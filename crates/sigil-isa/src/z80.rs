@@ -344,6 +344,13 @@ fn ed_ld_mem_pair_sub(rp: Reg16) -> u8 {
     0x43 | (rp_code(rp) << 4)
 }
 
+/// ED sub-opcode for `ld rr,(nn)` (load): `0x4B | (rp_code(rp) << 4)`.
+/// Yields bc=`4B`, de=`5B`, hl=`6B`, sp=`7B`. The `hl` value (`6B`) is never
+/// emitted — AS uses the base `2A` short form for `ld hl,(nn)` (catalog §6.7).
+fn ed_ld_pair_mem_sub(rp: Reg16) -> u8 {
+    0x4B | (rp_code(rp) << 4)
+}
+
 /// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 ///
 /// Dispatches on the mnemonic then the operand shape. Task 1 covers the five
@@ -413,6 +420,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Ld, [Operand::Pair(Reg16::Hl), Operand::Mem(nn)]) => {
             let [lo, hi] = le16(*nn);
             Ok(vec![0x2A, lo, hi])
+        }
+        // ED-prefixed ld rr,(nn) for bc/de/sp. hl uses base 2A (Task 4).
+        (Mnemonic::Ld, [Operand::Pair(rp @ (Reg16::Bc | Reg16::De | Reg16::Sp)), Operand::Mem(nn)]) => {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![ED_PREFIX, ed_ld_pair_mem_sub(*rp), lo, hi])
         }
         (Mnemonic::Ld, [Operand::Mem(nn), Operand::Pair(Reg16::Hl)]) => {
             let [lo, hi] = le16(*nn);
@@ -781,6 +793,46 @@ mod tests {
             })
             .unwrap(),
             vec![0x22, 0x34, 0x12]
+        );
+    }
+
+    #[test]
+    fn encodes_ed_ld_pair_mem_loads() {
+        // ld bc,(1234h) = ED 4B 34 12  (asl-verified)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Pair(Reg16::Bc), Operand::Mem(0x1234)],
+            })
+            .unwrap(),
+            vec![0xED, 0x4B, 0x34, 0x12]
+        );
+        // ld de,(1234h) = ED 5B 34 12  (asl-verified) — de MUST use ED 5B, NOT base
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Pair(Reg16::De), Operand::Mem(0x1234)],
+            })
+            .unwrap(),
+            vec![0xED, 0x5B, 0x34, 0x12]
+        );
+        // ld sp,(0C000h) = ED 7B 00 C0  (asl-verified, distinct address for LE)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Pair(Reg16::Sp), Operand::Mem(0xC000)],
+            })
+            .unwrap(),
+            vec![0xED, 0x7B, 0x00, 0xC0]
+        );
+        // REGRESSION GUARD (§6.7): hl load MUST stay base 2A, not ED 6B (Task 4 arm).
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Pair(Reg16::Hl), Operand::Mem(0x1234)],
+            })
+            .unwrap(),
+            vec![0x2A, 0x34, 0x12]
         );
     }
 }
