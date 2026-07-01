@@ -409,6 +409,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             "jr condition must be nz, z, nc, or c".into(),
         )),
         (Mnemonic::Jr, [Operand::Rel(d)]) => Ok(vec![0x18, *d as u8]),
+        (Mnemonic::Djnz, [Operand::Rel(d)]) => Ok(vec![0x10, *d as u8]),
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),

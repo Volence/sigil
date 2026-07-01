@@ -190,4 +190,11 @@ fn jr_rejects_non_flag_conditions() {
     }
 }
 
+#[test]
+fn djnz_relative() {
+    // asl `djnz $` at own-PC → disp -2: 10 FE. Displacement passes through as i8 -> u8.
+    assert_eq!(enc(Mnemonic::Djnz, vec![Operand::Rel(-2)]), vec![0x10, 0xFE]);
+    assert_eq!(enc(Mnemonic::Djnz, vec![Operand::Rel(-16)]), vec![0x10, 0xF0]);
+}
+
 // (additional Task 4 tests are appended below)
