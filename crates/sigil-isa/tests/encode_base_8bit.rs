@@ -140,4 +140,25 @@ fn alu_reg_and_hl() {
     }
 }
 
+#[test]
+fn alu_immediate() {
+    // `<op> n` single-operand (asl: `sub 5`, `and 007h`, `cp 2`, …)
+    let cases: &[(Mnemonic, u8, [u8; 2])] = &[
+        (Mnemonic::Add, 5, [0xC6, 0x05]),
+        (Mnemonic::Adc, 0, [0xCE, 0x00]),
+        (Mnemonic::Sub, 5, [0xD6, 0x05]),
+        (Mnemonic::Sbc, 5, [0xDE, 0x05]),
+        (Mnemonic::And, 7, [0xE6, 0x07]),
+        (Mnemonic::Or, 5, [0xF6, 0x05]),
+        (Mnemonic::Xor, 5, [0xEE, 0x05]),
+        (Mnemonic::Cp, 2, [0xFE, 0x02]),
+    ];
+    for &(m, n, bytes) in cases {
+        assert_eq!(encode(&inst(m, vec![Operand::Imm8(n)])).unwrap(), bytes.to_vec(), "{m:?} {n}");
+    }
+    // Two-operand `<op> a,n` shape encodes identically.
+    assert_eq!(encode(&inst(Mnemonic::Add, vec![Operand::Reg(Reg8::A), Operand::Imm8(5)])).unwrap(), vec![0xC6, 0x05]);
+    assert_eq!(encode(&inst(Mnemonic::Adc, vec![Operand::Reg(Reg8::A), Operand::Imm8(0)])).unwrap(), vec![0xCE, 0x00]);
+}
+
 // (further base-8bit vectors appended by later steps)

@@ -269,17 +269,18 @@ fn alu8_opcodes(m: Mnemonic) -> Option<(u8, u8)> {
 /// deliberately excluded so their match arms are reached instead. (Extended to accept
 /// `Imm8` in Step 3.5.)
 fn is_alu8_src(op: &Operand) -> bool {
-    matches!(op, Operand::Reg(_) | Operand::IndHl)
+    matches!(op, Operand::Reg(_) | Operand::IndHl | Operand::Imm8(_))
 }
 
 /// Encode a base 8-bit accumulator ALU op (`<op> a,src` or `<op> src`) over a
 /// register or `(hl)` source. (Immediate source added in Step 3.5.)
 fn encode_alu8(m: Mnemonic, src: &Operand) -> Result<Vec<u8>, IsaError> {
-    let (base, _) = alu8_opcodes(m)
+    let (base, imm_op) = alu8_opcodes(m)
         .ok_or_else(|| IsaError::UnsupportedForm(format!("{m:?} is not a base 8-bit ALU op")))?;
     match src {
         Operand::Reg(r) => Ok(vec![base | reg8_code(*r)]),
         Operand::IndHl => Ok(vec![base | 0x06]),
+        Operand::Imm8(n) => Ok(vec![imm_op, *n]),
         other => Err(IsaError::UnsupportedForm(format!("ALU source {other:?}"))),
     }
 }
