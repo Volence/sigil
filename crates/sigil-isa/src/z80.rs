@@ -274,6 +274,18 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         }
         (Mnemonic::Ld, [Operand::IndHl, Operand::Reg(src)]) => Ok(vec![0x70 | reg8_code(*src)]),
         (Mnemonic::Ld, [Operand::IndHl, Operand::Imm8(n)]) => Ok(vec![0x36, *n]),
+        (Mnemonic::Ld, [Operand::IndDe, Operand::Reg(Reg8::A)]) => Ok(vec![0x12]),
+        (Mnemonic::Ld, [Operand::Reg(Reg8::A), Operand::IndDe]) => Ok(vec![0x1A]),
+        (Mnemonic::Ld, [Operand::IndBc, Operand::Reg(Reg8::A)]) => Ok(vec![0x02]),
+        (Mnemonic::Ld, [Operand::Reg(Reg8::A), Operand::IndBc]) => Ok(vec![0x0A]),
+        (Mnemonic::Ld, [Operand::Reg(Reg8::A), Operand::Mem(nn)]) => {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![0x3A, lo, hi])
+        }
+        (Mnemonic::Ld, [Operand::Mem(nn), Operand::Reg(Reg8::A)]) => {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![0x32, lo, hi])
+        }
         // -- Task 3: end base group (insert new base arms above this line) -----
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }

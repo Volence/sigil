@@ -67,4 +67,34 @@ fn ld_hl_indirect() {
     );
 }
 
+#[test]
+fn ld_indirect_pair_and_absolute() {
+    // ld (de),a = 12 ; ld a,(de) = 1A ; ld (bc),a = 02 ; ld a,(bc) = 0A
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::IndDe, Operand::Reg(Reg8::A)])).unwrap(),
+        vec![0x12]
+    );
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::Reg(Reg8::A), Operand::IndDe])).unwrap(),
+        vec![0x1A]
+    );
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::IndBc, Operand::Reg(Reg8::A)])).unwrap(),
+        vec![0x02]
+    );
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::Reg(Reg8::A), Operand::IndBc])).unwrap(),
+        vec![0x0A]
+    );
+    // ld a,(8DFCh) = 3A FC 8D ; ld (8DFCh),a = 32 FC 8D   (imm16 little-endian)
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::Reg(Reg8::A), Operand::Mem(0x8DFC)])).unwrap(),
+        vec![0x3A, 0xFC, 0x8D]
+    );
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::Mem(0x8DFC), Operand::Reg(Reg8::A)])).unwrap(),
+        vec![0x32, 0xFC, 0x8D]
+    );
+}
+
 // (further base-8bit vectors appended by later steps)
