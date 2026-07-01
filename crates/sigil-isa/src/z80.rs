@@ -693,4 +693,26 @@ mod tests {
             Err(IsaError::OperandRange(_))
         ));
     }
+
+    #[test]
+    fn cb_rejects_unsupported_targets_and_shapes() {
+        // (bc)/(de) and immediates are not legal CB targets.
+        assert!(matches!(
+            encode(&Instruction { mnemonic: Mnemonic::Rlc, ops: vec![Operand::IndBc] }),
+            Err(IsaError::UnsupportedForm(_))
+        ));
+        assert!(matches!(
+            encode(&Instruction { mnemonic: Mnemonic::Bit, ops: vec![Operand::Bit(0), Operand::Imm8(5)] }),
+            Err(IsaError::UnsupportedForm(_))
+        ));
+        // wrong operand count.
+        assert!(matches!(
+            encode(&Instruction { mnemonic: Mnemonic::Srl, ops: vec![] }),
+            Err(IsaError::UnsupportedForm(_))
+        ));
+        assert!(matches!(
+            encode(&Instruction { mnemonic: Mnemonic::Res, ops: vec![Operand::Reg(Reg8::A)] }),
+            Err(IsaError::UnsupportedForm(_))
+        ));
+    }
 }
