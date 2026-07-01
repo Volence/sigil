@@ -389,6 +389,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         }
         (Mnemonic::Ret, []) => Ok(vec![0xC9]),
         (Mnemonic::Ret, [Operand::Cc(cc)]) => Ok(vec![0xC0 | (cond_code(*cc) << 3)]),
+        // (`jp nn` already encodes above via the migrated Plan-1 arm.)
+        (Mnemonic::Jp, [Operand::Cc(cc), Operand::Imm16(nn)]) => {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![0xC2 | (cond_code(*cc) << 3), lo, hi])
+        }
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
