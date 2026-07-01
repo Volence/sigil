@@ -341,6 +341,13 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Inc, [Operand::IndHl]) => Ok(vec![0x34]),
         (Mnemonic::Dec, [Operand::IndHl]) => Ok(vec![0x35]),
         // -- Task 3: end base group (insert new base arms above this line) -----
+        // ---- Task 4: base group - 16-bit ops + control flow ----
+        // (`nop` already encodes above via the migrated Plan-1 arm.)
+        (Mnemonic::Exx, []) => Ok(vec![0xD9]),
+        (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
+        (Mnemonic::Scf, []) => Ok(vec![0x37]),
+        (Mnemonic::Ei, []) => Ok(vec![0xFB]),
+        (Mnemonic::Di, []) => Ok(vec![0xF3]),
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }
 }
