@@ -315,10 +315,15 @@ fn encode_cb_shift(family: u8, ops: &[Operand]) -> Result<Vec<u8>, IsaError> {
 }
 
 /// Encode a CB bit op (`bit`/`res`/`set`): `[0xCB, base | (bit << 3) | target_code]`.
-/// `base` is 0x40 (bit), 0x80 (res) or 0xC0 (set).
+/// `base` is 0x40 (bit), 0x80 (res) or 0xC0 (set). The bit number must be 0..=7.
 fn encode_cb_bit(base: u8, ops: &[Operand]) -> Result<Vec<u8>, IsaError> {
     match ops {
         [Operand::Bit(bit), target] => {
+            if *bit > 7 {
+                return Err(IsaError::OperandRange(format!(
+                    "bit number {bit} out of range 0..=7"
+                )));
+            }
             let code = cb_target_code(target)?;
             Ok(vec![0xCB, base | (bit << 3) | code])
         }
@@ -675,5 +680,17 @@ mod tests {
         assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Set, ops: vec![Operand::Bit(6), Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0xF7]);
         assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Set, ops: vec![Operand::Bit(0), Operand::IndHl] }).unwrap(), vec![0xCB, 0xC6]);
         assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Set, ops: vec![Operand::Bit(7), Operand::IndHl] }).unwrap(), vec![0xCB, 0xFE]);
+    }
+
+    #[test]
+    fn cb_bit_number_out_of_range_errors() {
+        assert_eq!(
+            encode(&Instruction { mnemonic: Mnemonic::Bit, ops: vec![Operand::Bit(8), Operand::Reg(Reg8::A)] }),
+            Err(IsaError::OperandRange("bit number 8 out of range 0..=7".into()))
+        );
+        assert!(matches!(
+            encode(&Instruction { mnemonic: Mnemonic::Set, ops: vec![Operand::Bit(9), Operand::IndHl] }),
+            Err(IsaError::OperandRange(_))
+        ));
     }
 }
