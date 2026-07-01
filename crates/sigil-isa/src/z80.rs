@@ -59,6 +59,22 @@ fn reject_hl(reg: Reg8) -> Result<(), IsaError> {
     Ok(())
 }
 
+/// Map a 3-bit Z80 register code (0..=7) back to [`Reg8`].
+/// Code 6 represents `(HL)`; callers that reject it should pass the result
+/// through [`reject_hl`] before using it.
+fn reg_from_code(code: u8) -> Reg8 {
+    match code {
+        0 => Reg8::B,
+        1 => Reg8::C,
+        2 => Reg8::D,
+        3 => Reg8::E,
+        4 => Reg8::H,
+        5 => Reg8::L,
+        6 => Reg8::Hl,
+        _ => Reg8::A,
+    }
+}
+
 /// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst {
@@ -80,6 +96,61 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = addr.to_le_bytes();
             Ok(vec![0xC3, lo, hi])
         }
+    }
+}
+
+/// Decode the first instruction in `bytes`, returning it and the number of
+/// bytes consumed. Exact inverse of [`encode`] over the five supported forms.
+///
+/// Returns `Err` for any opcode outside the supported subset, for `(HL)`
+/// register operands (code 6), or for a truncated multi-byte instruction.
+pub fn disassemble(bytes: &[u8]) -> Result<(Instruction, usize), IsaError> {
+    let opcode = match bytes.first() {
+        Some(&b) => b,
+        None => return Err(IsaError::UnsupportedOperand("empty input".into())),
+    };
+    match opcode {
+        // nop
+        0x00 => Ok((Instruction::Nop, 1)),
+        // ld r, r'  (0x40..=0x7F, excluding HALT 0x76 and (HL) variants)
+        0x40..=0x7F => {
+            let dst = reg_from_code((opcode >> 3) & 0x07);
+            let src = reg_from_code(opcode & 0x07);
+            reject_hl(dst)?;
+            reject_hl(src)?;
+            Ok((Instruction::LdRegReg { dst, src }, 1))
+        }
+        // ld r, n  (0x06, 0x0E, 0x16, 0x1E, 0x26, 0x2E, 0x36, 0x3E)
+        _ if opcode & 0xC7 == 0x06 => {
+            let dst = reg_from_code((opcode >> 3) & 0x07);
+            reject_hl(dst)?;
+            let imm = match bytes.get(1) {
+                Some(&b) => b,
+                None => return Err(IsaError::UnsupportedOperand("truncated ld r, imm".into())),
+            };
+            Ok((Instruction::LdRegImm { dst, imm }, 2))
+        }
+        // add a, r  (0x80..=0x87)
+        0x80..=0x87 => {
+            let src = reg_from_code(opcode & 0x07);
+            reject_hl(src)?;
+            Ok((Instruction::AddAReg { src }, 1))
+        }
+        // jp nn  (0xC3, lo, hi — little-endian)
+        0xC3 => {
+            let lo = match bytes.get(1) {
+                Some(&b) => b as u16,
+                None => return Err(IsaError::UnsupportedOperand("truncated jp imm16".into())),
+            };
+            let hi = match bytes.get(2) {
+                Some(&b) => b as u16,
+                None => return Err(IsaError::UnsupportedOperand("truncated jp imm16".into())),
+            };
+            Ok((Instruction::JpImm { addr: lo | (hi << 8) }, 3))
+        }
+        _ => Err(IsaError::UnsupportedOperand(format!(
+            "unknown opcode {opcode:#04X}"
+        ))),
     }
 }
 
