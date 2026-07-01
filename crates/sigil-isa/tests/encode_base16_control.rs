@@ -43,4 +43,25 @@ fn exchange_and_hl_transfer() {
     assert_eq!(enc(Mnemonic::Jp, vec![Operand::IndHl]), vec![0xE9]);
 }
 
+#[test]
+fn ld_pair_imm16() {
+    // asl: ld bc,1234h=01 34 12  ld de,8DFCh=11 FC 8D  ld hl,1234h=21 34 12  ld sp,1234h=31 34 12
+    assert_eq!(
+        enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Bc), Operand::Imm16(0x1234)]),
+        vec![0x01, 0x34, 0x12]
+    );
+    assert_eq!(
+        enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::De), Operand::Imm16(0x8DFC)]),
+        vec![0x11, 0xFC, 0x8D]
+    );
+    assert_eq!(
+        enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Hl), Operand::Imm16(0x1234)]),
+        vec![0x21, 0x34, 0x12]
+    );
+    assert_eq!(
+        enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Sp), Operand::Imm16(0x1234)]),
+        vec![0x31, 0x34, 0x12]
+    );
+}
+
 // (additional Task 4 tests are appended below)

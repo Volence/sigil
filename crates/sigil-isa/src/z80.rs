@@ -348,6 +348,12 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Ex, [Operand::Pair(Reg16::Af), Operand::AfShadow]) => Ok(vec![0x08]),
         (Mnemonic::Ld, [Operand::Pair(Reg16::Sp), Operand::Pair(Reg16::Hl)]) => Ok(vec![0xF9]),
         (Mnemonic::Jp, [Operand::IndHl]) => Ok(vec![0xE9]),
+        (Mnemonic::Ld, [Operand::Pair(rr), Operand::Imm16(nn)])
+            if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Sp) =>
+        {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![0x01 | (rp_code(*rr) << 4), lo, hi])
+        }
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
