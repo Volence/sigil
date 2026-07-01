@@ -1241,5 +1241,52 @@ mod index_tests {
         );
     }
 
+    #[test]
+    fn dd_fd_group_asl_table() {
+        // Each row is (mnemonic, operands, expected bytes) — all bytes from tools/asl.
+        let cases: &[(Mnemonic, Vec<Operand>, Vec<u8>)] = &[
+            (Mnemonic::Ld, vec![Operand::Pair(Reg16::Ix), Operand::Imm16(0x1234)], vec![0xDD, 0x21, 0x34, 0x12]),
+            (Mnemonic::Ld, vec![Operand::Pair(Reg16::Iy), Operand::Imm16(0x1234)], vec![0xFD, 0x21, 0x34, 0x12]),
+            (Mnemonic::Ld, vec![Operand::Pair(Reg16::Ix), Operand::Mem(0x1234)], vec![0xDD, 0x2A, 0x34, 0x12]),
+            (Mnemonic::Ld, vec![Operand::Pair(Reg16::Iy), Operand::Mem(0x8DFC)], vec![0xFD, 0x2A, 0xFC, 0x8D]),
+            (Mnemonic::Ld, vec![Operand::Reg(Reg8::A), Operand::Indexed { reg: IndexReg::Ix, disp: 3 }], vec![0xDD, 0x7E, 0x03]),
+            (Mnemonic::Ld, vec![Operand::Reg(Reg8::L), Operand::Indexed { reg: IndexReg::Ix, disp: 10 }], vec![0xDD, 0x6E, 0x0A]),
+            (Mnemonic::Ld, vec![Operand::Reg(Reg8::A), Operand::Indexed { reg: IndexReg::Iy, disp: 5 }], vec![0xFD, 0x7E, 0x05]),
+            (Mnemonic::Ld, vec![Operand::Reg(Reg8::H), Operand::Indexed { reg: IndexReg::Iy, disp: 7 }], vec![0xFD, 0x66, 0x07]),
+            (Mnemonic::Ld, vec![Operand::Reg(Reg8::A), Operand::Indexed { reg: IndexReg::Ix, disp: -1 }], vec![0xDD, 0x7E, 0xFF]),
+            (Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }, Operand::Reg(Reg8::L)], vec![0xDD, 0x75, 0x03]),
+            (Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 10 }, Operand::Reg(Reg8::B)], vec![0xDD, 0x70, 0x0A]),
+            (Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 7 }, Operand::Reg(Reg8::A)], vec![0xFD, 0x77, 0x07]),
+            (Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Ix, disp: -2 }, Operand::Reg(Reg8::C)], vec![0xDD, 0x71, 0xFE]),
+            (Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }, Operand::Imm8(0)], vec![0xDD, 0x36, 0x03, 0x00]),
+            (Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 3 }, Operand::Imm8(0)], vec![0xFD, 0x36, 0x03, 0x00]),
+            (Mnemonic::Inc, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }], vec![0xDD, 0x34, 0x03]),
+            (Mnemonic::Inc, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 9 }], vec![0xFD, 0x34, 0x09]),
+            (Mnemonic::Dec, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 4 }], vec![0xDD, 0x35, 0x04]),
+            (Mnemonic::Dec, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 2 }], vec![0xFD, 0x35, 0x02]),
+            (Mnemonic::Add, vec![Operand::Reg(Reg8::A), Operand::Indexed { reg: IndexReg::Ix, disp: 3 }], vec![0xDD, 0x86, 0x03]),
+            (Mnemonic::Add, vec![Operand::Reg(Reg8::A), Operand::Indexed { reg: IndexReg::Iy, disp: 2 }], vec![0xFD, 0x86, 0x02]),
+            (Mnemonic::Or, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }], vec![0xDD, 0xB6, 0x03]),
+            (Mnemonic::Or, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 1 }], vec![0xFD, 0xB6, 0x01]),
+            (Mnemonic::Cp, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }], vec![0xDD, 0xBE, 0x03]),
+            (Mnemonic::Cp, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 4 }], vec![0xFD, 0xBE, 0x04]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Ix), Operand::Pair(Reg16::Bc)], vec![0xDD, 0x09]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Ix), Operand::Pair(Reg16::De)], vec![0xDD, 0x19]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Ix), Operand::Pair(Reg16::Ix)], vec![0xDD, 0x29]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Ix), Operand::Pair(Reg16::Sp)], vec![0xDD, 0x39]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Iy), Operand::Pair(Reg16::Bc)], vec![0xFD, 0x09]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Iy), Operand::Pair(Reg16::De)], vec![0xFD, 0x19]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Iy), Operand::Pair(Reg16::Iy)], vec![0xFD, 0x29]),
+            (Mnemonic::Add, vec![Operand::Pair(Reg16::Iy), Operand::Pair(Reg16::Sp)], vec![0xFD, 0x39]),
+            (Mnemonic::Push, vec![Operand::Pair(Reg16::Ix)], vec![0xDD, 0xE5]),
+            (Mnemonic::Pop, vec![Operand::Pair(Reg16::Ix)], vec![0xDD, 0xE1]),
+            (Mnemonic::Push, vec![Operand::Pair(Reg16::Iy)], vec![0xFD, 0xE5]),
+            (Mnemonic::Pop, vec![Operand::Pair(Reg16::Iy)], vec![0xFD, 0xE1]),
+        ];
+        for (m, ops, want) in cases {
+            assert_eq!(&enc(*m, ops.clone()), want, "mismatch for {m:?} {ops:?}");
+        }
+    }
+
     // --- more index-group tests appended below ---
 }
