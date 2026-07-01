@@ -417,6 +417,18 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Dec, [Operand::Indexed { reg, disp }]) => {
             Ok(vec![index_prefix(*reg), 0x35, *disp as u8])
         }
+        // add a,(ix+d) / add a,(iy+d)  ->  <pfx> 86 disp   (base `add a,(hl)`)
+        (Mnemonic::Add, [Operand::Reg(Reg8::A), Operand::Indexed { reg, disp }]) => {
+            Ok(vec![index_prefix(*reg), 0x86, *disp as u8])
+        }
+        // or (ix+d) / or (iy+d)  ->  <pfx> B6 disp   (base `or (hl)`)
+        (Mnemonic::Or, [Operand::Indexed { reg, disp }]) => {
+            Ok(vec![index_prefix(*reg), 0xB6, *disp as u8])
+        }
+        // cp (ix+d) / cp (iy+d)  ->  <pfx> BE disp   (base `cp (hl)`)
+        (Mnemonic::Cp, [Operand::Indexed { reg, disp }]) => {
+            Ok(vec![index_prefix(*reg), 0xBE, *disp as u8])
+        }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
             "unsupported Z80 index form: {inst:?}"
@@ -1090,6 +1102,39 @@ mod index_tests {
         assert_eq!(
             enc(Mnemonic::Dec, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 2 }]),
             vec![0xFD, 0x35, 0x02]
+        );
+    }
+
+    #[test]
+    fn alu_indexed() {
+        // asl: `add a,(ix+3)` = DD 86 03 ; `add a,(iy+2)` = FD 86 02 ;
+        // `or (ix+3)` = DD B6 03 ; `or (iy+1)` = FD B6 01 ;
+        // `cp (ix+3)` = DD BE 03 ; `cp (iy+4)` = FD BE 04
+        assert_eq!(
+            enc(Mnemonic::Add, vec![Operand::Reg(Reg8::A),
+                Operand::Indexed { reg: IndexReg::Ix, disp: 3 }]),
+            vec![0xDD, 0x86, 0x03]
+        );
+        assert_eq!(
+            enc(Mnemonic::Add, vec![Operand::Reg(Reg8::A),
+                Operand::Indexed { reg: IndexReg::Iy, disp: 2 }]),
+            vec![0xFD, 0x86, 0x02]
+        );
+        assert_eq!(
+            enc(Mnemonic::Or, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }]),
+            vec![0xDD, 0xB6, 0x03]
+        );
+        assert_eq!(
+            enc(Mnemonic::Or, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 1 }]),
+            vec![0xFD, 0xB6, 0x01]
+        );
+        assert_eq!(
+            enc(Mnemonic::Cp, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }]),
+            vec![0xDD, 0xBE, 0x03]
+        );
+        assert_eq!(
+            enc(Mnemonic::Cp, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 4 }]),
+            vec![0xFD, 0xBE, 0x04]
         );
     }
 
