@@ -246,6 +246,44 @@ fn reg8_from_code(code: u8) -> Result<Reg8, IsaError> {
     }
 }
 
+/// `(register-form base opcode, immediate-form opcode)` for the eight base 8-bit
+/// accumulator ALU operations; `None` for any other mnemonic.
+///
+/// Byte-verified against `tools/asl` (`add a,b`=80, `sub c`=91, `or a`=B7, `cp b`=B8, …).
+fn alu8_opcodes(m: Mnemonic) -> Option<(u8, u8)> {
+    Some(match m {
+        Mnemonic::Add => (0x80, 0xC6),
+        Mnemonic::Adc => (0x88, 0xCE),
+        Mnemonic::Sub => (0x90, 0xD6),
+        Mnemonic::Sbc => (0x98, 0xDE),
+        Mnemonic::And => (0xA0, 0xE6),
+        Mnemonic::Xor => (0xA8, 0xEE),
+        Mnemonic::Or => (0xB0, 0xF6),
+        Mnemonic::Cp => (0xB8, 0xFE),
+        _ => return None,
+    })
+}
+
+/// True when `op` is a source the base 8-bit ALU forms accept: a plain register or
+/// `(hl)`. `(ix+d)`/`(iy+d)` sources are the DD/FD tasks' responsibility and are
+/// deliberately excluded so their match arms are reached instead. (Extended to accept
+/// `Imm8` in Step 3.5.)
+fn is_alu8_src(op: &Operand) -> bool {
+    matches!(op, Operand::Reg(_) | Operand::IndHl)
+}
+
+/// Encode a base 8-bit accumulator ALU op (`<op> a,src` or `<op> src`) over a
+/// register or `(hl)` source. (Immediate source added in Step 3.5.)
+fn encode_alu8(m: Mnemonic, src: &Operand) -> Result<Vec<u8>, IsaError> {
+    let (base, _) = alu8_opcodes(m)
+        .ok_or_else(|| IsaError::UnsupportedForm(format!("{m:?} is not a base 8-bit ALU op")))?;
+    match src {
+        Operand::Reg(r) => Ok(vec![base | reg8_code(*r)]),
+        Operand::IndHl => Ok(vec![base | 0x06]),
+        other => Err(IsaError::UnsupportedForm(format!("ALU source {other:?}"))),
+    }
+}
+
 /// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 ///
 /// Dispatches on the mnemonic then the operand shape. Task 1 covers the five
@@ -286,6 +324,13 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![0x32, lo, hi])
         }
+        // -- Task 3: base 8-bit ALU (accepts both `<op> a,src` and `<op> src`) --
+        (m, [Operand::Reg(Reg8::A), src])
+            if alu8_opcodes(m).is_some() && is_alu8_src(src) =>
+        {
+            encode_alu8(m, src)
+        }
+        (m, [src]) if alu8_opcodes(m).is_some() && is_alu8_src(src) => encode_alu8(m, src),
         // -- Task 3: end base group (insert new base arms above this line) -----
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }

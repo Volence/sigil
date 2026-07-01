@@ -97,4 +97,47 @@ fn ld_indirect_pair_and_absolute() {
     );
 }
 
+#[test]
+fn alu_reg_and_hl() {
+    // Single-operand shape (asl: `sub c`, `or a`, `cp b`, …)
+    let cases: &[(Mnemonic, Reg8, u8)] = &[
+        (Mnemonic::Add, Reg8::A, 0x87), // add a,a
+        (Mnemonic::Add, Reg8::B, 0x80), // add a,b
+        (Mnemonic::Adc, Reg8::H, 0x8C), // adc a,h
+        (Mnemonic::Sub, Reg8::C, 0x91), // sub c
+        (Mnemonic::Sbc, Reg8::A, 0x9F), // sbc a,a
+        (Mnemonic::And, Reg8::C, 0xA1), // and c
+        (Mnemonic::Or, Reg8::A, 0xB7),  // or a   (A=7 -> B0|7=B7, NOT B0)
+        (Mnemonic::Or, Reg8::C, 0xB1),  // or c
+        (Mnemonic::Xor, Reg8::A, 0xAF), // xor a  (A8|7=AF)
+        (Mnemonic::Cp, Reg8::B, 0xB8),  // cp b
+    ];
+    for &(m, r, byte) in cases {
+        assert_eq!(encode(&inst(m, vec![Operand::Reg(r)])).unwrap(), vec![byte], "{m:?} {r:?}");
+    }
+
+    // Two-operand `<op> a,r` shape must encode identically to `<op> r`.
+    assert_eq!(encode(&inst(Mnemonic::Sub, vec![Operand::Reg(Reg8::A), Operand::Reg(Reg8::C)])).unwrap(), vec![0x91]);
+    assert_eq!(encode(&inst(Mnemonic::And, vec![Operand::Reg(Reg8::A), Operand::Reg(Reg8::C)])).unwrap(), vec![0xA1]);
+    assert_eq!(encode(&inst(Mnemonic::Or, vec![Operand::Reg(Reg8::A), Operand::Reg(Reg8::A)])).unwrap(), vec![0xB7]);
+    assert_eq!(encode(&inst(Mnemonic::Xor, vec![Operand::Reg(Reg8::A), Operand::Reg(Reg8::A)])).unwrap(), vec![0xAF]);
+    assert_eq!(encode(&inst(Mnemonic::Cp, vec![Operand::Reg(Reg8::A), Operand::Reg(Reg8::B)])).unwrap(), vec![0xB8]);
+
+    // `<op> a,(hl)` / `<op> (hl)`
+    let hl_cases: &[(Mnemonic, u8)] = &[
+        (Mnemonic::Add, 0x86),
+        (Mnemonic::Adc, 0x8E),
+        (Mnemonic::Sub, 0x96),
+        (Mnemonic::Sbc, 0x9E),
+        (Mnemonic::And, 0xA6),
+        (Mnemonic::Or, 0xB6),
+        (Mnemonic::Xor, 0xAE),
+        (Mnemonic::Cp, 0xBE),
+    ];
+    for &(m, byte) in hl_cases {
+        assert_eq!(encode(&inst(m, vec![Operand::IndHl])).unwrap(), vec![byte], "{m:?} (hl)");
+        assert_eq!(encode(&inst(m, vec![Operand::Reg(Reg8::A), Operand::IndHl])).unwrap(), vec![byte], "{m:?} a,(hl)");
+    }
+}
+
 // (further base-8bit vectors appended by later steps)
