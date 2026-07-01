@@ -476,6 +476,19 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     }
 }
 
+/// Encode a DDCB/FDCB indexed bit operation — `bit/res/set b,(ix+d)` / `(iy+d)`.
+///
+/// 4-byte layout, with the displacement byte BEFORE the sub-opcode:
+///   `[index_prefix(reg), 0xCB, disp, op]`
+/// where `op = base | (bit << 3) | 6`. The register field is always `6` (the
+/// `(hl)`-slot code); `base` = `0x40` (bit) / `0x80` (res) / `0xC0` (set).
+/// `disp` is already resolved to `-128..=127`, so its two's-complement byte is
+/// emitted directly (`-128 => 0x80`, `-1 => 0xFF`).
+fn encode_index_bit(base: u8, bit: u8, reg: IndexReg, disp: i8) -> Result<Vec<u8>, IsaError> {
+    let op = base | (bit << 3) | 6;
+    Ok(vec![index_prefix(reg), 0xCB, disp as u8, op])
+}
+
 /// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 ///
 /// Dispatches on the mnemonic then the operand shape. Task 1 covers the five
@@ -483,6 +496,20 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 /// until a later task adds it.
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     use Operand::*;
+    // DDCB/FDCB indexed bit ops (Task 8): bit/res/set b,(ix+d) / (iy+d).
+    // Matched here, ahead of the mnemonic dispatch, because they share one
+    // 4-byte encoding across all three mnemonics and both index registers.
+    if let [Operand::Bit(b), Operand::Indexed { reg, disp }] = inst.ops.as_slice() {
+        let base = match inst.mnemonic {
+            Mnemonic::Bit => Some(0x40u8),
+            Mnemonic::Res => Some(0x80u8),
+            Mnemonic::Set => Some(0xC0u8),
+            _ => None,
+        };
+        if let Some(base) = base {
+            return encode_index_bit(base, *b, *reg, *disp);
+        }
+    }
     match (inst.mnemonic, inst.ops.as_slice()) {
         // nop
         (Mnemonic::Nop, []) => Ok(vec![0x00]),
@@ -1289,4 +1316,133 @@ mod index_tests {
     }
 
     // --- more index-group tests appended below ---
+
+    #[test]
+    fn ddcb_fdcb_bit() {
+        // asl: DD CB 03 66  — bit 4,(ix+3)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Bit,
+                ops: vec![Operand::Bit(4), Operand::Indexed { reg: IndexReg::Ix, disp: 3 }],
+            })
+            .unwrap(),
+            vec![0xDD, 0xCB, 0x03, 0x66]
+        );
+        // asl: DD CB 00 46  — bit 0,(ix+0)  (min bit, zero disp)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Bit,
+                ops: vec![Operand::Bit(0), Operand::Indexed { reg: IndexReg::Ix, disp: 0 }],
+            })
+            .unwrap(),
+            vec![0xDD, 0xCB, 0x00, 0x46]
+        );
+        // asl: DD CB 7F 7E  — bit 7,(ix+127)  (max bit, max +disp)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Bit,
+                ops: vec![Operand::Bit(7), Operand::Indexed { reg: IndexReg::Ix, disp: 127 }],
+            })
+            .unwrap(),
+            vec![0xDD, 0xCB, 0x7F, 0x7E]
+        );
+        // asl: DD CB 80 7E  — bit 7,(ix-128)  (min -disp -> two's-complement 0x80)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Bit,
+                ops: vec![Operand::Bit(7), Operand::Indexed { reg: IndexReg::Ix, disp: -128 }],
+            })
+            .unwrap(),
+            vec![0xDD, 0xCB, 0x80, 0x7E]
+        );
+        // asl: FD CB 0A 56  — bit 2,(iy+10)  (FDCB prefix)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Bit,
+                ops: vec![Operand::Bit(2), Operand::Indexed { reg: IndexReg::Iy, disp: 10 }],
+            })
+            .unwrap(),
+            vec![0xFD, 0xCB, 0x0A, 0x56]
+        );
+    }
+
+    #[test]
+    fn ddcb_fdcb_res() {
+        // asl: DD CB 0A 8E  — res 1,(ix+10)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Res,
+                ops: vec![Operand::Bit(1), Operand::Indexed { reg: IndexReg::Ix, disp: 10 }],
+            })
+            .unwrap(),
+            vec![0xDD, 0xCB, 0x0A, 0x8E]
+        );
+        // asl: FD CB 00 86  — res 0,(iy+0)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Res,
+                ops: vec![Operand::Bit(0), Operand::Indexed { reg: IndexReg::Iy, disp: 0 }],
+            })
+            .unwrap(),
+            vec![0xFD, 0xCB, 0x00, 0x86]
+        );
+        // asl: FD CB 05 BE  — res 7,(iy+5)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Res,
+                ops: vec![Operand::Bit(7), Operand::Indexed { reg: IndexReg::Iy, disp: 5 }],
+            })
+            .unwrap(),
+            vec![0xFD, 0xCB, 0x05, 0xBE]
+        );
+        // asl: FD CB FF 9E  — res 3,(iy-1)  (disp -1 -> 0xFF)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Res,
+                ops: vec![Operand::Bit(3), Operand::Indexed { reg: IndexReg::Iy, disp: -1 }],
+            })
+            .unwrap(),
+            vec![0xFD, 0xCB, 0xFF, 0x9E]
+        );
+    }
+
+    #[test]
+    fn ddcb_fdcb_set() {
+        // asl: FD CB 01 DE  — set 3,(iy+1)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Set,
+                ops: vec![Operand::Bit(3), Operand::Indexed { reg: IndexReg::Iy, disp: 1 }],
+            })
+            .unwrap(),
+            vec![0xFD, 0xCB, 0x01, 0xDE]
+        );
+        // asl: DD CB 00 C6  — set 0,(ix+0)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Set,
+                ops: vec![Operand::Bit(0), Operand::Indexed { reg: IndexReg::Ix, disp: 0 }],
+            })
+            .unwrap(),
+            vec![0xDD, 0xCB, 0x00, 0xC6]
+        );
+        // asl: DD CB 0A EE  — set 5,(ix+10)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Set,
+                ops: vec![Operand::Bit(5), Operand::Indexed { reg: IndexReg::Ix, disp: 10 }],
+            })
+            .unwrap(),
+            vec![0xDD, 0xCB, 0x0A, 0xEE]
+        );
+        // asl: FD CB 7F FE  — set 7,(iy+127)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Set,
+                ops: vec![Operand::Bit(7), Operand::Indexed { reg: IndexReg::Iy, disp: 127 }],
+            })
+            .unwrap(),
+            vec![0xFD, 0xCB, 0x7F, 0xFE]
+        );
+    }
 }
