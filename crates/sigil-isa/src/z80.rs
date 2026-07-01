@@ -30,12 +30,29 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst {
         Instruction::Nop => Ok(vec![0x00]),
         Instruction::LdRegReg { dst, src } => {
+            if *dst == Reg8::Hl || *src == Reg8::Hl {
+                return Err(IsaError::UnsupportedOperand(
+                    "(HL) not supported in Plan 1".into(),
+                ));
+            }
             Ok(vec![0x40 | ((*dst as u8) << 3) | (*src as u8)])
         }
         Instruction::LdRegImm { dst, imm } => {
+            if *dst == Reg8::Hl {
+                return Err(IsaError::UnsupportedOperand(
+                    "(HL) not supported in Plan 1".into(),
+                ));
+            }
             Ok(vec![0x06 | ((*dst as u8) << 3), *imm])
         }
-        Instruction::AddAReg { src } => Ok(vec![0x80 | (*src as u8)]),
+        Instruction::AddAReg { src } => {
+            if *src == Reg8::Hl {
+                return Err(IsaError::UnsupportedOperand(
+                    "(HL) not supported in Plan 1".into(),
+                ));
+            }
+            Ok(vec![0x80 | (*src as u8)])
+        }
         Instruction::JpImm { addr } => {
             Ok(vec![0xC3, (*addr & 0x00FF) as u8, (*addr >> 8) as u8])
         }
@@ -45,6 +62,26 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_hl_operand() {
+        assert!(matches!(
+            encode(&Instruction::LdRegReg { dst: Reg8::Hl, src: Reg8::B }),
+            Err(IsaError::UnsupportedOperand(_))
+        ));
+        assert!(matches!(
+            encode(&Instruction::LdRegReg { dst: Reg8::B, src: Reg8::Hl }),
+            Err(IsaError::UnsupportedOperand(_))
+        ));
+        assert!(matches!(
+            encode(&Instruction::LdRegImm { dst: Reg8::Hl, imm: 0 }),
+            Err(IsaError::UnsupportedOperand(_))
+        ));
+        assert!(matches!(
+            encode(&Instruction::AddAReg { src: Reg8::Hl }),
+            Err(IsaError::UnsupportedOperand(_))
+        ));
+    }
 
     #[test]
     fn encodes_supported_forms() {
