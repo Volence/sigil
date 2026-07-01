@@ -111,4 +111,17 @@ fn add_hl_pair() {
     );
 }
 
+#[test]
+fn inc_dec_pair() {
+    // asl: inc bc/de/hl/sp = 03 13 23 33 ; dec bc/de/hl/sp = 0B 1B 2B 3B
+    assert_eq!(enc(Mnemonic::Inc, vec![Operand::Pair(Reg16::Bc)]), vec![0x03]);
+    assert_eq!(enc(Mnemonic::Inc, vec![Operand::Pair(Reg16::De)]), vec![0x13]);
+    assert_eq!(enc(Mnemonic::Inc, vec![Operand::Pair(Reg16::Hl)]), vec![0x23]);
+    assert_eq!(enc(Mnemonic::Inc, vec![Operand::Pair(Reg16::Sp)]), vec![0x33]);
+    assert_eq!(enc(Mnemonic::Dec, vec![Operand::Pair(Reg16::Bc)]), vec![0x0B]);
+    assert_eq!(enc(Mnemonic::Dec, vec![Operand::Pair(Reg16::De)]), vec![0x1B]);
+    assert_eq!(enc(Mnemonic::Dec, vec![Operand::Pair(Reg16::Hl)]), vec![0x2B]);
+    assert_eq!(enc(Mnemonic::Dec, vec![Operand::Pair(Reg16::Sp)]), vec![0x3B]);
+}
+
 // (additional Task 4 tests are appended below)
