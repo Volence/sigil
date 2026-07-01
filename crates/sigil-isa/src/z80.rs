@@ -364,6 +364,24 @@ fn as_index_reg(r: Reg16) -> Option<IndexReg> {
     }
 }
 
+/// Field code for the source pair of `add ix,rr` / `add iy,rr` (the `add hl,rr` slot).
+///
+/// BC=0, DE=1, SP=3; the index register itself (`add ix,ix` / `add iy,iy`) uses HL's
+/// slot code 2. Any other pair (HL, AF, or the opposite index register) is illegal —
+/// asl rejects `add ix,hl` with "addressing mode not allowed here".
+fn index_add_pair_code(dst: IndexReg, src: Reg16) -> Result<u8, IsaError> {
+    match src {
+        Reg16::Bc => Ok(0),
+        Reg16::De => Ok(1),
+        Reg16::Sp => Ok(3),
+        Reg16::Ix if dst == IndexReg::Ix => Ok(2),
+        Reg16::Iy if dst == IndexReg::Iy => Ok(2),
+        _ => Err(IsaError::UnsupportedForm(format!(
+            "add {dst:?},{src:?} is not a legal Z80 index form"
+        ))),
+    }
+}
+
 /// True for the DD/FD (IX/IY) non-CB indexed forms this task owns: any operand is
 /// `Operand::Indexed`, or a 16-bit operand names IX/IY (`ld ix,nn`, `add ix,rr`,
 /// `push`/`pop ix`, `ld ix,(nn)`). The mnemonic is unused — the operand shape suffices —
@@ -428,6 +446,14 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         // cp (ix+d) / cp (iy+d)  ->  <pfx> BE disp   (base `cp (hl)`)
         (Mnemonic::Cp, [Operand::Indexed { reg, disp }]) => {
             Ok(vec![index_prefix(*reg), 0xBE, *disp as u8])
+        }
+        // add ix,rr / add iy,rr  ->  <pfx> (0x09 | code<<4)   (base `add hl,rr`)
+        (Mnemonic::Add, [Operand::Pair(dst), Operand::Pair(src)])
+            if as_index_reg(*dst).is_some() =>
+        {
+            let ix = as_index_reg(*dst).unwrap();
+            let code = index_add_pair_code(ix, *src)?;
+            Ok(vec![index_prefix(ix), 0x09 | (code << 4)])
         }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
@@ -1136,6 +1162,47 @@ mod index_tests {
             enc(Mnemonic::Cp, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 4 }]),
             vec![0xFD, 0xBE, 0x04]
         );
+    }
+
+    #[test]
+    fn add_index_pair() {
+        // asl: add ix,bc=DD 09  add ix,de=DD 19  add ix,ix=DD 29  add ix,sp=DD 39
+        //      add iy,bc=FD 09  add iy,de=FD 19  add iy,iy=FD 29  add iy,sp=FD 39
+        for (src, lo) in [
+            (Reg16::Bc, 0x09u8), (Reg16::De, 0x19), (Reg16::Ix, 0x29), (Reg16::Sp, 0x39),
+        ] {
+            assert_eq!(
+                enc(Mnemonic::Add, vec![Operand::Pair(Reg16::Ix), Operand::Pair(src)]),
+                vec![0xDD, lo]
+            );
+        }
+        for (src, lo) in [
+            (Reg16::Bc, 0x09u8), (Reg16::De, 0x19), (Reg16::Iy, 0x29), (Reg16::Sp, 0x39),
+        ] {
+            assert_eq!(
+                enc(Mnemonic::Add, vec![Operand::Pair(Reg16::Iy), Operand::Pair(src)]),
+                vec![0xFD, lo]
+            );
+        }
+    }
+
+    #[test]
+    fn add_index_pair_rejects_illegal() {
+        // `add ix,hl` and `add ix,iy` are not legal Z80 forms (asl rejects them).
+        assert!(matches!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Add,
+                ops: vec![Operand::Pair(Reg16::Ix), Operand::Pair(Reg16::Hl)],
+            }),
+            Err(IsaError::UnsupportedForm(_))
+        ));
+        assert!(matches!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Add,
+                ops: vec![Operand::Pair(Reg16::Ix), Operand::Pair(Reg16::Iy)],
+            }),
+            Err(IsaError::UnsupportedForm(_))
+        ));
     }
 
     // --- more index-group tests appended below ---
