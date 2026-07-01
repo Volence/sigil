@@ -39,3 +39,14 @@ bit 1,(ix+10) => DD CB 0A 4E
         ]
     );
 }
+
+mod corpus;
+
+#[test]
+fn corpus_covers_full_isa() {
+    let n = corpus::corpus().len();
+    assert!(
+        n >= 70,
+        "corpus() must cover the full ~74-form catalog §2 ISA, found {n} entries"
+    );
+}
