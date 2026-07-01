@@ -351,6 +351,59 @@ fn ed_ld_pair_mem_sub(rp: Reg16) -> u8 {
     0x4B | (rp_code(rp) << 4)
 }
 
+/// Map an IX/IY 16-bit pair to its index register; `None` for any non-index pair.
+///
+/// The index group shares the `[Pair, ..]` operand shapes with the base group
+/// (`ld rr,nn`, `add hl,rr`, `push`/`pop`). Returning `None` for BC/DE/HL/SP/AF keeps
+/// those forms with the base group.
+fn as_index_reg(r: Reg16) -> Option<IndexReg> {
+    match r {
+        Reg16::Ix => Some(IndexReg::Ix),
+        Reg16::Iy => Some(IndexReg::Iy),
+        _ => None,
+    }
+}
+
+/// True for the DD/FD (IX/IY) non-CB indexed forms this task owns: any operand is
+/// `Operand::Indexed`, or a 16-bit operand names IX/IY (`ld ix,nn`, `add ix,rr`,
+/// `push`/`pop ix`, `ld ix,(nn)`). The mnemonic is unused — the operand shape suffices —
+/// but is accepted so the call site reads `is_index_form(m, ops)`. The DDCB/FDCB
+/// `[Bit, Indexed]` forms are intercepted by Task 8's guard at the top of `encode`, so
+/// they never reach this one.
+fn is_index_form(_m: Mnemonic, ops: &[Operand]) -> bool {
+    ops.iter().any(|op| {
+        matches!(
+            op,
+            Operand::Indexed { .. } | Operand::Pair(Reg16::Ix) | Operand::Pair(Reg16::Iy)
+        )
+    })
+}
+
+/// Encode the DD/FD (IX/IY) non-CB indexed forms (catalog §2.4/§2.5).
+///
+/// Layout is always `index_prefix(reg)` then the HL-equivalent base opcode, with the
+/// displacement byte at the position asl emits it (for `ld (ix+d),n` that is
+/// `DD 36 <disp> <n>`). Only called for `is_index_form` inputs; any shape it does not own
+/// (e.g. the illegal `add ix,hl`) is a hard `Err`. Each later step inserts one arm above
+/// the sentinel.
+fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let ops = inst.ops.as_slice();
+    match (inst.mnemonic, ops) {
+        // ld ix,nn / ld iy,nn  ->  <pfx> 21 lo hi   (base `ld hl,nn`)
+        (Mnemonic::Ld, [Operand::Pair(rr), Operand::Imm16(nn)])
+            if as_index_reg(*rr).is_some() =>
+        {
+            let ix = as_index_reg(*rr).unwrap();
+            let [lo, hi] = le16(*nn);
+            Ok(vec![index_prefix(ix), 0x21, lo, hi])
+        }
+        // -- Task 7: end index group (insert new index arms above this line) --
+        _ => Err(IsaError::UnsupportedForm(format!(
+            "unsupported Z80 index form: {inst:?}"
+        ))),
+    }
+}
+
 /// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 ///
 /// Dispatches on the mnemonic then the operand shape. Task 1 covers the five
@@ -512,6 +565,8 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             [Operand::Imm8(1)] => Ok(vec![ED_PREFIX, 0x56]),
             _ => Err(IsaError::UnsupportedForm(format!("im {:?}", inst.ops))),
         },
+        // Task 7: IX/IY indexed forms (DD/FD prefix)
+        (m, ops) if is_index_form(m, ops) => encode_index(inst),
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }
 }
@@ -903,4 +958,30 @@ mod tests {
             vec![0xED, 0x4F]
         );
     }
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    /// Encode via the public `encode` entry point (the same path the asl vector
+    /// oracle exercises), unwrapping the produced byte vector.
+    fn enc(mnemonic: Mnemonic, ops: Vec<Operand>) -> Vec<u8> {
+        encode(&Instruction { mnemonic, ops }).unwrap()
+    }
+
+    #[test]
+    fn ld_ix_iy_nn() {
+        // asl: `ld ix,1234h` = DD 21 34 12 ; `ld iy,1234h` = FD 21 34 12
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Ix), Operand::Imm16(0x1234)]),
+            vec![0xDD, 0x21, 0x34, 0x12]
+        );
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Iy), Operand::Imm16(0x1234)]),
+            vec![0xFD, 0x21, 0x34, 0x12]
+        );
+    }
+
+    // --- more index-group tests appended below ---
 }
