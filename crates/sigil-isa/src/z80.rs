@@ -405,6 +405,10 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Ld, [Operand::Indexed { reg, disp }, Operand::Reg(r)]) => {
             Ok(vec![index_prefix(*reg), 0x70 | reg8_code(*r), *disp as u8])
         }
+        // ld (ix+d),n / ld (iy+d),n  ->  <pfx> 36 disp n   (base `ld (hl),n`)
+        (Mnemonic::Ld, [Operand::Indexed { reg, disp }, Operand::Imm8(n)]) => {
+            Ok(vec![index_prefix(*reg), 0x36, *disp as u8, *n])
+        }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
             "unsupported Z80 index form: {inst:?}"
@@ -1040,6 +1044,22 @@ mod index_tests {
             enc(Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Ix, disp: -2 },
                 Operand::Reg(Reg8::C)]),
             vec![0xDD, 0x71, 0xFE]
+        );
+    }
+
+    #[test]
+    fn ld_indexed_imm() {
+        // asl: `ld (ix+3),0` = DD 36 03 00 ; `ld (iy+3),0` = FD 36 03 00
+        // Order is prefix, opcode 36, displacement, THEN the immediate.
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 },
+                Operand::Imm8(0)]),
+            vec![0xDD, 0x36, 0x03, 0x00]
+        );
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 3 },
+                Operand::Imm8(0)]),
+            vec![0xFD, 0x36, 0x03, 0x00]
         );
     }
 
