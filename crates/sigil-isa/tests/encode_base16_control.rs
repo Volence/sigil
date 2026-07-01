@@ -77,4 +77,17 @@ fn ld_hl_absolute_memory() {
     );
 }
 
+#[test]
+fn push_and_pop() {
+    // asl: push bc/de/hl/af = C5 D5 E5 F5 ; pop bc/de/hl/af = C1 D1 E1 F1
+    assert_eq!(enc(Mnemonic::Push, vec![Operand::Pair(Reg16::Bc)]), vec![0xC5]);
+    assert_eq!(enc(Mnemonic::Push, vec![Operand::Pair(Reg16::De)]), vec![0xD5]);
+    assert_eq!(enc(Mnemonic::Push, vec![Operand::Pair(Reg16::Hl)]), vec![0xE5]);
+    assert_eq!(enc(Mnemonic::Push, vec![Operand::Pair(Reg16::Af)]), vec![0xF5]);
+    assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Bc)]), vec![0xC1]);
+    assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::De)]), vec![0xD1]);
+    assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Hl)]), vec![0xE1]);
+    assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Af)]), vec![0xF1]);
+}
+
 // (additional Task 4 tests are appended below)

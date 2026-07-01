@@ -362,6 +362,16 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![0x22, lo, hi])
         }
+        (Mnemonic::Push, [Operand::Pair(rr)])
+            if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Af) =>
+        {
+            Ok(vec![0xC5 | (push_pop_code(*rr) << 4)])
+        }
+        (Mnemonic::Pop, [Operand::Pair(rr)])
+            if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Af) =>
+        {
+            Ok(vec![0xC1 | (push_pop_code(*rr) << 4)])
+        }
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
