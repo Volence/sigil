@@ -5,6 +5,20 @@
 /// The discriminants are the Z80 register codes used within opcode bytes.
 /// `Hl` (code 6) denotes the `(HL)` memory operand and is intentionally
 /// rejected by [`encode`] for now.
+///
+/// # Design note — `Hl = 6` and future breaking change
+///
+/// The `Hl` variant models the Z80 `(HL)` memory-indirect operand, whose
+/// register-code is 6.  It is kept inside `Reg8` deliberately so that the
+/// Plan 1 encoder and disassembler can use `(reg as u8)` register-code
+/// arithmetic uniformly across all eight register slots (0 = B … 7 = A).
+/// [`encode`] guards against accidental use of this variant via `reject_hl`.
+///
+/// A future revision that adds real memory-indirect or IX/IY-prefixed operands
+/// **should** split this into a pure-register enum (B/C/D/E/H/L/A) plus a
+/// separate operand type that covers `(HL)`, `(IX+d)`, `(IY+d)`, etc.  That
+/// split is a **known breaking change** to the (extraction-ready) public API of
+/// this crate and must be coordinated with all downstream crates.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Reg8 {
     B = 0,

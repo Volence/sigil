@@ -60,7 +60,7 @@ fn main() {
     let image = match sigil_frontend_as::assemble_str(&src) {
         Ok(bytes) => bytes,
         Err(err) => {
-            eprintln!("error: assembly failed: {err:?}");
+            eprintln!("error: assembly failed: {err}");
             process::exit(1);
         }
     };

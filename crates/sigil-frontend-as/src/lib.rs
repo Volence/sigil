@@ -15,6 +15,18 @@ pub enum ParseError {
     Isa(sigil_isa::z80::IsaError),
 }
 
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::UnknownMnemonic(m) => write!(f, "unknown mnemonic: {m}"),
+            ParseError::BadOperand(s) => write!(f, "bad operand: {s}"),
+            ParseError::Isa(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
+
 /// Parse a single register token (already lowercased) into a [`Reg8`].
 fn parse_reg(tok: &str) -> Option<Reg8> {
     match tok {
@@ -201,5 +213,57 @@ mod tests {
             0x00,
         ];
         assert_eq!(assemble_str(src), Ok(expected));
+    }
+
+    // ── Negative / error-path tests ──────────────────────────────────────────
+
+    /// `ld a, (hl)` parses successfully (both sides map to Reg8) but the
+    /// encoder rejects the (HL) memory operand, so assemble_str must surface
+    /// ParseError::Isa(IsaError::UnsupportedOperand(_)).
+    #[test]
+    fn assemble_hl_operand_surfaces_isa_error() {
+        assert!(matches!(
+            assemble_str("ld a, (hl)\n"),
+            Err(ParseError::Isa(sigil_isa::z80::IsaError::UnsupportedOperand(_)))
+        ));
+    }
+
+    /// An 8-bit immediate that is out of the 0..=255 range must return
+    /// ParseError::BadOperand.
+    #[test]
+    fn parse_imm8_out_of_range() {
+        assert!(matches!(
+            parse_line("ld a, 300"),
+            Err(ParseError::BadOperand(_))
+        ));
+    }
+
+    /// A 16-bit address that exceeds 0xFFFF must return ParseError::BadOperand.
+    #[test]
+    fn parse_jp_addr_out_of_range() {
+        assert!(matches!(
+            parse_line("jp 0x10000"),
+            Err(ParseError::BadOperand(_))
+        ));
+    }
+
+    /// A missing comma between operands must return ParseError::BadOperand
+    /// (from split_operands failing to find a comma).
+    #[test]
+    fn parse_missing_comma() {
+        assert!(matches!(
+            parse_line("ld a 5"),
+            Err(ParseError::BadOperand(_))
+        ));
+    }
+
+    /// `add b, c` — the destination is not `a`, which is invalid for ADD.
+    /// The parser returns ParseError::BadOperand for the non-`a` destination.
+    #[test]
+    fn parse_add_non_a_destination() {
+        assert!(matches!(
+            parse_line("add b, c"),
+            Err(ParseError::BadOperand(_))
+        ));
     }
 }
