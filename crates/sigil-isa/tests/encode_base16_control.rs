@@ -124,4 +124,18 @@ fn inc_dec_pair() {
     assert_eq!(enc(Mnemonic::Dec, vec![Operand::Pair(Reg16::Sp)]), vec![0x3B]);
 }
 
+#[test]
+fn ret_and_ret_cc() {
+    // asl: ret=C9 ; ret nz/z/nc/c/po/pe/p/m = C0 C8 D0 D8 E0 E8 F0 F8
+    assert_eq!(enc(Mnemonic::Ret, vec![]), vec![0xC9]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::Nz)]), vec![0xC0]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::Z)]), vec![0xC8]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::Nc)]), vec![0xD0]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::C)]), vec![0xD8]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::Po)]), vec![0xE0]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::Pe)]), vec![0xE8]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::P)]), vec![0xF0]);
+    assert_eq!(enc(Mnemonic::Ret, vec![Operand::Cc(Cond::M)]), vec![0xF8]);
+}
+
 // (additional Task 4 tests are appended below)

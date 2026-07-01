@@ -387,6 +387,8 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         {
             Ok(vec![0x0B | (rp_code(*rr) << 4)])
         }
+        (Mnemonic::Ret, []) => Ok(vec![0xC9]),
+        (Mnemonic::Ret, [Operand::Cc(cc)]) => Ok(vec![0xC0 | (cond_code(*cc) << 3)]),
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
