@@ -1,0 +1,9 @@
+[package]
+name = "sigil-frontend-as"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sigil-isa = { path = "../sigil-isa" }
+sigil-ir = { path = "../sigil-ir" }
+sigil-span = { path = "../sigil-span" }

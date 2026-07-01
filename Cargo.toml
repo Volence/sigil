@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sigil-isa",
+    "crates/sigil-span",
+    "crates/sigil-ir",
+    "crates/sigil-frontend-as",
+    "crates/sigil-cli",
+]
