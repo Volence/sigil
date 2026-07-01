@@ -90,4 +90,25 @@ fn push_and_pop() {
     assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Af)]), vec![0xF1]);
 }
 
+#[test]
+fn add_hl_pair() {
+    // asl: add hl,bc=09  add hl,de=19  add hl,hl=29  add hl,sp=39
+    assert_eq!(
+        enc(Mnemonic::Add, vec![Operand::Pair(Reg16::Hl), Operand::Pair(Reg16::Bc)]),
+        vec![0x09]
+    );
+    assert_eq!(
+        enc(Mnemonic::Add, vec![Operand::Pair(Reg16::Hl), Operand::Pair(Reg16::De)]),
+        vec![0x19]
+    );
+    assert_eq!(
+        enc(Mnemonic::Add, vec![Operand::Pair(Reg16::Hl), Operand::Pair(Reg16::Hl)]),
+        vec![0x29]
+    );
+    assert_eq!(
+        enc(Mnemonic::Add, vec![Operand::Pair(Reg16::Hl), Operand::Pair(Reg16::Sp)]),
+        vec![0x39]
+    );
+}
+
 // (additional Task 4 tests are appended below)

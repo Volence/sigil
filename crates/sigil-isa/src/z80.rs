@@ -372,6 +372,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         {
             Ok(vec![0xC1 | (push_pop_code(*rr) << 4)])
         }
+        (Mnemonic::Add, [Operand::Pair(Reg16::Hl), Operand::Pair(rr)])
+            if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Sp) =>
+        {
+            Ok(vec![0x09 | (rp_code(*rr) << 4)])
+        }
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
