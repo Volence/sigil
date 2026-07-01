@@ -333,6 +333,17 @@ fn encode_cb_bit(base: u8, ops: &[Operand]) -> Result<Vec<u8>, IsaError> {
     }
 }
 
+/// The Z80 `ED` instruction-group prefix byte.
+const ED_PREFIX: u8 = 0xED;
+
+/// ED sub-opcode for `ld (nn),rr` (store): `0x43 | (rp_code(rp) << 4)`.
+/// Yields bc=`43`, de=`53`, hl=`63`, sp=`73`. NOTE: the `hl` value (`63`) is
+/// never emitted by Sigil — AS uses the base `22` short form for `ld (nn),hl`
+/// (catalog §2.3/§6.7). The caller's or-pattern excludes `hl`.
+fn ed_ld_mem_pair_sub(rp: Reg16) -> u8 {
+    0x43 | (rp_code(rp) << 4)
+}
+
 /// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 ///
 /// Dispatches on the mnemonic then the operand shape. Task 1 covers the five
@@ -406,6 +417,12 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Ld, [Operand::Mem(nn), Operand::Pair(Reg16::Hl)]) => {
             let [lo, hi] = le16(*nn);
             Ok(vec![0x22, lo, hi])
+        }
+        // ED-prefixed ld (nn),rr for bc/de/sp. hl uses base 22 (Task 4); the
+        // or-pattern excludes hl so ED 63 is never emitted (catalog §6.7).
+        (Mnemonic::Ld, [Operand::Mem(nn), Operand::Pair(rp @ (Reg16::Bc | Reg16::De | Reg16::Sp))]) => {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![ED_PREFIX, ed_ld_mem_pair_sub(*rp), lo, hi])
         }
         (Mnemonic::Push, [Operand::Pair(rr)])
             if matches!(rr, Reg16::Bc | Reg16::De | Reg16::Hl | Reg16::Af) =>
@@ -714,5 +731,56 @@ mod tests {
             encode(&Instruction { mnemonic: Mnemonic::Res, ops: vec![Operand::Reg(Reg8::A)] }),
             Err(IsaError::UnsupportedForm(_))
         ));
+    }
+
+    #[test]
+    fn encodes_ed_ld_mem_pair_stores() {
+        // ld (1234h),bc = ED 43 34 12  (asl-verified)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Mem(0x1234), Operand::Pair(Reg16::Bc)],
+            })
+            .unwrap(),
+            vec![0xED, 0x43, 0x34, 0x12]
+        );
+        // ld (1234h),de = ED 53 34 12  (asl-verified) — de MUST use ED 53, NOT base
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Mem(0x1234), Operand::Pair(Reg16::De)],
+            })
+            .unwrap(),
+            vec![0xED, 0x53, 0x34, 0x12]
+        );
+        // ld (1234h),sp = ED 73 34 12  (asl-verified)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Mem(0x1234), Operand::Pair(Reg16::Sp)],
+            })
+            .unwrap(),
+            vec![0xED, 0x73, 0x34, 0x12]
+        );
+        // little-endian immediate re-confirmed with a distinct address:
+        // ld (8DFCh),de = ED 53 FC 8D  (asl-verified)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Mem(0x8DFC), Operand::Pair(Reg16::De)],
+            })
+            .unwrap(),
+            vec![0xED, 0x53, 0xFC, 0x8D]
+        );
+        // REGRESSION GUARD (byte-exact risk §6.7): hl store MUST stay base 22, not ED 63.
+        // This arm is owned by Task 4; Task 6's ED path must not shadow it.
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::Mem(0x1234), Operand::Pair(Reg16::Hl)],
+            })
+            .unwrap(),
+            vec![0x22, 0x34, 0x12]
+        );
     }
 }
