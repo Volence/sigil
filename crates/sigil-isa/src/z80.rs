@@ -409,6 +409,14 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Ld, [Operand::Indexed { reg, disp }, Operand::Imm8(n)]) => {
             Ok(vec![index_prefix(*reg), 0x36, *disp as u8, *n])
         }
+        // inc (ix+d) / inc (iy+d)  ->  <pfx> 34 disp   (base `inc (hl)`)
+        (Mnemonic::Inc, [Operand::Indexed { reg, disp }]) => {
+            Ok(vec![index_prefix(*reg), 0x34, *disp as u8])
+        }
+        // dec (ix+d) / dec (iy+d)  ->  <pfx> 35 disp   (base `dec (hl)`)
+        (Mnemonic::Dec, [Operand::Indexed { reg, disp }]) => {
+            Ok(vec![index_prefix(*reg), 0x35, *disp as u8])
+        }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
             "unsupported Z80 index form: {inst:?}"
@@ -1060,6 +1068,28 @@ mod index_tests {
             enc(Mnemonic::Ld, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 3 },
                 Operand::Imm8(0)]),
             vec![0xFD, 0x36, 0x03, 0x00]
+        );
+    }
+
+    #[test]
+    fn inc_dec_indexed() {
+        // asl: `inc (ix+3)` = DD 34 03 ; `inc (iy+9)` = FD 34 09 ;
+        // `dec (ix+4)` = DD 35 04 ; `dec (iy+2)` = FD 35 02
+        assert_eq!(
+            enc(Mnemonic::Inc, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }]),
+            vec![0xDD, 0x34, 0x03]
+        );
+        assert_eq!(
+            enc(Mnemonic::Inc, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 9 }]),
+            vec![0xFD, 0x34, 0x09]
+        );
+        assert_eq!(
+            enc(Mnemonic::Dec, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 4 }]),
+            vec![0xDD, 0x35, 0x04]
+        );
+        assert_eq!(
+            enc(Mnemonic::Dec, vec![Operand::Indexed { reg: IndexReg::Iy, disp: 2 }]),
+            vec![0xFD, 0x35, 0x02]
         );
     }
 
