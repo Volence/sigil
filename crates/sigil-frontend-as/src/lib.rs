@@ -1,6 +1,10 @@
 //! sigil-frontend-as: assembly-syntax frontend (parse_line / assemble_str).
+//!
+//! Plan-1 coverage only (nop; ld r,r'/r,n; add a,r; jp nn), retargeted onto the
+//! Plan-2 canonical `sigil-isa` operand/instruction model. The `sigil-isa` edge
+//! and the whole front-end are rewritten in a later plan.
 
-use sigil_isa::z80::{Instruction, Reg8};
+use sigil_isa::z80::{Instruction, Mnemonic, Operand, Reg8};
 use sigil_ir::{assemble_to_image, ModuleBuilder, Streamer};
 use sigil_span::{SourceId, Span};
 
@@ -27,17 +31,19 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parse a single register token (already lowercased) into a [`Reg8`].
-fn parse_reg(tok: &str) -> Option<Reg8> {
+/// Parse a register-or-`(hl)` operand token (already lowercased) into an
+/// [`Operand`]. Pure registers become [`Operand::Reg`]; `(hl)` becomes
+/// [`Operand::IndHl`].
+fn parse_reg_operand(tok: &str) -> Option<Operand> {
     match tok {
-        "b" => Some(Reg8::B),
-        "c" => Some(Reg8::C),
-        "d" => Some(Reg8::D),
-        "e" => Some(Reg8::E),
-        "h" => Some(Reg8::H),
-        "l" => Some(Reg8::L),
-        "(hl)" => Some(Reg8::Hl),
-        "a" => Some(Reg8::A),
+        "b" => Some(Operand::Reg(Reg8::B)),
+        "c" => Some(Operand::Reg(Reg8::C)),
+        "d" => Some(Operand::Reg(Reg8::D)),
+        "e" => Some(Operand::Reg(Reg8::E)),
+        "h" => Some(Operand::Reg(Reg8::H)),
+        "l" => Some(Operand::Reg(Reg8::L)),
+        "a" => Some(Operand::Reg(Reg8::A)),
+        "(hl)" => Some(Operand::IndHl),
         _ => None,
     }
 }
@@ -86,18 +92,21 @@ pub fn parse_line(line: &str) -> Result<Option<Instruction>, ParseError> {
     };
 
     match mnemonic.to_ascii_lowercase().as_str() {
-        "nop" => Ok(Some(Instruction::Nop)),
+        "nop" => Ok(Some(Instruction { mnemonic: Mnemonic::Nop, ops: vec![] })),
         "ld" => {
             let (dst_tok, src_tok) = split_operands(rest)?;
-            let dst = parse_reg(&dst_tok)
+            let dst = parse_reg_operand(&dst_tok)
                 .ok_or_else(|| ParseError::BadOperand(dst_tok.clone()))?;
-            if let Some(src) = parse_reg(&src_tok) {
-                Ok(Some(Instruction::LdRegReg { dst, src }))
+            if let Some(src) = parse_reg_operand(&src_tok) {
+                Ok(Some(Instruction { mnemonic: Mnemonic::Ld, ops: vec![dst, src] }))
             } else if let Some(imm) = parse_int(&src_tok) {
                 if !(0..=0xFF).contains(&imm) {
                     return Err(ParseError::BadOperand(src_tok));
                 }
-                Ok(Some(Instruction::LdRegImm { dst, imm: imm as u8 }))
+                Ok(Some(Instruction {
+                    mnemonic: Mnemonic::Ld,
+                    ops: vec![dst, Operand::Imm8(imm as u8)],
+                }))
             } else {
                 Err(ParseError::BadOperand(src_tok))
             }
@@ -107,9 +116,12 @@ pub fn parse_line(line: &str) -> Result<Option<Instruction>, ParseError> {
             if dst_tok != "a" {
                 return Err(ParseError::BadOperand(dst_tok));
             }
-            let src = parse_reg(&src_tok)
+            let src = parse_reg_operand(&src_tok)
                 .ok_or_else(|| ParseError::BadOperand(src_tok.clone()))?;
-            Ok(Some(Instruction::AddAReg { src }))
+            Ok(Some(Instruction {
+                mnemonic: Mnemonic::Add,
+                ops: vec![Operand::Reg(Reg8::A), src],
+            }))
         }
         "jp" => {
             let imm = parse_int(rest)
@@ -117,7 +129,10 @@ pub fn parse_line(line: &str) -> Result<Option<Instruction>, ParseError> {
             if !(0..=0xFFFF).contains(&imm) {
                 return Err(ParseError::BadOperand(rest.to_string()));
             }
-            Ok(Some(Instruction::JpImm { addr: imm as u16 }))
+            Ok(Some(Instruction {
+                mnemonic: Mnemonic::Jp,
+                ops: vec![Operand::Imm16(imm as u16)],
+            }))
         }
         _ => Err(ParseError::UnknownMnemonic(mnemonic.to_string())),
     }
@@ -126,7 +141,7 @@ pub fn parse_line(line: &str) -> Result<Option<Instruction>, ParseError> {
 /// Assemble a multi-line Z80 source string into a flat machine-code image.
 ///
 /// Each non-empty, non-comment line is parsed by [`parse_line`], encoded via
-/// `sigil_isa::z80::encode`, and streamed through a [`ModuleBuilder`].  The
+/// `sigil_isa::z80::encode`, and streamed through a [`ModuleBuilder`]. The
 /// resulting [`sigil_ir::Module`] is flattened by [`assemble_to_image`].
 pub fn assemble_str(src: &str) -> Result<Vec<u8>, ParseError> {
     let span = Span { source: SourceId(0), start: 0, end: 0 };
@@ -143,26 +158,33 @@ pub fn assemble_str(src: &str) -> Result<Vec<u8>, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sigil_isa::z80::{Instruction, Reg8};
+    use sigil_isa::z80::{Instruction, Mnemonic, Operand, Reg8};
+
+    fn ld(dst: Operand, src: Operand) -> Instruction {
+        Instruction { mnemonic: Mnemonic::Ld, ops: vec![dst, src] }
+    }
 
     #[test]
     fn parse_nop() {
-        assert_eq!(parse_line("nop"), Ok(Some(Instruction::Nop)));
+        assert_eq!(
+            parse_line("nop"),
+            Ok(Some(Instruction { mnemonic: Mnemonic::Nop, ops: vec![] }))
+        );
     }
 
     #[test]
     fn parse_ld_imm_forms() {
         assert_eq!(
             parse_line("ld a, 5"),
-            Ok(Some(Instruction::LdRegImm { dst: Reg8::A, imm: 5 }))
+            Ok(Some(ld(Operand::Reg(Reg8::A), Operand::Imm8(5))))
         );
         assert_eq!(
             parse_line("ld c, 0x0A"),
-            Ok(Some(Instruction::LdRegImm { dst: Reg8::C, imm: 10 }))
+            Ok(Some(ld(Operand::Reg(Reg8::C), Operand::Imm8(10))))
         );
         assert_eq!(
             parse_line("ld d, $FF"),
-            Ok(Some(Instruction::LdRegImm { dst: Reg8::D, imm: 255 }))
+            Ok(Some(ld(Operand::Reg(Reg8::D), Operand::Imm8(255))))
         );
     }
 
@@ -170,7 +192,7 @@ mod tests {
     fn parse_ld_reg_reg() {
         assert_eq!(
             parse_line("ld b, c"),
-            Ok(Some(Instruction::LdRegReg { dst: Reg8::B, src: Reg8::C }))
+            Ok(Some(ld(Operand::Reg(Reg8::B), Operand::Reg(Reg8::C))))
         );
     }
 
@@ -178,15 +200,27 @@ mod tests {
     fn parse_add_a_reg() {
         assert_eq!(
             parse_line("add a, b"),
-            Ok(Some(Instruction::AddAReg { src: Reg8::B }))
+            Ok(Some(Instruction {
+                mnemonic: Mnemonic::Add,
+                ops: vec![Operand::Reg(Reg8::A), Operand::Reg(Reg8::B)],
+            }))
         );
     }
 
     #[test]
     fn parse_jp_imm_forms() {
-        assert_eq!(parse_line("jp $1234"), Ok(Some(Instruction::JpImm { addr: 0x1234 })));
-        assert_eq!(parse_line("jp 0x00FF"), Ok(Some(Instruction::JpImm { addr: 0x00FF })));
-        assert_eq!(parse_line("jp 65535"), Ok(Some(Instruction::JpImm { addr: 65535 })));
+        assert_eq!(
+            parse_line("jp $1234"),
+            Ok(Some(Instruction { mnemonic: Mnemonic::Jp, ops: vec![Operand::Imm16(0x1234)] }))
+        );
+        assert_eq!(
+            parse_line("jp 0x00FF"),
+            Ok(Some(Instruction { mnemonic: Mnemonic::Jp, ops: vec![Operand::Imm16(0x00FF)] }))
+        );
+        assert_eq!(
+            parse_line("jp 65535"),
+            Ok(Some(Instruction { mnemonic: Mnemonic::Jp, ops: vec![Operand::Imm16(65535)] }))
+        );
     }
 
     #[test]
@@ -194,7 +228,10 @@ mod tests {
         assert_eq!(parse_line(""), Ok(None));
         assert_eq!(parse_line("   "), Ok(None));
         assert_eq!(parse_line("; just a comment"), Ok(None));
-        assert_eq!(parse_line("nop ; trailing comment"), Ok(Some(Instruction::Nop)));
+        assert_eq!(
+            parse_line("nop ; trailing comment"),
+            Ok(Some(Instruction { mnemonic: Mnemonic::Nop, ops: vec![] }))
+        );
     }
 
     #[test]
@@ -217,14 +254,14 @@ mod tests {
 
     // ── Negative / error-path tests ──────────────────────────────────────────
 
-    /// `ld a, (hl)` parses successfully (both sides map to Reg8) but the
-    /// encoder rejects the (HL) memory operand, so assemble_str must surface
-    /// ParseError::Isa(IsaError::UnsupportedOperand(_)).
+    /// `ld a, (hl)` parses successfully (dst=Reg(A), src=IndHl) but that form is
+    /// not among the five migrated forms, so the encoder rejects it and
+    /// assemble_str surfaces ParseError::Isa(IsaError::UnsupportedForm(_)).
     #[test]
     fn assemble_hl_operand_surfaces_isa_error() {
         assert!(matches!(
             assemble_str("ld a, (hl)\n"),
-            Err(ParseError::Isa(sigil_isa::z80::IsaError::UnsupportedOperand(_)))
+            Err(ParseError::Isa(sigil_isa::z80::IsaError::UnsupportedForm(_)))
         ));
     }
 
