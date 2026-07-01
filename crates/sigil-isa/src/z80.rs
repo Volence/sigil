@@ -402,6 +402,13 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![0xC4 | (cond_code(*cc) << 3), lo, hi])
         }
+        (Mnemonic::Jr, [Operand::Cc(cc), Operand::Rel(d)]) if cond_code(*cc) < 4 => {
+            Ok(vec![0x20 | (cond_code(*cc) << 3), *d as u8])
+        }
+        (Mnemonic::Jr, [Operand::Cc(_), Operand::Rel(_)]) => Err(IsaError::OperandRange(
+            "jr condition must be nz, z, nc, or c".into(),
+        )),
+        (Mnemonic::Jr, [Operand::Rel(d)]) => Ok(vec![0x18, *d as u8]),
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),

@@ -166,4 +166,28 @@ fn call_and_call_cc() {
     assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::M), Operand::Imm16(0x1234)]), vec![0xFC, 0x34, 0x12]);
 }
 
+#[test]
+fn jr_relative() {
+    // asl `jr $` / `jr cc,$` at own-PC → disp -2 (FE): jr=18 nz=20 z=28 nc=30 c=38
+    assert_eq!(enc(Mnemonic::Jr, vec![Operand::Rel(-2)]), vec![0x18, 0xFE]);
+    assert_eq!(enc(Mnemonic::Jr, vec![Operand::Cc(Cond::Nz), Operand::Rel(-2)]), vec![0x20, 0xFE]);
+    assert_eq!(enc(Mnemonic::Jr, vec![Operand::Cc(Cond::Z), Operand::Rel(-2)]), vec![0x28, 0xFE]);
+    assert_eq!(enc(Mnemonic::Jr, vec![Operand::Cc(Cond::Nc), Operand::Rel(-2)]), vec![0x30, 0xFE]);
+    assert_eq!(enc(Mnemonic::Jr, vec![Operand::Cc(Cond::C), Operand::Rel(-2)]), vec![0x38, 0xFE]);
+    // A positive, already-resolved displacement passes through verbatim (no relaxation).
+    assert_eq!(enc(Mnemonic::Jr, vec![Operand::Rel(5)]), vec![0x18, 0x05]);
+}
+
+#[test]
+fn jr_rejects_non_flag_conditions() {
+    // Only nz/z/nc/c are legal for jr; po/pe/p/m must be rejected (asl cannot encode them).
+    for cc in [Cond::Po, Cond::Pe, Cond::P, Cond::M] {
+        let r = encode(&Instruction {
+            mnemonic: Mnemonic::Jr,
+            ops: vec![Operand::Cc(cc), Operand::Rel(0)],
+        });
+        assert!(matches!(r, Err(IsaError::OperandRange(_))), "jr {cc:?} should be rejected");
+    }
+}
+
 // (additional Task 4 tests are appended below)
