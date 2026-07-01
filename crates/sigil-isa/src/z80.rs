@@ -485,6 +485,11 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 /// `disp` is already resolved to `-128..=127`, so its two's-complement byte is
 /// emitted directly (`-128 => 0x80`, `-1 => 0xFF`).
 fn encode_index_bit(base: u8, bit: u8, reg: IndexReg, disp: i8) -> Result<Vec<u8>, IsaError> {
+    if bit > 7 {
+        return Err(IsaError::OperandRange(format!(
+            "bit number {bit} out of range 0..=7 for indexed bit op"
+        )));
+    }
     let op = base | (bit << 3) | 6;
     Ok(vec![index_prefix(reg), 0xCB, disp as u8, op])
 }
@@ -1444,5 +1449,24 @@ mod index_tests {
             .unwrap(),
             vec![0xFD, 0xCB, 0x7F, 0xFE]
         );
+    }
+
+    #[test]
+    fn ddcb_bit_number_out_of_range() {
+        // bit numbers only exist for 0..=7; 8 must be rejected, not silently wrapped.
+        assert!(matches!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Bit,
+                ops: vec![Operand::Bit(8), Operand::Indexed { reg: IndexReg::Ix, disp: 0 }],
+            }),
+            Err(IsaError::OperandRange(_))
+        ));
+        assert!(matches!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Set,
+                ops: vec![Operand::Bit(255), Operand::Indexed { reg: IndexReg::Iy, disp: 0 }],
+            }),
+            Err(IsaError::OperandRange(_))
+        ));
     }
 }
