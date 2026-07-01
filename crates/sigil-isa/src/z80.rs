@@ -477,19 +477,17 @@ mod tests {
     }
 
     #[test]
-    fn ind_hl_forms_are_unsupported_for_now() {
-        // (HL) is a valid Operand, but ld/add with (HL) are not among Task 1's
-        // migrated forms, so encode reports UnsupportedForm (NOT a bad register).
+    fn ind_hl_forms_encode_in_base_group() {
+        // The base group (Task 3) now encodes the (HL) load/ALU forms, each byte
+        // verified against tools/asl: ld a,(hl)=7E, ld (hl),b=70, add a,(hl)=86.
+        // (These superseded the Task-1 "for now unsupported" placeholder.)
+        assert_eq!(encode(&ld(Operand::Reg(Reg8::A), Operand::IndHl)).unwrap(), vec![0x7E]);
+        assert_eq!(encode(&ld(Operand::IndHl, Operand::Reg(Reg8::B))).unwrap(), vec![0x70]);
+        assert_eq!(encode(&add_a(Operand::IndHl)).unwrap(), vec![0x86]);
+        // `ld (hl),(hl)` (HALT, 0x76) is outside the driver ISA and still reports
+        // UnsupportedForm — the (HL) operand itself is valid, the pairing is not.
         assert!(matches!(
-            encode(&ld(Operand::Reg(Reg8::A), Operand::IndHl)),
-            Err(IsaError::UnsupportedForm(_))
-        ));
-        assert!(matches!(
-            encode(&ld(Operand::IndHl, Operand::Reg(Reg8::B))),
-            Err(IsaError::UnsupportedForm(_))
-        ));
-        assert!(matches!(
-            encode(&add_a(Operand::IndHl)),
+            encode(&ld(Operand::IndHl, Operand::IndHl)),
             Err(IsaError::UnsupportedForm(_))
         ));
     }

@@ -254,15 +254,26 @@ mod tests {
 
     // ── Negative / error-path tests ──────────────────────────────────────────
 
-    /// `ld a, (hl)` parses successfully (dst=Reg(A), src=IndHl) but that form is
-    /// not among the five migrated forms, so the encoder rejects it and
+    /// `ld (hl), (hl)` parses successfully (dst=IndHl, src=IndHl) but that pairing
+    /// is HALT (0x76), outside the driver ISA, so the encoder rejects it and
     /// assemble_str surfaces ParseError::Isa(IsaError::UnsupportedForm(_)).
+    ///
+    /// (Base-group `(HL)` forms like `ld a,(hl)` now assemble — see the
+    /// `assemble_hl_operand_encodes` test — so this exercises a still-unsupported
+    /// pairing to keep the ISA-error path covered.)
     #[test]
     fn assemble_hl_operand_surfaces_isa_error() {
         assert!(matches!(
-            assemble_str("ld a, (hl)\n"),
+            assemble_str("ld (hl), (hl)\n"),
             Err(ParseError::Isa(sigil_isa::z80::IsaError::UnsupportedForm(_)))
         ));
+    }
+
+    /// The base group encodes `(HL)` load/ALU forms, so the frontend now assembles
+    /// `ld a,(hl)` (=7E) end-to-end instead of surfacing an ISA error.
+    #[test]
+    fn assemble_hl_operand_encodes() {
+        assert_eq!(assemble_str("ld a, (hl)\n"), Ok(vec![0x7E]));
     }
 
     /// An 8-bit immediate that is out of the 0..=255 range must return
