@@ -354,6 +354,14 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![0x01 | (rp_code(*rr) << 4), lo, hi])
         }
+        (Mnemonic::Ld, [Operand::Pair(Reg16::Hl), Operand::Mem(nn)]) => {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![0x2A, lo, hi])
+        }
+        (Mnemonic::Ld, [Operand::Mem(nn), Operand::Pair(Reg16::Hl)]) => {
+            let [lo, hi] = le16(*nn);
+            Ok(vec![0x22, lo, hi])
+        }
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),

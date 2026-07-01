@@ -64,4 +64,17 @@ fn ld_pair_imm16() {
     );
 }
 
+#[test]
+fn ld_hl_absolute_memory() {
+    // asl: ld hl,(1234h)=2A 34 12   ld (1234h),hl=22 34 12  (HL-only base opcodes)
+    assert_eq!(
+        enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Hl), Operand::Mem(0x1234)]),
+        vec![0x2A, 0x34, 0x12]
+    );
+    assert_eq!(
+        enc(Mnemonic::Ld, vec![Operand::Mem(0x1234), Operand::Pair(Reg16::Hl)]),
+        vec![0x22, 0x34, 0x12]
+    );
+}
+
 // (additional Task 4 tests are appended below)
