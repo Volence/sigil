@@ -343,6 +343,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         // -- Task 3: end base group (insert new base arms above this line) -----
         // ---- Task 4: base group - 16-bit ops + control flow ----
         // (`nop` already encodes above via the migrated Plan-1 arm.)
+        (Mnemonic::Ex, [Operand::Pair(Reg16::De), Operand::Pair(Reg16::Hl)]) => Ok(vec![0xEB]),
+        (Mnemonic::Ex, [Operand::Pair(Reg16::Sp), Operand::Pair(Reg16::Hl)]) => Ok(vec![0xE3]),
+        (Mnemonic::Ex, [Operand::Pair(Reg16::Af), Operand::AfShadow]) => Ok(vec![0x08]),
+        (Mnemonic::Ld, [Operand::Pair(Reg16::Sp), Operand::Pair(Reg16::Hl)]) => Ok(vec![0xF9]),
+        (Mnemonic::Jp, [Operand::IndHl]) => Ok(vec![0xE9]),
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
