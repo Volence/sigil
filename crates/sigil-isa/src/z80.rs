@@ -504,6 +504,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         // ---- Task 6: ED group — bare one-offs ----
         (Mnemonic::Neg, _) => Ok(vec![ED_PREFIX, 0x44]),
         (Mnemonic::Ldir, _) => Ok(vec![ED_PREFIX, 0xB0]),
+        // im 1 = ED 56 (only mode 1 is in catalog scope; other modes not oracled).
+        (Mnemonic::Im, ops) => match ops {
+            [Operand::Imm8(1)] => Ok(vec![ED_PREFIX, 0x56]),
+            _ => Err(IsaError::UnsupportedForm(format!("im {:?}", inst.ops))),
+        },
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }
 }
@@ -851,5 +856,26 @@ mod tests {
             encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: vec![] }).unwrap(),
             vec![0xED, 0xB0]
         );
+    }
+
+    #[test]
+    fn encodes_ed_im1() {
+        // im 1 = ED 56  (asl-verified)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Im,
+                ops: vec![Operand::Imm8(1)],
+            })
+            .unwrap(),
+            vec![0xED, 0x56]
+        );
+        // only mode 1 is in catalog scope; other modes are unsupported for M0.
+        assert!(matches!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Im,
+                ops: vec![Operand::Imm8(2)],
+            }),
+            Err(IsaError::UnsupportedForm(_))
+        ));
     }
 }
