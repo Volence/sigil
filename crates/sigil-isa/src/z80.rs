@@ -501,6 +501,9 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Bit, _) => encode_cb_bit(0x40, &inst.ops),
         (Mnemonic::Res, _) => encode_cb_bit(0x80, &inst.ops),
         (Mnemonic::Set, _) => encode_cb_bit(0xC0, &inst.ops),
+        // ---- Task 6: ED group — bare one-offs ----
+        (Mnemonic::Neg, _) => Ok(vec![ED_PREFIX, 0x44]),
+        (Mnemonic::Ldir, _) => Ok(vec![ED_PREFIX, 0xB0]),
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }
 }
@@ -833,6 +836,20 @@ mod tests {
             })
             .unwrap(),
             vec![0x2A, 0x34, 0x12]
+        );
+    }
+
+    #[test]
+    fn encodes_ed_neg_and_ldir() {
+        // neg  = ED 44  (asl-verified)
+        assert_eq!(
+            encode(&Instruction { mnemonic: Mnemonic::Neg, ops: vec![] }).unwrap(),
+            vec![0xED, 0x44]
+        );
+        // ldir = ED B0  (asl-verified)
+        assert_eq!(
+            encode(&Instruction { mnemonic: Mnemonic::Ldir, ops: vec![] }).unwrap(),
+            vec![0xED, 0xB0]
         );
     }
 }
