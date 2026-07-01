@@ -455,6 +455,14 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let code = index_add_pair_code(ix, *src)?;
             Ok(vec![index_prefix(ix), 0x09 | (code << 4)])
         }
+        // push ix / push iy  ->  <pfx> E5   (base `push hl`)
+        (Mnemonic::Push, [Operand::Pair(rr)]) if as_index_reg(*rr).is_some() => {
+            Ok(vec![index_prefix(as_index_reg(*rr).unwrap()), 0xE5])
+        }
+        // pop ix / pop iy  ->  <pfx> E1   (base `pop hl`)
+        (Mnemonic::Pop, [Operand::Pair(rr)]) if as_index_reg(*rr).is_some() => {
+            Ok(vec![index_prefix(as_index_reg(*rr).unwrap()), 0xE1])
+        }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
             "unsupported Z80 index form: {inst:?}"
@@ -1203,6 +1211,15 @@ mod index_tests {
             }),
             Err(IsaError::UnsupportedForm(_))
         ));
+    }
+
+    #[test]
+    fn push_pop_index() {
+        // asl: push ix=DD E5  pop ix=DD E1  push iy=FD E5  pop iy=FD E1
+        assert_eq!(enc(Mnemonic::Push, vec![Operand::Pair(Reg16::Ix)]), vec![0xDD, 0xE5]);
+        assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Ix)]), vec![0xDD, 0xE1]);
+        assert_eq!(enc(Mnemonic::Push, vec![Operand::Pair(Reg16::Iy)]), vec![0xFD, 0xE5]);
+        assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Iy)]), vec![0xFD, 0xE1]);
     }
 
     // --- more index-group tests appended below ---
