@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+
+[[bin]]
+name = "gen-z80-vectors"
+path = "src/bin/gen_z80_vectors.rs"
