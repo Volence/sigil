@@ -246,6 +246,9 @@ fn reg8_from_code(code: u8) -> Result<Reg8, IsaError> {
     }
 }
 
+// NOTE (for the AS front-end): the base ALU ops accept BOTH `<op> a,src` (two operands,
+// first must be reg A) and `<op> src` (one operand); both lower to identical bytes. asl
+// emits `or a`=B7 and `xor a`=AF (reg A's code is 7, not 0) — this is correct, not a bug.
 /// `(register-form base opcode, immediate-form opcode)` for the eight base 8-bit
 /// accumulator ALU operations; `None` for any other mnemonic.
 ///
