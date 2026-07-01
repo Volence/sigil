@@ -426,6 +426,9 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![ED_PREFIX, ed_ld_pair_mem_sub(*rp), lo, hi])
         }
+        // ld i,a = ED 47 ; ld r,a = ED 4F  (catalog §2.3, A0 idle stub)
+        (Mnemonic::Ld, [Operand::RegI, Operand::Reg(Reg8::A)]) => Ok(vec![ED_PREFIX, 0x47]),
+        (Mnemonic::Ld, [Operand::RegR, Operand::Reg(Reg8::A)]) => Ok(vec![ED_PREFIX, 0x4F]),
         (Mnemonic::Ld, [Operand::Mem(nn), Operand::Pair(Reg16::Hl)]) => {
             let [lo, hi] = le16(*nn);
             Ok(vec![0x22, lo, hi])
@@ -877,5 +880,27 @@ mod tests {
             }),
             Err(IsaError::UnsupportedForm(_))
         ));
+    }
+
+    #[test]
+    fn encodes_ed_ld_i_and_r() {
+        // ld i,a = ED 47  (asl-verified)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::RegI, Operand::Reg(Reg8::A)],
+            })
+            .unwrap(),
+            vec![0xED, 0x47]
+        );
+        // ld r,a = ED 4F  (asl-verified)
+        assert_eq!(
+            encode(&Instruction {
+                mnemonic: Mnemonic::Ld,
+                ops: vec![Operand::RegR, Operand::Reg(Reg8::A)],
+            })
+            .unwrap(),
+            vec![0xED, 0x4F]
+        );
     }
 }
