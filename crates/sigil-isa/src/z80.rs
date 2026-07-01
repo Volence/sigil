@@ -397,6 +397,10 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![index_prefix(ix), 0x21, lo, hi])
         }
+        // ld r,(ix+d) / ld r,(iy+d)  ->  <pfx> (0x46 | r<<3) disp   (base `ld r,(hl)`)
+        (Mnemonic::Ld, [Operand::Reg(r), Operand::Indexed { reg, disp }]) => {
+            Ok(vec![index_prefix(*reg), 0x46 | (reg8_code(*r) << 3), *disp as u8])
+        }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
             "unsupported Z80 index form: {inst:?}"
@@ -980,6 +984,32 @@ mod index_tests {
         assert_eq!(
             enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Iy), Operand::Imm16(0x1234)]),
             vec![0xFD, 0x21, 0x34, 0x12]
+        );
+    }
+
+    #[test]
+    fn ld_reg_indexed() {
+        // asl: `ld a,(ix+3)` = DD 7E 03 ; `ld l,(ix+10)` = DD 6E 0A (10 == resolved
+        // struct-field displacement) ; `ld a,(iy+5)` = FD 7E 05 ; `ld a,(ix-1)` = DD 7E FF
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Reg(Reg8::A),
+                Operand::Indexed { reg: IndexReg::Ix, disp: 3 }]),
+            vec![0xDD, 0x7E, 0x03]
+        );
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Reg(Reg8::L),
+                Operand::Indexed { reg: IndexReg::Ix, disp: 10 }]),
+            vec![0xDD, 0x6E, 0x0A]
+        );
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Reg(Reg8::A),
+                Operand::Indexed { reg: IndexReg::Iy, disp: 5 }]),
+            vec![0xFD, 0x7E, 0x05]
+        );
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Reg(Reg8::A),
+                Operand::Indexed { reg: IndexReg::Ix, disp: -1 }]),
+            vec![0xDD, 0x7E, 0xFF]
         );
     }
 
