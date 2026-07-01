@@ -171,9 +171,7 @@ impl std::fmt::Display for IsaError {
 impl std::error::Error for IsaError {}
 
 // ── Shared primitives ─────────────────────────────────────────────────────
-// Later encoder-group tasks CALL these; they never redefine them. The four not
-// yet used by the five migrated forms carry `#[allow(dead_code)]` until Task 2
-// wires them in.
+// The encoder-group arms below CALL these; they never redefine them.
 
 /// Z80 register-field code for a pure 8-bit register (B=0 … L=5, A=7).
 fn reg8_code(r: Reg8) -> u8 {
@@ -184,7 +182,6 @@ fn reg8_code(r: Reg8) -> u8 {
 /// ED `(nn),rr`: BC=0, DE=1, HL=2, SP=3. IX/IY encode as HL's code (2) behind a
 /// DD/FD prefix. `Af` shares slot 3 with SP and is never valid in these
 /// contexts (use [`push_pop_code`] for `push`/`pop`).
-#[allow(dead_code)] // consumed by later encoder-group tasks (16-bit forms)
 fn rp_code(r: Reg16) -> u8 {
     match r {
         Reg16::Bc => 0,
@@ -197,7 +194,6 @@ fn rp_code(r: Reg16) -> u8 {
 /// Register-pair field for `push`/`pop`: BC=0, DE=1, HL=2, AF=3. IX/IY encode as
 /// HL's code (2) behind a DD/FD prefix. `Sp` shares slot 3 with AF and is never
 /// valid in these contexts (use [`rp_code`] for 16-bit arithmetic/loads).
-#[allow(dead_code)] // consumed by later encoder-group tasks (push/pop)
 fn push_pop_code(r: Reg16) -> u8 {
     match r {
         Reg16::Bc => 0,
@@ -208,13 +204,11 @@ fn push_pop_code(r: Reg16) -> u8 {
 }
 
 /// Z80 condition-field code.
-#[allow(dead_code)] // consumed by later encoder-group tasks (jr/jp/ret/call cc)
 fn cond_code(c: Cond) -> u8 {
     c as u8
 }
 
 /// Prefix byte for an index register: IX => 0xDD, IY => 0xFD.
-#[allow(dead_code)] // consumed by later encoder-group tasks (DD/FD groups)
 fn index_prefix(r: IndexReg) -> u8 {
     match r {
         IndexReg::Ix => 0xDD,
