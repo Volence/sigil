@@ -288,6 +288,32 @@ fn encode_alu8(m: Mnemonic, src: &Operand) -> Result<Vec<u8>, IsaError> {
     }
 }
 
+/// Map a CB-group register/`(hl)` target to its 3-bit code (0..=7).
+/// `(HL)` is code 6; a plain register uses its `reg8_code`. Anything else is
+/// not a legal CB target.
+fn cb_target_code(op: &Operand) -> Result<u8, IsaError> {
+    match op {
+        Operand::Reg(r) => Ok(reg8_code(*r)),
+        Operand::IndHl => Ok(6),
+        other => Err(IsaError::UnsupportedForm(format!(
+            "CB group target must be r or (hl), got {other:?}"
+        ))),
+    }
+}
+
+/// Encode a CB shift/rotate: `[0xCB, (family << 3) | target_code]`.
+fn encode_cb_shift(family: u8, ops: &[Operand]) -> Result<Vec<u8>, IsaError> {
+    match ops {
+        [target] => {
+            let code = cb_target_code(target)?;
+            Ok(vec![0xCB, (family << 3) | code])
+        }
+        _ => Err(IsaError::UnsupportedForm(format!(
+            "CB shift/rotate expects one operand (r or (hl)), got {ops:?}"
+        ))),
+    }
+}
+
 /// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 ///
 /// Dispatches on the mnemonic then the operand shape. Task 1 covers the five
@@ -415,6 +441,14 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
         (Mnemonic::Ei, []) => Ok(vec![0xFB]),
         (Mnemonic::Di, []) => Ok(vec![0xF3]),
+        // ---- Task 5: CB group — shifts/rotates on r and (hl) ----
+        (Mnemonic::Rlc, _) => encode_cb_shift(0, &inst.ops),
+        (Mnemonic::Rrc, _) => encode_cb_shift(1, &inst.ops),
+        (Mnemonic::Rl, _) => encode_cb_shift(2, &inst.ops),
+        (Mnemonic::Rr, _) => encode_cb_shift(3, &inst.ops),
+        (Mnemonic::Sla, _) => encode_cb_shift(4, &inst.ops),
+        (Mnemonic::Sra, _) => encode_cb_shift(5, &inst.ops),
+        (Mnemonic::Srl, _) => encode_cb_shift(7, &inst.ops),
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }
 }
@@ -567,5 +601,42 @@ mod tests {
             encode(&ld(Operand::IndHl, Operand::IndHl)),
             Err(IsaError::UnsupportedForm(_))
         ));
+    }
+
+    #[test]
+    fn cb_shifts_rotates_on_r_and_hl() {
+        // Golden bytes from tools/asl (asl 1.42), cpu z80 / phase 0.
+        // rlc — family 0 (CB 00 base)
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rlc, ops: vec![Operand::Reg(Reg8::B)] }).unwrap(), vec![0xCB, 0x00]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rlc, ops: vec![Operand::Reg(Reg8::C)] }).unwrap(), vec![0xCB, 0x01]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rlc, ops: vec![Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0x07]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rlc, ops: vec![Operand::IndHl] }).unwrap(), vec![0xCB, 0x06]);
+        // rrc — family 1 (CB 08 base)
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rrc, ops: vec![Operand::Reg(Reg8::D)] }).unwrap(), vec![0xCB, 0x0A]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rrc, ops: vec![Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0x0F]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rrc, ops: vec![Operand::IndHl] }).unwrap(), vec![0xCB, 0x0E]);
+        // rl — family 2 (CB 10 base)
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rl, ops: vec![Operand::Reg(Reg8::E)] }).unwrap(), vec![0xCB, 0x13]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rl, ops: vec![Operand::Reg(Reg8::L)] }).unwrap(), vec![0xCB, 0x15]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rl, ops: vec![Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0x17]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rl, ops: vec![Operand::IndHl] }).unwrap(), vec![0xCB, 0x16]);
+        // rr — family 3 (CB 18 base)
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rr, ops: vec![Operand::Reg(Reg8::L)] }).unwrap(), vec![0xCB, 0x1D]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rr, ops: vec![Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0x1F]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Rr, ops: vec![Operand::IndHl] }).unwrap(), vec![0xCB, 0x1E]);
+        // sla — family 4 (CB 20 base)
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Sla, ops: vec![Operand::Reg(Reg8::C)] }).unwrap(), vec![0xCB, 0x21]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Sla, ops: vec![Operand::Reg(Reg8::H)] }).unwrap(), vec![0xCB, 0x24]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Sla, ops: vec![Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0x27]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Sla, ops: vec![Operand::IndHl] }).unwrap(), vec![0xCB, 0x26]);
+        // sra — family 5 (CB 28 base)
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Sra, ops: vec![Operand::Reg(Reg8::E)] }).unwrap(), vec![0xCB, 0x2B]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Sra, ops: vec![Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0x2F]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Sra, ops: vec![Operand::IndHl] }).unwrap(), vec![0xCB, 0x2E]);
+        // srl — family 7 (CB 38 base; family 6 = undocumented sll, NOT implemented)
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Srl, ops: vec![Operand::Reg(Reg8::A)] }).unwrap(), vec![0xCB, 0x3F]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Srl, ops: vec![Operand::Reg(Reg8::H)] }).unwrap(), vec![0xCB, 0x3C]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Srl, ops: vec![Operand::Reg(Reg8::B)] }).unwrap(), vec![0xCB, 0x38]);
+        assert_eq!(encode(&Instruction { mnemonic: Mnemonic::Srl, ops: vec![Operand::IndHl] }).unwrap(), vec![0xCB, 0x3E]);
     }
 }
