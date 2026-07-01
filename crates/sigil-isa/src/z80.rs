@@ -463,6 +463,12 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Pop, [Operand::Pair(rr)]) if as_index_reg(*rr).is_some() => {
             Ok(vec![index_prefix(as_index_reg(*rr).unwrap()), 0xE1])
         }
+        // ld ix,(nn) / ld iy,(nn)  ->  <pfx> 2A lo hi   (base `ld hl,(nn)`)
+        (Mnemonic::Ld, [Operand::Pair(rr), Operand::Mem(nn)]) if as_index_reg(*rr).is_some() => {
+            let ix = as_index_reg(*rr).unwrap();
+            let [lo, hi] = le16(*nn);
+            Ok(vec![index_prefix(ix), 0x2A, lo, hi])
+        }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
             "unsupported Z80 index form: {inst:?}"
@@ -1220,6 +1226,19 @@ mod index_tests {
         assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Ix)]), vec![0xDD, 0xE1]);
         assert_eq!(enc(Mnemonic::Push, vec![Operand::Pair(Reg16::Iy)]), vec![0xFD, 0xE5]);
         assert_eq!(enc(Mnemonic::Pop, vec![Operand::Pair(Reg16::Iy)]), vec![0xFD, 0xE1]);
+    }
+
+    #[test]
+    fn ld_index_mem() {
+        // asl: `ld iy,(8DFCh)` = FD 2A FC 8D (LE addr) ; `ld ix,(1234h)` = DD 2A 34 12
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Iy), Operand::Mem(0x8DFC)]),
+            vec![0xFD, 0x2A, 0xFC, 0x8D]
+        );
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Pair(Reg16::Ix), Operand::Mem(0x1234)]),
+            vec![0xDD, 0x2A, 0x34, 0x12]
+        );
     }
 
     // --- more index-group tests appended below ---
