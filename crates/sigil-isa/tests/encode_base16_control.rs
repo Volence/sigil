@@ -152,4 +152,18 @@ fn jp_and_jp_cc() {
     assert_eq!(enc(Mnemonic::Jp, vec![Operand::Cc(Cond::M), Operand::Imm16(0x1234)]), vec![0xFA, 0x34, 0x12]);
 }
 
+#[test]
+fn call_and_call_cc() {
+    // asl: call 1234h=CD 34 12 ; call nz/z/nc/c/po/pe/p/m,1234h = C4 CC D4 DC E4 EC F4 FC (+34 12)
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Imm16(0x1234)]), vec![0xCD, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::Nz), Operand::Imm16(0x1234)]), vec![0xC4, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::Z), Operand::Imm16(0x1234)]), vec![0xCC, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::Nc), Operand::Imm16(0x1234)]), vec![0xD4, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::C), Operand::Imm16(0x1234)]), vec![0xDC, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::Po), Operand::Imm16(0x1234)]), vec![0xE4, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::Pe), Operand::Imm16(0x1234)]), vec![0xEC, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::P), Operand::Imm16(0x1234)]), vec![0xF4, 0x34, 0x12]);
+    assert_eq!(enc(Mnemonic::Call, vec![Operand::Cc(Cond::M), Operand::Imm16(0x1234)]), vec![0xFC, 0x34, 0x12]);
+}
+
 // (additional Task 4 tests are appended below)
