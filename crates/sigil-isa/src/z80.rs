@@ -1,5 +1,10 @@
-// crates/sigil-isa/src/z80.rs
+//! Z80 instruction encoder for the Sigil assembler's supported subset.
 
+/// An 8-bit Z80 register operand.
+///
+/// The discriminants are the Z80 register codes used within opcode bytes.
+/// `Hl` (code 6) denotes the `(HL)` memory operand and is intentionally
+/// rejected by [`encode`] for now.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Reg8 {
     B = 0,
@@ -12,49 +17,68 @@ pub enum Reg8 {
     A = 7,
 }
 
+/// A single Z80 instruction in the supported subset.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Instruction {
+    /// `nop`
     Nop,
+    /// `ld dst, src` (register-to-register)
     LdRegReg { dst: Reg8, src: Reg8 },
+    /// `ld dst, imm` (immediate load)
     LdRegImm { dst: Reg8, imm: u8 },
+    /// `add a, src`
     AddAReg { src: Reg8 },
+    /// `jp addr` (absolute jump)
     JpImm { addr: u16 },
 }
 
+/// An error produced while encoding an [`Instruction`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IsaError {
+    /// An operand is not supported by the current encoder.
     UnsupportedOperand(String),
 }
 
+impl std::fmt::Display for IsaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IsaError::UnsupportedOperand(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for IsaError {}
+
+/// Reject the `(HL)` memory operand, which is not yet supported.
+fn reject_hl(reg: Reg8) -> Result<(), IsaError> {
+    if reg == Reg8::Hl {
+        return Err(IsaError::UnsupportedOperand(
+            "(HL) memory operand is not supported".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Encode a single [`Instruction`] into its Z80 machine-code bytes.
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst {
         Instruction::Nop => Ok(vec![0x00]),
         Instruction::LdRegReg { dst, src } => {
-            if *dst == Reg8::Hl || *src == Reg8::Hl {
-                return Err(IsaError::UnsupportedOperand(
-                    "(HL) not supported in Plan 1".into(),
-                ));
-            }
+            reject_hl(*dst)?;
+            reject_hl(*src)?;
             Ok(vec![0x40 | ((*dst as u8) << 3) | (*src as u8)])
         }
         Instruction::LdRegImm { dst, imm } => {
-            if *dst == Reg8::Hl {
-                return Err(IsaError::UnsupportedOperand(
-                    "(HL) not supported in Plan 1".into(),
-                ));
-            }
+            reject_hl(*dst)?;
             Ok(vec![0x06 | ((*dst as u8) << 3), *imm])
         }
         Instruction::AddAReg { src } => {
-            if *src == Reg8::Hl {
-                return Err(IsaError::UnsupportedOperand(
-                    "(HL) not supported in Plan 1".into(),
-                ));
-            }
+            reject_hl(*src)?;
             Ok(vec![0x80 | (*src as u8)])
         }
         Instruction::JpImm { addr } => {
-            Ok(vec![0xC3, (*addr & 0x00FF) as u8, (*addr >> 8) as u8])
+            let [lo, hi] = addr.to_le_bytes();
+            Ok(vec![0xC3, lo, hi])
         }
     }
 }
