@@ -269,6 +269,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![0xC3, lo, hi])
         }
+        (Mnemonic::Ld, [Operand::Reg(dst), Operand::IndHl]) => {
+            Ok(vec![0x46 | (reg8_code(*dst) << 3)])
+        }
+        (Mnemonic::Ld, [Operand::IndHl, Operand::Reg(src)]) => Ok(vec![0x70 | reg8_code(*src)]),
+        (Mnemonic::Ld, [Operand::IndHl, Operand::Imm8(n)]) => Ok(vec![0x36, *n]),
         // -- Task 3: end base group (insert new base arms above this line) -----
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }

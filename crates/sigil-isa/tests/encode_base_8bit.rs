@@ -40,4 +40,31 @@ fn ld_reg_reg_and_reg_imm() {
     );
 }
 
+#[test]
+fn ld_hl_indirect() {
+    // ld a,(hl) = 7E ; ld c,(hl) = 4E   (dst<<3 | 0x46)
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::Reg(Reg8::A), Operand::IndHl])).unwrap(),
+        vec![0x7E]
+    );
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::Reg(Reg8::C), Operand::IndHl])).unwrap(),
+        vec![0x4E]
+    );
+    // ld (hl),c = 71 ; ld (hl),a = 77   (0x70 | src)
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::IndHl, Operand::Reg(Reg8::C)])).unwrap(),
+        vec![0x71]
+    );
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::IndHl, Operand::Reg(Reg8::A)])).unwrap(),
+        vec![0x77]
+    );
+    // ld (hl),0 = 36 00
+    assert_eq!(
+        encode(&inst(Mnemonic::Ld, vec![Operand::IndHl, Operand::Imm8(0)])).unwrap(),
+        vec![0x36, 0x00]
+    );
+}
+
 // (further base-8bit vectors appended by later steps)
