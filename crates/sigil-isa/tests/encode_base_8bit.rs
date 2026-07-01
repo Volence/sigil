@@ -161,4 +161,17 @@ fn alu_immediate() {
     assert_eq!(encode(&inst(Mnemonic::Adc, vec![Operand::Reg(Reg8::A), Operand::Imm8(0)])).unwrap(), vec![0xCE, 0x00]);
 }
 
+#[test]
+fn inc_dec_reg_and_hl() {
+    // inc r = 0x04 | (r<<3) ; dec r = 0x05 | (r<<3)
+    assert_eq!(encode(&inst(Mnemonic::Inc, vec![Operand::Reg(Reg8::A)])).unwrap(), vec![0x3C]); // inc a
+    assert_eq!(encode(&inst(Mnemonic::Inc, vec![Operand::Reg(Reg8::B)])).unwrap(), vec![0x04]); // inc b
+    assert_eq!(encode(&inst(Mnemonic::Inc, vec![Operand::Reg(Reg8::H)])).unwrap(), vec![0x24]); // inc h
+    assert_eq!(encode(&inst(Mnemonic::Dec, vec![Operand::Reg(Reg8::A)])).unwrap(), vec![0x3D]); // dec a
+    assert_eq!(encode(&inst(Mnemonic::Dec, vec![Operand::Reg(Reg8::B)])).unwrap(), vec![0x05]); // dec b
+    // inc (hl) = 34 ; dec (hl) = 35
+    assert_eq!(encode(&inst(Mnemonic::Inc, vec![Operand::IndHl])).unwrap(), vec![0x34]);
+    assert_eq!(encode(&inst(Mnemonic::Dec, vec![Operand::IndHl])).unwrap(), vec![0x35]);
+}
+
 // (further base-8bit vectors appended by later steps)

@@ -332,6 +332,11 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             encode_alu8(m, src)
         }
         (m, [src]) if alu8_opcodes(m).is_some() && is_alu8_src(src) => encode_alu8(m, src),
+        // -- Task 3: base 8-bit inc/dec (r and (hl)) --------------------------
+        (Mnemonic::Inc, [Operand::Reg(r)]) => Ok(vec![0x04 | (reg8_code(*r) << 3)]),
+        (Mnemonic::Dec, [Operand::Reg(r)]) => Ok(vec![0x05 | (reg8_code(*r) << 3)]),
+        (Mnemonic::Inc, [Operand::IndHl]) => Ok(vec![0x34]),
+        (Mnemonic::Dec, [Operand::IndHl]) => Ok(vec![0x35]),
         // -- Task 3: end base group (insert new base arms above this line) -----
         _ => Err(IsaError::UnsupportedForm(format!("{inst:?}"))),
     }
