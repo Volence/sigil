@@ -1,0 +1,187 @@
+// ===========================================================================
+// PITCHER PLANT BADNIK — .emp conversion of sonic_hack's Object 0B
+// ===========================================================================
+// Source:   sonic_hack/code/objects/badniks/PitcherPlant.asm (legacy AS syntax)
+// Language: Sigil Spec 2 (.emp) — empyrean/docs/SIGIL_SPEC2_LANGUAGE.md
+// Status:   parses with `sigil parse` today; ASSEMBLES once Spec 2 Plans 2-4
+//           land (comptime evaluation, layout, lowering). Names like Sst,
+//           Draw_Sprite, spawn, ObjDef come from the game prelude and engine
+//           modules — nothing resolves yet, but the grammar is final.
+//
+// WHAT THIS OBJECT DOES (identical behavior to the legacy original):
+//   A stationary carnivorous plant. It idles until the player approaches
+//   within 96 pixels FROM THE SIDE IT FACES, then plays a "shoot" animation;
+//   16 frames before the animation ends, its mouth is open and it spits a
+//   seed projectile in an upward arc. The seed falls under gravity and
+//   deletes itself below the level. The plant then re-arms and waits again.
+// ===========================================================================
+
+// --- Module header ---------------------------------------------------------
+// One file = one module. `in obj_bank` places every item in this file into
+// the object-code ROM section ($10000..$20000 in Aeon), which the engine's
+// `objroutine()` 16-bit dispatch offsets require. In the legacy tree this
+// placement was implied by include order in the top-level .asm; here it is
+// declared, and the linker enforces the 64KB budget.
+module badniks.pitcher_plant in obj_bank
+
+// No `use` lines needed: the game prelude auto-imports the names every
+// object file touches (Sst and its fields, Draw_Sprite, ObjectMove,
+// ObjDef, spawn/anim/routine helpers, collision + render-flag constants).
+
+// --- Per-object variables (the SST overlay) --------------------------------
+// Every live object owns one SST ("Sprite Status Table" entry) — an $50-byte
+// record in RAM holding position, velocity, art, animation state, etc.
+// The last 34 bytes ($2E..$4F, `sst_custom`) are free for object-specific
+// data. In the legacy source this was a raw offset:
+//     PitcherPlant__Timer = $24        ; (a magic offset, unchecked)
+// Here it is a typed overlay. The compiler errors AT THIS LINE if the
+// fields ever outgrow the 34-byte window (the old `objvarsCheck` macro,
+// now built in), and `timer(a0)` below resolves through this declaration —
+// raw `sst_custom + N` arithmetic is not expressible in .emp.
+vars PitcherPlantV: sst_custom {
+    timer: u8,          // frames until the next state change (counts down)
+}
+
+// --- Tuning constants ------------------------------------------------------
+// Legacy values preserved exactly; only the names got clearer.
+
+const WAIT_TIME: u8 = 64            // legacy $40 — frames between attacks
+const ATTACK_RANGE: u16 = $60       // 96 px — proximity that triggers a shot
+const SHOOT_WINDUP: u8 = $28        // 40 frames — length of the shoot anim
+const FIRE_FRAME: u8 = 16           // seed launches when timer hits this
+                                    //   (the frame where the mouth is open)
+
+// Seed projectile physics. Velocities are 8.8 fixed-point (256 = 1 px/frame).
+// Negative X = toward the plant's facing; the engine's `spawn` flips it
+// automatically when the plant is x-flipped (legacy BadnikWeaponLoad did
+// the same via render_flags bit 0).
+const SEED_VEL_X: i16 = -$200       // 2 px/frame horizontally
+const SEED_VEL_Y: i16 = -$200       // 2 px/frame upward — gives the arc
+const SEED_GRAVITY: i16 = $20       // added to y_vel every frame while falling
+
+// --- Animation ids ---------------------------------------------------------
+// Indices into this object's animation script table (Map_PitcherPlant's
+// companion). An enum instead of bare equates: assigning a raw out-of-range
+// integer to an `Anim`-typed field is a compile error.
+enum Anim: u8 {
+    Idle  = 0,          // gentle sway
+    Seed  = 1,          // the projectile's spinning-seed frames
+    Shoot = 2,          // rear back + open mouth
+}
+
+// --- Object definitions ----------------------------------------------------
+// The legacy file ended with two hand-counted dc.w/dc.b data blocks
+// ("PitcherPlant__Data", 16 positional bytes where swapping width and
+// height assembles silently). ObjDef is the typed replacement: named
+// fields, checked layout, wrong-width or missing fields are compile
+// errors with a field-by-field diff.
+
+// The plant itself — what the level's object list spawns.
+pub data Def = ObjDef{
+    code:  init,                          // first-frame routine (below)
+    map:   Map_PitcherPlant,              // sprite mappings (art module)
+    art:   ArtTile{ tile: VRAM_PITCHER_PLANT, pal: 0, pri: 0 },
+    //     ^ typed bitfield: pal > 3 or an overflowing tile index is a
+    //       compile error (legacy vram_art() was unchecked bit math)
+    col:   Collision.Hurt,                // touching the plant hurts (enemy)
+    zpri:  3,                             // draw-order bucket (legacy $180)
+    size:  Size{ w: 16, h: 28 },          // hitbox: plant body, not the stem
+    anim:  Anim.Idle,
+}
+
+// The seed projectile — spawned by the shoot routine, never by a level.
+data SeedDef = ObjDef{
+    code:  seed,
+    map:   Map_PitcherPlant,              // shares the plant's art + mappings
+    art:   Def.art,                       //   (same VRAM, no extra loading)
+    col:   Collision.Projectile,          // hurts the player, dies to shields
+    zpri:  2,                             // legacy $100
+    size:  Size{ w: 3, h: 3 },            // tiny hitbox
+    vel:   Vel{ x: SEED_VEL_X, y: SEED_VEL_Y },
+    anim:  Anim.Seed,
+    frame: 5,                             // legacy mapping frame for the seed
+}
+
+// --- Behavior --------------------------------------------------------------
+// Each `proc` is one state; the object system calls whatever routine the
+// SST's code pointer holds, once per frame, with a0 = this object's SST.
+// `routine <label>` is the prelude helper that stores a new state routine
+// (the legacy `move.w #objroutine(...),(a0)` idiom).
+
+// State 0: first-frame init. Runs once, then falls through into `wait`
+// for the same frame — `falls_into` DECLARES the fallthrough, so reordering
+// these two procs (which would silently break the legacy version) is a
+// compile error here.
+proc init (a0: *Sst) falls_into wait {
+    move.b  #WAIT_TIME, timer(a0)        // start the re-arm countdown
+}
+
+// State 1: idle sway; watch for the player.
+proc wait (a0: *Sst) clobbers(d0) {
+    // Re-arm delay: do nothing until the countdown expires.
+    subq.b  #1, timer(a0)                // timer--
+    bne     .draw                        // still counting? just animate
+                                         //   (branch size auto-relaxed —
+                                         //    no .s/.w bookkeeping in .emp)
+
+    // Countdown hit zero: is the player close enough, on our facing side?
+    // The legacy version duplicated this check for left/right facing
+    // (two near-identical btst/cmp blocks, lines 36-52). `facing_abs` is
+    // the prelude helper that folds them: it computes the player's signed
+    // distance and negates it when this object is x-flipped, so "positive
+    // and small" always means "in front of me".
+    move.w  Player_1.x_pos, d0           // d0 = player world X
+    sub.w   x_pos(a0), d0                // d0 = distance (player - plant)
+    facing_abs d0                        // normalize by facing direction
+    cmp.w   #ATTACK_RANGE, d0
+    bhi     .rearm                       // too far (or behind us) — re-arm
+
+    // Player in range: start the attack.
+    move.b  #SHOOT_WINDUP, timer(a0)     // shoot anim runs 40 frames
+    anim    Anim.Shoot                   // prelude helper: set anim + reset
+    routine shoot                        // next frame, run `shoot` instead
+    bra     .draw
+
+.rearm:
+    move.b  #WAIT_TIME, timer(a0)        // wait another 64 frames
+.draw:
+    jmp     Draw_Sprite                  // animate + queue sprite + offscreen
+                                         //   check (legacy AnimateSprite +
+                                         //   MarkObjGone tail)
+}
+
+// State 2: shooting. The animation plays while the timer runs 40 -> 0;
+// the seed launches exactly when timer == 16 (mouth fully open).
+proc shoot (a0: *Sst) {
+    subq.b  #1, timer(a0)                // timer--
+    cmpi.b  #FIRE_FRAME, timer(a0)
+    bne     .no_fire                     // not the launch frame
+
+    // Launch! `spawn` allocates a fresh SST from SeedDef, positions it
+    // relative to us, and flips the X offset AND SEED_VEL_X when we're
+    // x-flipped (`flip: inherit`). The legacy version did this by hand:
+    // BadnikWeaponLoad, then sub #$10 from x, sub #$4 from y, then a
+    // btst on render_flags to add #$20 back when flipped.
+    spawn(SeedDef, offset: Vec{ x: -16, y: -4 }, flip: inherit)
+
+.no_fire:
+    tst.b   timer(a0)                    // animation finished?
+    bne     .draw                        // not yet — keep playing it
+
+    // Attack over: back to idle and re-arm.
+    move.b  #WAIT_TIME, timer(a0)
+    anim    Anim.Idle
+    routine wait
+.draw:
+    jmp     Draw_Sprite
+}
+
+// State (projectile): the seed's per-frame update. Pure ballistics.
+proc seed (a0: *Sst) {
+    despawn_below_level                  // prelude helper: delete self once
+                                         //   below the level's kill plane
+                                         //   (legacy Obj_DeleteIfBelowLevel)
+    add.w   #SEED_GRAVITY, y_vel(a0)     // gravity pulls the arc down
+    jsr     ObjectMove                   // engine: pos += vel (16.16 math)
+    jmp     Draw_Sprite
+}
