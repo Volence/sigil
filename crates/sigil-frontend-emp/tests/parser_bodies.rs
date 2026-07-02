@@ -95,3 +95,12 @@ fn spaced_paren_operand_is_not_a_call() {
     let AsmStmt::Instr(i) = &p.body[0] else { panic!("got {:?}", p.body[0]) };
     assert!(matches!(&i.operands[0], Operand::Ind { .. }));
 }
+
+#[test]
+fn instr_span_excludes_newline() {
+    let src = "module m\nproc x () {\n    bne .draw\n}\n";
+    let f = ok(src);
+    let p = first_proc(&f);
+    let AsmStmt::Instr(i) = &p.body[0] else { panic!() };
+    assert_eq!(&src[i.span.start as usize..i.span.end as usize], "bne .draw");
+}

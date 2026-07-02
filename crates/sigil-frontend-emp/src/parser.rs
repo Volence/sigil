@@ -612,8 +612,10 @@ impl Parser {
                 if !self.eat(&Tok::Comma) { break; }
             }
         }
+        // Span computed before the line end so the newline isn't included.
+        let span = start.merge(self.prev_span());
         self.expect_line_end_or_rbrace();
-        InstrLine { mnemonic, size, operands, span: start.merge(self.prev_span()) }
+        InstrLine { mnemonic, size, operands, span }
     }
 
     /// Like [`Parser::expect_line_end`], but also accepts a directly-following
