@@ -316,11 +316,23 @@ impl Parser {
             let fname = self.expect_ident("field name");
             self.expect(&Tok::Colon, "`:`");
             let bits = match self.peek().clone() {
-                Tok::Int(v) if v > 0 => { self.bump(); v as u32 }
+                // The lexer never produces negative `Int`s (`-` is a separate
+                // token), so try_from + a zero check cover all range errors.
+                Tok::Int(v) => {
+                    let sp = self.span();
+                    self.bump();
+                    match u32::try_from(v) {
+                        Ok(b) if b > 0 => b,
+                        _ => {
+                            self.diag_at(sp, "bit width must be 1..=4294967295");
+                            1
+                        }
+                    }
+                }
                 _ => {
                     let sp = self.span();
                     self.diag_at(sp, "expected a bit width");
-                    if !matches!(self.peek(), Tok::RBrace | Tok::Newline) {
+                    if !matches!(self.peek(), Tok::RBrace | Tok::Newline | Tok::Comma) {
                         self.bump();
                     }
                     1
@@ -328,11 +340,21 @@ impl Parser {
             };
             let anchor = if self.eat(&Tok::At) {
                 match self.peek().clone() {
-                    Tok::Int(v) if v >= 0 => { self.bump(); Some(v as u32) }
+                    Tok::Int(v) => {
+                        let sp = self.span();
+                        self.bump();
+                        match u32::try_from(v) {
+                            Ok(a) => Some(a),
+                            Err(_) => {
+                                self.diag_at(sp, "bit anchor out of range");
+                                None
+                            }
+                        }
+                    }
                     _ => {
                         let sp = self.span();
                         self.diag_at(sp, "expected a bit anchor after `@`");
-                        if !matches!(self.peek(), Tok::RBrace | Tok::Newline) {
+                        if !matches!(self.peek(), Tok::RBrace | Tok::Newline | Tok::Comma) {
                             self.bump();
                         }
                         None

@@ -135,6 +135,23 @@ fn bitfield_decl() {
 }
 
 #[test]
+fn huge_bit_width_is_diagnosed_not_truncated() {
+    let (_, diags) = parse_str("module m\nbitfield B: u16 { f: 5000000000 }\n");
+    assert!(!diags.is_empty());
+    let (_, diags) = parse_str("module m\nbitfield B: u16 { f: 1 @ 5000000000 }\n");
+    assert!(!diags.is_empty());
+}
+
+#[test]
+fn missing_bit_width_does_not_drop_next_field() {
+    let (f, diags) = parse_str("module m\nbitfield B: u16 { f: , g: 2 }\n");
+    assert!(!diags.is_empty());
+    let Item::Bitfield(b) = &f.items[0] else { panic!() };
+    assert_eq!(b.fields.len(), 2);
+    assert_eq!(b.fields[1].name, "g");
+}
+
+#[test]
 fn struct_decl_with_size_offsets_defaults() {
     let f = ok(concat!(
         "module m\n",
