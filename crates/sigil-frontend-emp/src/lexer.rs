@@ -1,16 +1,29 @@
+//! Lexer for the modern `.emp` language: source text in, spanned tokens out.
+
 use sigil_span::{SourceId, Span};
 
+/// A lexical token kind, carrying its payload for identifiers and literals.
+///
+/// Multi-character operators (`==`, `->`, `..`, ...) are single tokens.
+/// `.` is always its own [`Tok::Dot`] token, so forms like `move.b` and
+/// `.draw:` decompose here and are reassembled by the parser.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tok {
+    /// An identifier or keyword (keywords are not distinguished by the lexer).
     Ident(String),
+    /// An integer literal: decimal, `$`-hex, or `0b`-binary.
     Int(i64),
+    /// A floating-point literal (digits, `.`, digits).
     Float(f64),
+    /// A double-quoted string literal with escapes already resolved.
     Str(String),
+    /// One or more consecutive line breaks, collapsed into a single token.
     Newline,
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,
     Comma, Colon, Semi, Dot, At, Hash, Star, Plus, Minus, Slash, Percent,
     Amp, Pipe, Caret, Bang, Lt, Gt, Eq, Tilde,
     EqEq, Ne, Le, Ge, Shl, Shr, Arrow, DotDot, PlusPlus, AndAnd, OrOr,
+    /// End of input; always the final token emitted by [`lex`].
     Eof,
 }
 
@@ -19,18 +32,40 @@ impl Tok {
     pub fn ident(s: &str) -> Tok { Tok::Ident(s.to_string()) }
 }
 
+/// A [`Tok`] paired with the byte-range [`Span`] it was lexed from.
 #[derive(Debug, Clone)]
-pub struct Token { pub tok: Tok, pub span: Span }
+pub struct Token {
+    /// The token kind (and payload, for identifiers and literals).
+    pub tok: Tok,
+    /// Where in the source this token came from.
+    pub span: Span,
+}
 
-#[derive(Debug)]
-pub struct LexError { pub message: String, pub span: Span }
+/// A lexical error: malformed literal, unknown escape, stray character, etc.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LexError {
+    /// Human-readable description of the problem.
+    pub message: String,
+    /// The offending source range.
+    pub span: Span,
+}
 
+/// Build a [`Span`] in `source` covering bytes `[s, e)`.
+fn span_at(source: SourceId, s: usize, e: usize) -> Span {
+    Span { source, start: s as u32, end: e as u32 }
+}
+
+/// Lex `src` into a token stream, collecting errors instead of failing fast.
+///
+/// Always returns a token vector ending in [`Tok::Eof`], even on errors —
+/// erroneous input is skipped and lexing continues, so callers get the best
+/// possible token stream plus every [`LexError`] encountered.
 pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
     let b = src.as_bytes();
     let mut out = Vec::new();
     let mut errs = Vec::new();
     let mut i = 0usize;
-    let span = |s: usize, e: usize| Span { source, start: s as u32, end: e as u32 };
+    let span = |s: usize, e: usize| span_at(source, s, e);
     macro_rules! push { ($t:expr, $s:expr, $e:expr) => { out.push(Token { tok: $t, span: span($s, $e) }) } }
 
     while i < b.len() {
@@ -67,7 +102,8 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
             b'0'..=b'9' | b'$' => { i = lex_number(src, b, i, source, &mut out, &mut errs); }
             b'"' => { i = lex_string(src, b, i, source, &mut out, &mut errs); }
             _ => {
-                let two = if i + 1 < b.len() { &src[i..i + 2] } else { "" };
+                // `get` returns None off a char boundary — no panic on non-ASCII.
+                let two = src.get(i..i + 2).unwrap_or("");
                 let (tok, len) = match two {
                     "==" => (Tok::EqEq, 2), "!=" => (Tok::Ne, 2), "<=" => (Tok::Le, 2),
                     ">=" => (Tok::Ge, 2), "<<" => (Tok::Shl, 2), ">>" => (Tok::Shr, 2),
@@ -85,8 +121,11 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                         b'<' => (Tok::Lt, 1), b'>' => (Tok::Gt, 1), b'=' => (Tok::Eq, 1),
                         b'~' => (Tok::Tilde, 1),
                         _ => {
-                            errs.push(LexError { message: format!("unexpected character {:?}", c as char), span: span(s, s + 1) });
-                            i += 1;
+                            // Advance by the full char so multi-byte UTF-8 never
+                            // leaves `i` mid-character.
+                            let ch = src[i..].chars().next().unwrap();
+                            errs.push(LexError { message: format!("unexpected character {ch:?}"), span: span(s, s + ch.len_utf8()) });
+                            i += ch.len_utf8();
                             continue;
                         }
                     },
@@ -103,7 +142,7 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
 fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
               out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
     let s = i;
-    let span = |s: usize, e: usize| Span { source, start: s as u32, end: e as u32 };
+    let span = |s: usize, e: usize| span_at(source, s, e);
     if b[i] == b'$' {
         i += 1;
         let ds = i;
@@ -139,6 +178,8 @@ fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
         while i < b.len() && b[i].is_ascii_digit() { i += 1; }
         match src[s..i].parse::<f64>() {
             Ok(v) => out.push(Token { tok: Tok::Float(v), span: span(s, i) }),
+            // Defensive: the slice is digits `.` digits, which f64 always
+            // parses; unreachable in practice.
             Err(_) => errs.push(LexError { message: "bad float literal".into(), span: span(s, i) }),
         }
         return i;
@@ -153,7 +194,7 @@ fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
 fn lex_string(src: &str, b: &[u8], mut i: usize, source: SourceId,
               out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
     let s = i;
-    let span = |s: usize, e: usize| Span { source, start: s as u32, end: e as u32 };
+    let span = |s: usize, e: usize| span_at(source, s, e);
     i += 1; // opening quote
     let mut val = String::new();
     while i < b.len() && b[i] != b'"' && b[i] != b'\n' {

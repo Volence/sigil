@@ -83,3 +83,11 @@ fn bad_dollar_is_an_error() {
     let (_, errs) = lex("$zz", SourceId(0));
     assert_eq!(errs.len(), 1);
 }
+
+#[test]
+fn non_ascii_is_an_error_not_a_panic() {
+    let (toks_out, errs) = lex("a €b", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    // lexing continues after the bad char
+    assert!(toks_out.iter().any(|t| t.tok == Tok::ident("b")));
+}
