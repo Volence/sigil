@@ -150,3 +150,29 @@ fn struct_decl_with_size_offsets_defaults() {
     assert!(s.fields[2].offset.is_some());
 }
 
+#[test]
+fn vars_region_and_overlay_forms() {
+    // region form: `vars upper_ram { ... }`
+    let f = ok("module m\nvars upper_ram {\n    Player_Pos_Ring: [u8; 256] @align(256),\n}\n");
+    let Item::Vars(v) = &f.items[0] else { panic!() };
+    assert_eq!(v.name, None);
+    assert_eq!(v.region, "upper_ram");
+    assert!(v.fields[0].align.is_some());
+
+    // overlay form: `vars PitcherPlantV: sst_custom { timer: u8 }`
+    let f = ok("module m\nvars PitcherPlantV: sst_custom { timer: u8 }\n");
+    let Item::Vars(v) = &f.items[0] else { panic!() };
+    assert_eq!(v.name.as_deref(), Some("PitcherPlantV"));
+    assert_eq!(v.region, "sst_custom");
+    assert_eq!(v.fields[0].name, "timer");
+}
+
+#[test]
+fn data_decls() {
+    let f = ok("module m\npub data Def = ObjDef{ code: init }\ndata SineTable: [i8; 256] = deform_sine(amplitude: 20, period: 64)\n");
+    let Item::Data(d) = &f.items[0] else { panic!() };
+    assert!(d.public && d.ty.is_none());
+    let Item::Data(d) = &f.items[1] else { panic!() };
+    assert!(matches!(d.ty, Some(Type::Array(_, _))));
+    assert!(matches!(d.value, Expr::Call { .. }));
+}

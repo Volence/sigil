@@ -387,15 +387,64 @@ impl Parser {
         StructDecl { public, name, size, fields, span: start.merge(self.prev_span()) }
     }
 
+    /// Parse a `vars region { .. }` (region form) or `vars name: region { .. }`
+    /// (overlay form) declaration.
+    fn vars_decl(&mut self, public: bool) -> VarsDecl {
+        let start = self.span();
+        self.bump(); // `vars`
+        let first = self.expect_ident("region or overlay name");
+        let (name, region) = if self.eat(&Tok::Colon) {
+            let region = self.expect_ident("overlay region (e.g. sst_custom)");
+            (Some(first), region)
+        } else {
+            (None, first)
+        };
+        self.expect(&Tok::LBrace, "`{`");
+        let mut fields = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            let fspan = self.span();
+            let fname = self.expect_ident("field name");
+            self.expect(&Tok::Colon, "`:`");
+            let fty = self.ty();
+            let align = if self.at(&Tok::At) && matches!(self.peek2(), Tok::Ident(s) if s == "align") {
+                self.bump(); // @
+                self.bump(); // align
+                self.expect(&Tok::LParen, "`(`");
+                let e = self.expr();
+                self.expect(&Tok::RParen, "`)`");
+                Some(e)
+            } else { None };
+            fields.push(VarsField { name: fname, ty: fty, align, span: fspan });
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        VarsDecl { public, name, region, fields, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse a `data NAME[: Ty] = value` declaration.
+    fn data_decl(&mut self, public: bool) -> DataDecl {
+        let start = self.span();
+        self.bump(); // `data`
+        let name = self.expect_ident("data item name");
+        let ty = if self.eat(&Tok::Colon) { Some(self.ty()) } else { None };
+        self.expect(&Tok::Eq, "`=`");
+        let value = self.expr();
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        DataDecl { public, name, ty, value, span }
+    }
+
     // ---- stubs replaced by later tasks (each panics with the task that owns it) ----
     // These are unreachable via `parser_decls.rs` today (no test exercises
-    // vars/data/proc/comptime-fn/section bodies yet), so clippy sees them as
+    // proc/comptime-fn/section bodies yet), so clippy sees them as
     // effectively dead until their owning WP lands; keep them `unimplemented!`
     // per spec rather than deleting.
-    #[allow(dead_code)] // owned by Task 9
-    fn vars_decl(&mut self, _p: bool) -> VarsDecl { unimplemented!("Task 9") }
-    #[allow(dead_code)] // owned by Task 9
-    fn data_decl(&mut self, _p: bool) -> DataDecl { unimplemented!("Task 9") }
     #[allow(dead_code)] // owned by Task 10
     fn proc_decl(&mut self, _p: bool) -> ProcDecl { unimplemented!("Task 10") }
     #[allow(dead_code)] // owned by Task 11
