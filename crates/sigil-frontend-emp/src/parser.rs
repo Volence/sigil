@@ -462,13 +462,291 @@ impl Parser {
         DataDecl { public, name, ty, value, span }
     }
 
+    /// Parse a `proc name(params...) [clobbers(...)] [falls_into name] { body }`
+    /// declaration.
+    fn proc_decl(&mut self, public: bool) -> ProcDecl {
+        let start = self.span();
+        self.bump(); // `proc`
+        let name = self.expect_ident("proc name");
+        self.expect(&Tok::LParen, "`(`");
+        let mut params = Vec::new();
+        if !self.at(&Tok::RParen) {
+            loop {
+                let pspan = self.span();
+                let pname = self.expect_ident("parameter (register) name");
+                self.expect(&Tok::Colon, "`:`");
+                let pty = self.ty();
+                params.push((pname, pty, pspan));
+                if !self.eat(&Tok::Comma) { break; }
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.expect(&Tok::RParen, "`)`");
+        let mut clobbers = Vec::new();
+        let mut falls_into = None;
+        loop {
+            if self.eat_kw("clobbers") {
+                self.expect(&Tok::LParen, "`(`");
+                loop {
+                    clobbers.push(self.expect_ident("register"));
+                    if !self.eat(&Tok::Comma) { break; }
+                    if self.at(&Tok::RParen) { break; } // trailing comma
+                }
+                self.expect(&Tok::RParen, "`)`");
+            } else if self.eat_kw("falls_into") {
+                falls_into = Some(self.expect_ident("target proc name"));
+            } else {
+                break;
+            }
+        }
+        self.expect(&Tok::LBrace, "`{`");
+        let body = self.asm_body(/* splices_allowed = */ false);
+        self.expect(&Tok::RBrace, "`}`");
+        ProcDecl { public, name, params, clobbers, falls_into, body, span: start.merge(self.prev_span()) }
+    }
+
+    /// Body of a `proc` or an `asm { }` template. Statements are
+    /// newline-separated: labels (`.name:` / `export .name:`), instruction
+    /// lines, and statement-position comptime calls.
+    fn asm_body(&mut self, splices_allowed: bool) -> Vec<AsmStmt> {
+        let mut out = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
+            let start = self.span();
+            // `export .name:` / `.name:`
+            let export = self.at_kw("export") && matches!(self.peek2(), Tok::Dot);
+            if export { self.bump(); }
+            if self.at(&Tok::Dot) && matches!(self.peek2(), Tok::Ident(_)) {
+                self.bump();
+                let name = self.expect_ident("label name");
+                self.expect(&Tok::Colon, "`:` after label");
+                out.push(AsmStmt::Label { name, export, span: start.merge(self.prev_span()) });
+                continue;
+            }
+            if export {
+                // `export` not followed by a dot-label: diagnose and fall
+                // through to normal statement parsing so we still make
+                // progress (don't consume a closer/newline).
+                let sp = self.span();
+                self.diag_at(sp, "expected `.label` after `export`");
+            }
+            // statement-position comptime call: `ident(` where the `(` is
+            // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
+            // is an instruction with a parenthesized operand, not a call.
+            if matches!(self.peek(), Tok::Ident(_)) && matches!(self.peek2(), Tok::LParen)
+                && self.adjacent_to_next() {
+                let e = self.expr();
+                self.expect_line_end();
+                out.push(AsmStmt::Call(e));
+                continue;
+            }
+            out.push(AsmStmt::Instr(self.instr_line(splices_allowed)));
+        }
+        out
+    }
+
+    /// Is the token immediately after the current one lexically adjacent to
+    /// it (no whitespace between them)? Used to disambiguate `spawn(...)`
+    /// (a call) from `bne (a0)` (an instruction with a parenthesized operand).
+    fn adjacent_to_next(&self) -> bool {
+        let cur_end = self.span().end;
+        let next_start = self.toks[(self.pos + 1).min(self.toks.len() - 1)].span.start;
+        cur_end == next_start
+    }
+
+    /// A single machine-instruction line: mnemonic (possibly spliced),
+    /// optional size suffix, then comma-separated operands.
+    fn instr_line(&mut self, splices_allowed: bool) -> InstrLine {
+        let start = self.span();
+        // mnemonic: (ident|{splice})+ — parts concatenate: `b{cc}`
+        let mut mnemonic = Vec::new();
+        loop {
+            match self.peek().clone() {
+                Tok::Ident(_) => mnemonic.push(TextOrSplice::Text(self.expect_ident("mnemonic"))),
+                Tok::LBrace if splices_allowed => {
+                    self.bump();
+                    mnemonic.push(TextOrSplice::Splice(self.expr()));
+                    self.expect(&Tok::RBrace, "`}`");
+                }
+                _ => break,
+            }
+            // continue only if the next part is DIRECTLY adjacent (no gap):
+            let prev_end = self.prev_span().end;
+            if self.span().start != prev_end { break; }
+            if !(matches!(self.peek(), Tok::Ident(_)) || (splices_allowed && self.at(&Tok::LBrace))) { break; }
+        }
+        if mnemonic.is_empty() {
+            let sp = self.span();
+            self.diag_at(sp, format!("expected an instruction, found {:?}", self.peek()));
+            // do not consume closers/newline per convention:
+            if !matches!(self.peek(), Tok::RBrace | Tok::RParen | Tok::RBracket | Tok::Newline) {
+                self.bump();
+            }
+        }
+        // optional size suffix: `.b` / `.{w}` — must be DIRECTLY adjacent to
+        // the mnemonic (`subq.b`), else a leading dot belongs to the first
+        // operand instead (`bne     .draw` — a local-label reference, not
+        // a size suffix separated from `bne` by whitespace).
+        let size = if self.at(&Tok::Dot) && self.span().start == self.prev_span().end {
+            match self.peek2().clone() {
+                Tok::Ident(_) => {
+                    self.bump();
+                    Some(TextOrSplice::Text(self.expect_ident("size suffix")))
+                }
+                Tok::LBrace if splices_allowed => {
+                    self.bump(); // dot
+                    self.bump(); // lbrace
+                    let e = self.expr();
+                    self.expect(&Tok::RBrace, "`}`");
+                    Some(TextOrSplice::Splice(e))
+                }
+                _ => None,
+            }
+        } else { None };
+        // operands
+        let mut operands = Vec::new();
+        if !self.at(&Tok::Newline) && !self.at(&Tok::RBrace) && !self.at(&Tok::Eof) {
+            loop {
+                operands.push(self.operand(splices_allowed));
+                if !self.eat(&Tok::Comma) { break; }
+            }
+        }
+        self.expect_line_end_or_rbrace();
+        InstrLine { mnemonic, size, operands, span: start.merge(self.prev_span()) }
+    }
+
+    /// Like [`Parser::expect_line_end`], but also accepts a directly-following
+    /// `}`/EOF (the last instruction in a body needn't end in a newline).
+    fn expect_line_end_or_rbrace(&mut self) {
+        if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { return; }
+        self.expect_line_end();
+    }
+
+    /// A single instruction operand: immediate, pre-dec/post-inc, indirect,
+    /// displacement-indirect, a bare/local-label path, or a `{splice}`.
+    fn operand(&mut self, splices_allowed: bool) -> Operand {
+        let start = self.span();
+        match self.peek().clone() {
+            Tok::Hash => { self.bump(); Operand::Imm(self.expr()) }
+            Tok::Minus if matches!(self.peek2(), Tok::LParen) => {
+                self.bump();
+                let inner = self.paren_operand(splices_allowed, start);
+                Operand::PreDec(Box::new(inner))
+            }
+            Tok::LParen => {
+                let inner = self.paren_operand(splices_allowed, start);
+                if self.eat(&Tok::Plus) {
+                    Operand::PostInc(Box::new(inner))
+                } else {
+                    inner
+                }
+            }
+            Tok::LBrace if splices_allowed => {
+                self.bump();
+                let e = self.expr();
+                self.expect(&Tok::RBrace, "`}`");
+                Operand::Splice(e)
+            }
+            Tok::Dot if matches!(self.peek2(), Tok::Ident(_)) => {
+                // local-label operand: `.draw` — represent as a Path ".draw"
+                self.bump();
+                let name = self.expect_ident("label");
+                let span = start.merge(self.prev_span());
+                Operand::Plain {
+                    expr: Expr::Path(Path { segments: vec![format!(".{name}")], span }),
+                    size: None,
+                    span,
+                }
+            }
+            _ => {
+                let e = self.expr();
+                // NOTE: `timer(a0)` where `timer` is a bare ident arrives as
+                // Expr::Call via primary_expr — normalize an all-positional
+                // call to displacement-indexed addressing:
+                if let Expr::Call { callee, args, span } = &e {
+                    if !args.is_empty() && args.iter().all(|a| a.name.is_none()) {
+                        let parts = args.iter()
+                            .map(|a| (a.value.clone(), None))
+                            .collect::<Vec<_>>();
+                        return Operand::DispInd {
+                            disp: Expr::Path(callee.clone()),
+                            inner: Box::new(Operand::Ind { parts, size: None, span: *span }),
+                            span: *span,
+                        };
+                    }
+                }
+                // displacement form: expr immediately followed by `(...)` — `4(a0, d0.w)`
+                if self.at(&Tok::LParen) {
+                    let inner = self.paren_operand(splices_allowed, self.span());
+                    let span = start.merge(self.prev_span());
+                    return Operand::DispInd { disp: e, inner: Box::new(inner), span };
+                }
+                let size = self.trailing_size(splices_allowed);
+                let span = start.merge(self.prev_span());
+                Operand::Plain { expr: e, size, span }
+            }
+        }
+    }
+
+    /// `( part {, part} )` with optional per-part `.w`/`.l` and optional
+    /// trailing size after the close paren: `(VDP_Ctrl).l`
+    ///
+    /// Index-size caveat: in `(a0, d0.w)` the `.w` is consumed by `path()`
+    /// as a path segment (`d0.w` → Path["d0","w"]). `split_size_suffix`
+    /// undoes that: a multi-segment path whose LAST segment is exactly
+    /// "b"/"w"/"l" splits into (path-without-last, Some(size)). A struct
+    /// field genuinely named `w` in operand position would need parens —
+    /// accepted, and lint-flagged later (this is the AS size-suffix bug
+    /// class, resolved by rule instead of corruption).
+    fn paren_operand(&mut self, splices_allowed: bool, start: Span) -> Operand {
+        self.expect(&Tok::LParen, "`(`");
+        let mut parts = Vec::new();
+        loop {
+            let e = if self.at(&Tok::LBrace) && splices_allowed {
+                self.bump();
+                let e = self.expr();
+                self.expect(&Tok::RBrace, "`}`");
+                e
+            } else {
+                self.expr()
+            };
+            let (e, mut psize) = split_size_suffix(e);
+            if psize.is_none() { psize = self.trailing_size(splices_allowed); }
+            parts.push((e, psize));
+            if !self.eat(&Tok::Comma) { break; }
+            if self.at(&Tok::RParen) { break; } // trailing comma
+        }
+        self.expect(&Tok::RParen, "`)`");
+        let size = self.trailing_size(splices_allowed);
+        Operand::Ind { parts, size, span: start.merge(self.prev_span()) }
+    }
+
+    /// `.w` / `.l` / `.{expr}` if directly adjacent, else None.
+    fn trailing_size(&mut self, splices_allowed: bool) -> Option<TextOrSplice> {
+        if !self.at(&Tok::Dot) { return None; }
+        let adjacent = self.span().start == self.prev_span().end;
+        if !adjacent { return None; }
+        match self.peek2().clone() {
+            Tok::Ident(s) if s == "b" || s == "w" || s == "l" => {
+                self.bump(); self.bump();
+                Some(TextOrSplice::Text(s))
+            }
+            Tok::LBrace if splices_allowed => {
+                self.bump(); self.bump();
+                let e = self.expr();
+                self.expect(&Tok::RBrace, "`}`");
+                Some(TextOrSplice::Splice(e))
+            }
+            _ => None,
+        }
+    }
+
     // ---- stubs replaced by later tasks (each panics with the task that owns it) ----
     // These are unreachable via `parser_decls.rs` today (no test exercises
-    // proc/comptime-fn/section bodies yet), so clippy sees them as
+    // comptime-fn/section bodies yet), so clippy sees them as
     // effectively dead until their owning WP lands; keep them `unimplemented!`
     // per spec rather than deleting.
-    #[allow(dead_code)] // owned by Task 10
-    fn proc_decl(&mut self, _p: bool) -> ProcDecl { unimplemented!("Task 10") }
     #[allow(dead_code)] // owned by Task 11
     fn comptime_fn_decl(&mut self, _p: bool) -> ComptimeFnDecl { unimplemented!("Task 11") }
     #[allow(dead_code)] // owned by Task 13
@@ -691,6 +969,22 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
         | Expr::TupleLit { span, .. } | Expr::Range { span, .. } | Expr::If { span, .. }
         | Expr::For { span, .. } | Expr::Asm { span, .. } => *span,
     }
+}
+
+/// `d0.w` arrives from `path()` as Path["d0","w"] — split the trailing
+/// single-letter size segment back off (see `paren_operand`'s doc comment).
+pub(crate) fn split_size_suffix(e: Expr) -> (Expr, Option<TextOrSplice>) {
+    if let Expr::Path(p) = &e {
+        if p.segments.len() >= 2 {
+            let last = p.segments.last().unwrap();
+            if last == "b" || last == "w" || last == "l" {
+                let mut q = p.clone();
+                let size = q.segments.pop().unwrap();
+                return (Expr::Path(q), Some(TextOrSplice::Text(size)));
+            }
+        }
+    }
+    (e, None)
 }
 
 /// Test-only hook: parse a bare expression.
