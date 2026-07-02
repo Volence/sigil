@@ -253,15 +253,144 @@ impl Parser {
     #[allow(dead_code)] // owned by Task 13
     fn section_decl(&mut self) -> SectionDecl { unimplemented!("Task 13") }
 
-    // Task 6 adds expressions; Task 5 needs a minimal expr for attribute args.
-    /// Minimal placeholder — REPLACED WHOLESALE by Task 6 (expressions WP).
-    pub(crate) fn expr(&mut self) -> Expr {
+    // ---- expressions (precedence climbing) ----
+    // Levels (loosest → tightest):
+    //   1 ||   2 &&   3 == != < <= > >=   4 ..   5 ++   6 | ^   7 &
+    //   8 << >>   9 + -   10 * / %   unary   postfix(call)   primary
+    pub(crate) fn expr(&mut self) -> Expr { self.expr_bp(1) }
+
+    fn expr_bp(&mut self, min_bp: u8) -> Expr {
+        let mut lhs = self.unary_expr();
+        loop {
+            let (op, bp) = match self.peek() {
+                Tok::OrOr => (BinOp::Or, 1),
+                Tok::AndAnd => (BinOp::And, 2),
+                Tok::EqEq => (BinOp::Eq, 3), Tok::Ne => (BinOp::Ne, 3),
+                Tok::Lt => (BinOp::Lt, 3), Tok::Le => (BinOp::Le, 3),
+                Tok::Gt => (BinOp::Gt, 3), Tok::Ge => (BinOp::Ge, 3),
+                Tok::DotDot => (BinOp::Add /*unused — range path uses is_range below*/, 4),
+                Tok::PlusPlus => (BinOp::Concat, 5),
+                Tok::Pipe => (BinOp::BitOr, 6), Tok::Caret => (BinOp::BitXor, 6),
+                Tok::Amp => (BinOp::BitAnd, 7),
+                Tok::Shl => (BinOp::Shl, 8), Tok::Shr => (BinOp::Shr, 8),
+                Tok::Plus => (BinOp::Add, 9), Tok::Minus => (BinOp::Sub, 9),
+                Tok::Star => (BinOp::Mul, 10), Tok::Slash => (BinOp::Div, 10),
+                Tok::Percent => (BinOp::Mod, 10),
+                _ => break,
+            };
+            if bp < min_bp { break; }
+            let is_range = matches!(self.peek(), Tok::DotDot);
+            self.bump();
+            let rhs = self.expr_bp(bp + 1); // left-assoc
+            let span = expr_span(&lhs).merge(expr_span(&rhs));
+            lhs = if is_range {
+                Expr::Range { lo: Box::new(lhs), hi: Box::new(rhs), span }
+            } else {
+                Expr::Binary { op, lhs: Box::new(lhs), rhs: Box::new(rhs), span }
+            };
+        }
+        lhs
+    }
+
+    fn unary_expr(&mut self) -> Expr {
+        let start = self.span();
+        let op = match self.peek() {
+            Tok::Minus => Some(UnOp::Neg),
+            Tok::Bang => Some(UnOp::Not),
+            Tok::Tilde => Some(UnOp::BitNot),
+            _ => None,
+        };
+        if let Some(op) = op {
+            self.bump();
+            let expr = self.unary_expr();
+            let span = start.merge(expr_span(&expr));
+            return Expr::Unary { op, expr: Box::new(expr), span };
+        }
+        self.primary_expr()
+    }
+
+    fn primary_expr(&mut self) -> Expr {
         let start = self.span();
         match self.peek().clone() {
             Tok::Int(v) => { self.bump(); Expr::Int(v, start) }
             Tok::Float(v) => { self.bump(); Expr::Float(v, start) }
             Tok::Str(s) => { self.bump(); Expr::Str(s, start) }
-            Tok::Ident(_) => Expr::Path(self.path()),
+            Tok::LBracket => {
+                self.bump();
+                let mut elems = Vec::new();
+                self.skip_newlines();
+                if !self.at(&Tok::RBracket) {
+                    loop {
+                        elems.push(self.expr());
+                        self.skip_newlines();
+                        if !self.eat(&Tok::Comma) { break; }
+                        self.skip_newlines();
+                        if self.at(&Tok::RBracket) { break; } // trailing comma
+                    }
+                }
+                self.expect(&Tok::RBracket, "`]`");
+                Expr::ArrayLit { elems, span: start.merge(self.prev_span()) }
+            }
+            Tok::LParen => {
+                self.bump();
+                let mut elems = vec![self.expr()];
+                while self.eat(&Tok::Comma) { elems.push(self.expr()); }
+                self.expect(&Tok::RParen, "`)`");
+                if elems.len() == 1 {
+                    elems.pop().unwrap()
+                } else {
+                    Expr::TupleLit { elems, span: start.merge(self.prev_span()) }
+                }
+            }
+            Tok::Ident(_) => {
+                // `comptime for/if` in expression position: the `comptime`
+                // marker is a no-op inside an already-comptime context.
+                if self.at_kw("comptime")
+                    && matches!(self.peek2(), Tok::Ident(s) if s == "for" || s == "if") {
+                    self.bump();
+                }
+                if self.at_kw("if") { return self.if_expr(); }
+                if self.at_kw("for") { return self.for_expr(); }
+                if self.at_kw("asm") { return self.asm_expr(); }
+                let path = self.path();
+                match self.peek() {
+                    Tok::LParen => {
+                        self.bump();
+                        let mut args = Vec::new();
+                        self.skip_newlines();
+                        if !self.at(&Tok::RParen) {
+                            loop {
+                                args.push(self.arg());
+                                self.skip_newlines();
+                                if !self.eat(&Tok::Comma) { break; }
+                                self.skip_newlines();
+                            }
+                        }
+                        self.expect(&Tok::RParen, "`)`");
+                        Expr::Call { callee: path, args, span: start.merge(self.prev_span()) }
+                    }
+                    Tok::LBrace => {
+                        // struct literal: Path{ field: e, ... }
+                        self.bump();
+                        let mut fields = Vec::new();
+                        self.skip_newlines();
+                        if !self.at(&Tok::RBrace) {
+                            loop {
+                                let name = self.expect_ident("field name");
+                                self.expect(&Tok::Colon, "`:`");
+                                fields.push((name, self.expr()));
+                                self.skip_newlines();
+                                if !self.eat(&Tok::Comma) { break; }
+                                self.skip_newlines();
+                                if self.at(&Tok::RBrace) { break; }
+                            }
+                        }
+                        self.expect(&Tok::RBrace, "`}`");
+                        Expr::StructLit { ty: path, fields, span: start.merge(self.prev_span()) }
+                    }
+                    _ => Expr::Path(path),
+                }
+            }
             other => {
                 self.diag_at(start, format!("expected an expression, found {other:?}"));
                 self.bump();
@@ -269,4 +398,46 @@ impl Parser {
             }
         }
     }
+
+    fn arg(&mut self) -> Arg {
+        let start = self.span();
+        // `name: value` — ident followed by colon
+        if matches!(self.peek(), Tok::Ident(_)) && matches!(self.peek2(), Tok::Colon) {
+            let name = self.expect_ident("argument name");
+            self.bump(); // colon
+            let value = self.expr();
+            let span = start.merge(expr_span(&value));
+            return Arg { name: Some(name), value, span };
+        }
+        let value = self.expr();
+        let span = expr_span(&value);
+        Arg { name: None, value, span }
+    }
+
+    // if/for/asm expression stubs — replaced in Tasks 11–12 (WP6).
+    fn if_expr(&mut self) -> Expr { unimplemented!("Task 11") }
+    fn for_expr(&mut self) -> Expr { unimplemented!("Task 11") }
+    fn asm_expr(&mut self) -> Expr { unimplemented!("Task 12") }
+}
+
+/// Span of any expression node (helper for span merging).
+pub(crate) fn expr_span(e: &Expr) -> Span {
+    match e {
+        Expr::Int(_, s) | Expr::Float(_, s) | Expr::Str(_, s) => *s,
+        Expr::Path(p) => p.span,
+        Expr::Unary { span, .. } | Expr::Binary { span, .. } | Expr::Call { span, .. }
+        | Expr::StructLit { span, .. } | Expr::ArrayLit { span, .. }
+        | Expr::TupleLit { span, .. } | Expr::Range { span, .. } | Expr::If { span, .. }
+        | Expr::For { span, .. } | Expr::Asm { span, .. } => *span,
+    }
+}
+
+/// Test-only hook: parse a bare expression.
+pub fn parse_expr_for_tests(src: &str) -> Expr {
+    let (tokens, errs) = crate::lexer::lex(src, sigil_span::SourceId(0));
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut p = Parser::new(tokens);
+    let e = p.expr();
+    assert!(p.diags.is_empty(), "{:?}", p.diags);
+    e
 }
