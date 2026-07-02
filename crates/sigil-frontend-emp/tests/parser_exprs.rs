@@ -62,6 +62,13 @@ fn deep_nesting_is_an_error_not_an_abort() {
 }
 
 #[test]
+fn deep_unary_chain_is_an_error_not_an_abort() {
+    let inner = format!("{}1", "-".repeat(10_000));
+    let (_, diags) = parse_str(&format!("module m\nconst X = {inner}\n"));
+    assert!(!diags.is_empty());
+}
+
+#[test]
 fn error_arm_preserves_closers() {
     // S{a:} — one diagnostic for the missing value; the `}` must NOT be eaten,
     // so there is no bogus "expected `}`, found Eof" cascade.

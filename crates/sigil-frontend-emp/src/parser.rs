@@ -346,6 +346,14 @@ impl Parser {
     }
 
     fn unary_expr(&mut self) -> Expr {
+        // Same depth guard as `primary_expr`: a long `-`/`!`/`~` chain would
+        // otherwise recurse once per operator — bounded only by input size,
+        // not by a constant — and abort the process with a stack overflow.
+        if self.depth >= MAX_EXPR_DEPTH {
+            let span = self.span();
+            self.diag_at(span, "expression nesting too deep (max 128)");
+            return Expr::Path(Path { segments: vec!["<error>".into()], span });
+        }
         let start = self.span();
         let op = match self.peek() {
             Tok::Minus => Some(UnOp::Neg),
@@ -355,7 +363,9 @@ impl Parser {
         };
         if let Some(op) = op {
             self.bump();
+            self.depth += 1;
             let expr = self.unary_expr();
+            self.depth -= 1;
             let span = start.merge(expr_span(&expr));
             return Expr::Unary { op, expr: Box::new(expr), span };
         }
@@ -365,9 +375,8 @@ impl Parser {
     fn primary_expr(&mut self) -> Expr {
         // Depth guard: error out instead of recursing into pathologically
         // nested input (e.g. hundreds of `(`), which would abort the process
-        // with a stack overflow. Guarding here is sufficient — `unary_expr`
-        // and `expr_bp` recurse only via primary or with strictly consumed
-        // tokens.
+        // with a stack overflow. `expr_bp` recurses only via unary/primary,
+        // so guarding these two covers every unbounded-recursion path.
         if self.depth >= MAX_EXPR_DEPTH {
             let span = self.span();
             self.diag_at(span, "expression nesting too deep (max 128)");
