@@ -1,0 +1,7 @@
+[package]
+name = "sigil-frontend-emp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sigil-span = { path = "../sigil-span" }

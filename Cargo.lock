@@ -21,6 +21,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-frontend-emp"
+version = "0.1.0"
+dependencies = [
+ "sigil-span",
+]
+
+[[package]]
 name = "sigil-ir"
 version = "0.1.0"
 dependencies = [
