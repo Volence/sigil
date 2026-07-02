@@ -76,14 +76,7 @@ impl Parser {
     /// Parse a whole file: module header, module-level attributes, then items.
     pub fn file(&mut self) -> File {
         self.skip_newlines();
-        let diags_before = self.diags.len();
         let module = self.module_decl();
-        if self.diags.len() > diags_before {
-            // Fatal: no valid `module` header to anchor on. Item parsers for
-            // const/enum/.../section land in Tasks 7-13; bail out here
-            // rather than falling into their `unimplemented!` stubs.
-            return File { module, attrs: Vec::new(), items: Vec::new() };
-        }
         // module-level attributes: `@as_compat`, `@allow(naming.pascal)`
         let mut attrs = Vec::new();
         loop {
@@ -193,6 +186,7 @@ impl Parser {
         // parse dotted path, stopping before `.{` and `.*`
         let pstart = self.span();
         let mut segments = vec![self.expect_ident("module path")];
+        let mut base_end = self.prev_span().end;
         let mut names = UseNames::Whole;
         loop {
             if !self.at(&Tok::Dot) { break; }
@@ -200,6 +194,7 @@ impl Parser {
                 Tok::Ident(_) => {
                     self.bump();
                     segments.push(self.expect_ident("name"));
+                    base_end = self.prev_span().end;
                 }
                 Tok::Star => { self.bump(); self.bump(); names = UseNames::Glob; break; }
                 Tok::LBrace => {
@@ -221,7 +216,7 @@ impl Parser {
         }
         let base = Path {
             segments,
-            span: Span { source: pstart.source, start: pstart.start, end: self.prev_span().end },
+            span: Span { source: pstart.source, start: pstart.start, end: base_end },
         };
         // Span computed before the line end so the newline isn't included.
         let span = start.merge(self.prev_span());
@@ -229,15 +224,68 @@ impl Parser {
         UseDecl { base, names, span }
     }
 
+    fn ty(&mut self) -> Type {
+        match self.peek().clone() {
+            Tok::Star => { self.bump(); Type::Ptr(Box::new(self.ty())) }
+            Tok::LBracket => {
+                self.bump();
+                let elem = self.ty();
+                self.expect(&Tok::Semi, "`;` in array type");
+                let len = self.expr();
+                self.expect(&Tok::RBracket, "`]`");
+                Type::Array(Box::new(elem), len)
+            }
+            Tok::LParen => {
+                self.bump();
+                let mut elems = vec![self.ty()];
+                while self.eat(&Tok::Comma) { elems.push(self.ty()); }
+                self.expect(&Tok::RParen, "`)`");
+                Type::Tuple(elems)
+            }
+            _ => Type::Named(self.path()),
+        }
+    }
+
+    fn const_decl(&mut self, public: bool) -> ConstDecl {
+        let start = self.span();
+        self.bump(); // `const`
+        let name = self.expect_ident("constant name");
+        let ty = if self.eat(&Tok::Colon) { Some(self.ty()) } else { None };
+        self.expect(&Tok::Eq, "`=`");
+        let value = self.expr();
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        ConstDecl { public, name, ty, value, span }
+    }
+
+    fn enum_decl(&mut self, public: bool) -> EnumDecl {
+        let start = self.span();
+        self.bump(); // `enum`
+        let name = self.expect_ident("enum name");
+        self.expect(&Tok::Colon, "`:` (enums require a repr, e.g. `: u8`)");
+        let repr = self.ty();
+        self.expect(&Tok::LBrace, "`{`");
+        let mut variants = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            let vspan = self.span();
+            let vname = self.expect_ident("variant name");
+            let value = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
+            variants.push((vname, value, vspan));
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        EnumDecl { public, name, repr, variants, span: start.merge(self.prev_span()) }
+    }
+
     // ---- stubs replaced by later tasks (each panics with the task that owns it) ----
     // These are unreachable via `parser_decls.rs` today (no test exercises
-    // const/enum/bitfield/struct/vars/data/proc/comptime-fn/section bodies
-    // yet), so clippy sees them as effectively dead until their owning WP
-    // lands; keep them `unimplemented!` per spec rather than deleting.
-    #[allow(dead_code)] // owned by Task 7
-    fn const_decl(&mut self, _p: bool) -> ConstDecl { unimplemented!("Task 7") }
-    #[allow(dead_code)] // owned by Task 7
-    fn enum_decl(&mut self, _p: bool) -> EnumDecl { unimplemented!("Task 7") }
+    // bitfield/struct/vars/data/proc/comptime-fn/section bodies yet), so
+    // clippy sees them as effectively dead until their owning WP lands; keep
+    // them `unimplemented!` per spec rather than deleting.
     #[allow(dead_code)] // owned by Task 8
     fn bitfield_decl(&mut self, _p: bool) -> BitfieldDecl { unimplemented!("Task 8") }
     #[allow(dead_code)] // owned by Task 8

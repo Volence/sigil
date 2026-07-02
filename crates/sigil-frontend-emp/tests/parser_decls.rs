@@ -66,3 +66,45 @@ fn empty_attr_args() {
     let f = ok("module m\n@as_compat()\nuse engine.gfx.*\n");
     assert_eq!(f.attrs[0].args.len(), 0);
 }
+
+#[test]
+fn const_decls() {
+    let f = ok("module m\nconst WAIT_TIME: u8 = 64\npub const TAU: float = 6.283185307179586\nconst Def = ObjDef{ code: init }\n");
+    let Item::Const(c) = &f.items[0] else { panic!() };
+    assert_eq!(c.name, "WAIT_TIME");
+    assert!(!c.public);
+    assert!(matches!(c.value, Expr::Int(64, _)));
+    let Item::Const(c) = &f.items[1] else { panic!() };
+    assert!(c.public);
+    let Item::Const(c) = &f.items[2] else { panic!() };
+    assert!(c.ty.is_none()); // inferred from ObjDef{..}
+}
+
+#[test]
+fn enum_decl() {
+    let f = ok("module m\nenum Anim: u8 { Idle = 0, Seed = 1, Shoot = 2 }\n");
+    let Item::Enum(e) = &f.items[0] else { panic!() };
+    assert_eq!(e.name, "Anim");
+    assert_eq!(e.variants.len(), 3);
+    assert_eq!(e.variants[2].0, "Shoot");
+}
+
+#[test]
+fn types_parse() {
+    let f = ok("module m\nconst A: *Sst = x\nconst B: [i8; 256] = y\nconst C: (Data, Code) = z\n");
+    let Item::Const(c) = &f.items[0] else { panic!() };
+    assert!(matches!(c.ty, Some(Type::Ptr(_))));
+    let Item::Const(c) = &f.items[1] else { panic!() };
+    assert!(matches!(c.ty, Some(Type::Array(_, _))));
+    let Item::Const(c) = &f.items[2] else { panic!() };
+    assert!(matches!(c.ty, Some(Type::Tuple(_))));
+}
+
+#[test]
+fn missing_module_header_still_parses_items() {
+    // follow-up: with const_decl implemented, the parser must recover past a
+    // missing module header and still parse the items.
+    let (f, diags) = parse_str("const X: u8 = 1\n");
+    assert!(!diags.is_empty());
+    assert!(matches!(&f.items[0], Item::Const(c) if c.name == "X"));
+}
