@@ -17,6 +17,15 @@ pub struct Span {
     pub end: u32,
 }
 
+impl Span {
+    /// Combine two spans into the smallest span containing both. Assumes
+    /// both spans belong to the same source; the result keeps `self`'s
+    /// [`SourceId`].
+    pub fn merge(self, other: Span) -> Span {
+        Span { source: self.source, start: self.start.min(other.start), end: self.end.max(other.end) }
+    }
+}
+
 /// Stores source texts and maps [`Span`]s back to human-readable positions.
 #[derive(Default)]
 pub struct SourceMap {
