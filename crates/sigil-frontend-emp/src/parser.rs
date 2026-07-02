@@ -29,12 +29,26 @@ pub struct Parser {
     /// in `Operand::Splice`/`TextOrSplice::Splice`), so this only matters
     /// for splices nested *inside* a larger expression.
     splice_ctx: bool,
+    /// Statement-block nesting depth, guarded separately from the
+    /// expression `depth` counter: `if`/`while`/`for` headers parse a
+    /// condition EXPRESSION before their block, so sharing one counter
+    /// would let the condition's guard pre-fire (consuming nothing) right
+    /// before `stmt_block`'s guard, desyncing its brace recovery.
+    block_depth: u32,
 }
 
 impl Parser {
     /// Build a parser over an already-lexed token stream (must end in `Eof`).
     pub fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0, diags: Vec::new(), depth: 0, no_struct_lit: false, splice_ctx: false }
+        Parser {
+            toks,
+            pos: 0,
+            diags: Vec::new(),
+            depth: 0,
+            no_struct_lit: false,
+            splice_ctx: false,
+            block_depth: 0,
+        }
     }
     /// Consume the parser, returning every diagnostic collected so far.
     pub fn into_diagnostics(self) -> Vec<Diagnostic> { self.diags }
@@ -829,30 +843,38 @@ impl Parser {
 
     /// `{ stmt* }` — a comptime statement block (newline-separated statements).
     ///
-    /// Guarded by the same `depth` counter as expressions/types: block
-    /// nesting is shaped like a paren-bomb (`if x {` nested hundreds of
-    /// times), so an unbounded recursive descent here would abort the
-    /// process on adversarial input instead of producing a diagnostic.
+    /// Guarded by its own `block_depth` counter (NOT the expression `depth`
+    /// counter): block nesting is shaped like a paren-bomb (`if x {` nested
+    /// hundreds of times), so an unbounded recursive descent here would
+    /// abort the process on adversarial input instead of producing a
+    /// diagnostic. The counter must be separate because `if`/`while`/`for`
+    /// parse a condition expression right before this block — a shared
+    /// counter lets the condition guard pre-fire without consuming anything,
+    /// leaving this guard's recovery staring at a non-`{` token.
     fn stmt_block(&mut self) -> Vec<Stmt> {
-        if self.depth >= MAX_EXPR_DEPTH {
+        if self.block_depth >= MAX_EXPR_DEPTH {
             let span = self.span();
             self.diag_at(span, "block nesting too deep (max 128)");
-            // Do not recurse into `stmt`/`stmt_block` again: skip to the
-            // matching close brace via a bounded, depth-tracked scan so
-            // parsing can resume after this block without recursing.
+            // Do not recurse into `stmt`/`stmt_block` again. Recovery must
+            // CONSUME so the caller provably makes progress: scan forward to
+            // the block's `{` (whatever garbage precedes it), then
+            // balance-scan to its matching `}` and consume that too. Only
+            // Eof stops us early.
+            while !self.at(&Tok::LBrace) && !self.at(&Tok::Eof) { self.bump(); }
             if self.eat(&Tok::LBrace) {
                 let mut d = 1i32;
                 while d > 0 && !self.at(&Tok::Eof) {
                     match self.peek() {
-                        Tok::LBrace => { d += 1; self.bump(); }
-                        Tok::RBrace => { d -= 1; self.bump(); }
-                        _ => { self.bump(); }
+                        Tok::LBrace => d += 1,
+                        Tok::RBrace => d -= 1,
+                        _ => {}
                     }
+                    self.bump();
                 }
             }
             return Vec::new();
         }
-        self.depth += 1;
+        self.block_depth += 1;
         self.expect(&Tok::LBrace, "`{`");
         let mut out = Vec::new();
         loop {
@@ -861,7 +883,7 @@ impl Parser {
             out.push(self.stmt());
         }
         self.expect(&Tok::RBrace, "`}`");
-        self.depth -= 1;
+        self.block_depth -= 1;
         out
     }
 
@@ -869,6 +891,35 @@ impl Parser {
     /// `comptime block { }`/`if`/`while`/`for` body).
     fn stmt(&mut self) -> Stmt {
         let start = self.span();
+        // Reserved statement keywords cannot be assignment targets:
+        // `let = 5` gets ONE diagnostic and a skip to line end, not a
+        // cascade of expected-ident/expected-expression errors. (`patch`
+        // and `bind` are deliberately absent — they stay contextual and
+        // fall through to the assignment path below.)
+        if let Tok::Ident(kw) = self.peek() {
+            if matches!(kw.as_str(), "let" | "return" | "if" | "else" | "for" | "while" | "comptime")
+                && matches!(self.peek2(), Tok::Eq)
+            {
+                let kw = kw.clone();
+                self.diag_at(start, format!("`{kw}` is reserved and cannot be assigned"));
+                self.bump(); // the keyword
+                // skip the rest of the line; never consume the newline/closer
+                while !matches!(self.peek(), Tok::Newline | Tok::RBrace | Tok::Eof) {
+                    self.bump();
+                }
+                return Stmt::Expr(Expr::Path(Path { segments: vec!["<error>".into()], span: start }));
+            }
+        }
+        // `else` with no preceding `if`: diagnose once, discard its block
+        // (if any) so recovery stays clean, and make progress.
+        if self.at_kw("else") {
+            self.diag_at(start, "`else` without a matching `if`");
+            self.bump(); // `else`
+            if self.at(&Tok::LBrace) {
+                let _ = self.stmt_block();
+            }
+            return Stmt::Expr(Expr::Path(Path { segments: vec!["<error>".into()], span: start }));
+        }
         if self.eat_kw("let") {
             if self.at(&Tok::LParen) {
                 self.bump();
@@ -924,7 +975,11 @@ impl Parser {
             self.expect_line_end_or_rbrace();
             return Stmt::Return { value, span };
         }
-        if self.eat_kw("patch") {
+        // `patch`/`bind` are CONTEXTUAL: `patch = 5` is an assignment to a
+        // variable named `patch` (falls through to the assignment path),
+        // not a malformed patch declaration — hence the `!Eq` lookahead.
+        if self.at_kw("patch") && !matches!(self.peek2(), Tok::Eq) {
+            self.bump(); // `patch`
             let name = self.expect_ident("patch slot name");
             self.expect(&Tok::Colon, "`:`");
             let ty = self.ty();
@@ -932,7 +987,8 @@ impl Parser {
             self.expect_line_end_or_rbrace();
             return Stmt::Patch { name, ty, span };
         }
-        if self.eat_kw("bind") {
+        if self.at_kw("bind") && !matches!(self.peek2(), Tok::Eq) {
+            self.bump(); // `bind`
             let name = self.expect_ident("patch slot name");
             self.expect(&Tok::Eq, "`=`");
             let value = self.expr();

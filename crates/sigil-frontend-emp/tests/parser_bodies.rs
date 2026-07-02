@@ -190,11 +190,40 @@ fn no_struct_lit_in_condition_position() {
 
 #[test]
 fn deep_block_nesting_is_an_error_not_an_abort() {
+    // newline-per-statement variant
     let opens = "if x {\n".repeat(600);
     let closes = "}\n".repeat(600);
-    let src = format!("module m\ncomptime fn f(x: int) -> int {{\n{opens}{closes}return 1\n}}\n");
-    let (_, diags) = sigil_frontend_emp::parse_str(&src);
+    let src = format!("module m\ncomptime fn f(x: int) -> int {{\n{opens}{closes}return 1\n}}\nconst GOOD: u8 = 1\n");
+    let (f, diags) = parse_str(&src);
     assert!(!diags.is_empty());
+    assert!(diags.len() < 50, "diagnostic flood: {}", diags.len());
+    assert!(f.items.iter().any(|i| matches!(i, Item::Const(c) if c.name == "GOOD")));
+
+    // one-line variant (no newlines inside the bomb)
+    let opens = "if x { ".repeat(300);
+    let closes = "} ".repeat(300);
+    let src = format!("module m\ncomptime fn f(x: int) -> int {{\n{opens}{closes}\nreturn 1\n}}\nconst GOOD: u8 = 1\n");
+    let (f, diags) = parse_str(&src);
+    assert!(!diags.is_empty());
+    assert!(f.items.iter().any(|i| matches!(i, Item::Const(c) if c.name == "GOOD")));
+}
+
+#[test]
+fn patch_and_bind_are_contextual_let_is_reserved() {
+    // variable named patch/bind: assignment works
+    let f = ok("module m\ncomptime fn f() -> int {\n    comptime var patch: int = 0\n    patch = 5\n    bind = 6\n    return patch\n}\n");
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    assert!(matches!(&cf.body[1], Stmt::Assign { target, .. } if target.segments == vec!["patch"]));
+    assert!(matches!(&cf.body[2], Stmt::Assign { target, .. } if target.segments == vec!["bind"]));
+    // let is reserved: exactly one diagnostic, no cascade
+    let (_, diags) = parse_str("module m\ncomptime fn f() -> int {\n    let = 5\n    return 1\n}\n");
+    assert_eq!(diags.len(), 1, "{diags:?}");
+}
+
+#[test]
+fn dangling_else_is_diagnosed() {
+    let (_, diags) = parse_str("module m\ncomptime fn f() -> int {\n    else { 1 }\n    return 1\n}\n");
+    assert_eq!(diags.len(), 1, "{diags:?}");
 }
 
 #[test]
