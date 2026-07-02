@@ -101,6 +101,14 @@ fn types_parse() {
 }
 
 #[test]
+fn use_base_span_excludes_names() {
+    let src = "module m\nuse engine.objects.{Sst, Draw_Sprite}\n";
+    let f = ok(src);
+    let Item::Use(u) = &f.items[0] else { panic!() };
+    assert_eq!(&src[u.base.span.start as usize..u.base.span.end as usize], "engine.objects");
+}
+
+#[test]
 fn missing_module_header_still_parses_items() {
     // follow-up: with const_decl implemented, the parser must recover past a
     // missing module header and still parse the items.

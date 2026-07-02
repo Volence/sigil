@@ -3,18 +3,23 @@ use crate::ast::*;
 use crate::lexer::{Tok, Token};
 use sigil_span::{Diagnostic, Level, Span};
 
+/// Maximum expression nesting depth before the parser errors out instead of
+/// recursing (guards against stack-overflow aborts on pathological input).
+const MAX_EXPR_DEPTH: u32 = 128;
+
 /// A recursive-descent parser over a token stream, collecting diagnostics
 /// instead of failing fast.
 pub struct Parser {
     toks: Vec<Token>,
     pos: usize,
     diags: Vec<Diagnostic>,
+    depth: u32,
 }
 
 impl Parser {
     /// Build a parser over an already-lexed token stream (must end in `Eof`).
     pub fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0, diags: Vec::new() }
+        Parser { toks, pos: 0, diags: Vec::new(), depth: 0 }
     }
     /// Consume the parser, returning every diagnostic collected so far.
     pub fn into_diagnostics(self) -> Vec<Diagnostic> { self.diags }
@@ -358,6 +363,23 @@ impl Parser {
     }
 
     fn primary_expr(&mut self) -> Expr {
+        // Depth guard: error out instead of recursing into pathologically
+        // nested input (e.g. hundreds of `(`), which would abort the process
+        // with a stack overflow. Guarding here is sufficient — `unary_expr`
+        // and `expr_bp` recurse only via primary or with strictly consumed
+        // tokens.
+        if self.depth >= MAX_EXPR_DEPTH {
+            let span = self.span();
+            self.diag_at(span, "expression nesting too deep (max 128)");
+            return Expr::Path(Path { segments: vec!["<error>".into()], span });
+        }
+        self.depth += 1;
+        let r = self.primary_expr_inner();
+        self.depth -= 1;
+        r
+    }
+
+    fn primary_expr_inner(&mut self) -> Expr {
         let start = self.span();
         match self.peek().clone() {
             Tok::Int(v) => { self.bump(); Expr::Int(v, start) }
@@ -382,11 +404,18 @@ impl Parser {
             Tok::LParen => {
                 self.bump();
                 let mut elems = vec![self.expr()];
-                while self.eat(&Tok::Comma) { elems.push(self.expr()); }
+                let mut saw_comma = false;
+                while self.eat(&Tok::Comma) {
+                    saw_comma = true;
+                    if self.at(&Tok::RParen) { break; } // trailing comma
+                    elems.push(self.expr());
+                }
                 self.expect(&Tok::RParen, "`)`");
-                if elems.len() == 1 {
+                if !saw_comma {
+                    // plain grouping: `(e)`
                     elems.pop().unwrap()
                 } else {
+                    // any comma makes a tuple, so `(1,)` is a 1-element TupleLit
                     Expr::TupleLit { elems, span: start.merge(self.prev_span()) }
                 }
             }
@@ -412,6 +441,7 @@ impl Parser {
                                 self.skip_newlines();
                                 if !self.eat(&Tok::Comma) { break; }
                                 self.skip_newlines();
+                                if self.at(&Tok::RParen) { break; } // trailing comma
                             }
                         }
                         self.expect(&Tok::RParen, "`)`");
@@ -441,7 +471,12 @@ impl Parser {
             }
             other => {
                 self.diag_at(start, format!("expected an expression, found {other:?}"));
-                self.bump();
+                // Never consume a closer (or newline) an enclosing frame will
+                // expect — bumping it would cascade into bogus diagnostics.
+                if !matches!(self.peek(),
+                    Tok::RBrace | Tok::RParen | Tok::RBracket | Tok::Newline) {
+                    self.bump();
+                }
                 Expr::Path(Path { segments: vec!["<error>".into()], span: start })
             }
         }

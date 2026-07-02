@@ -1,4 +1,5 @@
 use sigil_frontend_emp::ast::*;
+use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::parser::parse_expr_for_tests;
 
 fn expr(src: &str) -> Expr {
@@ -51,4 +52,28 @@ fn unary_and_parens() {
     assert!(matches!(expr("-1"), Expr::Unary { op: UnOp::Neg, .. }));
     assert!(matches!(expr("!(a && b)"), Expr::Unary { op: UnOp::Not, .. }));
     assert!(matches!(expr("~x"), Expr::Unary { op: UnOp::BitNot, .. }));
+}
+
+#[test]
+fn deep_nesting_is_an_error_not_an_abort() {
+    let inner = format!("{}1{}", "(".repeat(600), ")".repeat(600));
+    let (_, diags) = parse_str(&format!("module m\nconst X = {inner}\n"));
+    assert!(!diags.is_empty());
+}
+
+#[test]
+fn error_arm_preserves_closers() {
+    // S{a:} — one diagnostic for the missing value; the `}` must NOT be eaten,
+    // so there is no bogus "expected `}`, found Eof" cascade.
+    let (_, diags) = parse_str("module m\nconst X = S{a:}\n");
+    assert_eq!(diags.len(), 1, "{diags:?}");
+}
+
+#[test]
+fn trailing_commas_and_one_tuple() {
+    let Expr::Call { args, .. } = expr("f(a: 1, b: 2,)") else { panic!() };
+    assert_eq!(args.len(), 2);
+    assert!(matches!(expr("(1,)"), Expr::TupleLit { elems, .. } if elems.len() == 1));
+    // plain grouping unchanged:
+    assert!(matches!(expr("(1)"), Expr::Int(1, _)));
 }
