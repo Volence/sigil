@@ -300,15 +300,98 @@ impl Parser {
         EnumDecl { public, name, repr, variants, span: start.merge(self.prev_span()) }
     }
 
+    /// Parse a `bitfield Name: repr { field: bits [@ anchor], ... }` declaration.
+    fn bitfield_decl(&mut self, public: bool) -> BitfieldDecl {
+        let start = self.span();
+        self.bump(); // `bitfield`
+        let name = self.expect_ident("bitfield name");
+        self.expect(&Tok::Colon, "`:` (bitfields require a repr)");
+        let repr = self.ty();
+        self.expect(&Tok::LBrace, "`{`");
+        let mut fields = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            let fspan = self.span();
+            let fname = self.expect_ident("field name");
+            self.expect(&Tok::Colon, "`:`");
+            let bits = match self.peek().clone() {
+                Tok::Int(v) if v > 0 => { self.bump(); v as u32 }
+                _ => {
+                    let sp = self.span();
+                    self.diag_at(sp, "expected a bit width");
+                    if !matches!(self.peek(), Tok::RBrace | Tok::Newline) {
+                        self.bump();
+                    }
+                    1
+                }
+            };
+            let anchor = if self.eat(&Tok::At) {
+                match self.peek().clone() {
+                    Tok::Int(v) if v >= 0 => { self.bump(); Some(v as u32) }
+                    _ => {
+                        let sp = self.span();
+                        self.diag_at(sp, "expected a bit anchor after `@`");
+                        if !matches!(self.peek(), Tok::RBrace | Tok::Newline) {
+                            self.bump();
+                        }
+                        None
+                    }
+                }
+            } else { None };
+            fields.push(BitfieldField { name: fname, bits, anchor, span: fspan });
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        BitfieldDecl { public, name, repr, fields, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse a `struct Name [(size: expr)] { field: ty [@ offset] [= default], ... }` declaration.
+    fn struct_decl(&mut self, public: bool) -> StructDecl {
+        let start = self.span();
+        self.bump(); // `struct`
+        let name = self.expect_ident("struct name");
+        let size = if self.eat(&Tok::LParen) {
+            if !self.eat_kw("size") {
+                let sp = self.span();
+                self.diag_at(sp, "expected `size:` in struct attribute list");
+            }
+            self.expect(&Tok::Colon, "`:`");
+            let e = self.expr();
+            self.expect(&Tok::RParen, "`)`");
+            Some(e)
+        } else { None };
+        self.expect(&Tok::LBrace, "`{`");
+        let mut fields = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            let fspan = self.span();
+            let fname = self.expect_ident("field name");
+            self.expect(&Tok::Colon, "`:`");
+            let fty = self.ty();
+            let offset = if self.eat(&Tok::At) { Some(self.expr()) } else { None };
+            let default = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
+            fields.push(StructField { name: fname, ty: fty, offset, default, span: fspan });
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        StructDecl { public, name, size, fields, span: start.merge(self.prev_span()) }
+    }
+
     // ---- stubs replaced by later tasks (each panics with the task that owns it) ----
     // These are unreachable via `parser_decls.rs` today (no test exercises
-    // bitfield/struct/vars/data/proc/comptime-fn/section bodies yet), so
-    // clippy sees them as effectively dead until their owning WP lands; keep
-    // them `unimplemented!` per spec rather than deleting.
-    #[allow(dead_code)] // owned by Task 8
-    fn bitfield_decl(&mut self, _p: bool) -> BitfieldDecl { unimplemented!("Task 8") }
-    #[allow(dead_code)] // owned by Task 8
-    fn struct_decl(&mut self, _p: bool) -> StructDecl { unimplemented!("Task 8") }
+    // vars/data/proc/comptime-fn/section bodies yet), so clippy sees them as
+    // effectively dead until their owning WP lands; keep them `unimplemented!`
+    // per spec rather than deleting.
     #[allow(dead_code)] // owned by Task 9
     fn vars_decl(&mut self, _p: bool) -> VarsDecl { unimplemented!("Task 9") }
     #[allow(dead_code)] // owned by Task 9

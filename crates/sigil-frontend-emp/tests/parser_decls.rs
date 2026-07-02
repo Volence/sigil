@@ -123,3 +123,30 @@ fn missing_module_header_still_parses_items() {
     assert!(!diags.is_empty());
     assert!(matches!(&f.items[0], Item::Const(c) if c.name == "X"));
 }
+
+#[test]
+fn bitfield_decl() {
+    let f = ok("module m\nbitfield ArtTile: u16 { pri: 1, pal: 2, tile: 11 @ 0 }\n");
+    let Item::Bitfield(b) = &f.items[0] else { panic!() };
+    assert_eq!(b.fields.len(), 3);
+    assert_eq!(b.fields[2].bits, 11);
+    assert_eq!(b.fields[2].anchor, Some(0));
+    assert_eq!(b.fields[0].anchor, None);
+}
+
+#[test]
+fn struct_decl_with_size_offsets_defaults() {
+    let f = ok(concat!(
+        "module m\n",
+        "struct Sst (size: $50) {\n",
+        "    id: u16,\n",
+        "    art: ArtTile = 0,\n",
+        "    sst_custom: [u8; 34] @ $2E,\n",
+        "}\n"));
+    let Item::Struct(s) = &f.items[0] else { panic!() };
+    assert!(s.size.is_some());
+    assert_eq!(s.fields.len(), 3);
+    assert!(s.fields[1].default.is_some());
+    assert!(s.fields[2].offset.is_some());
+}
+
