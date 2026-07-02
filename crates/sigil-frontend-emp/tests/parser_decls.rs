@@ -46,3 +46,23 @@ fn missing_module_header_is_diagnosed() {
     let (_, diags) = parse_str("const X: u8 = 1\n");
     assert!(!diags.is_empty());
 }
+
+#[test]
+fn decl_spans_cover_whole_declaration() {
+    let src = "module badniks.pitcher_plant in obj_bank\n";
+    let f = ok(src);
+    assert_eq!(f.module.span.start, 0);
+    assert_eq!(f.module.span.end as usize, src.trim_end().len());
+}
+
+#[test]
+fn pub_use_is_diagnosed() {
+    let (_, diags) = parse_str("module m\npub use engine.gfx.*\n");
+    assert_eq!(diags.len(), 1);
+}
+
+#[test]
+fn empty_attr_args() {
+    let f = ok("module m\n@as_compat()\nuse engine.gfx.*\n");
+    assert_eq!(f.attrs[0].args.len(), 0);
+}

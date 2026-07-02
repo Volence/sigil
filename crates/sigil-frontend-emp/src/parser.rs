@@ -94,14 +94,19 @@ impl Parser {
             let name = self.expect_ident("attribute name");
             let mut args = Vec::new();
             if self.eat(&Tok::LParen) {
-                loop {
-                    args.push(self.expr());
-                    if !self.eat(&Tok::Comma) { break; }
+                // `@attr()` is legal: empty parens mean zero args.
+                if !self.at(&Tok::RParen) {
+                    loop {
+                        args.push(self.expr());
+                        if !self.eat(&Tok::Comma) { break; }
+                    }
                 }
                 self.expect(&Tok::RParen, "`)`");
             }
+            // Span computed before the line end so the newline isn't included.
+            let aspan_full = aspan.merge(self.prev_span());
             self.expect_line_end();
-            attrs.push(Attr { name, args, span: aspan.merge(self.prev_span()) });
+            attrs.push(Attr { name, args, span: aspan_full });
         }
         let mut items = Vec::new();
         loop {
@@ -127,8 +132,10 @@ impl Parser {
         }
         let path = self.path();
         let in_section = if self.eat_kw("in") { Some(self.expect_ident("section name")) } else { None };
+        // Span computed before the line end so the newline isn't included.
+        let span = start.merge(self.prev_span());
         self.expect_line_end();
-        ModuleDecl { path, in_section, span: start }
+        ModuleDecl { path, in_section, span }
     }
 
     fn path(&mut self) -> Path {
@@ -145,6 +152,10 @@ impl Parser {
     /// unrecognized opener (caller recovers).
     fn item(&mut self) -> Option<Item> {
         let public = self.eat_kw("pub");
+        if public && (self.at_kw("use") || self.at_kw("section")) {
+            let sp = self.prev_span();
+            self.diag_at(sp, "`pub` is not valid on this declaration");
+        }
         if self.at_kw("use") { return Some(Item::Use(self.use_decl())); }
         if self.at_kw("const") { return Some(Item::Const(self.const_decl(public))); }
         if self.at_kw("enum") { return Some(Item::Enum(self.enum_decl(public))); }
@@ -208,12 +219,14 @@ impl Parser {
                 _ => break,
             }
         }
-        self.expect_line_end();
         let base = Path {
             segments,
             span: Span { source: pstart.source, start: pstart.start, end: self.prev_span().end },
         };
-        UseDecl { base, names, span: start }
+        // Span computed before the line end so the newline isn't included.
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        UseDecl { base, names, span }
     }
 
     // ---- stubs replaced by later tasks (each panics with the task that owns it) ----
