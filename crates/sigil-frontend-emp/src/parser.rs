@@ -141,7 +141,7 @@ impl Parser {
             if self.at(&Tok::Eof) { break; }
             match self.item() {
                 Some(item) => items.push(item),
-                None => self.recover_to_next_decl(),
+                None => self.recover_to_next_decl(false),
             }
         }
         File { module, attrs, items }
@@ -199,13 +199,27 @@ impl Parser {
     }
 
     /// Error recovery: skip until a token that can start a declaration.
-    fn recover_to_next_decl(&mut self) {
+    ///
+    /// `in_block` must be true when the caller is inside a brace-delimited
+    /// item list (i.e. a `section { ... }` body) and false at true top
+    /// level (the whole-file item list, which has no enclosing `{`). This
+    /// matters for a stray `}` seen at brace-depth 0 (relative to where
+    /// recovery started): inside a block that `}` is the block's OWN
+    /// closer, which recovery must leave unconsumed so the caller's own
+    /// `at(&Tok::RBrace)` check (and subsequent `expect`) sees it — bumping
+    /// it here would desync recovery, letting it eat the section's closing
+    /// brace and swallow following top-level items as bogus section
+    /// members. At true top level there is no enclosing `{` to protect, so
+    /// a stray `}` is just garbage to skip past (the old behavior),
+    /// otherwise recovery would loop forever re-diagnosing the same token.
+    fn recover_to_next_decl(&mut self, in_block: bool) {
         const OPENERS: [&str; 11] = ["use", "const", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "comptime", "section", "pub"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
                 Tok::Eof => return,
+                Tok::RBrace if in_block && depth == 0 => return,
                 Tok::LBrace => { depth += 1; self.bump(); }
                 Tok::RBrace => { depth -= 1; self.bump(); }
                 Tok::Ident(s) if depth <= 0 && OPENERS.contains(&s.as_str()) => return,
@@ -1036,12 +1050,46 @@ impl Parser {
         e
     }
 
-    // ---- stubs replaced by later tasks (each panics with the task that owns it) ----
-    // This is unreachable via `parser_decls.rs` today (no test exercises
-    // section bodies yet), so clippy sees it as effectively dead until its
-    // owning WP lands; keep it `unimplemented!` per spec rather than deleting.
-    #[allow(dead_code)] // owned by Task 13
-    fn section_decl(&mut self) -> SectionDecl { unimplemented!("Task 13") }
+    /// Parse a `section name [(attr: value, ...)] [{ items... }]` declaration.
+    ///
+    /// The block form nests ordinary items (`section z80_driver (cpu: z80) {
+    /// data X = ... }`); the bare form (no `{`) declares a section with no
+    /// inline items and ends at the line end, same as other single-line decls.
+    fn section_decl(&mut self) -> SectionDecl {
+        let start = self.span();
+        self.bump(); // `section`
+        let name = self.expect_ident("section name");
+        let mut attrs = Vec::new();
+        if self.eat(&Tok::LParen) {
+            if !self.at(&Tok::RParen) {
+                loop {
+                    let aname = self.expect_ident("attribute name");
+                    self.expect(&Tok::Colon, "`:`");
+                    attrs.push((aname, self.expr()));
+                    if !self.eat(&Tok::Comma) { break; }
+                    if self.at(&Tok::RParen) { break; } // trailing comma
+                }
+            }
+            self.expect(&Tok::RParen, "`)`");
+        }
+        let mut items = Vec::new();
+        if self.eat(&Tok::LBrace) {
+            loop {
+                self.skip_newlines();
+                if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
+                match self.item() {
+                    Some(i) => items.push(i),
+                    None => self.recover_to_next_decl(true),
+                }
+            }
+            self.expect(&Tok::RBrace, "`}`");
+            SectionDecl { name, attrs, items, span: start.merge(self.prev_span()) }
+        } else {
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            SectionDecl { name, attrs, items, span }
+        }
+    }
 
     // ---- expressions (precedence climbing) ----
     // Levels (loosest → tightest):
