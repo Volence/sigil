@@ -14,12 +14,18 @@ pub struct Parser {
     pos: usize,
     diags: Vec<Diagnostic>,
     depth: u32,
+    /// When true, a `Path` immediately followed by `{` is NOT parsed as a
+    /// struct literal — set while parsing `if`/`while` conditions and `for`
+    /// iterables (mirrors Rust's rule), and reset inside any delimited
+    /// subexpression (parens, brackets, call args, struct-literal field
+    /// values) where a struct literal is unambiguous again.
+    no_struct_lit: bool,
 }
 
 impl Parser {
     /// Build a parser over an already-lexed token stream (must end in `Eof`).
     pub fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0, diags: Vec::new(), depth: 0 }
+        Parser { toks, pos: 0, diags: Vec::new(), depth: 0, no_struct_lit: false }
     }
     /// Consume the parser, returning every diagnostic collected so far.
     pub fn into_diagnostics(self) -> Vec<Diagnostic> { self.diags }
@@ -766,13 +772,191 @@ impl Parser {
         }
     }
 
+    /// Parse a `comptime fn name(params...) [-> ret] { body... }` declaration.
+    fn comptime_fn_decl(&mut self, public: bool) -> ComptimeFnDecl {
+        let start = self.span();
+        self.bump(); // `comptime`
+        if !self.eat_kw("fn") {
+            let sp = self.span();
+            self.diag_at(sp, "expected `fn` after `comptime` at item position");
+        }
+        let name = self.expect_ident("function name");
+        self.expect(&Tok::LParen, "`(`");
+        let mut params = Vec::new();
+        if !self.at(&Tok::RParen) {
+            loop {
+                let pspan = self.span();
+                let pname = self.expect_ident("parameter name");
+                self.expect(&Tok::Colon, "`:`");
+                let pty = self.ty();
+                params.push((pname, pty, pspan));
+                if !self.eat(&Tok::Comma) { break; }
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.expect(&Tok::RParen, "`)`");
+        let ret = if self.eat(&Tok::Arrow) { Some(self.ty()) } else { None };
+        let body = self.stmt_block();
+        ComptimeFnDecl { public, name, params, ret, body, span: start.merge(self.prev_span()) }
+    }
+
+    /// `{ stmt* }` — a comptime statement block (newline-separated statements).
+    ///
+    /// Guarded by the same `depth` counter as expressions/types: block
+    /// nesting is shaped like a paren-bomb (`if x {` nested hundreds of
+    /// times), so an unbounded recursive descent here would abort the
+    /// process on adversarial input instead of producing a diagnostic.
+    fn stmt_block(&mut self) -> Vec<Stmt> {
+        if self.depth >= MAX_EXPR_DEPTH {
+            let span = self.span();
+            self.diag_at(span, "block nesting too deep (max 128)");
+            // Do not recurse into `stmt`/`stmt_block` again: skip to the
+            // matching close brace via a bounded, depth-tracked scan so
+            // parsing can resume after this block without recursing.
+            if self.eat(&Tok::LBrace) {
+                let mut d = 1i32;
+                while d > 0 && !self.at(&Tok::Eof) {
+                    match self.peek() {
+                        Tok::LBrace => { d += 1; self.bump(); }
+                        Tok::RBrace => { d -= 1; self.bump(); }
+                        _ => { self.bump(); }
+                    }
+                }
+            }
+            return Vec::new();
+        }
+        self.depth += 1;
+        self.expect(&Tok::LBrace, "`{`");
+        let mut out = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
+            out.push(self.stmt());
+        }
+        self.expect(&Tok::RBrace, "`}`");
+        self.depth -= 1;
+        out
+    }
+
+    /// A single comptime statement inside a `comptime fn` body (or a nested
+    /// `comptime block { }`/`if`/`while`/`for` body).
+    fn stmt(&mut self) -> Stmt {
+        let start = self.span();
+        if self.eat_kw("let") {
+            if self.at(&Tok::LParen) {
+                self.bump();
+                let mut names = vec![self.expect_ident("name")];
+                while self.eat(&Tok::Comma) { names.push(self.expect_ident("name")); }
+                self.expect(&Tok::RParen, "`)`");
+                self.expect(&Tok::Eq, "`=`");
+                let value = self.expr();
+                let span = start.merge(self.prev_span());
+                self.expect_line_end_or_rbrace();
+                return Stmt::LetTuple { names, value, span };
+            }
+            let name = self.expect_ident("name");
+            self.expect(&Tok::Eq, "`=`");
+            let value = self.expr();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end_or_rbrace();
+            return Stmt::Let { name, value, span };
+        }
+        if self.at_kw("comptime") {
+            match self.peek2().clone() {
+                Tok::Ident(s) if s == "block" => {
+                    self.bump(); self.bump();
+                    let body = self.stmt_block();
+                    return Stmt::ComptimeBlock { body, span: start.merge(self.prev_span()) };
+                }
+                Tok::Ident(s) if s == "var" => {
+                    self.bump(); self.bump();
+                    let name = self.expect_ident("variable name");
+                    let ty = if self.eat(&Tok::Colon) { Some(self.ty()) } else { None };
+                    self.expect(&Tok::Eq, "`=`");
+                    let value = self.expr();
+                    let span = start.merge(self.prev_span());
+                    self.expect_line_end_or_rbrace();
+                    return Stmt::Var { name, ty, value, span };
+                }
+                // `comptime for` / `comptime if` / `comptime while` — the marker
+                // is a no-op inside an already-comptime context; consume and fall through.
+                Tok::Ident(s) if s == "for" || s == "if" || s == "while" => { self.bump(); }
+                _ => {
+                    let sp = self.span();
+                    self.diag_at(sp, "expected `block`, `var`, `for`, `if`, or `while` after `comptime`");
+                    // do not consume closers/newline:
+                    if !matches!(self.peek(), Tok::RBrace | Tok::RParen | Tok::RBracket | Tok::Newline) {
+                        self.bump();
+                    }
+                }
+            }
+        }
+        if self.eat_kw("return") {
+            let value = if self.at(&Tok::Newline) || self.at(&Tok::RBrace) { None } else { Some(self.expr()) };
+            let span = start.merge(self.prev_span());
+            self.expect_line_end_or_rbrace();
+            return Stmt::Return { value, span };
+        }
+        if self.eat_kw("patch") {
+            let name = self.expect_ident("patch slot name");
+            self.expect(&Tok::Colon, "`:`");
+            let ty = self.ty();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end_or_rbrace();
+            return Stmt::Patch { name, ty, span };
+        }
+        if self.eat_kw("bind") {
+            let name = self.expect_ident("patch slot name");
+            self.expect(&Tok::Eq, "`=`");
+            let value = self.expr();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end_or_rbrace();
+            return Stmt::Bind { name, value, span };
+        }
+        if self.at_kw("while") {
+            self.bump();
+            let cond = self.expr_no_struct_lit();
+            let body = self.stmt_block();
+            return Stmt::While { cond, body, span: start.merge(self.prev_span()) };
+        }
+        if self.at_kw("if") {
+            let e = self.if_expr();
+            return Stmt::If(e);
+        }
+        if self.at_kw("for") {
+            let e = self.for_expr();
+            return Stmt::For(e);
+        }
+        // assignment: path = expr (lookahead with rewind)
+        if matches!(self.peek(), Tok::Ident(_)) {
+            let save = self.pos;
+            let path = self.path();
+            if self.eat(&Tok::Eq) {
+                let value = self.expr();
+                let span = start.merge(self.prev_span());
+                self.expect_line_end_or_rbrace();
+                return Stmt::Assign { target: path, value, span };
+            }
+            self.pos = save;
+        }
+        let e = self.expr();
+        self.expect_line_end_or_rbrace();
+        Stmt::Expr(e)
+    }
+
+    /// Parse an expression with struct literals disabled (if/while/for headers).
+    fn expr_no_struct_lit(&mut self) -> Expr {
+        let saved = self.no_struct_lit;
+        self.no_struct_lit = true;
+        let e = self.expr();
+        self.no_struct_lit = saved;
+        e
+    }
+
     // ---- stubs replaced by later tasks (each panics with the task that owns it) ----
-    // These are unreachable via `parser_decls.rs` today (no test exercises
-    // comptime-fn/section bodies yet), so clippy sees them as
-    // effectively dead until their owning WP lands; keep them `unimplemented!`
-    // per spec rather than deleting.
-    #[allow(dead_code)] // owned by Task 11
-    fn comptime_fn_decl(&mut self, _p: bool) -> ComptimeFnDecl { unimplemented!("Task 11") }
+    // This is unreachable via `parser_decls.rs` today (no test exercises
+    // section bodies yet), so clippy sees it as effectively dead until its
+    // owning WP lands; keep it `unimplemented!` per spec rather than deleting.
     #[allow(dead_code)] // owned by Task 13
     fn section_decl(&mut self) -> SectionDecl { unimplemented!("Task 13") }
 
@@ -867,6 +1051,10 @@ impl Parser {
             Tok::Str(s) => { self.bump(); Expr::Str(s, start) }
             Tok::LBracket => {
                 self.bump();
+                // Struct literals are unambiguous again once inside `[...]`,
+                // even if an enclosing if/while/for header disabled them.
+                let saved_nsl = self.no_struct_lit;
+                self.no_struct_lit = false;
                 let mut elems = Vec::new();
                 self.skip_newlines();
                 if !self.at(&Tok::RBracket) {
@@ -879,10 +1067,14 @@ impl Parser {
                     }
                 }
                 self.expect(&Tok::RBracket, "`]`");
+                self.no_struct_lit = saved_nsl;
                 Expr::ArrayLit { elems, span: start.merge(self.prev_span()) }
             }
             Tok::LParen => {
                 self.bump();
+                // Struct literals are unambiguous again once inside `(...)`.
+                let saved_nsl = self.no_struct_lit;
+                self.no_struct_lit = false;
                 let mut elems = vec![self.expr()];
                 let mut saw_comma = false;
                 while self.eat(&Tok::Comma) {
@@ -891,6 +1083,7 @@ impl Parser {
                     elems.push(self.expr());
                 }
                 self.expect(&Tok::RParen, "`)`");
+                self.no_struct_lit = saved_nsl;
                 if !saw_comma {
                     // plain grouping: `(e)`
                     elems.pop().unwrap()
@@ -913,6 +1106,9 @@ impl Parser {
                 match self.peek() {
                     Tok::LParen => {
                         self.bump();
+                        // Struct literals are unambiguous again inside call args.
+                        let saved_nsl = self.no_struct_lit;
+                        self.no_struct_lit = false;
                         let mut args = Vec::new();
                         self.skip_newlines();
                         if !self.at(&Tok::RParen) {
@@ -925,11 +1121,15 @@ impl Parser {
                             }
                         }
                         self.expect(&Tok::RParen, "`)`");
+                        self.no_struct_lit = saved_nsl;
                         Expr::Call { callee: path, args, span: start.merge(self.prev_span()) }
                     }
-                    Tok::LBrace => {
+                    Tok::LBrace if !self.no_struct_lit => {
                         // struct literal: Path{ field: e, ... }
                         self.bump();
+                        // Struct literals are unambiguous again inside field values.
+                        let saved_nsl = self.no_struct_lit;
+                        self.no_struct_lit = false;
                         let mut fields = Vec::new();
                         self.skip_newlines();
                         if !self.at(&Tok::RBrace) {
@@ -944,6 +1144,7 @@ impl Parser {
                             }
                         }
                         self.expect(&Tok::RBrace, "`}`");
+                        self.no_struct_lit = saved_nsl;
                         Expr::StructLit { ty: path, fields, span: start.merge(self.prev_span()) }
                     }
                     _ => Expr::Path(path),
@@ -977,9 +1178,41 @@ impl Parser {
         Arg { name: None, value, span }
     }
 
-    // if/for/asm expression stubs — replaced in Tasks 11–12 (WP6).
-    fn if_expr(&mut self) -> Expr { unimplemented!("Task 11") }
-    fn for_expr(&mut self) -> Expr { unimplemented!("Task 11") }
+    /// `if cond { then... } [else { els... } | else if ...]`.
+    ///
+    /// The condition is parsed with struct literals disabled (Rust's rule):
+    /// `if x { ... }` must not read `x {` as a struct literal.
+    fn if_expr(&mut self) -> Expr {
+        let start = self.span();
+        self.bump(); // `if`
+        let cond = self.expr_no_struct_lit();
+        let then = self.stmt_block();
+        let els = if self.eat_kw("else") {
+            if self.at_kw("if") {
+                Some(vec![Stmt::If(self.if_expr())])
+            } else {
+                Some(self.stmt_block())
+            }
+        } else { None };
+        Expr::If { cond: Box::new(cond), then, els, span: start.merge(self.prev_span()) }
+    }
+
+    /// `for var in iter { body... }`. The iterable is parsed with struct
+    /// literals disabled, same as `if_expr`'s condition.
+    fn for_expr(&mut self) -> Expr {
+        let start = self.span();
+        self.bump(); // `for`
+        let var = self.expect_ident("loop variable");
+        if !self.eat_kw("in") {
+            let sp = self.span();
+            self.diag_at(sp, "expected `in`");
+        }
+        let iter = self.expr_no_struct_lit();
+        let body = self.stmt_block();
+        Expr::For { var, iter: Box::new(iter), body, span: start.merge(self.prev_span()) }
+    }
+
+    // asm expression stub — replaced in Task 12 (WP6).
     fn asm_expr(&mut self) -> Expr { unimplemented!("Task 12") }
 }
 

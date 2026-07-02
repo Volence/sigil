@@ -131,3 +131,69 @@ fn instr_span_excludes_newline() {
     let AsmStmt::Instr(i) = &p.body[0] else { panic!() };
     assert_eq!(&src[i.span.start as usize..i.span.end as usize], "bne .draw");
 }
+
+#[test]
+fn comptime_fn_with_stmts() {
+    let f = ok(concat!(
+        "module m\n",
+        "comptime fn deform_sine(amplitude: int, period: int) -> [i8; 256] {\n",
+        "    ensure(256 % period == 0, \"bad period {period}\")\n",
+        "    return comptime for i in 0..256 { as.int(amplitude * as.sin(TAU * i / period)) }\n",
+        "}\n"));
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    assert_eq!(cf.name, "deform_sine");
+    assert_eq!(cf.params.len(), 2);
+    assert!(cf.ret.is_some());
+    assert!(matches!(&cf.body[0], Stmt::Expr(Expr::Call { .. })));   // ensure(...)
+    assert!(matches!(&cf.body[1], Stmt::Return { value: Some(Expr::For { .. }), .. }));
+}
+
+#[test]
+fn let_tuple_if_while_var_block() {
+    let f = ok(concat!(
+        "module m\n",
+        "comptime fn fstring(fmt: string) -> (Data, Code) {\n",
+        "    if fmt == \"\" { return (Data.empty, Code.empty) }\n",
+        "    let (lit, tok, rest) = split_token(fmt)\n",
+        "    comptime block {\n",
+        "        comptime var prev: int = -1\n",
+        "        while prev < 0 {\n",
+        "            prev = 1\n",
+        "        }\n",
+        "    }\n",
+        "    patch count: u8\n",
+        "    bind count = 3\n",
+        "    return (bytes(lit), Code.empty)\n",
+        "}\n"));
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    assert!(matches!(&cf.body[0], Stmt::If(Expr::If { .. })));
+    assert!(matches!(&cf.body[1], Stmt::LetTuple { names, .. } if names.len() == 3));
+    let Stmt::ComptimeBlock { body, .. } = &cf.body[2] else { panic!() };
+    assert!(matches!(&body[0], Stmt::Var { .. }));
+    assert!(matches!(&body[1], Stmt::While { .. }));
+    assert!(matches!(&cf.body[3], Stmt::Patch { .. }));
+    assert!(matches!(&cf.body[4], Stmt::Bind { .. }));
+}
+
+#[test]
+fn no_struct_lit_in_condition_position() {
+    // `if fmt { }` — fmt must be a Path condition, block is the then-branch
+    let f = ok("module m\ncomptime fn f(fmt: int) -> int {\n    if fmt { return 1 }\n    return 2\n}\n");
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    assert!(matches!(&cf.body[0], Stmt::If(Expr::If { cond, .. }) if matches!(&**cond, Expr::Path(_))));
+    // parenthesized arithmetic in condition is legal (verifies the paren
+    // save/clear/restore of no_struct_lit):
+    let f = ok("module m\ncomptime fn g() -> int {\n    if (1 + 2) == 3 { return 1 }\n    return 2\n}\n");
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    assert!(matches!(&cf.body[0], Stmt::If(_)));
+}
+
+#[test]
+fn deep_block_nesting_is_an_error_not_an_abort() {
+    let opens = "if x {\n".repeat(600);
+    let closes = "}\n".repeat(600);
+    let src = format!("module m\ncomptime fn f(x: int) -> int {{\n{opens}{closes}return 1\n}}\n");
+    let (_, diags) = sigil_frontend_emp::parse_str(&src);
+    assert!(!diags.is_empty());
+}
+
