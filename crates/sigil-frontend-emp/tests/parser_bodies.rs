@@ -197,3 +197,46 @@ fn deep_block_nesting_is_an_error_not_an_abort() {
     assert!(!diags.is_empty());
 }
 
+#[test]
+fn asm_template_with_splices() {
+    let f = ok(concat!(
+        "module m\n",
+        "comptime fn set_vdp_reg(reg: VdpReg, val: u8) -> Code {\n",
+        "    return asm {\n",
+        "        move.b  #{val}, (VDP_Shadow_Table + {reg}).w\n",
+        "        ori.l   #{1 << reg}, (VDP_Dirty_Mask).w\n",
+        "    }\n",
+        "}\n"));
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    let Stmt::Return { value: Some(Expr::Asm { body, .. }), .. } = &cf.body[0] else { panic!() };
+    assert_eq!(body.len(), 2);
+    let AsmStmt::Instr(i) = &body[0] else { panic!() };
+    // #{val} → Imm(splice expr)
+    assert!(matches!(&i.operands[0], Operand::Imm(Expr::Path(_))));
+    // (VDP_Shadow_Table + {reg}).w → Ind with Binary part and trailing size
+    let Operand::Ind { parts, size: Some(_), .. } = &i.operands[1] else { panic!() };
+    assert!(matches!(&parts[0].0, Expr::Binary { .. }));
+}
+
+#[test]
+fn spliced_mnemonic_width_and_label() {
+    let f = ok(concat!(
+        "module m\n",
+        "comptime fn assert_cc(w: Width, a: Operand, cc: Cc, b: Operand) -> Code {\n",
+        "    return asm {\n",
+        "        cmp.{w}   {b}, {a}\n",
+        "        b{cc}     .ok\n",
+        "        trap      #DEBUG_TRAP\n",
+        "    .ok:\n",
+        "    }\n",
+        "}\n"));
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    let Stmt::Return { value: Some(Expr::Asm { body, .. }), .. } = &cf.body[0] else { panic!() };
+    let AsmStmt::Instr(i) = &body[0] else { panic!() };
+    assert!(matches!(i.size, Some(TextOrSplice::Splice(_))));
+    assert!(matches!(&i.operands[0], Operand::Splice(_)));
+    let AsmStmt::Instr(i) = &body[1] else { panic!() };
+    assert_eq!(i.mnemonic.len(), 2); // Text("b") + Splice(cc)
+    assert!(matches!(&body[3], AsmStmt::Label { .. }));
+}
+

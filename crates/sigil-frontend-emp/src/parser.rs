@@ -20,12 +20,21 @@ pub struct Parser {
     /// subexpression (parens, brackets, call args, struct-literal field
     /// values) where a struct literal is unambiguous again.
     no_struct_lit: bool,
+    /// When true, a bare `{expr}` appearing where no other primary makes
+    /// sense (e.g. nested inside an arithmetic sub-expression: `x + {reg}`)
+    /// is transparently unwrapped to the inner expression. Set for the
+    /// duration of parsing an `asm { }` template body whose splices are
+    /// allowed; the operand/mnemonic-position `{splice}` cases are handled
+    /// separately (they consume the braces themselves and wrap the result
+    /// in `Operand::Splice`/`TextOrSplice::Splice`), so this only matters
+    /// for splices nested *inside* a larger expression.
+    splice_ctx: bool,
 }
 
 impl Parser {
     /// Build a parser over an already-lexed token stream (must end in `Eof`).
     pub fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0, diags: Vec::new(), depth: 0, no_struct_lit: false }
+        Parser { toks, pos: 0, diags: Vec::new(), depth: 0, no_struct_lit: false, splice_ctx: false }
     }
     /// Consume the parser, returning every diagnostic collected so far.
     pub fn into_diagnostics(self) -> Vec<Diagnostic> { self.diags }
@@ -515,6 +524,11 @@ impl Parser {
     /// newline-separated: labels (`.name:` / `export .name:`), instruction
     /// lines, and statement-position comptime calls.
     fn asm_body(&mut self, splices_allowed: bool) -> Vec<AsmStmt> {
+        // Enable transparent `{expr}` unwrapping for splices nested inside a
+        // larger expression (`x + {reg}`) for the duration of this body;
+        // restored on exit so an enclosing (non-splice) context is unaffected.
+        let saved_splice_ctx = self.splice_ctx;
+        self.splice_ctx = splices_allowed;
         let mut out = Vec::new();
         loop {
             self.skip_newlines();
@@ -549,6 +563,7 @@ impl Parser {
             }
             out.push(AsmStmt::Instr(self.instr_line(splices_allowed)));
         }
+        self.splice_ctx = saved_splice_ctx;
         out
     }
 
@@ -644,7 +659,19 @@ impl Parser {
     fn operand(&mut self, splices_allowed: bool) -> Operand {
         let start = self.span();
         match self.peek().clone() {
-            Tok::Hash => { self.bump(); Operand::Imm(self.expr()) }
+            Tok::Hash => {
+                self.bump();
+                // `#{expr}` — a spliced immediate; `{` is not otherwise a
+                // valid expression opener, so `expr()` alone can't parse it.
+                if splices_allowed && self.at(&Tok::LBrace) {
+                    self.bump();
+                    let e = self.expr();
+                    self.expect(&Tok::RBrace, "`}`");
+                    Operand::Imm(e)
+                } else {
+                    Operand::Imm(self.expr())
+                }
+            }
             // Pre-decrement is deliberately lenient about whitespace:
             // `- (a7)` is accepted as `-(a7)` because at operand position
             // there is no other sane reading of Minus followed by LParen
@@ -1092,6 +1119,17 @@ impl Parser {
                     Expr::TupleLit { elems, span: start.merge(self.prev_span()) }
                 }
             }
+            // A splice nested inside a larger expression, e.g. the `{reg}` in
+            // `VDP_Shadow_Table + {reg}`. Operand/mnemonic-position splices
+            // (a `{expr}` that IS the whole operand/mnemonic part) are
+            // handled by their own callers before they ever reach here — this
+            // arm only fires for a `{` that `expr()` encounters mid-expression.
+            Tok::LBrace if self.splice_ctx => {
+                self.bump();
+                let e = self.expr();
+                self.expect(&Tok::RBrace, "`}`");
+                e
+            }
             Tok::Ident(_) => {
                 // `comptime for/if` in expression position: the `comptime`
                 // marker is a no-op inside an already-comptime context.
@@ -1212,8 +1250,15 @@ impl Parser {
         Expr::For { var, iter: Box::new(iter), body, span: start.merge(self.prev_span()) }
     }
 
-    // asm expression stub — replaced in Task 12 (WP6).
-    fn asm_expr(&mut self) -> Expr { unimplemented!("Task 12") }
+    /// `asm { ... }` — a quoted Code template; splices are legal inside.
+    fn asm_expr(&mut self) -> Expr {
+        let start = self.span();
+        self.bump(); // `asm`
+        self.expect(&Tok::LBrace, "`{`");
+        let body = self.asm_body(/* splices_allowed = */ true);
+        self.expect(&Tok::RBrace, "`}`");
+        Expr::Asm { body, span: start.merge(self.prev_span()) }
+    }
 }
 
 /// Span of any expression node (helper for span merging).
