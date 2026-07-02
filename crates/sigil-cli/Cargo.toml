@@ -9,5 +9,6 @@ path = "src/main.rs"
 
 [dependencies]
 sigil-frontend-as = { path = "../sigil-frontend-as" }
+sigil-frontend-emp = { path = "../sigil-frontend-emp" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-span = { path = "../sigil-span" }
