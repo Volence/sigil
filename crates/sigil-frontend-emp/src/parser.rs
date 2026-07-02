@@ -230,6 +230,20 @@ impl Parser {
     }
 
     fn ty(&mut self) -> Type {
+        // Same depth guard as the expression grammar: `*`/`[`/`(` type arms
+        // all recurse, so a `****...u8` bomb would otherwise abort the process.
+        if self.depth >= MAX_EXPR_DEPTH {
+            let span = self.span();
+            self.diag_at(span, "type nesting too deep (max 128)");
+            return Type::Named(Path { segments: vec!["<error>".into()], span });
+        }
+        self.depth += 1;
+        let r = self.ty_inner();
+        self.depth -= 1;
+        r
+    }
+
+    fn ty_inner(&mut self) -> Type {
         match self.peek().clone() {
             Tok::Star => { self.bump(); Type::Ptr(Box::new(self.ty())) }
             Tok::LBracket => {
@@ -375,8 +389,9 @@ impl Parser {
     fn primary_expr(&mut self) -> Expr {
         // Depth guard: error out instead of recursing into pathologically
         // nested input (e.g. hundreds of `(`), which would abort the process
-        // with a stack overflow. `expr_bp` recurses only via unary/primary,
-        // so guarding these two covers every unbounded-recursion path.
+        // with a stack overflow. Guarded entry points: `primary_expr`,
+        // `unary_expr`, and `ty` — together they cover every unbounded
+        // recursion path (`expr_bp` recurses only via unary/primary).
         if self.depth >= MAX_EXPR_DEPTH {
             let span = self.span();
             self.diag_at(span, "expression nesting too deep (max 128)");

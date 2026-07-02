@@ -109,6 +109,13 @@ fn use_base_span_excludes_names() {
 }
 
 #[test]
+fn deep_pointer_type_is_an_error_not_an_abort() {
+    let stars = "*".repeat(5_000);
+    let (_, diags) = parse_str(&format!("module m\nconst X: {stars}u8 = 1\n"));
+    assert!(!diags.is_empty());
+}
+
+#[test]
 fn missing_module_header_still_parses_items() {
     // follow-up: with const_decl implemented, the parser must recover past a
     // missing module header and still parse the items.
