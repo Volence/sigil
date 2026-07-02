@@ -100,21 +100,86 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
     (out, errs)
 }
 
-// Filled in by Task 3 — stubs so Task 2 compiles (no Task-2 test reaches them).
-fn lex_number(_src: &str, b: &[u8], mut i: usize, source: SourceId,
-              _out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
+fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
+              out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
     let s = i;
-    while i < b.len() && !b[i].is_ascii_whitespace() { i += 1; }
-    errs.push(LexError { message: "numbers not implemented yet".into(),
-                         span: Span { source, start: s as u32, end: i as u32 } });
+    let span = |s: usize, e: usize| Span { source, start: s as u32, end: e as u32 };
+    if b[i] == b'$' {
+        i += 1;
+        let ds = i;
+        while i < b.len() && b[i].is_ascii_hexdigit() { i += 1; }
+        if ds == i {
+            errs.push(LexError { message: "expected hex digits after `$`".into(), span: span(s, i) });
+            return i;
+        }
+        match i64::from_str_radix(&src[ds..i], 16) {
+            Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
+            Err(_) => errs.push(LexError { message: "hex literal out of range".into(), span: span(s, i) }),
+        }
+        return i;
+    }
+    if b[i] == b'0' && i + 1 < b.len() && b[i + 1] == b'b' {
+        i += 2;
+        let ds = i;
+        while i < b.len() && (b[i] == b'0' || b[i] == b'1') { i += 1; }
+        if ds == i {
+            errs.push(LexError { message: "expected binary digits after `0b`".into(), span: span(s, i) });
+            return i;
+        }
+        match i64::from_str_radix(&src[ds..i], 2) {
+            Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
+            Err(_) => errs.push(LexError { message: "binary literal out of range".into(), span: span(s, i) }),
+        }
+        return i;
+    }
+    while i < b.len() && b[i].is_ascii_digit() { i += 1; }
+    // float: dot followed by a digit (so `0..256` stays Int DotDot Int)
+    if i + 1 < b.len() && b[i] == b'.' && b[i + 1].is_ascii_digit() {
+        i += 1;
+        while i < b.len() && b[i].is_ascii_digit() { i += 1; }
+        match src[s..i].parse::<f64>() {
+            Ok(v) => out.push(Token { tok: Tok::Float(v), span: span(s, i) }),
+            Err(_) => errs.push(LexError { message: "bad float literal".into(), span: span(s, i) }),
+        }
+        return i;
+    }
+    match src[s..i].parse::<i64>() {
+        Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
+        Err(_) => errs.push(LexError { message: "integer literal out of range".into(), span: span(s, i) }),
+    }
     i
 }
-fn lex_string(_src: &str, b: &[u8], mut i: usize, source: SourceId,
-              _out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
+
+fn lex_string(src: &str, b: &[u8], mut i: usize, source: SourceId,
+              out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
     let s = i;
-    i += 1;
-    while i < b.len() && b[i] != b'"' { i += 1; }
-    errs.push(LexError { message: "strings not implemented yet".into(),
-                         span: Span { source, start: s as u32, end: i as u32 } });
-    i + 1
+    let span = |s: usize, e: usize| Span { source, start: s as u32, end: e as u32 };
+    i += 1; // opening quote
+    let mut val = String::new();
+    while i < b.len() && b[i] != b'"' && b[i] != b'\n' {
+        if b[i] == b'\\' && i + 1 < b.len() {
+            match b[i + 1] {
+                b'n' => val.push('\n'),
+                b't' => val.push('\t'),
+                b'\\' => val.push('\\'),
+                b'"' => val.push('"'),
+                other => {
+                    errs.push(LexError { message: format!("unknown escape \\{}", other as char), span: span(i, i + 2) });
+                }
+            }
+            i += 2;
+        } else {
+            // multi-byte UTF-8 safe: copy the full char
+            let ch = src[i..].chars().next().unwrap();
+            val.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    if i >= b.len() || b[i] != b'"' {
+        errs.push(LexError { message: "unterminated string".into(), span: span(s, i) });
+        return i;
+    }
+    i += 1; // closing quote
+    out.push(Token { tok: Tok::Str(val), span: span(s, i) });
+    i
 }

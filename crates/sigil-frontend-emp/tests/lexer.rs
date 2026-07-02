@@ -50,3 +50,36 @@ fn spans_are_byte_offsets() {
     assert_eq!(tokens[1].span.end, 5);
     assert_eq!(tokens[1].span.source, SourceId(3));
 }
+
+#[test]
+fn numeric_literals() {
+    assert_eq!(
+        toks("64 $60 0b1010 3.5"),
+        vec![Tok::Int(64), Tok::Int(0x60), Tok::Int(0b1010), Tok::Float(3.5), Tok::Eof]
+    );
+}
+
+#[test]
+fn hex_is_case_insensitive_in_digits() {
+    assert_eq!(toks("$FFFF8000 $ff"), vec![Tok::Int(0xFFFF_8000), Tok::Int(0xFF), Tok::Eof]);
+}
+
+#[test]
+fn float_requires_digit_after_dot() {
+    // `0..256` is Int DotDot Int, not a malformed float
+    assert_eq!(toks("0..256"), vec![Tok::Int(0), Tok::DotDot, Tok::Int(256), Tok::Eof]);
+}
+
+#[test]
+fn string_literals_with_escapes() {
+    assert_eq!(
+        toks(r#""hi \"there\"\n""#),
+        vec![Tok::Str("hi \"there\"\n".to_string()), Tok::Eof]
+    );
+}
+
+#[test]
+fn bad_dollar_is_an_error() {
+    let (_, errs) = lex("$zz", SourceId(0));
+    assert_eq!(errs.len(), 1);
+}
