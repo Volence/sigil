@@ -97,6 +97,33 @@ fn spaced_paren_operand_is_not_a_call() {
 }
 
 #[test]
+fn call_normalized_dispind_keeps_sizes() {
+    let f = ok("module m\nproc x () {\n    move.b  timer(a0, d0.w), d1\n    move.l  timer(a0).l, d0\n}\n");
+    let p = first_proc(&f);
+    let AsmStmt::Instr(i) = &p.body[0] else { panic!() };
+    let Operand::DispInd { inner, .. } = &i.operands[0] else { panic!() };
+    let Operand::Ind { parts, .. } = &**inner else { panic!() };
+    assert_eq!(parts[1].1, Some(TextOrSplice::Text("w".into())));
+    let AsmStmt::Instr(i) = &p.body[1] else { panic!() };
+    assert_eq!(i.operands.len(), 2); // `, d0` must survive
+    let Operand::DispInd { inner, .. } = &i.operands[0] else { panic!() };
+    let Operand::Ind { size: Some(TextOrSplice::Text(s)), .. } = &**inner else { panic!() };
+    assert_eq!(s, "l");
+}
+
+#[test]
+fn mnemonic_size_is_restricted_to_bwls() {
+    // typo `bne.draw` — `.draw` must become the branch-target operand, not a size
+    let f = ok("module m\nproc x () {\n    bne.draw\n    bra.s .draw\n.draw:\n}\n");
+    let p = first_proc(&f);
+    let AsmStmt::Instr(i) = &p.body[0] else { panic!() };
+    assert!(i.size.is_none());
+    assert_eq!(i.operands.len(), 1);
+    let AsmStmt::Instr(i) = &p.body[1] else { panic!() };
+    assert_eq!(i.size, Some(TextOrSplice::Text("s".into())));
+}
+
+#[test]
 fn instr_span_excludes_newline() {
     let src = "module m\nproc x () {\n    bne .draw\n}\n";
     let f = ok(src);

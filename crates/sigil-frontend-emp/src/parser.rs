@@ -588,11 +588,19 @@ impl Parser {
         // the mnemonic (`subq.b`), else a leading dot belongs to the first
         // operand instead (`bne     .draw` — a local-label reference, not
         // a size suffix separated from `bne` by whitespace).
+        //
+        // The literal set is b/w/l/s — `.s` is the short-branch pin (`bra.s`),
+        // deliberately wider than operand index sizes (b/w/l only). Any other
+        // adjacent post-dot ident is NOT a size: consume nothing and fall
+        // through, so a typo like `bne.draw` parses `.draw` as the
+        // branch-target operand (identical to `bne .draw`) instead of
+        // silently swallowing the target as a bogus size.
         let size = if self.at(&Tok::Dot) && self.span().start == self.prev_span().end {
             match self.peek2().clone() {
-                Tok::Ident(_) => {
-                    self.bump();
-                    Some(TextOrSplice::Text(self.expect_ident("size suffix")))
+                Tok::Ident(s) if matches!(s.as_str(), "b" | "w" | "l" | "s") => {
+                    self.bump(); // dot
+                    self.bump(); // size ident
+                    Some(TextOrSplice::Text(s))
                 }
                 Tok::LBrace if splices_allowed => {
                     self.bump(); // dot
@@ -631,6 +639,10 @@ impl Parser {
         let start = self.span();
         match self.peek().clone() {
             Tok::Hash => { self.bump(); Operand::Imm(self.expr()) }
+            // Pre-decrement is deliberately lenient about whitespace:
+            // `- (a7)` is accepted as `-(a7)` because at operand position
+            // there is no other sane reading of Minus followed by LParen
+            // (a parenthesized negation would be written `#-(...)`).
             Tok::Minus if matches!(self.peek2(), Tok::LParen) => {
                 self.bump();
                 let inner = self.paren_operand(splices_allowed, start);
@@ -665,16 +677,26 @@ impl Parser {
                 let e = self.expr();
                 // NOTE: `timer(a0)` where `timer` is a bare ident arrives as
                 // Expr::Call via primary_expr — normalize an all-positional
-                // call to displacement-indexed addressing:
+                // call to displacement-indexed addressing. The `!args.is_empty()`
+                // guard is deliberate: an empty call `f()` stays an Expr::Call
+                // for the semantic layer — zero-part indirection isn't a 68k
+                // addressing mode.
                 if let Expr::Call { callee, args, span } = &e {
                     if !args.is_empty() && args.iter().all(|a| a.name.is_none()) {
+                        // Mirror paren_operand: recover per-part index sizes
+                        // (`d0.w` arrived as Path["d0","w"] inside the arg)...
                         let parts = args.iter()
-                            .map(|a| (a.value.clone(), None))
+                            .map(|a| split_size_suffix(a.value.clone()))
                             .collect::<Vec<_>>();
+                        // ...and consume a trailing size after the `)` so
+                        // `timer(a0).l` owns its `.l` (leaving it behind would
+                        // corrupt the rest of the operand list).
+                        let size = self.trailing_size(splices_allowed);
+                        let ispan = span.merge(self.prev_span());
                         return Operand::DispInd {
                             disp: Expr::Path(callee.clone()),
-                            inner: Box::new(Operand::Ind { parts, size: None, span: *span }),
-                            span: *span,
+                            inner: Box::new(Operand::Ind { parts, size, span: ispan }),
+                            span: ispan,
                         };
                     }
                 }
