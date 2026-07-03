@@ -34,3 +34,10 @@
 //! disassembler covering every encoded form is **deferred to a later plan**; M0
 //! only requires the encoder to be complete.
 pub mod z80;
+
+/// # 68000 encoder (M0.5 spike)
+///
+/// `m68k::encode` turns a resolved `m68k::Instruction` into big-endian bytes via a
+/// procedural EA/extension-word encoder. Scope is the MOVE EA matrix; proven against
+/// `asl` golden vectors (`tests/m68k_golden_vectors.txt`). See `src/m68k.rs`.
+pub mod m68k;
