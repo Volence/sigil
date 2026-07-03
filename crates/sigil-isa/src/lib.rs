@@ -35,9 +35,16 @@
 //! only requires the encoder to be complete.
 pub mod z80;
 
-/// # 68000 encoder (M0.5 spike)
+/// # 68000 encoder (M1.A — full Aeon ISA)
 ///
-/// `m68k::encode` turns a resolved `m68k::Instruction` into big-endian bytes via a
-/// procedural EA/extension-word encoder. Scope is the MOVE EA matrix; proven against
-/// `asl` golden vectors (`tests/m68k_golden_vectors.txt`). See `src/m68k.rs`.
+/// `m68k::encode` turns a resolved `m68k::Instruction` into big-endian bytes via
+/// per-family procedural encoders sharing one `encode_ea`/`brief_ext` machinery.
+/// Scope is every 68000 instruction/EA form the Aeon source (@ aeon `c7aaca6`) uses:
+/// ~46 mnemonic families (incl. `movea`), all 12 EA modes (brief-extension indexed
+/// form only — no 68020 extensions). Proven byte-identical to `asl` by the committed
+/// golden corpus (`tests/m68k_golden_vectors.txt`), with dedicated §5.5 hazard vectors
+/// (MOVEM `-(An)` mask reversal, 2-wide branches, DBcc non-relaxability, MOVE SR/CCR,
+/// movep/addx/cmpm/tas/Scc). Symbolic-target width selection and PcRel branch fixups
+/// are the linker's job (sub-project B); the encoder takes explicit, already-resolved
+/// EA forms and displacements.
 pub mod m68k;

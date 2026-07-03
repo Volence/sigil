@@ -84,6 +84,91 @@ fn immediate_and_pcrel_are_illegal_dest() {
 }
 
 #[test]
+fn alu_ea_family() {
+    check(&[
+        "add.w d1,d0", "add.w (a1),d0", "add.l d0,(a1)", "sub.w d1,d0",
+        "and.w d1,d0", "or.b d1,d0", "eor.w d0,d1", "cmp.w (a1),d0",
+        "cmpa.l a1,a0", "adda.w d0,a1", "suba.l a2,a3", "muls.w d1,d0",
+    ]);
+}
+
+#[test]
+fn alu_immediate_family() {
+    check(&[
+        "addi.w #$10,d0", "subi.l #$1000,d1", "andi.w #$00FF,d0", "ori.b #$01,d0",
+        "eori.w #$FFFF,d0", "cmpi.w #$0010,(a1)", "andi.b #$FE,ccr", "ori.b #$01,ccr",
+        "move.w #$2700,sr", "move.w sr,-(sp)",
+    ]);
+}
+
+#[test]
+fn quick_family() {
+    check(&["moveq #1,d0", "moveq #-1,d3", "addq.w #1,d0", "addq.l #8,a1", "subq.w #2,d1"]);
+}
+
+#[test]
+fn shift_rotate_family() {
+    check(&["asl.w #1,d0", "asr.l #3,d1", "lsl.w d2,d0", "lsr.b #1,d0", "rol.w #2,d0", "ror.w d1,d0"]);
+}
+
+#[test]
+fn bit_ops_family() {
+    check(&["btst #7,d0", "bset #0,(a0)", "bclr #5,d1", "btst d2,d0", "bset d1,(a0)"]);
+}
+
+#[test]
+fn single_ea_family() {
+    check(&[
+        "clr.w d0", "clr.l (a1)", "neg.w d0", "not.b d0", "tst.w d0", "tst.l (a1)",
+        "tas.b d0", "st d0", "sf d0", "sgt d0",
+    ]);
+}
+
+#[test]
+fn control_misc_family() {
+    check(&[
+        "jmp ($1234).w", "jmp ($12345678).l", "jsr ($1234).w", "jmp (a0)", "jmp (4,pc,d0.w)",
+        "lea (4,a0),a1", "pea (a0)", "nop", "rts", "rte", "trap #0", "swap d0", "ext.w d0", "ext.l d1",
+    ]);
+}
+
+#[test]
+fn branch_family_is_two_wide_only() {
+    check(&["bra.s *", "bra.w *", "bsr.s *", "bsr.w *", "beq.s *", "bne.w *"]);
+    let golden = parse_golden_m68k(GOLDEN);
+    assert_eq!(golden_bytes(&golden, "bra.s *").len(), 2, "bra.s must be 2 bytes");
+    assert_eq!(golden_bytes(&golden, "bra.w *").len(), 4, "bra.w must be 4 bytes");
+}
+
+#[test]
+fn dbcc_is_fixed_four_bytes() {
+    check(&["dbf d0,*", "dbeq d1,*"]);
+    let golden = parse_golden_m68k(GOLDEN);
+    assert_eq!(golden_bytes(&golden, "dbf d0,*").len(), 4, "DBcc is fixed 4 bytes (non-relaxable)");
+}
+
+#[test]
+fn movem_predecrement_mask_is_reversed() {
+    // The predecrement mask is bit-reversed vs every other mode; prove it on both
+    // directions and a spread of addressing modes.
+    check(&[
+        "movem.l d0-d7/a0-a6,-(sp)", "movem.l (sp)+,d0-d7/a0-a6",
+        "movem.l a2,-(sp)", "movem.l d3-d4,(a3)", "movem.l d3-d4,(8,a3)",
+        "movem.w d0-d6/a2,(a1)", "movem.l (a0)+,d0-a4",
+    ]);
+}
+
+#[test]
+fn specials_family() {
+    check(&["movep.w (4,a1),d0", "movep.l d0,(8,a1)", "addx.b d1,d0", "addx.l d3,d2", "cmpm.w (a0)+,(a1)+"]);
+}
+
+#[test]
+fn movea_family() {
+    check(&["movea.w d0,a1", "movea.l a0,a1", "movea.w (a2),a3", "movea.l #$1000,a0", "movea.w (4,a1),a2"]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();
