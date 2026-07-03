@@ -31,3 +31,12 @@ fn golden_covers_the_full_corpus() {
         );
     }
 }
+
+#[test]
+fn golden_snippets_are_unique() {
+    let vectors = parse_golden_m68k(GOLDEN);
+    let mut seen = std::collections::BTreeSet::new();
+    for v in &vectors {
+        assert!(seen.insert(v.snippet.clone()), "duplicate golden snippet: {:?}", v.snippet);
+    }
+}

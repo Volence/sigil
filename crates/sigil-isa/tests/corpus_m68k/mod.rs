@@ -16,7 +16,7 @@ fn mov(size: Size, src: Operand, dst: Operand) -> Instruction {
 }
 
 use Operand::*;
-use Size::{L, W};
+use Size::{B, L, W};
 
 /// The definitive M0.5 MOVE EA-matrix corpus. Snippet strings are verbatim asl input.
 pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
@@ -47,5 +47,10 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("move.w d1,($12345678).l", mov(W, Dn(1), AbsL(0x12345678))),
         // size + extension-word long flag
         ("move.l (2,a3,a4.l),d0", mov(L, Disp8AnXn { d: 2, an: 3, xn: Xn::A(4), long: true }, Dn(0))),
+        // review hardening: pin source-before-dest ext-word ordering, sign, and B size
+        ("move.w ($1234).w,($5678).w", mov(W, AbsW(0x1234), AbsW(0x5678))),
+        ("move.b #$12,d0", mov(B, Imm(0x12), Dn(0))),
+        ("move.w (-4,a1),d0", mov(W, Disp16An(-4, 1), Dn(0))),
+        ("move.w (-2,a2,d3.w),d0", mov(W, Disp8AnXn { d: -2, an: 2, xn: Xn::D(3), long: false }, Dn(0))),
     ]
 }
