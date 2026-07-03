@@ -30,8 +30,15 @@ impl std::error::Error for LowerError {}
 /// `sigil_isa::z80::{Mnemonic, Operand}`.
 ///
 /// M0 has no relaxation (every Z80 form is fixed-length), so lowering yields a
-/// single [`DataFragment`] directly; `jr`/`djnz` residual displacement fixups
-/// are attached to that fragment and resolved by the linker.
+/// single [`DataFragment`] directly.
+///
+/// **Scope of this trait method:** `lower` handles instructions whose operands
+/// are already fully resolved to concrete integers. Relative branches with an
+/// *unresolved* target (`jr`/`djnz` to a symbol) are **out of scope for `lower`**
+/// — it has no slot for a symbolic `Expr` target. Each backend exposes those via
+/// a backend-specific inherent method (e.g. `Z80Backend::lower_rel`) that emits
+/// the opcode plus a `Z80JrRel8` [`Fixup`] for the linker to resolve. A front-end
+/// (Plan 4) must route relative-branch mnemonics to that path, not through `lower`.
 pub trait Backend {
     type Mnemonic;
     type Operand;
@@ -39,8 +46,8 @@ pub trait Backend {
     /// The CPU this backend encodes for.
     fn cpu(&self) -> Cpu;
 
-    /// Lower one fully-decoded instruction to a data fragment (+ any residual
-    /// fixups, e.g. `Z80JrRel8` for `jr`/`djnz`).
+    /// Lower one fully-resolved instruction to a data fragment. See the trait
+    /// doc: `jr`/`djnz` with an unresolved symbolic target are NOT handled here.
     fn lower(
         &self,
         mnemonic: Self::Mnemonic,
