@@ -58,7 +58,7 @@ From a read-only enumeration of the non-Z80 tree at `c7aaca6` (Z80 excluded by `
 
 | Family | Mnemonics (from corpus) |
 |---|---|
-| move / movea | `move` (done), `movea` |
+| move / movea | `move` (done in M0.5), `movea` (MOVE-to-An, `.w`/`.l`; encoded in Task 11b) |
 | ALU-EA (opmode + Dn + EA) | `add adda`, `sub suba`, `and`, `or`, `eor`, `cmp cmpa`, `muls` |
 | ALU-immediate (`#imm,EA`) | `addi`, `subi`, `andi`, `ori`, `eori`, `cmpi` — incl. `andi/ori` to `ccr` and `move #imm,sr` sibling |
 | quick (embedded data) | `moveq`, `addq`, `subq` |

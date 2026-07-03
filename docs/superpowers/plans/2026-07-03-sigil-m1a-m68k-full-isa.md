@@ -766,6 +766,10 @@ git commit -m "docs(sigil-isa): m68k module doc — full Aeon ISA (M1.A) superse
 
 ---
 
+## Task 11b (added during execution): MOVEA — plan-gap fix
+
+`movea` was listed in the design doc §2.1 move/movea family but the Task 2–11 breakdown never assigned it a step, leaving `Mnemonic::Movea` with no dispatch arm. The Task 11 implementer flagged it; the corpus scout found `movea.w`/`movea.l` used ~140× in Aeon, so the encoder is incomplete without it. Fixed in commit `966fd3a`: `encode_movea` (MOVEA == MOVE with an An destination, `.w`/`.l` only, mode `001`), 5 corpus entries + golden, `movea_family` test. This also made `encode`'s `match` exhaustive over `Mnemonic` (the `other => UnsupportedForm` catch-all became unreachable and was removed).
+
 ## Self-review checklist (run before starting execution)
 
 - **Spec coverage:** §2 mnemonic families → Tasks 2–11; §3 vocab (`Cond`/`RegList`/`Size::S`) → Task 1; §4 adapter → Task 12; crate-graph → Task 13; §5 hazard vectors (MOVEM reversal, 2-wide branches, DBcc, SR/CCR, movep/addx/cmpm/tas/Scc) → Tasks 3/7/9/10/11 with dedicated assertions; §7 acceptance → Task 14. **Deferred to B (not in any task, by design):** bare-symbol jmp/jsr width selection, PcRel branch fixups, Pcd16→disp — verified absent from tasks intentionally.
