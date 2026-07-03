@@ -32,7 +32,11 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("move.w (6,a1,d2.w),d0", mov(W, Disp8AnXn { d: 6, an: 1, xn: Xn::D(2), long: false }, Dn(0))),
         ("move.w ($1234).w,d0", mov(W, AbsW(0x1234), Dn(0))),
         ("move.w ($12345678).l,d0", mov(W, AbsL(0x12345678), Dn(0))),
-        ("move.w (8,pc),d0", mov(W, Pcd16(8), Dn(0))),
+        // `Pcd16` holds the RESOLVED displacement emitted into the extension word
+        // (like the Z80 `Rel` operand). asl reads `(8,pc)` as an absolute target at
+        // `org 0` and resolves the stored disp to `target - ext_word_addr = 8 - 2 = 6`;
+        // the spike encodes that resolved disp — target→disp resolution is an M1 fixup.
+        ("move.w (8,pc),d0", mov(W, Pcd16(6), Dn(0))),
         ("move.w #$1234,d0", mov(W, Imm(0x1234), Dn(0))),
         // dest-mode sweep from d1 (proves the dest-EA mode/register swap)
         ("move.w d1,(a0)", mov(W, Dn(1), Ind(0))),
