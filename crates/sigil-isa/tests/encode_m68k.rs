@@ -31,3 +31,15 @@ fn check(snippets: &[&str]) {
 fn reg_direct() {
     check(&["move.w d1,d0", "move.l a1,d0"]);
 }
+
+#[test]
+fn memory_indirect_source_and_dest() {
+    check(&[
+        "move.w (a1),d0",
+        "move.w (a1)+,d0",
+        "move.w -(a1),d0",
+        "move.w d1,(a0)",
+        "move.w d1,(a0)+",
+        "move.w d1,-(a0)",
+    ]);
+}

@@ -125,6 +125,9 @@ fn encode_ea(op: &Operand, _field: Field, _size: Size) -> Result<(u8, u8, Vec<u1
     Ok(match *op {
         Operand::Dn(n) => (0b000, r(n), vec![]),
         Operand::An(n) => (0b001, r(n), vec![]),
+        Operand::Ind(n) => (0b010, r(n), vec![]),
+        Operand::PostInc(n) => (0b011, r(n), vec![]),
+        Operand::PreDec(n) => (0b100, r(n), vec![]),
         other => return Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     })
 }
