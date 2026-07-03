@@ -27,6 +27,18 @@ impl SymbolTable {
     }
 
     /// Define (or overwrite) a fully-qualified symbol.
+    ///
+    /// **Precondition:** a bare global name must never contain `.`. The table
+    /// keys locals as the composite `"Scope.local"`, so a global literally
+    /// named `"Foo.bar"` would alias the local `.bar` defined under scope
+    /// `"Foo"` — the table cannot distinguish them. Today's only producer (the
+    /// emp front-end) guarantees this because its lexer never lets `.` appear
+    /// inside an identifier; callers that construct names by other means must
+    /// uphold it.
+    ///
+    /// Redefinition is currently last-write-wins; `equ`-error / `set`-allowed
+    /// redefinition diagnostics (Core spec §6.x) land with the real producer in
+    /// Plan 4.
     pub fn define(&mut self, name: &str, value: SymbolValue) {
         self.entries.insert(name.to_string(), value);
     }
