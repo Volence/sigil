@@ -1,0 +1,8 @@
+[package]
+name = "sigil-link"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sigil-ir = { path = "../sigil-ir" }
+sigil-span = { path = "../sigil-span" }

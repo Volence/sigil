@@ -49,5 +49,13 @@ name = "sigil-isa"
 version = "0.1.0"
 
 [[package]]
+name = "sigil-link"
+version = "0.1.0"
+dependencies = [
+ "sigil-ir",
+ "sigil-span",
+]
+
+[[package]]
 name = "sigil-span"
 version = "0.1.0"

@@ -5,6 +5,7 @@ members = [
     "crates/sigil-span",
     "crates/sigil-ir",
     "crates/sigil-backend-z80",
+    "crates/sigil-link",
     "crates/sigil-frontend-as",
     "crates/sigil-frontend-emp",
     "crates/sigil-cli",
