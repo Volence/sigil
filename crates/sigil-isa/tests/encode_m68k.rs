@@ -102,6 +102,11 @@ fn alu_immediate_family() {
 }
 
 #[test]
+fn quick_family() {
+    check(&["moveq #1,d0", "moveq #-1,d3", "addq.w #1,d0", "addq.l #8,a1", "subq.w #2,d1"]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

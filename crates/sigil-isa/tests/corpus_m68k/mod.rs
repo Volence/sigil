@@ -76,5 +76,11 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("ori.b #$01,ccr", Instruction { mnemonic: Mnemonic::OriCcr, size: B, ops: vec![Imm(0x01), Ccr] }),
         ("move.w #$2700,sr", Instruction { mnemonic: Mnemonic::MoveToSr, size: W, ops: vec![Imm(0x2700), Sr] }),
         ("move.w sr,-(sp)", Instruction { mnemonic: Mnemonic::MoveFromSr, size: W, ops: vec![Sr, PreDec(7)] }),
+        // --- quick family ---
+        ("moveq #1,d0", Instruction { mnemonic: Mnemonic::Moveq, size: L, ops: vec![Imm(1), Dn(0)] }),
+        ("moveq #-1,d3", Instruction { mnemonic: Mnemonic::Moveq, size: L, ops: vec![Imm(-1), Dn(3)] }),
+        ("addq.w #1,d0", Instruction { mnemonic: Mnemonic::Addq, size: W, ops: vec![Imm(1), Dn(0)] }),
+        ("addq.l #8,a1", Instruction { mnemonic: Mnemonic::Addq, size: L, ops: vec![Imm(8), An(1)] }),
+        ("subq.w #2,d1", Instruction { mnemonic: Mnemonic::Subq, size: W, ops: vec![Imm(2), Dn(1)] }),
     ]
 }

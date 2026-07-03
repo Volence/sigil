@@ -121,6 +121,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         | Mnemonic::Muls => encode_alu_ea(inst),
         Mnemonic::Addi | Mnemonic::Subi | Mnemonic::Andi
         | Mnemonic::Ori | Mnemonic::Eori | Mnemonic::Cmpi => encode_alu_imm(inst),
+        Mnemonic::Moveq | Mnemonic::Addq | Mnemonic::Subq => encode_quick(inst),
         Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
@@ -383,6 +384,74 @@ fn encode_move_sr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
+/// Encode the "quick" family (`moveq`/`addq`/`subq`).
+///
+/// - `moveq #d,Dn` = `0111 rrr 0 dddddddd` (long; `d` is 8-bit signed data).
+/// - `addq #d,<ea>` = `0101 ddd 0 ss eeeeee`; `subq` = `0101 ddd 1 ss eeeeee`.
+///   `ddd` = data 1..=8 with **8 encoded as `000`**; `ss` = `size_code`.
+fn encode_quick(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (imm, dst) = match inst.ops.as_slice() {
+        [Operand::Imm(v), d] => (*v, d),
+        [s, d] => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} requires #imm source, got {s:?},{d:?}",
+                inst.mnemonic
+            )))
+        }
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 2 operands, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+
+    if inst.mnemonic == Mnemonic::Moveq {
+        let dn = match dst {
+            Operand::Dn(n) => (n & 0b111) as u16,
+            other => {
+                return Err(IsaError::UnsupportedForm(format!(
+                    "moveq requires Dn destination, got {other:?}"
+                )))
+            }
+        };
+        let data: i8 = i8::try_from(imm).map_err(|_| {
+            IsaError::UnsupportedForm(format!("moveq data {imm} does not fit in a signed byte"))
+        })?;
+        let word = 0x7000u16 | (dn << 9) | (data as u8 as u16);
+        return Ok(word.to_be_bytes().to_vec());
+    }
+
+    // addq / subq: data 1..=8, with 8 encoded as 000.
+    if !(1..=8).contains(&imm) {
+        return Err(IsaError::UnsupportedForm(format!(
+            "{:?} data must be 1..=8, got {imm}",
+            inst.mnemonic
+        )));
+    }
+    let ddd = (imm as u16) & 0b111; // 8 -> 000, else the value itself
+    let op_bit: u16 = match inst.mnemonic {
+        Mnemonic::Addq => 0,
+        Mnemonic::Subq => 1,
+        _ => unreachable!(),
+    };
+    let sz = size_code(inst.size)?;
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, inst.size)?;
+    let word: u16 = (0b0101 << 12)
+        | (ddd << 9)
+        | (op_bit << 8)
+        | (sz << 6)
+        | ((ea_mode as u16) << 3)
+        | (ea_reg as u16);
+    let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
+    out.extend_from_slice(&word.to_be_bytes());
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
 #[derive(Clone, Copy)]
 enum Field {
@@ -482,8 +551,8 @@ mod vocab_tests {
         let _ = (Operand::RegList(0x0001), Operand::Disp(4), Operand::Ccr, Operand::Sr);
         let _ = Size::S;
         // Still-unimplemented mnemonics are dispatched but return UnsupportedForm.
-        let moveq = Instruction { mnemonic: Mnemonic::Moveq, size: Size::L, ops: vec![Operand::Imm(1), Operand::Dn(0)] };
-        assert!(matches!(encode(&moveq), Err(IsaError::UnsupportedForm(_))));
+        let swap = Instruction { mnemonic: Mnemonic::Swap, size: Size::W, ops: vec![Operand::Dn(0)] };
+        assert!(matches!(encode(&swap), Err(IsaError::UnsupportedForm(_))));
         // Move still works.
         let mv = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
         assert_eq!(encode(&mv).unwrap(), vec![0x30, 0x01]);
