@@ -13,8 +13,11 @@
 //! orchestrates the build + extraction + file writes.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
-use sigil_ir::{Cpu, Module};
+use sigil_frontend_as::{assemble_root, Options};
+use sigil_ir::{Cpu, Module, SymbolTable, SymbolValue};
+use sigil_link::LinkedImage;
 
 /// Region A bracket anchors (68k-context labels around the phase-0 driver).
 pub const REGION_A_START_SYM: &str = "Z80_Sound_Start";
@@ -162,6 +165,72 @@ pub fn assign_lmas(module: &mut Module, map: &LmaMap) -> Result<(), String> {
     Ok(())
 }
 
+/// The reference build's define set: `SOUND_DRIVER_ENABLED` defined;
+/// `__DEBUG__`/`SOUND_DBG_MIRROR` undefined; `SND_REKEY_OFF_THEN_ON = 1`. Plus
+/// the derived 68k leaf stubs.
+pub fn reference_options(aeon_root: &Path, stubs: &[(String, i64)]) -> Options {
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SND_REKEY_OFF_THEN_ON".to_string(), 1),
+    ];
+    defines.extend(stubs.iter().cloned());
+    Options {
+        initial_cpu: Cpu::Z80,
+        defines,
+        include_root: Some(aeon_root.to_path_buf()),
+    }
+}
+
+/// Assemble regions A+B together and link them at their real LMAs. `stubs` seeds
+/// BOTH the front-end env (defines) AND the link `SymbolTable` (fallback for
+/// surviving `BankPtr16Le` fixup targets).
+pub fn build_harness(
+    aeon_root: &Path,
+    harness_root: &Path,
+    stubs: &[(String, i64)],
+    map: &LmaMap,
+) -> Result<LinkedImage, String> {
+    let opts = reference_options(aeon_root, stubs);
+    let mut module = assemble_root(harness_root, &opts)
+        .map_err(|d| format!("assemble: {} diagnostics; first: {:?}", d.len(), d.first()))?;
+    assign_lmas(&mut module, map)?;
+    let mut stub_table = SymbolTable::new();
+    for (name, value) in stubs {
+        stub_table.define(name, SymbolValue::Int(*value));
+    }
+    sigil_link::link(&module.sections, &stub_table)
+        .map_err(|d| format!("link: {} diagnostics; first: {:?}", d.len(), d.first()))
+}
+
+/// Parse `golden/stub-syms.toml`'s `name = value` lines (value may be `0xHEX` or
+/// decimal). Comment (`#`) and blank lines are ignored.
+pub fn load_stub_syms(golden_dir: &Path) -> Vec<(String, i64)> {
+    let text = std::fs::read_to_string(golden_dir.join("stub-syms.toml"))
+        .expect("read golden/stub-syms.toml");
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        let name = name.trim().to_string();
+        let value = value.trim();
+        let parsed = if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X"))
+        {
+            i64::from_str_radix(hex, 16).ok()
+        } else {
+            value.parse::<i64>().ok()
+        };
+        if let Some(v) = parsed {
+            out.push((name, v));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +321,23 @@ mod lma_tests {
         let mut m = Module { sections: vec![sec("sec0", Some(0))] };
         let err = assign_lmas(&mut m, &LmaMap::new()).unwrap_err();
         assert!(err.contains("no LMA mapping"), "got: {err}");
+    }
+}
+
+#[cfg(test)]
+mod harness_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "reads the aeon source tree; run with --ignored"]
+    fn harness_assembles_regions_a_and_b_together() {
+        let aeon = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../aeon");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("harness_root.asm");
+        let stubs = load_stub_syms(&Path::new(env!("CARGO_MANIFEST_DIR")).join("golden"));
+        let mut map = LmaMap::new();
+        map.set(Cpu::Z80, Some(0), 0x3EA);
+        map.set(Cpu::Z80, Some(0x8000), 0x60000);
+        let img = build_harness(&aeon, &root, &stubs, &map).expect("build");
+        assert_eq!(img.sections.len(), 2, "expected region A + region B");
     }
 }
