@@ -68,3 +68,23 @@ pbyte   macro
         pbyte 1,2,3,255
 --- bytes ---
 01 02 03 FF
+=== cross_scope_jp_dotted_local ===
+        cpu z80
+        phase 0
+Seq:
+        nop
+.fetch:
+        nop
+Other:
+        jp Seq.fetch
+--- bytes ---
+00 00 C3 01 00
+=== even_pad_dollar_and_1 ===
+        cpu z80
+        phase 0
+        db 1,2,3
+        if ($ & 1) <> 0
+        db 0
+        endif
+--- bytes ---
+01 02 03 00

@@ -300,6 +300,19 @@ fn crate_graph_is_one_way() {
         "sigil-link library must depend only on sigil-ir + sigil-span (backends are dev-deps)"
     );
 
+    // The AS front-end depends on sigil-ir + sigil-backend-z80 + sigil-span
+    // ONLY — no direct sigil-isa edge (deleted in the Plan-4 rewrite), no
+    // sigil-link (that is a dev-dep for the snippet gate, filtered by kind).
+    assert_eq!(
+        get("sigil-frontend-as"),
+        vec![
+            "sigil-backend-z80".to_string(),
+            "sigil-ir".to_string(),
+            "sigil-span".to_string()
+        ],
+        "sigil-frontend-as must depend on sigil-backend-z80 + sigil-ir + sigil-span only (no sigil-isa)"
+    );
+
     // (c) only sigil-cli may depend on sigil-frontend-as.
     for (pkg, deps) in &deps_of {
         if deps.iter().any(|d| d == "sigil-frontend-as") {
