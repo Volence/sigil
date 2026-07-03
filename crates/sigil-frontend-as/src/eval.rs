@@ -129,7 +129,10 @@ impl Asm {
     }
 
     fn here(&self) -> u32 {
-        self.state.vma_base.unwrap_or(0) + self.builder.current_offset()
+        // When no section is open (just after phase/dephase/cpu closed one and
+        // before the next emit reopens it), the new region has emitted 0 bytes.
+        self.state.vma_base.unwrap_or(0)
+            + if self.in_section { self.builder.current_offset() } else { 0 }
     }
 
     fn fold(&self, e: &Expr) -> Fold {
@@ -780,17 +783,6 @@ impl Asm {
     fn directive_dw(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
-            if let [Token { tok: Tok::Ident(name), .. }] = g {
-                if !is_reg_or_cond_word(name) && !self.functions.contains_key(name) {
-                    let target = Expr::Sym(qualify(name, self.scope.as_deref()));
-                    self.emit(
-                        &[0x00, 0x00],
-                        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target }],
-                        span,
-                    );
-                    continue;
-                }
-            }
             let expanded = self.expand_calls(g, 0);
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
@@ -799,8 +791,28 @@ impl Asm {
                     continue;
                 }
             };
-            let v = self.fold_imm(&e, span, -0x8000, 0xFFFF) as u16;
-            self.emit(&[(v & 0xFF) as u8, (v >> 8) as u8], vec![], span);
+            let qe = self.qualify_expr(&e);
+            match self.fold(&qe) {
+                Fold::Value(v) => {
+                    let w = v as u16;
+                    self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
+                }
+                Fold::Poison => {
+                    // A bare unresolved symbol defers to the linker as a
+                    // little-endian address fixup; a compound unresolved
+                    // expression is a real error (byte-stable placeholder).
+                    if matches!(qe, Expr::Sym(_)) {
+                        self.emit(
+                            &[0x00, 0x00],
+                            vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: qe }],
+                            span,
+                        );
+                    } else {
+                        self.err(span, "unresolved word expression");
+                        self.emit(&[0x00, 0x00], vec![], span);
+                    }
+                }
+            }
         }
     }
 
@@ -858,21 +870,33 @@ impl Asm {
         }
         if matches!(m, Mnemonic::Jp | Mnemonic::Call) {
             let (cond, target_opt) = self.split_control_target(atoms);
-            if let Some(target @ Expr::Sym(_)) = target_opt {
-                let mut ops = Vec::new();
-                if let Some(cc) = cond {
-                    ops.push(Operand::Cc(cc));
+            if let Some(target) = target_opt {
+                if matches!(target, Expr::Sym(_)) {
+                    let mut ops = Vec::new();
+                    if let Some(cc) = cond {
+                        ops.push(Operand::Cc(cc));
+                    }
+                    return Some(match self.fold(&target) {
+                        Fold::Value(v) => {
+                            ops.push(Operand::Imm16(v as u16));
+                            Lowered::Fixed(ops)
+                        }
+                        Fold::Poison => {
+                            ops.push(Operand::Imm16(0));
+                            Lowered::Abs16(ops, target)
+                        }
+                    });
                 }
-                ops.push(Operand::Imm16(0));
-                return Some(Lowered::Abs16(ops, target));
             }
         }
         if matches!(m, Mnemonic::Ld) {
             if let [OperandAtom::RegOrCond(w), OperandAtom::Value(e @ Expr::Sym(_))] = atoms {
                 if let Some(rr) = reg16(w) {
                     let target = self.qualify_expr(e);
-                    let ops = vec![Operand::Pair(rr), Operand::Imm16(0)];
-                    return Some(Lowered::Abs16(ops, target));
+                    return Some(match self.fold(&target) {
+                        Fold::Value(v) => Lowered::Fixed(vec![Operand::Pair(rr), Operand::Imm16(v as u16)]),
+                        Fold::Poison => Lowered::Abs16(vec![Operand::Pair(rr), Operand::Imm16(0)], target),
+                    });
                 }
             }
         }
@@ -1122,10 +1146,6 @@ fn reg16(w: &str) -> Option<Reg16> {
     })
 }
 
-fn is_reg_or_cond_word(w: &str) -> bool {
-    reg8(w).is_some() || reg16(w).is_some() || cond_word(w).is_some() || w == "i" || w == "r"
-}
-
 /// Qualify a name: `.local` → `Scope.local` (if scope); else unchanged.
 fn qualify(name: &str, scope: Option<&str>) -> String {
     if name.starts_with('.') {
@@ -1262,6 +1282,18 @@ mod tests {
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
         m.sections.first().map(|s| s.image_bytes()).unwrap_or_default()
+    }
+
+    #[test]
+    fn equate_as_16bit_operand_folds_not_fixups() {
+        // BufSize is an EQUATE (not a label); it must FOLD, since the linker
+        // cannot resolve a fixup to a non-label. Assemble + LINK + flatten.
+        let src = "        cpu z80\n        phase 0\nBufSize = 1234h\n        ld hl,BufSize\n        dw BufSize\n";
+        let m = run(src, &Options::default()).expect("assemble");
+        let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new()).expect("link must succeed (no unresolvable fixup)");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        // ld hl,1234h = 21 34 12 ; dw 1234h = 34 12
+        assert_eq!(bytes, vec![0x21, 0x34, 0x12, 0x34, 0x12]);
     }
 
     #[test]
