@@ -5,8 +5,10 @@ pub use backend::Cpu;
 
 pub mod expr;
 pub mod fixup;
+pub mod symbols;
 pub use expr::Expr;
 pub use fixup::{Fixup, FixupKind};
+pub use symbols::{SymbolTable, SymbolValue};
 
 use sigil_span::Span;
 
