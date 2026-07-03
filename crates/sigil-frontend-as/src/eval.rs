@@ -41,9 +41,20 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     let mut functions = FunctionTable::new();
     let mut prev = seed.clone();
     for pass in 0..PASS_CAP {
-        let (module, env, m, f, diags) = one_pass(src, opts, &seed, &macros, &functions);
+        let PassOutput { module, env, macros: m, functions: f, mut diags, poison } =
+            one_pass(src, opts, &seed, &macros, &functions);
         if pass > 0 && env == prev {
-            // Converged: this pass's result is authoritative.
+            // Converged: this pass's result is authoritative. The env is now final,
+            // so any operand that still folded to Poison references a genuinely
+            // undefined symbol — promote each to a hard error (a missing stub /
+            // typo that would otherwise have silently emitted a 0x00 byte).
+            for (name, span) in poison {
+                diags.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!("unresolved symbol `{name}` in operand"),
+                    primary: span,
+                });
+            }
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(diags)
             } else {
@@ -62,16 +73,28 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     }])
 }
 
+/// The outputs of a single assembly pass.
+struct PassOutput {
+    module: Module,
+    env: SymbolTable,
+    macros: MacroTable,
+    functions: FunctionTable,
+    diags: Vec<Diagnostic>,
+    /// Operand symbols that folded to Poison this pass (name + site span).
+    poison: Vec<(String, Span)>,
+}
+
 /// One assembly pass seeded with `seed_env` (symbols) plus the macro/function
 /// definition tables from prior passes. Returns the module, the discovered
-/// symbol table, the (possibly extended) definition tables, and diagnostics.
+/// symbol table, the (possibly extended) definition tables, diagnostics, and the
+/// unresolved-operand references seen this pass.
 fn one_pass(
     src: &str,
     opts: &Options,
     seed_env: &SymbolTable,
     seed_macros: &MacroTable,
     seed_functions: &FunctionTable,
-) -> (Module, SymbolTable, MacroTable, FunctionTable, Vec<Diagnostic>) {
+) -> PassOutput {
     let mut asm = Asm::new(opts);
     asm.env = seed_env.clone();
     asm.macros = seed_macros.clone();
@@ -79,7 +102,14 @@ fn one_pass(
     asm.process(src);
     let (module, mut diags) = asm.builder.finish();
     diags.append(&mut asm.diags);
-    (module, asm.env, asm.macros, asm.functions, diags)
+    PassOutput {
+        module,
+        env: asm.env,
+        macros: asm.macros,
+        functions: asm.functions,
+        diags,
+        poison: asm.poison_refs,
+    }
 }
 
 struct Asm {
@@ -97,6 +127,11 @@ struct Asm {
     visited: std::collections::BTreeSet<std::path::PathBuf>,
     include_root: Option<std::path::PathBuf>,
     aborted: bool,
+    /// Operand symbols that folded to Poison this pass (name + site span). On an
+    /// intermediate pass these are just not-yet-resolved forward refs; on the
+    /// CONVERGED pass the env is final, so any entry here is genuinely undefined
+    /// and `run` promotes it to an error.
+    poison_refs: Vec<(String, Span)>,
 }
 
 enum Lowered {
@@ -122,6 +157,7 @@ impl Asm {
             visited: std::collections::BTreeSet::new(),
             include_root: opts.include_root.clone(),
             aborted: false,
+            poison_refs: Vec::new(),
         }
     }
 
@@ -153,7 +189,11 @@ impl Asm {
     }
 
     /// Fold an immediate to a value in [lo,hi]. Out-of-range → diagnostic + clamp.
-    /// Unresolved (Poison) → 0 placeholder (byte-stable; the fixpoint resolves later).
+    /// Unresolved (Poison) → 0 placeholder for THIS pass (byte-stable so a forward
+    /// ref that resolves on a later pass doesn't perturb layout), but the offending
+    /// symbol names are recorded: on the converged pass `run` promotes them to
+    /// unresolved-symbol errors (the env is final there, so a still-Poison operand
+    /// is genuinely undefined rather than a pending forward ref).
     fn fold_imm(&mut self, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
         match self.fold(e) {
             Fold::Value(v) if v >= lo && v <= hi => v,
@@ -161,8 +201,40 @@ impl Asm {
                 self.err(span, format!("operand {v} out of range {lo}..={hi}"));
                 v.clamp(lo, hi)
             }
-            Fold::Poison => 0,
+            Fold::Poison => {
+                for name in self.unresolved_names(e) {
+                    self.poison_refs.push((name, span));
+                }
+                0
+            }
         }
+    }
+
+    /// Collect the symbol names in `e` that do NOT resolve in the current env
+    /// (ignoring `$`, which `fold` handles specially). These are the names that
+    /// made an operand fold to Poison.
+    fn unresolved_names(&self, e: &Expr) -> Vec<String> {
+        fn walk(this: &Asm, e: &Expr, out: &mut Vec<String>) {
+            match e {
+                Expr::Int(_) => {}
+                Expr::Sym(name) => {
+                    if name != "$" && this.env.resolve(name, this.scope.as_deref()).is_none() {
+                        out.push(name.clone());
+                    }
+                }
+                Expr::Binary { lhs, rhs, .. } => {
+                    walk(this, lhs, out);
+                    walk(this, rhs, out);
+                }
+                Expr::Unary { operand, .. } => walk(this, operand, out),
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, e, &mut out);
+        // A name can appear more than once in one operand (e.g. `X+X`); report it once.
+        out.sort();
+        out.dedup();
+        out
     }
 
     /// Fold a whole token slice as one constant expression (used by phase, etc.).
