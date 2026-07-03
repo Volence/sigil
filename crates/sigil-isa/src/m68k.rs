@@ -9,18 +9,44 @@
 //! Decode/disassembly (the ISA-sharing dual-facet) is deferred, as full Z80
 //! disassembly was in M0.
 
-/// Instruction mnemonics. Grown in M1; the spike covers `Move` only.
+/// Instruction mnemonics. The full 68000 set Aeon uses; only `Move` is encoded
+/// today — every other variant currently dispatches to `UnsupportedForm`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mnemonic {
-    Move,
+    Move, Movea,
+    Add, Adda, Sub, Suba, And, Or, Eor, Cmp, Cmpa, Muls,
+    Addi, Subi, Andi, Ori, Eori, Cmpi,
+    Moveq, Addq, Subq,
+    Asl, Asr, Lsl, Lsr, Rol, Ror,
+    Btst, Bset, Bclr,
+    Clr, Neg, Not, Tst, Tas,
+    Scc(Cond),
+    Jmp, Jsr, Lea, Pea, Nop, Rts, Rte, Trap, Swap, Ext,
+    Bra, Bsr, Bcc(Cond), Dbcc(Cond),
+    Movem, Movep, Addx, Cmpm,
+    MoveToSr, MoveFromSr, // move.w <ea>,sr / move.w sr,<ea>
+    AndiCcr, OriCcr,      // andi.b #imm,ccr / ori.b #imm,ccr
 }
 
-/// Operation size. `B` is included for completeness; the MOVE slice uses `W`/`L`.
+/// 68000 condition codes; discriminant is the 4-bit cc field (bits 11–8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cond {
+    T = 0x0, F = 0x1, Hi = 0x2, Ls = 0x3, Cc = 0x4, Cs = 0x5, Ne = 0x6, Eq = 0x7,
+    Vc = 0x8, Vs = 0x9, Pl = 0xA, Mi = 0xB, Ge = 0xC, Lt = 0xD, Gt = 0xE, Le = 0xF,
+}
+impl Cond {
+    #[inline]
+    pub fn cc(self) -> u16 { self as u16 }
+}
+
+/// Operation size. `B`/`W`/`L` are the data sizes; `S` is the 8-bit short branch
+/// displacement (never used by non-branch forms). Do not reorder `B,W,L`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Size {
     B,
     W,
     L,
+    S,
 }
 
 /// Index register for the `(d8,An,Xn)` brief extension word.
@@ -44,6 +70,15 @@ pub enum Operand {
     AbsL(i32),
     Pcd16(i16),
     Imm(i32),
+    /// MOVEM register-list mask in canonical order bit0=D0..bit7=D7,bit8=A0..bit15=A7.
+    /// The predecrement (-(An)) bit-order reversal is applied inside encode_movem.
+    RegList(u16),
+    /// Resolved branch / DBcc displacement (bytes measured as asl emits them).
+    Disp(i32),
+    /// The condition-code register (andi/ori to ccr).
+    Ccr,
+    /// The status register (move to/from sr).
+    Sr,
 }
 
 /// A decoded instruction: mnemonic + size + operands (source, dest order).
@@ -80,6 +115,7 @@ impl std::error::Error for IsaError {}
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst.mnemonic {
         Mnemonic::Move => encode_move(inst),
+        other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
 }
 
@@ -99,6 +135,7 @@ fn encode_move(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Size::B => 0b01,
         Size::W => 0b11,
         Size::L => 0b10,
+        Size::S => return Err(IsaError::UnsupportedForm("move has no short (.s) size".into())),
     };
     let (src_mode, src_reg, src_ext) = encode_ea(src, Field::Source, inst.size)?;
     let (dst_mode, dst_reg, dst_ext) = encode_ea(dst, Field::Dest, inst.size)?;
@@ -146,9 +183,16 @@ fn encode_ea(op: &Operand, field: Field, size: Size) -> Result<(u8, u8, Vec<u16>
                 Size::B => vec![(v as u16) & 0x00FF],
                 Size::W => vec![v as u16],
                 Size::L => vec![(v >> 16) as u16, v as u16],
+                Size::S => return Err(IsaError::UnsupportedForm("#imm has no short (.s) size".into())),
             };
             (0b111, 0b100, ext)
         }
+        // These are handled by their family encoders (movem/branch/ccr/sr) in
+        // later tasks, never resolved as a general EA.
+        Operand::RegList(_) => return Err(IsaError::UnsupportedForm("register list is not a general EA".into())),
+        Operand::Disp(_) => return Err(IsaError::UnsupportedForm("branch displacement is not a general EA".into())),
+        Operand::Ccr => return Err(IsaError::UnsupportedForm("ccr is not a general EA".into())),
+        Operand::Sr => return Err(IsaError::UnsupportedForm("sr is not a general EA".into())),
     })
 }
 
@@ -161,4 +205,23 @@ fn brief_ext(d: i8, xn: Xn, long: bool) -> u16 {
         Xn::A(n) => (1u16, (n & 0b111) as u16),
     };
     (ty << 15) | (num << 12) | ((long as u16) << 11) | ((d as u8) as u16)
+}
+
+#[cfg(test)]
+mod vocab_tests {
+    use super::*;
+
+    #[test]
+    fn new_vocab_constructs_and_move_still_dispatches() {
+        // New mnemonics/operands exist and compile.
+        let _ = (Mnemonic::Add, Mnemonic::Bcc(Cond::Eq), Mnemonic::Movem, Mnemonic::Moveq);
+        let _ = (Operand::RegList(0x0001), Operand::Disp(4), Operand::Ccr, Operand::Sr);
+        let _ = Size::S;
+        // Non-Move mnemonics are dispatched but not yet implemented → UnsupportedForm.
+        let add = Instruction { mnemonic: Mnemonic::Add, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
+        assert!(matches!(encode(&add), Err(IsaError::UnsupportedForm(_))));
+        // Move still works.
+        let mv = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
+        assert_eq!(encode(&mv).unwrap(), vec![0x30, 0x01]);
+    }
 }
