@@ -1,0 +1,9 @@
+[package]
+name = "sigil-backend-z80"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sigil-ir = { path = "../sigil-ir" }
+sigil-isa = { path = "../sigil-isa" }
+sigil-span = { path = "../sigil-span" }

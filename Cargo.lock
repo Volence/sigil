@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "sigil-backend-z80"
+version = "0.1.0"
+dependencies = [
+ "sigil-ir",
+ "sigil-isa",
+ "sigil-span",
+]
+
+[[package]]
 name = "sigil-cli"
 version = "0.1.0"
 dependencies = [
