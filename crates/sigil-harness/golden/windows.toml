@@ -9,7 +9,7 @@
 [region_a]
 vma_base = 0
 lma = 1002
-len = 5912
+len = 5920
 
 [region_b]
 vma_base = 32768

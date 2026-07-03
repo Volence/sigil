@@ -195,6 +195,20 @@ pub fn flatten(image: &LinkedImage, fill: u8) -> Vec<u8> {
     out
 }
 
+/// Like `flatten`, but errors if any two sections' `[lma, lma+len)` ranges
+/// overlap (a mis-assigned LMA map would otherwise silently clobber bytes).
+pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String> {
+    let mut ranges: Vec<(usize, usize, &str)> =
+        image.sections.iter().map(|s| (s.lma as usize, s.lma as usize + s.bytes.len(), s.name.as_str())).collect();
+    ranges.sort_by_key(|r| r.0);
+    for w in ranges.windows(2) {
+        if w[0].1 > w[1].0 {
+            return Err(format!("sections `{}` and `{}` overlap in the image", w[0].2, w[1].2));
+        }
+    }
+    Ok(flatten(image, fill))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,5 +439,30 @@ mod tests {
         let linked = link(&[a], &SymbolTable::new()).unwrap();
         // Bytes at LMA 2..4; positions 0,1 gap-filled with 0x00.
         assert_eq!(flatten(&linked, 0x00), vec![0x00, 0x00, 0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn flatten_checked_errors_on_overlap() {
+        // Two sections: lma 0 len 4 ([0,4)) and lma 2 len 4 ([2,6)) overlap.
+        let img = LinkedImage {
+            sections: vec![
+                LinkedSection { name: "a".to_string(), lma: 0, bytes: vec![0x11, 0x22, 0x33, 0x44] },
+                LinkedSection { name: "b".to_string(), lma: 2, bytes: vec![0x55, 0x66, 0x77, 0x88] },
+            ],
+        };
+        let err = flatten_checked(&img, 0x00).unwrap_err();
+        assert!(err.contains("overlap"), "got: {err}");
+    }
+
+    #[test]
+    fn flatten_checked_ok_when_disjoint() {
+        // lma 0 len 2 ([0,2)) and lma 2 len 2 ([2,4)) are adjacent, not overlapping.
+        let img = LinkedImage {
+            sections: vec![
+                LinkedSection { name: "a".to_string(), lma: 0, bytes: vec![0xAA, 0xBB] },
+                LinkedSection { name: "b".to_string(), lma: 2, bytes: vec![0xCC, 0xDD] },
+            ],
+        };
+        assert_eq!(flatten_checked(&img, 0x00).unwrap(), vec![0xAA, 0xBB, 0xCC, 0xDD]);
     }
 }

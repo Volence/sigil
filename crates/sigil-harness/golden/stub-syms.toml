@@ -1,30 +1,14 @@
 # External 68k leaf-stub symbols referenced by Region A/B but DEFINED
-# OUTSIDE A+B. These are the DEFINITIVE set: finalized in Task 5 by assembling
-# regions A+B in isolation and stubbing exactly the symbols that survive as
-# unresolved leaves (every A/B-internal symbol resolves without a stub).
-# Values are hex, taken from a fresh asl build's s4.lst.
-#
-# Provenance / why each is a leaf:
-#   * SND_ENGINE_TABLE_BANK — main.asm (= MovingTrucks_Bank_Start>>15);
-#     referenced by the driver (z80_sound_driver.asm `ld a,SND_ENGINE_TABLE_BANK`).
-#   * SND_<sample>_{BANK,PTR,LEN} — games/.../data/sound/dac_samples.asm (10
-#     DAC samples: BLIP/KICK/SNARE/HAT + the six S3K drums); read by region B's
-#     dac_sample_tab.asm as the DacSample records.
-#   * Sfx_XX — games/.../data/sound/sfx/sfx_XX.asm blob labels; windowed by
-#     region B's sfx_blob_win_tab.asm via sfx_winptr(Sfx_XX).
-#
-# CHANGES vs the Task-3 seed:
-#   - DROPPED SFX_BLOB_BANK: it is NOT an external leaf. It is defined INSIDE
-#     region A (sound_sfx.asm: `SFX_BLOB_BANK = sfx_bankid(Sfx_33)`) and resolves
-#     internally once Sfx_33 is stubbed — seeding it would have masked a real dep.
-#   - ADDED the six S3K DAC samples (18 syms) that dac_sample_tab.asm also reads
-#     (the seed only carried BLIP/KICK/SNARE/HAT).
-#   - ADDED the nine Sfx_XX blob labels (the real unresolved leaves the closure
-#     loop surfaced from sfx_blob_win_tab.asm).
+# OUTSIDE A+B (dac_samples.asm bank/ptr/len, the MT/SFX bank id, the
+# sfx/sfx_XX.asm blob labels). This is the DEFINITIVE set (STUB_SYM_NAMES
+# in regen.rs, finalized in Task 5); regen re-derives their VALUES from
+# each fresh asl build's s4.lst so the gate stays self-consistent when the
+# reference ROM drifts. Do not hand-edit; run `regen` to regenerate.
+# Values are hex.
 
 SND_ENGINE_TABLE_BANK = 0xc
-
-# --- DAC samples (dac_samples.asm; read by dac_sample_tab.asm) ---
+SFX_ID_BASE = 0x33
+SFX_TABLE_LEN = 0x87
 SND_BLIP_BANK = 0xa
 SND_BLIP_PTR = 0x8000
 SND_BLIP_LEN = 0xb40
@@ -55,14 +39,12 @@ SND_S3K_LOWTOM_LEN = 0x15b6
 SND_S3K_FLOORTOM_BANK = 0xb
 SND_S3K_FLOORTOM_PTR = 0xda28
 SND_S3K_FLOORTOM_LEN = 0x1916
-
-# --- SFX blob labels (sfx/sfx_XX.asm; windowed by sfx_blob_win_tab.asm) ---
-Sfx_33 = 0x6553a
-Sfx_34 = 0x65594
-Sfx_35 = 0x655ee
-Sfx_36 = 0x6572c
-Sfx_3C = 0x6575a
-Sfx_62 = 0x6588a
-Sfx_AB = 0x658a8
-Sfx_B6 = 0x65980
-Sfx_B9 = 0x659e8
+Sfx_33 = 0x63ae8
+Sfx_34 = 0x63b42
+Sfx_35 = 0x63b9c
+Sfx_36 = 0x63cda
+Sfx_3C = 0x63d08
+Sfx_62 = 0x63e38
+Sfx_AB = 0x63e56
+Sfx_B6 = 0x63f2e
+Sfx_B9 = 0x63f96

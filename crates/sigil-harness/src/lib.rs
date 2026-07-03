@@ -216,6 +216,25 @@ pub fn build_harness(
         .map_err(|d| format!("link: {} diagnostics; first: {:?}", d.len(), d.first()))
 }
 
+/// Compare a linked section's bytes against a golden blob. On mismatch, report
+/// the first differing byte offset. The `LinkedSection` here carries only
+/// name/lma/bytes; to map that offset back to source, correlate it against the
+/// original IR `Section`'s fragment spans (the pre-link representation), not this
+/// `LinkedImage`. `name` is the section name in the `LinkedImage`.
+pub fn diff_region(img: &LinkedImage, name: &str, golden: &[u8]) -> Result<(), String> {
+    let sec = img.section(name).ok_or_else(|| format!("no linked section `{name}`"))?;
+    if sec.bytes.len() != golden.len() {
+        return Err(format!("`{name}` length {} != golden {}", sec.bytes.len(), golden.len()));
+    }
+    if let Some(i) = (0..golden.len()).find(|&i| sec.bytes[i] != golden[i]) {
+        return Err(format!(
+            "`{name}` first diff at offset {i:#x}: sigil {:#04x} != golden {:#04x}",
+            sec.bytes[i], golden[i]
+        ));
+    }
+    Ok(())
+}
+
 /// Parse the `name = value` lines of a `stub-syms.toml` body (value may be
 /// `0xHEX` or decimal). Blank lines and `#` comments are skipped, but any
 /// present, non-comment line that is malformed — no `=`, or a value that parses
@@ -261,6 +280,34 @@ pub fn load_stub_syms(golden_dir: &Path) -> Vec<(String, i64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn img_with(name: &str, bytes: Vec<u8>) -> LinkedImage {
+        LinkedImage {
+            sections: vec![sigil_link::LinkedSection { name: name.to_string(), lma: 0, bytes }],
+        }
+    }
+
+    #[test]
+    fn diff_region_ok_on_match() {
+        let img = img_with("sec0", vec![0x01, 0x02, 0x03]);
+        assert!(diff_region(&img, "sec0", &[0x01, 0x02, 0x03]).is_ok());
+    }
+
+    #[test]
+    fn diff_region_reports_first_diff_offset() {
+        let img = img_with("sec0", vec![0x01, 0x02, 0xFF, 0x04]);
+        let err = diff_region(&img, "sec0", &[0x01, 0x02, 0x03, 0x04]).unwrap_err();
+        assert!(err.contains("offset 0x2"), "got: {err}");
+        assert!(err.contains("0xff"), "got: {err}");
+        assert!(err.contains("0x03"), "got: {err}");
+    }
+
+    #[test]
+    fn diff_region_reports_length_mismatch() {
+        let img = img_with("sec0", vec![0x01, 0x02]);
+        let err = diff_region(&img, "sec0", &[0x01, 0x02, 0x03]).unwrap_err();
+        assert!(err.contains("length"), "got: {err}");
+    }
 
     #[test]
     fn parse_stub_syms_reads_hex_decimal_comments_and_blanks() {
@@ -401,17 +448,44 @@ mod harness_tests {
 
         // Shape guard: pin BOTH regions by name + LMA + byte length so a
         // regression that drops a real section and admits a phantom cannot pass.
-        // Region A = sec0 (Z80, lma 0x3EA, 0x1718 = 5912 B); region B = sec32768
-        // (Z80, lma 0x60000, 0x607 = 1543 B) — matching golden/windows.toml.
-        // (`LinkedSection` carries no `cpu`, so the two real Z80 regions are
-        // pinned by their names + real LMAs + exact byte lengths; an empty
-        // M68000 phantom — also named `sec0` — could not satisfy the 0x1718
-        // length nor the 0x3EA LMA.)
+        // Region A = sec0 (Z80, lma 0x3EA); region B = sec32768 (Z80, lma
+        // 0x60000). The exact lengths track the current aeon source (they drift
+        // as the driver/tables change), so pin them to the committed golden blobs
+        // — which `regen` keeps in lockstep with the same build — rather than to
+        // a hard-coded number that silently rots. (`LinkedSection` carries no
+        // `cpu`, so the two real Z80 regions are pinned by their names + real
+        // LMAs + exact byte lengths; an empty M68000 phantom — also named `sec0`
+        // — could satisfy neither the golden length nor the 0x3EA LMA.)
+        let g = Path::new(env!("CARGO_MANIFEST_DIR")).join("golden");
+        let golden_a = std::fs::read(g.join("region_a.bin")).expect("region_a.bin (run regen)");
+        let golden_b = std::fs::read(g.join("region_b.bin")).expect("region_b.bin (run regen)");
         let a = img.section("sec0").expect("region A section sec0");
         let b = img.section("sec32768").expect("region B section sec32768");
         assert_eq!(a.lma, 0x3EA, "region A LMA");
-        assert_eq!(a.bytes.len(), 0x1718, "region A byte length");
         assert_eq!(b.lma, 0x60000, "region B LMA");
-        assert_eq!(b.bytes.len(), 0x607, "region B byte length");
+        // The real gate: the LIVE Sigil output must byte-match the committed
+        // reference blobs (not merely have the right length). Unlike the hermetic
+        // `m0_acceptance` test — which compares two files written by the same
+        // regen run and so only proves internal consistency — this asserts the
+        // freshly-assembled bytes against the reference extraction, with a
+        // first-diff offset on failure.
+        diff_region(&img, "sec0", &golden_a).expect("region A diverged from reference");
+        diff_region(&img, "sec32768", &golden_b).expect("region B diverged from reference");
+    }
+}
+
+#[cfg(test)]
+mod acceptance_tests {
+    use super::*;
+
+    #[test]
+    fn m0_acceptance_sigil_matches_reference_blobs() {
+        let g = Path::new(env!("CARGO_MANIFEST_DIR")).join("golden");
+        let ref_a = std::fs::read(g.join("region_a.bin")).expect("region_a.bin (run regen)");
+        let ref_b = std::fs::read(g.join("region_b.bin")).expect("region_b.bin (run regen)");
+        let sig_a = std::fs::read(g.join("sigil_a.bin")).expect("sigil_a.bin (run regen)");
+        let sig_b = std::fs::read(g.join("sigil_b.bin")).expect("sigil_b.bin (run regen)");
+        assert_eq!(sig_a, ref_a, "region A diverged");
+        assert_eq!(sig_b, ref_b, "region B diverged");
     }
 }
