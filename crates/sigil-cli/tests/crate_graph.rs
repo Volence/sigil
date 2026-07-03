@@ -1,9 +1,19 @@
 //! Integration test: enforce the one-way workspace crate graph.
 //!
-//! Rules verified:
+//! Rules verified (over **normal** dependencies only — see scope note below):
 //!   (a) `sigil-isa` has zero workspace (`sigil-*`) dependencies — extraction-ready
 //!   (b) `sigil-ir` depends only on `sigil-span`
 //!   (c) only `sigil-cli` may depend on `sigil-frontend-as` — contamination safeguard
+//!   (d) `sigil-backend-z80` depends on `sigil-ir`, `sigil-isa`, `sigil-span`;
+//!       `sigil-link` depends on `sigil-ir`, `sigil-span` (backends are dev-deps)
+//!
+//! **Scope: these invariants intentionally ignore `dev-` and `build-`dependencies.**
+//! `sigil_dep_map()` filters them out. The one-way graph guarantees what links into
+//! the *shipping* library artifacts; dev-deps only build `tests/`/benches and never
+//! reach a shipped crate, so e.g. an integration test taking `sigil-backend-z80` +
+//! `sigil-isa` as dev-deps (as `sigil-link` does) is legitimate and must not trip the
+//! guard. A forbidden edge introduced as a *dev*-dep is therefore deliberately not
+//! caught here — it does not violate the shipping-code quarantine.
 //!
 //! Parses `cargo metadata` JSON with a minimal hand parser; no external crates.
 
