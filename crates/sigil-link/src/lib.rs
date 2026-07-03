@@ -63,13 +63,16 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
             match frag {
                 Fragment::Data(d) => {
                     for fx in &d.fixups {
-                        // The fixup must start within THIS fragment's own bytes;
-                        // otherwise site_abs would land in a neighboring fragment.
-                        if fx.offset as usize >= d.bytes.len() {
+                        // The WHOLE fixup (offset..offset+width) must fit within
+                        // THIS fragment's own bytes; otherwise a multi-byte write
+                        // would silently clobber the next fragment.
+                        let width = fx.kind.byte_width() as usize;
+                        if fx.offset as usize + width > d.bytes.len() {
                             diags.push(diag(
                                 format!(
-                                    "fixup offset {} exceeds fragment length {} in section {}",
+                                    "fixup at offset {} (width {}) exceeds fragment length {} in section {}",
                                     fx.offset,
+                                    width,
                                     d.bytes.len(),
                                     sec.name
                                 ),
@@ -348,6 +351,37 @@ mod tests {
                 }],
                 span: span(),
             })],
+        };
+        let err = link(&[sec], &stubs).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn bankptr16le_at_fragment_boundary_diagnoses() {
+        // Two Data fragments; a 2-byte BankPtr16Le at offset 1 of the FIRST
+        // fragment ([0x00,0x00]) would write its high byte into the second
+        // fragment ([0xCC,0xDD]). The width-aware check must catch this loudly,
+        // and the second fragment's 0xCC must NOT be clobbered.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Ptr", SymbolValue::Int(0xBEEF));
+        let sec = Section {
+            name: "s".to_string(),
+            cpu: Cpu::Z80,
+            vma_base: Some(0x8000),
+            lma: 0x60000,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Data(DataFragment {
+                    bytes: vec![0x00, 0x00],
+                    fixups: vec![Fixup {
+                        kind: FixupKind::BankPtr16Le,
+                        offset: 1,
+                        target: Expr::Sym("Ptr".to_string()),
+                    }],
+                    span: span(),
+                }),
+                Fragment::Data(DataFragment { bytes: vec![0xCC, 0xDD], fixups: vec![], span: span() }),
+            ],
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
