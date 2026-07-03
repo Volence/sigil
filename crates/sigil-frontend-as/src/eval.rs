@@ -860,7 +860,7 @@ impl Asm {
                 }
             };
             let target = match target_atom {
-                OperandAtom::Value(e) => self.qualify_expr(e),
+                OperandAtom::Value(e) => self.resolve_dollar(&self.qualify_expr(e)),
                 _ => {
                     self.err(span, "jr/djnz needs a label target");
                     return None;
@@ -915,6 +915,25 @@ impl Asm {
         }
     }
 
+    /// Replace `$` (current-PC) sub-expressions with a concrete Int so the
+    /// relative-jump fixup carries a resolvable target. Other symbols stay
+    /// symbolic so real (possibly forward) labels still take the fixup path.
+    /// Mirrors `fold`'s rule that `$` never survives as a Sym fixup target.
+    fn resolve_dollar(&self, e: &Expr) -> Expr {
+        match e {
+            Expr::Sym(name) if name == "$" => Expr::Int(self.here() as i64),
+            Expr::Binary { op, lhs, rhs } => Expr::Binary {
+                op: *op,
+                lhs: Box::new(self.resolve_dollar(lhs)),
+                rhs: Box::new(self.resolve_dollar(rhs)),
+            },
+            Expr::Unary { op, operand } => {
+                Expr::Unary { op: *op, operand: Box::new(self.resolve_dollar(operand)) }
+            }
+            other => other.clone(),
+        }
+    }
+
     /// Qualify a bare local `.name` Sym against the current scope; else unchanged.
     fn qualify_expr(&self, e: &Expr) -> Expr {
         match e {
@@ -951,6 +970,8 @@ impl Asm {
                     "hl" => Operand::IndHl,
                     "bc" => Operand::IndBc,
                     "de" => Operand::IndDe,
+                    // `ex (sp),hl` — the encoder special-cases [Pair(Sp), Pair(Hl)] -> E3.
+                    "sp" if matches!(m, Mnemonic::Ex) => Operand::Pair(Reg16::Sp),
                     _ => {
                         self.err(span, "bad indirect register");
                         return None;
@@ -1294,6 +1315,22 @@ mod tests {
         let bytes = sigil_link::flatten(&linked, 0x00);
         // ld hl,1234h = 21 34 12 ; dw 1234h = 34 12
         assert_eq!(bytes, vec![0x21, 0x34, 0x12, 0x34, 0x12]);
+    }
+
+    #[test]
+    fn jr_dollar_relative_arithmetic_resolves_binary() {
+        // Exercises resolve_dollar's Binary recursion: `$` in `jr $±2` must fold
+        // to the instruction's own PC (0 under phase 0) before the fixup is made.
+        // Linker: disp = target - inst_end_vma, inst_end_vma = 2 for a jr at PC 0.
+        // `jr $+2` -> target 2, disp 0  -> 18 00
+        // `jr $-2` -> target -2, disp -4 -> 18 FC
+        let link = |src: &str| {
+            let m = run(src, &Options::default()).expect("assemble");
+            let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new()).expect("link");
+            sigil_link::flatten(&linked, 0x00)
+        };
+        assert_eq!(link("        cpu z80\n        phase 0\n        jr $+2\n"), vec![0x18, 0x00]);
+        assert_eq!(link("        cpu z80\n        phase 0\n        jr $-2\n"), vec![0x18, 0xFC]);
     }
 
     #[test]
