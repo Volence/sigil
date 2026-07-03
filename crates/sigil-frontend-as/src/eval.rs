@@ -179,7 +179,13 @@ impl Asm {
         }
     }
 
-    /// Parse `function name(p1,p2,...) = <body tokens>` and store it.
+    /// Parse a name-first AS `function` definition and store it.
+    ///
+    /// Real AS / aeon syntax: `<name> function <formal_args...>, <body_expr>`, e.g.
+    /// `timerAReload function mhz, 1024 - (1000000000000 / ((mhz) * 18773))`.
+    /// The comma-separated items after `function` are the formal parameters,
+    /// except the LAST, which is the body expression. (In aeon every function has
+    /// exactly one formal, but this handles any arity.)
     fn def_function(&mut self, line: &SrcLine) {
         let toks = match lex_line(&line.text, self.state.cpu, self.source, line.base) {
             Ok(t) => t,
@@ -188,45 +194,36 @@ impl Asm {
                 return;
             }
         };
-        // toks[0] = `function`, toks[1] = name, toks[2] = `(`, params..., `)`, `=`, body...
+        // toks[0] = name, toks[1] = `function`, toks[2..] = formals..., body.
         let span = toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: line.base, end: line.base });
-        let name = match toks.get(1).map(|t| &t.tok) {
+        let name = match toks.first().map(|t| &t.tok) {
             Some(Tok::Ident(s)) => s.clone(),
             _ => {
                 self.err(span, "function needs a name");
                 return;
             }
         };
-        let mut i = 2;
-        if !matches!(toks.get(i).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
-            self.err(span, "function needs `(params)`");
+        if !matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if s == "function") {
+            self.err(span, "function needs the `function` keyword");
             return;
         }
-        i += 1;
+        let groups = split_top_commas(&toks[2..]);
+        // Need at least one formal group plus the body group.
+        if groups.len() < 2 || groups.last().map(|g| g.is_empty()).unwrap_or(true) {
+            self.err(span, "function needs `<params...>, <body>`");
+            return;
+        }
+        let body = groups[groups.len() - 1].to_vec();
         let mut params = Vec::new();
-        loop {
-            match toks.get(i).map(|t| &t.tok) {
-                Some(Tok::Punct(Punct::RParen)) => {
-                    i += 1;
-                    break;
-                }
-                Some(Tok::Punct(Punct::Comma)) => i += 1,
-                Some(Tok::Ident(p)) => {
-                    params.push(p.clone());
-                    i += 1;
-                }
+        for g in &groups[..groups.len() - 1] {
+            match g {
+                [Token { tok: Tok::Ident(p), .. }] => params.push(p.clone()),
                 _ => {
-                    self.err(span, "bad function parameter list");
+                    self.err(span, "bad function parameter");
                     return;
                 }
             }
         }
-        if !matches!(toks.get(i).map(|t| &t.tok), Some(Tok::Punct(Punct::Eq))) {
-            self.err(span, "function needs `= <expr>`");
-            return;
-        }
-        i += 1;
-        let body = toks[i..].to_vec();
         self.functions.insert(name, (params, body));
     }
 
@@ -572,11 +569,15 @@ impl Asm {
         end + 1
     }
 
-    /// Handle `struct Name … endstruct`: define packed `Name_field` offsets and
-    /// `Name_len`. Field lines emit no bytes. Returns the index past `endstruct`.
+    /// Handle name-first `Name struct … Name endstruct`: define packed
+    /// `Name_field` offsets and `Name_len`. Field lines emit no bytes. Returns the
+    /// index past `endstruct`. (Mirrors `capture_macro`: name at `toks[0]`,
+    /// `struct` at `toks[1]`.)
     fn capture_struct(&mut self, lines: &[SrcLine], start: usize) -> usize {
-        let (_, args, span) = self.line_kw_args(&lines[start]);
-        let name = match args.first().map(|t| &t.tok) {
+        let toks = lex_line(&lines[start].text, self.state.cpu, self.source, lines[start].base)
+            .unwrap_or_default();
+        let span = toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: lines[start].base, end: lines[start].base });
+        let name = match toks.first().map(|t| &t.tok) {
             Some(Tok::Ident(s)) => s.clone(),
             _ => {
                 self.err(span, "struct needs a name");
@@ -1291,9 +1292,10 @@ mod tests {
             "        cpu z80\n        phase 0\n",
             "SFX_WIN_MASK = 32767\n",
             "SFX_WIN_BASE = 32768\n",
-            "function sfx_winptr(addr) = ((addr) & SFX_WIN_MASK) | SFX_WIN_BASE\n",
-            "function sfx_bankid(addr) = (addr) >> 15\n",
-            "function timerAReload(hz) = 1024 - (1000000000 / ((hz) * 18773))\n",
+            // Name-first (real AS): `<name> function <formal>, <body>`.
+            "sfx_winptr function addr, ((addr) & SFX_WIN_MASK) | SFX_WIN_BASE\n",
+            "sfx_bankid function addr, (addr) >> 15\n",
+            "timerAReload function hz, 1024 - (1000000000 / ((hz) * 18773))\n",
             "Sfx_33   = 0D69Ah\n",
             "        dw sfx_winptr(Sfx_33)\n",
             "        db sfx_bankid(0C0000h)\n",
@@ -1330,11 +1332,26 @@ mod tests {
     }
 
     #[test]
+    fn function_name_first_simple_double() {
+        // Self-contained: `dbl(x) = (x)*2`, name-first. db dbl(5) = 10 = 0x0A.
+        let src = "        cpu z80\n        phase 0\ndbl function x, (x)*2\n        db dbl(5)\n";
+        assert_eq!(image(src), vec![0x0A]);
+    }
+
+    #[test]
     fn struct_offsets_and_len_drive_indexed_disp() {
         // Packed: a(1) b(1) c(2) → a=0 b=1 c=2 len=4. Then (ix+SeqChannel_b) = (ix+1).
-        let src = "        cpu z80\n        phase 0\n        struct SeqChannel\na       ds.b 1\nb       ds.b 1\nc       ds.w 1\n        endstruct\n        ld a,(ix+SeqChannel_b)\n        db SeqChannel_len\n";
+        // Name-first (real AS): `SeqChannel struct` … `SeqChannel endstruct`.
+        let src = "        cpu z80\n        phase 0\nSeqChannel struct\na       ds.b 1\nb       ds.b 1\nc       ds.w 1\nSeqChannel endstruct\n        ld a,(ix+SeqChannel_b)\n        db SeqChannel_len\n";
         // ld a,(ix+1) = DD 7E 01 ; db 4 = 04
         assert_eq!(image(src), vec![0xDD, 0x7E, 0x01, 0x04]);
+    }
+
+    #[test]
+    fn struct_three_byte_fields_len_and_offsets() {
+        // Three ds.b 1 fields → offsets 0/1/2, DacSample_len = 3.
+        let src = "        cpu z80\n        phase 0\nDacSample struct\np       ds.b 1\nq       ds.b 1\nr       ds.b 1\nDacSample endstruct\n        db DacSample_p, DacSample_q, DacSample_r, DacSample_len\n";
+        assert_eq!(image(src), vec![0x00, 0x01, 0x02, 0x03]);
     }
 
     #[test]

@@ -43,11 +43,11 @@ Skip:
 === struct_field_indexed ===
         cpu z80
         phase 0
-        struct SeqChannel
+SeqChannel struct
 a       ds.b 1
 b       ds.b 1
 c       ds.w 1
-        endstruct
+SeqChannel endstruct
         ld a,(ix+SeqChannel_b)
         db SeqChannel_len
 --- bytes ---
