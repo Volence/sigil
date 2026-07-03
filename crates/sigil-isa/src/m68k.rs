@@ -66,6 +66,8 @@ pub enum Operand {
     PreDec(u8),
     Disp16An(i16, u8),
     Disp8AnXn { d: i8, an: u8, xn: Xn, long: bool },
+    /// (d8,PC,Xn) brief-extension PC-relative indexed — EA mode 111, reg 011.
+    Pcd8Xn { d: i8, xn: Xn, long: bool },
     AbsW(i16),
     AbsL(i32),
     Pcd16(i16),
@@ -129,6 +131,9 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         | Mnemonic::Tas | Mnemonic::Scc(_) => encode_single_ea(inst),
         Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
+        Mnemonic::Jmp | Mnemonic::Jsr | Mnemonic::Lea | Mnemonic::Pea
+        | Mnemonic::Nop | Mnemonic::Rts | Mnemonic::Rte | Mnemonic::Trap
+        | Mnemonic::Swap | Mnemonic::Ext => encode_control(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
 }
@@ -636,6 +641,142 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
+/// Encode the control / misc family (`jmp/jsr/lea/pea/nop/rts/rte/trap/swap/ext`).
+///
+/// - EA-only forms: `jmp`=`0x4EC0 | ea`, `jsr`=`0x4E80 | ea`, `pea`=`0x4840 | ea`,
+///   each followed by the operand's extension words.
+/// - `lea <ea>,An`=`0x41C0 | (an<<9) | ea` (+ ea ext words); dest must be `An`.
+/// - Fixed no-operand words: `nop`=`0x4E71`, `rts`=`0x4E75`, `rte`=`0x4E73`.
+/// - `trap #n`=`0x4E40 | (n & 0xF)`; `n` must be an `Imm` in `0..=15`.
+/// - `swap Dn`=`0x4840 | dn` (shares its base word with `pea`; dispatched by mnemonic).
+/// - `ext.w Dn`=`0x4880 | dn`, `ext.l Dn`=`0x48C0 | dn`.
+fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    // No-operand fixed words first.
+    let fixed: Option<u16> = match inst.mnemonic {
+        Mnemonic::Nop => Some(0x4E71),
+        Mnemonic::Rts => Some(0x4E75),
+        Mnemonic::Rte => Some(0x4E73),
+        _ => None,
+    };
+    if let Some(word) = fixed {
+        if !inst.ops.is_empty() {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 0 operands, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )));
+        }
+        return Ok(word.to_be_bytes().to_vec());
+    }
+
+    // `lea` is the only two-operand form.
+    if inst.mnemonic == Mnemonic::Lea {
+        let (src, an) = match inst.ops.as_slice() {
+            [src, Operand::An(n)] => (src, (n & 0b111) as u16),
+            [_, other] => {
+                return Err(IsaError::UnsupportedForm(format!(
+                    "lea requires An destination, got {other:?}"
+                )))
+            }
+            _ => {
+                return Err(IsaError::OperandCount(format!(
+                    "lea expects 2 operands, got {}",
+                    inst.ops.len()
+                )))
+            }
+        };
+        let (ea_mode, ea_reg, ea_ext) = encode_ea(src, Field::Source, inst.size)?;
+        let word: u16 = 0x41C0 | (an << 9) | ((ea_mode as u16) << 3) | (ea_reg as u16);
+        let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
+        out.extend_from_slice(&word.to_be_bytes());
+        for w in ea_ext {
+            out.extend_from_slice(&w.to_be_bytes());
+        }
+        return Ok(out);
+    }
+
+    // Remaining forms take exactly one operand.
+    let op = match inst.ops.as_slice() {
+        [op] => op,
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 1 operand, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+
+    match inst.mnemonic {
+        // EA-only forms.
+        Mnemonic::Jmp | Mnemonic::Jsr | Mnemonic::Pea => {
+            let base: u16 = match inst.mnemonic {
+                Mnemonic::Jmp => 0x4EC0,
+                Mnemonic::Jsr => 0x4E80,
+                Mnemonic::Pea => 0x4840,
+                _ => unreachable!(),
+            };
+            let (ea_mode, ea_reg, ea_ext) = encode_ea(op, Field::Source, inst.size)?;
+            let word: u16 = base | ((ea_mode as u16) << 3) | (ea_reg as u16);
+            let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
+            out.extend_from_slice(&word.to_be_bytes());
+            for w in ea_ext {
+                out.extend_from_slice(&w.to_be_bytes());
+            }
+            Ok(out)
+        }
+        Mnemonic::Trap => {
+            let n = match op {
+                Operand::Imm(v) if (0..=15).contains(v) => *v as u16,
+                Operand::Imm(v) => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "trap vector must be 0..=15, got {v}"
+                    )))
+                }
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "trap requires #n immediate, got {other:?}"
+                    )))
+                }
+            };
+            let word: u16 = 0x4E40 | (n & 0xF);
+            Ok(word.to_be_bytes().to_vec())
+        }
+        Mnemonic::Swap => {
+            let dn = match op {
+                Operand::Dn(n) => (n & 0b111) as u16,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "swap requires Dn operand, got {other:?}"
+                    )))
+                }
+            };
+            Ok((0x4840 | dn).to_be_bytes().to_vec())
+        }
+        Mnemonic::Ext => {
+            let dn = match op {
+                Operand::Dn(n) => (n & 0b111) as u16,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "ext requires Dn operand, got {other:?}"
+                    )))
+                }
+            };
+            let base: u16 = match inst.size {
+                Size::W => 0x4880,
+                Size::L => 0x48C0,
+                _ => {
+                    return Err(IsaError::UnsupportedForm(
+                        "ext is word (.w) or long (.l) only".into(),
+                    ))
+                }
+            };
+            Ok((base | dn).to_be_bytes().to_vec())
+        }
+        _ => unreachable!(),
+    }
+}
+
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
 #[derive(Clone, Copy)]
 enum Field {
@@ -684,6 +825,12 @@ fn encode_ea(op: &Operand, field: Field, size: Size) -> Result<(u8, u8, Vec<u16>
         Operand::PreDec(n) => (0b100, r(n), vec![]),
         Operand::Disp16An(d, n) => (0b101, r(n), vec![d as u16]),
         Operand::Disp8AnXn { d, an, xn, long } => (0b110, r(an), vec![brief_ext(d, xn, long)]),
+        Operand::Pcd8Xn { d, xn, long } => {
+            if let Field::Dest = field {
+                return Err(IsaError::IllegalDest("(d8,PC,Xn)".into()));
+            }
+            (0b111, 0b011, vec![brief_ext(d, xn, long)])
+        }
         Operand::AbsW(a) => (0b111, 0b000, vec![a as u16]),
         Operand::AbsL(a) => (0b111, 0b001, vec![(a >> 16) as u16, a as u16]),
         Operand::Pcd16(d) => {
@@ -735,8 +882,11 @@ mod vocab_tests {
         let _ = (Operand::RegList(0x0001), Operand::Disp(4), Operand::Ccr, Operand::Sr);
         let _ = Size::S;
         // Still-unimplemented mnemonics are dispatched but return UnsupportedForm.
+        let movem = Instruction { mnemonic: Mnemonic::Movem, size: Size::W, ops: vec![Operand::RegList(0x0001), Operand::PreDec(7)] };
+        assert!(matches!(encode(&movem), Err(IsaError::UnsupportedForm(_))));
+        // swap is now implemented (control/misc family): 0x4840 | dn.
         let swap = Instruction { mnemonic: Mnemonic::Swap, size: Size::W, ops: vec![Operand::Dn(0)] };
-        assert!(matches!(encode(&swap), Err(IsaError::UnsupportedForm(_))));
+        assert_eq!(encode(&swap).unwrap(), vec![0x48, 0x40]);
         // Move still works.
         let mv = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
         assert_eq!(encode(&mv).unwrap(), vec![0x30, 0x01]);

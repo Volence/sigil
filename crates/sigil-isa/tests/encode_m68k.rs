@@ -125,6 +125,14 @@ fn single_ea_family() {
 }
 
 #[test]
+fn control_misc_family() {
+    check(&[
+        "jmp ($1234).w", "jmp ($12345678).l", "jsr ($1234).w", "jmp (a0)", "jmp (4,pc,d0.w)",
+        "lea (4,a0),a1", "pea (a0)", "nop", "rts", "rte", "trap #0", "swap d0", "ext.w d0", "ext.l d1",
+    ]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

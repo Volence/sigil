@@ -106,5 +106,23 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("st d0", Instruction { mnemonic: Mnemonic::Scc(Cond::T), size: B, ops: vec![Dn(0)] }),
         ("sf d0", Instruction { mnemonic: Mnemonic::Scc(Cond::F), size: B, ops: vec![Dn(0)] }),
         ("sgt d0", Instruction { mnemonic: Mnemonic::Scc(Cond::Gt), size: B, ops: vec![Dn(0)] }),
+        // --- control / misc ---
+        ("jmp ($1234).w", Instruction { mnemonic: Mnemonic::Jmp, size: W, ops: vec![AbsW(0x1234)] }),
+        ("jmp ($12345678).l", Instruction { mnemonic: Mnemonic::Jmp, size: L, ops: vec![AbsL(0x12345678)] }),
+        ("jsr ($1234).w", Instruction { mnemonic: Mnemonic::Jsr, size: W, ops: vec![AbsW(0x1234)] }),
+        ("jmp (a0)", Instruction { mnemonic: Mnemonic::Jmp, size: W, ops: vec![Ind(0)] }),
+        // Like `Pcd16`, the stored `d` is the RESOLVED displacement asl emits: it reads
+        // `(4,pc,...)` as an absolute target at `org 0` and resolves the brief-ext disp to
+        // `target - ext_word_addr = 4 - 2 = 2`; target→disp resolution is an M1 fixup.
+        ("jmp (4,pc,d0.w)", Instruction { mnemonic: Mnemonic::Jmp, size: W, ops: vec![Pcd8Xn { d: 2, xn: Xn::D(0), long: false }] }),
+        ("lea (4,a0),a1", Instruction { mnemonic: Mnemonic::Lea, size: L, ops: vec![Disp16An(4, 0), An(1)] }),
+        ("pea (a0)", Instruction { mnemonic: Mnemonic::Pea, size: L, ops: vec![Ind(0)] }),
+        ("nop", Instruction { mnemonic: Mnemonic::Nop, size: W, ops: vec![] }),
+        ("rts", Instruction { mnemonic: Mnemonic::Rts, size: W, ops: vec![] }),
+        ("rte", Instruction { mnemonic: Mnemonic::Rte, size: W, ops: vec![] }),
+        ("trap #0", Instruction { mnemonic: Mnemonic::Trap, size: W, ops: vec![Imm(0)] }),
+        ("swap d0", Instruction { mnemonic: Mnemonic::Swap, size: W, ops: vec![Dn(0)] }),
+        ("ext.w d0", Instruction { mnemonic: Mnemonic::Ext, size: W, ops: vec![Dn(0)] }),
+        ("ext.l d1", Instruction { mnemonic: Mnemonic::Ext, size: L, ops: vec![Dn(1)] }),
     ]
 }
