@@ -14,6 +14,8 @@
 
 use std::collections::BTreeMap;
 
+use sigil_ir::{Cpu, Module};
+
 /// Region A bracket anchors (68k-context labels around the phase-0 driver).
 pub const REGION_A_START_SYM: &str = "Z80_Sound_Start";
 pub const REGION_A_END_SYM: &str = "Z80_Sound_End";
@@ -121,6 +123,45 @@ pub fn derive_region_b(syms: &BTreeMap<String, u64>) -> Result<RegionWindow, Str
     })
 }
 
+/// Maps a section's `(cpu, vma_base)` to the real ROM LMA it loads at. The
+/// front-end sets `lma = vma_base` as a placeholder; the harness overrides it
+/// before link so region A lands at its real ROM LMA and region B at $60000.
+#[derive(Clone, Debug, Default)]
+pub struct LmaMap {
+    entries: Vec<(Cpu, Option<u32>, u32)>, // (cpu, vma_base, lma)
+}
+
+impl LmaMap {
+    pub fn new() -> Self {
+        LmaMap { entries: Vec::new() }
+    }
+
+    pub fn set(&mut self, cpu: Cpu, vma_base: Option<u32>, lma: u32) {
+        self.entries.push((cpu, vma_base, lma));
+    }
+
+    fn lookup(&self, cpu: Cpu, vma_base: Option<u32>) -> Option<u32> {
+        self.entries.iter().find(|(c, v, _)| *c == cpu && *v == vma_base).map(|(_, _, l)| *l)
+    }
+}
+
+/// Override each section's LMA from the map. Errors (as a message) if a section
+/// has no mapping — the harness must account for every section.
+pub fn assign_lmas(module: &mut Module, map: &LmaMap) -> Result<(), String> {
+    for sec in &mut module.sections {
+        match map.lookup(sec.cpu, sec.vma_base) {
+            Some(lma) => sec.lma = lma,
+            None => {
+                return Err(format!(
+                    "no LMA mapping for section `{}` (cpu {:?}, vma_base {:?})",
+                    sec.name, sec.cpu, sec.vma_base
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,5 +223,34 @@ mod tests {
         syms.insert("Song_MovingTrucks".to_string(), 0x60607);
         let w = derive_region_b(&syms).unwrap();
         assert_eq!(w, RegionWindow { vma_base: 0x8000, lma: 0x60000, len: 0x607 });
+    }
+}
+
+#[cfg(test)]
+mod lma_tests {
+    use super::*;
+    use sigil_ir::{Cpu, Section};
+
+    fn sec(name: &str, vma_base: Option<u32>) -> Section {
+        Section { name: name.into(), cpu: Cpu::Z80, vma_base, lma: vma_base.unwrap_or(0),
+                  labels: vec![], fragments: vec![] }
+    }
+
+    #[test]
+    fn assigns_region_lmas_by_vma_base() {
+        let mut m = Module { sections: vec![sec("sec0", Some(0)), sec("sec32768", Some(0x8000))] };
+        let mut map = LmaMap::new();
+        map.set(Cpu::Z80, Some(0), 0x400);
+        map.set(Cpu::Z80, Some(0x8000), 0x60000);
+        assign_lmas(&mut m, &map).unwrap();
+        assert_eq!(m.sections[0].lma, 0x400);
+        assert_eq!(m.sections[1].lma, 0x60000);
+    }
+
+    #[test]
+    fn unmapped_section_errors() {
+        let mut m = Module { sections: vec![sec("sec0", Some(0))] };
+        let err = assign_lmas(&mut m, &LmaMap::new()).unwrap_err();
+        assert!(err.contains("no LMA mapping"), "got: {err}");
     }
 }
