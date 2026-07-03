@@ -5,8 +5,13 @@
 
 use sigil_ir::backend::{Backend, Cpu, LowerError};
 use sigil_ir::{DataFragment, Expr, Fixup, FixupKind};
-use sigil_isa::z80::{self, Cond, Instruction, Mnemonic, Operand};
+use sigil_isa::z80::{Cond, Instruction, Mnemonic, Operand};
 use sigil_span::Span;
+
+/// Re-export the Z80 operand/mnemonic vocabulary so downstream crates (the AS
+/// front-end) can construct instructions without a *direct* `sigil-isa`
+/// dependency — keeping `sigil-isa` a transitive-only edge (crate-graph guard).
+pub use sigil_isa::z80;
 
 /// The Z80 backend. Stateless.
 pub struct Z80Backend;
@@ -107,5 +112,13 @@ mod tests {
         let frag = b.lower_rel(Mnemonic::Jr, Some(Cond::Z), Expr::Sym(".target".to_string()), span()).unwrap();
         assert_eq!(frag.bytes[0], 0x28);
         assert_eq!(frag.fixups[0].kind, FixupKind::Z80JrRel8);
+    }
+
+    #[test]
+    fn reexports_z80_vocabulary() {
+        // The front-end constructs instructions via this re-export, not a direct
+        // sigil-isa dep. Naming these types through `crate::z80` must compile.
+        use crate::z80::{Cond, IndexReg, Mnemonic, Operand, Reg16, Reg8};
+        let _ = (Mnemonic::Ld, Operand::Reg(Reg8::A), Reg16::Hl, Cond::Z, IndexReg::Ix);
     }
 }
