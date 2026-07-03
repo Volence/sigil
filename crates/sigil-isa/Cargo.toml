@@ -8,3 +8,7 @@ edition = "2021"
 [[bin]]
 name = "gen-z80-vectors"
 path = "src/bin/gen_z80_vectors.rs"
+
+[[bin]]
+name = "gen-m68k-vectors"
+path = "src/bin/gen_m68k_vectors.rs"
