@@ -12,6 +12,12 @@ use sigil_ir::expr::Fold;
 use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
+#[derive(Clone)]
+struct SrcLine {
+    text: String,
+    base: u32,
+}
+
 pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     let mut asm = Asm::new(opts);
     for (k, v) in &opts.defines {
@@ -109,15 +115,33 @@ impl Asm {
     }
 
     fn process(&mut self, src: &str) {
+        let mut lines = Vec::new();
         let mut base = 0u32;
         for raw in src.split_inclusive('\n') {
-            self.process_line(raw, base);
+            lines.push(SrcLine { text: raw.to_string(), base });
             base += raw.len() as u32;
+        }
+        self.exec(&lines);
+    }
+
+    /// Execute a slice of logical lines in order, handling block directives.
+    fn exec(&mut self, lines: &[SrcLine]) {
+        let mut i = 0;
+        while i < lines.len() {
+            match self.line_keyword(&lines[i]).as_deref() {
+                Some("if") | Some("ifdef") | Some("ifndef") => {
+                    i = self.exec_if(lines, i);
+                }
+                _ => {
+                    self.exec_one(&lines[i]);
+                    i += 1;
+                }
+            }
         }
     }
 
-    fn process_line(&mut self, line: &str, base: u32) {
-        let toks = match lex_line(line, self.state.cpu, self.source, base) {
+    fn exec_one(&mut self, line: &SrcLine) {
+        let toks = match lex_line(&line.text, self.state.cpu, self.source, line.base) {
             Ok(t) => t,
             Err(d) => {
                 self.diags.push(d);
@@ -163,6 +187,145 @@ impl Asm {
             return;
         }
         self.dispatch(&head, &body[1..], body[0].span);
+    }
+
+    /// The dispatch keyword of a line (after peeling an optional label), or None
+    /// for a blank/label-only/lex-error line.
+    fn line_keyword(&self, line: &SrcLine) -> Option<String> {
+        let toks = lex_line(&line.text, self.state.cpu, self.source, line.base).ok()?;
+        if toks.is_empty() {
+            return None;
+        }
+        let parsed = parse_line_tokens(&toks);
+        let body = if parsed.label_colon.is_some() { parsed.tokens } else { toks };
+        let first = body.first()?;
+        let name = match &first.tok {
+            Tok::Ident(s) => s.clone(),
+            _ => return None,
+        };
+        // A leading bareword that is neither directive nor mnemonic is a bare
+        // label; the dispatch keyword is the next token.
+        if !is_op_keyword(&name) && !is_mnemonic(&name) && body.len() > 1 {
+            if let Tok::Ident(s) = &body[1].tok {
+                return Some(s.clone());
+            }
+        }
+        Some(name)
+    }
+
+    /// The keyword + the tokens after it + the keyword span, for a block head.
+    fn line_kw_args(&self, line: &SrcLine) -> (Option<String>, Vec<Token>, Span) {
+        let toks = match lex_line(&line.text, self.state.cpu, self.source, line.base) {
+            Ok(t) => t,
+            Err(_) => return (None, Vec::new(), Span { source: self.source, start: line.base, end: line.base }),
+        };
+        let parsed = parse_line_tokens(&toks);
+        let body = if parsed.label_colon.is_some() { parsed.tokens } else { toks };
+        // Peel a leading bare label.
+        let (kw_idx, kw) = match body.first() {
+            Some(Token { tok: Tok::Ident(s), .. })
+                if !is_op_keyword(s) && !is_mnemonic(s) && body.len() > 1 =>
+            {
+                match &body[1].tok {
+                    Tok::Ident(s2) => (1usize, Some(s2.clone())),
+                    _ => (0usize, Some(s.clone())),
+                }
+            }
+            Some(Token { tok: Tok::Ident(s), .. }) => (0usize, Some(s.clone())),
+            _ => (0usize, None),
+        };
+        let span = body.get(kw_idx).map(|t| t.span).unwrap_or(Span { source: self.source, start: line.base, end: line.base });
+        let args = body.get(kw_idx + 1..).unwrap_or(&[]).to_vec();
+        (kw, args, span)
+    }
+
+    /// Find the index of the terminator matching the block opened at `start`,
+    /// depth-counting nested blocks. Returns the terminator index (or the last
+    /// line index if unterminated).
+    fn find_block_end(&self, lines: &[SrcLine], start: usize, openers: &[&str], closers: &[&str]) -> usize {
+        let mut depth = 0i32;
+        for (idx, line) in lines.iter().enumerate().skip(start) {
+            let kw = self.line_keyword(line);
+            if let Some(k) = kw.as_deref() {
+                if idx == start || openers.contains(&k) {
+                    depth += 1;
+                } else if closers.contains(&k) {
+                    depth -= 1;
+                    if depth == 0 {
+                        return idx;
+                    }
+                }
+            }
+        }
+        lines.len().saturating_sub(1)
+    }
+
+    /// Execute an `if`/`ifdef`/`ifndef` … `endif` region; run the first true arm.
+    /// Returns the index just past `endif`.
+    fn exec_if(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let end = self.find_block_end(lines, start, &["if", "ifdef", "ifndef"], &["endif"]);
+        // Collect arm-head indices at depth 0: start, then each elseif/else.
+        let mut heads = vec![start];
+        let mut depth = 0i32;
+        for (idx, line) in lines.iter().enumerate().take(end).skip(start + 1) {
+            match self.line_keyword(line).as_deref() {
+                Some("if") | Some("ifdef") | Some("ifndef") => depth += 1,
+                Some("endif") => depth -= 1,
+                Some("elseif") | Some("else") if depth == 0 => heads.push(idx),
+                _ => {}
+            }
+        }
+        heads.push(end); // sentinel
+        for w in 0..(heads.len() - 1) {
+            let head = heads[w];
+            let (kw, argtoks, span) = self.line_kw_args(&lines[head]);
+            let take = match kw.as_deref() {
+                Some("if") | Some("ifdef") | Some("ifndef") => self.eval_cond(kw.as_deref().unwrap(), &argtoks, span),
+                Some("elseif") => self.eval_if_expr(&argtoks, span),
+                Some("else") => true,
+                _ => false,
+            };
+            if take {
+                let body = &lines[head + 1..heads[w + 1]];
+                self.exec(body);
+                break;
+            }
+        }
+        end + 1
+    }
+
+    fn eval_cond(&mut self, kw: &str, arg_toks: &[Token], span: Span) -> bool {
+        match kw {
+            "ifdef" => self.cond_defined(arg_toks),
+            "ifndef" => !self.cond_defined(arg_toks),
+            _ => self.eval_if_expr(arg_toks, span),
+        }
+    }
+
+    fn cond_defined(&self, arg_toks: &[Token]) -> bool {
+        matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if self.env.resolve(n, self.scope.as_deref()).is_some())
+    }
+
+    /// `if MOMCPUNAME="Z80"` / `<lhs>="str"` string equality, else numeric `!= 0`.
+    fn eval_if_expr(&mut self, toks: &[Token], span: Span) -> bool {
+        if let Some(pos) = toks.iter().position(|t| matches!(t.tok, Tok::Punct(Punct::Eq))) {
+            if let Some(Token { tok: Tok::Str(rhs), .. }) = toks.get(pos + 1) {
+                let lhs = self.string_value(&toks[..pos]);
+                return lhs.as_deref() == Some(rhs.as_str());
+            }
+        }
+        self.eval_all(toks, span).map(|v| v != 0).unwrap_or(false)
+    }
+
+    /// The string value of a builtin like MOMCPUNAME (else None).
+    fn string_value(&self, toks: &[Token]) -> Option<String> {
+        match toks {
+            [Token { tok: Tok::Ident(n), .. }] if n == "MOMCPUNAME" => Some(match self.state.cpu {
+                Cpu::Z80 => "Z80".into(),
+                Cpu::M68000 => "68000".into(),
+            }),
+            _ => None,
+        }
     }
 
     fn dispatch(&mut self, head: &str, rest: &[Token], span: Span) {
@@ -598,10 +761,38 @@ fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
 mod tests {
     use super::run;
     use crate::Options;
+    use sigil_ir::backend::Cpu;
 
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
         m.sections.first().map(|s| s.image_bytes()).unwrap_or_default()
+    }
+
+    #[test]
+    fn ifdef_gates_emission_by_define_set() {
+        let src = "        cpu z80\n        phase 0\n        db 1\n        ifdef __DEBUG__\n        db 0FFh\n        endif\n        ifdef SOUND_DRIVER_ENABLED\n        db 2\n        endif\n";
+        let opts = Options { initial_cpu: Cpu::Z80, defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)] };
+        let m = run(src, &opts).expect("assemble");
+        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        assert_eq!(bytes, vec![0x01, 0x02]);
+    }
+
+    #[test]
+    fn if_elseif_else_takes_one_branch() {
+        let src = "        cpu z80\n        phase 0\nX = 2\n        if X = 1\n        db 10h\n        elseif X = 2\n        db 20h\n        else\n        db 30h\n        endif\n";
+        assert_eq!(image(src), vec![0x20]);
+    }
+
+    #[test]
+    fn if_momcpuname_string_equality() {
+        let src = "        cpu z80\n        phase 0\n        if MOMCPUNAME=\"Z80\"\n        db 0AAh\n        else\n        db 0BBh\n        endif\n";
+        assert_eq!(image(src), vec![0xAA]);
+    }
+
+    #[test]
+    fn nested_if_inside_taken_branch() {
+        let src = "        cpu z80\n        phase 0\nX = 1\n        if X = 1\n        db 1\n        if X = 1\n        db 2\n        endif\n        db 3\n        endif\n";
+        assert_eq!(image(src), vec![0x01, 0x02, 0x03]);
     }
 
     #[test]
