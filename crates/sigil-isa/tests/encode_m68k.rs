@@ -164,6 +164,11 @@ fn specials_family() {
 }
 
 #[test]
+fn movea_family() {
+    check(&["movea.w d0,a1", "movea.l a0,a1", "movea.w (a2),a3", "movea.l #$1000,a0", "movea.w (4,a1),a2"]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

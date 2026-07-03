@@ -117,6 +117,7 @@ impl std::error::Error for IsaError {}
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst.mnemonic {
         Mnemonic::Move => encode_move(inst),
+        Mnemonic::Movea => encode_movea(inst),
         Mnemonic::Add | Mnemonic::Sub | Mnemonic::And | Mnemonic::Or
         | Mnemonic::Cmp | Mnemonic::Eor
         | Mnemonic::Cmpa | Mnemonic::Adda | Mnemonic::Suba
@@ -140,7 +141,6 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Movep => encode_movep(inst),
         Mnemonic::Addx => encode_addx(inst),
         Mnemonic::Cmpm => encode_cmpm(inst),
-        other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
 }
 
@@ -1045,6 +1045,52 @@ fn encode_move(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
+/// Encode `MOVEA <ea>,An` — byte-identical to a `MOVE` whose destination EA is an
+/// address register (dest mode `001`, dest reg = the An number). Same size-field
+/// encoding as `MOVE` (`.w`=0b11, `.l`=0b10); MOVEA has **no `.b` form** and its
+/// destination must be an `An`.
+///
+/// Word: `size_bits<<12 | (an<<9) | (0b001<<6) | (src_mode<<3) | src_reg`, followed by
+/// the source EA's extension words.
+fn encode_movea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (src, an) = match inst.ops.as_slice() {
+        [src, Operand::An(n)] => (src, (n & 0b111) as u16),
+        [_, other] => {
+            return Err(IsaError::IllegalDest(format!(
+                "movea requires An destination, got {other:?}"
+            )))
+        }
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "movea expects 2 operands, got {}",
+                inst.ops.len()
+            )))
+        }
+    };
+    // MOVEA shares MOVE's size field but has no byte form.
+    let size_bits: u16 = match inst.size {
+        Size::W => 0b11,
+        Size::L => 0b10,
+        Size::B | Size::S => {
+            return Err(IsaError::UnsupportedForm(
+                "movea is word (.w) or long (.l) only — no byte form".into(),
+            ))
+        }
+    };
+    let (src_mode, src_reg, src_ext) = encode_ea(src, Field::Source, inst.size)?;
+    let word: u16 = (size_bits << 12)
+        | (an << 9)
+        | (0b001 << 6)
+        | ((src_mode as u16) << 3)
+        | (src_reg as u16);
+    let mut out = Vec::with_capacity(2 + 2 * src_ext.len());
+    out.extend_from_slice(&word.to_be_bytes());
+    for w in src_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
 /// Resolve one EA to `(mode3, reg3, extension_words)`. Used for both source and dest —
 /// the field-order swap lives in `encode_move`, not here.
 fn encode_ea(op: &Operand, field: Field, size: Size) -> Result<(u8, u8, Vec<u16>), IsaError> {
@@ -1113,9 +1159,16 @@ mod vocab_tests {
         let _ = (Mnemonic::Add, Mnemonic::Bcc(Cond::Eq), Mnemonic::Movem, Mnemonic::Moveq);
         let _ = (Operand::RegList(0x0001), Operand::Disp(4), Operand::Ccr, Operand::Sr);
         let _ = Size::S;
-        // Still-unimplemented mnemonics (e.g. movea) are dispatched but return UnsupportedForm.
+        // movea now encodes (move-to-An): movea.l a1,a0 = 20 49.
         let movea = Instruction { mnemonic: Mnemonic::Movea, size: Size::L, ops: vec![Operand::An(1), Operand::An(0)] };
-        assert!(matches!(encode(&movea), Err(IsaError::UnsupportedForm(_))));
+        assert_eq!(encode(&movea).unwrap(), vec![0x20, 0x49]);
+        // Negative paths still covered: an illegal *operand shape* errors.
+        // #imm destination for a MOVE is illegal.
+        let bad_dst = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(0), Operand::Imm(1)] };
+        assert!(matches!(encode(&bad_dst), Err(IsaError::IllegalDest(_))));
+        // movea has no byte form.
+        let movea_b = Instruction { mnemonic: Mnemonic::Movea, size: Size::B, ops: vec![Operand::Dn(0), Operand::An(1)] };
+        assert!(matches!(encode(&movea_b), Err(IsaError::UnsupportedForm(_))));
         // movep/addx/cmpm now encode (specials family): movep.w (4,a1),d0 = 0109 0004.
         let movep = Instruction { mnemonic: Mnemonic::Movep, size: Size::W, ops: vec![Operand::Disp16An(4, 1), Operand::Dn(0)] };
         assert_eq!(encode(&movep).unwrap(), vec![0x01, 0x09, 0x00, 0x04]);

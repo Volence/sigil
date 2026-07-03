@@ -148,5 +148,11 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("addx.b d1,d0", Instruction { mnemonic: Mnemonic::Addx, size: B, ops: vec![Dn(1), Dn(0)] }),
         ("addx.l d3,d2", Instruction { mnemonic: Mnemonic::Addx, size: L, ops: vec![Dn(3), Dn(2)] }),
         ("cmpm.w (a0)+,(a1)+", Instruction { mnemonic: Mnemonic::Cmpm, size: W, ops: vec![PostInc(0), PostInc(1)] }),
+        // --- MOVEA ---
+        ("movea.w d0,a1", Instruction { mnemonic: Mnemonic::Movea, size: W, ops: vec![Dn(0), An(1)] }),
+        ("movea.l a0,a1", Instruction { mnemonic: Mnemonic::Movea, size: L, ops: vec![An(0), An(1)] }),
+        ("movea.w (a2),a3", Instruction { mnemonic: Mnemonic::Movea, size: W, ops: vec![Ind(2), An(3)] }),
+        ("movea.l #$1000,a0", Instruction { mnemonic: Mnemonic::Movea, size: L, ops: vec![Imm(0x1000), An(0)] }),
+        ("movea.w (4,a1),a2", Instruction { mnemonic: Mnemonic::Movea, size: W, ops: vec![Disp16An(4, 1), An(2)] }),
     ]
 }
