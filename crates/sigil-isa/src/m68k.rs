@@ -79,21 +79,52 @@ impl std::error::Error for IsaError {}
 /// Encode one instruction to big-endian machine-code bytes.
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst.mnemonic {
-        Mnemonic::Move => Err(IsaError::UnsupportedForm("move (not yet implemented)".into())),
+        Mnemonic::Move => encode_move(inst),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
+#[derive(Clone, Copy)]
+enum Field {
+    Source,
+    Dest,
+}
 
-    #[test]
-    fn stub_encode_move_is_unsupported_for_now() {
-        let inst = Instruction {
-            mnemonic: Mnemonic::Move,
-            size: Size::W,
-            ops: vec![Operand::Dn(1), Operand::Dn(0)],
-        };
-        assert!(matches!(encode(&inst), Err(IsaError::UnsupportedForm(_))));
+fn encode_move(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (src, dst) = match inst.ops.as_slice() {
+        [s, d] => (s, d),
+        _ => return Err(IsaError::OperandCount(format!("move expects 2 operands, got {}", inst.ops.len()))),
+    };
+    let size_bits: u16 = match inst.size {
+        Size::B => 0b01,
+        Size::W => 0b11,
+        Size::L => 0b10,
+    };
+    let (src_mode, src_reg, src_ext) = encode_ea(src, Field::Source, inst.size)?;
+    let (dst_mode, dst_reg, dst_ext) = encode_ea(dst, Field::Dest, inst.size)?;
+    let word: u16 = (size_bits << 12)
+        | ((dst_reg as u16) << 9)
+        | ((dst_mode as u16) << 6)
+        | ((src_mode as u16) << 3)
+        | (src_reg as u16);
+    let mut out = Vec::with_capacity(2 + 2 * (src_ext.len() + dst_ext.len()));
+    out.extend_from_slice(&word.to_be_bytes());
+    for w in src_ext {
+        out.extend_from_slice(&w.to_be_bytes());
     }
+    for w in dst_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
+/// Resolve one EA to `(mode3, reg3, extension_words)`. Used for both source and dest —
+/// the field-order swap lives in `encode_move`, not here.
+fn encode_ea(op: &Operand, _field: Field, _size: Size) -> Result<(u8, u8, Vec<u16>), IsaError> {
+    let r = |n: u8| n & 0b111;
+    Ok(match *op {
+        Operand::Dn(n) => (0b000, r(n), vec![]),
+        Operand::An(n) => (0b001, r(n), vec![]),
+        other => return Err(IsaError::UnsupportedForm(format!("{other:?}"))),
+    })
 }
