@@ -65,5 +65,16 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("adda.w d0,a1", Instruction { mnemonic: Mnemonic::Adda, size: W, ops: vec![Dn(0), An(1)] }),
         ("suba.l a2,a3", Instruction { mnemonic: Mnemonic::Suba, size: L, ops: vec![An(2), An(3)] }),
         ("muls.w d1,d0", Instruction { mnemonic: Mnemonic::Muls, size: W, ops: vec![Dn(1), Dn(0)] }),
+        // --- ALU-immediate family ---
+        ("addi.w #$10,d0", Instruction { mnemonic: Mnemonic::Addi, size: W, ops: vec![Imm(0x10), Dn(0)] }),
+        ("subi.l #$1000,d1", Instruction { mnemonic: Mnemonic::Subi, size: L, ops: vec![Imm(0x1000), Dn(1)] }),
+        ("andi.w #$00FF,d0", Instruction { mnemonic: Mnemonic::Andi, size: W, ops: vec![Imm(0x00FF), Dn(0)] }),
+        ("ori.b #$01,d0", Instruction { mnemonic: Mnemonic::Ori, size: B, ops: vec![Imm(0x01), Dn(0)] }),
+        ("eori.w #$FFFF,d0", Instruction { mnemonic: Mnemonic::Eori, size: W, ops: vec![Imm(0xFFFF), Dn(0)] }),
+        ("cmpi.w #$0010,(a1)", Instruction { mnemonic: Mnemonic::Cmpi, size: W, ops: vec![Imm(0x10), Ind(1)] }),
+        ("andi.b #$FE,ccr", Instruction { mnemonic: Mnemonic::AndiCcr, size: B, ops: vec![Imm(0xFE), Ccr] }),
+        ("ori.b #$01,ccr", Instruction { mnemonic: Mnemonic::OriCcr, size: B, ops: vec![Imm(0x01), Ccr] }),
+        ("move.w #$2700,sr", Instruction { mnemonic: Mnemonic::MoveToSr, size: W, ops: vec![Imm(0x2700), Sr] }),
+        ("move.w sr,-(sp)", Instruction { mnemonic: Mnemonic::MoveFromSr, size: W, ops: vec![Sr, PreDec(7)] }),
     ]
 }

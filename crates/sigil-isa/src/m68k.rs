@@ -119,6 +119,10 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         | Mnemonic::Cmp | Mnemonic::Eor
         | Mnemonic::Cmpa | Mnemonic::Adda | Mnemonic::Suba
         | Mnemonic::Muls => encode_alu_ea(inst),
+        Mnemonic::Addi | Mnemonic::Subi | Mnemonic::Andi
+        | Mnemonic::Ori | Mnemonic::Eori | Mnemonic::Cmpi => encode_alu_imm(inst),
+        Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
+        Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
 }
@@ -254,6 +258,123 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         | (opmode << 6)
         | ((ea_mode as u16) << 3)
         | (ea_reg as u16);
+    let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
+    out.extend_from_slice(&word.to_be_bytes());
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
+/// Build the immediate extension word(s) for an ALU-immediate operand.
+/// `.b` → one word (value in the low byte), `.w` → one word, `.l` → two words (high first).
+fn imm_ext_words(size: Size, v: i32) -> Result<Vec<u16>, IsaError> {
+    Ok(match size {
+        Size::B => vec![(v as u16) & 0x00FF],
+        Size::W => vec![v as u16],
+        Size::L => vec![(v >> 16) as u16, v as u16],
+        Size::S => return Err(IsaError::UnsupportedForm("ALU-immediate has no short (.s) size".into())),
+    })
+}
+
+/// Encode the ALU-immediate family (`addi/subi/andi/ori/eori/cmpi`).
+///
+/// Base word: `0000 oooo ss eeeeee`, followed by the immediate extension word(s)
+/// **before** the destination EA's extension words.
+fn encode_alu_imm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (imm, dst) = match inst.ops.as_slice() {
+        [Operand::Imm(v), d] => (*v, d),
+        [s, d] => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} requires #imm source, got {s:?},{d:?}",
+                inst.mnemonic
+            )))
+        }
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 2 operands, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+    let sz = size_code(inst.size)?;
+    let op: u16 = match inst.mnemonic {
+        Mnemonic::Ori => 0b0000,
+        Mnemonic::Andi => 0b0010,
+        Mnemonic::Subi => 0b0100,
+        Mnemonic::Addi => 0b0110,
+        Mnemonic::Eori => 0b1010,
+        Mnemonic::Cmpi => 0b1100,
+        _ => unreachable!(),
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, inst.size)?;
+    let word: u16 = (op << 8) | (sz << 6) | ((ea_mode as u16) << 3) | (ea_reg as u16);
+    let imm_ext = imm_ext_words(inst.size, imm)?;
+
+    let mut out = Vec::with_capacity(2 + 2 * (imm_ext.len() + ea_ext.len()));
+    out.extend_from_slice(&word.to_be_bytes());
+    for w in imm_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
+/// Encode `andi.b #imm,ccr` (`023C`) / `ori.b #imm,ccr` (`003C`) + one imm word.
+fn encode_ccr_imm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let imm = match inst.ops.as_slice() {
+        [Operand::Imm(v), Operand::Ccr] => *v,
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} requires #imm,ccr operands, got {:?}",
+                inst.mnemonic, inst.ops
+            )))
+        }
+    };
+    let opcode: u16 = match inst.mnemonic {
+        Mnemonic::AndiCcr => 0x023C,
+        Mnemonic::OriCcr => 0x003C,
+        _ => unreachable!(),
+    };
+    let imm_word = (imm as u16) & 0x00FF;
+    let mut out = Vec::with_capacity(4);
+    out.extend_from_slice(&opcode.to_be_bytes());
+    out.extend_from_slice(&imm_word.to_be_bytes());
+    Ok(out)
+}
+
+/// Encode `move.w <ea>,sr` (`46C0 | ea`) / `move.w sr,<ea>` (`40C0 | ea`) + EA ext words.
+fn encode_move_sr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (base, ea): (u16, &Operand) = match inst.mnemonic {
+        Mnemonic::MoveToSr => match inst.ops.as_slice() {
+            [src, Operand::Sr] => (0x46C0, src),
+            _ => {
+                return Err(IsaError::UnsupportedForm(format!(
+                    "move to sr requires <ea>,sr operands, got {:?}",
+                    inst.ops
+                )))
+            }
+        },
+        Mnemonic::MoveFromSr => match inst.ops.as_slice() {
+            [Operand::Sr, dst] => (0x40C0, dst),
+            _ => {
+                return Err(IsaError::UnsupportedForm(format!(
+                    "move from sr requires sr,<ea> operands, got {:?}",
+                    inst.ops
+                )))
+            }
+        },
+        _ => unreachable!(),
+    };
+    let field = match inst.mnemonic {
+        Mnemonic::MoveToSr => Field::Source,
+        _ => Field::Dest,
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, field, inst.size)?;
+    let word: u16 = base | ((ea_mode as u16) << 3) | (ea_reg as u16);
     let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
     out.extend_from_slice(&word.to_be_bytes());
     for w in ea_ext {

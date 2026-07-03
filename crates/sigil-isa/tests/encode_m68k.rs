@@ -93,6 +93,15 @@ fn alu_ea_family() {
 }
 
 #[test]
+fn alu_immediate_family() {
+    check(&[
+        "addi.w #$10,d0", "subi.l #$1000,d1", "andi.w #$00FF,d0", "ori.b #$01,d0",
+        "eori.w #$FFFF,d0", "cmpi.w #$0010,(a1)", "andi.b #$FE,ccr", "ori.b #$01,ccr",
+        "move.w #$2700,sr", "move.w sr,-(sp)",
+    ]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();
