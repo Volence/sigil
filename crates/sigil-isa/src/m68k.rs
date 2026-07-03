@@ -1,16 +1,32 @@
 //! `sigil-isa` 68000 encoder (procedural EA / extension-word machinery).
 //!
-//! M0.5 spike scope: `MOVE` across the effective-address matrix, proving the
-//! procedural EA encoder and the §5.5 `MOVE` dest-EA mode/register field swap
-//! byte-for-byte against `asl`. Operands carry **already-resolved** integers and
-//! their **explicit** EA form (`AbsW` vs `AbsL` vs `Pcd16`) — width *selection*
-//! (§5.6) is deliberately out of scope. Emits big-endian bytes.
+//! M1.A scope: the full 68000 instruction/EA set the Aeon source (@ aeon `c7aaca6`)
+//! uses — ~46 mnemonic families dispatched from [`encode`], each splicing the shared,
+//! MOVE-proven `encode_ea`/`brief_ext` into a fixed-field opcode word. All 12 EA modes
+//! appear, brief-extension indexed form only (no 68020 extensions). Proven byte-for-byte
+//! against `asl` by the committed golden corpus (`tests/m68k_golden_vectors.txt`),
+//! including the §5.5 hazards (MOVE dest-EA field swap, MOVEM `-(An)` mask reversal,
+//! 2-wide branches, DBcc non-relaxability, MOVE SR/CCR). Emits big-endian bytes.
 //!
-//! Decode/disassembly (the ISA-sharing dual-facet) is deferred, as full Z80
-//! disassembly was in M0.
+//! # Operand contract
+//!
+//! The encoder is a leaf that assumes **fully-resolved, well-formed** operands from a
+//! validating front-end (sub-project C) and linker (sub-project B): register numbers in
+//! `0..=7`, immediates within their size's range, and branch/PC displacements already
+//! resolved to their stored value (measured from the extension-word address, like the
+//! `Pcd16` convention) and non-degenerate. Out-of-range register/immediate values are
+//! masked/truncated to their field width rather than diagnosed — that validation is the
+//! front-end's responsibility, not the encoder's. The exceptions that *do* hard-check
+//! (because the signed truncation would be silently dangerous) are `moveq`/`addq`/`subq`
+//! data and the branch/`DBcc` displacement fit, which return an `IsaError` on overflow.
+//!
+//! Width *selection* (`abs.w` vs `abs.l` for bare-symbol `jmp`/`jsr`, §5.6) and
+//! decode/disassembly (the ISA-sharing dual facet) are deferred — the encoder takes the
+//! explicit EA form it is given.
 
-/// Instruction mnemonics. The full 68000 set Aeon uses; only `Move` is encoded
-/// today — every other variant currently dispatches to `UnsupportedForm`.
+/// Instruction mnemonics — the full 68000 set the Aeon source uses. Every variant
+/// dispatches to a real encoder in [`encode`]; the dispatch `match` is exhaustive over
+/// `Mnemonic` (no `UnsupportedForm` catch-all).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mnemonic {
     Move, Movea,
