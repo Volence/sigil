@@ -17,6 +17,7 @@ version = "0.1.0"
 dependencies = [
  "sigil-frontend-as",
  "sigil-frontend-emp",
+ "sigil-harness",
  "sigil-ir",
  "sigil-link",
  "sigil-span",

@@ -277,6 +277,34 @@ pub fn load_stub_syms(golden_dir: &Path) -> Vec<(String, i64)> {
     parse_stub_syms(&text).expect("parse golden/stub-syms.toml")
 }
 
+/// Path to a committed golden reference blob (`region_a.bin` / `region_b.bin`)
+/// inside this crate's own `golden/` directory. Callers (the CLI, tests) never
+/// need to know the harness crate's file layout — they just ask for a name.
+pub fn golden_path(name: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("golden").join(name)
+}
+
+/// Assemble Region A + Region B from the harness's own constructed source
+/// (`harness_root.asm`), using the committed stub set (`golden/stub-syms.toml`)
+/// and the fixed A/B LMA map. `aeon_root` is the only runtime input — it's
+/// where the driver source (referenced by `harness_root.asm`'s includes)
+/// lives. Returns the linked image: region A is section `sec0` (Z80, LMA
+/// 0x3EA), region B is section `sec32768` (Z80, LMA 0x60000).
+///
+/// This is the one-stop entry point for anything (CLI subcommands, `regen`)
+/// that wants "the reference A+B build" without hard-coding where the harness
+/// crate keeps its assets.
+pub fn assemble_reference_regions(aeon_root: &Path) -> Result<LinkedImage, String> {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let harness_root = crate_dir.join("harness_root.asm");
+    let golden = crate_dir.join("golden");
+    let stubs = load_stub_syms(&golden);
+    let mut map = LmaMap::new();
+    map.set(Cpu::Z80, Some(0), 0x3EA);
+    map.set(Cpu::Z80, Some(0x8000), 0x60000);
+    build_harness(aeon_root, &harness_root, &stubs, &map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,6 +499,16 @@ mod harness_tests {
         // first-diff offset on failure.
         diff_region(&img, "sec0", &golden_a).expect("region A diverged from reference");
         diff_region(&img, "sec32768", &golden_b).expect("region B diverged from reference");
+    }
+
+    #[test]
+    #[ignore = "reads the aeon source tree; run with --ignored"]
+    fn assemble_reference_regions_returns_both_sections() {
+        let aeon = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../aeon");
+        let img = assemble_reference_regions(&aeon).expect("assemble_reference_regions");
+        assert_eq!(img.sections.len(), 2, "expected region A + region B");
+        assert!(img.section("sec0").is_some(), "region A section sec0");
+        assert!(img.section("sec32768").is_some(), "region B section sec32768");
     }
 }
 

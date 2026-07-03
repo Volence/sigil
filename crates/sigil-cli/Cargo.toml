@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 sigil-frontend-as = { path = "../sigil-frontend-as" }
 sigil-frontend-emp = { path = "../sigil-frontend-emp" }
+sigil-harness = { path = "../sigil-harness" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-link = { path = "../sigil-link" }
 sigil-span = { path = "../sigil-span" }
