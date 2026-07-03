@@ -148,6 +148,17 @@ fn dbcc_is_fixed_four_bytes() {
 }
 
 #[test]
+fn movem_predecrement_mask_is_reversed() {
+    // The predecrement mask is bit-reversed vs every other mode; prove it on both
+    // directions and a spread of addressing modes.
+    check(&[
+        "movem.l d0-d7/a0-a6,-(sp)", "movem.l (sp)+,d0-d7/a0-a6",
+        "movem.l a2,-(sp)", "movem.l d3-d4,(a3)", "movem.l d3-d4,(8,a3)",
+        "movem.w d0-d6/a2,(a1)", "movem.l (a0)+,d0-a4",
+    ]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

@@ -136,6 +136,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         | Mnemonic::Swap | Mnemonic::Ext => encode_control(inst),
         Mnemonic::Bra | Mnemonic::Bsr | Mnemonic::Bcc(_) => encode_branch(inst),
         Mnemonic::Dbcc(_) => encode_dbcc(inst),
+        Mnemonic::Movem => encode_movem(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
 }
@@ -869,6 +870,61 @@ fn encode_dbcc(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
+/// Encode `MOVEM` (register↔memory multi-move) — including the §5.5 predecrement
+/// register-mask bit-order reversal, the single most byte-hazardous form.
+///
+/// Base word: `0100 1d00 1s eeeeee` = `0x4880 | (dir<<10) | (sz<<6) | ea`:
+/// - `dir` (bit 10): register→memory STORE = 0, memory→register LOAD = 1.
+/// - `sz` (bit 6): `.w` = 0, `.l` = 1.
+/// - Base words: STORE `.w`=`0x4880`, STORE `.l`=`0x48C0`, LOAD `.w`=`0x4C80`, LOAD `.l`=`0x4CC0`.
+///
+/// Direction comes from operand ORDER: `[RegList, mem]` = STORE, `[mem, RegList]` = LOAD.
+///
+/// After the opcode word comes the register-mask word FIRST, THEN the memory EA's own
+/// extension words (e.g. the `(d16,An)` displacement). `RegList(mask)` always holds the
+/// mask in canonical order (bit0=D0..bit7=D7, bit8=A0..bit15=A7). For the `-(An)`
+/// predecrement mode ONLY, the emitted mask word is the canonical mask with all 16 bits
+/// reversed (`u16::reverse_bits`); every other addressing mode emits the canonical mask.
+fn encode_movem(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    // Direction from operand order: [RegList, mem] = STORE, [mem, RegList] = LOAD.
+    let (mask, mem, dir): (u16, &Operand, u16) = match inst.ops.as_slice() {
+        [Operand::RegList(m), mem] => (*m, mem, 0), // regs -> memory (STORE)
+        [mem, Operand::RegList(m)] => (*m, mem, 1), // memory -> regs (LOAD)
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "movem requires [RegList,mem] or [mem,RegList] operands, got {:?}",
+                inst.ops
+            )))
+        }
+    };
+    let sz: u16 = match inst.size {
+        Size::W => 0,
+        Size::L => 1,
+        _ => {
+            return Err(IsaError::UnsupportedForm(
+                "movem is word (.w) or long (.l) only".into(),
+            ))
+        }
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(mem, Field::Dest, inst.size)?;
+    let word: u16 = 0x4880 | (dir << 10) | (sz << 6) | ((ea_mode as u16) << 3) | (ea_reg as u16);
+
+    // Predecrement `-(An)` reverses the canonical mask's 16 bits; all others emit it as-is.
+    let mask_word = if matches!(mem, Operand::PreDec(_)) {
+        mask.reverse_bits()
+    } else {
+        mask
+    };
+
+    let mut out = Vec::with_capacity(4 + 2 * ea_ext.len());
+    out.extend_from_slice(&word.to_be_bytes());
+    out.extend_from_slice(&mask_word.to_be_bytes());
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
 #[derive(Clone, Copy)]
 enum Field {
@@ -974,8 +1030,11 @@ mod vocab_tests {
         let _ = (Operand::RegList(0x0001), Operand::Disp(4), Operand::Ccr, Operand::Sr);
         let _ = Size::S;
         // Still-unimplemented mnemonics are dispatched but return UnsupportedForm.
-        let movem = Instruction { mnemonic: Mnemonic::Movem, size: Size::W, ops: vec![Operand::RegList(0x0001), Operand::PreDec(7)] };
-        assert!(matches!(encode(&movem), Err(IsaError::UnsupportedForm(_))));
+        let movep = Instruction { mnemonic: Mnemonic::Movep, size: Size::W, ops: vec![Operand::Dn(0), Operand::Disp16An(0, 0)] };
+        assert!(matches!(encode(&movep), Err(IsaError::UnsupportedForm(_))));
+        // movem is now implemented (§5.5 predecrement mask reversal): store d0 to -(sp) = 48E7 8000.
+        let movem = Instruction { mnemonic: Mnemonic::Movem, size: Size::L, ops: vec![Operand::RegList(0x0001), Operand::PreDec(7)] };
+        assert_eq!(encode(&movem).unwrap(), vec![0x48, 0xE7, 0x80, 0x00]);
         // swap is now implemented (control/misc family): 0x4840 | dn.
         let swap = Instruction { mnemonic: Mnemonic::Swap, size: Size::W, ops: vec![Operand::Dn(0)] };
         assert_eq!(encode(&swap).unwrap(), vec![0x48, 0x40]);

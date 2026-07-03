@@ -133,5 +133,14 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("bne.w *", Instruction { mnemonic: Mnemonic::Bcc(Cond::Ne), size: W, ops: vec![Disp(-2)] }),
         ("dbf d0,*", Instruction { mnemonic: Mnemonic::Dbcc(Cond::F), size: W, ops: vec![Dn(0), Disp(-2)] }),
         ("dbeq d1,*", Instruction { mnemonic: Mnemonic::Dbcc(Cond::Eq), size: W, ops: vec![Dn(1), Disp(-2)] }),
+        // --- MOVEM: register-store (to -(An)) and register-load (from (An)+/others) ---
+        // masks: d0-d7 = 0x00FF; a0-a6 = 0x7F00; d0-a6 (all-but-a7) = 0x7FFF; single a2 = 0x0400; d3/d4 = 0x0018
+        ("movem.l d0-d7/a0-a6,-(sp)", Instruction { mnemonic: Mnemonic::Movem, size: L, ops: vec![RegList(0x7FFF), PreDec(7)] }),
+        ("movem.l (sp)+,d0-d7/a0-a6", Instruction { mnemonic: Mnemonic::Movem, size: L, ops: vec![PostInc(7), RegList(0x7FFF)] }),
+        ("movem.l a2,-(sp)", Instruction { mnemonic: Mnemonic::Movem, size: L, ops: vec![RegList(0x0400), PreDec(7)] }),
+        ("movem.l d3-d4,(a3)", Instruction { mnemonic: Mnemonic::Movem, size: L, ops: vec![RegList(0x0018), Ind(3)] }),
+        ("movem.l d3-d4,(8,a3)", Instruction { mnemonic: Mnemonic::Movem, size: L, ops: vec![RegList(0x0018), Disp16An(8, 3)] }),
+        ("movem.w d0-d6/a2,(a1)", Instruction { mnemonic: Mnemonic::Movem, size: W, ops: vec![RegList(0x047F), Ind(1)] }),
+        ("movem.l (a0)+,d0-a4", Instruction { mnemonic: Mnemonic::Movem, size: L, ops: vec![PostInc(0), RegList(0x1FFF)] }),
     ]
 }
