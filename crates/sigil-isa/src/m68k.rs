@@ -120,7 +120,7 @@ fn encode_move(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 
 /// Resolve one EA to `(mode3, reg3, extension_words)`. Used for both source and dest —
 /// the field-order swap lives in `encode_move`, not here.
-fn encode_ea(op: &Operand, _field: Field, _size: Size) -> Result<(u8, u8, Vec<u16>), IsaError> {
+fn encode_ea(op: &Operand, field: Field, size: Size) -> Result<(u8, u8, Vec<u16>), IsaError> {
     let r = |n: u8| n & 0b111;
     Ok(match *op {
         Operand::Dn(n) => (0b000, r(n), vec![]),
@@ -130,7 +130,25 @@ fn encode_ea(op: &Operand, _field: Field, _size: Size) -> Result<(u8, u8, Vec<u1
         Operand::PreDec(n) => (0b100, r(n), vec![]),
         Operand::Disp16An(d, n) => (0b101, r(n), vec![d as u16]),
         Operand::Disp8AnXn { d, an, xn, long } => (0b110, r(an), vec![brief_ext(d, xn, long)]),
-        other => return Err(IsaError::UnsupportedForm(format!("{other:?}"))),
+        Operand::AbsW(a) => (0b111, 0b000, vec![a as u16]),
+        Operand::AbsL(a) => (0b111, 0b001, vec![(a >> 16) as u16, a as u16]),
+        Operand::Pcd16(d) => {
+            if let Field::Dest = field {
+                return Err(IsaError::IllegalDest("(d16,PC)".into()));
+            }
+            (0b111, 0b010, vec![d as u16])
+        }
+        Operand::Imm(v) => {
+            if let Field::Dest = field {
+                return Err(IsaError::IllegalDest("#imm".into()));
+            }
+            let ext = match size {
+                Size::B => vec![(v as u16) & 0x00FF],
+                Size::W => vec![v as u16],
+                Size::L => vec![(v >> 16) as u16, v as u16],
+            };
+            (0b111, 0b100, ext)
+        }
     })
 }
 

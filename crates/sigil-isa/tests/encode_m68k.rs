@@ -53,3 +53,32 @@ fn displacement_and_brief_extension_word() {
         "move.l (2,a3,a4.l),d0",
     ]);
 }
+
+#[test]
+fn absolute_pcrel_immediate() {
+    check(&[
+        "move.w ($1234).w,d0",
+        "move.w ($12345678).l,d0",
+        "move.w (8,pc),d0",
+        "move.w #$1234,d0",
+        "move.w d1,($1234).w",
+        "move.w d1,($12345678).l",
+    ]);
+}
+
+#[test]
+fn immediate_and_pcrel_are_illegal_dest() {
+    use sigil_isa::m68k::{encode, Instruction, Mnemonic, Operand, Size};
+    let imm_dst = Instruction {
+        mnemonic: Mnemonic::Move,
+        size: Size::W,
+        ops: vec![Operand::Dn(0), Operand::Imm(1)],
+    };
+    assert!(matches!(encode(&imm_dst), Err(sigil_isa::m68k::IsaError::IllegalDest(_))));
+    let pc_dst = Instruction {
+        mnemonic: Mnemonic::Move,
+        size: Size::W,
+        ops: vec![Operand::Dn(0), Operand::Pcd16(4)],
+    };
+    assert!(matches!(encode(&pc_dst), Err(sigil_isa::m68k::IsaError::IllegalDest(_))));
+}
