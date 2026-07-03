@@ -47,6 +47,9 @@ struct Asm {
     functions: std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>,
     macros: std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)>,
     macro_depth: usize,
+    visited: std::collections::BTreeSet<std::path::PathBuf>,
+    include_root: Option<std::path::PathBuf>,
+    aborted: bool,
 }
 
 enum Lowered {
@@ -69,6 +72,9 @@ impl Asm {
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
             macro_depth: 0,
+            visited: std::collections::BTreeSet::new(),
+            include_root: opts.include_root.clone(),
+            aborted: false,
         }
     }
 
@@ -227,19 +233,84 @@ impl Asm {
     }
 
     fn process(&mut self, src: &str) {
-        let mut lines = Vec::new();
-        let mut base = 0u32;
-        for raw in src.split_inclusive('\n') {
-            lines.push(SrcLine { text: raw.to_string(), base });
-            base += raw.len() as u32;
-        }
+        let lines = split_src_lines(src);
         self.exec(&lines);
+    }
+
+    /// Fold `\{expr}` sequences in the first string token to their decimal value.
+    fn interp_string(&mut self, rest: &[Token]) -> String {
+        let raw = match rest.iter().find_map(|t| if let Tok::Str(s) = &t.tok { Some(s.clone()) } else { None }) {
+            Some(s) => s,
+            None => return String::new(),
+        };
+        let mut out = String::new();
+        let mut cur = raw.as_str();
+        while let Some(pos) = cur.find("\\{") {
+            out.push_str(&cur[..pos]);
+            let after = &cur[pos + 2..];
+            match after.find('}') {
+                Some(end) => {
+                    let expr_text = &after[..end];
+                    match self.fold_text(expr_text) {
+                        Some(v) => out.push_str(&v.to_string()),
+                        None => {
+                            out.push_str("\\{");
+                            out.push_str(expr_text);
+                            out.push('}');
+                        }
+                    }
+                    cur = &after[end + 1..];
+                }
+                None => {
+                    out.push_str("\\{");
+                    cur = after;
+                }
+            }
+        }
+        out.push_str(cur);
+        out
+    }
+
+    /// Lex + fold a short expression string (for `\{…}` interpolation).
+    fn fold_text(&mut self, text: &str) -> Option<i64> {
+        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
+        self.eval_all(&toks, Span { source: self.source, start: 0, end: 0 })
+    }
+
+    /// `include "path"`: read a file relative to `include_root`, exec its lines
+    /// inline. A visited-set prevents re-inclusion (DAG, not tree).
+    fn directive_include(&mut self, rest: &[Token], span: Span) {
+        let rel = match rest.iter().find_map(|t| if let Tok::Str(s) = &t.tok { Some(s.clone()) } else { None }) {
+            Some(p) => p,
+            None => {
+                self.err(span, "include needs a quoted path");
+                return;
+            }
+        };
+        let path = match &self.include_root {
+            Some(root) => root.join(&rel),
+            None => std::path::PathBuf::from(&rel),
+        };
+        let canon = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if !self.visited.insert(canon) {
+            return; // already included (DAG guard)
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                let lines = split_src_lines(&text);
+                self.exec(&lines);
+            }
+            Err(e) => self.err(span, format!("cannot include {}: {e}", path.display())),
+        }
     }
 
     /// Execute a slice of logical lines in order, handling block directives.
     fn exec(&mut self, lines: &[SrcLine]) {
         let mut i = 0;
         while i < lines.len() {
+            if self.aborted {
+                return;
+            }
             match self.line_keyword(&lines[i]).as_deref() {
                 Some("if") | Some("ifdef") | Some("ifndef") => {
                     i = self.exec_if(lines, i);
@@ -541,6 +612,19 @@ impl Asm {
             "supmode" => self.state.supmode = on_off(rest),
             "db" | "dc.b" => self.directive_db(rest, span),
             "dw" => self.directive_dw(rest, span),
+            "error" => {
+                let m = self.interp_string(rest);
+                self.err(span, m);
+            }
+            "fatal" => {
+                let m = self.interp_string(rest);
+                self.err(span, m);
+                self.aborted = true;
+            }
+            "message" => {
+                let _ = self.interp_string(rest);
+            }
+            "include" => self.directive_include(rest, span),
             _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
             _ if is_mnemonic(head) => self.lower_instruction(head, rest, span),
             _ => self.err(span, format!("unknown directive or mnemonic `{head}`")),
@@ -917,6 +1001,18 @@ impl Asm {
 
 // ── free helpers ────────────────────────────────────────────────────────────
 
+/// Split source text into `SrcLine`s (each with its byte offset). Used for both
+/// the root source and included files.
+fn split_src_lines(text: &str) -> Vec<SrcLine> {
+    let mut lines = Vec::new();
+    let mut base = 0u32;
+    for raw in text.split_inclusive('\n') {
+        lines.push(SrcLine { text: raw.to_string(), base });
+        base += raw.len() as u32;
+    }
+    lines
+}
+
 fn is_op_keyword(s: &str) -> bool {
     matches!(
         s,
@@ -1116,7 +1212,7 @@ mod tests {
     #[test]
     fn ifdef_gates_emission_by_define_set() {
         let src = "        cpu z80\n        phase 0\n        db 1\n        ifdef __DEBUG__\n        db 0FFh\n        endif\n        ifdef SOUND_DRIVER_ENABLED\n        db 2\n        endif\n";
-        let opts = Options { initial_cpu: Cpu::Z80, defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)] };
+        let opts = Options { initial_cpu: Cpu::Z80, defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)], include_root: None };
         let m = run(src, &opts).expect("assemble");
         let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
         assert_eq!(bytes, vec![0x01, 0x02]);
@@ -1221,5 +1317,31 @@ mod tests {
         let src = "        cpu z80\n        phase 0\n        struct SeqChannel\na       ds.b 1\nb       ds.b 1\nc       ds.w 1\n        endstruct\n        ld a,(ix+SeqChannel_b)\n        db SeqChannel_len\n";
         // ld a,(ix+1) = DD 7E 01 ; db 4 = 04
         assert_eq!(image(src), vec![0xDD, 0x7E, 0x01, 0x04]);
+    }
+
+    #[test]
+    fn message_interpolates_and_emits_no_bytes() {
+        // false `if` guards fatal; message with \{expr} just evaluates; db N emits.
+        let src = "        cpu z80\n        phase 0\nN = 5\n        if N <> 5\n        fatal \"bad size \\{N}\"\n        endif\n        message \"N is \\{N}\"\n        db N\n";
+        assert_eq!(image(src), vec![0x05]);
+    }
+
+    #[test]
+    fn fatal_on_true_condition_is_an_error() {
+        let src = "        cpu z80\n        phase 0\nN = 6\n        if N <> 5\n        fatal \"bad size \\{N}\"\n        endif\n";
+        assert!(run(src, &Options::default()).is_err());
+    }
+
+    #[test]
+    fn include_pulls_in_a_file() {
+        let dir = std::env::temp_dir().join(format!("sigil_inc_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("part.inc"), "        db 0AAh,0BBh\n").unwrap();
+        let main = dir.join("main.asm");
+        std::fs::write(&main, "        cpu z80\n        phase 0\n        db 1\n        include \"part.inc\"\n        db 2\n").unwrap();
+        let m = crate::assemble_root(&main, &Options::default()).expect("assemble");
+        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        assert_eq!(bytes, vec![0x01, 0xAA, 0xBB, 0x02]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
