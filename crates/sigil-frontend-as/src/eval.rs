@@ -1,5 +1,6 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
+use crate::expand::{render_tokens, replace_word, split_call_args, split_top_commas};
 use crate::lexer::lex_line;
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
@@ -1185,113 +1186,6 @@ fn on_off(rest: &[Token]) -> bool {
 
 fn paren(p: Punct, span: Span) -> Token {
     Token { tok: Tok::Punct(p), span }
-}
-
-/// Reconstruct source text from a token slice (space-separated so tokens can't
-/// merge on re-lex). Used to build `ALLARGS`/positional-arg substitution text.
-fn render_tokens(toks: &[Token]) -> String {
-    toks.iter()
-        .map(|t| match &t.tok {
-            Tok::Ident(x) => x.clone(),
-            Tok::Int(n) => n.to_string(),
-            Tok::Str(x) => format!("\"{x}\""),
-            Tok::Dollar => "$".to_string(),
-            Tok::Punct(p) => punct_str(*p).to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn punct_str(p: Punct) -> &'static str {
-    match p {
-        Punct::Plus => "+", Punct::Minus => "-", Punct::Star => "*", Punct::Slash => "/",
-        Punct::Shl => "<<", Punct::Shr => ">>", Punct::Amp => "&", Punct::Pipe => "|",
-        Punct::Eq => "=", Punct::Ne => "<>", Punct::Lt => "<", Punct::Gt => ">",
-        Punct::Le => "<=", Punct::Ge => ">=", Punct::LParen => "(", Punct::RParen => ")",
-        Punct::Comma => ",", Punct::Colon => ":",
-    }
-}
-
-/// Whole-word text replace (identifier boundaries), for positional macro params.
-fn replace_word(text: &str, word: &str, repl: &str) -> String {
-    if word.is_empty() {
-        return text.to_string();
-    }
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(pos) = rest.find(word) {
-        let before = &rest[..pos];
-        let after = &rest[pos + word.len()..];
-        let ok_before = before.chars().last().is_none_or(|c| !c.is_alphanumeric() && c != '_');
-        let ok_after = after.chars().next().is_none_or(|c| !c.is_alphanumeric() && c != '_');
-        out.push_str(before);
-        if ok_before && ok_after {
-            out.push_str(repl);
-        } else {
-            out.push_str(word);
-        }
-        rest = after;
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Given `toks` with a `(` at index `lparen`, split the argument groups by
-/// depth-0 commas and return `(args, index_past_matching_rparen)`. None if unbalanced.
-fn split_call_args(toks: &[Token], lparen: usize) -> Option<(Vec<Vec<Token>>, usize)> {
-    let mut depth = 0i32;
-    let mut i = lparen;
-    let mut args: Vec<Vec<Token>> = Vec::new();
-    let mut cur: Vec<Token> = Vec::new();
-    while i < toks.len() {
-        match &toks[i].tok {
-            Tok::Punct(Punct::LParen) => {
-                depth += 1;
-                if depth > 1 {
-                    cur.push(toks[i].clone());
-                }
-                i += 1;
-            }
-            Tok::Punct(Punct::RParen) => {
-                depth -= 1;
-                if depth == 0 {
-                    args.push(cur);
-                    return Some((args, i + 1));
-                }
-                cur.push(toks[i].clone());
-                i += 1;
-            }
-            Tok::Punct(Punct::Comma) if depth == 1 => {
-                args.push(std::mem::take(&mut cur));
-                i += 1;
-            }
-            _ => {
-                cur.push(toks[i].clone());
-                i += 1;
-            }
-        }
-    }
-    None
-}
-
-/// Split a token slice on top-level (non-parenthesised) commas.
-fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
-    let mut groups = Vec::new();
-    let mut depth = 0i32;
-    let mut start = 0usize;
-    for (i, t) in toks.iter().enumerate() {
-        match t.tok {
-            Tok::Punct(Punct::LParen) => depth += 1,
-            Tok::Punct(Punct::RParen) => depth -= 1,
-            Tok::Punct(Punct::Comma) if depth == 0 => {
-                groups.push(&toks[start..i]);
-                start = i + 1;
-            }
-            _ => {}
-        }
-    }
-    groups.push(&toks[start..]);
-    groups
 }
 
 #[cfg(test)]

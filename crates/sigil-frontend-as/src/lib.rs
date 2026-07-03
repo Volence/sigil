@@ -6,6 +6,7 @@
 
 mod ast;
 mod eval;
+mod expand;
 mod expr;
 mod lexer;
 mod operands;
