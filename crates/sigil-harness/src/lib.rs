@@ -193,6 +193,15 @@ pub fn build_harness(
     let opts = reference_options(aeon_root, stubs);
     let mut module = assemble_root(harness_root, &opts)
         .map_err(|d| format!("assemble: {} diagnostics; first: {:?}", d.len(), d.first()))?;
+    // Drop empty label-only sections. Region A's driver source brackets itself
+    // with `Z80_Sound_Start:` (just before its `save/cpu z80/phase 0`) and
+    // `Z80_Sound_End:` (just after its `dephase/restore`); in the 68000-context
+    // preamble those two labels each open an empty `(M68000, vma_base None)`
+    // section carrying zero fragments. They contribute no image bytes (nothing
+    // in A/B references them — the tail `Z80_SOUND_SIZE` equate is evaluated at
+    // assemble time), so dropping them is byte-neutral and leaves exactly the
+    // two real output regions: A `sec0` (Z80) and B `sec32768` (Z80).
+    module.sections.retain(|s| !s.fragments.is_empty());
     assign_lmas(&mut module, map)?;
     let mut stub_table = SymbolTable::new();
     for (name, value) in stubs {
