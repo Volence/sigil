@@ -40,6 +40,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-harness"
+version = "0.1.0"
+dependencies = [
+ "sigil-frontend-as",
+ "sigil-ir",
+ "sigil-link",
+ "sigil-span",
+]
+
+[[package]]
 name = "sigil-ir"
 version = "0.1.0"
 dependencies = [

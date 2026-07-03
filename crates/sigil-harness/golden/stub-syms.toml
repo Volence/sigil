@@ -1,0 +1,22 @@
+# External 68k leaf-stub symbols referenced by Region A/B but DEFINED
+# OUTSIDE A+B (dac_samples.asm bank/ptr/len, the MT/SFX bank id, etc.).
+# Seeded by `regen` from a fresh asl build.
+#
+# BEST-EFFORT SEED ONLY. The DEFINITIVE stub set is finalized in Task 5,
+# when assembling A+B in isolation reveals exactly which symbols remain
+# unresolved. Values are hex.
+
+SND_ENGINE_TABLE_BANK = 0xc
+SFX_BLOB_BANK = 0xc
+SND_BLIP_BANK = 0xa
+SND_BLIP_PTR = 0x8000
+SND_BLIP_LEN = 0xb40
+SND_KICK_BANK = 0xb
+SND_KICK_PTR = 0x8000
+SND_KICK_LEN = 0x57e
+SND_SNARE_BANK = 0xb
+SND_SNARE_PTR = 0x857e
+SND_SNARE_LEN = 0xea4
+SND_HAT_BANK = 0xb
+SND_HAT_PTR = 0x9422
+SND_HAT_LEN = 0xf0

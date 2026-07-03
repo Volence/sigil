@@ -1,0 +1,10 @@
+[package]
+name = "sigil-harness"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sigil-span = { path = "../sigil-span" }
+sigil-ir = { path = "../sigil-ir" }
+sigil-link = { path = "../sigil-link" }
+sigil-frontend-as = { path = "../sigil-frontend-as" }
