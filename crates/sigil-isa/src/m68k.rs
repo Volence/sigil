@@ -122,6 +122,8 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Addi | Mnemonic::Subi | Mnemonic::Andi
         | Mnemonic::Ori | Mnemonic::Eori | Mnemonic::Cmpi => encode_alu_imm(inst),
         Mnemonic::Moveq | Mnemonic::Addq | Mnemonic::Subq => encode_quick(inst),
+        Mnemonic::Asl | Mnemonic::Asr | Mnemonic::Lsl | Mnemonic::Lsr
+        | Mnemonic::Rol | Mnemonic::Ror => encode_shift(inst),
         Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
@@ -450,6 +452,70 @@ fn encode_quick(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         out.extend_from_slice(&w.to_be_bytes());
     }
     Ok(out)
+}
+
+/// Encode the register shift/rotate family (`asl/asr/lsl/lsr/rol/ror`).
+///
+/// Base word: `1110 ccc d ss i tt rrr` =
+/// `0xE000 | ccc<<9 | d<<8 | ss<<6 | i<<5 | tt<<3 | dst_dn`.
+/// - `ccc`: immediate count 1..=8 (**8 → `000`**) when source is `#imm` (`i`=0),
+///   or the source Dn number when source is `Dn` (`i`=1).
+/// - `(d, tt)` by mnemonic: `asr`=(0,00), `asl`=(1,00), `lsr`=(0,01), `lsl`=(1,01),
+///   `ror`=(0,11), `rol`=(1,11).
+///
+/// Only the register (Dn destination) form is supported; the word memory-shift form
+/// is unused by the Aeon corpus.
+fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (src, dst) = match inst.ops.as_slice() {
+        [s, d] => (s, d),
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 2 operands, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+    let dst_dn = match dst {
+        Operand::Dn(n) => (n & 0b111) as u16,
+        other => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} requires Dn destination, got {other:?}",
+                inst.mnemonic
+            )))
+        }
+    };
+    let (d, tt): (u16, u16) = match inst.mnemonic {
+        Mnemonic::Asr => (0, 0b00),
+        Mnemonic::Asl => (1, 0b00),
+        Mnemonic::Lsr => (0, 0b01),
+        Mnemonic::Lsl => (1, 0b01),
+        Mnemonic::Ror => (0, 0b11),
+        Mnemonic::Rol => (1, 0b11),
+        _ => unreachable!(),
+    };
+    // Discriminate immediate-count (i=0) vs register-count (i=1) by the source.
+    let (ccc, i): (u16, u16) = match src {
+        Operand::Imm(v) => {
+            if !(1..=8).contains(v) {
+                return Err(IsaError::UnsupportedForm(format!(
+                    "{:?} immediate count must be 1..=8, got {v}",
+                    inst.mnemonic
+                )));
+            }
+            ((*v as u16) & 0b111, 0) // 8 -> 000, else the value itself
+        }
+        Operand::Dn(n) => ((*n & 0b111) as u16, 1),
+        other => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} source must be #imm count or Dn, got {other:?}",
+                inst.mnemonic
+            )))
+        }
+    };
+    let sz = size_code(inst.size)?;
+    let word: u16 = 0xE000 | (ccc << 9) | (d << 8) | (sz << 6) | (i << 5) | (tt << 3) | dst_dn;
+    Ok(word.to_be_bytes().to_vec())
 }
 
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.

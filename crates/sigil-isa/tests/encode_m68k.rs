@@ -107,6 +107,11 @@ fn quick_family() {
 }
 
 #[test]
+fn shift_rotate_family() {
+    check(&["asl.w #1,d0", "asr.l #3,d1", "lsl.w d2,d0", "lsr.b #1,d0", "rol.w #2,d0", "ror.w d1,d0"]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

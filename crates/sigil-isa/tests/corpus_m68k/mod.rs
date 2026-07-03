@@ -82,5 +82,12 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("addq.w #1,d0", Instruction { mnemonic: Mnemonic::Addq, size: W, ops: vec![Imm(1), Dn(0)] }),
         ("addq.l #8,a1", Instruction { mnemonic: Mnemonic::Addq, size: L, ops: vec![Imm(8), An(1)] }),
         ("subq.w #2,d1", Instruction { mnemonic: Mnemonic::Subq, size: W, ops: vec![Imm(2), Dn(1)] }),
+        // --- shift/rotate family ---
+        ("asl.w #1,d0", Instruction { mnemonic: Mnemonic::Asl, size: W, ops: vec![Imm(1), Dn(0)] }),
+        ("asr.l #3,d1", Instruction { mnemonic: Mnemonic::Asr, size: L, ops: vec![Imm(3), Dn(1)] }),
+        ("lsl.w d2,d0", Instruction { mnemonic: Mnemonic::Lsl, size: W, ops: vec![Dn(2), Dn(0)] }),
+        ("lsr.b #1,d0", Instruction { mnemonic: Mnemonic::Lsr, size: B, ops: vec![Imm(1), Dn(0)] }),
+        ("rol.w #2,d0", Instruction { mnemonic: Mnemonic::Rol, size: W, ops: vec![Imm(2), Dn(0)] }),
+        ("ror.w d1,d0", Instruction { mnemonic: Mnemonic::Ror, size: W, ops: vec![Dn(1), Dn(0)] }),
     ]
 }
