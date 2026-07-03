@@ -1,7 +1,6 @@
 //! state: the AS assembler-state unit + the save/restore stack.
 
 // `AsmState` is consumed by the eval loop (later task); unused until then.
-#![allow(dead_code)] // removed once eval consumes AsmState
 
 use sigil_ir::backend::Cpu;
 

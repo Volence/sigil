@@ -1,7 +1,6 @@
 //! token: the lexer's output vocabulary.
 
 // Consumed by the parser (next task); unused until then.
-#![allow(dead_code)]
 
 use sigil_span::Span;
 

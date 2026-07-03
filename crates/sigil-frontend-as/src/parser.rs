@@ -1,5 +1,4 @@
 //! parser: lexed line → structural `Line`.
-#![allow(dead_code)] // removed once eval consumes this
 
 use crate::ast::Line;
 use crate::token::{Punct, Tok, Token};

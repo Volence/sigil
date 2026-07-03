@@ -1,5 +1,4 @@
 //! ast: structural line produced by the parser and consumed by eval.
-#![allow(dead_code)] // removed once eval consumes Line
 
 use crate::token::Token;
 

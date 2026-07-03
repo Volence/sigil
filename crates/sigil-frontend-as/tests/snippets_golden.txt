@@ -1,0 +1,17 @@
+=== db_dw_le_and_equate ===
+        cpu z80
+        phase 0
+GAP     = 4
+Tab     db 1,2,3
+        dw 0284h
+        db GAP
+--- bytes ---
+01 02 03 84 02 04
+=== jp_label_fixup ===
+        cpu z80
+        phase 0
+        jp Target
+Target:
+        nop
+--- bytes ---
+C3 03 00 00

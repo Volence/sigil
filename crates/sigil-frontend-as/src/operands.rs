@@ -1,5 +1,4 @@
 //! operands: comma-split + structural classification of operand groups.
-#![allow(dead_code)] // removed once eval consumes parse_operands
 
 use crate::expr::parse_expr;
 use crate::token::{Punct, Tok, Token};

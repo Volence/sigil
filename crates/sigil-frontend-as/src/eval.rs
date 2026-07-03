@@ -1,10 +1,609 @@
-//! eval: the multi-pass driver — directive dispatch, expansion, fixpoint, emit.
+//! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
+use crate::lexer::lex_line;
+use crate::operands::{parse_operands, OperandAtom};
+use crate::parser::parse_line_tokens;
+use crate::token::{Punct, Tok, Token};
 use crate::Options;
-use sigil_ir::Module;
-use sigil_span::Diagnostic;
+use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
+use sigil_backend_z80::Z80Backend;
+use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
+use sigil_ir::expr::Fold;
+use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable, SymbolValue};
+use sigil_span::{Diagnostic, Level, SourceId, Span};
 
-/// Run the front-end over `src`. Stub: returns an empty module (grown in later tasks).
-pub fn run(_src: &str, _opts: &Options) -> Result<Module, Vec<Diagnostic>> {
-    Ok(Module { sections: Vec::new() })
+pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
+    let mut asm = Asm::new(opts);
+    for (k, v) in &opts.defines {
+        asm.env.define(k, SymbolValue::Int(*v));
+    }
+    asm.process(src);
+    let (module, mut diags) = asm.builder.finish();
+    diags.append(&mut asm.diags);
+    if diags.iter().any(|d| d.level == Level::Error) {
+        Err(diags)
+    } else {
+        Ok(module)
+    }
+}
+
+struct Asm {
+    builder: IrBuilder,
+    backend: Z80Backend,
+    state: crate::state::AsmState,
+    env: SymbolTable,
+    scope: Option<String>,
+    cursor: u32,
+    in_section: bool,
+    diags: Vec<Diagnostic>,
+    source: SourceId,
+}
+
+enum Lowered {
+    Fixed(Vec<Operand>),
+    Rel(Option<Cond>, Expr),
+    Abs16(Vec<Operand>, Expr),
+}
+
+impl Asm {
+    fn new(opts: &Options) -> Self {
+        Asm {
+            builder: IrBuilder::new(),
+            backend: Z80Backend,
+            state: crate::state::AsmState::new(opts.initial_cpu),
+            env: SymbolTable::new(),
+            scope: None,
+            cursor: 0,
+            in_section: false,
+            diags: Vec::new(),
+            source: SourceId(0),
+        }
+    }
+
+    fn err(&mut self, span: Span, msg: impl Into<String>) {
+        self.diags.push(Diagnostic { level: Level::Error, message: msg.into(), primary: span });
+    }
+
+    fn here(&self) -> u32 {
+        self.state.vma_base.unwrap_or(0) + self.cursor
+    }
+
+    fn fold(&self, e: &Expr) -> Fold {
+        let here = self.here() as i64;
+        let scope = self.scope.clone();
+        let env = &self.env;
+        e.fold(&|name| {
+            if name == "$" {
+                Some(here)
+            } else {
+                env.resolve(name, scope.as_deref())
+            }
+        })
+    }
+
+    /// Fold an immediate to a value in [lo,hi]. Out-of-range → diagnostic + clamp.
+    /// Unresolved (Poison) → 0 placeholder (byte-stable; the fixpoint resolves later).
+    fn fold_imm(&mut self, e: &Expr, span: Span, lo: i64, hi: i64) -> i64 {
+        match self.fold(e) {
+            Fold::Value(v) if v >= lo && v <= hi => v,
+            Fold::Value(v) => {
+                self.err(span, format!("operand {v} out of range {lo}..={hi}"));
+                v.clamp(lo, hi)
+            }
+            Fold::Poison => 0,
+        }
+    }
+
+    /// Fold a whole token slice as one constant expression (used by phase, etc.).
+    fn eval_all(&mut self, toks: &[Token], span: Span) -> Option<i64> {
+        let (e, rest) = crate::expr::parse_expr(toks)?;
+        if !rest.is_empty() {
+            self.err(span, "trailing tokens in expression");
+            return None;
+        }
+        match self.fold(&e) {
+            Fold::Value(v) => Some(v),
+            Fold::Poison => None,
+        }
+    }
+
+    fn process(&mut self, src: &str) {
+        let mut base = 0u32;
+        for raw in src.split_inclusive('\n') {
+            self.process_line(raw, base);
+            base += raw.len() as u32;
+        }
+    }
+
+    fn process_line(&mut self, line: &str, base: u32) {
+        let toks = match lex_line(line, self.state.cpu, self.source, base) {
+            Ok(t) => t,
+            Err(d) => {
+                self.diags.push(d);
+                return;
+            }
+        };
+        if toks.is_empty() {
+            return;
+        }
+        let parsed = parse_line_tokens(&toks);
+        if let Some(name) = parsed.label_colon.clone() {
+            self.define_label(&name);
+        }
+        let body = parsed.tokens;
+        if body.is_empty() {
+            return;
+        }
+        let head = match &body[0].tok {
+            Tok::Ident(s) => s.clone(),
+            _ => {
+                self.err(body[0].span, "expected mnemonic, directive, or label");
+                return;
+            }
+        };
+        if body.len() >= 2 && matches!(body[1].tok, Tok::Punct(Punct::Eq)) {
+            self.directive_equate(&head, &body[2..], body[0].span);
+            return;
+        }
+        if !is_op_keyword(&head) && !is_mnemonic(&head) {
+            self.define_label(&head);
+            if body.len() == 1 {
+                return;
+            }
+            let rest = &body[1..];
+            let rhead = match &rest[0].tok {
+                Tok::Ident(s) => s.clone(),
+                _ => {
+                    self.err(rest[0].span, "expected mnemonic or directive after label");
+                    return;
+                }
+            };
+            self.dispatch(&rhead, &rest[1..], rest[0].span);
+            return;
+        }
+        self.dispatch(&head, &body[1..], body[0].span);
+    }
+
+    fn dispatch(&mut self, head: &str, rest: &[Token], span: Span) {
+        match head {
+            "cpu" => self.directive_cpu(rest, span),
+            "phase" => self.directive_phase(rest, span),
+            "dephase" => self.directive_dephase(),
+            "save" => self.state.save(),
+            "restore" => {
+                if let Err(m) = self.state.restore() {
+                    self.err(span, m);
+                }
+            }
+            "padding" => self.state.padding = on_off(rest),
+            "supmode" => self.state.supmode = on_off(rest),
+            "db" | "dc.b" => self.directive_db(rest, span),
+            "dw" => self.directive_dw(rest, span),
+            _ if is_mnemonic(head) => self.lower_instruction(head, rest, span),
+            _ => self.err(span, format!("unknown directive or mnemonic `{head}`")),
+        }
+    }
+
+    fn open_section_if_needed(&mut self) {
+        if !self.in_section {
+            let name = format!("sec{}", self.state.vma_base.unwrap_or(0));
+            self.builder.switch_section(&name, self.state.cpu, self.state.vma_base);
+            self.in_section = true;
+            self.cursor = 0;
+        }
+    }
+
+    fn close_section(&mut self) {
+        self.in_section = false;
+        self.cursor = 0;
+    }
+
+    fn define_label(&mut self, name: &str) {
+        self.open_section_if_needed();
+        let value = self.here() as i64;
+        let qualified = if name.starts_with('.') {
+            qualify(name, self.scope.as_deref())
+        } else {
+            self.scope = Some(name.to_string());
+            name.to_string()
+        };
+        self.env.define(&qualified, SymbolValue::Int(value));
+        self.builder.define_label(&qualified);
+    }
+
+    fn directive_cpu(&mut self, rest: &[Token], span: Span) {
+        let name = match rest.first().map(|t| &t.tok) {
+            Some(Tok::Ident(s)) => s.clone(),
+            Some(Tok::Int(_)) => "68000".to_string(),
+            _ => {
+                self.err(span, "cpu needs a name");
+                return;
+            }
+        };
+        let cpu = match name.as_str() {
+            "z80" => Cpu::Z80,
+            "68000" | "68008" => Cpu::M68000,
+            other => {
+                self.err(span, format!("unsupported cpu `{other}`"));
+                return;
+            }
+        };
+        self.state.cpu = cpu;
+        self.close_section();
+    }
+
+    fn directive_phase(&mut self, rest: &[Token], span: Span) {
+        match self.eval_all(rest, span) {
+            Some(v) => {
+                self.state.vma_base = Some(v as u32);
+                self.close_section();
+            }
+            None => self.err(span, "phase needs a constant expression"),
+        }
+    }
+
+    fn directive_dephase(&mut self) {
+        self.state.vma_base = None;
+        self.close_section();
+    }
+
+    fn directive_equate(&mut self, name: &str, rest: &[Token], span: Span) {
+        if let Some(v) = self.eval_all(rest, span) {
+            self.env.define(name, SymbolValue::Int(v));
+        }
+    }
+
+    fn directive_db(&mut self, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        for g in split_top_commas(rest) {
+            let e = match crate::expr::parse_expr(g) {
+                Some((e, [])) => e,
+                _ => {
+                    self.err(span, "bad byte expression");
+                    continue;
+                }
+            };
+            let v = self.fold_imm(&e, span, -128, 0xFF);
+            self.emit(&[v as u8], vec![], span);
+        }
+    }
+
+    fn directive_dw(&mut self, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        for g in split_top_commas(rest) {
+            if let [Token { tok: Tok::Ident(name), .. }] = g {
+                if !is_reg_or_cond_word(name) {
+                    let target = Expr::Sym(qualify(name, self.scope.as_deref()));
+                    self.emit(
+                        &[0x00, 0x00],
+                        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target }],
+                        span,
+                    );
+                    continue;
+                }
+            }
+            let e = match crate::expr::parse_expr(g) {
+                Some((e, [])) => e,
+                _ => {
+                    self.err(span, "bad word expression");
+                    continue;
+                }
+            };
+            let v = self.fold_imm(&e, span, -0x8000, 0xFFFF) as u16;
+            self.emit(&[(v & 0xFF) as u8, (v >> 8) as u8], vec![], span);
+        }
+    }
+
+    fn lower_instruction(&mut self, mn: &str, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        let atoms = match parse_operands(rest) {
+            Ok(a) => a,
+            Err(d) => {
+                self.diags.push(d);
+                return;
+            }
+        };
+        let m = match mnemonic(mn) {
+            Some(m) => m,
+            None => {
+                self.err(span, "not a mnemonic");
+                return;
+            }
+        };
+        match self.build_operands(m, &atoms, span) {
+            Some(Lowered::Fixed(ops)) => {
+                let f = self.backend.lower(m, &ops, span);
+                self.emit_frag(f, span);
+            }
+            Some(Lowered::Rel(cond, target)) => {
+                let f = self.backend.lower_rel(m, cond, target, span);
+                self.emit_frag(f, span);
+            }
+            Some(Lowered::Abs16(ops, target)) => {
+                let f = self.backend.lower_abs16(m, &ops, target, span);
+                self.emit_frag(f, span);
+            }
+            None => {}
+        }
+    }
+
+    fn build_operands(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Lowered> {
+        if matches!(m, Mnemonic::Jr | Mnemonic::Djnz) {
+            let (cond, target_atom) = match atoms {
+                [OperandAtom::RegOrCond(w), t] => (cond_word(w), t),
+                [t] => (None, t),
+                _ => {
+                    self.err(span, "bad jr/djnz operands");
+                    return None;
+                }
+            };
+            let target = match target_atom {
+                OperandAtom::Value(e) => self.qualify_expr(e),
+                _ => {
+                    self.err(span, "jr/djnz needs a label target");
+                    return None;
+                }
+            };
+            return Some(Lowered::Rel(cond, target));
+        }
+        if matches!(m, Mnemonic::Jp | Mnemonic::Call) {
+            let (cond, target_opt) = self.split_control_target(atoms);
+            if let Some(target @ Expr::Sym(_)) = target_opt {
+                let mut ops = Vec::new();
+                if let Some(cc) = cond {
+                    ops.push(Operand::Cc(cc));
+                }
+                ops.push(Operand::Imm16(0));
+                return Some(Lowered::Abs16(ops, target));
+            }
+        }
+        if matches!(m, Mnemonic::Ld) {
+            if let [OperandAtom::RegOrCond(w), OperandAtom::Value(e @ Expr::Sym(_))] = atoms {
+                if let Some(rr) = reg16(w) {
+                    let target = self.qualify_expr(e);
+                    let ops = vec![Operand::Pair(rr), Operand::Imm16(0)];
+                    return Some(Lowered::Abs16(ops, target));
+                }
+            }
+        }
+        let ops = self.convert_atoms(m, atoms, span)?;
+        Some(Lowered::Fixed(ops))
+    }
+
+    /// For jp/call: split off a leading condition and return the bare target expr.
+    fn split_control_target(&self, atoms: &[OperandAtom]) -> (Option<Cond>, Option<Expr>) {
+        match atoms {
+            [OperandAtom::RegOrCond(w), OperandAtom::Value(e)] if cond_word(w).is_some() => {
+                (cond_word(w), Some(self.qualify_expr(e)))
+            }
+            [OperandAtom::Value(e)] => (None, Some(self.qualify_expr(e))),
+            _ => (None, None),
+        }
+    }
+
+    /// Qualify a bare local `.name` Sym against the current scope; else unchanged.
+    fn qualify_expr(&self, e: &Expr) -> Expr {
+        match e {
+            Expr::Sym(name) if name.starts_with('.') => {
+                Expr::Sym(qualify(name, self.scope.as_deref()))
+            }
+            other => other.clone(),
+        }
+    }
+
+    /// Convert operand atoms to resolved z80 operands, by mnemonic.
+    fn convert_atoms(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Vec<Operand>> {
+        let has_pair_companion = atoms
+            .iter()
+            .any(|a| matches!(a, OperandAtom::RegOrCond(w) if reg16(w).is_some()));
+        let control_flow = matches!(m, Mnemonic::Jp | Mnemonic::Call | Mnemonic::Ret);
+        let bit_op = matches!(m, Mnemonic::Bit | Mnemonic::Res | Mnemonic::Set);
+        let mut ops = Vec::with_capacity(atoms.len());
+        for (i, a) in atoms.iter().enumerate() {
+            let op = match a {
+                OperandAtom::RegOrCond(w) => {
+                    if control_flow && i == 0 {
+                        if let Some(cc) = cond_word(w) {
+                            Operand::Cc(cc)
+                        } else {
+                            self.reg_operand(w, span)?
+                        }
+                    } else {
+                        self.reg_operand(w, span)?
+                    }
+                }
+                OperandAtom::IndReg(w) => match w.as_str() {
+                    "hl" => Operand::IndHl,
+                    "bc" => Operand::IndBc,
+                    "de" => Operand::IndDe,
+                    _ => {
+                        self.err(span, "bad indirect register");
+                        return None;
+                    }
+                },
+                OperandAtom::Indexed { reg, disp } => {
+                    let d = self.fold_imm(disp, span, -128, 127);
+                    Operand::Indexed { reg: *reg, disp: d as i8 }
+                }
+                OperandAtom::Mem(e) => {
+                    let v = self.fold_imm(e, span, 0, 0xFFFF);
+                    Operand::Mem(v as u16)
+                }
+                OperandAtom::Value(e) => {
+                    if bit_op && i == 0 {
+                        let b = self.fold_imm(e, span, 0, 7);
+                        Operand::Bit(b as u8)
+                    } else if matches!(m, Mnemonic::Im) {
+                        let v = self.fold_imm(e, span, 0, 2);
+                        Operand::Imm8(v as u8)
+                    } else if matches!(m, Mnemonic::Jp | Mnemonic::Call) {
+                        // A literal address for jp/call is a 16-bit immediate
+                        // (symbolic targets take the Abs16 fixup path earlier).
+                        let v = self.fold_imm(e, span, 0, 0xFFFF);
+                        Operand::Imm16(v as u16)
+                    } else if has_pair_companion {
+                        let v = self.fold_imm(e, span, -0x8000, 0xFFFF);
+                        Operand::Imm16(v as u16)
+                    } else {
+                        let v = self.fold_imm(e, span, -128, 0xFF);
+                        Operand::Imm8(v as u8)
+                    }
+                }
+                OperandAtom::AfShadow => Operand::AfShadow,
+            };
+            ops.push(op);
+        }
+        Some(ops)
+    }
+
+    fn reg_operand(&mut self, w: &str, span: Span) -> Option<Operand> {
+        if let Some(r) = reg8(w) {
+            Some(Operand::Reg(r))
+        } else if let Some(rr) = reg16(w) {
+            Some(Operand::Pair(rr))
+        } else if w == "i" {
+            Some(Operand::RegI)
+        } else if w == "r" {
+            Some(Operand::RegR)
+        } else if let Some(cc) = cond_word(w) {
+            Some(Operand::Cc(cc))
+        } else {
+            self.err(span, format!("bad register/condition `{w}`"));
+            None
+        }
+    }
+
+    fn emit_frag(&mut self, frag: Result<DataFragment, LowerError>, span: Span) {
+        match frag {
+            Ok(f) => {
+                let bytes = f.bytes.clone();
+                self.emit(&bytes, f.fixups, span);
+            }
+            Err(e) => self.err(span, e.to_string()),
+        }
+    }
+
+    fn emit(&mut self, bytes: &[u8], fixups: Vec<Fixup>, span: Span) {
+        self.builder.emit_data(bytes, fixups, span);
+        self.cursor += bytes.len() as u32;
+    }
+}
+
+// ── free helpers ────────────────────────────────────────────────────────────
+
+fn is_op_keyword(s: &str) -> bool {
+    matches!(
+        s,
+        "cpu" | "phase" | "dephase" | "save" | "restore" | "padding" | "supmode"
+            | "db" | "dw" | "dc.b" | "equ"
+            | "if" | "elseif" | "else" | "endif" | "ifdef" | "ifndef"
+            | "rept" | "endr" | "endm" | "macro" | "struct" | "endstruct"
+            | "function" | "include" | "error" | "fatal" | "message"
+            | "ds.b" | "ds.w" | "ds.l"
+    )
+}
+
+fn is_mnemonic(s: &str) -> bool {
+    mnemonic(s).is_some()
+}
+
+fn mnemonic(s: &str) -> Option<Mnemonic> {
+    use Mnemonic::*;
+    Some(match s {
+        "nop" => Nop, "ld" => Ld, "add" => Add, "adc" => Adc, "sub" => Sub, "sbc" => Sbc,
+        "and" => And, "or" => Or, "xor" => Xor, "cp" => Cp, "inc" => Inc, "dec" => Dec,
+        "push" => Push, "pop" => Pop, "ex" => Ex, "exx" => Exx, "ret" => Ret, "jr" => Jr,
+        "jp" => Jp, "call" => Call, "djnz" => Djnz, "rrca" => Rrca, "scf" => Scf,
+        "ei" => Ei, "di" => Di, "bit" => Bit, "res" => Res, "set" => Set, "srl" => Srl,
+        "rr" => Rr, "sla" => Sla, "rlc" => Rlc, "rrc" => Rrc, "rl" => Rl, "sra" => Sra,
+        "neg" => Neg, "im" => Im, "ldir" => Ldir,
+        _ => return None,
+    })
+}
+
+fn cond_word(w: &str) -> Option<Cond> {
+    use Cond::*;
+    Some(match w {
+        "nz" => Nz, "z" => Z, "nc" => Nc, "c" => C, "po" => Po, "pe" => Pe, "p" => P, "m" => M,
+        _ => return None,
+    })
+}
+
+fn reg8(w: &str) -> Option<Reg8> {
+    use Reg8::*;
+    Some(match w {
+        "a" => A, "b" => B, "c" => C, "d" => D, "e" => E, "h" => H, "l" => L,
+        _ => return None,
+    })
+}
+
+fn reg16(w: &str) -> Option<Reg16> {
+    use Reg16::*;
+    Some(match w {
+        "bc" => Bc, "de" => De, "hl" => Hl, "sp" => Sp, "af" => Af, "ix" => Ix, "iy" => Iy,
+        _ => return None,
+    })
+}
+
+fn is_reg_or_cond_word(w: &str) -> bool {
+    reg8(w).is_some() || reg16(w).is_some() || cond_word(w).is_some() || w == "i" || w == "r"
+}
+
+/// Qualify a name: `.local` → `Scope.local` (if scope); else unchanged.
+fn qualify(name: &str, scope: Option<&str>) -> String {
+    if name.starts_with('.') {
+        match scope {
+            Some(s) => format!("{s}{name}"),
+            None => name.to_string(),
+        }
+    } else {
+        name.to_string()
+    }
+}
+
+fn on_off(rest: &[Token]) -> bool {
+    !matches!(rest.first().map(|t| &t.tok), Some(Tok::Ident(w)) if w == "off")
+}
+
+/// Split a token slice on top-level (non-parenthesised) commas.
+fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
+    let mut groups = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (i, t) in toks.iter().enumerate() {
+        match t.tok {
+            Tok::Punct(Punct::LParen) => depth += 1,
+            Tok::Punct(Punct::RParen) => depth -= 1,
+            Tok::Punct(Punct::Comma) if depth == 0 => {
+                groups.push(&toks[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    groups.push(&toks[start..]);
+    groups
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run;
+    use crate::Options;
+
+    fn image(src: &str) -> Vec<u8> {
+        let m = run(src, &Options::default()).expect("assemble");
+        m.sections.first().map(|s| s.image_bytes()).unwrap_or_default()
+    }
+
+    #[test]
+    fn lowers_common_instructions() {
+        let src = "        cpu z80\n        phase 0\n        nop\n        ld a,0Ch\n        ld b,c\n        add a,b\n        jp 1234h\n";
+        assert_eq!(image(src), vec![0x00, 0x3E, 0x0C, 0x41, 0x80, 0xC3, 0x34, 0x12]);
+    }
+
+    #[test]
+    fn db_dw_le_and_equate() {
+        let src = "        cpu z80\n        phase 0\nGAP = 4\n        db 1,2,3\n        dw 0284h\n        db GAP\n";
+        assert_eq!(image(src), vec![0x01, 0x02, 0x03, 0x84, 0x02, 0x04]);
+    }
 }

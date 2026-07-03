@@ -1,7 +1,6 @@
 //! lexer: CPU-context-aware tokeniser for one logical line.
 
 // `lex_line` + helpers are consumed by the parser (next task); unused until then.
-#![allow(dead_code)]
 
 use crate::token::{Punct, Tok, Token};
 use sigil_ir::backend::Cpu;

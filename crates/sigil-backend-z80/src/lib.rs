@@ -65,6 +65,34 @@ impl Z80Backend {
             span,
         })
     }
+
+    /// Lower a fixed-opcode instruction whose 16-bit immediate is an unresolved
+    /// symbolic *absolute* address (`jp`/`call`/`ld rr,nn`/`ld ix,nn` with a
+    /// label target). The immediate is the last 2 bytes for every such form;
+    /// emit the opcode with a `00 00` placeholder + a `BankPtr16Le` fixup there.
+    /// `operands` must carry `Imm16(0)` in the immediate slot (the placeholder).
+    pub fn lower_abs16(
+        &self,
+        mnemonic: Mnemonic,
+        operands: &[Operand],
+        target: Expr,
+        span: Span,
+    ) -> Result<DataFragment, LowerError> {
+        let inst = Instruction { mnemonic, ops: operands.to_vec() };
+        let mut bytes = z80::encode(&inst).map_err(|e| LowerError { message: e.to_string() })?;
+        if bytes.len() < 2 {
+            return Err(LowerError { message: "abs16 form shorter than 2 bytes".into() });
+        }
+        let off = bytes.len() as u32 - 2;
+        let n = bytes.len();
+        bytes[n - 2] = 0x00;
+        bytes[n - 1] = 0x00;
+        Ok(DataFragment {
+            bytes,
+            fixups: vec![Fixup { kind: FixupKind::BankPtr16Le, offset: off, target }],
+            span,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -112,6 +140,20 @@ mod tests {
         let frag = b.lower_rel(Mnemonic::Jr, Some(Cond::Z), Expr::Sym(".target".to_string()), span()).unwrap();
         assert_eq!(frag.bytes[0], 0x28);
         assert_eq!(frag.fixups[0].kind, FixupKind::Z80JrRel8);
+    }
+
+    #[test]
+    fn abs16_emits_bankptr_fixup_at_last_two_bytes() {
+        use sigil_isa::z80::Reg16;
+        let b = Z80Backend;
+        let f = b.lower_abs16(Mnemonic::Jp, &[Operand::Imm16(0)], Expr::Sym("Label".into()), span()).unwrap();
+        assert_eq!(f.bytes, vec![0xC3, 0x00, 0x00]);
+        assert_eq!(f.fixups.len(), 1);
+        assert_eq!(f.fixups[0].kind, FixupKind::BankPtr16Le);
+        assert_eq!(f.fixups[0].offset, 1);
+        let g = b.lower_abs16(Mnemonic::Ld, &[Operand::Pair(Reg16::Ix), Operand::Imm16(0)], Expr::Sym("L".into()), span()).unwrap();
+        assert_eq!(g.bytes, vec![0xDD, 0x21, 0x00, 0x00]);
+        assert_eq!(g.fixups[0].offset, 2);
     }
 
     #[test]

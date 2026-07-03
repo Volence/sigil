@@ -1,5 +1,4 @@
 //! expr: token-slice → `sigil_ir::Expr` with AS-flavoured precedence.
-#![allow(dead_code)] // removed once eval consumes parse_expr
 
 use crate::token::{Punct, Tok, Token};
 use sigil_ir::expr::{BinOp, UnOp};
