@@ -13,6 +13,7 @@ use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTa
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
+const PASS_CAP: usize = 8;
 
 #[derive(Clone)]
 struct SrcLine {
@@ -20,19 +21,64 @@ struct SrcLine {
     base: u32,
 }
 
+/// Collected macro definitions: name → (params, body lines).
+type MacroTable = std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)>;
+/// Collected function definitions: name → (params, body tokens).
+type FunctionTable = std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>;
+
 pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
-    let mut asm = Asm::new(opts);
+    // Seed pass 0 with the provided defines; each later pass is seeded with the
+    // previous pass's discovered symbols so forward references resolve. Macro and
+    // function definitions are carried forward too, so an `ifndef`-guarded
+    // definition collected on pass 0 stays available on later passes when its
+    // guard symbol suppresses re-collection.
+    let mut seed = SymbolTable::new();
     for (k, v) in &opts.defines {
-        asm.env.define(k, SymbolValue::Int(*v));
+        seed.define(k, SymbolValue::Int(*v));
     }
+    let mut macros = MacroTable::new();
+    let mut functions = FunctionTable::new();
+    let mut prev = seed.clone();
+    for pass in 0..PASS_CAP {
+        let (module, env, m, f, diags) = one_pass(src, opts, &seed, &macros, &functions);
+        if pass > 0 && env == prev {
+            // Converged: this pass's result is authoritative.
+            return if diags.iter().any(|d| d.level == Level::Error) {
+                Err(diags)
+            } else {
+                Ok(module)
+            };
+        }
+        prev = env.clone();
+        seed = env;
+        macros = m;
+        functions = f;
+    }
+    Err(vec![Diagnostic {
+        level: Level::Error,
+        message: format!("assembly did not converge within {PASS_CAP} passes (symbol values still changing)"),
+        primary: Span { source: SourceId(0), start: 0, end: 0 },
+    }])
+}
+
+/// One assembly pass seeded with `seed_env` (symbols) plus the macro/function
+/// definition tables from prior passes. Returns the module, the discovered
+/// symbol table, the (possibly extended) definition tables, and diagnostics.
+fn one_pass(
+    src: &str,
+    opts: &Options,
+    seed_env: &SymbolTable,
+    seed_macros: &MacroTable,
+    seed_functions: &FunctionTable,
+) -> (Module, SymbolTable, MacroTable, FunctionTable, Vec<Diagnostic>) {
+    let mut asm = Asm::new(opts);
+    asm.env = seed_env.clone();
+    asm.macros = seed_macros.clone();
+    asm.functions = seed_functions.clone();
     asm.process(src);
     let (module, mut diags) = asm.builder.finish();
     diags.append(&mut asm.diags);
-    if diags.iter().any(|d| d.level == Level::Error) {
-        Err(diags)
-    } else {
-        Ok(module)
-    }
+    (module, asm.env, asm.macros, asm.functions, diags)
 }
 
 struct Asm {
@@ -44,8 +90,8 @@ struct Asm {
     in_section: bool,
     diags: Vec<Diagnostic>,
     source: SourceId,
-    functions: std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>,
-    macros: std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)>,
+    functions: FunctionTable,
+    macros: MacroTable,
     macro_depth: usize,
     visited: std::collections::BTreeSet<std::path::PathBuf>,
     include_root: Option<std::path::PathBuf>,
@@ -385,54 +431,63 @@ impl Asm {
         self.dispatch(&head, &body[1..], body[0].span);
     }
 
-    /// The dispatch keyword of a line (after peeling an optional label), or None
-    /// for a blank/label-only/lex-error line.
-    fn line_keyword(&self, line: &SrcLine) -> Option<String> {
+    /// The routing keyword of a line, its index within `body`, and `body` (the
+    /// tokens after any colon-label). Rules, in order:
+    ///  1. second token is `macro`/`struct`/`function` ⇒ that keyword (a DEFINITION,
+    ///     regardless of whether the name is already known — so re-executed
+    ///     definition lines route correctly across passes).
+    ///  2. the leading name is a known macro ⇒ the name (an INVOCATION; its args,
+    ///     even if they look like keywords, are not block openers).
+    ///  3. the leading name is a directive/mnemonic ⇒ the name.
+    ///  4. a bare label followed by an Ident ⇒ that following Ident (e.g. `Tab db 0`).
+    ///  5. otherwise ⇒ the leading name.
+    fn dispatch_head(&self, line: &SrcLine) -> Option<(String, usize, Vec<Token>)> {
         let toks = lex_line(&line.text, self.state.cpu, self.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
         let parsed = parse_line_tokens(&toks);
         let body = if parsed.label_colon.is_some() { parsed.tokens } else { toks };
-        let first = body.first()?;
-        let name = match &first.tok {
+        if body.is_empty() {
+            return None;
+        }
+        let name = match &body[0].tok {
             Tok::Ident(s) => s.clone(),
             _ => return None,
         };
-        // A leading bareword that is neither directive nor mnemonic is a bare
-        // label; the dispatch keyword is the next token.
-        if !is_op_keyword(&name) && !is_mnemonic(&name) && !self.macros.contains_key(&name) && body.len() > 1 {
-            if let Tok::Ident(s) = &body[1].tok {
-                return Some(s.clone());
-            }
+        let second = body.get(1).and_then(|t| if let Tok::Ident(s) = &t.tok { Some(s.as_str()) } else { None });
+        if matches!(second, Some("macro") | Some("struct") | Some("function")) {
+            return Some((second.unwrap().to_string(), 1, body));
         }
-        Some(name)
+        if self.macros.contains_key(&name) {
+            return Some((name, 0, body));
+        }
+        if is_op_keyword(&name) || is_mnemonic(&name) {
+            return Some((name, 0, body));
+        }
+        if let Some(Token { tok: Tok::Ident(s), .. }) = body.get(1) {
+            return Some((s.clone(), 1, body));
+        }
+        Some((name, 0, body))
+    }
+
+    /// The dispatch keyword of a line (after peeling an optional label), or None
+    /// for a blank/label-only/lex-error line.
+    fn line_keyword(&self, line: &SrcLine) -> Option<String> {
+        self.dispatch_head(line).map(|(kw, _, _)| kw)
     }
 
     /// The keyword + the tokens after it + the keyword span, for a block head.
     fn line_kw_args(&self, line: &SrcLine) -> (Option<String>, Vec<Token>, Span) {
-        let toks = match lex_line(&line.text, self.state.cpu, self.source, line.base) {
-            Ok(t) => t,
-            Err(_) => return (None, Vec::new(), Span { source: self.source, start: line.base, end: line.base }),
-        };
-        let parsed = parse_line_tokens(&toks);
-        let body = if parsed.label_colon.is_some() { parsed.tokens } else { toks };
-        // Peel a leading bare label.
-        let (kw_idx, kw) = match body.first() {
-            Some(Token { tok: Tok::Ident(s), .. })
-                if !is_op_keyword(s) && !is_mnemonic(s) && !self.macros.contains_key(s) && body.len() > 1 =>
-            {
-                match &body[1].tok {
-                    Tok::Ident(s2) => (1usize, Some(s2.clone())),
-                    _ => (0usize, Some(s.clone())),
-                }
+        let fallback = Span { source: self.source, start: line.base, end: line.base };
+        match self.dispatch_head(line) {
+            Some((kw, idx, body)) => {
+                let span = body.get(idx).map(|t| t.span).unwrap_or(fallback);
+                let args = body.get(idx + 1..).unwrap_or(&[]).to_vec();
+                (Some(kw), args, span)
             }
-            Some(Token { tok: Tok::Ident(s), .. }) => (0usize, Some(s.clone())),
-            _ => (0usize, None),
-        };
-        let span = body.get(kw_idx).map(|t| t.span).unwrap_or(Span { source: self.source, start: line.base, end: line.base });
-        let args = body.get(kw_idx + 1..).unwrap_or(&[]).to_vec();
-        (kw, args, span)
+            None => (None, Vec::new(), fallback),
+        }
     }
 
     /// Find the index of the terminator matching the block opened at `start`,
@@ -1330,6 +1385,20 @@ mod tests {
     fn fatal_on_true_condition_is_an_error() {
         let src = "        cpu z80\n        phase 0\nN = 6\n        if N <> 5\n        fatal \"bad size \\{N}\"\n        endif\n";
         assert!(run(src, &Options::default()).is_err());
+    }
+
+    #[test]
+    fn forward_equate_resolves_across_passes() {
+        // LATER is used by `db` BEFORE it is defined; the fixpoint resolves it.
+        let src = "        cpu z80\n        phase 0\n        db LATER\nLATER   = 7\n";
+        assert_eq!(image(src), vec![0x07]);
+    }
+
+    #[test]
+    fn two_level_forward_chain_resolves() {
+        // db A ; A = B ; B = 7  — needs 3 passes to settle.
+        let src = "        cpu z80\n        phase 0\n        db A\nA       = B\nB       = 7\n";
+        assert_eq!(image(src), vec![0x07]);
     }
 
     #[test]
