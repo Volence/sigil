@@ -33,7 +33,6 @@ struct Asm {
     state: crate::state::AsmState,
     env: SymbolTable,
     scope: Option<String>,
-    cursor: u32,
     in_section: bool,
     diags: Vec<Diagnostic>,
     source: SourceId,
@@ -53,7 +52,6 @@ impl Asm {
             state: crate::state::AsmState::new(opts.initial_cpu),
             env: SymbolTable::new(),
             scope: None,
-            cursor: 0,
             in_section: false,
             diags: Vec::new(),
             source: SourceId(0),
@@ -65,7 +63,7 @@ impl Asm {
     }
 
     fn here(&self) -> u32 {
-        self.state.vma_base.unwrap_or(0) + self.cursor
+        self.state.vma_base.unwrap_or(0) + self.builder.current_offset()
     }
 
     fn fold(&self, e: &Expr) -> Fold {
@@ -73,6 +71,9 @@ impl Asm {
         let scope = self.scope.clone();
         let env = &self.env;
         e.fold(&|name| {
+            // `$` is resolved to the current PC here in the front-end: any
+            // `$`-bearing expression folds to a concrete value immediately and
+            // never survives as a Sym fixup target, so the linker never sees `$`.
             if name == "$" {
                 Some(here)
             } else {
@@ -187,15 +188,17 @@ impl Asm {
     fn open_section_if_needed(&mut self) {
         if !self.in_section {
             let name = format!("sec{}", self.state.vma_base.unwrap_or(0));
+            // lma defaults to vma_base (IrBuilder); Plan 5's map assigns real
+            // LMAs and handles same-phase section re-entry. Same-(cpu,vma)
+            // re-entry within one assembly would currently collide at flatten —
+            // out of the M0 single-region-per-phase gate.
             self.builder.switch_section(&name, self.state.cpu, self.state.vma_base);
             self.in_section = true;
-            self.cursor = 0;
         }
     }
 
     fn close_section(&mut self) {
         self.in_section = false;
-        self.cursor = 0;
     }
 
     fn define_label(&mut self, name: &str) {
@@ -249,7 +252,11 @@ impl Asm {
 
     fn directive_equate(&mut self, name: &str, rest: &[Token], span: Span) {
         if let Some(v) = self.eval_all(rest, span) {
-            self.env.define(name, SymbolValue::Int(v));
+            // An equate is not a label: qualify a local `.foo` against the
+            // current scope (so `ld a,.foo` resolves) but do NOT open a scope.
+            // `qualify` leaves non-dotted global names unchanged.
+            let q = qualify(name, self.scope.as_deref());
+            self.env.define(&q, SymbolValue::Int(v));
         }
     }
 
@@ -393,6 +400,7 @@ impl Asm {
 
     /// Convert operand atoms to resolved z80 operands, by mnemonic.
     fn convert_atoms(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Vec<Operand>> {
+        // M0 invariant: a 16-bit pair operand means the immediate is 16-bit (ld rr,nn). Holds for the driver's mnemonic set.
         let has_pair_companion = atoms
             .iter()
             .any(|a| matches!(a, OperandAtom::RegOrCond(w) if reg16(w).is_some()));
@@ -484,8 +492,9 @@ impl Asm {
     }
 
     fn emit(&mut self, bytes: &[u8], fixups: Vec<Fixup>, span: Span) {
+        // The builder advances its own section cursor (the single source of
+        // truth read back via `current_offset()`); the front-end keeps none.
         self.builder.emit_data(bytes, fixups, span);
-        self.cursor += bytes.len() as u32;
     }
 }
 
@@ -605,5 +614,11 @@ mod tests {
     fn db_dw_le_and_equate() {
         let src = "        cpu z80\n        phase 0\nGAP = 4\n        db 1,2,3\n        dw 0284h\n        db GAP\n";
         assert_eq!(image(src), vec![0x01, 0x02, 0x03, 0x84, 0x02, 0x04]);
+    }
+
+    #[test]
+    fn local_equate_resolves_in_scope() {
+        let src = "        cpu z80\n        phase 0\nScope:\n.k      = 5\n        ld a,.k\n";
+        assert_eq!(image(src), vec![0x3E, 0x05]);
     }
 }

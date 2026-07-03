@@ -41,6 +41,12 @@ impl IrBuilder {
         }
     }
 
+    /// Byte offset within the currently-open section (0 if none open). The
+    /// single source of truth for the front-end's `$`/label position.
+    pub fn current_offset(&self) -> u32 {
+        self.open.as_ref().map_or(0, |o| o.cursor)
+    }
+
     /// Consume the builder: close the open section and return the module + diags.
     pub fn finish(mut self) -> (Module, Vec<Diagnostic>) {
         self.close();
@@ -147,6 +153,24 @@ mod tests {
         assert_eq!(bsec.image_len(), 0x45F + 2);
         assert_eq!(bsec.vma_len(), 0x45F + 2 + 4);
         assert!(matches!(bsec.fragments[2], Fragment::Reserve { count: 4, .. }));
+    }
+
+    #[test]
+    fn current_offset_tracks_open_section_cursor() {
+        let mut b = IrBuilder::new();
+        // No section open yet ⇒ offset 0.
+        assert_eq!(b.current_offset(), 0);
+        b.switch_section("s", Cpu::Z80, Some(0x8000));
+        assert_eq!(b.current_offset(), 0);
+        b.emit_data(&[0x00, 0x3E, 0x0C], vec![], span());
+        assert_eq!(b.current_offset(), 3);
+        b.emit_fill(4, 0xAA, span());
+        assert_eq!(b.current_offset(), 3 + 4);
+        b.reserve(8, span());
+        assert_eq!(b.current_offset(), 3 + 4 + 8);
+        // Switching sections resets the cursor.
+        b.switch_section("t", Cpu::Z80, None);
+        assert_eq!(b.current_offset(), 0);
     }
 
     #[test]
