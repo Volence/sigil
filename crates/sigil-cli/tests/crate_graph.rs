@@ -290,6 +290,14 @@ fn crate_graph_is_one_way() {
         "sigil-backend-z80 must depend on sigil-ir, sigil-isa, sigil-span only"
     );
 
+    // sigil-backend-m68k wraps the ISA: depends on sigil-ir + sigil-isa (+ span),
+    // exactly mirroring sigil-backend-z80.
+    assert_eq!(
+        get("sigil-backend-m68k"),
+        vec!["sigil-ir".to_string(), "sigil-isa".to_string(), "sigil-span".to_string()],
+        "sigil-backend-m68k must depend on sigil-ir, sigil-isa, sigil-span only"
+    );
+
     // sigil-link is backend-agnostic in its library deps: sigil-ir + sigil-span.
     // (sigil-backend-z80/sigil-isa are dev-dependencies for the integration test
     // and MUST NOT appear as normal dependencies — cargo metadata --no-deps lists
