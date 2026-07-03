@@ -101,21 +101,28 @@ Encoding-hazard notes baked into the family functions:
 
 ## 4. The `sigil-backend-m68k` adapter (thin, mirrors `sigil-backend-z80`)
 
-New crate `crates/sigil-backend-m68k` (deps `sigil-ir` + `sigil-isa` + `sigil-span`). Implements the `Backend`
-trait (§5.1). Re-exports the isa vocabulary so the AS front-end (C) takes **no** direct `sigil-isa` edge.
+New crate `crates/sigil-backend-m68k` (deps `sigil-ir` + `sigil-isa` + `sigil-span`), mirroring the **actual**
+`sigil-backend-z80` shape — not the richer spec §5.1 sketch. The current `sigil_ir::backend::Backend` trait is
+`fn lower(mnemonic, operands, span) -> Result<DataFragment, LowerError>` (single fragment, fully-resolved
+operands); `sigil-ir` has **no** `RelaxableFragment`/`InstCandidate`/`ChosenSizes` types (Z80 needed none), and
+`FixupKind` has `Abs16Be`/`Abs32Be` but no `PcRel`. M1.A does not invent those.
 
-- **`lower_instruction(m, ops, hint)`** maps IR `Mnemonic`/`Operand` → isa `Mnemonic`/`Operand` and returns
-  `Vec<Fragment>`:
-  - Pinned forms (everything except bare-symbol `jmp`/`jsr`) → `Data` (or a single-candidate `Relaxable` with
-    `fixed = Some(n)`), since the operand carries its explicit resolved EA form.
-  - Bare-symbol `jmp`/`jsr` target → a **two-candidate `Relaxable` `{abs.w, abs.l}`** with a `fits` predicate.
-    A's `fits` is the first-approximation rule (target ∈ signed-16 sign-extended range ⇒ abs.w); the
-    **authoritative boundary — including `-A`'s byte effect (§5.6) — is pinned in sub-project B** by reading
-    `asl`'s open-source 68000 encoder, not assumed here. **Resolution** of the candidate needs layout, so it is
-    *exercised* in B; A only *produces* the candidate set and unit-tests the predicate shape.
-- **`encode(cand, resolved)`** calls the isa encoder and returns `(bytes, residual_fixups)`.
-- **Crate-graph guard:** add `sigil-backend-m68k` to `crate_graph.rs` rule (d) mirroring `sigil-backend-z80`
-  (deps = exactly `sigil-ir` + `sigil-isa` + `sigil-span`); `sigil-isa` stays zero-workspace-dep (rule (a)).
+- **`M68kBackend`** implements `Backend` with `type Mnemonic = m68k::Mnemonic`, `type Operand = m68k::Operand`,
+  `cpu() -> Cpu::M68000`, and **`lower`** delegating to `m68k::encode` for **fully-resolved forms** — which, per
+  the §2 corpus, is *everything except bare-symbol `jmp`/`jsr`*, since every data operand carries an explicit
+  resolved EA form. Unsupported/malformed forms → `LowerError`.
+- **Re-export** the isa vocabulary (`pub use sigil_isa::m68k;`) so the AS front-end (C) constructs instructions
+  without a direct `sigil-isa` edge (exactly as `sigil-backend-z80` re-exports `z80`).
+- **Crate-graph guard:** add `sigil-backend-m68k` to `crate_graph.rs` (deps = exactly `sigil-ir` + `sigil-isa`
+  + `sigil-span`, mirroring `sigil-backend-z80`); `sigil-isa` stays zero-workspace-dep (rule (a)).
+
+**Deferred to B (with the linker), not built in A:** symbolic-branch lowering (`bra`/`bsr`/`Bcc` to a label →
+`PcRel8`/`PcRel16` fixups — the `FixupKind` variants and a `lower_branch`-style inherent method, mirroring
+Z80's `lower_rel`), and the bare-symbol `jmp`/`jsr` **width selection** (abs.w vs abs.l, incl. `-A`'s byte
+effect per §5.6). Both need layout/fixup resolution — and the length-variable jmp/jsr case needs a
+`Relaxable`-style fragment that does not yet exist — so they belong with B, which owns that machinery. A's isa
+encoder still encodes `jmp`/`jsr` at an *explicit* width (`jmp ($1234).w`, `jsr ($12345678).l`), fully golden-
+tested; only the *selection from a bare symbol* is B's.
 
 ## 5. Test strategy (asl-oracle TDD — the M0/M0.5 pattern)
 
@@ -140,9 +147,11 @@ The `asl` oracle is the spec. Reuse the `gen_m68k_vectors.rs` generator pattern 
 
 ## 6. Explicitly out of scope (deferred to B / C / D)
 
-- **Width-selection *resolution*** (which of `{abs.w, abs.l}` a bare `jmp`/`jsr` gets) and **Pcd16 target→disp**
-  — both need layout ⇒ **sub-project B** (mirrors the `Z80JrRel8` linker-fixup pattern). A produces the
-  candidate + unit-tests `fits`; B resolves it against real addresses.
+- **Bare-symbol `jmp`/`jsr` width selection** (abs.w vs abs.l, incl. `-A`'s byte effect), **symbolic-branch
+  PcRel lowering** (the `PcRel8`/`PcRel16` `FixupKind` variants + `lower_branch`), and **Pcd16 target→disp** —
+  all need layout/fixup resolution, and the length-variable jmp/jsr case needs a `Relaxable` fragment type that
+  does not exist yet ⇒ **sub-project B** (mirrors the `Z80JrRel8` linker-fixup pattern). A's isa encoder still
+  encodes these at an *explicit* width/displacement, golden-tested.
 - **All AS front-end fidelity** (the `.ATTRIBUTE`/`pbyte` macro layer, `struct`, `function`, `strstr`, float
   folding, operator quirks) — **sub-project C**. A takes already-resolved integers + explicit EA forms, exactly
   as the M0.5 seed does.
