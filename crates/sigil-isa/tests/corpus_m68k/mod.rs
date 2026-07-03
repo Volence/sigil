@@ -124,5 +124,14 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("swap d0", Instruction { mnemonic: Mnemonic::Swap, size: W, ops: vec![Dn(0)] }),
         ("ext.w d0", Instruction { mnemonic: Mnemonic::Ext, size: W, ops: vec![Dn(0)] }),
         ("ext.l d1", Instruction { mnemonic: Mnemonic::Ext, size: L, ops: vec![Dn(1)] }),
+        // --- branches (2-wide only) + DBcc (non-relaxable) ---
+        ("bra.s *", Instruction { mnemonic: Mnemonic::Bra, size: Size::S, ops: vec![Disp(-2)] }),
+        ("bra.w *", Instruction { mnemonic: Mnemonic::Bra, size: W, ops: vec![Disp(-2)] }),
+        ("bsr.s *", Instruction { mnemonic: Mnemonic::Bsr, size: Size::S, ops: vec![Disp(-2)] }),
+        ("bsr.w *", Instruction { mnemonic: Mnemonic::Bsr, size: W, ops: vec![Disp(-2)] }),
+        ("beq.s *", Instruction { mnemonic: Mnemonic::Bcc(Cond::Eq), size: Size::S, ops: vec![Disp(-2)] }),
+        ("bne.w *", Instruction { mnemonic: Mnemonic::Bcc(Cond::Ne), size: W, ops: vec![Disp(-2)] }),
+        ("dbf d0,*", Instruction { mnemonic: Mnemonic::Dbcc(Cond::F), size: W, ops: vec![Dn(0), Disp(-2)] }),
+        ("dbeq d1,*", Instruction { mnemonic: Mnemonic::Dbcc(Cond::Eq), size: W, ops: vec![Dn(1), Disp(-2)] }),
     ]
 }

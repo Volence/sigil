@@ -133,6 +133,21 @@ fn control_misc_family() {
 }
 
 #[test]
+fn branch_family_is_two_wide_only() {
+    check(&["bra.s *", "bra.w *", "bsr.s *", "bsr.w *", "beq.s *", "bne.w *"]);
+    let golden = parse_golden_m68k(GOLDEN);
+    assert_eq!(golden_bytes(&golden, "bra.s *").len(), 2, "bra.s must be 2 bytes");
+    assert_eq!(golden_bytes(&golden, "bra.w *").len(), 4, "bra.w must be 4 bytes");
+}
+
+#[test]
+fn dbcc_is_fixed_four_bytes() {
+    check(&["dbf d0,*", "dbeq d1,*"]);
+    let golden = parse_golden_m68k(GOLDEN);
+    assert_eq!(golden_bytes(&golden, "dbf d0,*").len(), 4, "DBcc is fixed 4 bytes (non-relaxable)");
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

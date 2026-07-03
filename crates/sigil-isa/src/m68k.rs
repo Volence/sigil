@@ -134,6 +134,8 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Jmp | Mnemonic::Jsr | Mnemonic::Lea | Mnemonic::Pea
         | Mnemonic::Nop | Mnemonic::Rts | Mnemonic::Rte | Mnemonic::Trap
         | Mnemonic::Swap | Mnemonic::Ext => encode_control(inst),
+        Mnemonic::Bra | Mnemonic::Bsr | Mnemonic::Bcc(_) => encode_branch(inst),
+        Mnemonic::Dbcc(_) => encode_dbcc(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
 }
@@ -775,6 +777,96 @@ fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         }
         _ => unreachable!(),
     }
+}
+
+/// Encode the branch family (`bra`/`bsr`/`Bcc`), 2-wide only (§5.5 byte hazard).
+///
+/// Base word: `0110 cccc dddddddd` = `0x6000 | (cc<<8) | low_byte`.
+/// - `bra` = cc `0000`, `bsr` = cc `0001`, conditional `Bcc(cond)` uses `cond.cc()`.
+/// - `.s` (Size::S): the signed 8-bit displacement occupies the low byte (must fit `i8`).
+/// - `.w` (Size::W): the low byte is `0x00` and a 16-bit displacement word follows
+///   (must fit `i16`).
+/// - No `.l`/`.b` form — `Size::L`/`Size::B` are rejected with `UnsupportedForm`.
+///
+/// The `Disp` operand carries the already-resolved displacement (as asl emits it,
+/// measured from `instruction_address + 2`); the encoder emits it verbatim.
+fn encode_branch(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let disp = match inst.ops.as_slice() {
+        [Operand::Disp(d)] => *d,
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} requires a single resolved displacement operand, got {:?}",
+                inst.mnemonic, inst.ops
+            )))
+        }
+    };
+    let cc: u16 = match inst.mnemonic {
+        Mnemonic::Bra => 0x0,
+        Mnemonic::Bsr => 0x1,
+        Mnemonic::Bcc(cond) => cond.cc(),
+        _ => unreachable!(),
+    };
+    let base = 0x6000 | (cc << 8);
+    match inst.size {
+        Size::S => {
+            let d = i8::try_from(disp).map_err(|_| {
+                IsaError::UnsupportedForm(format!(
+                    "{:?}.s displacement {disp} does not fit a signed byte",
+                    inst.mnemonic
+                ))
+            })?;
+            let word = base | (d as u8 as u16);
+            Ok(word.to_be_bytes().to_vec())
+        }
+        Size::W => {
+            let d = i16::try_from(disp).map_err(|_| {
+                IsaError::UnsupportedForm(format!(
+                    "{:?}.w displacement {disp} does not fit a signed word",
+                    inst.mnemonic
+                ))
+            })?;
+            let mut out = Vec::with_capacity(4);
+            out.extend_from_slice(&base.to_be_bytes());
+            out.extend_from_slice(&d.to_be_bytes());
+            Ok(out)
+        }
+        Size::L | Size::B => Err(IsaError::UnsupportedForm(format!(
+            "{:?} is short (.s) or word (.w) only — 2-wide branch, no .l/.b",
+            inst.mnemonic
+        ))),
+    }
+}
+
+/// Encode `DBcc Dn,disp` (`dbf`/`dbeq`/…), always 4 bytes — NON-relaxable (§5.5).
+///
+/// Base word: `0101 cccc 11001 rrr` = `0x50C8 | (cc<<8) | dn`, followed by a fixed
+/// 16-bit displacement word (must fit `i16`). `dbf` = `Cond::F`, `dbeq` = `Cond::Eq`.
+/// The `Disp` operand carries the already-resolved displacement, emitted verbatim.
+fn encode_dbcc(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (dn, disp) = match inst.ops.as_slice() {
+        [Operand::Dn(n), Operand::Disp(d)] => ((n & 0b111) as u16, *d),
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} requires Dn,disp operands, got {:?}",
+                inst.mnemonic, inst.ops
+            )))
+        }
+    };
+    let cc: u16 = match inst.mnemonic {
+        Mnemonic::Dbcc(cond) => cond.cc(),
+        _ => unreachable!(),
+    };
+    let d = i16::try_from(disp).map_err(|_| {
+        IsaError::UnsupportedForm(format!(
+            "{:?} displacement {disp} does not fit a signed word",
+            inst.mnemonic
+        ))
+    })?;
+    let word = 0x50C8 | (cc << 8) | dn;
+    let mut out = Vec::with_capacity(4);
+    out.extend_from_slice(&word.to_be_bytes());
+    out.extend_from_slice(&d.to_be_bytes());
+    Ok(out)
 }
 
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
