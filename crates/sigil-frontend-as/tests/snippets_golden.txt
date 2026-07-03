@@ -31,3 +31,12 @@ Skip:
         nop
 --- bytes ---
 20 01 00 00
+=== rept_dollar_gap_fill ===
+        cpu z80
+        phase 0
+        nop
+        rept 4-$
+        db 0
+        endr
+--- bytes ---
+00 00 00 00

@@ -132,6 +132,9 @@ impl Asm {
                 Some("if") | Some("ifdef") | Some("ifndef") => {
                     i = self.exec_if(lines, i);
                 }
+                Some("rept") => {
+                    i = self.exec_rept(lines, i);
+                }
                 _ => {
                     self.exec_one(&lines[i]);
                     i += 1;
@@ -290,6 +293,29 @@ impl Asm {
                 self.exec(body);
                 break;
             }
+        }
+        end + 1
+    }
+
+    /// Handle `rept N … endr`. `N` is folded once at the `rept` line (with `$` =
+    /// the current phased VMA). Returns the index past `endr`.
+    fn exec_rept(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
+        let n = match self.eval_all(&arg_toks, span) {
+            Some(v) if v >= 0 => v as usize,
+            Some(_) => {
+                self.err(span, "negative rept count");
+                0
+            }
+            None => {
+                self.err(span, "unresolved rept count");
+                0
+            }
+        };
+        let end = self.find_block_end(lines, start, &["rept"], &["endr", "endm"]);
+        let body = &lines[start + 1..end];
+        for _ in 0..n {
+            self.exec(body);
         }
         end + 1
     }
@@ -811,5 +837,18 @@ mod tests {
     fn local_equate_resolves_in_scope() {
         let src = "        cpu z80\n        phase 0\nScope:\n.k      = 5\n        ld a,.k\n";
         assert_eq!(image(src), vec![0x3E, 0x05]);
+    }
+
+    #[test]
+    fn rept_dollar_gap_fill() {
+        // 3 nops (0x00), then fill to phased VMA 8 with `db 0` ⇒ 8 total bytes.
+        let src = "        cpu z80\n        phase 0\n        nop\n        nop\n        nop\n        rept 8-$\n        db 0\n        endr\n";
+        assert_eq!(image(src), vec![0x00; 8]);
+    }
+
+    #[test]
+    fn rept_constant_count() {
+        let src = "        cpu z80\n        phase 0\n        rept 3\n        db 0AAh\n        endr\n";
+        assert_eq!(image(src), vec![0xAA, 0xAA, 0xAA]);
     }
 }
