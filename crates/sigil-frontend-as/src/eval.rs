@@ -135,6 +135,9 @@ impl Asm {
                 Some("rept") => {
                     i = self.exec_rept(lines, i);
                 }
+                Some("struct") => {
+                    i = self.capture_struct(lines, i);
+                }
                 _ => {
                     self.exec_one(&lines[i]);
                     i += 1;
@@ -318,6 +321,56 @@ impl Asm {
             self.exec(body);
         }
         end + 1
+    }
+
+    /// Handle `struct Name … endstruct`: define packed `Name_field` offsets and
+    /// `Name_len`. Field lines emit no bytes. Returns the index past `endstruct`.
+    fn capture_struct(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let (_, args, span) = self.line_kw_args(&lines[start]);
+        let name = match args.first().map(|t| &t.tok) {
+            Some(Tok::Ident(s)) => s.clone(),
+            _ => {
+                self.err(span, "struct needs a name");
+                String::new()
+            }
+        };
+        let end = self.find_block_end(lines, start, &["struct"], &["endstruct"]);
+        let mut off: i64 = 0;
+        for l in &lines[start + 1..end] {
+            if let Some((field, width, count)) = self.parse_struct_field(l) {
+                self.env.define(&format!("{name}_{field}"), SymbolValue::Int(off));
+                off += width * count;
+            }
+        }
+        self.env.define(&format!("{name}_len"), SymbolValue::Int(off));
+        end + 1
+    }
+
+    /// Parse a `<field> ds.b|ds.w|ds.l <count>` struct-member line.
+    /// Returns `(field, width, count)`, or None for a blank/comment line.
+    fn parse_struct_field(&mut self, line: &SrcLine) -> Option<(String, i64, i64)> {
+        let toks = lex_line(&line.text, self.state.cpu, self.source, line.base).ok()?;
+        if toks.is_empty() {
+            return None;
+        }
+        let parsed = parse_line_tokens(&toks);
+        let (field, rest): (String, Vec<Token>) = if let Some(l) = parsed.label_colon {
+            (l, parsed.tokens)
+        } else {
+            match parsed.tokens.split_first() {
+                Some((Token { tok: Tok::Ident(s), .. }, r)) => (s.clone(), r.to_vec()),
+                _ => return None,
+            }
+        };
+        let width = match rest.first().map(|t| &t.tok) {
+            Some(Tok::Ident(w)) if w == "ds.b" => 1,
+            Some(Tok::Ident(w)) if w == "ds.w" => 2,
+            Some(Tok::Ident(w)) if w == "ds.l" => 4,
+            _ => return None,
+        };
+        let span = rest[0].span;
+        let count = self.eval_all(&rest[1..], span).unwrap_or(1);
+        Some((field, width, count))
     }
 
     fn eval_cond(&mut self, kw: &str, arg_toks: &[Token], span: Span) -> bool {
@@ -850,5 +903,13 @@ mod tests {
     fn rept_constant_count() {
         let src = "        cpu z80\n        phase 0\n        rept 3\n        db 0AAh\n        endr\n";
         assert_eq!(image(src), vec![0xAA, 0xAA, 0xAA]);
+    }
+
+    #[test]
+    fn struct_offsets_and_len_drive_indexed_disp() {
+        // Packed: a(1) b(1) c(2) → a=0 b=1 c=2 len=4. Then (ix+SeqChannel_b) = (ix+1).
+        let src = "        cpu z80\n        phase 0\n        struct SeqChannel\na       ds.b 1\nb       ds.b 1\nc       ds.w 1\n        endstruct\n        ld a,(ix+SeqChannel_b)\n        db SeqChannel_len\n";
+        // ld a,(ix+1) = DD 7E 01 ; db 4 = 04
+        assert_eq!(image(src), vec![0xDD, 0x7E, 0x01, 0x04]);
     }
 }

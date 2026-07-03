@@ -40,3 +40,15 @@ Skip:
         endr
 --- bytes ---
 00 00 00 00
+=== struct_field_indexed ===
+        cpu z80
+        phase 0
+        struct SeqChannel
+a       ds.b 1
+b       ds.b 1
+c       ds.w 1
+        endstruct
+        ld a,(ix+SeqChannel_b)
+        db SeqChannel_len
+--- bytes ---
+DD 7E 01 04
