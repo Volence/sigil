@@ -3,7 +3,7 @@
 //! Rules verified (over **normal** dependencies only — see scope note below):
 //!   (a) `sigil-isa` has zero workspace (`sigil-*`) dependencies — extraction-ready
 //!   (b) `sigil-ir` depends only on `sigil-span`
-//!   (c) only `sigil-cli` may depend on `sigil-frontend-as` — contamination safeguard
+//!   (c) only `sigil-cli` / `sigil-harness` may depend on `sigil-frontend-as` — contamination safeguard
 //!   (d) `sigil-backend-z80` depends on `sigil-ir`, `sigil-isa`, `sigil-span`;
 //!       `sigil-link` depends on `sigil-ir`, `sigil-span` (backends are dev-deps)
 //!
@@ -313,20 +313,27 @@ fn crate_graph_is_one_way() {
         "sigil-frontend-as must depend on sigil-backend-z80 + sigil-ir + sigil-span only (no sigil-isa)"
     );
 
-    // (c) only sigil-cli may depend on sigil-frontend-as.
+    // (c) only sigil-cli and sigil-harness may depend on sigil-frontend-as
+    // (the two top-level consumers named in the spec's one-way rule; the harness
+    // drives the same front-end→link pipeline for the byte-exact diff gate).
     for (pkg, deps) in &deps_of {
         if deps.iter().any(|d| d == "sigil-frontend-as") {
-            assert_eq!(
-                pkg, "sigil-cli",
-                "only sigil-cli may depend on sigil-frontend-as, but {} does",
+            assert!(
+                pkg == "sigil-cli" || pkg == "sigil-harness",
+                "only sigil-cli or sigil-harness may depend on sigil-frontend-as, but {} does",
                 pkg
             );
         }
     }
 
-    // Positive wiring check so (c) is non-vacuous: sigil-cli DOES pull in the frontend.
+    // Positive wiring check so (c) is non-vacuous: sigil-cli AND sigil-harness
+    // (the two whitelisted consumers) DO pull in the frontend.
     assert!(
         get("sigil-cli").contains(&"sigil-frontend-as".to_string()),
         "sigil-cli must depend on sigil-frontend-as"
+    );
+    assert!(
+        get("sigil-harness").contains(&"sigil-frontend-as".to_string()),
+        "sigil-harness must depend on sigil-frontend-as"
     );
 }

@@ -76,9 +76,9 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
         (g.first(), g.last())
     {
         let inner = &g[1..g.len() - 1];
-        // (hl)/(bc)/(de)
+        // (hl)/(bc)/(de), plus (sp) for `ex (sp),hl` (eval gates it by mnemonic).
         if let [Token { tok: Tok::Ident(w), .. }] = inner {
-            if matches!(w.as_str(), "hl" | "bc" | "de") {
+            if matches!(w.as_str(), "hl" | "bc" | "de" | "sp") {
                 return Ok(OperandAtom::IndReg(w.clone()));
             }
         }

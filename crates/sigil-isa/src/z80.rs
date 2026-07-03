@@ -463,6 +463,24 @@ fn encode_index(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             let [lo, hi] = le16(*nn);
             Ok(vec![index_prefix(ix), 0x2A, lo, hi])
         }
+        // sub (ix+d) / sub (iy+d)  ->  <pfx> 96 disp   (base `sub (hl)`)
+        (Mnemonic::Sub, [Operand::Indexed { reg, disp }]) => {
+            Ok(vec![index_prefix(*reg), 0x96, *disp as u8])
+        }
+        // inc ix / inc iy  ->  <pfx> 23   (base `inc hl`)
+        (Mnemonic::Inc, [Operand::Pair(rr)]) if as_index_reg(*rr).is_some() => {
+            Ok(vec![index_prefix(as_index_reg(*rr).unwrap()), 0x23])
+        }
+        // dec ix / dec iy  ->  <pfx> 2B   (base `dec hl`)
+        (Mnemonic::Dec, [Operand::Pair(rr)]) if as_index_reg(*rr).is_some() => {
+            Ok(vec![index_prefix(as_index_reg(*rr).unwrap()), 0x2B])
+        }
+        // ld (nn),ix / ld (nn),iy  ->  <pfx> 22 lo hi   (base `ld (nn),hl`)
+        (Mnemonic::Ld, [Operand::Mem(nn), Operand::Pair(rr)]) if as_index_reg(*rr).is_some() => {
+            let ix = as_index_reg(*rr).unwrap();
+            let [lo, hi] = le16(*nn);
+            Ok(vec![index_prefix(ix), 0x22, lo, hi])
+        }
         // -- Task 7: end index group (insert new index arms above this line) --
         _ => Err(IsaError::UnsupportedForm(format!(
             "unsupported Z80 index form: {inst:?}"
@@ -1315,6 +1333,32 @@ mod index_tests {
     }
 
     // --- more index-group tests appended below ---
+
+    #[test]
+    fn dd_fd_group_task5b() {
+        // Four index forms the aeon sound driver uses that the base table missed.
+        // Bytes are DD/FD-prefixed HL-equivalents; cross-checked against tools/asl.
+        // sub (ix+d) / sub (iy+d) -> <pfx> 96 disp  (base `sub (hl)` = 0x96)
+        assert_eq!(
+            enc(Mnemonic::Sub, vec![Operand::Indexed { reg: IndexReg::Ix, disp: 3 }]),
+            vec![0xDD, 0x96, 0x03]
+        );
+        // inc ix / inc iy -> <pfx> 23  (base `inc hl` = 0x23)
+        assert_eq!(enc(Mnemonic::Inc, vec![Operand::Pair(Reg16::Ix)]), vec![0xDD, 0x23]);
+        assert_eq!(enc(Mnemonic::Inc, vec![Operand::Pair(Reg16::Iy)]), vec![0xFD, 0x23]);
+        // dec ix / dec iy -> <pfx> 2B  (base `dec hl` = 0x2B)
+        assert_eq!(enc(Mnemonic::Dec, vec![Operand::Pair(Reg16::Ix)]), vec![0xDD, 0x2B]);
+        assert_eq!(enc(Mnemonic::Dec, vec![Operand::Pair(Reg16::Iy)]), vec![0xFD, 0x2B]);
+        // ld (nn),ix / ld (nn),iy -> <pfx> 22 lo hi  (base `ld (nn),hl` = 0x22)
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Mem(0x1234), Operand::Pair(Reg16::Ix)]),
+            vec![0xDD, 0x22, 0x34, 0x12]
+        );
+        assert_eq!(
+            enc(Mnemonic::Ld, vec![Operand::Mem(0x1234), Operand::Pair(Reg16::Iy)]),
+            vec![0xFD, 0x22, 0x34, 0x12]
+        );
+    }
 
     #[test]
     fn ddcb_fdcb_bit() {

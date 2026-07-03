@@ -1,0 +1,17 @@
+# Z80 golden extraction windows — DERIVED by `regen` from a fresh asl build.
+# Do not hand-edit; run `cargo run -p sigil-harness --bin regen` to regenerate.
+#
+# Region A: resident phase-0 driver, bracketed by 68k labels
+#   Z80_Sound_Start / Z80_Sound_End (== Z80_SOUND_SIZE).
+# Region B: phase-08000h Moving-Trucks / SFX engine-table bank,
+#   LMA = MovingTrucks_Bank_Start, ends at Song_MovingTrucks.
+
+[region_a]
+vma_base = 0
+lma = 1002
+len = 5920
+
+[region_b]
+vma_base = 32768
+lma = 393216
+len = 1543
