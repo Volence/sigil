@@ -42,6 +42,7 @@ struct Asm {
     in_section: bool,
     diags: Vec<Diagnostic>,
     source: SourceId,
+    functions: std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>,
 }
 
 enum Lowered {
@@ -61,6 +62,7 @@ impl Asm {
             in_section: false,
             diags: Vec::new(),
             source: SourceId(0),
+            functions: std::collections::BTreeMap::new(),
         }
     }
 
@@ -103,7 +105,8 @@ impl Asm {
 
     /// Fold a whole token slice as one constant expression (used by phase, etc.).
     fn eval_all(&mut self, toks: &[Token], span: Span) -> Option<i64> {
-        let (e, rest) = crate::expr::parse_expr(toks)?;
+        let expanded = self.expand_calls(toks);
+        let (e, rest) = crate::expr::parse_expr(&expanded)?;
         if !rest.is_empty() {
             self.err(span, "trailing tokens in expression");
             return None;
@@ -112,6 +115,106 @@ impl Asm {
             Fold::Value(v) => Some(v),
             Fold::Poison => None,
         }
+    }
+
+    /// Parse `function name(p1,p2,...) = <body tokens>` and store it.
+    fn def_function(&mut self, line: &SrcLine) {
+        let toks = match lex_line(&line.text, self.state.cpu, self.source, line.base) {
+            Ok(t) => t,
+            Err(d) => {
+                self.diags.push(d);
+                return;
+            }
+        };
+        // toks[0] = `function`, toks[1] = name, toks[2] = `(`, params..., `)`, `=`, body...
+        let span = toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: line.base, end: line.base });
+        let name = match toks.get(1).map(|t| &t.tok) {
+            Some(Tok::Ident(s)) => s.clone(),
+            _ => {
+                self.err(span, "function needs a name");
+                return;
+            }
+        };
+        let mut i = 2;
+        if !matches!(toks.get(i).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+            self.err(span, "function needs `(params)`");
+            return;
+        }
+        i += 1;
+        let mut params = Vec::new();
+        loop {
+            match toks.get(i).map(|t| &t.tok) {
+                Some(Tok::Punct(Punct::RParen)) => {
+                    i += 1;
+                    break;
+                }
+                Some(Tok::Punct(Punct::Comma)) => i += 1,
+                Some(Tok::Ident(p)) => {
+                    params.push(p.clone());
+                    i += 1;
+                }
+                _ => {
+                    self.err(span, "bad function parameter list");
+                    return;
+                }
+            }
+        }
+        if !matches!(toks.get(i).map(|t| &t.tok), Some(Tok::Punct(Punct::Eq))) {
+            self.err(span, "function needs `= <expr>`");
+            return;
+        }
+        i += 1;
+        let body = toks[i..].to_vec();
+        self.functions.insert(name, (params, body));
+    }
+
+    /// Expand every known-function call `fname(args)` in `toks` into its
+    /// parenthesised, parameter-substituted body (recursively). Unknown `Ident(`
+    /// is left untouched (it may be a `(nn)`-style group, not a call).
+    fn expand_calls(&self, toks: &[Token]) -> Vec<Token> {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < toks.len() {
+            if let Tok::Ident(name) = &toks[i].tok {
+                if let Some((params, body)) = self.functions.get(name) {
+                    if matches!(toks.get(i + 1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+                        if let Some((args, next)) = split_call_args(toks, i + 1) {
+                            let expanded = self.substitute(body, params, &args);
+                            let span = toks[i].span;
+                            out.push(paren(Punct::LParen, span));
+                            out.extend(self.expand_calls(&expanded));
+                            out.push(paren(Punct::RParen, span));
+                            i = next;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push(toks[i].clone());
+            i += 1;
+        }
+        out
+    }
+
+    /// Replace each body identifier equal to a parameter with its (expanded,
+    /// parenthesised) argument tokens.
+    fn substitute(&self, body: &[Token], params: &[String], args: &[Vec<Token>]) -> Vec<Token> {
+        let mut out = Vec::new();
+        for t in body {
+            if let Tok::Ident(name) = &t.tok {
+                if let Some(idx) = params.iter().position(|p| p == name) {
+                    if let Some(arg) = args.get(idx) {
+                        let expanded_arg = self.expand_calls(arg);
+                        out.push(paren(Punct::LParen, t.span));
+                        out.extend(expanded_arg);
+                        out.push(paren(Punct::RParen, t.span));
+                        continue;
+                    }
+                }
+            }
+            out.push(t.clone());
+        }
+        out
     }
 
     fn process(&mut self, src: &str) {
@@ -137,6 +240,10 @@ impl Asm {
                 }
                 Some("struct") => {
                     i = self.capture_struct(lines, i);
+                }
+                Some("function") => {
+                    self.def_function(&lines[i]);
+                    i += 1;
                 }
                 _ => {
                     self.exec_one(&lines[i]);
@@ -505,7 +612,8 @@ impl Asm {
     fn directive_db(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
-            let e = match crate::expr::parse_expr(g) {
+            let expanded = self.expand_calls(g);
+            let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(span, "bad byte expression");
@@ -521,7 +629,7 @@ impl Asm {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
             if let [Token { tok: Tok::Ident(name), .. }] = g {
-                if !is_reg_or_cond_word(name) {
+                if !is_reg_or_cond_word(name) && !self.functions.contains_key(name) {
                     let target = Expr::Sym(qualify(name, self.scope.as_deref()));
                     self.emit(
                         &[0x00, 0x00],
@@ -531,7 +639,8 @@ impl Asm {
                     continue;
                 }
             }
-            let e = match crate::expr::parse_expr(g) {
+            let expanded = self.expand_calls(g);
+            let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
                     self.err(span, "bad word expression");
@@ -816,6 +925,48 @@ fn on_off(rest: &[Token]) -> bool {
     !matches!(rest.first().map(|t| &t.tok), Some(Tok::Ident(w)) if w == "off")
 }
 
+fn paren(p: Punct, span: Span) -> Token {
+    Token { tok: Tok::Punct(p), span }
+}
+
+/// Given `toks` with a `(` at index `lparen`, split the argument groups by
+/// depth-0 commas and return `(args, index_past_matching_rparen)`. None if unbalanced.
+fn split_call_args(toks: &[Token], lparen: usize) -> Option<(Vec<Vec<Token>>, usize)> {
+    let mut depth = 0i32;
+    let mut i = lparen;
+    let mut args: Vec<Vec<Token>> = Vec::new();
+    let mut cur: Vec<Token> = Vec::new();
+    while i < toks.len() {
+        match &toks[i].tok {
+            Tok::Punct(Punct::LParen) => {
+                depth += 1;
+                if depth > 1 {
+                    cur.push(toks[i].clone());
+                }
+                i += 1;
+            }
+            Tok::Punct(Punct::RParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    args.push(cur);
+                    return Some((args, i + 1));
+                }
+                cur.push(toks[i].clone());
+                i += 1;
+            }
+            Tok::Punct(Punct::Comma) if depth == 1 => {
+                args.push(std::mem::take(&mut cur));
+                i += 1;
+            }
+            _ => {
+                cur.push(toks[i].clone());
+                i += 1;
+            }
+        }
+    }
+    None
+}
+
 /// Split a token slice on top-level (non-parenthesised) commas.
 fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
     let mut groups = Vec::new();
@@ -903,6 +1054,25 @@ mod tests {
     fn rept_constant_count() {
         let src = "        cpu z80\n        phase 0\n        rept 3\n        db 0AAh\n        endr\n";
         assert_eq!(image(src), vec![0xAA, 0xAA, 0xAA]);
+    }
+
+    #[test]
+    fn functions_fold_including_truncating_div() {
+        let src = concat!(
+            "        cpu z80\n        phase 0\n",
+            "SFX_WIN_MASK = 32767\n",
+            "SFX_WIN_BASE = 32768\n",
+            "function sfx_winptr(addr) = ((addr) & SFX_WIN_MASK) | SFX_WIN_BASE\n",
+            "function sfx_bankid(addr) = (addr) >> 15\n",
+            "function timerAReload(hz) = 1024 - (1000000000 / ((hz) * 18773))\n",
+            "Sfx_33   = 0D69Ah\n",
+            "        dw sfx_winptr(Sfx_33)\n",
+            "        db sfx_bankid(0C0000h)\n",
+            "        db timerAReload(59)\n",
+        );
+        // sfx_winptr(0xD69A)=(0xD69A&0x7FFF)|0x8000=0xD69A → LE 9A D6
+        // sfx_bankid(0xC0000)=0xC0000>>15=0x18 ; timerAReload(59)=122=0x7A
+        assert_eq!(image(src), vec![0x9A, 0xD6, 0x18, 0x7A]);
     }
 
     #[test]
