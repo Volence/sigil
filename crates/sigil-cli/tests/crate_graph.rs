@@ -222,6 +222,12 @@ fn sigil_dep_map() -> BTreeMap<String, Vec<String>> {
         let mut sigil_deps = Vec::new();
         if let Some(deps) = pkg.get("dependencies").and_then(|d| d.as_array()) {
             for dep in deps {
+                // Skip dev- and build-dependencies; only normal deps define the
+                // shipping crate graph.
+                let kind = dep.get("kind").and_then(|k| k.as_str());
+                if matches!(kind, Some("dev") | Some("build")) {
+                    continue;
+                }
                 if let Some(dn) = dep.get("name").and_then(|n| n.as_str()) {
                     if dn.starts_with("sigil-") {
                         sigil_deps.push(dn.to_string());
@@ -265,6 +271,23 @@ fn crate_graph_is_one_way() {
         get("sigil-ir"),
         vec!["sigil-span".to_string()],
         "sigil-ir must depend only on sigil-span"
+    );
+
+    // sigil-backend-z80 wraps the ISA: depends on sigil-ir + sigil-isa (+ span).
+    assert_eq!(
+        get("sigil-backend-z80"),
+        vec!["sigil-ir".to_string(), "sigil-isa".to_string(), "sigil-span".to_string()],
+        "sigil-backend-z80 must depend on sigil-ir, sigil-isa, sigil-span only"
+    );
+
+    // sigil-link is backend-agnostic in its library deps: sigil-ir + sigil-span.
+    // (sigil-backend-z80/sigil-isa are dev-dependencies for the integration test
+    // and MUST NOT appear as normal dependencies — cargo metadata --no-deps lists
+    // dev-deps too, so filter is by dependency kind below.)
+    assert_eq!(
+        get("sigil-link"),
+        vec!["sigil-ir".to_string(), "sigil-span".to_string()],
+        "sigil-link library must depend only on sigil-ir + sigil-span (backends are dev-deps)"
     );
 
     // (c) only sigil-cli may depend on sigil-frontend-as.

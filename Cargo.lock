@@ -52,7 +52,9 @@ version = "0.1.0"
 name = "sigil-link"
 version = "0.1.0"
 dependencies = [
+ "sigil-backend-z80",
  "sigil-ir",
+ "sigil-isa",
  "sigil-span",
 ]
 
