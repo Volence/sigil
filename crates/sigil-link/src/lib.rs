@@ -6,7 +6,7 @@
 //! upstream (the caller lowers instructions to `DataFragment`s first).
 
 use sigil_ir::expr::Fold;
-use sigil_ir::{Fixup, FixupKind, Fragment, Section, SymbolTable, SymbolValue};
+use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, Span};
 
 /// One section's resolved bytes and where they load.
@@ -33,6 +33,10 @@ impl LinkedImage {
 /// Resolve `sections` into a `LinkedImage`, seeding the symbol table with
 /// `stubs` (fixed external values, e.g. 68k leaf symbols in the harness).
 /// Returns all diagnostics on failure.
+///
+/// Symbol redefinition (the same name defined by multiple sections/stubs) is
+/// currently last-write-wins; collision diagnostics tied to the real producer
+/// land in Plan 4 when the front-end drives this.
 pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Vec<Diagnostic>> {
     let mut diags: Vec<Diagnostic> = Vec::new();
 
@@ -59,6 +63,20 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
             match frag {
                 Fragment::Data(d) => {
                     for fx in &d.fixups {
+                        // The fixup must start within THIS fragment's own bytes;
+                        // otherwise site_abs would land in a neighboring fragment.
+                        if fx.offset as usize >= d.bytes.len() {
+                            diags.push(diag(
+                                format!(
+                                    "fixup offset {} exceeds fragment length {} in section {}",
+                                    fx.offset,
+                                    d.bytes.len(),
+                                    sec.name
+                                ),
+                                d.span,
+                            ));
+                            continue;
+                        }
                         let site_abs = frag_img_off + fx.offset; // offset within section image
                         let site_vma = origin + site_abs;
                         apply_fixup(&mut bytes, site_abs, site_vma, fx, &syms, sec.name.as_str(), d.span, &mut diags);
@@ -100,8 +118,12 @@ fn apply_fixup(
     let value = match fx.target.fold(&|name| syms.resolve(name, None)) {
         Fold::Value(v) => v,
         Fold::Poison => {
+            let what = match &fx.target {
+                Expr::Sym(name) => format!("symbol `{name}`"),
+                _ => "target expression".to_string(),
+            };
             diags.push(diag(
-                format!("unresolved fixup target in section {section} at offset {site_abs}"),
+                format!("unresolved {what} for fixup in section {section} at offset {site_abs}"),
                 span,
             ));
             return;
@@ -110,6 +132,13 @@ fn apply_fixup(
 
     match fx.kind {
         FixupKind::BankPtr16Le => {
+            if (site_abs as usize) + 1 >= bytes.len() {
+                diags.push(diag(
+                    format!("BankPtr16Le fixup at offset {site_abs} would write past section end in section {section}"),
+                    span,
+                ));
+                return;
+            }
             let v = value as u16;
             let lo = (v & 0xFF) as u8;
             let hi = (v >> 8) as u8;
@@ -117,6 +146,13 @@ fn apply_fixup(
             bytes[(site_abs + 1) as usize] = hi;
         }
         FixupKind::Z80JrRel8 => {
+            if site_abs as usize >= bytes.len() {
+                diags.push(diag(
+                    format!("Z80JrRel8 fixup at offset {site_abs} would write past section end in section {section}"),
+                    span,
+                ));
+                return;
+            }
             // disp measured from the END of the 2-byte instruction. The opcode
             // is at site_abs-1; the instruction end VMA = (site_vma - 1) + 2.
             let inst_end_vma = (site_vma as i64 - 1) + 2;
@@ -289,6 +325,57 @@ mod tests {
         let sec = region_a(); // references SfxBlobWinTab, which no section defines here.
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("unresolved")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn fixup_offset_past_fragment_diagnoses() {
+        // Fragment is 2 bytes, but the fixup is at offset 5. Target is resolvable,
+        // so the offset overrun is the ONLY error.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Ok", SymbolValue::Int(0x1234));
+        let sec = Section {
+            name: "s".to_string(),
+            cpu: Cpu::Z80,
+            vma_base: Some(0x8000),
+            lma: 0x60000,
+            labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x00, 0x00],
+                fixups: vec![Fixup {
+                    kind: FixupKind::BankPtr16Le,
+                    offset: 5,
+                    target: Expr::Sym("Ok".to_string()),
+                }],
+                span: span(),
+            })],
+        };
+        let err = link(&[sec], &stubs).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn abs16be_unsupported_in_m0_diagnoses() {
+        let sec = Section {
+            name: "s".to_string(),
+            cpu: Cpu::Z80,
+            vma_base: Some(0x8000),
+            lma: 0x60000,
+            labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x00, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Int(0x1234) }],
+                span: span(),
+            })],
+        };
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("not supported in M0")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn unresolved_names_the_symbol() {
+        let sec = region_a(); // references SfxBlobWinTab, undefined here.
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("SfxBlobWinTab")), "got: {:?}", err);
     }
 
     #[test]
