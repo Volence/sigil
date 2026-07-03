@@ -201,6 +201,11 @@ pub fn build_harness(
     // in A/B references them — the tail `Z80_SOUND_SIZE` equate is evaluated at
     // assemble time), so dropping them is byte-neutral and leaves exactly the
     // two real output regions: A `sec0` (Z80) and B `sec32768` (Z80).
+    //
+    // A `Reserve`/`ds` region is NOT empty (Reserve is a fragment), so this is
+    // safe for BSS-style sections. This is a blanket drop, though: if a future
+    // harness adds a genuinely label-only section whose labels ARE referenced by
+    // a surviving fixup, it would be silently dropped — revisit the filter then.
     module.sections.retain(|s| !s.fragments.is_empty());
     assign_lmas(&mut module, map)?;
     let mut stub_table = SymbolTable::new();
@@ -211,19 +216,22 @@ pub fn build_harness(
         .map_err(|d| format!("link: {} diagnostics; first: {:?}", d.len(), d.first()))
 }
 
-/// Parse `golden/stub-syms.toml`'s `name = value` lines (value may be `0xHEX` or
-/// decimal). Comment (`#`) and blank lines are ignored.
-pub fn load_stub_syms(golden_dir: &Path) -> Vec<(String, i64)> {
-    let text = std::fs::read_to_string(golden_dir.join("stub-syms.toml"))
-        .expect("read golden/stub-syms.toml");
+/// Parse the `name = value` lines of a `stub-syms.toml` body (value may be
+/// `0xHEX` or decimal). Blank lines and `#` comments are skipped, but any
+/// present, non-comment line that is malformed — no `=`, or a value that parses
+/// as neither hex nor decimal — is a hard error (returns `Err` naming the
+/// offending line). We never silently drop a stub: a fat-fingered value in the
+/// hand-maintained table must surface here, not resurface as a baffling
+/// link-time "unresolved symbol".
+pub fn parse_stub_syms(text: &str) -> Result<Vec<(String, i64)>, String> {
     let mut out = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
+    for raw in text.lines() {
+        let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         let Some((name, value)) = line.split_once('=') else {
-            continue;
+            return Err(format!("malformed stub line (no `=`): {raw:?}"));
         };
         let name = name.trim().to_string();
         let value = value.trim();
@@ -233,16 +241,58 @@ pub fn load_stub_syms(golden_dir: &Path) -> Vec<(String, i64)> {
         } else {
             value.parse::<i64>().ok()
         };
-        if let Some(v) = parsed {
-            out.push((name, v));
+        match parsed {
+            Some(v) => out.push((name, v)),
+            None => return Err(format!("malformed stub value in line: {raw:?}")),
         }
     }
-    out
+    Ok(out)
+}
+
+/// Read `golden/stub-syms.toml` and parse it via [`parse_stub_syms`]. Panics
+/// (with the parse error) on a malformed table — acceptable for this test
+/// harness helper.
+pub fn load_stub_syms(golden_dir: &Path) -> Vec<(String, i64)> {
+    let text = std::fs::read_to_string(golden_dir.join("stub-syms.toml"))
+        .expect("read golden/stub-syms.toml");
+    parse_stub_syms(&text).expect("parse golden/stub-syms.toml")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_stub_syms_reads_hex_decimal_comments_and_blanks() {
+        let text = "\
+# a comment line
+SND_ENGINE_TABLE_BANK = 0xc
+
+  Sfx_33 = 0x6553a
+DEC_VALUE = 1543
+";
+        let out = parse_stub_syms(text).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                ("SND_ENGINE_TABLE_BANK".to_string(), 0xc),
+                ("Sfx_33".to_string(), 0x6553a),
+                ("DEC_VALUE".to_string(), 1543),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_stub_syms_errs_on_malformed_value() {
+        let err = parse_stub_syms("GOOD = 0x10\nBAD = 0xZZ\n").unwrap_err();
+        assert!(err.contains("0xZZ"), "error should name the offending line: {err}");
+    }
+
+    #[test]
+    fn parse_stub_syms_errs_on_missing_equals() {
+        let err = parse_stub_syms("NoEqualsHere\n").unwrap_err();
+        assert!(err.contains("NoEqualsHere"), "error should name the line: {err}");
+    }
 
     #[test]
     fn parses_symbol_cells_from_a_listing_row() {
@@ -348,5 +398,20 @@ mod harness_tests {
         map.set(Cpu::Z80, Some(0x8000), 0x60000);
         let img = build_harness(&aeon, &root, &stubs, &map).expect("build");
         assert_eq!(img.sections.len(), 2, "expected region A + region B");
+
+        // Shape guard: pin BOTH regions by name + LMA + byte length so a
+        // regression that drops a real section and admits a phantom cannot pass.
+        // Region A = sec0 (Z80, lma 0x3EA, 0x1718 = 5912 B); region B = sec32768
+        // (Z80, lma 0x60000, 0x607 = 1543 B) — matching golden/windows.toml.
+        // (`LinkedSection` carries no `cpu`, so the two real Z80 regions are
+        // pinned by their names + real LMAs + exact byte lengths; an empty
+        // M68000 phantom — also named `sec0` — could not satisfy the 0x1718
+        // length nor the 0x3EA LMA.)
+        let a = img.section("sec0").expect("region A section sec0");
+        let b = img.section("sec32768").expect("region B section sec32768");
+        assert_eq!(a.lma, 0x3EA, "region A LMA");
+        assert_eq!(a.bytes.len(), 0x1718, "region A byte length");
+        assert_eq!(b.lma, 0x60000, "region B LMA");
+        assert_eq!(b.bytes.len(), 0x607, "region B byte length");
     }
 }
