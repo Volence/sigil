@@ -43,3 +43,13 @@ fn memory_indirect_source_and_dest() {
         "move.w d1,-(a0)",
     ]);
 }
+
+#[test]
+fn displacement_and_brief_extension_word() {
+    check(&[
+        "move.w (4,a1),d0",
+        "move.w d1,(4,a0)",
+        "move.w (6,a1,d2.w),d0",
+        "move.l (2,a3,a4.l),d0",
+    ]);
+}

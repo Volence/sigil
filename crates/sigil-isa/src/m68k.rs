@@ -128,6 +128,19 @@ fn encode_ea(op: &Operand, _field: Field, _size: Size) -> Result<(u8, u8, Vec<u1
         Operand::Ind(n) => (0b010, r(n), vec![]),
         Operand::PostInc(n) => (0b011, r(n), vec![]),
         Operand::PreDec(n) => (0b100, r(n), vec![]),
+        Operand::Disp16An(d, n) => (0b101, r(n), vec![d as u16]),
+        Operand::Disp8AnXn { d, an, xn, long } => (0b110, r(an), vec![brief_ext(d, xn, long)]),
         other => return Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     })
+}
+
+/// Build a 68000 brief-format extension word for `(d8,An,Xn)`.
+/// bit15 index type (0=Dn,1=An); bits14–12 index reg; bit11 index size (0=`.w`,1=`.l`);
+/// bits10–9 scale (`00`, 68020+); bit8 `0` (brief); bits7–0 signed displacement.
+fn brief_ext(d: i8, xn: Xn, long: bool) -> u16 {
+    let (ty, num) = match xn {
+        Xn::D(n) => (0u16, (n & 0b111) as u16),
+        Xn::A(n) => (1u16, (n & 0b111) as u16),
+    };
+    (ty << 15) | (num << 12) | ((long as u16) << 11) | ((d as u8) as u16)
 }
