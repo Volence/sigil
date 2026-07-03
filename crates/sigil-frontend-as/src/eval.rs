@@ -12,6 +12,8 @@ use sigil_ir::expr::Fold;
 use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
+const EXPAND_CAP: usize = 64;
+
 #[derive(Clone)]
 struct SrcLine {
     text: String,
@@ -44,6 +46,7 @@ struct Asm {
     source: SourceId,
     functions: std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>,
     macros: std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)>,
+    macro_depth: usize,
 }
 
 enum Lowered {
@@ -65,6 +68,7 @@ impl Asm {
             source: SourceId(0),
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
+            macro_depth: 0,
         }
     }
 
@@ -107,7 +111,7 @@ impl Asm {
 
     /// Fold a whole token slice as one constant expression (used by phase, etc.).
     fn eval_all(&mut self, toks: &[Token], span: Span) -> Option<i64> {
-        let expanded = self.expand_calls(toks);
+        let expanded = self.expand_calls(toks, 0);
         let (e, rest) = crate::expr::parse_expr(&expanded)?;
         if !rest.is_empty() {
             self.err(span, "trailing tokens in expression");
@@ -173,7 +177,10 @@ impl Asm {
     /// Expand every known-function call `fname(args)` in `toks` into its
     /// parenthesised, parameter-substituted body (recursively). Unknown `Ident(`
     /// is left untouched (it may be a `(nn)`-style group, not a call).
-    fn expand_calls(&self, toks: &[Token]) -> Vec<Token> {
+    fn expand_calls(&self, toks: &[Token], depth: usize) -> Vec<Token> {
+        if depth > EXPAND_CAP {
+            return toks.to_vec();
+        }
         let mut out = Vec::new();
         let mut i = 0;
         while i < toks.len() {
@@ -181,10 +188,10 @@ impl Asm {
                 if let Some((params, body)) = self.functions.get(name) {
                     if matches!(toks.get(i + 1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
                         if let Some((args, next)) = split_call_args(toks, i + 1) {
-                            let expanded = self.substitute(body, params, &args);
+                            let expanded = self.substitute(body, params, &args, depth);
                             let span = toks[i].span;
                             out.push(paren(Punct::LParen, span));
-                            out.extend(self.expand_calls(&expanded));
+                            out.extend(self.expand_calls(&expanded, depth + 1));
                             out.push(paren(Punct::RParen, span));
                             i = next;
                             continue;
@@ -200,13 +207,13 @@ impl Asm {
 
     /// Replace each body identifier equal to a parameter with its (expanded,
     /// parenthesised) argument tokens.
-    fn substitute(&self, body: &[Token], params: &[String], args: &[Vec<Token>]) -> Vec<Token> {
+    fn substitute(&self, body: &[Token], params: &[String], args: &[Vec<Token>], depth: usize) -> Vec<Token> {
         let mut out = Vec::new();
         for t in body {
             if let Tok::Ident(name) = &t.tok {
                 if let Some(idx) = params.iter().position(|p| p == name) {
                     if let Some(arg) = args.get(idx) {
-                        let expanded_arg = self.expand_calls(arg);
+                        let expanded_arg = self.expand_calls(arg, depth + 1);
                         out.push(paren(Punct::LParen, t.span));
                         out.extend(expanded_arg);
                         out.push(paren(Punct::RParen, t.span));
@@ -323,7 +330,7 @@ impl Asm {
         };
         // A leading bareword that is neither directive nor mnemonic is a bare
         // label; the dispatch keyword is the next token.
-        if !is_op_keyword(&name) && !is_mnemonic(&name) && body.len() > 1 {
+        if !is_op_keyword(&name) && !is_mnemonic(&name) && !self.macros.contains_key(&name) && body.len() > 1 {
             if let Tok::Ident(s) = &body[1].tok {
                 return Some(s.clone());
             }
@@ -342,7 +349,7 @@ impl Asm {
         // Peel a leading bare label.
         let (kw_idx, kw) = match body.first() {
             Some(Token { tok: Tok::Ident(s), .. })
-                if !is_op_keyword(s) && !is_mnemonic(s) && body.len() > 1 =>
+                if !is_op_keyword(s) && !is_mnemonic(s) && !self.macros.contains_key(s) && body.len() > 1 =>
             {
                 match &body[1].tok {
                     Tok::Ident(s2) => (1usize, Some(s2.clone())),
@@ -618,7 +625,7 @@ impl Asm {
     fn directive_db(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g);
+            let expanded = self.expand_calls(g, 0);
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -645,7 +652,7 @@ impl Asm {
                     continue;
                 }
             }
-            let expanded = self.expand_calls(g);
+            let expanded = self.expand_calls(g, 0);
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -882,6 +889,11 @@ impl Asm {
     /// Expand a macro invocation: substitute `ALLARGS` (verbatim arg text) and
     /// positional params, then execute the resulting lines.
     fn expand_macro(&mut self, name: &str, arg_toks: &[Token]) {
+        if self.macro_depth >= EXPAND_CAP {
+            let span = arg_toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: 0, end: 0 });
+            self.err(span, format!("macro `{name}` expansion too deep (recursive macro?)"));
+            return;
+        }
         let (params, body) = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
@@ -897,7 +909,9 @@ impl Asm {
             }
             expanded.push(SrcLine { text, base: l.base });
         }
+        self.macro_depth += 1;
         self.exec(&expanded);
+        self.macro_depth -= 1;
     }
 }
 
@@ -1193,6 +1207,12 @@ mod tests {
             "        pbyte 1,2,3,255\n",
         );
         assert_eq!(image(src), vec![0x01, 0x02, 0x03, 0xFF]);
+    }
+
+    #[test]
+    fn macro_positional_params() {
+        let src = "        cpu z80\n        phase 0\nemit2   macro x,y\n        db x,y\n        endm\n        emit2 10h,20h\n";
+        assert_eq!(image(src), vec![0x10, 0x20]);
     }
 
     #[test]
