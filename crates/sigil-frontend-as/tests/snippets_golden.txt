@@ -52,3 +52,19 @@ c       ds.w 1
         db SeqChannel_len
 --- bytes ---
 DD 7E 01 04
+=== pbyte_macro ===
+        cpu z80
+        phase 0
+        ifndef pbyte_defined
+pbyte_defined = 1
+pbyte   macro
+        if MOMCPUNAME="Z80"
+        db      ALLARGS
+        else
+        dc.b    ALLARGS
+        endif
+        endm
+        endif
+        pbyte 1,2,3,255
+--- bytes ---
+01 02 03 FF

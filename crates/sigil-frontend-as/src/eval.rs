@@ -43,6 +43,7 @@ struct Asm {
     diags: Vec<Diagnostic>,
     source: SourceId,
     functions: std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>,
+    macros: std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)>,
 }
 
 enum Lowered {
@@ -63,6 +64,7 @@ impl Asm {
             diags: Vec::new(),
             source: SourceId(0),
             functions: std::collections::BTreeMap::new(),
+            macros: std::collections::BTreeMap::new(),
         }
     }
 
@@ -245,6 +247,9 @@ impl Asm {
                     self.def_function(&lines[i]);
                     i += 1;
                 }
+                Some("macro") => {
+                    i = self.capture_macro(lines, i);
+                }
                 _ => {
                     self.exec_one(&lines[i]);
                     i += 1;
@@ -283,7 +288,7 @@ impl Asm {
             self.directive_equate(&head, &body[2..], body[0].span);
             return;
         }
-        if !is_op_keyword(&head) && !is_mnemonic(&head) {
+        if !is_op_keyword(&head) && !is_mnemonic(&head) && !self.macros.contains_key(&head) {
             self.define_label(&head);
             if body.len() == 1 {
                 return;
@@ -529,6 +534,7 @@ impl Asm {
             "supmode" => self.state.supmode = on_off(rest),
             "db" | "dc.b" => self.directive_db(rest, span),
             "dw" => self.directive_dw(rest, span),
+            _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
             _ if is_mnemonic(head) => self.lower_instruction(head, rest, span),
             _ => self.err(span, format!("unknown directive or mnemonic `{head}`")),
         }
@@ -847,6 +853,52 @@ impl Asm {
         // truth read back via `current_offset()`); the front-end keeps none.
         self.builder.emit_data(bytes, fixups, span);
     }
+
+    /// Capture `<name> macro [params] … endm`. Returns the index past `endm`.
+    fn capture_macro(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let toks = lex_line(&lines[start].text, self.state.cpu, self.source, lines[start].base)
+            .unwrap_or_default();
+        // toks: Ident(name) Ident("macro") [param idents/commas...]
+        let name = match toks.first().map(|t| &t.tok) {
+            Some(Tok::Ident(s)) => s.clone(),
+            _ => {
+                let span = Span { source: self.source, start: lines[start].base, end: lines[start].base };
+                self.err(span, "macro needs a name");
+                String::new()
+            }
+        };
+        let params: Vec<String> = toks
+            .get(2..)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|t| if let Tok::Ident(p) = &t.tok { Some(p.clone()) } else { None })
+            .collect();
+        let end = self.find_block_end(lines, start, &["macro"], &["endm"]);
+        let body: Vec<SrcLine> = lines[start + 1..end].to_vec();
+        self.macros.insert(name, (params, body));
+        end + 1
+    }
+
+    /// Expand a macro invocation: substitute `ALLARGS` (verbatim arg text) and
+    /// positional params, then execute the resulting lines.
+    fn expand_macro(&mut self, name: &str, arg_toks: &[Token]) {
+        let (params, body) = match self.macros.get(name) {
+            Some(m) => m.clone(),
+            None => return,
+        };
+        let all_args = render_tokens(arg_toks);
+        let arg_groups: Vec<String> = split_top_commas(arg_toks).iter().map(|g| render_tokens(g)).collect();
+        let mut expanded = Vec::new();
+        for l in &body {
+            let mut text = l.text.clone();
+            text = text.replace("ALLARGS", &all_args);
+            for (p, a) in params.iter().zip(arg_groups.iter()) {
+                text = replace_word(&text, p, a);
+            }
+            expanded.push(SrcLine { text, base: l.base });
+        }
+        self.exec(&expanded);
+    }
 }
 
 // ── free helpers ────────────────────────────────────────────────────────────
@@ -927,6 +979,55 @@ fn on_off(rest: &[Token]) -> bool {
 
 fn paren(p: Punct, span: Span) -> Token {
     Token { tok: Tok::Punct(p), span }
+}
+
+/// Reconstruct source text from a token slice (space-separated so tokens can't
+/// merge on re-lex). Used to build `ALLARGS`/positional-arg substitution text.
+fn render_tokens(toks: &[Token]) -> String {
+    toks.iter()
+        .map(|t| match &t.tok {
+            Tok::Ident(x) => x.clone(),
+            Tok::Int(n) => n.to_string(),
+            Tok::Str(x) => format!("\"{x}\""),
+            Tok::Dollar => "$".to_string(),
+            Tok::Punct(p) => punct_str(*p).to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn punct_str(p: Punct) -> &'static str {
+    match p {
+        Punct::Plus => "+", Punct::Minus => "-", Punct::Star => "*", Punct::Slash => "/",
+        Punct::Shl => "<<", Punct::Shr => ">>", Punct::Amp => "&", Punct::Pipe => "|",
+        Punct::Eq => "=", Punct::Ne => "<>", Punct::Lt => "<", Punct::Gt => ">",
+        Punct::Le => "<=", Punct::Ge => ">=", Punct::LParen => "(", Punct::RParen => ")",
+        Punct::Comma => ",", Punct::Colon => ":",
+    }
+}
+
+/// Whole-word text replace (identifier boundaries), for positional macro params.
+fn replace_word(text: &str, word: &str, repl: &str) -> String {
+    if word.is_empty() {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(pos) = rest.find(word) {
+        let before = &rest[..pos];
+        let after = &rest[pos + word.len()..];
+        let ok_before = before.chars().last().is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        let ok_after = after.chars().next().is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        out.push_str(before);
+        if ok_before && ok_after {
+            out.push_str(repl);
+        } else {
+            out.push_str(word);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Given `toks` with a `(` at index `lparen`, split the argument groups by
@@ -1073,6 +1174,25 @@ mod tests {
         // sfx_winptr(0xD69A)=(0xD69A&0x7FFF)|0x8000=0xD69A → LE 9A D6
         // sfx_bankid(0xC0000)=0xC0000>>15=0x18 ; timerAReload(59)=122=0x7A
         assert_eq!(image(src), vec![0x9A, 0xD6, 0x18, 0x7A]);
+    }
+
+    #[test]
+    fn pbyte_macro_momcpuname_allargs_under_z80() {
+        let src = concat!(
+            "        cpu z80\n        phase 0\n",
+            "        ifndef pbyte_defined\n",
+            "pbyte_defined = 1\n",
+            "pbyte   macro\n",
+            "        if MOMCPUNAME=\"Z80\"\n",
+            "        db      ALLARGS\n",
+            "        else\n",
+            "        dc.b    ALLARGS\n",
+            "        endif\n",
+            "        endm\n",
+            "        endif\n",
+            "        pbyte 1,2,3,255\n",
+        );
+        assert_eq!(image(src), vec![0x01, 0x02, 0x03, 0xFF]);
     }
 
     #[test]
