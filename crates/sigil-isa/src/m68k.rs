@@ -137,6 +137,9 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Bra | Mnemonic::Bsr | Mnemonic::Bcc(_) => encode_branch(inst),
         Mnemonic::Dbcc(_) => encode_dbcc(inst),
         Mnemonic::Movem => encode_movem(inst),
+        Mnemonic::Movep => encode_movep(inst),
+        Mnemonic::Addx => encode_addx(inst),
+        Mnemonic::Cmpm => encode_cmpm(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
 }
@@ -925,6 +928,87 @@ fn encode_movem(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
+/// Encode `MOVEP Dn,(d16,An)` / `(d16,An),Dn` — the register↔alternate-byte-memory move.
+///
+/// Word: `0000 rrr ooo 001 aaa` = `(Dn<<9) | (opmode<<6) | 0b001_000 | An`, followed by a
+/// trailing 16-bit displacement word. `opmode`: word mem→reg=`100`, long mem→reg=`101`,
+/// word reg→mem=`110`, long reg→mem=`111`. Direction from operand order:
+/// `[(d16,An), Dn]` = mem→reg, `[Dn, (d16,An)]` = reg→mem. The displacement is emitted
+/// as its own trailing word (MOVEP has its own format — it is NOT routed through `encode_ea`).
+fn encode_movep(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    // Direction from operand order.
+    let (dn, an, disp, to_mem): (u8, u8, i16, bool) = match inst.ops.as_slice() {
+        [Operand::Disp16An(d, a), Operand::Dn(n)] => (n & 0b111, a & 0b111, *d, false),
+        [Operand::Dn(n), Operand::Disp16An(d, a)] => (n & 0b111, a & 0b111, *d, true),
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "movep requires Dn,(d16,An) or (d16,An),Dn operands, got {:?}",
+                inst.ops
+            )))
+        }
+    };
+    // opmode: bit8 (of the 3-bit field) = direction (mem→reg 0 / reg→mem 1), bit above = size.
+    let long = match inst.size {
+        Size::W => false,
+        Size::L => true,
+        _ => {
+            return Err(IsaError::UnsupportedForm(
+                "movep is word (.w) or long (.l) only".into(),
+            ))
+        }
+    };
+    let opmode: u16 = match (to_mem, long) {
+        (false, false) => 0b100, // word mem -> reg
+        (false, true) => 0b101,  // long mem -> reg
+        (true, false) => 0b110,  // word reg -> mem
+        (true, true) => 0b111,   // long reg -> mem
+    };
+    let word: u16 = ((dn as u16) << 9) | (opmode << 6) | 0b001_000 | (an as u16);
+    let mut out = Vec::with_capacity(4);
+    out.extend_from_slice(&word.to_be_bytes());
+    out.extend_from_slice(&disp.to_be_bytes());
+    Ok(out)
+}
+
+/// Encode `ADDX Dn,Dn` — extended add (register form only; the Aeon corpus uses no other).
+///
+/// Word: `1101 xxx 1 ss 00 0 yyy` = `0xD100 | (Rx<<9) | (ss<<6) | Ry`, where `Rx` is the
+/// destination Dn (second operand), `Ry` the source Dn (first operand), `ss` = `size_code`.
+/// The `-(An),-(An)` memory form is rejected with `UnsupportedForm`.
+fn encode_addx(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (ry, rx) = match inst.ops.as_slice() {
+        [Operand::Dn(s), Operand::Dn(d)] => (s & 0b111, d & 0b111),
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "addx supports only the Dn,Dn form, got {:?}",
+                inst.ops
+            )))
+        }
+    };
+    let ss = size_code(inst.size)?;
+    let word: u16 = 0xD100 | ((rx as u16) << 9) | (ss << 6) | (ry as u16);
+    Ok(word.to_be_bytes().to_vec())
+}
+
+/// Encode `CMPM (Ay)+,(Ax)+` — compare memory (postincrement form only).
+///
+/// Word: `1011 xxx 1 ss 001 yyy` = `0xB108 | (Ax<<9) | (ss<<6) | Ay`, where the FIRST
+/// operand `(Ay)+` is the source and the SECOND `(Ax)+` is the destination; `ss` = `size_code`.
+fn encode_cmpm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (ay, ax) = match inst.ops.as_slice() {
+        [Operand::PostInc(y), Operand::PostInc(x)] => (y & 0b111, x & 0b111),
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "cmpm requires (Ay)+,(Ax)+ operands, got {:?}",
+                inst.ops
+            )))
+        }
+    };
+    let ss = size_code(inst.size)?;
+    let word: u16 = 0xB108 | ((ax as u16) << 9) | (ss << 6) | (ay as u16);
+    Ok(word.to_be_bytes().to_vec())
+}
+
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
 #[derive(Clone, Copy)]
 enum Field {
@@ -1029,9 +1113,12 @@ mod vocab_tests {
         let _ = (Mnemonic::Add, Mnemonic::Bcc(Cond::Eq), Mnemonic::Movem, Mnemonic::Moveq);
         let _ = (Operand::RegList(0x0001), Operand::Disp(4), Operand::Ccr, Operand::Sr);
         let _ = Size::S;
-        // Still-unimplemented mnemonics are dispatched but return UnsupportedForm.
-        let movep = Instruction { mnemonic: Mnemonic::Movep, size: Size::W, ops: vec![Operand::Dn(0), Operand::Disp16An(0, 0)] };
-        assert!(matches!(encode(&movep), Err(IsaError::UnsupportedForm(_))));
+        // Still-unimplemented mnemonics (e.g. movea) are dispatched but return UnsupportedForm.
+        let movea = Instruction { mnemonic: Mnemonic::Movea, size: Size::L, ops: vec![Operand::An(1), Operand::An(0)] };
+        assert!(matches!(encode(&movea), Err(IsaError::UnsupportedForm(_))));
+        // movep/addx/cmpm now encode (specials family): movep.w (4,a1),d0 = 0109 0004.
+        let movep = Instruction { mnemonic: Mnemonic::Movep, size: Size::W, ops: vec![Operand::Disp16An(4, 1), Operand::Dn(0)] };
+        assert_eq!(encode(&movep).unwrap(), vec![0x01, 0x09, 0x00, 0x04]);
         // movem is now implemented (§5.5 predecrement mask reversal): store d0 to -(sp) = 48E7 8000.
         let movem = Instruction { mnemonic: Mnemonic::Movem, size: Size::L, ops: vec![Operand::RegList(0x0001), Operand::PreDec(7)] };
         assert_eq!(encode(&movem).unwrap(), vec![0x48, 0xE7, 0x80, 0x00]);

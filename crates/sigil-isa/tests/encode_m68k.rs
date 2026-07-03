@@ -159,6 +159,11 @@ fn movem_predecrement_mask_is_reversed() {
 }
 
 #[test]
+fn specials_family() {
+    check(&["movep.w (4,a1),d0", "movep.l d0,(8,a1)", "addx.b d1,d0", "addx.l d3,d2", "cmpm.w (a0)+,(a1)+"]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();
