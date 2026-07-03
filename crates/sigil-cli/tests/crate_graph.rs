@@ -326,9 +326,14 @@ fn crate_graph_is_one_way() {
         }
     }
 
-    // Positive wiring check so (c) is non-vacuous: sigil-cli DOES pull in the frontend.
+    // Positive wiring check so (c) is non-vacuous: sigil-cli AND sigil-harness
+    // (the two whitelisted consumers) DO pull in the frontend.
     assert!(
         get("sigil-cli").contains(&"sigil-frontend-as".to_string()),
         "sigil-cli must depend on sigil-frontend-as"
+    );
+    assert!(
+        get("sigil-harness").contains(&"sigil-frontend-as".to_string()),
+        "sigil-harness must depend on sigil-frontend-as"
     );
 }
