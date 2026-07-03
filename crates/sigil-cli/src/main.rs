@@ -65,13 +65,26 @@ fn main() {
         }
     };
 
-    let image = match sigil_frontend_as::assemble_str(&src) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            eprintln!("error: assembly failed: {err}");
+    let opts = sigil_frontend_as::Options::default();
+    let module = match sigil_frontend_as::assemble(&src, &opts) {
+        Ok(m) => m,
+        Err(diags) => {
+            for d in &diags {
+                eprintln!("error: {}", d.message);
+            }
             process::exit(1);
         }
     };
+    let linked = match sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()) {
+        Ok(img) => img,
+        Err(diags) => {
+            for d in &diags {
+                eprintln!("error: {}", d.message);
+            }
+            process::exit(1);
+        }
+    };
+    let image = sigil_link::flatten(&linked, 0x00);
 
     if let Some(out_path) = output {
         if let Err(err) = std::fs::write(&out_path, &image) {

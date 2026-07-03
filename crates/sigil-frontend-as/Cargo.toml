@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sigil-isa = { path = "../sigil-isa" }
 sigil-ir = { path = "../sigil-ir" }
+sigil-backend-z80 = { path = "../sigil-backend-z80" }
 sigil-span = { path = "../sigil-span" }
+
+[dev-dependencies]
+sigil-link = { path = "../sigil-link" }

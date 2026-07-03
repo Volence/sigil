@@ -11,4 +11,5 @@ path = "src/main.rs"
 sigil-frontend-as = { path = "../sigil-frontend-as" }
 sigil-frontend-emp = { path = "../sigil-frontend-emp" }
 sigil-ir = { path = "../sigil-ir" }
+sigil-link = { path = "../sigil-link" }
 sigil-span = { path = "../sigil-span" }

@@ -22,6 +22,7 @@ fn unique_temp_dir() -> std::path::PathBuf {
     dir
 }
 
+#[ignore = "toy grammar removed in Plan 4; replaced by an AS-faithful gate in Task 17"]
 #[test]
 fn golden_sample_end_to_end() {
     let dir = unique_temp_dir();
