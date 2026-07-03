@@ -8,7 +8,7 @@ pub enum Cpu {
 }
 
 use crate::{DataFragment, Fixup};
-use sigil_span::Span;
+use sigil_span::{Diagnostic, Span};
 
 /// An error produced while a backend lowers an instruction to bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,14 +56,26 @@ pub trait Backend {
     ) -> Result<DataFragment, LowerError>;
 }
 
-/// The streaming sink a front-end emits into (M0 subset of Core §4.9). Plan 4's
-/// AS front-end will drive this; Plan 3 only defines it and proves its shape.
+/// The streaming sink a front-end emits into (M0 subset of Core §4.9). The
+/// front-end folds every expression and lowers every instruction to final bytes
+/// *before* streaming, so this trait carries only the doors that shape the
+/// emitted `Module`: section boundaries, byte/fill/reserve fragments, labels,
+/// diagnostics. The `save`/`restore` assembler-state stack lives in the
+/// front-end, not here.
 pub trait IrStreamer {
+    /// Close the current section (if any) and open a new one. `vma_base = Some(v)`
+    /// phases labels/PC at `v`; `None` ⇒ VMA == LMA.
+    fn switch_section(&mut self, name: &str, cpu: Cpu, vma_base: Option<u32>);
     /// Emit a run of bytes with pending fixups at the current position.
     fn emit_data(&mut self, bytes: &[u8], fixups: Vec<Fixup>, span: Span);
-
+    /// Emit `count` copies of `value` (gap fill / padding).
+    fn emit_fill(&mut self, count: u32, value: u8, span: Span);
+    /// Reserve `count` bytes of address space with NO image bytes (`ds` under phase).
+    fn reserve(&mut self, count: u32, span: Span);
     /// Record a label at the current position.
     fn define_label(&mut self, name: &str);
+    /// Record a diagnostic.
+    fn diag(&mut self, d: Diagnostic);
 }
 
 #[cfg(test)]
@@ -111,11 +123,15 @@ mod tests {
         fixups: Vec<Fixup>,
     }
     impl IrStreamer for Collector {
+        fn switch_section(&mut self, _name: &str, _cpu: Cpu, _vma_base: Option<u32>) {}
         fn emit_data(&mut self, bytes: &[u8], fixups: Vec<Fixup>, _span: Span) {
             self.bytes.extend_from_slice(bytes);
             self.fixups.extend(fixups);
         }
+        fn emit_fill(&mut self, _count: u32, _value: u8, _span: Span) {}
+        fn reserve(&mut self, _count: u32, _span: Span) {}
         fn define_label(&mut self, _name: &str) {}
+        fn diag(&mut self, _d: Diagnostic) {}
     }
 
     #[test]

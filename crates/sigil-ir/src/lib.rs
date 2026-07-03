@@ -3,6 +3,9 @@
 pub mod backend;
 pub use backend::Cpu;
 
+pub mod builder;
+pub use builder::IrBuilder;
+
 pub mod expr;
 pub mod fixup;
 pub mod symbols;

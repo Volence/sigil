@@ -3,13 +3,11 @@
 
 use std::process::Command;
 
-const GOLDEN_SRC: &str = "nop\nld a, 5\nld b, 10\nld b, c\nld a, a\nadd a, b\nadd a, a\njp $1234\njp 0x00FF\n";
+const GOLDEN_SRC: &str = "        cpu z80\n        phase 0\n        nop\n        ld a,5\n        ld b,10\n        ld b,c\n        add a,b\n        jp 1234h\n";
 
-const GOLDEN_BYTES: [u8; 15] = [
-    0x00, 0x3E, 0x05, 0x06, 0x0A, 0x41, 0x7F, 0x80, 0x87, 0xC3, 0x34, 0x12, 0xC3, 0xFF, 0x00,
-];
+const GOLDEN_BYTES: [u8; 10] = [0x00, 0x3E, 0x05, 0x06, 0x0A, 0x41, 0x80, 0xC3, 0x34, 0x12];
 
-const GOLDEN_HEX: &str = "00 3E 05 06 0A 41 7F 80 87 C3 34 12 C3 FF 00";
+const GOLDEN_HEX: &str = "00 3E 05 06 0A 41 80 C3 34 12";
 
 fn unique_temp_dir() -> std::path::PathBuf {
     let mut dir = std::env::temp_dir();

@@ -18,6 +18,7 @@ dependencies = [
  "sigil-frontend-as",
  "sigil-frontend-emp",
  "sigil-ir",
+ "sigil-link",
  "sigil-span",
 ]
 
@@ -25,8 +26,9 @@ dependencies = [
 name = "sigil-frontend-as"
 version = "0.1.0"
 dependencies = [
+ "sigil-backend-z80",
  "sigil-ir",
- "sigil-isa",
+ "sigil-link",
  "sigil-span",
 ]
 

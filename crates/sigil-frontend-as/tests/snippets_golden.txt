@@ -1,0 +1,90 @@
+=== db_dw_le_and_equate ===
+        cpu z80
+        phase 0
+GAP     = 4
+Tab     db 1,2,3
+        dw 0284h
+        db GAP
+--- bytes ---
+01 02 03 84 02 04
+=== jp_label_fixup ===
+        cpu z80
+        phase 0
+        jp Target
+Target:
+        nop
+--- bytes ---
+C3 03 00 00
+=== indexed_disp_instructions ===
+        cpu z80
+        phase 0
+        ld a,(ix+4)
+        ld (iy-2),b
+--- bytes ---
+DD 7E 04 FD 70 FE
+=== jr_cc_forward_rel ===
+        cpu z80
+        phase 0
+        jr nz,Skip
+        nop
+Skip:
+        nop
+--- bytes ---
+20 01 00 00
+=== rept_dollar_gap_fill ===
+        cpu z80
+        phase 0
+        nop
+        rept 4-$
+        db 0
+        endr
+--- bytes ---
+00 00 00 00
+=== struct_field_indexed ===
+        cpu z80
+        phase 0
+        struct SeqChannel
+a       ds.b 1
+b       ds.b 1
+c       ds.w 1
+        endstruct
+        ld a,(ix+SeqChannel_b)
+        db SeqChannel_len
+--- bytes ---
+DD 7E 01 04
+=== pbyte_macro ===
+        cpu z80
+        phase 0
+        ifndef pbyte_defined
+pbyte_defined = 1
+pbyte   macro
+        if MOMCPUNAME="Z80"
+        db      ALLARGS
+        else
+        dc.b    ALLARGS
+        endif
+        endm
+        endif
+        pbyte 1,2,3,255
+--- bytes ---
+01 02 03 FF
+=== cross_scope_jp_dotted_local ===
+        cpu z80
+        phase 0
+Seq:
+        nop
+.fetch:
+        nop
+Other:
+        jp Seq.fetch
+--- bytes ---
+00 00 C3 01 00
+=== even_pad_dollar_and_1 ===
+        cpu z80
+        phase 0
+        db 1,2,3
+        if ($ & 1) <> 0
+        db 0
+        endif
+--- bytes ---
+01 02 03 00
