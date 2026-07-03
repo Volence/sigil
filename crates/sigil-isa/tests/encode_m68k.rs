@@ -117,6 +117,14 @@ fn bit_ops_family() {
 }
 
 #[test]
+fn single_ea_family() {
+    check(&[
+        "clr.w d0", "clr.l (a1)", "neg.w d0", "not.b d0", "tst.w d0", "tst.l (a1)",
+        "tas.b d0", "st d0", "sf d0", "sgt d0",
+    ]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

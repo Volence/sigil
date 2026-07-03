@@ -125,6 +125,8 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Asl | Mnemonic::Asr | Mnemonic::Lsl | Mnemonic::Lsr
         | Mnemonic::Rol | Mnemonic::Ror => encode_shift(inst),
         Mnemonic::Btst | Mnemonic::Bset | Mnemonic::Bclr => encode_bit(inst),
+        Mnemonic::Clr | Mnemonic::Neg | Mnemonic::Not | Mnemonic::Tst
+        | Mnemonic::Tas | Mnemonic::Scc(_) => encode_single_ea(inst),
         Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
@@ -582,6 +584,52 @@ fn encode_bit(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             )))
         }
     }
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
+/// Encode the single-EA family (`clr/neg/not/tst/tas/Scc`).
+///
+/// One operand supplies the `<ea>` in bits 5–0 (plus its extension words):
+/// - `clr`=`0x4200`, `neg`=`0x4400`, `not`=`0x4600`, `tst`=`0x4A00`, each
+///   `base | (size_code<<6) | ea`.
+/// - `tas`=`0x4AC0 | ea` — byte-fixed opcode (bits 7–6 = `11` are opcode, no size field).
+/// - `Scc(cond)`=`0x50C0 | (cond.cc()<<8) | ea` — byte-fixed, `cc` in bits 11–8.
+///
+/// For `tas`/`Scc` the operation is byte-size in the opcode itself, so `inst.size`
+/// is ignored (asl confirms the fixed bytes).
+fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let ea = match inst.ops.as_slice() {
+        [op] => op,
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 1 operand, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, Field::Dest, inst.size)?;
+    let ea_bits: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
+    let word: u16 = match inst.mnemonic {
+        Mnemonic::Clr | Mnemonic::Neg | Mnemonic::Not | Mnemonic::Tst => {
+            let base: u16 = match inst.mnemonic {
+                Mnemonic::Clr => 0x4200,
+                Mnemonic::Neg => 0x4400,
+                Mnemonic::Not => 0x4600,
+                Mnemonic::Tst => 0x4A00,
+                _ => unreachable!(),
+            };
+            base | (size_code(inst.size)? << 6) | ea_bits
+        }
+        Mnemonic::Tas => 0x4AC0 | ea_bits,
+        Mnemonic::Scc(cond) => 0x50C0 | (cond.cc() << 8) | ea_bits,
+        _ => unreachable!(),
+    };
+    let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
+    out.extend_from_slice(&word.to_be_bytes());
     for w in ea_ext {
         out.extend_from_slice(&w.to_be_bytes());
     }

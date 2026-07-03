@@ -9,7 +9,7 @@
 //! integration-test binary, so it is safe to share.
 #![allow(dead_code)]
 
-use sigil_isa::m68k::{Instruction, Mnemonic, Operand, Size, Xn};
+use sigil_isa::m68k::{Cond, Instruction, Mnemonic, Operand, Size, Xn};
 
 fn mov(size: Size, src: Operand, dst: Operand) -> Instruction {
     Instruction { mnemonic: Mnemonic::Move, size, ops: vec![src, dst] }
@@ -95,5 +95,16 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("bclr #5,d1", Instruction { mnemonic: Mnemonic::Bclr, size: L, ops: vec![Imm(5), Dn(1)] }),
         ("btst d2,d0", Instruction { mnemonic: Mnemonic::Btst, size: L, ops: vec![Dn(2), Dn(0)] }),
         ("bset d1,(a0)", Instruction { mnemonic: Mnemonic::Bset, size: B, ops: vec![Dn(1), Ind(0)] }),
+        // --- single-EA family ---
+        ("clr.w d0", Instruction { mnemonic: Mnemonic::Clr, size: W, ops: vec![Dn(0)] }),
+        ("clr.l (a1)", Instruction { mnemonic: Mnemonic::Clr, size: L, ops: vec![Ind(1)] }),
+        ("neg.w d0", Instruction { mnemonic: Mnemonic::Neg, size: W, ops: vec![Dn(0)] }),
+        ("not.b d0", Instruction { mnemonic: Mnemonic::Not, size: B, ops: vec![Dn(0)] }),
+        ("tst.w d0", Instruction { mnemonic: Mnemonic::Tst, size: W, ops: vec![Dn(0)] }),
+        ("tst.l (a1)", Instruction { mnemonic: Mnemonic::Tst, size: L, ops: vec![Ind(1)] }),
+        ("tas.b d0", Instruction { mnemonic: Mnemonic::Tas, size: B, ops: vec![Dn(0)] }),
+        ("st d0", Instruction { mnemonic: Mnemonic::Scc(Cond::T), size: B, ops: vec![Dn(0)] }),
+        ("sf d0", Instruction { mnemonic: Mnemonic::Scc(Cond::F), size: B, ops: vec![Dn(0)] }),
+        ("sgt d0", Instruction { mnemonic: Mnemonic::Scc(Cond::Gt), size: B, ops: vec![Dn(0)] }),
     ]
 }
