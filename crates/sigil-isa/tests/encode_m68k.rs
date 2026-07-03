@@ -112,6 +112,11 @@ fn shift_rotate_family() {
 }
 
 #[test]
+fn bit_ops_family() {
+    check(&["btst #7,d0", "bset #0,(a0)", "bclr #5,d1", "btst d2,d0", "bset d1,(a0)"]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();

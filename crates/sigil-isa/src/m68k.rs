@@ -124,6 +124,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Moveq | Mnemonic::Addq | Mnemonic::Subq => encode_quick(inst),
         Mnemonic::Asl | Mnemonic::Asr | Mnemonic::Lsl | Mnemonic::Lsr
         | Mnemonic::Rol | Mnemonic::Ror => encode_shift(inst),
+        Mnemonic::Btst | Mnemonic::Bset | Mnemonic::Bclr => encode_bit(inst),
         Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
@@ -516,6 +517,75 @@ fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     let sz = size_code(inst.size)?;
     let word: u16 = 0xE000 | (ccc << 9) | (d << 8) | (sz << 6) | (i << 5) | (tt << 3) | dst_dn;
     Ok(word.to_be_bytes().to_vec())
+}
+
+/// Encode the bit-manipulation family (`btst/bset/bclr`, static `#n` and dynamic `Dn`).
+///
+/// - Static (`#n,<ea>`): `0000 1000 tt eeeeee` then the bit-number word `(#n as u16)`,
+///   then the destination EA's extension words (bit-number word comes first).
+/// - Dynamic (`Dn,<ea>`): `0000 rrr 1 tt eeeeee` (`rrr`=source Dn), then the EA ext words.
+/// - `tt`: btst=00, bclr=10, bset=11.
+///
+/// Size is implicit (byte for a memory destination, long for a Dn destination); asl picks
+/// it from the destination, so the corpus `size` field is informational. The bit-number
+/// extension word is always a single word; the destination EA's own extension words depend
+/// only on the EA form, so the size passed to `encode_ea` does not affect them here.
+fn encode_bit(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (src, dst) = match inst.ops.as_slice() {
+        [s, d] => (s, d),
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 2 operands, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+    let tt: u16 = match inst.mnemonic {
+        Mnemonic::Btst => 0b00,
+        Mnemonic::Bclr => 0b10,
+        Mnemonic::Bset => 0b11,
+        _ => unreachable!(),
+    };
+    // Implicit size: long for a Dn destination, byte for a memory destination.
+    let size = match dst {
+        Operand::Dn(_) => Size::L,
+        _ => Size::B,
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, size)?;
+    let ea: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
+
+    let mut out = Vec::new();
+    match src {
+        // Static form: bit number is an immediate carried in an extension word.
+        Operand::Imm(v) => {
+            let bit_word = u16::try_from(*v).map_err(|_| {
+                IsaError::UnsupportedForm(format!(
+                    "{:?} bit number {v} does not fit a word",
+                    inst.mnemonic
+                ))
+            })?;
+            let word: u16 = 0x0800 | (tt << 6) | ea;
+            out.extend_from_slice(&word.to_be_bytes());
+            out.extend_from_slice(&bit_word.to_be_bytes());
+        }
+        // Dynamic form: bit number lives in a Dn selected by bits 11-9.
+        Operand::Dn(n) => {
+            let dn = (n & 0b111) as u16;
+            let word: u16 = 0x0100 | (dn << 9) | (tt << 6) | ea;
+            out.extend_from_slice(&word.to_be_bytes());
+        }
+        other => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} source must be #imm or Dn, got {other:?}",
+                inst.mnemonic
+            )))
+        }
+    }
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
 }
 
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.

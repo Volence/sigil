@@ -89,5 +89,11 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("lsr.b #1,d0", Instruction { mnemonic: Mnemonic::Lsr, size: B, ops: vec![Imm(1), Dn(0)] }),
         ("rol.w #2,d0", Instruction { mnemonic: Mnemonic::Rol, size: W, ops: vec![Imm(2), Dn(0)] }),
         ("ror.w d1,d0", Instruction { mnemonic: Mnemonic::Ror, size: W, ops: vec![Dn(1), Dn(0)] }),
+        // --- bit ops ---
+        ("btst #7,d0", Instruction { mnemonic: Mnemonic::Btst, size: L, ops: vec![Imm(7), Dn(0)] }),
+        ("bset #0,(a0)", Instruction { mnemonic: Mnemonic::Bset, size: B, ops: vec![Imm(0), Ind(0)] }),
+        ("bclr #5,d1", Instruction { mnemonic: Mnemonic::Bclr, size: L, ops: vec![Imm(5), Dn(1)] }),
+        ("btst d2,d0", Instruction { mnemonic: Mnemonic::Btst, size: L, ops: vec![Dn(2), Dn(0)] }),
+        ("bset d1,(a0)", Instruction { mnemonic: Mnemonic::Bset, size: B, ops: vec![Dn(1), Ind(0)] }),
     ]
 }
