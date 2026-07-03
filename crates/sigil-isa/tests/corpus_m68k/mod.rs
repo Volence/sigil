@@ -52,5 +52,18 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("move.b #$12,d0", mov(B, Imm(0x12), Dn(0))),
         ("move.w (-4,a1),d0", mov(W, Disp16An(-4, 1), Dn(0))),
         ("move.w (-2,a2,d3.w),d0", mov(W, Disp8AnXn { d: -2, an: 2, xn: Xn::D(3), long: false }, Dn(0))),
+        // --- ALU-EA family ---
+        ("add.w d1,d0", Instruction { mnemonic: Mnemonic::Add, size: W, ops: vec![Dn(1), Dn(0)] }),
+        ("add.w (a1),d0", Instruction { mnemonic: Mnemonic::Add, size: W, ops: vec![Ind(1), Dn(0)] }),
+        ("add.l d0,(a1)", Instruction { mnemonic: Mnemonic::Add, size: L, ops: vec![Dn(0), Ind(1)] }),
+        ("sub.w d1,d0", Instruction { mnemonic: Mnemonic::Sub, size: W, ops: vec![Dn(1), Dn(0)] }),
+        ("and.w d1,d0", Instruction { mnemonic: Mnemonic::And, size: W, ops: vec![Dn(1), Dn(0)] }),
+        ("or.b d1,d0", Instruction { mnemonic: Mnemonic::Or, size: B, ops: vec![Dn(1), Dn(0)] }),
+        ("eor.w d0,d1", Instruction { mnemonic: Mnemonic::Eor, size: W, ops: vec![Dn(0), Dn(1)] }),
+        ("cmp.w (a1),d0", Instruction { mnemonic: Mnemonic::Cmp, size: W, ops: vec![Ind(1), Dn(0)] }),
+        ("cmpa.l a1,a0", Instruction { mnemonic: Mnemonic::Cmpa, size: L, ops: vec![An(1), An(0)] }),
+        ("adda.w d0,a1", Instruction { mnemonic: Mnemonic::Adda, size: W, ops: vec![Dn(0), An(1)] }),
+        ("suba.l a2,a3", Instruction { mnemonic: Mnemonic::Suba, size: L, ops: vec![An(2), An(3)] }),
+        ("muls.w d1,d0", Instruction { mnemonic: Mnemonic::Muls, size: W, ops: vec![Dn(1), Dn(0)] }),
     ]
 }

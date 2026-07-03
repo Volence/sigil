@@ -115,8 +115,151 @@ impl std::error::Error for IsaError {}
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst.mnemonic {
         Mnemonic::Move => encode_move(inst),
+        Mnemonic::Add | Mnemonic::Sub | Mnemonic::And | Mnemonic::Or
+        | Mnemonic::Cmp | Mnemonic::Eor
+        | Mnemonic::Cmpa | Mnemonic::Adda | Mnemonic::Suba
+        | Mnemonic::Muls => encode_alu_ea(inst),
         other => Err(IsaError::UnsupportedForm(format!("{other:?}"))),
     }
+}
+
+/// The three data sizes as their 2-bit code (`.b`=0, `.w`=1, `.l`=2).
+/// Errors on `.s`, which has no meaning for a data-processing form.
+fn size_code(size: Size) -> Result<u16, IsaError> {
+    match size {
+        Size::B => Ok(0),
+        Size::W => Ok(1),
+        Size::L => Ok(2),
+        Size::S => Err(IsaError::UnsupportedForm("ALU-EA form has no short (.s) size".into())),
+    }
+}
+
+/// Encode the ALU-EA family (`add/sub/and/or/cmp/eor/cmpa/adda/suba/muls`).
+///
+/// Base word: `base<<12 | reg<<9 | opmode<<6 | (ea_mode<<3 | ea_reg)`, followed by
+/// the source/dest `<ea>` extension words. The register field (bits 11–9) holds the
+/// Dn (or, for `cmpa/adda/suba`, the An); the other operand supplies the EA.
+fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (src, dst) = match inst.ops.as_slice() {
+        [s, d] => (s, d),
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 2 operands, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+    let sz = size_code(inst.size)?;
+
+    // (base bits 15–12, register field, opmode, ea operand)
+    let (base, reg, opmode, ea): (u16, u8, u16, &Operand) = match inst.mnemonic {
+        // Address-register destination: reg = An, source is the EA.
+        Mnemonic::Cmpa | Mnemonic::Adda | Mnemonic::Suba => {
+            let an = match dst {
+                Operand::An(n) => n & 0b111,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "{:?} requires An destination, got {other:?}",
+                        inst.mnemonic
+                    )))
+                }
+            };
+            let base = match inst.mnemonic {
+                Mnemonic::Adda => 0b1101,
+                Mnemonic::Suba => 0b1001,
+                Mnemonic::Cmpa => 0b1011,
+                _ => unreachable!(),
+            };
+            // opmode: .w=011, .l=111 — the size bit is bit 8 of the opmode.
+            let opmode = match inst.size {
+                Size::W => 0b011,
+                Size::L => 0b111,
+                _ => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "{:?} is word/long only",
+                        inst.mnemonic
+                    )))
+                }
+            };
+            (base, an, opmode, src)
+        }
+        // Word multiply: reg = Dn destination, opmode 111, source is the EA.
+        Mnemonic::Muls => {
+            let dn = match dst {
+                Operand::Dn(n) => n & 0b111,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "muls requires Dn destination, got {other:?}"
+                    )))
+                }
+            };
+            if inst.size != Size::W {
+                return Err(IsaError::UnsupportedForm("muls is word only".into()));
+            }
+            (0b1100, dn, 0b111, src)
+        }
+        // `<ea>,Dn` only: reg = Dn destination.
+        Mnemonic::Cmp => {
+            let dn = match dst {
+                Operand::Dn(n) => n & 0b111,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "cmp requires Dn destination, got {other:?}"
+                    )))
+                }
+            };
+            (0b1011, dn, sz, src)
+        }
+        // `Dn,<ea>` only: reg = Dn source.
+        Mnemonic::Eor => {
+            let dn = match src {
+                Operand::Dn(n) => n & 0b111,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "eor requires Dn source, got {other:?}"
+                    )))
+                }
+            };
+            (0b1011, dn, sz + 0b100, dst)
+        }
+        // Bidirectional: `<ea>,Dn` (opmode 0xx) or `Dn,<ea>` (opmode 1xx).
+        Mnemonic::Add | Mnemonic::Sub | Mnemonic::And | Mnemonic::Or => {
+            let base = match inst.mnemonic {
+                Mnemonic::Add => 0b1101,
+                Mnemonic::Sub => 0b1001,
+                Mnemonic::And => 0b1100,
+                Mnemonic::Or => 0b1000,
+                _ => unreachable!(),
+            };
+            match (src, dst) {
+                // <ea>,Dn — reg is the Dn destination, opmode 0xx.
+                (ea, Operand::Dn(n)) => (base, n & 0b111, sz, ea),
+                // Dn,<ea> — reg is the Dn source, opmode 1xx.
+                (Operand::Dn(n), ea) => (base, n & 0b111, sz + 0b100, ea),
+                (s, d) => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "{:?} requires a Dn operand, got {s:?},{d:?}",
+                        inst.mnemonic
+                    )))
+                }
+            }
+        }
+        _ => unreachable!(),
+    };
+
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, Field::Source, inst.size)?;
+    let word: u16 = (base << 12)
+        | ((reg as u16) << 9)
+        | (opmode << 6)
+        | ((ea_mode as u16) << 3)
+        | (ea_reg as u16);
+    let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
+    out.extend_from_slice(&word.to_be_bytes());
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
 }
 
 /// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
@@ -217,9 +360,9 @@ mod vocab_tests {
         let _ = (Mnemonic::Add, Mnemonic::Bcc(Cond::Eq), Mnemonic::Movem, Mnemonic::Moveq);
         let _ = (Operand::RegList(0x0001), Operand::Disp(4), Operand::Ccr, Operand::Sr);
         let _ = Size::S;
-        // Non-Move mnemonics are dispatched but not yet implemented → UnsupportedForm.
-        let add = Instruction { mnemonic: Mnemonic::Add, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
-        assert!(matches!(encode(&add), Err(IsaError::UnsupportedForm(_))));
+        // Still-unimplemented mnemonics are dispatched but return UnsupportedForm.
+        let moveq = Instruction { mnemonic: Mnemonic::Moveq, size: Size::L, ops: vec![Operand::Imm(1), Operand::Dn(0)] };
+        assert!(matches!(encode(&moveq), Err(IsaError::UnsupportedForm(_))));
         // Move still works.
         let mv = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
         assert_eq!(encode(&mv).unwrap(), vec![0x30, 0x01]);

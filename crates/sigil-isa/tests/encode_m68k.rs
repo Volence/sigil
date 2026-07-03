@@ -84,6 +84,15 @@ fn immediate_and_pcrel_are_illegal_dest() {
 }
 
 #[test]
+fn alu_ea_family() {
+    check(&[
+        "add.w d1,d0", "add.w (a1),d0", "add.l d0,(a1)", "sub.w d1,d0",
+        "and.w d1,d0", "or.b d1,d0", "eor.w d0,d1", "cmp.w (a1),d0",
+        "cmpa.l a1,a0", "adda.w d0,a1", "suba.l a2,a3", "muls.w d1,d0",
+    ]);
+}
+
+#[test]
 fn all_forms_match_golden() {
     let golden = parse_golden_m68k(GOLDEN);
     let mut mismatches = Vec::new();
