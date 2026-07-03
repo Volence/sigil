@@ -53,6 +53,7 @@ impl Z80Backend {
                 message: format!("expected 2-byte relative form, got {} bytes", encoded.len()),
             });
         }
+        // byte[1] is a placeholder the linker overwrites when it resolves the Z80JrRel8 fixup; hardcode 0x00 rather than depend on the encoder's disp byte.
         Ok(DataFragment {
             bytes: vec![encoded[0], 0x00],
             fixups: vec![Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target }],
@@ -85,7 +86,7 @@ mod tests {
         let b = Z80Backend;
         // A deliberately malformed operand list for `ex` (0 operands).
         let err = b.lower(Mnemonic::Ex, &[], span()).unwrap_err();
-        assert!(err.message.contains("unsupported") || err.message.contains("form"));
+        assert!(err.message.contains("unsupported form"));
     }
 
     #[test]
