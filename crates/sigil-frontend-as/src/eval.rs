@@ -2817,6 +2817,13 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         Lea | Pea => Some(M68kSize::L),
         Swap | Nop | Rts | Rte | Tas | Trap => Some(M68kSize::W),
         Jmp | Jsr => Some(M68kSize::W),
+        // Bit ops (`btst`/`bset`/`bclr`) carry NO suffix in real 68k syntax:
+        // the operation size is implicit in the destination (long for a `Dn`
+        // target, byte for a memory target) and the encoder (`encode_bit`)
+        // re-derives it from the operand, ignoring this field — so the value
+        // here only satisfies `Instruction`'s size slot. `B` keeps the source
+        // `#bit`/`Dn` immediate fold within byte bounds (bit numbers are ≤ 31).
+        Btst | Bset | Bclr => Some(M68kSize::B),
         Dbcc(_) => Some(M68kSize::W),
         Scc(_) => Some(M68kSize::B),
         _ => None,
