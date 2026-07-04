@@ -184,6 +184,14 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
         // (d,An) / (d,An,Xn) — split the inner on top-level commas.
         let inner_groups = split_commas(inner);
         if inner_groups.len() == 2 {
+            // `(An,Xn)` zero-displacement indexed: asl reads a leading address
+            // register as the index base, so this is `M68kIdx` with disp 0 —
+            // not a `(disp,An)` where the first group is a displacement expr.
+            if single_areg(inner_groups[0]).is_some() {
+                if let Some(atom) = build_disp_ea(Expr::Int(0), inner) {
+                    return Ok(atom);
+                }
+            }
             let (disp, rest) = parse_expr(inner_groups[0]).ok_or_else(|| err(span, "bad displacement expression"))?;
             if !rest.is_empty() {
                 return Err(err(span, "trailing tokens in displacement"));
@@ -215,6 +223,33 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
             return Err(err(span, "trailing tokens in (address)"));
         }
         return Ok(OperandAtom::Mem(e));
+    }
+    // Motorola `disp(An)` / `disp(An,Xn)`: the displacement sits BEFORE the
+    // paren (unlike the AS `(disp,An)` form). Shape: the operand does not start
+    // with `(` (that is the AS form or a plain `(...)` group, handled above) or
+    // `-(` (predecrement, handled above), it ends with `)`, and the trailing
+    // paren group is `(An)` or `(An,Xn[.w|.l])`. Everything before that group is
+    // the displacement expression, and it must be non-empty. asl treats these
+    // identically to `(disp,An)` / `(disp,An,Xn)`, so we emit the same atoms and
+    // the existing lowering handles them unchanged.
+    if !matches!(g.first(), Some(Token { tok: Tok::Punct(Punct::LParen), .. })) {
+        if let Some(open) = trailing_group_open(g) {
+            if open > 0 {
+                let inner = &g[open + 1..g.len() - 1];
+                // Only commit to this form when the trailing group is a valid
+                // `An`/`An,Xn` base; otherwise fall through to the plain
+                // expression parse (and its diagnostic).
+                if build_disp_ea(Expr::Int(0), inner).is_some() {
+                    let (disp, rest) = parse_expr(&g[..open])
+                        .ok_or_else(|| err(span, "bad displacement expression in `disp(An)`"))?;
+                    if !rest.is_empty() {
+                        return Err(err(span, "trailing tokens in `disp(An)` displacement"));
+                    }
+                    // `build_disp_ea` already validated the group shape above.
+                    return Ok(build_disp_ea(disp, inner).expect("validated (An)/(An,Xn) group"));
+                }
+            }
+        }
     }
     // Bare expression.
     let (e, rest) = parse_expr(g).ok_or_else(|| err(span, "bad operand expression"))?;
@@ -286,6 +321,68 @@ fn split_index_reg_size(w: &str) -> (String, bool) {
         (base.to_string(), false)
     } else {
         (w.to_string(), false)
+    }
+}
+
+/// If `g` is exactly one bare `a0`..`a7` identifier, return its name. Used to
+/// tell a leading address-register base (`(An,Xn)`) from a displacement
+/// expression (`(disp,An)`) and to validate the base of a `disp(An[,Xn])` form.
+fn single_areg(g: &[Token]) -> Option<String> {
+    if let [Token { tok: Tok::Ident(w), .. }] = g {
+        if is_m68k_areg_name(w) {
+            return Some(w.clone());
+        }
+    }
+    None
+}
+
+/// If the operand ends in `)`, return the index of the `(` that opens the
+/// trailing paren group (i.e. the match for that final `)`). Used to peel the
+/// `(An[,Xn])` group off the end of a Motorola `disp(An)` / `disp(An,Xn)`
+/// operand, leaving the displacement tokens before it.
+fn trailing_group_open(g: &[Token]) -> Option<usize> {
+    if !matches!(g.last(), Some(Token { tok: Tok::Punct(Punct::RParen), .. })) {
+        return None;
+    }
+    let mut depth = 0i32;
+    for i in (0..g.len()).rev() {
+        match g[i].tok {
+            Tok::Punct(Punct::RParen) => depth += 1,
+            Tok::Punct(Punct::LParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Build a 68k displacement EA from an already-parsed displacement and the raw
+/// `(...)` inner tokens: a single address register (`M68kDisp`) or an address
+/// register plus an index register (`M68kIdx`). Returns `Ok(None)` when `inner`
+/// isn't a valid `An` / `An,Xn` group so the caller can fall through to another
+/// form or a diagnostic. Shared by the Motorola `disp(An[,Xn])` form and the
+/// parenthesised zero-displacement `(An,Xn)` form.
+fn build_disp_ea(disp: Expr, inner: &[Token]) -> Option<OperandAtom> {
+    let groups = split_commas(inner);
+    match groups.as_slice() {
+        [an_g] => {
+            let an = single_areg(an_g)?;
+            Some(OperandAtom::M68kDisp { disp, an })
+        }
+        [an_g, xn_g] => {
+            let an = single_areg(an_g)?;
+            let xn_word = match xn_g {
+                [Token { tok: Tok::Ident(w), .. }] => w,
+                _ => return None,
+            };
+            let (xn, xlong) = split_index_reg_size(xn_word);
+            Some(OperandAtom::M68kIdx { disp, an, xn, xlong })
+        }
+        _ => None,
     }
 }
 
@@ -481,6 +578,91 @@ mod tests {
                 assert_eq!(addr.fold(&|_| None), Fold::Value(-1));
             }
             other => panic!("want M68kAbs, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m68k_motorola_predisp_numeric_and_symbolic() {
+        // `4(a0)` == `(4,a0)`
+        match &atoms_68k("4(a0)")[0] {
+            OperandAtom::M68kDisp { disp, an } => {
+                assert_eq!(disp.fold(&|_| None), Fold::Value(4));
+                assert_eq!(an, "a0");
+            }
+            other => panic!("want M68kDisp, got {other:?}"),
+        }
+        // negative displacement before the paren.
+        match &atoms_68k("-4(a0)")[0] {
+            OperandAtom::M68kDisp { disp, an } => {
+                assert_eq!(disp.fold(&|_| None), Fold::Value(-4));
+                assert_eq!(an, "a0");
+            }
+            other => panic!("want M68kDisp, got {other:?}"),
+        }
+        // symbolic displacement.
+        match &atoms_68k("Foo(a0)")[0] {
+            OperandAtom::M68kDisp { disp, an } => {
+                assert_eq!(disp.fold(&|n| if n == "Foo" { Some(4) } else { None }), Fold::Value(4));
+                assert_eq!(an, "a0");
+            }
+            other => panic!("want M68kDisp, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m68k_motorola_preidx_word_and_long() {
+        match &atoms_68k("6(a0,d1.w)")[0] {
+            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+                assert_eq!(disp.fold(&|_| None), Fold::Value(6));
+                assert_eq!(an, "a0");
+                assert_eq!(xn, "d1");
+                assert!(!xlong);
+            }
+            other => panic!("want M68kIdx, got {other:?}"),
+        }
+        match &atoms_68k("8(a0,a2.l)")[0] {
+            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+                assert_eq!(disp.fold(&|_| None), Fold::Value(8));
+                assert_eq!(an, "a0");
+                assert_eq!(xn, "a2");
+                assert!(*xlong);
+            }
+            other => panic!("want M68kIdx, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m68k_zero_disp_indexed_paren_form() {
+        // `(a0,d1.w)` — leading address register means zero-disp indexed, not `(disp,An)`.
+        match &atoms_68k("(a0,d1.w)")[0] {
+            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+                assert_eq!(disp.fold(&|_| None), Fold::Value(0));
+                assert_eq!(an, "a0");
+                assert_eq!(xn, "d1");
+                assert!(!xlong);
+            }
+            other => panic!("want M68kIdx, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m68k_as_inside_paren_forms_still_parse() {
+        // T5's `(disp,An)` / `(disp,An,Xn)` must keep working alongside the new form.
+        match &atoms_68k("(4,a0)")[0] {
+            OperandAtom::M68kDisp { disp, an } => {
+                assert_eq!(disp.fold(&|_| None), Fold::Value(4));
+                assert_eq!(an, "a0");
+            }
+            other => panic!("want M68kDisp, got {other:?}"),
+        }
+        match &atoms_68k("(6,a0,d1.w)")[0] {
+            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+                assert_eq!(disp.fold(&|_| None), Fold::Value(6));
+                assert_eq!(an, "a0");
+                assert_eq!(xn, "d1");
+                assert!(!xlong);
+            }
+            other => panic!("want M68kIdx, got {other:?}"),
         }
     }
 

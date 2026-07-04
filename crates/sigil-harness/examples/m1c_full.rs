@@ -59,7 +59,7 @@ fn main() {
                 *hist.entry(key).or_default() += 1;
             }
             let mut v: Vec<_> = hist.into_iter().collect();
-            v.sort_by(|a, b| b.1.cmp(&a.1));
+            v.sort_by_key(|b| std::cmp::Reverse(b.1));
             println!("--- gap classes (count) ---");
             for (k, c) in &v {
                 println!("  {c:5}  {k}");
@@ -74,7 +74,7 @@ fn main() {
                 }
                 println!("--- distinct messages matching {filter:?} ({} distinct) ---", seen.len());
                 let mut v: Vec<_> = seen.into_iter().collect();
-                v.sort_by(|a, b| b.1.cmp(&a.1));
+                v.sort_by_key(|b| std::cmp::Reverse(b.1));
                 for (m, c) in v {
                     println!("  {c:4}  {m}");
                 }
