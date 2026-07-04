@@ -124,7 +124,21 @@ requires proving both `__DEBUG__` on/off. So they are **in M1.C scope** (T9) —
 **after** the non-debug path is byte-exact, so they never block the mainline. (User
 confirmed this boundary in brainstorm.)
 
-### D5 — Bug-for-bug `strstr`
+### D5 — `strstr` is STANDARD (T9-grounding correction, 2026-07-04 — the "bug" does not manifest)
+
+**Empirical correction to §7.1's D5.** Probing the reference `asl 1.42 Beta [Bld 212]`
+(aeon/tools/asl, version confirmed via the `s4.lst` header) shows its `strstr` is **correct**:
+`strstr("abc","c")`=2, `strstr("b>",">")`=1, `strstr("ab","ab")`=0, `strstr("xab","ab")`=1,
+`strstr("abc","z")`=-1 — it finds matches at the final character position (the alleged bug does
+NOT reproduce). The `debugger.asm` comment ("fails to check the last character") and its
+`if strstr(...)<0 → strlen-1` compensations describe a bug fixed by (or absent in) this build;
+the compensations are now **harmless**: in the only relevant case (`>` at the last char), both
+buggy+compensation AND correct-strstr yield `strlen-1`, and `>` is always present in a `%<…>`
+token — so **Core uses a STANDARD `strstr` and reproduces the debugger bytes byte-exact.** The
+bug-for-bug emulation is dropped as phantom scope. (The T9.3 `%<…>`-bytecode asl-diff gate is the
+final proof.) The original bug-for-bug reasoning is kept below for provenance but is superseded.
+
+### D5 (superseded) — Bug-for-bug `strstr`
 
 AS `strstr` **fails to check the last character of the haystack** (`debugger.asm:664`
 comment). Two distinct in-source compensations depend on it (lines 664, 726). Core's
