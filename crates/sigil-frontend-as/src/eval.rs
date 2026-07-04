@@ -1818,6 +1818,16 @@ impl Asm {
         // `.__str set substr(.__str,0,.__pos)`). Detect the string shape via
         // `eval_str` (literal / substr / lowstring / string-symbol copy) BEFORE
         // the numeric fold, and store it front-end-only (§7.4). Probe p1/p4.
+        //
+        // INVARIANT (relied on, not enforced): a symbol is int XOR string within
+        // a pass. The string branch writes `str_env`, the int branch writes
+        // `env`, and neither clears the other, so a `set` that FLIPS a symbol's
+        // type mid-pass would leave stale entries in both maps and resolve to
+        // whichever the use site consults. This is safe for every real target
+        // (the `__FSTRING` scan assigns each symbol one stable type before it is
+        // read — probe p1/p4); type-flipping `set` is unsupported. Poison-
+        // shadowing the counterpart would be un-probed asl semantics, so it is
+        // deliberately NOT done here.
         if let Some(s) = self.eval_str(rest) {
             self.str_env.insert(q, s);
             return;

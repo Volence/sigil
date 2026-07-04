@@ -33,9 +33,11 @@ pub enum Punct {
     /// Must be lexed as ONE token (maximal munch) so a leading `:` is never
     /// mistaken for a colon-label by `parse_line_tokens`.
     ColonEq,
-    /// `!` — INFIX bitwise-OR (asl-verified: `3!4`=7, same as `|`/`BinOp::Or`,
-    /// same precedence tier). The statement-level `!name` builtin-escape form
-    /// is a separate, unrelated construct (M1.C T9.2) — not handled here.
+    /// `!` — INFIX bitwise XOR (asl-verified 2026-07-04: `1!1`=0, `3!1`=2,
+    /// `5!3`=6 → `BinOp::Xor`; the earlier bitwise-OR reading was wrong — the
+    /// only prior golden `3!4`=7 can't tell OR from XOR since `3^4 == 3|4`).
+    /// Same precedence tier as `|`. The statement-level `!name` builtin-escape
+    /// form is a separate, unrelated construct (M1.C T9.2) — not handled here.
     Bang,
     /// `~` — prefix bitwise complement (`~x`, asl's one's-complement operator).
     Tilde,
