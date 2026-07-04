@@ -157,21 +157,45 @@ pub fn resolve_layout(
     // `jmp`/`jsr`-bearing code with no `Org` (engine code, safe) — see M1.C T6b.
     for sec in sections {
         let has_org = sec.fragments.iter().any(|f| matches!(f, Fragment::Org { .. }));
+        if !has_org {
+            continue;
+        }
+        // `has_org` holds from here, so an Org fragment provably exists — the
+        // find below cannot miss (documented via `expect`, not a fabricated span).
+        let org_span = sec
+            .fragments
+            .iter()
+            .find(|f| matches!(f, Fragment::Org { .. }))
+            .map(frag_span)
+            .expect("has_org implies an Org fragment");
         let has_jmpjsr = sec.fragments.iter().any(|f| matches!(f, Fragment::JmpJsrSym { .. }));
-        if has_org && has_jmpjsr {
-            let span = sec
-                .fragments
-                .iter()
-                .find(|f| matches!(f, Fragment::Org { .. }))
-                .map(frag_span)
-                .unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 });
+        if has_jmpjsr {
             return Err(vec![Diagnostic {
                 level: Level::Error,
                 message: format!(
                     "section `{}` mixes an `org` back-patch with a bare jmp/jsr — unsupported (resolve_layout's width-shift math is not Org-aware)",
                     sec.name
                 ),
-                primary: span,
+                primary: org_span,
+            }]);
+        }
+        // A `Reserve` in the same section is the analogous hazard: `IrBuilder`
+        // counts `Reserve` toward the cursor/extent the front-end resolves an
+        // `org` target against (VMA space), but `Section::image_bytes` and
+        // `link()`'s fixup walk treat `Reserve` as zero image bytes and apply
+        // `Org.target` as an IMAGE-byte offset — so a `Reserve` before an `org`
+        // back-patch diverges the resolved VMA offset from the physical image
+        // offset and the patch lands on the wrong byte. Latent today (parallax
+        // sections are pure `dc.b`, no `ds`), but fail loudly rather than
+        // mislink silently, mirroring the jmp/jsr guard above.
+        if sec.fragments.iter().any(|f| matches!(f, Fragment::Reserve { .. })) {
+            return Err(vec![Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "section `{}` mixes an `org` back-patch with a `ds`/reserve — unsupported (reserve advances VMA but not image bytes, so the org target's image offset diverges)",
+                    sec.name
+                ),
+                primary: org_span,
             }]);
         }
     }
@@ -535,6 +559,40 @@ mod tests {
         assert!(
             err.iter().any(|d| d.message.contains("org") && d.message.contains("jmp/jsr")),
             "got: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn resolve_layout_refuses_org_and_reserve_in_the_same_section() {
+        // The analogous hazard to Org+JmpJsrSym: a `Reserve` (from `ds`) counts
+        // toward the front-end's cursor/extent (VMA space) when it resolves an
+        // `org` target, but contributes no image bytes — so applying `Org.target`
+        // as an image offset would land the back-patch on the wrong physical
+        // byte. Guard must fail loudly, with a message distinct from the
+        // jmp/jsr one, pointing at the first `Org`.
+        let sec = Section {
+            name: "data".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Reserve { count: 4, span: sp() },
+                Fragment::Org { target: 0, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span: sp() }),
+            ],
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("org") && d.message.contains("reserve")),
+            "got: {:?}",
+            err
+        );
+        // ...and it must NOT be misreported as the jmp/jsr hazard.
+        assert!(
+            !err.iter().any(|d| d.message.contains("jmp/jsr")),
+            "Org+Reserve wrongly reported as the jmp/jsr hazard: {:?}",
             err
         );
     }
