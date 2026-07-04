@@ -18,6 +18,10 @@ pub enum Punct {
     /// Must be lexed as ONE token (maximal munch) so a leading `:` is never
     /// mistaken for a colon-label by `parse_line_tokens`.
     ColonEq,
+    /// `!` — INFIX bitwise-OR (asl-verified: `3!4`=7, same as `|`/`BinOp::Or`,
+    /// same precedence tier). The statement-level `!name` builtin-escape form
+    /// is a separate, unrelated construct (M1.C T9.2) — not handled here.
+    Bang,
 }
 
 /// A lexical token kind.

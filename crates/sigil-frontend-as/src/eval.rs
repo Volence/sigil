@@ -378,6 +378,145 @@ impl Asm {
         }
     }
 
+    /// Evaluate front-end-only debug-string builtin calls
+    /// (`strlen`/`strstr`/`val`) in `toks`, replacing each TOP-LEVEL call span
+    /// with a resolved `Tok::Int` — the same shape as `expand_int_builtin`
+    /// (§7.4: these are FRONT-END builtins; the string values involved never
+    /// become `sigil_ir::Expr` nodes). `substr(...)` itself produces a
+    /// STRING, not an int, so it is never substituted at this top level — it
+    /// is only ever consumed as a nested argument (via `eval_str`) inside one
+    /// of these three, which is how `strlen(substr(...))` /
+    /// `strstr(substr(s,p,0),">")` nesting works.
+    fn expand_str_builtins(&mut self, toks: &[Token]) -> Vec<Token> {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < toks.len() {
+            if let Tok::Ident(name) = &toks[i].tok {
+                if matches!(name.as_str(), "strlen" | "strstr" | "val")
+                    && matches!(toks.get(i + 1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen)))
+                {
+                    let span = toks[i].span;
+                    if let Some((args, next)) = split_call_args(toks, i + 1) {
+                        match self.eval_str_builtin(name, &args) {
+                            Some(v) => out.push(Token { tok: Tok::Int(v), span }),
+                            None => {
+                                self.err(span, format!("{name}(): could not evaluate string builtin"));
+                                out.push(Token { tok: Tok::Int(0), span });
+                            }
+                        }
+                        i = next;
+                        continue;
+                    }
+                }
+            }
+            out.push(toks[i].clone());
+            i += 1;
+        }
+        out
+    }
+
+    /// Dispatch one of the debug-string builtins that produce an INTEGER:
+    ///
+    /// - `strlen(str)` → character count.
+    /// - `strstr(haystack, needle)` → **STANDARD** 0-based index of the first
+    ///   match, or **-1** if absent (asl 1.42 Bld 212 verified: `strstr("abc",
+    ///   "c")`=2, `strstr("b>",">")`=1, `strstr("xab","ab")`=1,
+    ///   `strstr("abc","z")`=-1 — the alleged "fails on last char" bug does
+    ///   NOT reproduce in this asl; deliberately NOT emulated here).
+    /// - `val(str)` → re-lexes `str` fresh and folds it as an ordinary AS
+    ///   constant expression against the CURRENT env/scope (NOT just a number
+    ///   parse): `val("$80")`=0x80, `val("144")`=144, `val("hex+1")` resolves
+    ///   symbol `hex` the same way any operand would.
+    fn eval_str_builtin(&self, name: &str, args: &[Vec<Token>]) -> Option<i64> {
+        match (name, args) {
+            ("strlen", [s]) => Some(self.eval_str(s)?.chars().count() as i64),
+            ("strstr", [hay, needle]) => {
+                let hay = self.eval_str(hay)?;
+                let needle = self.eval_str(needle)?;
+                Some(match hay.find(&needle) {
+                    // `find` returns a BYTE offset; convert to a char count so
+                    // a (hypothetical) non-ASCII haystack still reports the
+                    // same index asl's char-oriented `strstr` would.
+                    Some(byte_idx) => hay[..byte_idx].chars().count() as i64,
+                    None => -1,
+                })
+            }
+            ("val", [s]) => self.fold_str_as_expr(&self.eval_str(s)?),
+            _ => None,
+        }
+    }
+
+    /// Evaluate a front-end-only STRING expression: a plain `Tok::Str`
+    /// literal, or a nested `substr(str, pos, len)` call. `None` on any other
+    /// shape (mirrors `Fold::Poison` in spirit — this value never becomes a
+    /// `sigil_ir::Expr`, per §7.4).
+    fn eval_str(&self, toks: &[Token]) -> Option<String> {
+        if let [Token { tok: Tok::Str(s), .. }] = toks {
+            return Some(s.clone());
+        }
+        if let [Token { tok: Tok::Ident(name), .. }, ..] = toks {
+            if name == "substr" && matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+                let (args, next) = split_call_args(toks, 1)?;
+                if next == toks.len() {
+                    return self.eval_substr(&args);
+                }
+            }
+        }
+        None
+    }
+
+    /// `substr(str, pos, len)`: 0-based `pos`; `len == 0` means "from `pos`
+    /// to the end of the string" (asl-verified: `substr("hello",1,0)` =
+    /// "ello", `substr("hello",1,2)` = "el"). `pos`/`len` are ordinary
+    /// constant expressions (a literal, a symbol, arithmetic, …) — not
+    /// further string-builtin calls; only the first (`str`) argument nests.
+    fn eval_substr(&self, args: &[Vec<Token>]) -> Option<String> {
+        let [s_toks, pos_toks, len_toks] = args else { return None };
+        let s = self.eval_str(s_toks)?;
+        let pos = self.fold_const(pos_toks)?;
+        let len = self.fold_const(len_toks)?;
+        if pos < 0 {
+            return None;
+        }
+        let chars: Vec<char> = s.chars().collect();
+        let pos = pos as usize;
+        if pos > chars.len() {
+            return None;
+        }
+        let end = match len {
+            0 => chars.len(),
+            n if n > 0 => (pos + n as usize).min(chars.len()),
+            _ => return None,
+        };
+        Some(chars[pos..end].iter().collect())
+    }
+
+    /// `val(str)`: lex `text` fresh (under the CURRENT cpu context) and fold
+    /// it as an ordinary constant expression — this is what makes `val` an
+    /// AS-EXPRESSION evaluator rather than a plain number parse (it resolves
+    /// symbols, honors `$`-prefixed hex, arithmetic, …).
+    fn fold_str_as_expr(&self, text: &str) -> Option<i64> {
+        let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
+        self.fold_const(&toks)
+    }
+
+    /// Fold a token slice as a plain constant integer expression — the
+    /// immutable counterpart of `eval_all` (no diagnostics on failure; `None`
+    /// mirrors `Fold::Poison`). Used by the debug-string evaluator wherever a
+    /// nested piece is known to be an INTEGER, never a string (`substr`'s
+    /// `pos`/`len` arguments, and `val`'s re-lexed expression text).
+    fn fold_const(&self, toks: &[Token]) -> Option<i64> {
+        let expanded = self.expand_calls(toks, 0);
+        let (e, rest) = crate::expr::parse_expr(&expanded)?;
+        if !rest.is_empty() {
+            return None;
+        }
+        match self.fold(&e) {
+            Fold::Value(v) => Some(v),
+            Fold::Poison => None,
+        }
+    }
+
     /// Parse a name-first AS `function` definition and store it.
     ///
     /// Real AS / aeon syntax: `<name> function <formal_args...>, <body_expr>`, e.g.
@@ -1103,6 +1242,7 @@ impl Asm {
         for g in split_top_commas(rest) {
             let called = self.expand_calls(g, 0);
             let expanded = self.expand_int_builtin(&called);
+            let expanded = self.expand_str_builtins(&expanded);
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -2877,5 +3017,81 @@ mod tests {
         // `tests/snippets_golden.txt`.
         let src = "        cpu 68000\n        padding off\n        phase 0\nk       set 0\n        rept 4\n        dc.b k\nk       set k+1\n        endr\n";
         assert_eq!(image(src), vec![0x00, 0x01, 0x02, 0x03]);
+    }
+
+    // ── T9.1: debug string builtins (substr/strlen/strstr/val) + `!`=OR ────
+
+    #[test]
+    fn strlen_of_a_plain_string_literal() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(\"hello\")\n";
+        assert_eq!(image(src), vec![5]);
+    }
+
+    #[test]
+    fn substr_len_zero_means_to_the_end() {
+        // asl-verified: `substr("hello",1,0)` = "ello" (len=0 = "to the end").
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(substr(\"hello\",1,0))\n";
+        assert_eq!(image(src), vec![4]);
+    }
+
+    #[test]
+    fn substr_bounded_length() {
+        // asl-verified: `substr("hello",1,2)` = "el".
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(substr(\"hello\",1,2))\n";
+        assert_eq!(image(src), vec![2]);
+    }
+
+    #[test]
+    fn strstr_finds_the_last_character() {
+        // D5 correction: asl 1.42 Bld 212's `strstr` is STANDARD — it does
+        // NOT fail to find a match at the last character (`strstr("b>",">")`
+        // = 1, not the alleged buggy "not found").
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strstr(\"b>\",\">\")&$FF\n";
+        assert_eq!(image(src), vec![1]);
+    }
+
+    #[test]
+    fn strstr_present_mid_string() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strstr(\"xab\",\"ab\")&$FF\n";
+        assert_eq!(image(src), vec![1]);
+    }
+
+    #[test]
+    fn strstr_absent_is_minus_one() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strstr(\"abc\",\"z\")&$FF\n";
+        assert_eq!(image(src), vec![0xFF]);
+    }
+
+    #[test]
+    fn strstr_nests_over_a_substr_argument() {
+        // `strstr(substr(s,p,0),">")` — the debugger's real usage shape.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strstr(substr(\"xxb>\",2,0),\">\")&$FF\n";
+        assert_eq!(image(src), vec![1]);
+    }
+
+    #[test]
+    fn val_parses_a_dollar_hex_string() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b val(\"$80\")\n";
+        assert_eq!(image(src), vec![0x80]);
+    }
+
+    #[test]
+    fn val_parses_a_decimal_string() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b val(\"144\")&$FF\n";
+        assert_eq!(image(src), vec![144]);
+    }
+
+    #[test]
+    fn val_evaluates_a_symbol_plus_arithmetic_in_the_string() {
+        // `val` is an AS-EXPRESSION evaluator, not a plain number parse: the
+        // string's symbol reference resolves against the CURRENT env.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nhex     = $80\n        dc.b val(\"hex+1\")&$FF\n";
+        assert_eq!(image(src), vec![0x81]);
+    }
+
+    #[test]
+    fn bang_is_infix_bitwise_or() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b (3!4)&$FF\n";
+        assert_eq!(image(src), vec![7]);
     }
 }

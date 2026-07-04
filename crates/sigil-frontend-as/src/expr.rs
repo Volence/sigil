@@ -29,6 +29,10 @@ fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
         Shl => (6, BinOp::Shl), Shr => (6, BinOp::Shr),
         Amp => (5, BinOp::And),
         Pipe => (4, BinOp::Or),
+        // `!` — AS's alternate infix bitwise-OR spelling (asl-verified:
+        // `3!4`=7). Same tier as `|`; the debugger's real usage always
+        // parenthesizes (`((*)&1)!1`) so the exact tier rarely matters.
+        Bang => (4, BinOp::Or),
         Eq => (3, BinOp::Eq), Ne => (3, BinOp::Ne),
         Lt => (3, BinOp::Lt), Gt => (3, BinOp::Gt),
         Le => (3, BinOp::Le), Ge => (3, BinOp::Ge),
