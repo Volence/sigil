@@ -32,13 +32,21 @@ fn main() {
     let text = fs::read_to_string(&golden_path).expect("read snippets_golden.txt");
     let blocks = parse_blocks(&text);
 
-    let aeon = std::env::var("AEON_DIR")
-        .unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon =
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
     let aeon = PathBuf::from(aeon);
     let asl = aeon.join("tools/asl");
     let p2bin = aeon.join("tools/p2bin");
-    assert!(asl.is_file(), "asl not found at {} (set AEON_DIR)", asl.display());
-    assert!(p2bin.is_file(), "p2bin not found at {} (set AEON_DIR)", p2bin.display());
+    assert!(
+        asl.is_file(),
+        "asl not found at {} (set AEON_DIR)",
+        asl.display()
+    );
+    assert!(
+        p2bin.is_file(),
+        "p2bin not found at {} (set AEON_DIR)",
+        p2bin.display()
+    );
 
     let work = std::env::temp_dir().join("sigil_snippet_gen");
     fs::create_dir_all(&work).expect("create work dir");
@@ -46,7 +54,11 @@ fn main() {
     let mut out = String::new();
     for b in &blocks {
         let bytes = assemble(&aeon, &asl, &p2bin, &work, &b.asm);
-        let hex = bytes.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ");
+        let hex = bytes
+            .iter()
+            .map(|x| format!("{x:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         out.push_str("=== ");
         out.push_str(&b.name);
         out.push_str(" ===\n");
@@ -57,7 +69,11 @@ fn main() {
     }
 
     fs::write(&golden_path, &out).expect("write golden file");
-    eprintln!("wrote {} snippet vectors to {}", blocks.len(), golden_path.display());
+    eprintln!(
+        "wrote {} snippet vectors to {}",
+        blocks.len(),
+        golden_path.display()
+    );
 }
 
 /// Parse the `=== name ===` / `--- bytes ---` block file into (name, asm) pairs,
@@ -68,9 +84,15 @@ fn parse_blocks(text: &str) -> Vec<Block> {
     let mut asm = String::new();
     let mut in_bytes = false;
     for line in text.lines() {
-        if let Some(n) = line.strip_prefix("=== ").and_then(|s| s.strip_suffix(" ===")) {
+        if let Some(n) = line
+            .strip_prefix("=== ")
+            .and_then(|s| s.strip_suffix(" ==="))
+        {
             if !name.is_empty() {
-                out.push(Block { name: name.clone(), asm: asm.clone() });
+                out.push(Block {
+                    name: name.clone(),
+                    asm: asm.clone(),
+                });
             }
             name = n.to_string();
             asm.clear();
@@ -104,9 +126,15 @@ fn assemble(aeon: &Path, asl: &Path, p2bin: &Path, work: &Path, src: &str) -> Ve
         .env("AS_MSGPATH", "tools")
         .env("USEANSI", "n")
         .args([
-            "-cpu", "68000", "-q", "-L", "-U",
-            "-olist", lst.to_str().unwrap(),
-            "-o", p.to_str().unwrap(),
+            "-cpu",
+            "68000",
+            "-q",
+            "-L",
+            "-U",
+            "-olist",
+            lst.to_str().unwrap(),
+            "-o",
+            p.to_str().unwrap(),
             asm.to_str().unwrap(),
         ])
         .output()

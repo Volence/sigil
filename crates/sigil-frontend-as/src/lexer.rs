@@ -9,7 +9,12 @@ use sigil_span::{Diagnostic, Level, SourceId, Span};
 /// Tokenise one logical line. `base` is the byte offset of `line`'s first char
 /// within the whole source (so spans are absolute). Comments (`;`→EOL) are
 /// stripped. Returns a diagnostic on a malformed token.
-pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec<Token>, Diagnostic> {
+pub fn lex_line(
+    line: &str,
+    cpu: Cpu,
+    source: SourceId,
+    base: u32,
+) -> Result<Vec<Token>, Diagnostic> {
     let bytes = line.as_bytes();
     let mut out = Vec::new();
     let mut i = 0usize;
@@ -27,7 +32,9 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
     while i < bytes.len() {
         let c = bytes[i];
         match c {
-            b' ' | b'\t' | b'\r' | b'\n' => { i += 1; }
+            b' ' | b'\t' | b'\r' | b'\n' => {
+                i += 1;
+            }
             b';' => break, // comment to EOL
             // AS macro-attribute block `{ATTR}` (e.g. `{GLOBALSYMBOLS}` in the
             // `probeCore macro …, {GLOBALSYMBOLS}` param list). It is a scoping
@@ -60,10 +67,16 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                 }
                 let s = std::str::from_utf8(&bytes[s0..i]).unwrap().to_string();
                 i += 1; // closing quote
-                out.push(Token { tok: Tok::Str(s), span: span_at(start, i) });
+                out.push(Token {
+                    tok: Tok::Str(s),
+                    span: span_at(start, i),
+                });
             }
             b'$' if cpu == Cpu::Z80 => {
-                out.push(Token { tok: Tok::Dollar, span: span_at(i, i + 1) });
+                out.push(Token {
+                    tok: Tok::Dollar,
+                    span: span_at(i, i + 1),
+                });
                 i += 1;
             }
             // AS binary literal: `%` followed by binary digits (e.g. `%100001`).
@@ -80,7 +93,10 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                 }
                 let v = i64::from_str_radix(std::str::from_utf8(&bytes[b0..i]).unwrap(), 2)
                     .map_err(|_| err(start, i, "malformed binary literal"))?;
-                out.push(Token { tok: Tok::Int(v), span: span_at(start, i) });
+                out.push(Token {
+                    tok: Tok::Int(v),
+                    span: span_at(start, i),
+                });
             }
             // AS character constant: `'…'` packs its bytes big-endian into an
             // integer (`'A'` = 0x41, `'INIT'` = 0x494E4954). Distinct from a
@@ -103,7 +119,10 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                     v = (v << 8) | ch as i64;
                 }
                 i += 1; // closing quote
-                out.push(Token { tok: Tok::Int(v), span: span_at(start, i) });
+                out.push(Token {
+                    tok: Tok::Int(v),
+                    span: span_at(start, i),
+                });
             }
             b'$' => {
                 // 68k hex: `$` then hex digits.
@@ -118,7 +137,10 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                 }
                 let v = i64::from_str_radix(std::str::from_utf8(&bytes[h0..i]).unwrap(), 16)
                     .map_err(|_| err(start, i, "malformed hex literal"))?;
-                out.push(Token { tok: Tok::Int(v), span: span_at(start, i) });
+                out.push(Token {
+                    tok: Tok::Int(v),
+                    span: span_at(start, i),
+                });
             }
             _ if c.is_ascii_digit() => {
                 // Number: scan an alnum run; trailing `h`/`H` ⇒ hex, else decimal.
@@ -160,18 +182,28 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                         }
                     }
                     let text = std::str::from_utf8(&bytes[start..i]).unwrap();
-                    let v: f64 = text.parse().map_err(|_| err(start, i, "malformed float literal"))?;
-                    out.push(Token { tok: Tok::Float(v), span: span_at(start, i) });
+                    let v: f64 = text
+                        .parse()
+                        .map_err(|_| err(start, i, "malformed float literal"))?;
+                    out.push(Token {
+                        tok: Tok::Float(v),
+                        span: span_at(start, i),
+                    });
                     continue;
                 }
                 let v = if let Some(hexs) = run.strip_suffix(['h', 'H']) {
-                    i64::from_str_radix(hexs, 16).map_err(|_| err(start, i, "malformed hex literal"))?
+                    i64::from_str_radix(hexs, 16)
+                        .map_err(|_| err(start, i, "malformed hex literal"))?
                 } else if run.bytes().all(|b| b.is_ascii_digit()) {
-                    run.parse::<i64>().map_err(|_| err(start, i, "malformed decimal literal"))?
+                    run.parse::<i64>()
+                        .map_err(|_| err(start, i, "malformed decimal literal"))?
                 } else {
                     return Err(err(start, i, "malformed number (hex needs a trailing `h`)"));
                 };
-                out.push(Token { tok: Tok::Int(v), span: span_at(start, i) });
+                out.push(Token {
+                    tok: Tok::Int(v),
+                    span: span_at(start, i),
+                });
             }
             _ if is_ident_start(c) => {
                 let start = i;
@@ -179,13 +211,19 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                     i += 1;
                 }
                 let s = std::str::from_utf8(&bytes[start..i]).unwrap().to_string();
-                out.push(Token { tok: Tok::Ident(s), span: span_at(start, i) });
+                out.push(Token {
+                    tok: Tok::Ident(s),
+                    span: span_at(start, i),
+                });
             }
             _ => {
                 // Operators / delimiters (maximal munch for 2-char forms).
-                let (p, len) = punct(&bytes[i..])
-                    .ok_or_else(|| err(i, i + 1, "unexpected character"))?;
-                out.push(Token { tok: Tok::Punct(p), span: span_at(i, i + len) });
+                let (p, len) =
+                    punct(&bytes[i..]).ok_or_else(|| err(i, i + 1, "unexpected character"))?;
+                out.push(Token {
+                    tok: Tok::Punct(p),
+                    span: span_at(i, i + len),
+                });
                 i += len;
             }
         }
@@ -203,7 +241,11 @@ fn is_ident_tail(c: u8) -> bool {
 /// Match a 1- or 2-byte operator at the head of `b`. 2-char forms first.
 fn punct(b: &[u8]) -> Option<(Punct, usize)> {
     use Punct::*;
-    let two = if b.len() >= 2 { Some((b[0], b[1])) } else { None };
+    let two = if b.len() >= 2 {
+        Some((b[0], b[1]))
+    } else {
+        None
+    };
     match two {
         Some((b'<', b'<')) => return Some((Shl, 2)),
         Some((b'>', b'>')) => return Some((Shr, 2)),
@@ -216,10 +258,22 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
         _ => {}
     }
     let one = match b[0] {
-        b'+' => Plus, b'-' => Minus, b'*' => Star, b'/' => Slash,
-        b'&' => Amp, b'|' => Pipe, b'=' => Eq, b'<' => Lt, b'>' => Gt,
-        b'(' => LParen, b')' => RParen, b',' => Comma, b':' => Colon,
-        b'#' => Hash, b'!' => Bang, b'~' => Tilde,
+        b'+' => Plus,
+        b'-' => Minus,
+        b'*' => Star,
+        b'/' => Slash,
+        b'&' => Amp,
+        b'|' => Pipe,
+        b'=' => Eq,
+        b'<' => Lt,
+        b'>' => Gt,
+        b'(' => LParen,
+        b')' => RParen,
+        b',' => Comma,
+        b':' => Colon,
+        b'#' => Hash,
+        b'!' => Bang,
+        b'~' => Tilde,
         _ => return None,
     };
     Some((one, 1))
@@ -276,7 +330,10 @@ mod tests {
     #[test]
     fn identifiers_locals_dotted_and_shadow() {
         assert_eq!(kinds(".loop", Cpu::Z80), vec![Tok::Ident(".loop".into())]);
-        assert_eq!(kinds("Seq.fetch", Cpu::Z80), vec![Tok::Ident("Seq.fetch".into())]);
+        assert_eq!(
+            kinds("Seq.fetch", Cpu::Z80),
+            vec![Tok::Ident("Seq.fetch".into())]
+        );
         assert_eq!(kinds("af'", Cpu::Z80), vec![Tok::Ident("af'".into())]);
         // Leading letter (not digit) ⇒ identifier even if it looks hex-ish.
         assert_eq!(kinds("FFh", Cpu::Z80), vec![Tok::Ident("FFh".into())]);
@@ -287,21 +344,43 @@ mod tests {
         use Punct::*;
         assert_eq!(
             kinds("a >> 8 & 0FFh", Cpu::Z80),
-            vec![Tok::Ident("a".into()), Tok::Punct(Shr), Tok::Int(8), Tok::Punct(Amp), Tok::Int(0xFF)]
+            vec![
+                Tok::Ident("a".into()),
+                Tok::Punct(Shr),
+                Tok::Int(8),
+                Tok::Punct(Amp),
+                Tok::Int(0xFF)
+            ]
         );
-        assert_eq!(kinds("<> <= >= << >>", Cpu::Z80),
-            vec![Tok::Punct(Ne), Tok::Punct(Le), Tok::Punct(Ge), Tok::Punct(Shl), Tok::Punct(Shr)]);
+        assert_eq!(
+            kinds("<> <= >= << >>", Cpu::Z80),
+            vec![
+                Tok::Punct(Ne),
+                Tok::Punct(Le),
+                Tok::Punct(Ge),
+                Tok::Punct(Shl),
+                Tok::Punct(Shr)
+            ]
+        );
     }
 
     #[test]
     fn comment_stripped_and_string_and_indexed() {
         use Punct::*;
-        assert_eq!(kinds("nop ; trailing", Cpu::Z80), vec![Tok::Ident("nop".into())]);
+        assert_eq!(
+            kinds("nop ; trailing", Cpu::Z80),
+            vec![Tok::Ident("nop".into())]
+        );
         assert_eq!(kinds("\"Z80\"", Cpu::Z80), vec![Tok::Str("Z80".into())]);
         assert_eq!(
             kinds("(ix+sc_flags)", Cpu::Z80),
-            vec![Tok::Punct(LParen), Tok::Ident("ix".into()), Tok::Punct(Plus),
-                 Tok::Ident("sc_flags".into()), Tok::Punct(RParen)]
+            vec![
+                Tok::Punct(LParen),
+                Tok::Ident("ix".into()),
+                Tok::Punct(Plus),
+                Tok::Ident("sc_flags".into()),
+                Tok::Punct(RParen)
+            ]
         );
     }
 
@@ -338,12 +417,18 @@ mod tests {
     #[allow(clippy::approx_constant)]
     fn float_literal_lexes_as_a_single_token() {
         // The `deform_table_sine` constant, and simpler decimal cases.
-        assert_eq!(kinds("6.283185307179586", Cpu::M68000), vec![Tok::Float(6.283185307179586)]);
+        assert_eq!(
+            kinds("6.283185307179586", Cpu::M68000),
+            vec![Tok::Float(6.283185307179586)]
+        );
         assert_eq!(kinds("0.5", Cpu::M68000), vec![Tok::Float(0.5)]);
         // A bare integer (no `.digit` following) still lexes as `Int`, not `Float`.
         assert_eq!(kinds("6", Cpu::M68000), vec![Tok::Int(6)]);
         // Dotted identifiers (dot-leading, not digit-leading) are unaffected.
-        assert_eq!(kinds("Seq.fetch", Cpu::M68000), vec![Tok::Ident("Seq.fetch".into())]);
+        assert_eq!(
+            kinds("Seq.fetch", Cpu::M68000),
+            vec![Tok::Ident("Seq.fetch".into())]
+        );
         // A float inside a larger expression is still one token amid others.
         assert_eq!(
             kinds("6.283185307179586 * i / 64", Cpu::M68000),

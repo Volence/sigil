@@ -26,7 +26,8 @@ fn never_stabilizing_input_hits_the_pass_cap_and_diagnoses() {
     let src = "        cpu z80\n        phase 0\n        if A = 0\n        db 0,0\n        endif\nB:\nA = B\n";
     let err = assemble(src, &Options::default()).expect_err("must not converge");
     assert!(
-        err.iter().any(|d| d.message.to_lowercase().contains("converge")),
+        err.iter()
+            .any(|d| d.message.to_lowercase().contains("converge")),
         "expected a non-convergence diagnostic, got: {err:?}"
     );
 }
@@ -35,5 +36,8 @@ fn never_stabilizing_input_hits_the_pass_cap_and_diagnoses() {
 fn ordinary_forward_reference_converges() {
     // A normal forward ref stabilizes by pass 2 (Target resolves on pass 1).
     let src = "        cpu z80\n        phase 0\n        jr Target\nTarget: nop\n";
-    assert!(assemble(src, &Options::default()).is_ok(), "forward ref should converge");
+    assert!(
+        assemble(src, &Options::default()).is_ok(),
+        "forward ref should converge"
+    );
 }

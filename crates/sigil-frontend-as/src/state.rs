@@ -28,7 +28,13 @@ struct Saved {
 impl AsmState {
     /// New state with `initial_cpu`, no phase, 68k defaults (padding on, supmode off).
     pub fn new(initial_cpu: Cpu) -> Self {
-        AsmState { cpu: initial_cpu, vma_base: None, padding: true, supmode: false, saved: Vec::new() }
+        AsmState {
+            cpu: initial_cpu,
+            vma_base: None,
+            padding: true,
+            supmode: false,
+            saved: Vec::new(),
+        }
     }
 
     /// `save`: push a snapshot of the whole unit.
@@ -43,7 +49,10 @@ impl AsmState {
 
     /// `restore`: pop the last snapshot. Err if the stack is empty.
     pub fn restore(&mut self) -> Result<(), &'static str> {
-        let s = self.saved.pop().ok_or("`restore` with no matching `save`")?;
+        let s = self
+            .saved
+            .pop()
+            .ok_or("`restore` with no matching `save`")?;
         self.cpu = s.cpu;
         self.vma_base = s.vma_base;
         self.padding = s.padding;

@@ -12,10 +12,16 @@ pub fn parse_line_tokens(toks: &[Token]) -> Line {
                 Tok::Ident(s) => s.clone(),
                 _ => unreachable!(),
             };
-            return Line { label_colon: Some(name), tokens: toks[2..].to_vec() };
+            return Line {
+                label_colon: Some(name),
+                tokens: toks[2..].to_vec(),
+            };
         }
     }
-    Line { label_colon: None, tokens: toks.to_vec() }
+    Line {
+        label_colon: None,
+        tokens: toks.to_vec(),
+    }
 }
 
 #[cfg(test)]
@@ -29,7 +35,10 @@ mod tests {
     fn line(src: &str) -> (Option<String>, Vec<Tok>) {
         let toks = lex_line(src, Cpu::Z80, SourceId(0), 0).unwrap();
         let l = parse_line_tokens(&toks);
-        (l.label_colon, l.tokens.iter().map(|t| t.tok.clone()).collect())
+        (
+            l.label_colon,
+            l.tokens.iter().map(|t| t.tok.clone()).collect(),
+        )
     }
 
     #[test]
@@ -44,7 +53,14 @@ mod tests {
         // eval decides whether the first bareword is a label or an op.
         let (lbl, toks) = line("SeqTable db 0");
         assert_eq!(lbl, None);
-        assert_eq!(toks, vec![Tok::Ident("SeqTable".into()), Tok::Ident("db".into()), Tok::Int(0)]);
+        assert_eq!(
+            toks,
+            vec![
+                Tok::Ident("SeqTable".into()),
+                Tok::Ident("db".into()),
+                Tok::Int(0)
+            ]
+        );
     }
 
     #[test]

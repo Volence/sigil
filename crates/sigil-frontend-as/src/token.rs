@@ -7,11 +7,26 @@ use sigil_span::Span;
 /// A punctuation / operator token.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Punct {
-    Plus, Minus, Star, Slash,
-    Shl, Shr, Amp, Pipe,
-    Eq, Ne, Lt, Gt, Le, Ge,
-    OrOr, AndAnd,
-    LParen, RParen, Comma, Colon,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Shl,
+    Shr,
+    Amp,
+    Pipe,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    OrOr,
+    AndAnd,
+    LParen,
+    RParen,
+    Comma,
+    Colon,
     /// `#` — 68k immediate marker (`#expr`).
     Hash,
     /// `:=` — AS reassignable-symbol assignment (`name := expr`, same as `set`).

@@ -35,8 +35,8 @@ deform_sine_i set deform_sine_i + 1
 
 fn assemble_bytes(asm: &str) -> Vec<u8> {
     let module = assemble(asm, &Options::default()).expect("assemble");
-    let resolved =
-        sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true).expect("resolve_layout");
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
     sigil_link::flatten(&linked, 0x00)
 }

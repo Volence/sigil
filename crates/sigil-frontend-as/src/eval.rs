@@ -7,8 +7,8 @@ use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
 use crate::Options;
 use sigil_backend_m68k::m68k::{
-    Cond as M68kCond, Instruction as M68kInstruction, Mnemonic as M68kMnemonic, Operand as M68kOperand,
-    Size as M68kSize, Xn as M68kXn,
+    Cond as M68kCond, Instruction as M68kInstruction, Mnemonic as M68kMnemonic,
+    Operand as M68kOperand, Size as M68kSize, Xn as M68kXn,
 };
 use sigil_backend_m68k::M68kBackend;
 use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
@@ -50,8 +50,14 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     let mut functions = FunctionTable::new();
     let mut prev = seed.clone();
     for pass in 0..PASS_CAP {
-        let PassOutput { module, env, macros: m, functions: f, mut diags, poison } =
-            one_pass(src, opts, &seed, &macros, &functions);
+        let PassOutput {
+            module,
+            env,
+            macros: m,
+            functions: f,
+            mut diags,
+            poison,
+        } = one_pass(src, opts, &seed, &macros, &functions);
         if pass > 0 && env == prev {
             // Converged: this pass's result is authoritative. The env is now final,
             // so any operand that still folded to Poison references a genuinely
@@ -77,8 +83,14 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     }
     Err(vec![Diagnostic {
         level: Level::Error,
-        message: format!("assembly did not converge within {PASS_CAP} passes (symbol values still changing)"),
-        primary: Span { source: SourceId(0), start: 0, end: 0 },
+        message: format!(
+            "assembly did not converge within {PASS_CAP} passes (symbol values still changing)"
+        ),
+        primary: Span {
+            source: SourceId(0),
+            start: 0,
+            end: 0,
+        },
     }])
 }
 
@@ -173,14 +185,22 @@ impl Asm {
     }
 
     fn err(&mut self, span: Span, msg: impl Into<String>) {
-        self.diags.push(Diagnostic { level: Level::Error, message: msg.into(), primary: span });
+        self.diags.push(Diagnostic {
+            level: Level::Error,
+            message: msg.into(),
+            primary: span,
+        });
     }
 
     fn here(&self) -> u32 {
         // When no section is open (just after phase/dephase/cpu closed one and
         // before the next emit reopens it), the new region has emitted 0 bytes.
         self.state.vma_base.unwrap_or(0)
-            + if self.in_section { self.builder.current_offset() } else { 0 }
+            + if self.in_section {
+                self.builder.current_offset()
+            } else {
+                0
+            }
     }
 
     /// The current PC as a SIGN-EXTENDED 32→64-bit value: an address with bit 31
@@ -309,7 +329,12 @@ impl Asm {
         let mut i = 0;
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
-                if name == "int" && matches!(toks.get(i + 1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+                if name == "int"
+                    && matches!(
+                        toks.get(i + 1).map(|t| &t.tok),
+                        Some(Tok::Punct(Punct::LParen))
+                    )
+                {
                     let span = toks[i].span;
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         let value = match args.as_slice() {
@@ -317,10 +342,16 @@ impl Asm {
                             _ => None,
                         };
                         match value {
-                            Some(v) => out.push(Token { tok: Tok::Int(v.floor() as i64), span }),
+                            Some(v) => out.push(Token {
+                                tok: Tok::Int(v.floor() as i64),
+                                span,
+                            }),
                             None => {
                                 self.err(span, "int(): could not evaluate float expression");
-                                out.push(Token { tok: Tok::Int(0), span });
+                                out.push(Token {
+                                    tok: Tok::Int(0),
+                                    span,
+                                });
                             }
                         }
                         i = next;
@@ -386,15 +417,23 @@ impl Asm {
                     _ => None,
                 }
             }
-            Tok::Ident(name) if (name == "sin" || name == "int")
-                && matches!(rest.first().map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) =>
+            Tok::Ident(name)
+                if (name == "sin" || name == "int")
+                    && matches!(
+                        rest.first().map(|t| &t.tok),
+                        Some(Tok::Punct(Punct::LParen))
+                    ) =>
             {
                 let (args, next) = split_call_args(rest, 0)?;
                 let inner = match args.as_slice() {
                     [arg] => self.eval_float(arg)?,
                     _ => return None,
                 };
-                let v = if name == "sin" { inner.sin() } else { inner.floor() };
+                let v = if name == "sin" {
+                    inner.sin()
+                } else {
+                    inner.floor()
+                };
                 Some((v, &rest[next..]))
             }
             Tok::Ident(name) => {
@@ -425,15 +464,27 @@ impl Asm {
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
                 if matches!(name.as_str(), "strlen" | "strstr" | "val")
-                    && matches!(toks.get(i + 1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen)))
+                    && matches!(
+                        toks.get(i + 1).map(|t| &t.tok),
+                        Some(Tok::Punct(Punct::LParen))
+                    )
                 {
                     let span = toks[i].span;
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         match self.eval_str_builtin(name, &args) {
-                            Some(v) => out.push(Token { tok: Tok::Int(v), span }),
+                            Some(v) => out.push(Token {
+                                tok: Tok::Int(v),
+                                span,
+                            }),
                             None => {
-                                self.err(span, format!("{name}(): could not evaluate string builtin"));
-                                out.push(Token { tok: Tok::Int(0), span });
+                                self.err(
+                                    span,
+                                    format!("{name}(): could not evaluate string builtin"),
+                                );
+                                out.push(Token {
+                                    tok: Tok::Int(0),
+                                    span,
+                                });
                             }
                         }
                         i = next;
@@ -486,17 +537,28 @@ impl Asm {
     /// `lowstring(substr(...))` / `substr(lowstring(...), ...)` nest freely
     /// (T9.3).
     fn eval_str(&self, toks: &[Token]) -> Option<String> {
-        if let [Token { tok: Tok::Str(s), .. }] = toks {
+        if let [Token {
+            tok: Tok::Str(s), ..
+        }] = toks
+        {
             return Some(s.clone());
         }
-        if let [Token { tok: Tok::Ident(name), .. }, ..] = toks {
-            if name == "substr" && matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+        if let [Token {
+            tok: Tok::Ident(name),
+            ..
+        }, ..] = toks
+        {
+            if name == "substr"
+                && matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen)))
+            {
                 let (args, next) = split_call_args(toks, 1)?;
                 if next == toks.len() {
                     return self.eval_substr(&args);
                 }
             }
-            if name == "lowstring" && matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+            if name == "lowstring"
+                && matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen)))
+            {
                 let (args, next) = split_call_args(toks, 1)?;
                 if next == toks.len() {
                     if let [s_toks] = args.as_slice() {
@@ -514,7 +576,9 @@ impl Asm {
     /// constant expressions (a literal, a symbol, arithmetic, …) — not
     /// further string-builtin calls; only the first (`str`) argument nests.
     fn eval_substr(&self, args: &[Vec<Token>]) -> Option<String> {
-        let [s_toks, pos_toks, len_toks] = args else { return None };
+        let [s_toks, pos_toks, len_toks] = args else {
+            return None;
+        };
         let s = self.eval_str(s_toks)?;
         let pos = self.fold_const(pos_toks)?;
         let len = self.fold_const(len_toks)?;
@@ -576,7 +640,11 @@ impl Asm {
             }
         };
         // toks[0] = name, toks[1] = `function`, toks[2..] = formals..., body.
-        let span = toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: line.base, end: line.base });
+        let span = toks.first().map(|t| t.span).unwrap_or(Span {
+            source: self.source,
+            start: line.base,
+            end: line.base,
+        });
         let name = match toks.first().map(|t| &t.tok) {
             Some(Tok::Ident(s)) => s.clone(),
             _ => {
@@ -598,7 +666,9 @@ impl Asm {
         let mut params = Vec::new();
         for g in &groups[..groups.len() - 1] {
             match g {
-                [Token { tok: Tok::Ident(p), .. }] => params.push(p.clone()),
+                [Token {
+                    tok: Tok::Ident(p), ..
+                }] => params.push(p.clone()),
                 _ => {
                     self.err(span, "bad function parameter");
                     return;
@@ -620,7 +690,10 @@ impl Asm {
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
                 if let Some((params, body)) = self.functions.get(name) {
-                    if matches!(toks.get(i + 1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+                    if matches!(
+                        toks.get(i + 1).map(|t| &t.tok),
+                        Some(Tok::Punct(Punct::LParen))
+                    ) {
                         if let Some((args, next)) = split_call_args(toks, i + 1) {
                             let expanded = self.substitute(body, params, &args, depth);
                             let span = toks[i].span;
@@ -641,7 +714,13 @@ impl Asm {
 
     /// Replace each body identifier equal to a parameter with its (expanded,
     /// parenthesised) argument tokens.
-    fn substitute(&self, body: &[Token], params: &[String], args: &[Vec<Token>], depth: usize) -> Vec<Token> {
+    fn substitute(
+        &self,
+        body: &[Token],
+        params: &[String],
+        args: &[Vec<Token>],
+        depth: usize,
+    ) -> Vec<Token> {
         let mut out = Vec::new();
         for t in body {
             if let Tok::Ident(name) = &t.tok {
@@ -667,7 +746,13 @@ impl Asm {
 
     /// Fold `\{expr}` sequences in the first string token to their decimal value.
     fn interp_string(&mut self, rest: &[Token]) -> String {
-        let raw = match rest.iter().find_map(|t| if let Tok::Str(s) = &t.tok { Some(s.clone()) } else { None }) {
+        let raw = match rest.iter().find_map(|t| {
+            if let Tok::Str(s) = &t.tok {
+                Some(s.clone())
+            } else {
+                None
+            }
+        }) {
             Some(s) => s,
             None => return String::new(),
         };
@@ -702,13 +787,26 @@ impl Asm {
     /// Lex + fold a short expression string (for `\{…}` interpolation).
     fn fold_text(&mut self, text: &str) -> Option<i64> {
         let toks = lex_line(text, self.state.cpu, self.source, 0).ok()?;
-        self.eval_all(&toks, Span { source: self.source, start: 0, end: 0 })
+        self.eval_all(
+            &toks,
+            Span {
+                source: self.source,
+                start: 0,
+                end: 0,
+            },
+        )
     }
 
     /// `include "path"`: read a file relative to `include_root`, exec its lines
     /// inline. A visited-set prevents re-inclusion (DAG, not tree).
     fn directive_include(&mut self, rest: &[Token], span: Span) {
-        let rel = match rest.iter().find_map(|t| if let Tok::Str(s) = &t.tok { Some(s.clone()) } else { None }) {
+        let rel = match rest.iter().find_map(|t| {
+            if let Tok::Str(s) = &t.tok {
+                Some(s.clone())
+            } else {
+                None
+            }
+        }) {
             Some(p) => p,
             None => {
                 self.err(span, "include needs a quoted path");
@@ -747,7 +845,13 @@ impl Asm {
     /// the second copy.
     fn directive_binclude(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
-        let rel = match rest.iter().find_map(|t| if let Tok::Str(s) = &t.tok { Some(s.clone()) } else { None }) {
+        let rel = match rest.iter().find_map(|t| {
+            if let Tok::Str(s) = &t.tok {
+                Some(s.clone())
+            } else {
+                None
+            }
+        }) {
             Some(p) => p,
             None => {
                 self.err(span, "BINCLUDE needs a quoted path");
@@ -879,7 +983,10 @@ impl Asm {
         // `ColonEq` token (see `token::Punct::ColonEq`), never as `Colon`
         // then `Eq`, so it can never be confused with a `name:` colon-label.
         let is_set_kw = matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if s == "set");
-        let is_coloneq = matches!(body.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::ColonEq)));
+        let is_coloneq = matches!(
+            body.get(1).map(|t| &t.tok),
+            Some(Tok::Punct(Punct::ColonEq))
+        );
         if is_set_kw || is_coloneq {
             self.directive_set(&head, &body[2..], body[0].span);
             return;
@@ -937,7 +1044,11 @@ impl Asm {
             return None;
         }
         let parsed = parse_line_tokens(&toks);
-        let body = if parsed.label_colon.is_some() { parsed.tokens } else { toks };
+        let body = if parsed.label_colon.is_some() {
+            parsed.tokens
+        } else {
+            toks
+        };
         if body.is_empty() {
             return None;
         }
@@ -945,7 +1056,13 @@ impl Asm {
             Tok::Ident(s) => s.clone(),
             _ => return None,
         };
-        let second = body.get(1).and_then(|t| if let Tok::Ident(s) = &t.tok { Some(s.as_str()) } else { None });
+        let second = body.get(1).and_then(|t| {
+            if let Tok::Ident(s) = &t.tok {
+                Some(s.as_str())
+            } else {
+                None
+            }
+        });
         if matches!(second, Some("macro") | Some("struct") | Some("function")) {
             return Some((second.unwrap().to_string(), 1, body));
         }
@@ -955,7 +1072,10 @@ impl Asm {
         if is_op_keyword(&name) || is_mnemonic(&name) {
             return Some((name, 0, body));
         }
-        if let Some(Token { tok: Tok::Ident(s), .. }) = body.get(1) {
+        if let Some(Token {
+            tok: Tok::Ident(s), ..
+        }) = body.get(1)
+        {
             return Some((s.clone(), 1, body));
         }
         Some((name, 0, body))
@@ -969,7 +1089,11 @@ impl Asm {
 
     /// The keyword + the tokens after it + the keyword span, for a block head.
     fn line_kw_args(&self, line: &SrcLine) -> (Option<String>, Vec<Token>, Span) {
-        let fallback = Span { source: self.source, start: line.base, end: line.base };
+        let fallback = Span {
+            source: self.source,
+            start: line.base,
+            end: line.base,
+        };
         match self.dispatch_head(line) {
             Some((kw, idx, body)) => {
                 let span = body.get(idx).map(|t| t.span).unwrap_or(fallback);
@@ -1003,7 +1127,9 @@ impl Asm {
         let start_kw = self.line_keyword(&lines[start]).unwrap_or_default();
         let mut stack: Vec<&'static [&'static str]> = vec![closers_for(&start_kw)];
         for (idx, line) in lines.iter().enumerate().skip(start + 1) {
-            let Some(k) = self.line_keyword(line) else { continue };
+            let Some(k) = self.line_keyword(line) else {
+                continue;
+            };
             let nested_closers = closers_for(&k);
             if !nested_closers.is_empty() {
                 // A nested block opener (if/ifdef/ifndef, rept, while, macro,
@@ -1044,7 +1170,9 @@ impl Asm {
             let head = heads[w];
             let (kw, argtoks, span) = self.line_kw_args(&lines[head]);
             let take = match kw.as_deref() {
-                Some("if") | Some("ifdef") | Some("ifndef") => self.eval_cond(kw.as_deref().unwrap(), &argtoks, span),
+                Some("if") | Some("ifdef") | Some("ifndef") => {
+                    self.eval_cond(kw.as_deref().unwrap(), &argtoks, span)
+                }
                 Some("elseif") => self.eval_if_expr(&argtoks, span),
                 Some("else") => true,
                 _ => false,
@@ -1184,9 +1312,18 @@ impl Asm {
     /// index past `endstruct`. (Mirrors `capture_macro`: name at `toks[0]`,
     /// `struct` at `toks[1]`.)
     fn capture_struct(&mut self, lines: &[SrcLine], start: usize) -> usize {
-        let toks = lex_line(&lines[start].text, self.state.cpu, self.source, lines[start].base)
-            .unwrap_or_default();
-        let span = toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: lines[start].base, end: lines[start].base });
+        let toks = lex_line(
+            &lines[start].text,
+            self.state.cpu,
+            self.source,
+            lines[start].base,
+        )
+        .unwrap_or_default();
+        let span = toks.first().map(|t| t.span).unwrap_or(Span {
+            source: self.source,
+            start: lines[start].base,
+            end: lines[start].base,
+        });
         let name = match toks.first().map(|t| &t.tok) {
             Some(Tok::Ident(s)) => s.clone(),
             _ => {
@@ -1201,7 +1338,8 @@ impl Asm {
                 // An anonymous reserve field (`ds.b 1` with no name) advances the
                 // struct offset but defines no member symbol.
                 if !field.is_empty() {
-                    self.env.define(&format!("{name}_{field}"), SymbolValue::Int(off));
+                    self.env
+                        .define(&format!("{name}_{field}"), SymbolValue::Int(off));
                 }
                 off += width * count;
                 // asl-verified, and it depends on the `padding` state: with
@@ -1220,7 +1358,8 @@ impl Asm {
                 }
             }
         }
-        self.env.define(&format!("{name}_len"), SymbolValue::Int(off));
+        self.env
+            .define(&format!("{name}_len"), SymbolValue::Int(off));
         end + 1
     }
 
@@ -1241,12 +1380,20 @@ impl Asm {
                 // AS still advances the struct offset by its size; it just binds
                 // no member symbol. Emit an empty field name and keep the whole
                 // token slice (the `ds.*` keyword is the width token).
-                Some((Token { tok: Tok::Ident(s), .. }, _))
-                    if matches!(s.as_str(), "ds.b" | "ds.w" | "ds.l") =>
-                {
+                Some((
+                    Token {
+                        tok: Tok::Ident(s), ..
+                    },
+                    _,
+                )) if matches!(s.as_str(), "ds.b" | "ds.w" | "ds.l") => {
                     (String::new(), parsed.tokens.clone())
                 }
-                Some((Token { tok: Tok::Ident(s), .. }, r)) => (s.clone(), r.to_vec()),
+                Some((
+                    Token {
+                        tok: Tok::Ident(s), ..
+                    },
+                    r,
+                )) => (s.clone(), r.to_vec()),
                 _ => return None,
             }
         };
@@ -1282,9 +1429,14 @@ impl Asm {
             .iter()
             .position(|t| matches!(t.tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne)))
         {
-            if let Some(Token { tok: Tok::Str(rhs), .. }) = toks.get(pos + 1) {
+            if let Some(Token {
+                tok: Tok::Str(rhs), ..
+            }) = toks.get(pos + 1)
+            {
                 let lhs = match &toks[..pos] {
-                    [Token { tok: Tok::Str(s), .. }] => Some(s.clone()),
+                    [Token {
+                        tok: Tok::Str(s), ..
+                    }] => Some(s.clone()),
                     other => self.string_value(other),
                 };
                 if let Some(lhs) = lhs {
@@ -1300,7 +1452,9 @@ impl Asm {
     /// The string value of a builtin like MOMCPUNAME (else None).
     fn string_value(&self, toks: &[Token]) -> Option<String> {
         match toks {
-            [Token { tok: Tok::Ident(n), .. }] if n == "MOMCPUNAME" => Some(match self.state.cpu {
+            [Token {
+                tok: Tok::Ident(n), ..
+            }] if n == "MOMCPUNAME" => Some(match self.state.cpu {
                 Cpu::Z80 => "Z80".into(),
                 Cpu::M68000 => "68000".into(),
             }),
@@ -1381,7 +1535,9 @@ impl Asm {
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
             // non-directive head is routed there rather than misreported as
             // "unknown directive or mnemonic".
-            _ if self.state.cpu == Cpu::Z80 && is_mnemonic(head) => self.lower_instruction(head, rest, span),
+            _ if self.state.cpu == Cpu::Z80 && is_mnemonic(head) => {
+                self.lower_instruction(head, rest, span)
+            }
             _ if self.state.cpu == Cpu::M68000 => self.lower_instruction(head, rest, span),
             _ => self.err(span, format!("unknown directive or mnemonic `{head}`")),
         }
@@ -1394,7 +1550,8 @@ impl Asm {
             // LMAs and handles same-phase section re-entry. Same-(cpu,vma)
             // re-entry within one assembly would currently collide at flatten —
             // out of the M0 single-region-per-phase gate.
-            self.builder.switch_section(&name, self.state.cpu, self.state.vma_base);
+            self.builder
+                .switch_section(&name, self.state.cpu, self.state.vma_base);
             self.in_section = true;
         }
     }
@@ -1536,7 +1693,9 @@ impl Asm {
             return;
         }
         let name = match groups[0] {
-            [Token { tok: Tok::Ident(s), .. }] => s.clone(),
+            [Token {
+                tok: Tok::Ident(s), ..
+            }] => s.clone(),
             _ => {
                 self.err(span, "`set` directive target must be a bare symbol");
                 return;
@@ -1599,7 +1758,11 @@ impl Asm {
                     if matches!(qe, Expr::Sym(_)) {
                         self.emit(
                             &[0x00, 0x00],
-                            vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: qe }],
+                            vec![Fixup {
+                                kind: FixupKind::BankPtr16Le,
+                                offset: 0,
+                                target: qe,
+                            }],
                             span,
                         );
                     } else {
@@ -1634,7 +1797,11 @@ impl Asm {
                     if matches!(qe, Expr::Sym(_)) {
                         self.emit(
                             &[0x00, 0x00],
-                            vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: qe }],
+                            vec![Fixup {
+                                kind: FixupKind::Abs16Be,
+                                offset: 0,
+                                target: qe,
+                            }],
                             span,
                         );
                     } else {
@@ -1668,7 +1835,11 @@ impl Asm {
                     if matches!(qe, Expr::Sym(_)) {
                         self.emit(
                             &[0x00, 0x00, 0x00, 0x00],
-                            vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: qe }],
+                            vec![Fixup {
+                                kind: FixupKind::Abs32Be,
+                                offset: 0,
+                                target: qe,
+                            }],
                             span,
                         );
                     } else {
@@ -1787,14 +1958,19 @@ impl Asm {
             Some(m) => m,
             None => {
                 match m68k_out_of_scope(base) {
-                    Some(family) => self.err(span, format!("`{base}` ({family}) is not yet implemented")),
+                    Some(family) => {
+                        self.err(span, format!("`{base}` ({family}) is not yet implemented"))
+                    }
                     None => self.err(span, format!("`{base}` is not a recognized 68000 mnemonic")),
                 }
                 return;
             }
         };
 
-        if matches!(mnemonic, M68kMnemonic::Bra | M68kMnemonic::Bsr | M68kMnemonic::Bcc(_)) {
+        if matches!(
+            mnemonic,
+            M68kMnemonic::Bra | M68kMnemonic::Bsr | M68kMnemonic::Bcc(_)
+        ) {
             return self.lower_m68k_branch(mnemonic, suffix_size, rest, span);
         }
         if matches!(mnemonic, M68kMnemonic::Dbcc(_)) {
@@ -1847,11 +2023,20 @@ impl Asm {
     /// convert every atom and fold-lower the instruction directly. Also the
     /// fallback for `jmp`/`jsr` once an EA-operand form (not a bare symbol)
     /// has been ruled out by the caller.
-    fn lower_m68k_generic(&mut self, mnemonic: M68kMnemonic, suffix_size: Option<M68kSize>, atoms: Vec<OperandAtom>, span: Span) {
+    fn lower_m68k_generic(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        suffix_size: Option<M68kSize>,
+        atoms: Vec<OperandAtom>,
+        span: Span,
+    ) {
         let size = match suffix_size.or_else(|| m68k_default_size(mnemonic)) {
             Some(s) => s,
             None => {
-                self.err(span, "instruction needs an explicit size suffix (.b/.w/.l)".to_string());
+                self.err(
+                    span,
+                    "instruction needs an explicit size suffix (.b/.w/.l)".to_string(),
+                );
                 return;
             }
         };
@@ -1872,7 +2057,11 @@ impl Asm {
             None => return,
         };
         let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
-        let inst = M68kInstruction { mnemonic, size, ops };
+        let inst = M68kInstruction {
+            mnemonic,
+            size,
+            ops,
+        };
         let frag = self.m68k.lower_inst(&inst, span);
         self.emit_frag(frag, span);
     }
@@ -1882,7 +2071,13 @@ impl Asm {
     /// MUST be `S` or `W`. The target is qualified (`.local` → `Scope.local`)
     /// and `$`-resolved, then handed to the backend's `lower_branch`, which
     /// builds the opcode + a `PcRel8`/`PcRelDisp16` fixup for the linker.
-    fn lower_m68k_branch(&mut self, mnemonic: M68kMnemonic, suffix_size: Option<M68kSize>, rest: &[Token], span: Span) {
+    fn lower_m68k_branch(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        suffix_size: Option<M68kSize>,
+        rest: &[Token],
+        span: Span,
+    ) {
         let size = match suffix_size {
             Some(s @ (M68kSize::S | M68kSize::W)) => s,
             Some(_) => {
@@ -1945,13 +2140,20 @@ impl Asm {
         let dn = match m68k_data_reg(&dn_name) {
             Some(n) => n,
             None => {
-                self.err(span, format!("`{dn_name}` is not a valid data register in Dbcc"));
+                self.err(
+                    span,
+                    format!("`{dn_name}` is not a valid data register in Dbcc"),
+                );
                 return;
             }
         };
         let target = self.resolve_dollar(&self.qualify_expr(&target_expr));
         let pc_of_disp_word = Expr::Int((self.here() + 2) as i64);
-        let disp_expr = Expr::Binary { op: BinOp::Sub, lhs: Box::new(target), rhs: Box::new(pc_of_disp_word) };
+        let disp_expr = Expr::Binary {
+            op: BinOp::Sub,
+            lhs: Box::new(target),
+            rhs: Box::new(pc_of_disp_word),
+        };
         let d = self.fold_imm(&disp_expr, span, i16::MIN as i64, i16::MAX as i64);
         let inst = M68kInstruction {
             mnemonic,
@@ -1986,7 +2188,10 @@ impl Asm {
         };
         let groups = split_top_commas(rest);
         if groups.len() != 2 {
-            self.err(span, "movem needs two operands: a register list and a memory EA");
+            self.err(
+                span,
+                "movem needs two operands: a register list and a memory EA",
+            );
             return;
         }
         let list0 = parse_reg_list(groups[0]);
@@ -1998,11 +2203,17 @@ impl Asm {
             (Some(m), None) => (m, true, groups[1]),
             (None, Some(m)) => (m, false, groups[0]),
             (Some(_), Some(_)) => {
-                self.err(span, "movem needs a memory EA operand, got two register lists");
+                self.err(
+                    span,
+                    "movem needs a memory EA operand, got two register lists",
+                );
                 return;
             }
             (None, None) => {
-                self.err(span, "movem needs a register-list operand (e.g. `d0-d7/a0-a6`)");
+                self.err(
+                    span,
+                    "movem needs a register-list operand (e.g. `d0-d7/a0-a6`)",
+                );
                 return;
             }
         };
@@ -2029,7 +2240,11 @@ impl Asm {
         } else {
             vec![mem_op, M68kOperand::RegList(mask)]
         };
-        let inst = M68kInstruction { mnemonic: M68kMnemonic::Movem, size, ops };
+        let inst = M68kInstruction {
+            mnemonic: M68kMnemonic::Movem,
+            size,
+            ops,
+        };
         let frag = self.m68k.lower_inst(&inst, span);
         self.emit_frag(frag, span);
     }
@@ -2046,7 +2261,14 @@ impl Asm {
     /// confirmed against `lower_pcrel_ea`'s own unit test (`lea (d16,PC),a0`)
     /// and against real asl (`m68k_move_w_pcd16_to_d0` in
     /// `tests/snippets_golden.txt`).
-    fn lower_m68k_pcrel(&mut self, mnemonic: M68kMnemonic, size: M68kSize, atoms: &[OperandAtom], pc_idx: usize, span: Span) {
+    fn lower_m68k_pcrel(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        size: M68kSize,
+        atoms: &[OperandAtom],
+        pc_idx: usize,
+        span: Span,
+    ) {
         let mut ops = Vec::with_capacity(atoms.len());
         let mut target = None;
         for (i, a) in atoms.iter().enumerate() {
@@ -2066,7 +2288,11 @@ impl Asm {
         }
         let target = target.expect("pc_idx must index the pc-relative atom");
         let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
-        let inst = M68kInstruction { mnemonic, size, ops };
+        let inst = M68kInstruction {
+            mnemonic,
+            size,
+            ops,
+        };
         let frag = self.m68k.lower_pcrel_ea(&inst, 2, target, span);
         self.emit_frag(frag, span);
     }
@@ -2077,13 +2303,22 @@ impl Asm {
     /// the pc-idx atom's `disp` is the label target (resolved later as an 8-bit
     /// PC-relative displacement), and its index register becomes the ext word's
     /// `Xn`. The disp8 byte sits at offset 3 (opcode word + ext-word high byte).
-    fn lower_m68k_pcrel_idx(&mut self, mnemonic: M68kMnemonic, size: M68kSize, atoms: &[OperandAtom], pc_idx: usize, span: Span) {
+    fn lower_m68k_pcrel_idx(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        size: M68kSize,
+        atoms: &[OperandAtom],
+        pc_idx: usize,
+        span: Span,
+    ) {
         let mut ops = Vec::with_capacity(atoms.len());
         let mut target = None;
         for (i, a) in atoms.iter().enumerate() {
             if i == pc_idx {
                 let (disp, xn, xlong) = match a {
-                    OperandAtom::M68kIdx { disp, xn, xlong, .. } => (disp, xn, *xlong),
+                    OperandAtom::M68kIdx {
+                        disp, xn, xlong, ..
+                    } => (disp, xn, *xlong),
                     _ => unreachable!("pc_idx must index a M68kIdx{{an: \"pc\"}} atom"),
                 };
                 let xn = match self.m68k_index_reg(xn, span) {
@@ -2091,7 +2326,11 @@ impl Asm {
                     None => return,
                 };
                 target = Some(self.qualify_expr(disp));
-                ops.push(M68kOperand::Pcd8Xn { d: 0, xn, long: xlong });
+                ops.push(M68kOperand::Pcd8Xn {
+                    d: 0,
+                    xn,
+                    long: xlong,
+                });
             } else {
                 match self.convert_one_atom_m68k(a, size, span) {
                     Some(op) => ops.push(op),
@@ -2101,7 +2340,11 @@ impl Asm {
         }
         let target = target.expect("pc_idx must index the pc-relative atom");
         let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
-        let inst = M68kInstruction { mnemonic, size, ops };
+        let inst = M68kInstruction {
+            mnemonic,
+            size,
+            ops,
+        };
         let frag = self.m68k.lower_pcrel_idx_ea(&inst, 3, target, span);
         self.emit_frag(frag, span);
     }
@@ -2141,135 +2384,176 @@ impl Asm {
     }
 
     /// Convert one operand atom (see [`Self::convert_atoms_m68k`]).
-    fn convert_one_atom_m68k(&mut self, a: &OperandAtom, size: M68kSize, span: Span) -> Option<M68kOperand> {
+    fn convert_one_atom_m68k(
+        &mut self,
+        a: &OperandAtom,
+        size: M68kSize,
+        span: Span,
+    ) -> Option<M68kOperand> {
         Some(match a {
-                OperandAtom::Imm(e) => {
-                    let (lo, hi) = m68k_imm_bounds(size);
-                    let v = self.fold_imm(e, span, lo, hi);
-                    M68kOperand::Imm(v as i32)
+            OperandAtom::Imm(e) => {
+                let (lo, hi) = m68k_imm_bounds(size);
+                let v = self.fold_imm(e, span, lo, hi);
+                M68kOperand::Imm(v as i32)
+            }
+            OperandAtom::RegOrCond(w) => {
+                if let Some(n) = m68k_addr_reg(w) {
+                    M68kOperand::An(n)
+                } else if let Some(n) = m68k_data_reg(w) {
+                    M68kOperand::Dn(n)
+                } else {
+                    self.err(
+                        span,
+                        format!("`{w}` is not a valid 68k register in this context"),
+                    );
+                    return None;
                 }
-                OperandAtom::RegOrCond(w) => {
-                    if let Some(n) = m68k_addr_reg(w) {
-                        M68kOperand::An(n)
-                    } else if let Some(n) = m68k_data_reg(w) {
-                        M68kOperand::Dn(n)
-                    } else {
-                        self.err(span, format!("`{w}` is not a valid 68k register in this context"));
-                        return None;
-                    }
-                }
-                OperandAtom::Value(Expr::Sym(name)) => {
-                    if let Some(n) = m68k_data_reg(name) {
-                        M68kOperand::Dn(n)
-                    } else if let Some(n) = m68k_addr_reg(name) {
-                        M68kOperand::An(n)
-                    } else if name == "sr" {
-                        M68kOperand::Sr
-                    } else if name == "ccr" {
-                        M68kOperand::Ccr
-                    } else {
-                        self.err(
+            }
+            OperandAtom::Value(Expr::Sym(name)) => {
+                if let Some(n) = m68k_data_reg(name) {
+                    M68kOperand::Dn(n)
+                } else if let Some(n) = m68k_addr_reg(name) {
+                    M68kOperand::An(n)
+                } else if name == "sr" {
+                    M68kOperand::Sr
+                } else if name == "ccr" {
+                    M68kOperand::Ccr
+                } else {
+                    self.err(
                             span,
                             format!(
                                 "absolute/symbolic operand `{name}` is out of scope for T5 (register-direct/#immediate/register-indirect only); deferred to T5b"
                             ),
                         );
-                        return None;
-                    }
+                    return None;
                 }
-                OperandAtom::Value(_) => {
-                    self.err(
+            }
+            OperandAtom::Value(_) => {
+                self.err(
                         span,
                         "bare numeric/expression operand implies 68k absolute addressing, out of scope for T5; deferred to T5b",
                     );
-                    return None;
-                }
-                OperandAtom::Mem(_) => {
-                    self.err(
+                return None;
+            }
+            OperandAtom::Mem(_) => {
+                self.err(
                         span,
                         "absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)",
                     );
+                return None;
+            }
+            OperandAtom::M68kAbs { addr, long } => {
+                let qualified = self.qualify_expr(addr);
+                let v = self.fold_imm(&qualified, span, i32::MIN as i64, u32::MAX as i64);
+                if *long {
+                    M68kOperand::AbsL(v as i32)
+                } else {
+                    M68kOperand::AbsW((v & 0xFFFF) as i16)
+                }
+            }
+            // `(sp)` is the `a7` alias but lexes down the pre-existing Z80
+            // `hl`/`bc`/`de`/`sp` branch (see `classify`), not `M68kInd`.
+            OperandAtom::IndReg(w) if w == "sp" => M68kOperand::Ind(7),
+            OperandAtom::IndReg(w) => {
+                self.err(
+                    span,
+                    format!("`({w})` is not a valid 68k address-register indirect operand"),
+                );
+                return None;
+            }
+            OperandAtom::Indexed { .. } => {
+                self.err(
+                    span,
+                    "z80 `(ix±d)`/`(iy±d)` indexed form is not a valid 68k operand",
+                );
+                return None;
+            }
+            OperandAtom::M68kPreDec(reg) => match m68k_addr_reg(reg) {
+                Some(n) => M68kOperand::PreDec(n),
+                None => {
+                    self.err(
+                        span,
+                        format!("`{reg}` is not a valid address register in `-(An)`"),
+                    );
                     return None;
                 }
-                OperandAtom::M68kAbs { addr, long } => {
-                    let qualified = self.qualify_expr(addr);
-                    let v = self.fold_imm(&qualified, span, i32::MIN as i64, u32::MAX as i64);
-                    if *long {
-                        M68kOperand::AbsL(v as i32)
-                    } else {
-                        M68kOperand::AbsW((v & 0xFFFF) as i16)
-                    }
-                }
-                // `(sp)` is the `a7` alias but lexes down the pre-existing Z80
-                // `hl`/`bc`/`de`/`sp` branch (see `classify`), not `M68kInd`.
-                OperandAtom::IndReg(w) if w == "sp" => M68kOperand::Ind(7),
-                OperandAtom::IndReg(w) => {
-                    self.err(span, format!("`({w})` is not a valid 68k address-register indirect operand"));
+            },
+            OperandAtom::M68kPostInc(reg) => match m68k_addr_reg(reg) {
+                Some(n) => M68kOperand::PostInc(n),
+                None => {
+                    self.err(
+                        span,
+                        format!("`{reg}` is not a valid address register in `(An)+`"),
+                    );
                     return None;
                 }
-                OperandAtom::Indexed { .. } => {
-                    self.err(span, "z80 `(ix±d)`/`(iy±d)` indexed form is not a valid 68k operand");
+            },
+            OperandAtom::M68kInd(reg) => match m68k_addr_reg(reg) {
+                Some(n) => M68kOperand::Ind(n),
+                None => {
+                    self.err(
+                        span,
+                        format!("`{reg}` is not a valid address register in `(An)`"),
+                    );
                     return None;
                 }
-                OperandAtom::M68kPreDec(reg) => match m68k_addr_reg(reg) {
-                    Some(n) => M68kOperand::PreDec(n),
+            },
+            OperandAtom::M68kDisp { disp, an } => {
+                let n = match m68k_addr_reg(an) {
+                    Some(n) => n,
                     None => {
-                        self.err(span, format!("`{reg}` is not a valid address register in `-(An)`"));
+                        self.err(span, m68k_disp_an_error(an));
                         return None;
                     }
-                },
-                OperandAtom::M68kPostInc(reg) => match m68k_addr_reg(reg) {
-                    Some(n) => M68kOperand::PostInc(n),
+                };
+                let d = self.fold_imm(disp, span, i16::MIN as i64, i16::MAX as i64);
+                M68kOperand::Disp16An(d as i16, n)
+            }
+            OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            } => {
+                let an_n = match m68k_addr_reg(an) {
+                    Some(n) => n,
                     None => {
-                        self.err(span, format!("`{reg}` is not a valid address register in `(An)+`"));
+                        self.err(span, m68k_disp_an_error(an));
                         return None;
                     }
-                },
-                OperandAtom::M68kInd(reg) => match m68k_addr_reg(reg) {
-                    Some(n) => M68kOperand::Ind(n),
-                    None => {
-                        self.err(span, format!("`{reg}` is not a valid address register in `(An)`"));
-                        return None;
-                    }
-                },
-                OperandAtom::M68kDisp { disp, an } => {
-                    let n = match m68k_addr_reg(an) {
-                        Some(n) => n,
-                        None => {
-                            self.err(span, m68k_disp_an_error(an));
-                            return None;
-                        }
-                    };
-                    let d = self.fold_imm(disp, span, i16::MIN as i64, i16::MAX as i64);
-                    M68kOperand::Disp16An(d as i16, n)
-                }
-                OperandAtom::M68kIdx { disp, an, xn, xlong } => {
-                    let an_n = match m68k_addr_reg(an) {
-                        Some(n) => n,
-                        None => {
-                            self.err(span, m68k_disp_an_error(an));
-                            return None;
-                        }
-                    };
-                    let xn_op = if let Some(n) = m68k_data_reg(xn) {
-                        M68kXn::D(n)
-                    } else if let Some(n) = m68k_addr_reg(xn) {
-                        M68kXn::A(n)
-                    } else {
-                        self.err(span, format!("`{xn}` is not a valid index register in `(d,An,Xn)`"));
-                        return None;
-                    };
-                    let d = self.fold_imm(disp, span, i8::MIN as i64, i8::MAX as i64);
-                    M68kOperand::Disp8AnXn { d: d as i8, an: an_n, xn: xn_op, long: *xlong }
-                }
-                OperandAtom::AfShadow => {
-                    self.err(span, "`af'` is not a 68k operand");
+                };
+                let xn_op = if let Some(n) = m68k_data_reg(xn) {
+                    M68kXn::D(n)
+                } else if let Some(n) = m68k_addr_reg(xn) {
+                    M68kXn::A(n)
+                } else {
+                    self.err(
+                        span,
+                        format!("`{xn}` is not a valid index register in `(d,An,Xn)`"),
+                    );
                     return None;
+                };
+                let d = self.fold_imm(disp, span, i8::MIN as i64, i8::MAX as i64);
+                M68kOperand::Disp8AnXn {
+                    d: d as i8,
+                    an: an_n,
+                    xn: xn_op,
+                    long: *xlong,
                 }
+            }
+            OperandAtom::AfShadow => {
+                self.err(span, "`af'` is not a 68k operand");
+                return None;
+            }
         })
     }
 
-    fn build_operands(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Lowered> {
+    fn build_operands(
+        &mut self,
+        m: Mnemonic,
+        atoms: &[OperandAtom],
+        span: Span,
+    ) -> Option<Lowered> {
         if matches!(m, Mnemonic::Jr | Mnemonic::Djnz) {
             let (cond, target_atom) = match atoms {
                 [OperandAtom::RegOrCond(w), t] => (cond_word(w), t),
@@ -2314,8 +2598,12 @@ impl Asm {
                 if let Some(rr) = reg16(w) {
                     let target = self.qualify_expr(e);
                     return Some(match self.fold(&target) {
-                        Fold::Value(v) => Lowered::Fixed(vec![Operand::Pair(rr), Operand::Imm16(v as u16)]),
-                        Fold::Poison => Lowered::Abs16(vec![Operand::Pair(rr), Operand::Imm16(0)], target),
+                        Fold::Value(v) => {
+                            Lowered::Fixed(vec![Operand::Pair(rr), Operand::Imm16(v as u16)])
+                        }
+                        Fold::Poison => {
+                            Lowered::Abs16(vec![Operand::Pair(rr), Operand::Imm16(0)], target)
+                        }
                     });
                 }
             }
@@ -2347,9 +2635,10 @@ impl Asm {
                 lhs: Box::new(self.resolve_dollar(lhs)),
                 rhs: Box::new(self.resolve_dollar(rhs)),
             },
-            Expr::Unary { op, operand } => {
-                Expr::Unary { op: *op, operand: Box::new(self.resolve_dollar(operand)) }
-            }
+            Expr::Unary { op, operand } => Expr::Unary {
+                op: *op,
+                operand: Box::new(self.resolve_dollar(operand)),
+            },
             other => other.clone(),
         }
     }
@@ -2365,7 +2654,12 @@ impl Asm {
     }
 
     /// Convert operand atoms to resolved z80 operands, by mnemonic.
-    fn convert_atoms(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Vec<Operand>> {
+    fn convert_atoms(
+        &mut self,
+        m: Mnemonic,
+        atoms: &[OperandAtom],
+        span: Span,
+    ) -> Option<Vec<Operand>> {
         // M0 invariant: a 16-bit pair operand means the immediate is 16-bit (ld rr,nn). Holds for the driver's mnemonic set.
         let has_pair_companion = atoms
             .iter()
@@ -2399,7 +2693,10 @@ impl Asm {
                 },
                 OperandAtom::Indexed { reg, disp } => {
                     let d = self.fold_imm(disp, span, -128, 127);
-                    Operand::Indexed { reg: *reg, disp: d as i8 }
+                    Operand::Indexed {
+                        reg: *reg,
+                        disp: d as i8,
+                    }
                 }
                 OperandAtom::Mem(e) => {
                     let v = self.fold_imm(e, span, 0, 0xFFFF);
@@ -2486,13 +2783,22 @@ impl Asm {
 
     /// Capture `<name> macro [params] … endm`. Returns the index past `endm`.
     fn capture_macro(&mut self, lines: &[SrcLine], start: usize) -> usize {
-        let toks = lex_line(&lines[start].text, self.state.cpu, self.source, lines[start].base)
-            .unwrap_or_default();
+        let toks = lex_line(
+            &lines[start].text,
+            self.state.cpu,
+            self.source,
+            lines[start].base,
+        )
+        .unwrap_or_default();
         // toks: Ident(name) Ident("macro") [param idents/commas...]
         let name = match toks.first().map(|t| &t.tok) {
             Some(Tok::Ident(s)) => s.clone(),
             _ => {
-                let span = Span { source: self.source, start: lines[start].base, end: lines[start].base };
+                let span = Span {
+                    source: self.source,
+                    start: lines[start].base,
+                    end: lines[start].base,
+                };
                 self.err(span, "macro needs a name");
                 String::new()
             }
@@ -2501,7 +2807,13 @@ impl Asm {
             .get(2..)
             .unwrap_or(&[])
             .iter()
-            .filter_map(|t| if let Tok::Ident(p) = &t.tok { Some(p.clone()) } else { None })
+            .filter_map(|t| {
+                if let Tok::Ident(p) = &t.tok {
+                    Some(p.clone())
+                } else {
+                    None
+                }
+            })
             .collect();
         let end = self.find_block_end(lines, start);
         let body: Vec<SrcLine> = lines[start + 1..end].to_vec();
@@ -2553,8 +2865,15 @@ impl Asm {
     /// use (asl-verified: `move.ATTRIBUTE src,d0` with `foo.w d1` → `move.w d1,d0`).
     fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
         if self.macro_depth >= EXPAND_CAP {
-            let span = arg_toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: 0, end: 0 });
-            self.err(span, format!("macro `{name}` expansion too deep (recursive macro?)"));
+            let span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
+                source: self.source,
+                start: 0,
+                end: 0,
+            });
+            self.err(
+                span,
+                format!("macro `{name}` expansion too deep (recursive macro?)"),
+            );
             return;
         }
         let (params, body) = match self.macros.get(name) {
@@ -2563,10 +2882,18 @@ impl Asm {
         };
         let all_args = render_tokens(arg_toks);
         let groups = split_top_commas(arg_toks);
-        let mut keyword: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let mut keyword: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
         let mut positional: Vec<String> = Vec::new();
         for g in &groups {
-            if let [Token { tok: Tok::Ident(nm), .. }, Token { tok: Tok::Punct(Punct::Eq), .. }, value @ ..] = *g {
+            if let [Token {
+                tok: Tok::Ident(nm),
+                ..
+            }, Token {
+                tok: Tok::Punct(Punct::Eq),
+                ..
+            }, value @ ..] = *g
+            {
                 if !value.is_empty() && params.iter().any(|p| p == nm) {
                     keyword.insert(nm.clone(), render_tokens(value));
                     continue;
@@ -2584,7 +2911,11 @@ impl Asm {
         let arg_values: Vec<(String, String)> = params
             .iter()
             .map(|p| {
-                let v = keyword.get(p).cloned().or_else(|| pos_iter.next()).unwrap_or_default();
+                let v = keyword
+                    .get(p)
+                    .cloned()
+                    .or_else(|| pos_iter.next())
+                    .unwrap_or_default();
                 (p.clone(), v)
             })
             .collect();
@@ -2646,7 +2977,10 @@ fn split_src_lines(text: &str) -> Vec<SrcLine> {
                 if is_cont {
                     pending = Some((start_base, acc));
                 } else {
-                    lines.push(SrcLine { text: acc, base: start_base });
+                    lines.push(SrcLine {
+                        text: acc,
+                        base: start_base,
+                    });
                 }
             }
             None => {
@@ -2660,7 +2994,10 @@ fn split_src_lines(text: &str) -> Vec<SrcLine> {
         base += raw.len() as u32;
     }
     if let Some((start_base, acc)) = pending {
-        lines.push(SrcLine { text: acc, base: start_base });
+        lines.push(SrcLine {
+            text: acc,
+            base: start_base,
+        });
     }
     lines
 }
@@ -2668,13 +3005,47 @@ fn split_src_lines(text: &str) -> Vec<SrcLine> {
 fn is_op_keyword(s: &str) -> bool {
     matches!(
         s,
-        "cpu" | "phase" | "dephase" | "org" | "save" | "restore" | "padding" | "supmode"
-            | "db" | "dw" | "dc.b" | "dc.w" | "dc.l" | "equ"
-            | "if" | "elseif" | "else" | "endif" | "ifdef" | "ifndef"
-            | "rept" | "endr" | "endm" | "macro" | "struct" | "endstruct"
-            | "function" | "include" | "BINCLUDE" | "error" | "fatal" | "message"
-            | "ds.b" | "ds.w" | "ds.l" | "align" | "while"
-            | "switch" | "case" | "elsecase" | "endcase"
+        "cpu"
+            | "phase"
+            | "dephase"
+            | "org"
+            | "save"
+            | "restore"
+            | "padding"
+            | "supmode"
+            | "db"
+            | "dw"
+            | "dc.b"
+            | "dc.w"
+            | "dc.l"
+            | "equ"
+            | "if"
+            | "elseif"
+            | "else"
+            | "endif"
+            | "ifdef"
+            | "ifndef"
+            | "rept"
+            | "endr"
+            | "endm"
+            | "macro"
+            | "struct"
+            | "endstruct"
+            | "function"
+            | "include"
+            | "BINCLUDE"
+            | "error"
+            | "fatal"
+            | "message"
+            | "ds.b"
+            | "ds.w"
+            | "ds.l"
+            | "align"
+            | "while"
+            | "switch"
+            | "case"
+            | "elsecase"
+            | "endcase"
     )
 }
 
@@ -2727,13 +3098,44 @@ fn is_mnemonic(s: &str) -> bool {
 fn mnemonic(s: &str) -> Option<Mnemonic> {
     use Mnemonic::*;
     Some(match s {
-        "nop" => Nop, "ld" => Ld, "add" => Add, "adc" => Adc, "sub" => Sub, "sbc" => Sbc,
-        "and" => And, "or" => Or, "xor" => Xor, "cp" => Cp, "inc" => Inc, "dec" => Dec,
-        "push" => Push, "pop" => Pop, "ex" => Ex, "exx" => Exx, "ret" => Ret, "jr" => Jr,
-        "jp" => Jp, "call" => Call, "djnz" => Djnz, "rrca" => Rrca, "scf" => Scf,
-        "ei" => Ei, "di" => Di, "bit" => Bit, "res" => Res, "set" => Set, "srl" => Srl,
-        "rr" => Rr, "sla" => Sla, "rlc" => Rlc, "rrc" => Rrc, "rl" => Rl, "sra" => Sra,
-        "neg" => Neg, "im" => Im, "ldir" => Ldir,
+        "nop" => Nop,
+        "ld" => Ld,
+        "add" => Add,
+        "adc" => Adc,
+        "sub" => Sub,
+        "sbc" => Sbc,
+        "and" => And,
+        "or" => Or,
+        "xor" => Xor,
+        "cp" => Cp,
+        "inc" => Inc,
+        "dec" => Dec,
+        "push" => Push,
+        "pop" => Pop,
+        "ex" => Ex,
+        "exx" => Exx,
+        "ret" => Ret,
+        "jr" => Jr,
+        "jp" => Jp,
+        "call" => Call,
+        "djnz" => Djnz,
+        "rrca" => Rrca,
+        "scf" => Scf,
+        "ei" => Ei,
+        "di" => Di,
+        "bit" => Bit,
+        "res" => Res,
+        "set" => Set,
+        "srl" => Srl,
+        "rr" => Rr,
+        "sla" => Sla,
+        "rlc" => Rlc,
+        "rrc" => Rrc,
+        "rl" => Rl,
+        "sra" => Sra,
+        "neg" => Neg,
+        "im" => Im,
+        "ldir" => Ldir,
         _ => return None,
     })
 }
@@ -2741,7 +3143,14 @@ fn mnemonic(s: &str) -> Option<Mnemonic> {
 fn cond_word(w: &str) -> Option<Cond> {
     use Cond::*;
     Some(match w {
-        "nz" => Nz, "z" => Z, "nc" => Nc, "c" => C, "po" => Po, "pe" => Pe, "p" => P, "m" => M,
+        "nz" => Nz,
+        "z" => Z,
+        "nc" => Nc,
+        "c" => C,
+        "po" => Po,
+        "pe" => Pe,
+        "p" => P,
+        "m" => M,
         _ => return None,
     })
 }
@@ -2749,7 +3158,13 @@ fn cond_word(w: &str) -> Option<Cond> {
 fn reg8(w: &str) -> Option<Reg8> {
     use Reg8::*;
     Some(match w {
-        "a" => A, "b" => B, "c" => C, "d" => D, "e" => E, "h" => H, "l" => L,
+        "a" => A,
+        "b" => B,
+        "c" => C,
+        "d" => D,
+        "e" => E,
+        "h" => H,
+        "l" => L,
         _ => return None,
     })
 }
@@ -2757,7 +3172,13 @@ fn reg8(w: &str) -> Option<Reg8> {
 fn reg16(w: &str) -> Option<Reg16> {
     use Reg16::*;
     Some(match w {
-        "bc" => Bc, "de" => De, "hl" => Hl, "sp" => Sp, "af" => Af, "ix" => Ix, "iy" => Iy,
+        "bc" => Bc,
+        "de" => De,
+        "hl" => Hl,
+        "sp" => Sp,
+        "af" => Af,
+        "ix" => Ix,
+        "iy" => Iy,
         _ => return None,
     })
 }
@@ -2790,19 +3211,56 @@ fn split_mnemonic_and_size(s: &str) -> (&str, Option<M68kSize>) {
 fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
     use M68kMnemonic::*;
     Some(match base {
-        "move" => Move, "movea" => Movea,
-        "add" => Add, "adda" => Adda, "sub" => Sub, "suba" => Suba,
-        "and" => And, "or" => Or, "eor" => Eor, "cmp" => Cmp, "cmpa" => Cmpa, "muls" => Muls,
-        "addi" => Addi, "subi" => Subi, "andi" => Andi, "ori" => Ori, "eori" => Eori, "cmpi" => Cmpi,
-        "moveq" => Moveq, "addq" => Addq, "subq" => Subq,
-        "asl" => Asl, "asr" => Asr, "lsl" => Lsl, "lsr" => Lsr, "rol" => Rol, "ror" => Ror,
-        "btst" => Btst, "bset" => Bset, "bclr" => Bclr,
-        "clr" => Clr, "neg" => Neg, "not" => Not, "tst" => Tst, "tas" => Tas,
-        "swap" => Swap, "ext" => Ext, "lea" => Lea, "pea" => Pea,
-        "movem" => Movem, "movep" => Movep, "addx" => Addx,
-        "nop" => Nop, "rts" => Rts, "rte" => Rte, "trap" => Trap,
-        "bra" => Bra, "bsr" => Bsr,
-        "jmp" => Jmp, "jsr" => Jsr,
+        "move" => Move,
+        "movea" => Movea,
+        "add" => Add,
+        "adda" => Adda,
+        "sub" => Sub,
+        "suba" => Suba,
+        "and" => And,
+        "or" => Or,
+        "eor" => Eor,
+        "cmp" => Cmp,
+        "cmpa" => Cmpa,
+        "muls" => Muls,
+        "addi" => Addi,
+        "subi" => Subi,
+        "andi" => Andi,
+        "ori" => Ori,
+        "eori" => Eori,
+        "cmpi" => Cmpi,
+        "moveq" => Moveq,
+        "addq" => Addq,
+        "subq" => Subq,
+        "asl" => Asl,
+        "asr" => Asr,
+        "lsl" => Lsl,
+        "lsr" => Lsr,
+        "rol" => Rol,
+        "ror" => Ror,
+        "btst" => Btst,
+        "bset" => Bset,
+        "bclr" => Bclr,
+        "clr" => Clr,
+        "neg" => Neg,
+        "not" => Not,
+        "tst" => Tst,
+        "tas" => Tas,
+        "swap" => Swap,
+        "ext" => Ext,
+        "lea" => Lea,
+        "pea" => Pea,
+        "movem" => Movem,
+        "movep" => Movep,
+        "addx" => Addx,
+        "nop" => Nop,
+        "rts" => Rts,
+        "rte" => Rte,
+        "trap" => Trap,
+        "bra" => Bra,
+        "bsr" => Bsr,
+        "jmp" => Jmp,
+        "jsr" => Jsr,
         "dbf" | "dbra" => Dbcc(M68kCond::F),
         _ => {
             if let Some(rest) = base.strip_prefix("db") {
@@ -2835,10 +3293,24 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
 fn m68k_cond(w: &str) -> Option<M68kCond> {
     use M68kCond::*;
     Some(match w {
-        "t" => T, "f" => F, "hi" => Hi, "ls" => Ls, "cc" => Cc, "cs" => Cs,
-        "hs" => Cc, "lo" => Cs,
-        "ne" => Ne, "eq" => Eq, "vc" => Vc, "vs" => Vs, "pl" => Pl, "mi" => Mi,
-        "ge" => Ge, "lt" => Lt, "gt" => Gt, "le" => Le,
+        "t" => T,
+        "f" => F,
+        "hi" => Hi,
+        "ls" => Ls,
+        "cc" => Cc,
+        "cs" => Cs,
+        "hs" => Cc,
+        "lo" => Cs,
+        "ne" => Ne,
+        "eq" => Eq,
+        "vc" => Vc,
+        "vs" => Vs,
+        "pl" => Pl,
+        "mi" => Mi,
+        "ge" => Ge,
+        "lt" => Lt,
+        "gt" => Gt,
+        "le" => Le,
         _ => return None,
     })
 }
@@ -2911,7 +3383,8 @@ fn m68k_data_reg(w: &str) -> Option<u8> {
 /// "not a valid address register" one.
 fn m68k_disp_an_error(an: &str) -> String {
     if an == "pc" {
-        "`(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)".to_string()
+        "`(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)"
+            .to_string()
     } else {
         format!("`{an}` is not a valid address register in `(d,An)`/`(d,An,Xn)`")
     }
@@ -2954,15 +3427,22 @@ fn parse_reg_list(toks: &[Token]) -> Option<u16> {
     for item in split_slash(toks) {
         match item {
             // Single register: `d3`, `a2`, `sp`.
-            [Token { tok: Tok::Ident(w), .. }] => {
+            [Token {
+                tok: Tok::Ident(w), ..
+            }] => {
                 mask |= 1u16 << reg_list_index(w)?;
             }
             // Contiguous range: `d0-d7`, `a0-a6`, `d0-a4`.
-            [
-                Token { tok: Tok::Ident(lo), .. },
-                Token { tok: Tok::Punct(Punct::Minus), .. },
-                Token { tok: Tok::Ident(hi), .. },
-            ] => {
+            [Token {
+                tok: Tok::Ident(lo),
+                ..
+            }, Token {
+                tok: Tok::Punct(Punct::Minus),
+                ..
+            }, Token {
+                tok: Tok::Ident(hi),
+                ..
+            }] => {
                 let lo = reg_list_index(lo)?;
                 let hi = reg_list_index(hi)?;
                 if lo > hi {
@@ -3049,7 +3529,10 @@ fn on_off(rest: &[Token]) -> bool {
 }
 
 fn paren(p: Punct, span: Span) -> Token {
-    Token { tok: Tok::Punct(p), span }
+    Token {
+        tok: Tok::Punct(p),
+        span,
+    }
 }
 
 #[cfg(test)]
@@ -3060,7 +3543,10 @@ mod tests {
 
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
-        m.sections.first().map(|s| s.image_bytes()).unwrap_or_default()
+        m.sections
+            .first()
+            .map(|s| s.image_bytes())
+            .unwrap_or_default()
     }
 
     #[test]
@@ -3095,21 +3581,60 @@ mod tests {
         assert_eq!(m68k_mnemonic("jsr"), Some(Mnemonic::Jsr));
         assert_eq!(m68k_mnemonic("bra"), Some(Mnemonic::Bra));
         assert_eq!(m68k_mnemonic("bsr"), Some(Mnemonic::Bsr));
-        assert_eq!(m68k_mnemonic("beq"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Eq)));
-        assert_eq!(m68k_mnemonic("bne"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Ne)));
-        assert_eq!(m68k_mnemonic("dbf"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::F)));
-        assert_eq!(m68k_mnemonic("dbra"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::F)));
-        assert_eq!(m68k_mnemonic("dbeq"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::Eq)));
-        assert_eq!(m68k_mnemonic("scc"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc)));
-        assert_eq!(m68k_mnemonic("seq"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Eq)));
-        assert_eq!(m68k_mnemonic("st"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::T)));
+        assert_eq!(
+            m68k_mnemonic("beq"),
+            Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Eq))
+        );
+        assert_eq!(
+            m68k_mnemonic("bne"),
+            Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Ne))
+        );
+        assert_eq!(
+            m68k_mnemonic("dbf"),
+            Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::F))
+        );
+        assert_eq!(
+            m68k_mnemonic("dbra"),
+            Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::F))
+        );
+        assert_eq!(
+            m68k_mnemonic("dbeq"),
+            Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::Eq))
+        );
+        assert_eq!(
+            m68k_mnemonic("scc"),
+            Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc))
+        );
+        assert_eq!(
+            m68k_mnemonic("seq"),
+            Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Eq))
+        );
+        assert_eq!(
+            m68k_mnemonic("st"),
+            Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::T))
+        );
         // Unsigned-branch aliases: bhs == bcc (carry-clear), blo == bcs
         // (carry-set); same for shs/slo and dbhs/dblo. Aeon uses bhs/blo.
-        assert_eq!(m68k_mnemonic("bhs"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Cc)));
-        assert_eq!(m68k_mnemonic("blo"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Cs)));
-        assert_eq!(m68k_mnemonic("shs"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc)));
-        assert_eq!(m68k_mnemonic("slo"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cs)));
-        assert_eq!(m68k_mnemonic("dbhs"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::Cc)));
+        assert_eq!(
+            m68k_mnemonic("bhs"),
+            Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Cc))
+        );
+        assert_eq!(
+            m68k_mnemonic("blo"),
+            Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Cs))
+        );
+        assert_eq!(
+            m68k_mnemonic("shs"),
+            Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc))
+        );
+        assert_eq!(
+            m68k_mnemonic("slo"),
+            Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cs))
+        );
+        assert_eq!(
+            m68k_mnemonic("dbhs"),
+            Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::Cc))
+        );
         // `movem`/`movep` are now in scope (register-list operands).
         assert_eq!(m68k_mnemonic("movem"), Some(Mnemonic::Movem));
         assert_eq!(m68k_mnemonic("movep"), Some(Mnemonic::Movep));
@@ -3122,10 +3647,22 @@ mod tests {
         use super::m68k_cond;
         use sigil_backend_m68k::m68k::Cond;
         let pairs = [
-            ("t", Cond::T), ("f", Cond::F), ("hi", Cond::Hi), ("ls", Cond::Ls),
-            ("cc", Cond::Cc), ("cs", Cond::Cs), ("ne", Cond::Ne), ("eq", Cond::Eq),
-            ("vc", Cond::Vc), ("vs", Cond::Vs), ("pl", Cond::Pl), ("mi", Cond::Mi),
-            ("ge", Cond::Ge), ("lt", Cond::Lt), ("gt", Cond::Gt), ("le", Cond::Le),
+            ("t", Cond::T),
+            ("f", Cond::F),
+            ("hi", Cond::Hi),
+            ("ls", Cond::Ls),
+            ("cc", Cond::Cc),
+            ("cs", Cond::Cs),
+            ("ne", Cond::Ne),
+            ("eq", Cond::Eq),
+            ("vc", Cond::Vc),
+            ("vs", Cond::Vs),
+            ("pl", Cond::Pl),
+            ("mi", Cond::Mi),
+            ("ge", Cond::Ge),
+            ("lt", Cond::Lt),
+            ("gt", Cond::Gt),
+            ("le", Cond::Le),
         ];
         for (w, c) in pairs {
             assert_eq!(m68k_cond(w), Some(c), "cc word `{w}`");
@@ -3158,7 +3695,7 @@ mod tests {
         assert_eq!(mask("d0"), Some(0x0001));
         assert_eq!(mask("a2"), Some(0x0400));
         assert_eq!(mask("sp"), Some(0x8000)); // sp == a7 == bit15
-        // `/` list mixing d and a.
+                                              // `/` list mixing d and a.
         assert_eq!(mask("a2/d2"), Some(0x0404));
         // `-` range.
         assert_eq!(mask("d0-d3"), Some(0x000F));
@@ -3179,32 +3716,59 @@ mod tests {
     fn m68k_movem_predec_reverses_mask_but_postinc_does_not() {
         // STORE to `-(An)` predecrement: the encoder REVERSES the canonical
         // mask. `a2/d2` canonical = 0x0404 → emitted word 0x2020 (48 E7 20 20).
-        assert_eq!(image("    cpu 68000\n    movem.l a2/d2,-(sp)\n"), vec![0x48, 0xE7, 0x20, 0x20]);
+        assert_eq!(
+            image("    cpu 68000\n    movem.l a2/d2,-(sp)\n"),
+            vec![0x48, 0xE7, 0x20, 0x20]
+        );
         // LOAD from `(An)+` postincrement: canonical mask emitted as-is.
         // `d0-d7/a0-a6` canonical = 0x7FFF → 4C DF 7F FF.
-        assert_eq!(image("    cpu 68000\n    movem.l (sp)+,d0-d7/a0-a6\n"), vec![0x4C, 0xDF, 0x7F, 0xFF]);
+        assert_eq!(
+            image("    cpu 68000\n    movem.l (sp)+,d0-d7/a0-a6\n"),
+            vec![0x4C, 0xDF, 0x7F, 0xFF]
+        );
     }
 
     #[test]
     fn m68k_movem_single_range_and_mixed_lists() {
         // Single register store to predec: canonical 0x0400 → reversed 0x0020.
-        assert_eq!(image("    cpu 68000\n    movem.l a2,-(sp)\n"), vec![0x48, 0xE7, 0x00, 0x20]);
+        assert_eq!(
+            image("    cpu 68000\n    movem.l a2,-(sp)\n"),
+            vec![0x48, 0xE7, 0x00, 0x20]
+        );
         // Range store to plain (An) indirect: NOT reversed (0x0018).
-        assert_eq!(image("    cpu 68000\n    movem.l d3-d4,(a3)\n"), vec![0x48, 0xD3, 0x00, 0x18]);
+        assert_eq!(
+            image("    cpu 68000\n    movem.l d3-d4,(a3)\n"),
+            vec![0x48, 0xD3, 0x00, 0x18]
+        );
         // Word range store to predec a7: canonical 0x000F → reversed 0xF000.
-        assert_eq!(image("    cpu 68000\n    movem.w d0-d3,-(a7)\n"), vec![0x48, 0xA7, 0xF0, 0x00]);
+        assert_eq!(
+            image("    cpu 68000\n    movem.w d0-d3,-(a7)\n"),
+            vec![0x48, 0xA7, 0xF0, 0x00]
+        );
         // Mixed range+single load from postinc crossing d→a: 0x1FFF, not reversed.
-        assert_eq!(image("    cpu 68000\n    movem.l (a0)+,d0-a4\n"), vec![0x4C, 0xD8, 0x1F, 0xFF]);
+        assert_eq!(
+            image("    cpu 68000\n    movem.l (a0)+,d0-a4\n"),
+            vec![0x4C, 0xD8, 0x1F, 0xFF]
+        );
         // Disp16(An) memory EA store (extension word follows the mask word).
-        assert_eq!(image("    cpu 68000\n    movem.l d3-d4,(8,a3)\n"), vec![0x48, 0xEB, 0x00, 0x18, 0x00, 0x08]);
+        assert_eq!(
+            image("    cpu 68000\n    movem.l d3-d4,(8,a3)\n"),
+            vec![0x48, 0xEB, 0x00, 0x18, 0x00, 0x08]
+        );
     }
 
     #[test]
     fn m68k_movep_both_directions() {
         // reg → mem (word): 01 89 00 04.
-        assert_eq!(image("    cpu 68000\n    movep.w d0,4(a1)\n"), vec![0x01, 0x89, 0x00, 0x04]);
+        assert_eq!(
+            image("    cpu 68000\n    movep.w d0,4(a1)\n"),
+            vec![0x01, 0x89, 0x00, 0x04]
+        );
         // mem → reg (long): 03 4A 00 08.
-        assert_eq!(image("    cpu 68000\n    movep.l 8(a2),d1\n"), vec![0x03, 0x4A, 0x00, 0x08]);
+        assert_eq!(
+            image("    cpu 68000\n    movep.l 8(a2),d1\n"),
+            vec![0x03, 0x4A, 0x00, 0x08]
+        );
     }
 
     #[test]
@@ -3213,7 +3777,10 @@ mod tests {
         // task) implements the fixed-length `(An)` family, so it now lowers
         // byte-exact instead of erroring. Bytes verified against real asl
         // (see `m68k_move_w_ind_a0_to_d0` in `tests/snippets_golden.txt`).
-        assert_eq!(image("    cpu 68000\n    move.w (a0),d0\n"), vec![0x30, 0x10]);
+        assert_eq!(
+            image("    cpu 68000\n    move.w (a0),d0\n"),
+            vec![0x30, 0x10]
+        );
     }
 
     #[test]
@@ -3224,9 +3791,14 @@ mod tests {
         // `sigil-link`). `move.w (8,pc),d0` at VMA 0: the extension word sits
         // at offset 2, target = 8, disp = 8 - 2 = 6.
         let src = "    cpu 68000\n    phase 0\n    move.w (8,pc),d0\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
         let bytes = sigil_link::flatten(&linked, 0x00);
         // move.w (d16,PC),d0 = 30 3A, then disp word 00 06.
@@ -3239,9 +3811,14 @@ mod tests {
         // asl-verified: `move.w (8,pc,d0.w),d1` at VMA 0 → `32 3B 00 06` (the
         // literal `8` is a TARGET address; disp = 8 - ext-word-VMA(2) = 6).
         let src = "    cpu 68000\n    phase 0\n    move.w (8,pc,d0.w),d1\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
         let bytes = sigil_link::flatten(&linked, 0x00);
         assert_eq!(bytes, vec![0x32, 0x3B, 0x00, 0x06]);
@@ -3252,8 +3829,13 @@ mod tests {
         // A bare symbol/number (no `#`, no parens) means 68k absolute addressing
         // — out of scope for T4 (deferred to T5).
         let src = "    cpu 68000\n    move.w $1234,d0\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = run(src, &opts).expect_err("absolute address operand must be rejected, not lowered");
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
+        let diags =
+            run(src, &opts).expect_err("absolute address operand must be rejected, not lowered");
         assert!(
             diags.iter().any(|d| d.message.contains("T5")),
             "expected a T5-deferral diagnostic, got: {:?}",
@@ -3267,8 +3849,13 @@ mod tests {
         // explicit `.s`/`.w` suffix (no relaxation) — a bare `bra` must still
         // error, just with a size-suffix diagnostic instead of a scope one.
         let src = "    cpu 68000\n    bra Target\nTarget:\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = run(src, &opts).expect_err("branch without a size suffix must be rejected, not lowered");
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
+        let diags = run(src, &opts)
+            .expect_err("branch without a size suffix must be rejected, not lowered");
         assert!(
             diags.iter().any(|d| d.message.contains("size suffix")),
             "expected a size-suffix diagnostic, got: {:?}",
@@ -3284,9 +3871,14 @@ mod tests {
         // `Start`, so `bra.w .loop` must resolve against `Start.loop`, not a
         // bare `.loop` (which the linker would never find).
         let src = "    cpu 68000\n    phase 0\nStart:\n    bra.w .loop\n.loop:\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
         let bytes = sigil_link::flatten(&linked, 0x00);
         // bra.w .loop: op@0, disp word@2, target=4 (right after the 4-byte
@@ -3300,10 +3892,18 @@ mod tests {
         // immediately) — its abs.w/abs.l width is chosen later by the
         // linker's `resolve_layout`. A low (<=0x7FFF) target selects abs.w.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jmp Lbl\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        assert!(matches!(m.sections[0].fragments[0], sigil_ir::Fragment::JmpJsrSym { is_jsr: false, .. }));
-        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        assert!(matches!(
+            m.sections[0].fragments[0],
+            sigil_ir::Fragment::JmpJsrSym { is_jsr: false, .. }
+        ));
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
         let bytes = sigil_link::flatten(&linked, 0x00);
         assert_eq!(bytes, vec![0x4E, 0xF8, 0x00, 0x00]);
@@ -3313,7 +3913,11 @@ mod tests {
     fn m68k_missing_size_suffix_is_a_clear_diagnostic() {
         // `move` has no default size and no suffix here — must error, not guess.
         let src = "    cpu 68000\n    move d0,d1\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let diags = run(src, &opts).expect_err("missing size suffix must be rejected");
         assert!(
             diags.iter().any(|d| d.message.contains("size suffix")),
@@ -3328,7 +3932,8 @@ mod tests {
         // cannot resolve a fixup to a non-label. Assemble + LINK + flatten.
         let src = "        cpu z80\n        phase 0\nBufSize = 1234h\n        ld hl,BufSize\n        dw BufSize\n";
         let m = run(src, &Options::default()).expect("assemble");
-        let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new()).expect("link must succeed (no unresolvable fixup)");
+        let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new())
+            .expect("link must succeed (no unresolvable fixup)");
         let bytes = sigil_link::flatten(&linked, 0x00);
         // ld hl,1234h = 21 34 12 ; dw 1234h = 34 12
         assert_eq!(bytes, vec![0x21, 0x34, 0x12, 0x34, 0x12]);
@@ -3343,19 +3948,34 @@ mod tests {
         // `jr $-2` -> target -2, disp -4 -> 18 FC
         let link = |src: &str| {
             let m = run(src, &Options::default()).expect("assemble");
-            let linked = sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new()).expect("link");
+            let linked =
+                sigil_link::link(&m.sections, &sigil_ir::SymbolTable::new()).expect("link");
             sigil_link::flatten(&linked, 0x00)
         };
-        assert_eq!(link("        cpu z80\n        phase 0\n        jr $+2\n"), vec![0x18, 0x00]);
-        assert_eq!(link("        cpu z80\n        phase 0\n        jr $-2\n"), vec![0x18, 0xFC]);
+        assert_eq!(
+            link("        cpu z80\n        phase 0\n        jr $+2\n"),
+            vec![0x18, 0x00]
+        );
+        assert_eq!(
+            link("        cpu z80\n        phase 0\n        jr $-2\n"),
+            vec![0x18, 0xFC]
+        );
     }
 
     #[test]
     fn ifdef_gates_emission_by_define_set() {
         let src = "        cpu z80\n        phase 0\n        db 1\n        ifdef __DEBUG__\n        db 0FFh\n        endif\n        ifdef SOUND_DRIVER_ENABLED\n        db 2\n        endif\n";
-        let opts = Options { initial_cpu: Cpu::Z80, defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::Z80,
+            defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        let bytes = m
+            .sections
+            .first()
+            .map(|s| s.image_bytes())
+            .unwrap_or_default();
         assert_eq!(bytes, vec![0x01, 0x02]);
     }
 
@@ -3393,9 +4013,17 @@ mod tests {
         // bytes emitted. Routed correctly it reaches lower_m68k and (T4) lowers
         // for real: `rts` = 4E75.
         let src = "    cpu 68000\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        let bytes = m
+            .sections
+            .first()
+            .map(|s| s.image_bytes())
+            .unwrap_or_default();
         assert_eq!(bytes, vec![0x4E, 0x75]);
     }
 
@@ -3405,9 +4033,17 @@ mod tests {
         // only `d0` reached dispatch. Routed correctly, the whole instruction
         // lowers: `move.w d0,d1` = 3200.
         let src = "    cpu 68000\nStart:\n    move.w d0,d1\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        let bytes = m
+            .sections
+            .first()
+            .map(|s| s.image_bytes())
+            .unwrap_or_default();
         assert_eq!(bytes, vec![0x32, 0x00]);
     }
 
@@ -3417,16 +4053,27 @@ mod tests {
         // remaining head routed as an instruction (label_colon.is_some() clause),
         // even though line.text starts at column 0.
         let src = "    cpu 68000\nFoo: rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options {
+            initial_cpu: Cpu::M68000,
+            defines: vec![],
+            include_root: None,
+        };
         let m = run(src, &opts).expect("assemble");
-        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        let bytes = m
+            .sections
+            .first()
+            .map(|s| s.image_bytes())
+            .unwrap_or_default();
         assert_eq!(bytes, vec![0x4E, 0x75]);
     }
 
     #[test]
     fn lowers_common_instructions() {
         let src = "        cpu z80\n        phase 0\n        nop\n        ld a,0Ch\n        ld b,c\n        add a,b\n        jp 1234h\n";
-        assert_eq!(image(src), vec![0x00, 0x3E, 0x0C, 0x41, 0x80, 0xC3, 0x34, 0x12]);
+        assert_eq!(
+            image(src),
+            vec![0x00, 0x3E, 0x0C, 0x41, 0x80, 0xC3, 0x34, 0x12]
+        );
     }
 
     #[test]
@@ -3450,7 +4097,8 @@ mod tests {
 
     #[test]
     fn rept_constant_count() {
-        let src = "        cpu z80\n        phase 0\n        rept 3\n        db 0AAh\n        endr\n";
+        let src =
+            "        cpu z80\n        phase 0\n        rept 3\n        db 0AAh\n        endr\n";
         assert_eq!(image(src), vec![0xAA, 0xAA, 0xAA]);
     }
 
@@ -3693,7 +4341,8 @@ mod tests {
     fn align_pads_zero_bytes_to_next_boundary() {
         // Odd offset 1 -> align 2 pads one zero byte, then the next dc.b lands
         // at the aligned offset (verified against asl: fill byte is 0x00).
-        let src = "        cpu 68000\n        phase 0\n        dc.b 1\n        align 2\n        dc.b 2\n";
+        let src =
+            "        cpu 68000\n        phase 0\n        dc.b 1\n        align 2\n        dc.b 2\n";
         assert_eq!(image(src), vec![0x01, 0x00, 0x02]);
     }
 
@@ -3732,14 +4381,19 @@ mod tests {
         // identical bytes either way).
         let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b 1,2,3,4\n        org 16\n        dc.b 5,6\n";
         let module = run(src, &Options::default()).expect("assemble");
-        assert_eq!(module.sections.len(), 2, "forward org must open a new section, not seek in-place");
+        assert_eq!(
+            module.sections.len(),
+            2,
+            "forward org must open a new section, not seek in-place"
+        );
         assert_eq!(module.sections[0].vma_base, Some(0));
         assert_eq!(module.sections[0].lma, 0);
         assert_eq!(module.sections[1].vma_base, Some(16));
         assert_eq!(module.sections[1].lma, 16);
         // Flatten both sections (image() only returns the first) to prove the
         // multi-section split still gap-fills identically to an in-section run.
-        let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
+        let linked =
+            sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
         let bytes = sigil_link::flatten(&linked, 0x00);
         let mut want = vec![1, 2, 3, 4];
         want.extend(std::iter::repeat_n(0x00, 12));
@@ -3794,7 +4448,11 @@ mod tests {
         let main = dir.join("main.asm");
         std::fs::write(&main, "        cpu z80\n        phase 0\n        db 1\n        include \"part.inc\"\n        db 2\n").unwrap();
         let m = crate::assemble_root(&main, &Options::default()).expect("assemble");
-        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        let bytes = m
+            .sections
+            .first()
+            .map(|s| s.image_bytes())
+            .unwrap_or_default();
         assert_eq!(bytes, vec![0x01, 0xAA, 0xBB, 0x02]);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3819,7 +4477,11 @@ mod tests {
         )
         .unwrap();
         let m = crate::assemble_root(&main, &Options::default()).expect("assemble");
-        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        let bytes = m
+            .sections
+            .first()
+            .map(|s| s.image_bytes())
+            .unwrap_or_default();
         let mut want = vec![0x01];
         want.extend_from_slice(&payload);
         want.push(0x02);
@@ -3917,7 +4579,8 @@ mod tests {
 
     #[test]
     fn val_parses_a_dollar_hex_string() {
-        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b val(\"$80\")\n";
+        let src =
+            "        cpu 68000\n        padding off\n        phase 0\n        dc.b val(\"$80\")\n";
         assert_eq!(image(src), vec![0x80]);
     }
 
@@ -3937,7 +4600,8 @@ mod tests {
 
     #[test]
     fn bang_is_infix_bitwise_or() {
-        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b (3!4)&$FF\n";
+        let src =
+            "        cpu 68000\n        padding off\n        phase 0\n        dc.b (3!4)&$FF\n";
         assert_eq!(image(src), vec![7]);
     }
 
@@ -4001,9 +4665,11 @@ mod tests {
         // A5: a condition that never resolves to zero is bounded by
         // `WHILE_CAP` and diagnosed rather than hanging the assembler.
         let src = "        cpu 68000\n        padding off\n        phase 0\nn       set 1\n        while (n)\nn       set n\n        endm\n";
-        let err = run(src, &Options::default()).expect_err("non-convergent while must diagnose, not hang");
+        let err = run(src, &Options::default())
+            .expect_err("non-convergent while must diagnose, not hang");
         assert!(
-            err.iter().any(|d| d.message.contains("while loop did not terminate")),
+            err.iter()
+                .any(|d| d.message.contains("while loop did not terminate")),
             "expected a while-non-convergence diagnostic, got {err:?}"
         );
     }
@@ -4023,9 +4689,13 @@ mod tests {
         // `error` (bang or not) doesn't set `aborted`, but it does push a
         // `Level::Error` diagnostic, so `run` still fails the assembly
         // overall (no bytes emitted) — the observable "abort" the spec means.
-        let src = "        cpu 68000\n        padding off\n        phase 0\n        !error \"boom\"\n";
+        let src =
+            "        cpu 68000\n        padding off\n        phase 0\n        !error \"boom\"\n";
         let err = run(src, &Options::default()).expect_err("!error must fail the assembly");
-        assert!(err.iter().any(|d| d.message.contains("boom")), "got {err:?}");
+        assert!(
+            err.iter().any(|d| d.message.contains("boom")),
+            "got {err:?}"
+        );
     }
 
     // ── T9.3: `lowstring` + `switch/case/elsecase/endcase` ────────────────
@@ -4131,7 +4801,8 @@ mod tests {
     fn dc_b_mixes_string_and_numeric_operands() {
         // asl-verified (`dc_b_string_mixed`): `dc.b "Hi",0` -> `48 69 00` — a
         // string operand and a plain numeric operand in the same comma list.
-        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b \"Hi\",0\n";
+        let src =
+            "        cpu 68000\n        padding off\n        phase 0\n        dc.b \"Hi\",0\n";
         assert_eq!(image(src), vec![0x48, 0x69, 0x00]);
     }
 

@@ -33,13 +33,22 @@ pub enum OperandAtom {
     /// `(d16,An)` — 68k address-register indirect with displacement.
     M68kDisp { disp: Expr, an: String },
     /// `(d8,An,Xn.w|.l)` — 68k address-register indirect with index.
-    M68kIdx { disp: Expr, an: String, xn: String, xlong: bool },
+    M68kIdx {
+        disp: Expr,
+        an: String,
+        xn: String,
+        xlong: bool,
+    },
     /// `(expr).w` / `(expr).l` — 68k explicit-width absolute addressing.
     M68kAbs { addr: Expr, long: bool },
 }
 
 fn err(span: Span, msg: &str) -> Diagnostic {
-    Diagnostic { level: Level::Error, message: msg.to_string(), primary: span }
+    Diagnostic {
+        level: Level::Error,
+        message: msg.to_string(),
+        primary: span,
+    }
 }
 
 /// Split `toks` on top-level commas and classify each group.
@@ -75,9 +84,17 @@ fn split_commas(toks: &[Token]) -> Vec<&[Token]> {
 }
 
 fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
-    let span = g.first().map(|t| t.span).unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 });
+    let span = g.first().map(|t| t.span).unwrap_or(Span {
+        source: sigil_span::SourceId(0),
+        start: 0,
+        end: 0,
+    });
     // `#expr` — 68k immediate marker.
-    if let Some(Token { tok: Tok::Punct(Punct::Hash), .. }) = g.first() {
+    if let Some(Token {
+        tok: Tok::Punct(Punct::Hash),
+        ..
+    }) = g.first()
+    {
         let (e, rest) = parse_expr(&g[1..]).ok_or_else(|| err(span, "bad immediate expression"))?;
         if !rest.is_empty() {
             return Err(err(span, "trailing tokens in #immediate"));
@@ -85,7 +102,10 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
         return Ok(OperandAtom::Imm(e));
     }
     // af'
-    if let [Token { tok: Tok::Ident(w), .. }] = g {
+    if let [Token {
+        tok: Tok::Ident(w), ..
+    }] = g
+    {
         if w == "af'" {
             return Ok(OperandAtom::AfShadow);
         }
@@ -96,12 +116,19 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
     // `-(An)` — 68k predecrement indirect. Exact 4-token shape only (`-`, `(`,
     // single ident, `)`) so an arithmetic `-(expr)` immediate (multi-token
     // inner) falls through to the ordinary expression parse below.
-    if let [
-        Token { tok: Tok::Punct(Punct::Minus), .. },
-        Token { tok: Tok::Punct(Punct::LParen), .. },
-        Token { tok: Tok::Ident(reg), .. },
-        Token { tok: Tok::Punct(Punct::RParen), .. },
-    ] = g
+    if let [Token {
+        tok: Tok::Punct(Punct::Minus),
+        ..
+    }, Token {
+        tok: Tok::Punct(Punct::LParen),
+        ..
+    }, Token {
+        tok: Tok::Ident(reg),
+        ..
+    }, Token {
+        tok: Tok::Punct(Punct::RParen),
+        ..
+    }] = g
     {
         return Ok(OperandAtom::M68kPreDec(reg.clone()));
     }
@@ -109,13 +136,26 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
     // a single ident; anything else with this shape is a malformed operand.
     if g.len() >= 3 {
         if let (
-            Some(Token { tok: Tok::Punct(Punct::LParen), .. }),
-            Some(Token { tok: Tok::Punct(Punct::Plus), .. }),
-            Some(Token { tok: Tok::Punct(Punct::RParen), .. }),
+            Some(Token {
+                tok: Tok::Punct(Punct::LParen),
+                ..
+            }),
+            Some(Token {
+                tok: Tok::Punct(Punct::Plus),
+                ..
+            }),
+            Some(Token {
+                tok: Tok::Punct(Punct::RParen),
+                ..
+            }),
         ) = (g.first(), g.last(), g.get(g.len() - 2))
         {
             let inner = &g[1..g.len() - 2];
-            if let [Token { tok: Tok::Ident(reg), .. }] = inner {
+            if let [Token {
+                tok: Tok::Ident(reg),
+                ..
+            }] = inner
+            {
                 return Ok(OperandAtom::M68kPostInc(reg.clone()));
             }
             return Err(err(span, "bad `(An)+` operand"));
@@ -132,9 +172,18 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
     // reinterpreted as an absolute address.
     if g.len() >= 4 {
         if let (
-            Some(Token { tok: Tok::Punct(Punct::LParen), .. }),
-            Some(Token { tok: Tok::Ident(suf), .. }),
-            Some(Token { tok: Tok::Punct(Punct::RParen), .. }),
+            Some(Token {
+                tok: Tok::Punct(Punct::LParen),
+                ..
+            }),
+            Some(Token {
+                tok: Tok::Ident(suf),
+                ..
+            }),
+            Some(Token {
+                tok: Tok::Punct(Punct::RParen),
+                ..
+            }),
         ) = (g.first(), g.last(), g.get(g.len() - 2))
         {
             let long = match suf.as_str() {
@@ -145,8 +194,8 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
             if let Some(long) = long {
                 let inner = &g[1..g.len() - 2];
                 if !is_bare_register_token(inner) {
-                    let (e, rest) =
-                        parse_expr(inner).ok_or_else(|| err(span, "bad absolute address expression"))?;
+                    let (e, rest) = parse_expr(inner)
+                        .ok_or_else(|| err(span, "bad absolute address expression"))?;
                     if !rest.is_empty() {
                         return Err(err(span, "trailing tokens in absolute address"));
                     }
@@ -155,84 +204,122 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
             }
         }
     }
-    // Parenthesised: (reg) / (ix+d) / (nn) / (d,An) / (d,An,Xn).
-    if let (Some(Token { tok: Tok::Punct(Punct::LParen), .. }), Some(Token { tok: Tok::Punct(Punct::RParen), .. })) =
-        (g.first(), g.last())
+    // Parenthesised: (reg) / (ix+d) / (nn) / (d,An) / (d,An,Xn). Only when the
+    // WHOLE operand is one paren group — i.e. the opening `(` matches the final
+    // `)` (`trailing_group_open == Some(0)`). A `(disp)(An)` Motorola form with a
+    // PARENTHESISED displacement (`(ART_POOL_PAGE_TILES*32)(a6)`) also starts and
+    // ends with parens, but its first `(` closes before the last `)`; it falls
+    // through to the `disp(An)` handling below.
+    if let (
+        Some(Token {
+            tok: Tok::Punct(Punct::LParen),
+            ..
+        }),
+        Some(Token {
+            tok: Tok::Punct(Punct::RParen),
+            ..
+        }),
+    ) = (g.first(), g.last())
     {
-        let inner = &g[1..g.len() - 1];
-        // (hl)/(bc)/(de), plus (sp) for `ex (sp),hl` (eval gates it by mnemonic).
-        if let [Token { tok: Tok::Ident(w), .. }] = inner {
-            if matches!(w.as_str(), "hl" | "bc" | "de" | "sp") {
-                return Ok(OperandAtom::IndReg(w.clone()));
-            }
-        }
-        // (An) — 68k address-register indirect. `a`+digit is unambiguously
-        // 68k (Z80 has no such register names), so this is safe to recognize
-        // structurally without a CPU flag.
-        if let [Token { tok: Tok::Ident(w), .. }] = inner {
-            if is_m68k_areg_name(w) {
-                return Ok(OperandAtom::M68kInd(w.clone()));
-            }
-        }
-        // (ix±d)/(iy±d)
-        if let Some(Token { tok: Tok::Ident(reg), .. }) = inner.first() {
-            if let Some(ir) = index_reg(reg) {
-                let disp = parse_indexed_disp(&inner[1..], span)?;
-                return Ok(OperandAtom::Indexed { reg: ir, disp });
-            }
-        }
-        // (d,An) / (d,An,Xn) — split the inner on top-level commas.
-        let inner_groups = split_commas(inner);
-        if inner_groups.len() == 2 {
-            // `(An,Xn)` zero-displacement indexed: asl reads a leading address
-            // register as the index base, so this is `M68kIdx` with disp 0 —
-            // not a `(disp,An)` where the first group is a displacement expr.
-            if single_areg(inner_groups[0]).is_some() {
-                if let Some(atom) = build_disp_ea(Expr::Int(0), inner) {
-                    return Ok(atom);
+        if trailing_group_open(g) == Some(0) {
+            let inner = &g[1..g.len() - 1];
+            // (hl)/(bc)/(de), plus (sp) for `ex (sp),hl` (eval gates it by mnemonic).
+            if let [Token {
+                tok: Tok::Ident(w), ..
+            }] = inner
+            {
+                if matches!(w.as_str(), "hl" | "bc" | "de" | "sp") {
+                    return Ok(OperandAtom::IndReg(w.clone()));
                 }
             }
-            let (disp, rest) = parse_expr(inner_groups[0]).ok_or_else(|| err(span, "bad displacement expression"))?;
-            if !rest.is_empty() {
-                return Err(err(span, "trailing tokens in displacement"));
+            // (An) — 68k address-register indirect. `a`+digit is unambiguously
+            // 68k (Z80 has no such register names), so this is safe to recognize
+            // structurally without a CPU flag.
+            if let [Token {
+                tok: Tok::Ident(w), ..
+            }] = inner
+            {
+                if is_m68k_areg_name(w) {
+                    return Ok(OperandAtom::M68kInd(w.clone()));
+                }
             }
-            let an = match inner_groups[1] {
-                [Token { tok: Tok::Ident(w), .. }] => w.clone(),
-                _ => return Err(err(span, "expected an address register in `(d,An)`")),
-            };
-            return Ok(OperandAtom::M68kDisp { disp, an });
-        }
-        if inner_groups.len() == 3 {
-            let (disp, rest) = parse_expr(inner_groups[0]).ok_or_else(|| err(span, "bad displacement expression"))?;
-            if !rest.is_empty() {
-                return Err(err(span, "trailing tokens in displacement"));
+            // (ix±d)/(iy±d)
+            if let Some(Token {
+                tok: Tok::Ident(reg),
+                ..
+            }) = inner.first()
+            {
+                if let Some(ir) = index_reg(reg) {
+                    let disp = parse_indexed_disp(&inner[1..], span)?;
+                    return Ok(OperandAtom::Indexed { reg: ir, disp });
+                }
             }
-            let an = match inner_groups[1] {
-                [Token { tok: Tok::Ident(w), .. }] => w.clone(),
-                _ => return Err(err(span, "expected an address register in `(d,An,Xn)`")),
-            };
-            let (xn, xlong) = match inner_groups[2] {
-                [Token { tok: Tok::Ident(w), .. }] => split_index_reg_size(w),
-                _ => return Err(err(span, "expected an index register in `(d,An,Xn)`")),
-            };
-            return Ok(OperandAtom::M68kIdx { disp, an, xn, xlong });
+            // (d,An) / (d,An,Xn) — split the inner on top-level commas.
+            let inner_groups = split_commas(inner);
+            if inner_groups.len() == 2 {
+                // `(An,Xn)` zero-displacement indexed: asl reads a leading address
+                // register as the index base, so this is `M68kIdx` with disp 0 —
+                // not a `(disp,An)` where the first group is a displacement expr.
+                if single_areg(inner_groups[0]).is_some() {
+                    if let Some(atom) = build_disp_ea(Expr::Int(0), inner) {
+                        return Ok(atom);
+                    }
+                }
+                let (disp, rest) = parse_expr(inner_groups[0])
+                    .ok_or_else(|| err(span, "bad displacement expression"))?;
+                if !rest.is_empty() {
+                    return Err(err(span, "trailing tokens in displacement"));
+                }
+                let an = match inner_groups[1] {
+                    [Token {
+                        tok: Tok::Ident(w), ..
+                    }] => w.clone(),
+                    _ => return Err(err(span, "expected an address register in `(d,An)`")),
+                };
+                return Ok(OperandAtom::M68kDisp { disp, an });
+            }
+            if inner_groups.len() == 3 {
+                let (disp, rest) = parse_expr(inner_groups[0])
+                    .ok_or_else(|| err(span, "bad displacement expression"))?;
+                if !rest.is_empty() {
+                    return Err(err(span, "trailing tokens in displacement"));
+                }
+                let an = match inner_groups[1] {
+                    [Token {
+                        tok: Tok::Ident(w), ..
+                    }] => w.clone(),
+                    _ => return Err(err(span, "expected an address register in `(d,An,Xn)`")),
+                };
+                let (xn, xlong) = match inner_groups[2] {
+                    [Token {
+                        tok: Tok::Ident(w), ..
+                    }] => split_index_reg_size(w),
+                    _ => return Err(err(span, "expected an index register in `(d,An,Xn)`")),
+                };
+                return Ok(OperandAtom::M68kIdx {
+                    disp,
+                    an,
+                    xn,
+                    xlong,
+                });
+            }
+            // (nn) absolute
+            let (e, rest) = parse_expr(inner).ok_or_else(|| err(span, "bad address expression"))?;
+            if !rest.is_empty() {
+                return Err(err(span, "trailing tokens in (address)"));
+            }
+            return Ok(OperandAtom::Mem(e));
         }
-        // (nn) absolute
-        let (e, rest) = parse_expr(inner).ok_or_else(|| err(span, "bad address expression"))?;
-        if !rest.is_empty() {
-            return Err(err(span, "trailing tokens in (address)"));
-        }
-        return Ok(OperandAtom::Mem(e));
     }
     // Motorola `disp(An)` / `disp(An,Xn)`: the displacement sits BEFORE the
-    // paren (unlike the AS `(disp,An)` form). Shape: the operand does not start
-    // with `(` (that is the AS form or a plain `(...)` group, handled above) or
-    // `-(` (predecrement, handled above), it ends with `)`, and the trailing
-    // paren group is `(An)` or `(An,Xn[.w|.l])`. Everything before that group is
-    // the displacement expression, and it must be non-empty. asl treats these
-    // identically to `(disp,An)` / `(disp,An,Xn)`, so we emit the same atoms and
-    // the existing lowering handles them unchanged.
-    if !matches!(g.first(), Some(Token { tok: Tok::Punct(Punct::LParen), .. })) {
+    // paren (unlike the AS `(disp,An)` form). Shape: it ends with `)`, and the
+    // trailing paren group is `(An)` or `(An,Xn[.w|.l])`. Everything before that
+    // group is the displacement expression (non-empty). The displacement may
+    // itself be parenthesised (`(EXPR)(a6)`), which is why this is NOT gated on
+    // the operand starting with a non-`(` token — the single-group `(...)` and
+    // `-(An)`/`(expr).w` shapes are all handled and returned above. asl treats
+    // these identically to `(disp,An)` / `(disp,An,Xn)`.
+    {
         if let Some(open) = trailing_group_open(g) {
             if open > 0 {
                 let inner = &g[open + 1..g.len() - 1];
@@ -264,13 +351,20 @@ fn parse_indexed_disp(rest: &[Token], span: Span) -> Result<Expr, Diagnostic> {
     match rest.first().map(|t| &t.tok) {
         Some(Tok::Punct(Punct::Plus)) => {
             let (e, tail) = parse_expr(&rest[1..]).ok_or_else(|| err(span, "bad +disp"))?;
-            if !tail.is_empty() { return Err(err(span, "trailing tokens in disp")); }
+            if !tail.is_empty() {
+                return Err(err(span, "trailing tokens in disp"));
+            }
             Ok(e)
         }
         Some(Tok::Punct(Punct::Minus)) => {
             let (e, tail) = parse_expr(&rest[1..]).ok_or_else(|| err(span, "bad -disp"))?;
-            if !tail.is_empty() { return Err(err(span, "trailing tokens in disp")); }
-            Ok(Expr::Unary { op: sigil_ir::expr::UnOp::Neg, operand: Box::new(e) })
+            if !tail.is_empty() {
+                return Err(err(span, "trailing tokens in disp"));
+            }
+            Ok(Expr::Unary {
+                op: sigil_ir::expr::UnOp::Neg,
+                operand: Box::new(e),
+            })
         }
         _ => Err(err(span, "index operand needs `+`/`-` displacement")),
     }
@@ -288,12 +382,16 @@ fn index_reg(w: &str) -> Option<IndexReg> {
 /// excludes `sp`: that alias stays on the pre-existing Z80 `hl`/`bc`/`de`/`sp`
 /// branch (see `classify`), so `(sp)` still parses as `IndReg("sp")`.
 fn is_m68k_areg_name(w: &str) -> bool {
-    w.strip_prefix('a').and_then(|d| d.parse::<u8>().ok()).is_some_and(|n| n <= 7)
+    w.strip_prefix('a')
+        .and_then(|d| d.parse::<u8>().ok())
+        .is_some_and(|n| n <= 7)
 }
 
 /// `true` iff `w` is `d0`..`d7` — the 68k data-register spelling.
 fn is_m68k_dreg_name(w: &str) -> bool {
-    w.strip_prefix('d').and_then(|d| d.parse::<u8>().ok()).is_some_and(|n| n <= 7)
+    w.strip_prefix('d')
+        .and_then(|d| d.parse::<u8>().ok())
+        .is_some_and(|n| n <= 7)
 }
 
 /// `true` iff `toks` is a single bare register-name identifier (68k address/data
@@ -331,7 +429,10 @@ fn split_index_reg_size(w: &str) -> (String, bool) {
 /// for `(An,Xn)` vs `(disp,An)` stays `a0`..`a7`-only. `M68kDisp{an:"sp"}` maps
 /// to a7 downstream; `M68kDisp{an:"pc"}` routes to the PC-relative lowering.
 fn disp_base_reg(g: &[Token]) -> Option<String> {
-    if let [Token { tok: Tok::Ident(w), .. }] = g {
+    if let [Token {
+        tok: Tok::Ident(w), ..
+    }] = g
+    {
         if is_m68k_areg_name(w) || w == "sp" || w == "pc" {
             return Some(w.clone());
         }
@@ -343,7 +444,10 @@ fn disp_base_reg(g: &[Token]) -> Option<String> {
 /// tell a leading address-register base (`(An,Xn)`) from a displacement
 /// expression (`(disp,An)`) and to validate the base of a `disp(An[,Xn])` form.
 fn single_areg(g: &[Token]) -> Option<String> {
-    if let [Token { tok: Tok::Ident(w), .. }] = g {
+    if let [Token {
+        tok: Tok::Ident(w), ..
+    }] = g
+    {
         if is_m68k_areg_name(w) {
             return Some(w.clone());
         }
@@ -356,7 +460,13 @@ fn single_areg(g: &[Token]) -> Option<String> {
 /// `(An[,Xn])` group off the end of a Motorola `disp(An)` / `disp(An,Xn)`
 /// operand, leaving the displacement tokens before it.
 fn trailing_group_open(g: &[Token]) -> Option<usize> {
-    if !matches!(g.last(), Some(Token { tok: Tok::Punct(Punct::RParen), .. })) {
+    if !matches!(
+        g.last(),
+        Some(Token {
+            tok: Tok::Punct(Punct::RParen),
+            ..
+        })
+    ) {
         return None;
     }
     let mut depth = 0i32;
@@ -391,11 +501,18 @@ fn build_disp_ea(disp: Expr, inner: &[Token]) -> Option<OperandAtom> {
         [an_g, xn_g] => {
             let an = disp_base_reg(an_g)?;
             let xn_word = match xn_g {
-                [Token { tok: Tok::Ident(w), .. }] => w,
+                [Token {
+                    tok: Tok::Ident(w), ..
+                }] => w,
                 _ => return None,
             };
             let (xn, xlong) = split_index_reg_size(xn_word);
-            Some(OperandAtom::M68kIdx { disp, an, xn, xlong })
+            Some(OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            })
         }
         _ => None,
     }
@@ -405,10 +522,28 @@ fn build_disp_ea(disp: Expr, inner: &[Token]) -> Option<OperandAtom> {
 fn is_reg_or_cond_word(w: &str) -> bool {
     matches!(
         w,
-        "a" | "b" | "c" | "d" | "e" | "h" | "l"
-            | "bc" | "de" | "hl" | "sp" | "af" | "ix" | "iy"
-            | "nz" | "z" | "nc" | "po" | "pe" | "p" | "m"
-            | "i" | "r"
+        "a" | "b"
+            | "c"
+            | "d"
+            | "e"
+            | "h"
+            | "l"
+            | "bc"
+            | "de"
+            | "hl"
+            | "sp"
+            | "af"
+            | "ix"
+            | "iy"
+            | "nz"
+            | "z"
+            | "nc"
+            | "po"
+            | "pe"
+            | "p"
+            | "m"
+            | "i"
+            | "r"
     )
 }
 
@@ -449,14 +584,20 @@ mod tests {
         match &atoms("(ix+sc_flags)")[0] {
             OperandAtom::Indexed { reg, disp } => {
                 assert!(matches!(reg, sigil_backend_z80::z80::IndexReg::Ix));
-                assert_eq!(disp.fold(&|n| if n == "sc_flags" { Some(10) } else { None }), Fold::Value(10));
+                assert_eq!(
+                    disp.fold(&|n| if n == "sc_flags" { Some(10) } else { None }),
+                    Fold::Value(10)
+                );
             }
             _ => panic!("want Indexed"),
         }
         // (ix+sc_mod_ptr+1)
         match &atoms("(ix+sc_mod_ptr+1)")[0] {
             OperandAtom::Indexed { disp, .. } => {
-                assert_eq!(disp.fold(&|n| if n == "sc_mod_ptr" { Some(2) } else { None }), Fold::Value(3));
+                assert_eq!(
+                    disp.fold(&|n| if n == "sc_mod_ptr" { Some(2) } else { None }),
+                    Fold::Value(3)
+                );
             }
             _ => panic!("want Indexed"),
         }
@@ -539,7 +680,12 @@ mod tests {
     #[test]
     fn m68k_disp8_an_xn_form_parses_word_and_long_index() {
         match &atoms_68k("(6,a0,d1.w)")[0] {
-            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+            OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            } => {
                 assert_eq!(disp.fold(&|_| None), Fold::Value(6));
                 assert_eq!(an, "a0");
                 assert_eq!(xn, "d1");
@@ -548,7 +694,12 @@ mod tests {
             other => panic!("want M68kIdx, got {other:?}"),
         }
         match &atoms_68k("(8,a0,a2.l)")[0] {
-            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+            OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            } => {
                 assert_eq!(disp.fold(&|_| None), Fold::Value(8));
                 assert_eq!(an, "a0");
                 assert_eq!(xn, "a2");
@@ -563,16 +714,28 @@ mod tests {
         match &atoms_68k("(RAMV).w")[0] {
             OperandAtom::M68kAbs { addr, long } => {
                 assert!(!*long);
-                assert_eq!(addr.fold(&|n| if n == "RAMV" { Some(0xFFFF8000u32 as i64) } else { None }),
-                    Fold::Value(0xFFFF8000u32 as i64));
+                assert_eq!(
+                    addr.fold(&|n| if n == "RAMV" {
+                        Some(0xFFFF8000u32 as i64)
+                    } else {
+                        None
+                    }),
+                    Fold::Value(0xFFFF8000u32 as i64)
+                );
             }
             other => panic!("want M68kAbs, got {other:?}"),
         }
         match &atoms_68k("(RAMV).l")[0] {
             OperandAtom::M68kAbs { addr, long } => {
                 assert!(*long);
-                assert_eq!(addr.fold(&|n| if n == "RAMV" { Some(0xFFFF8000u32 as i64) } else { None }),
-                    Fold::Value(0xFFFF8000u32 as i64));
+                assert_eq!(
+                    addr.fold(&|n| if n == "RAMV" {
+                        Some(0xFFFF8000u32 as i64)
+                    } else {
+                        None
+                    }),
+                    Fold::Value(0xFFFF8000u32 as i64)
+                );
             }
             other => panic!("want M68kAbs, got {other:?}"),
         }
@@ -617,7 +780,10 @@ mod tests {
         // symbolic displacement.
         match &atoms_68k("Foo(a0)")[0] {
             OperandAtom::M68kDisp { disp, an } => {
-                assert_eq!(disp.fold(&|n| if n == "Foo" { Some(4) } else { None }), Fold::Value(4));
+                assert_eq!(
+                    disp.fold(&|n| if n == "Foo" { Some(4) } else { None }),
+                    Fold::Value(4)
+                );
                 assert_eq!(an, "a0");
             }
             other => panic!("want M68kDisp, got {other:?}"),
@@ -627,7 +793,12 @@ mod tests {
     #[test]
     fn m68k_motorola_preidx_word_and_long() {
         match &atoms_68k("6(a0,d1.w)")[0] {
-            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+            OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            } => {
                 assert_eq!(disp.fold(&|_| None), Fold::Value(6));
                 assert_eq!(an, "a0");
                 assert_eq!(xn, "d1");
@@ -636,7 +807,12 @@ mod tests {
             other => panic!("want M68kIdx, got {other:?}"),
         }
         match &atoms_68k("8(a0,a2.l)")[0] {
-            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+            OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            } => {
                 assert_eq!(disp.fold(&|_| None), Fold::Value(8));
                 assert_eq!(an, "a0");
                 assert_eq!(xn, "a2");
@@ -650,7 +826,12 @@ mod tests {
     fn m68k_zero_disp_indexed_paren_form() {
         // `(a0,d1.w)` — leading address register means zero-disp indexed, not `(disp,An)`.
         match &atoms_68k("(a0,d1.w)")[0] {
-            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+            OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            } => {
                 assert_eq!(disp.fold(&|_| None), Fold::Value(0));
                 assert_eq!(an, "a0");
                 assert_eq!(xn, "d1");
@@ -671,7 +852,12 @@ mod tests {
             other => panic!("want M68kDisp, got {other:?}"),
         }
         match &atoms_68k("(6,a0,d1.w)")[0] {
-            OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+            OperandAtom::M68kIdx {
+                disp,
+                an,
+                xn,
+                xlong,
+            } => {
                 assert_eq!(disp.fold(&|_| None), Fold::Value(6));
                 assert_eq!(an, "a0");
                 assert_eq!(xn, "d1");
