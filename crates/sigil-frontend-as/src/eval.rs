@@ -249,8 +249,23 @@ impl Asm {
     }
 
     /// Fold a whole token slice as one constant expression (used by phase, etc.).
+    ///
+    /// Also expands the front-end-only `int(...)`/`sin(...)` and debug-string
+    /// (`strlen`/`strstr`/`val`, with `substr`/`lowstring` nesting) builtins
+    /// (T9.3) — the same two passes `directive_db` already ran before parsing
+    /// a `dc.b` argument. Without this, `<name> set strstr(str,"%<")` (the
+    /// idiom the debugger's `__FSTRING_*` macros use throughout) left
+    /// `strstr(...)` as un-expanded tokens here, since `eval_all` backs
+    /// `directive_set`/`while`/`if`/`rept`/`phase`/`org`/`align`/`ds`, and
+    /// previously only `directive_db` wired the builtins in. Wiring them in
+    /// HERE too — rather than only where the gap was first noticed — is what
+    /// makes `while`+`set` actually compose with the string builtins, so a
+    /// `while (pos>=0) / pos: set strstr(...)` loop (T9.2 `while` + T9.1
+    /// `strstr`) now really assembles.
     fn eval_all(&mut self, toks: &[Token], span: Span) -> Option<i64> {
         let expanded = self.expand_calls(toks, 0);
+        let expanded = self.expand_int_builtin(&expanded);
+        let expanded = self.expand_str_builtins(&expanded);
         let (e, rest) = crate::expr::parse_expr(&expanded)?;
         if !rest.is_empty() {
             self.err(span, "trailing tokens in expression");
@@ -451,9 +466,12 @@ impl Asm {
     }
 
     /// Evaluate a front-end-only STRING expression: a plain `Tok::Str`
-    /// literal, or a nested `substr(str, pos, len)` call. `None` on any other
-    /// shape (mirrors `Fold::Poison` in spirit — this value never becomes a
-    /// `sigil_ir::Expr`, per §7.4).
+    /// literal, or a nested `substr(str, pos, len)` / `lowstring(str)` call.
+    /// `None` on any other shape (mirrors `Fold::Poison` in spirit — this
+    /// value never becomes a `sigil_ir::Expr`, per §7.4). Both nested forms
+    /// recurse through `eval_str` for their own string argument, so
+    /// `lowstring(substr(...))` / `substr(lowstring(...), ...)` nest freely
+    /// (T9.3).
     fn eval_str(&self, toks: &[Token]) -> Option<String> {
         if let [Token { tok: Tok::Str(s), .. }] = toks {
             return Some(s.clone());
@@ -463,6 +481,14 @@ impl Asm {
                 let (args, next) = split_call_args(toks, 1)?;
                 if next == toks.len() {
                     return self.eval_substr(&args);
+                }
+            }
+            if name == "lowstring" && matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+                let (args, next) = split_call_args(toks, 1)?;
+                if next == toks.len() {
+                    if let [s_toks] = args.as_slice() {
+                        return self.eval_str(s_toks).map(|s| s.to_lowercase());
+                    }
                 }
             }
         }
@@ -710,6 +736,9 @@ impl Asm {
                 Some("while") => {
                     i = self.exec_while(lines, i);
                 }
+                Some("switch") => {
+                    i = self.exec_switch(lines, i);
+                }
                 Some("struct") => {
                     i = self.capture_struct(lines, i);
                 }
@@ -882,18 +911,41 @@ impl Asm {
     }
 
     /// Find the index of the terminator matching the block opened at `start`,
-    /// depth-counting nested blocks. Returns the terminator index (or the last
-    /// line index if unterminated).
-    fn find_block_end(&self, lines: &[SrcLine], start: usize, openers: &[&str], closers: &[&str]) -> usize {
-        let mut depth = 0i32;
-        for (idx, line) in lines.iter().enumerate().skip(start) {
-            let kw = self.line_keyword(line);
-            if let Some(k) = kw.as_deref() {
-                if idx == start || openers.contains(&k) {
-                    depth += 1;
-                } else if closers.contains(&k) {
-                    depth -= 1;
-                    if depth == 0 {
+    /// tracking nested blocks with a STACK of expected-closer sets (keyed by
+    /// each nested opener's own kind via [`closers_for`]) rather than a flat
+    /// depth count keyed on a single caller-supplied opener/closer pair.
+    ///
+    /// This distinction matters because several DIFFERENT block kinds share
+    /// the same literal closer keyword in real AS: `while … endm` AND
+    /// `macro … endm` (AND `rept`, which may close with either `endr` or
+    /// `endm`) all terminate on `endm`. A flat counter keyed on just the
+    /// outer call's own opener (e.g. `capture_macro` passing
+    /// `openers=["macro"]`) does NOT increment on a NESTED `while`, so the
+    /// nested while's own `endm` was mistaken for the enclosing macro's
+    /// `endm` — truncating the macro body before its real end (T9.3
+    /// investigation: a `macro` containing a `while … endm` loop, exactly
+    /// the shape `__FSTRING_GenerateDecodedString`-style debug macros need,
+    /// silently lost its tail and looped forever). The stack fixes this: a
+    /// nested opener of ANY kind pushes ITS OWN closer set, so only that
+    /// closer set's keyword pops it — regardless of what closer keyword the
+    /// enclosing block happens to share with it.
+    fn find_block_end(&self, lines: &[SrcLine], start: usize) -> usize {
+        let start_kw = self.line_keyword(&lines[start]).unwrap_or_default();
+        let mut stack: Vec<&'static [&'static str]> = vec![closers_for(&start_kw)];
+        for (idx, line) in lines.iter().enumerate().skip(start + 1) {
+            let Some(k) = self.line_keyword(line) else { continue };
+            let nested_closers = closers_for(&k);
+            if !nested_closers.is_empty() {
+                // A nested block opener (if/ifdef/ifndef, rept, while, macro,
+                // struct, switch) — push its own closer set; only ITS
+                // matching closer pops this frame.
+                stack.push(nested_closers);
+                continue;
+            }
+            if let Some(top) = stack.last() {
+                if top.contains(&k.as_str()) {
+                    stack.pop();
+                    if stack.is_empty() {
                         return idx;
                     }
                 }
@@ -905,7 +957,7 @@ impl Asm {
     /// Execute an `if`/`ifdef`/`ifndef` … `endif` region; run the first true arm.
     /// Returns the index just past `endif`.
     fn exec_if(&mut self, lines: &[SrcLine], start: usize) -> usize {
-        let end = self.find_block_end(lines, start, &["if", "ifdef", "ifndef"], &["endif"]);
+        let end = self.find_block_end(lines, start);
         // Collect arm-head indices at depth 0: start, then each elseif/else.
         let mut heads = vec![start];
         let mut depth = 0i32;
@@ -936,6 +988,63 @@ impl Asm {
         end + 1
     }
 
+    /// Handle `switch <str-expr> / case "s1" / … / elsecase / … / endcase`
+    /// (T9.3, asl-verified): assembles ONLY the body of the first `case`
+    /// whose literal string equals the switch value; `elsecase` is the
+    /// default (chosen when reached, mirroring `exec_if`'s `else` arm — same
+    /// arm-collection shape as `exec_if`, but keyed on STRING equality
+    /// against each `case`'s literal instead of a boolean condition). The
+    /// switch expression and each `case` literal are evaluated through
+    /// `eval_str` (so `switch lowstring(...)` / nested `substr` all compose,
+    /// exactly as the debugger's `__FSTRING_*` macros use them). An
+    /// unresolved switch expression, or a `case` whose argument isn't a
+    /// string, diagnoses but does not abort the block scan. Returns the
+    /// index past `endcase`.
+    fn exec_switch(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
+        let end = self.find_block_end(lines, start);
+        let switch_val = self.eval_str(&arg_toks);
+        if switch_val.is_none() {
+            self.err(span, "switch needs a string expression");
+        }
+        // Collect arm-head indices at depth 0: each `case "lit"` (Some(lit))
+        // and `elsecase` (None, the default), mirroring `exec_if`'s
+        // if/elseif/else head collection but depth-counting `switch`/`endcase`
+        // instead of `if`/`endif`.
+        let mut heads: Vec<(usize, Option<String>)> = Vec::new();
+        let mut depth = 0i32;
+        for (idx, line) in lines.iter().enumerate().take(end).skip(start + 1) {
+            match self.line_keyword(line).as_deref() {
+                Some("switch") => depth += 1,
+                Some("endcase") => depth -= 1,
+                Some("case") if depth == 0 => {
+                    let (_, cargs, cspan) = self.line_kw_args(line);
+                    let lit = self.eval_str(&cargs);
+                    if lit.is_none() {
+                        self.err(cspan, "case needs a string literal");
+                    }
+                    heads.push((idx, lit));
+                }
+                Some("elsecase") if depth == 0 => heads.push((idx, None)),
+                _ => {}
+            }
+        }
+        heads.push((end, None)); // sentinel
+        for w in 0..(heads.len() - 1) {
+            let (head, lit) = heads[w].clone();
+            let take = match &lit {
+                Some(s) => switch_val.as_deref() == Some(s.as_str()),
+                None => true, // elsecase: default, taken if reached
+            };
+            if take {
+                let body = &lines[head + 1..heads[w + 1].0];
+                self.exec(body);
+                break;
+            }
+        }
+        end + 1
+    }
+
     /// Handle `rept N … endr`. `N` is folded once at the `rept` line (with `$` =
     /// the current phased VMA). Returns the index past `endr`.
     fn exec_rept(&mut self, lines: &[SrcLine], start: usize) -> usize {
@@ -951,7 +1060,7 @@ impl Asm {
                 0
             }
         };
-        let end = self.find_block_end(lines, start, &["rept"], &["endr", "endm"]);
+        let end = self.find_block_end(lines, start);
         let body = &lines[start + 1..end];
         for _ in 0..n {
             self.exec(body);
@@ -971,7 +1080,7 @@ impl Asm {
     /// past `endm`.
     fn exec_while(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
-        let end = self.find_block_end(lines, start, &["while"], &["endm"]);
+        let end = self.find_block_end(lines, start);
         let body = &lines[start + 1..end];
         let mut iterations = 0usize;
         loop {
@@ -1015,7 +1124,7 @@ impl Asm {
                 String::new()
             }
         };
-        let end = self.find_block_end(lines, start, &["struct"], &["endstruct"]);
+        let end = self.find_block_end(lines, start);
         let mut off: i64 = 0;
         for l in &lines[start + 1..end] {
             if let Some((field, width, count)) = self.parse_struct_field(l) {
@@ -2126,7 +2235,7 @@ impl Asm {
             .iter()
             .filter_map(|t| if let Tok::Ident(p) = &t.tok { Some(p.clone()) } else { None })
             .collect();
-        let end = self.find_block_end(lines, start, &["macro"], &["endm"]);
+        let end = self.find_block_end(lines, start);
         let body: Vec<SrcLine> = lines[start + 1..end].to_vec();
         self.macros.insert(name, (params, body));
         end + 1
@@ -2249,7 +2358,25 @@ fn is_op_keyword(s: &str) -> bool {
             | "rept" | "endr" | "endm" | "macro" | "struct" | "endstruct"
             | "function" | "include" | "error" | "fatal" | "message"
             | "ds.b" | "ds.w" | "ds.l" | "align" | "while"
+            | "switch" | "case" | "elsecase" | "endcase"
     )
+}
+
+/// The closer keyword(s) that terminate the block a given OPENER keyword
+/// starts, or `&[]` if `s` does not open a block at all (used by
+/// [`Asm::find_block_end`]'s nesting stack — see its doc for why this must be
+/// keyed per-opener rather than a single flat set: `while`/`macro` (and
+/// optionally `rept`) all share the literal `endm` closer in real AS).
+fn closers_for(s: &str) -> &'static [&'static str] {
+    match s {
+        "if" | "ifdef" | "ifndef" => &["endif"],
+        "rept" => &["endr", "endm"],
+        "while" => &["endm"],
+        "macro" => &["endm"],
+        "struct" => &["endstruct"],
+        "switch" => &["endcase"],
+        _ => &[],
+    }
 }
 
 /// Split a bare identifier on a trailing `.b`/`.w`/`.l`/`.s` size suffix,
@@ -3321,5 +3448,94 @@ mod tests {
         let src = "        cpu 68000\n        padding off\n        phase 0\n        !error \"boom\"\n";
         let err = run(src, &Options::default()).expect_err("!error must fail the assembly");
         assert!(err.iter().any(|d| d.message.contains("boom")), "got {err:?}");
+    }
+
+    // ── T9.3: `lowstring` + `switch/case/elsecase/endcase` ────────────────
+
+    #[test]
+    fn lowstring_lowercases_a_plain_literal() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(lowstring(\"ABCD\"))\n";
+        assert_eq!(image(src), vec![4]);
+    }
+
+    #[test]
+    fn lowstring_nests_over_a_substr_argument() {
+        // `lowstring(substr(...))` and `substr(lowstring(...), ...)` both
+        // recurse through the same `eval_str` entry point (T9.3 doc on
+        // `eval_str`), so nesting either way round works.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(substr(lowstring(\"ABCDEF\"),1,3))\n";
+        assert_eq!(image(src), vec![3]);
+    }
+
+    #[test]
+    fn switch_case_selects_the_matching_body() {
+        // asl-verified golden (`switch_case_match`): `switch
+        // lowstring("HeX") / case "hex" / dc.b $80 / case "dec" / dc.b $90 /
+        // elsecase / dc.b $FF / endcase` → `80` — only the matching case's
+        // body assembles, the others are skipped entirely.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        switch lowstring(\"HeX\")\n        case \"hex\"\n        dc.b $80\n        case \"dec\"\n        dc.b $90\n        elsecase\n        dc.b $FF\n        endcase\n";
+        assert_eq!(image(src), vec![0x80]);
+    }
+
+    #[test]
+    fn switch_falls_through_to_elsecase_when_nothing_matches() {
+        // asl-verified golden (`switch_elsecase`): a switch value matching no
+        // `case` literal takes the `elsecase` (default) body.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        switch lowstring(\"XYZ\")\n        case \"hex\"\n        dc.b $80\n        case \"dec\"\n        dc.b $90\n        elsecase\n        dc.b $FF\n        endcase\n";
+        assert_eq!(image(src), vec![0xFF]);
+    }
+
+    #[test]
+    fn switch_with_no_matching_case_and_no_elsecase_emits_nothing() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        switch \"nope\"\n        case \"hex\"\n        dc.b $80\n        endcase\n";
+        assert_eq!(image(src), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn nested_switch_inside_a_case_body_resolves_independently() {
+        // The outer switch picks its `case "a"` arm; the switch NESTED
+        // inside that arm's body has its own independent case/elsecase
+        // resolution — proves `find_block_end`'s nesting stack (and
+        // `exec_switch`'s depth-0 arm scan) correctly isolate inner from
+        // outer `switch`/`case`/`elsecase`/`endcase` keywords.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        switch \"a\"\n        case \"a\"\n        switch \"z\"\n        case \"y\"\n        dc.b 1\n        elsecase\n        dc.b 2\n        endcase\n        elsecase\n        dc.b 3\n        endcase\n";
+        assert_eq!(image(src), vec![2]);
+    }
+
+    #[test]
+    fn while_loop_nested_inside_a_macro_body_does_not_truncate_the_macro() {
+        // Regression (T9.3 investigation): `find_block_end` used to
+        // depth-count solely on the CALLER's own opener/closer pair, so
+        // `capture_macro`'s `openers=["macro"]` scan didn't increment on a
+        // nested `while`, and that nested while's own `endm` was mistaken
+        // for the enclosing macro's `endm` — truncating the macro body
+        // before its real end and losing the accumulator's increment line,
+        // which then hung the (incompletely-captured) `while` until
+        // `WHILE_CAP`. Fixed by keying the nesting stack per-opener (see
+        // `closers_for`): `while … endm` nested inside `macro … endm` (the
+        // exact shape debug-format macros like `__FSTRING_GenerateDecodedString`
+        // use) must fully execute the loop AND run the line after it.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nfoo     macro n\ni       set 0\n        while (i<n)\n        dc.b i\ni       set i+1\n        endm\n        dc.b $FF\n        endm\n        foo 3\n";
+        assert_eq!(image(src), vec![0, 1, 2, 0xFF]);
+    }
+
+    #[test]
+    fn fstring_format_composition_matches_asl() {
+        // The payoff (T9.3): a MINIMAL `%<…>`-parsing macro modeled on
+        // `debugger.asm`'s `__FSTRING_GenerateDecodedString`, composing
+        // `macro` + `while` + `switch`/`case`/`elsecase` + `lowstring` +
+        // `substr`/`strstr`/`strlen`/`val` — every debug-surface primitive
+        // from T9.1/T9.2/T9.3 in one control-flow shape. Literal text spans
+        // emit their LENGTH (`strlen(substr(...))`) rather than their raw
+        // bytes: `dc.b <string-expr>` (multi-byte ASCII emission for a
+        // bare/computed string argument) was found to be unimplemented in
+        // `directive_db` — a real, separate gap outside T9.3's scope (see
+        // the T9.3 report) — so this substitutes a byte COUNT for the
+        // literal spans while still emitting the real decoded VALUE
+        // (`val(...)`) for each `%<…>` token, which is the actual "bytecode"
+        // half of the real macro. Byte-for-byte verified against real asl
+        // (`fstring_format` in `tests/snippets_golden.txt`): `01 80 01 0A 01`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nhex     = $80\nendl    = $0A\nfstr    macro string\nlpos    set 0\nwpos    set strstr(string,\"%<\")\n        while (wpos>=0)\n        if (wpos-lpos>0)\n        dc.b strlen(substr(string,lpos,wpos-lpos))\n        endif\nepos    set strstr(substr(string,wpos+1,0),\">\")+wpos+1\n        switch substr(string,wpos+2,1)\n        case \".\"\n        switch lowstring(substr(string,wpos+2,2))\n        case \".b\"\n        dc.b val(substr(string,wpos+5,epos-wpos-5))\n        case \".w\"\n        dc.b val(substr(string,wpos+5,epos-wpos-5))|1\n        elsecase\n        dc.b val(substr(string,wpos+5,epos-wpos-5))|3\n        endcase\n        elsecase\n        dc.b val(substr(string,wpos+2,epos-wpos-2))\n        endcase\nlpos    set epos+1\nwpos    set strstr(substr(string,lpos,0),\"%<\")\n        if (wpos>=0)\nwpos    set wpos+lpos\n        endif\n        endm\n        dc.b strlen(substr(string,lpos,0))\n        endm\n        fstr \"A%<.b hex> %<endl>Z\"\n";
+        assert_eq!(image(src), vec![0x01, 0x80, 0x01, 0x0A, 0x01]);
     }
 }

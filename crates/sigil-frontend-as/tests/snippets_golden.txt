@@ -892,3 +892,76 @@ n set n+1
         dc.b 2
 --- bytes ---
 01 00 02
+=== switch_case_match ===
+        cpu 68000
+        padding off
+        phase 0
+        switch lowstring("HeX")
+        case "hex"
+        dc.b $80
+        case "dec"
+        dc.b $90
+        elsecase
+        dc.b $FF
+        endcase
+--- bytes ---
+80
+=== switch_elsecase ===
+        cpu 68000
+        padding off
+        phase 0
+        switch lowstring("XYZ")
+        case "hex"
+        dc.b $80
+        case "dec"
+        dc.b $90
+        elsecase
+        dc.b $FF
+        endcase
+--- bytes ---
+FF
+=== lowstring_basic ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen(lowstring("ABCD"))
+--- bytes ---
+04
+=== fstring_format ===
+        cpu 68000
+        padding off
+        phase 0
+hex = $80
+endl = $0A
+fstr macro string
+lpos set 0
+wpos set strstr(string,"%<")
+    while (wpos>=0)
+    if (wpos-lpos>0)
+        dc.b strlen(substr(string,lpos,wpos-lpos))
+    endif
+epos set strstr(substr(string,wpos+1,0),">")+wpos+1
+    switch substr(string,wpos+2,1)
+    case "."
+        switch lowstring(substr(string,wpos+2,2))
+        case ".b"
+            dc.b val(substr(string,wpos+5,epos-wpos-5))
+        case ".w"
+            dc.b val(substr(string,wpos+5,epos-wpos-5))|1
+        elsecase
+            dc.b val(substr(string,wpos+5,epos-wpos-5))|3
+        endcase
+    elsecase
+        dc.b val(substr(string,wpos+2,epos-wpos-2))
+    endcase
+lpos set epos+1
+wpos set strstr(substr(string,lpos,0),"%<")
+    if (wpos>=0)
+wpos set wpos+lpos
+    endif
+    endm
+    dc.b strlen(substr(string,lpos,0))
+    endm
+    fstr "A%<.b hex> %<endl>Z"
+--- bytes ---
+01 80 01 0A 01
