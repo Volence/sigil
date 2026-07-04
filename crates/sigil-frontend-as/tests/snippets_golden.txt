@@ -470,3 +470,98 @@ RAMV    = $FFFF8000
         cmp.w (RAMV).w,d3
 --- bytes ---
 B6 78 80 00
+=== m68k_bra_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bra.w Lbl
+--- bytes ---
+60 00 FF FE
+=== m68k_bra_s_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bra.s Lbl
+--- bytes ---
+60 FE
+=== m68k_bsr_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bsr.w Lbl
+--- bytes ---
+61 00 FF FE
+=== m68k_beq_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        beq.w Lbl
+--- bytes ---
+67 00 FF FE
+=== m68k_bne_s_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bne.s Lbl
+--- bytes ---
+66 FE
+=== m68k_bcc_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bcc.w Lbl
+--- bytes ---
+64 00 FF FE
+=== m68k_dbf_d0_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        dbf d0,Lbl
+--- bytes ---
+51 C8 FF FE
+=== m68k_dbeq_d1_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        dbeq d1,Lbl
+--- bytes ---
+57 C9 FF FE
+=== m68k_jmp_sym_low ===
+        cpu 68000
+        phase 0
+Lbl:
+        jmp Lbl
+--- bytes ---
+4E F8 00 00
+=== m68k_jsr_sym_low ===
+        cpu 68000
+        phase 0
+Lbl:
+        jsr Lbl
+--- bytes ---
+4E B8 00 00
+=== m68k_jmp_ind_a0 ===
+        cpu 68000
+        phase 0
+        jmp (a0)
+--- bytes ---
+4E D0
+=== m68k_scc_d0 ===
+        cpu 68000
+        phase 0
+        scc d0
+--- bytes ---
+54 C0
+=== m68k_seq_d1 ===
+        cpu 68000
+        phase 0
+        seq d1
+--- bytes ---
+57 C1
+=== m68k_move_w_pcd16_to_d0 ===
+        cpu 68000
+        phase 0
+Lbl:
+        move.w (Lbl,pc),d0
+--- bytes ---
+30 3A FF FE

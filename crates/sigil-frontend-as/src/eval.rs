@@ -7,13 +7,14 @@ use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
 use crate::Options;
 use sigil_backend_m68k::m68k::{
-    Instruction as M68kInstruction, Mnemonic as M68kMnemonic, Operand as M68kOperand, Size as M68kSize, Xn as M68kXn,
+    Cond as M68kCond, Instruction as M68kInstruction, Mnemonic as M68kMnemonic, Operand as M68kOperand,
+    Size as M68kSize, Xn as M68kXn,
 };
 use sigil_backend_m68k::M68kBackend;
 use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
 use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
-use sigil_ir::expr::Fold;
+use sigil_ir::expr::{BinOp, Fold};
 use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
@@ -968,38 +969,71 @@ impl Asm {
         }
     }
 
-    /// M1.C T4/T5/T5b: the straight-line 68000 core — register-direct
-    /// (`Dn`/`An`/`sp`), `#immediate`, (T5) the fixed-length register-indirect
-    /// EA family (`(An)`/`(An)+`/`-(An)`/`(d16,An)`/`(d8,An,Xn)` plus
-    /// `lea`/`pea`), and (T5b) explicit-width absolute addressing
-    /// (`(expr).w`/`(expr).l`) — plus the `sr`/`ccr` pseudo-registers for
-    /// `move <-> sr` / `andi|ori #imm,ccr`. Width-selecting bare `(expr)`
-    /// (no suffix), PC-relative, branches, `jmp`/`jsr`, `Dbcc`/`Scc`, and
-    /// `movem`/`movep` remain out of scope here.
+    /// M1.C T4/T5/T5b/T5c: the 68000 core. Straight-line register/immediate
+    /// forms, the fixed-length register-indirect EA family, `lea`/`pea`, and
+    /// explicit-width absolute addressing fold immediately (no fixups). T5c
+    /// adds control transfer, each routed BEFORE the generic fold-based path
+    /// because its target is resolved later (by the linker), not by this
+    /// pass's fold:
+    ///  - `bra`/`bsr`/`Bcc` → [`Self::lower_m68k_branch`] (size-pinned by the
+    ///    `.s`/`.w` suffix, no relaxation).
+    ///  - `Dbcc` (`dbf`/`dbra`/`db<cc>`) → [`Self::lower_m68k_dbcc`] (the
+    ///    displacement FOLDS immediately — see that method's doc for why
+    ///    that's safe).
+    ///  - `jmp`/`jsr` with a bare symbol/expression target → a
+    ///    `Fragment::JmpJsrSym` (width chosen later by the linker's
+    ///    `resolve_layout`); `jmp`/`jsr` with an EA operand (e.g. `(a0)`)
+    ///    falls through to the generic path like any other instruction.
+    ///  - `(d16,PC)` operands (any mnemonic) → [`Self::lower_m68k_pcrel`].
+    ///
+    /// Only `movem`/`movep` remain out of scope — see `m68k_out_of_scope`.
     fn lower_m68k(&mut self, mn: &str, rest: &[Token], span: Span) {
         let (base, suffix_size) = split_mnemonic_and_size(mn);
         let mnemonic = match m68k_mnemonic(base) {
             Some(m) => m,
             None => {
                 match m68k_out_of_scope(base) {
-                    Some(family) => self.err(
-                        span,
-                        format!(
-                            "`{base}` ({family}) is out of scope for M1.C T5 (straight-line + fixed-length-EA core); deferred to T5b"
-                        ),
-                    ),
+                    Some(family) => self.err(span, format!("`{base}` ({family}) is not yet implemented")),
                     None => self.err(span, format!("`{base}` is not a recognized 68000 mnemonic")),
                 }
                 return;
             }
         };
-        let size = match suffix_size.or_else(|| m68k_default_size(mnemonic)) {
-            Some(s) => s,
-            None => {
-                self.err(span, format!("`{base}` needs an explicit size suffix (.b/.w/.l)"));
+
+        if matches!(mnemonic, M68kMnemonic::Bra | M68kMnemonic::Bsr | M68kMnemonic::Bcc(_)) {
+            return self.lower_m68k_branch(mnemonic, suffix_size, rest, span);
+        }
+        if matches!(mnemonic, M68kMnemonic::Dbcc(_)) {
+            return self.lower_m68k_dbcc(mnemonic, rest, span);
+        }
+        if matches!(mnemonic, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
+            let atoms = match parse_operands(rest) {
+                Ok(a) => a,
+                Err(d) => {
+                    self.diags.push(d);
+                    return;
+                }
+            };
+            // A bare symbol/expression target (no EA parens) is 68k absolute
+            // addressing whose WIDTH (abs.w vs abs.l) is chosen later by the
+            // linker's `resolve_layout` — see `sigil-backend-m68k`'s
+            // `lower_jmp_jsr_sym` doc. An EA operand (`(a0)`, `(Label).w`,
+            // `(d16,PC)`, ...) falls through to the generic path below.
+            if let [OperandAtom::Value(e)] = atoms.as_slice() {
+                let target = self.qualify_expr(e);
+                let is_jsr = matches!(mnemonic, M68kMnemonic::Jsr);
+                let frag = self.m68k.lower_jmp_jsr_sym(is_jsr, target, span);
+                // The baseline (all-abs.w) width is 4 bytes; `resolve_layout`
+                // assumes THIS baseline when shifting subsequent label
+                // offsets (see `sigil-link/src/relax.rs::shift_breakpoints`),
+                // so the cursor must advance by exactly 4 here regardless of
+                // the eventual real width.
+                self.builder.emit_fragment(frag, 4);
                 return;
             }
-        };
+            return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
+        }
+
         let atoms = match parse_operands(rest) {
             Ok(a) => a,
             Err(d) => {
@@ -1007,6 +1041,29 @@ impl Asm {
                 return;
             }
         };
+        self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
+    }
+
+    /// The shared tail of `lower_m68k` for every mnemonic that does NOT need
+    /// its own special-cased target handling: resolve the size, detect (and
+    /// deflect to [`Self::lower_m68k_pcrel`]) a `(d16,PC)` operand, else
+    /// convert every atom and fold-lower the instruction directly. Also the
+    /// fallback for `jmp`/`jsr` once an EA-operand form (not a bare symbol)
+    /// has been ruled out by the caller.
+    fn lower_m68k_generic(&mut self, mnemonic: M68kMnemonic, suffix_size: Option<M68kSize>, atoms: Vec<OperandAtom>, span: Span) {
+        let size = match suffix_size.or_else(|| m68k_default_size(mnemonic)) {
+            Some(s) => s,
+            None => {
+                self.err(span, "instruction needs an explicit size suffix (.b/.w/.l)".to_string());
+                return;
+            }
+        };
+        if let Some(pc_idx) = atoms
+            .iter()
+            .position(|a| matches!(a, OperandAtom::M68kDisp { an, .. } if an == "pc"))
+        {
+            return self.lower_m68k_pcrel(mnemonic, size, &atoms, pc_idx, span);
+        }
         let ops = match self.convert_atoms_m68k(mnemonic, size, &atoms, span) {
             Some(o) => o,
             None => return,
@@ -1017,12 +1074,134 @@ impl Asm {
         self.emit_frag(frag, span);
     }
 
-    /// Convert operand atoms to resolved 68k operands for the T4/T5/T5b
-    /// straight-line + fixed-length-EA core: `Dn`/`An`/`Imm` (plus bare
-    /// `sr`/`ccr`), (T5) the register-indirect family, and (T5b)
-    /// explicit-width absolute (`M68kAbs`) — fold-based, no fixups. Any
-    /// PC-relative, width-selecting bare-`(expr)`, or other variable-length
-    /// atom is rejected with a diagnostic naming T5b.
+    /// `bra`/`bsr`/`Bcc <target>`: Aeon pins the branch width by an explicit
+    /// `.s`/`.w` suffix (no relaxation), so `suffix_size` MUST be present and
+    /// MUST be `S` or `W`. The target is qualified (`.local` → `Scope.local`)
+    /// and `$`-resolved, then handed to the backend's `lower_branch`, which
+    /// builds the opcode + a `PcRel8`/`PcRelDisp16` fixup for the linker.
+    fn lower_m68k_branch(&mut self, mnemonic: M68kMnemonic, suffix_size: Option<M68kSize>, rest: &[Token], span: Span) {
+        let size = match suffix_size {
+            Some(s @ (M68kSize::S | M68kSize::W)) => s,
+            Some(_) => {
+                self.err(span, "branch size suffix must be `.s` or `.w`");
+                return;
+            }
+            None => {
+                self.err(span, "branch needs an explicit size suffix (.s or .w) — Aeon pins branch width, no relaxation");
+                return;
+            }
+        };
+        let atoms = match parse_operands(rest) {
+            Ok(a) => a,
+            Err(d) => {
+                self.diags.push(d);
+                return;
+            }
+        };
+        let target = match atoms.as_slice() {
+            [OperandAtom::Value(e)] => self.resolve_dollar(&self.qualify_expr(e)),
+            _ => {
+                self.err(span, "branch needs a single label target");
+                return;
+            }
+        };
+        let frag = self.m68k.lower_branch(mnemonic, size, target, span);
+        self.emit_frag(frag, span);
+    }
+
+    /// `Dbcc Dn,target` (`dbf`/`dbra`/`db<cc>`): always a fixed 4-byte
+    /// instruction (opcode word + a 16-bit displacement word) — NEVER
+    /// relaxed, unlike `jmp`/`jsr`'s abs.w/abs.l choice. Because the byte
+    /// width never depends on the resolved displacement, the displacement
+    /// can safely FOLD immediately here (through the front-end's normal
+    /// multi-pass symbol convergence) rather than deferring to a linker
+    /// fixup — a forward reference just resolves on a later pass, the same
+    /// way a forward `equ` does, and the placeholder `0` byte-pattern is
+    /// stable meanwhile. asl measures the displacement from the extension
+    /// word's own address (`instruction_start + 2` — the same PC-ref
+    /// convention `FixupKind::PcRelDisp16` documents for `bra.w`/`Bcc.w`),
+    /// confirmed against `crates/sigil-isa/tests/corpus_m68k/mod.rs`
+    /// (`"dbf d0,*"` / `"dbeq d1,*"` both fold to `Disp(-2)`, i.e.
+    /// `self_address - (self_address + 2)`) and against real `asl` (see
+    /// `m68k_dbf_d0_self`/`m68k_dbeq_d1_self` in `tests/snippets_golden.txt`).
+    fn lower_m68k_dbcc(&mut self, mnemonic: M68kMnemonic, rest: &[Token], span: Span) {
+        let atoms = match parse_operands(rest) {
+            Ok(a) => a,
+            Err(d) => {
+                self.diags.push(d);
+                return;
+            }
+        };
+        let (dn_name, target_expr) = match atoms.as_slice() {
+            [OperandAtom::Value(Expr::Sym(dn)), OperandAtom::Value(t)] => (dn.clone(), t.clone()),
+            _ => {
+                self.err(span, "Dbcc needs `Dn,target` operands");
+                return;
+            }
+        };
+        let dn = match m68k_data_reg(&dn_name) {
+            Some(n) => n,
+            None => {
+                self.err(span, format!("`{dn_name}` is not a valid data register in Dbcc"));
+                return;
+            }
+        };
+        let target = self.resolve_dollar(&self.qualify_expr(&target_expr));
+        let pc_of_disp_word = Expr::Int((self.here() + 2) as i64);
+        let disp_expr = Expr::Binary { op: BinOp::Sub, lhs: Box::new(target), rhs: Box::new(pc_of_disp_word) };
+        let d = self.fold_imm(&disp_expr, span, i16::MIN as i64, i16::MAX as i64);
+        let inst = M68kInstruction {
+            mnemonic,
+            size: M68kSize::W,
+            ops: vec![M68kOperand::Dn(dn), M68kOperand::Disp(d as i32)],
+        };
+        let frag = self.m68k.lower_inst(&inst, span);
+        self.emit_frag(frag, span);
+    }
+
+    /// An instruction with a `(d16,PC)` source operand (any mnemonic: `move`,
+    /// `tst`, `cmp`, ...). `pc_idx` is the index of that atom within `atoms`
+    /// (already located by the caller). `(d16,PC)` is illegal as a
+    /// DESTINATION EA (`encode_ea` rejects it there — real 68k only reads
+    /// through PC-relative), so wherever it legally appears it is the single
+    /// EA operand of a 1-operand form or the SOURCE of a 2-operand form; both
+    /// `encode_move`/`encode_alu_ea`/`encode_control`/etc. process the source
+    /// EA's extension words first (right after the 2-byte opcode word), so
+    /// the `(d16,PC)` extension word always starts at byte offset 2 —
+    /// confirmed against `lower_pcrel_ea`'s own unit test (`lea (d16,PC),a0`)
+    /// and against real asl (`m68k_move_w_pcd16_to_d0` in
+    /// `tests/snippets_golden.txt`).
+    fn lower_m68k_pcrel(&mut self, mnemonic: M68kMnemonic, size: M68kSize, atoms: &[OperandAtom], pc_idx: usize, span: Span) {
+        let mut ops = Vec::with_capacity(atoms.len());
+        let mut target = None;
+        for (i, a) in atoms.iter().enumerate() {
+            if i == pc_idx {
+                let disp = match a {
+                    OperandAtom::M68kDisp { disp, .. } => disp,
+                    _ => unreachable!("pc_idx must index a M68kDisp{{an: \"pc\"}} atom"),
+                };
+                target = Some(self.qualify_expr(disp));
+                ops.push(M68kOperand::Pcd16(0));
+            } else {
+                match self.convert_one_atom_m68k(a, size, span) {
+                    Some(op) => ops.push(op),
+                    None => return,
+                }
+            }
+        }
+        let target = target.expect("pc_idx must index the pc-relative atom");
+        let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
+        let inst = M68kInstruction { mnemonic, size, ops };
+        let frag = self.m68k.lower_pcrel_ea(&inst, 2, target, span);
+        self.emit_frag(frag, span);
+    }
+
+    /// Convert operand atoms to resolved 68k operands for the fold-based
+    /// (no-fixup) core: `Dn`/`An`/`Imm` (plus bare `sr`/`ccr`), the
+    /// register-indirect family, and explicit-width absolute (`M68kAbs`).
+    /// Any width-selecting bare-`(expr)` or `(d8,PC,Xn)` atom is rejected
+    /// with a diagnostic (the latter is the only PC-relative form still
+    /// unsupported — see [`Self::lower_m68k_pcrel`] for `(d16,PC)`).
     fn convert_atoms_m68k(
         &mut self,
         mnemonic: M68kMnemonic,
@@ -1030,10 +1209,17 @@ impl Asm {
         atoms: &[OperandAtom],
         span: Span,
     ) -> Option<Vec<M68kOperand>> {
-        let _ = mnemonic; // every straight-line form shares the same atom conversion
+        let _ = mnemonic; // every fold-based form shares the same atom conversion
         let mut ops = Vec::with_capacity(atoms.len());
         for a in atoms {
-            let op = match a {
+            ops.push(self.convert_one_atom_m68k(a, size, span)?);
+        }
+        Some(ops)
+    }
+
+    /// Convert one operand atom (see [`Self::convert_atoms_m68k`]).
+    fn convert_one_atom_m68k(&mut self, a: &OperandAtom, size: M68kSize, span: Span) -> Option<M68kOperand> {
+        Some(match a {
                 OperandAtom::Imm(e) => {
                     let (lo, hi) = m68k_imm_bounds(size);
                     let v = self.fold_imm(e, span, lo, hi);
@@ -1157,10 +1343,7 @@ impl Asm {
                     self.err(span, "`af'` is not a 68k operand");
                     return None;
                 }
-            };
-            ops.push(op);
-        }
-        Some(ops)
+        })
     }
 
     fn build_operands(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Lowered> {
@@ -1517,12 +1700,14 @@ fn split_mnemonic_and_size(s: &str) -> (&str, Option<M68kSize>) {
     }
 }
 
-/// The T4/T5 in-scope 68000 mnemonic table (straight-line register/immediate
-/// core, plus the T5 fixed-length register-indirect EA family and `lea`/`pea`).
-/// `move`/`andi`/`ori` are refined to `MoveToSr`/`MoveFromSr`/`AndiCcr`/
-/// `OriCcr` post-hoc by `refine_m68k_mnemonic` once the operand shape (a bare
-/// `sr`/`ccr`) is known. Branches, `jmp`/`jsr`, `Dbcc`/`Scc`, and
-/// `movem`/`movep` are NOT in this table — see `m68k_out_of_scope` (T5b).
+/// The T4/T5/T5b/T5c in-scope 68000 mnemonic table: straight-line
+/// register/immediate core, the fixed-length register-indirect EA family,
+/// `lea`/`pea`, explicit-width absolute addressing, and (T5c) control
+/// transfer — `bra`/`bsr`/`Bcc`, `Dbcc` (`dbf`/`dbra`/`db<cc>`), `Scc`, and
+/// `jmp`/`jsr`. `move`/`andi`/`ori` are refined to `MoveToSr`/`MoveFromSr`/
+/// `AndiCcr`/`OriCcr` post-hoc by `refine_m68k_mnemonic` once the operand
+/// shape (a bare `sr`/`ccr`) is known. Only `movem`/`movep` remain out of
+/// scope — see `m68k_out_of_scope`.
 fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
     use M68kMnemonic::*;
     Some(match base {
@@ -1536,55 +1721,72 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "clr" => Clr, "neg" => Neg, "not" => Not, "tst" => Tst, "tas" => Tas,
         "swap" => Swap, "ext" => Ext, "lea" => Lea, "pea" => Pea,
         "nop" => Nop, "rts" => Rts, "rte" => Rte, "trap" => Trap,
+        "bra" => Bra, "bsr" => Bsr,
+        "jmp" => Jmp, "jsr" => Jsr,
+        "dbf" | "dbra" => Dbcc(M68kCond::F),
+        _ => {
+            if let Some(rest) = base.strip_prefix("db") {
+                if let Some(c) = m68k_cond(rest) {
+                    return Some(Dbcc(c));
+                }
+            }
+            if let Some(rest) = base.strip_prefix('b') {
+                if let Some(c) = m68k_cond(rest) {
+                    return Some(Bcc(c));
+                }
+            }
+            if let Some(rest) = base.strip_prefix('s') {
+                if let Some(c) = m68k_cond(rest) {
+                    return Some(Scc(c));
+                }
+            }
+            return None;
+        }
+    })
+}
+
+/// Parse a 68000 condition-code mnemonic suffix (the `<cc>` in `b<cc>`,
+/// `db<cc>`, `s<cc>`) into its `Cond`. All 16 codes per the ISA's `Cond` enum.
+fn m68k_cond(w: &str) -> Option<M68kCond> {
+    use M68kCond::*;
+    Some(match w {
+        "t" => T, "f" => F, "hi" => Hi, "ls" => Ls, "cc" => Cc, "cs" => Cs,
+        "ne" => Ne, "eq" => Eq, "vc" => Vc, "vs" => Vs, "pl" => Pl, "mi" => Mi,
+        "ge" => Ge, "lt" => Lt, "gt" => Gt, "le" => Le,
         _ => return None,
     })
 }
 
-/// If `base` names it a real 68000 mnemonic that T4/T5 deliberately do not
-/// implement (absolute/PC-relative addressing, control flow), name the family
-/// for the diagnostic; else `None` (genuinely unrecognized).
+/// If `base` names it a real 68000 mnemonic that this front-end deliberately
+/// does not implement yet (`movem`/`movep`), name the family for the
+/// diagnostic; else `None` (genuinely unrecognized).
 fn m68k_out_of_scope(base: &str) -> Option<&'static str> {
-    const CONDS: &[&str] = &[
-        "t", "f", "hi", "ls", "cc", "cs", "ne", "eq", "vc", "vs", "pl", "mi", "ge", "lt", "gt", "le",
-    ];
     match base {
-        "bra" | "bsr" => return Some("branch bra/bsr"),
-        "jmp" | "jsr" => return Some("jmp/jsr"),
-        "movem" | "movep" => return Some("movem/movep"),
-        "dbra" => return Some("Dbcc"),
-        _ => {}
+        "movem" | "movep" => Some("movem/movep"),
+        _ => None,
     }
-    if let Some(rest) = base.strip_prefix('b') {
-        if CONDS.contains(&rest) {
-            return Some("conditional branch Bcc");
-        }
-    }
-    if let Some(rest) = base.strip_prefix("db") {
-        if CONDS.contains(&rest) {
-            return Some("Dbcc");
-        }
-    }
-    if let Some(rest) = base.strip_prefix('s') {
-        if CONDS.contains(&rest) {
-            return Some("Scc");
-        }
-    }
-    None
 }
 
 /// The implicit size for mnemonics real 68k syntax never suffixes (`moveq`,
-/// `swap`, `nop`, `rts`, `rte`, `tas`, `trap`, `lea`, `pea`). Verified against
-/// `crates/sigil-isa/tests/corpus_m68k/mod.rs`: `moveq` is always encoded
-/// `Size::L` (the encoder truncates the data to a signed byte regardless);
-/// `lea`/`pea` are always long (an address is always 32 bits); the
-/// fixed-opcode control forms carry `Size::W` in the corpus purely because
-/// `Instruction` requires *a* size field — the encoder ignores it for them.
+/// `swap`, `nop`, `rts`, `rte`, `tas`, `trap`, `lea`, `pea`, `jmp`, `jsr`,
+/// `Dbcc`, `Scc`). Verified against `crates/sigil-isa/tests/corpus_m68k/mod.rs`:
+/// `moveq` is always encoded `Size::L` (the encoder truncates the data to a
+/// signed byte regardless); `lea`/`pea` are always long (an address is always
+/// 32 bits); `jmp`/`jsr`/the fixed-opcode control forms carry `Size::W` in the
+/// corpus, `Dbcc` is always `Size::W` (its displacement is a fixed 16-bit
+/// word), and `Scc` is always `Size::B` (byte-fixed opcode) — in every case
+/// purely because `Instruction` requires *a* size field; the encoder ignores
+/// it for them. Branches (`bra`/`bsr`/`Bcc`) deliberately have NO default:
+/// Aeon pins branch width by an explicit `.s`/`.w` suffix, never relaxes.
 fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
     use M68kMnemonic::*;
     match m {
         Moveq => Some(M68kSize::L),
         Lea | Pea => Some(M68kSize::L),
         Swap | Nop | Rts | Rte | Tas | Trap => Some(M68kSize::W),
+        Jmp | Jsr => Some(M68kSize::W),
+        Dbcc(_) => Some(M68kSize::W),
+        Scc(_) => Some(M68kSize::B),
         _ => None,
     }
 }
@@ -1608,13 +1810,15 @@ fn m68k_data_reg(w: &str) -> Option<u8> {
 }
 
 /// The `an`-slot error for `(d,An)`/`(d,An,Xn)` when it's not a real address
-/// register. `pc` parses down the same `(expr,ident)` shape as `(d16,An)` (see
-/// `classify`), so it needs its own T5b-naming diagnostic rather than the
-/// generic "not a valid address register" one.
+/// register. `pc` parses down the same `(expr,ident)` shape as `(d16,An)`/
+/// `(d8,An,Xn)` (see `classify`). `(d16,PC)` is intercepted and lowered
+/// earlier (see `lower_m68k_generic`'s pc-relative scan), so this only ever
+/// fires for the still-unsupported `(d8,PC,Xn)` indexed form (an `M68kIdx`
+/// atom) — hence its own naming diagnostic rather than the generic
+/// "not a valid address register" one.
 fn m68k_disp_an_error(an: &str) -> String {
     if an == "pc" {
-        "PC-relative addressing `(d,PC)` is out of scope for T5 (fixed-length, no-fixup EA only); deferred to T5b"
-            .to_string()
+        "`(d8,PC,Xn)` indexed PC-relative addressing is not yet supported (only `(d16,PC)` lowers)".to_string()
     } else {
         format!("`{an}` is not a valid address register in `(d,An)`/`(d,An,Xn)`")
     }
@@ -1703,11 +1907,40 @@ mod tests {
         // T5 adds the fixed-length EA family plus `lea`/`pea` — both in-scope now.
         assert_eq!(m68k_mnemonic("lea"), Some(Mnemonic::Lea));
         assert_eq!(m68k_mnemonic("pea"), Some(Mnemonic::Pea));
-        // out-of-scope forms (T5b) are NOT in the in-scope table.
-        assert_eq!(m68k_mnemonic("jmp"), None);
-        assert_eq!(m68k_mnemonic("bra"), None);
-        assert_eq!(m68k_mnemonic("beq"), None);
+        // T5c adds control transfer: branches, Dbcc, Scc, jmp/jsr.
+        assert_eq!(m68k_mnemonic("jmp"), Some(Mnemonic::Jmp));
+        assert_eq!(m68k_mnemonic("jsr"), Some(Mnemonic::Jsr));
+        assert_eq!(m68k_mnemonic("bra"), Some(Mnemonic::Bra));
+        assert_eq!(m68k_mnemonic("bsr"), Some(Mnemonic::Bsr));
+        assert_eq!(m68k_mnemonic("beq"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Eq)));
+        assert_eq!(m68k_mnemonic("bne"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Ne)));
+        assert_eq!(m68k_mnemonic("dbf"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::F)));
+        assert_eq!(m68k_mnemonic("dbra"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::F)));
+        assert_eq!(m68k_mnemonic("dbeq"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::Eq)));
+        assert_eq!(m68k_mnemonic("scc"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc)));
+        assert_eq!(m68k_mnemonic("seq"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Eq)));
+        assert_eq!(m68k_mnemonic("st"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::T)));
+        // `movem`/`movep` remain out of scope.
         assert_eq!(m68k_mnemonic("movem"), None);
+        assert_eq!(m68k_mnemonic("movep"), None);
+        // a genuinely unrecognized word is not misparsed as a stray cc suffix.
+        assert_eq!(m68k_mnemonic("banana"), None);
+    }
+
+    #[test]
+    fn m68k_cond_parses_all_16_condition_codes() {
+        use super::m68k_cond;
+        use sigil_backend_m68k::m68k::Cond;
+        let pairs = [
+            ("t", Cond::T), ("f", Cond::F), ("hi", Cond::Hi), ("ls", Cond::Ls),
+            ("cc", Cond::Cc), ("cs", Cond::Cs), ("ne", Cond::Ne), ("eq", Cond::Eq),
+            ("vc", Cond::Vc), ("vs", Cond::Vs), ("pl", Cond::Pl), ("mi", Cond::Mi),
+            ("ge", Cond::Ge), ("lt", Cond::Lt), ("gt", Cond::Gt), ("le", Cond::Le),
+        ];
+        for (w, c) in pairs {
+            assert_eq!(m68k_cond(w), Some(c), "cc word `{w}`");
+        }
+        assert_eq!(m68k_cond("xx"), None);
     }
 
     #[test]
@@ -1733,15 +1966,31 @@ mod tests {
     }
 
     #[test]
-    fn m68k_pcrelative_operand_diagnoses_t5b_not_a_crash() {
-        // `(d,pc)` is PC-relative — still out of scope in T5 (fixed-length,
-        // no-fixup EA only), deferred to T5b.
-        let src = "    cpu 68000\n    move.w (8,pc),d0\n";
+    fn m68k_pcrelative_disp16_lowers_via_resolve_layout_link() {
+        // `(d16,PC)` (T5c): the front-end emits an unresolved `PcRelDisp16`
+        // fixup (via `lower_pcrel_ea`); resolving it needs a real link (the
+        // front-end's own fold never sees it — see `apply_fixup` in
+        // `sigil-link`). `move.w (8,pc),d0` at VMA 0: the extension word sits
+        // at offset 2, target = 8, disp = 8 - 2 = 6.
+        let src = "    cpu 68000\n    phase 0\n    move.w (8,pc),d0\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = run(src, &opts).expect_err("PC-relative operand must be rejected, not lowered");
+        let m = run(src, &opts).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        // move.w (d16,PC),d0 = 30 3A, then disp word 00 06.
+        assert_eq!(bytes, vec![0x30, 0x3A, 0x00, 0x06]);
+    }
+
+    #[test]
+    fn m68k_pcrelative_disp8_indexed_still_not_supported() {
+        // `(d8,PC,Xn)` remains out of scope (only `(d16,PC)` lowers in T5c).
+        let src = "    cpu 68000\n    move.w (8,pc,d0.w),d1\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let diags = run(src, &opts).expect_err("(d8,PC,Xn) must be rejected, not lowered");
         assert!(
-            diags.iter().any(|d| d.message.contains("T5b")),
-            "expected a T5b-deferral diagnostic, got: {:?}",
+            diags.iter().any(|d| d.message.contains("not yet supported")),
+            "expected a not-yet-supported diagnostic, got: {:?}",
             diags.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
     }
@@ -1761,16 +2010,51 @@ mod tests {
     }
 
     #[test]
-    fn m68k_branch_mnemonic_diagnoses_t5_not_a_crash() {
-        // `bra`/`Bcc` are control-flow forms — out of scope for T4 (deferred to T5).
+    fn m68k_branch_without_size_suffix_is_a_clear_diagnostic() {
+        // T5c: `bra`/`Bcc` are now in scope, but Aeon pins branch width by an
+        // explicit `.s`/`.w` suffix (no relaxation) — a bare `bra` must still
+        // error, just with a size-suffix diagnostic instead of a scope one.
         let src = "    cpu 68000\n    bra Target\nTarget:\n    rts\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = run(src, &opts).expect_err("branch mnemonic must be rejected, not lowered");
+        let diags = run(src, &opts).expect_err("branch without a size suffix must be rejected, not lowered");
         assert!(
-            diags.iter().any(|d| d.message.contains("T5")),
-            "expected a T5-deferral diagnostic, got: {:?}",
+            diags.iter().any(|d| d.message.contains("size suffix")),
+            "expected a size-suffix diagnostic, got: {:?}",
             diags.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn m68k_bra_w_qualifies_local_target_against_current_scope() {
+        // A bare `.local` branch target must be qualified to `Scope.local`
+        // BEFORE lowering (the linker resolves in global scope only) — this
+        // is the exact hazard `qualify_expr` exists for. `Start:` opens scope
+        // `Start`, so `bra.w .loop` must resolve against `Start.loop`, not a
+        // bare `.loop` (which the linker would never find).
+        let src = "    cpu 68000\n    phase 0\nStart:\n    bra.w .loop\n.loop:\n    rts\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        // bra.w .loop: op@0, disp word@2, target=4 (right after the 4-byte
+        // branch), disp = 4-2 = 2; then rts (4E75) at the target.
+        assert_eq!(bytes, vec![0x60, 0x00, 0x00, 0x02, 0x4E, 0x75]);
+    }
+
+    #[test]
+    fn m68k_jmp_jsr_bare_symbol_defers_width_to_resolve_layout() {
+        // `jmp Lbl`/`jsr Lbl` must emit `Fragment::JmpJsrSym` (not fold
+        // immediately) — its abs.w/abs.l width is chosen later by the
+        // linker's `resolve_layout`. A low (<=0x7FFF) target selects abs.w.
+        let src = "    cpu 68000\n    phase 0\nLbl:\n    jmp Lbl\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).expect("assemble");
+        assert!(matches!(m.sections[0].fragments[0], sigil_ir::Fragment::JmpJsrSym { is_jsr: false, .. }));
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        assert_eq!(bytes, vec![0x4E, 0xF8, 0x00, 0x00]);
     }
 
     #[test]

@@ -95,6 +95,12 @@ impl IrStreamer for IrBuilder {
         s.cursor += count;
     }
 
+    fn emit_fragment(&mut self, frag: Fragment, advance: u32) {
+        let s = self.section_mut();
+        s.fragments.push(frag);
+        s.cursor += advance;
+    }
+
     fn define_label(&mut self, name: &str) {
         let s = self.section_mut();
         let offset = s.cursor;
@@ -171,6 +177,24 @@ mod tests {
         // Switching sections resets the cursor.
         b.switch_section("t", Cpu::Z80, None);
         assert_eq!(b.current_offset(), 0);
+    }
+
+    #[test]
+    fn emit_fragment_pushes_raw_fragment_and_advances_cursor_by_given_amount() {
+        // The M1.C T5c door for `Fragment::JmpJsrSym`: the caller supplies the
+        // fragment (already built by the backend) and the baseline (abs.w)
+        // cursor advance, since the real width is chosen later by
+        // `resolve_layout`, not known yet at emission time.
+        let mut b = IrBuilder::new();
+        b.switch_section("s", Cpu::M68000, None);
+        let frag = Fragment::JmpJsrSym { is_jsr: true, target: Expr::Sym("Sub".into()), span: span() };
+        b.emit_fragment(frag.clone(), 4);
+        assert_eq!(b.current_offset(), 4);
+        b.define_label("After");
+        let (module, _diags) = b.finish();
+        let sec = &module.sections[0];
+        assert_eq!(sec.fragments, vec![frag]);
+        assert_eq!(sec.labels, vec![crate::Label { name: "After".into(), offset: 4 }]);
     }
 
     #[test]

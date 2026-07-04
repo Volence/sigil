@@ -7,7 +7,7 @@ pub enum Cpu {
     M68000,
 }
 
-use crate::{DataFragment, Fixup};
+use crate::{DataFragment, Fixup, Fragment};
 use sigil_span::{Diagnostic, Span};
 
 /// An error produced while a backend lowers an instruction to bytes.
@@ -72,6 +72,15 @@ pub trait IrStreamer {
     fn emit_fill(&mut self, count: u32, value: u8, span: Span);
     /// Reserve `count` bytes of address space with NO image bytes (`ds` under phase).
     fn reserve(&mut self, count: u32, span: Span);
+    /// Push a raw `Fragment` built elsewhere (not from raw bytes via
+    /// `emit_data`) at the current position, advancing the section cursor by
+    /// `advance` bytes. This is the M1.C T5c door for `Fragment::JmpJsrSym`:
+    /// its real length is chosen later by the linker's `resolve_layout`, so
+    /// `advance` must be the abs.w BASELINE width (4) that `resolve_layout`
+    /// assumes when it shifts subsequent label offsets (see
+    /// `sigil-link/src/relax.rs::shift_breakpoints`) — passing anything else
+    /// would desync this front-end's label offsets from that assumption.
+    fn emit_fragment(&mut self, frag: Fragment, advance: u32);
     /// Record a label at the current position.
     fn define_label(&mut self, name: &str);
     /// Record a diagnostic.
@@ -130,6 +139,7 @@ mod tests {
         }
         fn emit_fill(&mut self, _count: u32, _value: u8, _span: Span) {}
         fn reserve(&mut self, _count: u32, _span: Span) {}
+        fn emit_fragment(&mut self, _frag: Fragment, _advance: u32) {}
         fn define_label(&mut self, _name: &str) {}
         fn diag(&mut self, _d: Diagnostic) {}
     }
