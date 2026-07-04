@@ -9,6 +9,7 @@ struct OpenSection {
     name: String,
     cpu: Cpu,
     vma_base: Option<u32>,
+    lma: u32, // physical load address of this section's start
     labels: Vec<Label>,
     fragments: Vec<Fragment>,
     cursor: u32,     // VMA/PC offset from section start (counts Data+Fill+Reserve)
@@ -44,7 +45,7 @@ impl IrBuilder {
                 name: o.name,
                 cpu: o.cpu,
                 vma_base: o.vma_base,
-                lma: o.vma_base.unwrap_or(0),
+                lma: o.lma,
                 labels: o.labels,
                 fragments: o.fragments,
             });
@@ -64,6 +65,26 @@ impl IrBuilder {
     /// or a forward jump into brand-new territory (target beyond it).
     pub fn extent(&self) -> u32 {
         self.open.as_ref().map_or(0, |o| o.max_offset)
+    }
+
+    /// Open a new section with an EXPLICIT physical load address `lma` (distinct
+    /// from `vma_base` under phase). Closes any currently-open section first. This
+    /// is the front-end's door: it computes a continuous physical LMA counter and
+    /// a phased VMA base, which differ whenever a `phase` displacement is active.
+    /// The trait's [`IrStreamer::switch_section`] keeps the old default
+    /// (`lma = vma_base.unwrap_or(0)`) for backends/tests that don't model phase.
+    pub fn switch_section_lma(&mut self, name: &str, cpu: Cpu, vma_base: Option<u32>, lma: u32) {
+        self.close();
+        self.open = Some(OpenSection {
+            name: name.to_string(),
+            cpu,
+            vma_base,
+            lma,
+            labels: Vec::new(),
+            fragments: Vec::new(),
+            cursor: 0,
+            max_offset: 0,
+        });
     }
 
     /// Seek the open section's write cursor to `target` (backward or forward)
@@ -100,6 +121,7 @@ impl IrStreamer for IrBuilder {
             name: name.to_string(),
             cpu,
             vma_base,
+            lma: vma_base.unwrap_or(0),
             labels: Vec::new(),
             fragments: Vec::new(),
             cursor: 0,

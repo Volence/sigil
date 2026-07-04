@@ -141,6 +141,13 @@ struct Asm {
     env: SymbolTable,
     scope: Option<String>,
     in_section: bool,
+    /// Continuous physical location counter (asl-faithful): the real ROM byte
+    /// offset of the CURRENTLY-OPEN section's start. The live physical position is
+    /// `phys_base + builder.current_offset()`; it advances with every emitted byte
+    /// across ALL section switches (cpu/phase/dephase) and is NEVER rewound by
+    /// `restore`. `org N` sets it directly; `phase`/`dephase` leave it untouched
+    /// and instead adjust `state.disp`. VMA (`$`/labels) = physical + `disp`.
+    phys_base: u32,
     diags: Vec<Diagnostic>,
     source: SourceId,
     functions: FunctionTable,
@@ -154,7 +161,19 @@ struct Asm {
     /// CONVERGED pass the env is final, so any entry here is genuinely undefined
     /// and `run` promotes it to an error.
     poison_refs: Vec<(String, Span)>,
+    /// Remaining `while`-body-execution budget for THIS pass (per-`Asm`, so it
+    /// resets each pass). Complements the per-loop `WHILE_CAP`: two NESTED
+    /// non-convergent `while`s each bounded at `WHILE_CAP` still multiply to
+    /// `WHILE_CAP²` body runs, which can hang the pass. This global budget bounds
+    /// the TOTAL across all (possibly nested) loops so a pathological input
+    /// diagnoses in bounded time. Generous vs. any real table-fill loop.
+    while_budget: usize,
 }
+
+/// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
+/// Far above any real Aeon `while`-driven data table, far below the `WHILE_CAP²`
+/// (10⁸) a pair of nested non-convergent loops would otherwise grind through.
+const GLOBAL_WHILE_CAP: usize = 1_000_000;
 
 enum Lowered {
     Fixed(Vec<Operand>),
@@ -172,6 +191,7 @@ impl Asm {
             env: SymbolTable::new(),
             scope: None,
             in_section: false,
+            phys_base: 0,
             diags: Vec::new(),
             source: SourceId(0),
             functions: std::collections::BTreeMap::new(),
@@ -181,6 +201,7 @@ impl Asm {
             include_root: opts.include_root.clone(),
             aborted: false,
             poison_refs: Vec::new(),
+            while_budget: GLOBAL_WHILE_CAP,
         }
     }
 
@@ -192,15 +213,25 @@ impl Asm {
         });
     }
 
-    fn here(&self) -> u32 {
-        // When no section is open (just after phase/dephase/cpu closed one and
-        // before the next emit reopens it), the new region has emitted 0 bytes.
-        self.state.vma_base.unwrap_or(0)
+    /// The continuous PHYSICAL location counter (real ROM/LMA offset): the open
+    /// section's `phys_base` plus its running byte cursor. When no section is open
+    /// (just after cpu/phase/dephase closed one, before the next emit reopens it),
+    /// `phys_base` has already absorbed the closed section's length, so the current
+    /// physical position is simply `phys_base`.
+    fn current_physical(&self) -> u32 {
+        self.phys_base
             + if self.in_section {
                 self.builder.current_offset()
             } else {
                 0
             }
+    }
+
+    /// The current VMA (`$`/label address): `physical + phase displacement`. Under
+    /// no phase (`disp == 0`) this equals the physical location; inside a `phase
+    /// addr` block it equals `addr + bytes-since-phase` (the window VMA).
+    fn here(&self) -> u32 {
+        (self.current_physical() as i64 + self.state.disp) as u32
     }
 
     /// The current PC as a SIGN-EXTENDED 32→64-bit value: an address with bit 31
@@ -933,6 +964,23 @@ impl Asm {
                 self.directive_equate(&name, &b[1..], span);
                 return;
             }
+            // `NAME: set expr` / `NAME: := expr` — a colon-label immediately
+            // followed by a REASSIGNABLE-symbol directive binds NAME as a
+            // reassignable value, not a PC label (the colon is decorative, exactly
+            // as with `NAME: =`/`NAME: equ` above). This is the shape the
+            // debugger's `__FSTRING_*` string-scan macros use for their loop
+            // cursor: `.__pos: set strstr(...)+.__pos+2` — a `set` that MUST
+            // reassign `.__pos` each iteration so the `while (strstr(...)>=0)`
+            // guard makes progress and terminates. Treating it as a PC label
+            // instead froze `.__pos` at the current address, so the loop never
+            // found its end marker (infinite-loop → unbounded label emission).
+            let is_set_kw = matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if s == "set");
+            let is_coloneq = matches!(b.first().map(|t| &t.tok), Some(Tok::Punct(Punct::ColonEq)));
+            if (is_set_kw || is_coloneq) && b.len() >= 2 {
+                let span = b[0].span;
+                self.directive_set(&name, &b[1..], span);
+                return;
+            }
             self.define_label(&name);
         }
         let mut body = parsed.tokens;
@@ -1295,6 +1343,15 @@ impl Asm {
                         );
                         break;
                     }
+                    if self.while_budget == 0 {
+                        self.err(
+                            span,
+                            format!("total `while` iterations exceeded the per-pass budget ({GLOBAL_WHILE_CAP}) — a non-convergent (possibly nested) loop"),
+                        );
+                        self.aborted = true;
+                        break;
+                    }
+                    self.while_budget -= 1;
                     self.exec(body);
                     iterations += 1;
                 }
@@ -1545,19 +1602,28 @@ impl Asm {
 
     fn open_section_if_needed(&mut self) {
         if !self.in_section {
-            let name = format!("sec{}", self.state.vma_base.unwrap_or(0));
-            // lma defaults to vma_base (IrBuilder); Plan 5's map assigns real
-            // LMAs and handles same-phase section re-entry. Same-(cpu,vma)
-            // re-entry within one assembly would currently collide at flatten —
-            // out of the M0 single-region-per-phase gate.
+            // Physical LMA of this section's start = the continuous counter's
+            // current value (`phys_base`, already advanced past any closed
+            // section). The phased VMA base = physical + `disp` (equals the LMA
+            // when not phased). Name by VMA base so the two real output regions
+            // stay `sec0`/`sec32768` (the harness/M0 gate keys on those names).
+            let vma_base = (self.phys_base as i64 + self.state.disp) as u32;
+            let name = format!("sec{vma_base}");
             self.builder
-                .switch_section(&name, self.state.cpu, self.state.vma_base);
+                .switch_section_lma(&name, self.state.cpu, Some(vma_base), self.phys_base);
             self.in_section = true;
         }
     }
 
+    /// Close the open section, folding its emitted length into the continuous
+    /// physical counter so the NEXT section starts at the right ROM offset.
+    /// Idempotent: a second call while already closed does nothing (so a directive
+    /// that closes an already-closed region can't double-advance `phys_base`).
     fn close_section(&mut self) {
-        self.in_section = false;
+        if self.in_section {
+            self.phys_base += self.builder.current_offset();
+            self.in_section = false;
+        }
     }
 
     fn define_label(&mut self, name: &str) {
@@ -1597,16 +1663,27 @@ impl Asm {
     fn directive_phase(&mut self, rest: &[Token], span: Span) {
         match self.eval_all(rest, span) {
             Some(v) => {
-                self.state.vma_base = Some(v as u32);
+                // `phase addr` makes `$` report `addr` at the current physical
+                // point WITHOUT moving the physical counter: set the displacement
+                // to `addr - physical_now`. Compute the physical point BEFORE
+                // closing the section (close folds the length into `phys_base`,
+                // which leaves `current_physical()` unchanged — but order-safe).
+                let phys_now = self.current_physical();
                 self.close_section();
+                self.state.disp = v - phys_now as i64;
             }
             None => self.err(span, "phase needs a constant expression"),
         }
     }
 
     fn directive_dephase(&mut self) {
-        self.state.vma_base = None;
+        // Cancel the phase: `$` reports the physical location again. The physical
+        // counter has ADVANCED by the phased block's bytes (folded into `phys_base`
+        // by `close_section`), so labels after `dephase` continue from there — they
+        // are NOT rewound. `disp` returns to 0 (an explicit balance of `phase`;
+        // `restore` never touches it).
         self.close_section();
+        self.state.disp = 0;
     }
 
     /// AS `org <target>` (M1.C T6b). `target` is an ABSOLUTE address (like
@@ -1638,11 +1715,21 @@ impl Asm {
                 return;
             }
         };
+        // `org N` sets the location counter so `$` == N. `$` == physical + disp,
+        // so the physical target is `N - disp` (reduces to N outside any phase,
+        // which is every real `org` site). Setting `phys_base` directly is how the
+        // physical counter jumps.
+        let phys_target = (target_abs as i64 - self.state.disp) as u32;
         if !self.in_section {
-            self.state.vma_base = Some(target_abs);
+            self.phys_base = phys_target;
             return;
         }
-        let base = self.state.vma_base.unwrap_or(0);
+        // A section is open. `base` is the VMA of its first byte; `rel` is the
+        // target's offset within it. Within the already-written extent this is an
+        // in-place back-patch seek (`parallax_section_end`); beyond it, a forward
+        // jump that closes the section and re-bases the physical counter (so the
+        // gap is inter-section gap-fill, not a growing Org+JmpJsrSym run).
+        let base = (self.phys_base as i64 + self.state.disp) as u32;
         if target_abs < base {
             self.err(span, "org target precedes the current phase base");
             return;
@@ -1651,8 +1738,8 @@ impl Asm {
         if rel <= self.builder.extent() {
             self.builder.seek(rel, 0, span);
         } else {
-            self.state.vma_base = Some(target_abs);
             self.close_section();
+            self.phys_base = phys_target;
         }
     }
 
@@ -3540,6 +3627,7 @@ mod tests {
     use super::run;
     use crate::Options;
     use sigil_ir::backend::Cpu;
+    use sigil_ir::Module;
 
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
@@ -4411,6 +4499,95 @@ mod tests {
         assert_eq!(module.sections.len(), 1);
         assert_eq!(module.sections[0].vma_base, Some(0));
         assert_eq!(image(src), vec![0x07]);
+    }
+
+    /// Resolve a label's VMA (`vma_origin + offset`) from a finished module.
+    fn label_vma(module: &Module, name: &str) -> u32 {
+        for sec in &module.sections {
+            let origin = sec.vma_origin();
+            for l in &sec.labels {
+                if l.name == name {
+                    return origin + l.offset;
+                }
+            }
+        }
+        panic!("label `{name}` not found in module");
+    }
+
+    #[test]
+    fn phase_dephase_keeps_a_continuous_physical_counter() {
+        // The MovingTrucks LMA-continuity model, distilled (asl-probed, Bld 212):
+        //   org 0 / 8 bytes / Base / save / cpu z80 / phase 08000h / L1 / 4 bytes
+        //   / L1b / dephase / restore / L2 / 2 bytes / L3
+        // asl symbol table:
+        //   Base=8  L1=8000  L1b=8004  L2=C  L3=E
+        // The phase block's 4 bytes advance the PHYSICAL location counter even
+        // though labels INSIDE the block report window (0x8000+) VMAs. After
+        // dephase/restore the counter CONTINUES from physical (8+4=0xC), it is
+        // NOT rewound to a section-local 0 nor to the pre-save base.
+        let src = "\
+        cpu 68000\n        padding off\n        org 0\n\
+        dc.b 1,2,3,4,5,6,7,8\n\
+Base:\n\
+        save\n        cpu z80\n        phase 08000h\n\
+L1:\n\
+        db 10h,11h,12h,13h\n\
+L1b:\n\
+        dephase\n        restore\n\
+L2:\n\
+        dc.b $AA,$BB\n\
+L3:\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&module, "Base"), 0x8, "physical after 8 bytes");
+        assert_eq!(label_vma(&module, "L1"), 0x8000, "window VMA inside phase");
+        assert_eq!(label_vma(&module, "L1b"), 0x8004, "window VMA + 4");
+        assert_eq!(
+            label_vma(&module, "L2"),
+            0xC,
+            "physical CONTINUES past the phase block (8+4), not rewound"
+        );
+        assert_eq!(label_vma(&module, "L3"), 0xE, "physical + 2 more");
+    }
+
+    #[test]
+    fn colon_labeled_set_reassigns_rather_than_defining_a_pc_label() {
+        // asl-probed (Bld 212): a colon-label immediately followed by `set` is a
+        // REASSIGNABLE-symbol assignment (colon decorative), NOT a PC label.
+        //   i: set 0 / dc.b i / i: set i+5 / dc.b i / i: set i+5 / dc.b i
+        // asl bytes: 00 05 0A. Treating `i:` as a PC label instead froze `i` at
+        // the current address — the exact defect that made the debugger's
+        // `__FSTRING_*` `.__pos: set strstr(...)` loop never terminate.
+        let src = "        cpu 68000\n        padding off\n        org 0\ni:  set 0\n        dc.b i\ni:  set i+5\n        dc.b i\ni:  set i+5\n        dc.b i\n";
+        assert_eq!(image(src), vec![0x00, 0x05, 0x0A]);
+    }
+
+    #[test]
+    fn save_restore_does_not_resurrect_a_dephased_phase() {
+        // asl-probed (Bld 212): a `save` taken WHILE phased, then `dephase`, then
+        // `restore` does NOT bring the phase displacement back — `restore` only
+        // restores cpu/padding/listing. Sequence:
+        //   org 0 / 4 bytes / phase $8000 / A / 2 bytes / save / dephase / B
+        //   / 2 bytes / restore / C
+        // asl: A=8000  B=6  C=8  (C is physical 8, NOT 0x8004).
+        let src = "\
+        cpu 68000\n        padding off\n        org 0\n\
+        dc.b 1,2,3,4\n\
+        phase $8000\n\
+A:\n\
+        dc.b 5,6\n\
+        save\n        dephase\n\
+B:\n\
+        dc.b 7,8\n\
+        restore\n\
+C:\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&module, "A"), 0x8000);
+        assert_eq!(label_vma(&module, "B"), 0x6, "physical after dephase");
+        assert_eq!(
+            label_vma(&module, "C"),
+            0x8,
+            "restore must NOT resurrect the dephased displacement"
+        );
     }
 
     #[test]
