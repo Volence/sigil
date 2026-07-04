@@ -89,6 +89,9 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                 }
                 Fragment::Fill { count, .. } => frag_img_off += *count,
                 Fragment::Reserve { .. } => {} // no image bytes
+                Fragment::JmpJsrSym { .. } => {
+                    unreachable!("JmpJsrSym must be lowered by resolve_layout before link")
+                }
             }
         }
 
