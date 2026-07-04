@@ -22,6 +22,8 @@ pub enum OperandAtom {
     Value(Expr),
     /// `af'`.
     AfShadow,
+    /// `#expr` — 68k explicit immediate marker.
+    Imm(Expr),
 }
 
 fn err(span: Span, msg: &str) -> Diagnostic {
@@ -62,6 +64,14 @@ fn split_commas(toks: &[Token]) -> Vec<&[Token]> {
 
 fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
     let span = g.first().map(|t| t.span).unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 });
+    // `#expr` — 68k immediate marker.
+    if let Some(Token { tok: Tok::Punct(Punct::Hash), .. }) = g.first() {
+        let (e, rest) = parse_expr(&g[1..]).ok_or_else(|| err(span, "bad immediate expression"))?;
+        if !rest.is_empty() {
+            return Err(err(span, "trailing tokens in #immediate"));
+        }
+        return Ok(OperandAtom::Imm(e));
+    }
     // af'
     if let [Token { tok: Tok::Ident(w), .. }] = g {
         if w == "af'" {
@@ -194,5 +204,26 @@ mod tests {
     fn absolute_mem_vs_symbol_value() {
         assert!(matches!(&atoms("(SND_TEMPO_CUR)")[0], OperandAtom::Mem(_)));
         assert!(matches!(&atoms("SfxBlobWinTab")[0], OperandAtom::Value(_)));
+    }
+
+    fn atoms_68k(src: &str) -> Vec<OperandAtom> {
+        let toks = lex_line(src, Cpu::M68000, SourceId(0), 0).unwrap();
+        parse_operands(&toks).unwrap()
+    }
+
+    #[test]
+    fn hash_immediate_marker_produces_imm_atom() {
+        match &atoms_68k("#5")[0] {
+            OperandAtom::Imm(e) => assert_eq!(e.fold(&|_| None), Fold::Value(5)),
+            other => panic!("want Imm, got {other:?}"),
+        }
+        // Two operands: #imm then a bare register-ish word (still a Value here —
+        // 68k register recognition is eval.rs's job, not operands.rs's).
+        let a = atoms_68k("#$1234,d0");
+        assert_eq!(a.len(), 2);
+        match &a[0] {
+            OperandAtom::Imm(e) => assert_eq!(e.fold(&|_| None), Fold::Value(0x1234)),
+            other => panic!("want Imm, got {other:?}"),
+        }
     }
 }

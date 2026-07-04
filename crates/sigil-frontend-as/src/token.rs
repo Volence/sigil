@@ -12,6 +12,8 @@ pub enum Punct {
     Eq, Ne, Lt, Gt, Le, Ge,
     OrOr, AndAnd,
     LParen, RParen, Comma, Colon,
+    /// `#` — 68k immediate marker (`#expr`).
+    Hash,
 }
 
 /// A lexical token kind.

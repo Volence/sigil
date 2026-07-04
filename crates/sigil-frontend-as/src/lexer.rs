@@ -123,6 +123,7 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
         b'+' => Plus, b'-' => Minus, b'*' => Star, b'/' => Slash,
         b'&' => Amp, b'|' => Pipe, b'=' => Eq, b'<' => Lt, b'>' => Gt,
         b'(' => LParen, b')' => RParen, b',' => Comma, b':' => Colon,
+        b'#' => Hash,
         _ => return None,
     };
     Some((one, 1))
@@ -156,6 +157,24 @@ mod tests {
     fn m68k_dollar_hex() {
         assert_eq!(kinds("$1234", Cpu::M68000), vec![Tok::Int(0x1234)]);
         assert_eq!(kinds("255", Cpu::M68000), vec![Tok::Int(255)]);
+    }
+
+    #[test]
+    fn m68k_hash_immediate_marker() {
+        assert_eq!(
+            kinds("#$1234", Cpu::M68000),
+            vec![Tok::Punct(Punct::Hash), Tok::Int(0x1234)]
+        );
+        assert_eq!(
+            kinds("move.w #5,d0", Cpu::M68000),
+            vec![
+                Tok::Ident("move.w".into()),
+                Tok::Punct(Punct::Hash),
+                Tok::Int(5),
+                Tok::Punct(Punct::Comma),
+                Tok::Ident("d0".into()),
+            ]
+        );
     }
 
     #[test]

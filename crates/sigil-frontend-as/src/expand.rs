@@ -25,7 +25,7 @@ fn punct_str(p: Punct) -> &'static str {
         Punct::Eq => "=", Punct::Ne => "<>", Punct::Lt => "<", Punct::Gt => ">",
         Punct::Le => "<=", Punct::Ge => ">=", Punct::LParen => "(", Punct::RParen => ")",
         Punct::OrOr => "||", Punct::AndAnd => "&&",
-        Punct::Comma => ",", Punct::Colon => ":",
+        Punct::Comma => ",", Punct::Colon => ":", Punct::Hash => "#",
     }
 }
 

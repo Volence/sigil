@@ -6,6 +6,7 @@ use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
 use crate::Options;
+use sigil_backend_m68k::m68k::{Instruction as M68kInstruction, Mnemonic as M68kMnemonic, Operand as M68kOperand, Size as M68kSize};
 use sigil_backend_m68k::M68kBackend;
 use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
 use sigil_backend_z80::Z80Backend;
@@ -965,10 +966,122 @@ impl Asm {
         }
     }
 
-    /// Stub: real 68k mnemonic/operand lowering lands in M1.C T4/T5.
-    fn lower_m68k(&mut self, _mn: &str, _rest: &[Token], span: Span) {
-        let _ = &self.m68k; // field is wired now; used from T4/T5 onward.
-        self.err(span, "68k instruction lowering not yet implemented");
+    /// M1.C T4: the straight-line 68000 core — register-direct (`Dn`/`An`/`sp`)
+    /// and `#immediate` operands only (plus the `sr`/`ccr` pseudo-registers for
+    /// `move <-> sr` / `andi|ori #imm,ccr`). Memory/EA operands, absolute
+    /// addressing, branches, `jmp`/`jsr`, `Dbcc`/`Scc`, and `movem`/`movep` are
+    /// out of scope here and land in T5.
+    fn lower_m68k(&mut self, mn: &str, rest: &[Token], span: Span) {
+        let (base, suffix_size) = split_mnemonic_and_size(mn);
+        let mnemonic = match m68k_mnemonic(base) {
+            Some(m) => m,
+            None => {
+                match m68k_out_of_scope(base) {
+                    Some(family) => self.err(
+                        span,
+                        format!(
+                            "`{base}` ({family}) is out of scope for M1.C T4 (straight-line register/immediate core); deferred to T5"
+                        ),
+                    ),
+                    None => self.err(span, format!("`{base}` is not a recognized 68000 mnemonic")),
+                }
+                return;
+            }
+        };
+        let size = match suffix_size.or_else(|| m68k_default_size(mnemonic)) {
+            Some(s) => s,
+            None => {
+                self.err(span, format!("`{base}` needs an explicit size suffix (.b/.w/.l)"));
+                return;
+            }
+        };
+        let atoms = match parse_operands(rest) {
+            Ok(a) => a,
+            Err(d) => {
+                self.diags.push(d);
+                return;
+            }
+        };
+        let ops = match self.convert_atoms_m68k(mnemonic, size, &atoms, span) {
+            Some(o) => o,
+            None => return,
+        };
+        let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
+        let inst = M68kInstruction { mnemonic, size, ops };
+        let frag = self.m68k.lower_inst(&inst, span);
+        self.emit_frag(frag, span);
+    }
+
+    /// Convert operand atoms to resolved 68k operands for the T4 straight-line
+    /// core: `Dn`/`An`/`Imm` only (plus bare `sr`/`ccr`). Any memory/EA or
+    /// absolute-addressing atom is rejected with a diagnostic naming T5.
+    fn convert_atoms_m68k(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        size: M68kSize,
+        atoms: &[OperandAtom],
+        span: Span,
+    ) -> Option<Vec<M68kOperand>> {
+        let _ = mnemonic; // every straight-line form shares the same atom conversion
+        let mut ops = Vec::with_capacity(atoms.len());
+        for a in atoms {
+            let op = match a {
+                OperandAtom::Imm(e) => {
+                    let (lo, hi) = m68k_imm_bounds(size);
+                    let v = self.fold_imm(e, span, lo, hi);
+                    M68kOperand::Imm(v as i32)
+                }
+                OperandAtom::RegOrCond(w) => {
+                    if let Some(n) = m68k_addr_reg(w) {
+                        M68kOperand::An(n)
+                    } else if let Some(n) = m68k_data_reg(w) {
+                        M68kOperand::Dn(n)
+                    } else {
+                        self.err(span, format!("`{w}` is not a valid 68k register in this context"));
+                        return None;
+                    }
+                }
+                OperandAtom::Value(Expr::Sym(name)) => {
+                    if let Some(n) = m68k_data_reg(name) {
+                        M68kOperand::Dn(n)
+                    } else if let Some(n) = m68k_addr_reg(name) {
+                        M68kOperand::An(n)
+                    } else if name == "sr" {
+                        M68kOperand::Sr
+                    } else if name == "ccr" {
+                        M68kOperand::Ccr
+                    } else {
+                        self.err(
+                            span,
+                            format!(
+                                "absolute/symbolic operand `{name}` is out of scope for T4 (register-direct/#immediate only); deferred to T5"
+                            ),
+                        );
+                        return None;
+                    }
+                }
+                OperandAtom::Value(_) => {
+                    self.err(
+                        span,
+                        "bare numeric/expression operand implies 68k absolute addressing, out of scope for T4; deferred to T5",
+                    );
+                    return None;
+                }
+                OperandAtom::Mem(_) | OperandAtom::IndReg(_) | OperandAtom::Indexed { .. } => {
+                    self.err(
+                        span,
+                        "memory / effective-address operand forms are out of scope for T4 (register-direct/#immediate only); deferred to T5",
+                    );
+                    return None;
+                }
+                OperandAtom::AfShadow => {
+                    self.err(span, "`af'` is not a 68k operand");
+                    return None;
+                }
+            };
+            ops.push(op);
+        }
+        Some(ops)
     }
 
     fn build_operands(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Lowered> {
@@ -1128,6 +1241,13 @@ impl Asm {
                     }
                 }
                 OperandAtom::AfShadow => Operand::AfShadow,
+                OperandAtom::Imm(_) => {
+                    // `#imm` is a 68k-only operand form (see `convert_atoms_m68k`);
+                    // the z80 lexer never emits a `#` token, so this is unreachable
+                    // in practice, but the match must stay exhaustive.
+                    self.err(span, "`#` immediate is not valid z80 syntax");
+                    return None;
+                }
             };
             ops.push(op);
         }
@@ -1289,6 +1409,136 @@ fn reg16(w: &str) -> Option<Reg16> {
     })
 }
 
+/// Split a 68k mnemonic token on a trailing `.b`/`.w`/`.l`/`.s` size suffix.
+/// Returns the bare base mnemonic and the parsed size (`None` if no suffix —
+/// the caller falls back to `m68k_default_size`, or errors if that's also `None`).
+fn split_mnemonic_and_size(s: &str) -> (&str, Option<M68kSize>) {
+    if let Some(b) = s.strip_suffix(".b") {
+        (b, Some(M68kSize::B))
+    } else if let Some(b) = s.strip_suffix(".w") {
+        (b, Some(M68kSize::W))
+    } else if let Some(b) = s.strip_suffix(".l") {
+        (b, Some(M68kSize::L))
+    } else if let Some(b) = s.strip_suffix(".s") {
+        (b, Some(M68kSize::S))
+    } else {
+        (s, None)
+    }
+}
+
+/// The T4 in-scope 68000 mnemonic table (straight-line register/immediate
+/// core). `move`/`andi`/`ori` are refined to `MoveToSr`/`MoveFromSr`/`AndiCcr`/
+/// `OriCcr` post-hoc by `refine_m68k_mnemonic` once the operand shape (a bare
+/// `sr`/`ccr`) is known. Branches, `jmp`/`jsr`, `lea`/`pea`, `Dbcc`/`Scc`, and
+/// `movem`/`movep` are NOT in this table — see `m68k_out_of_scope` (T5).
+fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
+    use M68kMnemonic::*;
+    Some(match base {
+        "move" => Move, "movea" => Movea,
+        "add" => Add, "adda" => Adda, "sub" => Sub, "suba" => Suba,
+        "and" => And, "or" => Or, "eor" => Eor, "cmp" => Cmp, "cmpa" => Cmpa, "muls" => Muls,
+        "addi" => Addi, "subi" => Subi, "andi" => Andi, "ori" => Ori, "eori" => Eori, "cmpi" => Cmpi,
+        "moveq" => Moveq, "addq" => Addq, "subq" => Subq,
+        "asl" => Asl, "asr" => Asr, "lsl" => Lsl, "lsr" => Lsr, "rol" => Rol, "ror" => Ror,
+        "btst" => Btst, "bset" => Bset, "bclr" => Bclr,
+        "clr" => Clr, "neg" => Neg, "not" => Not, "tst" => Tst, "tas" => Tas,
+        "swap" => Swap, "ext" => Ext,
+        "nop" => Nop, "rts" => Rts, "rte" => Rte, "trap" => Trap,
+        _ => return None,
+    })
+}
+
+/// If `base` names it a real 68000 mnemonic that T4 deliberately does not
+/// implement (memory/EA, absolute addressing, control flow), name the family
+/// for the diagnostic; else `None` (genuinely unrecognized).
+fn m68k_out_of_scope(base: &str) -> Option<&'static str> {
+    const CONDS: &[&str] = &[
+        "t", "f", "hi", "ls", "cc", "cs", "ne", "eq", "vc", "vs", "pl", "mi", "ge", "lt", "gt", "le",
+    ];
+    match base {
+        "bra" | "bsr" => return Some("branch bra/bsr"),
+        "jmp" | "jsr" => return Some("jmp/jsr"),
+        "lea" | "pea" => return Some("lea/pea"),
+        "movem" | "movep" => return Some("movem/movep"),
+        "dbra" => return Some("Dbcc"),
+        _ => {}
+    }
+    if let Some(rest) = base.strip_prefix('b') {
+        if CONDS.contains(&rest) {
+            return Some("conditional branch Bcc");
+        }
+    }
+    if let Some(rest) = base.strip_prefix("db") {
+        if CONDS.contains(&rest) {
+            return Some("Dbcc");
+        }
+    }
+    if let Some(rest) = base.strip_prefix('s') {
+        if CONDS.contains(&rest) {
+            return Some("Scc");
+        }
+    }
+    None
+}
+
+/// The implicit size for mnemonics real 68k syntax never suffixes (`moveq`,
+/// `swap`, `nop`, `rts`, `rte`, `tas`, `trap`). Verified against
+/// `crates/sigil-isa/tests/corpus_m68k/mod.rs`: `moveq` is always encoded
+/// `Size::L` (the encoder truncates the data to a signed byte regardless);
+/// the fixed-opcode control forms carry `Size::W` in the corpus purely because
+/// `Instruction` requires *a* size field — the encoder ignores it for them.
+fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
+    use M68kMnemonic::*;
+    match m {
+        Moveq => Some(M68kSize::L),
+        Swap | Nop | Rts | Rte | Tas | Trap => Some(M68kSize::W),
+        _ => None,
+    }
+}
+
+/// Fold bounds for a `#imm` operand at a given size — generous enough to admit
+/// either the signed or the bit-pattern-equivalent unsigned spelling; the
+/// encoder (`imm_ext_words`/`moveq`/`addq` range checks) does the real
+/// business-rule validation and surfaces an `IsaError` on overflow.
+fn m68k_imm_bounds(size: M68kSize) -> (i64, i64) {
+    match size {
+        M68kSize::B => (-128, 0xFF),
+        M68kSize::W => (-0x8000, 0xFFFF),
+        M68kSize::L | M68kSize::S => (i32::MIN as i64, u32::MAX as i64),
+    }
+}
+
+/// `d0`..`d7` → `Some(0..=7)`; anything else (including out-of-range `d8`+) → `None`.
+fn m68k_data_reg(w: &str) -> Option<u8> {
+    let n: u8 = w.strip_prefix('d')?.parse().ok()?;
+    (n <= 7).then_some(n)
+}
+
+/// `a0`..`a7` → `Some(0..=7)`; `sp` is the `a7` alias. Anything else → `None`.
+fn m68k_addr_reg(w: &str) -> Option<u8> {
+    if w == "sp" {
+        return Some(7);
+    }
+    let n: u8 = w.strip_prefix('a')?.parse().ok()?;
+    (n <= 7).then_some(n)
+}
+
+/// Post-hoc mnemonic refinement for the operand-shape-dependent variants: a
+/// `move` to/from the bare `sr` pseudo-register is really `MoveToSr`/
+/// `MoveFromSr`; `andi`/`ori` targeting the bare `ccr` pseudo-register are
+/// really `AndiCcr`/`OriCcr`. The encoder dispatches solely on `Mnemonic`, so
+/// this must happen before building the `Instruction`.
+fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnemonic {
+    use M68kMnemonic::*;
+    match (mnemonic, ops) {
+        (Move, [_, M68kOperand::Sr]) => MoveToSr,
+        (Move, [M68kOperand::Sr, _]) => MoveFromSr,
+        (Andi, [_, M68kOperand::Ccr]) => AndiCcr,
+        (Ori, [_, M68kOperand::Ccr]) => OriCcr,
+        (m, _) => m,
+    }
+}
+
 /// Qualify a name: `.local` → `Scope.local` (if scope); else unchanged.
 fn qualify(name: &str, scope: Option<&str>) -> String {
     if name.starts_with('.') {
@@ -1318,6 +1568,104 @@ mod tests {
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
         m.sections.first().map(|s| s.image_bytes()).unwrap_or_default()
+    }
+
+    #[test]
+    fn split_mnemonic_and_size_strips_known_suffixes() {
+        use super::split_mnemonic_and_size;
+        use sigil_backend_m68k::m68k::Size;
+        assert_eq!(split_mnemonic_and_size("move.w"), ("move", Some(Size::W)));
+        assert_eq!(split_mnemonic_and_size("move.l"), ("move", Some(Size::L)));
+        assert_eq!(split_mnemonic_and_size("clr.b"), ("clr", Some(Size::B)));
+        assert_eq!(split_mnemonic_and_size("bra.s"), ("bra", Some(Size::S)));
+        assert_eq!(split_mnemonic_and_size("moveq"), ("moveq", None));
+        assert_eq!(split_mnemonic_and_size("swap"), ("swap", None));
+    }
+
+    #[test]
+    fn m68k_mnemonic_recognizes_in_scope_bases() {
+        use super::m68k_mnemonic;
+        use sigil_backend_m68k::m68k::Mnemonic;
+        assert_eq!(m68k_mnemonic("move"), Some(Mnemonic::Move));
+        assert_eq!(m68k_mnemonic("moveq"), Some(Mnemonic::Moveq));
+        assert_eq!(m68k_mnemonic("addq"), Some(Mnemonic::Addq));
+        assert_eq!(m68k_mnemonic("swap"), Some(Mnemonic::Swap));
+        assert_eq!(m68k_mnemonic("ext"), Some(Mnemonic::Ext));
+        assert_eq!(m68k_mnemonic("nop"), Some(Mnemonic::Nop));
+        assert_eq!(m68k_mnemonic("rts"), Some(Mnemonic::Rts));
+        assert_eq!(m68k_mnemonic("rte"), Some(Mnemonic::Rte));
+        // out-of-scope forms (T5) are NOT in the in-scope table.
+        assert_eq!(m68k_mnemonic("jmp"), None);
+        assert_eq!(m68k_mnemonic("bra"), None);
+        assert_eq!(m68k_mnemonic("beq"), None);
+        assert_eq!(m68k_mnemonic("lea"), None);
+        assert_eq!(m68k_mnemonic("movem"), None);
+    }
+
+    #[test]
+    fn m68k_register_words_recognized() {
+        use super::{m68k_addr_reg, m68k_data_reg};
+        assert_eq!(m68k_data_reg("d0"), Some(0));
+        assert_eq!(m68k_data_reg("d7"), Some(7));
+        assert_eq!(m68k_data_reg("d8"), None);
+        assert_eq!(m68k_data_reg("a0"), None);
+        assert_eq!(m68k_addr_reg("a0"), Some(0));
+        assert_eq!(m68k_addr_reg("a7"), Some(7));
+        assert_eq!(m68k_addr_reg("sp"), Some(7));
+        assert_eq!(m68k_addr_reg("d0"), None);
+    }
+
+    #[test]
+    fn m68k_memory_operand_diagnoses_t5_not_a_crash() {
+        // `(a0)` is a register-indirect EA — out of scope for T4 (deferred to T5).
+        let src = "    cpu 68000\n    move.w (a0),d1\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let diags = run(src, &opts).expect_err("memory operand must be rejected, not lowered");
+        assert!(
+            diags.iter().any(|d| d.message.contains("T5")),
+            "expected a T5-deferral diagnostic, got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn m68k_absolute_address_operand_diagnoses_t5_not_a_crash() {
+        // A bare symbol/number (no `#`, no parens) means 68k absolute addressing
+        // — out of scope for T4 (deferred to T5).
+        let src = "    cpu 68000\n    move.w $1234,d0\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let diags = run(src, &opts).expect_err("absolute address operand must be rejected, not lowered");
+        assert!(
+            diags.iter().any(|d| d.message.contains("T5")),
+            "expected a T5-deferral diagnostic, got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn m68k_branch_mnemonic_diagnoses_t5_not_a_crash() {
+        // `bra`/`Bcc` are control-flow forms — out of scope for T4 (deferred to T5).
+        let src = "    cpu 68000\n    bra Target\nTarget:\n    rts\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let diags = run(src, &opts).expect_err("branch mnemonic must be rejected, not lowered");
+        assert!(
+            diags.iter().any(|d| d.message.contains("T5")),
+            "expected a T5-deferral diagnostic, got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn m68k_missing_size_suffix_is_a_clear_diagnostic() {
+        // `move` has no default size and no suffix here — must error, not guess.
+        let src = "    cpu 68000\n    move d0,d1\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let diags = run(src, &opts).expect_err("missing size suffix must be rejected");
+        assert!(
+            diags.iter().any(|d| d.message.contains("size suffix")),
+            "expected a size-suffix diagnostic, got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1384,47 +1732,29 @@ mod tests {
     }
 
     #[test]
-    fn m68k_operandless_instruction_reaches_stub_not_swallowed_as_label() {
+    fn m68k_operandless_instruction_reaches_lower_not_swallowed_as_label() {
         // `rts` is NOT a Z80 mnemonic (Z80 has `ret`) and carries no operand, so
         // it is a clean discriminator: if the indented head were misclassified as
         // a bare label, `body.len() == 1` would define it and return with NO
-        // diagnostic (Ok) — tripping the `Ok(_)` arm below. Routed correctly it
-        // reaches lower_m68k and yields the stub sentinel.
+        // bytes emitted. Routed correctly it reaches lower_m68k and (T4) lowers
+        // for real: `rts` = 4E75.
         let src = "    cpu 68000\n    rts\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = match run(src, &opts) {
-            Ok(_) => panic!("expected stub diagnostic; `rts` was swallowed as a bare label"),
-            Err(d) => d,
-        };
-        let stub = diags
-            .iter()
-            .find(|d| d.message.contains("68k instruction lowering not yet implemented"))
-            .unwrap_or_else(|| panic!("expected m68k stub diagnostic, got: {:?}",
-                diags.iter().map(|d| &d.message).collect::<Vec<_>>()));
-        // The diagnostic must point at the mnemonic `rts`, not anything else.
-        let text = &src[stub.primary.start as usize..stub.primary.end as usize];
-        assert_eq!(text, "rts", "stub diagnostic should span the mnemonic");
+        let m = run(src, &opts).expect("assemble");
+        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        assert_eq!(bytes, vec![0x4E, 0x75]);
     }
 
     #[test]
-    fn m68k_instruction_diagnostic_spans_mnemonic_not_operand() {
-        // Operand-bearing case: the stub diagnostic must span the MNEMONIC
-        // (`move.w`), proving the mnemonic — not its operand `d0` — reached
-        // lower_m68k. Before the column-rule fix, `move.w` was swallowed as a
-        // bogus label and the sentinel pointed at `d0`.
+    fn m68k_instruction_after_colon_label_lowers_the_mnemonic_not_the_operand() {
+        // Before the column-rule fix, `move.w` was swallowed as a bogus label and
+        // only `d0` reached dispatch. Routed correctly, the whole instruction
+        // lowers: `move.w d0,d1` = 3200.
         let src = "    cpu 68000\nStart:\n    move.w d0,d1\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = match run(src, &opts) {
-            Ok(_) => panic!("expected stub diagnostic, got clean assembly"),
-            Err(d) => d,
-        };
-        let stub = diags
-            .iter()
-            .find(|d| d.message.contains("68k instruction lowering not yet implemented"))
-            .unwrap_or_else(|| panic!("expected m68k stub diagnostic, got: {:?}",
-                diags.iter().map(|d| &d.message).collect::<Vec<_>>()));
-        let text = &src[stub.primary.start as usize..stub.primary.end as usize];
-        assert_eq!(text, "move.w", "stub diagnostic should span the mnemonic, not the operand");
+        let m = run(src, &opts).expect("assemble");
+        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        assert_eq!(bytes, vec![0x32, 0x00]);
     }
 
     #[test]
@@ -1434,15 +1764,9 @@ mod tests {
         // even though line.text starts at column 0.
         let src = "    cpu 68000\nFoo: rts\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = match run(src, &opts) {
-            Ok(_) => panic!("expected stub diagnostic for the instruction after the colon label"),
-            Err(d) => d,
-        };
-        assert!(
-            diags.iter().any(|d| d.message.contains("68k instruction lowering not yet implemented")),
-            "expected m68k stub diagnostic, got: {:?}",
-            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
+        let m = run(src, &opts).expect("assemble");
+        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        assert_eq!(bytes, vec![0x4E, 0x75]);
     }
 
     #[test]

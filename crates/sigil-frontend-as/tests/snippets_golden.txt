@@ -150,3 +150,159 @@ Other:
         endif
 --- bytes ---
 01
+=== m68k_move_w_dn_dn ===
+        cpu 68000
+        phase 0
+        move.w d0,d1
+--- bytes ---
+32 00
+=== m68k_moveq_dn ===
+        cpu 68000
+        phase 0
+        moveq #5,d0
+--- bytes ---
+70 05
+=== m68k_move_l_dn_dn ===
+        cpu 68000
+        phase 0
+        move.l d2,d3
+--- bytes ---
+26 02
+=== m68k_add_w_dn_dn ===
+        cpu 68000
+        phase 0
+        add.w d1,d2
+--- bytes ---
+D4 41
+=== m68k_addq_w_dn ===
+        cpu 68000
+        phase 0
+        addq.w #1,d0
+--- bytes ---
+52 40
+=== m68k_sub_l_dn_dn ===
+        cpu 68000
+        phase 0
+        sub.l d4,d5
+--- bytes ---
+9A 84
+=== m68k_cmp_w_dn_dn ===
+        cpu 68000
+        phase 0
+        cmp.w d6,d7
+--- bytes ---
+BE 46
+=== m68k_and_w_dn_dn ===
+        cpu 68000
+        phase 0
+        and.w d0,d1
+--- bytes ---
+C2 40
+=== m68k_or_l_dn_dn ===
+        cpu 68000
+        phase 0
+        or.l d2,d3
+--- bytes ---
+86 82
+=== m68k_eor_w_dn_dn ===
+        cpu 68000
+        phase 0
+        eor.w d4,d5
+--- bytes ---
+B9 45
+=== m68k_asl_w_imm_dn ===
+        cpu 68000
+        phase 0
+        asl.w #2,d0
+--- bytes ---
+E5 40
+=== m68k_lsr_l_imm_dn ===
+        cpu 68000
+        phase 0
+        lsr.l #1,d1
+--- bytes ---
+E2 89
+=== m68k_swap_dn ===
+        cpu 68000
+        phase 0
+        swap d0
+--- bytes ---
+48 40
+=== m68k_ext_w_dn ===
+        cpu 68000
+        phase 0
+        ext.w d0
+--- bytes ---
+48 80
+=== m68k_ext_l_dn ===
+        cpu 68000
+        phase 0
+        ext.l d1
+--- bytes ---
+48 C1
+=== m68k_clr_b_dn ===
+        cpu 68000
+        phase 0
+        clr.b d2
+--- bytes ---
+42 02
+=== m68k_neg_w_dn ===
+        cpu 68000
+        phase 0
+        neg.w d3
+--- bytes ---
+44 43
+=== m68k_not_l_dn ===
+        cpu 68000
+        phase 0
+        not.l d4
+--- bytes ---
+46 84
+=== m68k_tst_w_dn ===
+        cpu 68000
+        phase 0
+        tst.w d5
+--- bytes ---
+4A 45
+=== m68k_nop ===
+        cpu 68000
+        phase 0
+        nop
+--- bytes ---
+4E 71
+=== m68k_rts ===
+        cpu 68000
+        phase 0
+        rts
+--- bytes ---
+4E 75
+=== m68k_rte ===
+        cpu 68000
+        phase 0
+        rte
+--- bytes ---
+4E 73
+=== m68k_move_w_imm_to_sr ===
+        cpu 68000
+        phase 0
+        move.w #$2700,sr
+--- bytes ---
+46 FC 27 00
+=== m68k_move_w_sr_to_dn ===
+        cpu 68000
+        phase 0
+        move.w sr,d0
+--- bytes ---
+40 C0
+=== m68k_andi_b_imm_ccr ===
+        cpu 68000
+        phase 0
+        andi.b #$FE,ccr
+--- bytes ---
+02 3C 00 FE
+=== m68k_ori_b_imm_ccr ===
+        cpu 68000
+        phase 0
+        ori.b #$01,ccr
+--- bytes ---
+00 3C 00 01
