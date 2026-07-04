@@ -6,6 +6,7 @@ use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
 use crate::Options;
+use sigil_backend_m68k::M68kBackend;
 use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
 use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
@@ -114,7 +115,8 @@ fn one_pass(
 
 struct Asm {
     builder: IrBuilder,
-    backend: Z80Backend,
+    z80: Z80Backend,
+    m68k: M68kBackend,
     state: crate::state::AsmState,
     env: SymbolTable,
     scope: Option<String>,
@@ -144,7 +146,8 @@ impl Asm {
     fn new(opts: &Options) -> Self {
         Asm {
             builder: IrBuilder::new(),
-            backend: Z80Backend,
+            z80: Z80Backend,
+            m68k: M68kBackend,
             state: crate::state::AsmState::new(opts.initial_cpu),
             env: SymbolTable::new(),
             scope: None,
@@ -758,7 +761,12 @@ impl Asm {
             }
             "include" => self.directive_include(rest, span),
             _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
-            _ if is_mnemonic(head) => self.lower_instruction(head, rest, span),
+            // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
+            // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
+            // non-directive head is routed there rather than misreported as
+            // "unknown directive or mnemonic".
+            _ if self.state.cpu == Cpu::Z80 && is_mnemonic(head) => self.lower_instruction(head, rest, span),
+            _ if self.state.cpu == Cpu::M68000 => self.lower_instruction(head, rest, span),
             _ => self.err(span, format!("unknown directive or mnemonic `{head}`")),
         }
     }
@@ -892,6 +900,13 @@ impl Asm {
 
     fn lower_instruction(&mut self, mn: &str, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        match self.state.cpu {
+            Cpu::Z80 => self.lower_z80(mn, rest, span),
+            Cpu::M68000 => self.lower_m68k(mn, rest, span),
+        }
+    }
+
+    fn lower_z80(&mut self, mn: &str, rest: &[Token], span: Span) {
         let atoms = match parse_operands(rest) {
             Ok(a) => a,
             Err(d) => {
@@ -908,19 +923,25 @@ impl Asm {
         };
         match self.build_operands(m, &atoms, span) {
             Some(Lowered::Fixed(ops)) => {
-                let f = self.backend.lower(m, &ops, span);
+                let f = self.z80.lower(m, &ops, span);
                 self.emit_frag(f, span);
             }
             Some(Lowered::Rel(cond, target)) => {
-                let f = self.backend.lower_rel(m, cond, target, span);
+                let f = self.z80.lower_rel(m, cond, target, span);
                 self.emit_frag(f, span);
             }
             Some(Lowered::Abs16(ops, target)) => {
-                let f = self.backend.lower_abs16(m, &ops, target, span);
+                let f = self.z80.lower_abs16(m, &ops, target, span);
                 self.emit_frag(f, span);
             }
             None => {}
         }
+    }
+
+    /// Stub: real 68k mnemonic/operand lowering lands in M1.C T4/T5.
+    fn lower_m68k(&mut self, _mn: &str, _rest: &[Token], span: Span) {
+        let _ = &self.m68k; // field is wired now; used from T4/T5 onward.
+        self.err(span, "68k instruction lowering not yet implemented");
     }
 
     fn build_operands(&mut self, m: Mnemonic, atoms: &[OperandAtom], span: Span) -> Option<Lowered> {
@@ -1325,6 +1346,25 @@ mod tests {
     fn nested_if_inside_taken_branch() {
         let src = "        cpu z80\n        phase 0\nX = 1\n        if X = 1\n        db 1\n        if X = 1\n        db 2\n        endif\n        db 3\n        endif\n";
         assert_eq!(image(src), vec![0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn m68k_instruction_reaches_m68k_dispatch_stub() {
+        // Minimal 68k program: switch CPU, emit one instruction.
+        let src = "    cpu 68000\nStart:\n    move.w d0,d1\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let res = run(src, &opts);
+        // T1 only wires dispatch; the m68k path is a stub, so assembly reports the
+        // sentinel diagnostic (replaced with real lowering in T4/T5).
+        let diags = match res {
+            Ok(_) => panic!("expected stub diagnostic, got clean assembly"),
+            Err(d) => d,
+        };
+        assert!(
+            diags.iter().any(|d| d.message.contains("68k instruction lowering not yet implemented")),
+            "expected m68k stub diagnostic, got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
