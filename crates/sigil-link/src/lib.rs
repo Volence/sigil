@@ -169,11 +169,34 @@ fn apply_fixup(
             }
             bytes[site_abs as usize] = disp as i8 as u8;
         }
-        FixupKind::Abs16Be | FixupKind::Abs32Be => {
-            diags.push(diag(
-                format!("68000 fixup kind {:?} not supported in M0", fx.kind),
-                span,
-            ));
+        FixupKind::Abs16Be => {
+            // abs.w holds a sign-extended 16-bit address: the VMA must fit i16
+            // (asl errors otherwise; matching that keeps us byte-exact).
+            let v = value as i64;
+            if !(-0x8000..=0x7FFF).contains(&v) && !(0xFF_8000..=0xFF_FFFF).contains(&(v & 0xFF_FFFF)) {
+                diags.push(diag(
+                    format!("value {v:#X} does not fit abs.w (16-bit sign-extended) in section {section}"),
+                    span,
+                ));
+                return;
+            }
+            let w = (value & 0xFFFF) as u16;
+            bytes[site_abs as usize] = (w >> 8) as u8;
+            bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
+        }
+        FixupKind::Abs32Be => {
+            let w = value as u32;
+            bytes[site_abs as usize] = (w >> 24) as u8;
+            bytes[site_abs as usize + 1] = (w >> 16) as u8;
+            bytes[site_abs as usize + 2] = (w >> 8) as u8;
+            bytes[site_abs as usize + 3] = (w & 0xFF) as u8;
+        }
+        FixupKind::PcRel8 | FixupKind::PcRelDisp16 | FixupKind::PcRelDisp8 => {
+            // Implemented in Task 3.
+            diags.push(diag(format!("PC-relative fixup {:?} not yet implemented", fx.kind), span));
+        }
+        FixupKind::HeaderChecksum => {
+            diags.push(diag("HeaderChecksum is a post-image pass, not an in-fragment fixup".into(), span));
         }
     }
 }
@@ -402,21 +425,48 @@ mod tests {
     }
 
     #[test]
-    fn abs16be_unsupported_in_m0_diagnoses() {
+    fn abs32be_writes_big_endian_target_vma() {
+        // A 4-byte data fragment; Abs32Be fixup at offset 0 targeting VMA 0x00123456.
+        let mut stubs = SymbolTable::new();
+        stubs.define("T", SymbolValue::Int(0x0012_3456));
         let sec = Section {
-            name: "s".to_string(),
-            cpu: Cpu::Z80,
-            vma_base: Some(0x8000),
-            lma: 0x60000,
+            name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400,
             labels: vec![],
             fragments: vec![Fragment::Data(DataFragment {
-                bytes: vec![0x00, 0x00],
-                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Int(0x1234) }],
+                bytes: vec![0, 0, 0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("T".into()) }],
                 span: span(),
             })],
         };
-        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
-        assert!(err.iter().any(|d| d.message.contains("not supported in M0")), "got: {:?}", err);
+        let linked = link(&[sec], &stubs).unwrap();
+        assert_eq!(linked.section("s").unwrap().bytes, vec![0x00, 0x12, 0x34, 0x56]);
+    }
+
+    #[test]
+    fn abs16be_writes_big_endian_and_rejects_overflow() {
+        let mut stubs = SymbolTable::new();
+        stubs.define("Ok", SymbolValue::Int(0x1234));
+        stubs.define("Big", SymbolValue::Int(0x1_0000)); // does not fit abs.w sign-extension
+        let ok = Section {
+            name: "ok".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Ok".into()) }],
+                span: span(),
+            })],
+        };
+        assert_eq!(link(&[ok], &stubs).unwrap().section("ok").unwrap().bytes, vec![0x12, 0x34]);
+
+        let bad = Section {
+            name: "bad".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Big".into()) }],
+                span: span(),
+            })],
+        };
+        let err = link(&[bad], &stubs).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
     }
 
     #[test]
