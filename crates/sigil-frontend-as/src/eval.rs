@@ -802,6 +802,20 @@ impl Asm {
         }
         let parsed = parse_line_tokens(&toks);
         if let Some(name) = parsed.label_colon.clone() {
+            // `NAME: = expr` / `NAME: equ expr`: a colon-label immediately
+            // followed by an equate directive defines NAME as a CONSTANT, not a
+            // PC label — AS tolerates the decorative colon on an equate (Aeon
+            // writes both `RESET_RAM: = $FFFFFF00` and
+            // `DEBUGGER__EXTENSIONS__ENABLE: equ 1`). Detect it here so we bind
+            // the value rather than emitting a stray location label.
+            let b = &parsed.tokens;
+            let is_eq = matches!(b.first().map(|t| &t.tok), Some(Tok::Punct(Punct::Eq)));
+            let is_equ = matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if s == "equ");
+            if (is_eq || is_equ) && b.len() >= 2 {
+                let span = b[0].span;
+                self.directive_equate(&name, &b[1..], span);
+                return;
+            }
             self.define_label(&name);
         }
         let mut body = parsed.tokens;
@@ -827,6 +841,17 @@ impl Asm {
             }
         };
         if body.len() >= 2 && matches!(body[1].tok, Tok::Punct(Punct::Eq)) {
+            self.directive_equate(&head, &body[2..], body[0].span);
+            return;
+        }
+        // `name equ <expr>` — AS's constant-equate keyword form (equivalent to
+        // `name = <expr>` for our purposes). Intercepted here, before the
+        // mnemonic/bare-label fallback, for the same reason as `=`/`set`: the
+        // head is the symbol NAME, not a mnemonic. Without this, `hex equ $80`
+        // defines a stray label `hex` then dispatches `equ` as an instruction,
+        // and `dec equ $90` is worse still — `dec` IS a Z80 mnemonic, so the
+        // whole line routes to instruction lowering and errors under 68000.
+        if matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if s == "equ") {
             self.directive_equate(&head, &body[2..], body[0].span);
             return;
         }
@@ -1160,7 +1185,11 @@ impl Asm {
         let mut off: i64 = 0;
         for l in &lines[start + 1..end] {
             if let Some((field, width, count)) = self.parse_struct_field(l) {
-                self.env.define(&format!("{name}_{field}"), SymbolValue::Int(off));
+                // An anonymous reserve field (`ds.b 1` with no name) advances the
+                // struct offset but defines no member symbol.
+                if !field.is_empty() {
+                    self.env.define(&format!("{name}_{field}"), SymbolValue::Int(off));
+                }
                 off += width * count;
                 // asl-verified, and it depends on the `padding` state: with
                 // `padding on` (asl's default), a `ds.w`/`ds.l` field
@@ -1194,6 +1223,16 @@ impl Asm {
             (l, parsed.tokens)
         } else {
             match parsed.tokens.split_first() {
+                // Anonymous reserve field: a bare `ds.b|ds.w|ds.l N` with no
+                // preceding name (e.g. Act's `ds.b 1 ; reserved (pad to word)`).
+                // AS still advances the struct offset by its size; it just binds
+                // no member symbol. Emit an empty field name and keep the whole
+                // token slice (the `ds.*` keyword is the width token).
+                Some((Token { tok: Tok::Ident(s), .. }, _))
+                    if matches!(s.as_str(), "ds.b" | "ds.w" | "ds.l") =>
+                {
+                    (String::new(), parsed.tokens.clone())
+                }
                 Some((Token { tok: Tok::Ident(s), .. }, r)) => (s.clone(), r.to_vec()),
                 _ => return None,
             }
@@ -2393,9 +2432,54 @@ impl Asm {
 fn split_src_lines(text: &str) -> Vec<SrcLine> {
     let mut lines = Vec::new();
     let mut base = 0u32;
+    // A physical line whose last non-whitespace character is `\` is an AS
+    // line-continuation: it joins with the following physical line into one
+    // logical line (the Aeon `function` definitions in macros.asm /
+    // parallax_macros.inc wrap a long body expression this way). The joined
+    // logical line takes the FIRST physical line's `base`; the `\` (and the
+    // intervening newline) are replaced by spaces so downstream byte offsets
+    // stay length-stable and no bogus `\` token reaches the lexer. Only a
+    // trailing `\` continues — an interior `\` (e.g. a macro `\1` parameter
+    // marker) is untouched.
+    let mut pending: Option<(u32, String)> = None;
     for raw in text.split_inclusive('\n') {
-        lines.push(SrcLine { text: raw.to_string(), base });
+        let trimmed = raw.trim_end();
+        let is_cont = trimmed.ends_with('\\');
+        // Length-preserving cell text: drop the trailing newline's semantics by
+        // turning a continuation `\`+tail into spaces, else keep the raw text.
+        let cell = if is_cont {
+            // Replace the final `\` with a space, and the trailing whitespace
+            // (incl. the newline) it had is preserved as-is after it.
+            let cut = trimmed.len() - 1; // index of the `\`
+            let mut s = String::with_capacity(raw.len());
+            s.push_str(&raw[..cut]);
+            s.push(' ');
+            s.push_str(&raw[cut + 1..]);
+            s
+        } else {
+            raw.to_string()
+        };
+        match pending.take() {
+            Some((start_base, mut acc)) => {
+                acc.push_str(&cell);
+                if is_cont {
+                    pending = Some((start_base, acc));
+                } else {
+                    lines.push(SrcLine { text: acc, base: start_base });
+                }
+            }
+            None => {
+                if is_cont {
+                    pending = Some((base, cell));
+                } else {
+                    lines.push(SrcLine { text: cell, base });
+                }
+            }
+        }
         base += raw.len() as u32;
+    }
+    if let Some((start_base, acc)) = pending {
+        lines.push(SrcLine { text: acc, base: start_base });
     }
     lines
 }
@@ -3154,6 +3238,67 @@ mod tests {
         // Three ds.b 1 fields → offsets 0/1/2, DacSample_len = 3.
         let src = "        cpu z80\n        phase 0\nDacSample struct\np       ds.b 1\nq       ds.b 1\nr       ds.b 1\nDacSample endstruct\n        db DacSample_p, DacSample_q, DacSample_r, DacSample_len\n";
         assert_eq!(image(src), vec![0x00, 0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn equ_keyword_defines_a_constant() {
+        // AS `name equ expr` (parallax_macros.inc `FACTOR_LOCKED equ $0FF`).
+        // Also `dec equ $90`: `dec` is a Z80 mnemonic, so without the equate
+        // intercept the line would route to instruction lowering.
+        let src = "        cpu 68000\n        phase 0\nFOO equ $12\ndec equ $34\n        dc.b FOO\n        dc.b dec\n";
+        assert_eq!(image(src), vec![0x12, 0x34]);
+    }
+
+    #[test]
+    fn colon_label_equate_forms_define_constants_not_labels() {
+        // AS tolerates a decorative colon on an equate: `NAME: equ v`
+        // (debugger.asm) and `NAME: = v` (ram.asm `RESET_RAM: = $FFFFFF00`).
+        let src = "        cpu 68000\n        phase 0\nA: equ $11\nB: = $22\n        dc.b A\n        dc.b B\n";
+        assert_eq!(image(src), vec![0x11, 0x22]);
+    }
+
+    #[test]
+    fn anonymous_struct_reserve_field_advances_offset() {
+        // AS: an unnamed `ds.b N` inside a struct reserves space (advances the
+        // running offset) but binds no member symbol — the Act struct's
+        // `ds.b 1 ; reserved (pad to word)` pattern. Here b=$00, len=3 (a+pad+c
+        // = 1+1+1) even though the middle field has no name.
+        let src = concat!(
+            "        cpu 68000\n        padding off\n        phase 0\n",
+            "Rec     struct\n",
+            "a       ds.b 1\n",
+            "        ds.b 1\n",
+            "c       ds.b 1\n",
+            "Rec     endstruct\n",
+            "        dc.b Rec_a\n        dc.b Rec_c\n        dc.b Rec_len\n",
+        );
+        assert_eq!(image(src), vec![0x00, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn char_constant_folds_in_expression() {
+        // AS `'…'` packs big-endian; used bare and in expressions.
+        let src = "        cpu 68000\n        phase 0\n        dc.l 'INIT'\n";
+        assert_eq!(image(src), vec![0x49, 0x4E, 0x49, 0x54]);
+    }
+
+    #[test]
+    fn binary_literal_folds_in_expression() {
+        // AS `%` binary literal (constants.asm `VRAM = %100001`).
+        let src = "        cpu 68000\n        phase 0\nVRAM = %100001\n        dc.b VRAM\n";
+        assert_eq!(image(src), vec![0x21]);
+    }
+
+    #[test]
+    fn backslash_line_continuation_joins_function_body() {
+        // AS trailing-`\` continuation (macros.asm vdpComm def wraps its body).
+        let src = concat!(
+            "        cpu 68000\n        phase 0\n",
+            "sum     function a,b, \\\n",
+            "                (a) + (b)\n",
+            "        dc.b sum(3,4)\n",
+        );
+        assert_eq!(image(src), vec![0x07]);
     }
 
     #[test]

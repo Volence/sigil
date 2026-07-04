@@ -47,6 +47,45 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                 out.push(Token { tok: Tok::Dollar, span: span_at(i, i + 1) });
                 i += 1;
             }
+            // AS binary literal: `%` followed by binary digits (e.g. `%100001`).
+            // A `%` NOT followed by `0`/`1` is left to the operator path (which
+            // reports "unexpected character" as before), so this only ever
+            // fires on a genuine binary constant. Outside comments (stripped at
+            // `;`) every `%` in the Aeon front-matter is such a literal.
+            b'%' if matches!(bytes.get(i + 1), Some(b'0' | b'1')) => {
+                let start = i;
+                i += 1;
+                let b0 = i;
+                while i < bytes.len() && matches!(bytes[i], b'0' | b'1') {
+                    i += 1;
+                }
+                let v = i64::from_str_radix(std::str::from_utf8(&bytes[b0..i]).unwrap(), 2)
+                    .map_err(|_| err(start, i, "malformed binary literal"))?;
+                out.push(Token { tok: Tok::Int(v), span: span_at(start, i) });
+            }
+            // AS character constant: `'…'` packs its bytes big-endian into an
+            // integer (`'A'` = 0x41, `'INIT'` = 0x494E4954). Distinct from a
+            // `"…"` string. A `'` reaching this arm is a genuine opener: an
+            // identifier greedily absorbs any trailing `'` as an ident tail
+            // (the z80 `af'` shadow-register form), so a leading `'` never
+            // follows an identifier char.
+            b'\'' => {
+                let start = i;
+                i += 1;
+                let s0 = i;
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    i += 1;
+                }
+                if i >= bytes.len() {
+                    return Err(err(start, i, "unterminated character constant"));
+                }
+                let mut v: i64 = 0;
+                for &ch in &bytes[s0..i] {
+                    v = (v << 8) | ch as i64;
+                }
+                i += 1; // closing quote
+                out.push(Token { tok: Tok::Int(v), span: span_at(start, i) });
+            }
             b'$' => {
                 // 68k hex: `$` then hex digits.
                 let start = i;
@@ -245,6 +284,26 @@ mod tests {
             vec![Tok::Punct(LParen), Tok::Ident("ix".into()), Tok::Punct(Plus),
                  Tok::Ident("sc_flags".into()), Tok::Punct(RParen)]
         );
+    }
+
+    #[test]
+    fn binary_literal_percent_prefix() {
+        // AS `%` binary literal (e.g. constants.asm `VRAM = %100001`).
+        assert_eq!(kinds("%100001", Cpu::M68000), vec![Tok::Int(0b100001)]);
+        assert_eq!(kinds("%0", Cpu::M68000), vec![Tok::Int(0)]);
+        // `%` not followed by a binary digit is still an unexpected-char error.
+        assert!(lex_line("%x", Cpu::M68000, SourceId(0), 0).is_err());
+    }
+
+    #[test]
+    fn char_constant_packs_big_endian() {
+        // AS `'…'` character constant packs bytes big-endian (constants.asm
+        // `CROSS_RESET_MAGIC = 'INIT'`).
+        assert_eq!(kinds("'A'", Cpu::M68000), vec![Tok::Int(0x41)]);
+        assert_eq!(kinds("'INIT'", Cpu::M68000), vec![Tok::Int(0x494E4954)]);
+        // A trailing `'` on an identifier (z80 `af'`) is unaffected.
+        assert_eq!(kinds("af'", Cpu::Z80), vec![Tok::Ident("af'".into())]);
+        assert!(lex_line("'unterminated", Cpu::M68000, SourceId(0), 0).is_err());
     }
 
     #[test]

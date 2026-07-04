@@ -1,0 +1,67 @@
+; Bounded M1.C T10 harness root: the REAL games/sonic4/main.asm front-matter
+; include tree + `org 0` + the 64-entry vector table, then STOP (main.asm
+; continues into engine code needing generators). Faithful copy of main.asm's
+; opening (verified) so a byte-match against s4.bin[0:256] proves the include
+; tree parses and dc.l/symbol resolution work on real Aeon source.
+;
+; External CODE labels referenced by the vector table (EntryPoint, BusError, …)
+; are seeded as `-D` defines / link stubs from s4.lst — see m1c_vector_table.rs.
+; SYSTEM_STACK is NOT stubbed: it is a real equate defined in constants.asm.
+    cpu 68000
+    padding off
+    supmode on
+
+PAD_TO_POWER_OF_TWO     = 1
+
+    include "constants.asm"
+    include "sound_constants.asm"
+    include "structs.asm"
+    include "macros.asm"
+    include "engine/parallax_macros.inc"
+    include "ram.asm"
+    include "engine/debug/debugger.asm"
+
+    org 0
+
+__BUDGET_VECTORS:
+Vectors:
+    dc.l    SYSTEM_STACK                    ; $00: Initial SSP
+    dc.l    EntryPoint                      ; $04: Reset PC
+    dc.l    BusError                        ; $08: Bus error
+    dc.l    AddressError                    ; $0C: Address error
+    dc.l    IllegalInstr                    ; $10: Illegal instruction
+    dc.l    ZeroDivide                      ; $14: Division by zero
+    dc.l    ChkInstr                        ; $18: CHK exception
+    dc.l    TrapvInstr                      ; $1C: TRAPV
+    dc.l    PrivilegeViol                   ; $20: Privilege violation
+    dc.l    Trace                           ; $24: Trace
+    dc.l    Line1010Emu                     ; $28: Line 1010
+    dc.l    Line1111Emu                     ; $2C: Line 1111
+    dc.l    ErrorExcept                     ; $30: Reserved
+    dc.l    ErrorExcept                     ; $34: Reserved
+    dc.l    ErrorExcept                     ; $38: Reserved
+    dc.l    ErrorExcept                     ; $3C: Reserved
+    dc.l    ErrorExcept                     ; $40: Reserved
+    dc.l    ErrorExcept                     ; $44: Reserved
+    dc.l    ErrorExcept                     ; $48: Reserved
+    dc.l    ErrorExcept                     ; $4C: Reserved
+    dc.l    ErrorExcept                     ; $50: Reserved
+    dc.l    ErrorExcept                     ; $54: Reserved
+    dc.l    ErrorExcept                     ; $58: Reserved
+    dc.l    ErrorExcept                     ; $5C: Reserved
+    dc.l    ErrorExcept                     ; $60: Spurious interrupt
+    dc.l    NullInterrupt                   ; $64: IRQ1 (external)
+    dc.l    NullInterrupt                   ; $68: IRQ2 (external)
+    dc.l    NullInterrupt                   ; $6C: IRQ3
+    dc.l    HBlank_Dispatch                 ; $70: IRQ4 (HBlank)
+    dc.l    NullInterrupt                   ; $74: IRQ5
+    dc.l    VBlank_Handler                  ; $78: IRQ6 (VBlank)
+    dc.l    NullInterrupt                   ; $7C: IRQ7 (NMI)
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $80-$8C: TRAP 0-3
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $90-$9C: TRAP 4-7
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $A0-$AC: TRAP 8-11
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $B0-$BC: TRAP 12-15
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $C0-$CC: Reserved
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $D0-$DC: Reserved
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $E0-$EC: Reserved
+    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $F0-$FC: Reserved
