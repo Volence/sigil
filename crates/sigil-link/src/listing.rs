@@ -21,6 +21,18 @@ pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
     let unused = rows.iter().filter(|s| s.unused).count();
 
     let mut out = String::new();
+
+    // Oracle's `LoadFromAsListing` reads the per-line BODY listing (via
+    // `ParseLineHeader`: `(depth) num/hexaddr :  ... Name:`), NOT the symbol-table
+    // section that s4budget reads. Emit one Oracle-parseable body line per symbol
+    // first — verified against the real Oracle Symbols.cpp AND s4budget: the body
+    // lines precede s4budget's `Symbol Table` header (so it ignores them) and the
+    // symbol-table rows below fail Oracle's `ParseLineHeader` (so Oracle ignores
+    // them). Each consumer reads exactly its own half of one file.
+    for (i, s) in rows.iter().enumerate() {
+        out.push_str(&format!("(0) {}/{:X} :        {}:\n", i + 1, s.value, s.name));
+    }
+
     out.push_str("  Symbol Table (* = unused):\n");
     out.push_str("  --------------------------\n\n");
     for s in &rows {
@@ -70,5 +82,25 @@ mod tests {
                 && (l.contains(" C |") || l.contains(" - |"))
         });
         assert!(re_ok, "no parseable row in:\n{out}");
+    }
+
+    #[test]
+    fn emits_oracle_body_lines_before_symbol_table() {
+        let out = emit_listing(&[
+            sym("Main", 0x1000, false, false),
+            sym("OBJ_len", 0x40, true, false),
+        ]);
+        // Oracle body lines (ParseLineHeader format) come first, address-sorted.
+        // `(depth) N/HEXADDR :        Name:`
+        assert!(out.contains("(0) 1/40 :        OBJ_len:"), "missing/incorrect body line:\n{out}");
+        assert!(out.contains("(0) 2/1000 :        Main:"), "missing/incorrect body line:\n{out}");
+        // Every body line must precede the Symbol Table header (s4budget reads only
+        // after that header; Oracle reads only the body lines).
+        let body_idx = out.find("(0) 1/40").unwrap();
+        let tab_idx = out.find("Symbol Table").unwrap();
+        assert!(body_idx < tab_idx, "body lines must precede the symbol-table section");
+        // The symbol-table section is still present and unchanged.
+        assert!(out.contains("Main : 1000 C |"));
+        assert!(out.contains("OBJ_len : 40 - |"));
     }
 }
