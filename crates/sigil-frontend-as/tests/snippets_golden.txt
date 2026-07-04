@@ -619,3 +619,74 @@ Lbl:
         dc.w $abcd
 --- bytes ---
 11 22 33 AB CD
+=== macro_keyword_args ===
+        cpu 68000
+        phase 0
+tst     macro AMP,PER
+        dc.b AMP
+        dc.b PER
+        endm
+        tst AMP=7,PER=9
+        tst 3,4
+        tst PER=5,AMP=2
+--- bytes ---
+07 09 03 04 02 05
+=== struct_len_assert ===
+        cpu 68000
+        phase 0
+Rec     struct
+a       ds.b 1
+b       ds.w 1
+c       ds.b 1
+Rec     endstruct
+        if Rec_len <> 4
+        dc.b 1
+        else
+        dc.b 2
+        endif
+        dc.b Rec_b
+--- bytes ---
+01 01
+=== struct_len_assert_padding_off ===
+        cpu 68000
+        padding off
+        phase 0
+Rec     struct
+a       ds.b 1
+b       ds.w 1
+c       ds.b 1
+Rec     endstruct
+        if Rec_len <> 4
+        dc.b 1
+        else
+        dc.b 2
+        endif
+        dc.b Rec_b
+--- bytes ---
+02 01
+=== pbyte_momcpuname ===
+        cpu 68000
+        phase 0
+        ifndef pbyte_defined
+pbyte_defined = 1
+pbyte   macro
+        if MOMCPUNAME="Z80"
+        db      ALLARGS
+        else
+        dc.b    ALLARGS
+        endif
+        endm
+        endif
+        pbyte 10,20,30
+--- bytes ---
+0A 14 1E
+=== allargs ===
+        cpu 68000
+        phase 0
+blob    macro
+        dc.b ALLARGS
+        endm
+        blob 1
+        blob 2,3,4,5
+--- bytes ---
+01 02 03 04 05

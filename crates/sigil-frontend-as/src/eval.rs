@@ -683,6 +683,20 @@ impl Asm {
             if let Some((field, width, count)) = self.parse_struct_field(l) {
                 self.env.define(&format!("{name}_{field}"), SymbolValue::Int(off));
                 off += width * count;
+                // asl-verified, and it depends on the `padding` state: with
+                // `padding on` (asl's default), a `ds.w`/`ds.l` field
+                // (width >= 2) pads the running offset up to the next even
+                // address once it's placed (the field's own start is NOT
+                // pre-aligned, only the offset that follows). With
+                // `padding off` — which Aeon sets globally at the top of
+                // main.asm — there is NO rounding; the naive running offset
+                // is used. Probed against real asl with
+                // `a ds.b 1 / b ds.w 1 / c ds.b 1`:
+                //   padding on  -> a=0 b=1 c=4 len=5
+                //   padding off -> a=0 b=1 c=3 len=4  (Aeon's real layout).
+                if self.state.padding && width >= 2 && off % 2 != 0 {
+                    off += 1;
+                }
             }
         }
         self.env.define(&format!("{name}_len"), SymbolValue::Int(off));
@@ -1696,7 +1710,15 @@ impl Asm {
     }
 
     /// Expand a macro invocation: substitute `ALLARGS` (verbatim arg text) and
-    /// positional params, then execute the resulting lines.
+    /// params (positional and/or keyword), then execute the resulting lines.
+    ///
+    /// Real AS binds params two ways, mixable in one call (asl-verified — see
+    /// the `macro_keyword_args` snippet): a comma-split arg of the shape
+    /// `NAME=value` binds `NAME` by name, regardless of where it sits in the
+    /// call; every other arg fills the remaining (not yet keyword-bound)
+    /// params positionally, in declaration order. `tst AMP=7,PER=9`,
+    /// `tst 3,4`, and `tst PER=5,AMP=2` (params `AMP,PER`) all bind correctly
+    /// under this rule.
     fn expand_macro(&mut self, name: &str, arg_toks: &[Token]) {
         if self.macro_depth >= EXPAND_CAP {
             let span = arg_toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: 0, end: 0 });
@@ -1708,12 +1730,34 @@ impl Asm {
             None => return,
         };
         let all_args = render_tokens(arg_toks);
-        let arg_groups: Vec<String> = split_top_commas(arg_toks).iter().map(|g| render_tokens(g)).collect();
+        let groups = split_top_commas(arg_toks);
+        let mut keyword: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let mut positional: Vec<String> = Vec::new();
+        for g in &groups {
+            if let [Token { tok: Tok::Ident(nm), .. }, Token { tok: Tok::Punct(Punct::Eq), .. }, value @ ..] = *g {
+                if !value.is_empty() && params.iter().any(|p| p == nm) {
+                    keyword.insert(nm.clone(), render_tokens(value));
+                    continue;
+                }
+            }
+            positional.push(render_tokens(g));
+        }
+        let mut pos_iter = positional.into_iter();
+        let arg_values: Vec<(String, String)> = params
+            .iter()
+            .filter_map(|p| {
+                keyword
+                    .get(p)
+                    .cloned()
+                    .or_else(|| pos_iter.next())
+                    .map(|v| (p.clone(), v))
+            })
+            .collect();
         let mut expanded = Vec::new();
         for l in &body {
             let mut text = l.text.clone();
             text = text.replace("ALLARGS", &all_args);
-            for (p, a) in params.iter().zip(arg_groups.iter()) {
+            for (p, a) in &arg_values {
                 text = replace_word(&text, p, a);
             }
             expanded.push(SrcLine { text, base: l.base });
@@ -2354,6 +2398,78 @@ mod tests {
     fn macro_positional_params() {
         let src = "        cpu z80\n        phase 0\nemit2   macro x,y\n        db x,y\n        endm\n        emit2 10h,20h\n";
         assert_eq!(image(src), vec![0x10, 0x20]);
+    }
+
+    #[test]
+    fn macro_keyword_args_bind_by_name() {
+        // asl-verified (see tst snippet in snippets_golden.txt): `NAME=value`
+        // binds a param by name regardless of its position in the call.
+        let src = concat!(
+            "        cpu 68000\n        phase 0\n",
+            "tst     macro AMP,PER\n",
+            "        dc.b AMP\n        dc.b PER\n        endm\n",
+            "        tst AMP=7,PER=9\n",
+        );
+        assert_eq!(image(src), vec![0x07, 0x09]);
+    }
+
+    #[test]
+    fn macro_positional_args_still_work_alongside_keyword_binding() {
+        let src = concat!(
+            "        cpu 68000\n        phase 0\n",
+            "tst     macro AMP,PER\n",
+            "        dc.b AMP\n        dc.b PER\n        endm\n",
+            "        tst 3,4\n",
+        );
+        assert_eq!(image(src), vec![0x03, 0x04]);
+    }
+
+    #[test]
+    fn macro_keyword_args_are_order_independent() {
+        let src = concat!(
+            "        cpu 68000\n        phase 0\n",
+            "tst     macro AMP,PER\n",
+            "        dc.b AMP\n        dc.b PER\n        endm\n",
+            "        tst PER=5,AMP=2\n",
+        );
+        assert_eq!(image(src), vec![0x02, 0x05]);
+    }
+
+    #[test]
+    fn struct_word_field_pads_running_offset_to_even_under_padding_on() {
+        // asl-verified: with `padding on` (asl's default), a `ds.w`/`ds.l`
+        // (width >= 2) field pads the running struct offset up to the next
+        // even address AFTER it's placed — even though the field's own start
+        // offset is not pre-aligned. Probed against real asl:
+        // `a ds.b 1 / b ds.w 1 / c ds.b 1` -> a=0 b=1 c=4 len=5.
+        let src = concat!(
+            "        cpu 68000\n        phase 0\n",
+            "Rec     struct\n",
+            "a       ds.b 1\n",
+            "b       ds.w 1\n",
+            "c       ds.b 1\n",
+            "Rec     endstruct\n",
+            "        dc.b Rec_a\n        dc.b Rec_b\n        dc.b Rec_c\n        dc.b Rec_len\n",
+        );
+        assert_eq!(image(src), vec![0x00, 0x01, 0x04, 0x05]);
+    }
+
+    #[test]
+    fn struct_word_field_uses_naive_offset_under_padding_off() {
+        // asl-verified: with `padding off` (Aeon's real global state, set at
+        // the top of main.asm), struct fields are NOT even-rounded — the
+        // running offset advances by exactly the field size. Probed against
+        // real asl: `a ds.b 1 / b ds.w 1 / c ds.b 1` -> a=0 b=1 c=3 len=4.
+        let src = concat!(
+            "        cpu 68000\n        padding off\n        phase 0\n",
+            "Rec     struct\n",
+            "a       ds.b 1\n",
+            "b       ds.w 1\n",
+            "c       ds.b 1\n",
+            "Rec     endstruct\n",
+            "        dc.b Rec_a\n        dc.b Rec_b\n        dc.b Rec_c\n        dc.b Rec_len\n",
+        );
+        assert_eq!(image(src), vec![0x00, 0x01, 0x03, 0x04]);
     }
 
     #[test]
