@@ -719,6 +719,38 @@ impl Asm {
         }
     }
 
+    /// `BINCLUDE "path"`: read a file's raw bytes and emit them verbatim —
+    /// opaque binary data, no parsing (asl-verified: a file containing `ABCD`
+    /// emits `41 42 43 44`). Path resolves via `include_root` exactly like
+    /// `include` (real Aeon source paths are relative to the aeon root, e.g.
+    /// `BINCLUDE "games/sonic4/data/collision/heightmaps.bin"`). Unlike
+    /// `include`, this is NOT re-entrancy-guarded by `self.visited` — every
+    /// real usage in Aeon is a bare, single-use `BINCLUDE "path"` (no
+    /// offset/length args; verified via `grep -rn BINCLUDE` over
+    /// `aeon/games` + `aeon/engine`, all 43 call sites bare), and unlike
+    /// `include` (which execs the file's lines and so must not re-enter a
+    /// cycle), re-BINCLUDEing the same path is a legitimate way to place the
+    /// same blob at two different labels — a DAG guard would silently drop
+    /// the second copy.
+    fn directive_binclude(&mut self, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        let rel = match rest.iter().find_map(|t| if let Tok::Str(s) = &t.tok { Some(s.clone()) } else { None }) {
+            Some(p) => p,
+            None => {
+                self.err(span, "BINCLUDE needs a quoted path");
+                return;
+            }
+        };
+        let path = match &self.include_root {
+            Some(root) => root.join(&rel),
+            None => std::path::PathBuf::from(&rel),
+        };
+        match std::fs::read(&path) {
+            Ok(bytes) => self.emit(&bytes, vec![], span),
+            Err(e) => self.err(span, format!("cannot BINCLUDE {}: {e}", path.display())),
+        }
+    }
+
     /// Execute a slice of logical lines in order, handling block directives.
     fn exec(&mut self, lines: &[SrcLine]) {
         let mut i = 0;
@@ -1277,6 +1309,13 @@ impl Asm {
                 let _ = self.interp_string(rest);
             }
             "include" => self.directive_include(rest, span),
+            // Matched by exact case, not lowercased: this front-end never
+            // case-folds identifiers (see `is_op_keyword`/`lex_line` — every
+            // other directive here is matched against the exact spelling
+            // real Aeon source uses, e.g. lowercase `include`/`org`). Real
+            // source spells this directive uppercase at all 43 call sites
+            // (`grep -rn BINCLUDE aeon/games aeon/engine`), never `binclude`.
+            "BINCLUDE" => self.directive_binclude(rest, span),
             _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
             // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
@@ -2368,7 +2407,7 @@ fn is_op_keyword(s: &str) -> bool {
             | "db" | "dw" | "dc.b" | "dc.w" | "dc.l" | "equ"
             | "if" | "elseif" | "else" | "endif" | "ifdef" | "ifndef"
             | "rept" | "endr" | "endm" | "macro" | "struct" | "endstruct"
-            | "function" | "include" | "error" | "fatal" | "message"
+            | "function" | "include" | "BINCLUDE" | "error" | "fatal" | "message"
             | "ds.b" | "ds.w" | "ds.l" | "align" | "while"
             | "switch" | "case" | "elsecase" | "endcase"
     )
@@ -3258,6 +3297,34 @@ mod tests {
         let m = crate::assemble_root(&main, &Options::default()).expect("assemble");
         let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
         assert_eq!(bytes, vec![0x01, 0xAA, 0xBB, 0x02]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn binclude_emits_file_bytes_verbatim() {
+        // `BINCLUDE "path"` (M1.C T10): opaque binary emit, no parsing — the
+        // file's raw bytes go straight into the image. Path resolves via
+        // `include_root` exactly like `include` (asl-verified: same base
+        // directory, real Aeon source uses `BINCLUDE "games/.../foo.bin"`
+        // resolved from the aeon root). Content spans the full byte range
+        // (incl. 0x00 and non-ASCII) to prove this is a raw copy, not a
+        // text/db-style parse.
+        let dir = std::env::temp_dir().join(format!("sigil_binc_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload: Vec<u8> = vec![0x00, 0x41, 0xFF, 0x0A, 0x80, 0x7F];
+        std::fs::write(dir.join("blob.bin"), &payload).unwrap();
+        let main = dir.join("main.asm");
+        std::fs::write(
+            &main,
+            "        cpu 68000\n        padding off\n        phase 0\n        dc.b 1\n        BINCLUDE \"blob.bin\"\n        dc.b 2\n",
+        )
+        .unwrap();
+        let m = crate::assemble_root(&main, &Options::default()).expect("assemble");
+        let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
+        let mut want = vec![0x01];
+        want.extend_from_slice(&payload);
+        want.push(0x02);
+        assert_eq!(bytes, want);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
