@@ -1100,3 +1100,65 @@ B3 48
         cmpm.b  (a3)+, (a2)+
 --- bytes ---
 B5 0B
+=== m68k_padding_on_word_at_odd_pc ===
+        cpu 68000
+        padding on
+        phase 0
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 00 12 34
+=== m68k_padding_off_word_at_odd_pc ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 12 34
+=== m68k_padding_on_long_at_odd_pc ===
+        cpu 68000
+        padding on
+        phase 0
+        dc.b $AA
+        dc.l $12345678
+--- bytes ---
+AA 00 12 34 56 78
+=== m68k_padding_on_instr_at_odd_pc ===
+        cpu 68000
+        padding on
+        phase 0
+        dc.b $AA
+        nop
+--- bytes ---
+AA 00 4E 71
+=== m68k_restore_cpu_change_resets_padding_on ===
+        cpu 68000
+        padding off
+        phase 0
+        save
+        cpu z80
+        restore
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 00 12 34
+=== m68k_restore_same_cpu_keeps_padding_off ===
+        cpu 68000
+        padding off
+        phase 0
+        save
+        restore
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 12 34
+=== m68k_cpu_directive_resets_padding_on ===
+        cpu 68000
+        padding off
+        phase 0
+        cpu 68000
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 00 12 34

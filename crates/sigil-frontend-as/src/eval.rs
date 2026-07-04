@@ -1656,8 +1656,28 @@ impl Asm {
                 return;
             }
         };
-        self.state.cpu = cpu;
+        // The `cpu` directive resets padding/supmode to the CPU default,
+        // unconditionally (asl-verified — see state.rs::set_cpu). Aeon's real
+        // `padding off` at main.asm:3 therefore survives only until the first
+        // subsequent `cpu` directive / cpu-changing `restore` (boot.asm's z80
+        // load blocks), after which padding is ON for the rest of the ROM.
+        self.state.set_cpu(cpu);
         self.close_section();
+    }
+
+    /// asl `padding on` (68000) inserts a single `$00` byte before a word-or-
+    /// larger datum (`dc.w`/`dc.l`/any instruction) whose logical PC `$` is odd,
+    /// keeping 68k data/code word-aligned. Alignment is on the LOGICAL `$`
+    /// (`physical + phase disp`), not the physical offset — asl-verified (the
+    /// `phase_logodd`/`phase_logeven` probes in
+    /// `docs/superpowers/notes/2026-07-04-m1d-t0.1-padding-probes.md`). No-op
+    /// under `padding off` (Aeon's initial state), on a Z80 CPU (byte stream), or
+    /// at an even `$`. `dc.b` never calls this (alignment 1).
+    fn pad_word_align(&mut self, span: Span) {
+        if self.state.padding && self.state.cpu == Cpu::M68000 && !self.here().is_multiple_of(2) {
+            self.open_section_if_needed();
+            self.emit(&[0x00], vec![], span);
+        }
     }
 
     fn directive_phase(&mut self, rest: &[Token], span: Span) {
@@ -1865,6 +1885,7 @@ impl Asm {
     /// `dw`'s little-endian). Mirrors `directive_dw`'s expr-list parsing.
     fn directive_dc_w(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        self.pad_word_align(span);
         for g in split_top_commas(rest) {
             let expanded = self.expand_calls(g, 0);
             let e = match crate::expr::parse_expr(&expanded) {
@@ -1903,6 +1924,7 @@ impl Asm {
     /// `dc.l <expr>,...` — big-endian 32-bit longwords.
     fn directive_dc_l(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        self.pad_word_align(span);
         for g in split_top_commas(rest) {
             let expanded = self.expand_calls(g, 0);
             let e = match crate::expr::parse_expr(&expanded) {
@@ -2053,6 +2075,12 @@ impl Asm {
                 return;
             }
         };
+
+        // Every 68k instruction is word-aligned: under `padding on` at an odd `$`,
+        // asl prefixes a $00 pad byte (asl-verified — `instr_odd_pad_on` probe).
+        // Covers all instruction paths (branch/dbcc/movem/jmp-jsr/generic) since
+        // it runs before the dispatch below.
+        self.pad_word_align(span);
 
         if matches!(
             mnemonic,

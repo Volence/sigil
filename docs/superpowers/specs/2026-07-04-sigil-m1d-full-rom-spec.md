@@ -93,7 +93,22 @@ Stashed aeon's forest_bg/editor WIP to get a reproducible pin. `regen` byte-iden
 (region A 5896 B, B 1543 B). Recorded in `PROVENANCE.md`. Recon re-run against the
 clean tree: same structure (2M → T1 string-set root cause + 6 T2 EA sites + 3 one-offs).
 
-**T0.1 — `padding` fidelity (fixes F1). Probe-first, then implement.**
+**T0.1 — `padding` fidelity (fixes F1). ✅ DONE (2026-07-04).** Probe-first: 17
+live-asl probes (matrix in `docs/superpowers/notes/2026-07-04-m1d-t0.1-padding-probes.md`)
+established **hypothesis A** (fits every row): (1) the `cpu X` directive resets
+padding/supmode to CPU defaults **unconditionally, even same-CPU** (probe d: `padding
+off; cpu 68000`→ON); (2) `save` snapshots only the CPU; `restore` re-applies it and
+resets padding/supmode to default **only on an actual CPU change** (t14→ON, t12→OFF) and
+**never restores the saved padding value** (probes b/c decisive). Also verified padding
+aligns on the **logical `$`** (physical+disp), not physical (phase_logodd/logeven probes),
+and pads before `dc.w`/`dc.l`/**instructions** at odd `$`. Implemented: `state.rs` `set_cpu`
+(unconditional reset) + change-conditional `restore` + rewritten header/tests; `eval.rs`
+`directive_cpu`→`set_cpu`, new `pad_word_align` helper wired into dc.w/dc.l/`lower_m68k`.
+Fixed the "probe-verified" lie in the state.rs header. 7 byte-affecting snippet goldens
+(regenerated from real asl: pad-on/off word/long/instr at odd PC, t14/t12/d state cases).
+**All strict gates still green** (regen A+B byte-identical, m1b_gate 5, m1c_vector_table 1
+— the padding-ON change is post-boot.asm, so those padding-off regions are unaffected).
+The old probe-matrix items:
 1. **Probe matrix against live asl** (the audit's t9–t14 probes live in a session
    scratchpad and must be re-created as committed artifacts): {padding on/off} ×
    {save/restore with and without intervening `cpu` change} × {explicit `padding`
