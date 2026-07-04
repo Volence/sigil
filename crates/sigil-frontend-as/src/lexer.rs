@@ -69,6 +69,43 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
                     i += 1;
                 }
                 let run = std::str::from_utf8(&bytes[start..i]).unwrap();
+                // Float literal (`6.283185307179586`, only meaningful inside a
+                // `sin(...)`/`int(...)` builtin argument — see `Tok::Float`):
+                // a PLAIN decimal run (never a hex run, which already absorbed
+                // any `h` suffix into `run` above) immediately followed by
+                // `.` + a digit. A bare trailing `.` with no following digit
+                // (or a hex run) is left alone as before.
+                if run.bytes().all(|b| b.is_ascii_digit())
+                    && i < bytes.len()
+                    && bytes[i] == b'.'
+                    && i + 1 < bytes.len()
+                    && bytes[i + 1].is_ascii_digit()
+                {
+                    i += 1; // consume '.'
+                    while i < bytes.len() && bytes[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                    // Optional exponent: [eE][+-]?digits+ (only consumed if
+                    // well-formed; otherwise left for the next token, matching
+                    // how `parse::<f64>` would reject a dangling `e`).
+                    if i < bytes.len() && matches!(bytes[i], b'e' | b'E') {
+                        let mut j = i + 1;
+                        if j < bytes.len() && matches!(bytes[j], b'+' | b'-') {
+                            j += 1;
+                        }
+                        let exp_digits_start = j;
+                        while j < bytes.len() && bytes[j].is_ascii_digit() {
+                            j += 1;
+                        }
+                        if j > exp_digits_start {
+                            i = j;
+                        }
+                    }
+                    let text = std::str::from_utf8(&bytes[start..i]).unwrap();
+                    let v: f64 = text.parse().map_err(|_| err(start, i, "malformed float literal"))?;
+                    out.push(Token { tok: Tok::Float(v), span: span_at(start, i) });
+                    continue;
+                }
                 let v = if let Some(hexs) = run.strip_suffix(['h', 'H']) {
                     i64::from_str_radix(hexs, 16).map_err(|_| err(start, i, "malformed hex literal"))?
                 } else if run.bytes().all(|b| b.is_ascii_digit()) {
@@ -214,5 +251,31 @@ mod tests {
     fn malformed_number_is_a_diagnostic_not_a_panic() {
         // Digit-led run containing A–F with no trailing `h` under z80 is an error.
         assert!(lex_line("1F", Cpu::Z80, SourceId(0), 0).is_err());
+    }
+
+    #[test]
+    // The literal below is `deform_table_sine`'s exact source text
+    // (`engine/parallax_macros.inc:223`), verbatim — not a rounded
+    // approximation of `TAU` we should "fix" to the constant.
+    #[allow(clippy::approx_constant)]
+    fn float_literal_lexes_as_a_single_token() {
+        // The `deform_table_sine` constant, and simpler decimal cases.
+        assert_eq!(kinds("6.283185307179586", Cpu::M68000), vec![Tok::Float(6.283185307179586)]);
+        assert_eq!(kinds("0.5", Cpu::M68000), vec![Tok::Float(0.5)]);
+        // A bare integer (no `.digit` following) still lexes as `Int`, not `Float`.
+        assert_eq!(kinds("6", Cpu::M68000), vec![Tok::Int(6)]);
+        // Dotted identifiers (dot-leading, not digit-leading) are unaffected.
+        assert_eq!(kinds("Seq.fetch", Cpu::M68000), vec![Tok::Ident("Seq.fetch".into())]);
+        // A float inside a larger expression is still one token amid others.
+        assert_eq!(
+            kinds("6.283185307179586 * i / 64", Cpu::M68000),
+            vec![
+                Tok::Float(6.283185307179586),
+                Tok::Punct(Punct::Star),
+                Tok::Ident("i".into()),
+                Tok::Punct(Punct::Slash),
+                Tok::Int(64),
+            ]
+        );
     }
 }

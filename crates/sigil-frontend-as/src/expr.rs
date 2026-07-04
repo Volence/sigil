@@ -19,6 +19,12 @@ fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
     use Punct::*;
     Some(match p {
         Star => (8, BinOp::Mul), Slash => (8, BinOp::Div),
+        // `#` infix modulo — same precedence tier as `*`/`/` (asl-verified:
+        // `7#5*2`=4, `5+7#2`=6). Distinct from the OPERAND-level `#expr`
+        // immediate marker, which `operands.rs::classify` consumes from the
+        // front of an operand group before this parser ever sees it — by the
+        // time `parse_expr` runs, any remaining `#` is unambiguously infix.
+        Hash => (8, BinOp::Mod),
         Plus => (7, BinOp::Add), Minus => (7, BinOp::Sub),
         Shl => (6, BinOp::Shl), Shr => (6, BinOp::Shr),
         Amp => (5, BinOp::And),
@@ -95,6 +101,20 @@ mod tests {
         assert_eq!(fold("(0D69Ah & 7FFFh) | 8000h", &none), 0xD69A);
         assert_eq!(fold("1024 - (1000000000 / (59 * 18773))", &none), 122);
         assert_eq!(fold("-5 + 8", &none), 3);
+    }
+
+    #[test]
+    fn hash_modulo_and_precedence() {
+        let none = |_: &str| None;
+        assert_eq!(fold("256 # 64", &none), 0);
+        assert_eq!(fold("100 # 7", &none), 2);
+        assert_eq!(fold("255 # 256", &none), 255);
+        assert_eq!(fold("(-5) # 3", &none), -2);
+        assert_eq!(fold("5 # (-3)", &none), 2);
+        // `#` binds like `*`/`/` — tighter than `+` (asl-verified).
+        assert_eq!(fold("7 # 5 * 2", &none), 4);
+        assert_eq!(fold("5 + 7 # 2", &none), 6);
+        assert_eq!(fold("7 # 2 + 5", &none), 6);
     }
 
     #[test]

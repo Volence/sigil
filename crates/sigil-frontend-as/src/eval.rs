@@ -258,6 +258,126 @@ impl Asm {
         }
     }
 
+    /// Evaluate front-end-only `int(...)` builtin calls in `toks` (§7.4:
+    /// `sin`/`int` are FRONT-END builtins — they must NEVER become
+    /// `sigil_ir::Expr` nodes, so this runs as token-level preprocessing
+    /// BEFORE `crate::expr::parse_expr` ever sees the line). Scans for each
+    /// top-level `int(` call, evaluates its single argument as an f64
+    /// expression via `eval_float` (which recognizes nested `sin(...)`/
+    /// `int(...)` calls itself, so `int(sin(int(x)))`-style nesting works),
+    /// floors the result (AS's `int()` = floor, spike-0-verified against the
+    /// 4 committed sine goldens), and replaces the whole `int(...)` span with
+    /// a single resolved `Tok::Int` — a completely ordinary integer literal
+    /// from here on, indistinguishable from one the source author wrote by
+    /// hand. A bare `sin(...)` not wrapped in `int(...)` has no integer
+    /// meaning and is left untouched (whatever consumes it downstream will
+    /// report a normal "bad expression" diagnostic).
+    fn expand_int_builtin(&mut self, toks: &[Token]) -> Vec<Token> {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < toks.len() {
+            if let Tok::Ident(name) = &toks[i].tok {
+                if name == "int" && matches!(toks.get(i + 1).map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) {
+                    let span = toks[i].span;
+                    if let Some((args, next)) = split_call_args(toks, i + 1) {
+                        let value = match args.as_slice() {
+                            [arg] => self.eval_float(arg),
+                            _ => None,
+                        };
+                        match value {
+                            Some(v) => out.push(Token { tok: Tok::Int(v.floor() as i64), span }),
+                            None => {
+                                self.err(span, "int(): could not evaluate float expression");
+                                out.push(Token { tok: Tok::Int(0), span });
+                            }
+                        }
+                        i = next;
+                        continue;
+                    }
+                }
+            }
+            out.push(toks[i].clone());
+            i += 1;
+        }
+        out
+    }
+
+    /// Evaluate a front-end-only f64 expression tree: `+ - * /`, unary
+    /// negation, parens, int/float literals, symbol lookups (resolved via the
+    /// SAME env/scope as ordinary i64 folding, then promoted to f64), and
+    /// nested `sin(...)`/`int(...)` calls. `None` on any unresolved symbol or
+    /// malformed shape — mirrors `Fold::Poison` in spirit, but this whole tree
+    /// stays out of `sigil_ir::Expr` (§7.4).
+    fn eval_float(&self, toks: &[Token]) -> Option<f64> {
+        let (v, rest) = self.parse_float_bp(toks, 0)?;
+        rest.is_empty().then_some(v)
+    }
+
+    fn parse_float_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(f64, &'t [Token])> {
+        let (mut lhs, mut rest) = self.parse_float_atom(toks)?;
+        while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
+            let bp = match p {
+                Punct::Star | Punct::Slash => 8,
+                Punct::Plus | Punct::Minus => 7,
+                _ => break,
+            };
+            if bp <= min_bp {
+                break;
+            }
+            let op = *p;
+            let (rhs, r2) = self.parse_float_bp(&rest[1..], bp)?;
+            lhs = match op {
+                Punct::Star => lhs * rhs,
+                Punct::Slash => lhs / rhs,
+                Punct::Plus => lhs + rhs,
+                Punct::Minus => lhs - rhs,
+                _ => unreachable!(),
+            };
+            rest = r2;
+        }
+        Some((lhs, rest))
+    }
+
+    fn parse_float_atom<'t>(&self, toks: &'t [Token]) -> Option<(f64, &'t [Token])> {
+        let (head, rest) = toks.split_first()?;
+        match &head.tok {
+            Tok::Float(f) => Some((*f, rest)),
+            Tok::Int(n) => Some((*n as f64, rest)),
+            Tok::Punct(Punct::Minus) => {
+                let (v, r) = self.parse_float_atom(rest)?;
+                Some((-v, r))
+            }
+            Tok::Punct(Punct::LParen) => {
+                let (v, r) = self.parse_float_bp(rest, 0)?;
+                match r.first().map(|t| &t.tok) {
+                    Some(Tok::Punct(Punct::RParen)) => Some((v, &r[1..])),
+                    _ => None,
+                }
+            }
+            Tok::Ident(name) if (name == "sin" || name == "int")
+                && matches!(rest.first().map(|t| &t.tok), Some(Tok::Punct(Punct::LParen))) =>
+            {
+                let (args, next) = split_call_args(rest, 0)?;
+                let inner = match args.as_slice() {
+                    [arg] => self.eval_float(arg)?,
+                    _ => return None,
+                };
+                let v = if name == "sin" { inner.sin() } else { inner.floor() };
+                Some((v, &rest[next..]))
+            }
+            Tok::Ident(name) => {
+                let v = if name == "$" {
+                    self.here() as i64
+                } else {
+                    self.env.resolve(name, self.scope.as_deref())?
+                };
+                Some((v as f64, rest))
+            }
+            Tok::Dollar => Some((self.here() as f64, rest)),
+            _ => None,
+        }
+    }
+
     /// Parse a name-first AS `function` definition and store it.
     ///
     /// Real AS / aeon syntax: `<name> function <formal_args...>, <body_expr>`, e.g.
@@ -933,7 +1053,8 @@ impl Asm {
     fn directive_db(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g, 0);
+            let called = self.expand_calls(g, 0);
+            let expanded = self.expand_int_builtin(&called);
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {

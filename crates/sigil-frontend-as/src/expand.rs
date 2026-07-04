@@ -10,6 +10,7 @@ pub(crate) fn render_tokens(toks: &[Token]) -> String {
         .map(|t| match &t.tok {
             Tok::Ident(x) => x.clone(),
             Tok::Int(n) => n.to_string(),
+            Tok::Float(f) => f.to_string(),
             Tok::Str(x) => format!("\"{x}\""),
             Tok::Dollar => "$".to_string(),
             Tok::Punct(p) => punct_str(*p).to_string(),

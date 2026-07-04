@@ -721,3 +721,41 @@ k       set k+1
         endr
 --- bytes ---
 00 01 02 03
+=== hash_modulo ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 256#64,100#7,255#256
+        dc.b (-5)#3,5#(-3),(-5)#(-3)
+--- bytes ---
+00 02 FF FE 02 FE
+=== hash_modulo_precedence ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 7#5*2,5+7#2,7#2+5
+--- bytes ---
+04 06 06
+=== deform_table_sine_shimmer ===
+        cpu 68000
+        padding off
+        phase 0
+deform_table_sine macro AMPLITUDE,PERIOD
+    if "AMPLITUDE" = ""
+        fatal "deform_table_sine: AMPLITUDE required"
+    endif
+    if "PERIOD" = ""
+        fatal "deform_table_sine: PERIOD required"
+    endif
+    if (256 # PERIOD) <> 0
+        fatal "deform_table_sine: PERIOD=\{PERIOD} must divide 256"
+    endif
+deform_sine_i set 0
+    rept 256
+        dc.b int(AMPLITUDE * sin(6.283185307179586 * deform_sine_i / PERIOD))
+deform_sine_i set deform_sine_i + 1
+    endr
+    endm
+        deform_table_sine AMPLITUDE=8, PERIOD=32
+--- bytes ---
+00 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 FF FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE
