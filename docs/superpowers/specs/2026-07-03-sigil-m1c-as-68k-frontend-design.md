@@ -202,17 +202,20 @@ before `--no-ff` merge to master.
 - ~~**T3**~~ **Dissolved by Spike 0** — mainline float builtins (`sin`/`int`) fold into T8;
   all string builtins (`strstr`/`substr`/`strlen`/`lowstring`/`val`/`switch`) are
   debug-only → T9.
-- **T4** (re-split after T4-grounding, 2026-07-03) 68k **straight-line core**: mnemonic +
-  `.b/.w/.l/.s` size parse (→ `m68k::Mnemonic`+`Size`), register/immediate/absolute operand
-  recognition (`d0–d7`/`a0–a7`/`sp`/`ccr`/`sr`/`#imm`/`abs`), `convert_atoms_m68k` for those
-  forms, and `lower_m68k` via `M68kBackend::lower_inst` (replacing the T1 stub). Byte-exact
-  asl-diff gate on the common instruction set (`move`/`add`/`moveq`/`cmp`/`tst`/`clr`/…).
-  Delivers *working* simple 68k assembly. (high-latitude)
+- **T4** (re-split after T4-grounding, 2026-07-03) 68k **straight-line core, reg/imm only**:
+  mnemonic + `.b/.w/.l/.s` size parse (→ `m68k::Mnemonic`+`Size`), register + immediate operand
+  recognition (`d0–d7`/`a0–a7`/`sp`/`#imm`), `convert_atoms_m68k` for `Dn`/`An`/`Imm`, and
+  `lower_m68k` via `M68kBackend::lower_inst` (replacing the T1 stub). Byte-exact asl-diff gate on
+  the common straight-line set (`move d,d`/`moveq`/`add`/`cmp`/`tst`/`clr`/`swap`/`ext`/`nop`/
+  `rts`/…). Delivers *working* simple 68k assembly. **Absolute addressing is deferred to T5**
+  because its abs.w/abs.l width selection (fixed-fit vs forward-symbol) is EA-family work.
+  (high-latitude)
 - **T5** 68k **addressing-mode + control-flow richness**: the full EA set (`(An)`, `(An)+`,
-  `-(An)`, `(d16,An)`, `(d8,An,Xn)`, `(d16,PC)`, `(d8,PC,Xn)`) via new operand atoms;
-  branches (`bra`/`bsr`/`Bcc` → `lower_branch`), `jmp`/`jsr` (→ `lower_jmp_jsr_sym`),
-  PC-relative EAs (→ `lower_pcrel_ea`), and **dotted-local qualification** (D6). Byte-exact
-  asl-diff gate. (high-latitude)
+  `-(An)`, `(d16,An)`, `(d8,An,Xn)`, `(d16,PC)`, `(d8,PC,Xn)`, **`abs.w`/`abs.l` + width
+  selection**) via new operand atoms; `lea`/`pea`; branches (`bra`/`bsr`/`Bcc` →
+  `lower_branch`), `jmp`/`jsr` (→ `lower_jmp_jsr_sym`), `Dbcc`/`Scc`, PC-relative EAs (→
+  `lower_pcrel_ea`), and **dotted-local qualification** (D6). Byte-exact asl-diff gate.
+  (high-latitude)
 - **T6** `dc.w`/`dc.l`/`ds.b`/`ds.w`/`ds.l`/`align` (arbitrary boundary, incl `align $8000`)
   /`org` (4 sites) + padding-state interaction (Aeon `padding off` global → odd `dc.b` runs
   unpadded). Spike 0: `even` has 0 real uses, out of scope. **T2 note:** `dc.b`/`ds.b` are
