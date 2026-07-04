@@ -1731,7 +1731,9 @@ impl Asm {
     ///    falls through to the generic path like any other instruction.
     ///  - `(d16,PC)` operands (any mnemonic) → [`Self::lower_m68k_pcrel`].
     ///
-    /// Only `movem`/`movep` remain out of scope — see `m68k_out_of_scope`.
+    /// `movem` routes to [`Self::lower_m68k_movem`] (register-list operand);
+    /// every other in-scope mnemonic (incl. `movep`) flows through the shared
+    /// branch/dbcc/jmp-jsr/generic paths below.
     fn lower_m68k(&mut self, mn: &str, rest: &[Token], span: Span) {
         let (base, suffix_size) = split_mnemonic_and_size(mn);
         let mnemonic = match m68k_mnemonic(base) {
@@ -1750,6 +1752,9 @@ impl Asm {
         }
         if matches!(mnemonic, M68kMnemonic::Dbcc(_)) {
             return self.lower_m68k_dbcc(mnemonic, rest, span);
+        }
+        if matches!(mnemonic, M68kMnemonic::Movem) {
+            return self.lower_m68k_movem(suffix_size, rest, span);
         }
         if matches!(mnemonic, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
             let atoms = match parse_operands(rest) {
@@ -1900,6 +1905,78 @@ impl Asm {
             size: M68kSize::W,
             ops: vec![M68kOperand::Dn(dn), M68kOperand::Disp(d as i32)],
         };
+        let frag = self.m68k.lower_inst(&inst, span);
+        self.emit_frag(frag, span);
+    }
+
+    /// `movem.<w|l> <reglist>,<ea>` (STORE) / `movem.<w|l> <ea>,<reglist>`
+    /// (LOAD). Exactly one operand is a register list (`d0-d7/a0-a6`, `a2/d2`,
+    /// `d0-d3`, a single reg, or a range crossing the d→a boundary like
+    /// `d0-a4`); the other is the memory EA. The register list is built into a
+    /// CANONICAL mask (bit0=D0..bit7=D7, bit8=A0..bit15=A7) here, in operand
+    /// order; the `-(An)` predecrement 16-bit mask REVERSAL is the encoder's
+    /// job (`encode_movem`), never the front-end's — asl-verified: for
+    /// `movem.l a2/d2,-(sp)` the front-end emits the canonical `RegList(0x0404)`
+    /// and asl's bytes are `48 E7 20 20` (= `reverse_bits(0x0404)`), so the
+    /// reversal must NOT be pre-applied here. Size is mandatory (`.w`/`.l`).
+    fn lower_m68k_movem(&mut self, suffix_size: Option<M68kSize>, rest: &[Token], span: Span) {
+        let size = match suffix_size {
+            Some(s @ (M68kSize::W | M68kSize::L)) => s,
+            Some(_) => {
+                self.err(span, "movem is word (.w) or long (.l) only");
+                return;
+            }
+            None => {
+                self.err(span, "movem needs an explicit size suffix (.w or .l)");
+                return;
+            }
+        };
+        let groups = split_top_commas(rest);
+        if groups.len() != 2 {
+            self.err(span, "movem needs two operands: a register list and a memory EA");
+            return;
+        }
+        let list0 = parse_reg_list(groups[0]);
+        let list1 = parse_reg_list(groups[1]);
+        // The register list is whichever operand parses as one; the OTHER is the
+        // memory EA. Operand ORDER selects direction (STORE vs LOAD), so it is
+        // preserved. If both or neither parse, the form is malformed.
+        let (mask, list_first, mem_toks) = match (list0, list1) {
+            (Some(m), None) => (m, true, groups[1]),
+            (None, Some(m)) => (m, false, groups[0]),
+            (Some(_), Some(_)) => {
+                self.err(span, "movem needs a memory EA operand, got two register lists");
+                return;
+            }
+            (None, None) => {
+                self.err(span, "movem needs a register-list operand (e.g. `d0-d7/a0-a6`)");
+                return;
+            }
+        };
+        let mem_atoms = match parse_operands(mem_toks) {
+            Ok(a) => a,
+            Err(d) => {
+                self.diags.push(d);
+                return;
+            }
+        };
+        let mem_atom = match mem_atoms.as_slice() {
+            [a] => a,
+            _ => {
+                self.err(span, "movem memory operand must be a single EA");
+                return;
+            }
+        };
+        let mem_op = match self.convert_one_atom_m68k(mem_atom, size, span) {
+            Some(o) => o,
+            None => return,
+        };
+        let ops = if list_first {
+            vec![M68kOperand::RegList(mask), mem_op]
+        } else {
+            vec![mem_op, M68kOperand::RegList(mask)]
+        };
+        let inst = M68kInstruction { mnemonic: M68kMnemonic::Movem, size, ops };
         let frag = self.m68k.lower_inst(&inst, span);
         self.emit_frag(frag, span);
     }
@@ -2604,8 +2681,8 @@ fn split_mnemonic_and_size(s: &str) -> (&str, Option<M68kSize>) {
 /// transfer — `bra`/`bsr`/`Bcc`, `Dbcc` (`dbf`/`dbra`/`db<cc>`), `Scc`, and
 /// `jmp`/`jsr`. `move`/`andi`/`ori` are refined to `MoveToSr`/`MoveFromSr`/
 /// `AndiCcr`/`OriCcr` post-hoc by `refine_m68k_mnemonic` once the operand
-/// shape (a bare `sr`/`ccr`) is known. Only `movem`/`movep` remain out of
-/// scope — see `m68k_out_of_scope`.
+/// shape (a bare `sr`/`ccr`) is known. `movem`/`movep` (register-list operands)
+/// are now in scope too; nothing 68000 the Aeon source uses remains deferred.
 fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
     use M68kMnemonic::*;
     Some(match base {
@@ -2618,6 +2695,7 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "btst" => Btst, "bset" => Bset, "bclr" => Bclr,
         "clr" => Clr, "neg" => Neg, "not" => Not, "tst" => Tst, "tas" => Tas,
         "swap" => Swap, "ext" => Ext, "lea" => Lea, "pea" => Pea,
+        "movem" => Movem, "movep" => Movep,
         "nop" => Nop, "rts" => Rts, "rte" => Rte, "trap" => Trap,
         "bra" => Bra, "bsr" => Bsr,
         "jmp" => Jmp, "jsr" => Jsr,
@@ -2661,14 +2739,14 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
     })
 }
 
-/// If `base` names it a real 68000 mnemonic that this front-end deliberately
-/// does not implement yet (`movem`/`movep`), name the family for the
-/// diagnostic; else `None` (genuinely unrecognized).
-fn m68k_out_of_scope(base: &str) -> Option<&'static str> {
-    match base {
-        "movem" | "movep" => Some("movem/movep"),
-        _ => None,
-    }
+/// If `base` names a real 68000 mnemonic that this front-end deliberately does
+/// not implement yet, name the family for the diagnostic; else `None`
+/// (genuinely unrecognized). Nothing remains out of scope — `movem`/`movep`
+/// (with register-list operands) are now handled — so this always returns
+/// `None`; it is retained as the seam where a future deferral would name its
+/// family.
+fn m68k_out_of_scope(_base: &str) -> Option<&'static str> {
+    None
 }
 
 /// The implicit size for mnemonics real 68k syntax never suffixes (`moveq`,
@@ -2735,6 +2813,73 @@ fn m68k_addr_reg(w: &str) -> Option<u8> {
     }
     let n: u8 = w.strip_prefix('a')?.parse().ok()?;
     (n <= 7).then_some(n)
+}
+
+/// The MOVEM register-list bit index of a single register: `d0..d7` → `0..=7`,
+/// `a0..a7` (and `sp` = `a7`) → `8..=15`. This is the CANONICAL mask ordering
+/// the encoder expects (`Operand::RegList` doc); the `-(An)` reversal is applied
+/// inside `encode_movem`, never here. `None` for any non-register word.
+fn reg_list_index(w: &str) -> Option<u8> {
+    if let Some(n) = m68k_data_reg(w) {
+        Some(n)
+    } else {
+        m68k_addr_reg(w).map(|n| n + 8)
+    }
+}
+
+/// Parse a MOVEM register-list operand's tokens into a canonical 16-bit mask
+/// (bit0=D0..bit7=D7, bit8=A0..bit15=A7), or `None` if the tokens are not a
+/// well-formed register list. Grammar: `/`-separated items, each a single
+/// register (`d3`, `a2`) or a contiguous range `lo-hi` (`d0-d7`, `a0-a6`, or
+/// a d→a crossing range such as `d0-a4`). A range with `lo > hi` is rejected.
+/// This is a total, side-effect-free recognizer: it returns `None` (rather than
+/// diagnosing) on any non-list shape so the caller can use it to DISCRIMINATE
+/// the register-list operand from the memory-EA operand of a `movem`.
+fn parse_reg_list(toks: &[Token]) -> Option<u16> {
+    if toks.is_empty() {
+        return None;
+    }
+    let mut mask: u16 = 0;
+    for item in split_slash(toks) {
+        match item {
+            // Single register: `d3`, `a2`, `sp`.
+            [Token { tok: Tok::Ident(w), .. }] => {
+                mask |= 1u16 << reg_list_index(w)?;
+            }
+            // Contiguous range: `d0-d7`, `a0-a6`, `d0-a4`.
+            [
+                Token { tok: Tok::Ident(lo), .. },
+                Token { tok: Tok::Punct(Punct::Minus), .. },
+                Token { tok: Tok::Ident(hi), .. },
+            ] => {
+                let lo = reg_list_index(lo)?;
+                let hi = reg_list_index(hi)?;
+                if lo > hi {
+                    return None;
+                }
+                for b in lo..=hi {
+                    mask |= 1u16 << b;
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(mask)
+}
+
+/// Split a register-list operand's tokens on top-level `/` separators (a
+/// register list never contains parentheses, so no depth tracking is needed).
+fn split_slash(toks: &[Token]) -> Vec<&[Token]> {
+    let mut groups = Vec::new();
+    let mut start = 0usize;
+    for (i, t) in toks.iter().enumerate() {
+        if matches!(t.tok, Tok::Punct(Punct::Slash)) {
+            groups.push(&toks[start..i]);
+            start = i + 1;
+        }
+    }
+    groups.push(&toks[start..]);
+    groups
 }
 
 /// Post-hoc mnemonic refinement for the operand-shape-dependent variants: a
@@ -2831,9 +2976,9 @@ mod tests {
         assert_eq!(m68k_mnemonic("shs"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc)));
         assert_eq!(m68k_mnemonic("slo"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cs)));
         assert_eq!(m68k_mnemonic("dbhs"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::Cc)));
-        // `movem`/`movep` remain out of scope.
-        assert_eq!(m68k_mnemonic("movem"), None);
-        assert_eq!(m68k_mnemonic("movep"), None);
+        // `movem`/`movep` are now in scope (register-list operands).
+        assert_eq!(m68k_mnemonic("movem"), Some(Mnemonic::Movem));
+        assert_eq!(m68k_mnemonic("movep"), Some(Mnemonic::Movep));
         // a genuinely unrecognized word is not misparsed as a stray cc suffix.
         assert_eq!(m68k_mnemonic("banana"), None);
     }
@@ -2865,6 +3010,67 @@ mod tests {
         assert_eq!(m68k_addr_reg("a7"), Some(7));
         assert_eq!(m68k_addr_reg("sp"), Some(7));
         assert_eq!(m68k_addr_reg("d0"), None);
+    }
+
+    #[test]
+    fn parse_reg_list_builds_canonical_masks() {
+        use super::parse_reg_list;
+        use crate::lexer::lex_line;
+        let mask = |s: &str| {
+            let toks = lex_line(s, Cpu::M68000, sigil_span::SourceId(0), 0).unwrap();
+            parse_reg_list(&toks)
+        };
+        // Single reg: bit0=D0..bit7=D7, bit8=A0..bit15=A7 (canonical order).
+        assert_eq!(mask("d0"), Some(0x0001));
+        assert_eq!(mask("a2"), Some(0x0400));
+        assert_eq!(mask("sp"), Some(0x8000)); // sp == a7 == bit15
+        // `/` list mixing d and a.
+        assert_eq!(mask("a2/d2"), Some(0x0404));
+        // `-` range.
+        assert_eq!(mask("d0-d3"), Some(0x000F));
+        assert_eq!(mask("a0-a6"), Some(0x7F00));
+        // Range crossing the d→a boundary is contiguous in canonical order.
+        assert_eq!(mask("d0-a4"), Some(0x1FFF));
+        // Range + list combined.
+        assert_eq!(mask("d0-d7/a0-a6"), Some(0x7FFF));
+        assert_eq!(mask("d0-d6/a2"), Some(0x047F));
+        // Not a register list.
+        assert_eq!(mask("(a0)"), None);
+        assert_eq!(mask("-(sp)"), None);
+        assert_eq!(mask("d0-x9"), None);
+        assert_eq!(mask("d7-d0"), None); // reversed range rejected
+    }
+
+    #[test]
+    fn m68k_movem_predec_reverses_mask_but_postinc_does_not() {
+        // STORE to `-(An)` predecrement: the encoder REVERSES the canonical
+        // mask. `a2/d2` canonical = 0x0404 → emitted word 0x2020 (48 E7 20 20).
+        assert_eq!(image("    cpu 68000\n    movem.l a2/d2,-(sp)\n"), vec![0x48, 0xE7, 0x20, 0x20]);
+        // LOAD from `(An)+` postincrement: canonical mask emitted as-is.
+        // `d0-d7/a0-a6` canonical = 0x7FFF → 4C DF 7F FF.
+        assert_eq!(image("    cpu 68000\n    movem.l (sp)+,d0-d7/a0-a6\n"), vec![0x4C, 0xDF, 0x7F, 0xFF]);
+    }
+
+    #[test]
+    fn m68k_movem_single_range_and_mixed_lists() {
+        // Single register store to predec: canonical 0x0400 → reversed 0x0020.
+        assert_eq!(image("    cpu 68000\n    movem.l a2,-(sp)\n"), vec![0x48, 0xE7, 0x00, 0x20]);
+        // Range store to plain (An) indirect: NOT reversed (0x0018).
+        assert_eq!(image("    cpu 68000\n    movem.l d3-d4,(a3)\n"), vec![0x48, 0xD3, 0x00, 0x18]);
+        // Word range store to predec a7: canonical 0x000F → reversed 0xF000.
+        assert_eq!(image("    cpu 68000\n    movem.w d0-d3,-(a7)\n"), vec![0x48, 0xA7, 0xF0, 0x00]);
+        // Mixed range+single load from postinc crossing d→a: 0x1FFF, not reversed.
+        assert_eq!(image("    cpu 68000\n    movem.l (a0)+,d0-a4\n"), vec![0x4C, 0xD8, 0x1F, 0xFF]);
+        // Disp16(An) memory EA store (extension word follows the mask word).
+        assert_eq!(image("    cpu 68000\n    movem.l d3-d4,(8,a3)\n"), vec![0x48, 0xEB, 0x00, 0x18, 0x00, 0x08]);
+    }
+
+    #[test]
+    fn m68k_movep_both_directions() {
+        // reg → mem (word): 01 89 00 04.
+        assert_eq!(image("    cpu 68000\n    movep.w d0,4(a1)\n"), vec![0x01, 0x89, 0x00, 0x04]);
+        // mem → reg (long): 03 4A 00 08.
+        assert_eq!(image("    cpu 68000\n    movep.l 8(a2),d1\n"), vec![0x03, 0x4A, 0x00, 0x08]);
     }
 
     #[test]
