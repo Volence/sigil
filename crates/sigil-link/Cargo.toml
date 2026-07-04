@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 sigil-ir = { path = "../sigil-ir" }
 sigil-span = { path = "../sigil-span" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [dev-dependencies]
 sigil-backend-z80 = { path = "../sigil-backend-z80" }

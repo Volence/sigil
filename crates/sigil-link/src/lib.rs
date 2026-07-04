@@ -13,6 +13,9 @@ use sigil_span::{Diagnostic, Level, Span};
 mod relax;
 pub use relax::{asl_width_rule, resolve_layout, AbsWidth};
 
+mod map_load;
+pub use map_load::load_map;
+
 mod listing;
 pub use listing::{emit_listing, ListingSymbol};
 
