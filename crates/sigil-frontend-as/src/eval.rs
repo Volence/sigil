@@ -2942,22 +2942,33 @@ impl Asm {
             lines[start].base,
         )
         .unwrap_or_default();
-        // toks: Ident(name) Ident("macro") [param idents/commas...]
-        let name = match toks.first().map(|t| &t.tok) {
-            Some(Tok::Ident(s)) => s.clone(),
-            _ => {
-                let span = Span {
-                    source: self.source,
-                    start: lines[start].base,
-                    end: lines[start].base,
-                };
-                self.err(span, "macro needs a name");
-                String::new()
-            }
+        // Two head shapes (both real AS, both asl-verified):
+        //   `NAME macro p...`   → toks: Ident(NAME) Ident("macro") [params...]
+        //   `NAME: macro p...`  → toks: Ident(NAME) Colon Ident("macro") [params...]
+        // The colon form (used by the `__FSTRING`/`__ErrorMessage` debug macros)
+        // must peel the label before reading params, else `macro` itself leaks in
+        // as the first "param" and shifts every real param by one (binding the
+        // caller's arg to a phantom slot). `parse_line_tokens` peels it.
+        let parsed = parse_line_tokens(&toks);
+        let (name, param_toks): (String, Vec<Token>) = if let Some(lbl) = parsed.label_colon {
+            // parsed.tokens: Ident("macro") [params...]; params start at index 1.
+            (lbl, parsed.tokens.get(1..).unwrap_or(&[]).to_vec())
+        } else {
+            let name = match toks.first().map(|t| &t.tok) {
+                Some(Tok::Ident(s)) => s.clone(),
+                _ => {
+                    let span = Span {
+                        source: self.source,
+                        start: lines[start].base,
+                        end: lines[start].base,
+                    };
+                    self.err(span, "macro needs a name");
+                    String::new()
+                }
+            };
+            (name, toks.get(2..).unwrap_or(&[]).to_vec())
         };
-        let params: Vec<String> = toks
-            .get(2..)
-            .unwrap_or(&[])
+        let params: Vec<String> = param_toks
             .iter()
             .filter_map(|t| {
                 if let Tok::Ident(p) = &t.tok {
