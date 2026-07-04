@@ -76,6 +76,14 @@ fn parse_atom(toks: &[Token]) -> Option<(Expr, &[Token])> {
             let (inner, r) = parse_atom(rest)?;
             Some((Expr::Unary { op: UnOp::Neg, operand: Box::new(inner) }, r))
         }
+        // `~expr` — prefix bitwise complement (asl-verified: `~$0F` = -16 =
+        // `$FFFFFFF0`). Binds like negation (tighter than the binary tier), so
+        // `~(mask)` / `~BLOCK_TILE_SIZE-1` parse as `(~x)` then any following
+        // binary operator, matching asl.
+        Tok::Punct(Punct::Tilde) => {
+            let (inner, r) = parse_atom(rest)?;
+            Some((Expr::Unary { op: UnOp::Not, operand: Box::new(inner) }, r))
+        }
         Tok::Punct(Punct::LParen) => {
             let (inner, r) = parse_bp(rest, 0)?;
             match r.first().map(|t| &t.tok) {

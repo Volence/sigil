@@ -41,6 +41,8 @@ pub enum BinOp {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UnOp {
     Neg,
+    /// Bitwise complement (`~x`), asl's one's-complement operator.
+    Not,
 }
 
 /// A build-time integer expression.
@@ -83,6 +85,7 @@ impl Expr {
                 };
                 match op {
                     UnOp::Neg => Fold::Value(v.wrapping_neg()),
+                    UnOp::Not => Fold::Value(!v),
                 }
             }
             Expr::Binary { op, lhs, rhs } => {

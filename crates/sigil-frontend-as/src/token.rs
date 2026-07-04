@@ -22,6 +22,8 @@ pub enum Punct {
     /// same precedence tier). The statement-level `!name` builtin-escape form
     /// is a separate, unrelated construct (M1.C T9.2) — not handled here.
     Bang,
+    /// `~` — prefix bitwise complement (`~x`, asl's one's-complement operator).
+    Tilde,
 }
 
 /// A lexical token kind.

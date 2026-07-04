@@ -219,7 +219,7 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
         b'+' => Plus, b'-' => Minus, b'*' => Star, b'/' => Slash,
         b'&' => Amp, b'|' => Pipe, b'=' => Eq, b'<' => Lt, b'>' => Gt,
         b'(' => LParen, b')' => RParen, b',' => Comma, b':' => Colon,
-        b'#' => Hash, b'!' => Bang,
+        b'#' => Hash, b'!' => Bang, b'~' => Tilde,
         _ => return None,
     };
     Some((one, 1))
