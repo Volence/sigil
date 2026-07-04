@@ -1088,3 +1088,15 @@ Foo     equ 4
         movep.l 8(a2),d1
 --- bytes ---
 03 4A 00 08
+=== m68k_cmpm_w_postinc ===
+        cpu 68000
+        phase 0
+        cmpm.w  (a0)+, (a1)+
+--- bytes ---
+B3 48
+=== m68k_cmpm_b_postinc ===
+        cpu 68000
+        phase 0
+        cmpm.b  (a3)+, (a2)+
+--- bytes ---
+B5 0B

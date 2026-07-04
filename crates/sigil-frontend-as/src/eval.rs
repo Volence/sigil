@@ -3340,6 +3340,7 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "movem" => Movem,
         "movep" => Movep,
         "addx" => Addx,
+        "cmpm" => Cmpm,
         "nop" => Nop,
         "rts" => Rts,
         "rte" => Rte,
@@ -3726,6 +3727,9 @@ mod tests {
         // `movem`/`movep` are now in scope (register-list operands).
         assert_eq!(m68k_mnemonic("movem"), Some(Mnemonic::Movem));
         assert_eq!(m68k_mnemonic("movep"), Some(Mnemonic::Movep));
+        // `cmpm` (F3): encoder always had it; the front-end table did not until
+        // M1.D T0.4. Exposed only under __DEBUG__ (compression_selftest.asm:83).
+        assert_eq!(m68k_mnemonic("cmpm"), Some(Mnemonic::Cmpm));
         // a genuinely unrecognized word is not misparsed as a stray cc suffix.
         assert_eq!(m68k_mnemonic("banana"), None);
     }

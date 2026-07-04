@@ -130,9 +130,14 @@ pass with `--ignored` (the `#[ignore]` stays — it gates on the live aeon tree,
 the strict gates). **T0.1 interaction still open:** once padding-on/pad-byte semantics
 land, re-verify the harness reproduces aeon's *effective* padding at each region.
 
-**T0.4 — `cmpm` in the front-end mnemonic table (fixes F3).** Encoder support exists
-(`sigil-isa/src/m68k.rs`); this is parser/lowering plumbing + one snippet golden
-(expected `B5 0B` for `cmpm.w (a3)+,(a2)+`-class forms). Unblocks A2.
+**T0.4 — `cmpm` in the front-end mnemonic table (fixes F3). ✅ DONE (2026-07-04).**
+Root cause was even smaller than expected: `M68kMnemonic` is a *type alias* for the
+isa `Mnemonic`, so `Cmpm` already existed and the `(Ay)+,(Ax)+` operand shape already
+lowered (shared with `addx`). One line — `"cmpm" => Cmpm` in the mnemonic table — plus
+two asl-generated goldens: `cmpm.w (a0)+,(a1)+`→`B3 48` (aeon's real form,
+compression_selftest.asm:83) and `cmpm.b (a3)+,(a2)+`→`B5 0B` (matches the spec's
+predicted `B5 0B`). Regen churned only the 2 new blocks (non-circularity intact).
+Unblocks A2.
 
 ### T1 — String-valued `set` symbols + `__FSTRING` (the assembly blocker)
 
