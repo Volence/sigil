@@ -13,6 +13,9 @@ use sigil_span::{Diagnostic, Level, Span};
 mod relax;
 pub use relax::{asl_width_rule, resolve_layout, AbsWidth};
 
+mod listing;
+pub use listing::{emit_listing, ListingSymbol};
+
 /// One section's resolved bytes and where they load.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinkedSection {
