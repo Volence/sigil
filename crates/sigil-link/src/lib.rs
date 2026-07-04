@@ -67,8 +67,11 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
         let origin = sec.vma_origin();
 
         // Walk fragments to find each Data fragment's byte offset within the
-        // section image, so fixup offsets and site VMAs are correct.
-        let mut frag_img_off: u32 = 0; // offset within the image bytes
+        // section image, so fixup offsets and site VMAs are correct. This walk
+        // is a write-cursor replay mirroring `Section::image_bytes`: `Org`
+        // seeks the cursor (so a back-patched Data fragment's fixups, if any,
+        // land at the right offset); Reserve leaves it untouched.
+        let mut frag_img_off: u32 = 0; // offset within the image bytes (cursor)
         for frag in &sec.fragments {
             match frag {
                 Fragment::Data(d) => {
@@ -98,6 +101,7 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                 }
                 Fragment::Fill { count, .. } => frag_img_off += *count,
                 Fragment::Reserve { .. } => {} // no image bytes
+                Fragment::Org { target, .. } => frag_img_off = *target,
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before link")
                 }

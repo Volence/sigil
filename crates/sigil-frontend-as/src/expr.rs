@@ -57,6 +57,16 @@ fn parse_atom(toks: &[Token]) -> Option<(Expr, &[Token])> {
     match &head.tok {
         Tok::Int(n) => Some((Expr::Int(*n), rest)),
         Tok::Dollar => Some((Expr::Sym("$".to_string()), rest)),
+        // A standalone `*` in atom (primary-expression) position is AS's other
+        // spelling of the current-PC symbol (used by `pscStart := *` etc. in
+        // `parallax_section`/`parallax_section_end`). `parse_atom` is only ever
+        // invoked expecting a primary expression, so a `Star` reaching here is
+        // unambiguous — it can't be the infix multiplication operator, which
+        // `parse_bp`'s loop consumes only after a valid lhs. Folding it to the
+        // same `Expr::Sym("$")` that `$` produces means every existing
+        // `$`-handling site (front-end `fold`, poison detection) already
+        // supports it with no further changes.
+        Tok::Punct(Punct::Star) => Some((Expr::Sym("$".to_string()), rest)),
         Tok::Ident(name) => Some((Expr::Sym(name.clone()), rest)),
         Tok::Punct(Punct::Minus) => {
             let (inner, r) = parse_atom(rest)?;

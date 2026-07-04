@@ -759,3 +759,41 @@ deform_sine_i set deform_sine_i + 1
         deform_table_sine AMPLITUDE=8, PERIOD=32
 --- bytes ---
 00 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 FF FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE
+=== org_backpatch ===
+        cpu 68000
+        padding off
+        phase 0
+Hdr := *
+        dc.b 0,1,2,3
+End := *
+        org Hdr
+        dc.b 99
+        org End
+        dc.b 4
+--- bytes ---
+63 01 02 03 04
+=== org_parallax_header_patch ===
+        cpu 68000
+        padding off
+        phase 0
+pscStart := *
+        dc.b 0
+        dc.b 10,20,30
+        dc.b 1,1,1
+        dc.b 2,2,2
+pscEndPos := *
+        org pscStart
+        dc.b 2
+        org pscEndPos
+        dc.b 255
+--- bytes ---
+02 0A 14 1E 01 01 01 02 02 02 FF
+=== org_forward_new_section ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 1,2,3,4
+        org 16
+        dc.b 5,6
+--- bytes ---
+01 02 03 04 00 00 00 00 00 00 00 00 00 00 00 00 05 06

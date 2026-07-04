@@ -918,6 +918,7 @@ impl Asm {
             "cpu" => self.directive_cpu(rest, span),
             "phase" => self.directive_phase(rest, span),
             "dephase" => self.directive_dephase(),
+            "org" => self.directive_org(rest, span),
             "save" => self.state.save(),
             "restore" => {
                 if let Err(m) = self.state.restore() {
@@ -1021,6 +1022,53 @@ impl Asm {
     fn directive_dephase(&mut self) {
         self.state.vma_base = None;
         self.close_section();
+    }
+
+    /// AS `org <target>` (M1.C T6b). `target` is an ABSOLUTE address (like
+    /// `phase`'s argument), evaluated eagerly (matching `directive_align`/
+    /// `directive_ds`'s pattern of resolving directive arguments at eval time
+    /// rather than deferring an `Expr` into the fragment). Two cases, per the
+    /// asl-verified back-patch + absolute-org rules (M1.C T6b investigation):
+    ///
+    /// - **No section open yet** (e.g. `main.asm`'s very first `org 0`, before
+    ///   any byte has been emitted): behaves exactly like `phase`'s no-section
+    ///   path — just records the base for the next emit to open a section at.
+    /// - **A section IS open** and `target` falls within bytes the section has
+    ///   ALREADY written (`target - base <= builder.extent()`): an in-section
+    ///   back-patch seek (`org pscStart / dc.b n / org pscEndPos`, the
+    ///   `parallax_section_end` idiom) — `IrBuilder::seek` repositions the
+    ///   cursor; subsequent `Data`/`Fill` overwrite in place.
+    /// - Otherwise (`target` is beyond anything written): a forward jump into
+    ///   brand-new territory (`main.asm`'s `org $10000` starting the object
+    ///   code bank) — closing the section and re-phasing at `target`, so the
+    ///   gap is filled by `flatten`'s ordinary inter-section gap-fill instead of
+    ///   growing this section's `Org`+`JmpJsrSym` mix (which `resolve_layout`
+    ///   refuses — see its guard — since real engine code between `org 0` and
+    ///   `org $10000` contains bare `jmp`/`jsr`).
+    fn directive_org(&mut self, rest: &[Token], span: Span) {
+        let target_abs = match self.eval_all(rest, span) {
+            Some(v) => v as u32,
+            None => {
+                self.err(span, "org needs a constant expression");
+                return;
+            }
+        };
+        if !self.in_section {
+            self.state.vma_base = Some(target_abs);
+            return;
+        }
+        let base = self.state.vma_base.unwrap_or(0);
+        if target_abs < base {
+            self.err(span, "org target precedes the current phase base");
+            return;
+        }
+        let rel = target_abs - base;
+        if rel <= self.builder.extent() {
+            self.builder.seek(rel, 0, span);
+        } else {
+            self.state.vma_base = Some(target_abs);
+            self.close_section();
+        }
     }
 
     fn directive_equate(&mut self, name: &str, rest: &[Token], span: Span) {
@@ -1939,7 +1987,7 @@ fn split_src_lines(text: &str) -> Vec<SrcLine> {
 fn is_op_keyword(s: &str) -> bool {
     matches!(
         s,
-        "cpu" | "phase" | "dephase" | "save" | "restore" | "padding" | "supmode"
+        "cpu" | "phase" | "dephase" | "org" | "save" | "restore" | "padding" | "supmode"
             | "db" | "dw" | "dc.b" | "dc.w" | "dc.l" | "equ"
             | "if" | "elseif" | "else" | "endif" | "ifdef" | "ifndef"
             | "rept" | "endr" | "endm" | "macro" | "struct" | "endstruct"
@@ -2704,6 +2752,53 @@ mod tests {
         want.extend(std::iter::repeat_n(0x00, 13));
         want.push(0x04);
         assert_eq!(image(src), want);
+    }
+
+    #[test]
+    fn org_backpatch_seeks_in_section_and_overwrites() {
+        // The `parallax_section_end` shape: capture positions via `:=`/`*`
+        // (M1.C T6b adds `*` as a PC-symbol atom alongside `$`), seek back to
+        // patch a placeholder byte, then resume forward. asl-verified: 63 01 02 03 04.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nHdr := *\n        dc.b 0,1,2,3\nEnd := *\n        org Hdr\n        dc.b 99\n        org End\n        dc.b 4\n";
+        assert_eq!(image(src), vec![0x63, 0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn org_forward_past_extent_opens_a_new_phase_like_section() {
+        // A forward `org` beyond anything written closes the section and
+        // re-phases (main.asm's `org $10000` shape, scaled down) rather than
+        // growing the still-open section with a zero-fill run — proven here by
+        // checking `module.sections.len()` directly (the byte-level gap-fill is
+        // ALSO covered by the `org_forward_new_section` golden snippet, which
+        // can't distinguish the two implementations since `flatten` produces
+        // identical bytes either way).
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b 1,2,3,4\n        org 16\n        dc.b 5,6\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        assert_eq!(module.sections.len(), 2, "forward org must open a new section, not seek in-place");
+        assert_eq!(module.sections[0].vma_base, Some(0));
+        assert_eq!(module.sections[0].lma, 0);
+        assert_eq!(module.sections[1].vma_base, Some(16));
+        assert_eq!(module.sections[1].lma, 16);
+        // Flatten both sections (image() only returns the first) to prove the
+        // multi-section split still gap-fills identically to an in-section run.
+        let linked = sigil_link::link(&module.sections, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        let mut want = vec![1, 2, 3, 4];
+        want.extend(std::iter::repeat_n(0x00, 12));
+        want.extend([5, 6]);
+        assert_eq!(bytes, want);
+    }
+
+    #[test]
+    fn org_with_no_section_open_yet_just_sets_the_phase_base() {
+        // main.asm's very first `org 0` (before any byte is emitted): behaves
+        // exactly like `phase`'s no-section-open path — no seek, no section
+        // materializes until the next emit.
+        let src = "        cpu 68000\n        padding off\n        org 0\n        dc.b 7\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        assert_eq!(module.sections.len(), 1);
+        assert_eq!(module.sections[0].vma_base, Some(0));
+        assert_eq!(image(src), vec![0x07]);
     }
 
     #[test]
