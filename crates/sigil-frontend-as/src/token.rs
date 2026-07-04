@@ -10,6 +10,7 @@ pub enum Punct {
     Plus, Minus, Star, Slash,
     Shl, Shr, Amp, Pipe,
     Eq, Ne, Lt, Gt, Le, Ge,
+    OrOr, AndAnd,
     LParen, RParen, Comma, Colon,
 }
 

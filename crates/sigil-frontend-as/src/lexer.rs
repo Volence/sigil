@@ -115,6 +115,8 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
         Some((b'<', b'>')) => return Some((Ne, 2)),
         Some((b'<', b'=')) => return Some((Le, 2)),
         Some((b'>', b'=')) => return Some((Ge, 2)),
+        Some((b'|', b'|')) => return Some((OrOr, 2)),
+        Some((b'&', b'&')) => return Some((AndAnd, 2)),
         _ => {}
     }
     let one = match b[0] {

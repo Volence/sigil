@@ -88,3 +88,65 @@ Other:
         endif
 --- bytes ---
 01 02 03 00
+=== or_or_operator ===
+        cpu z80
+        phase 0
+        db (0 || 0)
+        db (0 || 1)
+        db (1 || 0)
+        db (1 || 1)
+--- bytes ---
+00 01 01 01
+=== and_and_operator ===
+        cpu z80
+        phase 0
+        db (0 && 0)
+        db (0 && 1)
+        db (1 && 0)
+        db (1 && 1)
+--- bytes ---
+00 00 00 01
+=== value_context_lt ===
+        cpu z80
+        phase 0
+        db (5<9)
+        db (9<5)
+--- bytes ---
+01 00
+=== value_context_ne ===
+        cpu z80
+        phase 0
+        db (3<>3)
+        db (3<>4)
+--- bytes ---
+00 01
+=== string_eq_true ===
+        cpu z80
+        phase 0
+        if "a"="a"
+        db 1
+        else
+        db 0
+        endif
+--- bytes ---
+01
+=== string_eq_false ===
+        cpu z80
+        phase 0
+        if "a"="b"
+        db 1
+        else
+        db 0
+        endif
+--- bytes ---
+00
+=== string_ne ===
+        cpu z80
+        phase 0
+        if "a"<>"b"
+        db 1
+        else
+        db 0
+        endif
+--- bytes ---
+01

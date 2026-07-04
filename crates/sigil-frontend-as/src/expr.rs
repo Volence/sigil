@@ -11,17 +11,23 @@ pub fn parse_expr(toks: &[Token]) -> Option<(Expr, &[Token])> {
 }
 
 /// Binding-power ladder: higher binds tighter.
+///
+/// `||` is loosest, `&&` binds tighter than `||` but looser than comparisons,
+/// mirroring AS's real operator surface (empirically confirmed against `asl`:
+/// both fold to a neutral `1`/`0`, same as the comparison tier).
 fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
     use Punct::*;
     Some(match p {
-        Star => (6, BinOp::Mul), Slash => (6, BinOp::Div),
-        Plus => (5, BinOp::Add), Minus => (5, BinOp::Sub),
-        Shl => (4, BinOp::Shl), Shr => (4, BinOp::Shr),
-        Amp => (3, BinOp::And),
-        Pipe => (2, BinOp::Or),
-        Eq => (1, BinOp::Eq), Ne => (1, BinOp::Ne),
-        Lt => (1, BinOp::Lt), Gt => (1, BinOp::Gt),
-        Le => (1, BinOp::Le), Ge => (1, BinOp::Ge),
+        Star => (8, BinOp::Mul), Slash => (8, BinOp::Div),
+        Plus => (7, BinOp::Add), Minus => (7, BinOp::Sub),
+        Shl => (6, BinOp::Shl), Shr => (6, BinOp::Shr),
+        Amp => (5, BinOp::And),
+        Pipe => (4, BinOp::Or),
+        Eq => (3, BinOp::Eq), Ne => (3, BinOp::Ne),
+        Lt => (3, BinOp::Lt), Gt => (3, BinOp::Gt),
+        Le => (3, BinOp::Le), Ge => (3, BinOp::Ge),
+        AndAnd => (2, BinOp::LogAnd),
+        OrOr => (1, BinOp::LogOr),
         _ => return None,
     })
 }

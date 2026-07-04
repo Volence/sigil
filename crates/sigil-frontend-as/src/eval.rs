@@ -724,12 +724,25 @@ impl Asm {
         matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if self.env.resolve(n, self.scope.as_deref()).is_some())
     }
 
-    /// `if MOMCPUNAME="Z80"` / `<lhs>="str"` string equality, else numeric `!= 0`.
+    /// `if MOMCPUNAME="Z80"` / `<lhs>="str"` / `"a"="a"` / `"a"<>"b"` string
+    /// (in)equality, else numeric `!= 0`. Strings never enter `sigil_ir::Expr`
+    /// (§7.4: no AS-specific concept in IR) — the shape is detected and folded
+    /// to a bool directly here, before any numeric `Expr` is built.
     fn eval_if_expr(&mut self, toks: &[Token], span: Span) -> bool {
-        if let Some(pos) = toks.iter().position(|t| matches!(t.tok, Tok::Punct(Punct::Eq))) {
+        if let Some(pos) = toks
+            .iter()
+            .position(|t| matches!(t.tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne)))
+        {
             if let Some(Token { tok: Tok::Str(rhs), .. }) = toks.get(pos + 1) {
-                let lhs = self.string_value(&toks[..pos]);
-                return lhs.as_deref() == Some(rhs.as_str());
+                let lhs = match &toks[..pos] {
+                    [Token { tok: Tok::Str(s), .. }] => Some(s.clone()),
+                    other => self.string_value(other),
+                };
+                if let Some(lhs) = lhs {
+                    let eq = lhs == *rhs;
+                    let is_ne = matches!(toks[pos].tok, Tok::Punct(Punct::Ne));
+                    return if is_ne { !eq } else { eq };
+                }
             }
         }
         self.eval_all(toks, span).map(|v| v != 0).unwrap_or(false)
@@ -1354,6 +1367,14 @@ mod tests {
     fn if_momcpuname_string_equality() {
         let src = "        cpu z80\n        phase 0\n        if MOMCPUNAME=\"Z80\"\n        db 0AAh\n        else\n        db 0BBh\n        endif\n";
         assert_eq!(image(src), vec![0xAA]);
+    }
+
+    #[test]
+    fn if_literal_string_equality_and_inequality() {
+        // Literal `"a"="a"` / `"a"<>"b"` must fold to a bool directly (never
+        // through sigil_ir::Expr — strings are not an IR concept, §7.4).
+        let src = "        cpu z80\n        phase 0\n        if \"a\"=\"a\"\n        db 1\n        else\n        db 0\n        endif\n        if \"a\"=\"b\"\n        db 1\n        else\n        db 0\n        endif\n        if \"a\"<>\"b\"\n        db 1\n        else\n        db 0\n        endif\n        if \"a\"<>\"a\"\n        db 1\n        else\n        db 0\n        endif\n";
+        assert_eq!(image(src), vec![0x01, 0x00, 0x01, 0x00]);
     }
 
     #[test]

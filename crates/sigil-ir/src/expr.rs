@@ -24,6 +24,10 @@ pub enum BinOp {
     Gt,
     Le,
     Ge,
+    /// Logical OR (`||`). Folds to `1`/`0` (neutral truth value), not bitwise `Or`.
+    LogOr,
+    /// Logical AND (`&&`). Folds to `1`/`0` (neutral truth value), not bitwise `And`.
+    LogAnd,
 }
 
 /// Unary operators.
@@ -106,6 +110,8 @@ impl Expr {
                     BinOp::Gt => bool_val(a > b),
                     BinOp::Le => bool_val(a <= b),
                     BinOp::Ge => bool_val(a >= b),
+                    BinOp::LogOr => bool_val(a != 0 || b != 0),
+                    BinOp::LogAnd => bool_val(a != 0 && b != 0),
                 }
             }
         }
@@ -142,6 +148,27 @@ mod tests {
         // Comparisons fold to 1 / 0 (used only in if-context by the front-end).
         assert_eq!(fold_pure(&bin(Eq, 3, 3)), Fold::Value(1));
         assert_eq!(fold_pure(&bin(Ne, 3, 3)), Fold::Value(0));
+    }
+
+    #[test]
+    fn logical_or_and_and_fold_to_neutral_0_1() {
+        use BinOp::*;
+        let bin = |op, l: i64, r: i64| {
+            Expr::Binary { op, lhs: Box::new(Expr::Int(l)), rhs: Box::new(Expr::Int(r)) }
+        };
+        // Matches real asl's truth table (verified against the `asl` binary):
+        // both operators yield 1/0, never -1/0.
+        assert_eq!(fold_pure(&bin(LogOr, 0, 0)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogOr, 0, 1)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogOr, 1, 0)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogOr, 1, 1)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogAnd, 0, 0)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogAnd, 0, 1)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogAnd, 1, 0)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogAnd, 1, 1)), Fold::Value(1));
+        // Non-zero operands other than 1 still normalize to the truth value.
+        assert_eq!(fold_pure(&bin(LogOr, 5, 0)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogAnd, 5, 2)), Fold::Value(1));
     }
 
     #[test]
