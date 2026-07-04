@@ -191,9 +191,33 @@ fn apply_fixup(
             bytes[site_abs as usize + 2] = (w >> 8) as u8;
             bytes[site_abs as usize + 3] = (w & 0xFF) as u8;
         }
-        FixupKind::PcRel8 | FixupKind::PcRelDisp16 | FixupKind::PcRelDisp8 => {
-            // Implemented in Task 3.
-            diags.push(diag(format!("PC-relative fixup {:?} not yet implemented", fx.kind), span));
+        FixupKind::PcRel8 => {
+            // disp measured from op+2; the disp byte sits at op+1 = site_vma.
+            let disp = value - (site_vma as i64 + 1);
+            if !(-128..=127).contains(&disp) {
+                diags.push(diag(format!("bra.s/Bcc.s displacement out of range ({disp}) in section {section}"), span));
+                return;
+            }
+            bytes[site_abs as usize] = disp as i8 as u8;
+        }
+        FixupKind::PcRelDisp16 => {
+            // disp measured from the extension word's own VMA = site_vma.
+            let disp = value - site_vma as i64;
+            if !(-0x8000..=0x7FFF).contains(&disp) {
+                diags.push(diag(format!("(d16,PC)/bra.w displacement out of range ({disp}) in section {section}"), span));
+                return;
+            }
+            let w = disp as i16 as u16;
+            bytes[site_abs as usize] = (w >> 8) as u8;
+            bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
+        }
+        FixupKind::PcRelDisp8 => {
+            let disp = value - site_vma as i64;
+            if !(-128..=127).contains(&disp) {
+                diags.push(diag(format!("(d8,PC,Xn) displacement out of range ({disp}) in section {section}"), span));
+                return;
+            }
+            bytes[site_abs as usize] = disp as i8 as u8;
         }
         FixupKind::HeaderChecksum => {
             diags.push(diag("HeaderChecksum is a post-image pass, not an in-fragment fixup".into(), span));
@@ -353,6 +377,54 @@ mod tests {
             fragments: vec![Fragment::Data(DataFragment {
                 bytes: vec![0x18, 0x00],
                 fixups: vec![Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target: Expr::Sym("far".to_string()) }],
+                span: span(),
+            })],
+        };
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn pcrel_disp16_measured_from_extension_word() {
+        // bra.w at op VMA 0x1000: [0x60,0x00, hi,lo]. Disp word at offset 2 (VMA 0x1002).
+        // target 0x1080 → disp = 0x1080 - 0x1002 = 0x7E.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x1000,
+            labels: vec![Label { name: "t".into(), offset: 0x80 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x60, 0x00, 0x00, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::PcRelDisp16, offset: 2, target: Expr::Sym("t".into()) }],
+                span: span(),
+            })],
+        };
+        let linked = link(&[sec], &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x60, 0x00, 0x00, 0x7E]);
+    }
+
+    #[test]
+    fn pcrel8_measured_from_op_plus_two() {
+        // bra.s at op VMA 0x2000: [0x60, disp]. disp byte at offset 1 (VMA 0x2001).
+        // target 0x2010 → disp = 0x2010 - (0x2001 + 1) = 0x0E.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x2000,
+            labels: vec![Label { name: "t".into(), offset: 0x10 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x60, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("t".into()) }],
+                span: span(),
+            })],
+        };
+        assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
+    }
+
+    #[test]
+    fn pcrel8_out_of_range_diagnoses() {
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x2000,
+            labels: vec![Label { name: "far".into(), offset: 0x200 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x60, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("far".into()) }],
                 span: span(),
             })],
         };
