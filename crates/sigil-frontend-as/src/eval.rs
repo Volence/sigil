@@ -2521,14 +2521,17 @@ impl Asm {
             positional.push(render_tokens(g));
         }
         let mut pos_iter = positional.into_iter();
+        // An OMITTED argument binds to the EMPTY STRING, not "left unsubstituted"
+        // (asl-verified): the Aeon parallax macros gate optional fields on
+        // `if "param" = ""` and expect the bare param to vanish where used
+        // (`P_VFG := vFactorFg` → `P_VFG := ` on the empty branch, never taken).
+        // `replace_word` treats `"` as a word boundary, so an empty binding also
+        // collapses `"param"` → `""`, making the guard compare true.
         let arg_values: Vec<(String, String)> = params
             .iter()
-            .filter_map(|p| {
-                keyword
-                    .get(p)
-                    .cloned()
-                    .or_else(|| pos_iter.next())
-                    .map(|v| (p.clone(), v))
+            .map(|p| {
+                let v = keyword.get(p).cloned().or_else(|| pos_iter.next()).unwrap_or_default();
+                (p.clone(), v)
             })
             .collect();
         let mut expanded = Vec::new();
