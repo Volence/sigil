@@ -229,7 +229,13 @@ fn apply_fixup(
             bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
         }
         FixupKind::PcRelDisp8 => {
-            let disp = value - site_vma as i64;
+            // `(d8,PC,Xn)`: the disp8 is the LOW byte of the brief extension
+            // word, but the 68k PC reference is the extension word's own VMA —
+            // one byte BEFORE this disp byte. So `disp = target - (site_vma - 1)`
+            // (asl-verified: `move.w Tbl(pc,d0.w),d1` at $0, `Tbl` at $4 →
+            // ext word `0002`, i.e. disp = 4 - (3 - 1) = 2). The fixup offset
+            // points at the disp byte itself.
+            let disp = value - (site_vma as i64 - 1);
             if !(-128..=127).contains(&disp) {
                 diags.push(diag(format!("(d8,PC,Xn) displacement out of range ({disp}) in section {section}"), span));
                 return;

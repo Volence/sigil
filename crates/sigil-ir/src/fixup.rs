@@ -19,8 +19,10 @@ pub enum FixupKind {
     /// 16-bit displacement in an extension word (`bra.w`/`bsr.w`/`Bcc.w`, `(d16,PC)`).
     /// `disp = target - site_vma` (the disp word's own VMA); range i16, big-endian.
     PcRelDisp16,
-    /// 8-bit displacement in a brief extension word (`(d8,PC,Xn)`).
-    /// `disp = target - site_vma`; range i8.
+    /// 8-bit displacement in a brief extension word (`(d8,PC,Xn)`). The disp is
+    /// the LOW byte of the ext word, but the 68k PC reference is the ext word's
+    /// own VMA (one byte before): `disp = target - (site_vma - 1)`; range i8.
+    /// The fixup offset points at the disp (low) byte.
     PcRelDisp8,
     /// Synthetic Sega header checksum. Applied as a final post-image pass over
     /// the whole file, NOT through `apply_fixup`; present here for `byte_width`

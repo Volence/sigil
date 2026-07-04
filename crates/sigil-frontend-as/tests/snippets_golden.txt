@@ -565,6 +565,17 @@ Lbl:
         move.w (Lbl,pc),d0
 --- bytes ---
 30 3A FF FE
+=== m68k_pcd8xn_move_and_lea ===
+        cpu 68000
+        phase 0
+        move.w Tbl(pc,d0.w),d1
+Tbl:
+        dc.w $1111
+        lea Tbl2(pc,a2.l),a0
+Tbl2:
+        dc.w $2222
+--- bytes ---
+32 3B 00 02 11 11 41 FB A8 02 22 22
 === m68k_dc_w_be ===
         cpu 68000
         phase 0

@@ -115,6 +115,30 @@ impl M68kBackend {
             span,
         })
     }
+
+    /// Lower an instruction carrying a symbolic `(d8,PC,Xn)` operand: encode with
+    /// a `Pcd8Xn { d: 0, .. }` placeholder (the encoder emits the brief extension
+    /// word with a zero displacement), then attach a `PcRelDisp8` fixup at the
+    /// disp (low) byte of that extension word. `disp8_offset` is that byte's
+    /// position within the encoded bytes — for a single-word opcode with the
+    /// PC-indexed EA as its source it is `3` (opcode word + ext-word high byte).
+    pub fn lower_pcrel_idx_ea(
+        &self,
+        inst: &Instruction,
+        disp8_offset: u32,
+        target: Expr,
+        span: Span,
+    ) -> Result<DataFragment, LowerError> {
+        let bytes = m68k::encode(inst).map_err(|e| LowerError { message: e.to_string() })?;
+        if disp8_offset as usize >= bytes.len() {
+            return Err(LowerError { message: "pcd8 disp offset past instruction end".into() });
+        }
+        Ok(DataFragment {
+            bytes,
+            fixups: vec![Fixup { kind: FixupKind::PcRelDisp8, offset: disp8_offset, target }],
+            span,
+        })
+    }
 }
 
 #[cfg(test)]

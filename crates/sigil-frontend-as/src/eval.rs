@@ -1861,6 +1861,12 @@ impl Asm {
         {
             return self.lower_m68k_pcrel(mnemonic, size, &atoms, pc_idx, span);
         }
+        if let Some(pc_idx) = atoms
+            .iter()
+            .position(|a| matches!(a, OperandAtom::M68kIdx { an, .. } if an == "pc"))
+        {
+            return self.lower_m68k_pcrel_idx(mnemonic, size, &atoms, pc_idx, span);
+        }
         let ops = match self.convert_atoms_m68k(mnemonic, size, &atoms, span) {
             Some(o) => o,
             None => return,
@@ -2063,6 +2069,54 @@ impl Asm {
         let inst = M68kInstruction { mnemonic, size, ops };
         let frag = self.m68k.lower_pcrel_ea(&inst, 2, target, span);
         self.emit_frag(frag, span);
+    }
+
+    /// An instruction with a `(d8,PC,Xn)` source operand (`Label(pc,Xn.w|.l)`,
+    /// e.g. jump-table reads `.case_table(pc,d2.w)`). Mirrors
+    /// [`Self::lower_m68k_pcrel`] but for the brief-extension-word indexed form:
+    /// the pc-idx atom's `disp` is the label target (resolved later as an 8-bit
+    /// PC-relative displacement), and its index register becomes the ext word's
+    /// `Xn`. The disp8 byte sits at offset 3 (opcode word + ext-word high byte).
+    fn lower_m68k_pcrel_idx(&mut self, mnemonic: M68kMnemonic, size: M68kSize, atoms: &[OperandAtom], pc_idx: usize, span: Span) {
+        let mut ops = Vec::with_capacity(atoms.len());
+        let mut target = None;
+        for (i, a) in atoms.iter().enumerate() {
+            if i == pc_idx {
+                let (disp, xn, xlong) = match a {
+                    OperandAtom::M68kIdx { disp, xn, xlong, .. } => (disp, xn, *xlong),
+                    _ => unreachable!("pc_idx must index a M68kIdx{{an: \"pc\"}} atom"),
+                };
+                let xn = match self.m68k_index_reg(xn, span) {
+                    Some(x) => x,
+                    None => return,
+                };
+                target = Some(self.qualify_expr(disp));
+                ops.push(M68kOperand::Pcd8Xn { d: 0, xn, long: xlong });
+            } else {
+                match self.convert_one_atom_m68k(a, size, span) {
+                    Some(op) => ops.push(op),
+                    None => return,
+                }
+            }
+        }
+        let target = target.expect("pc_idx must index the pc-relative atom");
+        let mnemonic = refine_m68k_mnemonic(mnemonic, &ops);
+        let inst = M68kInstruction { mnemonic, size, ops };
+        let frag = self.m68k.lower_pcrel_idx_ea(&inst, 3, target, span);
+        self.emit_frag(frag, span);
+    }
+
+    /// Parse a 68k index-register name (`d0`..`d7` / `a0`..`a7`, `sp` = a7) into
+    /// the ISA's `Xn`. Diagnoses (and returns `None`) on a non-register token.
+    fn m68k_index_reg(&mut self, xn: &str, span: Span) -> Option<M68kXn> {
+        if let Some(n) = m68k_data_reg(xn) {
+            Some(M68kXn::D(n))
+        } else if let Some(n) = m68k_addr_reg(xn) {
+            Some(M68kXn::A(n))
+        } else {
+            self.err(span, format!("`{xn}` is not a valid index register"));
+            None
+        }
     }
 
     /// Convert operand atoms to resolved 68k operands for the fold-based
@@ -3180,16 +3234,17 @@ mod tests {
     }
 
     #[test]
-    fn m68k_pcrelative_disp8_indexed_still_not_supported() {
-        // `(d8,PC,Xn)` remains out of scope (only `(d16,PC)` lowers in T5c).
-        let src = "    cpu 68000\n    move.w (8,pc,d0.w),d1\n";
+    fn m68k_pcrelative_disp8_indexed_lowers() {
+        // `(d8,PC,Xn)` now lowers to a brief extension word + `PcRelDisp8` fixup.
+        // asl-verified: `move.w (8,pc,d0.w),d1` at VMA 0 → `32 3B 00 06` (the
+        // literal `8` is a TARGET address; disp = 8 - ext-word-VMA(2) = 6).
+        let src = "    cpu 68000\n    phase 0\n    move.w (8,pc,d0.w),d1\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = run(src, &opts).expect_err("(d8,PC,Xn) must be rejected, not lowered");
-        assert!(
-            diags.iter().any(|d| d.message.contains("not yet supported")),
-            "expected a not-yet-supported diagnostic, got: {:?}",
-            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
+        let m = run(src, &opts).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true).expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        assert_eq!(bytes, vec![0x32, 0x3B, 0x00, 0x06]);
     }
 
     #[test]
