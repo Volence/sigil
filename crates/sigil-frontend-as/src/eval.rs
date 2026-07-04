@@ -2644,11 +2644,17 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
 }
 
 /// Parse a 68000 condition-code mnemonic suffix (the `<cc>` in `b<cc>`,
-/// `db<cc>`, `s<cc>`) into its `Cond`. All 16 codes per the ISA's `Cond` enum.
+/// `db<cc>`, `s<cc>`) into its `Cond`. All 16 codes per the ISA's `Cond` enum,
+/// plus the two unsigned-branch spellings `hs`/`lo`: on the 68000 HS
+/// (higher-or-same) IS carry-clear (CC) and LO (lower) IS carry-set (CS) —
+/// asl accepts `bhs`/`blo`/`shs`/`slo`/`dbhs`/`dblo` as exact aliases, and the
+/// Aeon source uses `bhs`/`blo` pervasively (~68 sites). They encode to the
+/// identical opcode as `bcc`/`bcs`, so this is a pure spelling alias.
 fn m68k_cond(w: &str) -> Option<M68kCond> {
     use M68kCond::*;
     Some(match w {
         "t" => T, "f" => F, "hi" => Hi, "ls" => Ls, "cc" => Cc, "cs" => Cs,
+        "hs" => Cc, "lo" => Cs,
         "ne" => Ne, "eq" => Eq, "vc" => Vc, "vs" => Vs, "pl" => Pl, "mi" => Mi,
         "ge" => Ge, "lt" => Lt, "gt" => Gt, "le" => Le,
         _ => return None,
@@ -2818,6 +2824,13 @@ mod tests {
         assert_eq!(m68k_mnemonic("scc"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc)));
         assert_eq!(m68k_mnemonic("seq"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Eq)));
         assert_eq!(m68k_mnemonic("st"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::T)));
+        // Unsigned-branch aliases: bhs == bcc (carry-clear), blo == bcs
+        // (carry-set); same for shs/slo and dbhs/dblo. Aeon uses bhs/blo.
+        assert_eq!(m68k_mnemonic("bhs"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Cc)));
+        assert_eq!(m68k_mnemonic("blo"), Some(Mnemonic::Bcc(sigil_backend_m68k::m68k::Cond::Cs)));
+        assert_eq!(m68k_mnemonic("shs"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cc)));
+        assert_eq!(m68k_mnemonic("slo"), Some(Mnemonic::Scc(sigil_backend_m68k::m68k::Cond::Cs)));
+        assert_eq!(m68k_mnemonic("dbhs"), Some(Mnemonic::Dbcc(sigil_backend_m68k::m68k::Cond::Cc)));
         // `movem`/`movep` remain out of scope.
         assert_eq!(m68k_mnemonic("movem"), None);
         assert_eq!(m68k_mnemonic("movep"), None);
