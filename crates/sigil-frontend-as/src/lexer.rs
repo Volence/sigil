@@ -29,6 +29,25 @@ pub fn lex_line(line: &str, cpu: Cpu, source: SourceId, base: u32) -> Result<Vec
         match c {
             b' ' | b'\t' | b'\r' | b'\n' => { i += 1; }
             b';' => break, // comment to EOL
+            // AS macro-attribute block `{ATTR}` (e.g. `{GLOBALSYMBOLS}` in the
+            // `probeCore macro …, {GLOBALSYMBOLS}` param list). It is a scoping
+            // attribute with no byte effect for us — the body labels lead each
+            // expansion under the stamped routine name either way — so consume
+            // the whole `{…}` group and emit no token. Only ever appears in a
+            // macro-definition param list in the Aeon tree (every other `{`
+            // lives inside a string literal or a `\{…}` interpolation, neither
+            // of which reaches this char scanner).
+            b'{' => {
+                let start = i;
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'}' {
+                    i += 1;
+                }
+                if i >= bytes.len() {
+                    return Err(err(start, i, "unterminated `{…}` macro attribute"));
+                }
+                i += 1; // closing brace
+            }
             b'"' => {
                 let start = i;
                 i += 1;

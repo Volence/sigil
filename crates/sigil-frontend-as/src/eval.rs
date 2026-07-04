@@ -1335,6 +1335,14 @@ impl Asm {
             "ds.w" => self.directive_ds(2, rest, span),
             "ds.l" => self.directive_ds(4, rest, span),
             "align" => self.directive_align(rest, span),
+            // `set NAME, VALUE` — asl's comma-operand spelling of the SET
+            // directive (the reassignable-symbol assignment, name in the
+            // OPERAND column rather than the label column). Aeon writes this in
+            // `rept`-unrolled data init (`set .c, 0` / `set .c, .c+DMAEntry_len`).
+            // Verified against asl: `set .c, 0` assigns `.c = 0` exactly like
+            // `.c set 0`. Gated to 68000 so the Z80 `set BIT,(ix+d)` bit
+            // instruction (same head word) still routes to Z80 lowering below.
+            "set" if self.state.cpu == Cpu::M68000 => self.directive_set_comma(rest, span),
             "error" => {
                 let m = self.interp_string(rest);
                 self.err(span, m);
@@ -1503,6 +1511,25 @@ impl Asm {
             let q = qualify(name, self.scope.as_deref());
             self.env.define(&q, SymbolValue::Int(v));
         }
+    }
+
+    /// `set NAME, VALUE` — the comma-operand form of SET (see the dispatch
+    /// arm). Splits the first top-level comma into the target symbol name and
+    /// the value expression, then reuses `directive_set`.
+    fn directive_set_comma(&mut self, rest: &[Token], span: Span) {
+        let groups = split_top_commas(rest);
+        if groups.len() != 2 {
+            self.err(span, "`set` directive expects `NAME, value`");
+            return;
+        }
+        let name = match groups[0] {
+            [Token { tok: Tok::Ident(s), .. }] => s.clone(),
+            _ => {
+                self.err(span, "`set` directive target must be a bare symbol");
+                return;
+            }
+        };
+        self.directive_set(&name, groups[1], span);
     }
 
     fn directive_db(&mut self, rest: &[Token], span: Span) {
@@ -2695,7 +2722,7 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "btst" => Btst, "bset" => Bset, "bclr" => Bclr,
         "clr" => Clr, "neg" => Neg, "not" => Not, "tst" => Tst, "tas" => Tas,
         "swap" => Swap, "ext" => Ext, "lea" => Lea, "pea" => Pea,
-        "movem" => Movem, "movep" => Movep,
+        "movem" => Movem, "movep" => Movep, "addx" => Addx,
         "nop" => Nop, "rts" => Rts, "rte" => Rte, "trap" => Trap,
         "bra" => Bra, "bsr" => Bsr,
         "jmp" => Jmp, "jsr" => Jsr,
