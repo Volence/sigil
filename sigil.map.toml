@@ -1,0 +1,16 @@
+# Sigil external memory map for Aeon (the p2bin layout the source assumes).
+# Default gap fill matches p2bin invoked without -p.
+fill = 0x00
+
+[[region]]
+name = "rom"
+lma_base = 0
+size = 0x400000        # 4 MiB address space; the image ends at the source terminus
+kind = "rom"
+
+[[region]]
+name = "z80_moving_trucks_bank"
+lma_base = 0x60000     # cross-checked against golden/windows.toml region_b.lma = 393216 (0x60000) — match
+size = 0x8000
+kind = "z80_bank"
+vma_base = 0x8000

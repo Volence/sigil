@@ -8,6 +8,7 @@ pub use builder::IrBuilder;
 
 pub mod expr;
 pub mod fixup;
+pub mod map;
 pub mod symbols;
 pub use expr::Expr;
 pub use fixup::{Fixup, FixupKind};
@@ -44,6 +45,12 @@ pub enum Fragment {
     /// Reserve `count` bytes of address space with NO image bytes (RAM `ds`
     /// under phase/dephase); contributes to VMA length, not to image length.
     Reserve { count: u32, span: Span },
+    /// A bare-symbol `jmp`/`jsr` whose operand width (`abs.w`/`abs.l`) is not yet
+    /// chosen — the ONLY length-variable fragment. `resolve_layout` (sigil-link)
+    /// picks the width and lowers this to a `Data` fragment (opcode word +
+    /// Abs16Be/Abs32Be operand fixup) BEFORE `link()` runs, so the helpers below
+    /// never see it at link time.
+    JmpJsrSym { is_jsr: bool, target: crate::expr::Expr, span: Span },
 }
 
 /// A named, ordered collection of [`Fragment`]s laid out at a fixed LMA, whose
@@ -79,6 +86,9 @@ impl Section {
                 Fragment::Data(d) => d.bytes.len() as u32,
                 Fragment::Fill { count, .. } => *count,
                 Fragment::Reserve { .. } => 0,
+                Fragment::JmpJsrSym { .. } => {
+                    unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
+                }
             };
         }
         n
@@ -93,6 +103,9 @@ impl Section {
                 Fragment::Data(d) => d.bytes.len() as u32,
                 Fragment::Fill { count, .. } => *count,
                 Fragment::Reserve { count, .. } => *count,
+                Fragment::JmpJsrSym { .. } => {
+                    unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
+                }
             };
         }
         n
@@ -108,6 +121,9 @@ impl Section {
                     out.extend(std::iter::repeat_n(*value, *count as usize));
                 }
                 Fragment::Reserve { .. } => {}
+                Fragment::JmpJsrSym { .. } => {
+                    unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
+                }
             }
         }
         out
@@ -261,5 +277,18 @@ mod tests {
         assert_eq!(sec.image_bytes(), vec![0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         // VMA span (labels/PC) counts Reserve too.
         assert_eq!(sec.vma_len(), 3 + 4 + 8);
+    }
+
+    #[test]
+    fn jmpjsr_sym_variant_constructs() {
+        let f = Fragment::JmpJsrSym {
+            is_jsr: true,
+            target: Expr::Sym("Sub".into()),
+            span: Span { source: SourceId(0), start: 0, end: 0 },
+        };
+        match f {
+            Fragment::JmpJsrSym { is_jsr, .. } => assert!(is_jsr),
+            _ => panic!("wrong variant"),
+        }
     }
 }

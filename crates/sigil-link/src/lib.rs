@@ -6,8 +6,18 @@
 //! upstream (the caller lowers instructions to `DataFragment`s first).
 
 use sigil_ir::expr::Fold;
+use sigil_ir::map::MemoryMap;
 use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, Span};
+
+mod relax;
+pub use relax::{asl_width_rule, resolve_layout, AbsWidth};
+
+mod map_load;
+pub use map_load::load_map;
+
+mod listing;
+pub use listing::{emit_listing, ListingSymbol};
 
 /// One section's resolved bytes and where they load.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,6 +98,9 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                 }
                 Fragment::Fill { count, .. } => frag_img_off += *count,
                 Fragment::Reserve { .. } => {} // no image bytes
+                Fragment::JmpJsrSym { .. } => {
+                    unreachable!("JmpJsrSym must be lowered by resolve_layout before link")
+                }
             }
         }
 
@@ -169,11 +182,58 @@ fn apply_fixup(
             }
             bytes[site_abs as usize] = disp as i8 as u8;
         }
-        FixupKind::Abs16Be | FixupKind::Abs32Be => {
-            diags.push(diag(
-                format!("68000 fixup kind {:?} not supported in M0", fx.kind),
-                span,
-            ));
+        FixupKind::Abs16Be => {
+            // abs.w holds a sign-extended 16-bit address: the VMA must fit i16
+            // (asl errors otherwise; matching that keeps us byte-exact).
+            let v = value as i64;
+            if !(-0x8000..=0x7FFF).contains(&v) && !(0xFF_8000..=0xFF_FFFF).contains(&(v & 0xFF_FFFF)) {
+                diags.push(diag(
+                    format!("value {v:#X} does not fit abs.w (16-bit sign-extended) in section {section}"),
+                    span,
+                ));
+                return;
+            }
+            let w = (value & 0xFFFF) as u16;
+            bytes[site_abs as usize] = (w >> 8) as u8;
+            bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
+        }
+        FixupKind::Abs32Be => {
+            let w = value as u32;
+            bytes[site_abs as usize] = (w >> 24) as u8;
+            bytes[site_abs as usize + 1] = (w >> 16) as u8;
+            bytes[site_abs as usize + 2] = (w >> 8) as u8;
+            bytes[site_abs as usize + 3] = (w & 0xFF) as u8;
+        }
+        FixupKind::PcRel8 => {
+            // disp measured from op+2; the disp byte sits at op+1 = site_vma.
+            let disp = value - (site_vma as i64 + 1);
+            if !(-128..=127).contains(&disp) {
+                diags.push(diag(format!("bra.s/Bcc.s displacement out of range ({disp}) in section {section}"), span));
+                return;
+            }
+            bytes[site_abs as usize] = disp as i8 as u8;
+        }
+        FixupKind::PcRelDisp16 => {
+            // disp measured from the extension word's own VMA = site_vma.
+            let disp = value - site_vma as i64;
+            if !(-0x8000..=0x7FFF).contains(&disp) {
+                diags.push(diag(format!("(d16,PC)/bra.w displacement out of range ({disp}) in section {section}"), span));
+                return;
+            }
+            let w = disp as i16 as u16;
+            bytes[site_abs as usize] = (w >> 8) as u8;
+            bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
+        }
+        FixupKind::PcRelDisp8 => {
+            let disp = value - site_vma as i64;
+            if !(-128..=127).contains(&disp) {
+                diags.push(diag(format!("(d8,PC,Xn) displacement out of range ({disp}) in section {section}"), span));
+                return;
+            }
+            bytes[site_abs as usize] = disp as i8 as u8;
+        }
+        FixupKind::HeaderChecksum => {
+            diags.push(diag("HeaderChecksum is a post-image pass, not an in-fragment fixup".into(), span));
         }
     }
 }
@@ -207,6 +267,41 @@ pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String>
         }
     }
     Ok(flatten(image, fill))
+}
+
+/// The single-image ROM output (`p2bin` + `fixheader` replacement):
+/// validate each section against the map, place bytes at LMA, gap-fill with the
+/// map default, append NOTHING (the `convsym` no-op), then apply the header
+/// checksum as the final pass. The ROM ends at the last section byte — no
+/// power-of-two padding.
+pub fn emit_rom(image: &LinkedImage, map: &MemoryMap) -> Result<Vec<u8>, String> {
+    for s in &image.sections {
+        map.validate_section(&s.name, s.lma, s.bytes.len() as u32)?;
+    }
+    let mut rom = flatten_checked(image, map.fill)?;
+    // convsym no-op: append nothing.
+    apply_header_checksum(&mut rom); // Task 6
+    Ok(rom)
+}
+
+/// Sega header checksum: 16-bit big-endian additive word-sum over `[0x200, EOF)`,
+/// written big-endian at `0x18E`. The genuinely-last byte-mutating pass. An odd
+/// trailing byte is summed as the high half of a word (low half 0x00).
+pub fn apply_header_checksum(rom: &mut [u8]) {
+    if rom.len() < 0x200 {
+        return;
+    }
+    let mut sum: u16 = 0;
+    let mut i = 0x200;
+    while i + 1 < rom.len() {
+        sum = sum.wrapping_add(((rom[i] as u16) << 8) | rom[i + 1] as u16);
+        i += 2;
+    }
+    if i < rom.len() {
+        sum = sum.wrapping_add((rom[i] as u16) << 8);
+    }
+    rom[0x18E] = (sum >> 8) as u8;
+    rom[0x18F] = (sum & 0xFF) as u8;
 }
 
 #[cfg(test)]
@@ -338,6 +433,54 @@ mod tests {
     }
 
     #[test]
+    fn pcrel_disp16_measured_from_extension_word() {
+        // bra.w at op VMA 0x1000: [0x60,0x00, hi,lo]. Disp word at offset 2 (VMA 0x1002).
+        // target 0x1080 → disp = 0x1080 - 0x1002 = 0x7E.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x1000,
+            labels: vec![Label { name: "t".into(), offset: 0x80 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x60, 0x00, 0x00, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::PcRelDisp16, offset: 2, target: Expr::Sym("t".into()) }],
+                span: span(),
+            })],
+        };
+        let linked = link(&[sec], &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x60, 0x00, 0x00, 0x7E]);
+    }
+
+    #[test]
+    fn pcrel8_measured_from_op_plus_two() {
+        // bra.s at op VMA 0x2000: [0x60, disp]. disp byte at offset 1 (VMA 0x2001).
+        // target 0x2010 → disp = 0x2010 - (0x2001 + 1) = 0x0E.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x2000,
+            labels: vec![Label { name: "t".into(), offset: 0x10 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x60, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("t".into()) }],
+                span: span(),
+            })],
+        };
+        assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
+    }
+
+    #[test]
+    fn pcrel8_out_of_range_diagnoses() {
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x2000,
+            labels: vec![Label { name: "far".into(), offset: 0x200 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x60, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("far".into()) }],
+                span: span(),
+            })],
+        };
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
+    }
+
+    #[test]
     fn unresolved_target_diagnoses() {
         let sec = region_a(); // references SfxBlobWinTab, which no section defines here.
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
@@ -402,21 +545,48 @@ mod tests {
     }
 
     #[test]
-    fn abs16be_unsupported_in_m0_diagnoses() {
+    fn abs32be_writes_big_endian_target_vma() {
+        // A 4-byte data fragment; Abs32Be fixup at offset 0 targeting VMA 0x00123456.
+        let mut stubs = SymbolTable::new();
+        stubs.define("T", SymbolValue::Int(0x0012_3456));
         let sec = Section {
-            name: "s".to_string(),
-            cpu: Cpu::Z80,
-            vma_base: Some(0x8000),
-            lma: 0x60000,
+            name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400,
             labels: vec![],
             fragments: vec![Fragment::Data(DataFragment {
-                bytes: vec![0x00, 0x00],
-                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Int(0x1234) }],
+                bytes: vec![0, 0, 0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("T".into()) }],
                 span: span(),
             })],
         };
-        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
-        assert!(err.iter().any(|d| d.message.contains("not supported in M0")), "got: {:?}", err);
+        let linked = link(&[sec], &stubs).unwrap();
+        assert_eq!(linked.section("s").unwrap().bytes, vec![0x00, 0x12, 0x34, 0x56]);
+    }
+
+    #[test]
+    fn abs16be_writes_big_endian_and_rejects_overflow() {
+        let mut stubs = SymbolTable::new();
+        stubs.define("Ok", SymbolValue::Int(0x1234));
+        stubs.define("Big", SymbolValue::Int(0x1_0000)); // does not fit abs.w sign-extension
+        let ok = Section {
+            name: "ok".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Ok".into()) }],
+                span: span(),
+            })],
+        };
+        assert_eq!(link(&[ok], &stubs).unwrap().section("ok").unwrap().bytes, vec![0x12, 0x34]);
+
+        let bad = Section {
+            name: "bad".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Big".into()) }],
+                span: span(),
+            })],
+        };
+        let err = link(&[bad], &stubs).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
     }
 
     #[test]
@@ -464,5 +634,59 @@ mod tests {
             ],
         };
         assert_eq!(flatten_checked(&img, 0x00).unwrap(), vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn emit_rom_places_sections_and_validates_regions() {
+        use sigil_ir::map::{MemoryMap, Region, RegionKind};
+        let map = MemoryMap::new(
+            vec![Region { name: "rom".into(), lma_base: 0, size: 0x1_0000, kind: RegionKind::Rom, vma_base: None }],
+            0x00,
+        );
+        let img = LinkedImage {
+            sections: vec![
+                LinkedSection { name: "a".into(), lma: 2, bytes: vec![0xAA, 0xBB] },
+                LinkedSection { name: "b".into(), lma: 6, bytes: vec![0xCC] },
+            ],
+        };
+        // head 0,1 filled; bytes at 2..4; gap at 4,5; byte at 6. Terminus = 7 (no padding).
+        assert_eq!(emit_rom(&img, &map).unwrap(), vec![0x00, 0x00, 0xAA, 0xBB, 0x00, 0x00, 0xCC]);
+    }
+
+    #[test]
+    fn emit_rom_rejects_section_outside_region() {
+        use sigil_ir::map::{MemoryMap, Region, RegionKind};
+        let map = MemoryMap::new(
+            vec![Region { name: "rom".into(), lma_base: 0, size: 4, kind: RegionKind::Rom, vma_base: None }],
+            0x00,
+        );
+        let img = LinkedImage { sections: vec![LinkedSection { name: "a".into(), lma: 8, bytes: vec![1] }] };
+        assert!(emit_rom(&img, &map).is_err());
+    }
+
+    #[test]
+    fn header_checksum_is_be_wordsum_over_200_to_eof_at_18e() {
+        // Build a >0x200-byte ROM; put known words after 0x200; assert the
+        // checksum word at 0x18E equals the BE word-sum over [0x200, EOF).
+        let mut rom = vec![0u8; 0x210];
+        rom[0x200] = 0x12;
+        rom[0x201] = 0x34; // word 0x1234
+        rom[0x202] = 0x00;
+        rom[0x203] = 0x01; // word 0x0001
+        // remaining 0x204..0x210 are zero words → sum = 0x1235.
+        apply_header_checksum(&mut rom);
+        assert_eq!(rom[0x18E], 0x12);
+        assert_eq!(rom[0x18F], 0x35);
+    }
+
+    #[test]
+    fn header_checksum_handles_odd_trailing_byte() {
+        // Odd length: last lone byte forms a word with a 0x00 low half (BE hi-byte).
+        let mut rom = vec![0u8; 0x203];
+        rom[0x200] = 0x00;
+        rom[0x201] = 0x10; // word 0x0010
+        rom[0x202] = 0x05; // lone byte → word 0x0500
+        apply_header_checksum(&mut rom);
+        assert_eq!(((rom[0x18E] as u16) << 8) | rom[0x18F] as u16, 0x0510);
     }
 }

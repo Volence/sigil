@@ -51,3 +51,22 @@ if Sigil diverges from the reference** (writing both blobs for diffing). A clean
 run overwrites these files with a fresh, self-consistent snapshot. Commit the
 result to re-baseline. (M1 replaces this whole snapshot dance with a full-ROM
 `sha256` gate once the 68000 backend assembles the real 68k data.)
+
+## M1.B reference-ROM pin (acceptance gate)
+
+The `m1b_gate` integration test (`crates/sigil-harness/tests/m1b_gate.rs`) checks
+the linker's byte-mutating passes against the live Aeon reference ROM. The pin
+below records the exact reference the gate was validated against. This is a
+**moving target** — the Aeon ROM (and thus its stored checksum) changes as the
+engine evolves; re-baseline this pin *deliberately* when intentionally tracking a
+new Aeon build, and re-confirm the gate passes against it.
+
+- Aeon repo commit (reference): **`9bacc939ae7c7c5300fc7e50548d851373128a23`**
+- `aeon/s4.bin` length: **458666 bytes** (`0x6FF2A`)
+- Stored header checksum at `0x18E`: **`0x5CBE`**
+
+`header_checksum_reproduces_reference_rom_18e` does not hardcode `0x5CBE`: it
+reads the stored word from the reference ROM, zeroes `0x18E`, recomputes via
+`sigil_link::apply_header_checksum`, and asserts equality — so the gate stays
+correct across re-baselines as long as the Sega checksum algorithm holds. The
+values above are the observed pin at the time this gate was written.
