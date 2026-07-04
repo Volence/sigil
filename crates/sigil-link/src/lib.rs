@@ -272,8 +272,25 @@ pub fn emit_rom(image: &LinkedImage, map: &MemoryMap) -> Result<Vec<u8>, String>
     Ok(rom)
 }
 
-/// TEMP stub — real implementation in Task 6.
-pub fn apply_header_checksum(_rom: &mut [u8]) {}
+/// Sega header checksum: 16-bit big-endian additive word-sum over `[0x200, EOF)`,
+/// written big-endian at `0x18E`. The genuinely-last byte-mutating pass. An odd
+/// trailing byte is summed as the high half of a word (low half 0x00).
+pub fn apply_header_checksum(rom: &mut [u8]) {
+    if rom.len() < 0x200 {
+        return;
+    }
+    let mut sum: u16 = 0;
+    let mut i = 0x200;
+    while i + 1 < rom.len() {
+        sum = sum.wrapping_add(((rom[i] as u16) << 8) | rom[i + 1] as u16);
+        i += 2;
+    }
+    if i < rom.len() {
+        sum = sum.wrapping_add((rom[i] as u16) << 8);
+    }
+    rom[0x18E] = (sum >> 8) as u8;
+    rom[0x18F] = (sum & 0xFF) as u8;
+}
 
 #[cfg(test)]
 mod tests {
@@ -633,5 +650,31 @@ mod tests {
         );
         let img = LinkedImage { sections: vec![LinkedSection { name: "a".into(), lma: 8, bytes: vec![1] }] };
         assert!(emit_rom(&img, &map).is_err());
+    }
+
+    #[test]
+    fn header_checksum_is_be_wordsum_over_200_to_eof_at_18e() {
+        // Build a >0x200-byte ROM; put known words after 0x200; assert the
+        // checksum word at 0x18E equals the BE word-sum over [0x200, EOF).
+        let mut rom = vec![0u8; 0x210];
+        rom[0x200] = 0x12;
+        rom[0x201] = 0x34; // word 0x1234
+        rom[0x202] = 0x00;
+        rom[0x203] = 0x01; // word 0x0001
+        // remaining 0x204..0x210 are zero words → sum = 0x1235.
+        apply_header_checksum(&mut rom);
+        assert_eq!(rom[0x18E], 0x12);
+        assert_eq!(rom[0x18F], 0x35);
+    }
+
+    #[test]
+    fn header_checksum_handles_odd_trailing_byte() {
+        // Odd length: last lone byte forms a word with a 0x00 low half (BE hi-byte).
+        let mut rom = vec![0u8; 0x203];
+        rom[0x200] = 0x00;
+        rom[0x201] = 0x10; // word 0x0010
+        rom[0x202] = 0x05; // lone byte → word 0x0500
+        apply_header_checksum(&mut rom);
+        assert_eq!(((rom[0x18E] as u16) << 8) | rom[0x18F] as u16, 0x0510);
     }
 }
