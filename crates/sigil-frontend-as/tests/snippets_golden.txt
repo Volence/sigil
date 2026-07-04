@@ -1162,3 +1162,106 @@ AA 12 34
         dc.w $1234
 --- bytes ---
 AA 00 12 34
+=== t1_str_set_substr_whole ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"BUS ERROR"
+	dc.b	substr(S, 0, 0)
+	dc.b	0
+--- bytes ---
+42 55 53 20 45 52 52 4F 52 00
+=== t1_str_strstr_miss ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"BUS ERROR"
+P:	set	strstr(S, "%<")
+	dc.b	P&$FF
+--- bytes ---
+FF
+=== t1_str_strlen ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"BUS ERROR"
+	dc.b	strlen(S)
+--- bytes ---
+09
+=== t1_str_reassign_substr_self ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"HELLO"
+S:	set	substr(S, 0, 3)
+	dc.b	strlen(S)
+	dc.b	substr(S, 0, 0)
+--- bytes ---
+03 48 45 4C
+=== t1_str_val_sym ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"$80"
+	dc.b	val(S)
+--- bytes ---
+80
+=== t1_str_empty ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	""
+	dc.b	strlen(S)
+	dc.b	$AA
+--- bytes ---
+00 AA
+=== t1_bang_xor ===
+	cpu 68000
+	padding off
+	org 0
+	dc.b	(1)!1
+	dc.b	(3)!1
+	dc.b	5!3
+--- bytes ---
+00 02 06
+=== t1_errormessage_representative ===
+	cpu 68000
+	padding off
+	org 0
+_eh_address_error	equ	$01
+_eh_return		equ	$20
+_eh_align_offset	equ	$80
+DEBUGGER__EXTENSIONS__ENABLE	equ	1
+_eh_default:	equ	0
+MDDBG__ErrorHandler	equ	$000400
+MDDBG__ErrorHandler_PagesController	equ	$000500
+__FSTRING_GenerateArgumentsCode: macro string
+	.__pos:	set	strstr(string,"%<")
+	.__str:	set	string
+	while (.__pos>=0)
+		.__substr:	set	substr(.__str,.__pos,0)
+		if (.__pos>0)
+			.__str:	set	substr(.__str, 0, .__pos)
+			.__pos:	set	strstr(.__str,"%<")
+		else
+			.__pos:	set	-1
+		endif
+	endm
+	endm
+__FSTRING_GenerateDecodedString: macro string, addnewline
+	dc.b	substr(string, 0, 0)
+	dc.b	0
+	endm
+__ErrorMessage:	macro string, opts
+	__FSTRING_GenerateArgumentsCode string
+	jsr	(MDDBG__ErrorHandler).l
+	__FSTRING_GenerateDecodedString string, 0
+	.__align_flag: set (((*)&1)!1)*_eh_align_offset
+	dc.b	(opts)+_eh_return|.__align_flag
+	!align	2
+	jmp	(MDDBG__ErrorHandler_PagesController).l
+	endm
+BusError:
+	__ErrorMessage	"BUS ERROR", _eh_default|_eh_address_error
+--- bytes ---
+4E B9 00 00 04 00 42 55 53 20 45 52 52 4F 52 00 A1 00 4E F9 00 00 05 00
