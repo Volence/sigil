@@ -114,12 +114,19 @@ Acceptance: new snippet goldens green; all existing strict gates still green
 (`m0_acceptance`, `m1b_gate`, `m1c_vector_table` — these currently pass *with* the wrong
 model, so any regression here means the new model was implemented where it shouldn't be).
 
-**T0.2 — Commit the stale-fold reproducer (fixes nothing; pins F2).** A hermetic
-front-end source: a bank whose first instruction is a bare `jmp` to a `>$8000` label,
-followed by a label and a folded `dc.l` reference to it, plus a second section after the
-bank. Assert the current behavior (the `Org+JmpJsrSym` guard error, or — in a guard-free
-variant — the stale bytes/stale LMA) as an `#[ignore = "flips green in T3"]` test with
-the *correct* expected bytes written in. T3's exit criterion includes flipping it on.
+**T0.2 — Commit the stale-fold reproducer (fixes nothing; pins F2). ✅ DONE
+(2026-07-04).** `crates/sigil-frontend-as/tests/stale_fold_repro.rs`. Used the
+**guard-free variant** (`phase $10000` sets the base via displacement, emits no `Org`
+fragment → labels resolve `>$8000` → the bare `jmp` grows abs.w→abs.l, without tripping
+resolve_layout's `Org+JmpJsrSym` guard) — isolates the defect cleanly. Two
+`#[ignore = "flips green in T3"]` tests assert asl-1.42-verified correct output:
+`dc_l_after_grown_jmp_folds_correctly` (single section, flatten = `4EF9 0001 0006 0001
+0006` — the folded `dc.l` must be `$10006` not the stale baseline `$10004`) and
+`downstream_section_lma_reflows_after_growth` (two sections; `SecondSection` LMA must be
+`$0A`, not the stale `$08` — **this pins the half the handoff did not flag**). Companion
+`*_documents_current_bug` tests pass today (tripwires; T3 deletes them). Verified: default
+run 2 pass / 2 ignored; `--ignored` run the 2 correct-behavior tests FAIL (`...04` vs
+`...06`; lma 8 vs 10). Both asl-truths captured live.
 
 **T0.3 — Repair the M0 live harness. ✅ DONE (2026-07-04).** Added `padding off` to
 `harness_root.asm` (after `cpu 68000`, mirroring aeon `main.asm:3`) — cleared the
