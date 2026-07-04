@@ -129,6 +129,19 @@ comment). Two distinct in-source compensations depend on it (lines 664, 726). Co
 position** (correct 0-based index otherwise), matching `asl 1.42 Bld 212`. This quirk lives
 **only** in the front-end builtin table, never in IR (§7.4).
 
+### D7 — 68k line classification uses AS's column rule (found during T1)
+
+`exec_one`'s bare-label-without-colon detection historically keyed on the Z80-only
+`is_mnemonic` table. Under `cpu 68000` there is no mnemonic table until T4, so a leading
+identifier cannot be classified as label-vs-instruction that way. AS's actual rule is
+**column-based**: a bare label (no colon) sits at **column 0**; an instruction is
+**indented**. T1 implemented this for the M68000 path (`indented = head.span.start >
+line.base`; a stripped colon label forces instruction classification). **T4 note:** when the
+68k mnemonic table lands, classification may consult it *in addition to* the column rule,
+but the column rule remains the AS-faithful ground truth and must not regress (the T1 tests
+`m68k_operandless_instruction_reaches_stub_not_swallowed_as_label` and
+`m68k_colon_label_then_instruction_both_handled` guard it).
+
 ### D6 — Dotted-local qualification for jmp/jsr
 
 The M1.B linker folds `JmpJsrSym` targets in **global scope** (`sigil-link/src/lib.rs:132`:
