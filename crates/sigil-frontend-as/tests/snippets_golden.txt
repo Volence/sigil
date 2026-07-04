@@ -797,3 +797,67 @@ pscEndPos := *
         dc.b 5,6
 --- bytes ---
 01 02 03 04 00 00 00 00 00 00 00 00 00 00 00 00 05 06
+=== debug_strlen_basic ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen("hello")
+--- bytes ---
+05
+=== debug_strlen_substr_to_end ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen(substr("hello",1,0))
+--- bytes ---
+04
+=== debug_strlen_substr_bounded ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen(substr("hello",1,2))
+--- bytes ---
+02
+=== debug_strstr_present ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strstr("b>",">")&$FF
+--- bytes ---
+01
+=== debug_strstr_absent ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strstr("abc","z")&$FF
+--- bytes ---
+FF
+=== debug_val_hex ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b val("$80")
+--- bytes ---
+80
+=== debug_val_decimal ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b val("144")
+--- bytes ---
+90
+=== debug_val_symbol_arith ===
+        cpu 68000
+        padding off
+        phase 0
+hex = $80
+        dc.b val("hex+1")&$FF
+--- bytes ---
+81
+=== debug_bang_bitor ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b (3!4)&$FF
+--- bytes ---
+07
