@@ -210,17 +210,19 @@ before `--no-ff` merge to master.
   `rts`/…). Delivers *working* simple 68k assembly. **Absolute addressing is deferred to T5**
   because its abs.w/abs.l width selection (fixed-fit vs forward-symbol) is EA-family work.
   (high-latitude)
-- **T5** (split from T5b by mechanism, 2026-07-03) 68k **data addressing modes** — the
-  `lower_inst`-based EA family: `(An)`, `(An)+`, `-(An)`, `(d16,An)`, `(d8,An,Xn)`, plus
-  **absolute `abs.w`/`abs.l` with width selection** (front-end picks width from the converged
-  symbol value during its own multi-pass — fixed-length fragments, no linker fragment needed;
-  ROM≥$8000 → abs.l, RAM $FF8000+ → abs.w) and `lea`/`pea`. New 68k operand atoms + extend
-  `convert_atoms_m68k`. Byte-exact asl-diff gate. (high-latitude)
-- **T5b** 68k **control-flow + PC-relative** — the M1.B fixup/deferred-fragment methods:
-  branches (`bra`/`bsr`/`Bcc` → `lower_branch`), `jmp`/`jsr` (→ `lower_jmp_jsr_sym`, integrating
-  with the linker's `resolve_layout` width fixpoint) + **dotted-local qualification** (D6),
-  `Dbcc`/`Scc`, and PC-relative EAs `(d16,PC)`/`(d8,PC,Xn)` (→ `lower_pcrel_ea`). Byte-exact
-  asl-diff gate; verifies the front-end→linker JmpJsrSym handoff. (high-latitude)
+- **T5** (split by mechanism = *fixed-length* vs *variable-length*, 2026-07-03) 68k
+  **fixed-length EA modes** — the `lower_inst`-based register-indirect family: `(An)`, `(An)+`,
+  `-(An)`, `(d16,An)`, `(d8,An,Xn)` + `lea`/`pea`. All fixed-length (no width selection, no
+  fixups). New 68k operand atoms (`IndReg`/`Indexed` today are Z80-shaped — add 68k ones, or
+  make `parse_operands` CPU-aware) + extend `convert_atoms_m68k`. Byte-exact asl-diff gate.
+  (high-latitude)
+- **T5b** 68k **variable-length + control-flow** (everything width/fixup/linker-integrated):
+  **absolute `abs.w`/`abs.l` width selection**, branches (`bra`/`bsr`/`Bcc` → `lower_branch`),
+  `jmp`/`jsr` (→ `lower_jmp_jsr_sym`, integrating with the linker's `resolve_layout` width
+  fixpoint) + **dotted-local qualification** (D6), `Dbcc`/`Scc`, and PC-relative EAs
+  `(d16,PC)`/`(d8,PC,Xn)` (→ `lower_pcrel_ea`). The abs-width front-end-multi-pass-vs-linker
+  approach is decided in the T5b plan. Byte-exact asl-diff gate; verifies the front-end→linker
+  JmpJsrSym handoff. (high-latitude)
 - **T6** `dc.w`/`dc.l`/`ds.b`/`ds.w`/`ds.l`/`align` (arbitrary boundary, incl `align $8000`)
   /`org` (4 sites) + padding-state interaction (Aeon `padding off` global → odd `dc.b` runs
   unpadded). Spike 0: `even` has 0 real uses, out of scope. **T2 note:** `dc.b`/`ds.b` are
