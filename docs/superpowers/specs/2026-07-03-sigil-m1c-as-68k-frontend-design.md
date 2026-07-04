@@ -199,10 +199,17 @@ before `--no-ff` merge to master.
 - ~~**T3**~~ **Dissolved by Spike 0** — mainline float builtins (`sin`/`int`) fold into T8;
   all string builtins (`strstr`/`substr`/`strlen`/`lowstring`/`val`/`switch`) are
   debug-only → T9.
-- **T4** 68k mnemonics + `.b/.w/.l/.s` size-suffix parse + operand-atom extensions
-  (`-(An)`, `(An)+`, `(d16,PC)`, `abs.w`/`abs.l`).
-- **T5** `convert_atoms_m68k` + lower routing (branch / jmp-jsr-sym / pcrel-ea) +
-  **dotted-local qualification** (D6). (high-latitude)
+- **T4** (re-split after T4-grounding, 2026-07-03) 68k **straight-line core**: mnemonic +
+  `.b/.w/.l/.s` size parse (→ `m68k::Mnemonic`+`Size`), register/immediate/absolute operand
+  recognition (`d0–d7`/`a0–a7`/`sp`/`ccr`/`sr`/`#imm`/`abs`), `convert_atoms_m68k` for those
+  forms, and `lower_m68k` via `M68kBackend::lower_inst` (replacing the T1 stub). Byte-exact
+  asl-diff gate on the common instruction set (`move`/`add`/`moveq`/`cmp`/`tst`/`clr`/…).
+  Delivers *working* simple 68k assembly. (high-latitude)
+- **T5** 68k **addressing-mode + control-flow richness**: the full EA set (`(An)`, `(An)+`,
+  `-(An)`, `(d16,An)`, `(d8,An,Xn)`, `(d16,PC)`, `(d8,PC,Xn)`) via new operand atoms;
+  branches (`bra`/`bsr`/`Bcc` → `lower_branch`), `jmp`/`jsr` (→ `lower_jmp_jsr_sym`),
+  PC-relative EAs (→ `lower_pcrel_ea`), and **dotted-local qualification** (D6). Byte-exact
+  asl-diff gate. (high-latitude)
 - **T6** `dc.w`/`dc.l`/`ds.b`/`ds.w`/`ds.l`/`align` (arbitrary boundary, incl `align $8000`)
   /`org` (4 sites) + padding-state interaction (Aeon `padding off` global → odd `dc.b` runs
   unpadded). Spike 0: `even` has 0 real uses, out of scope. (transcription)
