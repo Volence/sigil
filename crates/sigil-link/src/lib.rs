@@ -6,6 +6,7 @@
 //! upstream (the caller lowers instructions to `DataFragment`s first).
 
 use sigil_ir::expr::Fold;
+use sigil_ir::map::MemoryMap;
 use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, Span};
 
@@ -255,6 +256,24 @@ pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String>
     }
     Ok(flatten(image, fill))
 }
+
+/// The single-image ROM output (`p2bin` + `fixheader` replacement):
+/// validate each section against the map, place bytes at LMA, gap-fill with the
+/// map default, append NOTHING (the `convsym` no-op), then apply the header
+/// checksum as the final pass. The ROM ends at the last section byte — no
+/// power-of-two padding.
+pub fn emit_rom(image: &LinkedImage, map: &MemoryMap) -> Result<Vec<u8>, String> {
+    for s in &image.sections {
+        map.validate_section(&s.name, s.lma, s.bytes.len() as u32)?;
+    }
+    let mut rom = flatten_checked(image, map.fill)?;
+    // convsym no-op: append nothing.
+    apply_header_checksum(&mut rom); // Task 6
+    Ok(rom)
+}
+
+/// TEMP stub — real implementation in Task 6.
+pub fn apply_header_checksum(_rom: &mut [u8]) {}
 
 #[cfg(test)]
 mod tests {
@@ -586,5 +605,33 @@ mod tests {
             ],
         };
         assert_eq!(flatten_checked(&img, 0x00).unwrap(), vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn emit_rom_places_sections_and_validates_regions() {
+        use sigil_ir::map::{MemoryMap, Region, RegionKind};
+        let map = MemoryMap::new(
+            vec![Region { name: "rom".into(), lma_base: 0, size: 0x1_0000, kind: RegionKind::Rom, vma_base: None }],
+            0x00,
+        );
+        let img = LinkedImage {
+            sections: vec![
+                LinkedSection { name: "a".into(), lma: 2, bytes: vec![0xAA, 0xBB] },
+                LinkedSection { name: "b".into(), lma: 6, bytes: vec![0xCC] },
+            ],
+        };
+        // head 0,1 filled; bytes at 2..4; gap at 4,5; byte at 6. Terminus = 7 (no padding).
+        assert_eq!(emit_rom(&img, &map).unwrap(), vec![0x00, 0x00, 0xAA, 0xBB, 0x00, 0x00, 0xCC]);
+    }
+
+    #[test]
+    fn emit_rom_rejects_section_outside_region() {
+        use sigil_ir::map::{MemoryMap, Region, RegionKind};
+        let map = MemoryMap::new(
+            vec![Region { name: "rom".into(), lma_base: 0, size: 4, kind: RegionKind::Rom, vma_base: None }],
+            0x00,
+        );
+        let img = LinkedImage { sections: vec![LinkedSection { name: "a".into(), lma: 8, bytes: vec![1] }] };
+        assert!(emit_rom(&img, &map).is_err());
     }
 }
