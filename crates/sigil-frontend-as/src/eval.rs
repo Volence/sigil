@@ -6,7 +6,9 @@ use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
 use crate::Options;
-use sigil_backend_m68k::m68k::{Instruction as M68kInstruction, Mnemonic as M68kMnemonic, Operand as M68kOperand, Size as M68kSize};
+use sigil_backend_m68k::m68k::{
+    Instruction as M68kInstruction, Mnemonic as M68kMnemonic, Operand as M68kOperand, Size as M68kSize, Xn as M68kXn,
+};
 use sigil_backend_m68k::M68kBackend;
 use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
 use sigil_backend_z80::Z80Backend;
@@ -966,11 +968,12 @@ impl Asm {
         }
     }
 
-    /// M1.C T4: the straight-line 68000 core — register-direct (`Dn`/`An`/`sp`)
-    /// and `#immediate` operands only (plus the `sr`/`ccr` pseudo-registers for
-    /// `move <-> sr` / `andi|ori #imm,ccr`). Memory/EA operands, absolute
-    /// addressing, branches, `jmp`/`jsr`, `Dbcc`/`Scc`, and `movem`/`movep` are
-    /// out of scope here and land in T5.
+    /// M1.C T4/T5: the straight-line 68000 core — register-direct (`Dn`/`An`/`sp`),
+    /// `#immediate`, and (T5) the fixed-length register-indirect EA family
+    /// (`(An)`/`(An)+`/`-(An)`/`(d16,An)`/`(d8,An,Xn)` plus `lea`/`pea`) — plus
+    /// the `sr`/`ccr` pseudo-registers for `move <-> sr` / `andi|ori #imm,ccr`.
+    /// Absolute addressing, PC-relative, branches, `jmp`/`jsr`, `Dbcc`/`Scc`,
+    /// and `movem`/`movep` are out of scope here and land in T5b.
     fn lower_m68k(&mut self, mn: &str, rest: &[Token], span: Span) {
         let (base, suffix_size) = split_mnemonic_and_size(mn);
         let mnemonic = match m68k_mnemonic(base) {
@@ -980,7 +983,7 @@ impl Asm {
                     Some(family) => self.err(
                         span,
                         format!(
-                            "`{base}` ({family}) is out of scope for M1.C T4 (straight-line register/immediate core); deferred to T5"
+                            "`{base}` ({family}) is out of scope for M1.C T5 (straight-line + fixed-length-EA core); deferred to T5b"
                         ),
                     ),
                     None => self.err(span, format!("`{base}` is not a recognized 68000 mnemonic")),
@@ -1012,9 +1015,11 @@ impl Asm {
         self.emit_frag(frag, span);
     }
 
-    /// Convert operand atoms to resolved 68k operands for the T4 straight-line
-    /// core: `Dn`/`An`/`Imm` only (plus bare `sr`/`ccr`). Any memory/EA or
-    /// absolute-addressing atom is rejected with a diagnostic naming T5.
+    /// Convert operand atoms to resolved 68k operands for the T4/T5
+    /// straight-line + fixed-length-EA core: `Dn`/`An`/`Imm` (plus bare
+    /// `sr`/`ccr`), and (T5) the register-indirect family. Any absolute,
+    /// PC-relative, or other variable-length/fixup atom is rejected with a
+    /// diagnostic naming T5b.
     fn convert_atoms_m68k(
         &mut self,
         mnemonic: M68kMnemonic,
@@ -1054,7 +1059,7 @@ impl Asm {
                         self.err(
                             span,
                             format!(
-                                "absolute/symbolic operand `{name}` is out of scope for T4 (register-direct/#immediate only); deferred to T5"
+                                "absolute/symbolic operand `{name}` is out of scope for T5 (register-direct/#immediate/register-indirect only); deferred to T5b"
                             ),
                         );
                         return None;
@@ -1063,16 +1068,78 @@ impl Asm {
                 OperandAtom::Value(_) => {
                     self.err(
                         span,
-                        "bare numeric/expression operand implies 68k absolute addressing, out of scope for T4; deferred to T5",
+                        "bare numeric/expression operand implies 68k absolute addressing, out of scope for T5; deferred to T5b",
                     );
                     return None;
                 }
-                OperandAtom::Mem(_) | OperandAtom::IndReg(_) | OperandAtom::Indexed { .. } => {
+                OperandAtom::Mem(_) => {
                     self.err(
                         span,
-                        "memory / effective-address operand forms are out of scope for T4 (register-direct/#immediate only); deferred to T5",
+                        "absolute address operand forms (`$nnnn`/`(expr)`) are out of scope for T5; deferred to T5b",
                     );
                     return None;
+                }
+                // `(sp)` is the `a7` alias but lexes down the pre-existing Z80
+                // `hl`/`bc`/`de`/`sp` branch (see `classify`), not `M68kInd`.
+                OperandAtom::IndReg(w) if w == "sp" => M68kOperand::Ind(7),
+                OperandAtom::IndReg(w) => {
+                    self.err(span, format!("`({w})` is not a valid 68k address-register indirect operand"));
+                    return None;
+                }
+                OperandAtom::Indexed { .. } => {
+                    self.err(span, "z80 `(ix±d)`/`(iy±d)` indexed form is not a valid 68k operand");
+                    return None;
+                }
+                OperandAtom::M68kPreDec(reg) => match m68k_addr_reg(reg) {
+                    Some(n) => M68kOperand::PreDec(n),
+                    None => {
+                        self.err(span, format!("`{reg}` is not a valid address register in `-(An)`"));
+                        return None;
+                    }
+                },
+                OperandAtom::M68kPostInc(reg) => match m68k_addr_reg(reg) {
+                    Some(n) => M68kOperand::PostInc(n),
+                    None => {
+                        self.err(span, format!("`{reg}` is not a valid address register in `(An)+`"));
+                        return None;
+                    }
+                },
+                OperandAtom::M68kInd(reg) => match m68k_addr_reg(reg) {
+                    Some(n) => M68kOperand::Ind(n),
+                    None => {
+                        self.err(span, format!("`{reg}` is not a valid address register in `(An)`"));
+                        return None;
+                    }
+                },
+                OperandAtom::M68kDisp { disp, an } => {
+                    let n = match m68k_addr_reg(an) {
+                        Some(n) => n,
+                        None => {
+                            self.err(span, m68k_disp_an_error(an));
+                            return None;
+                        }
+                    };
+                    let d = self.fold_imm(disp, span, i16::MIN as i64, i16::MAX as i64);
+                    M68kOperand::Disp16An(d as i16, n)
+                }
+                OperandAtom::M68kIdx { disp, an, xn, xlong } => {
+                    let an_n = match m68k_addr_reg(an) {
+                        Some(n) => n,
+                        None => {
+                            self.err(span, m68k_disp_an_error(an));
+                            return None;
+                        }
+                    };
+                    let xn_op = if let Some(n) = m68k_data_reg(xn) {
+                        M68kXn::D(n)
+                    } else if let Some(n) = m68k_addr_reg(xn) {
+                        M68kXn::A(n)
+                    } else {
+                        self.err(span, format!("`{xn}` is not a valid index register in `(d,An,Xn)`"));
+                        return None;
+                    };
+                    let d = self.fold_imm(disp, span, i8::MIN as i64, i8::MAX as i64);
+                    M68kOperand::Disp8AnXn { d: d as i8, an: an_n, xn: xn_op, long: *xlong }
                 }
                 OperandAtom::AfShadow => {
                     self.err(span, "`af'` is not a 68k operand");
@@ -1246,6 +1313,17 @@ impl Asm {
                     // the z80 lexer never emits a `#` token, so this is unreachable
                     // in practice, but the match must stay exhaustive.
                     self.err(span, "`#` immediate is not valid z80 syntax");
+                    return None;
+                }
+                OperandAtom::M68kPreDec(_)
+                | OperandAtom::M68kPostInc(_)
+                | OperandAtom::M68kInd(_)
+                | OperandAtom::M68kDisp { .. }
+                | OperandAtom::M68kIdx { .. } => {
+                    // These 68k-only EA shapes (see `convert_atoms_m68k`) don't
+                    // arise from z80 syntax in practice (`a0`.."a7" aren't z80
+                    // register names), but the match must stay exhaustive.
+                    self.err(span, "this operand form is not valid z80 syntax");
                     return None;
                 }
             };
@@ -1426,11 +1504,12 @@ fn split_mnemonic_and_size(s: &str) -> (&str, Option<M68kSize>) {
     }
 }
 
-/// The T4 in-scope 68000 mnemonic table (straight-line register/immediate
-/// core). `move`/`andi`/`ori` are refined to `MoveToSr`/`MoveFromSr`/`AndiCcr`/
+/// The T4/T5 in-scope 68000 mnemonic table (straight-line register/immediate
+/// core, plus the T5 fixed-length register-indirect EA family and `lea`/`pea`).
+/// `move`/`andi`/`ori` are refined to `MoveToSr`/`MoveFromSr`/`AndiCcr`/
 /// `OriCcr` post-hoc by `refine_m68k_mnemonic` once the operand shape (a bare
-/// `sr`/`ccr`) is known. Branches, `jmp`/`jsr`, `lea`/`pea`, `Dbcc`/`Scc`, and
-/// `movem`/`movep` are NOT in this table — see `m68k_out_of_scope` (T5).
+/// `sr`/`ccr`) is known. Branches, `jmp`/`jsr`, `Dbcc`/`Scc`, and
+/// `movem`/`movep` are NOT in this table — see `m68k_out_of_scope` (T5b).
 fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
     use M68kMnemonic::*;
     Some(match base {
@@ -1442,14 +1521,14 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "asl" => Asl, "asr" => Asr, "lsl" => Lsl, "lsr" => Lsr, "rol" => Rol, "ror" => Ror,
         "btst" => Btst, "bset" => Bset, "bclr" => Bclr,
         "clr" => Clr, "neg" => Neg, "not" => Not, "tst" => Tst, "tas" => Tas,
-        "swap" => Swap, "ext" => Ext,
+        "swap" => Swap, "ext" => Ext, "lea" => Lea, "pea" => Pea,
         "nop" => Nop, "rts" => Rts, "rte" => Rte, "trap" => Trap,
         _ => return None,
     })
 }
 
-/// If `base` names it a real 68000 mnemonic that T4 deliberately does not
-/// implement (memory/EA, absolute addressing, control flow), name the family
+/// If `base` names it a real 68000 mnemonic that T4/T5 deliberately do not
+/// implement (absolute/PC-relative addressing, control flow), name the family
 /// for the diagnostic; else `None` (genuinely unrecognized).
 fn m68k_out_of_scope(base: &str) -> Option<&'static str> {
     const CONDS: &[&str] = &[
@@ -1458,7 +1537,6 @@ fn m68k_out_of_scope(base: &str) -> Option<&'static str> {
     match base {
         "bra" | "bsr" => return Some("branch bra/bsr"),
         "jmp" | "jsr" => return Some("jmp/jsr"),
-        "lea" | "pea" => return Some("lea/pea"),
         "movem" | "movep" => return Some("movem/movep"),
         "dbra" => return Some("Dbcc"),
         _ => {}
@@ -1482,15 +1560,17 @@ fn m68k_out_of_scope(base: &str) -> Option<&'static str> {
 }
 
 /// The implicit size for mnemonics real 68k syntax never suffixes (`moveq`,
-/// `swap`, `nop`, `rts`, `rte`, `tas`, `trap`). Verified against
+/// `swap`, `nop`, `rts`, `rte`, `tas`, `trap`, `lea`, `pea`). Verified against
 /// `crates/sigil-isa/tests/corpus_m68k/mod.rs`: `moveq` is always encoded
 /// `Size::L` (the encoder truncates the data to a signed byte regardless);
-/// the fixed-opcode control forms carry `Size::W` in the corpus purely because
+/// `lea`/`pea` are always long (an address is always 32 bits); the
+/// fixed-opcode control forms carry `Size::W` in the corpus purely because
 /// `Instruction` requires *a* size field — the encoder ignores it for them.
 fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
     use M68kMnemonic::*;
     match m {
         Moveq => Some(M68kSize::L),
+        Lea | Pea => Some(M68kSize::L),
         Swap | Nop | Rts | Rte | Tas | Trap => Some(M68kSize::W),
         _ => None,
     }
@@ -1512,6 +1592,19 @@ fn m68k_imm_bounds(size: M68kSize) -> (i64, i64) {
 fn m68k_data_reg(w: &str) -> Option<u8> {
     let n: u8 = w.strip_prefix('d')?.parse().ok()?;
     (n <= 7).then_some(n)
+}
+
+/// The `an`-slot error for `(d,An)`/`(d,An,Xn)` when it's not a real address
+/// register. `pc` parses down the same `(expr,ident)` shape as `(d16,An)` (see
+/// `classify`), so it needs its own T5b-naming diagnostic rather than the
+/// generic "not a valid address register" one.
+fn m68k_disp_an_error(an: &str) -> String {
+    if an == "pc" {
+        "PC-relative addressing `(d,PC)` is out of scope for T5 (fixed-length, no-fixup EA only); deferred to T5b"
+            .to_string()
+    } else {
+        format!("`{an}` is not a valid address register in `(d,An)`/`(d,An,Xn)`")
+    }
 }
 
 /// `a0`..`a7` → `Some(0..=7)`; `sp` is the `a7` alias. Anything else → `None`.
@@ -1594,11 +1687,13 @@ mod tests {
         assert_eq!(m68k_mnemonic("nop"), Some(Mnemonic::Nop));
         assert_eq!(m68k_mnemonic("rts"), Some(Mnemonic::Rts));
         assert_eq!(m68k_mnemonic("rte"), Some(Mnemonic::Rte));
-        // out-of-scope forms (T5) are NOT in the in-scope table.
+        // T5 adds the fixed-length EA family plus `lea`/`pea` — both in-scope now.
+        assert_eq!(m68k_mnemonic("lea"), Some(Mnemonic::Lea));
+        assert_eq!(m68k_mnemonic("pea"), Some(Mnemonic::Pea));
+        // out-of-scope forms (T5b) are NOT in the in-scope table.
         assert_eq!(m68k_mnemonic("jmp"), None);
         assert_eq!(m68k_mnemonic("bra"), None);
         assert_eq!(m68k_mnemonic("beq"), None);
-        assert_eq!(m68k_mnemonic("lea"), None);
         assert_eq!(m68k_mnemonic("movem"), None);
     }
 
@@ -1616,14 +1711,24 @@ mod tests {
     }
 
     #[test]
-    fn m68k_memory_operand_diagnoses_t5_not_a_crash() {
-        // `(a0)` is a register-indirect EA — out of scope for T4 (deferred to T5).
-        let src = "    cpu 68000\n    move.w (a0),d1\n";
+    fn m68k_register_indirect_operand_now_lowers_in_t5() {
+        // `(a0)` is a register-indirect EA — T4 deferred it to T5; T5 (this
+        // task) implements the fixed-length `(An)` family, so it now lowers
+        // byte-exact instead of erroring. Bytes verified against real asl
+        // (see `m68k_move_w_ind_a0_to_d0` in `tests/snippets_golden.txt`).
+        assert_eq!(image("    cpu 68000\n    move.w (a0),d0\n"), vec![0x30, 0x10]);
+    }
+
+    #[test]
+    fn m68k_pcrelative_operand_diagnoses_t5b_not_a_crash() {
+        // `(d,pc)` is PC-relative — still out of scope in T5 (fixed-length,
+        // no-fixup EA only), deferred to T5b.
+        let src = "    cpu 68000\n    move.w (8,pc),d0\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let diags = run(src, &opts).expect_err("memory operand must be rejected, not lowered");
+        let diags = run(src, &opts).expect_err("PC-relative operand must be rejected, not lowered");
         assert!(
-            diags.iter().any(|d| d.message.contains("T5")),
-            "expected a T5-deferral diagnostic, got: {:?}",
+            diags.iter().any(|d| d.message.contains("T5b")),
+            "expected a T5b-deferral diagnostic, got: {:?}",
             diags.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
     }

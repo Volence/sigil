@@ -306,3 +306,111 @@ E2 89
         ori.b #$01,ccr
 --- bytes ---
 00 3C 00 01
+=== m68k_move_w_ind_a0_to_d0 ===
+        cpu 68000
+        phase 0
+        move.w (a0),d0
+--- bytes ---
+30 10
+=== m68k_move_w_d0_to_ind_a0 ===
+        cpu 68000
+        phase 0
+        move.w d0,(a0)
+--- bytes ---
+30 80
+=== m68k_move_w_postinc_a0_to_d1 ===
+        cpu 68000
+        phase 0
+        move.w (a0)+,d1
+--- bytes ---
+32 18
+=== m68k_move_w_d1_to_postinc_a0 ===
+        cpu 68000
+        phase 0
+        move.w d1,(a0)+
+--- bytes ---
+30 C1
+=== m68k_move_w_predec_a1_to_d2 ===
+        cpu 68000
+        phase 0
+        move.w -(a1),d2
+--- bytes ---
+34 21
+=== m68k_move_w_d2_to_predec_a1 ===
+        cpu 68000
+        phase 0
+        move.w d2,-(a1)
+--- bytes ---
+33 02
+=== m68k_move_w_disp16_a0_to_d3 ===
+        cpu 68000
+        phase 0
+        move.w (4,a0),d3
+--- bytes ---
+36 28 00 04
+=== m68k_move_w_d3_to_disp16_a0 ===
+        cpu 68000
+        phase 0
+        move.w d3,(6,a0)
+--- bytes ---
+31 43 00 06
+=== m68k_move_w_idx_a0_d1w_to_d4 ===
+        cpu 68000
+        phase 0
+        move.w (6,a0,d1.w),d4
+--- bytes ---
+38 30 10 06
+=== m68k_move_w_idx_a0_a2l_to_d5 ===
+        cpu 68000
+        phase 0
+        move.w (8,a0,a2.l),d5
+--- bytes ---
+3A 30 A8 08
+=== m68k_clr_w_ind_a0 ===
+        cpu 68000
+        phase 0
+        clr.w (a0)
+--- bytes ---
+42 50
+=== m68k_tst_b_postinc_a1 ===
+        cpu 68000
+        phase 0
+        tst.b (a1)+
+--- bytes ---
+4A 19
+=== m68k_add_w_ind_a0_to_d0 ===
+        cpu 68000
+        phase 0
+        add.w (a0),d0
+--- bytes ---
+D0 50
+=== m68k_lea_ind_a0_to_a1 ===
+        cpu 68000
+        phase 0
+        lea (a0),a1
+--- bytes ---
+43 D0
+=== m68k_lea_disp16_a0_to_a1 ===
+        cpu 68000
+        phase 0
+        lea (4,a0),a1
+--- bytes ---
+43 E8 00 04
+=== m68k_lea_idx_a0_d1w_to_a2 ===
+        cpu 68000
+        phase 0
+        lea (6,a0,d1.w),a2
+--- bytes ---
+45 F0 10 06
+=== m68k_pea_ind_a0 ===
+        cpu 68000
+        phase 0
+        pea (a0)
+--- bytes ---
+48 50
+=== m68k_pea_disp16_a0 ===
+        cpu 68000
+        phase 0
+        pea (4,a0)
+--- bytes ---
+48 68 00 04
