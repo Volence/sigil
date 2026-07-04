@@ -8,6 +8,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # CI checks out only this repo, so the reference-dependent m1b_gate tests
+      # (checksum vs aeon/s4.bin, s4budget, Oracle) self-skip here; those
+      # fidelity gates run pre-merge locally via SIGIL_STRICT_GATE=1 in an env
+      # that has the sibling aeon/oracle repos.
       - name: test
         run: cargo test --workspace
       - name: clippy
