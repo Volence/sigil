@@ -216,13 +216,21 @@ before `--no-ff` merge to master.
   fixups). New 68k operand atoms (`IndReg`/`Indexed` today are Z80-shaped — add 68k ones, or
   make `parse_operands` CPU-aware) + extend `convert_atoms_m68k`. Byte-exact asl-diff gate.
   (high-latitude)
-- **T5b** 68k **variable-length + control-flow** (everything width/fixup/linker-integrated):
-  **absolute `abs.w`/`abs.l` width selection**, branches (`bra`/`bsr`/`Bcc` → `lower_branch`),
-  `jmp`/`jsr` (→ `lower_jmp_jsr_sym`, integrating with the linker's `resolve_layout` width
-  fixpoint) + **dotted-local qualification** (D6), `Dbcc`/`Scc`, and PC-relative EAs
-  `(d16,PC)`/`(d8,PC,Xn)` (→ `lower_pcrel_ea`). The abs-width front-end-multi-pass-vs-linker
-  approach is decided in the T5b plan. Byte-exact asl-diff gate; verifies the front-end→linker
-  JmpJsrSym handoff. (high-latitude)
+- **T5b** 68k **symbolic control-flow + PC-relative + explicit-width absolutes** (the
+  fixup/linker-integrated path): branches `bra`/`bsr`/`Bcc` (→ `lower_branch`, size from the
+  `.s`/`.w` suffix — M1.A confirmed Aeon's branches are 100% size-pinned), `jmp`/`jsr` (→
+  `lower_jmp_jsr_sym`, integrating with the linker's `resolve_layout` width fixpoint), `Dbcc`,
+  `Scc` (via `lower_inst` — condition-coded straight-line, no branch target), PC-relative EAs
+  `(d16,PC)`/`(d8,PC,Xn)` (→ `lower_pcrel_ea`), and **explicit-width absolutes** `(Sym).w`/
+  `(Sym).l` (honor the suffix → `AbsW`/`AbsL`; resolved value folds, forward-ref → `Abs16Be`/
+  `Abs32Be` fixup). **Dotted-local qualification** (D6): `qualify_expr` MUST be applied to every
+  control-flow/absolute target before lowering (the linker resolves `JmpJsrSym` in GLOBAL scope).
+  Byte-exact asl-diff gate; verifies the front-end→linker JmpJsrSym handoff. (high-latitude)
+  - **DEFERRED — bare-absolute abs.w/abs.l AUTO-width selection for data operands (→ T5c IFF
+    needed).** Corroborated unused by two findings (T5b grounding + M1.A "width-selection
+    collapses to bare-symbol jmp/jsr only"): Aeon writes explicit `.w`/`.l` on every absolute
+    data operand, so auto-selection is phantom scope. If T10 surfaces a bare absolute, add T5c
+    with a linker `AbsDataSym` fragment mirroring `JmpJsrSym`.
 - **T6** `dc.w`/`dc.l`/`ds.b`/`ds.w`/`ds.l`/`align` (arbitrary boundary, incl `align $8000`)
   /`org` (4 sites) + padding-state interaction (Aeon `padding off` global → odd `dc.b` runs
   unpadded). Spike 0: `even` has 0 real uses, out of scope. **T2 note:** `dc.b`/`ds.b` are
