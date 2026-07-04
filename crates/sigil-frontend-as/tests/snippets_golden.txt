@@ -690,3 +690,34 @@ blob    macro
         blob 2,3,4,5
 --- bytes ---
 01 02 03 04 05
+=== set_accumulator ===
+        cpu 68000
+        padding off
+        phase 0
+i       set 0
+        dc.b i
+i       set i+5
+        dc.b i
+--- bytes ---
+00 05
+=== coloneq_accumulator ===
+        cpu 68000
+        padding off
+        phase 0
+j       := 10
+        dc.b j
+j       := j*2
+        dc.b j
+--- bytes ---
+0A 14
+=== set_in_rept ===
+        cpu 68000
+        padding off
+        phase 0
+k       set 0
+        rept 4
+        dc.b k
+k       set k+1
+        endr
+--- bytes ---
+00 01 02 03
