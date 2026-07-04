@@ -161,9 +161,61 @@ compression_selftest.asm:83) and `cmpm.b (a3)+,(a2)+`→`B5 0B` (matches the spe
 predicted `B5 0B`). Regen churned only the 2 new blocks (non-circularity intact).
 Unblocks A2.
 
-### T1 — String-valued `set` symbols + `__FSTRING` (the assembly blocker)
+### T1 — String-valued `set` symbols + `__FSTRING` (the assembly blocker). ✅ DONE (2026-07-04).
 
-Unchanged from the handoff, with sharper acceptance. `error_handler.asm`'s
+**Result:** recon **2,000,702 → 7 diagnostics** — the `strstr` (2,000,198) /
+`strlen` (99) / `while`-non-convergent (99) / `trailing tokens` (297) /
+`per-pass budget` (1) classes all dropped to **0**, and the 2 prior one-offs
+(`directive expects …`, `unresolved long expression`) cleared as downstream of
+the string failures. Remaining 7 = the 6 T2 EA sites + **1 newly-exposed**
+(bucketed below).
+
+**Design decision (resolves the spec's "Extend `SymbolValue` to `Int | Str`"):**
+strings do **NOT** enter `sigil_ir::SymbolValue` (it stays `Int | Poison`,
+`#[derive(Copy)]` — structurally can't hold a `String`). Per §7.4, string-valued
+`set` symbols live in a new **front-end-local** `str_env: HashMap<String,String>`
+on `Asm`, keyed by qualified name exactly like `env`. `directive_set` tries
+`eval_str` first (literal / `substr` / `lowstring` / string-symbol copy) →
+`str_env`; else the numeric `eval_all` → `env`. `eval_str` gained a lone-ident
+branch (`resolve_str`, mirroring `SymbolTable::resolve`) so builtins resolve a
+string **symbol**, not just a literal. The `while` converges for free once
+`strstr(.__str,"%<")` returns -1. NOT carried across passes (asl `set` is a
+sequential per-pass assignment; every `__FSTRING` symbol is assigned before read
+— probe p1/p4). Invariant documented at `directive_set`: a symbol is int XOR
+string per pass; type-flipping `set` is unsupported (un-probed → not enforced).
+
+**Newly-exposed items (probe-first, both handled during T1):**
+1. **Infix `!` is XOR, not bitwise-OR** — decisive on the `__ErrorMessage`
+   `.__align_flag: set (((*)&1)!1)*$80` emit path. Probed (`1!1`=0, `3!1`=2,
+   `5!3`=6; OR and XOR agree only on the one prior golden `3!4`=7). Fixed:
+   `BinOp::Xor` + `Bang => BinOp::Xor`. (Commit `c09752e`.)
+2. **`capture_macro` colon-label param-shift** (latent, pre-existing) — the
+   colon-form head `NAME: macro p` left the `macro` keyword as a phantom first
+   param, shifting every real param by one. The real `__FSTRING`/`__ErrorMessage`
+   macros use the colon form, so this had to be fixed for T1. Peeled via the
+   existing `parse_line_tokens`; non-colon form unchanged. `m1c_vector_table`
+   (real `main.asm` macro tree) still green → no regression. (Commit `498466b`.)
+
+**Bucketed for recon-0 / T2 (do NOT re-discover):** the 1 remaining
+newly-exposed diagnostic is `` `END` is not a recognized 68000 mnemonic `` —
+AS's `end` directive (uppercase, at the end of the source tree), previously
+masked by the string failures. Needs a no-op / entry-point directive handler.
+Belongs with T2 (both must clear to reach recon-0).
+
+**Probes committed:** `docs/superpowers/notes/2026-07-04-m1d-t1-string-set-probes.md`
+(6 string-symbol cases + the `!`-XOR matrix + the full `__ErrorMessage` reference
+bytes `4EB9 00000400 / "BUS ERROR" / 00 / A1 / 00 / 4EF9 00000500`). **Goldens:**
+8 new asl-verified snippet blocks (`t1_*`); `gen_snippet_vectors` churned only
+those 8 (non-circularity intact). **Plan:**
+`docs/superpowers/plans/2026-07-04-sigil-m1d-t1-string-set.md`. **Commits:**
+`c09752e` (XOR) → `cd82435` (str_env) → `498466b` (capture_macro) → `9816e53`
+(goldens) → `b26972d` (review-fix docs). Two-stage review: spec ✅, code
+quality ✅ (ship-ready). All strict gates green (m1b_gate 5, m1c_vector_table 1,
+harness 16, workspace, clippy `-D warnings`).
+
+---
+
+**Original scope (for reference).** `error_handler.asm`'s
 `__ErrorMessage` macros are not `__DEBUG__`-guarded, so the **non-debug** ROM runs
 `__FSTRING_GenerateArgumentsCode`, which stores strings in symbols (`.__str: set "…"`)
 and scans them with `substr`/`strstr`/switch-on-string (`debugger.asm:647-659`,
