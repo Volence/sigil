@@ -496,14 +496,13 @@ mod tests {
         // `M68kAbs` (it's rejected as a malformed operand elsewhere, not
         // silently reinterpreted as an address).
         let toks = lex_line("(a0).w", Cpu::M68000, SourceId(0), 0).unwrap();
-        match parse_operands(&toks) {
-            Ok(atoms) => assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }])),
-            Err(_) => {} // also acceptable: rejected outright
+        // Ok → must not be M68kAbs; Err (rejected outright) is also acceptable.
+        if let Ok(atoms) = parse_operands(&toks) {
+            assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
         let toks = lex_line("(d0).w", Cpu::M68000, SourceId(0), 0).unwrap();
-        match parse_operands(&toks) {
-            Ok(atoms) => assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }])),
-            Err(_) => {} // also acceptable: rejected outright
+        if let Ok(atoms) = parse_operands(&toks) {
+            assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
     }
 }
