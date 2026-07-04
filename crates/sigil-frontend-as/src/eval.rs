@@ -2951,8 +2951,31 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
         (Move, [M68kOperand::Sr, _]) => MoveFromSr,
         (Andi, [_, M68kOperand::Ccr]) => AndiCcr,
         (Ori, [_, M68kOperand::Ccr]) => OriCcr,
+        // An immediate source into a MEMORY destination on the ALU forms is
+        // asl's spelling of the corresponding `xxxi` immediate instruction:
+        // `cmp #imm,(abs)` ≡ `cmpi`, `and #imm,(abs)` ≡ `andi`, etc. (byte-exact
+        // asl-verified: `cmp.b #$80,($FFFF8000).l` == `cmpi.b …` == `0C39 …`).
+        // A `Dn` destination is left alone — `add #4,d0` / `cmp #5,d0` are the
+        // regular `<ea>,Dn` forms with an immediate source EA (distinct bytes).
+        (Cmp, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Cmpi,
+        (And, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Andi,
+        (Or, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Ori,
+        (Add, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Addi,
+        (Sub, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Subi,
+        (Eor, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Eori,
         (m, _) => m,
     }
+}
+
+/// True for a 68k MEMORY effective-address destination (any alterable EA that is
+/// neither a data nor address register). Used to route `cmp`/`and`/… `#imm,mem`
+/// to their `cmpi`/`andi`/… immediate encodings (see `refine_m68k_mnemonic`).
+fn is_mem_dest(op: &M68kOperand) -> bool {
+    use M68kOperand::*;
+    matches!(
+        op,
+        Ind(_) | PostInc(_) | PreDec(_) | Disp16An(..) | Disp8AnXn { .. } | AbsW(_) | AbsL(_)
+    )
 }
 
 /// Qualify a name: `.local` → `Scope.local` (if scope); else unchanged.
