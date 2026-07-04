@@ -324,6 +324,21 @@ fn split_index_reg_size(w: &str) -> (String, bool) {
     }
 }
 
+/// The base register of a `disp(base)` / `disp(base,Xn)` group: an address
+/// register `a0`..`a7`, its `sp` (= a7) alias, or the program counter `pc`
+/// (PC-relative addressing). Broader than [`single_areg`] — a `disp(An,Xn)`
+/// base legitimately spans all three, whereas the leading-register discriminator
+/// for `(An,Xn)` vs `(disp,An)` stays `a0`..`a7`-only. `M68kDisp{an:"sp"}` maps
+/// to a7 downstream; `M68kDisp{an:"pc"}` routes to the PC-relative lowering.
+fn disp_base_reg(g: &[Token]) -> Option<String> {
+    if let [Token { tok: Tok::Ident(w), .. }] = g {
+        if is_m68k_areg_name(w) || w == "sp" || w == "pc" {
+            return Some(w.clone());
+        }
+    }
+    None
+}
+
 /// If `g` is exactly one bare `a0`..`a7` identifier, return its name. Used to
 /// tell a leading address-register base (`(An,Xn)`) from a displacement
 /// expression (`(disp,An)`) and to validate the base of a `disp(An[,Xn])` form.
@@ -370,11 +385,11 @@ fn build_disp_ea(disp: Expr, inner: &[Token]) -> Option<OperandAtom> {
     let groups = split_commas(inner);
     match groups.as_slice() {
         [an_g] => {
-            let an = single_areg(an_g)?;
+            let an = disp_base_reg(an_g)?;
             Some(OperandAtom::M68kDisp { disp, an })
         }
         [an_g, xn_g] => {
-            let an = single_areg(an_g)?;
+            let an = disp_base_reg(an_g)?;
             let xn_word = match xn_g {
                 [Token { tok: Tok::Ident(w), .. }] => w,
                 _ => return None,
