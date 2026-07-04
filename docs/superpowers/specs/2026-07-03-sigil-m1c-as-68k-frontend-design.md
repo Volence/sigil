@@ -244,11 +244,18 @@ before `--no-ff` merge to master.
 - **T7** struct/`_len` + `if _len<>N/error` assertion; keyword macro args; ALLARGS /
   `MOMCPUNAME` `pbyte` dispatch (`db` vs `dc.b`) — the non-debug dual-CPU idiom in the 8
   `*_patches.asm` sound files. (`.ATTRIBUTE` is debug-only → T9.)
-- **T8** rept/irp/irpc/while completeness + `deform_table_sine` fold **incl. the `sin`/`int`
-  builtins** (libm `sin` + `floor`, gated on the 4 Spike-0 goldens). (high-latitude)
+- **T8** **`set`/`:=` reassignable accumulators** (T8-grounding: `:=` used ×149 broadly —
+  band counters, `OE_PREV_X` monotonic checks, the deform accumulators; currently only `=`
+  equate exists). Foundational, snippet-gated. (`rept` already done in M0; **`irp`/`irpc` have
+  0 real uses — dropped; `while` is debug-only → T9**.) (high-latitude)
+- **T8b** `sin`/`int` **float builtins** (parse `sin(expr)`/`int(expr)` calls; evaluate in f64
+  — libm `sin` + `int`=`floor`) + the **`deform_table_sine` fold** (`rept 256 / dc.b
+  int(AMP*sin(2π·i/PER))`, needs T7 keyword args + T8 `set` accumulator). Gated byte-exact on
+  the 4 Spike-0 goldens (`int()`=floor already confirmed to bit-match). (high-latitude)
 - **T9** (debug-only, `__DEBUG__`) string builtins `strstr` (bug-for-bug D5)/`substr`/
-  `strlen`/`lowstring`/`val` + `switch`/`lowstring` `%<…>` machinery + `!`=bitwise-or
-  operator + `.ATTRIBUTE` + `!name` escape (`!error` ×4, `!align` ×10). (high-latitude)
+  `strlen`/`lowstring`/`val` + `switch`/`lowstring` `%<…>` machinery + **`while`** (×3, all in
+  `debugger.asm`) + `!`=bitwise-or operator + `.ATTRIBUTE` + `!name` escape (`!error` ×4,
+  `!align` ×10). (high-latitude)
 - **T10** progressive real-source integration — assemble growing 68k subsets, byte-exact
   per section vs asl. **Exit gate for M1.C.**
 
