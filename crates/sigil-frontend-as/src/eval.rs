@@ -1433,6 +1433,18 @@ impl Asm {
             let called = self.expand_calls(g, 0);
             let expanded = self.expand_int_builtin(&called);
             let expanded = self.expand_str_builtins(&expanded);
+            // (T6c) A STRING operand — a plain `Tok::Str` literal or a
+            // string-builtin call that resolves to one (`substr(...)`,
+            // `lowstring(...)`) — emits one ASCII byte per character
+            // instead of folding as a numeric expression (asl-verified:
+            // `dc.b "AB"` -> `41 42`; `dc.b substr("hello",1,2)` -> `65 6C`).
+            // This is the shape only, checked BEFORE the numeric parse below
+            // so plain numeric/symbol operands are unaffected.
+            if let Some(s) = self.eval_str(&expanded) {
+                let bytes: Vec<u8> = s.chars().map(|c| c as u8).collect();
+                self.emit(&bytes, vec![], span);
+                continue;
+            }
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -3537,5 +3549,50 @@ mod tests {
         // (`fstring_format` in `tests/snippets_golden.txt`): `01 80 01 0A 01`.
         let src = "        cpu 68000\n        padding off\n        phase 0\nhex     = $80\nendl    = $0A\nfstr    macro string\nlpos    set 0\nwpos    set strstr(string,\"%<\")\n        while (wpos>=0)\n        if (wpos-lpos>0)\n        dc.b strlen(substr(string,lpos,wpos-lpos))\n        endif\nepos    set strstr(substr(string,wpos+1,0),\">\")+wpos+1\n        switch substr(string,wpos+2,1)\n        case \".\"\n        switch lowstring(substr(string,wpos+2,2))\n        case \".b\"\n        dc.b val(substr(string,wpos+5,epos-wpos-5))\n        case \".w\"\n        dc.b val(substr(string,wpos+5,epos-wpos-5))|1\n        elsecase\n        dc.b val(substr(string,wpos+5,epos-wpos-5))|3\n        endcase\n        elsecase\n        dc.b val(substr(string,wpos+2,epos-wpos-2))\n        endcase\nlpos    set epos+1\nwpos    set strstr(substr(string,lpos,0),\"%<\")\n        if (wpos>=0)\nwpos    set wpos+lpos\n        endif\n        endm\n        dc.b strlen(substr(string,lpos,0))\n        endm\n        fstr \"A%<.b hex> %<endl>Z\"\n";
         assert_eq!(image(src), vec![0x01, 0x80, 0x01, 0x0A, 0x01]);
+    }
+
+    // ── T6c: `dc.b`/`db` STRING operands -> ASCII bytes (ROM header) ───────
+
+    #[test]
+    fn dc_b_string_literal_emits_ascii_bytes() {
+        // asl-verified (`dc_b_string` in `tests/snippets_golden.txt`):
+        // `dc.b "AB"` -> `41 42` (one ASCII byte per char), not a numeric fold.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b \"AB\"\n";
+        assert_eq!(image(src), vec![0x41, 0x42]);
+    }
+
+    #[test]
+    fn dc_b_mixes_string_and_numeric_operands() {
+        // asl-verified (`dc_b_string_mixed`): `dc.b "Hi",0` -> `48 69 00` — a
+        // string operand and a plain numeric operand in the same comma list.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b \"Hi\",0\n";
+        assert_eq!(image(src), vec![0x48, 0x69, 0x00]);
+    }
+
+    #[test]
+    fn dc_b_substr_operand_emits_ascii_bytes() {
+        // asl-verified (`dc_b_substr`): a T9.1 string-builtin call
+        // (`substr(...)`) that RESOLVES to a string (as opposed to
+        // `strlen(substr(...))`, which resolves to an int) also emits ASCII
+        // bytes, not the byte count: `dc.b substr("hello",1,2)` -> `65 6C`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b substr(\"hello\",1,2)\n";
+        assert_eq!(image(src), vec![0x65, 0x6C]);
+    }
+
+    #[test]
+    fn db_alias_also_emits_ascii_for_string_operands() {
+        // `db` is the same directive as `dc.b` (see the dispatch match arm
+        // `"db" | "dc.b" => self.directive_db(...)`), so it must get the same
+        // string-operand handling.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        db \"AB\"\n";
+        assert_eq!(image(src), vec![0x41, 0x42]);
+    }
+
+    #[test]
+    fn dc_b_numeric_operand_still_folds_as_before() {
+        // Regression guard: a plain numeric operand must still take the
+        // numeric-fold path, not be misdetected as a string.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b $41\n";
+        assert_eq!(image(src), vec![0x41]);
     }
 }

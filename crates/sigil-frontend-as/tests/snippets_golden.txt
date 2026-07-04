@@ -965,3 +965,24 @@ wpos set wpos+lpos
     fstr "A%<.b hex> %<endl>Z"
 --- bytes ---
 01 80 01 0A 01
+=== dc_b_string ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b "AB"
+--- bytes ---
+41 42
+=== dc_b_string_mixed ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b "Hi",0
+--- bytes ---
+48 69 00
+=== dc_b_substr ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b substr("hello",1,2)
+--- bytes ---
+65 6C
