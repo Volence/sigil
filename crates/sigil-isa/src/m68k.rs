@@ -496,11 +496,40 @@ fn encode_quick(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 /// Only the register (Dn destination) form is supported; the word memory-shift form
 /// is unused by the Aeon corpus.
 fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let (d, tt): (u16, u16) = match inst.mnemonic {
+        Mnemonic::Asr => (0, 0b00),
+        Mnemonic::Asl => (1, 0b00),
+        Mnemonic::Lsr => (0, 0b01),
+        Mnemonic::Lsl => (1, 0b01),
+        Mnemonic::Ror => (0, 0b11),
+        Mnemonic::Rol => (1, 0b11),
+        _ => unreachable!(),
+    };
+    // Single-operand MEMORY shift: `<shift>.w <ea>` shifts a memory WORD by one
+    // (asl-verified: `asr.w (a0)` = E0D0, `lsl.w (a1)` = E3D1, `asr.w 4(a0)` =
+    // E0E8 0004). Base word `1110 0tt d 11 eeeeee` = 0xE0C0 | tt<<9 | d<<8 | ea.
+    // Word-size only (no .b/.l memory-shift form exists on the 68000).
+    if let [dst] = inst.ops.as_slice() {
+        if inst.size != Size::W {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} memory-shift form is word-only, got size {:?}",
+                inst.mnemonic, inst.size
+            )));
+        }
+        let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, Size::W)?;
+        let ea: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
+        let word: u16 = 0xE0C0 | (tt << 9) | (d << 8) | ea;
+        let mut out = word.to_be_bytes().to_vec();
+        for w in ea_ext {
+            out.extend_from_slice(&w.to_be_bytes());
+        }
+        return Ok(out);
+    }
     let (src, dst) = match inst.ops.as_slice() {
         [s, d] => (s, d),
         _ => {
             return Err(IsaError::OperandCount(format!(
-                "{:?} expects 2 operands, got {}",
+                "{:?} expects 1 or 2 operands, got {}",
                 inst.mnemonic,
                 inst.ops.len()
             )))
@@ -514,15 +543,6 @@ fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 inst.mnemonic
             )))
         }
-    };
-    let (d, tt): (u16, u16) = match inst.mnemonic {
-        Mnemonic::Asr => (0, 0b00),
-        Mnemonic::Asl => (1, 0b00),
-        Mnemonic::Lsr => (0, 0b01),
-        Mnemonic::Lsl => (1, 0b01),
-        Mnemonic::Ror => (0, 0b11),
-        Mnemonic::Rol => (1, 0b11),
-        _ => unreachable!(),
     };
     // Discriminate immediate-count (i=0) vs register-count (i=1) by the source.
     let (ccc, i): (u16, u16) = match src {

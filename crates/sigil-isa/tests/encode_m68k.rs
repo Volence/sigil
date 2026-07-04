@@ -84,6 +84,23 @@ fn immediate_and_pcrel_are_illegal_dest() {
 }
 
 #[test]
+fn memory_shift_by_one() {
+    // Single-operand `<shift>.w <ea>` memory shift-by-1 (asl-verified goldens).
+    use sigil_isa::m68k::{encode, Instruction, Mnemonic, Operand, Size};
+    let cases: &[(Mnemonic, Operand, &[u8])] = &[
+        (Mnemonic::Asr, Operand::Ind(0), &[0xE0, 0xD0]),          // asr.w (a0)
+        (Mnemonic::Lsl, Operand::Ind(1), &[0xE3, 0xD1]),          // lsl.w (a1)
+        (Mnemonic::Lsr, Operand::Ind(2), &[0xE2, 0xD2]),          // lsr.w (a2)
+        (Mnemonic::Rol, Operand::Ind(3), &[0xE7, 0xD3]),          // rol.w (a3)
+        (Mnemonic::Asr, Operand::Disp16An(4, 0), &[0xE0, 0xE8, 0x00, 0x04]), // asr.w 4(a0)
+    ];
+    for (mn, ea, want) in cases {
+        let inst = Instruction { mnemonic: *mn, size: Size::W, ops: vec![*ea] };
+        assert_eq!(&encode(&inst).unwrap(), want, "{mn:?} {ea:?}");
+    }
+}
+
+#[test]
 fn alu_ea_family() {
     check(&[
         "add.w d1,d0", "add.w (a1),d0", "add.l d0,(a1)", "sub.w d1,d0",
