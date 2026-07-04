@@ -1775,6 +1775,13 @@ impl Asm {
     /// every other in-scope mnemonic (incl. `movep`) flows through the shared
     /// branch/dbcc/jmp-jsr/generic paths below.
     fn lower_m68k(&mut self, mn: &str, rest: &[Token], span: Span) {
+        // Expand AS `function` calls in the operands FIRST (e.g. the immediate
+        // `#vram_art(tile,0,0)` / `#vdpComm(addr,VRAM,DMA)` / `#dmaLength(N)`
+        // forms — `macros.asm`'s single-expression functions). `expand_calls`
+        // only rewrites `name(args)` where `name` is a known function, so
+        // register-indirect EAs (`(a0)`, `(4,a0,d1.w)`) pass through untouched.
+        let expanded = self.expand_calls(rest, 0);
+        let rest = expanded.as_slice();
         let (base, suffix_size) = split_mnemonic_and_size(mn);
         let mnemonic = match m68k_mnemonic(base) {
             Some(m) => m,
