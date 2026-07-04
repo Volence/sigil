@@ -32,10 +32,11 @@ fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
         Shr => (6, BinOp::Shr),
         Amp => (5, BinOp::And),
         Pipe => (4, BinOp::Or),
-        // `!` — AS's alternate infix bitwise-OR spelling (asl-verified:
-        // `3!4`=7). Same tier as `|`; the debugger's real usage always
-        // parenthesizes (`((*)&1)!1`) so the exact tier rarely matters.
-        Bang => (4, BinOp::Or),
+        // `!` — AS's infix bitwise XOR (asl-verified 2026-07-04: `1!1`=0,
+        // `3!1`=2, `5!3`=6; the earlier bitwise-OR reading was wrong — the
+        // only prior golden `3!4`=7 can't tell OR from XOR). Same tier as `|`.
+        // Drives `__ErrorMessage`'s `.__align_flag: set (((*)&1)!1)*$80`.
+        Bang => (4, BinOp::Xor),
         Eq => (3, BinOp::Eq),
         Ne => (3, BinOp::Ne),
         Lt => (3, BinOp::Lt),
