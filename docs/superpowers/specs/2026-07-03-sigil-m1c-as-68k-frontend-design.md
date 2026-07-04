@@ -216,16 +216,19 @@ before `--no-ff` merge to master.
   fixups). New 68k operand atoms (`IndReg`/`Indexed` today are Z80-shaped — add 68k ones, or
   make `parse_operands` CPU-aware) + extend `convert_atoms_m68k`. Byte-exact asl-diff gate.
   (high-latitude)
-- **T5b** 68k **symbolic control-flow + PC-relative + explicit-width absolutes** (the
-  fixup/linker-integrated path): branches `bra`/`bsr`/`Bcc` (→ `lower_branch`, size from the
-  `.s`/`.w` suffix — M1.A confirmed Aeon's branches are 100% size-pinned), `jmp`/`jsr` (→
-  `lower_jmp_jsr_sym`, integrating with the linker's `resolve_layout` width fixpoint), `Dbcc`,
-  `Scc` (via `lower_inst` — condition-coded straight-line, no branch target), PC-relative EAs
-  `(d16,PC)`/`(d8,PC,Xn)` (→ `lower_pcrel_ea`), and **explicit-width absolutes** `(Sym).w`/
-  `(Sym).l` (honor the suffix → `AbsW`/`AbsL`; resolved value folds, forward-ref → `Abs16Be`/
-  `Abs32Be` fixup). **Dotted-local qualification** (D6): `qualify_expr` MUST be applied to every
-  control-flow/absolute target before lowering (the linker resolves `JmpJsrSym` in GLOBAL scope).
-  Byte-exact asl-diff gate; verifies the front-end→linker JmpJsrSym handoff. (high-latitude)
+- **T5b** 68k **explicit-width absolute addressing** — `(Sym).w`/`(Sym).l` data operands
+  (pervasive in Aeon: every RAM/register/ROM-data access). Honor the suffix → `AbsW`/`AbsL`;
+  resolved value folds to fixed bytes, forward-ref → `Abs16Be`/`Abs32Be` fixup (M1.B already
+  resolves both). Dotted-local qualify on the address symbol. Byte-exact asl-diff gate.
+  (high-latitude)
+- **T5c** 68k **control transfer + PC-relative** (the branch/jmp/jsr + `lower_pcrel_ea` family):
+  branches `bra`/`bsr`/`Bcc` (→ `lower_branch`, size from the `.s`/`.w` suffix — M1.A confirmed
+  branches are 100% size-pinned), `Dbcc` (`dbf`/`dbra`, ×99), `jmp`/`jsr` (→ `lower_jmp_jsr_sym`,
+  integrating with the linker's `resolve_layout` width fixpoint), `Scc` (via `lower_inst` —
+  condition-coded straight-line, no branch target), and PC-relative EAs `(d16,PC)`/`(d8,PC,Xn)`
+  (→ `lower_pcrel_ea`). **Dotted-local qualification** (D6): `qualify_expr` MUST be applied to
+  every control-flow/pcrel target before lowering (the linker resolves `JmpJsrSym` in GLOBAL
+  scope). Byte-exact asl-diff gate; verifies the front-end→linker JmpJsrSym handoff. (high-latitude)
   - **DEFERRED — bare-absolute abs.w/abs.l AUTO-width selection for data operands (→ T5c IFF
     needed).** Corroborated unused by two findings (T5b grounding + M1.A "width-selection
     collapses to bare-symbol jmp/jsr only"): Aeon writes explicit `.w`/`.l` on every absolute
