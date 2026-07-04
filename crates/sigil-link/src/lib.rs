@@ -10,6 +10,9 @@ use sigil_ir::map::MemoryMap;
 use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, Span};
 
+mod relax;
+pub use relax::{asl_width_rule, AbsWidth};
+
 /// One section's resolved bytes and where they load.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinkedSection {
