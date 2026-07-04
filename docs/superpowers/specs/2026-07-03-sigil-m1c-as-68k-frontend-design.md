@@ -98,7 +98,10 @@ has **zero builtins**. **Spike 0 (verified 2026-07-03) collapsed this scope** by
 raw grep hits from genuine operator uses (stripping comments and message strings):
 
 - **Mainline operators actually used:** `<>` (×70, not-equal), `||` (×5, logical-or),
-  `&&` (×4, logical-and) — plus comparisons that must **yield `0` / `-1` masks** (§7.1).
+  `&&` (×4, logical-and). **Comparison result value (T2 empirical correction, 2026-07-03):**
+  §7.1 assumed comparisons yield `0`/`-1` masks; **real `asl 1.42 Bld 212` emits `0`/`1`**
+  (`db (5<9)`→`01`, `db (9<5)`→`00`), so IR's neutral `0`/`1` fold is already correct and
+  **no `-1` mask / `Neg`-wrap is applied**. `||`/`&&` fold to the same neutral `0`/`1`.
 - **Zero real occurrences** (all comment prose or literal text inside `error`/`fatal`
   message strings): `mod` (63 raw), `!=` (33 raw), `~` (76 raw), `~~` (0), `cos` (3 raw),
   `even` (62 raw). These are **dropped from scope** — reproducing them would be phantom work.
@@ -212,7 +215,11 @@ before `--no-ff` merge to master.
   asl-diff gate. (high-latitude)
 - **T6** `dc.w`/`dc.l`/`ds.b`/`ds.w`/`ds.l`/`align` (arbitrary boundary, incl `align $8000`)
   /`org` (4 sites) + padding-state interaction (Aeon `padding off` global → odd `dc.b` runs
-  unpadded). Spike 0: `even` has 0 real uses, out of scope. (transcription)
+  unpadded). Spike 0: `even` has 0 real uses, out of scope. **T2 note:** `dc.b`/`ds.b` are
+  invalid AS pseudo-ops under `cpu z80` (only `db`/`ds`); the pre-existing
+  `struct_field_indexed` snippet golden uses them and would fail an asl regen — T6 must
+  reconcile the CPU context of the `dc.*`/`ds.*` snippets (they belong under `cpu 68000`).
+  (transcription)
 - **T7** struct/`_len` + `if _len<>N/error` assertion; keyword macro args; ALLARGS /
   `MOMCPUNAME` `pbyte` dispatch (`db` vs `dc.b`) — the non-debug dual-CPU idiom in the 8
   `*_patches.asm` sound files. (`.ATTRIBUTE` is debug-only → T9.)
