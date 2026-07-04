@@ -861,3 +861,34 @@ hex = $80
         dc.b (3!4)&$FF
 --- bytes ---
 07
+=== attribute_macro ===
+        cpu 68000
+        padding off
+        phase 0
+foo macro src
+        move.ATTRIBUTE src,d0
+        endm
+        foo.w d1
+        foo.l d2
+--- bytes ---
+30 01 20 02
+=== while_loop ===
+        cpu 68000
+        padding off
+        phase 0
+n set 0
+        while (n<3)
+        dc.b n
+n set n+1
+        endm
+--- bytes ---
+00 01 02
+=== bang_align ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 1
+        !align 2
+        dc.b 2
+--- bytes ---
+01 00 02

@@ -20,6 +20,10 @@ use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
 const PASS_CAP: usize = 8;
+/// Bound for `while … endm` (T9.2): caps re-evaluation/body-expansion
+/// iterations so a non-convergent condition diagnoses (A5) instead of
+/// hanging. Generous relative to any real `while`-driven table-fill idiom.
+const WHILE_CAP: usize = 10_000;
 
 #[derive(Clone)]
 struct SrcLine {
@@ -703,6 +707,9 @@ impl Asm {
                 Some("rept") => {
                     i = self.exec_rept(lines, i);
                 }
+                Some("while") => {
+                    i = self.exec_while(lines, i);
+                }
                 Some("struct") => {
                     i = self.capture_struct(lines, i);
                 }
@@ -736,7 +743,18 @@ impl Asm {
         if let Some(name) = parsed.label_colon.clone() {
             self.define_label(&name);
         }
-        let body = parsed.tokens;
+        let mut body = parsed.tokens;
+        // `!name` builtin escape (T9.2, asl-verified): a leading `!` forces
+        // AS's builtin directive `name` over any same-named user macro —
+        // `!error "msg"` / `!align N`. Core carries no macro that shadows a
+        // builtin, so the escape reduces to: strip the `!` and dispatch
+        // exactly as `name args…` would. (This is unrelated to `!` as the
+        // bitwise-or operator — that only ever appears mid-expression,
+        // inside an already-consumed head's operand tokens, never as the
+        // line's very first token, so there is no ambiguity to resolve.)
+        if matches!(body.first().map(|t| &t.tok), Some(Tok::Punct(Punct::Bang))) {
+            body = body[1..].to_vec();
+        }
         if body.is_empty() {
             return;
         }
@@ -767,7 +785,11 @@ impl Asm {
             self.directive_set(&head, &body[2..], body[0].span);
             return;
         }
-        if !is_op_keyword(&head) && !is_mnemonic(&head) && !self.macros.contains_key(&head) {
+        if !is_op_keyword(&head)
+            && !is_mnemonic(&head)
+            && !self.macros.contains_key(&head)
+            && !self.is_attribute_macro_head(&head)
+        {
             // Under 68000 there is no mnemonic table yet (M1.C T4/T5), so
             // `is_mnemonic` (Z80-only) cannot tell a bare label from an
             // instruction. Fall back to AS's column rule: a bare label (no
@@ -937,6 +959,47 @@ impl Asm {
         end + 1
     }
 
+    /// Handle `while (cond) … endm` (T9.2, asl-verified — NOT `endw`: asl
+    /// errors "WHILE without ENDM"). Unlike `rept`'s once-folded count, the
+    /// condition is a live expression re-evaluated every iteration (typically
+    /// against a `set` accumulator advanced in the body), so this can't fold
+    /// it once up front the way `exec_rept` does. Bounded by `WHILE_CAP`
+    /// with a non-convergence diagnostic (A5, `SIGIL_CORE_SPEC.md` §7.1/§10.4
+    /// — the same bounded-loop-or-diagnose contract as the pass loop
+    /// (`PASS_CAP`) and macro expansion (`EXPAND_CAP`)) so a condition that
+    /// can never resolve to zero can't hang the assembler. Returns the index
+    /// past `endm`.
+    fn exec_while(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
+        let end = self.find_block_end(lines, start, &["while"], &["endm"]);
+        let body = &lines[start + 1..end];
+        let mut iterations = 0usize;
+        loop {
+            if self.aborted {
+                break;
+            }
+            match self.eval_all(&arg_toks, span) {
+                Some(0) => break,
+                Some(_) => {
+                    if iterations >= WHILE_CAP {
+                        self.err(
+                            span,
+                            format!("while loop did not terminate within {WHILE_CAP} iterations (non-convergent condition?)"),
+                        );
+                        break;
+                    }
+                    self.exec(body);
+                    iterations += 1;
+                }
+                None => {
+                    self.err(span, "unresolved while condition");
+                    break;
+                }
+            }
+        }
+        end + 1
+    }
+
     /// Handle name-first `Name struct … Name endstruct`: define packed
     /// `Name_field` offsets and `Name_len`. Field lines emit no bytes. Returns the
     /// index past `endstruct`. (Mirrors `capture_macro`: name at `toks[0]`,
@@ -1052,7 +1115,25 @@ impl Asm {
         }
     }
 
+    /// Whether `head` names a `.ATTRIBUTE`-suffix invocation of a captured
+    /// macro (T9.2): `head` itself isn't a known macro, but stripping a
+    /// trailing `.b`/`.w`/`.l`/`.s` yields one that is. Checked before the
+    /// M68000 bare-label/mnemonic-column heuristic in `exec_one` (so
+    /// `foo.w d1` — a macro invocation — dispatches, rather than being
+    /// mistaken for a label) and drives `dispatch`'s own attribute-macro
+    /// arm below.
+    fn is_attribute_macro_head(&self, head: &str) -> bool {
+        !self.macros.contains_key(head)
+            && split_attribute_suffix(head).is_some_and(|(base, _)| self.macros.contains_key(base))
+    }
+
     fn dispatch(&mut self, head: &str, rest: &[Token], span: Span) {
+        if let Some((base, suffix)) = split_attribute_suffix(head) {
+            if !self.macros.contains_key(head) && self.macros.contains_key(base) {
+                self.expand_macro_with_attribute(base, rest, suffix);
+                return;
+            }
+        }
         match head {
             "cpu" => self.directive_cpu(rest, span),
             "phase" => self.directive_phase(rest, span),
@@ -2062,6 +2143,38 @@ impl Asm {
     /// `tst 3,4`, and `tst PER=5,AMP=2` (params `AMP,PER`) all bind correctly
     /// under this rule.
     fn expand_macro(&mut self, name: &str, arg_toks: &[Token]) {
+        self.expand_macro_inner(name, arg_toks, None);
+    }
+
+    /// Expand a `.ATTRIBUTE`-suffix invocation (T9.2): `name` is the BASE
+    /// macro (already stripped of its `.SUFFIX` by `dispatch`'s
+    /// `split_attribute_suffix` check), `attribute` is the literal suffix
+    /// text (`.b`/`.w`/`.l`/`.s`) bound to `.ATTRIBUTE` inside the body.
+    fn expand_macro_with_attribute(&mut self, name: &str, arg_toks: &[Token], attribute: &str) {
+        self.expand_macro_inner(name, arg_toks, Some(attribute));
+    }
+
+    /// Shared implementation: substitute `.ATTRIBUTE` (if this is an
+    /// attribute-suffixed call), `ALLARGS` (verbatim arg text), and params
+    /// (positional and/or keyword), then execute the resulting lines.
+    ///
+    /// Real AS binds params two ways, mixable in one call (asl-verified — see
+    /// the `macro_keyword_args` snippet): a comma-split arg of the shape
+    /// `NAME=value` binds `NAME` by name, regardless of where it sits in the
+    /// call; every other arg fills the remaining (not yet keyword-bound)
+    /// params positionally, in declaration order. `tst AMP=7,PER=9`,
+    /// `tst 3,4`, and `tst PER=5,AMP=2` (params `AMP,PER`) all bind correctly
+    /// under this rule.
+    ///
+    /// `.ATTRIBUTE` is substituted with a plain (unbounded) literal-text
+    /// replace, the same way `ALLARGS` is — NOT `replace_word`'s
+    /// identifier-boundary match, because `.ATTRIBUTE` is deliberately used
+    /// glued onto a mnemonic (`move.ATTRIBUTE`, one lexed ident) as well as
+    /// standalone in a string; a boundary check keyed on `is_alphanumeric`
+    /// would reject the glued-mnemonic case (the char right before the `.` is
+    /// alphanumeric, e.g. the `e` in `move`), which is the primary asl-verified
+    /// use (asl-verified: `move.ATTRIBUTE src,d0` with `foo.w d1` → `move.w d1,d0`).
+    fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
         if self.macro_depth >= EXPAND_CAP {
             let span = arg_toks.first().map(|t| t.span).unwrap_or(Span { source: self.source, start: 0, end: 0 });
             self.err(span, format!("macro `{name}` expansion too deep (recursive macro?)"));
@@ -2098,6 +2211,9 @@ impl Asm {
         let mut expanded = Vec::new();
         for l in &body {
             let mut text = l.text.clone();
+            if let Some(suffix) = attribute {
+                text = text.replace(".ATTRIBUTE", suffix);
+            }
             text = text.replace("ALLARGS", &all_args);
             for (p, a) in &arg_values {
                 text = replace_word(&text, p, a);
@@ -2132,8 +2248,33 @@ fn is_op_keyword(s: &str) -> bool {
             | "if" | "elseif" | "else" | "endif" | "ifdef" | "ifndef"
             | "rept" | "endr" | "endm" | "macro" | "struct" | "endstruct"
             | "function" | "include" | "error" | "fatal" | "message"
-            | "ds.b" | "ds.w" | "ds.l" | "align"
+            | "ds.b" | "ds.w" | "ds.l" | "align" | "while"
     )
+}
+
+/// Split a bare identifier on a trailing `.b`/`.w`/`.l`/`.s` size suffix,
+/// returning the base name and the literal suffix text (e.g. `.w`). Used for
+/// `.ATTRIBUTE` macro-suffix synthesis (T9.2): a macro invoked as
+/// `name.SUFFIX args` is dispatched by stripping the suffix and checking
+/// whether the BASE name is a captured macro — deliberately distinct from
+/// `split_mnemonic_and_size` (which returns a parsed `M68kSize` for real
+/// mnemonic lowering) so the two never interact: this only ever fires from
+/// `dispatch`'s attribute-macro check, which is gated on the base name being
+/// a literal entry in `self.macros` — a real mnemonic like `move`/`clr` is
+/// never in that map, so `move.w`/`clr.b` etc. keep going through the normal
+/// mnemonic-suffix path untouched.
+fn split_attribute_suffix(s: &str) -> Option<(&str, &'static str)> {
+    if let Some(b) = s.strip_suffix(".b") {
+        Some((b, ".b"))
+    } else if let Some(b) = s.strip_suffix(".w") {
+        Some((b, ".w"))
+    } else if let Some(b) = s.strip_suffix(".l") {
+        Some((b, ".l"))
+    } else if let Some(b) = s.strip_suffix(".s") {
+        Some((b, ".s"))
+    } else {
+        None
+    }
 }
 
 fn is_mnemonic(s: &str) -> bool {
@@ -3093,5 +3234,92 @@ mod tests {
     fn bang_is_infix_bitwise_or() {
         let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b (3!4)&$FF\n";
         assert_eq!(image(src), vec![7]);
+    }
+
+    // ── T9.2: `.ATTRIBUTE` macro-suffix + `!name` escape + `while … endm` ──
+
+    #[test]
+    fn split_attribute_suffix_strips_known_suffixes_only() {
+        use super::split_attribute_suffix;
+        assert_eq!(split_attribute_suffix("foo.w"), Some(("foo", ".w")));
+        assert_eq!(split_attribute_suffix("foo.b"), Some(("foo", ".b")));
+        assert_eq!(split_attribute_suffix("foo.l"), Some(("foo", ".l")));
+        assert_eq!(split_attribute_suffix("foo.s"), Some(("foo", ".s")));
+        assert_eq!(split_attribute_suffix("foo"), None);
+        assert_eq!(split_attribute_suffix("move"), None);
+    }
+
+    #[test]
+    fn attribute_macro_binds_dot_attribute_in_a_mnemonic() {
+        // asl-verified golden (`attribute_macro` in snippets_golden.txt):
+        // `foo.w d1` → `move.w d1,d0` = `30 01`; `foo.l d2` → `move.l d2,d0` = `20 02`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nfoo     macro src\n        move.ATTRIBUTE src,d0\n        endm\n        foo.w d1\n        foo.l d2\n";
+        assert_eq!(image(src), vec![0x30, 0x01, 0x20, 0x02]);
+    }
+
+    #[test]
+    fn attribute_substitutes_inside_a_string_literal_too() {
+        // `.ATTRIBUTE` is a plain (unbounded) text substitution — like
+        // `ALLARGS` — so it also reaches inside a quoted string in the macro
+        // body, not just a bare mnemonic. "x.ATTRIBUTEy" -> "x.wy" (4 chars);
+        // without substitution it would stay "x.ATTRIBUTEy" (12 chars).
+        let src = "        cpu 68000\n        padding off\n        phase 0\nfoo     macro\n        dc.b strlen(\"x.ATTRIBUTEy\")\n        endm\n        foo.w\n";
+        assert_eq!(image(src), vec![4]);
+    }
+
+    #[test]
+    fn attribute_suffix_does_not_hijack_a_plain_mnemonic() {
+        // No `move` macro is defined here — `move.w` must keep lowering as
+        // the real instruction via `split_mnemonic_and_size`, confirming the
+        // attribute-macro path (gated on the BASE name being a literal entry
+        // in `self.macros`) never fires for ordinary suffixed mnemonics.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        move.w d1,d0\n";
+        assert_eq!(image(src), vec![0x30, 0x01]);
+    }
+
+    #[test]
+    fn while_loop_reevaluates_condition_each_iteration() {
+        // asl-verified golden (`while_loop`): `n set 0 / while (n<3) / dc.b n
+        // / n set n+1 / endm` → `00 01 02`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nn       set 0\n        while (n<3)\n        dc.b n\nn       set n+1\n        endm\n";
+        assert_eq!(image(src), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn while_loop_never_entered_emits_nothing() {
+        let src = "        cpu 68000\n        padding off\n        phase 0\nn       set 5\n        while (n<0)\n        dc.b 1\n        endm\n";
+        assert_eq!(image(src), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn while_loop_non_convergent_condition_diagnoses_instead_of_hanging() {
+        // A5: a condition that never resolves to zero is bounded by
+        // `WHILE_CAP` and diagnosed rather than hanging the assembler.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nn       set 1\n        while (n)\nn       set n\n        endm\n";
+        let err = run(src, &Options::default()).expect_err("non-convergent while must diagnose, not hang");
+        assert!(
+            err.iter().any(|d| d.message.contains("while loop did not terminate")),
+            "expected a while-non-convergence diagnostic, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn bang_align_pads_to_the_requested_boundary() {
+        // asl-verified golden (`bang_align`): odd `dc.b 1`, `!align 2`,
+        // `dc.b 2` → `01 00 02`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b 1\n        !align 2\n        dc.b 2\n";
+        assert_eq!(image(src), vec![1, 0, 2]);
+    }
+
+    #[test]
+    fn bang_error_forces_the_builtin_directive_and_diagnoses() {
+        // `even` is NOT a valid asl directive (verified "unknown
+        // instruction"), so only `!error`/`!align` are in scope. A plain
+        // `error` (bang or not) doesn't set `aborted`, but it does push a
+        // `Level::Error` diagnostic, so `run` still fails the assembly
+        // overall (no bytes emitted) — the observable "abort" the spec means.
+        let src = "        cpu 68000\n        padding off\n        phase 0\n        !error \"boom\"\n";
+        let err = run(src, &Options::default()).expect_err("!error must fail the assembly");
+        assert!(err.iter().any(|d| d.message.contains("boom")), "got {err:?}");
     }
 }
