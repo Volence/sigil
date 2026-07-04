@@ -1,7 +1,9 @@
 //! 68000 `Backend` implementation: binds the CPU-agnostic `sigil_ir::Backend`
-//! trait to `sigil_isa::m68k` and turns fully-resolved instructions into
-//! `DataFragment`s. Symbolic-target lowering (branch PcRel fixups, jmp/jsr
-//! width selection) is deferred to sub-project B with the linker.
+//! trait to `sigil_isa::m68k` and turns instructions into `DataFragment`s —
+//! fully-resolved forms via `lower_inst`, and deferred-target forms via
+//! `lower_branch` (bra/bsr/Bcc PcRel fixups), `lower_pcrel_ea` ((d16,PC) fixup),
+//! and `lower_jmp_jsr_sym` (the jmp/jsr placeholder). Only jmp/jsr operand-WIDTH
+//! selection (abs.w vs abs.l) is deferred to the linker's `resolve_layout`.
 
 use sigil_ir::backend::{Backend, Cpu, LowerError};
 use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, Fragment};
@@ -193,5 +195,25 @@ mod tests {
             .lower_branch(Mnemonic::Bcc(Cond::Eq), Size::W, Expr::Sym(".t".into()), span())
             .unwrap();
         assert_eq!(&frag.bytes[..2], &[0x67, 0x00]);
+    }
+
+    #[test]
+    fn lower_pcrel_ea_attaches_disp16_fixup_at_offset() {
+        // lea (d16,PC),a0 → 41 FA 00 00 : opcode word, then the d16 extension word.
+        let inst = Instruction { mnemonic: Mnemonic::Lea, size: Size::L, ops: vec![Operand::Pcd16(0), Operand::An(0)] };
+        let frag = M68kBackend.lower_pcrel_ea(&inst, 2, Expr::Sym("L".into()), span()).unwrap();
+        assert_eq!(frag.bytes.len(), 4);
+        assert_eq!(frag.fixups.len(), 1);
+        assert_eq!(frag.fixups[0].kind, FixupKind::PcRelDisp16);
+        assert_eq!(frag.fixups[0].offset, 2);
+        assert_eq!(frag.fixups[0].target, Expr::Sym("L".into()));
+    }
+
+    #[test]
+    fn lower_pcrel_ea_offset_past_end_errors() {
+        let inst = Instruction { mnemonic: Mnemonic::Lea, size: Size::L, ops: vec![Operand::Pcd16(0), Operand::An(0)] };
+        // Encoded length is 4; offset 3 makes offset+2 = 5 > 4.
+        let err = M68kBackend.lower_pcrel_ea(&inst, 3, Expr::Sym("L".into()), span()).unwrap_err();
+        assert!(err.message.contains("past instruction end"));
     }
 }
