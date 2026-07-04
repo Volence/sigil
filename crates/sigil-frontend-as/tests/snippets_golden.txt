@@ -414,3 +414,59 @@ D0 50
         pea (4,a0)
 --- bytes ---
 48 68 00 04
+=== m68k_move_w_absw_ramv_to_d0 ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        move.w (RAMV).w,d0
+--- bytes ---
+30 38 80 00
+=== m68k_move_w_d0_to_absw_ramv ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        move.w d0,(RAMV).w
+--- bytes ---
+31 C0 80 00
+=== m68k_move_l_absl_vdp_to_d1 ===
+        cpu 68000
+        phase 0
+VDP     = $C00004
+        move.l (VDP).l,d1
+--- bytes ---
+22 39 00 C0 00 04
+=== m68k_move_b_absw_ramv_to_d2 ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        move.b (RAMV).w,d2
+--- bytes ---
+14 38 80 00
+=== m68k_lea_absl_romtab_to_a0 ===
+        cpu 68000
+        phase 0
+ROMTAB  = $12345
+        lea (ROMTAB).l,a0
+--- bytes ---
+41 F9 00 01 23 45
+=== m68k_clr_w_absw_ramv ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        clr.w (RAMV).w
+--- bytes ---
+42 78 80 00
+=== m68k_tst_b_absw_ramv ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        tst.b (RAMV).w
+--- bytes ---
+4A 38 80 00
+=== m68k_cmp_w_absw_ramv_to_d3 ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        cmp.w (RAMV).w,d3
+--- bytes ---
+B6 78 80 00

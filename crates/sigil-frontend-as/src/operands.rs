@@ -34,6 +34,8 @@ pub enum OperandAtom {
     M68kDisp { disp: Expr, an: String },
     /// `(d8,An,Xn.w|.l)` — 68k address-register indirect with index.
     M68kIdx { disp: Expr, an: String, xn: String, xlong: bool },
+    /// `(expr).w` / `(expr).l` — 68k explicit-width absolute addressing.
+    M68kAbs { addr: Expr, long: bool },
 }
 
 fn err(span: Span, msg: &str) -> Diagnostic {
@@ -117,6 +119,40 @@ fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
                 return Ok(OperandAtom::M68kPostInc(reg.clone()));
             }
             return Err(err(span, "bad `(An)+` operand"));
+        }
+    }
+    // `(expr).w` / `(expr).l` — 68k explicit-width absolute addressing. The
+    // lexer folds `.w`/`.l` into the identifier that follows `)` (`.` is an
+    // ident-tail/-start char — see `lexer.rs`), so this shows up as its own
+    // trailing `Ident(".w"|".l")` token rather than punctuation glued to the
+    // paren. Exact shape: `( ... ) .w|.l`. Only a non-register inner
+    // expression qualifies — `(a0)`/`(d0)`/etc. never reach here anyway (no
+    // trailing width token), but a hypothetical `(a0).w` is guarded off too
+    // so it falls through to a diagnostic rather than being silently
+    // reinterpreted as an absolute address.
+    if g.len() >= 4 {
+        if let (
+            Some(Token { tok: Tok::Punct(Punct::LParen), .. }),
+            Some(Token { tok: Tok::Ident(suf), .. }),
+            Some(Token { tok: Tok::Punct(Punct::RParen), .. }),
+        ) = (g.first(), g.last(), g.get(g.len() - 2))
+        {
+            let long = match suf.as_str() {
+                ".w" => Some(false),
+                ".l" => Some(true),
+                _ => None,
+            };
+            if let Some(long) = long {
+                let inner = &g[1..g.len() - 2];
+                if !is_bare_register_token(inner) {
+                    let (e, rest) =
+                        parse_expr(inner).ok_or_else(|| err(span, "bad absolute address expression"))?;
+                    if !rest.is_empty() {
+                        return Err(err(span, "trailing tokens in absolute address"));
+                    }
+                    return Ok(OperandAtom::M68kAbs { addr: e, long });
+                }
+            }
         }
     }
     // Parenthesised: (reg) / (ix+d) / (nn) / (d,An) / (d,An,Xn).
@@ -218,6 +254,24 @@ fn index_reg(w: &str) -> Option<IndexReg> {
 /// branch (see `classify`), so `(sp)` still parses as `IndReg("sp")`.
 fn is_m68k_areg_name(w: &str) -> bool {
     w.strip_prefix('a').and_then(|d| d.parse::<u8>().ok()).is_some_and(|n| n <= 7)
+}
+
+/// `true` iff `w` is `d0`..`d7` — the 68k data-register spelling.
+fn is_m68k_dreg_name(w: &str) -> bool {
+    w.strip_prefix('d').and_then(|d| d.parse::<u8>().ok()).is_some_and(|n| n <= 7)
+}
+
+/// `true` iff `toks` is a single bare register-name identifier (68k address/data
+/// register, Z80 index register, or Z80 `(hl)`/`(bc)`/`(de)`/`(sp)` register
+/// name). Used to keep `(expr).w`/`.l` absolute-addressing recognition from
+/// misfiring on a register token that happens to sit inside parens followed
+/// by a stray width suffix.
+fn is_bare_register_token(toks: &[Token]) -> bool {
+    matches!(
+        toks,
+        [Token { tok: Tok::Ident(w), .. }]
+            if is_m68k_areg_name(w) || is_m68k_dreg_name(w) || matches!(w.as_str(), "ix" | "iy" | "hl" | "bc" | "de" | "sp")
+    )
 }
 
 /// Split a 68k index-register token (`d1`, `d1.w`, `a2.l`, ...) into its bare
@@ -389,6 +443,67 @@ mod tests {
                 assert!(*xlong);
             }
             other => panic!("want M68kIdx, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m68k_abs_w_and_l_forms_parse() {
+        match &atoms_68k("(RAMV).w")[0] {
+            OperandAtom::M68kAbs { addr, long } => {
+                assert!(!*long);
+                assert_eq!(addr.fold(&|n| if n == "RAMV" { Some(0xFFFF8000u32 as i64) } else { None }),
+                    Fold::Value(0xFFFF8000u32 as i64));
+            }
+            other => panic!("want M68kAbs, got {other:?}"),
+        }
+        match &atoms_68k("(RAMV).l")[0] {
+            OperandAtom::M68kAbs { addr, long } => {
+                assert!(*long);
+                assert_eq!(addr.fold(&|n| if n == "RAMV" { Some(0xFFFF8000u32 as i64) } else { None }),
+                    Fold::Value(0xFFFF8000u32 as i64));
+            }
+            other => panic!("want M68kAbs, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m68k_abs_w_handles_large_and_negative_values() {
+        match &atoms_68k("($FFFF8000).w")[0] {
+            OperandAtom::M68kAbs { addr, long } => {
+                assert!(!*long);
+                assert_eq!(addr.fold(&|_| None), Fold::Value(0xFFFF8000));
+            }
+            other => panic!("want M68kAbs, got {other:?}"),
+        }
+        match &atoms_68k("(-1).w")[0] {
+            OperandAtom::M68kAbs { addr, long } => {
+                assert!(!*long);
+                assert_eq!(addr.fold(&|_| None), Fold::Value(-1));
+            }
+            other => panic!("want M68kAbs, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m68k_abs_does_not_misparse_register_indirect() {
+        // `(a0)` (no trailing width suffix) must still be M68kInd, not M68kAbs.
+        match &atoms_68k("(a0)")[0] {
+            OperandAtom::M68kInd(w) => assert_eq!(w, "a0"),
+            other => panic!("want M68kInd, got {other:?}"),
+        }
+        // A bare register token immediately followed by a width suffix is not
+        // a valid absolute-addressing form; the guard keeps it out of
+        // `M68kAbs` (it's rejected as a malformed operand elsewhere, not
+        // silently reinterpreted as an address).
+        let toks = lex_line("(a0).w", Cpu::M68000, SourceId(0), 0).unwrap();
+        match parse_operands(&toks) {
+            Ok(atoms) => assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }])),
+            Err(_) => {} // also acceptable: rejected outright
+        }
+        let toks = lex_line("(d0).w", Cpu::M68000, SourceId(0), 0).unwrap();
+        match parse_operands(&toks) {
+            Ok(atoms) => assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }])),
+            Err(_) => {} // also acceptable: rejected outright
         }
     }
 }

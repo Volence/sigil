@@ -968,12 +968,14 @@ impl Asm {
         }
     }
 
-    /// M1.C T4/T5: the straight-line 68000 core — register-direct (`Dn`/`An`/`sp`),
-    /// `#immediate`, and (T5) the fixed-length register-indirect EA family
-    /// (`(An)`/`(An)+`/`-(An)`/`(d16,An)`/`(d8,An,Xn)` plus `lea`/`pea`) — plus
-    /// the `sr`/`ccr` pseudo-registers for `move <-> sr` / `andi|ori #imm,ccr`.
-    /// Absolute addressing, PC-relative, branches, `jmp`/`jsr`, `Dbcc`/`Scc`,
-    /// and `movem`/`movep` are out of scope here and land in T5b.
+    /// M1.C T4/T5/T5b: the straight-line 68000 core — register-direct
+    /// (`Dn`/`An`/`sp`), `#immediate`, (T5) the fixed-length register-indirect
+    /// EA family (`(An)`/`(An)+`/`-(An)`/`(d16,An)`/`(d8,An,Xn)` plus
+    /// `lea`/`pea`), and (T5b) explicit-width absolute addressing
+    /// (`(expr).w`/`(expr).l`) — plus the `sr`/`ccr` pseudo-registers for
+    /// `move <-> sr` / `andi|ori #imm,ccr`. Width-selecting bare `(expr)`
+    /// (no suffix), PC-relative, branches, `jmp`/`jsr`, `Dbcc`/`Scc`, and
+    /// `movem`/`movep` remain out of scope here.
     fn lower_m68k(&mut self, mn: &str, rest: &[Token], span: Span) {
         let (base, suffix_size) = split_mnemonic_and_size(mn);
         let mnemonic = match m68k_mnemonic(base) {
@@ -1015,11 +1017,12 @@ impl Asm {
         self.emit_frag(frag, span);
     }
 
-    /// Convert operand atoms to resolved 68k operands for the T4/T5
+    /// Convert operand atoms to resolved 68k operands for the T4/T5/T5b
     /// straight-line + fixed-length-EA core: `Dn`/`An`/`Imm` (plus bare
-    /// `sr`/`ccr`), and (T5) the register-indirect family. Any absolute,
-    /// PC-relative, or other variable-length/fixup atom is rejected with a
-    /// diagnostic naming T5b.
+    /// `sr`/`ccr`), (T5) the register-indirect family, and (T5b)
+    /// explicit-width absolute (`M68kAbs`) — fold-based, no fixups. Any
+    /// PC-relative, width-selecting bare-`(expr)`, or other variable-length
+    /// atom is rejected with a diagnostic naming T5b.
     fn convert_atoms_m68k(
         &mut self,
         mnemonic: M68kMnemonic,
@@ -1075,9 +1078,18 @@ impl Asm {
                 OperandAtom::Mem(_) => {
                     self.err(
                         span,
-                        "absolute address operand forms (`$nnnn`/`(expr)`) are out of scope for T5; deferred to T5b",
+                        "absolute address operand `(expr)` needs an explicit `.w`/`.l` width suffix (width-selecting bare `(expr)` is out of scope)",
                     );
                     return None;
+                }
+                OperandAtom::M68kAbs { addr, long } => {
+                    let qualified = self.qualify_expr(addr);
+                    let v = self.fold_imm(&qualified, span, i32::MIN as i64, u32::MAX as i64);
+                    if *long {
+                        M68kOperand::AbsL(v as i32)
+                    } else {
+                        M68kOperand::AbsW((v & 0xFFFF) as i16)
+                    }
                 }
                 // `(sp)` is the `a7` alias but lexes down the pre-existing Z80
                 // `hl`/`bc`/`de`/`sp` branch (see `classify`), not `M68kInd`.
@@ -1319,7 +1331,8 @@ impl Asm {
                 | OperandAtom::M68kPostInc(_)
                 | OperandAtom::M68kInd(_)
                 | OperandAtom::M68kDisp { .. }
-                | OperandAtom::M68kIdx { .. } => {
+                | OperandAtom::M68kIdx { .. }
+                | OperandAtom::M68kAbs { .. } => {
                     // These 68k-only EA shapes (see `convert_atoms_m68k`) don't
                     // arise from z80 syntax in practice (`a0`.."a7" aren't z80
                     // register names), but the match must stay exhaustive.
