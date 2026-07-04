@@ -489,6 +489,20 @@ impl Asm {
             return;
         }
         if !is_op_keyword(&head) && !is_mnemonic(&head) && !self.macros.contains_key(&head) {
+            // Under 68000 there is no mnemonic table yet (M1.C T4/T5), so
+            // `is_mnemonic` (Z80-only) cannot tell a bare label from an
+            // instruction. Fall back to AS's column rule: a bare label (no
+            // colon) sits at column 0; an instruction is indented. A colon
+            // label was already stripped above, so any remaining head on such a
+            // line is an instruction regardless of column. Head token column =
+            // `span.start - line.base` (see lex_line: span.start = base + col).
+            if self.state.cpu == Cpu::M68000 {
+                let indented = body[0].span.start > line.base;
+                if parsed.label_colon.is_some() || indented {
+                    self.dispatch(&head, &body[1..], body[0].span);
+                    return;
+                }
+            }
             self.define_label(&head);
             if body.len() == 1 {
                 return;
@@ -1349,15 +1363,58 @@ mod tests {
     }
 
     #[test]
-    fn m68k_instruction_reaches_m68k_dispatch_stub() {
-        // Minimal 68k program: switch CPU, emit one instruction.
+    fn m68k_operandless_instruction_reaches_stub_not_swallowed_as_label() {
+        // `rts` is NOT a Z80 mnemonic (Z80 has `ret`) and carries no operand, so
+        // it is a clean discriminator: if the indented head were misclassified as
+        // a bare label, `body.len() == 1` would define it and return with NO
+        // diagnostic (Ok) — tripping the `Ok(_)` arm below. Routed correctly it
+        // reaches lower_m68k and yields the stub sentinel.
+        let src = "    cpu 68000\n    rts\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let diags = match run(src, &opts) {
+            Ok(_) => panic!("expected stub diagnostic; `rts` was swallowed as a bare label"),
+            Err(d) => d,
+        };
+        let stub = diags
+            .iter()
+            .find(|d| d.message.contains("68k instruction lowering not yet implemented"))
+            .unwrap_or_else(|| panic!("expected m68k stub diagnostic, got: {:?}",
+                diags.iter().map(|d| &d.message).collect::<Vec<_>>()));
+        // The diagnostic must point at the mnemonic `rts`, not anything else.
+        let text = &src[stub.primary.start as usize..stub.primary.end as usize];
+        assert_eq!(text, "rts", "stub diagnostic should span the mnemonic");
+    }
+
+    #[test]
+    fn m68k_instruction_diagnostic_spans_mnemonic_not_operand() {
+        // Operand-bearing case: the stub diagnostic must span the MNEMONIC
+        // (`move.w`), proving the mnemonic — not its operand `d0` — reached
+        // lower_m68k. Before the column-rule fix, `move.w` was swallowed as a
+        // bogus label and the sentinel pointed at `d0`.
         let src = "    cpu 68000\nStart:\n    move.w d0,d1\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
-        let res = run(src, &opts);
-        // T1 only wires dispatch; the m68k path is a stub, so assembly reports the
-        // sentinel diagnostic (replaced with real lowering in T4/T5).
-        let diags = match res {
+        let diags = match run(src, &opts) {
             Ok(_) => panic!("expected stub diagnostic, got clean assembly"),
+            Err(d) => d,
+        };
+        let stub = diags
+            .iter()
+            .find(|d| d.message.contains("68k instruction lowering not yet implemented"))
+            .unwrap_or_else(|| panic!("expected m68k stub diagnostic, got: {:?}",
+                diags.iter().map(|d| &d.message).collect::<Vec<_>>()));
+        let text = &src[stub.primary.start as usize..stub.primary.end as usize];
+        assert_eq!(text, "move.w", "stub diagnostic should span the mnemonic, not the operand");
+    }
+
+    #[test]
+    fn m68k_colon_label_then_instruction_both_handled() {
+        // `Foo: rts` on one line: the colon label must be defined AND the
+        // remaining head routed as an instruction (label_colon.is_some() clause),
+        // even though line.text starts at column 0.
+        let src = "    cpu 68000\nFoo: rts\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let diags = match run(src, &opts) {
+            Ok(_) => panic!("expected stub diagnostic for the instruction after the colon label"),
             Err(d) => d,
         };
         assert!(
