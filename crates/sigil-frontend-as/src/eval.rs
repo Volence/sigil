@@ -492,6 +492,22 @@ impl Asm {
             self.directive_equate(&head, &body[2..], body[0].span);
             return;
         }
+        // `name set <expr>` / `name := <expr>` — AS's reassignable-symbol forms
+        // (T8). Checked here, before the mnemonic/bare-label fallback below,
+        // for the same reason as the `=` equate check just above: the head
+        // (`head`) is the accumulator's NAME, not a mnemonic, so without this
+        // early intercept a 68000 line like `i set 0` would fall into the
+        // bare-label path, define a label `i` at the current PC, and then try
+        // to dispatch `set` itself as an instruction (and fail — `set` is
+        // only a recognized mnemonic under Z80). `:=` lexes as the single
+        // `ColonEq` token (see `token::Punct::ColonEq`), never as `Colon`
+        // then `Eq`, so it can never be confused with a `name:` colon-label.
+        let is_set_kw = matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if s == "set");
+        let is_coloneq = matches!(body.get(1).map(|t| &t.tok), Some(Tok::Punct(Punct::ColonEq)));
+        if is_set_kw || is_coloneq {
+            self.directive_set(&head, &body[2..], body[0].span);
+            return;
+        }
         if !is_op_keyword(&head) && !is_mnemonic(&head) && !self.macros.contains_key(&head) {
             // Under 68000 there is no mnemonic table yet (M1.C T4/T5), so
             // `is_mnemonic` (Z80-only) cannot tell a bare label from an
@@ -892,6 +908,23 @@ impl Asm {
             // An equate is not a label: qualify a local `.foo` against the
             // current scope (so `ld a,.foo` resolves) but do NOT open a scope.
             // `qualify` leaves non-dotted global names unchanged.
+            let q = qualify(name, self.scope.as_deref());
+            self.env.define(&q, SymbolValue::Int(v));
+        }
+    }
+
+    /// `name set <expr>` / `name := <expr>` (T8): AS's reassignable-symbol
+    /// forms, e.g. Aeon's band counters / `OE_PREV_X` sort checks / deform
+    /// accumulators. `eval_all` folds `rest` against `self.env` AS IT STANDS
+    /// AT THIS LINE, so a self-reference (`i set i+5`) reads the CURRENT
+    /// value of `i` — the redefinition below then overwrites it, giving
+    /// emission-order imperative semantics (verified against real asl: `i set
+    /// 0 / dc.b i / i set i+5 / dc.b i` → `00 05`). Deliberately its own
+    /// function rather than an alias of `directive_equate`: `=` is slated to
+    /// grow a single-assignment redefinition diagnostic (see that function's
+    /// doc), and `set`/`:=` must keep permitting redefinition when it does.
+    fn directive_set(&mut self, name: &str, rest: &[Token], span: Span) {
+        if let Some(v) = self.eval_all(rest, span) {
             let q = qualify(name, self.scope.as_deref());
             self.env.define(&q, SymbolValue::Int(v));
         }
@@ -2590,5 +2623,43 @@ mod tests {
         let bytes = m.sections.first().map(|s| s.image_bytes()).unwrap_or_default();
         assert_eq!(bytes, vec![0x01, 0xAA, 0xBB, 0x02]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_reassigns_a_symbol() {
+        // Plain reassignment (no self-reference): the second `set` simply
+        // overwrites `i`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\ni       set 1\n        dc.b i\ni       set 9\n        dc.b i\n";
+        assert_eq!(image(src), vec![0x01, 0x09]);
+    }
+
+    #[test]
+    fn set_self_reference_reads_the_current_value() {
+        // `i set i+5` (T8): the RHS folds against `i`'s CURRENT value at this
+        // point in emission order, then overwrites it — verified against
+        // real asl (see `set_accumulator` in `tests/snippets_golden.txt`).
+        let src = "        cpu 68000\n        padding off\n        phase 0\ni       set 0\n        dc.b i\ni       set i+5\n        dc.b i\n";
+        assert_eq!(image(src), vec![0x00, 0x05]);
+    }
+
+    #[test]
+    fn coloneq_is_identical_to_set() {
+        // `:=` (T8) is asl-verified to behave exactly like `set` — see
+        // `coloneq_accumulator` in `tests/snippets_golden.txt`. `:=` must
+        // lex as ONE `ColonEq` token so `j := 10` is never mistaken for a
+        // colon-label (`j:`) followed by a stray `= 10`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nj       := 10\n        dc.b j\nj       := j*2\n        dc.b j\n";
+        assert_eq!(image(src), vec![0x0A, 0x14]);
+    }
+
+    #[test]
+    fn set_accumulates_inside_rept() {
+        // The deform-accumulator pattern (`rept` body counter): `set`
+        // converges across the multi-pass fixpoint because every value folds
+        // immediately from the CURRENT pass's own execution (no dependency
+        // on the seeded env from the prior pass) — see `set_in_rept` in
+        // `tests/snippets_golden.txt`.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nk       set 0\n        rept 4\n        dc.b k\nk       set k+1\n        endr\n";
+        assert_eq!(image(src), vec![0x00, 0x01, 0x02, 0x03]);
     }
 }

@@ -14,6 +14,10 @@ pub enum Punct {
     LParen, RParen, Comma, Colon,
     /// `#` — 68k immediate marker (`#expr`).
     Hash,
+    /// `:=` — AS reassignable-symbol assignment (`name := expr`, same as `set`).
+    /// Must be lexed as ONE token (maximal munch) so a leading `:` is never
+    /// mistaken for a colon-label by `parse_line_tokens`.
+    ColonEq,
 }
 
 /// A lexical token kind.
