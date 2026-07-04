@@ -13,6 +13,19 @@ pub enum FixupKind {
     Abs16Be,
     /// Scaffolding for the 68000 backend (M1); unused in M0.
     Abs32Be,
+    /// 8-bit branch displacement in the opcode low byte (`bra.s`/`bsr.s`/`Bcc.s`).
+    /// `disp = target - (site_vma + 1)` (PC ref = op+2, byte at op+1); range i8.
+    PcRel8,
+    /// 16-bit displacement in an extension word (`bra.w`/`bsr.w`/`Bcc.w`, `(d16,PC)`).
+    /// `disp = target - site_vma` (the disp word's own VMA); range i16, big-endian.
+    PcRelDisp16,
+    /// 8-bit displacement in a brief extension word (`(d8,PC,Xn)`).
+    /// `disp = target - site_vma`; range i8.
+    PcRelDisp8,
+    /// Synthetic Sega header checksum. Applied as a final post-image pass over
+    /// the whole file, NOT through `apply_fixup`; present here for `byte_width`
+    /// bookkeeping and future in-fragment modelling.
+    HeaderChecksum,
 }
 
 impl FixupKind {
@@ -21,7 +34,8 @@ impl FixupKind {
     pub fn byte_width(&self) -> u32 {
         match self {
             FixupKind::BankPtr16Le | FixupKind::Abs16Be => 2,
-            FixupKind::Z80JrRel8 => 1,
+            FixupKind::PcRelDisp16 | FixupKind::HeaderChecksum => 2,
+            FixupKind::Z80JrRel8 | FixupKind::PcRel8 | FixupKind::PcRelDisp8 => 1,
             FixupKind::Abs32Be => 4,
         }
     }
@@ -47,5 +61,13 @@ mod tests {
         assert_eq!(FixupKind::Abs16Be.byte_width(), 2);
         assert_eq!(FixupKind::Z80JrRel8.byte_width(), 1);
         assert_eq!(FixupKind::Abs32Be.byte_width(), 4);
+    }
+
+    #[test]
+    fn byte_width_of_new_68k_kinds() {
+        assert_eq!(FixupKind::PcRel8.byte_width(), 1);
+        assert_eq!(FixupKind::PcRelDisp16.byte_width(), 2);
+        assert_eq!(FixupKind::PcRelDisp8.byte_width(), 1);
+        assert_eq!(FixupKind::HeaderChecksum.byte_width(), 2);
     }
 }
