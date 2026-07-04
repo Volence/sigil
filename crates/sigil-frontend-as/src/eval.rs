@@ -139,6 +139,13 @@ struct Asm {
     m68k: M68kBackend,
     state: crate::state::AsmState,
     env: SymbolTable,
+    /// Front-end-only string-valued symbols (`.__str set "BUS ERROR"`).
+    /// §7.4: strings NEVER enter `sigil_ir::SymbolValue`; they live here in the
+    /// evaluator. Keyed by fully-qualified name exactly like `env` (see
+    /// `resolve_str`). NOT carried across passes — asl `set` is a sequential
+    /// per-pass assignment and every string symbol in the `__FSTRING` scan is
+    /// assigned before it is read (probe p1/p4).
+    str_env: std::collections::HashMap<String, String>,
     scope: Option<String>,
     in_section: bool,
     /// Continuous physical location counter (asl-faithful): the real ROM byte
@@ -189,6 +196,7 @@ impl Asm {
             m68k: M68kBackend,
             state: crate::state::AsmState::new(opts.initial_cpu),
             env: SymbolTable::new(),
+            str_env: std::collections::HashMap::new(),
             scope: None,
             in_section: false,
             phys_base: 0,
@@ -560,6 +568,18 @@ impl Asm {
         }
     }
 
+    /// Resolve a bare identifier reference to its string value, if it names a
+    /// string-valued `set` symbol. Key-building mirrors `SymbolTable::resolve`:
+    /// `.foo` → `"{scope}.foo"` (needs a scope), `A.b`/`foo` → verbatim.
+    fn resolve_str(&self, name: &str) -> Option<String> {
+        let key = if let Some(local) = name.strip_prefix('.') {
+            format!("{}.{}", self.scope.as_deref()?, local)
+        } else {
+            name.to_string()
+        };
+        self.str_env.get(&key).cloned()
+    }
+
     /// Evaluate a front-end-only STRING expression: a plain `Tok::Str`
     /// literal, or a nested `substr(str, pos, len)` / `lowstring(str)` call.
     /// `None` on any other shape (mirrors `Fold::Poison` in spirit — this
@@ -573,6 +593,15 @@ impl Asm {
         }] = toks
         {
             return Some(s.clone());
+        }
+        if let [Token {
+            tok: Tok::Ident(name),
+            ..
+        }] = toks
+        {
+            if let Some(s) = self.resolve_str(name) {
+                return Some(s);
+            }
         }
         if let [Token {
             tok: Tok::Ident(name),
@@ -1784,8 +1813,16 @@ impl Asm {
     /// grow a single-assignment redefinition diagnostic (see that function's
     /// doc), and `set`/`:=` must keep permitting redefinition when it does.
     fn directive_set(&mut self, name: &str, rest: &[Token], span: Span) {
+        let q = qualify(name, self.scope.as_deref());
+        // asl: `set` may bind a STRING (`.__str set "BUS ERROR"`,
+        // `.__str set substr(.__str,0,.__pos)`). Detect the string shape via
+        // `eval_str` (literal / substr / lowstring / string-symbol copy) BEFORE
+        // the numeric fold, and store it front-end-only (§7.4). Probe p1/p4.
+        if let Some(s) = self.eval_str(rest) {
+            self.str_env.insert(q, s);
+            return;
+        }
         if let Some(v) = self.eval_all(rest, span) {
-            let q = qualify(name, self.scope.as_deref());
             self.env.define(&q, SymbolValue::Int(v));
         }
     }
