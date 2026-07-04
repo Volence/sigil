@@ -1,0 +1,293 @@
+# Sigil M1.D — Full-ROM Byte-Exactness — Design (audit-revised)
+
+**Status:** approved (independent audit revision 2026-07-04; supersedes the ordering in
+`2026-07-04-sigil-m1d-full-rom-handoff.md` — that doc remains valid as the M1.C landing
+record)
+**Milestone:** M1.D (follows M1.C, merged `aadf98b`)
+**Crates:** `sigil-frontend-as`, `sigil-link`, `sigil-ir`, `sigil-harness` (+ doc backports
+to `empyrean/docs/SIGIL_CORE_SPEC.md`)
+**Reference toolchain:** `asl 1.42 Beta Build 212` → `p2bin` → `convsym` (no-op) → `fixheader`
+**Reference source pin:** re-pin aeon at M1.D start (T0.0); the handoff-era pin was `9bacc93`
+
+---
+
+## 0. What changed since the handoff — the 2026-07-04 audit
+
+Four independent review passes (architecture-vs-spec, phase/dephase semantics vs live asl,
+linker width-fold soundness, golden-vector provenance) ran against merged M1.C. Confirmed
+sound: crate quarantine + one-way graph (enforced by `crate_graph.rs`), the oracle
+discipline (all 368 committed goldens regenerate byte-identical from real asl — non-circular
+proven; fresh 24-snippet differential vs live asl scored 23/24), the phase/dephase
+continuous-physical model (14 live asl probes, all match), and the M1.B width rule
+(`asl_width_rule` boundary-swept, `-A` proven irrelevant).
+
+The audit **upgraded two known items and found two new ones**. These reshape M1.D:
+
+- **F1 (NEW, byte-affecting): `padding` is wrong across `save`/`cpu`/`restore`.**
+  Live-asl probes show `restore` re-applies the saved CPU, and a CPU *switch* resets
+  `padding` to the new CPU's default (ON for 68k): `padding off; save; cpu z80; …;
+  restore` ends with padding **ON** (probe t14), while `save; restore` with no CPU change
+  preserves it (t12); `cpu z80; cpu 68000` alone resets it (t13). Aeon's only save/restore
+  pattern (boot.asm's Z80 load blocks, ~`boot.asm:280`) changes CPU — so in the **real**
+  reference build, everything after boot.asm assembles with padding **ON**, despite
+  `padding off` at `main.asm:3`. Sigil preserves OFF. Additionally sigil implements
+  padding only as struct `ds.w/ds.l` offset rounding (`eval.rs:1413`), not asl's observed
+  pad-byte-before-word-emission-at-odd-PC (t9/t10). Currently latent (no tested region
+  emits a word at odd PC), i.e. a first-diff landmine. The `state.rs` header comment
+  claiming this exact behavior was "probe-verified" is **contradicted by the probes** —
+  see the probe-first process rule (§4).
+- **F2 (UPGRADED risk→certainty): stale-fold under jmp/jsr width growth.** The object
+  bank (`org $10000`) contains **11 bare-symbol `jmp/jsr` sites that grow abs.w→abs.l**
+  (asl's own listing shows `4EF9` at ROM `$1012E`, `$1041E`, `$10486`, …; +22 bytes
+  total). The front-end advances the cursor by a fixed 4 per site (`eval.rs:2082`) and
+  folds nearly every label reference at those **baseline** values; `resolve_layout` shifts
+  labels/fixups but not already-folded bytes. Two guaranteed failures once emit runs:
+  stale folded pointer tables inside the bank, and — **unflagged by the handoff** — stale
+  **downstream section LMAs** (`phys_base` accumulates baseline lengths, so the Z80 driver
+  lands 22 bytes early; `resolve_layout` never re-flows section LMAs, `relax.rs:284-291`).
+  Today the `Org+JmpJsrSym` guard (`relax.rs:158-181`) fails loud on that exact section —
+  a tripwire, not a fix. Fix direction is settled: **move width selection into the
+  front-end pass loop** (T3).
+- **F3 (NEW, small): `cmpm` is encodable (`sigil-isa`) but missing from the front-end
+  mnemonic table** — hard diagnostic, debug-build-only exposure
+  (`engine/debug/compression_selftest.asm:83` under `ifdef __DEBUG__`). Blocks A2.
+- **F4 (confirmed): the empyrean spec is stale on ≥4 asl-verified points** (comparisons
+  fold 0/1 not 0/−1; `int()` = floor; the `strstr` last-char bug does not exist in asl
+  1.42; `save/restore` state set) and describes never-built architecture
+  (`ProvenanceStack`, `RelaxableFragment`/`ChosenSizes`, full `Diagnostic`, full
+  `IrStreamer`, frontend→backend edge prohibition). A future agent grounding on it will
+  mis-build — this failure mode has already occurred once in project history (see
+  `SIGIL_PLAN_AUDIT_2026-07-01.md` F3). Backport is now in-milestone scope (T7).
+
+Recon reality check (re-run 2026-07-04): the raw diagnostic count is ~2.0 M, but it
+reduces to **one root cause** (string-valued `set` / `__FSTRING`, fanned out by a
+non-convergent `while` scan loop) + **6 deferred EA sites over 3 distinct symbols**
+(`OJZ_Act1_Descriptor` ×4, `BGND_Palette`, `OJZ_Palette`) + 2 one-offs (`… directive
+expects …`, `unresolved long expression`). The handoff's "~19" counted distinct sites.
+
+---
+
+## 1. Goal & exit criteria
+
+| Gate | Criterion |
+|---|---|
+| **A1** | `sha256(sigil_s4.bin) == sha256(ref_s4.bin)` for the **non-debug** build, full pipeline (assemble → resolve_layout → link → emit_rom), reference freshly built by `aeon/build.sh` at the T0.0 pin |
+| **A2** | Same for the **`__DEBUG__`** build (requires F3 fix + a deliberately-built debug reference ROM) |
+| **A3** | The ~42-symbol M0 stub table is **deleted**; the full build defines everything itself (the recon already runs with zero stubs) |
+| **A4** | `SIGIL_CORE_SPEC.md` reconciled: 4 verified corrections backported, architecture supersessions recorded (T7) |
+
+Everything is measured against **fresh** asl output at a pinned aeon commit; never
+against stale on-disk artifacts (golden-provenance rule, `golden/PROVENANCE.md`).
+
+---
+
+## 2. Task breakdown (dependency order)
+
+### T0 — Groundwork (independent of the assembly blocker; start immediately)
+
+**T0.0 — Re-pin the reference. ✅ DONE (2026-07-04).** Pinned clean `9bacc93`:
+len **450878**, sha256 `605631da…ad5117`, `0x18E`=**`0xcfc3`**. **Key finding:** the
+M1.B pin (458666/`0x5CBE`) was captured with a *dirty* aeon tree — the build is
+non-hermetic (python generators consume editor JSON), so a clean `9bacc93` differs.
+Stashed aeon's forest_bg/editor WIP to get a reproducible pin. `regen` byte-identical
+(region A 5896 B, B 1543 B). Recorded in `PROVENANCE.md`. Recon re-run against the
+clean tree: same structure (2M → T1 string-set root cause + 6 T2 EA sites + 3 one-offs).
+
+**T0.1 — `padding` fidelity (fixes F1). Probe-first, then implement.**
+1. **Probe matrix against live asl** (the audit's t9–t14 probes live in a session
+   scratchpad and must be re-created as committed artifacts): {padding on/off} ×
+   {save/restore with and without intervening `cpu` change} × {explicit `padding`
+   between save and restore} × {supmode, for completeness}; plus emission probes: `dc.w`
+   / `dc.l` / `ds.w` / a 68k instruction, each at odd PC, padding on and off; struct
+   `ds.w` offset rounding both ways (already covered by T7-era goldens — keep them
+   green). Record results in a notes doc; encode the byte-affecting cases as
+   `gen_snippet_vectors` snippet goldens so they regenerate from real asl forever.
+2. **Implement to match.** Expected model (verify, don't trust): `restore` re-applies the
+   saved CPU; a CPU **switch** (and only a switch) resets `padding`/`supmode` to the new
+   CPU's defaults; `restore` without a CPU change leaves padding as-is. Plus real
+   pad-byte-before-word/long-emission-at-odd-PC when padding is ON (this is what the
+   post-boot.asm reference build actually does).
+3. **Fix the `state.rs` header comment** to state the verified semantics and point at the
+   committed probes.
+
+Acceptance: new snippet goldens green; all existing strict gates still green
+(`m0_acceptance`, `m1b_gate`, `m1c_vector_table` — these currently pass *with* the wrong
+model, so any regression here means the new model was implemented where it shouldn't be).
+
+**T0.2 — Commit the stale-fold reproducer (fixes nothing; pins F2).** A hermetic
+front-end source: a bank whose first instruction is a bare `jmp` to a `>$8000` label,
+followed by a label and a folded `dc.l` reference to it, plus a second section after the
+bank. Assert the current behavior (the `Org+JmpJsrSym` guard error, or — in a guard-free
+variant — the stale bytes/stale LMA) as an `#[ignore = "flips green in T3"]` test with
+the *correct* expected bytes written in. T3's exit criterion includes flipping it on.
+
+**T0.3 — Repair the M0 live harness. ✅ DONE (2026-07-04).** Added `padding off` to
+`harness_root.asm` (after `cpu 68000`, mirroring aeon `main.asm:3`) — cleared the
+`DacSample struct is 10 bytes, expected 9` regen abort. `regen` now exits 0 and
+byte-matches (region A 5896 B, B 1543 B); goldens refreshed. Both live tests
+(`harness_assembles_regions_a_and_b_together`, `assemble_reference_regions_returns_both_sections`)
+pass with `--ignored` (the `#[ignore]` stays — it gates on the live aeon tree, like
+the strict gates). **T0.1 interaction still open:** once padding-on/pad-byte semantics
+land, re-verify the harness reproduces aeon's *effective* padding at each region.
+
+**T0.4 — `cmpm` in the front-end mnemonic table (fixes F3).** Encoder support exists
+(`sigil-isa/src/m68k.rs`); this is parser/lowering plumbing + one snippet golden
+(expected `B5 0B` for `cmpm.w (a3)+,(a2)+`-class forms). Unblocks A2.
+
+### T1 — String-valued `set` symbols + `__FSTRING` (the assembly blocker)
+
+Unchanged from the handoff, with sharper acceptance. `error_handler.asm`'s
+`__ErrorMessage` macros are not `__DEBUG__`-guarded, so the **non-debug** ROM runs
+`__FSTRING_GenerateArgumentsCode`, which stores strings in symbols (`.__str: set "…"`)
+and scans them with `substr`/`strstr`/switch-on-string (`debugger.asm:647-659`,
+`error_handler.asm:31-65`). Extend `SymbolValue` to `Int | Str`, thread string values
+through `set`/expression evaluation/the existing string builtins, and make the scan
+`while` loop converge.
+
+§7.4 contamination safeguard still applies: strings live in the front-end evaluator
+only; nothing string-typed enters `sigil-ir`.
+
+Probe-first: each builtin's edge cases (empty string, `substr` len 0 = to-end, `strstr`
+miss = ?, `val` on a string-valued symbol, comparison of string symbols) against live
+asl, encoded as snippet goldens where byte-affecting.
+
+Acceptance: the recon (`m1c_full`) drops the `strstr`/`strlen`/`while`/`trailing tokens`
+classes to **0**; remaining diagnostics ≤ the 6 known EA sites + anything newly exposed
+(bucket and record them); the emitted `__ErrorMessage` bytes for a representative macro
+invocation match asl (snippet golden).
+
+### T2 — The 6 deferred EA sites (3 symbols)
+
+Small, bounded: the T5b-deferred symbolic-operand forms at `OJZ_Act1_Descriptor` (×4),
+`BGND_Palette`, `OJZ_Palette`. Locate with `FILTER="out of scope" m1c_full`. Snippet
+goldens per form. Acceptance: recon reaches **0 diagnostics** (with T1), which arms the
+`m1c_rom` emit path for the first time.
+
+### T3 — Width selection moves into the front-end pass loop (fixes F2)
+
+The architectural fix, replacing the linker-side growth machinery on the front-end path.
+
+**Design (settled by the audit; verify the one open semantic by probe):**
+- In `lower_jmp_jsr_sym`-class lowering, pick abs.w/abs.l **per pass** from the current
+  env via the existing pinned `asl_width_rule`; advance the cursor by the **true** width
+  (2-word or 3-word form); let the existing `env == prev` convergence absorb growth
+  exactly as asl's own repeat-until-stable does.
+- **Probe first:** what width does asl assume for a symbol *unknown in the current pass*
+  (expected: the long/pessimistic form — verify), and does a
+  width-depends-on-own-address construct oscillate or converge in asl (the `$FF8000`
+  non-monotone note in `relax.rs:126-143` says asl can oscillate — confirm it stays
+  unreachable for ROM-targeting jmp/jsr and record the probe).
+- Consequences to implement, not hope for: `phys_base` now accumulates **true** section
+  lengths → downstream LMAs (the Z80 driver) correct by construction — the unflagged
+  half of F2 closes for free. `PASS_CAP = 8` must be raised or made growth-aware
+  (growth consumes extra convergence passes).
+- The linker keeps `asl_width_rule` + `resolve_layout` as a **verification assert** on
+  the front-end path (widths already final → zero growth expected; assert it) and as the
+  live relaxer for hand-built IR (m1b_gate). Keep the `Org+JmpJsrSym` guard as a
+  tripwire. Whether `Fragment::JmpJsrSym` survives on the front-end path or the
+  front-end emits finished `Data`+fixup is implementer's choice at plan time — record it.
+- In-scope adjacent hardening (both audit-flagged, both bite at full-ROM link): `link()`
+  symbol redefinition is silently last-write-wins (`sigil-link/src/lib.rs:47-49`) — make
+  it a diagnostic; `sec{vma}` auto-names collide for a future second bank phased at the
+  same address (`eval.rs:1611`) — disambiguate (e.g. ordinal suffix).
+
+Acceptance: T0.2's reproducer flips green with byte-correct output; all snippet goldens
+and strict gates still green; the 11 real growth sites produce `4EF9` at the asl-listing
+addresses (spot-assert `$1012E` in a bounded harness if cheap).
+
+### T4 — First full-ROM emit + first-diff triage (A1)
+
+With recon at 0, run `m1c_rom` (assemble → resolve_layout → link → emit_rom vs
+`s4.bin`). Expect second-order surprises — this path has never run on real source.
+Triage protocol per divergence: first differing offset → map through `s4.lst` (asl's
+listing, or sigil's `emit_listing`) to the source line → classify (encoder? fold?
+padding? layout?) → **cure at the source of the class, add the missing snippet golden,
+re-run** — never patch bytes. F1's padding divergence is the predicted first hit if T0.1
+was incomplete.
+
+Acceptance: `sha256` match, non-debug; promote `m1c_rom` from example to a
+`SIGIL_STRICT_GATE` test `m1d_rom` (skip-green without aeon, like the others).
+
+### T5 — `__DEBUG__` build parity (A2)
+
+Build the debug reference deliberately (aeon's `__DEBUG__` switch; record the exact
+invocation in PROVENANCE.md — the debug ROM is NOT the shipped `s4.bin`). Assemble the
+same config in sigil; sha256 match. Known dependency: T0.4 (`cmpm`). Expect the debug
+surface (debugger.asm's `.ATTRIBUTE`/`switch`/`lowstring` paths, already implemented in
+M1.C) to get its first whole-image exercise.
+
+### T6 — Delete the stub table (A3)
+
+The ~42-symbol M0 stub table exists only because the M0-era harness assembled the Z80
+regions without the 68k side. The full build defines everything (recon: zero stubs).
+Delete it; re-run the M0 acceptance path via the full-build machinery. Acceptance: no
+stub file, all gates green.
+
+### T7 — Spec + doc reconciliation (A4; anytime, must land before milestone close)
+
+1. **`empyrean/docs/SIGIL_CORE_SPEC.md` backports:** comparisons fold **0/1** (§7.1/§4.5);
+   `int()` = **floor** (header/D8); **remove the normative `strstr` bug-for-bug paragraph**
+   (§7.1) and its §12 R3 risk entry (disproven in asl 1.42 Bld 212); `save/restore`
+   preserve cpu/padding/supmode with the **T0.1-verified reset-on-CPU-switch semantics**
+   (§7.1). Each with a "verified 2026-07-0X vs asl 1.42 Bld 212" note.
+2. **Architecture supersession notes** (same doc, same pattern as the existing salsa
+   deferral note): `ProvenanceStack` deferred (nodes carry `Span` only — record it as a
+   *decision*, revisit at Spec 3); `Diagnostic` narrowed to `{level, message, primary}`;
+   §4.3 `RelaxableFragment`/`ChosenSizes` superseded by `JmpJsrSym`+`resolve_layout`,
+   itself superseded by T3 front-end width selection; §4.9 `IrStreamer` narrowed (no
+   `emit_instruction`/`set_phase`/push-pop state); §9.1 frontend→backends edge blessed
+   (D1 rationale from the M1.C design); §8.4 CI-gate wording → reality (reference gates
+   run locally via `SIGIL_STRICT_GATE=1`; GitHub CI self-skips them).
+3. **Stale-comment sweep:** `gen_snippet_vectors.rs:15-17` + `asl_snippets.rs:3`
+   ("hand-verified" → generator-produced, demonstrably true); README status table (M0
+   live-gate caveat until T0.3 lands; M1 row); `sigil-isa/src/m68k.rs` phrasing is
+   already honest ("the set Aeon uses") — make README/memory phrasing match it.
+
+---
+
+## 3. Sequencing & rationale
+
+```
+T0.0 → {T0.1, T0.2, T0.3, T0.4}   (parallel, no blockers)
+T1 → T2 → (recon = 0) → T3 → T4 (A1) → T5 (A2) → T6 (A3)
+T7 anytime; before close
+```
+
+T0 first because all four items are cheap, independent of the blocker, and two of them
+(T0.1, T0.2) convert audit findings into committed, executable truth *now* — the padding
+divergence and the stale-fold failure must not be re-discovered at T4 as mystery diffs.
+T3 sits after recon-0 only because its acceptance needs the real growth sites
+assemblable; its design work can start any time. The handoff's original ordering deferred
+F1/F2 understanding to "when it bites" — this spec front-loads them.
+
+---
+
+## 4. Process requirements (carry-forward + audit-hardened)
+
+- **Probe-first, committed-probe:** any claim about asl semantics is established by
+  running the live binary *before* implementation, and the probe must survive the session
+  — as a `gen_snippet_vectors` golden when byte-affecting, or a checked-in notes doc with
+  the probe source when not. A comment saying "probe-verified" without a committed
+  artifact is what produced F1. Never trust a spec/doc claim over a probe (this
+  milestone deletes one disproven spec bug and corrects three spec facts).
+- **Every byte-affecting change lands with real-asl goldens** (`gen_snippet_vectors`
+  regenerates as a no-op — the audit's non-circularity proof depends on keeping this
+  invariant).
+- **Strict gates before merge:** `SIGIL_STRICT_GATE=1 AEON_DIR=… cargo test -p
+  sigil-harness` + workspace tests + `clippy --workspace --all-targets -- -D warnings`.
+- **Cure at the source of the class** (R7): on any ROM diff, fix the semantic class and
+  add the missing golden; never special-case bytes.
+- **Update this doc + the memory note as tasks land** (mark done, record snags, record
+  the T3 fragment-representation decision).
+
+---
+
+## 5. Risks
+
+| # | Risk | Mitigation |
+|---|---|---|
+| 1 | T3 probe reveals asl's unknown-forward-symbol width guess differs from expected, or an oscillation reachable in aeon | Probe before design freeze; the pinned width rule + listing spot-checks (`$1012E` = `4EF9`) bound the blast radius |
+| 2 | T0.1 padding model interacts with regions that are currently byte-green | Existing strict gates double as regression armor; implement behind the probe matrix, not intuition |
+| 3 | T4 exposes unknown-unknowns (this path has never run on real source) | The triage protocol + first-diff→listing mapping; budget for iteration, don't promise A1 in one pass |
+| 4 | Moving aeon reference drifts mid-milestone | T0.0 pin; re-pin only deliberately, with `regen` + PROVENANCE update |
+| 5 | Debug reference ROM (T5) config drift vs what aeon actually ships | Record the exact build invocation in PROVENANCE.md when first produced |

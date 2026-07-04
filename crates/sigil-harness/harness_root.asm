@@ -11,6 +11,10 @@
 ; `save/cpu z80/phase 0 … dephase/restore` switches to z80 and back for the
 ; driver body; region B does the same for the phase-08000h bank.
         cpu     68000
+; `padding off` mirrors aeon main.asm:3 — the real build assembles in padding-off
+; context, so DacSample and the other structs pack naively (ds.b/ds.w/ds.l do NOT
+; even-round the running offset). Without this, DacSample sizes 10 vs the real 9.
+        padding off
         include "sound_constants.asm"
 ; --- region A: resident driver, phase 0 ---
         include "engine/sound/z80_sound_driver.asm"
