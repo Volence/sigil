@@ -8,6 +8,7 @@ pub use builder::IrBuilder;
 
 pub mod expr;
 pub mod fixup;
+pub mod map;
 pub mod symbols;
 pub use expr::Expr;
 pub use fixup::{Fixup, FixupKind};
