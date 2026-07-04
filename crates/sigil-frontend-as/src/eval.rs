@@ -183,8 +183,21 @@ impl Asm {
             + if self.in_section { self.builder.current_offset() } else { 0 }
     }
 
+    /// The current PC as a SIGN-EXTENDED 32→64-bit value: an address with bit 31
+    /// set (the 68k RAM aliases `$FFFF0000`/`$FFFF8000`+) becomes NEGATIVE, exactly
+    /// as asl stores a phased label (`$FFFFFFFFFFFF80AC` = −32596 for a label at
+    /// `$FFFF80AC`). This is what makes `move.w #RAM_Label, d0` fold in range: the
+    /// low-RAM address is a small negative that fits a signed word, whereas the
+    /// raw unsigned `4294934700` overflows. Byte-identical to the unsigned form
+    /// for every wider use (abs.l / `.l` immediate truncate back to the same 32
+    /// bits; abs.w / disp16 take the same low word). ROM addresses (< `$80000000`)
+    /// are unaffected — sign-extension is a no-op there.
+    fn here_i64(&self) -> i64 {
+        self.here() as i32 as i64
+    }
+
     fn fold(&self, e: &Expr) -> Fold {
-        let here = self.here() as i64;
+        let here = self.here_i64();
         let scope = self.scope.clone();
         let env = &self.env;
         e.fold(&|name| {
@@ -386,7 +399,7 @@ impl Asm {
             }
             Tok::Ident(name) => {
                 let v = if name == "$" {
-                    self.here() as i64
+                    self.here_i64()
                 } else {
                     self.env.resolve(name, self.scope.as_deref())?
                 };
@@ -1392,7 +1405,7 @@ impl Asm {
 
     fn define_label(&mut self, name: &str) {
         self.open_section_if_needed();
-        let value = self.here() as i64;
+        let value = self.here_i64();
         let qualified = if name.starts_with('.') {
             qualify(name, self.scope.as_deref())
         } else {
