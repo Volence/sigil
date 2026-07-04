@@ -73,35 +73,46 @@ routing — implementer's choice at plan time, whichever keeps each path cleares
 on the byte-exact ROM path; AS's float `sin()` + `int()`-truncation are in fidelity scope
 (SIGIL_CORE_SPEC §7.1).
 
-**Decision:**
+**Decision (Spike 0 resolved this — bit-match confirmed, source-cure NOT needed):**
 1. Extract the 4 golden 256-byte tables from the reference ROM **unconditionally** (Spike
-   0) — committed golden vectors, same pattern as the Z80 encoder vectors. The harness
-   needs them regardless of which strategy wins.
-2. Implement the real fold in Rust `f64` with `int()` = **truncate-toward-zero** (confirm
-   vs asl in Spike 0), and asl-faithful `sin`/`cos`. Gate on the goldens.
-3. asl 1.42's `sin`/`cos` operate on C `double`; `f64` is *likely* bit-identical, and these
-   amplitudes rarely land on a `.5` truncation boundary. If it resists after **one bounded
-   task** (T8), fall back to §12 R7 **source-level cure**: pre-bake the 4 tables to a
-   `BINCLUDE` in Aeon, rebuild the reference with `asl`, re-baseline A1 (new length/checksum
-   landmarks recorded in SIGIL_CORE_SPEC header). A deliberate, recorded decision — never
-   silent drift.
+   0, done — committed at `crates/sigil-frontend-as/tests/vectors/sine_goldens/`).
+2. Implement the real fold in Rust `f64` with `int()` = **floor (round toward −∞)** and
+   libm `sin`. **Spike 0 finding (verified 2026-07-03):** `floor` reproduces all 4 golden
+   tables byte-for-byte; `trunc`/`round_half`/`round_even` each fail (trunc diverges on
+   ~123/256 indices in the largest-amplitude table). AS `int()` is therefore floor here,
+   **not** truncate-toward-zero as originally assumed.
+3. libm `sin` + `floor` **bit-matches** the reference ROM with no observed FP/libm
+   discrepancy, so the D2 source-cure fallback (§12 R7 pre-bake to `BINCLUDE` + re-baseline)
+   is **not indicated**. It remains the documented escape hatch only if a future
+   re-baseline surfaces a mismatch.
 
-Note: `cos()` is used 3× elsewhere in 68k source (not in this macro) — the float-builtin
-work (T3) must cover `sin`, `cos`, and `int` together.
+Note: `cos()` has **zero real occurrences** in the source (Spike 0: all 3 raw hits are
+comment prose). `sin` and `int` are used at exactly **one** site — the `deform_table_sine`
+macro (`parallax_macros.inc:223`) — so the float-builtin work folds into **T8**; there is
+no separate mainline builtin task.
 
 ### D3 — AS-faithful operator + builtin layer is a foundation task, lands first
 
 The current Pratt parser (`expr.rs`) supports only `* / + - << >> & | = != < > <= >=` and
-has **zero builtins**. Aeon 68k source additionally uses (verified counts):
-`mod` (×63), `<>` (×59), `!=` (×33), `||` (×20), `&&` (×5), plus `#`=modulo, `!`=bitwise-or,
-`~~`=boolean-not, and comparisons that must **yield `0` / `-1` masks** (§7.1). Builtins used:
-`substr` (×32), `strlen` (×18), `sin` (×13), `strstr` (×11), `lowstring` (×5), `cos` (×3),
-`int` (×1).
+has **zero builtins**. **Spike 0 (verified 2026-07-03) collapsed this scope** by separating
+raw grep hits from genuine operator uses (stripping comments and message strings):
 
-**Decision:** land the operator set (T2) and builtin table (T3) **before** 68k instruction
-lowering, because load-bearing macros depend on them (e.g. `deform_table_sine` needs
-`#`/`<>`/`sin`/string-compare/`\{}`-interpolation just to expand). Both asl-diff-gated on
-expression snippets.
+- **Mainline operators actually used:** `<>` (×70, not-equal), `||` (×5, logical-or),
+  `&&` (×4, logical-and) — plus comparisons that must **yield `0` / `-1` masks** (§7.1).
+- **Zero real occurrences** (all comment prose or literal text inside `error`/`fatal`
+  message strings): `mod` (63 raw), `!=` (33 raw), `~` (76 raw), `~~` (0), `cos` (3 raw),
+  `even` (62 raw). These are **dropped from scope** — reproducing them would be phantom work.
+- **Debug-only operator:** `!`=bitwise-or (×3, all in `engine/debug/debugger.asm`) →
+  handled in **T9**, not the mainline T2.
+- **Builtins:** the entire string-builtin surface (`substr` ×32, `strlen` ×18, `strstr`
+  ×11, `lowstring` ×5, `val` ×5, `switch` ×5) is **confined to `debugger.asm`** → **T9**
+  (debug-only). The mainline needs only `sin`/`int` at the single sine site → **T8**.
+
+**Decision:** T2 lands the mainline operator set (`<>`, `||`, `&&`, comparison masks) +
+generalized `\{}` interpolation + string comparison **before** 68k instruction lowering
+(macros like `deform_table_sine` need `<>`/string-compare/`\{}` to expand). The former "T3
+builtin table" task is **dissolved**: mainline float builtins move to T8, all string
+builtins move to T9.
 
 ### D4 — `__DEBUG__` debugger surface stays in M1.C, lands last
 
@@ -135,15 +146,16 @@ This is a front-end responsibility, not a linker one.
 | State stack | 68k-ready | none | — |
 | Lexer | cpu-aware | none | — |
 | Operand-atom parse | structural | add `-(An)`,`(An)+`,PC-rel,abs.w/.l atoms | med |
-| Expr operators | subset | `mod`/`#`/`<>`/`!=`/`\|\|`/`&&`/`~~`, masks | med |
-| Builtins | none | strstr(bug)/substr/strlen/sin/cos/int/lowstring | med |
+| Expr operators (mainline) | subset | `<>`/`\|\|`/`&&` + comparison masks (Spike 0: `mod`/`!=`/`~~`/`~` unused) | low |
+| Builtins (mainline) | none | `sin`/`int` only, at the single sine site (→ T8) | low |
+| Builtins (debug) | none | strstr(bug)/substr/strlen/lowstring/val/switch, `!`=or (→ T9) | med |
 | `\{expr}` interp | error/fatal only | generalize to all string contexts | low |
 | CPU→backend dispatch | Z80 hardcoded | split `lower_z80`/`lower_m68k` | high |
 | Mnemonic table | 26 Z80 | 68k table + `.b/.w/.l/.s` suffix parse | med |
 | Register words | Z80 only | d0–d7/a0–a7/pc/sp/ccr/sr | low |
 | Operand convert | Z80 | `convert_atoms_m68k` + EA modes | med |
 | Instr lowering | lower/rel/abs16 | branch/jmp-jsr-sym/pcrel-ea + qualify | high |
-| Data directives | `db`/`dc.b`/`dw` | `dc.w`/`dc.l`/`ds.*`/`align`/`even`+padding | low |
+| Data directives | `db`/`dc.b`/`dw` | `dc.w`/`dc.l`/`ds.*`/`align` (arbitrary, incl `$8000`)/`org`+padding (Spike 0: `even` unused) | low |
 | struct/`_len` | capture only | `_len` symbol + `if _len<>N/error` | low |
 | Macro args | positional | keyword args + ALLARGS/.ATTRIBUTE/MOMCPUNAME | med |
 | rept/irp/irpc/while | rept only | irp/irpc/while + sine fold | med |
@@ -155,31 +167,40 @@ This is a front-end responsibility, not a linker one.
 
 Each task: spec-slice → TDD plan → fresh implementer → review. asl-diff / golden-vector
 gates throughout (the M1.B pattern). Lighter controller-verify on transcription tasks
-(T2/T3/T6); full two-stage review on high-latitude tasks (T1/T5/T8/T9); whole-branch review
+(T2/T6); full two-stage review on high-latitude tasks (T1/T5/T8/T9); whole-branch review
 before `--no-ff` merge to master.
 
-- **Spike 0** (pre-dispatch de-risk, no production code):
-  extract 4 sine goldens from ref ROM; confirm `int()` truncation direction + asl float
-  probe (`sin`/`cos` bit behavior); enumerate the **exact** operator + builtin + directive
-  set across *all* 68k source so T2–T9 scopes are pinned, not guessed.
+> **Re-scoped by Spike 0 (2026-07-03, DONE at `6a3bfc3`):** `int()` = floor (bit-matches
+> via libm `sin`); mainline operators reduce to `<>`/`||`/`&&`; the former T3 builtin task
+> is dissolved (mainline float builtins → T8, all string builtins → T9); T6 drops `even`,
+> adds `org` + arbitrary-boundary `align`.
+
+- **Spike 0** ✅ DONE (`6a3bfc3`) — 4 sine goldens extracted; `int()`=floor confirmed
+  (libm `sin`+`floor` bit-matches); full operator/builtin/directive surface enumerated.
+  Findings: `docs/superpowers/notes/2026-07-03-m1c-spike0-findings.md`.
 - **T1** Backend multiplexing refactor — extract `lower_z80`, add `m68k` field, dispatch on
   `state.cpu`. Pure refactor; existing Z80 tests stay green. (high-latitude)
-- **T2** AS-faithful operators + generalized `\{expr}` interpolation + string comparison,
-  comparisons→`0`/`-1` masks. asl-diff-gated on expression snippets. (transcription)
-- **T3** Builtin table — `strstr` bug-for-bug (D5) + `substr`/`strlen`/`sin`/`cos`/`int`/
-  `lowstring`. asl-diff + strstr golden cases. (transcription)
+- **T2** Mainline operators (`<>`, `||`, `&&`, comparison→`0`/`-1` masks) + generalized
+  `\{expr}` interpolation + `"a"="b"` string comparison. asl-diff-gated on expression
+  snippets. (transcription)
+- ~~**T3**~~ **Dissolved by Spike 0** — mainline float builtins (`sin`/`int`) fold into T8;
+  all string builtins (`strstr`/`substr`/`strlen`/`lowstring`/`val`/`switch`) are
+  debug-only → T9.
 - **T4** 68k mnemonics + `.b/.w/.l/.s` size-suffix parse + operand-atom extensions
   (`-(An)`, `(An)+`, `(d16,PC)`, `abs.w`/`abs.l`).
 - **T5** `convert_atoms_m68k` + lower routing (branch / jmp-jsr-sym / pcrel-ea) +
   **dotted-local qualification** (D6). (high-latitude)
-- **T6** `dc.w`/`dc.l`/`ds.b`/`ds.w`/`ds.l`/`align`/`even` + padding-state interaction
-  (Aeon `padding off` global → odd `dc.b` runs unpadded). (transcription)
+- **T6** `dc.w`/`dc.l`/`ds.b`/`ds.w`/`ds.l`/`align` (arbitrary boundary, incl `align $8000`)
+  /`org` (4 sites) + padding-state interaction (Aeon `padding off` global → odd `dc.b` runs
+  unpadded). Spike 0: `even` has 0 real uses, out of scope. (transcription)
 - **T7** struct/`_len` + `if _len<>N/error` assertion; keyword macro args; ALLARGS /
-  `.ATTRIBUTE` / `MOMCPUNAME` `pbyte` dispatch (`db` vs `dc.b`).
-- **T8** rept/irp/irpc/while completeness + `deform_table_sine` fold — resolves D2
-  (bit-match vs source-cure). (high-latitude)
-- **T9** switch/lowstring + `!name` escape (`!error` ×4, `!align 2`) + `__DEBUG__`
-  debugger `%<…>` bytes. (high-latitude)
+  `MOMCPUNAME` `pbyte` dispatch (`db` vs `dc.b`) — the non-debug dual-CPU idiom in the 8
+  `*_patches.asm` sound files. (`.ATTRIBUTE` is debug-only → T9.)
+- **T8** rept/irp/irpc/while completeness + `deform_table_sine` fold **incl. the `sin`/`int`
+  builtins** (libm `sin` + `floor`, gated on the 4 Spike-0 goldens). (high-latitude)
+- **T9** (debug-only, `__DEBUG__`) string builtins `strstr` (bug-for-bug D5)/`substr`/
+  `strlen`/`lowstring`/`val` + `switch`/`lowstring` `%<…>` machinery + `!`=bitwise-or
+  operator + `.ATTRIBUTE` + `!name` escape (`!error` ×4, `!align` ×10). (high-latitude)
 - **T10** progressive real-source integration — assemble growing 68k subsets, byte-exact
   per section vs asl. **Exit gate for M1.C.**
 
