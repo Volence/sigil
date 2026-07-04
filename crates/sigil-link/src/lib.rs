@@ -11,7 +11,7 @@ use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable, SymbolVal
 use sigil_span::{Diagnostic, Level, Span};
 
 mod relax;
-pub use relax::{asl_width_rule, AbsWidth};
+pub use relax::{asl_width_rule, resolve_layout, AbsWidth};
 
 /// One section's resolved bytes and where they load.
 #[derive(Clone, Debug, Eq, PartialEq)]
