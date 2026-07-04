@@ -39,8 +39,6 @@ use sigil_ir::expr::Fold;
 use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SymbolTable, SymbolValue};
 use sigil_span::{Diagnostic, Level, Span};
 
-const MAX_PASSES: usize = 64;
-
 /// Current byte length of a fragment; `JmpJsrSym` uses the given width.
 fn frag_len(frag: &Fragment, w: AbsWidth) -> u32 {
     match frag {
@@ -111,6 +109,25 @@ fn frag_span(f: &Fragment) -> Span {
 /// each to a concrete `Data` fragment AND shift every label to its final offset,
 /// so the returned sections contain only Data/Fill/Reserve and `link()` runs on
 /// them unchanged.
+///
+/// # Grow-only vs asl's bidirectional relaxation at the 0xFF8000 wrap
+///
+/// `asl_width_rule` is *non-monotonic* in the target address: it selects abs.w on
+/// `[0, 0x7FFF]`, abs.l on `[0x8000, 0xFF_7FFF]`, then abs.w *again* on
+/// `[0xFF_8000, 0xFF_FFFF]` (16-bit sign extension). This fixpoint only ever flips
+/// a width W→L, never L→W. So a `jmp`/`jsr` whose target crosses the
+/// `0xFF_7FFF → 0xFF_8000` boundary because of *earlier* growth stays locked to
+/// abs.l even though its final address would only need abs.w — i.e. we may emit an
+/// abs.l that is 2 bytes larger than asl's abs.w in that exact range.
+///
+/// This is deliberate: real asl 1.42's *bidirectional* relaxer is itself
+/// non-terminating (it oscillates) on that self-referential construction, so there
+/// is no stable asl output to be byte-exact against there. Byte-exactness is
+/// therefore not claimed in the `0xFF_8000` sign-extension wrap. Reaching it
+/// requires a bare `jmp`/`jsr` to a `$FF8000+` (RAM) target that is *also*
+/// self-referentially width-affected — which does not occur in Aeon, where
+/// `jmp`/`jsr` target ROM code labels. Grow-only is what buys guaranteed
+/// termination in exchange.
 pub fn resolve_layout(
     sections: &[Section],
     stubs: &SymbolTable,
@@ -120,7 +137,22 @@ pub fn resolve_layout(
     let mut widths: Vec<Vec<AbsWidth>> =
         sections.iter().map(|s| vec![AbsWidth::W; s.fragments.len()]).collect();
 
-    for _ in 0..MAX_PASSES {
+    // Provably-sufficient pass cap: each pass that reports `grew` flips at least
+    // one JmpJsrSym W→L, and each fragment flips at most once, so at most
+    // `total_jmpjsr` passes can grow — pass `total_jmpjsr + 1` is guaranteed to
+    // observe no growth and converge. The non-convergence Err below is then an
+    // unreachable-in-practice backstop.
+    let total_jmpjsr: usize = sections
+        .iter()
+        .flat_map(|s| s.fragments.iter())
+        .filter(|f| matches!(f, Fragment::JmpJsrSym { .. }))
+        .count();
+    let cap = total_jmpjsr + 1;
+
+    // Span of a fragment that grew on the most recent pass, for the backstop diag.
+    let mut last_grown_span: Option<Span> = None;
+
+    for _ in 0..cap {
         // (a) Build the symbol table with label VMAs shifted under current widths.
         let mut syms = stubs.clone();
         for (si, sec) in sections.iter().enumerate() {
@@ -136,6 +168,10 @@ pub fn resolve_layout(
         for (si, sec) in sections.iter().enumerate() {
             for (fi, frag) in sec.fragments.iter().enumerate() {
                 if let Fragment::JmpJsrSym { target, span, .. } = frag {
+                    // GLOBAL scope only (scope None): a bare `jmp .local`/`jsr .local`
+                    // to a dotted local would not resolve here. The front-end
+                    // (sub-project C) must qualify such targets to fully-dotted names
+                    // before emitting `JmpJsrSym`.
                     let v = match target.fold(&|n| syms.resolve(n, None)) {
                         Fold::Value(v) => v,
                         Fold::Poison => {
@@ -148,6 +184,7 @@ pub fn resolve_layout(
                     };
                     if asl_width_rule(v, dash_a) == AbsWidth::L && widths[si][fi] == AbsWidth::W {
                         widths[si][fi] = AbsWidth::L;
+                        last_grown_span = Some(*span);
                         grew = true;
                     }
                 }
@@ -193,12 +230,11 @@ pub fn resolve_layout(
 
     Err(vec![Diagnostic {
         level: Level::Error,
-        message: format!("jmp/jsr width selection did not converge within {MAX_PASSES} passes"),
-        primary: sections
-            .iter()
-            .flat_map(|s| s.fragments.iter())
-            .map(frag_span)
-            .next()
+        message: format!("jmp/jsr width selection did not converge within {cap} passes"),
+        // Point at a fragment that grew on the final pass (the likely culprit);
+        // fall back to the first fragment's span if nothing grew.
+        primary: last_grown_span
+            .or_else(|| sections.iter().flat_map(|s| s.fragments.iter()).map(frag_span).next())
             .unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 }),
     }])
 }
@@ -206,11 +242,108 @@ pub fn resolve_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sigil_ir::{Cpu, DataFragment, Expr, Fragment, Label, Section, SymbolTable, SymbolValue};
+    use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SymbolTable, SymbolValue};
     use sigil_span::{SourceId, Span};
 
     fn sp() -> Span {
         Span { source: SourceId(0), start: 0, end: 0 }
+    }
+
+    #[test]
+    fn resolve_boundary_wrap_terminates_safely() {
+        // Documented safe-oversized case: as the jmp grows +2, Target's VMA crosses
+        // 0xFF_7FFE → 0xFF_8000. asl_width_rule is non-monotonic there (L then W
+        // again), but grow-only never shrinks back, so we emit abs.l (6 bytes) — 2
+        // bytes larger than asl's abs.w would be. This is where asl 1.42's
+        // bidirectional relaxer itself oscillates, so there is no stable target.
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0xFF_7FFA,
+            labels: vec![Label { name: "Target".into(), offset: 4 }],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Target".into()), span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
+            ],
+        };
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        // The jmp lowered to abs.l (6-byte Data), and Target shifted 4 → 6.
+        assert!(matches!(&out[0].fragments[0], Fragment::Data(d) if d.bytes.len() == 6));
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "Target").unwrap().offset, 6);
+    }
+
+    #[test]
+    fn resolve_multi_jmp_cascade_converges() {
+        // A genuine multi-pass cascade: `jmp A` and `jmp Hi` in one section. Pass 1
+        // grows `jmp Hi` (high stub) → +2; that shift pushes label A's VMA from
+        // 0x7FFF across 0x8000, so `jmp A` grows in pass 2. Proves shift_breakpoints
+        // composes multiple growths and the fixpoint re-converges over passes.
+        // origin = vma_base = 0x7FF0; baseline: jmp A [0,4), jmp Hi [4,8),
+        // fill(7) [8,0x0F), nop @0x0F, A@0x0F → baseline A VMA = 0x7FFF.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0x7FF0),
+            lma: 0,
+            labels: vec![Label { name: "A".into(), offset: 0x0F }],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("A".into()), span: sp() },
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Fill { value: 0, count: 7, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
+            ],
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        // Both jmps grew to abs.l; A shifted 0x0F → 0x13 (0x0F + 4).
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "A").unwrap().offset, 0x13);
+        let linked = crate::link(&out, &stubs).unwrap();
+        // frag0 jmp A abs.l → A VMA = 0x7FF0 + 0x13 = 0x8003; frag1 jmp Hi abs.l →
+        // 0x123456; then 7 fill zeros; then nop.
+        assert_eq!(
+            linked.section("c").unwrap().bytes,
+            vec![
+                0x4E, 0xF9, 0x00, 0x00, 0x80, 0x03, // jmp A abs.l
+                0x4E, 0xF9, 0x00, 0x12, 0x34, 0x56, // jmp Hi abs.l
+                0, 0, 0, 0, 0, 0, 0, // 7 fill bytes
+                0x4E, 0x71, // nop
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_phased_section_shifts_correctly() {
+        // Phased section (VMA≠LMA): vma_base 0xFF_0000, lma 0x000100. A growing
+        // `jmp Hi` shifts label After (baseline 4 → 6); a following Abs32Be fixup on
+        // After proves link() computes its VMA from vma_origin under phase.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0xFF_0000),
+            lma: 0x000100,
+            labels: vec![Label { name: "After".into(), offset: 4 }],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
+                Fragment::Data(DataFragment {
+                    bytes: vec![0, 0, 0, 0],
+                    fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("After".into()) }],
+                    span: sp(),
+                }),
+            ],
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
+        let linked = crate::link(&out, &stubs).unwrap();
+        // jmp Hi abs.l; nop; then Abs32Be(After) = 0xFF_0000 + 6 = 0x00FF0006.
+        assert_eq!(
+            linked.section("c").unwrap().bytes,
+            vec![0x4E, 0xF9, 0x00, 0x12, 0x34, 0x56, 0x4E, 0x71, 0x00, 0xFF, 0x00, 0x06]
+        );
     }
 
     #[test]
