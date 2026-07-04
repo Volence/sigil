@@ -778,6 +778,12 @@ impl Asm {
             "supmode" => self.state.supmode = on_off(rest),
             "db" | "dc.b" => self.directive_db(rest, span),
             "dw" => self.directive_dw(rest, span),
+            "dc.w" => self.directive_dc_w(rest, span),
+            "dc.l" => self.directive_dc_l(rest, span),
+            "ds.b" => self.directive_ds(1, rest, span),
+            "ds.w" => self.directive_ds(2, rest, span),
+            "ds.l" => self.directive_ds(4, rest, span),
+            "align" => self.directive_align(rest, span),
             "error" => {
                 let m = self.interp_string(rest);
                 self.err(span, m);
@@ -926,6 +932,109 @@ impl Asm {
                     }
                 }
             }
+        }
+    }
+
+    /// `dc.w <expr>,...` — big-endian 16-bit words (asl: BE, unlike the Z80
+    /// `dw`'s little-endian). Mirrors `directive_dw`'s expr-list parsing.
+    fn directive_dc_w(&mut self, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        for g in split_top_commas(rest) {
+            let expanded = self.expand_calls(g, 0);
+            let e = match crate::expr::parse_expr(&expanded) {
+                Some((e, [])) => e,
+                _ => {
+                    self.err(span, "bad word expression");
+                    continue;
+                }
+            };
+            let qe = self.qualify_expr(&e);
+            match self.fold(&qe) {
+                Fold::Value(v) => {
+                    let w = (v as u16).to_be_bytes();
+                    self.emit(&w, vec![], span);
+                }
+                Fold::Poison => {
+                    if matches!(qe, Expr::Sym(_)) {
+                        self.emit(
+                            &[0x00, 0x00],
+                            vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: qe }],
+                            span,
+                        );
+                    } else {
+                        self.err(span, "unresolved word expression");
+                        self.emit(&[0x00, 0x00], vec![], span);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `dc.l <expr>,...` — big-endian 32-bit longwords.
+    fn directive_dc_l(&mut self, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        for g in split_top_commas(rest) {
+            let expanded = self.expand_calls(g, 0);
+            let e = match crate::expr::parse_expr(&expanded) {
+                Some((e, [])) => e,
+                _ => {
+                    self.err(span, "bad long expression");
+                    continue;
+                }
+            };
+            let qe = self.qualify_expr(&e);
+            match self.fold(&qe) {
+                Fold::Value(v) => {
+                    let l = (v as u32).to_be_bytes();
+                    self.emit(&l, vec![], span);
+                }
+                Fold::Poison => {
+                    if matches!(qe, Expr::Sym(_)) {
+                        self.emit(
+                            &[0x00, 0x00, 0x00, 0x00],
+                            vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: qe }],
+                            span,
+                        );
+                    } else {
+                        self.err(span, "unresolved long expression");
+                        self.emit(&[0x00, 0x00, 0x00, 0x00], vec![], span);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `ds.b`/`ds.w`/`ds.l <count>` — reserve `count * unit` bytes with no
+    /// image bytes (verified against asl: a `ds` run with nothing emitted
+    /// after it never materializes in the flat binary — matches
+    /// `Fragment::Reserve`, not a real `Fill`).
+    fn directive_ds(&mut self, unit: u32, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        match self.eval_all(rest, span) {
+            Some(v) if v >= 0 => self.builder.reserve(v as u32 * unit, span),
+            Some(_) => self.err(span, "negative ds count"),
+            None => self.err(span, "unresolved ds count"),
+        }
+    }
+
+    /// `align <n>` — pad with zero bytes up to the next multiple of `n`
+    /// (verified against asl: fill byte is `0x00`; a no-op when already
+    /// aligned). Unlike `ds`, real Aeon usage always aligns something that
+    /// follows in the same section, so this pads via a real `Fill` (visible
+    /// zero bytes), matching asl's observed behavior when writes follow.
+    fn directive_align(&mut self, rest: &[Token], span: Span) {
+        self.open_section_if_needed();
+        match self.eval_all(rest, span) {
+            Some(n) if n > 0 => {
+                let n = n as u32;
+                let pos = self.here();
+                let pad = (n - (pos % n)) % n;
+                if pad > 0 {
+                    self.builder.emit_fill(pad, 0, span);
+                }
+            }
+            Some(_) => self.err(span, "align needs a positive constant"),
+            None => self.err(span, "unresolved align constant"),
         }
     }
 
@@ -1633,11 +1742,11 @@ fn is_op_keyword(s: &str) -> bool {
     matches!(
         s,
         "cpu" | "phase" | "dephase" | "save" | "restore" | "padding" | "supmode"
-            | "db" | "dw" | "dc.b" | "equ"
+            | "db" | "dw" | "dc.b" | "dc.w" | "dc.l" | "equ"
             | "if" | "elseif" | "else" | "endif" | "ifdef" | "ifndef"
             | "rept" | "endr" | "endm" | "macro" | "struct" | "endstruct"
             | "function" | "include" | "error" | "fatal" | "message"
-            | "ds.b" | "ds.w" | "ds.l"
+            | "ds.b" | "ds.w" | "ds.l" | "align"
     )
 }
 
@@ -2268,6 +2377,63 @@ mod tests {
         // Three ds.b 1 fields → offsets 0/1/2, DacSample_len = 3.
         let src = "        cpu z80\n        phase 0\nDacSample struct\np       ds.b 1\nq       ds.b 1\nr       ds.b 1\nDacSample endstruct\n        db DacSample_p, DacSample_q, DacSample_r, DacSample_len\n";
         assert_eq!(image(src), vec![0x00, 0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn dc_w_emits_big_endian_words() {
+        // asl: `dc.w $1234,$5678` -> 12 34 56 78 (BE, not Z80 `dw`'s LE).
+        let src = "        cpu 68000\n        phase 0\n        dc.w $1234,$5678\n";
+        assert_eq!(image(src), vec![0x12, 0x34, 0x56, 0x78]);
+    }
+
+    #[test]
+    fn dc_l_emits_big_endian_longs() {
+        let src = "        cpu 68000\n        phase 0\n        dc.l $12345678\n";
+        assert_eq!(image(src), vec![0x12, 0x34, 0x56, 0x78]);
+    }
+
+    #[test]
+    fn ds_b_trailing_reserve_contributes_no_image_bytes() {
+        // Matches real asl/p2bin: a trailing `ds` with nothing written after it
+        // never materializes into the flat image (verified against asl).
+        let src = "        cpu 68000\n        phase 0\n        ds.b 3\n";
+        assert_eq!(image(src), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn ds_w_and_ds_l_reserve_scale_by_unit_width() {
+        let src = "        cpu 68000\n        phase 0\n        ds.w 2\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        assert_eq!(module.sections[0].vma_len(), 4);
+        assert_eq!(module.sections[0].image_len(), 0);
+
+        let src = "        cpu 68000\n        phase 0\n        ds.l 1\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        assert_eq!(module.sections[0].vma_len(), 4);
+        assert_eq!(module.sections[0].image_len(), 0);
+    }
+
+    #[test]
+    fn align_pads_zero_bytes_to_next_boundary() {
+        // Odd offset 1 -> align 2 pads one zero byte, then the next dc.b lands
+        // at the aligned offset (verified against asl: fill byte is 0x00).
+        let src = "        cpu 68000\n        phase 0\n        dc.b 1\n        align 2\n        dc.b 2\n";
+        assert_eq!(image(src), vec![0x01, 0x00, 0x02]);
+    }
+
+    #[test]
+    fn align_is_a_noop_when_already_aligned() {
+        let src = "        cpu 68000\n        phase 0\n        dc.w $1234\n        align 2\n        dc.b 9\n";
+        assert_eq!(image(src), vec![0x12, 0x34, 0x09]);
+    }
+
+    #[test]
+    fn align_pads_to_large_power_of_two_boundary() {
+        let src = "        cpu 68000\n        phase 0\n        dc.b 1,2,3\n        align $10\n        dc.b 4\n";
+        let mut want = vec![0x01, 0x02, 0x03];
+        want.extend(std::iter::repeat_n(0x00, 13));
+        want.push(0x04);
+        assert_eq!(image(src), want);
     }
 
     #[test]

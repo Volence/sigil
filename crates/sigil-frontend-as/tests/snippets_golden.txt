@@ -41,17 +41,17 @@ Skip:
 --- bytes ---
 00 00 00 00
 === struct_field_indexed ===
-        cpu z80
+        cpu 68000
         phase 0
 SeqChannel struct
 a       ds.b 1
 b       ds.b 1
 c       ds.w 1
 SeqChannel endstruct
-        ld a,(ix+SeqChannel_b)
-        db SeqChannel_len
+        move.b  #SeqChannel_b,d0
+        dc.b SeqChannel_len
 --- bytes ---
-DD 7E 01 04
+10 3C 00 01 04
 === pbyte_macro ===
         cpu z80
         phase 0
@@ -565,3 +565,57 @@ Lbl:
         move.w (Lbl,pc),d0
 --- bytes ---
 30 3A FF FE
+=== m68k_dc_w_be ===
+        cpu 68000
+        phase 0
+        dc.w $1234,$5678
+--- bytes ---
+12 34 56 78
+=== m68k_dc_l_be ===
+        cpu 68000
+        phase 0
+        dc.l $12345678
+--- bytes ---
+12 34 56 78
+=== m68k_ds_b_zero ===
+        cpu 68000
+        phase 0
+        ds.b 3
+--- bytes ---
+
+=== m68k_ds_w_zero ===
+        cpu 68000
+        phase 0
+        ds.w 2
+--- bytes ---
+
+=== m68k_ds_l_zero ===
+        cpu 68000
+        phase 0
+        ds.l 1
+--- bytes ---
+
+=== m68k_align_2_pad ===
+        cpu 68000
+        phase 0
+        dc.b 1
+        align 2
+        dc.b 2
+--- bytes ---
+01 00 02
+=== m68k_align_16_pad ===
+        cpu 68000
+        phase 0
+        dc.b 1,2,3
+        align $10
+        dc.b 4
+--- bytes ---
+01 02 03 00 00 00 00 00 00 00 00 00 00 00 00 00 04
+=== m68k_dc_b_odd_no_pad ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11,$22,$33
+        dc.w $abcd
+--- bytes ---
+11 22 33 AB CD
