@@ -14,6 +14,13 @@ pub enum BinOp {
     Mul,
     /// Truncating integer division (toward zero), matching AS.
     Div,
+    /// `#` — modulo, remainder-of-truncating-division (sign follows the
+    /// dividend, i.e. Rust's `%`). asl-verified: `256#64`=0, `100#7`=2,
+    /// `255#256`=255, and with negatives `(-5)#3`=-2, `5#(-3)`=2,
+    /// `(-5)#(-3)`=-2 — exactly Rust's `%` / `wrapping_rem`, not Euclidean
+    /// modulo. Same precedence tier as `*`/`/` (asl-verified: `7#5*2`=4,
+    /// `5+7#2`=6 — `#` binds tighter than `+`).
+    Mod,
     Shl,
     Shr,
     And,
@@ -24,12 +31,18 @@ pub enum BinOp {
     Gt,
     Le,
     Ge,
+    /// Logical OR (`||`). Folds to `1`/`0` (neutral truth value), not bitwise `Or`.
+    LogOr,
+    /// Logical AND (`&&`). Folds to `1`/`0` (neutral truth value), not bitwise `And`.
+    LogAnd,
 }
 
 /// Unary operators.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UnOp {
     Neg,
+    /// Bitwise complement (`~x`), asl's one's-complement operator.
+    Not,
 }
 
 /// A build-time integer expression.
@@ -72,6 +85,7 @@ impl Expr {
                 };
                 match op {
                     UnOp::Neg => Fold::Value(v.wrapping_neg()),
+                    UnOp::Not => Fold::Value(!v),
                 }
             }
             Expr::Binary { op, lhs, rhs } => {
@@ -96,6 +110,13 @@ impl Expr {
                             Fold::Value(a.wrapping_div(b))
                         }
                     }
+                    BinOp::Mod => {
+                        if b == 0 {
+                            Fold::Poison
+                        } else {
+                            Fold::Value(a.wrapping_rem(b))
+                        }
+                    }
                     BinOp::Shl => Fold::Value(a.wrapping_shl(b as u32)),
                     BinOp::Shr => Fold::Value(a.wrapping_shr(b as u32)),
                     BinOp::And => Fold::Value(a & b),
@@ -106,6 +127,8 @@ impl Expr {
                     BinOp::Gt => bool_val(a > b),
                     BinOp::Le => bool_val(a <= b),
                     BinOp::Ge => bool_val(a >= b),
+                    BinOp::LogOr => bool_val(a != 0 || b != 0),
+                    BinOp::LogAnd => bool_val(a != 0 && b != 0),
                 }
             }
         }
@@ -145,10 +168,51 @@ mod tests {
     }
 
     #[test]
+    fn logical_or_and_and_fold_to_neutral_0_1() {
+        use BinOp::*;
+        let bin = |op, l: i64, r: i64| {
+            Expr::Binary { op, lhs: Box::new(Expr::Int(l)), rhs: Box::new(Expr::Int(r)) }
+        };
+        // Matches real asl's truth table (verified against the `asl` binary):
+        // both operators yield 1/0, never -1/0.
+        assert_eq!(fold_pure(&bin(LogOr, 0, 0)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogOr, 0, 1)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogOr, 1, 0)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogOr, 1, 1)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogAnd, 0, 0)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogAnd, 0, 1)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogAnd, 1, 0)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(LogAnd, 1, 1)), Fold::Value(1));
+        // Non-zero operands other than 1 still normalize to the truth value.
+        assert_eq!(fold_pure(&bin(LogOr, 5, 0)), Fold::Value(1));
+        assert_eq!(fold_pure(&bin(LogAnd, 5, 2)), Fold::Value(1));
+    }
+
+    #[test]
     fn division_truncates_toward_zero() {
         use BinOp::*;
         let div = |l, r| Expr::Binary { op: Div, lhs: Box::new(Expr::Int(l)), rhs: Box::new(Expr::Int(r)) };
         assert_eq!(fold_pure(&div(1_000_000_000, 1_107_607)), Fold::Value(902));
+    }
+
+    #[test]
+    fn modulo_matches_asl_hash_operator() {
+        // asl-verified truth table (probed against real `asl` — see BinOp::Mod doc).
+        use BinOp::*;
+        let m = |l, r| Expr::Binary { op: Mod, lhs: Box::new(Expr::Int(l)), rhs: Box::new(Expr::Int(r)) };
+        assert_eq!(fold_pure(&m(256, 64)), Fold::Value(0));
+        assert_eq!(fold_pure(&m(100, 7)), Fold::Value(2));
+        assert_eq!(fold_pure(&m(255, 256)), Fold::Value(255));
+        assert_eq!(fold_pure(&m(-5, 3)), Fold::Value(-2));
+        assert_eq!(fold_pure(&m(5, -3)), Fold::Value(2));
+        assert_eq!(fold_pure(&m(-5, -3)), Fold::Value(-2));
+    }
+
+    #[test]
+    fn modulo_by_zero_poisons() {
+        use BinOp::*;
+        let m = Expr::Binary { op: Mod, lhs: Box::new(Expr::Int(5)), rhs: Box::new(Expr::Int(0)) };
+        assert_eq!(fold_pure(&m), Fold::Poison);
     }
 
     #[test]

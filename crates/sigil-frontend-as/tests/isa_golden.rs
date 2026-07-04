@@ -18,7 +18,9 @@ fn assemble_one(snippet: &str) -> Vec<u8> {
 }
 
 fn parse_hex(s: &str) -> Vec<u8> {
-    s.split_whitespace().map(|t| u8::from_str_radix(t, 16).unwrap()).collect()
+    s.split_whitespace()
+        .map(|t| u8::from_str_radix(t, 16).unwrap())
+        .collect()
 }
 
 #[test]
@@ -39,5 +41,10 @@ fn every_isa_vector_round_trips_through_the_frontend() {
             Err(_) => failures.push(format!("`{snippet}`: panicked")),
         }
     }
-    assert!(failures.is_empty(), "front-end diverged on {} forms:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "front-end diverged on {} forms:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }

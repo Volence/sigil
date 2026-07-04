@@ -67,8 +67,11 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
         let origin = sec.vma_origin();
 
         // Walk fragments to find each Data fragment's byte offset within the
-        // section image, so fixup offsets and site VMAs are correct.
-        let mut frag_img_off: u32 = 0; // offset within the image bytes
+        // section image, so fixup offsets and site VMAs are correct. This walk
+        // is a write-cursor replay mirroring `Section::image_bytes`: `Org`
+        // seeks the cursor (so a back-patched Data fragment's fixups, if any,
+        // land at the right offset); Reserve leaves it untouched.
+        let mut frag_img_off: u32 = 0; // offset within the image bytes (cursor)
         for frag in &sec.fragments {
             match frag {
                 Fragment::Data(d) => {
@@ -98,6 +101,7 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                 }
                 Fragment::Fill { count, .. } => frag_img_off += *count,
                 Fragment::Reserve { .. } => {} // no image bytes
+                Fragment::Org { target, .. } => frag_img_off = *target,
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before link")
                 }
@@ -225,7 +229,13 @@ fn apply_fixup(
             bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
         }
         FixupKind::PcRelDisp8 => {
-            let disp = value - site_vma as i64;
+            // `(d8,PC,Xn)`: the disp8 is the LOW byte of the brief extension
+            // word, but the 68k PC reference is the extension word's own VMA —
+            // one byte BEFORE this disp byte. So `disp = target - (site_vma - 1)`
+            // (asl-verified: `move.w Tbl(pc,d0.w),d1` at $0, `Tbl` at $4 →
+            // ext word `0002`, i.e. disp = 4 - (3 - 1) = 2). The fixup offset
+            // points at the disp byte itself.
+            let disp = value - (site_vma as i64 - 1);
             if !(-128..=127).contains(&disp) {
                 diags.push(diag(format!("(d8,PC,Xn) displacement out of range ({disp}) in section {section}"), span));
                 return;

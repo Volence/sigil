@@ -9,9 +9,20 @@ struct OpenSection {
     name: String,
     cpu: Cpu,
     vma_base: Option<u32>,
+    lma: u32, // physical load address of this section's start
     labels: Vec<Label>,
     fragments: Vec<Fragment>,
-    cursor: u32, // VMA/PC offset from section start (counts Data+Fill+Reserve)
+    cursor: u32,     // VMA/PC offset from section start (counts Data+Fill+Reserve)
+    max_offset: u32, // highest `cursor` ever reached (the org back-patch "extent")
+}
+
+impl OpenSection {
+    /// Track the running cursor's high-water mark after every mutation.
+    fn bump_max(&mut self) {
+        if self.cursor > self.max_offset {
+            self.max_offset = self.cursor;
+        }
+    }
 }
 
 /// Concrete `IrStreamer` that accumulates `Section`s and yields a `Module`.
@@ -34,7 +45,7 @@ impl IrBuilder {
                 name: o.name,
                 cpu: o.cpu,
                 vma_base: o.vma_base,
-                lma: o.vma_base.unwrap_or(0),
+                lma: o.lma,
                 labels: o.labels,
                 fragments: o.fragments,
             });
@@ -45,6 +56,46 @@ impl IrBuilder {
     /// single source of truth for the front-end's `$`/label position.
     pub fn current_offset(&self) -> u32 {
         self.open.as_ref().map_or(0, |o| o.cursor)
+    }
+
+    /// The highest `current_offset()` ever reached in the currently-open
+    /// section (0 if none open). This is the "extent" a front-end's `org`
+    /// directive compares its target against to decide whether it's an
+    /// in-section back-patch seek (target within the extent already written)
+    /// or a forward jump into brand-new territory (target beyond it).
+    pub fn extent(&self) -> u32 {
+        self.open.as_ref().map_or(0, |o| o.max_offset)
+    }
+
+    /// Open a new section with an EXPLICIT physical load address `lma` (distinct
+    /// from `vma_base` under phase). Closes any currently-open section first. This
+    /// is the front-end's door: it computes a continuous physical LMA counter and
+    /// a phased VMA base, which differ whenever a `phase` displacement is active.
+    /// The trait's [`IrStreamer::switch_section`] keeps the old default
+    /// (`lma = vma_base.unwrap_or(0)`) for backends/tests that don't model phase.
+    pub fn switch_section_lma(&mut self, name: &str, cpu: Cpu, vma_base: Option<u32>, lma: u32) {
+        self.close();
+        self.open = Some(OpenSection {
+            name: name.to_string(),
+            cpu,
+            vma_base,
+            lma,
+            labels: Vec::new(),
+            fragments: Vec::new(),
+            cursor: 0,
+            max_offset: 0,
+        });
+    }
+
+    /// Seek the open section's write cursor to `target` (backward or forward)
+    /// and push an `Org` marker fragment recording `fill` (the byte that fills
+    /// any forward gap when the fragments are later replayed into bytes — see
+    /// `Section::image_bytes`). Panics if no section is open (front-end bug).
+    pub fn seek(&mut self, target: u32, fill: u8, span: Span) {
+        let s = self.section_mut();
+        s.fragments.push(Fragment::Org { target, fill, span });
+        s.cursor = target;
+        s.bump_max();
     }
 
     /// Consume the builder: close the open section and return the module + diags.
@@ -70,9 +121,11 @@ impl IrStreamer for IrBuilder {
             name: name.to_string(),
             cpu,
             vma_base,
+            lma: vma_base.unwrap_or(0),
             labels: Vec::new(),
             fragments: Vec::new(),
             cursor: 0,
+            max_offset: 0,
         });
     }
 
@@ -81,18 +134,28 @@ impl IrStreamer for IrBuilder {
         let s = self.section_mut();
         s.fragments.push(Fragment::Data(DataFragment { bytes: bytes.to_vec(), fixups, span }));
         s.cursor += n;
+        s.bump_max();
     }
 
     fn emit_fill(&mut self, count: u32, value: u8, span: Span) {
         let s = self.section_mut();
         s.fragments.push(Fragment::Fill { value, count, span });
         s.cursor += count;
+        s.bump_max();
     }
 
     fn reserve(&mut self, count: u32, span: Span) {
         let s = self.section_mut();
         s.fragments.push(Fragment::Reserve { count, span });
         s.cursor += count;
+        s.bump_max();
+    }
+
+    fn emit_fragment(&mut self, frag: Fragment, advance: u32) {
+        let s = self.section_mut();
+        s.fragments.push(frag);
+        s.cursor += advance;
+        s.bump_max();
     }
 
     fn define_label(&mut self, name: &str) {
@@ -174,6 +237,24 @@ mod tests {
     }
 
     #[test]
+    fn emit_fragment_pushes_raw_fragment_and_advances_cursor_by_given_amount() {
+        // The M1.C T5c door for `Fragment::JmpJsrSym`: the caller supplies the
+        // fragment (already built by the backend) and the baseline (abs.w)
+        // cursor advance, since the real width is chosen later by
+        // `resolve_layout`, not known yet at emission time.
+        let mut b = IrBuilder::new();
+        b.switch_section("s", Cpu::M68000, None);
+        let frag = Fragment::JmpJsrSym { is_jsr: true, target: Expr::Sym("Sub".into()), span: span() };
+        b.emit_fragment(frag.clone(), 4);
+        assert_eq!(b.current_offset(), 4);
+        b.define_label("After");
+        let (module, _diags) = b.finish();
+        let sec = &module.sections[0];
+        assert_eq!(sec.fragments, vec![frag]);
+        assert_eq!(sec.labels, vec![crate::Label { name: "After".into(), offset: 4 }]);
+    }
+
+    #[test]
     fn diag_is_collected_and_finish_returns_it() {
         use sigil_span::{Diagnostic, Level};
         let mut b = IrBuilder::new();
@@ -182,5 +263,48 @@ mod tests {
         let (_m, diags) = b.finish();
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].message, "boom");
+    }
+
+    #[test]
+    fn extent_tracks_high_water_mark_across_a_backward_seek() {
+        // The `parallax_section_end` shape: write 4 bytes, seek back to 0 (a
+        // back-patch), write 1 byte. `extent()` must stay at the high-water
+        // mark (4) throughout — a subsequent `org` to anything <= 4 is still a
+        // safe in-section seek, not a forward jump into new territory.
+        let mut b = IrBuilder::new();
+        b.switch_section("s", Cpu::M68000, None);
+        assert_eq!(b.extent(), 0);
+        b.emit_data(&[0, 1, 2, 3], vec![], span());
+        assert_eq!(b.extent(), 4);
+        assert_eq!(b.current_offset(), 4);
+        b.seek(0, 0x00, span());
+        assert_eq!(b.current_offset(), 0); // cursor moved back...
+        assert_eq!(b.extent(), 4); // ...but the extent remembers the high-water mark
+        b.emit_data(&[0x63], vec![], span());
+        assert_eq!(b.current_offset(), 1);
+        assert_eq!(b.extent(), 4); // still 4: this write didn't exceed the prior extent
+        b.seek(4, 0x00, span());
+        assert_eq!(b.current_offset(), 4);
+        assert_eq!(b.extent(), 4);
+
+        let (module, _diags) = b.finish();
+        let sec = &module.sections[0];
+        assert!(matches!(sec.fragments[1], Fragment::Org { target: 0, .. }));
+        assert!(matches!(sec.fragments[3], Fragment::Org { target: 4, .. }));
+    }
+
+    #[test]
+    fn seek_forward_beyond_extent_still_updates_extent() {
+        // `seek` itself is a mechanical cursor move; it doesn't refuse a target
+        // beyond the current extent (the front-end's `directive_org` is what
+        // decides whether such a target should instead close the section and
+        // re-phase — this proves `seek`'s own bookkeeping stays correct either way).
+        let mut b = IrBuilder::new();
+        b.switch_section("s", Cpu::M68000, None);
+        b.emit_data(&[1, 2], vec![], span());
+        assert_eq!(b.extent(), 2);
+        b.seek(10, 0x00, span());
+        assert_eq!(b.current_offset(), 10);
+        assert_eq!(b.extent(), 10);
     }
 }

@@ -10,6 +10,7 @@ pub(crate) fn render_tokens(toks: &[Token]) -> String {
         .map(|t| match &t.tok {
             Tok::Ident(x) => x.clone(),
             Tok::Int(n) => n.to_string(),
+            Tok::Float(f) => f.to_string(),
             Tok::Str(x) => format!("\"{x}\""),
             Tok::Dollar => "$".to_string(),
             Tok::Punct(p) => punct_str(*p).to_string(),
@@ -20,11 +21,30 @@ pub(crate) fn render_tokens(toks: &[Token]) -> String {
 
 fn punct_str(p: Punct) -> &'static str {
     match p {
-        Punct::Plus => "+", Punct::Minus => "-", Punct::Star => "*", Punct::Slash => "/",
-        Punct::Shl => "<<", Punct::Shr => ">>", Punct::Amp => "&", Punct::Pipe => "|",
-        Punct::Eq => "=", Punct::Ne => "<>", Punct::Lt => "<", Punct::Gt => ">",
-        Punct::Le => "<=", Punct::Ge => ">=", Punct::LParen => "(", Punct::RParen => ")",
-        Punct::Comma => ",", Punct::Colon => ":",
+        Punct::Plus => "+",
+        Punct::Minus => "-",
+        Punct::Star => "*",
+        Punct::Slash => "/",
+        Punct::Shl => "<<",
+        Punct::Shr => ">>",
+        Punct::Amp => "&",
+        Punct::Pipe => "|",
+        Punct::Eq => "=",
+        Punct::Ne => "<>",
+        Punct::Lt => "<",
+        Punct::Gt => ">",
+        Punct::Le => "<=",
+        Punct::Ge => ">=",
+        Punct::LParen => "(",
+        Punct::RParen => ")",
+        Punct::OrOr => "||",
+        Punct::AndAnd => "&&",
+        Punct::Comma => ",",
+        Punct::Colon => ":",
+        Punct::Hash => "#",
+        Punct::ColonEq => ":=",
+        Punct::Bang => "!",
+        Punct::Tilde => "~",
     }
 }
 
@@ -38,8 +58,14 @@ pub(crate) fn replace_word(text: &str, word: &str, repl: &str) -> String {
     while let Some(pos) = rest.find(word) {
         let before = &rest[..pos];
         let after = &rest[pos + word.len()..];
-        let ok_before = before.chars().last().is_none_or(|c| !c.is_alphanumeric() && c != '_');
-        let ok_after = after.chars().next().is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        let ok_before = before
+            .chars()
+            .last()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        let ok_after = after
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_');
         out.push_str(before);
         if ok_before && ok_after {
             out.push_str(repl);

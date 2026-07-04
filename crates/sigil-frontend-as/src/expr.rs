@@ -11,17 +11,39 @@ pub fn parse_expr(toks: &[Token]) -> Option<(Expr, &[Token])> {
 }
 
 /// Binding-power ladder: higher binds tighter.
+///
+/// `||` is loosest, `&&` binds tighter than `||` but looser than comparisons,
+/// mirroring AS's real operator surface (empirically confirmed against `asl`:
+/// both fold to a neutral `1`/`0`, same as the comparison tier).
 fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
     use Punct::*;
     Some(match p {
-        Star => (6, BinOp::Mul), Slash => (6, BinOp::Div),
-        Plus => (5, BinOp::Add), Minus => (5, BinOp::Sub),
-        Shl => (4, BinOp::Shl), Shr => (4, BinOp::Shr),
-        Amp => (3, BinOp::And),
-        Pipe => (2, BinOp::Or),
-        Eq => (1, BinOp::Eq), Ne => (1, BinOp::Ne),
-        Lt => (1, BinOp::Lt), Gt => (1, BinOp::Gt),
-        Le => (1, BinOp::Le), Ge => (1, BinOp::Ge),
+        Star => (8, BinOp::Mul),
+        Slash => (8, BinOp::Div),
+        // `#` infix modulo — same precedence tier as `*`/`/` (asl-verified:
+        // `7#5*2`=4, `5+7#2`=6). Distinct from the OPERAND-level `#expr`
+        // immediate marker, which `operands.rs::classify` consumes from the
+        // front of an operand group before this parser ever sees it — by the
+        // time `parse_expr` runs, any remaining `#` is unambiguously infix.
+        Hash => (8, BinOp::Mod),
+        Plus => (7, BinOp::Add),
+        Minus => (7, BinOp::Sub),
+        Shl => (6, BinOp::Shl),
+        Shr => (6, BinOp::Shr),
+        Amp => (5, BinOp::And),
+        Pipe => (4, BinOp::Or),
+        // `!` — AS's alternate infix bitwise-OR spelling (asl-verified:
+        // `3!4`=7). Same tier as `|`; the debugger's real usage always
+        // parenthesizes (`((*)&1)!1`) so the exact tier rarely matters.
+        Bang => (4, BinOp::Or),
+        Eq => (3, BinOp::Eq),
+        Ne => (3, BinOp::Ne),
+        Lt => (3, BinOp::Lt),
+        Gt => (3, BinOp::Gt),
+        Le => (3, BinOp::Le),
+        Ge => (3, BinOp::Ge),
+        AndAnd => (2, BinOp::LogAnd),
+        OrOr => (1, BinOp::LogOr),
         _ => return None,
     })
 }
@@ -34,7 +56,11 @@ fn parse_bp(toks: &[Token], min_bp: u8) -> Option<(Expr, &[Token])> {
             _ => break,
         };
         let (rhs, r2) = parse_bp(&rest[1..], bp)?;
-        lhs = Expr::Binary { op, lhs: Box::new(lhs), rhs: Box::new(rhs) };
+        lhs = Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
         rest = r2;
     }
     Some((lhs, rest))
@@ -45,10 +71,40 @@ fn parse_atom(toks: &[Token]) -> Option<(Expr, &[Token])> {
     match &head.tok {
         Tok::Int(n) => Some((Expr::Int(*n), rest)),
         Tok::Dollar => Some((Expr::Sym("$".to_string()), rest)),
+        // A standalone `*` in atom (primary-expression) position is AS's other
+        // spelling of the current-PC symbol (used by `pscStart := *` etc. in
+        // `parallax_section`/`parallax_section_end`). `parse_atom` is only ever
+        // invoked expecting a primary expression, so a `Star` reaching here is
+        // unambiguous — it can't be the infix multiplication operator, which
+        // `parse_bp`'s loop consumes only after a valid lhs. Folding it to the
+        // same `Expr::Sym("$")` that `$` produces means every existing
+        // `$`-handling site (front-end `fold`, poison detection) already
+        // supports it with no further changes.
+        Tok::Punct(Punct::Star) => Some((Expr::Sym("$".to_string()), rest)),
         Tok::Ident(name) => Some((Expr::Sym(name.clone()), rest)),
         Tok::Punct(Punct::Minus) => {
             let (inner, r) = parse_atom(rest)?;
-            Some((Expr::Unary { op: UnOp::Neg, operand: Box::new(inner) }, r))
+            Some((
+                Expr::Unary {
+                    op: UnOp::Neg,
+                    operand: Box::new(inner),
+                },
+                r,
+            ))
+        }
+        // `~expr` — prefix bitwise complement (asl-verified: `~$0F` = -16 =
+        // `$FFFFFFF0`). Binds like negation (tighter than the binary tier), so
+        // `~(mask)` / `~BLOCK_TILE_SIZE-1` parse as `(~x)` then any following
+        // binary operator, matching asl.
+        Tok::Punct(Punct::Tilde) => {
+            let (inner, r) = parse_atom(rest)?;
+            Some((
+                Expr::Unary {
+                    op: UnOp::Not,
+                    operand: Box::new(inner),
+                },
+                r,
+            ))
         }
         Tok::Punct(Punct::LParen) => {
             let (inner, r) = parse_bp(rest, 0)?;
@@ -92,8 +148,27 @@ mod tests {
     }
 
     #[test]
+    fn hash_modulo_and_precedence() {
+        let none = |_: &str| None;
+        assert_eq!(fold("256 # 64", &none), 0);
+        assert_eq!(fold("100 # 7", &none), 2);
+        assert_eq!(fold("255 # 256", &none), 255);
+        assert_eq!(fold("(-5) # 3", &none), -2);
+        assert_eq!(fold("5 # (-3)", &none), 2);
+        // `#` binds like `*`/`/` — tighter than `+` (asl-verified).
+        assert_eq!(fold("7 # 5 * 2", &none), 4);
+        assert_eq!(fold("5 + 7 # 2", &none), 6);
+        assert_eq!(fold("7 # 2 + 5", &none), 6);
+    }
+
+    #[test]
     fn symbols_and_dollar() {
-        let env = |n: &str| match n { "Ids_End" => Some(0x8290), "Ids" => Some(0x8284), "$" => Some(0x38), _ => None };
+        let env = |n: &str| match n {
+            "Ids_End" => Some(0x8290),
+            "Ids" => Some(0x8284),
+            "$" => Some(0x38),
+            _ => None,
+        };
         assert_eq!(fold("Ids_End - Ids", &env), 0x0C);
         assert_eq!(fold("38h - $", &env), 0); // $ bound to 0x38
     }

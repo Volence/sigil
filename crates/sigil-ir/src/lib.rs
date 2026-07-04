@@ -51,6 +51,15 @@ pub enum Fragment {
     /// Abs16Be/Abs32Be operand fixup) BEFORE `link()` runs, so the helpers below
     /// never see it at link time.
     JmpJsrSym { is_jsr: bool, target: crate::expr::Expr, span: Span },
+    /// AS `org <target>`: reposition the write cursor to `target` (a byte offset
+    /// from the section start, already resolved by the front-end). Used both for
+    /// the within-section back-patch idiom (`org Hdr / dc.b n / org End`, e.g.
+    /// `parallax_section_end`) and — via the front-end's `directive_org` — as the
+    /// trigger for a phase-like new section when `target` is beyond anything the
+    /// section has written yet. `Section::image_bytes`/`vma_len` replay fragments
+    /// with a write cursor that `Org` seeks (backward OR forward); forward seeks
+    /// past the current image extent are gap-filled with `fill`.
+    Org { target: u32, fill: u8, span: Span },
 }
 
 /// A named, ordered collection of [`Fragment`]s laid out at a fixed LMA, whose
@@ -78,49 +87,78 @@ impl Section {
     }
 
     /// Number of bytes this section contributes to the ROM image
-    /// (`Data` + `Fill`; `Reserve` contributes nothing).
+    /// (`Data` + `Fill`, replayed through a write cursor that `Org` may seek
+    /// backward or forward; `Reserve` contributes nothing). Equal to the
+    /// highest byte offset ever written, matching asl: a trailing back-patch
+    /// `org` that never re-advances past the prior extent does not truncate
+    /// the image (see `image_bytes`).
     pub fn image_len(&self) -> u32 {
-        let mut n: u32 = 0;
-        for frag in &self.fragments {
-            n += match frag {
-                Fragment::Data(d) => d.bytes.len() as u32,
-                Fragment::Fill { count, .. } => *count,
-                Fragment::Reserve { .. } => 0,
-                Fragment::JmpJsrSym { .. } => {
-                    unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
-                }
-            };
-        }
-        n
+        self.image_bytes().len() as u32
     }
 
     /// Number of bytes of address space (VMA/PC) this section spans
-    /// (`Data` + `Fill` + `Reserve`).
+    /// (`Data` + `Fill` + `Reserve`, cursor-replayed the same way as
+    /// `image_len`/`image_bytes` so `Org` seeks are accounted for).
     pub fn vma_len(&self) -> u32 {
-        let mut n: u32 = 0;
+        let mut cursor: u32 = 0;
+        let mut max_extent: u32 = 0;
         for frag in &self.fragments {
-            n += match frag {
-                Fragment::Data(d) => d.bytes.len() as u32,
-                Fragment::Fill { count, .. } => *count,
-                Fragment::Reserve { count, .. } => *count,
+            match frag {
+                Fragment::Data(d) => cursor += d.bytes.len() as u32,
+                Fragment::Fill { count, .. } => cursor += *count,
+                Fragment::Reserve { count, .. } => cursor += *count,
+                Fragment::Org { target, .. } => cursor = *target,
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
                 }
-            };
+            }
+            if cursor > max_extent {
+                max_extent = cursor;
+            }
         }
-        n
+        max_extent
     }
 
-    /// Concatenate every image-contributing fragment's bytes in order.
+    /// Replay every image-contributing fragment through a write cursor: `Data`/
+    /// `Fill` write at the cursor and advance it; `Reserve` contributes no image
+    /// bytes and leaves the cursor untouched; `Org` seeks the cursor to `target`
+    /// — backward (into already-written bytes, which `Data`/`Fill` then
+    /// overwrite in place) or forward (extending the image with `fill` bytes up
+    /// to `target`, exactly like a real gap). The final image never shrinks: its
+    /// length is the highest offset ever reached, so a trailing backward `org`
+    /// that doesn't re-advance past the prior extent leaves the tail bytes
+    /// intact (asl-confirmed).
     pub fn image_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
+        let mut out: Vec<u8> = Vec::new();
+        let mut cursor: usize = 0;
         for frag in &self.fragments {
             match frag {
-                Fragment::Data(data) => out.extend_from_slice(&data.bytes),
+                Fragment::Data(data) => {
+                    let end = cursor + data.bytes.len();
+                    if end > out.len() {
+                        out.resize(end, 0);
+                    }
+                    out[cursor..end].copy_from_slice(&data.bytes);
+                    cursor = end;
+                }
                 Fragment::Fill { value, count, .. } => {
-                    out.extend(std::iter::repeat_n(*value, *count as usize));
+                    let end = cursor + *count as usize;
+                    if end > out.len() {
+                        out.resize(end, 0);
+                    }
+                    for b in &mut out[cursor..end] {
+                        *b = *value;
+                    }
+                    cursor = end;
                 }
                 Fragment::Reserve { .. } => {}
+                Fragment::Org { target, fill, .. } => {
+                    let t = *target as usize;
+                    if t > out.len() {
+                        out.resize(t, *fill);
+                    }
+                    cursor = t;
+                }
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
                 }
@@ -290,5 +328,83 @@ mod tests {
             Fragment::JmpJsrSym { is_jsr, .. } => assert!(is_jsr),
             _ => panic!("wrong variant"),
         }
+    }
+
+    /// The `org Hdr / dc.b n / org End` back-patch idiom (`parallax_section_end`):
+    /// a backward `Org` seek overwrites the placeholder byte at offset 0 in
+    /// place, then a forward `Org` seek (to the extent already reached) resumes
+    /// so the trailing byte appends normally. asl-verified: `63 01 02 03 04`.
+    #[test]
+    fn org_backpatch_overwrites_in_place_and_resumes() {
+        let span = Span { source: SourceId(0), start: 0, end: 0 };
+        let sec = Section {
+            name: "s".to_string(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0x00, 0x01, 0x02, 0x03], fixups: vec![], span }),
+                Fragment::Org { target: 0, fill: 0x00, span }, // org Hdr (back to offset 0)
+                Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span }), // dc.b 99
+                Fragment::Org { target: 4, fill: 0x00, span }, // org End (resume at offset 4)
+                Fragment::Data(DataFragment { bytes: vec![0x04], fixups: vec![], span }),
+            ],
+        };
+        // The byte at the back-patched offset (0x00) now differs from the
+        // original placeholder — proving a real overwrite, not an append.
+        assert_eq!(sec.image_bytes(), vec![0x63, 0x01, 0x02, 0x03, 0x04]);
+        assert_eq!(sec.image_len(), 5);
+    }
+
+    /// A forward `Org` seek past the current image extent (asl's absolute-org
+    /// and back-patch-resume behavior alike) gap-fills with the fragment's
+    /// `fill` byte, growing the image rather than overwriting.
+    #[test]
+    fn org_forward_seek_gap_fills_with_fill_byte() {
+        let span = Span { source: SourceId(0), start: 0, end: 0 };
+        let sec = Section {
+            name: "s".to_string(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![1, 2, 3, 4], fixups: vec![], span }),
+                Fragment::Org { target: 16, fill: 0x00, span },
+                Fragment::Data(DataFragment { bytes: vec![5, 6], fixups: vec![], span }),
+            ],
+        };
+        let mut want = vec![1, 2, 3, 4];
+        want.extend(std::iter::repeat_n(0x00, 12));
+        want.extend([5, 6]);
+        assert_eq!(sec.image_bytes(), want);
+        assert_eq!(sec.image_len(), 18);
+    }
+
+    /// A trailing backward `Org` that never re-advances past the prior extent
+    /// must NOT truncate the image (asl-verified: the max offset ever written
+    /// wins, not the final cursor position).
+    #[test]
+    fn org_trailing_backward_seek_does_not_truncate() {
+        let span = Span { source: SourceId(0), start: 0, end: 0 };
+        let sec = Section {
+            name: "s".to_string(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Data(DataFragment {
+                    bytes: vec![1, 2, 3, 4, 5, 6, 7, 8],
+                    fixups: vec![],
+                    span,
+                }),
+                Fragment::Org { target: 0, fill: 0x00, span },
+                Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span }),
+            ],
+        };
+        assert_eq!(sec.image_bytes(), vec![0x63, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(sec.image_len(), 8);
     }
 }

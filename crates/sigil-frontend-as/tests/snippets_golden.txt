@@ -41,17 +41,17 @@ Skip:
 --- bytes ---
 00 00 00 00
 === struct_field_indexed ===
-        cpu z80
+        cpu 68000
         phase 0
 SeqChannel struct
 a       ds.b 1
 b       ds.b 1
 c       ds.w 1
 SeqChannel endstruct
-        ld a,(ix+SeqChannel_b)
-        db SeqChannel_len
+        move.b  #SeqChannel_b,d0
+        dc.b SeqChannel_len
 --- bytes ---
-DD 7E 01 04
+10 3C 00 01 04
 === pbyte_macro ===
         cpu z80
         phase 0
@@ -88,3 +88,1003 @@ Other:
         endif
 --- bytes ---
 01 02 03 00
+=== or_or_operator ===
+        cpu z80
+        phase 0
+        db (0 || 0)
+        db (0 || 1)
+        db (1 || 0)
+        db (1 || 1)
+--- bytes ---
+00 01 01 01
+=== and_and_operator ===
+        cpu z80
+        phase 0
+        db (0 && 0)
+        db (0 && 1)
+        db (1 && 0)
+        db (1 && 1)
+--- bytes ---
+00 00 00 01
+=== value_context_lt ===
+        cpu z80
+        phase 0
+        db (5<9)
+        db (9<5)
+--- bytes ---
+01 00
+=== value_context_ne ===
+        cpu z80
+        phase 0
+        db (3<>3)
+        db (3<>4)
+--- bytes ---
+00 01
+=== string_eq_true ===
+        cpu z80
+        phase 0
+        if "a"="a"
+        db 1
+        else
+        db 0
+        endif
+--- bytes ---
+01
+=== string_eq_false ===
+        cpu z80
+        phase 0
+        if "a"="b"
+        db 1
+        else
+        db 0
+        endif
+--- bytes ---
+00
+=== string_ne ===
+        cpu z80
+        phase 0
+        if "a"<>"b"
+        db 1
+        else
+        db 0
+        endif
+--- bytes ---
+01
+=== m68k_move_w_dn_dn ===
+        cpu 68000
+        phase 0
+        move.w d0,d1
+--- bytes ---
+32 00
+=== m68k_moveq_dn ===
+        cpu 68000
+        phase 0
+        moveq #5,d0
+--- bytes ---
+70 05
+=== m68k_move_l_dn_dn ===
+        cpu 68000
+        phase 0
+        move.l d2,d3
+--- bytes ---
+26 02
+=== m68k_add_w_dn_dn ===
+        cpu 68000
+        phase 0
+        add.w d1,d2
+--- bytes ---
+D4 41
+=== m68k_addq_w_dn ===
+        cpu 68000
+        phase 0
+        addq.w #1,d0
+--- bytes ---
+52 40
+=== m68k_sub_l_dn_dn ===
+        cpu 68000
+        phase 0
+        sub.l d4,d5
+--- bytes ---
+9A 84
+=== m68k_cmp_w_dn_dn ===
+        cpu 68000
+        phase 0
+        cmp.w d6,d7
+--- bytes ---
+BE 46
+=== m68k_and_w_dn_dn ===
+        cpu 68000
+        phase 0
+        and.w d0,d1
+--- bytes ---
+C2 40
+=== m68k_or_l_dn_dn ===
+        cpu 68000
+        phase 0
+        or.l d2,d3
+--- bytes ---
+86 82
+=== m68k_eor_w_dn_dn ===
+        cpu 68000
+        phase 0
+        eor.w d4,d5
+--- bytes ---
+B9 45
+=== m68k_asl_w_imm_dn ===
+        cpu 68000
+        phase 0
+        asl.w #2,d0
+--- bytes ---
+E5 40
+=== m68k_lsr_l_imm_dn ===
+        cpu 68000
+        phase 0
+        lsr.l #1,d1
+--- bytes ---
+E2 89
+=== m68k_swap_dn ===
+        cpu 68000
+        phase 0
+        swap d0
+--- bytes ---
+48 40
+=== m68k_ext_w_dn ===
+        cpu 68000
+        phase 0
+        ext.w d0
+--- bytes ---
+48 80
+=== m68k_ext_l_dn ===
+        cpu 68000
+        phase 0
+        ext.l d1
+--- bytes ---
+48 C1
+=== m68k_clr_b_dn ===
+        cpu 68000
+        phase 0
+        clr.b d2
+--- bytes ---
+42 02
+=== m68k_neg_w_dn ===
+        cpu 68000
+        phase 0
+        neg.w d3
+--- bytes ---
+44 43
+=== m68k_not_l_dn ===
+        cpu 68000
+        phase 0
+        not.l d4
+--- bytes ---
+46 84
+=== m68k_tst_w_dn ===
+        cpu 68000
+        phase 0
+        tst.w d5
+--- bytes ---
+4A 45
+=== m68k_nop ===
+        cpu 68000
+        phase 0
+        nop
+--- bytes ---
+4E 71
+=== m68k_rts ===
+        cpu 68000
+        phase 0
+        rts
+--- bytes ---
+4E 75
+=== m68k_rte ===
+        cpu 68000
+        phase 0
+        rte
+--- bytes ---
+4E 73
+=== m68k_move_w_imm_to_sr ===
+        cpu 68000
+        phase 0
+        move.w #$2700,sr
+--- bytes ---
+46 FC 27 00
+=== m68k_move_w_sr_to_dn ===
+        cpu 68000
+        phase 0
+        move.w sr,d0
+--- bytes ---
+40 C0
+=== m68k_andi_b_imm_ccr ===
+        cpu 68000
+        phase 0
+        andi.b #$FE,ccr
+--- bytes ---
+02 3C 00 FE
+=== m68k_ori_b_imm_ccr ===
+        cpu 68000
+        phase 0
+        ori.b #$01,ccr
+--- bytes ---
+00 3C 00 01
+=== m68k_move_w_ind_a0_to_d0 ===
+        cpu 68000
+        phase 0
+        move.w (a0),d0
+--- bytes ---
+30 10
+=== m68k_move_w_d0_to_ind_a0 ===
+        cpu 68000
+        phase 0
+        move.w d0,(a0)
+--- bytes ---
+30 80
+=== m68k_move_w_postinc_a0_to_d1 ===
+        cpu 68000
+        phase 0
+        move.w (a0)+,d1
+--- bytes ---
+32 18
+=== m68k_move_w_d1_to_postinc_a0 ===
+        cpu 68000
+        phase 0
+        move.w d1,(a0)+
+--- bytes ---
+30 C1
+=== m68k_move_w_predec_a1_to_d2 ===
+        cpu 68000
+        phase 0
+        move.w -(a1),d2
+--- bytes ---
+34 21
+=== m68k_move_w_d2_to_predec_a1 ===
+        cpu 68000
+        phase 0
+        move.w d2,-(a1)
+--- bytes ---
+33 02
+=== m68k_move_w_disp16_a0_to_d3 ===
+        cpu 68000
+        phase 0
+        move.w (4,a0),d3
+--- bytes ---
+36 28 00 04
+=== m68k_move_w_d3_to_disp16_a0 ===
+        cpu 68000
+        phase 0
+        move.w d3,(6,a0)
+--- bytes ---
+31 43 00 06
+=== m68k_move_w_idx_a0_d1w_to_d4 ===
+        cpu 68000
+        phase 0
+        move.w (6,a0,d1.w),d4
+--- bytes ---
+38 30 10 06
+=== m68k_move_w_idx_a0_a2l_to_d5 ===
+        cpu 68000
+        phase 0
+        move.w (8,a0,a2.l),d5
+--- bytes ---
+3A 30 A8 08
+=== m68k_clr_w_ind_a0 ===
+        cpu 68000
+        phase 0
+        clr.w (a0)
+--- bytes ---
+42 50
+=== m68k_tst_b_postinc_a1 ===
+        cpu 68000
+        phase 0
+        tst.b (a1)+
+--- bytes ---
+4A 19
+=== m68k_add_w_ind_a0_to_d0 ===
+        cpu 68000
+        phase 0
+        add.w (a0),d0
+--- bytes ---
+D0 50
+=== m68k_lea_ind_a0_to_a1 ===
+        cpu 68000
+        phase 0
+        lea (a0),a1
+--- bytes ---
+43 D0
+=== m68k_lea_disp16_a0_to_a1 ===
+        cpu 68000
+        phase 0
+        lea (4,a0),a1
+--- bytes ---
+43 E8 00 04
+=== m68k_lea_idx_a0_d1w_to_a2 ===
+        cpu 68000
+        phase 0
+        lea (6,a0,d1.w),a2
+--- bytes ---
+45 F0 10 06
+=== m68k_pea_ind_a0 ===
+        cpu 68000
+        phase 0
+        pea (a0)
+--- bytes ---
+48 50
+=== m68k_pea_disp16_a0 ===
+        cpu 68000
+        phase 0
+        pea (4,a0)
+--- bytes ---
+48 68 00 04
+=== m68k_move_w_absw_ramv_to_d0 ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        move.w (RAMV).w,d0
+--- bytes ---
+30 38 80 00
+=== m68k_move_w_d0_to_absw_ramv ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        move.w d0,(RAMV).w
+--- bytes ---
+31 C0 80 00
+=== m68k_move_l_absl_vdp_to_d1 ===
+        cpu 68000
+        phase 0
+VDP     = $C00004
+        move.l (VDP).l,d1
+--- bytes ---
+22 39 00 C0 00 04
+=== m68k_move_b_absw_ramv_to_d2 ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        move.b (RAMV).w,d2
+--- bytes ---
+14 38 80 00
+=== m68k_lea_absl_romtab_to_a0 ===
+        cpu 68000
+        phase 0
+ROMTAB  = $12345
+        lea (ROMTAB).l,a0
+--- bytes ---
+41 F9 00 01 23 45
+=== m68k_clr_w_absw_ramv ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        clr.w (RAMV).w
+--- bytes ---
+42 78 80 00
+=== m68k_tst_b_absw_ramv ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        tst.b (RAMV).w
+--- bytes ---
+4A 38 80 00
+=== m68k_cmp_w_absw_ramv_to_d3 ===
+        cpu 68000
+        phase 0
+RAMV    = $FFFF8000
+        cmp.w (RAMV).w,d3
+--- bytes ---
+B6 78 80 00
+=== m68k_bra_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bra.w Lbl
+--- bytes ---
+60 00 FF FE
+=== m68k_bra_s_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bra.s Lbl
+--- bytes ---
+60 FE
+=== m68k_bsr_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bsr.w Lbl
+--- bytes ---
+61 00 FF FE
+=== m68k_beq_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        beq.w Lbl
+--- bytes ---
+67 00 FF FE
+=== m68k_bne_s_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bne.s Lbl
+--- bytes ---
+66 FE
+=== m68k_bcc_w_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        bcc.w Lbl
+--- bytes ---
+64 00 FF FE
+=== m68k_dbf_d0_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        dbf d0,Lbl
+--- bytes ---
+51 C8 FF FE
+=== m68k_dbeq_d1_self ===
+        cpu 68000
+        phase 0
+Lbl:
+        dbeq d1,Lbl
+--- bytes ---
+57 C9 FF FE
+=== m68k_jmp_sym_low ===
+        cpu 68000
+        phase 0
+Lbl:
+        jmp Lbl
+--- bytes ---
+4E F8 00 00
+=== m68k_jsr_sym_low ===
+        cpu 68000
+        phase 0
+Lbl:
+        jsr Lbl
+--- bytes ---
+4E B8 00 00
+=== m68k_jmp_ind_a0 ===
+        cpu 68000
+        phase 0
+        jmp (a0)
+--- bytes ---
+4E D0
+=== m68k_scc_d0 ===
+        cpu 68000
+        phase 0
+        scc d0
+--- bytes ---
+54 C0
+=== m68k_seq_d1 ===
+        cpu 68000
+        phase 0
+        seq d1
+--- bytes ---
+57 C1
+=== m68k_move_w_pcd16_to_d0 ===
+        cpu 68000
+        phase 0
+Lbl:
+        move.w (Lbl,pc),d0
+--- bytes ---
+30 3A FF FE
+=== m68k_pcd8xn_move_and_lea ===
+        cpu 68000
+        phase 0
+        move.w Tbl(pc,d0.w),d1
+Tbl:
+        dc.w $1111
+        lea Tbl2(pc,a2.l),a0
+Tbl2:
+        dc.w $2222
+--- bytes ---
+32 3B 00 02 11 11 41 FB A8 02 22 22
+=== m68k_dc_w_be ===
+        cpu 68000
+        phase 0
+        dc.w $1234,$5678
+--- bytes ---
+12 34 56 78
+=== m68k_dc_l_be ===
+        cpu 68000
+        phase 0
+        dc.l $12345678
+--- bytes ---
+12 34 56 78
+=== m68k_ds_b_zero ===
+        cpu 68000
+        phase 0
+        ds.b 3
+--- bytes ---
+
+=== m68k_ds_w_zero ===
+        cpu 68000
+        phase 0
+        ds.w 2
+--- bytes ---
+
+=== m68k_ds_l_zero ===
+        cpu 68000
+        phase 0
+        ds.l 1
+--- bytes ---
+
+=== m68k_align_2_pad ===
+        cpu 68000
+        phase 0
+        dc.b 1
+        align 2
+        dc.b 2
+--- bytes ---
+01 00 02
+=== m68k_align_16_pad ===
+        cpu 68000
+        phase 0
+        dc.b 1,2,3
+        align $10
+        dc.b 4
+--- bytes ---
+01 02 03 00 00 00 00 00 00 00 00 00 00 00 00 00 04
+=== m68k_dc_b_odd_no_pad ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11,$22,$33
+        dc.w $abcd
+--- bytes ---
+11 22 33 AB CD
+=== macro_keyword_args ===
+        cpu 68000
+        phase 0
+tst     macro AMP,PER
+        dc.b AMP
+        dc.b PER
+        endm
+        tst AMP=7,PER=9
+        tst 3,4
+        tst PER=5,AMP=2
+--- bytes ---
+07 09 03 04 02 05
+=== struct_len_assert ===
+        cpu 68000
+        phase 0
+Rec     struct
+a       ds.b 1
+b       ds.w 1
+c       ds.b 1
+Rec     endstruct
+        if Rec_len <> 4
+        dc.b 1
+        else
+        dc.b 2
+        endif
+        dc.b Rec_b
+--- bytes ---
+01 01
+=== struct_len_assert_padding_off ===
+        cpu 68000
+        padding off
+        phase 0
+Rec     struct
+a       ds.b 1
+b       ds.w 1
+c       ds.b 1
+Rec     endstruct
+        if Rec_len <> 4
+        dc.b 1
+        else
+        dc.b 2
+        endif
+        dc.b Rec_b
+--- bytes ---
+02 01
+=== pbyte_momcpuname ===
+        cpu 68000
+        phase 0
+        ifndef pbyte_defined
+pbyte_defined = 1
+pbyte   macro
+        if MOMCPUNAME="Z80"
+        db      ALLARGS
+        else
+        dc.b    ALLARGS
+        endif
+        endm
+        endif
+        pbyte 10,20,30
+--- bytes ---
+0A 14 1E
+=== allargs ===
+        cpu 68000
+        phase 0
+blob    macro
+        dc.b ALLARGS
+        endm
+        blob 1
+        blob 2,3,4,5
+--- bytes ---
+01 02 03 04 05
+=== set_accumulator ===
+        cpu 68000
+        padding off
+        phase 0
+i       set 0
+        dc.b i
+i       set i+5
+        dc.b i
+--- bytes ---
+00 05
+=== coloneq_accumulator ===
+        cpu 68000
+        padding off
+        phase 0
+j       := 10
+        dc.b j
+j       := j*2
+        dc.b j
+--- bytes ---
+0A 14
+=== set_in_rept ===
+        cpu 68000
+        padding off
+        phase 0
+k       set 0
+        rept 4
+        dc.b k
+k       set k+1
+        endr
+--- bytes ---
+00 01 02 03
+=== hash_modulo ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 256#64,100#7,255#256
+        dc.b (-5)#3,5#(-3),(-5)#(-3)
+--- bytes ---
+00 02 FF FE 02 FE
+=== hash_modulo_precedence ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 7#5*2,5+7#2,7#2+5
+--- bytes ---
+04 06 06
+=== deform_table_sine_shimmer ===
+        cpu 68000
+        padding off
+        phase 0
+deform_table_sine macro AMPLITUDE,PERIOD
+    if "AMPLITUDE" = ""
+        fatal "deform_table_sine: AMPLITUDE required"
+    endif
+    if "PERIOD" = ""
+        fatal "deform_table_sine: PERIOD required"
+    endif
+    if (256 # PERIOD) <> 0
+        fatal "deform_table_sine: PERIOD=\{PERIOD} must divide 256"
+    endif
+deform_sine_i set 0
+    rept 256
+        dc.b int(AMPLITUDE * sin(6.283185307179586 * deform_sine_i / PERIOD))
+deform_sine_i set deform_sine_i + 1
+    endr
+    endm
+        deform_table_sine AMPLITUDE=8, PERIOD=32
+--- bytes ---
+00 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 FF FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE FF 01 03 04 05 06 07 07 08 07 07 06 05 04 03 01 00 FE FC FB FA F9 F8 F8 F8 F8 F8 F9 FA FB FC FE
+=== org_backpatch ===
+        cpu 68000
+        padding off
+        phase 0
+Hdr := *
+        dc.b 0,1,2,3
+End := *
+        org Hdr
+        dc.b 99
+        org End
+        dc.b 4
+--- bytes ---
+63 01 02 03 04
+=== org_parallax_header_patch ===
+        cpu 68000
+        padding off
+        phase 0
+pscStart := *
+        dc.b 0
+        dc.b 10,20,30
+        dc.b 1,1,1
+        dc.b 2,2,2
+pscEndPos := *
+        org pscStart
+        dc.b 2
+        org pscEndPos
+        dc.b 255
+--- bytes ---
+02 0A 14 1E 01 01 01 02 02 02 FF
+=== org_forward_new_section ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 1,2,3,4
+        org 16
+        dc.b 5,6
+--- bytes ---
+01 02 03 04 00 00 00 00 00 00 00 00 00 00 00 00 05 06
+=== debug_strlen_basic ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen("hello")
+--- bytes ---
+05
+=== debug_strlen_substr_to_end ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen(substr("hello",1,0))
+--- bytes ---
+04
+=== debug_strlen_substr_bounded ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen(substr("hello",1,2))
+--- bytes ---
+02
+=== debug_strstr_present ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strstr("b>",">")&$FF
+--- bytes ---
+01
+=== debug_strstr_absent ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strstr("abc","z")&$FF
+--- bytes ---
+FF
+=== debug_val_hex ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b val("$80")
+--- bytes ---
+80
+=== debug_val_decimal ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b val("144")
+--- bytes ---
+90
+=== debug_val_symbol_arith ===
+        cpu 68000
+        padding off
+        phase 0
+hex = $80
+        dc.b val("hex+1")&$FF
+--- bytes ---
+81
+=== debug_bang_bitor ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b (3!4)&$FF
+--- bytes ---
+07
+=== attribute_macro ===
+        cpu 68000
+        padding off
+        phase 0
+foo macro src
+        move.ATTRIBUTE src,d0
+        endm
+        foo.w d1
+        foo.l d2
+--- bytes ---
+30 01 20 02
+=== while_loop ===
+        cpu 68000
+        padding off
+        phase 0
+n set 0
+        while (n<3)
+        dc.b n
+n set n+1
+        endm
+--- bytes ---
+00 01 02
+=== bang_align ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b 1
+        !align 2
+        dc.b 2
+--- bytes ---
+01 00 02
+=== switch_case_match ===
+        cpu 68000
+        padding off
+        phase 0
+        switch lowstring("HeX")
+        case "hex"
+        dc.b $80
+        case "dec"
+        dc.b $90
+        elsecase
+        dc.b $FF
+        endcase
+--- bytes ---
+80
+=== switch_elsecase ===
+        cpu 68000
+        padding off
+        phase 0
+        switch lowstring("XYZ")
+        case "hex"
+        dc.b $80
+        case "dec"
+        dc.b $90
+        elsecase
+        dc.b $FF
+        endcase
+--- bytes ---
+FF
+=== lowstring_basic ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b strlen(lowstring("ABCD"))
+--- bytes ---
+04
+=== fstring_format ===
+        cpu 68000
+        padding off
+        phase 0
+hex = $80
+endl = $0A
+fstr macro string
+lpos set 0
+wpos set strstr(string,"%<")
+    while (wpos>=0)
+    if (wpos-lpos>0)
+        dc.b strlen(substr(string,lpos,wpos-lpos))
+    endif
+epos set strstr(substr(string,wpos+1,0),">")+wpos+1
+    switch substr(string,wpos+2,1)
+    case "."
+        switch lowstring(substr(string,wpos+2,2))
+        case ".b"
+            dc.b val(substr(string,wpos+5,epos-wpos-5))
+        case ".w"
+            dc.b val(substr(string,wpos+5,epos-wpos-5))|1
+        elsecase
+            dc.b val(substr(string,wpos+5,epos-wpos-5))|3
+        endcase
+    elsecase
+        dc.b val(substr(string,wpos+2,epos-wpos-2))
+    endcase
+lpos set epos+1
+wpos set strstr(substr(string,lpos,0),"%<")
+    if (wpos>=0)
+wpos set wpos+lpos
+    endif
+    endm
+    dc.b strlen(substr(string,lpos,0))
+    endm
+    fstr "A%<.b hex> %<endl>Z"
+--- bytes ---
+01 80 01 0A 01
+=== dc_b_string ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b "AB"
+--- bytes ---
+41 42
+=== dc_b_string_mixed ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b "Hi",0
+--- bytes ---
+48 69 00
+=== dc_b_substr ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b substr("hello",1,2)
+--- bytes ---
+65 6C
+=== m68k_move_w_predisp16_a0_to_d0 ===
+        cpu 68000
+        phase 0
+        move.w 4(a0),d0
+--- bytes ---
+30 28 00 04
+=== m68k_tst_w_predisp16_a2 ===
+        cpu 68000
+        phase 0
+        tst.w 8(a2)
+--- bytes ---
+4A 6A 00 08
+=== m68k_move_w_preidx_a0_d1w_to_d2 ===
+        cpu 68000
+        phase 0
+        move.w 6(a0,d1.w),d2
+--- bytes ---
+34 30 10 06
+=== m68k_move_w_preidx_a0_a2l_to_d3 ===
+        cpu 68000
+        phase 0
+        move.w 8(a0,a2.l),d3
+--- bytes ---
+36 30 A8 08
+=== m68k_lea_predisp16_a0_to_a1 ===
+        cpu 68000
+        phase 0
+        lea 12(a0),a1
+--- bytes ---
+43 E8 00 0C
+=== m68k_move_w_presymdisp_a0_to_d0 ===
+        cpu 68000
+        phase 0
+Foo     equ 4
+        move.w Foo(a0),d0
+--- bytes ---
+30 28 00 04
+=== m68k_move_w_zerodisp_idx_a0_d1w_to_d4 ===
+        cpu 68000
+        phase 0
+        move.w (a0,d1.w),d4
+--- bytes ---
+38 30 10 00
+=== m68k_movem_l_regmix_predec ===
+        cpu 68000
+        phase 0
+        movem.l a2/d2,-(sp)
+--- bytes ---
+48 E7 20 20
+=== m68k_movem_l_range_postinc ===
+        cpu 68000
+        phase 0
+        movem.l (sp)+,d0-d7/a0-a6
+--- bytes ---
+4C DF 7F FF
+=== m68k_movem_w_range_predec ===
+        cpu 68000
+        phase 0
+        movem.w d0-d3,-(a7)
+--- bytes ---
+48 A7 F0 00
+=== m68k_movem_l_single_predec ===
+        cpu 68000
+        phase 0
+        movem.l a2,-(sp)
+--- bytes ---
+48 E7 00 20
+=== m68k_movem_l_range_ind ===
+        cpu 68000
+        phase 0
+        movem.l d3-d4,(a3)
+--- bytes ---
+48 D3 00 18
+=== m68k_movem_l_crossrange_postinc ===
+        cpu 68000
+        phase 0
+        movem.l (a0)+,d0-a4
+--- bytes ---
+4C D8 1F FF
+=== m68k_movep_w_reg_to_mem ===
+        cpu 68000
+        phase 0
+        movep.w d0,4(a1)
+--- bytes ---
+01 89 00 04
+=== m68k_movep_l_mem_to_reg ===
+        cpu 68000
+        phase 0
+        movep.l 8(a2),d1
+--- bytes ---
+03 4A 00 08

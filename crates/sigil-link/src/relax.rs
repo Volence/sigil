@@ -40,11 +40,21 @@ use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, S
 use sigil_span::{Diagnostic, Level, Span};
 
 /// Current byte length of a fragment; `JmpJsrSym` uses the given width.
+///
+/// `Org` returns 0: it is a cursor *reposition*, not a run of bytes, so it has
+/// no length in the monotonic-prefix-sum sense `shift_breakpoints` relies on.
+/// This is only sound because `resolve_layout` refuses (see the guard below)
+/// any section that mixes `Org` with a real-growth `JmpJsrSym`: with zero
+/// `JmpJsrSym` fragments in a section, every width in `widths[..]` stays
+/// `AbsWidth::W`, so `frag_len(frag, w)` is independent of `w` for every
+/// fragment (Org included) and `shift_offset` reduces to the identity
+/// function regardless of what value `Org` contributes here.
 fn frag_len(frag: &Fragment, w: AbsWidth) -> u32 {
     match frag {
         Fragment::Data(d) => d.bytes.len() as u32,
         Fragment::Fill { count, .. } => *count,
         Fragment::Reserve { count, .. } => *count,
+        Fragment::Org { .. } => 0,
         Fragment::JmpJsrSym { .. } => w.inst_len(),
     }
 }
@@ -101,7 +111,10 @@ fn lower_jmp_jsr(is_jsr: bool, target: Expr, w: AbsWidth, span: Span) -> Fragmen
 fn frag_span(f: &Fragment) -> Span {
     match f {
         Fragment::Data(d) => d.span,
-        Fragment::Fill { span, .. } | Fragment::Reserve { span, .. } | Fragment::JmpJsrSym { span, .. } => *span,
+        Fragment::Fill { span, .. }
+        | Fragment::Reserve { span, .. }
+        | Fragment::Org { span, .. }
+        | Fragment::JmpJsrSym { span, .. } => *span,
     }
 }
 
@@ -133,6 +146,60 @@ pub fn resolve_layout(
     stubs: &SymbolTable,
     dash_a: bool,
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
+    // Guard: a section mixing `Org` (the back-patch/absolute-org marker) with a
+    // bare `jmp`/`jsr` (`JmpJsrSym`) is architecturally unverified — the
+    // `shift_breakpoints`/`shift_offset` label-shift math assumes every
+    // fragment's length sums to a monotonic prefix (see `frag_len`'s doc
+    // comment), which `Org`'s cursor reposition breaks the instant a REAL width
+    // grows in the same section. Rather than silently compute a wrong offset,
+    // fail loudly here; today's real Aeon sections either mix pure back-patched
+    // `dc.b`/`dc.w`/`dc.l` data with no `jmp`/`jsr` (parallax sections, safe) or
+    // `jmp`/`jsr`-bearing code with no `Org` (engine code, safe) — see M1.C T6b.
+    for sec in sections {
+        let has_org = sec.fragments.iter().any(|f| matches!(f, Fragment::Org { .. }));
+        if !has_org {
+            continue;
+        }
+        // `has_org` holds from here, so an Org fragment provably exists — the
+        // find below cannot miss (documented via `expect`, not a fabricated span).
+        let org_span = sec
+            .fragments
+            .iter()
+            .find(|f| matches!(f, Fragment::Org { .. }))
+            .map(frag_span)
+            .expect("has_org implies an Org fragment");
+        let has_jmpjsr = sec.fragments.iter().any(|f| matches!(f, Fragment::JmpJsrSym { .. }));
+        if has_jmpjsr {
+            return Err(vec![Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "section `{}` mixes an `org` back-patch with a bare jmp/jsr — unsupported (resolve_layout's width-shift math is not Org-aware)",
+                    sec.name
+                ),
+                primary: org_span,
+            }]);
+        }
+        // A `Reserve` in the same section is the analogous hazard: `IrBuilder`
+        // counts `Reserve` toward the cursor/extent the front-end resolves an
+        // `org` target against (VMA space), but `Section::image_bytes` and
+        // `link()`'s fixup walk treat `Reserve` as zero image bytes and apply
+        // `Org.target` as an IMAGE-byte offset — so a `Reserve` before an `org`
+        // back-patch diverges the resolved VMA offset from the physical image
+        // offset and the patch lands on the wrong byte. Latent today (parallax
+        // sections are pure `dc.b`, no `ds`), but fail loudly rather than
+        // mislink silently, mirroring the jmp/jsr guard above.
+        if sec.fragments.iter().any(|f| matches!(f, Fragment::Reserve { .. })) {
+            return Err(vec![Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "section `{}` mixes an `org` back-patch with a `ds`/reserve — unsupported (reserve advances VMA but not image bytes, so the org target's image offset diverges)",
+                    sec.name
+                ),
+                primary: org_span,
+            }]);
+        }
+    }
+
     // Per-section, per-fragment width; JmpJsrSym entries start at abs.w (minimum).
     let mut widths: Vec<Vec<AbsWidth>> =
         sections.iter().map(|s| vec![AbsWidth::W; s.fragments.len()]).collect();
@@ -463,5 +530,96 @@ mod tests {
     fn inst_len_is_4_for_w_and_6_for_l() {
         assert_eq!(AbsWidth::W.inst_len(), 4);
         assert_eq!(AbsWidth::L.inst_len(), 6);
+    }
+
+    #[test]
+    fn resolve_layout_refuses_org_and_jmpjsr_in_the_same_section() {
+        // The real Aeon collision this guard exists for: main.asm's object-bank
+        // section (opened by `org $10000`) contains BOTH bare `jmp`/`jsr` calls
+        // (player/object code) AND the parallax `parallax_section_end` back-patch
+        // (`org pscStart / dc.b n / org pscEndPos`) later in the SAME still-open
+        // section. `shift_breakpoints`'s label-shift math assumes a monotonic
+        // fragment-length prefix sum, which a real-growth `JmpJsrSym` alongside
+        // an `Org` reposition would violate — so `resolve_layout` must fail
+        // loudly here instead of silently computing a wrong offset.
+        let sec = Section {
+            name: "objbank".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0x10000),
+            lma: 0x10000,
+            labels: vec![],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: true, target: Expr::Sym("Sub".into()), span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0], fixups: vec![], span: sp() }),
+                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![1], fixups: vec![], span: sp() }),
+            ],
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("org") && d.message.contains("jmp/jsr")),
+            "got: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn resolve_layout_refuses_org_and_reserve_in_the_same_section() {
+        // The analogous hazard to Org+JmpJsrSym: a `Reserve` (from `ds`) counts
+        // toward the front-end's cursor/extent (VMA space) when it resolves an
+        // `org` target, but contributes no image bytes — so applying `Org.target`
+        // as an image offset would land the back-patch on the wrong physical
+        // byte. Guard must fail loudly, with a message distinct from the
+        // jmp/jsr one, pointing at the first `Org`.
+        let sec = Section {
+            name: "data".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Reserve { count: 4, span: sp() },
+                Fragment::Org { target: 0, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span: sp() }),
+            ],
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("org") && d.message.contains("reserve")),
+            "got: {:?}",
+            err
+        );
+        // ...and it must NOT be misreported as the jmp/jsr hazard.
+        assert!(
+            !err.iter().any(|d| d.message.contains("jmp/jsr")),
+            "Org+Reserve wrongly reported as the jmp/jsr hazard: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn resolve_layout_allows_org_alone_with_no_jmpjsr() {
+        // The parallax-data-only case (real Aeon usage today): pure `dc.b`
+        // back-patch, zero `jmp`/`jsr` in the section — must pass through
+        // resolve_layout unperturbed (the identity-shift argument in
+        // `frag_len`'s doc comment).
+        let sec = Section {
+            name: "data".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![Label { name: "After".into(), offset: 5 }],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0, 1, 2, 3], fixups: vec![], span: sp() }),
+                Fragment::Org { target: 0, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span: sp() }),
+                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![4], fixups: vec![], span: sp() }),
+            ],
+        };
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 5);
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("data").unwrap().bytes, vec![0x63, 1, 2, 3, 4]);
     }
 }

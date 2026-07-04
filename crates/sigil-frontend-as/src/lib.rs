@@ -37,7 +37,11 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Options { initial_cpu: Cpu::Z80, defines: Vec::new(), include_root: None }
+        Options {
+            initial_cpu: Cpu::Z80,
+            defines: Vec::new(),
+            include_root: None,
+        }
     }
 }
 
@@ -55,7 +59,11 @@ pub fn assemble_root(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnost
         vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
             message: format!("cannot read {}: {e}", root.display()),
-            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+            primary: sigil_span::Span {
+                source: sigil_span::SourceId(0),
+                start: 0,
+                end: 0,
+            },
         }]
     })?;
     let mut o = opts.clone();
