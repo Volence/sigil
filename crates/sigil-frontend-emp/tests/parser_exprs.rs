@@ -152,6 +152,16 @@ fn pipe_is_loosest_precedence() {
 }
 
 #[test]
+fn pipe_into_non_call_target_diagnoses() {
+    // `a |> f + b`: the target is a Binary (`f + b`), not a call/name — this is
+    // a diagnostic, NOT an orphaned `+ b` producing an "expected end of line".
+    let (_, diags) = parse_str("module m\nconst R = a |> f + b\n");
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    let msg = &diags[0].message;
+    assert!(msg.contains("|>") || msg.contains("call or name"), "{msg}");
+}
+
+#[test]
 fn infix_bitor_and_or_unaffected() {
     // A `|` following a primary is still infix bit-or; `||` is logical or.
     assert!(matches!(expr("a | b"), Expr::Binary { op: BinOp::BitOr, .. }));

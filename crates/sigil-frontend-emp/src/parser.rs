@@ -1104,9 +1104,14 @@ impl Parser {
         let mut lhs = self.expr_bp(1);
         while self.at(&Tok::PipeGt) {
             self.bump(); // `|>`
-            // The pipe target is a call/name/lambda (a primary + postfix call),
-            // NOT a full binary expression — `a |> f + b` is `f(a) + b`.
-            let rhs = self.unary_expr();
+            // Both sides are parsed with `expr_bp(1)`, which stops at the next
+            // `|>` (pipe is not one of its operators) — so pipe stays the
+            // loosest layer and left-associative. `a + b |> f` is `f(a + b)`;
+            // `xs |> f |> g` is `g(f(xs))`. Parsing the target as a full binary
+            // expr (not just a primary) means a non-call/non-name target like
+            // `a |> f + b` becomes `desugar_pipe`'s clean "must be a call or
+            // name" diagnostic instead of orphaning the trailing `+ b`.
+            let rhs = self.expr_bp(1);
             lhs = self.desugar_pipe(lhs, rhs);
         }
         lhs
