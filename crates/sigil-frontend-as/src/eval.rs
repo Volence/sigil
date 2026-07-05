@@ -2176,16 +2176,27 @@ impl Asm {
                 // Data fragment carries the true length, so the cursor advances truthfully
                 // and downstream section LMAs (`phys_base`) are correct by construction.
                 // See docs/superpowers/notes/2026-07-04-m1d-t3-jmpjsr-width-probes.md.
-                let width = match self.fold(&target) {
-                    Fold::Value(v) => asl_width_rule(v, false),
+                //
+                // The fold selects the width AND supplies the fixup value: when
+                // resolved, BAKE the literal (`Expr::Int(v)`) into the fixup,
+                // mirroring `abs_ea_from_expr`. `equ` constants live only in the
+                // front-end env, never as section labels, so the linker (which
+                // builds its symbol table from section labels alone) cannot
+                // resolve a symbolic `equ` target; baking the folded value is
+                // also correct for labels (front-end VMA == link's
+                // vma_origin+offset on convergence). Unresolved-this-pass keeps
+                // the symbolic form so a real forward label still resolves at
+                // link; a genuinely-undefined one errors via `poison_refs`.
+                let (width, fixup_target) = match self.fold(&target) {
+                    Fold::Value(v) => (asl_width_rule(v, false), Expr::Int(v)),
                     Fold::Poison => {
                         for name in self.unresolved_names(&target) {
                             self.poison_refs.push((name, span));
                         }
-                        AbsWidth::W
+                        (AbsWidth::W, target)
                     }
                 };
-                let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, target, width, span);
+                let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, fixup_target, width, span);
                 self.emit_frag(Ok(frag), span);
                 return;
             }

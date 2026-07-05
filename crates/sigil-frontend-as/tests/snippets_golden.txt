@@ -1318,3 +1318,48 @@ H:	equ $10000
 	rts
 --- bytes ---
 30 39 00 01 00 00 4E 75
+=== t3_jmp_abs_w ===
+	cpu 68000
+	padding off
+	org 0
+Low:	equ $100
+	jmp Low
+	rts
+--- bytes ---
+4E F8 01 00 4E 75
+=== t3_jmp_abs_l ===
+	cpu 68000
+	padding off
+	org 0
+High:	equ $10000
+	jmp High
+	rts
+--- bytes ---
+4E F9 00 01 00 00 4E 75
+=== t3_jsr_abs_w ===
+	cpu 68000
+	padding off
+	org 0
+Low:	equ $100
+	jsr Low
+	rts
+--- bytes ---
+4E B8 01 00 4E 75
+=== t3_jsr_abs_l ===
+	cpu 68000
+	padding off
+	org 0
+High:	equ $10000
+	jsr High
+	rts
+--- bytes ---
+4E B9 00 01 00 00 4E 75
+=== t3_jmp_fwd_low ===
+	cpu 68000
+	padding off
+	org 0
+	jmp Fwd
+	nop
+Fwd:	rts
+--- bytes ---
+4E F8 00 06 4E 71 4E 75
