@@ -172,7 +172,13 @@ impl Parser {
             self.bump(); // dot
             segments.push(self.expect_ident("name"));
         }
-        Path { segments, span: Span { source: start.source, start: start.start, end: self.prev_span().end } }
+        // Merge (not a raw `start.start..prev.end`) so the span is never
+        // inverted: if the opening `expect_ident` consumed nothing (the token
+        // was not an ident), `prev_span().end` can precede `start.start`, and a
+        // raw range would yield `end < start`. `merge` takes min-start/max-end,
+        // keeping the normal case exact while clamping the error case to a valid
+        // span.
+        Path { segments, span: start.merge(self.prev_span()) }
     }
 
     /// Dispatch on the leading contextual keyword. Returns None on an
@@ -1095,7 +1101,63 @@ impl Parser {
     // Levels (loosest → tightest):
     //   1 ||   2 &&   3 == != < <= > >=   4 ..   5 ++   6 | ^   7 &
     //   8 << >>   9 + -   10 * / %   unary   postfix(call)   primary
-    pub(crate) fn expr(&mut self) -> Expr { self.expr_bp(1) }
+    /// A full expression, including the `|>` pipe. Pipe is looser than every
+    /// binary operator and left-associative, so it wraps `expr_bp` as a thin
+    /// outer layer rather than threading through the precedence climb. Each
+    /// `lhs |> rhs` desugars to an ordinary [`Expr::Call`], so the evaluator
+    /// needs no pipe node of its own.
+    pub(crate) fn expr(&mut self) -> Expr {
+        let mut lhs = self.expr_bp(1);
+        while self.at(&Tok::PipeGt) {
+            self.bump(); // `|>`
+            // Both sides are parsed with `expr_bp(1)`, which stops at the next
+            // `|>` (pipe is not one of its operators) — so pipe stays the
+            // loosest layer and left-associative. `a + b |> f` is `f(a + b)`;
+            // `xs |> f |> g` is `g(f(xs))`. Parsing the target as a full binary
+            // expr (not just a primary) means a non-call/non-name target like
+            // `a |> f + b` becomes `desugar_pipe`'s clean "must be a call or
+            // name" diagnostic instead of orphaning the trailing `+ b`.
+            let rhs = self.expr_bp(1);
+            lhs = self.desugar_pipe(lhs, rhs);
+        }
+        lhs
+    }
+
+    /// Turn `lhs |> rhs` into a plain call node (the piped value becomes the
+    /// first positional argument):
+    /// - `rhs = f(args...)` → `f(lhs, args...)`
+    /// - `rhs = f` (a bare path) → `f(lhs)`
+    /// - anything else (int, lambda literal, ...) → a diagnostic; `lhs` is
+    ///   returned unchanged. A lambda as the DIRECT pipe target
+    ///   (`xs |> |f| ...`) appears in no spec example — the real use is a
+    ///   lambda passed INSIDE a call on the rhs (`xs |> map(|f| ...)`), which
+    ///   the call branch handles — so it is rejected with a clear message
+    ///   rather than given a bespoke AST affordance.
+    fn desugar_pipe(&mut self, lhs: Expr, rhs: Expr) -> Expr {
+        let lhs_span = expr_span(&lhs);
+        match rhs {
+            Expr::Call { callee, mut args, span } => {
+                let arg = Arg { name: None, value: lhs, span: lhs_span };
+                args.insert(0, arg);
+                let span = lhs_span.merge(span);
+                Expr::Call { callee, args, span }
+            }
+            Expr::Path(p) => {
+                let span = lhs_span.merge(p.span);
+                let arg = Arg { name: None, value: lhs, span: lhs_span };
+                Expr::Call { callee: p, args: vec![arg], span }
+            }
+            Expr::Lambda { span, .. } => {
+                self.diag_at(span, "pipe into a lambda literal is not supported; \
+                                    name the lambda or use map/filter/fold");
+                lhs
+            }
+            other => {
+                self.diag_at(expr_span(&other), "right side of `|>` must be a function call or name");
+                lhs
+            }
+        }
+    }
 
     fn expr_bp(&mut self, min_bp: u8) -> Expr {
         let mut lhs = self.unary_expr();
@@ -1233,6 +1295,30 @@ impl Parser {
                 let e = self.expr();
                 self.expect(&Tok::RBrace, "`}`");
                 e
+            }
+            // A `|` where an expression STARTS is a lambda `|p, ...| body`.
+            // Infix bit-or `|` only ever follows a primary, so it is reached in
+            // `expr_bp`, not here — there is no ambiguity. `||` lexes as
+            // `Tok::OrOr`, so zero-param lambdas are unwritable by construction.
+            Tok::Pipe => {
+                self.bump(); // opening `|`
+                let mut params = Vec::new();
+                // `| |` (two pipes) leaves the list empty: diagnose rather than
+                // silently accept a zero-param lambda (spec lambdas take ≥1 elem).
+                if self.at(&Tok::Pipe) {
+                    self.diag_at(start, "lambda needs at least one parameter");
+                } else {
+                    loop {
+                        params.push(self.expect_ident("lambda parameter"));
+                        if !self.eat(&Tok::Comma) { break; }
+                    }
+                }
+                self.expect(&Tok::Pipe, "`|` to close the lambda parameter list");
+                // The body is a full expression: `|x| x + 1` binds the `+`, and
+                // inside `map(|f| f + 1)` the body stops at the enclosing `)`.
+                let body = self.expr();
+                let span = start.merge(expr_span(&body));
+                Expr::Lambda { params, body: Box::new(body), span }
             }
             Tok::Ident(_) => {
                 // `comptime for/if` in expression position: the `comptime`
@@ -1373,7 +1459,8 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
         Expr::Unary { span, .. } | Expr::Binary { span, .. } | Expr::Call { span, .. }
         | Expr::StructLit { span, .. } | Expr::ArrayLit { span, .. }
         | Expr::TupleLit { span, .. } | Expr::Range { span, .. } | Expr::If { span, .. }
-        | Expr::For { span, .. } | Expr::Asm { span, .. } => *span,
+        | Expr::For { span, .. } | Expr::Asm { span, .. }
+        | Expr::Lambda { span, .. } => *span,
     }
 }
 

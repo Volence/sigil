@@ -23,6 +23,9 @@ pub enum Tok {
     Comma, Colon, Semi, Dot, At, Hash, Star, Plus, Minus, Slash, Percent,
     Amp, Pipe, Caret, Bang, Lt, Gt, Eq, Tilde,
     EqEq, Ne, Le, Ge, Shl, Shr, Arrow, DotDot, PlusPlus, AndAnd, OrOr,
+    /// The pipe operator `|>` (function application, D-P2.17). Matched before
+    /// single `|` so it is never mis-lexed as `Pipe` then `Gt`.
+    PipeGt,
     /// End of input; always the final token emitted by [`lex`].
     Eof,
 }
@@ -97,6 +100,11 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
             }
             b'A'..=b'Z' | b'a'..=b'z' | b'_' => {
                 while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') { i += 1; }
+                // A single trailing apostrophe is part of the identifier: the Z80
+                // shadow-register syntax `af'`/`bc'`/`de'`/`hl'`. Exactly one is
+                // absorbed (Z80 uses exactly one); a second `'` is left to the
+                // stray-character path so `af''` still errors.
+                if i < b.len() && b[i] == b'\'' { i += 1; }
                 push!(Tok::Ident(src[s..i].to_string()), s, i);
             }
             b'0'..=b'9' | b'$' => { i = lex_number(src, b, i, source, &mut out, &mut errs); }
@@ -109,6 +117,9 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                     ">=" => (Tok::Ge, 2), "<<" => (Tok::Shl, 2), ">>" => (Tok::Shr, 2),
                     "->" => (Tok::Arrow, 2), ".." => (Tok::DotDot, 2), "++" => (Tok::PlusPlus, 2),
                     "&&" => (Tok::AndAnd, 2), "||" => (Tok::OrOr, 2),
+                    // `|>` before the single-`|` fallback: distinct strings, so
+                    // match order is irrelevant, but keep it beside `||`.
+                    "|>" => (Tok::PipeGt, 2),
                     _ => match c {
                         b'{' => (Tok::LBrace, 1), b'}' => (Tok::RBrace, 1),
                         b'(' => (Tok::LParen, 1), b')' => (Tok::RParen, 1),

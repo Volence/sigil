@@ -19,6 +19,24 @@ fn module_header_plain_and_in_section() {
 }
 
 #[test]
+fn path_in_error_position_has_non_inverted_span() {
+    // Regression (B2): when `path()` starts on a non-ident token, its opening
+    // `expect_ident` consumes nothing and `prev_span().end` can precede the
+    // start, producing an INVERTED span (end < start) that trips span-asserting
+    // renderers. `module  = x` reaches the module path with a missing name and a
+    // byte gap, so the span must still satisfy `start <= end`.
+    let (f, diags) = parse_str("module  = x\n");
+    assert!(!diags.is_empty(), "expected a parse error for the missing module name");
+    let span = f.module.path.span;
+    assert!(
+        span.start <= span.end,
+        "module path span is inverted: {}..{}",
+        span.start,
+        span.end
+    );
+}
+
+#[test]
 fn use_decls() {
     let f = ok("module m\nuse engine.objects.{Sst, Draw_Sprite}\nuse engine.gfx.*\nuse player.Player_1\n");
     assert_eq!(f.items.len(), 3);
