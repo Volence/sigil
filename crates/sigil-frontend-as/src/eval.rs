@@ -124,7 +124,8 @@ fn one_pass(
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
     asm.process(src);
-    let (module, mut diags) = asm.builder.finish();
+    let (mut module, mut diags) = asm.builder.finish();
+    dedup_section_names(&mut module.sections);
     diags.append(&mut asm.diags);
     PassOutput {
         module,
@@ -133,6 +134,36 @@ fn one_pass(
         functions: asm.functions,
         diags,
         poison: asm.poison_refs,
+    }
+}
+
+/// Give every NON-EMPTY auto-opened section a unique name. Two sections that
+/// open at the same VMA base (e.g. a second bank re-phased at the same address)
+/// both get the bare `sec{vma}` name from `open_section_if_needed`; here the
+/// first keeps it and later ones get a `#1`/`#2`/… suffix, so `link()`'s
+/// duplicate-symbol diagnostic (M1.D T3) doesn't misfire on a genuine
+/// second bank.
+///
+/// EMPTY (zero-fragment) sections are skipped: they carry no labels, are dropped
+/// before link (the M0 harness's `build_harness` drops them), and so must NOT
+/// consume the bare name — otherwise the M0 preamble's stray empty `sec0` would
+/// steal `sec0` from the real region-A driver, which is then linked/looked-up by
+/// that name.
+fn dedup_section_names(sections: &mut [sigil_ir::Section]) {
+    let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for sec in sections.iter_mut() {
+        if sec.fragments.is_empty() {
+            continue;
+        }
+        match counts.get_mut(&sec.name) {
+            Some(n) => {
+                *n += 1;
+                sec.name = format!("{}#{}", sec.name, *n);
+            }
+            None => {
+                counts.insert(sec.name.clone(), 0);
+            }
+        }
     }
 }
 
@@ -178,13 +209,6 @@ struct Asm {
     /// the TOTAL across all (possibly nested) loops so a pathological input
     /// diagnoses in bounded time. Generous vs. any real table-fill loop.
     while_budget: usize,
-    /// Bookkeeping for auto-opened section names (`sec{vma_base}`). Two sections
-    /// that open at the same VMA base (e.g. a second bank re-phased at the same
-    /// address) would otherwise collide, and `link()` now hard-errors on the
-    /// duplicate labels that follow. The first occurrence of a given base keeps
-    /// the bare name (the M0 harness / strict gate keys on `sec0`/`sec32768`);
-    /// repeats get `sec{vma}#1`, `#2`, …. Value = count of prior uses.
-    used_section_names: std::collections::HashMap<String, u32>,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -220,7 +244,6 @@ impl Asm {
             aborted: false,
             poison_refs: Vec::new(),
             while_budget: GLOBAL_WHILE_CAP,
-            used_section_names: std::collections::HashMap::new(),
         }
     }
 
@@ -1654,18 +1677,12 @@ impl Asm {
             // section). The phased VMA base = physical + `disp` (equals the LMA
             // when not phased). Name by VMA base so the two real output regions
             // stay `sec0`/`sec32768` (the harness/M0 gate keys on those names).
+            // Collisions between two auto-opened sections at the same VMA base
+            // are disambiguated later, over NON-EMPTY sections only, by
+            // `dedup_section_names` (an empty stray section — dropped before link
+            // — must not steal the bare name from a real region).
             let vma_base = (self.phys_base as i64 + self.state.disp) as u32;
-            let base = format!("sec{vma_base}");
-            let name = match self.used_section_names.get_mut(&base) {
-                Some(n) => {
-                    *n += 1;
-                    format!("{base}#{n}")
-                }
-                None => {
-                    self.used_section_names.insert(base.clone(), 0);
-                    base
-                }
-            };
+            let name = format!("sec{vma_base}");
             self.builder
                 .switch_section_lma(&name, self.state.cpu, Some(vma_base), self.phys_base);
             self.in_section = true;
