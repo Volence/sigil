@@ -643,6 +643,11 @@ impl<'a> Evaluator<'a> {
     /// with `layout_of_struct`, and so every call site already has one handy)
     /// goes unused.
     pub(crate) fn layout_of_bitfield(&mut self, name: &str, _span: Span) -> BitfieldLayout {
+        // Memoized: a malformed bitfield's diagnostics fire exactly once, not
+        // once per referencing literal (mirrors `struct_layout_memo`).
+        if let Some(l) = self.bitfield_layout_memo.get(name) {
+            return l.clone();
+        }
         let Some(decl) = self.bitfields.get(name).copied() else {
             debug_assert!(false, "layout_of_bitfield called for unknown bitfield `{name}`");
             return BitfieldLayout { repr_bits: 0, fields: Vec::new() };
@@ -650,13 +655,21 @@ impl<'a> Evaluator<'a> {
         let repr_ty = self.resolve_type(&decl.repr);
         let repr_bits: u32 = match &repr_ty {
             Ty::Prim { width, signed: false } => u32::from(*width) * 8,
-            Ty::Poison => return BitfieldLayout { repr_bits: 0, fields: Vec::new() },
+            Ty::Poison => {
+                // A poisoned repr already reported (via `resolve_type`); memoize
+                // the empty layout so a re-query doesn't re-resolve/re-report.
+                let empty = BitfieldLayout { repr_bits: 0, fields: Vec::new() };
+                self.bitfield_layout_memo.insert(name.to_string(), empty.clone());
+                return empty;
+            }
             other => {
                 self.error(
                     decl.span,
                     format!("bitfield {name}: repr must be u8, u16, or u32, got {}", other.describe()),
                 );
-                return BitfieldLayout { repr_bits: 0, fields: Vec::new() };
+                let empty = BitfieldLayout { repr_bits: 0, fields: Vec::new() };
+                self.bitfield_layout_memo.insert(name.to_string(), empty.clone());
+                return empty;
             }
         };
         let mut cursor = repr_bits;
@@ -710,7 +723,9 @@ impl<'a> Evaluator<'a> {
             placed.push((lsb, f.bits));
             fields.push(BitfieldFieldLayout { name: f.name.clone(), bits: f.bits, lsb });
         }
-        BitfieldLayout { repr_bits, fields }
+        let layout = BitfieldLayout { repr_bits, fields };
+        self.bitfield_layout_memo.insert(name.to_string(), layout.clone());
+        layout
     }
 
     /// The ONE shared refinement mechanism (D-P3.6): check `val` against the
@@ -733,9 +748,22 @@ impl<'a> Evaluator<'a> {
     ///   there is no bound to check, so this returns `true` (those types are
     ///   never constructed via the `Name(x)` call syntax this backs).
     pub(crate) fn check_value_fits_ty(&mut self, ty: &Ty, val: i128, span: Span) -> bool {
+        // The outermost type's own name is the "label" every downstream
+        // diagnostic blames: a `newtype Angle = u8` whose bound is really the
+        // underlying `u8` still names *Angle* (not `u8`) in the message, since
+        // that is the type the author wrote at the construction site.
+        let label = ty.describe();
+        self.check_value_fits_ty_labeled(ty, val, span, &label)
+    }
+
+    /// The recursive worker behind [`check_value_fits_ty`](Self::check_value_fits_ty),
+    /// carrying `label` — the outermost constructed type's name — so a newtype
+    /// that bottoms out in a bare primitive still names the *newtype* rather
+    /// than the underlying `u8` in its out-of-range diagnostic.
+    fn check_value_fits_ty_labeled(&mut self, ty: &Ty, val: i128, span: Span, label: &str) -> bool {
         match ty {
             Ty::Refined { lo, hi, .. } => {
-                self.check_in_range(val, *lo, *hi, span, &format!("{} construction", ty.describe()))
+                self.check_in_range(val, *lo, *hi, span, &format!("{label} construction"))
             }
             Ty::Newtype(name) => {
                 if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
@@ -754,22 +782,30 @@ impl<'a> Evaluator<'a> {
                 if let Some((lo_expr, hi_expr)) = &decl.refine {
                     return match (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr)) {
                         (Some(lo), Some(hi)) => {
-                            self.check_in_range(val, lo, hi, span, &format!("newtype {name}"))
+                            self.check_in_range(val, lo, hi, span, &format!("newtype {label}"))
                         }
                         // A non-int bound already reported via `eval_const_index`.
                         _ => false,
                     };
                 }
+                // Recurse into the underlying type but KEEP `label` — the author
+                // wrote `Angle(x)`, so the eventual `u8` range check must blame
+                // `Angle`, not `u8`.
                 self.layout_in_progress.push(name.to_string());
                 let underlying = self.resolve_type(&decl.underlying);
-                let ok = self.check_value_fits_ty(&underlying, val, span);
+                let ok = self.check_value_fits_ty_labeled(&underlying, val, span, label);
                 self.layout_in_progress.pop();
                 ok
             }
             Ty::Prim { width, signed } => {
                 let (lo, hi) = prim_bounds(*width, *signed);
-                self.check_in_range(val, lo, hi, span, &format!("{} value", ty.describe()))
+                self.check_in_range(val, lo, hi, span, &format!("{label} value"))
             }
+            // `fixed<>` and a newtype whose underlying is a struct/bitfield/enum
+            // fall through here: they carry no scalar bound this mechanism knows
+            // how to check, so construction is (for now) unchecked. `fixed<>`
+            // scale checking is DEFERRED to T5; this arm is not the final word on
+            // "every constructible type is range-checked".
             _ => true,
         }
     }

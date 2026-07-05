@@ -89,6 +89,11 @@ pub struct Evaluator<'a> {
     /// [`const_memo`](Self::const_memo). A zero-size Poisoned layout records a
     /// struct that already failed (cyclic layout) so it does not re-report.
     pub(crate) struct_layout_memo: HashMap<String, crate::layout::Layout>,
+    /// Memoized bitfield layouts, keyed by bitfield name (T4). Mirrors
+    /// [`struct_layout_memo`](Self::struct_layout_memo): a malformed bitfield
+    /// (overlap/overflow) is validated and diagnosed exactly ONCE, then reused
+    /// across every literal that references it within one evaluation.
+    pub(crate) bitfield_layout_memo: HashMap<String, crate::layout::BitfieldLayout>,
     /// The names of structs whose layout is currently being computed, in
     /// reference order — the in-progress stack for cyclic-layout detection,
     /// mirroring [`in_progress`](Self::in_progress) for consts.
@@ -141,6 +146,7 @@ impl<'a> Evaluator<'a> {
             bitfields: HashMap::new(),
             newtypes: HashMap::new(),
             struct_layout_memo: HashMap::new(),
+            bitfield_layout_memo: HashMap::new(),
             layout_in_progress: Vec::new(),
             aborted: false,
             pending_return: None,

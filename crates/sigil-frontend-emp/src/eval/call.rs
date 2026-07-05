@@ -329,7 +329,7 @@ impl<'a> Evaluator<'a> {
     }
 
     /// `Name(x)` where `Name` is a `newtype` (T4): comptime construction.
-    /// Evaluates the single argument, checks it against the newtype's
+    /// Evaluates the single integer argument, checks it against the newtype's
     /// effective bounds via the shared [`check_value_fits_ty`](Self::check_value_fits_ty)
     /// mechanism (D-P3.6), and returns the ERASED underlying value on success —
     /// no `Value::Typed` wrapper (that's T5, which extends this exact call
@@ -341,23 +341,8 @@ impl<'a> Evaluator<'a> {
         span: Span,
         env: &mut Env,
     ) -> Value {
-        let Some(arg_val) = self.eval_single_arg(&decl.name, args, span, env) else {
+        let Some(n) = self.eval_single_int_arg("newtype", &decl.name, args, span, env) else {
             return Value::Poison;
-        };
-        let n = match arg_val {
-            Value::Int(n) => n,
-            Value::Poison => return Value::Poison,
-            other => {
-                self.error(
-                    span,
-                    format!(
-                        "newtype `{}` construction expects an integer, got {}",
-                        decl.name,
-                        other.type_name()
-                    ),
-                );
-                return Value::Poison;
-            }
         };
         let ty = crate::layout::Ty::Newtype(decl.name.clone());
         if self.check_value_fits_ty(&ty, n, span) {
@@ -368,11 +353,11 @@ impl<'a> Evaluator<'a> {
     }
 
     /// `Name(x)` where `Name` is an `enum` (T4): a closed cast. Evaluates the
-    /// single argument and matches it against each variant's comptime
-    /// discriminant (see [`enum_variant_value`](Self::enum_variant_value)); a
-    /// match yields that nullary [`Value::Enum`], and no match is
-    /// `[enum.out-of-range]`. There is no `unchecked` escape-hatch cast in the
-    /// grammar yet (§4.4) — deferred to whichever later task adds it.
+    /// single integer argument and matches it against each variant's comptime
+    /// discriminant; a match yields that nullary [`Value::Enum`] (first match
+    /// wins on a duplicate discriminant), and no match is `[enum.out-of-range]`.
+    /// There is no `unchecked` escape-hatch cast in the grammar yet (§4.4) —
+    /// deferred to whichever later task adds it.
     fn cast_enum(
         &mut self,
         decl: &'a ast::EnumDecl,
@@ -380,26 +365,12 @@ impl<'a> Evaluator<'a> {
         span: Span,
         env: &mut Env,
     ) -> Value {
-        let Some(arg_val) = self.eval_single_arg(&decl.name, args, span, env) else {
+        let Some(n) = self.eval_single_int_arg("enum", &decl.name, args, span, env) else {
             return Value::Poison;
         };
-        let n = match arg_val {
-            Value::Int(n) => n,
-            Value::Poison => return Value::Poison,
-            other => {
-                self.error(
-                    span,
-                    format!(
-                        "enum `{}` cast expects an integer, got {}",
-                        decl.name,
-                        other.type_name()
-                    ),
-                );
-                return Value::Poison;
-            }
-        };
-        for idx in 0..decl.variants.len() {
-            if self.enum_variant_value(decl, idx) == Some(n) {
+        let values = self.enum_variant_values(decl);
+        for (idx, v) in values.iter().enumerate() {
+            if *v == Some(n) {
                 return Value::Enum {
                     ty_name: decl.name.clone(),
                     variant: decl.variants[idx].name.clone(),
@@ -411,45 +382,65 @@ impl<'a> Evaluator<'a> {
         Value::Poison
     }
 
-    /// Evaluate the comptime integer value of `decl`'s `idx`-th variant: its
-    /// explicit discriminant expression (`Idle = 0`) if given, else one more
-    /// than the previous variant's value (starting at 0 for the first variant)
-    /// — the conventional C/Rust-style auto-increment. A non-int discriminant
-    /// expression is a diagnostic (returns `None`); an already-`Poison` result
-    /// stays silent (D-P2.9).
-    fn enum_variant_value(&mut self, decl: &'a ast::EnumDecl, idx: usize) -> Option<i128> {
-        match &decl.variants[idx].value {
-            Some(expr) => match self.eval_expr(expr, &mut Env::new()) {
-                Value::Int(n) => Some(n),
-                Value::Poison => None,
-                other => {
-                    self.error(
-                        crate::parser::expr_span(expr),
-                        format!(
-                            "enum variant discriminant must be an integer, got {}",
-                            other.type_name()
-                        ),
-                    );
-                    None
-                }
-            },
-            None if idx == 0 => Some(0),
-            None => self.enum_variant_value(decl, idx - 1).map(|v| v + 1),
+    /// Compute every variant's comptime discriminant in ONE forward pass (O(n),
+    /// no native recursion — a large fully-auto-increment enum must not risk a
+    /// stack overflow): each variant is its explicit discriminant expression
+    /// (`Idle = 0`) if given, else one more than the previous variant's value
+    /// (starting at 0 for the first). A non-int discriminant is a diagnostic and
+    /// yields `None` for that slot; an already-`Poison` discriminant stays
+    /// silent (D-P2.9). A `None` slot restarts the auto-increment from 0 at the
+    /// next omitted variant (there is no sensible predecessor to add to).
+    fn enum_variant_values(&mut self, decl: &'a ast::EnumDecl) -> Vec<Option<i128>> {
+        let mut out = Vec::with_capacity(decl.variants.len());
+        let mut prev: Option<i128> = None;
+        for variant in &decl.variants {
+            let value = match &variant.value {
+                Some(expr) => match self.eval_expr(expr, &mut Env::new()) {
+                    Value::Int(n) => Some(n),
+                    Value::Poison => None,
+                    other => {
+                        self.error(
+                            crate::parser::expr_span(expr),
+                            format!(
+                                "enum variant discriminant must be an integer, got {}",
+                                other.type_name()
+                            ),
+                        );
+                        None
+                    }
+                },
+                None => match prev {
+                    Some(p) => Some(p + 1),
+                    None => Some(0),
+                },
+            };
+            prev = value;
+            out.push(value);
         }
+        out
     }
 
-    /// Evaluate the exactly-one positional argument a newtype/enum
-    /// construction-or-cast call takes (`Name(x)`), reporting and returning
-    /// `None` for the wrong arity; a named argument (`Name(x: 40)`) is also a
-    /// diagnostic but its value is still evaluated and returned (so a `Poison`
-    /// downstream propagates silently rather than compounding).
-    fn eval_single_arg(
+    /// Evaluate the exactly-one positional integer argument a newtype/enum
+    /// construction-or-cast call takes (`Name(x)`). Reports and returns `None`
+    /// for the wrong arity; a named argument (`Name(x: 40)`) is also a
+    /// diagnostic but its value is still evaluated.
+    ///
+    /// CRITICAL (the `eval_operand` INVARIANT, commit db75176): a `return`/abort
+    /// that fired inside the argument belongs to the *caller*, so immediately
+    /// after evaluating the arg we bail on `pending_return`/`aborted` — otherwise
+    /// the leaked pending-return short-circuits every downstream `eval_expr` (a
+    /// newtype-bound check, or the enum discriminant scan) to `Poison`, which
+    /// would fabricate a spurious out-of-range/failed-check diagnostic on an
+    /// otherwise valid program. Mirrors the guards at the other two arg-eval
+    /// sites in this file.
+    fn eval_single_int_arg(
         &mut self,
+        kind: &str,
         ty_name: &str,
         args: &[ast::Arg],
         span: Span,
         env: &mut Env,
-    ) -> Option<Value> {
+    ) -> Option<i128> {
         if args.len() != 1 {
             self.error(
                 span,
@@ -461,6 +452,22 @@ impl<'a> Evaluator<'a> {
         if arg.name.is_some() {
             self.error(arg.span, format!("`{ty_name}` construction/cast takes a positional argument"));
         }
-        Some(self.eval_expr(&arg.value, env))
+        let arg_val = self.eval_expr(&arg.value, env);
+        // The leaked-return / abort guard (see the doc comment above).
+        if self.aborted || self.pending_return.is_some() {
+            return None;
+        }
+        match arg_val {
+            Value::Int(n) => Some(n),
+            // An already-reported error propagates silently (D-P2.9).
+            Value::Poison => None,
+            other => {
+                self.error(
+                    span,
+                    format!("{kind} `{ty_name}` construction/cast expects an integer, got {}", other.type_name()),
+                );
+                None
+            }
+        }
     }
 }

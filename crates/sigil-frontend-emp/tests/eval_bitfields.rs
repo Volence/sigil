@@ -195,3 +195,120 @@ fn enum_cast_out_of_range_is_diagnosed() {
         "expected the message to name the value and the enum, got {diags:?}"
     );
 }
+
+#[test]
+fn enum_cast_arg_return_does_not_leak_a_spurious_out_of_range() {
+    // Regression (Critical): a `return` fired inside the cast argument belongs
+    // to the CALLER. Before the fix, `eval_single_arg` did not bail on a leaked
+    // `pending_return`, so the per-variant discriminant evals short-circuited to
+    // Poison, no variant matched, and a spurious `[enum.out-of-range]` fired even
+    // though the fn correctly returned 42.
+    let src = "module m\n\
+               enum Anim: u8 { Idle = 0, Seed = 1, Shoot = 2 }\n\
+               comptime fn pick(c: int) -> int {\n\
+                   let x = Anim(if c > 0 { return 42 } else { 1 })\n\
+                   0\n\
+               }\n\
+               const R = pick(1)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(42)), "the caller's return value must win");
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[enum.out-of-range]")),
+        "a leaked return must not fabricate an out-of-range diagnostic, got {diags:?}"
+    );
+}
+
+// ---- enum auto-increment / mixed / duplicate discriminants -------------
+
+#[test]
+fn enum_cast_uses_auto_incremented_discriminants() {
+    // A=5, B (auto → 6), C=1 (explicit reset), D (auto → 2). E(6) → B; E(1) → C.
+    let src = "module m\nenum E: u8 { A = 5, B, C = 1, D }\n";
+    let (bv, diags) = eval(&format!("{src}const N = E(6)\n"), "N");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        bv,
+        Some(Value::Enum { ty_name: "E".to_string(), variant: "B".to_string(), payload: vec![] })
+    );
+    // C=1 and D=2 both live; E(1) → C, E(2) → D.
+    let (cv, _) = eval(&format!("{src}const N = E(1)\n"), "N");
+    assert_eq!(
+        cv,
+        Some(Value::Enum { ty_name: "E".to_string(), variant: "C".to_string(), payload: vec![] })
+    );
+    let (dv, _) = eval(&format!("{src}const N = E(2)\n"), "N");
+    assert_eq!(
+        dv,
+        Some(Value::Enum { ty_name: "E".to_string(), variant: "D".to_string(), payload: vec![] })
+    );
+}
+
+#[test]
+fn enum_cast_duplicate_discriminant_resolves_first_match_wins() {
+    // A=1 and B=1 collide; the cast must resolve to the FIRST declared (A),
+    // deterministically.
+    let src = "module m\nenum E: u8 { A = 1, B = 1 }\nconst N = E(1)\n";
+    let (v, diags) = eval(src, "N");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        v,
+        Some(Value::Enum { ty_name: "E".to_string(), variant: "A".to_string(), payload: vec![] })
+    );
+}
+
+// ---- newtype construction cycle (through the real eval_call path) ------
+
+#[test]
+fn newtype_construction_cycle_is_diagnosed_not_a_crash() {
+    // `newtype A = B; newtype B = A` has no scalar bound to bottom out at;
+    // `check_value_fits_ty` must catch the cycle (via layout_in_progress) rather
+    // than recurse forever. Exercised through construction, not just sizing.
+    let src = "module m\nnewtype A = B\nnewtype B = A\nconst N = A(5)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic type")),
+        "expected a cyclic-type diagnostic, got {diags:?}"
+    );
+}
+
+// ---- bitfield layout memo: one diagnostic per malformed bitfield -------
+
+#[test]
+fn malformed_bitfield_reused_reports_overlap_once() {
+    // A bitfield with an overlapping anchor, used in THREE literals within one
+    // eval_const, must emit its overlap diagnostic exactly once (memoized).
+    let src = "module m\n\
+               bitfield Bad: u8 { a: 4 @ 4, b: 4 @ 2 }\n\
+               const X = Bad{ a: 1 }\n\
+               const Y = Bad{ a: 2 }\n\
+               const Z = Bad{ a: 3 }\n\
+               const N = X + Y + Z\n";
+    let (_v, diags) = eval(src, "N");
+    let overlaps =
+        diags.iter().filter(|d| d.message.contains("[bitfield.field-overlap]")).count();
+    assert_eq!(overlaps, 1, "expected exactly one overlap diagnostic, got {diags:?}");
+}
+
+// ---- anchor continuation: unanchored field after an anchored one -------
+
+#[test]
+fn unanchored_field_after_anchor_continues_from_reset_cursor() {
+    // hi(2) fills MSB → lsb 6. mid(4) @ 0 anchors at bit 0 and resets cursor to
+    // 0. lo(?) after it would underflow — instead use an anchored middle then a
+    // trailing unanchored field ABOVE it via a fresh cursor is impossible, so
+    // model the documented reset path: an anchored field lowers the cursor, and
+    // a following unanchored field packs below the (reset) cursor.
+    // Layout: top(3) fills from MSB → lsb 13. anchored(4) @ 4 → lsb 4, cursor→4.
+    // tail(4) unanchored → lsb = cursor(4) - 4 = 0.
+    let src = "module m\nbitfield B: u16 { top: 3, anchored: 4 @ 4, tail: 4 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_bitfield(&file, "B");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let layout = layout.expect("B should lay out");
+    let lsb = |name: &str| layout.fields.iter().find(|f| f.name == name).unwrap().lsb;
+    assert_eq!(lsb("top"), 13);
+    assert_eq!(lsb("anchored"), 4);
+    assert_eq!(lsb("tail"), 0);
+}

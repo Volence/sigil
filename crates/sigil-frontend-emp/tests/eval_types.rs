@@ -350,6 +350,12 @@ fn newtype_without_where_still_checked_against_its_underlying_primitive() {
         diags.iter().any(|d| d.message.contains("300 not in 0..255")),
         "was {diags:?}"
     );
+    // The diagnostic names the newtype the author wrote (`Angle`), not the
+    // underlying `u8` — the minor-review fix.
+    assert!(
+        diags.iter().any(|d| d.message.contains("Angle")),
+        "expected the message to name the newtype `Angle`, got {diags:?}"
+    );
 
     let src = "module m\nnewtype Angle = u8\nconst N = Angle(200)\n";
     let (v, diags) = eval_helper(src, "N");
