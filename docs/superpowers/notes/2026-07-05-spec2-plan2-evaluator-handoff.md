@@ -170,5 +170,41 @@ leave a clear state for the wake-up review.
   + evaluated in the current env, spliced via Display — strings spliced UNQUOTED (review polish);
   best-effort `<?>` + diagnostic on parse/eval failure. Self-reviewed by me (guard/interp logic +
   the unquoted-string fix). New `tests/eval_guards.rs` (13 tests). Crate green, clippy clean.
-- **T8 IN PROGRESS** — end-to-end `tests/eval_corpus.rs` + Plan-1 carry-forwards (`af'` lexing,
-  `path()` inverted-span) + whole-branch review.
+- **T8 DONE** (impl `03b1a0c`, seam fixes `db75176`). `tests/eval_corpus.rs` (9 end-to-end
+  programs: recursion, parallax-style monotonic fold w/ comptime var+for+ensure+interp, deform_sine
+  guard+table skeleton, functional pipeline `|> map |> filter |> fold` w/ lambdas AND fn-refs, const
+  dependency graph, string processing) — every asserted value matched; the corpus surfaced NO
+  evaluator bugs (only a correct clarification that `ensure` is non-fatal so the fn continues).
+  Carry-forwards: `af'` lexes as one ident (trailing `'`), `path()` span now `start.merge(...)` so a
+  missing-ident recovery can't invert it. Note: array PARAM types must be sized `[int; N]` (`[int]`
+  doesn't parse); length not yet type-checked (Plan 3).
+- **WHOLE-BRANCH REVIEW** (final gate) found 3 cross-feature seam bugs the 6 isolated reviews missed,
+  all fixed in `db75176`:
+  1. **CRITICAL** — a `return` inside a lambda body (via an expression-position `if`/`for`) leaked
+     through `map`/`filter`/`fold` and became the ENCLOSING fn's return (silent wrong value, zero
+     diagnostics). Fixed: `apply_callable` takes `pending_return` after the body → the `return`
+     yields from the lambda. Repro `go()` now correctly = `Int(3)`.
+  2. **IMPORTANT** — a locally/const-bound lambda/fn-ref couldn't be called by name (`let f=|x|x+1
+     f(10)` → "unknown function"). Fixed: `eval_call` resolves a single-segment callee as a value
+     (env→const) between the builtin check and the `fns` lookup, routing Lambda/FnRef through
+     `apply_callable`; non-callable value → "not callable".
+  3. **IMPORTANT** — range builtins materialized eagerly with no step charge (`(0..3e9).map` OOMs).
+     Fixed: range `len` is O(1); range map/filter/fold consume lazily charging a step per element →
+     a huge range hits the step budget, not the allocator.
+  `tests/eval_builtins.rs` +8 (66). **Module-split of eval.rs (~2160 lines) recommended as a
+  POST-checkpoint follow-up** (cohesive now, no correctness reason to split before the milestone).
+
+## FINAL STATE (Plan 2 complete, on branch, NOT merged)
+
+- **All 8 tasks done. 258 tests pass. `cargo clippy --workspace --all-targets -- -D warnings` clean.
+  Crate still depends on `sigil-span` ONLY.** Branch `spec2-p2-emp-evaluator`, HEAD `db75176`, off
+  master `11aaf0d` (master untouched — M1.D track intact). Nothing pushed; empyrean repo not pushed.
+- **Acceptance met:** `const`/`comptime fn` programs evaluate to expected `Value`s (corpus);
+  `ensure` failure and non-termination each produce a NAMED, spanned diagnostic; the two-stage +
+  whole-branch review loop caught a CRITICAL silent-wrong-value bug and fixed it.
+- **Milestone gate:** per the standing convention I did NOT merge to master — Plan 2 needs Volence's
+  checkpoint. Suggested review path: skim the plan doc's D-P2.1..D-P2.19 decisions, read
+  `tests/eval_corpus.rs` (the readable acceptance proof), then decide merge.
+- **Known follow-ups (non-blocking, for Plan 3+):** (1) split `eval.rs` into an `eval/` module tree
+  (seams sketched in the final review); (2) `none`→`Unit` is a placeholder that meets real
+  Option/sum-types in Plan 3; (3) everything in the OUT-of-scope list below is deliberately deferred.
