@@ -102,3 +102,39 @@ fn non_ascii_is_an_error_not_a_panic() {
     // lexing continues after the bad char
     assert!(toks_out.iter().any(|t| t.tok == Tok::ident("b")));
 }
+
+// ---- Z80 shadow-register apostrophe (B1) --------------------------------
+
+#[test]
+fn shadow_register_apostrophe_is_part_of_ident() {
+    // `af'`, `bc'`, ... (Z80 shadow registers) lex as a SINGLE identifier,
+    // apostrophe included.
+    assert_eq!(toks("af'"), vec![Tok::ident("af'"), Tok::Eof]);
+    assert_eq!(toks("bc'"), vec![Tok::ident("bc'"), Tok::Eof]);
+    assert_eq!(
+        toks("ex af, af'"),
+        vec![Tok::ident("ex"), Tok::ident("af"), Tok::Comma, Tok::ident("af'"), Tok::Eof]
+    );
+}
+
+#[test]
+fn plain_ident_without_apostrophe_is_unaffected() {
+    // `exx` and other apostrophe-free idents keep lexing exactly as before.
+    assert_eq!(toks("exx"), vec![Tok::ident("exx"), Tok::Eof]);
+    assert_eq!(toks("af"), vec![Tok::ident("af"), Tok::Eof]);
+}
+
+#[test]
+fn only_one_trailing_apostrophe_is_absorbed() {
+    // A single trailing `'` joins the ident; a second `'` is a stray char that
+    // errors (and must not panic).
+    let (_, errs) = lex("af''", SourceId(0));
+    assert_eq!(errs.len(), 1, "second apostrophe should be a stray-char error");
+}
+
+#[test]
+fn bare_apostrophe_is_an_error_not_a_panic() {
+    // A `'` not following an identifier is an unexpected character, not a crash.
+    let (_, errs) = lex("'", SourceId(0));
+    assert_eq!(errs.len(), 1);
+}

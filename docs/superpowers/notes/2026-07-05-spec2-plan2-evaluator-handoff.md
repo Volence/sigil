@@ -162,4 +162,13 @@ leave a clear state for the wake-up review.
     `parse_emp_int` (reject `+5`/`$-5`), added bare `s.val`, fixed a map/fold Poison-cascade
     (short-circuits per D-P2.9), +24 diagnostic-path/edge tests. `tests/eval_builtins.rs` 58 tests.
   - **Checkpoint: 223 tests total, clippy clean, still `sigil-span`-only.**
-- **T7 IN PROGRESS** — guards `ensure`/`ensure_fatal` + `{interp}` (D-P2.19) + budget-message test.
+- **T7 DONE** (impl `210ffc7`, polish `d2def6d`). `ensure`/`ensure_fatal` special-cased in
+  `eval_call` (before builtins/user fns, not shadowable) → `eval_guard`: arity/type checks, passing
+  guard silent, failing `ensure` emits an interpolated error + Poison (D-P2.8), `ensure_fatal` sets
+  `aborted` with the interpolated text as the sole reason. `{interp}` (D-P2.19): `interpolate`/
+  `interp_one` walk the message, `{{`/`}}` escape, `{expr}` is lexed+parsed (reusing `Parser::expr`)
+  + evaluated in the current env, spliced via Display — strings spliced UNQUOTED (review polish);
+  best-effort `<?>` + diagnostic on parse/eval failure. Self-reviewed by me (guard/interp logic +
+  the unquoted-string fix). New `tests/eval_guards.rs` (13 tests). Crate green, clippy clean.
+- **T8 IN PROGRESS** — end-to-end `tests/eval_corpus.rs` + Plan-1 carry-forwards (`af'` lexing,
+  `path()` inverted-span) + whole-branch review.

@@ -172,7 +172,13 @@ impl Parser {
             self.bump(); // dot
             segments.push(self.expect_ident("name"));
         }
-        Path { segments, span: Span { source: start.source, start: start.start, end: self.prev_span().end } }
+        // Merge (not a raw `start.start..prev.end`) so the span is never
+        // inverted: if the opening `expect_ident` consumed nothing (the token
+        // was not an ident), `prev_span().end` can precede `start.start`, and a
+        // raw range would yield `end < start`. `merge` takes min-start/max-end,
+        // keeping the normal case exact while clamping the error case to a valid
+        // span.
+        Path { segments, span: start.merge(self.prev_span()) }
     }
 
     /// Dispatch on the leading contextual keyword. Returns None on an

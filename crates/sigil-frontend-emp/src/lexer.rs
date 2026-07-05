@@ -100,6 +100,11 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
             }
             b'A'..=b'Z' | b'a'..=b'z' | b'_' => {
                 while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') { i += 1; }
+                // A single trailing apostrophe is part of the identifier: the Z80
+                // shadow-register syntax `af'`/`bc'`/`de'`/`hl'`. Exactly one is
+                // absorbed (Z80 uses exactly one); a second `'` is left to the
+                // stray-character path so `af''` still errors.
+                if i < b.len() && b[i] == b'\'' { i += 1; }
                 push!(Tok::Ident(src[s..i].to_string()), s, i);
             }
             b'0'..=b'9' | b'$' => { i = lex_number(src, b, i, source, &mut out, &mut errs); }
