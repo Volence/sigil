@@ -75,14 +75,45 @@ impl<'a> Evaluator<'a> {
                 body: body.clone(),
                 captured: env.clone(),
             },
-            // TODO(Plan 3 T2+): `match` needs exhaustiveness checking and
-            // pattern binding, and `sizeof`/`offsetof`/`rescale` need the
-            // layout engine — grammar only for T1, so these are silent
-            // `Poison` for now (matches `Asm`/`If`-before-T-implemented above).
-            ast::Expr::Match { .. }
-            | ast::Expr::SizeOf(..)
-            | ast::Expr::OffsetOf(..)
-            | ast::Expr::Rescale { .. } => Value::Poison,
+            // `sizeof(T)` (D-P3.9, T3): resolve `T` against the file's type
+            // tables and size it via the layout engine. Resolution failure is
+            // already diagnosed by `resolve_type`, so an already-`Poison`
+            // resolved type stays silent here.
+            ast::Expr::SizeOf(ty, span) => {
+                let resolved = self.resolve_type(ty);
+                if matches!(resolved, crate::layout::Ty::Poison) {
+                    return Value::Poison;
+                }
+                Value::Int(self.size_of_ty(&resolved, *span) as i128)
+            }
+            // `offsetof(T, field)` (D-P3.9, T3): `T` must bottom out (through
+            // `Refined`/`Newtype` wrappers) at a struct; `field` must be one of
+            // its fields. Either failure is a diagnostic + `Poison`.
+            ast::Expr::OffsetOf(ty, field_name, span) => {
+                let resolved = self.resolve_type(ty);
+                if matches!(resolved, crate::layout::Ty::Poison) {
+                    return Value::Poison;
+                }
+                let Some(struct_name) = self.struct_name_for_offsetof(&resolved) else {
+                    self.error(*span, format!("offsetof: {} is not a struct", resolved.describe()));
+                    return Value::Poison;
+                };
+                let layout = self.layout_of_struct(&struct_name, *span);
+                match layout.fields.iter().find(|f| &f.name == field_name) {
+                    Some(f) => Value::Int(f.offset as i128),
+                    None => {
+                        self.error(
+                            *span,
+                            format!("offsetof: struct {struct_name} has no field {field_name}"),
+                        );
+                        Value::Poison
+                    }
+                }
+            }
+            // TODO(Plan 3 T5): `rescale<I,F>` needs fixed-point conversion —
+            // grammar only for T1, so it stays a silent `Poison` for now
+            // (matches `Asm`/`If`-before-T-implemented above).
+            ast::Expr::Match { .. } | ast::Expr::Rescale { .. } => Value::Poison,
         }
     }
 

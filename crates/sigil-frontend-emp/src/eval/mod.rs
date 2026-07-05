@@ -187,6 +187,13 @@ impl<'a> Evaluator<'a> {
         self.diags.push(Diagnostic { level: Level::Error, message: msg.into(), primary: span });
     }
 
+    /// Push a [`Warning`](Level::Warning) diagnostic at `span`. Used by
+    /// default-on lints (e.g. `[layout.odd-field]`, T3) that report but do not
+    /// poison — the check that triggered it still has a usable value/layout.
+    pub fn warn(&mut self, span: Span, msg: impl Into<String>) {
+        self.diags.push(Diagnostic { level: Level::Warning, message: msg.into(), primary: span });
+    }
+
     /// Charge one evaluation step. Returns `false` once [`STEP_BUDGET`] is
     /// exceeded so callers can bail out; keeps counting otherwise.
     pub fn bump_step(&mut self) -> bool {

@@ -69,6 +69,31 @@ pub enum Ty {
     Poison,
 }
 
+impl Ty {
+    /// A short human-readable name for diagnostics (T3's `offsetof: {ty} is not
+    /// a struct`, etc). Not a full pretty-printer — just enough to name what
+    /// went wrong.
+    pub(crate) fn describe(&self) -> String {
+        match self {
+            Ty::Prim { width, signed } => {
+                format!("{}{}", if *signed { "i" } else { "u" }, u32::from(*width) * 8)
+            }
+            Ty::Ptr(inner) => format!("*{}", inner.describe()),
+            Ty::Array(inner, n) => format!("[{}; {n}]", inner.describe()),
+            Ty::Tuple(elems) => {
+                format!("({})", elems.iter().map(Ty::describe).collect::<Vec<_>>().join(", "))
+            }
+            Ty::Struct(name) => name.clone(),
+            Ty::Bitfield(name) => name.clone(),
+            Ty::Enum(name) => name.clone(),
+            Ty::Newtype(name) => name.clone(),
+            Ty::Fixed { i, f } => format!("fixed<{i},{f}>"),
+            Ty::Refined { inner, lo, hi } => format!("{} where {lo}..{hi}", inner.describe()),
+            Ty::Poison => "<poisoned type>".to_string(),
+        }
+    }
+}
+
 /// A resolved struct byte layout: total size and per-field placement.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
@@ -173,6 +198,27 @@ impl<'a> Evaluator<'a> {
                     _ => Ty::Poison,
                 }
             }
+        }
+    }
+
+    /// Resolve a [`Ty`] down to the name of the struct it names, for
+    /// `offsetof(T, field)` (T3). Bottoms out through the erasing wrappers —
+    /// [`Ty::Refined`] and [`Ty::Newtype`] — so `offsetof` works on a refined
+    /// or newtype-wrapped struct type, not just a bare `Ty::Struct`. Returns
+    /// `None` for anything that doesn't bottom out at a struct (including
+    /// `Ty::Poison`, which stays silent — the poisoning resolve already
+    /// reported); the caller diagnoses the `None` case with the *original*
+    /// resolved type so the message names what was actually written.
+    pub(crate) fn struct_name_for_offsetof(&mut self, ty: &Ty) -> Option<String> {
+        match ty {
+            Ty::Struct(name) => Some(name.clone()),
+            Ty::Refined { inner, .. } => self.struct_name_for_offsetof(inner),
+            Ty::Newtype(name) => {
+                let decl = self.newtypes.get(name.as_str()).copied()?;
+                let underlying = self.resolve_type(&decl.underlying);
+                self.struct_name_for_offsetof(&underlying)
+            }
+            _ => None,
         }
     }
 
@@ -387,8 +433,77 @@ impl<'a> Evaluator<'a> {
             return existing.clone();
         }
         let layout = Layout { size: offset, fields };
+        // T3: struct layout checks. These run exactly once per struct, right
+        // here on the freshly-computed RAW layout, before it is memoized — a
+        // later query short-circuits at the top-of-function memo lookup and
+        // never re-enters this block, so none of these re-fire. They are also
+        // unreachable for any struct on a layout cycle: both early-return paths
+        // above (the cycle-detection block and the CRITICAL re-check just
+        // above) return before this point, so a cyclic struct's own diagnostic
+        // is the only one it gets — no size-mismatch/odd-field pile-on.
+        self.check_struct_size(name, decl, &layout);
+        self.check_struct_offsets(name, decl, &layout);
+        self.check_struct_odd_fields(name, decl, &layout);
         self.struct_layout_memo.insert(name.to_string(), layout.clone());
         layout
+    }
+
+    /// D-P3.9 `(size: N)` verification: if `decl` declares an explicit size,
+    /// compare it to `layout`'s computed total. A mismatch is ONE diagnostic —
+    /// the headline delta plus a field-by-field diff (name/offset/size for
+    /// every field) — so the author can see exactly which field to fix instead
+    /// of just "sizes disagree" (this replaces AS's `if X_len <> N / error`
+    /// idiom, §4.3).
+    fn check_struct_size(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
+        let Some(size_expr) = &decl.size else { return };
+        let Some(declared) = self.eval_const_index(size_expr) else { return };
+        let computed = layout.size as i128;
+        if declared == computed {
+            return;
+        }
+        let mut msg = format!("struct {name}: declared size {declared} but fields total {computed}");
+        for f in &layout.fields {
+            msg.push_str(&format!("\n  {} @{} ({} byte{})", f.name, f.offset, f.size, if f.size == 1 { "" } else { "s" }));
+        }
+        msg.push_str(&format!("\n  {computed} vs {declared} (off by {})", computed - declared));
+        self.error(crate::parser::expr_span(size_expr), msg);
+    }
+
+    /// D-P3.9 `@offset` field assertions: for every field that carries an
+    /// explicit `@ expr`, compare it to that field's computed offset within
+    /// `layout`. A mismatch is one diagnostic per offending field.
+    fn check_struct_offsets(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
+        for (field_decl, field_layout) in decl.fields.iter().zip(layout.fields.iter()) {
+            let Some(offset_expr) = &field_decl.offset else { continue };
+            let Some(asserted) = self.eval_const_index(offset_expr) else { continue };
+            let computed = field_layout.offset as i128;
+            if asserted != computed {
+                self.error(
+                    crate::parser::expr_span(offset_expr),
+                    format!(
+                        "struct {name}: field {} at offset {computed} but @offset asserts {asserted}",
+                        field_layout.name
+                    ),
+                );
+            }
+        }
+    }
+
+    /// `[layout.odd-field]` (§4.3): a default-on WARNING (not an error — some
+    /// Z80-side layouts are legitimately unaligned) for every word/long
+    /// (2- or 4-byte) field that lands at an odd byte offset.
+    fn check_struct_odd_fields(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
+        for (field_decl, field_layout) in decl.fields.iter().zip(layout.fields.iter()) {
+            if matches!(field_layout.size, 2 | 4) && field_layout.offset % 2 == 1 {
+                self.warn(
+                    field_decl.span,
+                    format!(
+                        "[layout.odd-field] struct {name}: field {} ({}-byte) at odd offset {}",
+                        field_layout.name, field_layout.size, field_layout.offset
+                    ),
+                );
+            }
+        }
     }
 
     /// Range membership with INCLUSIVE bounds on BOTH ends (D-P3.8): returns

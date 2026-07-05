@@ -99,10 +99,17 @@ fn unknown_type_is_poison_with_diagnostic() {
 
 #[test]
 fn struct_layout_offsets_no_padding() {
-    // Declaration-order, next-byte packing: a@0, b@1, c@3, size 7.
+    // Declaration-order, next-byte packing: a@0, b@1, c@3, size 7. b (2-byte)
+    // and c (4-byte) both land at odd offsets — exactly the no-implicit-padding
+    // scenario T3's `[layout.odd-field]` lint warns about (§4.3); this is a
+    // default-on WARNING, not an error, and doesn't affect the computed layout.
     let file = parse("module m\nstruct S { a: u8, b: u16, c: u32 }\n");
     let (layout, diags) = layout_struct(&file, "S");
-    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert!(
+        diags.iter().all(|d| d.level == sigil_span::Level::Warning),
+        "expected only odd-field WARNINGs (T3), got {diags:?}"
+    );
+    assert_eq!(diags.len(), 2, "expected b and c to both warn odd-field, got {diags:?}");
     let layout = layout.expect("S should lay out");
     assert_eq!(layout.size, 7);
     assert_eq!(layout.fields.len(), 3);
