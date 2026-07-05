@@ -168,6 +168,93 @@ fn infix_bitor_and_or_unaffected() {
     assert!(matches!(expr("a || b"), Expr::Binary { op: BinOp::Or, .. }));
 }
 
+// ---- match expressions & patterns (Plan 3 T1) ----
+
+#[test]
+fn match_wildcard_and_binding_arms() {
+    let Expr::Match { scrutinee, arms, .. } = expr("match tok { _ => 1, s => 2 }") else { panic!() };
+    assert!(matches!(*scrutinee, Expr::Path(p) if p.segments == vec!["tok"]));
+    assert_eq!(arms.len(), 2);
+    assert!(matches!(arms[0].pat, Pattern::Wildcard(_)));
+    assert!(matches!(&arms[1].pat, Pattern::Binding(n, _) if n == "s"));
+}
+
+#[test]
+fn match_nullary_and_payload_variant_arms() {
+    // `Anim.Idle => ...` — nullary variant pattern.
+    // `Token.Literal(s) => ...` — payload-carrying variant pattern with a binding subpattern.
+    let Expr::Match { arms, .. } =
+        expr("match a { Anim.Idle => 1, Token.Literal(s) => 2 }") else { panic!() };
+    let Pattern::Variant { path, subpats, .. } = &arms[0].pat else { panic!() };
+    assert_eq!(path.segments, vec!["Anim", "Idle"]);
+    assert!(subpats.is_empty());
+    let Pattern::Variant { path, subpats, .. } = &arms[1].pat else { panic!() };
+    assert_eq!(path.segments, vec!["Token", "Literal"]);
+    assert_eq!(subpats.len(), 1);
+    assert!(matches!(&subpats[0], Pattern::Binding(n, _) if n == "s"));
+}
+
+#[test]
+fn match_trailing_comma_allowed() {
+    let Expr::Match { arms, .. } = expr("match a { _ => 1, }") else { panic!() };
+    assert_eq!(arms.len(), 1);
+}
+
+#[test]
+fn match_with_no_arms_is_diagnosed_not_panicking() {
+    let (_, diags) = parse_str("module m\nconst X = match a { }\n");
+    assert!(!diags.is_empty());
+}
+
+// ---- sizeof / offsetof / rescale (Plan 3 T1) ----
+
+#[test]
+fn sizeof_of_a_type() {
+    let Expr::SizeOf(ty, _) = expr("sizeof(Sst)") else { panic!() };
+    assert!(matches!(*ty, Type::Named(p) if p.segments == vec!["Sst"]));
+}
+
+#[test]
+fn offsetof_type_and_field() {
+    let Expr::OffsetOf(ty, field, _) = expr("offsetof(Sst, timer)") else { panic!() };
+    assert!(matches!(*ty, Type::Named(p) if p.segments == vec!["Sst"]));
+    assert_eq!(field, "timer");
+}
+
+#[test]
+fn rescale_type_args_and_value() {
+    let Expr::Rescale { i, f, arg, .. } = expr("rescale<8, 8>(x)") else { panic!() };
+    assert_eq!(i, 8);
+    assert_eq!(f, 8);
+    assert!(matches!(*arg, Expr::Path(p) if p.segments == vec!["x"]));
+}
+
+#[test]
+fn sizeof_offsetof_rescale_are_not_reserved() {
+    // Not immediately followed by `(`/`<` — ordinary names.
+    assert!(matches!(expr("sizeof"), Expr::Path(p) if p.segments == vec!["sizeof"]));
+    assert!(matches!(expr("offsetof"), Expr::Path(p) if p.segments == vec!["offsetof"]));
+    assert!(matches!(expr("rescale"), Expr::Path(p) if p.segments == vec!["rescale"]));
+}
+
+#[test]
+fn offsetof_missing_field_is_diagnosed_not_panicking() {
+    let (_, diags) = parse_str("module m\nconst X = offsetof(Sst)\n");
+    assert!(!diags.is_empty());
+}
+
+#[test]
+fn rescale_as_name_compared_with_lt_is_a_binary_not_a_builtin() {
+    // `rescale` in expression position followed by `<` is an ordinary name in a
+    // `<` comparison — NOT the `rescale<I,F>` builtin. It must parse as a clean
+    // Binary{Lt}, with no cascading Rescale-parse diagnostics.
+    let (_, diags) = parse_str("module m\nconst X = rescale < 5\n");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let Expr::Binary { op: BinOp::Lt, lhs, rhs, .. } = expr("rescale < 5") else { panic!() };
+    assert!(matches!(*lhs, Expr::Path(p) if p.segments == vec!["rescale"]));
+    assert!(matches!(*rhs, Expr::Int(5, _)));
+}
+
 #[test]
 fn method_paths_still_parse() {
     // `.` path handling is unchanged by the lambda/pipe additions.

@@ -58,6 +58,12 @@ impl Parser {
     fn peek2(&self) -> &Tok {
         &self.toks[(self.pos + 1).min(self.toks.len() - 1)].tok
     }
+    /// Peek `n` tokens ahead of the cursor (clamped to the trailing `Eof`),
+    /// for the rare multi-token lookahead — e.g. distinguishing the
+    /// `rescale<I,F>(x)` builtin from an ordinary `rescale < n` comparison.
+    fn peek_at(&self, n: usize) -> &Tok {
+        &self.toks[(self.pos + n).min(self.toks.len() - 1)].tok
+    }
     fn span(&self) -> Span { self.toks[self.pos].span }
     fn prev_span(&self) -> Span { self.toks[self.pos.saturating_sub(1)].span }
     fn bump(&mut self) -> Token {
@@ -191,13 +197,23 @@ impl Parser {
         }
         if self.at_kw("use") { return Some(Item::Use(self.use_decl())); }
         if self.at_kw("const") { return Some(Item::Const(self.const_decl(public))); }
-        if self.at_kw("enum") { return Some(Item::Enum(self.enum_decl(public))); }
+        if self.at_kw("enum") { return Some(Item::Enum(self.enum_decl(public, false))); }
         if self.at_kw("bitfield") { return Some(Item::Bitfield(self.bitfield_decl(public))); }
         if self.at_kw("struct") { return Some(Item::Struct(self.struct_decl(public))); }
         if self.at_kw("vars") { return Some(Item::Vars(self.vars_decl(public))); }
         if self.at_kw("data") { return Some(Item::Data(self.data_decl(public))); }
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
-        if self.at_kw("comptime") { return Some(Item::ComptimeFn(self.comptime_fn_decl(public))); }
+        if self.at_kw("newtype") { return Some(Item::Newtype(self.newtype_decl(public))); }
+        if self.at_kw("comptime") {
+            // `comptime enum Name { ... }` — a payload-carrying enum, distinct
+            // from `comptime fn`. Peek past `comptime` before committing to
+            // either reading.
+            if matches!(self.peek2(), Tok::Ident(s) if s == "enum") {
+                self.bump(); // `comptime`
+                return Some(Item::Enum(self.enum_decl(public, true)));
+            }
+            return Some(Item::ComptimeFn(self.comptime_fn_decl(public)));
+        }
         if self.at_kw("section") { return Some(Item::Section(self.section_decl())); }
         let span = self.span();
         self.diag_at(span, format!("expected a declaration, found {:?}", self.peek()));
@@ -219,8 +235,9 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 11] = ["use", "const", "enum", "bitfield", "struct",
-                                     "vars", "data", "proc", "comptime", "section", "pub"];
+        const OPENERS: [&str; 12] = ["use", "const", "enum", "bitfield", "struct",
+                                     "vars", "data", "proc", "comptime", "section", "pub",
+                                     "newtype"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -278,7 +295,17 @@ impl Parser {
         UseDecl { base, names, span }
     }
 
+    /// A full type, including an optional trailing `where LO..HI` refinement.
     fn ty(&mut self) -> Type {
+        let base = self.ty_base();
+        self.maybe_where_refine(base)
+    }
+
+    /// A type with NO `where`-refinement handling — the depth-guarded base
+    /// case reused directly by [`Parser::newtype_decl`], which parses its
+    /// `where` clause itself into a dedicated AST field rather than a nested
+    /// [`Type::Refined`].
+    fn ty_base(&mut self) -> Type {
         // Same depth guard as the expression grammar: `*`/`[`/`(` type arms
         // all recurse, so a `****...u8` bomb would otherwise abort the process.
         if self.depth >= MAX_EXPR_DEPTH {
@@ -290,6 +317,34 @@ impl Parser {
         let r = self.ty_inner();
         self.depth -= 1;
         r
+    }
+
+    /// If a contextual `where` follows, consume it and wrap `base` as a
+    /// [`Type::Refined`]; otherwise return `base` unchanged. A malformed
+    /// range after `where` is diagnosed (via [`Parser::try_where_range`])
+    /// and `base` is returned unwrapped.
+    fn maybe_where_refine(&mut self, base: Type) -> Type {
+        if self.eat_kw("where") {
+            match self.try_where_range() {
+                Some((lo, hi)) => Type::Refined(Box::new(base), lo, hi),
+                None => base,
+            }
+        } else {
+            base
+        }
+    }
+
+    /// Parse the `LO..HI` range following an already-consumed contextual
+    /// `where`. Diagnoses (without panicking) if what follows isn't a range
+    /// expression, and returns `None` in that case.
+    fn try_where_range(&mut self) -> Option<(Expr, Expr)> {
+        let range = self.expr();
+        if let Expr::Range { lo, hi, .. } = range {
+            Some((*lo, *hi))
+        } else {
+            self.diag_at(expr_span(&range), "expected a range `LO..HI` after `where`");
+            None
+        }
     }
 
     fn ty_inner(&mut self) -> Type {
@@ -310,7 +365,48 @@ impl Parser {
                 self.expect(&Tok::RParen, "`)`");
                 Type::Tuple(elems)
             }
+            // `fixed<I, F>` — a fixed-point type; only recognized when `fixed`
+            // is immediately followed by `<` (otherwise `fixed` is an ordinary,
+            // unreserved type/value name).
+            Tok::Ident(s) if s == "fixed" && matches!(self.peek2(), Tok::Lt) => {
+                self.bump(); // `fixed`
+                self.bump(); // `<`
+                let i = self.expect_u32_lit("an integer bit width");
+                self.expect(&Tok::Comma, "`,`");
+                let f = self.expect_u32_lit("a fraction bit width");
+                self.expect(&Tok::Gt, "`>`");
+                Type::Fixed { i, f }
+            }
             _ => Type::Named(self.path()),
+        }
+    }
+
+    /// A `u32` integer literal, e.g. the `8` in `fixed<8, 8>` or `rescale<8, 8>`.
+    /// On anything else, diagnoses and returns `0` without consuming a token
+    /// that an enclosing frame (`,`/`>`/etc.) needs to see.
+    fn expect_u32_lit(&mut self, what: &str) -> u32 {
+        match self.peek().clone() {
+            Tok::Int(v) => {
+                let sp = self.span();
+                self.bump();
+                match u32::try_from(v) {
+                    Ok(n) => n,
+                    Err(_) => {
+                        self.diag_at(sp, format!("{what} out of range (must fit in u32)"));
+                        0
+                    }
+                }
+            }
+            _ => {
+                let sp = self.span();
+                self.diag_at(sp, format!("expected {what}"));
+                if !matches!(self.peek(),
+                    Tok::RBrace | Tok::RParen | Tok::RBracket | Tok::Newline
+                    | Tok::Comma | Tok::Gt | Tok::Eof) {
+                    self.bump();
+                }
+                0
+            }
         }
     }
 
@@ -326,12 +422,22 @@ impl Parser {
         ConstDecl { public, name, ty, value, span }
     }
 
-    fn enum_decl(&mut self, public: bool) -> EnumDecl {
+    /// Parse an `enum Name: repr { variants... }` (`comptime == false`, repr
+    /// required) or `comptime enum Name [: repr] { variants... }`
+    /// (`comptime == true`, repr optional, variants may carry payload types).
+    /// The `enum`/`comptime` leading keyword(s) must already be consumed by
+    /// the caller for the comptime case (see `item`'s dispatch); this always
+    /// consumes the `enum` keyword itself.
+    fn enum_decl(&mut self, public: bool, comptime: bool) -> EnumDecl {
         let start = self.span();
         self.bump(); // `enum`
         let name = self.expect_ident("enum name");
-        self.expect(&Tok::Colon, "`:` (enums require a repr, e.g. `: u8`)");
-        let repr = self.ty();
+        let repr = if comptime {
+            if self.eat(&Tok::Colon) { Some(self.ty()) } else { None }
+        } else {
+            self.expect(&Tok::Colon, "`:` (enums require a repr, e.g. `: u8`)");
+            Some(self.ty())
+        };
         self.expect(&Tok::LBrace, "`{`");
         let mut variants = Vec::new();
         loop {
@@ -340,13 +446,38 @@ impl Parser {
             let vspan = self.span();
             let vname = self.expect_ident("variant name");
             let value = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
-            variants.push((vname, value, vspan));
+            let payload = if self.eat(&Tok::LParen) {
+                let mut tys = Vec::new();
+                if !self.at(&Tok::RParen) {
+                    loop {
+                        tys.push(self.ty());
+                        if !self.eat(&Tok::Comma) { break; }
+                        if self.at(&Tok::RParen) { break; } // trailing comma
+                    }
+                }
+                self.expect(&Tok::RParen, "`)`");
+                tys
+            } else { Vec::new() };
+            variants.push(EnumVariant { name: vname, value, payload, span: vspan });
             self.skip_newlines();
             if !self.eat(&Tok::Comma) { break; }
         }
         self.skip_newlines();
         self.expect(&Tok::RBrace, "`}`");
-        EnumDecl { public, name, repr, variants, span: start.merge(self.prev_span()) }
+        EnumDecl { public, comptime, name, repr, variants, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse a `newtype Name = Underlying [where LO..HI]` declaration.
+    fn newtype_decl(&mut self, public: bool) -> NewtypeDecl {
+        let start = self.span();
+        self.bump(); // `newtype`
+        let name = self.expect_ident("newtype name");
+        self.expect(&Tok::Eq, "`=`");
+        let underlying = self.ty_base();
+        let refine = if self.eat_kw("where") { self.try_where_range() } else { None };
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        NewtypeDecl { public, name, underlying, refine, span }
     }
 
     /// Parse a `bitfield Name: repr { field: bits [@ anchor], ... }` declaration.
@@ -917,7 +1048,7 @@ impl Parser {
         // and `bind` are deliberately absent — they stay contextual and
         // fall through to the assignment path below.)
         if let Tok::Ident(kw) = self.peek() {
-            if matches!(kw.as_str(), "let" | "return" | "if" | "else" | "for" | "while" | "comptime")
+            if matches!(kw.as_str(), "let" | "return" | "if" | "else" | "for" | "while" | "comptime" | "match")
                 && matches!(self.peek2(), Tok::Eq)
             {
                 let kw = kw.clone();
@@ -1330,6 +1461,31 @@ impl Parser {
                 if self.at_kw("if") { return self.if_expr(); }
                 if self.at_kw("for") { return self.for_expr(); }
                 if self.at_kw("asm") { return self.asm_expr(); }
+                if self.at_kw("match") { return self.match_expr(); }
+                // Type-argument builtins are recognized only when the ident is
+                // DIRECTLY followed by their opener — otherwise they are
+                // ordinary, unreserved names (§10 guidance).
+                if self.at_kw("sizeof") && matches!(self.peek2(), Tok::LParen) {
+                    return self.sizeof_expr();
+                }
+                if self.at_kw("offsetof") && matches!(self.peek2(), Tok::LParen) {
+                    return self.offsetof_expr();
+                }
+                // `rescale` sits in EXPRESSION position, where `<` is a valid
+                // comparison operator — unlike `fixed<...>`, which lives in
+                // type position where `<` is never infix. So committing on a
+                // bare `rescale <` would mis-parse `rescale < 5` (an ordinary
+                // name compared with `<`) into a broken `Rescale` node. Require
+                // the full `< int ,` prefix — the unambiguous `rescale<I,F>`
+                // shape — before committing; anything else falls through to
+                // ordinary path/binary parsing.
+                if self.at_kw("rescale")
+                    && matches!(self.peek2(), Tok::Lt)
+                    && matches!(self.peek_at(2), Tok::Int(_))
+                    && matches!(self.peek_at(3), Tok::Comma)
+                {
+                    return self.rescale_expr();
+                }
                 let path = self.path();
                 match self.peek() {
                     Tok::LParen => {
@@ -1449,6 +1605,106 @@ impl Parser {
         self.expect(&Tok::RBrace, "`}`");
         Expr::Asm { body, span: start.merge(self.prev_span()) }
     }
+
+    /// `match scrutinee { Pat => body, ... }`. The scrutinee is parsed with
+    /// struct literals disabled, same as `if`/`for` (Rust's rule): `match x {
+    /// ... }` must not read `x {` as a struct literal.
+    fn match_expr(&mut self) -> Expr {
+        let start = self.span();
+        self.bump(); // `match`
+        let scrutinee = self.expr_no_struct_lit();
+        self.expect(&Tok::LBrace, "`{`");
+        let mut arms = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            let arm_start = self.span();
+            let pat = self.pattern();
+            self.expect(&Tok::FatArrow, "`=>`");
+            let body = self.expr();
+            let span = arm_start.merge(expr_span(&body));
+            arms.push(MatchArm { pat, body, span });
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        let span = start.merge(self.prev_span());
+        if arms.is_empty() {
+            self.diag_at(span, "`match` must have at least one arm");
+        }
+        Expr::Match { scrutinee: Box::new(scrutinee), arms, span }
+    }
+
+    /// A single match-arm pattern: `_`, a bare lowercase binding, or a
+    /// (possibly-qualified) variant path with optional parenthesized
+    /// subpatterns: `Anim.Idle`, `Token.Literal(s)`.
+    fn pattern(&mut self) -> Pattern {
+        let start = self.span();
+        if self.at_kw("_") {
+            self.bump();
+            return Pattern::Wildcard(start);
+        }
+        let path = self.path();
+        let is_binding = path.segments.len() == 1
+            && path.segments[0].chars().next().is_some_and(|c| c.is_lowercase());
+        if is_binding {
+            return Pattern::Binding(path.segments[0].clone(), path.span);
+        }
+        let mut subpats = Vec::new();
+        if self.eat(&Tok::LParen) {
+            if !self.at(&Tok::RParen) {
+                loop {
+                    subpats.push(self.pattern());
+                    if !self.eat(&Tok::Comma) { break; }
+                    if self.at(&Tok::RParen) { break; } // trailing comma
+                }
+            }
+            self.expect(&Tok::RParen, "`)`");
+        }
+        let span = path.span.merge(self.prev_span());
+        Pattern::Variant { path, subpats, span }
+    }
+
+    /// `sizeof(T)` — the byte size of a type.
+    fn sizeof_expr(&mut self) -> Expr {
+        let start = self.span();
+        self.bump(); // `sizeof`
+        self.expect(&Tok::LParen, "`(`");
+        let ty = self.ty();
+        self.expect(&Tok::RParen, "`)`");
+        Expr::SizeOf(Box::new(ty), start.merge(self.prev_span()))
+    }
+
+    /// `offsetof(T, field)` — the byte offset of `field` within `T`.
+    fn offsetof_expr(&mut self) -> Expr {
+        let start = self.span();
+        self.bump(); // `offsetof`
+        self.expect(&Tok::LParen, "`(`");
+        let ty = self.ty();
+        self.expect(&Tok::Comma, "`,`");
+        let field = self.expect_ident("field name");
+        self.expect(&Tok::RParen, "`)`");
+        Expr::OffsetOf(Box::new(ty), field, start.merge(self.prev_span()))
+    }
+
+    /// `rescale<I, F>(x)` — reinterpret a fixed-point value under a new
+    /// `fixed<I, F>` scale.
+    fn rescale_expr(&mut self) -> Expr {
+        let start = self.span();
+        self.bump(); // `rescale`
+        self.expect(&Tok::Lt, "`<`");
+        let i = self.expect_u32_lit("an integer bit width");
+        self.expect(&Tok::Comma, "`,`");
+        let f = self.expect_u32_lit("a fraction bit width");
+        self.expect(&Tok::Gt, "`>`");
+        self.expect(&Tok::LParen, "`(`");
+        let arg = self.expr();
+        self.expect(&Tok::RParen, "`)`");
+        Expr::Rescale { i, f, arg: Box::new(arg), span: start.merge(self.prev_span()) }
+    }
 }
 
 /// Span of any expression node (helper for span merging).
@@ -1460,7 +1716,9 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
         | Expr::StructLit { span, .. } | Expr::ArrayLit { span, .. }
         | Expr::TupleLit { span, .. } | Expr::Range { span, .. } | Expr::If { span, .. }
         | Expr::For { span, .. } | Expr::Asm { span, .. }
-        | Expr::Lambda { span, .. } => *span,
+        | Expr::Lambda { span, .. } | Expr::Match { span, .. }
+        | Expr::Rescale { span, .. } => *span,
+        Expr::SizeOf(_, s) | Expr::OffsetOf(_, _, s) => *s,
     }
 }
 

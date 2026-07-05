@@ -34,6 +34,14 @@ fn multichar_operators() {
 }
 
 #[test]
+fn fat_arrow_is_one_token() {
+    // `=>` (match arms) is a single token, distinct from `=` and `>`.
+    assert_eq!(toks("=>"), vec![Tok::FatArrow, Tok::Eof]);
+    assert_eq!(toks("Pat => body"), vec![Tok::ident("Pat"), Tok::FatArrow, Tok::ident("body"), Tok::Eof]);
+    assert_eq!(toks("= >"), vec![Tok::Eq, Tok::Gt, Tok::Eof]);
+}
+
+#[test]
 fn pipe_variants_disambiguate() {
     // `|>` is one token, distinct from `||` and a bare `|`.
     assert_eq!(toks("|>"), vec![Tok::PipeGt, Tok::Eof]);

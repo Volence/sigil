@@ -298,3 +298,36 @@ fn infinite_while_is_bounded_by_step_budget_not_a_hang() {
         "diagnostics were {diags:?}"
     );
 }
+
+// ---- `return` leaking out of a struct / bitfield field expr (T8 Minor 3) ----
+
+#[test]
+fn return_inside_struct_field_expr_propagates_cleanly() {
+    // A `return` fired while evaluating a struct-literal field expr must
+    // propagate as the fn's result with no spurious diagnostic — the same
+    // uniform leaked-return handling every sibling construction site has.
+    let src = "module m\n\
+        struct S { x: u8 }\n\
+        comptime fn f() -> int {\n\
+        \x20   let s = S { x: for i in 0..3 { if i == 1 { return 42 } } }\n\
+        \x20   return 0\n\
+        }\n\
+        const C = f()\n";
+    let (v, diags) = eval(src, "C");
+    assert_eq!(v, Some(int(42)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn return_inside_bitfield_field_expr_propagates_cleanly() {
+    let src = "module m\n\
+        bitfield B: u8 { a: 4 }\n\
+        comptime fn g() -> int {\n\
+        \x20   let b = B { a: for i in 0..3 { if i == 1 { return 7 } } }\n\
+        \x20   return 0\n\
+        }\n\
+        const C = g()\n";
+    let (v, diags) = eval(src, "C");
+    assert_eq!(v, Some(int(7)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}

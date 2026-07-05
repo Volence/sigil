@@ -26,6 +26,9 @@ pub enum Tok {
     /// The pipe operator `|>` (function application, D-P2.17). Matched before
     /// single `|` so it is never mis-lexed as `Pipe` then `Gt`.
     PipeGt,
+    /// The fat arrow `=>` (match arms, Spec 2 Plan 3). Matched before single
+    /// `=` so it is never mis-lexed as `Eq` then `Gt`.
+    FatArrow,
     /// End of input; always the final token emitted by [`lex`].
     Eof,
 }
@@ -120,6 +123,7 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                     // `|>` before the single-`|` fallback: distinct strings, so
                     // match order is irrelevant, but keep it beside `||`.
                     "|>" => (Tok::PipeGt, 2),
+                    "=>" => (Tok::FatArrow, 2),
                     _ => match c {
                         b'{' => (Tok::LBrace, 1), b'}' => (Tok::RBrace, 1),
                         b'(' => (Tok::LParen, 1), b')' => (Tok::RParen, 1),

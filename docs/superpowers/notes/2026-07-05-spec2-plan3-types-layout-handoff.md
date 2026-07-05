@@ -185,5 +185,50 @@ Rough, TDD, commit-per-task, mirroring Plan 2's cadence:
   non-exhaustive `match` each produce a **named, spanned** diagnostic with interpolated values (§9).
 - `cargo test -p sigil-frontend-emp` green; `cargo clippy --workspace --all-targets -- -D warnings`
   clean; crate still `sigil-span`-only.
+
+## FINAL STATE — Plan 3 COMPLETE on branch `spec2-p3-types-layout` (NOT merged; milestone → needs Volence checkpoint)
+
+All tasks T0–T8 done, subagent-driven with two-stage reviews (spec + code-quality) per task + a
+whole-branch review. Branch off master `ff2c387` (Plan 2 merged), 19 commits, HEAD `8a55d38`.
+**446 tests pass; `cargo clippy --workspace --all-targets -- -D warnings` clean; crate still
+`sigil-span`-only.** Design doc:
+`docs/superpowers/specs/2026-07-05-sigil-spec2-p3-types-layout-design.md`; plan doc:
+`empyrean/docs/plans/2026-07-05-sigil-spec2-p3-types-layout.md` (decisions D-P3.1..D-P3.12;
+D-P3.8 refinements INCLUSIVE; D-P3.10 corrected to widths-fit-not-fill).
+
+**Delivered:** T0 split `eval.rs`→`eval/` tree; T1 grammar (newtype/fixed/where/match/sizeof/
+offsetof/rescale + comptime-enum payloads); T2 `Ty` model + type table + `size_of_ty`/
+`layout_of_struct` (memoized, cycle-detected) + inclusive `check_in_range`; T3 struct `(size:)`/
+`@offset`/`sizeof`/`offsetof` + odd-field warning; T4 bitfield layout/packing (MSB→LSB) + the ONE
+shared refinement mechanism (`check_in_range`/`check_value_fits_ty` backing bitfield fields +
+`where`/newtype refinements + enum casts) + enum casts; T5 `Value::Typed` sized/wrapping arithmetic
+(confined to Typed; bare-`int` overflow still errors) + `fixed<I,F>` scale (same-scale ± transparent,
+`×` doubles to fixed<2I,2F>, mismatch names `rescale`) + `rescale`; T6 comptime sum types +
+exhaustive `match` (payload binding, missing-variant + typo'd-variant caught) — `?` DEFERRED (no
+token/prelude convention yet); T7 `Value::Data` (CPU-neutral structured cells: Scalar/Bytes/SymRef)
++ `Data.empty`/`++`/`byte`/`bytes` + `lower_to_data` checked emission (i128→sized range-checks) +
+checked struct literals (no silent zero-fill) + `data` items. T8 corpus (Appendix A/E + match,
+end-to-end — **zero findings**) + whole-branch review.
+
+**Review loop caught ~16 reproducible defects that all passed their initial green suites** — the value
+of the two-stage + whole-branch discipline. Notably the whole-branch review found the Plan-3 analogue
+of Plan 2's CRITICAL: a self-referential newtype `where` bound (`newtype N = u8 where 0..N(2)`)
+crashing the process via native-stack overflow because the refinement-bound-eval path bypassed the
+newtype cycle guard — fixed with a DEDICATED `refine_check_in_progress` stack (distinct from
+`layout_in_progress` so the legitimate `where 0..sizeof(S)` pattern doesn't false-cycle). Other
+caught bugs: T2 memo-overwrite + newtype-cycle SIGABRT; T3 `(size:)`/`offsetof` re-entrancy SIGABRT;
+T4 enum-cast return-leak; T5 unchecked fixed construction + silent-wrong shifts; T6 poison-cascade +
+silently-swallowed typo'd variant; T7 struct-default recursion SIGABRT + annotation-size gap.
+
+**Plan-3/Plan-4 seam held:** `Value::Data` carries CPU-neutral structured cells; NO byte-order
+serialization, NO `SymRef`→`Fixup` resolution, NO `Code`/`asm{}` — all Plan 4.
+
+**Recommended follow-ups (deferred, present at checkpoint):** (1) consolidate the now-~6 cycle-guard
+sites (layout_in_progress used by size/layout/offsetof/effective_underlying + struct_construct_in_progress
++ refine_check_in_progress) into a shared helper — the duplication caused the one missing-diagnostic
+inconsistency the reviews had to fix; (2) split `eval/expr.rs` (~1387 lines) into a focused module
+(e.g. extract match/pattern + the checked literals + typed arithmetic) — a behavior-neutral T0-style
+move, worth doing before Plan 4 grows it further. Both are maintainability refactors, not correctness;
+left out of the milestone diff so the checkpoint reviews a clean functional deliverable.
 </content>
 </invoke>

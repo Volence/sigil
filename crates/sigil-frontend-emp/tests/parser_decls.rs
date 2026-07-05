@@ -104,7 +104,7 @@ fn enum_decl() {
     let Item::Enum(e) = &f.items[0] else { panic!() };
     assert_eq!(e.name, "Anim");
     assert_eq!(e.variants.len(), 3);
-    assert_eq!(e.variants[2].0, "Shoot");
+    assert_eq!(e.variants[2].name, "Shoot");
 }
 
 #[test]
@@ -200,6 +200,91 @@ fn vars_region_and_overlay_forms() {
     assert_eq!(v.name.as_deref(), Some("PitcherPlantV"));
     assert_eq!(v.region, "sst_custom");
     assert_eq!(v.fields[0].name, "timer");
+}
+
+#[test]
+fn newtype_plain() {
+    let f = ok("module m\nnewtype Frame = u16\npub newtype Angle = u8\n");
+    let Item::Newtype(n) = &f.items[0] else { panic!() };
+    assert!(!n.public);
+    assert_eq!(n.name, "Frame");
+    assert!(matches!(&n.underlying, Type::Named(p) if p.segments == vec!["u16"]));
+    assert!(n.refine.is_none());
+    let Item::Newtype(n) = &f.items[1] else { panic!() };
+    assert!(n.public);
+}
+
+#[test]
+fn newtype_with_where_refinement() {
+    let f = ok("module m\nnewtype Percent = u8 where 0..101\n");
+    let Item::Newtype(n) = &f.items[0] else { panic!() };
+    assert!(matches!(&n.underlying, Type::Named(p) if p.segments == vec!["u8"]));
+    let (lo, hi) = n.refine.as_ref().expect("expected a refinement");
+    assert!(matches!(lo, Expr::Int(0, _)));
+    assert!(matches!(hi, Expr::Int(101, _)));
+}
+
+#[test]
+fn fixed_point_type() {
+    let f = ok("module m\nconst A: fixed<8, 8> = x\n");
+    let Item::Const(c) = &f.items[0] else { panic!() };
+    assert!(matches!(c.ty, Some(Type::Fixed { i: 8, f: 8 })));
+}
+
+#[test]
+fn refined_type_in_ordinary_type_position() {
+    let f = ok("module m\nconst A: u8 where 0..101 = x\n");
+    let Item::Const(c) = &f.items[0] else { panic!() };
+    let Some(Type::Refined(base, lo, hi)) = &c.ty else { panic!("{:?}", c.ty) };
+    assert!(matches!(**base, Type::Named(_)));
+    assert!(matches!(lo, Expr::Int(0, _)));
+    assert!(matches!(hi, Expr::Int(101, _)));
+}
+
+#[test]
+fn fixed_missing_param_is_diagnosed_not_panicking() {
+    let (_, diags) = parse_str("module m\nconst A: fixed<> = x\n");
+    assert!(!diags.is_empty());
+}
+
+#[test]
+fn where_with_no_range_is_diagnosed_not_panicking() {
+    let (_, diags) = parse_str("module m\nnewtype X = u8 where\n");
+    assert!(!diags.is_empty());
+}
+
+#[test]
+fn comptime_enum_with_payload() {
+    let f = ok(concat!(
+        "module m\n",
+        "comptime enum Token {\n",
+        "    Literal(string),\n",
+        "    Arg(Width, Operand, TokKind),\n",
+        "}\n"));
+    let Item::Enum(e) = &f.items[0] else { panic!() };
+    assert!(e.comptime);
+    assert!(e.repr.is_none());
+    assert_eq!(e.variants.len(), 2);
+    assert_eq!(e.variants[0].name, "Literal");
+    assert_eq!(e.variants[0].payload.len(), 1);
+    assert!(matches!(&e.variants[0].payload[0], Type::Named(p) if p.segments == vec!["string"]));
+    assert_eq!(e.variants[1].payload.len(), 3);
+}
+
+#[test]
+fn comptime_enum_may_have_explicit_repr() {
+    let f = ok("module m\ncomptime enum Flag: u8 { A, B }\n");
+    let Item::Enum(e) = &f.items[0] else { panic!() };
+    assert!(e.comptime);
+    assert!(matches!(&e.repr, Some(Type::Named(p)) if p.segments == vec!["u8"]));
+}
+
+#[test]
+fn plain_enum_still_requires_repr() {
+    let (f, diags) = parse_str("module m\nenum Anim { Idle }\n");
+    assert!(!diags.is_empty());
+    let Item::Enum(e) = &f.items[0] else { panic!() };
+    assert!(!e.comptime);
 }
 
 #[test]
