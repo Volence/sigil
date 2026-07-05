@@ -188,6 +188,39 @@ fn non_terminating_recursion_is_bounded_not_a_crash() {
     );
 }
 
+#[test]
+fn return_in_argument_position_exits_caller() {
+    // Regression (T4 review): a `return` inside a call argument belongs to the
+    // CALLER, not the callee. `return 7` must exit `outer`, so R = 7 — not 1007
+    // (callee's body must never steal the caller's pending return).
+    let src = "module m\n\
+        comptime fn callee(x: int) -> int { return x + 100 }\n\
+        comptime fn outer(c: bool) -> int {\n\
+        \x20   let r = callee(if c { return 7 } else { 2 })\n\
+        \x20   return r + 1000\n\
+        }\n\
+        const R = outer(true)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(7)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn sequential_early_returning_calls_do_not_leak() {
+    // Calling an early-returning fn twice and summing must not leak a return
+    // across the call boundary: inner(1)=1, inner(2)=2, so R = 3.
+    let src = "module m\n\
+        comptime fn inner(x: int) -> int {\n\
+        \x20   if x > 0 { return x }\n\
+        \x20   return 0\n\
+        }\n\
+        comptime fn outer() -> int { return inner(1) + inner(2) }\n\
+        const R = outer()\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(3)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
 // ---- last-expr block value --------------------------------------------
 
 #[test]

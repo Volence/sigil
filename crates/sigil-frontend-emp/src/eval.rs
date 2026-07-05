@@ -531,6 +531,14 @@ impl<'a> Evaluator<'a> {
         if self.aborted {
             return Value::Poison;
         }
+        // A `return` fired inside an argument expression (e.g. `f(if c { return 7 })`)
+        // belongs to the *caller*, not the callee. Bail before running the callee
+        // body so the enclosing `exec_stmts` arm takes `pending_return` and yields
+        // the caller's `Flow::Return`; otherwise the callee's first statement would
+        // steal it.
+        if self.pending_return.is_some() {
+            return Value::Poison;
+        }
         // Recursion / stack safety (D-P2.16): bound the depth *before* recursing
         // so runaway recursion is named, not a native stack overflow.
         if self.call_stack.len() >= MAX_CALL_DEPTH {
