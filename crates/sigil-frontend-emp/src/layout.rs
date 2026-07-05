@@ -807,12 +807,45 @@ impl<'a> Evaluator<'a> {
                 let (lo, hi) = prim_bounds(*width, *signed);
                 self.check_in_range(val, lo, hi, span, &format!("{label} value"))
             }
-            // `fixed<>` and a newtype whose underlying is a struct/bitfield/enum
-            // fall through here: they carry no scalar bound this mechanism knows
-            // how to check, so construction is (for now) unchecked. `fixed<>`
-            // scale checking is DEFERRED to T5; this arm is not the final word on
-            // "every constructible type is range-checked".
+            // A `fixed<I,F>` value is stored in an `I+F`-bit SIGNED integer
+            // (T5, D2.10): its stored int must fit `-(2^(bits-1)) ..= 2^(bits-1)-1`.
+            // So `Fix(999999)` for `newtype Fix = fixed<4,4>` (an 8-bit store,
+            // −128..127) is an out-of-range construction, not a silent accept.
+            Ty::Fixed { i, f } => {
+                let Some(bits) = self.fixed_width_bits(*i, *f, span) else {
+                    return false;
+                };
+                let lo = -(1i128 << (bits - 1));
+                let hi = (1i128 << (bits - 1)) - 1;
+                self.check_in_range(val, lo, hi, span, &format!("{label} value"))
+            }
+            // A newtype whose underlying is a struct/bitfield/enum carries no
+            // scalar bound this mechanism knows how to check — those types are
+            // never constructed via the `Name(x)` call syntax this backs, so
+            // there is nothing to range-check.
             _ => true,
+        }
+    }
+
+    /// The bit width of a `fixed<I,F>` (`I + F`), guarding the two degenerate
+    /// widths that would make sized arithmetic silently wrong (T5, review Minor
+    /// #7): a zero-bit fixed (no store) and a `>= 128`-bit fixed (unrepresentable
+    /// in the i128 comptime domain — [`wrap_bits`](crate::eval) silently skips
+    /// wrapping at `bits >= 128`). Either is a `[fixed.too-wide]` diagnostic and
+    /// `None`; otherwise the width. `I`/`F` are each a full `u32`, so the sum is
+    /// computed in `u64` to avoid its own overflow.
+    pub(crate) fn fixed_width_bits(&mut self, i: u32, f: u32, span: Span) -> Option<u32> {
+        let bits = u64::from(i) + u64::from(f);
+        if bits == 0 || bits >= 128 {
+            self.error(
+                span,
+                format!(
+                    "[fixed.too-wide] fixed<{i},{f}> ({bits} bits) is not a usable comptime fixed-point width (need 1..=127 bits)"
+                ),
+            );
+            None
+        } else {
+            Some(bits as u32)
         }
     }
 }

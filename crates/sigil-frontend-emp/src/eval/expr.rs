@@ -422,8 +422,13 @@ impl<'a> Evaluator<'a> {
     /// path or the scale-aware fixed path. Cross-type mixing (different nominal
     /// types that are not a fixed/fixed scale mismatch) is `[cross-type mix]`.
     fn typed_op(&mut self, op: BinOp, tl: Ty, nl: i128, tr: Ty, nr: i128, span: Span) -> Value {
-        let ul = self.effective_underlying(&tl);
-        let ur = self.effective_underlying(&tr);
+        let ul = self.effective_underlying(&tl, span);
+        // Bail on a poisoned (e.g. cyclic) left underlying before resolving the
+        // right — so a cycle present on both operands reports once, not twice.
+        if matches!(ul, Ty::Poison) {
+            return Value::Poison;
+        }
+        let ur = self.effective_underlying(&tr, span);
         match (&ul, &ur) {
             (Ty::Poison, _) | (_, Ty::Poison) => Value::Poison,
             (Ty::Fixed { i: il, f: fl }, Ty::Fixed { i: ir, f: fr }) => {
@@ -447,13 +452,18 @@ impl<'a> Evaluator<'a> {
     /// [`Ty::Newtype`] chains (and [`Ty::Refined`] wrappers) down to a
     /// [`Ty::Prim`] or [`Ty::Fixed`] — for arithmetic dispatch. Cycle-guarded
     /// against the shared [`layout_in_progress`](Evaluator) stack (a
-    /// `newtype A = B; newtype B = A` chain), returning [`Ty::Poison`] on a
-    /// detected cycle. A construction already validated the value, so this
-    /// normally bottoms out cleanly.
-    fn effective_underlying(&mut self, ty: &Ty) -> Ty {
+    /// `newtype A = B; newtype B = A` chain), reporting `cyclic type: {chain}`
+    /// (matching the sibling guards in [`size_of_newtype`](Evaluator) etc.) and
+    /// returning [`Ty::Poison`] on a detected cycle. A construction already
+    /// validated the value, so this normally bottoms out cleanly.
+    fn effective_underlying(&mut self, ty: &Ty, span: Span) -> Ty {
         match ty {
             Ty::Newtype(name) => {
-                if self.layout_in_progress.iter().any(|n| n == name) {
+                if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
+                    let mut chain: Vec<&str> =
+                        self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
+                    chain.push(name);
+                    self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
                     return Ty::Poison;
                 }
                 let Some(decl) = self.newtypes.get(name.as_str()).copied() else {
@@ -461,11 +471,11 @@ impl<'a> Evaluator<'a> {
                 };
                 self.layout_in_progress.push(name.to_string());
                 let underlying = self.resolve_type(&decl.underlying);
-                let result = self.effective_underlying(&underlying);
+                let result = self.effective_underlying(&underlying, span);
                 self.layout_in_progress.pop();
                 result
             }
-            Ty::Refined { inner, .. } => self.effective_underlying(inner),
+            Ty::Refined { inner, .. } => self.effective_underlying(inner, span),
             other => other.clone(),
         }
     }
@@ -500,8 +510,21 @@ impl<'a> Evaluator<'a> {
             BinOp::BitAnd => typed(wrap_bits(nl & nr, bits, signed)),
             BinOp::BitOr => typed(wrap_bits(nl | nr, bits, signed)),
             BinOp::BitXor => typed(wrap_bits(nl ^ nr, bits, signed)),
-            BinOp::Shl => typed(wrap_bits(nl.wrapping_shl(nr as u32), bits, signed)),
-            BinOp::Shr => typed(wrap_bits(nl >> nr.clamp(0, 127), bits, signed)),
+            // Shift count must be in `0..width` (the TYPE's width) — shifting an
+            // 8-bit value by >= 8 is out of range, mirroring bare-int `eval_shift`
+            // which errors rather than silently wrapping/clamping the count.
+            BinOp::Shl | BinOp::Shr => {
+                if !(0..i128::from(bits)).contains(&nr) {
+                    self.error(span, format!("shift amount out of range: {nr}"));
+                    return Value::Poison;
+                }
+                let n = nr as u32;
+                if op == BinOp::Shl {
+                    typed(wrap_bits(nl.wrapping_shl(n), bits, signed))
+                } else {
+                    typed(wrap_bits(nl >> n, bits, signed))
+                }
+            }
             BinOp::Eq => Value::Bool(nl == nr),
             BinOp::Ne => Value::Bool(nl != nr),
             BinOp::Lt => Value::Bool(nl < nr),
@@ -544,11 +567,20 @@ impl<'a> Evaluator<'a> {
         // bare `fixed<Il+Ir, Fl+Fr>` — the one op whose result type differs from
         // its operands'.
         if op == BinOp::Mul {
+            let (ni, nf) = (il.saturating_add(ir), fl.saturating_add(fr));
+            // The combined scale must stay representable in the i128 domain —
+            // e.g. `fixed<32,32> × fixed<32,32>` would be a 128-bit fixed, past
+            // where `wrap_bits` can wrap. Reject it rather than widen silently.
+            if self.fixed_width_bits(ni, nf, span).is_none() {
+                return Value::Poison;
+            }
             let Some(prod) = nl.checked_mul(nr) else {
                 return self.arith_overflow(span, "*");
             };
-            let ty = Ty::Fixed { i: il.saturating_add(ir), f: fl.saturating_add(fr) };
-            return Value::Typed { ty: Box::new(ty), val: Box::new(Value::Int(prod)) };
+            return Value::Typed {
+                ty: Box::new(Ty::Fixed { i: ni, f: nf }),
+                val: Box::new(Value::Int(prod)),
+            };
         }
         let same_scale = (il, fl) == (ir, fr);
         match op {
@@ -845,7 +877,11 @@ impl<'a> Evaluator<'a> {
         let Some(stored) = val.as_stored_int() else {
             return Value::Poison;
         };
-        let Ty::Fixed { f: src_f, .. } = self.effective_underlying(ty) else {
+        // The target `fixed<I,F>` must itself be a usable width.
+        if self.fixed_width_bits(i, f, span).is_none() {
+            return Value::Poison;
+        }
+        let Ty::Fixed { f: src_f, .. } = self.effective_underlying(ty, span) else {
             self.error(span, format!("rescale expects a fixed<> value, got {}", ty.describe()));
             return Value::Poison;
         };

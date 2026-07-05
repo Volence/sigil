@@ -269,3 +269,107 @@ fn bare_int_arithmetic_is_unchanged() {
     assert_eq!(v, Some(Value::Int(300)));
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }
+
+// ---- T5 review: silent-failure regressions -----------------------------
+
+#[test]
+fn typed_div_and_mod_by_zero_are_diagnosed_not_panics() {
+    for op in ["/", "%"] {
+        let src = format!("module m\nnewtype Angle = u8\nconst N = Angle(10) {op} Angle(0)\n");
+        let (v, diags) = eval(&src, "N");
+        assert_eq!(v, Some(Value::Poison), "op {op}");
+        assert!(
+            diags.iter().any(|d| d.message.contains("by zero")),
+            "op {op}: expected a by-zero diagnostic, got {diags:?}"
+        );
+    }
+}
+
+#[test]
+fn typed_valid_shift_works() {
+    // Angle(5) << 2 = 20, still Typed(Angle), no diagnostic.
+    let src = "module m\nnewtype Angle = u8\nconst N = Angle(5) << 2\n";
+    let (n, ty, diags) = typed_stored(src, "N");
+    assert_eq!(n, 20);
+    assert_eq!(ty, Ty::Newtype("Angle".into()));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn typed_out_of_range_shift_is_diagnosed() {
+    // CRITICAL 2 repro: pre-fix these returned silent wrong answers (5, or a
+    // no-op) with ZERO diagnostics. A count outside `0..width` must now error.
+    // `<< 128` (past 128), `<< 8` (== the u8 width), and `<< -1` are all bad.
+    for amount in ["128", "8", "(0 - 1)"] {
+        let src = format!("module m\nnewtype Angle = u8\nconst N = Angle(5) << {amount}\n");
+        let (v, diags) = eval(&src, "N");
+        assert_eq!(v, Some(Value::Poison), "shift by {amount}");
+        assert!(
+            diags.iter().any(|d| d.message.contains("shift amount out of range")),
+            "shift by {amount}: expected a shift-range diagnostic, got {diags:?}"
+        );
+    }
+}
+
+#[test]
+fn small_fixed_construction_out_of_range_is_diagnosed() {
+    // CRITICAL 1 repro: pre-fix `Fix(999999)` for an 8-bit fixed store was
+    // silently accepted (the `_ => true` catch-all). fixed<4,4> is a signed
+    // 8-bit store, range -128..=127.
+    let src = "module m\nnewtype Fix = fixed<4,4>\nconst N = Fix(999999)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("999999 not in -128..127")),
+        "expected an out-of-range fixed construction, got {diags:?}"
+    );
+
+    // ...and an in-range construction still works (1.0 in 4.4 is 0x10 = 16).
+    let src = "module m\nnewtype Fix = fixed<4,4>\nconst N = Fix(16)\n";
+    let (n, _ty, diags) = typed_stored(src, "N");
+    assert_eq!(n, 16);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn too_wide_fixed_is_diagnosed() {
+    // review Minor #7: a fixed whose I+F >= 128 cannot be wrapped in the i128
+    // domain — construction must reject it rather than silently skip wrapping.
+    let src = "module m\nnewtype Huge = fixed<100,100>\nconst N = Huge(1)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("[fixed.too-wide]")),
+        "expected a fixed.too-wide diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn cyclic_newtype_through_arithmetic_is_diagnosed() {
+    // IMPORTANT 3 repro: pre-fix `effective_underlying` returned a bare Poison
+    // with ZERO diagnostics on a cycle. `A(x)` constructs (the `where` bound
+    // bottoms out), but the arithmetic must resolve the underlying and detect
+    // the `A -> A` cycle, reporting it like the sibling guards.
+    let src = "module m\nnewtype A = A where 0..10\nconst N = A(5) + A(3)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic type")),
+        "expected a cyclic-type diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn subtraction_respects_operand_order_in_both_coercion_directions() {
+    // `5 - Angle(3)` = 2 (bare literal coerced on the left).
+    let src = "module m\nnewtype Angle = u8\nconst N = 5 - Angle(3)\n";
+    let (n, _ty, diags) = typed_stored(src, "N");
+    assert_eq!(n, 2);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+
+    // `Angle(3) - 5` = -2, wraps into u8 as 254 (locks the non-commutative order).
+    let src = "module m\nnewtype Angle = u8\nconst N = Angle(3) - 5\n";
+    let (n, _ty, diags) = typed_stored(src, "N");
+    assert_eq!(n, 254);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
