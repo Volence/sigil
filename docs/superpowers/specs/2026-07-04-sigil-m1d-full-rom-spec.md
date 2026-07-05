@@ -235,12 +235,39 @@ classes to **0**; remaining diagnostics ≤ the 6 known EA sites + anything newl
 (bucket and record them); the emitted `__ErrorMessage` bytes for a representative macro
 invocation match asl (snippet golden).
 
-### T2 — The 6 deferred EA sites (3 symbols)
+### T2 — The 6 deferred EA sites (3 symbols) + `END`
 
-Small, bounded: the T5b-deferred symbolic-operand forms at `OJZ_Act1_Descriptor` (×4),
-`BGND_Palette`, `OJZ_Palette`. Locate with `FILTER="out of scope" m1c_full`. Snippet
-goldens per form. Acceptance: recon reaches **0 diagnostics** (with T1), which arms the
-`m1c_rom` emit path for the first time.
+Small, bounded: the T5b-deferred symbolic-operand forms + the `END` one-off.
+Probes committed: `docs/superpowers/notes/2026-07-04-m1d-t2-abs-ea-end-probes.md`.
+
+**Located (2026-07-04):** all 6 EA sites are bare-symbol absolute source EAs
+(`lea Sym, a0`) in `test/ojz_scroll_test.asm` (included by `main.asm:415`):
+`OJZ_Act1_Descriptor` ×4 (`:36,:47,:98,:117`), `BGND_Palette` (`:20`),
+`OJZ_Palette` (`:27`). `END` is the bare directive at `main.asm:446`.
+
+**Design decision (settled; supersedes "deferred to T5b"):** a bare-symbol
+absolute EA is a **width-variable instruction** — asl width-selects abs.w/abs.l
+via the *same* pinned `asl_width_rule` as jmp/jsr (probe-verified: `lea $100`→
+`41F8` abs.w, `lea $10000`→`41F9` abs.l, boundaries `$7FFF`/`$8000`/`$FF8000`
+exact; EA-general, not lea-specific — `move.w Sym,d0` too). Lower it by
+**folding + width-selecting in the front-end now** (not a deferred resolve_layout
+fragment): `convert_one_atom_m68k` folds the address from the current-pass env,
+picks the width via `asl_width_rule`, emits `M68kOperand::AbsW`/`AbsL`;
+unresolved-this-pass → pessimistic abs.l (asl's forward-symbol guess; keeps the
+fixpoint shrink-only). This reuses the one pinned rule and is the T3 front-end
+width-selection mechanism applied to the absolute-EA class — a stepping-stone,
+not throwaway. The 6 real sites all target high-address level data → abs.l, no
+per-pass flip; byte-exact **values** (F2 stale-address) stay a T3/T4 matter.
+**Shared rule:** relocate `asl_width_rule`+`AbsWidth` from `sigil-link` to
+`sigil-ir` (the front-end cannot depend on `sigil-link` — one-way graph);
+`sigil-link` re-exports so its code + M1.B boundary-sweep stay green.
+
+**`END`:** emission no-op (probe: bare `END` and `END <sym>` both emit zero
+bytes; the arg is an entry-point marker). Add `"end" | "END" => {}` to `dispatch`.
+
+Snippet goldens per form (`t2_*`: abs.w/abs.l/boundary for `lea` + EA-general
+`move`, `END` no-op). Acceptance: recon reaches **0 diagnostics** (with T1),
+which arms the `m1c_rom` emit path for the first time.
 
 ### T3 — Width selection moves into the front-end pass loop (fixes F2)
 
