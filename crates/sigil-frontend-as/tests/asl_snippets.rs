@@ -1,7 +1,8 @@
 //! End-to-end gate: assemble each committed snippet through the front end
-//! (→ link → flatten) and compare to golden bytes. Golden bytes for these
-//! snippets are hand-verified; a manual `gen_snippet_vectors` bin (added
-//! separately) can regenerate them from real `asl`.
+//! (→ link → flatten) and compare to golden bytes. The golden bytes are
+//! **generated from real `asl`** by the `gen_snippet_vectors` bin and regenerate
+//! as a git-clean no-op (non-circularity — see that bin's header); this gate
+//! reads the committed bytes and never needs asl.
 
 use sigil_frontend_as::{assemble, Options};
 use sigil_ir::SymbolTable;

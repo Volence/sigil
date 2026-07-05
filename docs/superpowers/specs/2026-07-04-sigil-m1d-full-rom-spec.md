@@ -463,9 +463,43 @@ link and scope the check to genuine collisions if it fires.
 Acceptance: `sha256` match, non-debug; promote `m1c_rom` from example to a
 `SIGIL_STRICT_GATE` test `m1d_rom` (skip-green without aeon, like the others).
 
-### T5 — `__DEBUG__` build parity (A2)
+### T5 — `__DEBUG__` build parity (A2). ✅ DONE (2026-07-05).
 
-Build the debug reference deliberately (aeon's `__DEBUG__` switch; record the exact
+**Result: Sigil's `__DEBUG__` build is BYTE-EXACT** to the deliberately-built debug
+reference (`aeon/s4.debug.bin`), identical over `[0, EndOfRom=0x673A2)` except the 4
+`convsym`/`fixheader` header bytes `{0x18E,0x18F,0x1A6,0x1A7}` — the same A1/A2 shape as
+`m1d_rom`. New strict gate `crates/sigil-harness/tests/m1d_debug_rom.rs` + helper
+`assemble_full_rom_debug`. Commits `c6c278b` (the six cures + gate) → `d3656ff` (review
+fix); spec✅ + code-quality✅ review (ready-to-merge; one latent-panic fix applied).
+
+**Six real assembler gaps found by first-diff triage on the debug surface's first
+whole-image exercise, each probe-first vs live asl, each with a `t5_*` snippet golden
+(regen churned only the 6 new blocks):**
+1. **`==` is asl's C-style equality alias for `=`** (lexer). It lexed as two `Eq` tokens
+   → `parse_expr` choked. Pervasive in `debugger.asm`.
+2. **String comparisons fold as SUB-expressions of boolean logic**, not only as a whole
+   `if` condition. New `expand_str_comparisons` folds `<str-expr> (=|<>) "literal"` → 0/1
+   (probe: `((strlen(t)==2)&&(substr(t,0,1)=="."))`=1), wired into `eval_all` + `directive_db`;
+   `trailing_str_expr_len` finds the LHS extent (literal / bare ident / `substr`/`lowstring`).
+3. **`substr` edge semantics**: pos AT/PAST end → `""`, NEGATIVE len → `""` (was `None`/error)
+   — the `%<…>` decoder hits `substr(string,len,-1)`.
+4. **`cmp <ea>,An` ≡ `cmpa`** (`refine_m68k_mnemonic`: `(Cmp,[_,An])=>Cmpa`; probe `B3C8`).
+   `assert`'s `cmp.ATTRIBUTE dest,src` with an An `dest`.
+5. **A string `.`-local `set` symbol passed as a macro arg is substituted BY VALUE** (quoted)
+   — the T4 reserved scope name `" macro#N.local"` can't re-lex as one identifier, so
+   `switch`/`lowstring`/`substr` in the callee couldn't resolve it. `__FSTRING_PushArgument`
+   consumes `.__operand`/`.__param` this way. New `bind_macro_arg`.
+6. **`render_tokens` merge-aware spacing**: space two tokens only when they'd MERGE on
+   re-lex (both ident chars), so `#1` renders `#1` not `# 1` — the extra space became a
+   literal byte when a macro arg is embedded in a `%<…>` assert string (`dest=#1`). This one
+   byte cascaded to 17.5k downstream address diffs.
+
+The T5 review caught a latent panic (`trailing_str_expr_len` underflow on empty input,
+`dc.b <>"x"`) — fixed + regression test. Non-debug ROM unaffected throughout (the fixes are
+debug-only-exercised or byte-identical for non-debug; `m1d_rom` stayed green each step).
+
+**Original scope (for reference).** Build the debug reference deliberately (aeon's
+`__DEBUG__` switch; record the exact
 invocation in PROVENANCE.md — the debug ROM is NOT the shipped `s4.bin`). Assemble the
 same config in sigil; compare. Known dependency: T0.4 (`cmpm`). Expect the debug
 surface (debugger.asm's `.ATTRIBUTE`/`switch`/`lowstring` paths, already implemented in
@@ -518,7 +552,27 @@ M0-era harness assembled the Z80 regions without the 68k side. The full build de
 everything (recon: zero stubs). Delete it; re-run the M0 acceptance path via the full-build
 machinery. Acceptance: no stub file, all gates green.
 
-### T7 — Spec + doc reconciliation (A4; anytime, must land before milestone close)
+### T7 — Spec + doc reconciliation (A4). ✅ DONE (2026-07-05).
+
+All three parts landed in `empyrean/docs/SIGIL_CORE_SPEC.md` + the sigil sweep:
+1. **Backports (each with a "verified vs asl 1.42 Bld 212" note):** comparisons fold **0/1**
+   (§4.5 + §7.1); infix `!` = **XOR** (§4.5 + §7.1); `==`≡`=` (§4.5 + §7.1); `int()` =
+   **floor** (§7.1); the normative **`strstr` bug-for-bug paragraph is deleted / inverted**
+   (§7.1) with its §12 R3 + R7 mentions corrected (bug does not reproduce); `save`/`restore`
+   given the **T0.1 reset-on-CPU-switch** semantics (§4.9 — corrected the "preserve exactly
+   what AS preserves" claim).
+2. **Architecture supersessions** recorded as a consolidated §4 note (same status as the §3.2
+   salsa deferral): `ProvenanceStack` deferred (Span-only); `RelaxableFragment`/`ChosenSizes`
+   never built (→ `JmpJsrSym`+`resolve_layout` → T3 front-end width selection); `Diagnostic`
+   narrowed to `{level,message,primary}`; `IrStreamer` narrowed (+ `emit_fragment`); §9.1
+   frontend→backends edge blessed; `SymbolValue` stays `Int|Poison`. §8.4 CI wording +
+   M0/M1 acceptance rewritten to reality (local `SIGIL_STRICT_GATE`; T6 M0 re-expression;
+   A1/A2 convsym-append-out-of-scope + assembled-`EndOfRom` length, not 458737).
+3. **Stale-comment sweep:** `gen_snippet_vectors.rs` + `asl_snippets.rs` ("hand-verified" →
+   generator-produced / non-circular); README status table (M1 ✅, assembled-ROM target;
+   `sigil-harness` crate row = the gates, `regen` retired).
+
+**Original scope (for reference).**
 
 1. **`empyrean/docs/SIGIL_CORE_SPEC.md` backports:** comparisons fold **0/1** (§7.1/§4.5);
    `int()` = **floor** (header/D8); **remove the normative `strstr` bug-for-bug paragraph**

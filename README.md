@@ -15,13 +15,16 @@ the assembler Sigil replaces, not against a spec read of the ISA.
 
 | Milestone | Scope | State |
 |---|---|---|
-| **M0** | IR + full Z80 backend + AS front-end (Z80 subset) + byte-exact A+B harness | ✅ complete — Aeon's Z80 sound-driver regions assemble byte-identical to a fresh `asl` reference ROM |
+| **M0** | IR + full Z80 backend + AS front-end (Z80 subset) + byte-exact A+B harness | ✅ complete — Aeon's Z80 sound-driver regions assemble byte-identical to a fresh `asl` reference ROM (M1.D T6 re-expressed this via the full zero-stub build) |
 | **M0.5** | Procedural-EA spike: `sigil-isa::m68k` MOVE encoder | ✅ complete — all 22 MOVE EA-matrix forms byte-identical to `asl` |
-| **M1** | Full 68000 backend + relaxation + operand-width selection + full linker | ⏳ next — target: whole `s4.bin` byte-identical (`sha256` gate) |
+| **M1** | Full 68000 backend (A) + full linker (B) + AS 68k front-end fidelity (C) + full-ROM byte-exactness (D) | ✅ complete — the whole assembled `s4.bin` is byte-identical to `asl`, both **non-debug** (`m1d_rom`) and **`__DEBUG__`** (`m1d_debug_rom`) |
 
 The M0.5 spike retired the risk in the 68000's irregular effective-address /
 extension-word encoding (the [§5.5 hazards](#the-asl-oracle-discipline)) before M1
-commits to the full backend.
+committed to the full backend. The byte-exactness target is the **assembled** ROM
+(`asl` → `p2bin`); `build.sh`'s trailing `convsym -a` debug-symbol append is out of
+scope (not executed — an ELF-`.symtab` analogue), so Sigil's ROM equals `s4.bin`
+except the four `convsym`/`fixheader`-rewritten header bytes.
 
 ## Workspace layout
 
@@ -38,8 +41,8 @@ encoders stay dependency-free and extraction-ready.
 | `sigil-link` | VMA≠LMA layout, fixup resolution, image flattening (the linker) |
 | `sigil-frontend-as` | The quarantined AS-syntax oracle front-end (lexer/parser/eval/macros/multi-pass). Nothing depends on it except the CLI and harness |
 | `sigil-frontend-emp` | The future `.emp` surface-language front-end (parallel Spec-2 track) |
-| `sigil-cli` | The `sigil` binary (`parse` / `build` / `diff`) |
-| `sigil-harness` | The byte-exact A+B diff harness + `regen` reference-derivation tool |
+| `sigil-cli` | The `sigil` binary (`parse` / `build` / `diff` — `build`/`diff` drive the full-ROM reference build) |
+| `sigil-harness` | The reference-build helpers (`assemble_full_rom`) + the byte-exactness gates (`m0_regions`, `m1b_gate`, `m1c_vector_table`, `m1d_rom`, `m1d_debug_rom`) |
 
 ## Build & test
 
