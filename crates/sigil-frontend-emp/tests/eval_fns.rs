@@ -221,6 +221,20 @@ fn sequential_early_returning_calls_do_not_leak() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }
 
+#[test]
+fn deep_abort_chain_is_truncated() {
+    // The depth abort fires with 512 `spin` frames on the call stack; the
+    // message names only the innermost MAX_CHAIN_FRAMES, prefixed with `...`.
+    let src = "module m\ncomptime fn spin(n: int) -> int { return spin(n + 1) }\nconst R = spin(0)\n";
+    let (_, diags) = eval(src, "R");
+    let msg = &diags
+        .iter()
+        .find(|d| d.message.contains("recursion too deep"))
+        .expect("expected a recursion-depth diagnostic")
+        .message;
+    assert!(msg.contains("... ->"), "chain not truncated: {msg:?}");
+}
+
 // ---- last-expr block value --------------------------------------------
 
 #[test]

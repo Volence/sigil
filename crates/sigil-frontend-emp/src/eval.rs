@@ -98,6 +98,10 @@ pub const STEP_BUDGET: u64 = 5_000_000;
 /// [`Evaluator::abort`]) instead of overflowing the process stack.
 pub const MAX_CALL_DEPTH: usize = 512;
 
+/// How many innermost call-stack frames an abort message names before it
+/// truncates with a leading `...` (keeps a deep repeated chain readable).
+const MAX_CHAIN_FRAMES: usize = 12;
+
 /// A control-flow signal threaded out of [`Evaluator::exec_stmts`].
 ///
 /// A statement block either falls off its end (`Normal`, carrying the block's
@@ -146,6 +150,11 @@ pub struct Evaluator<'a> {
     /// exit the enclosing fn. `eval_expr` sets it; the next `exec_stmts` step
     /// picks it up and turns it into a [`Flow::Return`]. (Statement-position
     /// `return`/`if` never need this — they flow through `exec_stmts` directly.)
+    ///
+    /// INVARIANT: every statement arm that evaluates an operand MUST route it
+    /// through [`eval_operand`](Evaluator::eval_operand) and bail on
+    /// `Err(Flow::Return)`. Bypassing that check lets a caller's pending return
+    /// leak into a callee (the call-arg return-leak bug class).
     pending_return: Option<Value>,
     /// Memoized const values, keyed by const name. A `Poison` entry records a
     /// const that already failed (cycle or error) so the failure does not
@@ -342,6 +351,18 @@ impl<'a> Evaluator<'a> {
 
     // ---- statement execution / control flow (T4) ---------------------------
 
+    /// Eval `expr`; if it left a pending return, surface it as `Err(Flow::Return)`
+    /// so the calling stmt arm can bail. Centralizes the check EVERY statement arm
+    /// that evaluates an operand must perform (this is the invariant that prevents
+    /// the call-arg return-leak class of bug).
+    fn eval_operand(&mut self, expr: &ast::Expr, env: &mut Env) -> Result<Value, Flow> {
+        let v = self.eval_expr(expr, env);
+        match self.pending_return.take() {
+            Some(r) => Err(Flow::Return(r)),
+            None => Ok(v),
+        }
+    }
+
     /// Execute a statement block in order in `env`'s *current* scope, returning
     /// a [`Flow`]: `Normal(v)` if the block fell off its end (with `v` the
     /// trailing value), or `Return(v)` the moment an explicit `return` — or a
@@ -365,39 +386,38 @@ impl<'a> Evaluator<'a> {
             }
             match stmt {
                 ast::Stmt::Let { name, value, .. } => {
-                    let v = self.eval_expr(value, env);
-                    if let Some(r) = self.pending_return.take() {
-                        return Flow::Return(r);
-                    }
+                    let v = match self.eval_operand(value, env) {
+                        Ok(v) => v,
+                        Err(f) => return f,
+                    };
                     env.define(name.clone(), v, false);
                     last = Value::Unit;
                 }
                 ast::Stmt::LetTuple { names, value, span } => {
-                    let v = self.eval_expr(value, env);
-                    if let Some(r) = self.pending_return.take() {
-                        return Flow::Return(r);
-                    }
+                    let v = match self.eval_operand(value, env) {
+                        Ok(v) => v,
+                        Err(f) => return f,
+                    };
                     self.bind_tuple(names, v, *span, env);
                     last = Value::Unit;
                 }
                 ast::Stmt::Return { value, .. } => {
                     let v = match value {
-                        Some(e) => self.eval_expr(e, env),
+                        // A `return` nested in the returned expression wins (it
+                        // fired first); `eval_operand` surfaces it as `Err`.
+                        Some(e) => match self.eval_operand(e, env) {
+                            Ok(v) => v,
+                            Err(f) => return f,
+                        },
                         None => Value::Unit,
                     };
-                    // A `return` nested in the returned expression wins (it fired
-                    // first); otherwise return this statement's own value.
-                    if let Some(r) = self.pending_return.take() {
-                        return Flow::Return(r);
-                    }
                     return Flow::Return(v);
                 }
                 ast::Stmt::Expr(e) => {
-                    let v = self.eval_expr(e, env);
-                    if let Some(r) = self.pending_return.take() {
-                        return Flow::Return(r);
-                    }
-                    last = v;
+                    last = match self.eval_operand(e, env) {
+                        Ok(v) => v,
+                        Err(f) => return f,
+                    };
                 }
                 ast::Stmt::If(e) => {
                     // Statement-position `if`: run it, propagate any `return`,
@@ -414,6 +434,10 @@ impl<'a> Evaluator<'a> {
                 // TODO(T5): `for`/`while`/`comptime` blocks + `comptime var` /
                 // assignment / `patch` / `bind`. No-op for now (kept total so T5
                 // slots in without touching the handled arms above).
+                //
+                // INVARIANT: when these arms gain real semantics, every operand
+                // they evaluate MUST go through `eval_operand` and bail on
+                // `Err(Flow::Return)` — see the `pending_return` field doc.
                 ast::Stmt::While { .. }
                 | ast::Stmt::ComptimeBlock { .. }
                 | ast::Stmt::For(_)
@@ -444,11 +468,11 @@ impl<'a> Evaluator<'a> {
         if self.aborted {
             return Flow::Normal(Value::Poison);
         }
-        let c = self.eval_expr(cond, env);
         // A `return` fired while evaluating the condition itself — propagate it.
-        if let Some(r) = self.pending_return.take() {
-            return Flow::Return(r);
-        }
+        let c = match self.eval_operand(cond, env) {
+            Ok(v) => v,
+            Err(f) => return f,
+        };
         match c {
             Value::Poison => Flow::Normal(Value::Poison),
             Value::Bool(true) => {
@@ -491,8 +515,8 @@ impl<'a> Evaluator<'a> {
             Value::Poison => {}
             ref other => {
                 let got = match other {
-                    Value::Tuple(elems) => format!("a {}-tuple", elems.len()),
-                    v => format!("a {}", v.type_name()),
+                    Value::Tuple(elems) => format!("{}-tuple", elems.len()),
+                    v => v.type_name().to_string(),
                 };
                 self.error(
                     span,
@@ -584,6 +608,13 @@ impl<'a> Evaluator<'a> {
         let mut slots: Vec<Option<Value>> = vec![None; n];
         let mut pos = 0usize;
         for arg in args {
+            // A `return` fired in an earlier arg (its value belongs to the
+            // caller) or an abort — stop binding so we don't pile spurious
+            // arity diagnostics onto the real event. The caller discards these
+            // bindings.
+            if self.aborted || self.pending_return.is_some() {
+                break;
+            }
             let v = self.eval_expr(&arg.value, env);
             match &arg.name {
                 None => {
@@ -618,6 +649,12 @@ impl<'a> Evaluator<'a> {
                 },
             }
         }
+        // If a return/abort interrupted arg binding, the slots are incomplete by
+        // design; skip missing-arg reporting (spurious) — the caller discards
+        // this result anyway.
+        if self.aborted || self.pending_return.is_some() {
+            return vec![Value::Poison; n];
+        }
         slots
             .into_iter()
             .enumerate()
@@ -644,9 +681,10 @@ impl<'a> Evaluator<'a> {
         }
         self.aborted = true;
         let names: Vec<&str> = self.call_stack.iter().map(|(n, _)| n.as_str()).collect();
-        // Keep the message bounded when a deep chain repeats the same callee.
-        let chain = if names.len() > 12 {
-            format!("... -> {}", names[names.len() - 12..].join(" -> "))
+        // Keep the message bounded when a deep chain repeats the same callee:
+        // show only the innermost `MAX_CHAIN_FRAMES`, prefixed with `...`.
+        let chain = if names.len() > MAX_CHAIN_FRAMES {
+            format!("... -> {}", names[names.len() - MAX_CHAIN_FRAMES..].join(" -> "))
         } else {
             names.join(" -> ")
         };
@@ -1055,12 +1093,16 @@ pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Di
     // (A per-call thread is cheap enough at comptime; a future task may hoist it
     // to one evaluator-owned worker.)
     std::thread::scope(|scope| {
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .stack_size(EVAL_STACK_BYTES)
             .spawn_scoped(scope, || eval_const_inner(file, name))
-            .expect("failed to spawn comptime evaluation thread")
-            .join()
-            .expect("comptime evaluation thread panicked")
+            .expect("failed to spawn comptime evaluation thread");
+        match handle.join() {
+            Ok(v) => v,
+            // Re-raise the original panic on the caller's thread so its payload,
+            // message, and backtrace are preserved rather than flattened.
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     })
 }
 
