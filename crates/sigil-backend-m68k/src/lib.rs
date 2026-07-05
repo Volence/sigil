@@ -2,8 +2,11 @@
 //! trait to `sigil_isa::m68k` and turns instructions into `DataFragment`s —
 //! fully-resolved forms via `lower_inst`, and deferred-target forms via
 //! `lower_branch` (bra/bsr/Bcc PcRel fixups), `lower_pcrel_ea` ((d16,PC) fixup),
-//! and `lower_jmp_jsr_sym` (the jmp/jsr placeholder). Only jmp/jsr operand-WIDTH
-//! selection (abs.w vs abs.l) is deferred to the linker's `resolve_layout`.
+//! and the two jmp/jsr forms. The assembler front-end selects jmp/jsr operand
+//! WIDTH (abs.w vs abs.l) in its own pass loop and builds the finished fragment
+//! via `lower_jmp_jsr_abs` (M1.D T3). `lower_jmp_jsr_sym` is the residual
+//! placeholder form for hand-built IR, whose width the linker's `resolve_layout`
+//! selects.
 
 use sigil_ir::backend::{Backend, Cpu, LowerError};
 use sigil_ir::{AbsWidth, DataFragment, Expr, Fixup, FixupKind, Fragment};
