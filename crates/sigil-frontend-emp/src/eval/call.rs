@@ -34,8 +34,18 @@ impl<'a> Evaluator<'a> {
                 return self.eval_builtin_call(callee, method.clone(), args, span, env);
             }
         }
-        // Non-builtin, non-single-segment callee: an enum payload constructor or
-        // module path, both later plans. Silently poison for now (no diagnostic).
+        // Payload-carrying comptime enum construction (T6): `Enum.Variant(args)`.
+        // A 2-segment callee whose first segment names a known enum is always
+        // routed here — even if the variant lookup then fails — so a typo'd
+        // variant reports "no variant" rather than falling through to the
+        // generic silent-poison path below.
+        if callee.segments.len() == 2 {
+            if let Some(decl) = self.enums.get(callee.segments[0].as_str()).copied() {
+                return self.construct_enum_payload(decl, &callee.segments[1], args, span, env);
+            }
+        }
+        // Any other non-builtin, non-single-segment callee (a module path,
+        // later plan) is silently poisoned for now (no diagnostic).
         if callee.segments.len() != 1 {
             return Value::Poison;
         }
@@ -385,6 +395,57 @@ impl<'a> Evaluator<'a> {
         }
         self.error(span, format!("[enum.out-of-range] {n} is not a variant of {}", decl.name));
         Value::Poison
+    }
+
+    /// `Enum.Variant(args)` (T6): construct a payload-carrying comptime enum
+    /// value. `decl` is the enum named by the callee's first segment;
+    /// `variant_name` its second. Checks the variant exists and that the
+    /// argument count matches its DECLARED payload arity exactly
+    /// (`[enum.payload-arity]` naming expected vs got) — payload argument
+    /// TYPES are not checked against the declared payload types here (loose
+    /// at comptime for now; a deeper type-check is deferred to a later task).
+    ///
+    /// Mirrors the `eval_operand` return-leak guard used throughout this file
+    /// (commit db75176, see [`eval_single_int_arg`](Self::eval_single_int_arg)'s
+    /// doc comment): a `return`/abort surfaced while evaluating one arg belongs
+    /// to the *caller*, so bail immediately rather than let it poison the
+    /// arity check with a spurious diagnostic.
+    fn construct_enum_payload(
+        &mut self,
+        decl: &'a ast::EnumDecl,
+        variant_name: &str,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        let Some(variant) = decl.variants.iter().find(|v| v.name == variant_name) else {
+            self.error(span, format!("enum `{}` has no variant `{variant_name}`", decl.name));
+            return Value::Poison;
+        };
+        let mut payload = Vec::with_capacity(args.len());
+        for arg in args {
+            if arg.name.is_some() {
+                self.error(arg.span, "enum payload construction takes positional arguments only");
+            }
+            payload.push(self.eval_expr(&arg.value, env));
+            // The leaked-return / abort guard — see the doc comment above.
+            if self.aborted || self.pending_return.is_some() {
+                return Value::Poison;
+            }
+        }
+        if payload.len() != variant.payload.len() {
+            self.error(
+                span,
+                format!(
+                    "[enum.payload-arity] `{}.{variant_name}` expects {} payload value(s), got {}",
+                    decl.name,
+                    variant.payload.len(),
+                    payload.len()
+                ),
+            );
+            return Value::Poison;
+        }
+        Value::Enum { ty_name: decl.name.clone(), variant: variant_name.to_string(), payload }
     }
 
     /// Compute every variant's comptime discriminant in ONE forward pass (O(n),

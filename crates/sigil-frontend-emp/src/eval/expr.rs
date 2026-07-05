@@ -123,8 +123,10 @@ impl<'a> Evaluator<'a> {
             // `rescale<I,F>(x)` (T5, D2.10): retag a fixed-point value to the
             // target scale, shifting its stored int by the fraction-bit delta.
             ast::Expr::Rescale { i, f, arg, span } => self.eval_rescale(*i, *f, arg, *span, env),
-            // TODO(T6): `match` / sum-type destructuring.
-            ast::Expr::Match { .. } => Value::Poison,
+            // `match` / sum-type destructuring (T6, D-P3.10-ish).
+            ast::Expr::Match { scrutinee, arms, span } => {
+                self.eval_match(scrutinee, arms, *span, env)
+            }
         }
     }
 
@@ -177,9 +179,23 @@ impl<'a> Evaluator<'a> {
             if let Some(v) = a_val {
                 return self.field_or_len(v, b, path.span);
             }
-            // Step 2: a nullary `Enum.Variant` value.
+            // Step 2: a nullary `Enum.Variant` value. A variant that DOES
+            // declare a payload (T6) cannot be referenced bare — it must be
+            // called (`Enum.Variant(...)`, parsed as an `Expr::Call` and
+            // handled by `eval_call`'s `construct_enum_payload`) so its
+            // payload values are actually supplied.
             if let Some(decl) = self.enums.get(a) {
-                if decl.variants.iter().any(|v| v.name == b) {
+                if let Some(variant) = decl.variants.iter().find(|v| v.name == b) {
+                    if !variant.payload.is_empty() {
+                        self.error(
+                            path.span,
+                            format!(
+                                "variant `{b}` takes {} payload value(s); use `{a}.{b}(...)`",
+                                variant.payload.len()
+                            ),
+                        );
+                        return Value::Poison;
+                    }
                     return Value::Enum {
                         ty_name: a.to_string(),
                         variant: b.to_string(),
@@ -896,6 +912,180 @@ impl<'a> Evaluator<'a> {
             if d >= 128 { 0 } else { stored << d }
         };
         Value::Typed { ty: Box::new(Ty::Fixed { i, f }), val: Box::new(Value::Int(shifted)) }
+    }
+
+    /// `match scrutinee { pat => body, ... }` (T6). The scrutinee must
+    /// evaluate to a [`Value::Enum`] — matching on any other value kind is
+    /// unsupported in v1 (a clear diagnostic; a future plan may add matching
+    /// on other shapes). Exhaustiveness (D-P3.10) is checked statically
+    /// against the scrutinee's enum decl BEFORE arm selection, and always
+    /// runs regardless of which arm ultimately fires. Arms are then tried
+    /// top-to-bottom; the first whose pattern matches the scrutinee wins, runs
+    /// its body in a fresh scope holding the pattern's bindings, and its value
+    /// is returned. A `return` reached through a nested expression-position
+    /// `if` inside the winning arm's body sets `pending_return` exactly as it
+    /// would for any other expression (T4's mechanism) — `eval_match` does
+    /// nothing special to propagate it; the caller's usual
+    /// `eval_operand`/`Expr::If`-wrapping machinery picks it up unchanged.
+    fn eval_match(
+        &mut self,
+        scrutinee: &ast::Expr,
+        arms: &[ast::MatchArm],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        let scrutinee_span = crate::parser::expr_span(scrutinee);
+        let sv = self.eval_expr(scrutinee, env);
+        // A `return`/abort surfaced while evaluating the scrutinee belongs to
+        // the caller (the `eval_operand` invariant) — bail before touching arms.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let (ty_name, variant) = match &sv {
+            Value::Enum { ty_name, variant, .. } => (ty_name.clone(), variant.clone()),
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    scrutinee_span,
+                    format!("match on non-enum value ({}) is unsupported", other.type_name()),
+                );
+                return Value::Poison;
+            }
+        };
+        // Exhaustiveness is a STATIC check — it always runs, independent of
+        // which arm (if any) ends up matching at runtime.
+        self.check_match_exhaustive(&ty_name, arms, span);
+        for arm in arms {
+            env.push_scope();
+            let outcome = self.bind_pattern(&arm.pat, &sv, env);
+            match outcome {
+                // Matched (and any bindings applied) — run the arm body in
+                // this scope and return its value; first match wins.
+                Some(true) => {
+                    let v = self.eval_expr(&arm.body, env);
+                    env.pop_scope();
+                    return v;
+                }
+                // Did not match this arm (e.g. a different variant, or a
+                // nested subpattern mismatch) — drop the scope and try the
+                // next arm; no diagnostic, this is an ordinary non-match.
+                Some(false) => {
+                    env.pop_scope();
+                }
+                // A structural pattern error (arity mismatch) was already
+                // diagnosed inside `bind_pattern` — poison the whole match
+                // immediately rather than silently trying another arm, since
+                // the mismatch is fixed by the pattern's shape, not the data.
+                None => {
+                    env.pop_scope();
+                    return Value::Poison;
+                }
+            }
+        }
+        // Unreachable when the match is exhaustive and every arm's arity is
+        // correct; kept as a defensive fallback (e.g. exhaustiveness allowed a
+        // catch-all that happens not to be reachable in some other way).
+        self.error(span, format!("no arm matched enum value `{ty_name}.{variant}`"));
+        Value::Poison
+    }
+
+    /// Exhaustiveness check for a `match` on enum `ty_name` (D-P3.10). Because
+    /// comptime enums are closed (a fixed, fully-known variant set — no
+    /// solver needed), this is a simple coverage scan: a [`Pattern::Variant`]
+    /// covers the variant named by its path's LAST segment; a
+    /// [`Pattern::Wildcard`] or [`Pattern::Binding`] is a catch-all covering
+    /// every remaining variant. Any declared variant covered by neither, once
+    /// all arms are scanned, is reported by name in one
+    /// `[match.non-exhaustive]` diagnostic. Silently returns if `ty_name`
+    /// isn't a known enum (should not happen — the scrutinee already produced
+    /// a `Value::Enum` naming it).
+    fn check_match_exhaustive(&mut self, ty_name: &str, arms: &[ast::MatchArm], span: Span) {
+        let Some(decl) = self.enums.get(ty_name).copied() else {
+            return;
+        };
+        let mut covered: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut catch_all = false;
+        for arm in arms {
+            match &arm.pat {
+                ast::Pattern::Variant { path, .. } => {
+                    if let Some(seg) = path.segments.last() {
+                        covered.insert(seg.as_str());
+                    }
+                }
+                ast::Pattern::Wildcard(_) | ast::Pattern::Binding(_, _) => catch_all = true,
+            }
+        }
+        if catch_all {
+            return;
+        }
+        let missing: Vec<&str> =
+            decl.variants.iter().map(|v| v.name.as_str()).filter(|n| !covered.contains(n)).collect();
+        if !missing.is_empty() {
+            self.error(span, format!("[match.non-exhaustive] missing {}", missing.join(", ")));
+        }
+    }
+
+    /// Try to match (and, on success, bind) `pat` against a value `val` —
+    /// either the whole scrutinee (top-level arm pattern) or one payload
+    /// value (a nested [`Pattern::Variant`] subpattern) — recursing uniformly
+    /// for both, since a nested subpattern is matched exactly like a
+    /// top-level one against its corresponding payload value.
+    ///
+    /// Returns:
+    /// - `Some(true)` — matched; any bindings introduced are defined in `env`.
+    /// - `Some(false)` — did not match (a different variant, or a nested
+    ///   subpattern mismatch) — an ordinary non-match, no diagnostic; the
+    ///   caller should try the next arm.
+    /// - `None` — a STRUCTURAL pattern error (subpattern arity does not match
+    ///   the payload's declared arity) already diagnosed here — this is fixed
+    ///   by the pattern's shape, not by the runtime data, so the caller should
+    ///   poison the whole match rather than keep trying arms.
+    fn bind_pattern(&mut self, pat: &ast::Pattern, val: &Value, env: &mut Env) -> Option<bool> {
+        match pat {
+            ast::Pattern::Wildcard(_) => Some(true),
+            ast::Pattern::Binding(name, _) => {
+                env.define(name.clone(), val.clone(), false);
+                Some(true)
+            }
+            ast::Pattern::Variant { path, subpats, span } => {
+                let vname = path.segments.last().map(String::as_str).unwrap_or("");
+                match val {
+                    Value::Enum { variant, payload, .. } => {
+                        if variant != vname {
+                            return Some(false);
+                        }
+                        if subpats.len() != payload.len() {
+                            self.error(
+                                *span,
+                                format!(
+                                    "pattern `{vname}` expects {} payload value(s), got {}",
+                                    subpats.len(),
+                                    payload.len()
+                                ),
+                            );
+                            return None;
+                        }
+                        for (sp, pv) in subpats.iter().zip(payload.iter()) {
+                            match self.bind_pattern(sp, pv, env) {
+                                Some(true) => {}
+                                Some(false) => return Some(false),
+                                None => return None,
+                            }
+                        }
+                        Some(true)
+                    }
+                    // A payload value that already failed evaluation (T6:
+                    // constructing the enum itself may have poisoned a
+                    // payload slot) propagates silently — no new diagnostic.
+                    Value::Poison => Some(true),
+                    // Matching a `Variant` pattern against a non-enum value is
+                    // a static/data mismatch this task does not deep-check
+                    // (payload TYPES are loose at comptime, D-P3.10 scope) —
+                    // treat as an ordinary non-match rather than erroring.
+                    _ => Some(false),
+                }
+            }
+        }
     }
 
     // ---- diagnostic helpers ------------------------------------------------
