@@ -952,9 +952,12 @@ impl<'a> Evaluator<'a> {
                 return Value::Poison;
             }
         };
-        // Exhaustiveness is a STATIC check — it always runs, independent of
-        // which arm (if any) ends up matching at runtime.
-        self.check_match_exhaustive(&ty_name, arms, span);
+        // Exhaustiveness + variant-name validation is a STATIC check — it
+        // always runs, independent of which arm (if any) matches at runtime,
+        // and reports whether it emitted any diagnostic (so the runtime
+        // "no arm matched" fallback below does not double-report on the
+        // common non-exhaustive-hit path).
+        let statically_reported = self.check_match_exhaustive(&ty_name, arms, span);
         for arm in arms {
             env.push_scope();
             let outcome = self.bind_pattern(&arm.pat, &sv, env);
@@ -982,47 +985,72 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-        // Unreachable when the match is exhaustive and every arm's arity is
-        // correct; kept as a defensive fallback (e.g. exhaustiveness allowed a
-        // catch-all that happens not to be reachable in some other way).
-        self.error(span, format!("no arm matched enum value `{ty_name}.{variant}`"));
+        // No arm matched at runtime. When the static check already reported
+        // (a non-exhaustive match, or a typo'd variant), this is the SAME
+        // event — do not double-report; just poison per D-P2.9. The fallback
+        // diagnostic is reserved for the genuinely-shouldn't-happen case where
+        // exhaustiveness passed yet nothing matched.
+        if !statically_reported {
+            self.error(span, format!("no arm matched enum value `{ty_name}.{variant}`"));
+        }
         Value::Poison
     }
 
-    /// Exhaustiveness check for a `match` on enum `ty_name` (D-P3.10). Because
-    /// comptime enums are closed (a fixed, fully-known variant set — no
-    /// solver needed), this is a simple coverage scan: a [`Pattern::Variant`]
-    /// covers the variant named by its path's LAST segment; a
-    /// [`Pattern::Wildcard`] or [`Pattern::Binding`] is a catch-all covering
-    /// every remaining variant. Any declared variant covered by neither, once
-    /// all arms are scanned, is reported by name in one
-    /// `[match.non-exhaustive]` diagnostic. Silently returns if `ty_name`
-    /// isn't a known enum (should not happen — the scrutinee already produced
-    /// a `Value::Enum` naming it).
-    fn check_match_exhaustive(&mut self, ty_name: &str, arms: &[ast::MatchArm], span: Span) {
+    /// Static validation of a `match` on enum `ty_name` (D-P3.10): variant-name
+    /// checking AND exhaustiveness. Returns `true` iff it emitted any
+    /// diagnostic (so [`eval_match`](Self::eval_match) can suppress its runtime
+    /// "no arm matched" fallback rather than double-report the same event).
+    ///
+    /// Because comptime enums are closed (a fixed, fully-known variant set — no
+    /// solver needed), both checks are simple scans over the declared variants:
+    /// - Every [`Pattern::Variant`] names a variant by its path's LAST segment;
+    ///   a segment naming NO declared variant is a typo — reported
+    ///   (`no variant \`X\` on enum \`Y\``) EVEN when a catch-all is present, so
+    ///   a typo is never silently swallowed by the `_` arm.
+    /// - A `Variant` arm covers its named variant; a [`Pattern::Wildcard`] or
+    ///   [`Pattern::Binding`] is a catch-all covering every remaining variant.
+    ///   Any declared variant covered by neither, once all arms are scanned, is
+    ///   reported by name in one `[match.non-exhaustive]` diagnostic.
+    ///
+    /// Silently returns `false` if `ty_name` isn't a known enum (should not
+    /// happen — the scrutinee already produced a `Value::Enum` naming it).
+    fn check_match_exhaustive(&mut self, ty_name: &str, arms: &[ast::MatchArm], span: Span) -> bool {
         let Some(decl) = self.enums.get(ty_name).copied() else {
-            return;
+            return false;
         };
+        let mut reported = false;
         let mut covered: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut catch_all = false;
         for arm in arms {
             match &arm.pat {
-                ast::Pattern::Variant { path, .. } => {
+                ast::Pattern::Variant { path, span: pat_span, .. } => {
                     if let Some(seg) = path.segments.last() {
-                        covered.insert(seg.as_str());
+                        // Validate the variant name against the enum (fires
+                        // regardless of any catch-all, so a typo is caught).
+                        if decl.variants.iter().any(|v| &v.name == seg) {
+                            covered.insert(seg.as_str());
+                        } else {
+                            self.error(
+                                *pat_span,
+                                format!("no variant `{seg}` on enum `{ty_name}`"),
+                            );
+                            reported = true;
+                        }
                     }
                 }
                 ast::Pattern::Wildcard(_) | ast::Pattern::Binding(_, _) => catch_all = true,
             }
         }
         if catch_all {
-            return;
+            return reported;
         }
         let missing: Vec<&str> =
             decl.variants.iter().map(|v| v.name.as_str()).filter(|n| !covered.contains(n)).collect();
         if !missing.is_empty() {
             self.error(span, format!("[match.non-exhaustive] missing {}", missing.join(", ")));
+            reported = true;
         }
+        reported
     }
 
     /// Try to match (and, on success, bind) `pat` against a value `val` —
@@ -1058,7 +1086,7 @@ impl<'a> Evaluator<'a> {
                             self.error(
                                 *span,
                                 format!(
-                                    "pattern `{vname}` expects {} payload value(s), got {}",
+                                    "[match.pattern-arity] pattern `{vname}` expects {} payload value(s), got {}",
                                     subpats.len(),
                                     payload.len()
                                 ),
@@ -1075,15 +1103,39 @@ impl<'a> Evaluator<'a> {
                         Some(true)
                     }
                     // A payload value that already failed evaluation (T6:
-                    // constructing the enum itself may have poisoned a
-                    // payload slot) propagates silently — no new diagnostic.
-                    Value::Poison => Some(true),
+                    // constructing the enum itself may have poisoned a payload
+                    // slot) propagates silently (D-P2.9). But the subpatterns'
+                    // inner names must STILL be bound — to `Poison`, mirroring
+                    // the `Binding` case — otherwise the arm body's references
+                    // to them fire a spurious `unknown name` cascade off the
+                    // one real (already-reported) error.
+                    Value::Poison => {
+                        self.bind_subpats_poison(subpats, env);
+                        Some(true)
+                    }
                     // Matching a `Variant` pattern against a non-enum value is
                     // a static/data mismatch this task does not deep-check
                     // (payload TYPES are loose at comptime, D-P3.10 scope) —
                     // treat as an ordinary non-match rather than erroring.
                     _ => Some(false),
                 }
+            }
+        }
+    }
+
+    /// Bind every name introduced by `subpats` to [`Value::Poison`], recursing
+    /// through nested [`Pattern::Variant`] subpatterns. Used when a `Variant`
+    /// pattern matches against an already-`Poison` payload value (D-P2.9): the
+    /// inner names must be defined so the arm body does not fire a spurious
+    /// `unknown name` cascade off the one real error, but they carry no usable
+    /// value. Wildcards bind nothing; arity is not checked (the value is
+    /// already poisoned, so any further diagnostic would itself be a cascade).
+    fn bind_subpats_poison(&mut self, subpats: &[ast::Pattern], env: &mut Env) {
+        for sp in subpats {
+            match sp {
+                ast::Pattern::Wildcard(_) => {}
+                ast::Pattern::Binding(name, _) => env.define(name.clone(), Value::Poison, false),
+                ast::Pattern::Variant { subpats, .. } => self.bind_subpats_poison(subpats, env),
             }
         }
     }

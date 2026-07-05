@@ -422,10 +422,16 @@ impl<'a> Evaluator<'a> {
             self.error(span, format!("enum `{}` has no variant `{variant_name}`", decl.name));
             return Value::Poison;
         };
+        // Track whether any diagnostic fired so the result is `Poison` on ANY
+        // error (a named arg, arity mismatch, etc.), never a normal `Enum`
+        // value — mirroring `eval_bitfield_lit`'s `poisoned` flag and the crate
+        // convention that a value carrying a reported error is `Poison`.
+        let mut poisoned = false;
         let mut payload = Vec::with_capacity(args.len());
         for arg in args {
             if arg.name.is_some() {
                 self.error(arg.span, "enum payload construction takes positional arguments only");
+                poisoned = true;
             }
             payload.push(self.eval_expr(&arg.value, env));
             // The leaked-return / abort guard — see the doc comment above.
@@ -443,6 +449,9 @@ impl<'a> Evaluator<'a> {
                     payload.len()
                 ),
             );
+            return Value::Poison;
+        }
+        if poisoned {
             return Value::Poison;
         }
         Value::Enum { ty_name: decl.name.clone(), variant: variant_name.to_string(), payload }

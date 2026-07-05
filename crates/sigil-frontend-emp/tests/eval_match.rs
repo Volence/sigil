@@ -290,7 +290,116 @@ fn nested_pattern_arity_mismatch_errors() {
     let (v, diags) = eval(src, "R");
     assert_eq!(v, Some(Value::Poison));
     assert!(
-        diags.iter().any(|d| d.message.contains("payload value")),
+        diags.iter().any(|d| d.message.contains("[match.pattern-arity]")),
         "diagnostics were {diags:?}"
     );
+}
+
+// ---- T6 review regressions -----------------------------------------------
+
+#[test]
+fn nested_arity_error_does_not_cascade_unknown_name() {
+    // CRITICAL (D-P2.9): `Res.Ok(Opt.Some(1, 2))` fails to construct (inner
+    // arity error, poisoning the payload). Matching it with `Ok(Some(x)) => x`
+    // must NOT then fire a spurious `unknown name x` off the arm body — the
+    // one real diagnostic is the inner arity error. Exactly one diagnostic.
+    let src = "module m\n\
+        comptime enum Opt { Some(int), None }\n\
+        comptime enum Res { Ok(Opt), Err(string) }\n\
+        const R = match Res.Ok(Opt.Some(1, 2)) {\n\
+        \x20   Ok(Some(x)) => x,\n\
+        \x20   Ok(None) => 0,\n\
+        \x20   Err(e) => -1,\n\
+        }\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        !diags.iter().any(|d| d.message.contains("unknown name")),
+        "spurious cascade diagnostic present: {diags:?}"
+    );
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("[enum.payload-arity]"),
+        "the one diagnostic should be the inner arity error: {diags:?}"
+    );
+}
+
+#[test]
+fn non_exhaustive_hit_reports_exactly_once() {
+    // IMPORTANT 1: the common non-exhaustive path — a real non-exhaustive
+    // match evaluated against the uncovered variant — must NOT double-report
+    // (`[match.non-exhaustive]` AND `no arm matched`). Exactly one diagnostic.
+    let src = "module m\ncomptime enum Opt { Some(int), None }\n\
+        const R = match Opt.None { Some(x) => x + 1 }\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(Value::Poison));
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("[match.non-exhaustive]"),
+        "the one diagnostic should be the non-exhaustive error: {diags:?}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("no arm matched")),
+        "runtime fallback double-reported: {diags:?}"
+    );
+}
+
+#[test]
+fn named_payload_arg_poisons_result() {
+    // IMPORTANT 2: a named argument to a payload constructor is a diagnostic,
+    // and the result MUST be Poison (not a normal Enum) so a caller checking
+    // `== Poison` sees the bad construction.
+    let src = "module m\ncomptime enum Opt { Some(int), None }\nconst R = Opt.Some(x: 5)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("positional")),
+        "diagnostics were {diags:?}"
+    );
+}
+
+#[test]
+fn typod_variant_pattern_is_caught_even_with_catch_all() {
+    // IMPORTANT 3: a pattern naming a nonexistent variant must be diagnosed
+    // even when a catch-all `_` would otherwise swallow it — otherwise a typo
+    // silently defeats exhaustive match's totality.
+    let src = "module m\ncomptime enum Opt { Some(int), None }\n\
+        const R = match Opt.Some(5) { Sme(x) => 1, _ => 0 }\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.message.contains("no variant `Sme`")),
+        "typo'd variant not caught: {diags:?}"
+    );
+}
+
+#[test]
+fn return_inside_payload_constructor_arg_propagates() {
+    // MISSING TEST: a `return` inside a payload-constructor argument belongs
+    // to the enclosing fn, not the construction. `return Opt.None` must exit
+    // `f`, so R = Opt.None, with no spurious diagnostic.
+    let src = "module m\n\
+        comptime enum Opt { Some(int), None }\n\
+        comptime fn f(c: int) -> Opt {\n\
+        \x20   let r = Opt.Some(if c > 0 { return Opt.None } else { 5 })\n\
+        \x20   return r\n\
+        }\n\
+        const R = f(1)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(enum_val("Opt", "None", vec![])));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn payload_constructor_arg_return_not_taken_still_constructs() {
+    // Companion to the above: when the `return` branch is NOT taken, the
+    // construction completes normally (no leaked pending return).
+    let src = "module m\n\
+        comptime enum Opt { Some(int), None }\n\
+        comptime fn f(c: int) -> Opt {\n\
+        \x20   let r = Opt.Some(if c > 0 { return Opt.None } else { 5 })\n\
+        \x20   return r\n\
+        }\n\
+        const R = f(-1)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(enum_val("Opt", "Some", vec![int(5)])));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }
