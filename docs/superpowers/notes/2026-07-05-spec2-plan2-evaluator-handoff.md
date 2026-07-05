@@ -146,6 +146,20 @@ leave a clear state for the wake-up review.
   → unified the Range/Array loop bodies, added `exec_scoped`/`exec_comptime_scoped` helpers (killed
   the 4× push/exec/pop idiom + made ctx edit-proof), +2 coverage tests. New
   `tests/eval_control_flow.rs` (17 tests). **153 tests total**, clippy clean.
-- **T6 IN PROGRESS** — split per **D-P2.17** into T6a (frontend: `|>` token + `|params| e` lambdas
-  + `Expr::Lambda` + pipe→Call desugar) then T6b (evaluator: §6.8 builtins + struct field access +
-  `.len` + lambda application + method/free/pipe dispatch).
+- **T6 DONE** — split per **D-P2.17**.
+  - **T6a** (frontend, impl `623f8bc`, fix `4af9f2d`): `|>` token, `|params| e` lambdas at primary
+    position (no zero-param — collides with `||`), `Expr::Lambda`, pipe desugars in the PARSER to a
+    Call (piped value = first arg). Self-review caught + fixed a real bug: `a |> f + b` orphaned
+    `+ b`; fixed by parsing the pipe target with `expr_bp(1)` so pipe is consistently the loosest
+    layer (`a + b |> f` = `f(a+b)`; invalid target = clean diagnostic). 19 parser + 11 lexer tests.
+  - **T6b** (evaluator, impl `fa9f237`, fixes `d507332`): added `Value::FnRef` (first-class fn
+    refs — makes `bands.map(band_entry)` work), `Expr::Lambda`→`Value::Lambda` (captures env),
+    `apply_callable` + a factored `call_fn_with_values` (FnRef recursion is depth/budget-bounded),
+    §6.8 builtins (array/range `len/map/filter/fold`, string `len/find/slice/val` per **D-P2.18** —
+    char-indexed, standard `find`, half-open `slice` with OOB error, `val`=int-literal parse), struct
+    field access + `.len`/`.val` bare paths, builtin-before-user dispatch (not shadowable). Two-stage
+    review: spec ✅ (probed find/slice/val + recursion-safety); quality Approve → tightened
+    `parse_emp_int` (reject `+5`/`$-5`), added bare `s.val`, fixed a map/fold Poison-cascade
+    (short-circuits per D-P2.9), +24 diagnostic-path/edge tests. `tests/eval_builtins.rs` 58 tests.
+  - **Checkpoint: 223 tests total, clippy clean, still `sigil-span`-only.**
+- **T7 IN PROGRESS** — guards `ensure`/`ensure_fatal` + `{interp}` (D-P2.19) + budget-message test.
