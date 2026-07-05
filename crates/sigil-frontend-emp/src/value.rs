@@ -91,10 +91,91 @@ pub enum Value {
         /// The stored integer (normally a [`Value::Int`]).
         val: Box<Value>,
     },
+    /// A CHECKED, CPU-NEUTRAL structured data buffer (T7, D-P3.5): the Plan 3 /
+    /// Plan 4 seam. Produced by `byte`/`bytes`/`Data.empty`/`++` and by lowering
+    /// a typed comptime value against its `Ty` (`lower_to_data`). It commits NO
+    /// endianness and resolves NO pointer address — those are Plan 4; here the
+    /// cells stay structured so Plan 4 can pick byte order and resolve fixups.
+    Data(DataBuf),
     /// An "error already reported here" sentinel (D-P2.9). Operations on
     /// `Poison` yield `Poison` silently so one bad subexpression does not fan
     /// out into a cascade of diagnostics.
     Poison,
+}
+
+/// A checked, CPU-neutral, structured data buffer (T7, D-P3.5). `size` is the
+/// total byte length (the sum of every cell's byte size); `cells` preserves the
+/// STRUCTURE (scalars keep their width/signedness, pointer references stay
+/// symbolic) so Plan 4 can commit endianness and resolve fixups. Building it via
+/// [`concat`](DataBuf::concat) / [`push`](DataBuf::push) keeps `size` in step
+/// with `cells`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DataBuf {
+    /// The buffer's cells, in emission order.
+    pub cells: Vec<Cell>,
+    /// The total byte size — the sum of every cell's byte size. CPU-neutral.
+    pub size: usize,
+}
+
+/// One structured cell of a [`DataBuf`] (T7). Kept structured (not a flat byte
+/// blob) so Plan 4 has the width/signedness it needs to pick a byte order, and
+/// the symbol name it needs to emit a relocation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Cell {
+    /// A range-checked sized integer. `width ∈ {1, 2, 4}` bytes; `signed`
+    /// records whether the source type was signed. NO endianness is committed —
+    /// Plan 4 serializes this to `width` bytes in the target's byte order.
+    Scalar {
+        /// The (already range-checked) integer value.
+        value: i128,
+        /// Byte width: 1, 2, or 4.
+        width: u8,
+        /// Whether the source type was signed.
+        signed: bool,
+    },
+    /// A run of width-1 bytes (from `byte`/`bytes`/`++`). Single bytes have no
+    /// byte order, so this stays CPU-neutral as raw bytes.
+    Bytes(Vec<u8>),
+    /// A pointer-typed field: a reference to a named symbol, `width` bytes wide
+    /// (4, the Abs32 default — D-P3.7). Plan 4 resolves the name to an address
+    /// and emits a fixup; Plan 3 does NOT.
+    SymRef {
+        /// The referenced symbol's name.
+        name: String,
+        /// Pointer byte width (4).
+        width: u8,
+    },
+}
+
+impl Cell {
+    /// The cell's byte size: a scalar/symref is its `width`, a byte run is its
+    /// length.
+    pub fn byte_size(&self) -> usize {
+        match self {
+            Cell::Scalar { width, .. } | Cell::SymRef { width, .. } => *width as usize,
+            Cell::Bytes(b) => b.len(),
+        }
+    }
+}
+
+impl DataBuf {
+    /// The empty buffer — the `Data` monoid's identity (`Data.empty`).
+    pub fn empty() -> Self {
+        DataBuf { cells: Vec::new(), size: 0 }
+    }
+
+    /// The monoid `++`: append `b`'s cells after `a`'s and sum their sizes.
+    pub fn concat(mut a: DataBuf, b: DataBuf) -> DataBuf {
+        a.cells.extend(b.cells);
+        a.size += b.size;
+        a
+    }
+
+    /// Push one cell, keeping [`size`](DataBuf::size) in step with `cells`.
+    pub fn push(&mut self, cell: Cell) {
+        self.size += cell.byte_size();
+        self.cells.push(cell);
+    }
 }
 
 impl Value {
@@ -120,6 +201,7 @@ impl Value {
             Value::Lambda { .. } => "lambda",
             Value::FnRef(_) => "fn",
             Value::Typed { .. } => "typed",
+            Value::Data(_) => "data",
             Value::Poison => "poison",
         }
     }
@@ -207,6 +289,7 @@ impl fmt::Display for Value {
             // A typed value renders as its inner (stored) value — the nominal
             // type shows in diagnostics, not in the interpolated/printed value.
             Value::Typed { val, .. } => write!(f, "{val}"),
+            Value::Data(buf) => write!(f, "data[{} bytes]", buf.size),
             Value::Poison => f.write_str("<poison>"),
         }
     }
@@ -340,7 +423,21 @@ mod tests {
             "lambda"
         );
         assert_eq!(Value::FnRef("f".into()).type_name(), "fn");
+        assert_eq!(Value::Data(DataBuf::empty()).type_name(), "data");
         assert_eq!(Value::Poison.type_name(), "poison");
+    }
+
+    #[test]
+    fn databuf_monoid_and_display() {
+        let mut a = DataBuf::empty();
+        a.push(Cell::Scalar { value: 5, width: 1, signed: false });
+        assert_eq!(a.size, 1);
+        let mut b = DataBuf::empty();
+        b.push(Cell::Bytes(vec![1, 2, 3]));
+        let c = DataBuf::concat(a, b);
+        assert_eq!(c.size, 4);
+        assert_eq!(c.cells.len(), 2);
+        assert_eq!(Value::Data(c).to_string(), "data[4 bytes]");
     }
 
     fn dummy_span() -> sigil_span::Span {

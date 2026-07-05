@@ -3,8 +3,14 @@
 //! expression's callee/receiver into one of them.
 use super::{Env, Evaluator};
 use crate::ast;
-use crate::value::Value;
+use crate::value::{Cell, DataBuf, Value};
 use sigil_span::Span;
+
+/// The inclusive value range accepted by `byte`/`bytes` — an 8-bit cell may be
+/// written signed (`-128..=127`) or unsigned (`0..=255`), so the union is the
+/// accepted set; anything outside genuinely does not fit 8 bits.
+const BYTE_LO: i128 = -128;
+const BYTE_HI: i128 = 255;
 
 impl<'a> Evaluator<'a> {
     /// Dispatch a §6.8 builtin call, extracting the receiver and the builtin's
@@ -303,6 +309,109 @@ impl<'a> Evaluator<'a> {
             format!("`{method}` expects {want} argument(s), got {}", args.len()),
         );
         false
+    }
+
+    /// `byte(x)` (T7, §6.8 / Appendix B): a one-cell [`Value::Data`] holding a
+    /// single range-checked byte. `x` must be an integer fitting 8 bits
+    /// (`-128..=255`); otherwise a diagnostic and [`Poison`](Value::Poison) — a
+    /// `Poison` in a `++` chain propagates silently (`eval_binary` short-circuits
+    /// before `eval_concat`).
+    pub(super) fn eval_byte(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let Some(n) = self.eval_single_positional_int("byte", args, span, env) else {
+            return Value::Poison;
+        };
+        if !(BYTE_LO..=BYTE_HI).contains(&n) {
+            self.error(span, format!("byte value {n} does not fit 8 bits ({BYTE_LO}..={BYTE_HI})"));
+            return Value::Poison;
+        }
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Scalar { value: n, width: 1, signed: false });
+        Value::Data(buf)
+    }
+
+    /// `bytes([a, b, c])` (T7, §6.8 / Appendix B): a one-cell [`Value::Data`]
+    /// holding a width-1 run. The single argument must be an array; each element
+    /// is range-checked to a byte (`-128..=255`) and stored as a `u8`. Any
+    /// out-of-range or non-int element is a diagnostic and poisons the result.
+    pub(super) fn eval_bytes(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 1 {
+            self.error(span, format!("`bytes` expects exactly 1 argument, got {}", args.len()));
+            return Value::Poison;
+        }
+        if args[0].name.is_some() {
+            self.error(args[0].span, "`bytes` takes a positional argument");
+        }
+        let arg = self.eval_expr(&args[0].value, env);
+        // A leaked return / abort from the argument belongs to the caller.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let elems = match arg {
+            Value::Array(elems) => elems,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(span, format!("`bytes` expects an array, got {}", other.type_name()));
+                return Value::Poison;
+            }
+        };
+        let mut out = Vec::with_capacity(elems.len());
+        let mut poisoned = false;
+        for el in &elems {
+            match el.as_stored_int() {
+                Some(n) if (BYTE_LO..=BYTE_HI).contains(&n) => out.push((n & 0xFF) as u8),
+                Some(n) => {
+                    self.error(span, format!("byte value {n} does not fit 8 bits ({BYTE_LO}..={BYTE_HI})"));
+                    poisoned = true;
+                }
+                None => {
+                    if matches!(el, Value::Poison) {
+                        poisoned = true;
+                    } else {
+                        self.error(span, format!("`bytes` element must be an integer, got {}", el.type_name()));
+                        poisoned = true;
+                    }
+                }
+            }
+        }
+        if poisoned {
+            return Value::Poison;
+        }
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Bytes(out));
+        Value::Data(buf)
+    }
+
+    /// Evaluate the single positional integer argument shared by `byte` (and
+    /// future scalar `Data` constructors). Wrong arity / a named arg is a
+    /// diagnostic; a leaked return/abort from the argument belongs to the caller.
+    fn eval_single_positional_int(
+        &mut self,
+        name: &str,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Option<i128> {
+        if args.len() != 1 {
+            self.error(span, format!("`{name}` expects exactly 1 argument, got {}", args.len()));
+            return None;
+        }
+        if args[0].name.is_some() {
+            self.error(args[0].span, format!("`{name}` takes a positional argument"));
+        }
+        let v = self.eval_expr(&args[0].value, env);
+        if self.aborted || self.pending_return.is_some() {
+            return None;
+        }
+        if let Some(n) = v.as_stored_int() {
+            return Some(n);
+        }
+        match v {
+            Value::Poison => None,
+            other => {
+                self.error(span, format!("`{name}` expects an integer, got {}", other.type_name()));
+                None
+            }
+        }
     }
 
     /// Parse a string as an `.emp` integer literal for the `val` builtin,

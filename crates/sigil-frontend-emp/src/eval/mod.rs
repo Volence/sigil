@@ -12,6 +12,7 @@
 mod builtins;
 mod call;
 mod control;
+mod emit;
 mod env;
 mod expr;
 mod guards;
@@ -85,6 +86,10 @@ pub struct Evaluator<'a> {
     /// File-level `newtype` decls, indexed by name (empty in no-file mode).
     /// `pub(crate)` for the [`layout`](crate::layout) module (T2).
     pub(crate) newtypes: HashMap<&'a str, &'a ast::NewtypeDecl>,
+    /// File-level `data` decls, indexed by name (empty in no-file mode). T7's
+    /// [`resolve_data`](Self::resolve_data) lowers these to a checked
+    /// [`DataBuf`](crate::value::DataBuf).
+    pub(crate) datas: HashMap<&'a str, &'a ast::DataDecl>,
     /// Memoized struct layouts, keyed by struct name — the layout analogue of
     /// [`const_memo`](Self::const_memo). A zero-size Poisoned layout records a
     /// struct that already failed (cyclic layout) so it does not re-report.
@@ -128,6 +133,12 @@ pub struct Evaluator<'a> {
     /// evaluated, in reference order — the in-progress stack used to detect and
     /// name cyclic const definitions.
     in_progress: Vec<String>,
+    /// Memoized data-item buffers, keyed by data-item name (T7) — the data
+    /// analogue of [`const_memo`](Self::const_memo). Data items cannot reference
+    /// each other as values in Plan 3 (only consts are name-resolvable), so this
+    /// is a plain memo with no cycle machinery; it exists so a shared evaluator
+    /// answers repeated queries once.
+    data_memo: HashMap<String, crate::value::DataBuf>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -145,6 +156,7 @@ impl<'a> Evaluator<'a> {
             structs: HashMap::new(),
             bitfields: HashMap::new(),
             newtypes: HashMap::new(),
+            datas: HashMap::new(),
             struct_layout_memo: HashMap::new(),
             bitfield_layout_memo: HashMap::new(),
             layout_in_progress: Vec::new(),
@@ -153,6 +165,7 @@ impl<'a> Evaluator<'a> {
             comptime_ctx: 0,
             const_memo: HashMap::new(),
             in_progress: Vec::new(),
+            data_memo: HashMap::new(),
         }
     }
 
@@ -181,6 +194,9 @@ impl<'a> Evaluator<'a> {
                 }
                 ast::Item::Newtype(n) => {
                     ev.newtypes.insert(n.name.as_str(), n);
+                }
+                ast::Item::Data(d) => {
+                    ev.datas.insert(d.name.as_str(), d);
                 }
                 _ => {}
             }

@@ -24,6 +24,10 @@ impl<'a> Evaluator<'a> {
             match callee.segments[0].as_str() {
                 "ensure" => return self.eval_guard(false, args, span, env),
                 "ensure_fatal" => return self.eval_guard(true, args, span, env),
+                // The `Data` monoid constructors (T7, §6.8). Like guards/builtins
+                // they are not user-shadowable, so dispatch them ahead of user fns.
+                "byte" => return self.eval_byte(args, span, env),
+                "bytes" => return self.eval_bytes(args, span, env),
                 _ => {}
             }
         }
@@ -465,7 +469,7 @@ impl<'a> Evaluator<'a> {
     /// yields `None` for that slot; an already-`Poison` discriminant stays
     /// silent (D-P2.9). A `None` slot restarts the auto-increment from 0 at the
     /// next omitted variant (there is no sensible predecessor to add to).
-    fn enum_variant_values(&mut self, decl: &'a ast::EnumDecl) -> Vec<Option<i128>> {
+    pub(crate) fn enum_variant_values(&mut self, decl: &'a ast::EnumDecl) -> Vec<Option<i128>> {
         let mut out = Vec::with_capacity(decl.variants.len());
         let mut prev: Option<i128> = None;
         for variant in &decl.variants {

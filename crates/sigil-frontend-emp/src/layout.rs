@@ -16,7 +16,7 @@
 //! and the field-mismatch diff are all T3 — layered on top of what is here.
 use crate::ast;
 use crate::eval::{Env, Evaluator};
-use crate::value::Value;
+use crate::value::{DataBuf, Value};
 use sigil_span::{Diagnostic, Span};
 
 /// A resolved `.emp` type (D-P3.1): the semantic counterpart of a syntactic
@@ -854,7 +854,7 @@ impl<'a> Evaluator<'a> {
 /// unsigned. `width` is always 1, 2, or 4 (the [`Ty::Prim`] invariant); any
 /// other width is unreachable and falls back to the full `i128` range so a
 /// future widening degrades gracefully instead of panicking.
-fn prim_bounds(width: u8, signed: bool) -> (i128, i128) {
+pub(crate) fn prim_bounds(width: u8, signed: bool) -> (i128, i128) {
     match (width, signed) {
         (1, false) => (0, u8::MAX as i128),
         (1, true) => (i8::MIN as i128, i8::MAX as i128),
@@ -923,6 +923,23 @@ pub fn layout_structs_shared(
             }
         }
         (out, ev.diags)
+    })
+}
+
+/// Lower the `data` item named `name` in `file` to a checked, CPU-neutral
+/// [`DataBuf`] (T7, D-P3.5), returning it (or `None` if no such data item) plus
+/// any diagnostics — the emission analogue of [`layout_struct`]. Runs on the
+/// shared large-stack evaluation thread (see [`size_of_type`]): a data value can
+/// drive comptime-fn calls (array element expressions, defaults).
+pub fn eval_data(file: &ast::File, name: &str) -> (Option<DataBuf>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if !ev.datas.contains_key(name) {
+            ev.error(file.module.span, format!("no data item named `{name}`"));
+            return (None, ev.diags);
+        }
+        let buf = ev.resolve_data(name, file.module.span);
+        (Some(buf), ev.diags)
     })
 }
 

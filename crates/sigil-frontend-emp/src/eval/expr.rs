@@ -168,6 +168,12 @@ impl<'a> Evaluator<'a> {
         // (`Enum.Variant(x)`) parses as a `Call`, not a plain path.
         if path.segments.len() == 2 {
             let (a, b) = (path.segments[0].as_str(), path.segments[1].as_str());
+            // `Data.empty` — the `Data` monoid's identity (T7, §6.8). A bare path
+            // (payload-carrying `byte`/`bytes` parse as calls); `Data` is not a
+            // user type, so this cannot be shadowed by an enum/const.
+            if a == "Data" && b == "empty" {
+                return Value::Data(crate::value::DataBuf::empty());
+            }
             // Step 1: does `a` resolve to a *value* (local binding, then const)?
             let a_val = if let Some(v) = env.lookup(a) {
                 Some(v.clone())
@@ -249,12 +255,17 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    /// Build a struct or bitfield value from a written literal (D-P2.14). A
-    /// literal whose type name resolves to a `bitfield` (T4) packs its fields
+    /// Build a struct or bitfield value from a written literal (D-P2.14 / §4.5).
+    /// A literal whose type name resolves to a `bitfield` (T4) packs its fields
     /// to the erased repr integer, per [`eval_bitfield_lit`](Self::eval_bitfield_lit).
-    /// Otherwise (a plain struct, value level only): evaluate each field in
-    /// order and tag the value with the type's last path segment — no
-    /// existence/field/size/default checks (that is T7).
+    /// A literal naming a DECLARED `struct` is CHECKED (T7, D-P3.12) via
+    /// [`eval_checked_struct_lit`](Self::eval_checked_struct_lit): unknown/
+    /// duplicate fields, missing no-default fields (NO silent zero-fill), and the
+    /// layout `(size:)`/`@offset` checks all fire here. A literal naming an
+    /// UNDECLARED type stays value-level (the Plan-2 behaviour): each field is
+    /// evaluated in order and the value is tagged with the type's last path
+    /// segment, with no existence/field/size checks — comptime-only structs and
+    /// forward-compatible names rely on this.
     fn eval_struct_lit(
         &mut self,
         ty: &ast::Path,
@@ -266,10 +277,83 @@ impl<'a> Evaluator<'a> {
         if self.bitfields.contains_key(ty_name.as_str()) {
             return self.eval_bitfield_lit(&ty_name, fields, span, env);
         }
-        // Poison field values are preserved as-is (propagate, no new diagnostic).
+        if self.structs.contains_key(ty_name.as_str()) {
+            return self.eval_checked_struct_lit(&ty_name, fields, span, env);
+        }
+        // Undeclared type name → value-level only (Plan 2). Poison field values
+        // are preserved as-is (propagate, no new diagnostic).
         let fields =
             fields.iter().map(|(name, e)| (name.clone(), self.eval_expr(e, env))).collect();
         Value::Struct { ty_name, fields }
+    }
+
+    /// The CHECKED struct literal (T7, §4.5 / D-P3.12) for a DECLARED struct.
+    ///
+    /// - Each PROVIDED field must be a declared field (else `[struct.unknown-field]`)
+    ///   and must not be given twice (else a duplicate diagnostic).
+    /// - Each DECLARED field NOT provided uses its `= default` if it has one; a
+    ///   field with NO default is `[struct.missing-field]` — there is NO silent
+    ///   zero-fill (the only "zero" is a field that literally declares `= 0`,
+    ///   which the default path already covers).
+    /// - The struct's layout is computed ([`layout_of_struct`](Self::layout_of_struct))
+    ///   so a bad `(size:)`/`@offset` still surfaces at the literal site.
+    ///
+    /// Field VALUE range-checking is NOT done here — that happens later at
+    /// emission ([`lower_to_data`](Self::lower_to_data)). Returns a
+    /// [`Value::Struct`] whose fields are in DECLARATION order (defaults filled,
+    /// a missing field filled with [`Poison`](Value::Poison) so downstream
+    /// lowering stays silent) so it lines up with the byte layout.
+    fn eval_checked_struct_lit(
+        &mut self,
+        ty_name: &str,
+        provided: &[(String, ast::Expr)],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        // Copy the `&'a StructDecl` out so `self` is free to be mutated across
+        // the field/default eval below (mirrors `layout_of_struct`).
+        let decl: &'a ast::StructDecl =
+            self.structs.get(ty_name).copied().expect("caller checked the struct exists");
+        // Evaluate provided fields, checking existence and duplication. Keep the
+        // evaluated values keyed by name for the declaration-order rebuild.
+        let mut provided_vals: Vec<(String, Value)> = Vec::with_capacity(provided.len());
+        for (fname, expr) in provided {
+            let v = self.eval_expr(expr, env);
+            let fspan = crate::parser::expr_span(expr);
+            if !decl.fields.iter().any(|f| &f.name == fname) {
+                self.error(fspan, format!("[struct.unknown-field] struct {ty_name} has no field `{fname}`"));
+                continue;
+            }
+            if provided_vals.iter().any(|(n, _)| n == fname) {
+                self.error(fspan, format!("struct {ty_name}: field `{fname}` given more than once"));
+                continue;
+            }
+            provided_vals.push((fname.clone(), v));
+        }
+        // Rebuild in declaration order: provided value, else default, else a
+        // missing-field diagnostic (no silent zero-fill).
+        let mut out_fields = Vec::with_capacity(decl.fields.len());
+        for field in &decl.fields {
+            if let Some((_, v)) = provided_vals.iter().find(|(n, _)| n == &field.name) {
+                out_fields.push((field.name.clone(), v.clone()));
+            } else if let Some(default) = &field.default {
+                let dv = self.eval_expr(default, env);
+                out_fields.push((field.name.clone(), dv));
+            } else {
+                self.error(
+                    span,
+                    format!(
+                        "[struct.missing-field] struct {ty_name}: field `{}` has no default and was not provided",
+                        field.name
+                    ),
+                );
+                out_fields.push((field.name.clone(), Value::Poison));
+            }
+        }
+        // Trigger the layout `(size:)`/`@offset`/odd-field checks at the literal
+        // site (memoized, so this reports at most once per struct).
+        let _ = self.layout_of_struct(ty_name, span);
+        Value::Struct { ty_name: ty_name.to_string(), fields: out_fields }
     }
 
     /// Build a bitfield value from a written literal (T4, §4.4): each provided
@@ -472,7 +556,7 @@ impl<'a> Evaluator<'a> {
     /// (matching the sibling guards in [`size_of_newtype`](Evaluator) etc.) and
     /// returning [`Ty::Poison`] on a detected cycle. A construction already
     /// validated the value, so this normally bottoms out cleanly.
-    fn effective_underlying(&mut self, ty: &Ty, span: Span) -> Ty {
+    pub(crate) fn effective_underlying(&mut self, ty: &Ty, span: Span) -> Ty {
         match ty {
             Ty::Newtype(name) => {
                 if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
@@ -842,6 +926,10 @@ impl<'a> Evaluator<'a> {
             (Value::Array(mut a), Value::Array(b)) => {
                 a.extend(b);
                 Value::Array(a)
+            }
+            // The `Data` monoid `++` (T7, §6.8): append cell lists, sum sizes.
+            (Value::Data(a), Value::Data(b)) => {
+                Value::Data(crate::value::DataBuf::concat(a, b))
             }
             (a, b) => self.binop_type_error(span, "++", &a, &b),
         }
