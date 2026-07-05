@@ -132,6 +132,10 @@ dependencies = [
 name = "sigil-frontend-emp"
 version = "0.1.0"
 dependencies = [
+ "sigil-backend-m68k",
+ "sigil-backend-z80",
+ "sigil-ir",
+ "sigil-link",
  "sigil-span",
 ]
 

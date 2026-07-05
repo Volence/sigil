@@ -5,3 +5,9 @@ edition = "2021"
 
 [dependencies]
 sigil-span = { path = "../sigil-span" }
+sigil-ir = { path = "../sigil-ir" }
+sigil-backend-z80 = { path = "../sigil-backend-z80" }
+sigil-backend-m68k = { path = "../sigil-backend-m68k" }
+
+[dev-dependencies]
+sigil-link = { path = "../sigil-link" }
