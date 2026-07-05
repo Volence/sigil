@@ -23,6 +23,9 @@ pub enum Tok {
     Comma, Colon, Semi, Dot, At, Hash, Star, Plus, Minus, Slash, Percent,
     Amp, Pipe, Caret, Bang, Lt, Gt, Eq, Tilde,
     EqEq, Ne, Le, Ge, Shl, Shr, Arrow, DotDot, PlusPlus, AndAnd, OrOr,
+    /// The pipe operator `|>` (function application, D-P2.17). Matched before
+    /// single `|` so it is never mis-lexed as `Pipe` then `Gt`.
+    PipeGt,
     /// End of input; always the final token emitted by [`lex`].
     Eof,
 }
@@ -109,6 +112,9 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                     ">=" => (Tok::Ge, 2), "<<" => (Tok::Shl, 2), ">>" => (Tok::Shr, 2),
                     "->" => (Tok::Arrow, 2), ".." => (Tok::DotDot, 2), "++" => (Tok::PlusPlus, 2),
                     "&&" => (Tok::AndAnd, 2), "||" => (Tok::OrOr, 2),
+                    // `|>` before the single-`|` fallback: distinct strings, so
+                    // match order is irrelevant, but keep it beside `||`.
+                    "|>" => (Tok::PipeGt, 2),
                     _ => match c {
                         b'{' => (Tok::LBrace, 1), b'}' => (Tok::RBrace, 1),
                         b'(' => (Tok::LParen, 1), b')' => (Tok::RParen, 1),

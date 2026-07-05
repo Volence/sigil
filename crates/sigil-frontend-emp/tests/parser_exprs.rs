@@ -84,3 +84,85 @@ fn trailing_commas_and_one_tuple() {
     // plain grouping unchanged:
     assert!(matches!(expr("(1)"), Expr::Int(1, _)));
 }
+
+// ---- lambdas & the `|>` pipe (T6a) ----
+
+#[test]
+fn lambda_one_param() {
+    // `|x| x + 1` → Lambda with one param and a `+` body.
+    let Expr::Lambda { params, body, .. } = expr("|x| x + 1") else { panic!() };
+    assert_eq!(params, vec!["x"]);
+    assert!(matches!(*body, Expr::Binary { op: BinOp::Add, .. }));
+}
+
+#[test]
+fn lambda_multi_param() {
+    let Expr::Lambda { params, body, .. } = expr("|a, b| a * b") else { panic!() };
+    assert_eq!(params, vec!["a", "b"]);
+    assert!(matches!(*body, Expr::Binary { op: BinOp::Mul, .. }));
+}
+
+#[test]
+fn pipe_into_bare_name() {
+    // `xs |> f` desugars to `f(xs)`.
+    let Expr::Call { callee, args, .. } = expr("xs |> f") else { panic!() };
+    assert_eq!(callee.segments, vec!["f"]);
+    assert_eq!(args.len(), 1);
+    assert!(args[0].name.is_none());
+    assert!(matches!(&args[0].value, Expr::Path(p) if p.segments == vec!["xs"]));
+}
+
+#[test]
+fn pipe_into_call_prepends_arg() {
+    // `xs |> map(g)` → `map(xs, g)` — piped value is the FIRST arg.
+    let Expr::Call { callee, args, .. } = expr("xs |> map(g)") else { panic!() };
+    assert_eq!(callee.segments, vec!["map"]);
+    assert_eq!(args.len(), 2);
+    assert!(matches!(&args[0].value, Expr::Path(p) if p.segments == vec!["xs"]));
+    assert!(matches!(&args[1].value, Expr::Path(p) if p.segments == vec!["g"]));
+}
+
+#[test]
+fn pipe_chains_left_assoc() {
+    // `xs |> f |> g` → `g(f(xs))`.
+    let Expr::Call { callee, args, .. } = expr("xs |> f |> g") else { panic!() };
+    assert_eq!(callee.segments, vec!["g"]);
+    assert_eq!(args.len(), 1);
+    let Expr::Call { callee: inner_callee, args: inner_args, .. } = &args[0].value else { panic!() };
+    assert_eq!(inner_callee.segments, vec!["f"]);
+    assert!(matches!(&inner_args[0].value, Expr::Path(p) if p.segments == vec!["xs"]));
+}
+
+#[test]
+fn pipe_into_call_with_lambda_arg() {
+    // `frames |> map(|f| f + 1)` → `map(frames, |f| f + 1)`.
+    let Expr::Call { callee, args, .. } = expr("frames |> map(|f| f + 1)") else { panic!() };
+    assert_eq!(callee.segments, vec!["map"]);
+    assert_eq!(args.len(), 2);
+    assert!(matches!(&args[0].value, Expr::Path(p) if p.segments == vec!["frames"]));
+    assert!(matches!(&args[1].value, Expr::Lambda { .. }));
+}
+
+#[test]
+fn pipe_is_loosest_precedence() {
+    // `a + b |> f` → `f(a + b)`: `+` binds tighter than `|>`.
+    let Expr::Call { callee, args, .. } = expr("a + b |> f") else { panic!() };
+    assert_eq!(callee.segments, vec!["f"]);
+    assert!(matches!(&args[0].value, Expr::Binary { op: BinOp::Add, .. }));
+}
+
+#[test]
+fn infix_bitor_and_or_unaffected() {
+    // A `|` following a primary is still infix bit-or; `||` is logical or.
+    assert!(matches!(expr("a | b"), Expr::Binary { op: BinOp::BitOr, .. }));
+    assert!(matches!(expr("a || b"), Expr::Binary { op: BinOp::Or, .. }));
+}
+
+#[test]
+fn method_paths_still_parse() {
+    // `.` path handling is unchanged by the lambda/pipe additions.
+    let Expr::Call { callee, args, .. } = expr("xs.map(g)") else { panic!() };
+    assert_eq!(callee.segments, vec!["xs", "map"]);
+    assert_eq!(args.len(), 1);
+    assert!(matches!(expr("xs.len"), Expr::Path(p) if p.segments == vec!["xs", "len"]));
+}

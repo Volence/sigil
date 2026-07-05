@@ -288,6 +288,8 @@ impl<'a> Evaluator<'a> {
             }
             // TODO(Plan 3/4): `asm { }` lowers to a `Code` value.
             ast::Expr::Asm { .. } => Value::Poison,
+            // TODO(T6b): evaluate to Value::Lambda capturing env.
+            ast::Expr::Lambda { .. } => Value::Poison,
         }
     }
 

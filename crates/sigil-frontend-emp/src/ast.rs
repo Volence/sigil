@@ -388,6 +388,16 @@ pub enum Expr {
         /// Span of the whole expression.
         span: Span,
     },
+    /// A comptime lambda `|p1, p2| body` (≥1 param). Erases at lowering; used to
+    /// feed inline transforms to map/filter/fold (§6.8, D2.12).
+    Lambda {
+        /// The parameter names, in order (at least one).
+        params: Vec<String>,
+        /// The single body expression.
+        body: Box<Expr>,
+        /// Span of the whole lambda.
+        span: Span,
+    },
 }
 
 /// A call argument, optionally named: `spawn(SeedDef, offset: 4)`.

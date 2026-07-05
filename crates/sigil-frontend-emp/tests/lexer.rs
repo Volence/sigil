@@ -34,6 +34,17 @@ fn multichar_operators() {
 }
 
 #[test]
+fn pipe_variants_disambiguate() {
+    // `|>` is one token, distinct from `||` and a bare `|`.
+    assert_eq!(toks("|>"), vec![Tok::PipeGt, Tok::Eof]);
+    assert_eq!(toks("||"), vec![Tok::OrOr, Tok::Eof]);
+    assert_eq!(toks("|"), vec![Tok::Pipe, Tok::Eof]);
+    assert_eq!(toks("a |> b"), vec![Tok::ident("a"), Tok::PipeGt, Tok::ident("b"), Tok::Eof]);
+    assert_eq!(toks("a | b"), vec![Tok::ident("a"), Tok::Pipe, Tok::ident("b"), Tok::Eof]);
+    assert_eq!(toks("a || b"), vec![Tok::ident("a"), Tok::OrOr, Tok::ident("b"), Tok::Eof]);
+}
+
+#[test]
 fn dot_is_its_own_token() {
     // `move.b` and `.draw:` both decompose; the parser reassembles.
     assert_eq!(
