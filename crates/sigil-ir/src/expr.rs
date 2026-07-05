@@ -25,6 +25,9 @@ pub enum BinOp {
     Shr,
     And,
     Or,
+    /// `!` — bitwise XOR (asl's infix `!`; probe-verified 2026-07-04:
+    /// `1!1`=0, `3!1`=2, `5!3`=6 — NOT bitwise-OR).
+    Xor,
     Eq,
     Ne,
     Lt,
@@ -121,6 +124,7 @@ impl Expr {
                     BinOp::Shr => Fold::Value(a.wrapping_shr(b as u32)),
                     BinOp::And => Fold::Value(a & b),
                     BinOp::Or => Fold::Value(a | b),
+                    BinOp::Xor => Fold::Value(a ^ b),
                     BinOp::Eq => bool_val(a == b),
                     BinOp::Ne => bool_val(a != b),
                     BinOp::Lt => bool_val(a < b),
@@ -186,6 +190,18 @@ mod tests {
         // Non-zero operands other than 1 still normalize to the truth value.
         assert_eq!(fold_pure(&bin(LogOr, 5, 0)), Fold::Value(1));
         assert_eq!(fold_pure(&bin(LogAnd, 5, 2)), Fold::Value(1));
+    }
+
+    #[test]
+    fn xor_folds() {
+        use BinOp::*;
+        let bin = |op, l: i64, r: i64| {
+            Expr::Binary { op, lhs: Box::new(Expr::Int(l)), rhs: Box::new(Expr::Int(r)) }
+        };
+        // asl-verified infix `!`: 1!1=0, 3!1=2, 5!3=6 (probe 2026-07-04).
+        assert_eq!(fold_pure(&bin(Xor, 1, 1)), Fold::Value(0));
+        assert_eq!(fold_pure(&bin(Xor, 3, 1)), Fold::Value(2));
+        assert_eq!(fold_pure(&bin(Xor, 5, 3)), Fold::Value(6));
     }
 
     #[test]

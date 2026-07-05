@@ -44,20 +44,35 @@ impl LinkedImage {
 /// `stubs` (fixed external values, e.g. 68k leaf symbols in the harness).
 /// Returns all diagnostics on failure.
 ///
-/// Symbol redefinition (the same name defined by multiple sections/stubs) is
-/// currently last-write-wins; collision diagnostics tied to the real producer
-/// land in Plan 4 when the front-end drives this.
+/// A symbol name defined by two different sections is a hard `Error`
+/// diagnostic (a real collision at full-ROM link). A section label resolving
+/// against a `stubs` entry is legitimate and is not flagged.
 pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Vec<Diagnostic>> {
     let mut diags: Vec<Diagnostic> = Vec::new();
 
     // Pass 1: build the symbol table — stubs first, then each section's labels
     // at their phased VMA (vma_origin + offset).
     let mut syms = stubs.clone();
+    let mut defined_here: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for sec in sections {
         let origin = sec.vma_origin();
         for label in &sec.labels {
+            if let Some(prev) = defined_here.insert(label.name.clone(), sec.name.clone()) {
+                diags.push(diag(
+                    format!(
+                        "symbol `{}` redefined by section `{}` (already defined by section `{}`)",
+                        label.name, sec.name, prev
+                    ),
+                    // TODO: null span — `Label` carries no span today. When labels
+                    // gain a producer span, point this at the redefining label.
+                    Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+                ));
+            }
             syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
         }
+    }
+    if diags.iter().any(|d| d.level == Level::Error) {
+        return Err(diags);
     }
 
     // Pass 2: per section, copy image bytes and apply fixups.
@@ -250,15 +265,26 @@ fn apply_fixup(
 
 /// Materialize a full contiguous image: place each section's bytes at its LMA,
 /// filling all gaps (and the head) with `fill`. Sections must not overlap.
+///
+/// EMPTY sections are skipped: a pure-`ds`/Reserve section (RAM variable
+/// declarations phased to `$FFFF0000`+) reserves address space and defines
+/// labels but emits NO ROM bytes — asl/p2bin write no binary records for it.
+/// It carries a physical-counter LMA that can legitimately alias a real code
+/// section's range (both start near physical 0), so it must contribute nothing
+/// to, and never be range-checked against, the image.
 pub fn flatten(image: &LinkedImage, fill: u8) -> Vec<u8> {
     let end = image
         .sections
         .iter()
+        .filter(|s| !s.bytes.is_empty())
         .map(|s| s.lma as usize + s.bytes.len())
         .max()
         .unwrap_or(0);
     let mut out = vec![fill; end];
     for s in &image.sections {
+        if s.bytes.is_empty() {
+            continue;
+        }
         let start = s.lma as usize;
         out[start..start + s.bytes.len()].copy_from_slice(&s.bytes);
     }
@@ -267,9 +293,15 @@ pub fn flatten(image: &LinkedImage, fill: u8) -> Vec<u8> {
 
 /// Like `flatten`, but errors if any two sections' `[lma, lma+len)` ranges
 /// overlap (a mis-assigned LMA map would otherwise silently clobber bytes).
+/// Empty (zero-byte) sections are excluded — they place no bytes, so they can
+/// neither clobber nor overlap (see `flatten`).
 pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String> {
-    let mut ranges: Vec<(usize, usize, &str)> =
-        image.sections.iter().map(|s| (s.lma as usize, s.lma as usize + s.bytes.len(), s.name.as_str())).collect();
+    let mut ranges: Vec<(usize, usize, &str)> = image
+        .sections
+        .iter()
+        .filter(|s| !s.bytes.is_empty())
+        .map(|s| (s.lma as usize, s.lma as usize + s.bytes.len(), s.name.as_str()))
+        .collect();
     ranges.sort_by_key(|r| r.0);
     for w in ranges.windows(2) {
         if w[0].1 > w[1].0 {
@@ -440,6 +472,29 @@ mod tests {
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn link_reports_duplicate_section_symbol() {
+        let mk = |name: &str| Section {
+            name: name.into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0),
+            lma: 0,
+            labels: vec![Label { name: "Dup".into(), offset: 0 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x4E, 0x71],
+                fixups: vec![],
+                span: span(),
+            })],
+        };
+        let err = link(&[mk("a"), mk("b")], &SymbolTable::new()).unwrap_err();
+        assert!(
+            err.iter()
+                .any(|d| d.message.contains("Dup") && d.message.to_lowercase().contains("redefin")),
+            "expected a redefinition diagnostic for `Dup`, got: {:?}",
+            err
+        );
     }
 
     #[test]

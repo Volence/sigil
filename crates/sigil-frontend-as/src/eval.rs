@@ -15,11 +15,14 @@ use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
 use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
 use sigil_ir::expr::{BinOp, Fold};
-use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable, SymbolValue};
+use sigil_ir::{
+    asl_width_rule, AbsWidth, DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable,
+    SymbolValue,
+};
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
-const PASS_CAP: usize = 8;
+const PASS_CAP: usize = 16;
 /// Bound for `while … endm` (T9.2): caps re-evaluation/body-expansion
 /// iterations so a non-convergent condition diagnoses (A5) instead of
 /// hanging. Generous relative to any real `while`-driven table-fill idiom.
@@ -121,7 +124,8 @@ fn one_pass(
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
     asm.process(src);
-    let (module, mut diags) = asm.builder.finish();
+    let (mut module, mut diags) = asm.builder.finish();
+    dedup_section_names(&mut module.sections);
     diags.append(&mut asm.diags);
     PassOutput {
         module,
@@ -133,12 +137,48 @@ fn one_pass(
     }
 }
 
+/// Give every NON-EMPTY auto-opened section a unique name. Two sections that
+/// open at the same VMA base (e.g. a second bank re-phased at the same address)
+/// both get the bare `sec{vma}` name from `open_section_if_needed`; here the
+/// first keeps it and later ones get a `#1`/`#2`/… suffix, so `link()`'s
+/// duplicate-symbol diagnostic (M1.D T3) doesn't misfire on a genuine
+/// second bank.
+///
+/// EMPTY (zero-fragment) sections are skipped: they carry no labels and place no
+/// bytes, so `link()` / `emit_rom` drop them (M1.D T4), and so they must NOT
+/// consume the bare name — otherwise a stray empty `sec0` would steal `sec0`
+/// from the real region-A driver, which is then linked/looked-up by that name.
+fn dedup_section_names(sections: &mut [sigil_ir::Section]) {
+    let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for sec in sections.iter_mut() {
+        if sec.fragments.is_empty() {
+            continue;
+        }
+        match counts.get_mut(&sec.name) {
+            Some(n) => {
+                *n += 1;
+                sec.name = format!("{}#{}", sec.name, *n);
+            }
+            None => {
+                counts.insert(sec.name.clone(), 0);
+            }
+        }
+    }
+}
+
 struct Asm {
     builder: IrBuilder,
     z80: Z80Backend,
     m68k: M68kBackend,
     state: crate::state::AsmState,
     env: SymbolTable,
+    /// Front-end-only string-valued symbols (`.__str set "BUS ERROR"`).
+    /// §7.4: strings NEVER enter `sigil_ir::SymbolValue`; they live here in the
+    /// evaluator. Keyed by fully-qualified name exactly like `env` (see
+    /// `resolve_str`). NOT carried across passes — asl `set` is a sequential
+    /// per-pass assignment and every string symbol in the `__FSTRING` scan is
+    /// assigned before it is read (probe p1/p4).
+    str_env: std::collections::HashMap<String, String>,
     scope: Option<String>,
     in_section: bool,
     /// Continuous physical location counter (asl-faithful): the real ROM byte
@@ -153,6 +193,14 @@ struct Asm {
     functions: FunctionTable,
     macros: MacroTable,
     macro_depth: usize,
+    /// Monotonic per-pass counter identifying each macro EXPANSION. A `.`-local
+    /// label defined inside a macro body is scoped to its expansion (asl-verified
+    /// — `docs/superpowers/notes/2026-07-04-m1d-t4-macro-local-scope-probes.md`),
+    /// NOT to the caller's global label; this counter names that per-expansion
+    /// scope so two expansions in one global scope don't collide. Resets to 0
+    /// each pass (fresh `Asm`), so expansion order — hence scope names — is stable
+    /// across passes once conditionals converge.
+    macro_expansion_seq: u32,
     visited: std::collections::BTreeSet<std::path::PathBuf>,
     include_root: Option<std::path::PathBuf>,
     aborted: bool,
@@ -189,6 +237,7 @@ impl Asm {
             m68k: M68kBackend,
             state: crate::state::AsmState::new(opts.initial_cpu),
             env: SymbolTable::new(),
+            str_env: std::collections::HashMap::new(),
             scope: None,
             in_section: false,
             phys_base: 0,
@@ -197,6 +246,7 @@ impl Asm {
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
             macro_depth: 0,
+            macro_expansion_seq: 0,
             visited: std::collections::BTreeSet::new(),
             include_root: opts.include_root.clone(),
             aborted: false,
@@ -330,6 +380,7 @@ impl Asm {
         let expanded = self.expand_calls(toks, 0);
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
+        let expanded = self.expand_str_comparisons(&expanded);
         let (e, rest) = crate::expr::parse_expr(&expanded)?;
         if !rest.is_empty() {
             self.err(span, "trailing tokens in expression");
@@ -529,6 +580,49 @@ impl Asm {
         out
     }
 
+    /// Fold `<string-expr> (= | <>) "literal"` sub-patterns to a `Tok::Int(0/1)`
+    /// so asl string comparisons compose INSIDE boolean expressions
+    /// (`&&`/`||`/parens), not just as a whole `if` condition. Runs after
+    /// [`Self::expand_str_builtins`] (so `strlen`/`strstr`/`val` are already
+    /// ints) and before `parse_expr`.
+    ///
+    /// The discriminator that a comparison is string-typed is a **string-literal
+    /// RHS** (asl: `"a"="b"` folds to 0/1 — probe `probe_strcmp` 2026-07-05:
+    /// `((strlen(t)==2)&&(substr(t,0,1)=="."))` = true, `("x"<>"y")` = 1). The
+    /// LHS is the trailing string-expr in the already-emitted output — a string
+    /// literal, a string-valued `set` symbol, or a `substr(...)`/`lowstring(...)`
+    /// call, exactly what [`Self::eval_str`] resolves. If the trailing tokens
+    /// don't resolve to a string the operator is left untouched (ordinary numeric
+    /// `=`), so a genuine `numeric = 5` is unaffected (its RHS isn't a string
+    /// anyway). Only `debugger.asm`'s `%<…>` decoder exercises this; latent until
+    /// the `__DEBUG__` build (M1.D T5).
+    fn expand_str_comparisons(&self, toks: &[Token]) -> Vec<Token> {
+        let mut out: Vec<Token> = Vec::new();
+        let mut i = 0;
+        while i < toks.len() {
+            let is_cmp = matches!(toks[i].tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne));
+            if is_cmp {
+                if let Some(Token { tok: Tok::Str(rhs), .. }) = toks.get(i + 1) {
+                    if let Some(lhs_len) = trailing_str_expr_len(&out) {
+                        let lhs = &out[out.len() - lhs_len..];
+                        if let Some(lv) = self.eval_str(lhs) {
+                            let ne = matches!(toks[i].tok, Tok::Punct(Punct::Ne));
+                            let eq = &lv == rhs;
+                            let span = toks[i].span;
+                            out.truncate(out.len() - lhs_len);
+                            out.push(Token { tok: Tok::Int((eq ^ ne) as i64), span });
+                            i += 2;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push(toks[i].clone());
+            i += 1;
+        }
+        out
+    }
+
     /// Dispatch one of the debug-string builtins that produce an INTEGER:
     ///
     /// - `strlen(str)` → character count.
@@ -560,6 +654,18 @@ impl Asm {
         }
     }
 
+    /// Resolve a bare identifier reference to its string value, if it names a
+    /// string-valued `set` symbol. Key-building mirrors `SymbolTable::resolve`:
+    /// `.foo` → `"{scope}.foo"` (needs a scope), `A.b`/`foo` → verbatim.
+    fn resolve_str(&self, name: &str) -> Option<String> {
+        let key = if let Some(local) = name.strip_prefix('.') {
+            format!("{}.{}", self.scope.as_deref()?, local)
+        } else {
+            name.to_string()
+        };
+        self.str_env.get(&key).cloned()
+    }
+
     /// Evaluate a front-end-only STRING expression: a plain `Tok::Str`
     /// literal, or a nested `substr(str, pos, len)` / `lowstring(str)` call.
     /// `None` on any other shape (mirrors `Fold::Poison` in spirit — this
@@ -573,6 +679,15 @@ impl Asm {
         }] = toks
         {
             return Some(s.clone());
+        }
+        if let [Token {
+            tok: Tok::Ident(name),
+            ..
+        }] = toks
+        {
+            if let Some(s) = self.resolve_str(name) {
+                return Some(s);
+            }
         }
         if let [Token {
             tok: Tok::Ident(name),
@@ -617,14 +732,17 @@ impl Asm {
             return None;
         }
         let chars: Vec<char> = s.chars().collect();
-        let pos = pos as usize;
-        if pos > chars.len() {
-            return None;
-        }
+        // asl edge semantics (probe `probe_substr` 2026-07-05): a `pos` at OR past
+        // the end yields "" (not an error — `substr("abc",5,0)`=""), and a NEGATIVE
+        // len also yields "" (`substr("abc",3,-1)`=""). Both are hit by
+        // `debugger.asm`'s `%<…>` decoder when a token has no trailing param (e.g.
+        // `%<.w d0>` → `.__param: set substr(string, len, -1)` → "" → defaults to
+        // "hex"). A len past the end clamps to the available tail (already matched).
+        let pos = (pos as usize).min(chars.len());
         let end = match len {
-            0 => chars.len(),
+            0 => chars.len(),                             // len 0 = to end
             n if n > 0 => (pos + n as usize).min(chars.len()),
-            _ => return None,
+            _ => pos,                                      // negative len = empty
         };
         Some(chars[pos..end].iter().collect())
     }
@@ -1587,6 +1705,13 @@ impl Asm {
             // source spells this directive uppercase at all 43 call sites
             // (`grep -rn BINCLUDE aeon/games aeon/engine`), never `binclude`.
             "BINCLUDE" => self.directive_binclude(rest, span),
+            // `END` (asl's end-of-source / entry-point directive). Emits no
+            // bytes — bare `END` and `END <entrypoint>` are both emission
+            // no-ops (probe: 2026-07-04-m1d-t2-abs-ea-end-probes.md). Aeon's
+            // only use is the bare `END` at main.asm:446. Exact-case like
+            // `BINCLUDE`; does not collide with the `endif`/`endm`/`endr`/
+            // `endcase` block closers (handled in block scanning, not dispatch).
+            "end" | "END" => {}
             _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
             // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
@@ -1607,6 +1732,10 @@ impl Asm {
             // section). The phased VMA base = physical + `disp` (equals the LMA
             // when not phased). Name by VMA base so the two real output regions
             // stay `sec0`/`sec32768` (the harness/M0 gate keys on those names).
+            // Collisions between two auto-opened sections at the same VMA base
+            // are disambiguated later, over NON-EMPTY sections only, by
+            // `dedup_section_names` (an empty stray section — dropped before link
+            // — must not steal the bare name from a real region).
             let vma_base = (self.phys_base as i64 + self.state.disp) as u32;
             let name = format!("sec{vma_base}");
             self.builder
@@ -1656,8 +1785,28 @@ impl Asm {
                 return;
             }
         };
-        self.state.cpu = cpu;
+        // The `cpu` directive resets padding/supmode to the CPU default,
+        // unconditionally (asl-verified — see state.rs::set_cpu). Aeon's real
+        // `padding off` at main.asm:3 therefore survives only until the first
+        // subsequent `cpu` directive / cpu-changing `restore` (boot.asm's z80
+        // load blocks), after which padding is ON for the rest of the ROM.
+        self.state.set_cpu(cpu);
         self.close_section();
+    }
+
+    /// asl `padding on` (68000) inserts a single `$00` byte before a word-or-
+    /// larger datum (`dc.w`/`dc.l`/any instruction) whose logical PC `$` is odd,
+    /// keeping 68k data/code word-aligned. Alignment is on the LOGICAL `$`
+    /// (`physical + phase disp`), not the physical offset — asl-verified (the
+    /// `phase_logodd`/`phase_logeven` probes in
+    /// `docs/superpowers/notes/2026-07-04-m1d-t0.1-padding-probes.md`). No-op
+    /// under `padding off` (Aeon's initial state), on a Z80 CPU (byte stream), or
+    /// at an even `$`. `dc.b` never calls this (alignment 1).
+    fn pad_word_align(&mut self, span: Span) {
+        if self.state.padding && self.state.cpu == Cpu::M68000 && !self.here().is_multiple_of(2) {
+            self.open_section_if_needed();
+            self.emit(&[0x00], vec![], span);
+        }
     }
 
     fn directive_phase(&mut self, rest: &[Token], span: Span) {
@@ -1764,8 +1913,26 @@ impl Asm {
     /// grow a single-assignment redefinition diagnostic (see that function's
     /// doc), and `set`/`:=` must keep permitting redefinition when it does.
     fn directive_set(&mut self, name: &str, rest: &[Token], span: Span) {
+        let q = qualify(name, self.scope.as_deref());
+        // asl: `set` may bind a STRING (`.__str set "BUS ERROR"`,
+        // `.__str set substr(.__str,0,.__pos)`). Detect the string shape via
+        // `eval_str` (literal / substr / lowstring / string-symbol copy) BEFORE
+        // the numeric fold, and store it front-end-only (§7.4). Probe p1/p4.
+        //
+        // INVARIANT (relied on, not enforced): a symbol is int XOR string within
+        // a pass. The string branch writes `str_env`, the int branch writes
+        // `env`, and neither clears the other, so a `set` that FLIPS a symbol's
+        // type mid-pass would leave stale entries in both maps and resolve to
+        // whichever the use site consults. This is safe for every real target
+        // (the `__FSTRING` scan assigns each symbol one stable type before it is
+        // read — probe p1/p4); type-flipping `set` is unsupported. Poison-
+        // shadowing the counterpart would be un-probed asl semantics, so it is
+        // deliberately NOT done here.
+        if let Some(s) = self.eval_str(rest) {
+            self.str_env.insert(q, s);
+            return;
+        }
         if let Some(v) = self.eval_all(rest, span) {
-            let q = qualify(name, self.scope.as_deref());
             self.env.define(&q, SymbolValue::Int(v));
         }
     }
@@ -1809,6 +1976,9 @@ impl Asm {
                 self.emit(&bytes, vec![], span);
                 continue;
             }
+            // Fold any nested string comparison (`substr(...)="x"`) to 0/1 before
+            // the numeric parse (mirrors `eval_all`; T5).
+            let expanded = self.expand_str_comparisons(&expanded);
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -1865,6 +2035,7 @@ impl Asm {
     /// `dw`'s little-endian). Mirrors `directive_dw`'s expr-list parsing.
     fn directive_dc_w(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        self.pad_word_align(span);
         for g in split_top_commas(rest) {
             let expanded = self.expand_calls(g, 0);
             let e = match crate::expr::parse_expr(&expanded) {
@@ -1903,6 +2074,7 @@ impl Asm {
     /// `dc.l <expr>,...` — big-endian 32-bit longwords.
     fn directive_dc_l(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        self.pad_word_align(span);
         for g in split_top_commas(rest) {
             let expanded = self.expand_calls(g, 0);
             let e = match crate::expr::parse_expr(&expanded) {
@@ -2023,10 +2195,12 @@ impl Asm {
     ///  - `Dbcc` (`dbf`/`dbra`/`db<cc>`) → [`Self::lower_m68k_dbcc`] (the
     ///    displacement FOLDS immediately — see that method's doc for why
     ///    that's safe).
-    ///  - `jmp`/`jsr` with a bare symbol/expression target → a
-    ///    `Fragment::JmpJsrSym` (width chosen later by the linker's
-    ///    `resolve_layout`); `jmp`/`jsr` with an EA operand (e.g. `(a0)`)
-    ///    falls through to the generic path like any other instruction.
+    ///  - `jmp`/`jsr` with a bare symbol/expression target → width-selected in
+    ///    this pass (M1.D T3): the target folds from the current env, picks
+    ///    abs.w/abs.l via `asl_width_rule`, and emits a finished `Fragment::Data`
+    ///    (opcode + `Abs16Be`/`Abs32Be` fixup) via `lower_jmp_jsr_abs` — so the
+    ///    cursor advances by the true width. `jmp`/`jsr` with an EA operand (e.g.
+    ///    `(a0)`) falls through to the generic path like any other instruction.
     ///  - `(d16,PC)` operands (any mnemonic) → [`Self::lower_m68k_pcrel`].
     ///
     /// `movem` routes to [`Self::lower_m68k_movem`] (register-list operand);
@@ -2054,6 +2228,12 @@ impl Asm {
             }
         };
 
+        // Every 68k instruction is word-aligned: under `padding on` at an odd `$`,
+        // asl prefixes a $00 pad byte (asl-verified — `instr_odd_pad_on` probe).
+        // Covers all instruction paths (branch/dbcc/movem/jmp-jsr/generic) since
+        // it runs before the dispatch below.
+        self.pad_word_align(span);
+
         if matches!(
             mnemonic,
             M68kMnemonic::Bra | M68kMnemonic::Bsr | M68kMnemonic::Bcc(_)
@@ -2075,20 +2255,46 @@ impl Asm {
                 }
             };
             // A bare symbol/expression target (no EA parens) is 68k absolute
-            // addressing whose WIDTH (abs.w vs abs.l) is chosen later by the
-            // linker's `resolve_layout` — see `sigil-backend-m68k`'s
-            // `lower_jmp_jsr_sym` doc. An EA operand (`(a0)`, `(Label).w`,
-            // `(d16,PC)`, ...) falls through to the generic path below.
+            // addressing whose WIDTH (abs.w vs abs.l) is selected in the
+            // front-end pass loop (M1.D T3) — see the block below. An EA
+            // operand (`(a0)`, `(Label).w`, `(d16,PC)`, ...) falls through to
+            // the generic path below.
             if let [OperandAtom::Value(e)] = atoms.as_slice() {
-                let target = self.qualify_expr(e);
+                let target = self.resolve_dollar(&self.qualify_expr(e));
                 let is_jsr = matches!(mnemonic, M68kMnemonic::Jsr);
-                let frag = self.m68k.lower_jmp_jsr_sym(is_jsr, target, span);
-                // The baseline (all-abs.w) width is 4 bytes; `resolve_layout`
-                // assumes THIS baseline when shifting subsequent label
-                // offsets (see `sigil-link/src/relax.rs::shift_breakpoints`),
-                // so the cursor must advance by exactly 4 here regardless of
-                // the eventual real width.
-                self.builder.emit_fragment(frag, 4);
+                // Width selection in the front-end pass loop (M1.D T3): fold the target
+                // from the current-pass env and pick abs.w/abs.l via `asl_width_rule`.
+                // Unknown-this-pass (Poison) → abs.w (OPTIMISTIC) — probe-verified as asl's
+                // least fixpoint (grow-only): the multi-pass `env == prev` loop then only
+                // ever grows a width W→L (label addresses are monotone-nondecreasing across
+                // passes), so it converges to exactly asl's minimal widths. The finished
+                // Data fragment carries the true length, so the cursor advances truthfully
+                // and downstream section LMAs (`phys_base`) are correct by construction.
+                // See docs/superpowers/notes/2026-07-04-m1d-t3-jmpjsr-width-probes.md.
+                //
+                // The fold selects the width AND supplies the fixup value: when
+                // resolved, BAKE the literal (`Expr::Int(v)`) into the fixup,
+                // mirroring `abs_ea_from_expr`. `equ` constants live only in the
+                // front-end env, never as section labels, so the linker (which
+                // builds its symbol table from section labels alone) cannot
+                // resolve a symbolic `equ` target; baking the folded value is
+                // also correct for labels (front-end VMA == link's
+                // vma_origin+offset on convergence — a real forward label folds
+                // to Value on the converged pass and is baked too). The
+                // symbolic form is kept only for the unresolved-this-pass
+                // (Poison) case; on the converged pass a still-Poison target is
+                // a genuinely-undefined symbol and errors via `poison_refs`.
+                let (width, fixup_target) = match self.fold(&target) {
+                    Fold::Value(v) => (asl_width_rule(v, false), Expr::Int(v)),
+                    Fold::Poison => {
+                        for name in self.unresolved_names(&target) {
+                            self.poison_refs.push((name, span));
+                        }
+                        (AbsWidth::W, target)
+                    }
+                };
+                let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, fixup_target, width, span);
+                self.emit_frag(Ok(frag), span);
                 return;
             }
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
@@ -2184,7 +2390,7 @@ impl Asm {
             }
         };
         let target = match atoms.as_slice() {
-            [OperandAtom::Value(e)] => self.resolve_dollar(&self.qualify_expr(e)),
+            [OperandAtom::Value(e)] => self.fixup_target(e),
             _ => {
                 self.err(span, "branch needs a single label target");
                 return;
@@ -2318,10 +2524,15 @@ impl Asm {
                 return;
             }
         };
-        let mem_op = match self.convert_one_atom_m68k(mem_atom, size, span) {
+        let mut mem_op = match self.convert_one_atom_m68k(mem_atom, size, span) {
             Some(o) => o,
             None => return,
         };
+        // `movem` reaches its memory EA via this path (not `convert_atoms_m68k`),
+        // so apply the zero-disp collapse here too — asl optimizes `movem.l
+        // d0-d7,0(a0)` → `48D0` (mode 2), probe-verified. `movem` is never
+        // `movep`, so the collapse is unconditional.
+        collapse_zero_disp(&mut mem_op);
         let ops = if list_first {
             vec![M68kOperand::RegList(mask), mem_op]
         } else {
@@ -2364,7 +2575,7 @@ impl Asm {
                     OperandAtom::M68kDisp { disp, .. } => disp,
                     _ => unreachable!("pc_idx must index a M68kDisp{{an: \"pc\"}} atom"),
                 };
-                target = Some(self.qualify_expr(disp));
+                target = Some(self.fixup_target(disp));
                 ops.push(M68kOperand::Pcd16(0));
             } else {
                 match self.convert_one_atom_m68k(a, size, span) {
@@ -2412,7 +2623,7 @@ impl Asm {
                     Some(x) => x,
                     None => return,
                 };
-                target = Some(self.qualify_expr(disp));
+                target = Some(self.fixup_target(disp));
                 ops.push(M68kOperand::Pcd8Xn {
                     d: 0,
                     xn,
@@ -2462,12 +2673,56 @@ impl Asm {
         atoms: &[OperandAtom],
         span: Span,
     ) -> Option<Vec<M68kOperand>> {
-        let _ = mnemonic; // every fold-based form shares the same atom conversion
         let mut ops = Vec::with_capacity(atoms.len());
         for a in atoms {
             ops.push(self.convert_one_atom_m68k(a, size, span)?);
         }
+        // asl zero-displacement optimization — `movep` is the sole 68000
+        // exception (see `collapse_zero_disp`).
+        if mnemonic != M68kMnemonic::Movep {
+            for op in &mut ops {
+                collapse_zero_disp(op);
+            }
+        }
         Some(ops)
+    }
+
+    /// Lower a bare (unsuffixed) absolute-address EA operand — a symbol or an
+    /// expression used where a 68k EA is expected, e.g. `lea Sym, a0` or
+    /// `move.w Sym, d0`. asl width-selects abs.w/abs.l via `asl_width_rule`
+    /// (probe-verified EA-general in M1.D T2). We fold + select in the front
+    /// end (the T3 width-selection mechanism for the absolute-EA class), so the
+    /// instruction's Data fragment carries the true encoded length and the
+    /// multi-pass fixpoint converges. Uses `self.fold` (not `fold_imm`): an
+    /// unresolved-this-pass symbol folds to Poison → optimistic abs.w (M1.D T3
+    /// probe: asl selects the least fixpoint for the absolute-EA class — `lea` at
+    /// $7FFA → 41F8 7FFE, abs.w). The multi-pass loop then only ever grows a
+    /// width W→L, converging to asl's minimal width, so realistic forward refs
+    /// converge. See docs/superpowers/notes/2026-07-04-m1d-t3-jmpjsr-width-probes.md.
+    /// (`asl_width_rule` is non-monotonic at the $FF8000 sign-extension wrap —
+    /// see the grow-only caveat in `sigil-link/relax.rs`; that region is
+    /// immediately-resolved high-RAM constants in Aeon, and `PASS_CAP` backstops
+    /// any pathological oscillation.) The name is recorded in `poison_refs` so a
+    /// genuinely-undefined symbol still errors on the converged pass.
+    fn abs_ea_from_expr(&mut self, e: &Expr, span: Span) -> M68kOperand {
+        let qualified = self.qualify_expr(e);
+        match self.fold(&qualified) {
+            Fold::Value(v) => match asl_width_rule(v, false) {
+                AbsWidth::W => M68kOperand::AbsW((v & 0xFFFF) as i16),
+                AbsWidth::L => M68kOperand::AbsL(v as i32),
+            },
+            Fold::Poison => {
+                for name in self.unresolved_names(&qualified) {
+                    self.poison_refs.push((name, span));
+                }
+                // Optimistic abs.w while unresolved (M1.D T3): asl selects the least
+                // fixpoint for the absolute-EA class too (probe: lea at $7FFA → 41F8
+                // 7FFE, abs.w). The multi-pass loop then only grows W→L, converging
+                // to asl's minimal width. The converged pass re-folds to the real
+                // value (or errors via poison_refs above).
+                M68kOperand::AbsW(0)
+            }
+        }
     }
 
     /// Convert one operand atom (see [`Self::convert_atoms_m68k`]).
@@ -2496,7 +2751,7 @@ impl Asm {
                     return None;
                 }
             }
-            OperandAtom::Value(Expr::Sym(name)) => {
+            OperandAtom::Value(e @ Expr::Sym(name)) => {
                 if let Some(n) = m68k_data_reg(name) {
                     M68kOperand::Dn(n)
                 } else if let Some(n) = m68k_addr_reg(name) {
@@ -2506,21 +2761,15 @@ impl Asm {
                 } else if name == "ccr" {
                     M68kOperand::Ccr
                 } else {
-                    self.err(
-                            span,
-                            format!(
-                                "absolute/symbolic operand `{name}` is out of scope for T5 (register-direct/#immediate/register-indirect only); deferred to T5b"
-                            ),
-                        );
-                    return None;
+                    // Bare symbol in EA position = absolute address; asl
+                    // width-selects abs.w/abs.l (M1.D T2).
+                    self.abs_ea_from_expr(e, span)
                 }
             }
-            OperandAtom::Value(_) => {
-                self.err(
-                        span,
-                        "bare numeric/expression operand implies 68k absolute addressing, out of scope for T5; deferred to T5b",
-                    );
-                return None;
+            OperandAtom::Value(e) => {
+                // Bare numeric/expression operand = 68k absolute addressing;
+                // width-selected like the bare-symbol case above (M1.D T2).
+                self.abs_ea_from_expr(e, span)
             }
             OperandAtom::Mem(_) => {
                 self.err(
@@ -2730,13 +2979,45 @@ impl Asm {
         }
     }
 
-    /// Qualify a bare local `.name` Sym against the current scope; else unchanged.
+    /// Qualify every `.`-local `Sym` in the tree against the current scope.
+    /// RECURSES into compound expressions (mirroring `resolve_dollar`): a `.`-local
+    /// can sit nested inside arithmetic — jump-table targets like `.cc_table-4(pc,…)`
+    /// and computed branch targets like `.drain_end-.c*8` — and each nested local
+    /// must qualify, or the linker's global-scope fold can never resolve it.
     fn qualify_expr(&self, e: &Expr) -> Expr {
         match e {
             Expr::Sym(name) if name.starts_with('.') => {
                 Expr::Sym(qualify(name, self.scope.as_deref()))
             }
+            Expr::Binary { op, lhs, rhs } => Expr::Binary {
+                op: *op,
+                lhs: Box::new(self.qualify_expr(lhs)),
+                rhs: Box::new(self.qualify_expr(rhs)),
+            },
+            Expr::Unary { op, operand } => Expr::Unary {
+                op: *op,
+                operand: Box::new(self.qualify_expr(operand)),
+            },
             other => other.clone(),
+        }
+    }
+
+    /// Resolve a PC-relative branch / jump-table target destined for a fixup.
+    /// Qualifies `.`-locals (deep), resolves `$`, then FOLDS against the current
+    /// env and BAKES a resolved target as `Expr::Int` — mirroring the jmp/jsr and
+    /// `abs_ea_from_expr` bake (M1.D T3). Baking is required, not just tidy: the
+    /// target may reference an env-only `set`/`equ` symbol the linker's
+    /// section-label table cannot see (`.c`, a per-iteration `rept` counter in
+    /// `dma_queue.asm`'s `bra.w .drain_end-.c*8`), and the counter's value must be
+    /// captured HERE (its value at this instruction), not deferred to the linker
+    /// where only its final value survives. A still-unresolved (forward) target
+    /// stays fully-qualified-symbolic for the linker to resolve or reject — the
+    /// branch width is fixed, so the placeholder never perturbs layout.
+    fn fixup_target(&self, e: &Expr) -> Expr {
+        let qualified = self.resolve_dollar(&self.qualify_expr(e));
+        match self.fold(&qualified) {
+            Fold::Value(v) => Expr::Int(v),
+            Fold::Poison => qualified,
         }
     }
 
@@ -2877,22 +3158,33 @@ impl Asm {
             lines[start].base,
         )
         .unwrap_or_default();
-        // toks: Ident(name) Ident("macro") [param idents/commas...]
-        let name = match toks.first().map(|t| &t.tok) {
-            Some(Tok::Ident(s)) => s.clone(),
-            _ => {
-                let span = Span {
-                    source: self.source,
-                    start: lines[start].base,
-                    end: lines[start].base,
-                };
-                self.err(span, "macro needs a name");
-                String::new()
-            }
+        // Two head shapes (both real AS, both asl-verified):
+        //   `NAME macro p...`   → toks: Ident(NAME) Ident("macro") [params...]
+        //   `NAME: macro p...`  → toks: Ident(NAME) Colon Ident("macro") [params...]
+        // The colon form (used by the `__FSTRING`/`__ErrorMessage` debug macros)
+        // must peel the label before reading params, else `macro` itself leaks in
+        // as the first "param" and shifts every real param by one (binding the
+        // caller's arg to a phantom slot). `parse_line_tokens` peels it.
+        let parsed = parse_line_tokens(&toks);
+        let (name, param_toks): (String, Vec<Token>) = if let Some(lbl) = parsed.label_colon {
+            // parsed.tokens: Ident("macro") [params...]; params start at index 1.
+            (lbl, parsed.tokens.get(1..).unwrap_or(&[]).to_vec())
+        } else {
+            let name = match toks.first().map(|t| &t.tok) {
+                Some(Tok::Ident(s)) => s.clone(),
+                _ => {
+                    let span = Span {
+                        source: self.source,
+                        start: lines[start].base,
+                        end: lines[start].base,
+                    };
+                    self.err(span, "macro needs a name");
+                    String::new()
+                }
+            };
+            (name, toks.get(2..).unwrap_or(&[]).to_vec())
         };
-        let params: Vec<String> = toks
-            .get(2..)
-            .unwrap_or(&[])
+        let params: Vec<String> = param_toks
             .iter()
             .filter_map(|t| {
                 if let Tok::Ident(p) = &t.tok {
@@ -2950,6 +3242,32 @@ impl Asm {
     /// would reject the glued-mnemonic case (the char right before the `.` is
     /// alphanumeric, e.g. the `e` in `move`), which is the primary asl-verified
     /// use (asl-verified: `move.ATTRIBUTE src,d0` with `foo.w d1` → `move.w d1,d0`).
+    /// Bind one macro argument, qualifying a bare `.`-local against the CALLER
+    /// scope (asl evaluates arguments in caller context — [`Self::scope`] still
+    /// holds that scope here, before the expansion swaps in its own).
+    ///
+    /// A `.`-local that names a **string-valued** `set` symbol is substituted BY
+    /// VALUE, as a quoted literal: the qualified name `" macro#N.local"` (space +
+    /// `#`) can't re-lex as a single identifier, so `switch`/`lowstring`/`substr`
+    /// in the callee couldn't resolve it — but the value round-trips.
+    /// `debugger.asm`'s `__FSTRING_*` pass `.__operand`/`.__param` string locals
+    /// into `__FSTRING_PushArgument` this way (probe `probe_argkind` 2026-07-05).
+    /// A label / int-local keeps the qualified NAME, resolved via the symbol table
+    /// (e.g. `aabb_axis_test`'s `.next_object` arg). Latent until __DEBUG__ (T5).
+    fn bind_macro_arg(&self, v: String, caller_scope: Option<&str>) -> String {
+        if is_bare_local(&v) {
+            if let Some(s) = self.resolve_str(&v) {
+                // Quoted so it re-lexes as one `Tok::Str`. Assumes the value has
+                // no embedded `"` — true for every debugger operand/param
+                // descriptor (`"d0"`, `".w"`, `"#"`, …); a value containing a
+                // quote would produce a broken literal (none occurs in aeon).
+                return format!("\"{s}\"");
+            }
+            return qualify(&v, caller_scope);
+        }
+        v
+    }
+
     fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
         if self.macro_depth >= EXPAND_CAP {
             let span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
@@ -2989,23 +3307,24 @@ impl Asm {
             positional.push(render_tokens(g));
         }
         let mut pos_iter = positional.into_iter();
+        // The caller's local-label scope, captured BEFORE the expansion swaps in
+        // its own scope below. A macro argument that is a bare `.`-local
+        // (`aabb_axis_test …,.next_object,…`) names a label in the CALLER's scope
+        // — asl evaluates arguments in the caller context — so it must be
+        // qualified here, before substitution, not against the expansion scope.
+        let caller_scope = self.scope.clone();
         // An OMITTED argument binds to the EMPTY STRING, not "left unsubstituted"
         // (asl-verified): the Aeon parallax macros gate optional fields on
         // `if "param" = ""` and expect the bare param to vanish where used
         // (`P_VFG := vFactorFg` → `P_VFG := ` on the empty branch, never taken).
         // `replace_word` treats `"` as a word boundary, so an empty binding also
         // collapses `"param"` → `""`, making the guard compare true.
-        let arg_values: Vec<(String, String)> = params
-            .iter()
-            .map(|p| {
-                let v = keyword
-                    .get(p)
-                    .cloned()
-                    .or_else(|| pos_iter.next())
-                    .unwrap_or_default();
-                (p.clone(), v)
-            })
-            .collect();
+        let mut arg_values: Vec<(String, String)> = Vec::with_capacity(params.len());
+        for p in &params {
+            let v = keyword.get(p).cloned().or_else(|| pos_iter.next()).unwrap_or_default();
+            let bound = self.bind_macro_arg(v, caller_scope.as_deref());
+            arg_values.push((p.clone(), bound));
+        }
         let mut expanded = Vec::new();
         for l in &body {
             let mut text = l.text.clone();
@@ -3018,9 +3337,29 @@ impl Asm {
             }
             expanded.push(SrcLine { text, base: l.base });
         }
+        // A `.`-local written LITERALLY in this macro body is scoped to the
+        // EXPANSION, not the caller's global label (asl-verified, T4 probe
+        // P1/P3): two expansions of one macro in a single global scope each own a
+        // private copy, and asl neither collides them nor exposes them as caller-
+        // qualified user symbols. Give the body a fresh, reserved scope name so
+        // `qualify(".x", scope)` → `<expansion>.x` is unique per expansion, then
+        // restore the caller's scope. The reserved prefix cannot alias a user
+        // global label (no source label begins with a space). A `.`-local that
+        // came in through an ARGUMENT was already qualified against `caller_scope`
+        // above, so it points at the caller's label and is unaffected here. All
+        // aeon body `.`-locals are def+ref within one expansion and reached only
+        // by fixed-length short branches, so this affects no layout.
+        //
+        // Limitations (none exercised by aeon): a macro body that references a
+        // caller-scope `.`-local WITHOUT it being passed as an argument, or
+        // defines a NON-dotted global label meant to become the outer scope
+        // afterwards, would diverge — aeon does neither.
+        self.macro_expansion_seq += 1;
+        self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
         self.macro_depth += 1;
         self.exec(&expanded);
         self.macro_depth -= 1;
+        self.scope = caller_scope;
     }
 }
 
@@ -3175,6 +3514,53 @@ fn split_attribute_suffix(s: &str) -> Option<(&str, &'static str)> {
         Some((b, ".s"))
     } else {
         None
+    }
+}
+
+/// Length (in tokens) of the trailing string-expression at the END of `out`, or
+/// `None` if the last token can't begin a string comparison LHS. Used by
+/// [`Evaluator::expand_str_comparisons`] to find the operand to the left of a
+/// `=`/`<>` whose RHS is a string literal. A string-expr is: a string literal
+/// (1 token), a bare identifier (1 token — a candidate string-valued symbol,
+/// validated by `eval_str`), or a balanced `substr(...)`/`lowstring(...)` call
+/// ending in `)`.
+fn trailing_str_expr_len(out: &[Token]) -> Option<usize> {
+    // `out.last()?` (not `out[n-1]`): an expression whose FIRST token is a
+    // comparison operator (`dc.b <>"x"`) reaches here with `out` empty — `n - 1`
+    // would underflow-panic in debug. Empty → no LHS → None (the malformed input
+    // then falls through to a normal "bad expression" diagnostic, not a crash).
+    let last = out.last()?;
+    let n = out.len();
+    match &last.tok {
+        Tok::Str(_) | Tok::Ident(_) => Some(1),
+        Tok::Punct(Punct::RParen) => {
+            // Walk back to the matching `(`; the ident before it must name a
+            // string-producing builtin.
+            let mut depth = 0usize;
+            let mut j = n;
+            while j > 0 {
+                j -= 1;
+                match &out[j].tok {
+                    Tok::Punct(Punct::RParen) => depth += 1,
+                    Tok::Punct(Punct::LParen) => {
+                        depth -= 1;
+                        if depth == 0 {
+                            let name = match out.get(j.checked_sub(1)?)?.tok {
+                                Tok::Ident(ref s) => s.as_str(),
+                                _ => return None,
+                            };
+                            if name == "substr" || name == "lowstring" {
+                                return Some(n - (j - 1));
+                            }
+                            return None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        _ => None,
     }
 }
 
@@ -3340,6 +3726,7 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "movem" => Movem,
         "movep" => Movep,
         "addx" => Addx,
+        "cmpm" => Cmpm,
         "nop" => Nop,
         "rts" => Rts,
         "rte" => Rte,
@@ -3579,6 +3966,14 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
         // A `Dn` destination is left alone — `add #4,d0` / `cmp #5,d0` are the
         // regular `<ea>,Dn` forms with an immediate source EA (distinct bytes).
         (Cmp, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Cmpi,
+        // A `cmp` with an ADDRESS-register destination is asl's spelling of
+        // `cmpa` (probe `probe_cmpa` 2026-07-05: `cmp.l a0,a1` == `cmpa.l a0,a1`
+        // == `B3C8`). Only `debugger.asm`'s `assert` macro (`cmp.ATTRIBUTE
+        // dest,src` with an An `dest`) exercises this — latent until __DEBUG__
+        // (M1.D T5). `add`/`sub` have the analogous `adda`/`suba` aliases, but no
+        // An-dest form of them appears in either build, so they are left to fail
+        // loud if one ever does (never silently mis-encoded).
+        (Cmp, [_, M68kOperand::An(_)]) => Cmpa,
         (And, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Andi,
         (Or, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Ori,
         (Add, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Addi,
@@ -3611,6 +4006,55 @@ fn qualify(name: &str, scope: Option<&str>) -> String {
     }
 }
 
+/// asl zero-displacement optimization (probe-verified, unconditional — NOT
+/// `-A`-gated; probe in the T4 notes' companion `zd` matrix): a `(d16,An)` EA
+/// whose displacement is 0 encodes as `(An)`, dropping the extension word
+/// (`move.b d0,0(a0)` → `1080` not `1140 0000`; `movem.l d0-d7,0(a0)` → `48D0`
+/// not `48E8 …0000`). This must be decided in the FRONT END, not the encoder,
+/// so the fragment carries the true (2-byte-shorter) EA length and the layout
+/// cursor stays correct. Callers apply it to every EA-general instruction;
+/// `movep` is the sole 68000 exception — mode 5 `(d16,An)` is its ONLY legal
+/// addressing (no register-indirect form), so it keeps `03C8 0000`. Every other
+/// EA instruction legally accepts mode 2 `(An)` wherever it accepts mode 5, so
+/// the collapse is always safe (this is 68000-specific; 68020+ is out of scope
+/// — Aeon pins `cpu 68000`).
+///
+/// Convergence: the displacement reaching here has already passed through
+/// `fold_imm`, which coerces an unresolved (forward-ref) displacement to a
+/// placeholder 0. So a Poison disp is optimized to `(An)` on an early pass and
+/// GROWS to `(d16,An)` (2→4 bytes) once it resolves nonzero — the same
+/// optimistic-short, grow-only discipline as the abs.w→abs.l / jmp-jsr width
+/// machinery. A resolved-nonzero disp never shrinks back to 0, so the fixpoint
+/// is monotone and converges to asl's minimal encoding (an extra pass, at worst,
+/// for a forward-ref disp that transits the placeholder 0). Aeon's real
+/// zero-disp sites (the `Init_DMA_Queue` `rept` at `.c=0`) resolve immediately
+/// and never transit a placeholder.
+fn collapse_zero_disp(op: &mut M68kOperand) {
+    if let M68kOperand::Disp16An(0, n) = *op {
+        *op = M68kOperand::Ind(n);
+    }
+}
+
+/// Qualify a macro argument that is a bare `.`-local against the CALLER's scope.
+/// A label passed into a macro (`…,.next_object,…`) names a symbol in the caller,
+/// so it must be resolved in the caller's scope, not the expansion's private one
+/// (see `expand_macro_inner`). Only a *clean* bare local (`.name`) is rewritten;
+/// compound or non-local argument text passes through untouched.
+///
+/// KNOWN over-match (not exercised by Aeon): the predicate cannot distinguish a
+/// bare local label from a lone size suffix / fractional token — a macro argument
+/// of literally `.w`/`.b`/`.l`/`.5` also satisfies `.` + alphanumerics and would
+/// be rewritten to `caller_scope.w` etc. Aeon never passes such a value as a
+/// macro argument (size suffixes ride on the mnemonic, not an argument slot).
+/// A bare `.`-local name: `.` followed by one or more identifier chars and
+/// nothing else (e.g. `.next_object`, `.__operand`), as opposed to a dotted
+/// expression or a `.`-suffixed literal.
+fn is_bare_local(v: &str) -> bool {
+    v.starts_with('.')
+        && v.len() > 1
+        && v[1..].chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
 fn on_off(rest: &[Token]) -> bool {
     !matches!(rest.first().map(|t| &t.tok), Some(Tok::Ident(w)) if w == "off")
 }
@@ -3635,6 +4079,19 @@ mod tests {
             .first()
             .map(|s| s.image_bytes())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn leading_comparison_operand_does_not_panic() {
+        // Regression (M1.D T5 review): `expand_str_comparisons` sees a `<>`/`=`
+        // with a string-literal RHS and an EMPTY left context, so
+        // `trailing_str_expr_len` must return None rather than underflow-panic on
+        // `out[n-1]`. The malformed operand must be handled gracefully (a
+        // diagnostic or the pre-existing silent-fold) — the point is it must not
+        // CRASH the assembler. Reaching this assert at all means no panic fired.
+        for src in ["\tcpu 68000\n\tdc.b <>\"x\"\n", "\tcpu 68000\n\tdc.b =\"x\"\n"] {
+            let _ = run(src, &Options::default());
+        }
     }
 
     #[test]
@@ -3726,6 +4183,9 @@ mod tests {
         // `movem`/`movep` are now in scope (register-list operands).
         assert_eq!(m68k_mnemonic("movem"), Some(Mnemonic::Movem));
         assert_eq!(m68k_mnemonic("movep"), Some(Mnemonic::Movep));
+        // `cmpm` (F3): encoder always had it; the front-end table did not until
+        // M1.D T0.4. Exposed only under __DEBUG__ (compression_selftest.asm:83).
+        assert_eq!(m68k_mnemonic("cmpm"), Some(Mnemonic::Cmpm));
         // a genuinely unrecognized word is not misparsed as a stray cc suffix.
         assert_eq!(m68k_mnemonic("banana"), None);
     }
@@ -3913,22 +4373,22 @@ mod tests {
     }
 
     #[test]
-    fn m68k_absolute_address_operand_diagnoses_t5_not_a_crash() {
-        // A bare symbol/number (no `#`, no parens) means 68k absolute addressing
-        // — out of scope for T4 (deferred to T5).
+    fn m68k_bare_absolute_operand_width_selects_abs_w() {
+        // A bare number (no `#`, no parens) means 68k absolute addressing. Since
+        // M1.D T2 this is in scope: asl width-selects abs.w for a target in
+        // [0,$7FFF]∪[$FF8000,$FFFFFF]. `$1234` ≤ $7FFF → abs.w: `30 38 12 34`.
         let src = "    cpu 68000\n    move.w $1234,d0\n";
         let opts = Options {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
         };
-        let diags =
-            run(src, &opts).expect_err("absolute address operand must be rejected, not lowered");
-        assert!(
-            diags.iter().any(|d| d.message.contains("T5")),
-            "expected a T5-deferral diagnostic, got: {:?}",
-            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
+        let m = run(src, &opts).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        assert_eq!(bytes, vec![0x30, 0x38, 0x12, 0x34]);
     }
 
     #[test]
@@ -3975,10 +4435,12 @@ mod tests {
     }
 
     #[test]
-    fn m68k_jmp_jsr_bare_symbol_defers_width_to_resolve_layout() {
-        // `jmp Lbl`/`jsr Lbl` must emit `Fragment::JmpJsrSym` (not fold
-        // immediately) — its abs.w/abs.l width is chosen later by the
-        // linker's `resolve_layout`. A low (<=0x7FFF) target selects abs.w.
+    fn m68k_jmp_jsr_bare_symbol_selects_width_in_front_end() {
+        // `jmp Lbl`/`jsr Lbl` selects its abs.w/abs.l width in the front-end
+        // pass loop (M1.D T3) and emits a finished `Fragment::Data` — NOT a
+        // width-deferred `JmpJsrSym`. A low (<=0x7FFF) target selects abs.w, so
+        // the fragment is already 4 bytes long and `resolve_layout`/`link` are a
+        // pass-through. See the width-selection block in `lower_m68k`.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jmp Lbl\n";
         let opts = Options {
             initial_cpu: Cpu::M68000,
@@ -3988,7 +4450,7 @@ mod tests {
         let m = run(src, &opts).expect("assemble");
         assert!(matches!(
             m.sections[0].fragments[0],
-            sigil_ir::Fragment::JmpJsrSym { is_jsr: false, .. }
+            sigil_ir::Fragment::Data(_)
         ));
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -5008,5 +5470,21 @@ C:\n";
         // numeric-fold path, not be misdetected as a string.
         let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b $41\n";
         assert_eq!(image(src), vec![0x41]);
+    }
+
+    #[test]
+    fn duplicate_vma_base_sections_get_distinct_names() {
+        let src = "\
+        cpu 68000\n\
+        phase $8000\n\
+        dc.b 1\n\
+        dephase\n\
+        phase $8000\n\
+        dc.b 2\n\
+        dephase\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        let names: Vec<&str> = module.sections.iter().map(|s| s.name.as_str()).collect();
+        let unique: std::collections::HashSet<&&str> = names.iter().collect();
+        assert_eq!(unique.len(), names.len(), "section names collided: {names:?}");
     }
 }

@@ -250,6 +250,10 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
         Some((b'<', b'<')) => return Some((Shl, 2)),
         Some((b'>', b'>')) => return Some((Shr, 2)),
         Some((b'<', b'>')) => return Some((Ne, 2)),
+        // `==` is asl's C-style equality alias for `=` (probe 2026-07-05: asl
+        // folds `a==b` identically to `a=b`). Without this it lexes as two `Eq`
+        // tokens and `parse_expr` chokes. Used pervasively in `debugger.asm`.
+        Some((b'=', b'=')) => return Some((Eq, 2)),
         Some((b'<', b'=')) => return Some((Le, 2)),
         Some((b'>', b'=')) => return Some((Ge, 2)),
         Some((b'|', b'|')) => return Some((OrOr, 2)),

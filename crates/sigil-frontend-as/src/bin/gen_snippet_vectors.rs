@@ -12,9 +12,11 @@
 //! AEON_DIR=/path/to/aeon cargo run -p sigil-frontend-as --bin gen-snippet-vectors
 //! ```
 //!
-//! The golden bytes committed today are hand-verified, so running this tool is
-//! optional — it exists to reconcile the snippets against real asl when the
-//! snippet list grows.
+//! The committed golden bytes are **generator-produced from real asl** and
+//! regenerate byte-identically (running this tool on the committed file is a
+//! git-clean no-op — the non-circularity invariant: each new snippet block must
+//! churn ONLY its own bytes, proving every committed golden is authentic asl
+//! output, not a value the implementation happened to emit).
 
 use std::fs;
 use std::path::{Path, PathBuf};

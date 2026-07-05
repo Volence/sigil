@@ -1088,3 +1088,410 @@ Foo     equ 4
         movep.l 8(a2),d1
 --- bytes ---
 03 4A 00 08
+=== m68k_cmpm_w_postinc ===
+        cpu 68000
+        phase 0
+        cmpm.w  (a0)+, (a1)+
+--- bytes ---
+B3 48
+=== m68k_cmpm_b_postinc ===
+        cpu 68000
+        phase 0
+        cmpm.b  (a3)+, (a2)+
+--- bytes ---
+B5 0B
+=== m68k_padding_on_word_at_odd_pc ===
+        cpu 68000
+        padding on
+        phase 0
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 00 12 34
+=== m68k_padding_off_word_at_odd_pc ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 12 34
+=== m68k_padding_on_long_at_odd_pc ===
+        cpu 68000
+        padding on
+        phase 0
+        dc.b $AA
+        dc.l $12345678
+--- bytes ---
+AA 00 12 34 56 78
+=== m68k_padding_on_instr_at_odd_pc ===
+        cpu 68000
+        padding on
+        phase 0
+        dc.b $AA
+        nop
+--- bytes ---
+AA 00 4E 71
+=== m68k_restore_cpu_change_resets_padding_on ===
+        cpu 68000
+        padding off
+        phase 0
+        save
+        cpu z80
+        restore
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 00 12 34
+=== m68k_restore_same_cpu_keeps_padding_off ===
+        cpu 68000
+        padding off
+        phase 0
+        save
+        restore
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 12 34
+=== m68k_cpu_directive_resets_padding_on ===
+        cpu 68000
+        padding off
+        phase 0
+        cpu 68000
+        dc.b $AA
+        dc.w $1234
+--- bytes ---
+AA 00 12 34
+=== t1_str_set_substr_whole ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"BUS ERROR"
+	dc.b	substr(S, 0, 0)
+	dc.b	0
+--- bytes ---
+42 55 53 20 45 52 52 4F 52 00
+=== t1_str_strstr_miss ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"BUS ERROR"
+P:	set	strstr(S, "%<")
+	dc.b	P&$FF
+--- bytes ---
+FF
+=== t1_str_strlen ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"BUS ERROR"
+	dc.b	strlen(S)
+--- bytes ---
+09
+=== t1_str_reassign_substr_self ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"HELLO"
+S:	set	substr(S, 0, 3)
+	dc.b	strlen(S)
+	dc.b	substr(S, 0, 0)
+--- bytes ---
+03 48 45 4C
+=== t1_str_val_sym ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	"$80"
+	dc.b	val(S)
+--- bytes ---
+80
+=== t1_str_empty ===
+	cpu 68000
+	padding off
+	org 0
+S:	set	""
+	dc.b	strlen(S)
+	dc.b	$AA
+--- bytes ---
+00 AA
+=== t1_bang_xor ===
+	cpu 68000
+	padding off
+	org 0
+	dc.b	(1)!1
+	dc.b	(3)!1
+	dc.b	5!3
+--- bytes ---
+00 02 06
+=== t1_errormessage_representative ===
+	cpu 68000
+	padding off
+	org 0
+_eh_address_error	equ	$01
+_eh_return		equ	$20
+_eh_align_offset	equ	$80
+DEBUGGER__EXTENSIONS__ENABLE	equ	1
+_eh_default:	equ	0
+MDDBG__ErrorHandler	equ	$000400
+MDDBG__ErrorHandler_PagesController	equ	$000500
+__FSTRING_GenerateArgumentsCode: macro string
+	.__pos:	set	strstr(string,"%<")
+	.__str:	set	string
+	while (.__pos>=0)
+		.__substr:	set	substr(.__str,.__pos,0)
+		if (.__pos>0)
+			.__str:	set	substr(.__str, 0, .__pos)
+			.__pos:	set	strstr(.__str,"%<")
+		else
+			.__pos:	set	-1
+		endif
+	endm
+	endm
+__FSTRING_GenerateDecodedString: macro string, addnewline
+	dc.b	substr(string, 0, 0)
+	dc.b	0
+	endm
+__ErrorMessage:	macro string, opts
+	__FSTRING_GenerateArgumentsCode string
+	jsr	(MDDBG__ErrorHandler).l
+	__FSTRING_GenerateDecodedString string, 0
+	.__align_flag: set (((*)&1)!1)*_eh_align_offset
+	dc.b	(opts)+_eh_return|.__align_flag
+	!align	2
+	jmp	(MDDBG__ErrorHandler_PagesController).l
+	endm
+BusError:
+	__ErrorMessage	"BUS ERROR", _eh_default|_eh_address_error
+--- bytes ---
+4E B9 00 00 04 00 42 55 53 20 45 52 52 4F 52 00 A1 00 4E F9 00 00 05 00
+=== t2_end_noop ===
+	cpu 68000
+	padding off
+	org 0
+	nop
+	END
+--- bytes ---
+4E 71
+=== t2_lea_abs_w ===
+	cpu 68000
+	padding off
+	org 0
+Low:	equ $100
+	lea Low, a0
+	rts
+--- bytes ---
+41 F8 01 00 4E 75
+=== t2_lea_abs_l ===
+	cpu 68000
+	padding off
+	org 0
+High:	equ $10000
+	lea High, a0
+	rts
+--- bytes ---
+41 F9 00 01 00 00 4E 75
+=== t2_lea_abs_boundary ===
+	cpu 68000
+	padding off
+	org 0
+S:	equ $FF8000
+	lea S, a0
+	rts
+--- bytes ---
+41 F8 80 00 4E 75
+=== t2_move_abs_w ===
+	cpu 68000
+	padding off
+	org 0
+L:	equ $100
+	move.w L, d0
+	rts
+--- bytes ---
+30 38 01 00 4E 75
+=== t2_move_abs_l ===
+	cpu 68000
+	padding off
+	org 0
+H:	equ $10000
+	move.w H, d0
+	rts
+--- bytes ---
+30 39 00 01 00 00 4E 75
+=== t3_jmp_abs_w ===
+	cpu 68000
+	padding off
+	org 0
+Low:	equ $100
+	jmp Low
+	rts
+--- bytes ---
+4E F8 01 00 4E 75
+=== t3_jmp_abs_l ===
+	cpu 68000
+	padding off
+	org 0
+High:	equ $10000
+	jmp High
+	rts
+--- bytes ---
+4E F9 00 01 00 00 4E 75
+=== t3_jsr_abs_w ===
+	cpu 68000
+	padding off
+	org 0
+Low:	equ $100
+	jsr Low
+	rts
+--- bytes ---
+4E B8 01 00 4E 75
+=== t3_jsr_abs_l ===
+	cpu 68000
+	padding off
+	org 0
+High:	equ $10000
+	jsr High
+	rts
+--- bytes ---
+4E B9 00 01 00 00 4E 75
+=== t3_jmp_fwd_low ===
+	cpu 68000
+	padding off
+	org 0
+	jmp Fwd
+	nop
+Fwd:	rts
+--- bytes ---
+4E F8 00 06 4E 71 4E 75
+=== t4_maclocal_twice ===
+	cpu 68000
+	padding off
+	org 0
+mymac	macro
+	beq.s	.done
+	nop
+.done:
+	endm
+Foo:
+	mymac
+	mymac
+	rts
+--- bytes ---
+67 02 4E 71 67 02 4E 71 4E 75
+=== t4_branch_computed ===
+	cpu 68000
+	padding off
+	org 0
+Foo:
+	bra.w	.end-2
+	nop
+.end:
+	rts
+--- bytes ---
+60 00 00 02 4E 71 4E 75
+=== t4_pcrel_computed_jmp ===
+	cpu 68000
+	padding off
+	org 0
+Foo:
+	jmp	.tab-4(pc,d0.w)
+.tab:
+	rts
+--- bytes ---
+4E FB 00 FE 4E 75
+=== t4_zerodisp_move_b ===
+	cpu 68000
+	padding off
+	org 0
+	move.b	d0, 0(a0)
+	rts
+--- bytes ---
+10 80 4E 75
+=== t4_zerodisp_move_nonzero ===
+	cpu 68000
+	padding off
+	org 0
+	move.b	d0, 2(a0)
+	rts
+--- bytes ---
+11 40 00 02 4E 75
+=== t4_zerodisp_lea ===
+	cpu 68000
+	padding off
+	org 0
+	lea	0(a0), a1
+	rts
+--- bytes ---
+43 D0 4E 75
+=== t4_zerodisp_movep_keeps ===
+	cpu 68000
+	padding off
+	org 0
+	movep.l	d1, 0(a0)
+	rts
+--- bytes ---
+03 C8 00 00 4E 75
+=== t4_zerodisp_movem ===
+	cpu 68000
+	padding off
+	org 0
+	movem.l	d0-d7, 0(a0)
+	rts
+--- bytes ---
+48 D0 00 FF 4E 75
+=== t5_eqeq ===
+	cpu 68000
+	padding off
+	dc.b	(5==5), (5==6), (7<>7), (7<>8)
+--- bytes ---
+01 00 00 01
+=== t5_strcmp_nested ===
+	cpu 68000
+	padding off
+t	set	".w"
+	dc.b	((strlen(t)==2)&&(substr(t,0,1)==".")), (t==".w"), (substr(t,0,1)=="."), ("x"<>"y")
+--- bytes ---
+01 01 01 01
+=== t5_substr_edges ===
+	cpu 68000
+	padding off
+s	set	"abc"
+	dc.b	strlen(substr(s,3,-1)), strlen(substr(s,5,0)), strlen(substr(s,2,-1)), strlen(substr(s,1,10))
+	dc.b	$FF, substr(s,1,10), $FE
+--- bytes ---
+00 00 00 02 FF 62 63 FE
+=== t5_cmpa ===
+	cpu 68000
+	padding off
+	cmp.l	a0, a1
+	cmp.w	d0, a1
+	cmp.l	(a2), a3
+--- bytes ---
+B3 C8 B2 C0 B7 D2
+=== t5_macro_strarg ===
+	cpu 68000
+	padding off
+callee:	macro	op
+	switch	lowstring(op)
+	case	"d1"
+	dc.b	$11
+	elsecase
+	dc.b	$EE
+	endcase
+	endm
+outer:	macro
+.myop:	set	"d1"
+	callee	.myop
+	endm
+	outer
+--- bytes ---
+11
+=== t5_render_hash_in_string ===
+	cpu 68000
+	padding off
+m:	macro	arg
+	dc.b	"[arg]"
+	endm
+	m	#1
+--- bytes ---
+5B 23 31 5D

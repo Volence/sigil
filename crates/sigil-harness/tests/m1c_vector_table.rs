@@ -34,23 +34,26 @@ fn strict_gate() -> bool {
 /// seeded BOTH as front-end `-D` defines and as link-time symbols (mirroring the
 /// M0 harness's dual stub seeding). SYSTEM_STACK is intentionally absent: it is a
 /// genuine equate in constants.asm, so stubbing it would double-define it.
+// Addresses re-derived from the M1.D T0.0 clean-tree `s4.lst` (aeon 9bacc93,
+// clean working tree, s4.bin 450878 B). The prior values came from a dirty-tree
+// build ~8KB larger, which moved every exception-vector target.
 const STUBS: &[(&str, i64)] = &[
     ("EntryPoint", 0x200),
-    ("BusError", 0x662F2),
-    ("AddressError", 0x6630A),
-    ("IllegalInstr", 0x66326),
-    ("ZeroDivide", 0x66348),
-    ("ChkInstr", 0x66362),
-    ("TrapvInstr", 0x66380),
-    ("PrivilegeViol", 0x663A0),
-    ("Trace", 0x663C2),
-    ("Line1010Emu", 0x663D6),
-    ("Line1111Emu", 0x663F6),
-    ("ErrorExcept", 0x66416),
-    ("NullInterrupt", 0x662F0),
-    ("HBlank_Dispatch", 0x21F8),
-    ("VBlank_Handler", 0x20C8),
-    ("ErrorTrap", 0x66434),
+    ("BusError", 0x64804),
+    ("AddressError", 0x6481C),
+    ("IllegalInstr", 0x64838),
+    ("ZeroDivide", 0x6485A),
+    ("ChkInstr", 0x64874),
+    ("TrapvInstr", 0x64892),
+    ("PrivilegeViol", 0x648B2),
+    ("Trace", 0x648D4),
+    ("Line1010Emu", 0x648E8),
+    ("Line1111Emu", 0x64908),
+    ("ErrorExcept", 0x64928),
+    ("NullInterrupt", 0x64802),
+    ("HBlank_Dispatch", 0x216A),
+    ("VBlank_Handler", 0x2042),
+    ("ErrorTrap", 0x64946),
 ];
 
 #[test]

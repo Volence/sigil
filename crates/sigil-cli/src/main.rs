@@ -12,13 +12,13 @@
 //! `sigil parse <input.emp>` runs only the .emp lexer/parser front end
 //! (Spec 2 Plan 1) and reports success or every diagnostic collected.
 //!
-//! `sigil build --aeon <dir>` assembles the M0 integration harness's Region
-//! A + Region B reference source (see `sigil-harness`) and, with `-o`, writes
-//! the flattened image to disk.
+//! `sigil build --aeon <dir>` assembles the full non-debug Aeon ROM (the whole
+//! `main.asm` include tree, no stubs) and, with `-o`, writes the emitted ROM to
+//! disk.
 //!
-//! `sigil diff --aeon <dir>` assembles the same regions and compares them
-//! byte-for-byte against the committed golden reference blobs, exiting
-//! non-zero if either region diverges.
+//! `sigil diff --aeon <dir>` assembles the same full ROM and compares the Z80
+//! sound driver's Region A + Region B byte-for-byte against `aeon/s4.bin`,
+//! exiting non-zero if either region diverges.
 
 use std::process;
 
@@ -200,15 +200,14 @@ fn parse_aeon_and_output(args: &[String], allow_output: bool, usage: &str) -> (S
     (aeon, output)
 }
 
-/// `sigil build --aeon <dir> [-o <output.bin>]` — assemble the M0 harness's
-/// Region A + Region B reference source and, if `-o` is given, write the
-/// flattened image to disk.
+/// `sigil build --aeon <dir> [-o <output.bin>]` — assemble the full non-debug
+/// Aeon ROM (no stubs) and, if `-o` is given, write the emitted ROM to disk.
 fn run_build(args: &[String]) {
     let (aeon, output) =
         parse_aeon_and_output(args, true, "sigil build --aeon <dir> [-o <output.bin>]");
     let aeon_path = std::path::Path::new(&aeon);
 
-    let img = match sigil_harness::assemble_reference_regions(aeon_path) {
+    let img = match sigil_harness::assemble_full_rom(aeon_path) {
         Ok(img) => img,
         Err(err) => {
             eprintln!("error: {err}");
@@ -216,36 +215,53 @@ fn run_build(args: &[String]) {
         }
     };
 
-    let region_a = img.section("sec0");
-    let region_b = img.section("sec32768");
-    let len_a = region_a.map(|s| s.bytes.len()).unwrap_or(0);
-    let len_b = region_b.map(|s| s.bytes.len()).unwrap_or(0);
+    let len_a = sigil_harness::region_at_lma(&img, sigil_harness::REGION_A_LMA)
+        .map(<[u8]>::len)
+        .unwrap_or(0);
+    let len_b = sigil_harness::region_at_lma(&img, sigil_harness::REGION_B_LMA)
+        .map(<[u8]>::len)
+        .unwrap_or(0);
 
     if let Some(out_path) = output {
-        let flat = match sigil_link::flatten_checked(&img, 0x00) {
+        let map_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+        let map = match std::fs::read_to_string(&map_path)
+            .map_err(|e| e.to_string())
+            .and_then(|s| sigil_link::load_map(&s))
+        {
+            Ok(map) => map,
+            Err(err) => {
+                eprintln!("error: load map {}: {err}", map_path.display());
+                process::exit(1);
+            }
+        };
+        let rom = match sigil_link::emit_rom(&img, &map) {
             Ok(bytes) => bytes,
             Err(err) => {
                 eprintln!("error: {err}");
                 process::exit(1);
             }
         };
-        if let Err(err) = std::fs::write(&out_path, &flat) {
+        if let Err(err) = std::fs::write(&out_path, &rom) {
             eprintln!("error: cannot write {out_path}: {err}");
             process::exit(1);
         }
     }
 
-    println!("built: region A {len_a} B @ sec0, region B {len_b} B @ sec32768");
+    println!(
+        "built: full ROM, sound driver region A {len_a} B @ {:#x}, region B {len_b} B @ {:#x}",
+        sigil_harness::REGION_A_LMA,
+        sigil_harness::REGION_B_LMA
+    );
 }
 
-/// `sigil diff --aeon <dir>` — assemble the M0 harness's Region A + Region B
-/// reference source and compare it byte-for-byte against the committed golden
-/// blobs. Exits non-zero if either region diverges.
+/// `sigil diff --aeon <dir>` — assemble the full non-debug Aeon ROM (no stubs)
+/// and compare the sound driver's Region A + Region B byte-for-byte against
+/// `aeon/s4.bin`. Exits non-zero if either region diverges.
 fn run_diff(args: &[String]) {
     let (aeon, _) = parse_aeon_and_output(args, false, "sigil diff --aeon <dir>");
     let aeon_path = std::path::Path::new(&aeon);
 
-    let img = match sigil_harness::assemble_reference_regions(aeon_path) {
+    let img = match sigil_harness::assemble_full_rom(aeon_path) {
         Ok(img) => img,
         Err(err) => {
             eprintln!("error: {err}");
@@ -253,34 +269,45 @@ fn run_diff(args: &[String]) {
         }
     };
 
-    let ref_a = match std::fs::read(sigil_harness::golden_path("region_a.bin")) {
+    let refrom = match std::fs::read(aeon_path.join("s4.bin")) {
         Ok(bytes) => bytes,
         Err(err) => {
-            eprintln!("error: cannot read golden region_a.bin: {err}");
-            process::exit(1);
-        }
-    };
-    let ref_b = match std::fs::read(sigil_harness::golden_path("region_b.bin")) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            eprintln!("error: cannot read golden region_b.bin: {err}");
+            eprintln!("error: cannot read {}/s4.bin: {err}", aeon);
             process::exit(1);
         }
     };
 
     let mut ok = true;
-    match sigil_harness::diff_region(&img, "sec0", &ref_a) {
-        Ok(()) => println!("region A (sec0):     MATCH ({} bytes)", ref_a.len()),
-        Err(err) => {
-            println!("region A (sec0):     {err}");
-            ok = false;
-        }
-    }
-    match sigil_harness::diff_region(&img, "sec32768", &ref_b) {
-        Ok(()) => println!("region B (sec32768): MATCH ({} bytes)", ref_b.len()),
-        Err(err) => {
-            println!("region B (sec32768): {err}");
-            ok = false;
+    for (label, lma) in
+        [("region A", sigil_harness::REGION_A_LMA), ("region B", sigil_harness::REGION_B_LMA)]
+    {
+        let bytes = match sigil_harness::region_at_lma(&img, lma) {
+            Some(b) => b,
+            None => {
+                println!("{label} ({lma:#x}): no linked section at that LMA");
+                ok = false;
+                continue;
+            }
+        };
+        let start = lma as usize;
+        let end = start + bytes.len();
+        match refrom.get(start..end) {
+            Some(win) if win == bytes => println!("{label} ({lma:#x}): MATCH ({} bytes)", bytes.len()),
+            Some(win) => {
+                let i = (0..bytes.len()).find(|&i| bytes[i] != win[i]).unwrap();
+                println!(
+                    "{label} ({lma:#x}): diverged at region offset {i:#x} (ROM {:#x}): \
+                     sigil {:#04x} != ref {:#04x}",
+                    start + i,
+                    bytes[i],
+                    win[i]
+                );
+                ok = false;
+            }
+            None => {
+                println!("{label} ({lma:#x}): window exceeds reference ROM ({} B)", refrom.len());
+                ok = false;
+            }
         }
     }
 

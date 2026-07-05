@@ -1,7 +1,11 @@
 # Sigil M1.D — Full-ROM byte-exactness — Handoff
 
-**Status:** M1.C (AS 68k front-end) essentially COMPLETE and merged. M1.D is the remaining path
-to `sha256(sigil_s4.bin) == sha256(ref_s4.bin)`.
+**Status:** SUPERSEDED as the M1.D work plan by
+`2026-07-04-sigil-m1d-full-rom-spec.md` (audit-revised: new byte-affecting
+`padding`-across-restore finding, the stale-fold risk upgraded to a certainty with a fix
+direction, `cmpm` front-end gap, spec backports now in scope). This doc remains valid as
+the M1.C landing record. Original status: M1.C (AS 68k front-end) essentially COMPLETE and
+merged. M1.D is the remaining path to `sha256(sigil_s4.bin) == sha256(ref_s4.bin)`.
 
 ## Where M1.C landed
 The front-end (`sigil-frontend-as`) assembles the ENTIRE real Aeon `games/sonic4/main.asm`

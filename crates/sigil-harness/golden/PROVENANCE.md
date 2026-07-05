@@ -1,56 +1,32 @@
-# Golden provenance — Sigil M0 acceptance gate
+# Golden provenance — Sigil reference gates
 
-These committed golden blobs certify that Sigil reproduces the Aeon Z80 sound
-driver byte-for-byte:
+## M0 acceptance — the Z80 sound driver (RE-EXPRESSED in M1.D T6)
 
-- `region_a.bin` / `region_b.bin` — the reference regions sliced from a fresh
-  `asl` build of `aeon/s4.bin` (region A `[Z80_Sound_Start:Z80_Sound_End]`,
-  region B `[MovingTrucks_Bank_Start:Song_MovingTrucks]`).
-- `sigil_a.bin` / `sigil_b.bin` — Sigil's own assembled output for the same two
-  regions. They are **byte-identical** to the reference blobs (that identity is
-  the M0 acceptance gate).
-- `windows.toml` / `stub-syms.toml` — the extraction windows and the 68k leaf
-  stub set, both re-derived from the fresh build's `s4.lst`.
+The M0 milestone proved Sigil reproduces the Aeon Z80 sound driver (Region A =
+the resident phase-0 driver; Region B = the phase-`08000h` Moving-Trucks / SFX
+bank) byte-for-byte. It was originally gated by a **bounded harness** that
+assembled those two regions *in isolation*, stubbing the ~42 68k leaf symbols the
+driver referenced but that the isolated build did not define
+(`golden/stub-syms.toml`, re-derived by the `regen` bin from a fresh `s4.lst`).
 
-## The reference is a moving target (read this before trusting a stale blob)
+**That whole apparatus was retired in M1.D T6.** Sigil now assembles the entire
+`main.asm` include tree byte-exact with **zero stubs** (the `m1d_rom` gate), so
+the sound-driver regions fall out of the full build directly. The following were
+deleted: `harness_root.asm`, `golden/{stub-syms.toml,windows.toml,region_a.bin,
+region_b.bin,sigil_a.bin,sigil_b.bin}`, the `regen` bin, and the
+`build_harness`/`assemble_reference_regions` lib helpers.
 
-Aeon is under **active development**, and `aeon/build.sh` re-runs code/data
-**generators** (sfx transcode, BG-tile/ojz blob gen, …) on every build, so the
-reference ROM's byte layout drifts as Aeon changes — the resident driver region
-has been observed at both `0x1720` (5920 B) and `0x1708` (5896 B). **Sigil has
-been verified byte-identical to the `asl` reference at every observed state** —
-the drift is in the Aeon source, not in Sigil.
+M0 acceptance is now the `m0_regions` gate
+(`crates/sigil-harness/tests/m0_regions.rs`): it runs the full non-debug build
+(no stubs), locates the linked sections at LMA `0x3EA` (Region A) and `0x60000`
+(Region B), and asserts each is byte-identical to the corresponding window of the
+**live** `aeon/s4.bin`. Region lengths are read from the live sections (not
+pinned), so the gate tracks driver growth automatically. It is reference-gated
+(needs the sibling `aeon` tree) and self-tracks Aeon drift the same way
+`m1d_rom` does — no committed golden blob to go stale.
 
-Consequently:
-
-- The **hermetic** test `m0_acceptance_sigil_matches_reference_blobs` compares
-  these committed `sigil_*.bin` vs `region_*.bin` — it certifies *snapshot
-  consistency* (Sigil-output == asl-reference at capture time), and stays green
-  regardless of later Aeon drift.
-- The **live** gate — `harness_assembles_regions_a_and_b_together` (`--ignored`),
-  the `sigil diff` CLI, and `regen` — assembles against the **current** Aeon tree
-  and will report a length/first-diff mismatch if these blobs are stale relative
-  to it. That is expected when Aeon has moved; it is **not** a Sigil regression.
-
-## Provenance of this snapshot
-
-- Captured during Plan 5 (Sigil M0). Aeon repo HEAD at merge time:
-  **`0ac34034829cc0a9f993413266f2e2f109b3a980`** (working tree carried unrelated
-  BG/editor WIP; the sound-driver source was stable for the capture).
-- Sigil branch: `sigil-m0-p5-integration-harness` (merged to `master`).
-
-## To refresh these goldens against the current Aeon
-
-```
-cargo run -p sigil-harness --bin regen
-```
-
-`regen` rebuilds Aeon, re-derives the windows + stub set from the fresh `.lst`,
-re-slices the reference regions, re-assembles with Sigil, and **exits non-zero
-if Sigil diverges from the reference** (writing both blobs for diffing). A clean
-run overwrites these files with a fresh, self-consistent snapshot. Commit the
-result to re-baseline. (M1 replaces this whole snapshot dance with a full-ROM
-`sha256` gate once the 68000 backend assembles the real 68k data.)
+To run: `SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-harness
+--test m0_regions`.
 
 ## M1.B reference-ROM pin (acceptance gate)
 
@@ -70,3 +46,51 @@ reads the stored word from the reference ROM, zeroes `0x18E`, recomputes via
 `sigil_link::apply_header_checksum`, and asserts equality — so the gate stays
 correct across re-baselines as long as the Sega checksum algorithm holds. The
 values above are the observed pin at the time this gate was written.
+
+## M1.D reference pin (T0.0, 2026-07-04) — the authoritative full-ROM target
+
+Re-pinned at the start of M1.D. **The M1.B pin above (458666 B / `0x5CBE`) was
+captured with a DIRTY aeon working tree** (BG/editor WIP carried in, per the M0
+snapshot note). A *clean* `9bacc93` produces a different, smaller ROM — the
+build is non-hermetic (`build.sh` runs python generators that consume the editor
+JSON), so the reference depends on the working-tree state, not just the commit.
+This pin is the reproducible clean-tree reference every M1.D gate measures
+against:
+
+- Aeon repo commit: **`9bacc939ae7c7c5300fc7e50548d851373128a23`**, working tree
+  **clean** (uncommitted forest_bg_gen/editor experiments stashed at pin time).
+- `aeon/s4.bin` length: **450878 bytes**
+- sha256: **`605631da01e2fb889d0babfebf8f1341f86a0fba0e63286cbc0671f068ad5117`**
+- Stored header checksum at `0x18E`: **`0xcfc3`**
+
+To reproduce the non-debug reference: stash any aeon WIP → `./build.sh sonic4`.
+(The `regen` bin that formerly re-derived the M0 goldens was retired in T6.)
+
+## M1.D T5 — the `__DEBUG__` reference (A2, 2026-07-05)
+
+The debug parity gate (`crates/sigil-harness/tests/m1d_debug_rom.rs`) compares
+Sigil's `__DEBUG__` build against a **deliberately-built** debug reference — NOT
+the shipped `s4.bin`. It is a separate on-disk artifact (`aeon/s4.debug.bin`, a
+gitignored build output), captured so the non-debug reference `s4.bin` (which the
+other gates depend on) can be restored alongside it.
+
+Exact capture procedure (from a **clean** aeon at the `9bacc93` pin):
+
+```
+cd aeon
+DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4   # -D __DEBUG__ -D SOUND_DRIVER_ENABLED
+cp s4.bin s4.debug.bin && cp s4.lst s4.debug.lst   # capture the debug outputs
+./build.sh sonic4                                  # rebuild + restore the non-debug s4.bin/s4.lst
+```
+
+- Debug `s4.debug.bin` length: **458666 bytes** (post-`convsym -a` append; the
+  deb2 symbol table is larger under `__DEBUG__`), sha256
+  `f51588ba72359569415e2506d3fbae660b4c9742fafc8473a67eac2a76c06b8c`.
+- Sigil's **assembled** debug ROM (pre-convsym, what the gate emits): **`0x673A2`
+  bytes** (`EndOfRom`), byte-identical to `s4.debug.bin` over `[0, 0x673A2)`
+  EXCEPT the four `convsym`/`fixheader` header bytes `{0x18E,0x18F,0x1A6,0x1A7}` —
+  the same A1/A2 scope decision as `m1d_rom`.
+
+⚠️ Building debug **clobbers** `aeon/s4.bin`/`s4.lst` (the non-debug pin). Always
+restore them afterwards (the final `./build.sh sonic4` above), and confirm
+`sha256(s4.bin) == 605631da…` before relying on the non-debug gates.

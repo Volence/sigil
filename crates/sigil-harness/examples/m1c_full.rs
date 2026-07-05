@@ -38,14 +38,20 @@ fn main() {
         Ok(m) => {
             println!("ASSEMBLED OK: {} sections", m.sections.len());
             for s in &m.sections {
+                // NB: `image_len()` is intentionally NOT printed here — a raw
+                // assembled section can still hold `JmpJsrSym` fragments (bare
+                // jmp/jsr), whose length is only fixed once `resolve_layout`
+                // width-selects them; calling `image_len()` pre-resolve panics.
+                // This recon is a diagnostics collector (goal: 0 diagnostics);
+                // the full assemble→resolve_layout→link→emit path is exercised
+                // by the `m1c_rom` gate (M1.D T4), not here.
                 println!(
-                    "  section {} cpu={:?} vma_base={:?} lma={:#x} frags={} image_len={:#x}",
+                    "  section {} cpu={:?} vma_base={:?} lma={:#x} frags={}",
                     s.name,
                     s.cpu,
                     s.vma_base,
                     s.lma,
                     s.fragments.len(),
-                    s.image_len()
                 );
             }
         }
