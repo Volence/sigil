@@ -313,6 +313,77 @@ impl<'a> Evaluator<'a> {
         self.const_memo.insert(name.to_string(), v.clone());
         v
     }
+
+    /// Select one of the three DISTINCT cycle-guard stacks for
+    /// [`with_cycle_guard`](Self::with_cycle_guard). The stacks stay separate
+    /// fields for correctness (see their doc comments); this only picks among
+    /// them, never merges them.
+    fn cycle_stack_mut(&mut self, stack: CycleStack) -> &mut Vec<String> {
+        match stack {
+            CycleStack::Layout => &mut self.layout_in_progress,
+            CycleStack::Construct => &mut self.struct_construct_in_progress,
+            CycleStack::Refine => &mut self.refine_check_in_progress,
+        }
+    }
+
+    /// Shared cycle-guard boilerplate (behavior-neutral consolidation of the
+    /// repeated push/check/pop + chain-diagnostic pattern that appears at each
+    /// of the simple guarded sites: `effective_underlying`, `size_of_newtype`,
+    /// `struct_name_for_offsetof`, the newtype-underlying-chain and
+    /// refine-bound branches of `check_value_fits_ty_labeled`, and
+    /// `eval_checked_struct_lit`.
+    ///
+    /// If `name` is already on the selected stack, this emits exactly one
+    /// `cyclic {kind}: A -> B -> A` diagnostic at `span` (naming the in-progress
+    /// chain from where `name` first entered, plus the repeat) and returns
+    /// `None` WITHOUT running `body`. Otherwise it pushes `name`, runs `body`,
+    /// pops (on every path — the pop happens here, once, regardless of how
+    /// `body` returns), and returns `Some(result)`.
+    ///
+    /// Deliberately does NOT touch the complex `layout_of_struct` site: that
+    /// guard is interleaved with the struct-layout memo re-check and the
+    /// whole-cycle-slice poisoning, which this simple push/body/pop shape does
+    /// not model.
+    pub(crate) fn with_cycle_guard<T>(
+        &mut self,
+        stack: CycleStack,
+        name: &str,
+        span: Span,
+        kind: &str,
+        body: impl FnOnce(&mut Self) -> T,
+    ) -> Option<T> {
+        let stack_ref = self.cycle_stack_mut(stack);
+        if let Some(start) = stack_ref.iter().position(|n| n == name) {
+            let mut chain: Vec<&str> = stack_ref[start..].iter().map(|s| s.as_str()).collect();
+            chain.push(name);
+            let msg = format!("cyclic {kind}: {}", chain.join(" -> "));
+            self.error(span, msg);
+            return None;
+        }
+        self.cycle_stack_mut(stack).push(name.to_string());
+        let result = body(self);
+        self.cycle_stack_mut(stack).pop();
+        Some(result)
+    }
+}
+
+/// Which cycle-guard stack a [`Evaluator::with_cycle_guard`] call targets. The
+/// three underlying `Vec<String>` fields are distinct BY DESIGN (see their doc
+/// comments on [`Evaluator`]) — re-entrancy on layout/size, on struct-literal
+/// construction, and on newtype refinement-bound eval are genuinely different
+/// concerns, and merging their stacks would false-cycle legitimate patterns
+/// (e.g. `newtype N = u8 where 0..sizeof(S)` alongside `struct S { x: N }`).
+/// This enum only SELECTS among the three; it never merges them.
+#[derive(Clone, Copy)]
+pub(crate) enum CycleStack {
+    /// [`Evaluator::layout_in_progress`] — size/layout/offsetof re-entrancy.
+    Layout,
+    /// [`Evaluator::struct_construct_in_progress`] — struct-literal
+    /// construction re-entrancy.
+    Construct,
+    /// [`Evaluator::refine_check_in_progress`] — newtype refinement-bound-eval
+    /// re-entrancy.
+    Refine,
 }
 
 impl Default for Evaluator<'_> {

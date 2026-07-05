@@ -243,19 +243,11 @@ impl<'a> Evaluator<'a> {
             Ty::Struct(name) => Some(name.clone()),
             Ty::Refined { inner, .. } => self.struct_name_for_offsetof(inner, span),
             Ty::Newtype(name) => {
-                if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
-                    let mut chain: Vec<&str> =
-                        self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
-                    chain.push(name);
-                    self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
-                    return None;
-                }
-                let decl = self.newtypes.get(name.as_str()).copied()?;
-                self.layout_in_progress.push(name.to_string());
-                let underlying = self.resolve_type(&decl.underlying);
-                let result = self.struct_name_for_offsetof(&underlying, span);
-                self.layout_in_progress.pop();
-                result
+                self.with_cycle_guard(crate::eval::CycleStack::Layout, name, span, "type", |this| {
+                    let decl = this.newtypes.get(name.as_str()).copied()?;
+                    let underlying = this.resolve_type(&decl.underlying);
+                    this.struct_name_for_offsetof(&underlying, span)
+                })?
             }
             _ => None,
         }
@@ -364,23 +356,17 @@ impl<'a> Evaluator<'a> {
     /// native stack. Newtype sizes are not memoized (a deferred perf nit); the
     /// underlying is re-resolved each time, which is cheap and side-effect-free.
     fn size_of_newtype(&mut self, name: &str, span: Span) -> usize {
-        if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
-            let mut chain: Vec<&str> =
-                self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
-            chain.push(name);
-            self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
-            return 0;
-        }
-        // Copy the `&'a NewtypeDecl` out so `self` is free to be mutated across
-        // the recursive resolve/size below (as `resolve_const`/`layout_of_struct`).
-        let Some(decl) = self.newtypes.get(name).copied() else {
-            return 0;
-        };
-        self.layout_in_progress.push(name.to_string());
-        let underlying = self.resolve_type(&decl.underlying);
-        let size = self.size_of_ty(&underlying, span);
-        self.layout_in_progress.pop();
-        size
+        let result = self.with_cycle_guard(crate::eval::CycleStack::Layout, name, span, "type", |this| {
+            // Copy the `&'a NewtypeDecl` out so `self` is free to be mutated
+            // across the recursive resolve/size below (as
+            // `resolve_const`/`layout_of_struct`).
+            let Some(decl) = this.newtypes.get(name).copied() else {
+                return 0;
+            };
+            let underlying = this.resolve_type(&decl.underlying);
+            this.size_of_ty(&underlying, span)
+        });
+        result.unwrap_or(0)
     }
 
     /// Compute (or fetch the memoized) byte layout of the struct named `name`,
@@ -778,34 +764,29 @@ impl<'a> Evaluator<'a> {
                     // falsely flag the legitimate `where 0 .. sizeof(S)` /
                     // `struct S { x: N }` size re-entrancy — so a construction cycle
                     // is diagnosed like the underlying-chain cycle above.
-                    if let Some(start) =
-                        self.refine_check_in_progress.iter().position(|n| n == name)
-                    {
-                        let mut chain: Vec<&str> =
-                            self.refine_check_in_progress[start..].iter().map(|s| s.as_str()).collect();
-                        chain.push(name);
-                        self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
-                        return false;
-                    }
-                    self.refine_check_in_progress.push(name.to_string());
-                    let result = match (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr)) {
-                        (Some(lo), Some(hi)) => {
-                            self.check_in_range(val, lo, hi, span, &format!("newtype {label}"))
-                        }
-                        // A non-int bound already reported via `eval_const_index`.
-                        _ => false,
-                    };
-                    self.refine_check_in_progress.pop();
-                    return result;
+                    let result =
+                        self.with_cycle_guard(crate::eval::CycleStack::Refine, name, span, "type", |this| {
+                            match (this.eval_const_index(lo_expr), this.eval_const_index(hi_expr)) {
+                                (Some(lo), Some(hi)) => {
+                                    this.check_in_range(val, lo, hi, span, &format!("newtype {label}"))
+                                }
+                                // A non-int bound already reported via `eval_const_index`.
+                                _ => false,
+                            }
+                        });
+                    return result.unwrap_or(false);
                 }
                 // Recurse into the underlying type but KEEP `label` — the author
                 // wrote `Angle(x)`, so the eventual `u8` range check must blame
-                // `Angle`, not `u8`.
-                self.layout_in_progress.push(name.to_string());
-                let underlying = self.resolve_type(&decl.underlying);
-                let ok = self.check_value_fits_ty_labeled(&underlying, val, span, label);
-                self.layout_in_progress.pop();
-                ok
+                // `Angle`, not `u8`. (The top-of-arm check above already ruled out
+                // `name` being on `layout_in_progress`, and nothing between there
+                // and here can push it, so this guard's own check never fires — it
+                // exists to pair the push with a guaranteed pop.)
+                let result = self.with_cycle_guard(crate::eval::CycleStack::Layout, name, span, "type", |this| {
+                    let underlying = this.resolve_type(&decl.underlying);
+                    this.check_value_fits_ty_labeled(&underlying, val, span, label)
+                });
+                result.unwrap_or(false)
             }
             Ty::Prim { width, signed } => {
                 let (lo, hi) = prim_bounds(*width, *signed);

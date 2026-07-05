@@ -94,21 +94,14 @@ impl<'a> Evaluator<'a> {
     pub(crate) fn effective_underlying(&mut self, ty: &Ty, span: Span) -> Ty {
         match ty {
             Ty::Newtype(name) => {
-                if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
-                    let mut chain: Vec<&str> =
-                        self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
-                    chain.push(name);
-                    self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
-                    return Ty::Poison;
-                }
-                let Some(decl) = self.newtypes.get(name.as_str()).copied() else {
-                    return Ty::Poison;
-                };
-                self.layout_in_progress.push(name.to_string());
-                let underlying = self.resolve_type(&decl.underlying);
-                let result = self.effective_underlying(&underlying, span);
-                self.layout_in_progress.pop();
-                result
+                let result = self.with_cycle_guard(super::CycleStack::Layout, name, span, "type", |this| {
+                    let Some(decl) = this.newtypes.get(name.as_str()).copied() else {
+                        return Ty::Poison;
+                    };
+                    let underlying = this.resolve_type(&decl.underlying);
+                    this.effective_underlying(&underlying, span)
+                });
+                result.unwrap_or(Ty::Poison)
             }
             Ty::Refined { inner, .. } => self.effective_underlying(inner, span),
             other => other.clone(),

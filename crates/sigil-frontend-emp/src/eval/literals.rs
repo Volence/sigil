@@ -68,6 +68,11 @@ impl<'a> Evaluator<'a> {
         // `layout_of_struct` (a by-value self-reference is also an infinite
         // layout, but the default-eval recursion fires independently and needs
         // its own guard). On a repeat, report and poison this construction.
+        //
+        // NOTE: this reports the chain from the WHOLE in-progress stack (not
+        // sliced from where `ty_name` first appeared, unlike the shared
+        // `with_cycle_guard` helper used just below) — kept exactly as before
+        // so the diagnostic text is unchanged.
         if self.struct_construct_in_progress.iter().any(|n| n == ty_name) {
             let mut chain: Vec<&str> =
                 self.struct_construct_in_progress.iter().map(|s| s.as_str()).collect();
@@ -79,58 +84,76 @@ impl<'a> Evaluator<'a> {
         // the field/default eval below (mirrors `layout_of_struct`).
         let decl: &'a ast::StructDecl =
             self.structs.get(ty_name).copied().expect("caller checked the struct exists");
-        self.struct_construct_in_progress.push(ty_name.to_string());
-        // Evaluate provided fields, checking existence and duplication. Keep the
-        // evaluated values keyed by name for the declaration-order rebuild.
-        let mut provided_vals: Vec<(String, Value)> = Vec::with_capacity(provided.len());
-        for (fname, expr) in provided {
-            let v = self.eval_expr(expr, env);
-            // A `return` (or abort) inside a field expr propagates uniformly —
-            // mirroring the sibling construction sites (T8 review, Minor 3). Pop
-            // the construction guard before bailing so the stack stays balanced.
-            if self.aborted || self.pending_return.is_some() {
-                self.struct_construct_in_progress.pop();
-                return Value::Poison;
-            }
-            let fspan = crate::parser::expr_span(expr);
-            if !decl.fields.iter().any(|f| &f.name == fname) {
-                self.error(fspan, format!("[struct.unknown-field] struct {ty_name} has no field `{fname}`"));
-                continue;
-            }
-            if provided_vals.iter().any(|(n, _)| n == fname) {
-                self.error(fspan, format!("struct {ty_name}: field `{fname}` given more than once"));
-                continue;
-            }
-            provided_vals.push((fname.clone(), v));
-        }
-        // Rebuild in declaration order: provided value, else default, else a
-        // missing-field diagnostic (no silent zero-fill).
-        let mut out_fields = Vec::with_capacity(decl.fields.len());
-        for field in &decl.fields {
-            if let Some((_, v)) = provided_vals.iter().find(|(n, _)| n == &field.name) {
-                out_fields.push((field.name.clone(), v.clone()));
-            } else if let Some(default) = &field.default {
-                let dv = self.eval_expr(default, env);
-                // Same leaked-return / abort bail as the provided-field loop.
-                if self.aborted || self.pending_return.is_some() {
-                    self.struct_construct_in_progress.pop();
-                    return Value::Poison;
+        // The check above already ruled out `ty_name` being in progress, and
+        // nothing runs between there and here that could push it — so this
+        // guard's own (re-)check can never fire. It exists to guarantee the pop
+        // on every path out of `body`, replacing the three hand-written pop
+        // sites (T7/T8 review) with one.
+        let built = self.with_cycle_guard(
+            super::CycleStack::Construct,
+            ty_name,
+            span,
+            "struct construction",
+            |this| {
+                // Evaluate provided fields, checking existence and duplication.
+                // Keep the evaluated values keyed by name for the
+                // declaration-order rebuild.
+                let mut provided_vals: Vec<(String, Value)> = Vec::with_capacity(provided.len());
+                for (fname, expr) in provided {
+                    let v = this.eval_expr(expr, env);
+                    // A `return` (or abort) inside a field expr propagates
+                    // uniformly — mirroring the sibling construction sites (T8
+                    // review, Minor 3).
+                    if this.aborted || this.pending_return.is_some() {
+                        return None;
+                    }
+                    let fspan = crate::parser::expr_span(expr);
+                    if !decl.fields.iter().any(|f| &f.name == fname) {
+                        this.error(
+                            fspan,
+                            format!("[struct.unknown-field] struct {ty_name} has no field `{fname}`"),
+                        );
+                        continue;
+                    }
+                    if provided_vals.iter().any(|(n, _)| n == fname) {
+                        this.error(fspan, format!("struct {ty_name}: field `{fname}` given more than once"));
+                        continue;
+                    }
+                    provided_vals.push((fname.clone(), v));
                 }
-                out_fields.push((field.name.clone(), dv));
-            } else {
-                self.error(
-                    span,
-                    format!(
-                        "[struct.missing-field] struct {ty_name}: field `{}` has no default and was not provided",
-                        field.name
-                    ),
-                );
-                out_fields.push((field.name.clone(), Value::Poison));
-            }
-        }
-        // All nested constructions are done — pop before the (non-constructing)
-        // layout checks.
-        self.struct_construct_in_progress.pop();
+                // Rebuild in declaration order: provided value, else default,
+                // else a missing-field diagnostic (no silent zero-fill).
+                let mut out_fields = Vec::with_capacity(decl.fields.len());
+                for field in &decl.fields {
+                    if let Some((_, v)) = provided_vals.iter().find(|(n, _)| n == &field.name) {
+                        out_fields.push((field.name.clone(), v.clone()));
+                    } else if let Some(default) = &field.default {
+                        let dv = this.eval_expr(default, env);
+                        // Same leaked-return / abort bail as the provided-field loop.
+                        if this.aborted || this.pending_return.is_some() {
+                            return None;
+                        }
+                        out_fields.push((field.name.clone(), dv));
+                    } else {
+                        this.error(
+                            span,
+                            format!(
+                                "[struct.missing-field] struct {ty_name}: field `{}` has no default and was not provided",
+                                field.name
+                            ),
+                        );
+                        out_fields.push((field.name.clone(), Value::Poison));
+                    }
+                }
+                Some(out_fields)
+            },
+        );
+        // `built` is `Some(Some(fields))` on a normal build, `Some(None)` on a
+        // leaked return/abort mid-construction, and (unreachable here, since
+        // the check above already passed) `None` on a detected cycle.
+        let Some(out_fields) = built.flatten() else {
+            return Value::Poison;
+        };
         // Trigger the layout `(size:)`/`@offset`/odd-field checks at the literal
         // site (memoized, so this reports at most once per struct).
         let _ = self.layout_of_struct(ty_name, span);
