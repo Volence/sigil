@@ -492,12 +492,7 @@ impl<'a> Evaluator<'a> {
                     // closing brace (the scope pop drops it). The block is a
                     // side-effect statement — it yields Unit — but an inner
                     // `return` still propagates out to the enclosing fn.
-                    env.push_scope();
-                    self.comptime_ctx += 1;
-                    let f = self.exec_stmts(body, env);
-                    self.comptime_ctx -= 1;
-                    env.pop_scope();
-                    if let Flow::Return(v) = f {
+                    if let Flow::Return(v) = self.exec_comptime_scoped(body, env) {
                         return Flow::Return(v);
                     }
                     last = Value::Unit;
@@ -528,6 +523,28 @@ impl<'a> Evaluator<'a> {
         Flow::Normal(last)
     }
 
+    /// Execute `body` in a fresh nested scope, returning its [`Flow`]. Pushes a
+    /// scope, runs the block, then pops — centralizing the push/exec/pop idiom so
+    /// the scope is always dropped, including on the `Return` path.
+    fn exec_scoped(&mut self, body: &[ast::Stmt], env: &mut Env) -> Flow {
+        env.push_scope();
+        let f = self.exec_stmts(body, env);
+        env.pop_scope();
+        f
+    }
+
+    /// Like [`exec_scoped`](Self::exec_scoped) but also enters a comptime-mutable
+    /// context (D-P2.5) for the duration, so `comptime var`/assignment are legal
+    /// inside `body`. Folding the depth bump into this helper keeps it balanced:
+    /// there is no path between the increment and its matching decrement, so a
+    /// future early return in the body cannot leave `comptime_ctx` unbalanced.
+    fn exec_comptime_scoped(&mut self, body: &[ast::Stmt], env: &mut Env) -> Flow {
+        self.comptime_ctx += 1;
+        let f = self.exec_scoped(body, env);
+        self.comptime_ctx -= 1;
+        f
+    }
+
     /// Evaluate an `if` in either statement or expression position (D-P2.15).
     ///
     /// The condition must be `Bool`; a non-bool is an error (yielding `Poison`)
@@ -551,19 +568,9 @@ impl<'a> Evaluator<'a> {
         };
         match c {
             Value::Poison => Flow::Normal(Value::Poison),
-            Value::Bool(true) => {
-                env.push_scope();
-                let f = self.exec_stmts(then, env);
-                env.pop_scope();
-                f
-            }
+            Value::Bool(true) => self.exec_scoped(then, env),
             Value::Bool(false) => match els {
-                Some(e) => {
-                    env.push_scope();
-                    let f = self.exec_stmts(e, env);
-                    env.pop_scope();
-                    f
-                }
+                Some(e) => self.exec_scoped(e, env),
                 None => Flow::Normal(Value::Unit),
             },
             other => {
@@ -600,46 +607,12 @@ impl<'a> Evaluator<'a> {
         if self.aborted || self.pending_return.is_some() {
             return Value::Poison;
         }
-        let mut collected = Vec::new();
-        match iter_v {
-            Value::Range { lo, hi } => {
-                let mut i = lo;
-                while i < hi {
-                    if !self.bump_step() {
-                        self.abort(span, "step budget exceeded");
-                        return Value::Poison;
-                    }
-                    match self.run_loop_body(var, Value::Int(i), body, env) {
-                        Flow::Normal(v) => collected.push(v),
-                        Flow::Return(r) => {
-                            self.pending_return = Some(r);
-                            return Value::Poison;
-                        }
-                    }
-                    if self.aborted {
-                        return Value::Poison;
-                    }
-                    i += 1;
-                }
-            }
-            Value::Array(elems) => {
-                for el in elems {
-                    if !self.bump_step() {
-                        self.abort(span, "step budget exceeded");
-                        return Value::Poison;
-                    }
-                    match self.run_loop_body(var, el, body, env) {
-                        Flow::Normal(v) => collected.push(v),
-                        Flow::Return(r) => {
-                            self.pending_return = Some(r);
-                            return Value::Poison;
-                        }
-                    }
-                    if self.aborted {
-                        return Value::Poison;
-                    }
-                }
-            }
+        // One element stream for both iterables. `Range` stays lazy — it is
+        // never materialized into a `Vec` — so a huge range costs no memory and
+        // is bounded purely by the per-iteration step budget below.
+        let items: Box<dyn Iterator<Item = Value>> = match iter_v {
+            Value::Range { lo, hi } => Box::new((lo..hi).map(Value::Int)),
+            Value::Array(elems) => Box::new(elems.into_iter()),
             Value::Poison => return Value::Poison,
             other => {
                 self.error(
@@ -648,13 +621,35 @@ impl<'a> Evaluator<'a> {
                 );
                 return Value::Poison;
             }
+        };
+        let mut collected = Vec::new();
+        for elem in items {
+            if !self.bump_step() {
+                self.abort(span, "step budget exceeded");
+                return Value::Poison;
+            }
+            match self.run_loop_body(var, elem, body, env) {
+                Flow::Normal(v) => collected.push(v),
+                Flow::Return(r) => {
+                    // Stash the body's return so the enclosing `exec_stmts`
+                    // surfaces it as a fn-level `Flow::Return`.
+                    self.pending_return = Some(r);
+                    return Value::Poison;
+                }
+            }
+            if self.aborted {
+                return Value::Poison;
+            }
         }
         Value::Array(collected)
     }
 
-    /// Run one `for` iteration: push a scope binding `var` to `elem` (immutably),
-    /// execute `body`, then pop. The [`Flow`] — including a `Return` — is
-    /// returned so the caller can collect the value or propagate the return.
+    /// Run one `for` iteration: bind `var` to `elem` (immutably) in a fresh
+    /// scope, then run `body` via [`exec_scoped`](Self::exec_scoped). The loop
+    /// variable lives only for this iteration (dropped when the scope pops), and
+    /// the body's own locals are dropped by `exec_scoped`. The [`Flow`] —
+    /// including a `Return` — is returned so the caller can collect the value or
+    /// propagate the return.
     fn run_loop_body(
         &mut self,
         var: &str,
@@ -664,7 +659,7 @@ impl<'a> Evaluator<'a> {
     ) -> Flow {
         env.push_scope();
         env.define(var.to_string(), elem, false);
-        let f = self.exec_stmts(body, env);
+        let f = self.exec_scoped(body, env);
         env.pop_scope();
         f
     }
@@ -697,10 +692,7 @@ impl<'a> Evaluator<'a> {
             };
             match c {
                 Value::Bool(true) => {
-                    env.push_scope();
-                    let f = self.exec_stmts(body, env);
-                    env.pop_scope();
-                    if let Flow::Return(v) = f {
+                    if let Flow::Return(v) = self.exec_scoped(body, env) {
                         return Flow::Return(v);
                     }
                 }
@@ -799,10 +791,9 @@ impl<'a> Evaluator<'a> {
             fenv.define(pname.clone(), v, false);
         }
         // A comptime-fn body IS a comptime-mutable context (D-P2.5): `comptime
-        // var` and reassignment are legal inside it.
-        self.comptime_ctx += 1;
-        let flow = self.exec_stmts(&decl.body, &mut fenv);
-        self.comptime_ctx -= 1;
+        // var` and reassignment are legal inside it. `exec_comptime_scoped`
+        // enters (and always restores) that context around the body.
+        let flow = self.exec_comptime_scoped(&decl.body, &mut fenv);
         self.call_stack.pop();
         match flow {
             Flow::Return(v) | Flow::Normal(v) => v,

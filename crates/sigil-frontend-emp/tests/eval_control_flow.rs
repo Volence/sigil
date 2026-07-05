@@ -240,6 +240,45 @@ fn assign_to_unbound_name_errors() {
     );
 }
 
+#[test]
+fn field_assignment_is_not_yet_supported() {
+    // `a.x = 2` is a multi-segment (field) assignment target — out of scope
+    // until Plan 3. It must be diagnosed, not silently applied or crash.
+    let src = "module m\n\
+        comptime fn f() -> int {\n\
+        \x20   comptime var a = Point{x: 1}\n\
+        \x20   a.x = 2\n\
+        \x20   return 0\n\
+        }\n\
+        const R = f()\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(0)));
+    assert!(
+        diags.iter().any(|d| d.message.contains("field assignment not yet supported")),
+        "diagnostics were {diags:?}"
+    );
+}
+
+#[test]
+fn return_surfaced_from_for_iterable_exits_fn() {
+    // A `return` inside the FOR ITERABLE expression exits the fn before any
+    // iteration: f(true) returns 9 (never loops); f(false) iterates [1, 2] and
+    // falls through to `return 100`.
+    let src = "module m\n\
+        comptime fn f(c: bool) -> int {\n\
+        \x20   let a = for x in (if c { return 9 } else { [1, 2] }) { x }\n\
+        \x20   return 100\n\
+        }\n\
+        const T = f(true)\n\
+        const F = f(false)\n";
+    let (t, dt) = eval(src, "T");
+    assert_eq!(t, Some(int(9)));
+    assert!(dt.is_empty(), "unexpected diagnostics: {dt:?}");
+    let (f, df) = eval(src, "F");
+    assert_eq!(f, Some(int(100)));
+    assert!(df.is_empty(), "unexpected diagnostics: {df:?}");
+}
+
 // ---- boundedness -------------------------------------------------------
 
 #[test]
