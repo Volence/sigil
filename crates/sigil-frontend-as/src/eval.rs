@@ -22,7 +22,7 @@ use sigil_ir::{
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
-const PASS_CAP: usize = 8;
+const PASS_CAP: usize = 16;
 /// Bound for `while … endm` (T9.2): caps re-evaluation/body-expansion
 /// iterations so a non-convergent condition diagnoses (A5) instead of
 /// hanging. Generous relative to any real `while`-driven table-fill idiom.
@@ -2160,20 +2160,33 @@ impl Asm {
                 }
             };
             // A bare symbol/expression target (no EA parens) is 68k absolute
-            // addressing whose WIDTH (abs.w vs abs.l) is chosen later by the
-            // linker's `resolve_layout` — see `sigil-backend-m68k`'s
-            // `lower_jmp_jsr_sym` doc. An EA operand (`(a0)`, `(Label).w`,
-            // `(d16,PC)`, ...) falls through to the generic path below.
+            // addressing whose WIDTH (abs.w vs abs.l) is selected in the
+            // front-end pass loop (M1.D T3) — see the block below. An EA
+            // operand (`(a0)`, `(Label).w`, `(d16,PC)`, ...) falls through to
+            // the generic path below.
             if let [OperandAtom::Value(e)] = atoms.as_slice() {
-                let target = self.qualify_expr(e);
+                let target = self.resolve_dollar(&self.qualify_expr(e));
                 let is_jsr = matches!(mnemonic, M68kMnemonic::Jsr);
-                let frag = self.m68k.lower_jmp_jsr_sym(is_jsr, target, span);
-                // The baseline (all-abs.w) width is 4 bytes; `resolve_layout`
-                // assumes THIS baseline when shifting subsequent label
-                // offsets (see `sigil-link/src/relax.rs::shift_breakpoints`),
-                // so the cursor must advance by exactly 4 here regardless of
-                // the eventual real width.
-                self.builder.emit_fragment(frag, 4);
+                // Width selection in the front-end pass loop (M1.D T3): fold the target
+                // from the current-pass env and pick abs.w/abs.l via `asl_width_rule`.
+                // Unknown-this-pass (Poison) → abs.w (OPTIMISTIC) — probe-verified as asl's
+                // least fixpoint (grow-only): the multi-pass `env == prev` loop then only
+                // ever grows a width W→L (label addresses are monotone-nondecreasing across
+                // passes), so it converges to exactly asl's minimal widths. The finished
+                // Data fragment carries the true length, so the cursor advances truthfully
+                // and downstream section LMAs (`phys_base`) are correct by construction.
+                // See docs/superpowers/notes/2026-07-04-m1d-t3-jmpjsr-width-probes.md.
+                let width = match self.fold(&target) {
+                    Fold::Value(v) => asl_width_rule(v, false),
+                    Fold::Poison => {
+                        for name in self.unresolved_names(&target) {
+                            self.poison_refs.push((name, span));
+                        }
+                        AbsWidth::W
+                    }
+                };
+                let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, target, width, span);
+                self.emit_frag(Ok(frag), span);
                 return;
             }
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
@@ -2562,9 +2575,11 @@ impl Asm {
     /// end (the T3 width-selection mechanism for the absolute-EA class), so the
     /// instruction's Data fragment carries the true encoded length and the
     /// multi-pass fixpoint converges. Uses `self.fold` (not `fold_imm`): an
-    /// unresolved-this-pass symbol folds to Poison → pessimistic abs.l (matching
-    /// asl's forward-symbol width guess). The first resolution can then only
-    /// shrink-or-stay (abs.l → abs.w/abs.l), so realistic forward refs converge.
+    /// unresolved-this-pass symbol folds to Poison → optimistic abs.w (M1.D T3
+    /// probe: asl selects the least fixpoint for the absolute-EA class — `lea` at
+    /// $7FFA → 41F8 7FFE, abs.w). The multi-pass loop then only ever grows a
+    /// width W→L, converging to asl's minimal width, so realistic forward refs
+    /// converge. See docs/superpowers/notes/2026-07-04-m1d-t3-jmpjsr-width-probes.md.
     /// (`asl_width_rule` is non-monotonic at the $FF8000 sign-extension wrap —
     /// see the grow-only caveat in `sigil-link/relax.rs`; that region is
     /// immediately-resolved high-RAM constants in Aeon, and `PASS_CAP` backstops
@@ -2581,9 +2596,12 @@ impl Asm {
                 for name in self.unresolved_names(&qualified) {
                     self.poison_refs.push((name, span));
                 }
-                // Pessimistic abs.l while unresolved; the converged pass re-folds
-                // to a real value (or errors via poison_refs above).
-                M68kOperand::AbsL(0)
+                // Optimistic abs.w while unresolved (M1.D T3): asl selects the least
+                // fixpoint for the absolute-EA class too (probe: lea at $7FFA → 41F8
+                // 7FFE, abs.w). The multi-pass loop then only grows W→L, converging
+                // to asl's minimal width. The converged pass re-folds to the real
+                // value (or errors via poison_refs above).
+                M68kOperand::AbsW(0)
             }
         }
     }
@@ -4102,10 +4120,12 @@ mod tests {
     }
 
     #[test]
-    fn m68k_jmp_jsr_bare_symbol_defers_width_to_resolve_layout() {
-        // `jmp Lbl`/`jsr Lbl` must emit `Fragment::JmpJsrSym` (not fold
-        // immediately) — its abs.w/abs.l width is chosen later by the
-        // linker's `resolve_layout`. A low (<=0x7FFF) target selects abs.w.
+    fn m68k_jmp_jsr_bare_symbol_selects_width_in_front_end() {
+        // `jmp Lbl`/`jsr Lbl` selects its abs.w/abs.l width in the front-end
+        // pass loop (M1.D T3) and emits a finished `Fragment::Data` — NOT a
+        // width-deferred `JmpJsrSym`. A low (<=0x7FFF) target selects abs.w, so
+        // the fragment is already 4 bytes long and `resolve_layout`/`link` are a
+        // pass-through. See the width-selection block in `lower_m68k`.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jmp Lbl\n";
         let opts = Options {
             initial_cpu: Cpu::M68000,
@@ -4115,7 +4135,7 @@ mod tests {
         let m = run(src, &opts).expect("assemble");
         assert!(matches!(
             m.sections[0].fragments[0],
-            sigil_ir::Fragment::JmpJsrSym { is_jsr: false, .. }
+            sigil_ir::Fragment::Data(_)
         ));
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
