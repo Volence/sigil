@@ -94,8 +94,17 @@ impl<'a> Evaluator<'a> {
                 if matches!(resolved, crate::layout::Ty::Poison) {
                     return Value::Poison;
                 }
-                let Some(struct_name) = self.struct_name_for_offsetof(&resolved) else {
-                    self.error(*span, format!("offsetof: {} is not a struct", resolved.describe()));
+                // `struct_name_for_offsetof` may itself report (a newtype
+                // cycle) — only add the generic "not a struct" message when it
+                // stayed silent, so a cyclic newtype yields one specific error.
+                let before = self.diags.len();
+                let Some(struct_name) = self.struct_name_for_offsetof(&resolved, *span) else {
+                    if self.diags.len() == before {
+                        self.error(
+                            *span,
+                            format!("offsetof: {} is not a struct", resolved.describe()),
+                        );
+                    }
                     return Value::Poison;
                 };
                 let layout = self.layout_of_struct(&struct_name, *span);

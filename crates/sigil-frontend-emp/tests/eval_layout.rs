@@ -125,13 +125,16 @@ fn declared_size_mismatch_is_one_diagnostic_naming_fields_and_delta() {
     assert!(msg.contains("SeqChannel"), "was {msg:?}");
     assert!(msg.contains("declared size 58"), "was {msg:?}");
     assert!(msg.contains("fields total 4"), "was {msg:?}");
-    // Names every field so the author can find which one is wrong.
-    assert!(msg.contains('a'), "was {msg:?}");
-    assert!(msg.contains('b'), "was {msg:?}");
-    assert!(msg.contains('c'), "was {msg:?}");
-    // Names the delta.
-    assert!(msg.contains("off by"), "was {msg:?}");
-    assert!(msg.contains("-54") || msg.contains("54"), "was {msg:?}");
+    // Names every field's diff line (name @offset) so the author can find which
+    // one is wrong. (Assert the full `x @off` fragment, not a bare char — the
+    // struct name "SeqChannel" contains 'a', which would pass vacuously.)
+    assert!(msg.contains("a @0"), "was {msg:?}");
+    assert!(msg.contains("b @1"), "was {msg:?}");
+    assert!(msg.contains("c @3"), "was {msg:?}");
+    // Names the delta, absolute + directional (never a bare negative).
+    assert!(msg.contains("off by 54"), "was {msg:?}");
+    assert!(msg.contains("too small"), "was {msg:?}");
+    assert!(!msg.contains("-54"), "delta must be absolute, not negative: {msg:?}");
 }
 
 // ---- @offset field assertions ------------------------------------------
@@ -251,4 +254,95 @@ fn shared_evaluator_cycle_member_direct_query_has_no_extra_diagnostics() {
     assert_eq!(diags.len(), 1, "expected only the cycle diagnostic, got {diags:?}");
     assert!(layouts[0].as_ref().expect("A layout").fields.is_empty());
     assert!(layouts[1].as_ref().expect("B layout").fields.is_empty());
+}
+
+// ---- re-entrancy: self-referential (size:)/@offset must not crash ------
+
+#[test]
+fn self_referential_size_expr_is_cyclic_not_a_crash() {
+    // Critical 1 regression: `(size: sizeof(Foo))` inside `Foo` re-enters
+    // `layout_of_struct(Foo)` DURING the `(size:)` check. Pre-fix, `Foo` had
+    // already been popped from the in-progress stack (and not yet memoized), so
+    // the re-entrant call fell through cycle detection into infinite recursion
+    // → SIGABRT. It must now report a cyclic-layout diagnostic instead.
+    let src = "module m\nstruct Foo (size: sizeof(Foo)) { a: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "Foo");
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic struct layout")),
+        "expected a cyclic-layout diagnostic, got {diags:?}"
+    );
+    // Exactly the cycle diagnostic — no spurious size-mismatch piled on top.
+    assert_eq!(diags.len(), 1, "expected only the cycle diagnostic, got {diags:?}");
+    let layout = layout.expect("Foo should return a (poisoned) layout");
+    assert_eq!(layout.size, 0);
+    assert!(layout.fields.is_empty());
+}
+
+#[test]
+fn mutual_size_sizeof_pair_is_cyclic_not_a_crash() {
+    // Critical 1 regression, mutual form: A's `(size: sizeof(B))` check lays out
+    // B, whose `(size: sizeof(A))` check re-enters A (still in-progress) and
+    // closes the cycle. Pre-fix this recursed forever.
+    let src = "module m\n\
+               struct A (size: sizeof(B)) { x: u8 }\n\
+               struct B (size: sizeof(A)) { y: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "A");
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic struct layout")),
+        "expected a cyclic-layout diagnostic, got {diags:?}"
+    );
+    assert_eq!(diags.len(), 1, "expected only the cycle diagnostic, got {diags:?}");
+}
+
+#[test]
+fn self_referential_at_offset_expr_is_cyclic_not_a_crash() {
+    // Critical 1 regression via `@offset`: `b: u8 @ sizeof(S)` re-enters
+    // `layout_of_struct(S)` during the offset check.
+    let src = "module m\nstruct S { a: u8, b: u8 @ sizeof(S) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic struct layout")),
+        "expected a cyclic-layout diagnostic, got {diags:?}"
+    );
+    assert_eq!(diags.len(), 1, "expected only the cycle diagnostic, got {diags:?}");
+}
+
+// ---- offsetof through a newtype ----------------------------------------
+
+#[test]
+fn offsetof_through_newtype_wrapping_a_struct() {
+    // Positive coverage for the `struct_name_for_offsetof` Newtype branch: a
+    // newtype that wraps a struct resolves offsetof to the field's offset.
+    let src = "module m\n\
+               struct Inner { a: u8, b: u8 }\n\
+               newtype Wrap = Inner\n\
+               const N = offsetof(Wrap, b)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(int(1)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn offsetof_newtype_cycle_is_diagnosed_not_a_crash() {
+    // Critical 2 regression: `newtype A = B; newtype B = A` gives
+    // `struct_name_for_offsetof` no struct to bottom out at; pre-fix its
+    // Newtype branch recursed with no cycle guard → SIGABRT. It must now report
+    // a diagnostic (a cyclic-type one) and poison instead.
+    let src = "module m\n\
+               newtype A = B\n\
+               newtype B = A\n\
+               const N = offsetof(A, x)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(!diags.is_empty(), "expected a diagnostic, got none");
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic type")),
+        "expected a cyclic-type diagnostic, got {diags:?}"
+    );
 }

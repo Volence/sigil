@@ -207,16 +207,34 @@ impl<'a> Evaluator<'a> {
     /// or newtype-wrapped struct type, not just a bare `Ty::Struct`. Returns
     /// `None` for anything that doesn't bottom out at a struct (including
     /// `Ty::Poison`, which stays silent — the poisoning resolve already
-    /// reported); the caller diagnoses the `None` case with the *original*
-    /// resolved type so the message names what was actually written.
-    pub(crate) fn struct_name_for_offsetof(&mut self, ty: &Ty) -> Option<String> {
+    /// reported).
+    ///
+    /// The newtype-underlying recursion is cycle-guarded against the shared
+    /// [`layout_in_progress`](Evaluator) stack (mirroring
+    /// [`size_of_newtype`](Self::size_of_newtype)): a `newtype A = B; newtype B
+    /// = A` chain would otherwise recurse forever and overflow the native stack.
+    /// On a detected repeat this reports `cyclic type: A -> B -> A` at `span`
+    /// and returns `None`. The caller checks whether a diagnostic was already
+    /// emitted before adding its own generic "not a struct" message, so a
+    /// newtype cycle yields exactly one (specific) diagnostic.
+    pub(crate) fn struct_name_for_offsetof(&mut self, ty: &Ty, span: Span) -> Option<String> {
         match ty {
             Ty::Struct(name) => Some(name.clone()),
-            Ty::Refined { inner, .. } => self.struct_name_for_offsetof(inner),
+            Ty::Refined { inner, .. } => self.struct_name_for_offsetof(inner, span),
             Ty::Newtype(name) => {
+                if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
+                    let mut chain: Vec<&str> =
+                        self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
+                    chain.push(name);
+                    self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
+                    return None;
+                }
                 let decl = self.newtypes.get(name.as_str()).copied()?;
+                self.layout_in_progress.push(name.to_string());
                 let underlying = self.resolve_type(&decl.underlying);
-                self.struct_name_for_offsetof(&underlying)
+                let result = self.struct_name_for_offsetof(&underlying, span);
+                self.layout_in_progress.pop();
+                result
             }
             _ => None,
         }
@@ -421,29 +439,51 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-        self.layout_in_progress.pop();
-        // CRITICAL: a deeper recursive call may have closed a cycle back to
-        // `name` and already memoized a poisoned (zero-size) layout for it. That
-        // poison is the correct answer — do NOT overwrite it with the ordinary,
-        // numerically-wrong layout this frame just computed over the truncated
-        // (size-0) cyclic field. Unlike `Value::Poison`, a `Layout` does not
-        // self-propagate through the field loop, so this guard is what makes
-        // multi-hop / mutual struct cycles report a poisoned layout, not a lie.
+        // (a) FIELD-TYPE cycle: a deeper recursive call (a field whose type is
+        // this struct, directly or transitively) may have closed a cycle back
+        // to `name` and already memoized a poisoned (zero-size) layout for it.
+        // That poison is the correct answer — do NOT overwrite it with the
+        // ordinary, numerically-wrong layout this frame just computed over the
+        // truncated (size-0) cyclic field, and skip the T3 checks entirely so a
+        // cyclic struct gets ONLY its cycle diagnostic (no size-mismatch/odd-
+        // field pile-on). Unlike `Value::Poison`, a `Layout` does not self-
+        // propagate through the field loop, so this guard is what makes multi-
+        // hop / mutual struct cycles report a poisoned layout, not a lie.
+        // NOTE: `name` is STILL on `layout_in_progress` here (it is popped only
+        // after the T3 checks below) — see the CRITICAL comment on the checks.
         if let Some(existing) = self.struct_layout_memo.get(name) {
-            return existing.clone();
+            let existing = existing.clone();
+            self.layout_in_progress.pop();
+            return existing;
         }
         let layout = Layout { size: offset, fields };
-        // T3: struct layout checks. These run exactly once per struct, right
-        // here on the freshly-computed RAW layout, before it is memoized — a
-        // later query short-circuits at the top-of-function memo lookup and
-        // never re-enters this block, so none of these re-fire. They are also
-        // unreachable for any struct on a layout cycle: both early-return paths
-        // above (the cycle-detection block and the CRITICAL re-check just
-        // above) return before this point, so a cyclic struct's own diagnostic
-        // is the only one it gets — no size-mismatch/odd-field pile-on.
+        // T3: struct layout checks, run exactly once per struct on the freshly-
+        // computed RAW layout, before it is memoized — a later query short-
+        // circuits at the top-of-function memo lookup and never re-enters here.
+        //
+        // CRITICAL: these run with `name` STILL on `layout_in_progress` (it is
+        // popped only after the (b) re-check below). `check_struct_size` /
+        // `check_struct_offsets` evaluate the `(size:)` / `@offset` exprs, which
+        // may themselves call `sizeof`/`offsetof` on THIS SAME struct
+        // (`struct Foo (size: sizeof(Foo)) { .. }`). Keeping `name` in-progress
+        // routes that re-entrant `layout_of_struct(name)` into the cycle-
+        // detection branch above (a proper `cyclic struct layout: Foo -> Foo`
+        // diagnostic) instead of falling through to infinite recursion. Each
+        // check bails the moment such a re-entrant call has poisoned our memo
+        // entry, so no spurious size-mismatch piles on top of the cycle report.
         self.check_struct_size(name, decl, &layout);
         self.check_struct_offsets(name, decl, &layout);
         self.check_struct_odd_fields(name, decl, &layout);
+        // (b) CHECK-EXPR cycle: a `(size:)`/`@offset` expr above may have called
+        // `sizeof`/`offsetof(Self)`, closing the layout cycle and slice-poisoning
+        // `name`'s memo entry. Keep that poison — do NOT overwrite it with the
+        // layout this frame computed (the same overwrite class guarded at (a)).
+        if let Some(existing) = self.struct_layout_memo.get(name) {
+            let existing = existing.clone();
+            self.layout_in_progress.pop();
+            return existing;
+        }
+        self.layout_in_progress.pop();
         self.struct_layout_memo.insert(name.to_string(), layout.clone());
         layout
     }
@@ -457,6 +497,15 @@ impl<'a> Evaluator<'a> {
     fn check_struct_size(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
         let Some(size_expr) = &decl.size else { return };
         let Some(declared) = self.eval_const_index(size_expr) else { return };
+        // Re-entrancy guard: evaluating the `(size:)` expr may have called
+        // `sizeof`/`offsetof` on this same struct, closing the layout cycle and
+        // poisoning our memo entry (which does not exist for a non-cyclic struct
+        // until the very end of `layout_of_struct`). That cyclic-layout
+        // diagnostic stands alone — bail rather than pile a spurious
+        // size-mismatch on top of it.
+        if self.struct_layout_memo.contains_key(name) {
+            return;
+        }
         let computed = layout.size as i128;
         if declared == computed {
             return;
@@ -465,7 +514,12 @@ impl<'a> Evaluator<'a> {
         for f in &layout.fields {
             msg.push_str(&format!("\n  {} @{} ({} byte{})", f.name, f.offset, f.size, if f.size == 1 { "" } else { "s" }));
         }
-        msg.push_str(&format!("\n  {computed} vs {declared} (off by {})", computed - declared));
+        // Directional/absolute delta — never a bare negative. `computed <
+        // declared` means the fields fall short of the declared size (the struct
+        // is "too small"); `computed > declared` overshoots it.
+        let delta = computed - declared;
+        let dir = if delta < 0 { "too small" } else { "too large" };
+        msg.push_str(&format!("\n  {computed} vs {declared} (off by {}, {dir})", delta.abs()));
         self.error(crate::parser::expr_span(size_expr), msg);
     }
 
@@ -473,9 +527,20 @@ impl<'a> Evaluator<'a> {
     /// explicit `@ expr`, compare it to that field's computed offset within
     /// `layout`. A mismatch is one diagnostic per offending field.
     fn check_struct_offsets(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
+        // A cycle that closed during `check_struct_size` (or an earlier field's
+        // `@offset` expr) already poisoned our memo entry — stop, don't add
+        // offset-mismatch noise on top of the cycle report.
+        if self.struct_layout_memo.contains_key(name) {
+            return;
+        }
         for (field_decl, field_layout) in decl.fields.iter().zip(layout.fields.iter()) {
             let Some(offset_expr) = &field_decl.offset else { continue };
             let Some(asserted) = self.eval_const_index(offset_expr) else { continue };
+            // Same re-entrancy guard: a self-referential `@offset` expr (e.g.
+            // `b: u8 @ sizeof(Self)`) may have closed the layout cycle.
+            if self.struct_layout_memo.contains_key(name) {
+                return;
+            }
             let computed = field_layout.offset as i128;
             if asserted != computed {
                 self.error(
@@ -493,8 +558,18 @@ impl<'a> Evaluator<'a> {
     /// Z80-side layouts are legitimately unaligned) for every word/long
     /// (2- or 4-byte) field that lands at an odd byte offset.
     fn check_struct_odd_fields(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
+        // A cycle closed during an earlier check (via a `(size:)`/`@offset` expr)
+        // already poisoned our memo entry — don't warn on a struct we're about
+        // to return as poison.
+        if self.struct_layout_memo.contains_key(name) {
+            return;
+        }
         for (field_decl, field_layout) in decl.fields.iter().zip(layout.fields.iter()) {
             if matches!(field_layout.size, 2 | 4) && field_layout.offset % 2 == 1 {
+                // The warning is anchored at the whole field declaration's span
+                // (`field_decl.span`), not just the type or offset token — a
+                // deliberate choice so the caret covers the entire offending
+                // field, which reads better than pointing at a sub-token.
                 self.warn(
                     field_decl.span,
                     format!(
