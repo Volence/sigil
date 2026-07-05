@@ -6,7 +6,7 @@
 //! selection (abs.w vs abs.l) is deferred to the linker's `resolve_layout`.
 
 use sigil_ir::backend::{Backend, Cpu, LowerError};
-use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, Fragment};
+use sigil_ir::{AbsWidth, DataFragment, Expr, Fixup, FixupKind, Fragment};
 use sigil_isa::m68k::{Instruction, Mnemonic, Operand, Size};
 use sigil_span::Span;
 
@@ -51,6 +51,40 @@ impl M68kBackend {
     /// `jsr` (true) vs `jmp` (false).
     pub fn lower_jmp_jsr_sym(&self, is_jsr: bool, target: Expr, span: Span) -> Fragment {
         Fragment::JmpJsrSym { is_jsr, target, span }
+    }
+
+    /// Lower a bare-symbol `jmp`/`jsr` at an ALREADY-CHOSEN width to a finished
+    /// `DataFragment` (opcode word + `Abs16Be`/`Abs32Be` fixup carrying `target`).
+    ///
+    /// This is the front-end's width-selected path (M1.D T3): the front-end folds
+    /// the target and picks `width` via `asl_width_rule` in its own pass loop, so
+    /// the fragment's byte length is final and the cursor advances truthfully — no
+    /// deferral to `resolve_layout`. Byte layout matches the linker's private
+    /// `lower_jmp_jsr` (jmp 4EF8/4EF9, jsr 4EB8/4EB9; `.l = .w | 1`; operand at
+    /// offset 2). The value is still resolved by `link()`'s fixup pass.
+    pub fn lower_jmp_jsr_abs(
+        &self,
+        is_jsr: bool,
+        target: Expr,
+        width: AbsWidth,
+        span: Span,
+    ) -> DataFragment {
+        let base: u16 = if is_jsr { 0x4EB8 } else { 0x4EF8 };
+        match width {
+            AbsWidth::W => DataFragment {
+                bytes: vec![(base >> 8) as u8, (base & 0xFF) as u8, 0, 0],
+                fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 2, target }],
+                span,
+            },
+            AbsWidth::L => {
+                let op = base | 0x0001;
+                DataFragment {
+                    bytes: vec![(op >> 8) as u8, (op & 0xFF) as u8, 0, 0, 0, 0],
+                    fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 2, target }],
+                    span,
+                }
+            }
+        }
     }
 
     /// Lower a symbolic `bra`/`bsr`/`Bcc` at an explicit size (`.s` or `.w`) to
@@ -239,5 +273,20 @@ mod tests {
         // Encoded length is 4; offset 3 makes offset+2 = 5 > 4.
         let err = M68kBackend.lower_pcrel_ea(&inst, 3, Expr::Sym("L".into()), span()).unwrap_err();
         assert!(err.message.contains("past instruction end"));
+    }
+
+    #[test]
+    fn lower_jmp_jsr_abs_builds_absw_and_absl() {
+        use sigil_ir::{AbsWidth, FixupKind};
+        let w = M68kBackend.lower_jmp_jsr_abs(false, Expr::Sym("T".into()), AbsWidth::W, span());
+        assert_eq!(w.bytes, vec![0x4E, 0xF8, 0x00, 0x00]);
+        assert_eq!(w.fixups.len(), 1);
+        assert!(matches!(w.fixups[0].kind, FixupKind::Abs16Be));
+        assert_eq!(w.fixups[0].offset, 2);
+
+        let l = M68kBackend.lower_jmp_jsr_abs(true, Expr::Sym("T".into()), AbsWidth::L, span());
+        assert_eq!(l.bytes, vec![0x4E, 0xB9, 0x00, 0x00, 0x00, 0x00]);
+        assert!(matches!(l.fixups[0].kind, FixupKind::Abs32Be));
+        assert_eq!(l.fixups[0].offset, 2);
     }
 }
