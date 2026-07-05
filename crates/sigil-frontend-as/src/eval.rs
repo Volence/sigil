@@ -2137,10 +2137,12 @@ impl Asm {
     ///  - `Dbcc` (`dbf`/`dbra`/`db<cc>`) → [`Self::lower_m68k_dbcc`] (the
     ///    displacement FOLDS immediately — see that method's doc for why
     ///    that's safe).
-    ///  - `jmp`/`jsr` with a bare symbol/expression target → a
-    ///    `Fragment::JmpJsrSym` (width chosen later by the linker's
-    ///    `resolve_layout`); `jmp`/`jsr` with an EA operand (e.g. `(a0)`)
-    ///    falls through to the generic path like any other instruction.
+    ///  - `jmp`/`jsr` with a bare symbol/expression target → width-selected in
+    ///    this pass (M1.D T3): the target folds from the current env, picks
+    ///    abs.w/abs.l via `asl_width_rule`, and emits a finished `Fragment::Data`
+    ///    (opcode + `Abs16Be`/`Abs32Be` fixup) via `lower_jmp_jsr_abs` — so the
+    ///    cursor advances by the true width. `jmp`/`jsr` with an EA operand (e.g.
+    ///    `(a0)`) falls through to the generic path like any other instruction.
     ///  - `(d16,PC)` operands (any mnemonic) → [`Self::lower_m68k_pcrel`].
     ///
     /// `movem` routes to [`Self::lower_m68k_movem`] (register-list operand);
@@ -2219,9 +2221,11 @@ impl Asm {
                 // builds its symbol table from section labels alone) cannot
                 // resolve a symbolic `equ` target; baking the folded value is
                 // also correct for labels (front-end VMA == link's
-                // vma_origin+offset on convergence). Unresolved-this-pass keeps
-                // the symbolic form so a real forward label still resolves at
-                // link; a genuinely-undefined one errors via `poison_refs`.
+                // vma_origin+offset on convergence — a real forward label folds
+                // to Value on the converged pass and is baked too). The
+                // symbolic form is kept only for the unresolved-this-pass
+                // (Poison) case; on the converged pass a still-Poison target is
+                // a genuinely-undefined symbol and errors via `poison_refs`.
                 let (width, fixup_target) = match self.fold(&target) {
                     Fold::Value(v) => (asl_width_rule(v, false), Expr::Int(v)),
                     Fold::Poison => {

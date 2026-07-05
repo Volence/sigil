@@ -63,6 +63,8 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                         "symbol `{}` redefined by section `{}` (already defined by section `{}`)",
                         label.name, sec.name, prev
                     ),
+                    // TODO: null span — `Label` carries no span today. When labels
+                    // gain a producer span, point this at the redefining label.
                     Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
                 ));
             }

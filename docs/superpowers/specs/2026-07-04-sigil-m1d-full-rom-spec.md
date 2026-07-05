@@ -302,11 +302,63 @@ Snippet goldens per form (`t2_*`: abs.w/abs.l/boundary for `lea` + EA-general
 `move`, `END` no-op). Acceptance: recon reaches **0 diagnostics** (with T1),
 which arms the `m1c_rom` emit path for the first time.
 
-### T3 — Width selection moves into the front-end pass loop (fixes F2)
+### T3 — Width selection moves into the front-end pass loop (fixes F2). ✅ DONE (2026-07-04).
 
 The architectural fix, replacing the linker-side growth machinery on the front-end path.
 
-**Design (settled by the audit; verify the one open semantic by probe):**
+**Result:** the two `stale_fold_repro.rs` `#[ignore]` reproducers flip green (`dc.l`
+after a grown jmp folds to `$10006`; `SecondSection` LMA re-flows to `$0A`); the tripwires
+are deleted. Both halves of F2 closed. All gates green (workspace 47 suites; strict
+`m1b_gate` 5 / `m1c_vector_table` 1; harness 18 incl. `--include-ignored`; clippy
+`-D warnings`); `m1c_full` still `ASSEMBLED OK: 8 sections`; 5 `t3_*` goldens
+regenerate no-op. Commits: `74542f0` (backend `lower_jmp_jsr_abs`) → `2a1b2b8` (front-end
+width selection + abs-EA unify + PASS_CAP) → `10a45fb` (header doc) → `9ec70a1` (reproducers
+green) → `70bb0cd` (equ-target bake fix + `t3_*` goldens) → `f4d4285` (link redefinition
+diagnostic) → `57a8b69`+`b62c354` (section-name dedup + the empty-section fix). Two-stage
+review (spec ✅ + code-quality ✅) on the load-bearing front-end task; whole-branch review
+at close.
+
+**PROBE REFUTED THE SPEC'S EXPECTED SEMANTIC.** The spec expected asl to assume the
+"long/pessimistic" form for an unknown-this-pass forward symbol. The decisive probe
+(`docs/superpowers/notes/2026-07-04-m1d-t3-jmpjsr-width-probes.md`: `org $7FFA; jmp T; T:`
+→ `4EF8 7FFE`, abs.w — the LEAST fixpoint, not abs.l/$8000) shows asl assumes the **short/
+optimistic abs.w** form and grows W→L only when the resolved value forces it, for both
+jmp/jsr AND absolute-EA. Per "never trust a spec claim over a probe" (§4), the design
+follows the probe. **This SIMPLIFIED T3:** no per-site width-persistence machinery is
+needed — optimistic-abs.w start makes the existing `env == prev` multi-pass loop
+*inherently* grow-only (label addresses monotone-nondecreasing across passes → widths
+monotone → converges to asl's least fixpoint).
+
+**Fragment representation decision (recorded):** the front-end emits a **finished
+`Fragment::Data`** (opcode + `Abs16Be`/`Abs32Be` fixup), NOT `Fragment::JmpJsrSym`.
+Mirrors `abs_ea_from_expr`; the cursor advances by the true width so `phys_base` fixes
+downstream LMAs by construction; `resolve_layout` sees no `JmpJsrSym` on the front-end
+path → identity (the "zero growth" assertion, held trivially) and stays the live relaxer
+for hand-built IR (m1b_gate). The Org+JmpJsrSym guard is kept but can no longer fire on
+the front-end path — so the real object bank (`org $10000` + bare jmp/jsr + parallax `org`
+back-patch) now assembles.
+
+**One gap the goldens exposed (cured at source):** the jmp/jsr path folded the target only
+for width and passed the *symbolic* expr into the fixup, but `equ` constants live only in
+the front-end env, never as section labels, so the linker (symbol table = section labels
+only) couldn't resolve an `equ` target. Fixed by baking the folded value (`Expr::Int(v)`)
+into the fixup when resolved (mirroring `abs_ea_from_expr`), symbolic only for the Poison
+case. All 22 real aeon jmp/jsr targets are code labels, so this was latent — but a real
+correctness gap, caught by the `t3_*` equate-target goldens.
+
+**`$FF8000` non-monotone region:** unreachable for aeon (all 22 bare jmp/jsr targets are
+ROM code labels; RAM jumps are register-indirect `jmp (aN)`, a different path). PASS_CAP=16
+backstops any pathological oscillation. Same posture as the linker.
+
+**Hardening (both landed):** `link()` now hard-errors on a duplicate SECTION-defined
+symbol (section-vs-stub still allowed). `sec{vma}` auto-names disambiguated over NON-EMPTY
+sections at finalization (`dedup_section_names`) — an empty stray section (dropped before
+link) must not steal the bare name. The real ROM DOES have a same-VMA-base collision
+(M68000 `sec0` + Z80 region A at vma 0), so this composes with the link check and was
+load-bearing, not merely defensive; the M0 harness's empty preamble `sec0` correctly keeps
+region A named `sec0` (the M0 live gate keys on it).
+
+**Original design (for reference — verify the one open semantic by probe):**
 - In `lower_jmp_jsr_sym`-class lowering, pick abs.w/abs.l **per pass** from the current
   env via the existing pinned `asl_width_rule`; advance the cursor by the **true** width
   (2-word or 3-word form); let the existing `env == prev` convergence absorb growth
@@ -330,9 +382,10 @@ The architectural fix, replacing the linker-side growth machinery on the front-e
   it a diagnostic; `sec{vma}` auto-names collide for a future second bank phased at the
   same address (`eval.rs:1611`) — disambiguate (e.g. ordinal suffix).
 
-Acceptance: T0.2's reproducer flips green with byte-correct output; all snippet goldens
-and strict gates still green; the 11 real growth sites produce `4EF9` at the asl-listing
-addresses (spot-assert `$1012E` in a bounded harness if cheap).
+Acceptance (met): T0.2's reproducer flips green with byte-correct output; all snippet
+goldens and strict gates still green. The `$1012E`=`4EF9` full-ROM spot-assert needs the
+emit path (`m1c_rom`), so it lands in **T4** — T3 arms it (the object bank now assembles
+through resolve_layout→link with no guard trip).
 
 ### T4 — First full-ROM emit + first-diff triage (A1)
 
@@ -343,6 +396,13 @@ listing, or sigil's `emit_listing`) to the source line → classify (encoder? fo
 padding? layout?) → **cure at the source of the class, add the missing snippet golden,
 re-run** — never patch bytes. F1's padding divergence is the predicted first hit if T0.1
 was incomplete.
+
+**T3 watch item to verify at bring-up:** T3's new `link()` duplicate-section-symbol
+diagnostic treats *any* same-named label across two sections as a hard error (correct for
+Sigil's globally-scoped auto-section layout; `m1c_full` links its 8 sections clean). If the
+real ROM ever relies on asl `SECTION`-directive namespacing to legitimately reuse a label
+name across regions, this would false-positive — watch for it on the first full `m1c_rom`
+link and scope the check to genuine collisions if it fires.
 
 Acceptance: `sha256` match, non-debug; promote `m1c_rom` from example to a
 `SIGIL_STRICT_GATE` test `m1d_rom` (skip-green without aeon, like the others).
