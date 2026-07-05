@@ -324,23 +324,7 @@ impl<'a> Evaluator<'a> {
                 }
                 total
             }
-            Ty::Fixed { i, f } => {
-                // `i` and `f` are each a full `u32` per the parser, so `i + f`
-                // can overflow `u32` — widen the add.
-                let Some(bits) = i.checked_add(*f) else {
-                    self.error(span, format!("fixed<{i},{f}> is too large to size"));
-                    return 0;
-                };
-                if bits % 8 != 0 {
-                    self.error(
-                        span,
-                        format!("fixed<{i},{f}> is not a whole number of bytes"),
-                    );
-                    // Best-effort ceil so callers still get a plausible size.
-                    return bits.div_ceil(8) as usize;
-                }
-                (bits / 8) as usize
-            }
+            Ty::Fixed { i, f } => self.fixed_byte_size(*i, *f, span),
             Ty::Refined { inner, .. } => self.size_of_ty(inner, span),
             // Newtype sizing recurses through the underlying type, which may
             // form a `newtype A = B; newtype B = A` cycle that never passes
@@ -825,6 +809,26 @@ impl<'a> Evaluator<'a> {
             // there is nothing to range-check.
             _ => true,
         }
+    }
+
+    /// The BYTE size of a `fixed<I,F>` (`(I+F)/8`), and the ONE place the
+    /// "not a whole number of bytes" diagnostic lives — shared by
+    /// [`size_of_ty`](Self::size_of_ty)'s [`Ty::Fixed`] arm and T7's
+    /// [`lower_fixed`](Self::lower_fixed) so the two cannot diverge (a non-byte
+    /// `fixed<>` must diagnose identically whether it is a struct field or a
+    /// top-level `data`/array element). `I`/`F` are each a full `u32`, so the sum
+    /// is checked. A non-whole-byte width still returns a best-effort ceil so a
+    /// caller has a plausible size.
+    pub(crate) fn fixed_byte_size(&mut self, i: u32, f: u32, span: Span) -> usize {
+        let Some(bits) = i.checked_add(f) else {
+            self.error(span, format!("fixed<{i},{f}> is too large to size"));
+            return 0;
+        };
+        if bits % 8 != 0 {
+            self.error(span, format!("fixed<{i},{f}> is not a whole number of bytes"));
+            return bits.div_ceil(8) as usize;
+        }
+        (bits / 8) as usize
     }
 
     /// The bit width of a `fixed<I,F>` (`I + F`), guarding the two degenerate

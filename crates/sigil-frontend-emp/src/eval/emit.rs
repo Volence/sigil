@@ -21,6 +21,9 @@ impl<'a> Evaluator<'a> {
     /// value or a [`Ty::Poison`] is already-reported: return an empty buffer
     /// silently (D-P2.9).
     pub(crate) fn lower_to_data(&mut self, value: &Value, ty: &Ty, span: Span) -> DataBuf {
+        // This guard filters Poison up front, so the per-kind leaf lowerings
+        // below never see a Poison `value` — their type-mismatch diagnostics are
+        // therefore unconditional (a non-Poison, wrong-shape value).
         if matches!(value, Value::Poison) || matches!(ty, Ty::Poison) {
             return DataBuf::empty();
         }
@@ -79,23 +82,46 @@ impl<'a> Evaluator<'a> {
         buf
     }
 
-    /// Lower a `fixed<I,F>`: emit the STORED scaled int (`x·2^F`) as a signed
-    /// scalar of `⌈(I+F)/8⌉` bytes, range-checked against the signed `I+F`-bit
-    /// store.
+    /// Lower a `fixed<I,F>`: emit the STORED scaled int (`x·2^F`) as a SIGNED
+    /// scalar, range-checked against the signed `I+F`-bit store. Enforces the
+    /// [`Cell::Scalar`] width invariant (∈ {1,2,4}): a non-whole-byte fixed
+    /// diagnoses (via the shared [`fixed_byte_size`](Self::fixed_byte_size), the
+    /// same check `size_of_ty` uses), and a fixed wider than 4 bytes (e.g.
+    /// `fixed<32,32>` = 8 bytes) is rejected — the 68k `.b/.w/.l` directives are
+    /// 1/2/4 bytes, and wide fixed types are multiply intermediates you `rescale`
+    /// down before storing.
     fn lower_fixed(&mut self, value: &Value, i: u32, f: u32, span: Span) -> DataBuf {
         let Some(n) = value.as_stored_int() else {
             self.emit_expected_int(value, &Ty::Fixed { i, f }, span);
             return DataBuf::empty();
         };
+        // `fixed_width_bits` guards the degenerate 0 / ≥128-bit widths.
         let Some(bits) = self.fixed_width_bits(i, f, span) else {
             return DataBuf::empty();
         };
-        let width = bits.div_ceil(8) as u8;
+        // Shared whole-byte check (emits the "not a whole number of bytes"
+        // diagnostic identically to `size_of_ty`).
+        let width_bytes = self.fixed_byte_size(i, f, span);
+        if bits % 8 != 0 {
+            // A partial-byte fixed cannot be emitted as a scalar; the whole-byte
+            // diagnostic already fired in `fixed_byte_size`.
+            return DataBuf::empty();
+        }
+        if width_bytes > 4 {
+            self.error(
+                span,
+                format!(
+                    "{} is {width_bytes} bytes; too wide to emit as a scalar — rescale before storing",
+                    Ty::Fixed { i, f }.describe()
+                ),
+            );
+            return DataBuf::empty();
+        }
         let lo = -(1i128 << (bits - 1));
         let hi = (1i128 << (bits - 1)) - 1;
         self.emit_range_check(n, lo, hi, &Ty::Fixed { i, f }.describe(), span);
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: n, width, signed: true });
+        buf.push(Cell::Scalar { value: n, width: width_bytes as u8, signed: true });
         buf
     }
 
@@ -105,12 +131,10 @@ impl<'a> Evaluator<'a> {
     fn lower_bitfield(&mut self, value: &Value, name: &str, span: Span) -> DataBuf {
         let layout = self.layout_of_bitfield(name, span);
         let Some(n) = value.as_stored_int() else {
-            if !matches!(value, Value::Poison) {
-                self.error(
-                    span,
-                    format!("bitfield {name} value must be an integer, got {}", value.type_name()),
-                );
-            }
+            self.error(
+                span,
+                format!("bitfield {name} value must be an integer, got {}", value.type_name()),
+            );
             return DataBuf::empty();
         };
         let mut buf = DataBuf::empty();
@@ -122,9 +146,7 @@ impl<'a> Evaluator<'a> {
     /// in T4's cast) as a scalar of the enum's repr width/signedness.
     fn lower_enum(&mut self, value: &Value, name: &str, span: Span) -> DataBuf {
         let Value::Enum { variant, .. } = value else {
-            if !matches!(value, Value::Poison) {
-                self.error(span, format!("expected a {name} enum value, got {}", value.type_name()));
-            }
+            self.error(span, format!("expected a {name} enum value, got {}", value.type_name()));
             return DataBuf::empty();
         };
         let Some(decl) = self.enums.get(name).copied() else {
@@ -164,9 +186,7 @@ impl<'a> Evaluator<'a> {
     /// and concatenate.
     fn lower_array(&mut self, value: &Value, elem: &Ty, n: usize, span: Span) -> DataBuf {
         let Value::Array(elems) = value else {
-            if !matches!(value, Value::Poison) {
-                self.error(span, format!("expected an array of length {n}, got {}", value.type_name()));
-            }
+            self.error(span, format!("expected an array of length {n}, got {}", value.type_name()));
             return DataBuf::empty();
         };
         if elems.len() != n {
@@ -186,9 +206,7 @@ impl<'a> Evaluator<'a> {
     /// lower each element against its corresponding tuple type and concatenate.
     fn lower_tuple(&mut self, value: &Value, elem_tys: &[Ty], span: Span) -> DataBuf {
         let Value::Tuple(vals) = value else {
-            if !matches!(value, Value::Poison) {
-                self.error(span, format!("expected a tuple, got {}", value.type_name()));
-            }
+            self.error(span, format!("expected a tuple, got {}", value.type_name()));
             return DataBuf::empty();
         };
         if vals.len() != elem_tys.len() {
@@ -211,9 +229,7 @@ impl<'a> Evaluator<'a> {
     /// so the emitted cells fall at the layout's offsets.
     fn lower_struct(&mut self, value: &Value, name: &str, span: Span) -> DataBuf {
         let Value::Struct { fields, .. } = value else {
-            if !matches!(value, Value::Poison) {
-                self.error(span, format!("expected a {name} struct value, got {}", value.type_name()));
-            }
+            self.error(span, format!("expected a {name} struct value, got {}", value.type_name()));
             return DataBuf::empty();
         };
         // `layout_of_struct` returns an owned `Layout` (not borrowed from self),
@@ -240,7 +256,7 @@ impl<'a> Evaluator<'a> {
         let name = match value {
             Value::FnRef(n) => Some(n.clone()),
             Value::Str(s) => Some(s.clone()),
-            Value::Poison => return DataBuf::empty(),
+            // Poison is filtered by `lower_to_data`, so `_` is a genuine non-ref.
             _ => None,
         };
         let mut buf = DataBuf::empty();
@@ -307,6 +323,24 @@ impl<'a> Evaluator<'a> {
             return DataBuf::empty();
         }
         if let Value::Data(buf) = value {
+            // A `Data`-monoid initializer (byte/bytes/++) is already lowered, but
+            // an explicit annotation still pins the size — a `data D: [u8;3] =
+            // bytes([1,2])` that produces the wrong byte count is a mismatch.
+            if let Some(t) = &decl.ty {
+                let ty = self.resolve_type(t);
+                if !matches!(ty, Ty::Poison) {
+                    let declared = self.size_of_ty(&ty, decl.span);
+                    if declared != buf.size {
+                        self.error(
+                            decl.span,
+                            format!(
+                                "[emit.size-mismatch] data `{}`: declared type is {declared} byte(s), initializer produced {}",
+                                decl.name, buf.size
+                            ),
+                        );
+                    }
+                }
+            }
             return buf;
         }
         let ty = match &decl.ty {

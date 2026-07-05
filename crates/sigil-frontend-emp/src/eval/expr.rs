@@ -310,10 +310,24 @@ impl<'a> Evaluator<'a> {
         span: Span,
         env: &mut Env,
     ) -> Value {
+        // Construction cycle guard (T7 review): a field's `= default` can
+        // construct this SAME struct (`struct A { x: A = A{} }`), which would
+        // recurse forever. This is DISTINCT from the cyclic-LAYOUT check in
+        // `layout_of_struct` (a by-value self-reference is also an infinite
+        // layout, but the default-eval recursion fires independently and needs
+        // its own guard). On a repeat, report and poison this construction.
+        if self.struct_construct_in_progress.iter().any(|n| n == ty_name) {
+            let mut chain: Vec<&str> =
+                self.struct_construct_in_progress.iter().map(|s| s.as_str()).collect();
+            chain.push(ty_name);
+            self.error(span, format!("cyclic struct construction: {}", chain.join(" -> ")));
+            return Value::Poison;
+        }
         // Copy the `&'a StructDecl` out so `self` is free to be mutated across
         // the field/default eval below (mirrors `layout_of_struct`).
         let decl: &'a ast::StructDecl =
             self.structs.get(ty_name).copied().expect("caller checked the struct exists");
+        self.struct_construct_in_progress.push(ty_name.to_string());
         // Evaluate provided fields, checking existence and duplication. Keep the
         // evaluated values keyed by name for the declaration-order rebuild.
         let mut provided_vals: Vec<(String, Value)> = Vec::with_capacity(provided.len());
@@ -350,6 +364,9 @@ impl<'a> Evaluator<'a> {
                 out_fields.push((field.name.clone(), Value::Poison));
             }
         }
+        // All nested constructions are done — pop before the (non-constructing)
+        // layout checks.
+        self.struct_construct_in_progress.pop();
         // Trigger the layout `(size:)`/`@offset`/odd-field checks at the literal
         // site (memoized, so this reports at most once per struct).
         let _ = self.layout_of_struct(ty_name, span);

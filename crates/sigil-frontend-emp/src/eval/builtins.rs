@@ -324,8 +324,11 @@ impl<'a> Evaluator<'a> {
             self.error(span, format!("byte value {n} does not fit 8 bits ({BYTE_LO}..={BYTE_HI})"));
             return Value::Poison;
         }
+        // Normalize the stored value to its 8-bit pattern so it agrees with the
+        // `signed: false` flag (`byte(-5)` stores 251, matching how `bytes` does
+        // it); the accepted input range stays the `-128..=255` union above.
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: n, width: 1, signed: false });
+        buf.push(Cell::Scalar { value: n & 0xFF, width: 1, signed: false });
         Value::Data(buf)
     }
 

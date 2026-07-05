@@ -241,3 +241,143 @@ fn missing_data_item_is_diagnosed() {
         "expected a no-such-data diagnostic, got {diags:?}"
     );
 }
+
+// ---- T7 review: struct-default construction cycle guard -----------------
+
+#[test]
+fn self_referential_struct_default_does_not_crash() {
+    // A field default that constructs its own struct would recurse forever
+    // (pre-fix: stack overflow → SIGABRT). It must instead diagnose and stop.
+    let src = "module m\nstruct A { x: A = A{} }\ndata D: A = A{}\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic struct construction")),
+        "expected a cyclic-construction diagnostic, got {diags:?}"
+    );
+}
+
+// ---- T7 review: annotation-size check on a Data initializer -------------
+
+#[test]
+fn data_annotation_size_mismatch_is_diagnosed() {
+    let src = "module m\ndata D: [u8; 3] = bytes([1, 2])\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.size-mismatch]")),
+        "expected a size-mismatch diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn data_annotation_size_match_is_clean() {
+    let src = "module m\ndata D: [u8; 3] = bytes([1, 2, 3])\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(buf.expect("data buf").size, 3);
+}
+
+// ---- T7 review: fixed-point emission ------------------------------------
+
+#[test]
+fn fixed_value_emits_signed_scalar_at_byte_width() {
+    // 65536 = 1.0 in fixed<16,16>; the store is a signed 4-byte scalar.
+    let src = "module m\ndata D: fixed<16, 16> = 65536\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 4);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 65536, width: 4, signed: true }]);
+}
+
+#[test]
+fn fixed_non_whole_byte_is_diagnosed() {
+    let src = "module m\ndata D: fixed<4, 3> = 0\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("whole number of bytes")),
+        "expected a whole-byte diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn fixed_too_wide_to_emit_is_diagnosed() {
+    // fixed<32,32> = 8 bytes — no 68k data directive is 8 bytes wide.
+    let src = "module m\ndata D: fixed<32, 32> = 0\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("too wide to emit")),
+        "expected a too-wide diagnostic, got {diags:?}"
+    );
+}
+
+// ---- T7 review: newtype / refined lowering ------------------------------
+
+#[test]
+fn newtype_lowers_at_underlying_width() {
+    let src = "module m\nnewtype Word = u16\ndata D: Word = Word(258)\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 258, width: 2, signed: false }]);
+}
+
+#[test]
+fn refined_lowers_at_underlying_width() {
+    let src = "module m\ndata D: u8 where 0..200 = 50\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 50, width: 1, signed: false }]);
+}
+
+#[test]
+fn refined_out_of_underlying_range_diagnoses_at_emission() {
+    // 300 fits neither `u8` (the underlying store) — the emission range-check
+    // fires even though the refinement bound was never construction-checked.
+    let src = "module m\ndata D: u8 where 0..10 = 300\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("300")),
+        "expected an [emit.out-of-range] on 300, got {diags:?}"
+    );
+}
+
+// ---- T7 review: tuple lowering ------------------------------------------
+
+#[test]
+fn tuple_lowers_each_element() {
+    let src = "module m\ndata D: (u8, u16) = (1, 258)\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 3);
+    assert_eq!(
+        buf.cells,
+        vec![
+            Cell::Scalar { value: 1, width: 1, signed: false },
+            Cell::Scalar { value: 258, width: 2, signed: false },
+        ]
+    );
+}
+
+#[test]
+fn tuple_arity_mismatch_is_diagnosed() {
+    let src = "module m\ndata D: (u8, u16) = (1, 2, 3)\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("tuple arity mismatch")),
+        "expected a tuple arity diagnostic, got {diags:?}"
+    );
+}
+
+// ---- T7 review: duplicate-field detection -------------------------------
+
+#[test]
+fn struct_duplicate_field_is_diagnosed() {
+    let src = "module m\nstruct S { a: u8 }\ndata D: S = S{ a: 1, a: 2 }\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("more than once")),
+        "expected a duplicate-field diagnostic, got {diags:?}"
+    );
+}

@@ -139,6 +139,13 @@ pub struct Evaluator<'a> {
     /// is a plain memo with no cycle machinery; it exists so a shared evaluator
     /// answers repeated queries once.
     data_memo: HashMap<String, crate::value::DataBuf>,
+    /// The names of structs whose CHECKED LITERAL is currently being constructed,
+    /// in reference order (T7). A struct field's `= default` expression can
+    /// construct the same struct (`struct A { x: A = A{} }`), which would recurse
+    /// forever — this stack is DISTINCT from [`layout_in_progress`](Self::layout_in_progress)
+    /// (which guards layout sizing) because `eval_checked_struct_lit` also *calls*
+    /// `layout_of_struct`, so the two must not share a stack.
+    pub(crate) struct_construct_in_progress: Vec<String>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -166,6 +173,7 @@ impl<'a> Evaluator<'a> {
             const_memo: HashMap::new(),
             in_progress: Vec::new(),
             data_memo: HashMap::new(),
+            struct_construct_in_progress: Vec::new(),
         }
     }
 
