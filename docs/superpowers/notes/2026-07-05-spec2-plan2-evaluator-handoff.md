@@ -118,3 +118,22 @@ leave a clear state for the wake-up review.
   Minor). Fixes folded: merged `unop_type_error`→`operand_type_error`, `eval_equality`→`&self`,
   backfilled direct add/mul/sub/neg-overflow + wrong-type bitwise/shift tests. **102 tests**,
   clippy clean. Call/StructLit/If/For/Asm return Poison placeholders for later tasks.
+- **T3 DONE** (`4ec3ad5`). `Evaluator<'a>` gained a borrowed file index (`consts`/`enums`
+  HashMaps) + owned `const_memo` + `in_progress` stack; `with_file()` builds it, `new()` stays
+  the empty-program ctor (T2 tests still green). Lazy memoized const resolution with cycle
+  detection (`cyclic const definition: A -> B -> A`, Poison memoized to suppress cascade).
+  `eval_path` now resolves single names to file consts (env shadows consts) and `E.V` to nullary
+  `Value::Enum`. Folded in **D-P2.14**: `StructLit` → `Value::Struct` (value-level only, no
+  layout/field/default checks) and enum-variant paths. Self-reviewed by me (cycle logic +
+  lifetime plumbing correct). New `tests/eval_consts.rs` (10 tests); crate green, clippy clean.
+- **T4 DONE** (impl `1a54e4b`, fix `fc40054`, quality `2dcc134`). Comptime fn calls: `fns` index,
+  `enum Flow{Normal,Return}` + `exec_stmts`, `eval_if` (stmt+expr position — **D-P2.15** moved
+  if/else here), positional+named arg binding (missing/extra/unknown/duplicate diagnostics),
+  fresh pure per-call env, recursion via `MAX_CALL_DEPTH=512` on a 64MB scoped thread + step-budget
+  `abort()` naming the call chain (**D-P2.16**). Two-stage review: spec review caught a **CRITICAL**
+  — `return` in a call-ARGUMENT expression leaked into the callee (`callee(if c {return 7} else {2})`
+  returned from callee not caller); fixed with a `pending_return` guard in `eval_call`. Quality
+  review (Approve) → added an `eval_operand` helper that DRYs the pending_return check across all 5
+  operand sites + an INVARIANT doc so T5's new arms can't reintroduce the leak; extracted
+  `MAX_CHAIN_FRAMES`, fixed spurious arity diags after mid-arg return, preserved thread panic. New
+  `tests/eval_fns.rs` (23 tests). **135 tests total**, clippy clean.

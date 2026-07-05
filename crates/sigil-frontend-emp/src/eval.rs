@@ -156,6 +156,13 @@ pub struct Evaluator<'a> {
     /// `Err(Flow::Return)`. Bypassing that check lets a caller's pending return
     /// leak into a callee (the call-arg return-leak bug class).
     pending_return: Option<Value>,
+    /// Depth of enclosing comptime-mutable contexts (D-P2.5). A `comptime var`
+    /// and its reassignment are only legal where this is non-zero: inside a
+    /// `comptime fn` body (bumped in [`eval_call`](Evaluator::eval_call)) or a
+    /// nested `comptime block { }` (bumped in the [`Stmt::ComptimeBlock`] arm).
+    /// Module-level `const` value expressions run with `comptime_ctx == 0`, so
+    /// they have no mutable state.
+    comptime_ctx: u32,
     /// Memoized const values, keyed by const name. A `Poison` entry records a
     /// const that already failed (cycle or error) so the failure does not
     /// re-report on subsequent references.
@@ -180,6 +187,7 @@ impl<'a> Evaluator<'a> {
             fns: HashMap::new(),
             aborted: false,
             pending_return: None,
+            comptime_ctx: 0,
             const_memo: HashMap::new(),
             in_progress: Vec::new(),
         }
@@ -275,8 +283,9 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
-            // TODO(T5): `for` comprehensions.
-            ast::Expr::For { .. } => Value::Poison,
+            ast::Expr::For { var, iter, body, span } => {
+                self.eval_for(var, iter, body, *span, env)
+            }
             // TODO(Plan 3/4): `asm { }` lowers to a `Code` value.
             ast::Expr::Asm { .. } => Value::Poison,
         }
@@ -431,20 +440,87 @@ impl<'a> Evaluator<'a> {
                     }
                     last = Value::Unit;
                 }
-                // TODO(T5): `for`/`while`/`comptime` blocks + `comptime var` /
-                // assignment / `patch` / `bind`. No-op for now (kept total so T5
-                // slots in without touching the handled arms above).
-                //
-                // INVARIANT: when these arms gain real semantics, every operand
-                // they evaluate MUST go through `eval_operand` and bail on
-                // `Err(Flow::Return)` — see the `pending_return` field doc.
-                ast::Stmt::While { .. }
-                | ast::Stmt::ComptimeBlock { .. }
-                | ast::Stmt::For(_)
-                | ast::Stmt::Var { .. }
-                | ast::Stmt::Assign { .. }
-                | ast::Stmt::Patch { .. }
-                | ast::Stmt::Bind { .. } => {
+                ast::Stmt::Var { name, value, span, .. } => {
+                    // Evaluate the initializer first (a nested `return` wins and
+                    // bails before we bind or diagnose).
+                    let v = match self.eval_operand(value, env) {
+                        Ok(v) => v,
+                        Err(f) => return f,
+                    };
+                    // `comptime var` needs a comptime-mutable context (D-P2.5).
+                    // Outside one it is an error — but we still bind it (mutable)
+                    // so later references/assignments don't cascade extra
+                    // unknown-name/immutable diagnostics off the one real error.
+                    if self.comptime_ctx == 0 {
+                        self.error(
+                            *span,
+                            "comptime var is only allowed inside a comptime block or comptime fn body",
+                        );
+                    }
+                    env.define(name.clone(), v, true);
+                    last = Value::Unit;
+                }
+                ast::Stmt::Assign { target, value, span } => {
+                    let v = match self.eval_operand(value, env) {
+                        Ok(v) => v,
+                        Err(f) => return f,
+                    };
+                    // Field assignment (`a.b = ..`) is Plan 3+; only a plain
+                    // single-segment target is assignable here.
+                    if target.segments.len() > 1 {
+                        self.error(*span, "field assignment not yet supported");
+                    } else {
+                        let name = target.segments[0].as_str();
+                        match env.assign(name, v) {
+                            Ok(()) => {}
+                            Err(AssignError::NotFound) => {
+                                self.error(*span, format!("cannot assign to unbound name `{name}`"));
+                            }
+                            Err(AssignError::Immutable) => self.error(
+                                *span,
+                                format!(
+                                    "cannot assign to immutable binding `{name}` (declared with `let`)"
+                                ),
+                            ),
+                        }
+                    }
+                    last = Value::Unit;
+                }
+                ast::Stmt::ComptimeBlock { body, .. } => {
+                    // A nested comptime block is its own scope and comptime
+                    // context: a `comptime var` declared inside is dead at the
+                    // closing brace (the scope pop drops it). The block is a
+                    // side-effect statement — it yields Unit — but an inner
+                    // `return` still propagates out to the enclosing fn.
+                    env.push_scope();
+                    self.comptime_ctx += 1;
+                    let f = self.exec_stmts(body, env);
+                    self.comptime_ctx -= 1;
+                    env.pop_scope();
+                    if let Flow::Return(v) = f {
+                        return Flow::Return(v);
+                    }
+                    last = Value::Unit;
+                }
+                ast::Stmt::While { cond, body, span } => {
+                    match self.eval_while(cond, body, *span, env) {
+                        Flow::Return(v) => return Flow::Return(v),
+                        Flow::Normal(_) => {}
+                    }
+                    last = Value::Unit;
+                }
+                ast::Stmt::For(e) => {
+                    // A `for` at statement position runs for its side effects
+                    // (mutating comptime vars); its Array value is discarded.
+                    // `eval_operand` surfaces any body/iter `return` as `Err`.
+                    match self.eval_operand(e, env) {
+                        Ok(_) => {}
+                        Err(f) => return f,
+                    }
+                    last = Value::Unit;
+                }
+                // TODO(Plan 4): `patch` / `bind`. No-op for now (kept total).
+                ast::Stmt::Patch { .. } | ast::Stmt::Bind { .. } => {
                     last = Value::Unit;
                 }
             }
@@ -496,6 +572,148 @@ impl<'a> Evaluator<'a> {
                     format!("if condition must be bool, got {}", other.type_name()),
                 );
                 Flow::Normal(Value::Poison)
+            }
+        }
+    }
+
+    /// Evaluate a `for var in iter { body }` expression (D-P2.6, §6.8): iterate
+    /// `iter`, running `body` in a fresh scope per element with `var` bound, and
+    /// collect each iteration's value into an [`Array`](Value::Array).
+    ///
+    /// `iter` must be a [`Range`](Value::Range) (half-open `lo..hi`) or an
+    /// [`Array`](Value::Array); any other type is an error yielding `Poison`.
+    /// One step is charged per iteration, so even a huge range stays bounded by
+    /// [`STEP_BUDGET`]. A `return` inside the body stops the loop and is stashed
+    /// in `pending_return` so the enclosing `exec_stmts` turns it into a
+    /// fn-level [`Flow::Return`]; a `Poison` iterable propagates silently.
+    fn eval_for(
+        &mut self,
+        var: &str,
+        iter: &ast::Expr,
+        body: &[ast::Stmt],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        // `eval_expr`'s top guard guarantees no pending return on entry; a
+        // return fired *while evaluating `iter`* leaves one set, so bail.
+        let iter_v = self.eval_expr(iter, env);
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let mut collected = Vec::new();
+        match iter_v {
+            Value::Range { lo, hi } => {
+                let mut i = lo;
+                while i < hi {
+                    if !self.bump_step() {
+                        self.abort(span, "step budget exceeded");
+                        return Value::Poison;
+                    }
+                    match self.run_loop_body(var, Value::Int(i), body, env) {
+                        Flow::Normal(v) => collected.push(v),
+                        Flow::Return(r) => {
+                            self.pending_return = Some(r);
+                            return Value::Poison;
+                        }
+                    }
+                    if self.aborted {
+                        return Value::Poison;
+                    }
+                    i += 1;
+                }
+            }
+            Value::Array(elems) => {
+                for el in elems {
+                    if !self.bump_step() {
+                        self.abort(span, "step budget exceeded");
+                        return Value::Poison;
+                    }
+                    match self.run_loop_body(var, el, body, env) {
+                        Flow::Normal(v) => collected.push(v),
+                        Flow::Return(r) => {
+                            self.pending_return = Some(r);
+                            return Value::Poison;
+                        }
+                    }
+                    if self.aborted {
+                        return Value::Poison;
+                    }
+                }
+            }
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    crate::parser::expr_span(iter),
+                    format!("for expects a range or array, got {}", other.type_name()),
+                );
+                return Value::Poison;
+            }
+        }
+        Value::Array(collected)
+    }
+
+    /// Run one `for` iteration: push a scope binding `var` to `elem` (immutably),
+    /// execute `body`, then pop. The [`Flow`] — including a `Return` — is
+    /// returned so the caller can collect the value or propagate the return.
+    fn run_loop_body(
+        &mut self,
+        var: &str,
+        elem: Value,
+        body: &[ast::Stmt],
+        env: &mut Env,
+    ) -> Flow {
+        env.push_scope();
+        env.define(var.to_string(), elem, false);
+        let f = self.exec_stmts(body, env);
+        env.pop_scope();
+        f
+    }
+
+    /// Evaluate a `while cond { body }` statement (D-P2.6): repeatedly run `body`
+    /// (in a fresh scope) while `cond` is `Bool(true)`, yielding `Normal(Unit)`.
+    ///
+    /// A step is charged per iteration so an otherwise-infinite loop is bounded
+    /// by [`STEP_BUDGET`] and aborts rather than hanging. A non-bool condition is
+    /// an error that stops the loop; a `Poison` condition stops silently. A
+    /// `return` in the body (or surfaced from the condition) propagates outward.
+    fn eval_while(
+        &mut self,
+        cond: &ast::Expr,
+        body: &[ast::Stmt],
+        span: Span,
+        env: &mut Env,
+    ) -> Flow {
+        loop {
+            if self.aborted {
+                return Flow::Normal(Value::Poison);
+            }
+            if !self.bump_step() {
+                self.abort(span, "step budget exceeded");
+                return Flow::Normal(Value::Poison);
+            }
+            let c = match self.eval_operand(cond, env) {
+                Ok(v) => v,
+                Err(f) => return f,
+            };
+            match c {
+                Value::Bool(true) => {
+                    env.push_scope();
+                    let f = self.exec_stmts(body, env);
+                    env.pop_scope();
+                    if let Flow::Return(v) = f {
+                        return Flow::Return(v);
+                    }
+                }
+                Value::Bool(false) => return Flow::Normal(Value::Unit),
+                // A poisoned condition already reported its own error upstream.
+                Value::Poison => return Flow::Normal(Value::Unit),
+                other => {
+                    self.error(
+                        crate::parser::expr_span(cond),
+                        format!("while condition must be bool, got {}", other.type_name()),
+                    );
+                    return Flow::Normal(Value::Unit);
+                }
             }
         }
     }
@@ -580,7 +798,11 @@ impl<'a> Evaluator<'a> {
         for ((pname, _, _), v) in decl.params.iter().zip(bound) {
             fenv.define(pname.clone(), v, false);
         }
+        // A comptime-fn body IS a comptime-mutable context (D-P2.5): `comptime
+        // var` and reassignment are legal inside it.
+        self.comptime_ctx += 1;
         let flow = self.exec_stmts(&decl.body, &mut fenv);
+        self.comptime_ctx -= 1;
         self.call_stack.pop();
         match flow {
             Flow::Return(v) | Flow::Normal(v) => v,
@@ -1247,6 +1469,32 @@ mod tests {
         assert!(v.is_none());
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message.contains("no const named `MISSING`"));
+    }
+
+    #[test]
+    fn comptime_var_outside_context_is_diagnosed_but_still_bound() {
+        // `comptime var` at `comptime_ctx == 0` (module/const level) is illegal.
+        // Surface syntax can't reach this (a `comptime var` only parses inside a
+        // fn/comptime-block body, which bump the context), so drive `exec_stmts`
+        // directly to prove the guard fires — and that the name is still bound
+        // (mutable) so downstream references don't cascade.
+        let mut ev = Evaluator::new();
+        let mut env = Env::new();
+        let span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
+        let stmts = vec![ast::Stmt::Var {
+            name: "x".to_string(),
+            ty: None,
+            value: ast::Expr::Int(7, span),
+            span,
+        }];
+        assert_eq!(ev.comptime_ctx, 0);
+        let _ = ev.exec_stmts(&stmts, &mut env);
+        assert!(
+            ev.diags.iter().any(|d| d.message.contains("comptime var is only allowed")),
+            "diagnostics were {:?}",
+            ev.diags
+        );
+        assert_eq!(env.lookup("x"), Some(&i(7)));
     }
 
     fn empty_file() -> crate::ast::File {
