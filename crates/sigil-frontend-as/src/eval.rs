@@ -178,6 +178,13 @@ struct Asm {
     /// the TOTAL across all (possibly nested) loops so a pathological input
     /// diagnoses in bounded time. Generous vs. any real table-fill loop.
     while_budget: usize,
+    /// Bookkeeping for auto-opened section names (`sec{vma_base}`). Two sections
+    /// that open at the same VMA base (e.g. a second bank re-phased at the same
+    /// address) would otherwise collide, and `link()` now hard-errors on the
+    /// duplicate labels that follow. The first occurrence of a given base keeps
+    /// the bare name (the M0 harness / strict gate keys on `sec0`/`sec32768`);
+    /// repeats get `sec{vma}#1`, `#2`, …. Value = count of prior uses.
+    used_section_names: std::collections::HashMap<String, u32>,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -213,6 +220,7 @@ impl Asm {
             aborted: false,
             poison_refs: Vec::new(),
             while_budget: GLOBAL_WHILE_CAP,
+            used_section_names: std::collections::HashMap::new(),
         }
     }
 
@@ -1647,7 +1655,17 @@ impl Asm {
             // when not phased). Name by VMA base so the two real output regions
             // stay `sec0`/`sec32768` (the harness/M0 gate keys on those names).
             let vma_base = (self.phys_base as i64 + self.state.disp) as u32;
-            let name = format!("sec{vma_base}");
+            let base = format!("sec{vma_base}");
+            let name = match self.used_section_names.get_mut(&base) {
+                Some(n) => {
+                    *n += 1;
+                    format!("{base}#{n}")
+                }
+                None => {
+                    self.used_section_names.insert(base.clone(), 0);
+                    base
+                }
+            };
             self.builder
                 .switch_section_lma(&name, self.state.cpu, Some(vma_base), self.phys_base);
             self.in_section = true;
@@ -5166,5 +5184,21 @@ C:\n";
         // numeric-fold path, not be misdetected as a string.
         let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b $41\n";
         assert_eq!(image(src), vec![0x41]);
+    }
+
+    #[test]
+    fn duplicate_vma_base_sections_get_distinct_names() {
+        let src = "\
+        cpu 68000\n\
+        phase $8000\n\
+        dc.b 1\n\
+        dephase\n\
+        phase $8000\n\
+        dc.b 2\n\
+        dephase\n";
+        let module = run(src, &Options::default()).expect("assemble");
+        let names: Vec<&str> = module.sections.iter().map(|s| s.name.as_str()).collect();
+        let unique: std::collections::HashSet<&&str> = names.iter().collect();
+        assert_eq!(unique.len(), names.len(), "section names collided: {names:?}");
     }
 }
