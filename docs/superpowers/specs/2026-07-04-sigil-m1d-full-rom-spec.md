@@ -235,9 +235,42 @@ classes to **0**; remaining diagnostics ≤ the 6 known EA sites + anything newl
 (bucket and record them); the emitted `__ErrorMessage` bytes for a representative macro
 invocation match asl (snippet golden).
 
-### T2 — The 6 deferred EA sites (3 symbols) + `END`
+### T2 — The 6 deferred EA sites (3 symbols) + `END`. ✅ DONE (2026-07-04).
 
-Small, bounded: the T5b-deferred symbolic-operand forms + the `END` one-off.
+**Result:** recon **7 → 0 diagnostics** — `m1c_full` now reports `ASSEMBLED OK: 8
+sections`. This arms the `m1c_rom` full-ROM emit path for the first time (T4).
+Commits: `e24ec2a` (AbsWidth→sigil-ir) → `be40b65` (END no-op) → `86e711a`
+(abs-EA width-select, spec✅ + code-quality✅ two-stage review; polish applied:
+scoped "shrink-only" doc claim + `@`-binding to drop a clone) → `4a53538`
+(recon-example fix, below). All strict gates green (m1b_gate 5, m1c_vector_table
+1, harness 16; workspace 47 suites 0-failed; clippy `-D warnings` clean).
+
+**Design executed as settled below.** `asl_width_rule` + `AbsWidth` relocated
+to `sigil-ir` (single source of truth; front-end can't depend on `sigil-link`);
+`sigil-link` re-exports (its M1.B boundary-sweep tests untouched). Bare-symbol/
+expression absolute EA lowers via a new `abs_ea_from_expr` helper
+(`eval.rs`): qualify → `self.fold` (NOT `fold_imm` — that returns 0 on Poison →
+optimistic abs.w) → `asl_width_rule` → `AbsW`/`AbsL`; unresolved-this-pass →
+pessimistic `AbsL(0)` + `poison_refs` (converged pass still errors on genuinely-
+undefined). 5 `t2_*` goldens (abs.w/abs.l/$FF8000-boundary for `lea` + EA-general
+`move.w`) + the `END` no-op golden; `gen_snippet_vectors` churned only those
+(non-circularity intact). One pre-existing unit test that asserted the removed
+reject was updated to assert the width-selected bytes.
+
+**Newly-exposed (bucketed + handled, `4a53538`):** with assembly now succeeding,
+`m1c_full`'s success branch ran for the first time and hit an `unreachable!` in
+`Section::image_len()` on unlowered `JmpJsrSym` fragments (bare jmp/jsr, only
+lowered by `resolve_layout`). Fixed by dropping the pre-resolve `image_len`
+print from the recon (a diagnostics collector); the full assemble→resolve_layout
+→link→emit path is T4's `m1c_rom` gate. **No new front-end diagnostics** — the
+recon is genuinely at 0.
+
+**Carry to T3/T4:** the folded absolute-EA *values* for the 6 real sites (all in
+`test/ojz_scroll_test.asm`, targeting high-address level data → abs.l) may be
+stale by the object-bank +22 (F2) until T3 re-flows section LMAs — a byte-*value*
+concern, not width (width is stable abs.l). This is the predicted T4 first-diff
+territory alongside F1 padding.
+
 Probes committed: `docs/superpowers/notes/2026-07-04-m1d-t2-abs-ea-end-probes.md`.
 
 **Located (2026-07-04):** all 6 EA sites are bare-symbol absolute source EAs
