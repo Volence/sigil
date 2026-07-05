@@ -58,6 +58,12 @@ impl Parser {
     fn peek2(&self) -> &Tok {
         &self.toks[(self.pos + 1).min(self.toks.len() - 1)].tok
     }
+    /// Peek `n` tokens ahead of the cursor (clamped to the trailing `Eof`),
+    /// for the rare multi-token lookahead — e.g. distinguishing the
+    /// `rescale<I,F>(x)` builtin from an ordinary `rescale < n` comparison.
+    fn peek_at(&self, n: usize) -> &Tok {
+        &self.toks[(self.pos + n).min(self.toks.len() - 1)].tok
+    }
     fn span(&self) -> Span { self.toks[self.pos].span }
     fn prev_span(&self) -> Span { self.toks[self.pos.saturating_sub(1)].span }
     fn bump(&mut self) -> Token {
@@ -1465,7 +1471,19 @@ impl Parser {
                 if self.at_kw("offsetof") && matches!(self.peek2(), Tok::LParen) {
                     return self.offsetof_expr();
                 }
-                if self.at_kw("rescale") && matches!(self.peek2(), Tok::Lt) {
+                // `rescale` sits in EXPRESSION position, where `<` is a valid
+                // comparison operator — unlike `fixed<...>`, which lives in
+                // type position where `<` is never infix. So committing on a
+                // bare `rescale <` would mis-parse `rescale < 5` (an ordinary
+                // name compared with `<`) into a broken `Rescale` node. Require
+                // the full `< int ,` prefix — the unambiguous `rescale<I,F>`
+                // shape — before committing; anything else falls through to
+                // ordinary path/binary parsing.
+                if self.at_kw("rescale")
+                    && matches!(self.peek2(), Tok::Lt)
+                    && matches!(self.peek_at(2), Tok::Int(_))
+                    && matches!(self.peek_at(3), Tok::Comma)
+                {
                     return self.rescale_expr();
                 }
                 let path = self.path();

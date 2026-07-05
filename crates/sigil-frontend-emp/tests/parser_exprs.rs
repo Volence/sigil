@@ -244,6 +244,18 @@ fn offsetof_missing_field_is_diagnosed_not_panicking() {
 }
 
 #[test]
+fn rescale_as_name_compared_with_lt_is_a_binary_not_a_builtin() {
+    // `rescale` in expression position followed by `<` is an ordinary name in a
+    // `<` comparison — NOT the `rescale<I,F>` builtin. It must parse as a clean
+    // Binary{Lt}, with no cascading Rescale-parse diagnostics.
+    let (_, diags) = parse_str("module m\nconst X = rescale < 5\n");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let Expr::Binary { op: BinOp::Lt, lhs, rhs, .. } = expr("rescale < 5") else { panic!() };
+    assert!(matches!(*lhs, Expr::Path(p) if p.segments == vec!["rescale"]));
+    assert!(matches!(*rhs, Expr::Int(5, _)));
+}
+
+#[test]
 fn method_paths_still_parse() {
     // `.` path handling is unchanged by the lambda/pipe additions.
     let Expr::Call { callee, args, .. } = expr("xs.map(g)") else { panic!() };

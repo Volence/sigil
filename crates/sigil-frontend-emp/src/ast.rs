@@ -312,8 +312,13 @@ pub enum Type {
         /// Fraction-part bit width.
         f: u32,
     },
-    /// A refined type `T where LO..HI`: `T` narrowed to the inclusive-lo,
-    /// exclusive-hi range given by the two expressions.
+    /// A refined type `T where LO..HI`: `T` narrowed to the range given by the
+    /// two expressions. The bounds are INCLUSIVE on BOTH ends (D-P3.8) — e.g.
+    /// `VramTile where 0..2047` covers all 2048 tiles, and `set_pal(64)` on a
+    /// `where 0..63` param fails with "64 not in 0..63". This deliberately
+    /// diverges from [`Expr::Range`]'s half-open (inclusive-lo, exclusive-hi)
+    /// iteration semantics; a later `check_in_range` must use `<=` on the hi
+    /// bound, not `<`.
     Refined(Box<Type>, Expr, Expr),
 }
 
