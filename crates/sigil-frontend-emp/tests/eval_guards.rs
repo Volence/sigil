@@ -107,6 +107,18 @@ fn bad_interpolation_still_diagnoses_no_crash() {
     assert!(!diags.is_empty(), "a failing guard must still emit at least one diagnostic");
 }
 
+#[test]
+fn string_interpolates_unquoted() {
+    // A string value interpolates as its bare contents — no `"..."` quotes,
+    // which would read wrong mid-sentence in a user-facing guard message.
+    let src = "module m\ncomptime fn f(who: str) -> int { ensure(false, \"who: {who}\")\n    return 0 }\nconst R = f(\"bob\")\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        has_exact(&diags, "who: bob"),
+        "expected an unquoted string interpolation, got {diags:?}"
+    );
+}
+
 // ---- arity / type errors -----------------------------------------------
 
 #[test]

@@ -1022,11 +1022,15 @@ impl<'a> Evaluator<'a> {
         // Evaluating the inner expr may itself report (e.g. an unknown name); that
         // diagnostic plus this best-effort one are both acceptable — the guard is
         // already failing, so a noisy interpolation is not a cascade concern.
-        let v = self.eval_expr(&expr, env);
-        if matches!(v, Value::Poison) {
-            return bad(self, "evaluation failed");
+        match self.eval_expr(&expr, env) {
+            Value::Poison => bad(self, "evaluation failed"),
+            // A string interpolates as its bare contents: `Value`'s `Display`
+            // quotes strings (`{s:?}`) for diagnostics, which reads wrong
+            // mid-sentence in a user-facing guard message. Every other value kind
+            // keeps its `Display`.
+            Value::Str(s) => s,
+            other => other.to_string(),
         }
-        v.to_string()
     }
 
     /// Invoke a `comptime fn` with already-evaluated positional argument values
