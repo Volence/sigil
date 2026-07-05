@@ -450,6 +450,33 @@ where
     })
 }
 
+/// Evaluate a `proc` body to a resolved [`CodeBuf`](crate::value::CodeBuf)
+/// against `file`'s comptime context (Plan 4, T4 — §5.1), returning it plus any
+/// diagnostics. This REUSES [`Evaluator::eval_asm`] — the exact same
+/// `AsmStmt`→`CodeBuf` walk `asm { }` instantiation uses — so proc lowering and
+/// `asm { }` share one operand/label path (D-P4.1). A proc body differs only in
+/// that it is parsed with `splices_allowed = false`, so no `{splice}` ever
+/// appears; the fresh-per-instantiation label rename still applies, letting an
+/// intra-proc `.loop:` reference resolve (the full `Owner.label` external model
+/// is T5). Params are declarative register bindings (§5.1) that emit no code and
+/// need no env seeding — a body's register operand resolves via the register
+/// name directly. Returns `None` only if evaluation did not yield a `Code` value
+/// (it always does today; the guard keeps the seam total).
+pub fn eval_proc_body(
+    file: &crate::ast::File,
+    body: &[ast::AsmStmt],
+    span: Span,
+) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>) {
+    run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        let mut env = Env::new();
+        match ev.eval_asm(body, span, &mut env) {
+            Value::Code(buf) => (Some(buf), ev.diags),
+            _ => (None, ev.diags),
+        }
+    })
+}
+
 /// The body of [`eval_const`], run on the large-stack evaluation thread.
 fn eval_const_inner(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
     let mut ev = Evaluator::with_file(file);

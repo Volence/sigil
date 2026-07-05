@@ -1,0 +1,198 @@
+//! T4 (Plan 4) — `proc` lowering. A `proc` lowers to a label named after the
+//! proc plus its body, run through the SAME `eval_asm` → `lower_code_buf` path
+//! `asm { }` uses (no instruction lowering is re-implemented). This exercises
+//! the byte-exact body emission, the label placement, and the three §5.1
+//! proc-contract diagnostics: declared-fallthrough adjacency
+//! (`[proc.fallthrough-separated]`), undeclared fallthrough
+//! (`[proc.undeclared-fallthrough]`), and the clobbers lint
+//! (`[proc.clobber-undeclared]`).
+
+use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::parse_str;
+use sigil_ir::backend::Cpu;
+use sigil_ir::{Module, SymbolTable};
+use sigil_span::{Diagnostic, Level};
+
+/// Parse + lower `src` to a `Module` for the 68k, asserting the source parsed
+/// cleanly. Returns the module and the lowering diagnostics.
+fn lower(src: &str) -> (Module, Vec<Diagnostic>) {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 })
+}
+
+/// Link a lowered `Module` to a flat image (mirrors T0/T2/T3 link helpers).
+fn flatten(module: &Module) -> Vec<u8> {
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+    sigil_link::flatten(&linked, 0x00)
+}
+
+/// True if any diagnostic message contains `tag` (the bracketed lint code).
+fn has_tag(diags: &[Diagnostic], tag: &str) -> bool {
+    diags.iter().any(|d| d.message.contains(tag))
+}
+
+#[test]
+fn proc_emits_label_and_body() {
+    // `proc foo() { moveq #0, d0  rts }` → label `foo` at offset 0 plus the exact
+    // encoded bytes: moveq #0,d0 = 70 00 (golden), rts = 4E 75 (golden).
+    let (module, diags) = lower("module m\nproc foo() {\n    moveq #0, d0\n    rts\n}\n");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+
+    let section = module.sections.first().expect("one section");
+    let foo = section.labels.iter().find(|l| l.name == "foo").expect("`foo` label");
+    assert_eq!(foo.offset, 0, "proc label sits at the start of its body");
+
+    assert_eq!(flatten(&module), vec![0x70, 0x00, 0x4E, 0x75]);
+}
+
+#[test]
+fn falls_into_adjacent_ok() {
+    // `proc a falls_into b` immediately followed by `proc b` — physically
+    // adjacent, so NO `[proc.fallthrough-separated]` (and no undeclared-fallthrough
+    // warning for `a`, since it declares the fall).
+    let src = "module m\n\
+               proc a() falls_into b {\n    moveq #0, d0\n}\n\
+               proc b() {\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.fallthrough-separated]"),
+        "adjacent falls_into must not be flagged: {diags:?}"
+    );
+    // Declaring `falls_into` also suppresses the undeclared-fallthrough warning
+    // for `a`, even though its body ends without a terminator.
+    assert!(
+        !has_tag(&diags, "[proc.undeclared-fallthrough]"),
+        "a declared fall must suppress the undeclared-fallthrough warning: {diags:?}"
+    );
+}
+
+#[test]
+fn falls_into_separated_errors() {
+    // `proc a falls_into b` with another proc between `a` and `b` — the fall
+    // cannot happen, so `[proc.fallthrough-separated]` (an error) naming both.
+    let src = "module m\n\
+               proc a() falls_into b {\n    moveq #0, d0\n}\n\
+               proc middle() {\n    rts\n}\n\
+               proc b() {\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let sep = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.fallthrough-separated]"))
+        .expect("expected a fallthrough-separated diagnostic");
+    assert_eq!(sep.level, Level::Error);
+    assert!(sep.message.contains('a') && sep.message.contains('b'), "names both procs");
+}
+
+#[test]
+fn undeclared_fallthrough_warns() {
+    // A proc whose body ends WITHOUT a terminator and does not declare
+    // `falls_into` → `[proc.undeclared-fallthrough]` warning.
+    let (_module, diags) = lower("module m\nproc p() {\n    moveq #0, d0\n}\n");
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.undeclared-fallthrough]"))
+        .expect("expected an undeclared-fallthrough diagnostic");
+    assert_eq!(w.level, Level::Warning);
+}
+
+#[test]
+fn empty_proc_body_warns_fallthrough() {
+    // An empty body has no terminating instruction, so it falls through → the
+    // undeclared-fallthrough warning fires (pins the documented behavior).
+    let (_module, diags) = lower("module m\nproc p() {\n}\n");
+    assert!(
+        has_tag(&diags, "[proc.undeclared-fallthrough]"),
+        "an empty proc body must warn about fallthrough: {diags:?}"
+    );
+}
+
+#[test]
+fn terminated_proc_does_not_warn_fallthrough() {
+    // Companion: a proc ending in `rts` terminates straight-line flow → NO
+    // undeclared-fallthrough warning.
+    let (_module, diags) = lower("module m\nproc p() {\n    moveq #0, d0\n    rts\n}\n");
+    assert!(
+        !has_tag(&diags, "[proc.undeclared-fallthrough]"),
+        "a proc ending in rts must not warn: {diags:?}"
+    );
+}
+
+#[test]
+fn clobber_undeclared_warns() {
+    // `move.l d2, d3` writes d3 (the destination) under `clobbers(d0, d1)` — d3 is
+    // neither declared nor a param → `[proc.clobber-undeclared]` naming it.
+    let src = "module m\nproc p() clobbers(d0, d1) {\n    move.l d2, d3\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("expected a clobber-undeclared diagnostic");
+    assert_eq!(w.level, Level::Warning);
+    assert!(w.message.contains("d3"), "names the undeclared destination register: {}", w.message);
+}
+
+#[test]
+fn scc_write_undeclared_warns() {
+    // `seq d0` (Scc) sets a byte in its sole operand — a real register write.
+    // Under `clobbers(d1)`, d0 is undeclared → `[proc.clobber-undeclared]` naming d0.
+    let src = "module m\nproc p() clobbers(d1) {\n    seq d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("expected a clobber-undeclared diagnostic for the Scc write");
+    assert_eq!(w.level, Level::Warning);
+    assert!(w.message.contains("d0"), "names the Scc destination register: {}", w.message);
+}
+
+#[test]
+fn read_only_op_does_not_warn() {
+    // A read-only mnemonic (`cmp`) with a register in last-operand position must
+    // NOT warn — this guards the write-form allowlist from a careless future edit
+    // that adds a read-only mnemonic to it.
+    let src = "module m\nproc p() clobbers(d0) {\n    cmp.l d2, d3\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "a read-only op must not trip the clobber lint: {diags:?}"
+    );
+}
+
+#[test]
+fn memory_destination_does_not_warn() {
+    // A memory-destination write (`move.l d0, (a1)`) has no register destination —
+    // guards the `ops.last()` == Reg filter (d0 here is the source, not written).
+    let src = "module m\nproc p() clobbers(d0) {\n    move.l d0, (a1)\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "a memory-destination write must not trip the clobber lint: {diags:?}"
+    );
+}
+
+#[test]
+fn declared_clobber_does_not_warn() {
+    // Companion: writing only a declared clobber (`d0`) → no clobber diagnostic.
+    let src = "module m\nproc p() clobbers(d0, d1) {\n    moveq #0, d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "writing a declared clobber must not warn: {diags:?}"
+    );
+}
+
+#[test]
+fn param_register_write_is_not_an_undeclared_clobber() {
+    // A write to a PARAM register is part of the proc's contract, not an
+    // undeclared clobber: `move.l d0, d2` with `d2` a param and `d0` clobbered.
+    let src = "module m\n\
+               proc p(d2: u8) clobbers(d0) {\n    move.l d0, d2\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "writing a param register must not warn: {diags:?}"
+    );
+}

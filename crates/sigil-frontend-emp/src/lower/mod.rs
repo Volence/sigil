@@ -10,6 +10,7 @@
 
 mod code;
 mod data;
+mod proc;
 
 pub use code::lower_code_buf;
 
@@ -37,17 +38,35 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
 
     builder.switch_section("text", opts.initial_cpu, None);
 
-    for item in &file.items {
-        let ast::Item::Data(decl) = item else { continue };
-        let (buf, mut ds) = eval_data(file, &decl.name);
-        diags.append(&mut ds);
-        let Some(buf) = buf else { continue };
+    // Walk items in declaration order. Data emits its serialized buffer; a proc
+    // emits its label + lowered body (T4). The proc arm needs the item's index
+    // to check declared-fallthrough adjacency against the following item.
+    for (index, item) in file.items.iter().enumerate() {
+        match item {
+            ast::Item::Data(decl) => {
+                let (buf, mut ds) = eval_data(file, &decl.name);
+                diags.append(&mut ds);
+                let Some(buf) = buf else { continue };
 
-        let (bytes, fixups, mut stream_diags) =
-            data::stream_data(&buf, opts.initial_cpu, decl.span);
-        diags.append(&mut stream_diags);
-        builder.define_label(&decl.name);
-        builder.emit_data(&bytes, fixups, decl.span);
+                let (bytes, fixups, mut stream_diags) =
+                    data::stream_data(&buf, opts.initial_cpu, decl.span);
+                diags.append(&mut stream_diags);
+                builder.define_label(&decl.name);
+                builder.emit_data(&bytes, fixups, decl.span);
+            }
+            ast::Item::Proc(decl) => {
+                proc::lower_proc(
+                    file,
+                    decl,
+                    index,
+                    &file.items,
+                    opts.initial_cpu,
+                    &mut builder,
+                    &mut diags,
+                );
+            }
+            _ => {}
+        }
     }
 
     let (module, mut build_diags) = builder.finish();
