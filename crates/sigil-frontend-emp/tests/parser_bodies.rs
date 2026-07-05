@@ -149,6 +149,21 @@ fn comptime_fn_with_stmts() {
 }
 
 #[test]
+fn match_as_a_bare_statement() {
+    let f = ok(concat!(
+        "module m\n",
+        "comptime fn classify(tok: Token) -> int {\n",
+        "    match tok {\n",
+        "        Token.Literal(s) => 1,\n",
+        "        _ => 0,\n",
+        "    }\n",
+        "}\n"));
+    let Item::ComptimeFn(cf) = &f.items[0] else { panic!() };
+    let Stmt::Expr(Expr::Match { arms, .. }) = &cf.body[0] else { panic!("{:?}", cf.body[0]) };
+    assert_eq!(arms.len(), 2);
+}
+
+#[test]
 fn let_tuple_if_while_var_block() {
     let f = ok(concat!(
         "module m\n",

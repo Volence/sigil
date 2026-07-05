@@ -75,6 +75,14 @@ impl<'a> Evaluator<'a> {
                 body: body.clone(),
                 captured: env.clone(),
             },
+            // TODO(Plan 3 T2+): `match` needs exhaustiveness checking and
+            // pattern binding, and `sizeof`/`offsetof`/`rescale` need the
+            // layout engine — grammar only for T1, so these are silent
+            // `Poison` for now (matches `Asm`/`If`-before-T-implemented above).
+            ast::Expr::Match { .. }
+            | ast::Expr::SizeOf(..)
+            | ast::Expr::OffsetOf(..)
+            | ast::Expr::Rescale { .. } => Value::Poison,
         }
     }
 
@@ -129,7 +137,7 @@ impl<'a> Evaluator<'a> {
             }
             // Step 2: a nullary `Enum.Variant` value.
             if let Some(decl) = self.enums.get(a) {
-                if decl.variants.iter().any(|(v, _, _)| v == b) {
+                if decl.variants.iter().any(|v| v.name == b) {
                     return Value::Enum {
                         ty_name: a.to_string(),
                         variant: b.to_string(),

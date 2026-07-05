@@ -67,6 +67,8 @@ pub enum Item {
     ComptimeFn(ComptimeFnDecl),
     /// `section ...` declaration.
     Section(SectionDecl),
+    /// `newtype ...` declaration.
+    Newtype(NewtypeDecl),
 }
 
 /// A `use base.{a, b}` / `use base.*` / `use base` import.
@@ -106,18 +108,38 @@ pub struct ConstDecl {
     pub span: Span,
 }
 
-/// An `enum Name: repr { variants... }` declaration.
+/// An `enum Name: repr { variants... }` declaration (or `comptime enum Name
+/// { variants... }`, whose variants may carry payload types instead of an
+/// explicit value, and which needs no repr).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDecl {
     /// Whether this enum is exported (`pub enum`).
     pub public: bool,
+    /// Whether this is a `comptime enum` (payload-carrying, no explicit
+    /// discriminant type required) rather than a plain repr-backed enum.
+    pub comptime: bool,
     /// The enum's name.
     pub name: String,
     /// The underlying representation type, e.g. `u8` in `enum Anim: u8`.
-    pub repr: Type,
-    /// Variants as `(name, optional explicit value, span)`.
-    pub variants: Vec<(String, Option<Expr>, Span)>,
+    /// Always `Some` for a plain enum (required); optional for `comptime enum`.
+    pub repr: Option<Type>,
+    /// The enum's variants, in declaration order.
+    pub variants: Vec<EnumVariant>,
     /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// A single variant within an [`EnumDecl`]: `Idle = 0` or `Literal(string)`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    /// The variant's name.
+    pub name: String,
+    /// An explicit discriminant value, e.g. the `0` in `Idle = 0`.
+    pub value: Option<Expr>,
+    /// Payload types, e.g. `[Named(string)]` in `Literal(string)` (empty for
+    /// a plain, non-payload-carrying variant).
+    pub payload: Vec<Type>,
+    /// Span of the whole variant.
     pub span: Span,
 }
 
@@ -283,6 +305,31 @@ pub enum Type {
     Array(Box<Type>, Expr),
     /// A tuple type: `(Data, Code)`.
     Tuple(Vec<Type>),
+    /// A fixed-point type `fixed<I, F>`: `I` integer bits, `F` fraction bits.
+    Fixed {
+        /// Integer-part bit width.
+        i: u32,
+        /// Fraction-part bit width.
+        f: u32,
+    },
+    /// A refined type `T where LO..HI`: `T` narrowed to the inclusive-lo,
+    /// exclusive-hi range given by the two expressions.
+    Refined(Box<Type>, Expr, Expr),
+}
+
+/// A `newtype Name = Underlying [where LO..HI]` declaration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewtypeDecl {
+    /// Whether this newtype is exported (`pub newtype`).
+    pub public: bool,
+    /// The newtype's name.
+    pub name: String,
+    /// The underlying type it wraps.
+    pub underlying: Type,
+    /// The optional `where LO..HI` range refinement, as `(lo, hi)`.
+    pub refine: Option<(Expr, Expr)>,
+    /// Span of the whole declaration.
+    pub span: Span,
 }
 
 // ---- expressions -------------------------------------------------------
@@ -396,6 +443,62 @@ pub enum Expr {
         /// The single body expression.
         body: Box<Expr>,
         /// Span of the whole lambda.
+        span: Span,
+    },
+    /// A `match scrutinee { pat => body, ... }` expression.
+    Match {
+        /// The scrutinee being matched.
+        scrutinee: Box<Expr>,
+        /// The match arms, in order.
+        arms: Vec<MatchArm>,
+        /// Span of the whole expression.
+        span: Span,
+    },
+    /// `sizeof(T)` — the byte size of a type (resolved at layout time).
+    SizeOf(Box<Type>, Span),
+    /// `offsetof(T, field)` — the byte offset of `field` within `T`.
+    OffsetOf(Box<Type>, String, Span),
+    /// `rescale<I, F>(x)` — reinterpret a fixed-point value under a new
+    /// `fixed<I, F>` scale.
+    Rescale {
+        /// Target integer-part bit width.
+        i: u32,
+        /// Target fraction-part bit width.
+        f: u32,
+        /// The value being rescaled.
+        arg: Box<Expr>,
+        /// Span of the whole expression.
+        span: Span,
+    },
+}
+
+/// A single arm of a [`Expr::Match`]: `Pat => body`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    /// The arm's pattern.
+    pub pat: Pattern,
+    /// The arm's body expression.
+    pub body: Expr,
+    /// Span of the whole arm.
+    pub span: Span,
+}
+
+/// A match-arm pattern.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    /// `_` — matches anything, binds nothing.
+    Wildcard(Span),
+    /// A bare lowercase identifier — matches anything, binds it to a name.
+    Binding(String, Span),
+    /// A path (optionally qualified, e.g. `Anim.Idle`), optionally followed
+    /// by parenthesized subpatterns for a payload-carrying variant, e.g.
+    /// `Token.Literal(s)`.
+    Variant {
+        /// The variant's path.
+        path: Path,
+        /// Subpatterns for the variant's payload (empty for a nullary variant).
+        subpats: Vec<Pattern>,
+        /// Span of the whole pattern.
         span: Span,
     },
 }
