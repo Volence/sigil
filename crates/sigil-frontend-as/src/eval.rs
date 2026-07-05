@@ -1616,6 +1616,13 @@ impl Asm {
             // source spells this directive uppercase at all 43 call sites
             // (`grep -rn BINCLUDE aeon/games aeon/engine`), never `binclude`.
             "BINCLUDE" => self.directive_binclude(rest, span),
+            // `END` (asl's end-of-source / entry-point directive). Emits no
+            // bytes — bare `END` and `END <entrypoint>` are both emission
+            // no-ops (probe: 2026-07-04-m1d-t2-abs-ea-end-probes.md). Aeon's
+            // only use is the bare `END` at main.asm:446. Exact-case like
+            // `BINCLUDE`; does not collide with the `endif`/`endm`/`endr`/
+            // `endcase` block closers (handled in block scanning, not dispatch).
+            "end" | "END" => {}
             _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
             // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any

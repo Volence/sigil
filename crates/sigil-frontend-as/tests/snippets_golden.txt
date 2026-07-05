@@ -1265,3 +1265,12 @@ BusError:
 	__ErrorMessage	"BUS ERROR", _eh_default|_eh_address_error
 --- bytes ---
 4E B9 00 00 04 00 42 55 53 20 45 52 52 4F 52 00 A1 00 4E F9 00 00 05 00
+
+=== t2_end_noop ===
+	cpu 68000
+	padding off
+	org 0
+	nop
+	END
+--- bytes ---
+4E 71
