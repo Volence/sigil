@@ -33,8 +33,7 @@
 
 use std::path::PathBuf;
 
-use sigil_frontend_as::{assemble_root, Options};
-use sigil_ir::{Cpu, SymbolTable};
+use sigil_harness::assemble_full_rom;
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -62,24 +61,9 @@ fn full_rom_matches_assembled_reference() {
         return;
     };
 
-    let root = aeon.join("games/sonic4/main.asm");
     // Non-debug config, mirroring build.sh's default ASFLAGS: SOUND_DRIVER_ENABLED
     // on, __DEBUG__ off. No stubs — the full build defines everything.
-    let opts = Options {
-        initial_cpu: Cpu::M68000,
-        defines: vec![("SOUND_DRIVER_ENABLED".to_string(), 1)],
-        include_root: Some(aeon.clone()),
-    };
-
-    let module = match assemble_root(&root, &opts) {
-        Ok(m) => m,
-        Err(d) => panic!("assemble: {} diagnostics; first: {:?}", d.len(), d.first()),
-    };
-    let stubs = SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(&module.sections, &stubs, true)
-        .unwrap_or_else(|d| panic!("resolve_layout: {} diagnostics; first: {:?}", d.len(), d.first()));
-    let linked = sigil_link::link(&resolved, &stubs)
-        .unwrap_or_else(|d| panic!("link: {} diagnostics; first: {:?}", d.len(), d.first()));
+    let linked = assemble_full_rom(&aeon).unwrap_or_else(|e| panic!("{e}"));
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map_src = std::fs::read_to_string(&map_path)

@@ -144,11 +144,10 @@ fn one_pass(
 /// duplicate-symbol diagnostic (M1.D T3) doesn't misfire on a genuine
 /// second bank.
 ///
-/// EMPTY (zero-fragment) sections are skipped: they carry no labels, are dropped
-/// before link (the M0 harness's `build_harness` drops them), and so must NOT
-/// consume the bare name — otherwise the M0 preamble's stray empty `sec0` would
-/// steal `sec0` from the real region-A driver, which is then linked/looked-up by
-/// that name.
+/// EMPTY (zero-fragment) sections are skipped: they carry no labels and place no
+/// bytes, so `link()` / `emit_rom` drop them (M1.D T4), and so they must NOT
+/// consume the bare name — otherwise a stray empty `sec0` would steal `sec0`
+/// from the real region-A driver, which is then linked/looked-up by that name.
 fn dedup_section_names(sections: &mut [sigil_ir::Section]) {
     let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for sec in sections.iter_mut() {
