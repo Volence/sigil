@@ -77,8 +77,23 @@ fn division_and_modulo_by_zero() {
 fn integer_overflow_is_an_error() {
     // 1 << 127 sets the sign bit and overflows i128's positive range.
     poison_with("1 << 127", "overflow");
-    // MIN / -1 overflows.
     ok("1 << 126", int(1i128 << 126));
+}
+
+#[test]
+fn direct_arithmetic_overflow_is_an_error() {
+    // `*` overflow: (2^126) * 4 = 2^128, past i128::MAX. Exercises checked_mul.
+    poison_with("(1 << 126) * 4", "integer overflow");
+    // `+` overflow: the first add already yields 2^127, past i128::MAX
+    // (2^127 - 1); the second `+` then sees Poison and stays silent, so still
+    // exactly one diagnostic. Exercises checked_add.
+    poison_with("(1 << 126) + (1 << 126) + (1 << 126)", "integer overflow");
+    // `-` overflow: 0 - i128::MIN has no i128 representation. i128::MIN is
+    // -(2^127); build it as -(2^126) - (2^126). Exercises checked_sub.
+    poison_with("0 - (-(1 << 126) - (1 << 126))", "integer overflow");
+    // Neg overflow: negating i128::MIN. Built as -(2^126) - (2^126) = i128::MIN,
+    // then unary-negated. Exercises checked_neg.
+    poison_with("-(-(1 << 126) - (1 << 126))", "integer overflow");
 }
 
 // ---- shifts ------------------------------------------------------------
@@ -99,6 +114,12 @@ fn bitwise() {
     ok("0b1100 & 0b1010", int(8));
     ok("0b1100 | 0b1010", int(14));
     ok("0b1100 ^ 0b1010", int(6));
+}
+
+#[test]
+fn bitwise_and_shift_type_errors() {
+    poison_with("1 & true", "not defined");
+    poison_with("true << 1", "not defined");
 }
 
 // ---- comparisons -------------------------------------------------------

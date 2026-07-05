@@ -210,15 +210,15 @@ impl Evaluator {
                     None => self.arith_overflow(span, "-"),
                 },
                 Value::Float(x) => Value::Float(-x),
-                other => self.unop_type_error(span, "-", &other),
+                other => self.operand_type_error(span, "-", &other),
             },
             UnOp::Not => match v {
                 Value::Bool(b) => Value::Bool(!b),
-                other => self.unop_type_error(span, "!", &other),
+                other => self.operand_type_error(span, "!", &other),
             },
             UnOp::BitNot => match v {
                 Value::Int(n) => Value::Int(!n),
-                other => self.unop_type_error(span, "~", &other),
+                other => self.operand_type_error(span, "~", &other),
             },
         }
     }
@@ -357,7 +357,7 @@ impl Evaluator {
     /// `Int`/`Float` compare by value; distinct non-numeric kinds are simply
     /// not equal (so `==` is total and never spuriously errors — genuine type
     /// mismatches are the type checker's job in a later plan).
-    fn eval_equality(&mut self, op: BinOp, lhs: &Value, rhs: &Value) -> Value {
+    fn eval_equality(&self, op: BinOp, lhs: &Value, rhs: &Value) -> Value {
         let eq = values_equal(lhs, rhs);
         Value::Bool(if op == BinOp::Ne { !eq } else { eq })
     }
@@ -404,7 +404,7 @@ impl Evaluator {
         }
         let lb = match lhs {
             Value::Bool(b) => b,
-            other => return self.binop_lhs_type_error(span, binop_symbol(op), &other),
+            other => return self.operand_type_error(span, binop_symbol(op), &other),
         };
         match op {
             BinOp::And if !lb => return Value::Bool(false),
@@ -417,7 +417,7 @@ impl Evaluator {
         }
         match rhs {
             Value::Bool(b) => Value::Bool(b),
-            other => self.binop_lhs_type_error(span, binop_symbol(op), &other),
+            other => self.operand_type_error(span, binop_symbol(op), &other),
         }
     }
 
@@ -465,8 +465,9 @@ impl Evaluator {
         Value::Poison
     }
 
-    /// Report a unary type error and return `Poison`.
-    fn unop_type_error(&mut self, span: Span, sym: &str, operand: &Value) -> Value {
+    /// Report a type error naming a single operand and return `Poison`. Used
+    /// for unary operators and for a single offending operand of a logical op.
+    fn operand_type_error(&mut self, span: Span, sym: &str, operand: &Value) -> Value {
         self.error(span, format!("`{sym}` not defined for {}", operand.type_name()));
         Value::Poison
     }
@@ -477,12 +478,6 @@ impl Evaluator {
             span,
             format!("`{sym}` not defined for {} and {}", lhs.type_name(), rhs.type_name()),
         );
-        Value::Poison
-    }
-
-    /// Report a type error naming a single (LHS) operand and return `Poison`.
-    fn binop_lhs_type_error(&mut self, span: Span, sym: &str, operand: &Value) -> Value {
-        self.error(span, format!("`{sym}` not defined for {}", operand.type_name()));
         Value::Poison
     }
 }
