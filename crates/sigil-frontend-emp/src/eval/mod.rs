@@ -16,6 +16,9 @@ mod emit;
 mod env;
 mod expr;
 mod guards;
+mod literals;
+mod pattern;
+mod typed;
 
 pub use env::{AssignError, Binding, Env};
 
