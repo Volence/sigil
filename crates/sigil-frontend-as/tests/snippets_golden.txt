@@ -1363,3 +1363,79 @@ High:	equ $10000
 Fwd:	rts
 --- bytes ---
 4E F8 00 06 4E 71 4E 75
+=== t4_maclocal_twice ===
+	cpu 68000
+	padding off
+	org 0
+mymac	macro
+	beq.s	.done
+	nop
+.done:
+	endm
+Foo:
+	mymac
+	mymac
+	rts
+--- bytes ---
+67 02 4E 71 67 02 4E 71 4E 75
+=== t4_branch_computed ===
+	cpu 68000
+	padding off
+	org 0
+Foo:
+	bra.w	.end-2
+	nop
+.end:
+	rts
+--- bytes ---
+60 00 00 02 4E 71 4E 75
+=== t4_pcrel_computed_jmp ===
+	cpu 68000
+	padding off
+	org 0
+Foo:
+	jmp	.tab-4(pc,d0.w)
+.tab:
+	rts
+--- bytes ---
+4E FB 00 FE 4E 75
+=== t4_zerodisp_move_b ===
+	cpu 68000
+	padding off
+	org 0
+	move.b	d0, 0(a0)
+	rts
+--- bytes ---
+10 80 4E 75
+=== t4_zerodisp_move_nonzero ===
+	cpu 68000
+	padding off
+	org 0
+	move.b	d0, 2(a0)
+	rts
+--- bytes ---
+11 40 00 02 4E 75
+=== t4_zerodisp_lea ===
+	cpu 68000
+	padding off
+	org 0
+	lea	0(a0), a1
+	rts
+--- bytes ---
+43 D0 4E 75
+=== t4_zerodisp_movep_keeps ===
+	cpu 68000
+	padding off
+	org 0
+	movep.l	d1, 0(a0)
+	rts
+--- bytes ---
+03 C8 00 00 4E 75
+=== t4_zerodisp_movem ===
+	cpu 68000
+	padding off
+	org 0
+	movem.l	d0-d7, 0(a0)
+	rts
+--- bytes ---
+48 D0 00 FF 4E 75

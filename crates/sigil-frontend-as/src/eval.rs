@@ -194,6 +194,14 @@ struct Asm {
     functions: FunctionTable,
     macros: MacroTable,
     macro_depth: usize,
+    /// Monotonic per-pass counter identifying each macro EXPANSION. A `.`-local
+    /// label defined inside a macro body is scoped to its expansion (asl-verified
+    /// — `docs/superpowers/notes/2026-07-04-m1d-t4-macro-local-scope-probes.md`),
+    /// NOT to the caller's global label; this counter names that per-expansion
+    /// scope so two expansions in one global scope don't collide. Resets to 0
+    /// each pass (fresh `Asm`), so expansion order — hence scope names — is stable
+    /// across passes once conditionals converge.
+    macro_expansion_seq: u32,
     visited: std::collections::BTreeSet<std::path::PathBuf>,
     include_root: Option<std::path::PathBuf>,
     aborted: bool,
@@ -239,6 +247,7 @@ impl Asm {
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
             macro_depth: 0,
+            macro_expansion_seq: 0,
             visited: std::collections::BTreeSet::new(),
             include_root: opts.include_root.clone(),
             aborted: false,
@@ -2332,7 +2341,7 @@ impl Asm {
             }
         };
         let target = match atoms.as_slice() {
-            [OperandAtom::Value(e)] => self.resolve_dollar(&self.qualify_expr(e)),
+            [OperandAtom::Value(e)] => self.fixup_target(e),
             _ => {
                 self.err(span, "branch needs a single label target");
                 return;
@@ -2466,10 +2475,15 @@ impl Asm {
                 return;
             }
         };
-        let mem_op = match self.convert_one_atom_m68k(mem_atom, size, span) {
+        let mut mem_op = match self.convert_one_atom_m68k(mem_atom, size, span) {
             Some(o) => o,
             None => return,
         };
+        // `movem` reaches its memory EA via this path (not `convert_atoms_m68k`),
+        // so apply the zero-disp collapse here too — asl optimizes `movem.l
+        // d0-d7,0(a0)` → `48D0` (mode 2), probe-verified. `movem` is never
+        // `movep`, so the collapse is unconditional.
+        collapse_zero_disp(&mut mem_op);
         let ops = if list_first {
             vec![M68kOperand::RegList(mask), mem_op]
         } else {
@@ -2512,7 +2526,7 @@ impl Asm {
                     OperandAtom::M68kDisp { disp, .. } => disp,
                     _ => unreachable!("pc_idx must index a M68kDisp{{an: \"pc\"}} atom"),
                 };
-                target = Some(self.qualify_expr(disp));
+                target = Some(self.fixup_target(disp));
                 ops.push(M68kOperand::Pcd16(0));
             } else {
                 match self.convert_one_atom_m68k(a, size, span) {
@@ -2560,7 +2574,7 @@ impl Asm {
                     Some(x) => x,
                     None => return,
                 };
-                target = Some(self.qualify_expr(disp));
+                target = Some(self.fixup_target(disp));
                 ops.push(M68kOperand::Pcd8Xn {
                     d: 0,
                     xn,
@@ -2610,10 +2624,16 @@ impl Asm {
         atoms: &[OperandAtom],
         span: Span,
     ) -> Option<Vec<M68kOperand>> {
-        let _ = mnemonic; // every fold-based form shares the same atom conversion
         let mut ops = Vec::with_capacity(atoms.len());
         for a in atoms {
             ops.push(self.convert_one_atom_m68k(a, size, span)?);
+        }
+        // asl zero-displacement optimization — `movep` is the sole 68000
+        // exception (see `collapse_zero_disp`).
+        if mnemonic != M68kMnemonic::Movep {
+            for op in &mut ops {
+                collapse_zero_disp(op);
+            }
         }
         Some(ops)
     }
@@ -2910,13 +2930,45 @@ impl Asm {
         }
     }
 
-    /// Qualify a bare local `.name` Sym against the current scope; else unchanged.
+    /// Qualify every `.`-local `Sym` in the tree against the current scope.
+    /// RECURSES into compound expressions (mirroring `resolve_dollar`): a `.`-local
+    /// can sit nested inside arithmetic — jump-table targets like `.cc_table-4(pc,…)`
+    /// and computed branch targets like `.drain_end-.c*8` — and each nested local
+    /// must qualify, or the linker's global-scope fold can never resolve it.
     fn qualify_expr(&self, e: &Expr) -> Expr {
         match e {
             Expr::Sym(name) if name.starts_with('.') => {
                 Expr::Sym(qualify(name, self.scope.as_deref()))
             }
+            Expr::Binary { op, lhs, rhs } => Expr::Binary {
+                op: *op,
+                lhs: Box::new(self.qualify_expr(lhs)),
+                rhs: Box::new(self.qualify_expr(rhs)),
+            },
+            Expr::Unary { op, operand } => Expr::Unary {
+                op: *op,
+                operand: Box::new(self.qualify_expr(operand)),
+            },
             other => other.clone(),
+        }
+    }
+
+    /// Resolve a PC-relative branch / jump-table target destined for a fixup.
+    /// Qualifies `.`-locals (deep), resolves `$`, then FOLDS against the current
+    /// env and BAKES a resolved target as `Expr::Int` — mirroring the jmp/jsr and
+    /// `abs_ea_from_expr` bake (M1.D T3). Baking is required, not just tidy: the
+    /// target may reference an env-only `set`/`equ` symbol the linker's
+    /// section-label table cannot see (`.c`, a per-iteration `rept` counter in
+    /// `dma_queue.asm`'s `bra.w .drain_end-.c*8`), and the counter's value must be
+    /// captured HERE (its value at this instruction), not deferred to the linker
+    /// where only its final value survives. A still-unresolved (forward) target
+    /// stays fully-qualified-symbolic for the linker to resolve or reject — the
+    /// branch width is fixed, so the placeholder never perturbs layout.
+    fn fixup_target(&self, e: &Expr) -> Expr {
+        let qualified = self.resolve_dollar(&self.qualify_expr(e));
+        match self.fold(&qualified) {
+            Fold::Value(v) => Expr::Int(v),
+            Fold::Poison => qualified,
         }
     }
 
@@ -3180,6 +3232,12 @@ impl Asm {
             positional.push(render_tokens(g));
         }
         let mut pos_iter = positional.into_iter();
+        // The caller's local-label scope, captured BEFORE the expansion swaps in
+        // its own scope below. A macro argument that is a bare `.`-local
+        // (`aabb_axis_test …,.next_object,…`) names a label in the CALLER's scope
+        // — asl evaluates arguments in the caller context — so it must be
+        // qualified here, before substitution, not against the expansion scope.
+        let caller_scope = self.scope.clone();
         // An OMITTED argument binds to the EMPTY STRING, not "left unsubstituted"
         // (asl-verified): the Aeon parallax macros gate optional fields on
         // `if "param" = ""` and expect the bare param to vanish where used
@@ -3194,7 +3252,7 @@ impl Asm {
                     .cloned()
                     .or_else(|| pos_iter.next())
                     .unwrap_or_default();
-                (p.clone(), v)
+                (p.clone(), qualify_macro_arg(v, caller_scope.as_deref()))
             })
             .collect();
         let mut expanded = Vec::new();
@@ -3209,9 +3267,29 @@ impl Asm {
             }
             expanded.push(SrcLine { text, base: l.base });
         }
+        // A `.`-local written LITERALLY in this macro body is scoped to the
+        // EXPANSION, not the caller's global label (asl-verified, T4 probe
+        // P1/P3): two expansions of one macro in a single global scope each own a
+        // private copy, and asl neither collides them nor exposes them as caller-
+        // qualified user symbols. Give the body a fresh, reserved scope name so
+        // `qualify(".x", scope)` → `<expansion>.x` is unique per expansion, then
+        // restore the caller's scope. The reserved prefix cannot alias a user
+        // global label (no source label begins with a space). A `.`-local that
+        // came in through an ARGUMENT was already qualified against `caller_scope`
+        // above, so it points at the caller's label and is unaffected here. All
+        // aeon body `.`-locals are def+ref within one expansion and reached only
+        // by fixed-length short branches, so this affects no layout.
+        //
+        // Limitations (none exercised by aeon): a macro body that references a
+        // caller-scope `.`-local WITHOUT it being passed as an argument, or
+        // defines a NON-dotted global label meant to become the outer scope
+        // afterwards, would diverge — aeon does neither.
+        self.macro_expansion_seq += 1;
+        self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
         self.macro_depth += 1;
         self.exec(&expanded);
         self.macro_depth -= 1;
+        self.scope = caller_scope;
     }
 }
 
@@ -3800,6 +3878,57 @@ fn qualify(name: &str, scope: Option<&str>) -> String {
         }
     } else {
         name.to_string()
+    }
+}
+
+/// asl zero-displacement optimization (probe-verified, unconditional — NOT
+/// `-A`-gated; probe in the T4 notes' companion `zd` matrix): a `(d16,An)` EA
+/// whose displacement is 0 encodes as `(An)`, dropping the extension word
+/// (`move.b d0,0(a0)` → `1080` not `1140 0000`; `movem.l d0-d7,0(a0)` → `48D0`
+/// not `48E8 …0000`). This must be decided in the FRONT END, not the encoder,
+/// so the fragment carries the true (2-byte-shorter) EA length and the layout
+/// cursor stays correct. Callers apply it to every EA-general instruction;
+/// `movep` is the sole 68000 exception — mode 5 `(d16,An)` is its ONLY legal
+/// addressing (no register-indirect form), so it keeps `03C8 0000`. Every other
+/// EA instruction legally accepts mode 2 `(An)` wherever it accepts mode 5, so
+/// the collapse is always safe (this is 68000-specific; 68020+ is out of scope
+/// — Aeon pins `cpu 68000`).
+///
+/// Convergence: the displacement reaching here has already passed through
+/// `fold_imm`, which coerces an unresolved (forward-ref) displacement to a
+/// placeholder 0. So a Poison disp is optimized to `(An)` on an early pass and
+/// GROWS to `(d16,An)` (2→4 bytes) once it resolves nonzero — the same
+/// optimistic-short, grow-only discipline as the abs.w→abs.l / jmp-jsr width
+/// machinery. A resolved-nonzero disp never shrinks back to 0, so the fixpoint
+/// is monotone and converges to asl's minimal encoding (an extra pass, at worst,
+/// for a forward-ref disp that transits the placeholder 0). Aeon's real
+/// zero-disp sites (the `Init_DMA_Queue` `rept` at `.c=0`) resolve immediately
+/// and never transit a placeholder.
+fn collapse_zero_disp(op: &mut M68kOperand) {
+    if let M68kOperand::Disp16An(0, n) = *op {
+        *op = M68kOperand::Ind(n);
+    }
+}
+
+/// Qualify a macro argument that is a bare `.`-local against the CALLER's scope.
+/// A label passed into a macro (`…,.next_object,…`) names a symbol in the caller,
+/// so it must be resolved in the caller's scope, not the expansion's private one
+/// (see `expand_macro_inner`). Only a *clean* bare local (`.name`) is rewritten;
+/// compound or non-local argument text passes through untouched.
+///
+/// KNOWN over-match (not exercised by Aeon): the predicate cannot distinguish a
+/// bare local label from a lone size suffix / fractional token — a macro argument
+/// of literally `.w`/`.b`/`.l`/`.5` also satisfies `.` + alphanumerics and would
+/// be rewritten to `caller_scope.w` etc. Aeon never passes such a value as a
+/// macro argument (size suffixes ride on the mnemonic, not an argument slot).
+fn qualify_macro_arg(v: String, caller_scope: Option<&str>) -> String {
+    let is_bare_local = v.starts_with('.')
+        && v.len() > 1
+        && v[1..].chars().all(|c| c.is_alphanumeric() || c == '_');
+    if is_bare_local {
+        qualify(&v, caller_scope)
+    } else {
+        v
     }
 }
 

@@ -387,7 +387,63 @@ goldens and strict gates still green. The `$1012E`=`4EF9` full-ROM spot-assert n
 emit path (`m1c_rom`), so it lands in **T4** — T3 arms it (the object bank now assembles
 through resolve_layout→link with no guard trip).
 
-### T4 — First full-ROM emit + first-diff triage (A1)
+### T4 — First full-ROM emit + first-diff triage (A1). ✅ DONE (2026-07-05).
+
+**Result: Sigil's assembler is BYTE-EXACT for the entire non-debug ROM.** Proven two
+ways: (a) `sigil emit_rom` output == the assembled (pre-convsym) reference, sha256
+`286127635f52fa51`; (b) `sigil emit_rom` + real `convsym -a` + `fixheader` == the pinned
+`s4.bin`, sha256 `605631da…ad5117`. New strict gate `crates/sigil-harness/tests/m1d_rom.rs`
+(`full_rom_matches_assembled_reference`) asserts Sigil's ROM differs from `s4.bin` at
+EXACTLY 4 bytes — `{0x18E,0x18F}` (checksum) and `{0x1A6,0x1A7}` (ROM-end pointer low half)
+— both rewritten by the out-of-scope `convsym`/`fixheader` post-steps. Skip-green without
+aeon, like the others.
+
+**A1 scope decision (2026-07-05, user-confirmed):** the target of byte-exactness is the
+**assembled ROM**, NOT `build.sh`'s literal `s4.bin`. `build.sh` runs `convsym … -a`, which
+APPENDS the MD-Debugger `deb2` symbol table (~34 KB) and rewrites two header fields; that
+append is debug tooling (not executed / not game content — the MD-Debugger analogue of an
+ELF `.symtab`), and M1.B already modelled `convsym` as a no-op. Replicating convsym's deb2
+encoder was declined as large effort for zero assembler-correctness value. This is the
+key T4 finding that reshaped A1.
+
+**Four real assembler gaps found by first-diff triage and cured at the source of the class**
+(each probe-first, each with real-asl `t4_*` goldens; probes in
+`docs/superpowers/notes/2026-07-04-m1d-t4-macro-local-scope-probes.md` + companion scratch):
+1. **Macro-internal `.`-local scoping.** asl scopes a `.`-local defined INSIDE a macro body
+   to that EXPANSION (unique per expansion — `queueStaticDMA.done` expands 7× in one scope
+   with no collision), while a source-level `.`-local redefinition is a hard error (probes
+   P1/P3). Sigil qualified macro `.`-locals to the caller's global label → 14 false
+   `link()` duplicate-symbol collisions (the T3 hardening, firing correctly). Fix:
+   `expand_macro_inner` runs the body under a fresh reserved scope `" macro#N"`. A `.`-local
+   passed AS A MACRO ARGUMENT (`aabb_axis_test …,.next_object,…`) is qualified against the
+   CALLER scope before substitution (`qualify_macro_arg`) — asl evaluates args in the caller
+   context.
+2. **Compound PC-relative targets.** `qualify_expr` was shallow (top-level `Sym` only), so
+   `.`-locals nested in arithmetic — `jmp .cc_table-4(pc,d0.w)`, `bra.w .drain_end-.c*8` —
+   never qualified → the linker's global fold couldn't resolve them. Fix: `qualify_expr`
+   recurses (mirroring `resolve_dollar`); a new `fixup_target` helper folds-and-bakes the
+   target (`Expr::Int` when resolved) so env-only `rept`/`set` counters (`.c`) resolve at
+   the instruction (the counter's value HERE, not its final value) — the T3 bake pattern.
+3. **asl zero-displacement optimization.** `(d16,An)` with displacement 0 → `(An)`, dropping
+   the extension word (`move.b d0,0(a0)` → `1080`, not `1140 0000`) — unconditional (NOT
+   `-A`-gated), EXCEPT `movep` (no register-indirect form; keeps `03C8 0000`). This was the
+   first STRUCTURAL diff (a `rept` at `.c=0` in `Init_DMA_Queue`). Fix in
+   `convert_atoms_m68k`: rewrite `Disp16An(0,n)` → `Ind(n)` for every mnemonic but `movep`.
+   Must be a front-end choice (changes EA width 4→2) so the layout cursor stays correct.
+4. **Empty RAM sections.** Pure-`ds` sections (RAM vars phased to `$FFFF0000`+, `image_len`
+   0) carry a physical-counter LMA that aliases real code → false `emit_rom` overlap. Fix:
+   `flatten`/`flatten_checked` skip zero-byte sections (they emit no ROM bytes, faithful to
+   asl/p2bin).
+
+The predicted first-diffs (F1 padding, object-bank layout) did NOT fire — T0.1's padding
+model and T3's front-end width selection were already correct through the full ROM; the
+`$1012E`=`4EF9` object-bank grow landed byte-exact with no special handling. **All gates
+green** (workspace 48 suites; strict m1b 5 / m1c_vector_table 1 / m1d_rom 1 / M0 live 18
+incl `--include-ignored`; clippy `-D warnings`; `gen_snippet_vectors` churns only the 7 new
+`t4_*` blocks — non-circularity intact).
+
+---
+*(original T4 plan follows)*
 
 With recon at 0, run `m1c_rom` (assemble → resolve_layout → link → emit_rom vs
 `s4.bin`). Expect second-order surprises — this path has never run on real source.
@@ -411,9 +467,15 @@ Acceptance: `sha256` match, non-debug; promote `m1c_rom` from example to a
 
 Build the debug reference deliberately (aeon's `__DEBUG__` switch; record the exact
 invocation in PROVENANCE.md — the debug ROM is NOT the shipped `s4.bin`). Assemble the
-same config in sigil; sha256 match. Known dependency: T0.4 (`cmpm`). Expect the debug
+same config in sigil; compare. Known dependency: T0.4 (`cmpm`). Expect the debug
 surface (debugger.asm's `.ATTRIBUTE`/`switch`/`lowstring` paths, already implemented in
 M1.C) to get its first whole-image exercise.
+
+**A2 scope inherits T4's decision:** the debug reference is also post-processed by
+`convsym -a` (larger symbol table, since `__DEBUG__` adds symbols), so compare against the
+**assembled** debug ROM (the `m1d_rom` gate's "diff set is exactly the convsym-rewritten
+header bytes" shape, adjusted for the debug build's `EndOfRom`), not the convsym-appended
+artifact.
 
 ### T6 — Delete the stub table (A3)
 

@@ -265,15 +265,26 @@ fn apply_fixup(
 
 /// Materialize a full contiguous image: place each section's bytes at its LMA,
 /// filling all gaps (and the head) with `fill`. Sections must not overlap.
+///
+/// EMPTY sections are skipped: a pure-`ds`/Reserve section (RAM variable
+/// declarations phased to `$FFFF0000`+) reserves address space and defines
+/// labels but emits NO ROM bytes — asl/p2bin write no binary records for it.
+/// It carries a physical-counter LMA that can legitimately alias a real code
+/// section's range (both start near physical 0), so it must contribute nothing
+/// to, and never be range-checked against, the image.
 pub fn flatten(image: &LinkedImage, fill: u8) -> Vec<u8> {
     let end = image
         .sections
         .iter()
+        .filter(|s| !s.bytes.is_empty())
         .map(|s| s.lma as usize + s.bytes.len())
         .max()
         .unwrap_or(0);
     let mut out = vec![fill; end];
     for s in &image.sections {
+        if s.bytes.is_empty() {
+            continue;
+        }
         let start = s.lma as usize;
         out[start..start + s.bytes.len()].copy_from_slice(&s.bytes);
     }
@@ -282,9 +293,15 @@ pub fn flatten(image: &LinkedImage, fill: u8) -> Vec<u8> {
 
 /// Like `flatten`, but errors if any two sections' `[lma, lma+len)` ranges
 /// overlap (a mis-assigned LMA map would otherwise silently clobber bytes).
+/// Empty (zero-byte) sections are excluded — they place no bytes, so they can
+/// neither clobber nor overlap (see `flatten`).
 pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String> {
-    let mut ranges: Vec<(usize, usize, &str)> =
-        image.sections.iter().map(|s| (s.lma as usize, s.lma as usize + s.bytes.len(), s.name.as_str())).collect();
+    let mut ranges: Vec<(usize, usize, &str)> = image
+        .sections
+        .iter()
+        .filter(|s| !s.bytes.is_empty())
+        .map(|s| (s.lma as usize, s.lma as usize + s.bytes.len(), s.name.as_str()))
+        .collect();
     ranges.sort_by_key(|r| r.0);
     for w in ranges.windows(2) {
         if w[0].1 > w[1].0 {
