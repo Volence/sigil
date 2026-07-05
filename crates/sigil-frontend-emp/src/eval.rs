@@ -288,8 +288,14 @@ impl<'a> Evaluator<'a> {
             }
             // TODO(Plan 3/4): `asm { }` lowers to a `Code` value.
             ast::Expr::Asm { .. } => Value::Poison,
-            // TODO(T6b): evaluate to Value::Lambda capturing env.
-            ast::Expr::Lambda { .. } => Value::Poison,
+            // A lambda captures the *current* env by value (D2.12): the clone
+            // snapshots the defining scope, so later mutation of it cannot leak
+            // into an already-constructed lambda (matches `Env`'s clone contract).
+            ast::Expr::Lambda { params, body, .. } => Value::Lambda {
+                params: params.clone(),
+                body: body.clone(),
+                captured: env.clone(),
+            },
         }
     }
 
@@ -307,33 +313,51 @@ impl<'a> Evaluator<'a> {
                 // introduces a first-class Option value.
                 "none" => Value::Unit,
                 name => {
-                    // Local bindings shadow file-level consts: check `env` first.
+                    // Precedence (D2.12): local binding → file const → fn-ref.
+                    // A bare `comptime fn` name becomes a first-class `FnRef` so
+                    // it can be passed as a value (`xs.map(band_entry)`); env
+                    // vars and consts still shadow a same-named fn.
                     if let Some(v) = env.lookup(name) {
                         return v.clone();
                     }
-                    // Then fall back to a file-level const of the same name.
                     if self.consts.contains_key(name) {
                         return self.resolve_const(name, path.span);
+                    }
+                    if self.fns.contains_key(name) {
+                        return Value::FnRef(name.to_string());
                     }
                     self.error(path.span, format!("unknown name `{name}`"));
                     Value::Poison
                 }
             };
         }
-        // A two-segment `Enum.Variant` path resolves to a nullary enum value
-        // when `Enum` names a file-level enum. Payload-carrying construction
+        // A two-segment `a.b` path is, in precedence order: field access / `.len`
+        // on a value `a` (struct field, or the length of an array/string/range),
+        // then an `Enum.Variant` nullary value. Payload-carrying construction
         // (`Enum.Variant(x)`) parses as a `Call`, not a plain path.
         if path.segments.len() == 2 {
-            let (ty, variant) = (path.segments[0].as_str(), path.segments[1].as_str());
-            if let Some(decl) = self.enums.get(ty) {
-                if decl.variants.iter().any(|(v, _, _)| v == variant) {
+            let (a, b) = (path.segments[0].as_str(), path.segments[1].as_str());
+            // Step 1: does `a` resolve to a *value* (local binding, then const)?
+            let a_val = if let Some(v) = env.lookup(a) {
+                Some(v.clone())
+            } else if self.consts.contains_key(a) {
+                Some(self.resolve_const(a, path.span))
+            } else {
+                None
+            };
+            if let Some(v) = a_val {
+                return self.field_or_len(v, b, path.span);
+            }
+            // Step 2: a nullary `Enum.Variant` value.
+            if let Some(decl) = self.enums.get(a) {
+                if decl.variants.iter().any(|(v, _, _)| v == b) {
                     return Value::Enum {
-                        ty_name: ty.to_string(),
-                        variant: variant.to_string(),
+                        ty_name: a.to_string(),
+                        variant: b.to_string(),
                         payload: vec![],
                     };
                 }
-                self.error(path.span, format!("enum `{ty}` has no variant `{variant}`"));
+                self.error(path.span, format!("enum `{a}` has no variant `{b}`"));
                 return Value::Poison;
             }
         }
@@ -342,6 +366,38 @@ impl<'a> Evaluator<'a> {
         let full = path.segments.join(".");
         self.error(path.span, format!("unknown name `{full}`"));
         Value::Poison
+    }
+
+    /// Resolve a bare `a.b` where `a` is a value (D-P2.17/D-P2.18): a struct
+    /// field access, or the `.len` of an array/string/range. Anything else is an
+    /// error yielding `Poison`; a `Poison` receiver propagates silently.
+    ///
+    /// Note the ordering: on a struct, `b` is *always* a field name (so a struct
+    /// with a field literally named `len` reads that field, not a length).
+    fn field_or_len(&mut self, v: Value, field: &str, span: Span) -> Value {
+        match v {
+            Value::Poison => Value::Poison,
+            Value::Struct { ty_name, fields } => {
+                match fields.iter().find(|(n, _)| n == field) {
+                    Some((_, val)) => val.clone(),
+                    None => {
+                        self.error(span, format!("struct `{ty_name}` has no field `{field}`"));
+                        Value::Poison
+                    }
+                }
+            }
+            Value::Array(elems) if field == "len" => Value::Int(elems.len() as i128),
+            Value::Str(s) if field == "len" => Value::Int(s.chars().count() as i128),
+            // A half-open `lo..hi` has `max(0, hi - lo)` elements.
+            Value::Range { lo, hi } if field == "len" => Value::Int((hi - lo).max(0)),
+            other => {
+                self.error(
+                    span,
+                    format!("`{field}` is not a field or `.len` of {}", other.type_name()),
+                );
+                Value::Poison
+            }
+        }
     }
 
     /// Build a struct value from a written literal (D-P2.14, value level only):
@@ -741,13 +797,23 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    /// Evaluate a call expression. A single-segment callee names a `comptime fn`;
-    /// an unknown single name is an error. A multi-segment callee is a
-    /// method-style receiver call (`xs.map(..)`) handled by T6 — returned as
-    /// silent `Poison` here.
+    /// Evaluate a call expression. Dispatch order (D-P2.10): if the callee's
+    /// last segment is a §6.8 builtin (`len`/`map`/`filter`/`fold`/`find`/
+    /// `slice`/`val`), it is a builtin method call — builtins are *not*
+    /// user-shadowable, so this is checked before any user fn. Otherwise a
+    /// single-segment callee names a `comptime fn`; an unknown single name is an
+    /// error, and any other multi-segment callee (e.g. an enum payload
+    /// constructor, a later plan) is a silent `Poison`.
     fn eval_call(&mut self, callee: &ast::Path, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
-        // Multi-segment callee: a `recv.method(..)` builtin or enum constructor,
-        // both of which arrive in T6. Silently poison for now (no diagnostic).
+        // Builtins win over user fns and are the only method-form (`a.b(..)`)
+        // calls handled here.
+        if let Some(method) = callee.segments.last() {
+            if is_builtin(method) {
+                return self.eval_builtin_call(callee, method.clone(), args, span, env);
+            }
+        }
+        // Non-builtin, non-single-segment callee: an enum payload constructor or
+        // module path, both later plans. Silently poison for now (no diagnostic).
         if callee.segments.len() != 1 {
             return Value::Poison;
         }
@@ -775,21 +841,48 @@ impl<'a> Evaluator<'a> {
         if self.pending_return.is_some() {
             return Value::Poison;
         }
+        self.call_fn_with_values(decl, bound, span)
+    }
+
+    /// Invoke a `comptime fn` with already-evaluated positional argument values
+    /// (D-P2.16). Factored out of [`eval_call`](Self::eval_call) so a first-class
+    /// [`FnRef`](Value::FnRef) applied via [`apply_callable`](Self::apply_callable)
+    /// runs through the exact same call machinery: arity check, depth/step
+    /// budgets, a fresh pure env seeing only the params, and `Flow::Return`
+    /// handling. `arg_values` must already be free of any pending return.
+    fn call_fn_with_values(
+        &mut self,
+        decl: &'a ast::ComptimeFnDecl,
+        arg_values: Vec<Value>,
+        call_span: Span,
+    ) -> Value {
+        if arg_values.len() != decl.params.len() {
+            self.error(
+                call_span,
+                format!(
+                    "function `{}` expects {} argument(s), got {}",
+                    decl.name,
+                    decl.params.len(),
+                    arg_values.len()
+                ),
+            );
+            return Value::Poison;
+        }
         // Recursion / stack safety (D-P2.16): bound the depth *before* recursing
         // so runaway recursion is named, not a native stack overflow.
         if self.call_stack.len() >= MAX_CALL_DEPTH {
-            self.abort(span, "recursion too deep");
+            self.abort(call_span, "recursion too deep");
             return Value::Poison;
         }
         if !self.bump_step() {
-            self.abort(span, "step budget exceeded");
+            self.abort(call_span, "step budget exceeded");
             return Value::Poison;
         }
-        self.call_stack.push((name.to_string(), span));
+        self.call_stack.push((decl.name.clone(), call_span));
         // Comptime fns are pure: a fresh env, seeing only their params (and, via
         // `self`, file consts/fns) — never the caller's locals.
         let mut fenv = Env::new();
-        for ((pname, _, _), v) in decl.params.iter().zip(bound) {
+        for ((pname, _, _), v) in decl.params.iter().zip(arg_values) {
             fenv.define(pname.clone(), v, false);
         }
         // A comptime-fn body IS a comptime-mutable context (D-P2.5): `comptime
@@ -800,6 +893,327 @@ impl<'a> Evaluator<'a> {
         match flow {
             Flow::Return(v) | Flow::Normal(v) => v,
         }
+    }
+
+    /// Apply a callable [`Value`] to already-evaluated arguments (D2.12): a
+    /// [`Lambda`](Value::Lambda) (arity-checked, run in its captured env plus a
+    /// fresh scope binding the params) or a [`FnRef`](Value::FnRef) (dispatched
+    /// through [`call_fn_with_values`](Self::call_fn_with_values)). A `Poison`
+    /// callable propagates silently; any other value type is "not callable".
+    fn apply_callable(&mut self, callable: Value, arg_values: Vec<Value>, call_span: Span) -> Value {
+        if self.aborted {
+            return Value::Poison;
+        }
+        match callable {
+            Value::Poison => Value::Poison,
+            Value::Lambda { params, body, captured } => {
+                if params.len() != arg_values.len() {
+                    self.error(
+                        call_span,
+                        format!(
+                            "lambda expects {} argument(s), got {}",
+                            params.len(),
+                            arg_values.len()
+                        ),
+                    );
+                    return Value::Poison;
+                }
+                if !self.bump_step() {
+                    self.abort(call_span, "step budget exceeded");
+                    return Value::Poison;
+                }
+                // Run in the captured env (owned via the moved `Value`) plus a
+                // fresh scope holding the immutable params. Lambda bodies are
+                // pure expressions, so no `Flow`/return handling is needed.
+                let mut lenv = captured;
+                lenv.push_scope();
+                for (p, v) in params.iter().zip(arg_values) {
+                    lenv.define(p.clone(), v, false);
+                }
+                self.eval_expr(&body, &mut lenv)
+            }
+            Value::FnRef(name) => match self.fns.get(name.as_str()).copied() {
+                Some(decl) => self.call_fn_with_values(decl, arg_values, call_span),
+                None => {
+                    self.error(call_span, format!("unknown function `{name}`"));
+                    Value::Poison
+                }
+            },
+            other => {
+                self.error(
+                    call_span,
+                    format!("value of type {} is not callable", other.type_name()),
+                );
+                Value::Poison
+            }
+        }
+    }
+
+    // ---- §6.8 builtins -----------------------------------------------------
+
+    /// Dispatch a §6.8 builtin call, extracting the receiver and the builtin's
+    /// positional arguments from the two surface forms:
+    /// - method form (`recv.method(args...)`, `callee.segments.len() >= 2`): the
+    ///   receiver is the callee prefix `recv`, the builtin args are `args`.
+    /// - free/pipe form (`method(recv, args...)`, single-segment callee — this
+    ///   is also the shape a `recv |> method(args...)` pipe desugars to): the
+    ///   receiver is the first arg, the builtin args are the rest.
+    ///
+    /// Builtins take positional args only; a named arg is diagnosed. A `Poison`
+    /// receiver propagates silently.
+    fn eval_builtin_call(
+        &mut self,
+        callee: &ast::Path,
+        method: String,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        let (receiver, arg_values) = if callee.segments.len() >= 2 {
+            // Method form: the receiver is the callee's prefix path.
+            let n = callee.segments.len();
+            let prefix = ast::Path {
+                segments: callee.segments[..n - 1].to_vec(),
+                span: callee.span,
+            };
+            let recv = self.eval_expr(&ast::Expr::Path(prefix), env);
+            let vals = self.eval_builtin_args(args, env);
+            (recv, vals)
+        } else {
+            // Free/pipe form: the receiver is the first positional argument.
+            if args.is_empty() {
+                self.error(span, format!("builtin `{method}` needs a receiver"));
+                return Value::Poison;
+            }
+            let recv = self.eval_expr(&args[0].value, env);
+            let vals = self.eval_builtin_args(&args[1..], env);
+            (recv, vals)
+        };
+        if self.aborted {
+            return Value::Poison;
+        }
+        self.eval_builtin(receiver, &method, arg_values, span)
+    }
+
+    /// Evaluate a builtin's positional argument expressions to values. A named
+    /// argument is a diagnostic (builtins take positional args only); its value
+    /// is still evaluated so downstream arity/type checks stay meaningful.
+    fn eval_builtin_args(&mut self, args: &[ast::Arg], env: &mut Env) -> Vec<Value> {
+        args.iter()
+            .map(|a| {
+                if a.name.is_some() {
+                    self.error(a.span, "builtin methods take positional arguments only");
+                }
+                self.eval_expr(&a.value, env)
+            })
+            .collect()
+    }
+
+    /// Dispatch a resolved builtin on its receiver value (D-P2.18). Arrays and
+    /// ranges share the sequence builtins (a range is materialized to its
+    /// elements); strings have their own set. A `Poison` receiver is silent; any
+    /// other receiver type is "`method` is not defined on <type>".
+    fn eval_builtin(&mut self, receiver: Value, method: &str, args: Vec<Value>, span: Span) -> Value {
+        match receiver {
+            Value::Array(elems) => self.eval_seq_builtin(elems, method, args, span),
+            // A range participates in the sequence builtins by materializing to a
+            // `Vec` of its `Int` elements (half-open `lo..hi`).
+            Value::Range { lo, hi } => {
+                let elems: Vec<Value> = (lo..hi).map(Value::Int).collect();
+                self.eval_seq_builtin(elems, method, args, span)
+            }
+            Value::Str(s) => self.eval_str_builtin(s, method, args, span),
+            Value::Poison => Value::Poison,
+            other => {
+                self.error(span, format!("`{method}` is not defined on {}", other.type_name()));
+                Value::Poison
+            }
+        }
+    }
+
+    /// The array/range builtins: `len`, `map`, `filter`, `fold`. `elems` is the
+    /// already-materialized element sequence.
+    fn eval_seq_builtin(
+        &mut self,
+        elems: Vec<Value>,
+        method: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> Value {
+        match method {
+            "len" => {
+                if !self.check_arity(method, &args, 0, span) {
+                    return Value::Poison;
+                }
+                Value::Int(elems.len() as i128)
+            }
+            "map" => {
+                if !self.check_arity(method, &args, 1, span) {
+                    return Value::Poison;
+                }
+                let f = args.into_iter().next().unwrap();
+                let mut out = Vec::with_capacity(elems.len());
+                for el in elems {
+                    out.push(self.apply_callable(f.clone(), vec![el], span));
+                    if self.aborted {
+                        return Value::Poison;
+                    }
+                }
+                Value::Array(out)
+            }
+            "filter" => {
+                if !self.check_arity(method, &args, 1, span) {
+                    return Value::Poison;
+                }
+                let f = args.into_iter().next().unwrap();
+                let mut out = Vec::new();
+                for el in elems {
+                    match self.apply_callable(f.clone(), vec![el.clone()], span) {
+                        Value::Bool(true) => out.push(el),
+                        Value::Bool(false) => {}
+                        // The predicate already reported its own error upstream.
+                        Value::Poison => return Value::Poison,
+                        other => {
+                            self.error(
+                                span,
+                                format!(
+                                    "filter predicate must return bool, got {}",
+                                    other.type_name()
+                                ),
+                            );
+                            return Value::Poison;
+                        }
+                    }
+                    if self.aborted {
+                        return Value::Poison;
+                    }
+                }
+                Value::Array(out)
+            }
+            "fold" => {
+                if !self.check_arity(method, &args, 2, span) {
+                    return Value::Poison;
+                }
+                let mut it = args.into_iter();
+                let mut acc = it.next().unwrap();
+                let f = it.next().unwrap();
+                for el in elems {
+                    acc = self.apply_callable(f.clone(), vec![acc, el], span);
+                    if self.aborted {
+                        return Value::Poison;
+                    }
+                }
+                acc
+            }
+            _ => {
+                self.error(span, format!("`{method}` is not defined on array"));
+                Value::Poison
+            }
+        }
+    }
+
+    /// The string builtins: `len`, `find`, `slice`, `val` (D-P2.18). All indices
+    /// are CHAR indices (Genesis strings are ASCII, but multi-byte input still
+    /// behaves correctly).
+    fn eval_str_builtin(
+        &mut self,
+        s: String,
+        method: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> Value {
+        match method {
+            "len" => {
+                if !self.check_arity(method, &args, 0, span) {
+                    return Value::Poison;
+                }
+                Value::Int(s.chars().count() as i128)
+            }
+            "find" => {
+                if !self.check_arity(method, &args, 1, span) {
+                    return Value::Poison;
+                }
+                let needle = match &args[0] {
+                    Value::Str(n) => n,
+                    Value::Poison => return Value::Poison,
+                    other => {
+                        self.error(
+                            span,
+                            format!("`find` needle must be a string, got {}", other.type_name()),
+                        );
+                        return Value::Poison;
+                    }
+                };
+                // Standard first-occurrence search (NO AS `strstr` last-char bug):
+                // find the byte offset, then convert it to a char index.
+                match s.find(needle.as_str()) {
+                    Some(byte) => Value::Int(s[..byte].chars().count() as i128),
+                    None => Value::Int(-1),
+                }
+            }
+            "slice" => {
+                if !self.check_arity(method, &args, 2, span) {
+                    return Value::Poison;
+                }
+                let (start, end) = match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => (*a, *b),
+                    (Value::Poison, _) | (_, Value::Poison) => return Value::Poison,
+                    (a, b) => {
+                        self.error(
+                            span,
+                            format!(
+                                "slice bounds must be int, got {} and {}",
+                                a.type_name(),
+                                b.type_name()
+                            ),
+                        );
+                        return Value::Poison;
+                    }
+                };
+                let chars: Vec<char> = s.chars().collect();
+                let n = chars.len() as i128;
+                // Half-open `[start, end)`; validate `0 <= start <= end <= len`.
+                if start < 0 || end < start || end > n {
+                    self.error(
+                        span,
+                        format!("slice [{start}..{end}] out of range for string of length {n}"),
+                    );
+                    return Value::Poison;
+                }
+                let sub: String = chars[start as usize..end as usize].iter().collect();
+                Value::Str(sub)
+            }
+            "val" => {
+                if !self.check_arity(method, &args, 0, span) {
+                    return Value::Poison;
+                }
+                match parse_emp_int(&s) {
+                    Some(n) => Value::Int(n),
+                    None => {
+                        self.error(span, format!("cannot parse `{s}` as an integer"));
+                        Value::Poison
+                    }
+                }
+            }
+            _ => {
+                self.error(span, format!("`{method}` is not defined on string"));
+                Value::Poison
+            }
+        }
+    }
+
+    /// Check a builtin got exactly `want` positional arguments; emit an error and
+    /// return `false` otherwise. (Any `Poison` argument is left for the caller to
+    /// propagate — arity is validated regardless of argument values.)
+    fn check_arity(&mut self, method: &str, args: &[Value], want: usize, span: Span) -> bool {
+        if args.len() == want {
+            return true;
+        }
+        self.error(
+            span,
+            format!("`{method}` expects {want} argument(s), got {}", args.len()),
+        );
+        false
     }
 
     /// Bind call `args` to `decl`'s parameters, returning a value per parameter
@@ -1235,6 +1649,36 @@ impl<'a> Evaluator<'a> {
         );
         Value::Poison
     }
+}
+
+/// Whether `name` is a §6.8 builtin method (D-P2.10 — the closed, non-user-
+/// shadowable set). `len` overlaps the array/range and string sets; the receiver
+/// type disambiguates at dispatch.
+fn is_builtin(name: &str) -> bool {
+    matches!(name, "len" | "map" | "filter" | "fold" | "find" | "slice" | "val")
+}
+
+/// Parse a trimmed string as an `.emp` integer literal for the `val` builtin
+/// (D-P2.18): an optional leading `-`, then `$HHHH`/`0xHHHH` (hex), `0bBBBB`
+/// (binary), or decimal digits. Returns `None` on any malformed input. Mirrors
+/// the lexer's numeric grammar (extended with `0x` as an accepted hex spelling)
+/// reduced to integer literals.
+fn parse_emp_int(s: &str) -> Option<i128> {
+    let t = s.trim();
+    let (neg, rest) = match t.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, t),
+    };
+    let mag = if let Some(h) = rest.strip_prefix('$') {
+        i128::from_str_radix(h, 16).ok()
+    } else if let Some(h) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
+        i128::from_str_radix(h, 16).ok()
+    } else if let Some(bits) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
+        i128::from_str_radix(bits, 2).ok()
+    } else {
+        rest.parse::<i128>().ok()
+    }?;
+    Some(if neg { -mag } else { mag })
 }
 
 /// Coerce a numeric value to `f64` for mixed Int/Float promotion; `None` for

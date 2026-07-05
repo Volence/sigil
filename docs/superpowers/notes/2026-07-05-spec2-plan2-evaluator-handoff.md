@@ -137,3 +137,15 @@ leave a clear state for the wake-up review.
   operand sites + an INVARIANT doc so T5's new arms can't reintroduce the leak; extracted
   `MAX_CHAIN_FRAMES`, fixed spurious arity diags after mid-arg return, preserved thread panic. New
   `tests/eval_fns.rs` (23 tests). **135 tests total**, clippy clean.
+- **T5 DONE** (impl `c2430d5`, quality `4f9321e`). Control flow: `comptime_ctx` mutability-context
+  counter, `Stmt::Var`/`Assign`/`ComptimeBlock`/`While` + `Expr::For`/`Stmt::For`. `for` → Array of
+  per-iteration body values (Range/Array iterables, lazy range), `while` → Unit (step-budget
+  bounded), comptime var/assign honor mutability + the `eval_operand`/pending_return invariant.
+  Two-stage review: spec ✅ (live-probed all 4 return-in-operand cases, ctx balance, and confirmed
+  the infinite-`while` test genuinely hits the 5M budget → "step budget exceeded"); quality Approve
+  → unified the Range/Array loop bodies, added `exec_scoped`/`exec_comptime_scoped` helpers (killed
+  the 4× push/exec/pop idiom + made ctx edit-proof), +2 coverage tests. New
+  `tests/eval_control_flow.rs` (17 tests). **153 tests total**, clippy clean.
+- **T6 IN PROGRESS** — split per **D-P2.17** into T6a (frontend: `|>` token + `|params| e` lambdas
+  + `Expr::Lambda` + pipe→Call desugar) then T6b (evaluator: §6.8 builtins + struct field access +
+  `.len` + lambda application + method/free/pipe dispatch).

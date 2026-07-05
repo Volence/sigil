@@ -70,6 +70,12 @@ pub enum Value {
         /// The environment captured at the lambda's definition site.
         captured: Env,
     },
+    /// A first-class reference to a named `comptime fn` (D2.12). A bare
+    /// function name evaluates to this so it can be passed as a value —
+    /// `bands.map(band_entry)` feeds `band_entry` to `map`. Carries only the
+    /// fn's name; the [`Evaluator`](crate::eval::Evaluator) resolves it against
+    /// the file's fn index when the value is applied.
+    FnRef(String),
     /// An "error already reported here" sentinel (D-P2.9). Operations on
     /// `Poison` yield `Poison` silently so one bad subexpression does not fan
     /// out into a cascade of diagnostics.
@@ -91,6 +97,7 @@ impl Value {
             Value::Tuple(_) => "tuple",
             Value::Unit => "unit",
             Value::Lambda { .. } => "lambda",
+            Value::FnRef(_) => "fn",
             Value::Poison => "poison",
         }
     }
@@ -160,6 +167,7 @@ impl fmt::Display for Value {
             }
             Value::Unit => f.write_str("()"),
             Value::Lambda { .. } => f.write_str("<lambda>"),
+            Value::FnRef(name) => write!(f, "<fn {name}>"),
             Value::Poison => f.write_str("<poison>"),
         }
     }
@@ -260,6 +268,11 @@ mod tests {
     }
 
     #[test]
+    fn display_fn_ref() {
+        assert_eq!(Value::FnRef("dbl".to_string()).to_string(), "<fn dbl>");
+    }
+
+    #[test]
     fn type_names() {
         assert_eq!(i(1).type_name(), "int");
         assert_eq!(Value::Float(1.0).type_name(), "float");
@@ -287,6 +300,7 @@ mod tests {
             .type_name(),
             "lambda"
         );
+        assert_eq!(Value::FnRef("f".into()).type_name(), "fn");
         assert_eq!(Value::Poison.type_name(), "poison");
     }
 
