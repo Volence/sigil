@@ -477,12 +477,46 @@ M1.C) to get its first whole-image exercise.
 header bytes" shape, adjusted for the debug build's `EndOfRom`), not the convsym-appended
 artifact.
 
-### T6 — Delete the stub table (A3)
+### T6 — Delete the stub table (A3). ✅ DONE (2026-07-05).
 
-The ~42-symbol M0 stub table exists only because the M0-era harness assembled the Z80
-regions without the 68k side. The full build defines everything (recon: zero stubs).
-Delete it; re-run the M0 acceptance path via the full-build machinery. Acceptance: no
-stub file, all gates green.
+**Result:** the ~42-symbol stub table and the entire M0 **bounded harness** are retired;
+the full build defines everything (zero stubs). Commit `21cf234`, code-quality review ✅
+(ready-to-merge, no blocking issues; the one actioned suggestion — an empty-section guard
+against a vacuous pass — is folded in).
+
+The bounded harness (`harness_root.asm` + `golden/stub-syms.toml` + `build_harness`)
+assembled Regions A+B *in isolation*, stubbing the leaf symbols the 68k side it did not
+assemble would define. That scaffolding existed only because Sigil could not yet assemble
+the whole 68k ROM. T4 removed that premise. So T6 **retired the bounded harness wholesale**
+rather than stub-freeing it piece by piece (every consumer had to change anyway):
+
+- **Deleted:** `harness_root.asm`, `golden/{stub-syms.toml,windows.toml,region_a.bin,
+  region_b.bin,sigil_a.bin,sigil_b.bin}`, the `regen` bin, and the lib helpers
+  `build_harness`/`assemble_reference_regions`/`reference_options`/`parse_stub_syms`/
+  `load_stub_syms`/`golden_path`/`LmaMap`/`assign_lmas`/`derive_region_*`/
+  `parse_lst_symbols`/`RegionWindow`/`diff_region`.
+- **New M0 acceptance gate** `crates/sigil-harness/tests/m0_regions.rs`: the full non-debug
+  build (no stubs) → locate the linked sections at LMA `0x3EA` (Region A) / `0x60000`
+  (Region B) → assert each byte-identical to the live `aeon/s4.bin` window. Region
+  **lengths** are read from the live sections (not pinned), so it tracks driver growth; an
+  empty-section guard keeps the compare from passing vacuously. Reference-gated exactly like
+  `m1d_rom` (skip-green without aeon; `SIGIL_STRICT_GATE=1` hard-fails a missing reference).
+- **`lib.rs` slimmed** to one reference-build entry point: `assemble_full_rom(aeon)` +
+  `region_at_lma`. `m1d_rom` was DRY'd onto `assemble_full_rom` (behavior-preserving —
+  same sha256). The CLI `build`/`diff` subcommands were repointed to the full build
+  (`build -o` emits the full ROM; `diff` compares Regions A+B vs `aeon/s4.bin`).
+- **Docs:** `golden/PROVENANCE.md` M0 section rewritten; the `eval.rs`
+  `dedup_section_names` comment's dead `build_harness` referent replaced.
+
+All gates green: workspace tests; clippy `-D warnings`; strict `m0_regions` 1 / `m1b_gate`
+5 / `m1c_vector_table` 1 / `m1d_rom` 1 (a non-`#[ignore]` skip-green test, so
+`--include-ignored` is a harmless superset, not a requirement). CLI `build -o` emits sha256
+`286127635f52fa51…` (== the T4 assembled ROM).
+
+**Original scope (for reference).** The ~42-symbol M0 stub table exists only because the
+M0-era harness assembled the Z80 regions without the 68k side. The full build defines
+everything (recon: zero stubs). Delete it; re-run the M0 acceptance path via the full-build
+machinery. Acceptance: no stub file, all gates green.
 
 ### T7 — Spec + doc reconciliation (A4; anytime, must land before milestone close)
 
