@@ -8,7 +8,10 @@
 //! symbolic fixup the linker resolves. T2 grows the real per-CPU byte-order /
 //! fixup-kind serializer, which lives in [`data`]. Instruction lowering is T3+.
 
+mod code;
 mod data;
+
+pub use code::lower_code_buf;
 
 use crate::ast;
 use crate::layout::eval_data;

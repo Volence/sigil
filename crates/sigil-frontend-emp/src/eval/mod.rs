@@ -9,6 +9,7 @@
 //! constructors, and the crate's top-level entry points ([`eval_const`]);
 //! the submodules contribute method groups via additional `impl Evaluator`
 //! blocks.
+mod asm;
 mod builtins;
 mod call;
 mod control;
@@ -161,6 +162,15 @@ pub struct Evaluator<'a> {
     /// `layout_in_progress`) as a false cycle. Construction/refinement re-entrancy
     /// and size/layout re-entrancy are genuinely different concerns.
     pub(crate) refine_check_in_progress: Vec<String>,
+    /// Monotonic instantiation counter for `asm { }` label hygiene (D-P4.6, T3).
+    /// Each `asm { }` evaluation takes a fresh id `k`, used to rename its
+    /// non-`export` local labels to unique symbols (`$asm{k}$name`) so that two
+    /// instantiations of the same template never collide, while references to a
+    /// `.name` label WITHIN one instantiation rewrite to the same fresh symbol so
+    /// intra-`asm{}` branches still resolve. The FULL hygiene model (`export`
+    /// making a label caller-visible as `Owner.name`, cross-`asm{}` references)
+    /// is T5; T3 only does the minimal counter + rename.
+    asm_counter: u32,
 }
 
 impl<'a> Evaluator<'a> {
@@ -190,6 +200,7 @@ impl<'a> Evaluator<'a> {
             data_memo: HashMap::new(),
             struct_construct_in_progress: Vec::new(),
             refine_check_in_progress: Vec::new(),
+            asm_counter: 0,
         }
     }
 
