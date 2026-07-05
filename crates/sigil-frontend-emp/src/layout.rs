@@ -267,8 +267,14 @@ impl<'a> Evaluator<'a> {
     /// (also `None`), so a reported sub-error does not double-report.
     fn eval_const_index(&mut self, expr: &ast::Expr) -> Option<i128> {
         let mut env = Env::new();
-        match self.eval_expr(expr, &mut env) {
-            Value::Int(n) => Some(n),
+        let v = self.eval_expr(expr, &mut env);
+        // A `Value::Typed` (a newtype/fixed value) erases to its stored int
+        // (§8.3), so a nominally-typed comptime value is still a usable array
+        // length / refinement bound.
+        if let Some(n) = v.as_stored_int() {
+            return Some(n);
+        }
+        match v {
             Value::Poison => None,
             other => {
                 self.error(

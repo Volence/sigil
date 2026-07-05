@@ -346,7 +346,12 @@ impl<'a> Evaluator<'a> {
         };
         let ty = crate::layout::Ty::Newtype(decl.name.clone());
         if self.check_value_fits_ty(&ty, n, span) {
-            Value::Int(n)
+            // T5: construction now produces a `Value::Typed` carrying the
+            // nominal newtype (was the erased bare `Int` in T4). The stored int
+            // is the checked value — for a newtype over `fixed<I,F>` it is the
+            // scaled value `x·2^F` exactly as written. Arithmetic on this value
+            // wraps at the underlying's width / scale (see `expr.rs`).
+            Value::Typed { ty: Box::new(ty), val: Box::new(Value::Int(n)) }
         } else {
             Value::Poison
         }
@@ -396,7 +401,8 @@ impl<'a> Evaluator<'a> {
         for variant in &decl.variants {
             let value = match &variant.value {
                 Some(expr) => match self.eval_expr(expr, &mut Env::new()) {
-                    Value::Int(n) => Some(n),
+                    // A typed discriminant erases to its stored int (§8.3).
+                    v if v.as_stored_int().is_some() => v.as_stored_int(),
                     Value::Poison => None,
                     other => {
                         self.error(
@@ -457,8 +463,12 @@ impl<'a> Evaluator<'a> {
         if self.aborted || self.pending_return.is_some() {
             return None;
         }
+        // A `Value::Typed` argument erases to its stored int (§8.3), so
+        // `Angle(Frame(5))`-style nesting is accepted transparently.
+        if let Some(n) = arg_val.as_stored_int() {
+            return Some(n);
+        }
         match arg_val {
-            Value::Int(n) => Some(n),
             // An already-reported error propagates silently (D-P2.9).
             Value::Poison => None,
             other => {

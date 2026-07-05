@@ -3,6 +3,7 @@
 //! dispatch that ties them together.
 use super::{Env, Evaluator, Flow};
 use crate::ast::{self, BinOp, UnOp};
+use crate::layout::Ty;
 use crate::value::Value;
 use sigil_span::Span;
 
@@ -119,10 +120,11 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
-            // TODO(Plan 3 T5): `rescale<I,F>` needs fixed-point conversion —
-            // grammar only for T1, so it stays a silent `Poison` for now
-            // (matches `Asm`/`If`-before-T-implemented above).
-            ast::Expr::Match { .. } | ast::Expr::Rescale { .. } => Value::Poison,
+            // `rescale<I,F>(x)` (T5, D2.10): retag a fixed-point value to the
+            // target scale, shifting its stored int by the fraction-bit delta.
+            ast::Expr::Rescale { i, f, arg, span } => self.eval_rescale(*i, *f, arg, *span, env),
+            // TODO(T6): `match` / sum-type destructuring.
+            ast::Expr::Match { .. } => Value::Poison,
         }
     }
 
@@ -283,16 +285,18 @@ impl<'a> Evaluator<'a> {
                 poisoned = true;
                 continue;
             };
+            // A `Value::Typed` field value erases to its stored int (§8.3).
+            if let Some(n) = v.as_stored_int() {
+                let max = (1i128 << fl.bits) - 1;
+                if self.check_in_range(n, 0, max, fspan, &format!("bitfield field '{fname}'")) {
+                    packed |= n << fl.lsb;
+                } else {
+                    poisoned = true;
+                }
+                continue;
+            }
             match v {
                 Value::Poison => poisoned = true,
-                Value::Int(n) => {
-                    let max = (1i128 << fl.bits) - 1;
-                    if self.check_in_range(n, 0, max, fspan, &format!("bitfield field '{fname}'")) {
-                        packed |= n << fl.lsb;
-                    } else {
-                        poisoned = true;
-                    }
-                }
                 other => {
                     self.error(
                         fspan,
@@ -359,6 +363,13 @@ impl<'a> Evaluator<'a> {
         if matches!(lhs, Value::Poison) || matches!(rhs, Value::Poison) {
             return Value::Poison;
         }
+        // T5 (D-P3.3): if EITHER operand carries a sized nominal type, the whole
+        // op is type-aware — it wraps at the underlying's width/scale and stays
+        // typed. This is the ONLY place comptime arithmetic wraps; bare `Int op
+        // Int` keeps the Plan-2 overflow-is-error behaviour below, untouched.
+        if matches!(lhs, Value::Typed { .. }) || matches!(rhs, Value::Typed { .. }) {
+            return self.eval_typed_binary(op, lhs, rhs, span);
+        }
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 self.eval_arith(op, lhs, rhs, span)
@@ -371,6 +382,242 @@ impl<'a> Evaluator<'a> {
             // Short-circuit operators were dispatched above.
             BinOp::And | BinOp::Or => unreachable!("logical ops handled by eval_logical"),
         }
+    }
+
+    /// Type-aware binary op (T5, D-P3.3): at least one operand is a
+    /// [`Value::Typed`]. Resolves both operands to `(Ty, i128)` — coercing a
+    /// bare `Int` into the typed operand's type (the ergonomic "typed + literal"
+    /// case) — then dispatches on the effective underlying type. A `Typed` beside
+    /// a non-int, non-typed operand (a `Float`, `Bool`, `Str`, …) is a plain type
+    /// error.
+    fn eval_typed_binary(&mut self, op: BinOp, lhs: Value, rhs: Value, span: Span) -> Value {
+        let (tl, nl, tr, nr) = match (lhs, rhs) {
+            (Value::Typed { ty: tl, val: vl }, Value::Typed { ty: tr, val: vr }) => {
+                match (vl.as_stored_int(), vr.as_stored_int()) {
+                    (Some(a), Some(b)) => (*tl, a, *tr, b),
+                    // A typed value whose stored payload is not an integer is a
+                    // malformed value (already-reported upstream); stay silent.
+                    _ => return Value::Poison,
+                }
+            }
+            // `Typed ⊕ bare Int`: coerce the literal into the typed operand's
+            // type, then treat it as a same-type op.
+            (Value::Typed { ty, val }, other) => match (val.as_stored_int(), other.as_stored_int()) {
+                (Some(a), Some(b)) => (*ty.clone(), a, *ty, b),
+                _ => return self.binop_type_error(span, binop_symbol(op), &Value::Typed { ty, val }, &other),
+            },
+            (other, Value::Typed { ty, val }) => match (other.as_stored_int(), val.as_stored_int()) {
+                (Some(a), Some(b)) => (*ty.clone(), a, *ty, b),
+                _ => return self.binop_type_error(span, binop_symbol(op), &other, &Value::Typed { ty, val }),
+            },
+            // Unreachable: the caller only routes here when one side is `Typed`.
+            (l, r) => return self.binop_type_error(span, binop_symbol(op), &l, &r),
+        };
+        self.typed_op(op, tl, nl, tr, nr, span)
+    }
+
+    /// Dispatch a same-or-cross-type typed op on two resolved `(Ty, i128)`
+    /// operands. Resolves each nominal type to its effective underlying
+    /// ([`Ty::Prim`] or [`Ty::Fixed`]) and routes to the width-wrapping prim
+    /// path or the scale-aware fixed path. Cross-type mixing (different nominal
+    /// types that are not a fixed/fixed scale mismatch) is `[cross-type mix]`.
+    fn typed_op(&mut self, op: BinOp, tl: Ty, nl: i128, tr: Ty, nr: i128, span: Span) -> Value {
+        let ul = self.effective_underlying(&tl);
+        let ur = self.effective_underlying(&tr);
+        match (&ul, &ur) {
+            (Ty::Poison, _) | (_, Ty::Poison) => Value::Poison,
+            (Ty::Fixed { i: il, f: fl }, Ty::Fixed { i: ir, f: fr }) => {
+                self.fixed_op(op, &tl, (*il, *fl), nl, &tr, (*ir, *fr), nr, span)
+            }
+            (Ty::Prim { width, signed }, Ty::Prim { .. }) => {
+                // Prim-underlying values must share the SAME nominal type (there
+                // is no meaningful cross-newtype arithmetic — D2.9 / Appendix E).
+                if tl != tr {
+                    return self.cross_type_mix(&tl, &tr, span);
+                }
+                self.prim_op(op, tl, *width, *signed, nl, nr, span)
+            }
+            // A fixed mixed with a prim (or any other underlying) at different
+            // nominal types is a cross-type mix.
+            _ => self.cross_type_mix(&tl, &tr, span),
+        }
+    }
+
+    /// Resolve a nominal [`Ty`] to its effective underlying — following
+    /// [`Ty::Newtype`] chains (and [`Ty::Refined`] wrappers) down to a
+    /// [`Ty::Prim`] or [`Ty::Fixed`] — for arithmetic dispatch. Cycle-guarded
+    /// against the shared [`layout_in_progress`](Evaluator) stack (a
+    /// `newtype A = B; newtype B = A` chain), returning [`Ty::Poison`] on a
+    /// detected cycle. A construction already validated the value, so this
+    /// normally bottoms out cleanly.
+    fn effective_underlying(&mut self, ty: &Ty) -> Ty {
+        match ty {
+            Ty::Newtype(name) => {
+                if self.layout_in_progress.iter().any(|n| n == name) {
+                    return Ty::Poison;
+                }
+                let Some(decl) = self.newtypes.get(name.as_str()).copied() else {
+                    return Ty::Poison;
+                };
+                self.layout_in_progress.push(name.to_string());
+                let underlying = self.resolve_type(&decl.underlying);
+                let result = self.effective_underlying(&underlying);
+                self.layout_in_progress.pop();
+                result
+            }
+            Ty::Refined { inner, .. } => self.effective_underlying(inner),
+            other => other.clone(),
+        }
+    }
+
+    /// A prim-underlying typed op (D2.9): `+ - * / %` and bitwise/shift compute
+    /// on the stored ints then WRAP at the underlying's `width*8` bits (two's
+    /// complement, respecting `signed`), staying [`Value::Typed`] with the same
+    /// nominal type. Comparisons compare the stored ints and yield a bare
+    /// [`Value::Bool`]. `++` is not defined on a scalar.
+    #[allow(clippy::too_many_arguments)]
+    fn prim_op(&mut self, op: BinOp, ty: Ty, width: u8, signed: bool, nl: i128, nr: i128, span: Span) -> Value {
+        let bits = u32::from(width) * 8;
+        let typed = |n: i128| Value::Typed { ty: Box::new(ty.clone()), val: Box::new(Value::Int(n)) };
+        match op {
+            BinOp::Add => typed(wrap_bits(nl.wrapping_add(nr), bits, signed)),
+            BinOp::Sub => typed(wrap_bits(nl.wrapping_sub(nr), bits, signed)),
+            BinOp::Mul => typed(wrap_bits(nl.wrapping_mul(nr), bits, signed)),
+            BinOp::Div => {
+                if nr == 0 {
+                    self.error(span, "division by zero");
+                    return Value::Poison;
+                }
+                typed(wrap_bits(nl.wrapping_div(nr), bits, signed))
+            }
+            BinOp::Mod => {
+                if nr == 0 {
+                    self.error(span, "modulo by zero");
+                    return Value::Poison;
+                }
+                typed(wrap_bits(nl.wrapping_rem(nr), bits, signed))
+            }
+            BinOp::BitAnd => typed(wrap_bits(nl & nr, bits, signed)),
+            BinOp::BitOr => typed(wrap_bits(nl | nr, bits, signed)),
+            BinOp::BitXor => typed(wrap_bits(nl ^ nr, bits, signed)),
+            BinOp::Shl => typed(wrap_bits(nl.wrapping_shl(nr as u32), bits, signed)),
+            BinOp::Shr => typed(wrap_bits(nl >> nr.clamp(0, 127), bits, signed)),
+            BinOp::Eq => Value::Bool(nl == nr),
+            BinOp::Ne => Value::Bool(nl != nr),
+            BinOp::Lt => Value::Bool(nl < nr),
+            BinOp::Le => Value::Bool(nl <= nr),
+            BinOp::Gt => Value::Bool(nl > nr),
+            BinOp::Ge => Value::Bool(nl >= nr),
+            BinOp::Concat => {
+                self.error(span, format!("`++` not defined for {}", ty.describe()));
+                Value::Poison
+            }
+            BinOp::And | BinOp::Or => unreachable!("logical ops never reach typed_op"),
+        }
+    }
+
+    /// A fixed-underlying typed op (D2.10, Appendix E case 2):
+    /// - `+`/`-`: transparent at the SAME scale (wrap at `I+F` bits, signed);
+    ///   DIFFERENT scale is `[scale mismatch]` naming the required `rescale`.
+    ///   Same scale but a DIFFERENT nominal type (e.g. `newtype Fix =
+    ///   fixed<16,16>` vs a bare `fixed<16,16>`) is a `[cross-type mix]`.
+    /// - `*`: the scale COMBINES — `fixed<Il,Fl> × fixed<Ir,Fr>` →
+    ///   `fixed<Il+Ir, Fl+Fr>` (so same-scale squares to `fixed<2I,2F>`), no
+    ///   wrap (the result widened).
+    /// - comparisons: same-scale compare stored ints; different scale is a
+    ///   scale mismatch.
+    /// - `/`, `%`, bitwise, shift, `++`: not defined on `fixed<>` (use `rescale`
+    ///   + integer ops).
+    #[allow(clippy::too_many_arguments)]
+    fn fixed_op(
+        &mut self,
+        op: BinOp,
+        tl: &Ty,
+        (il, fl): (u32, u32),
+        nl: i128,
+        tr: &Ty,
+        (ir, fr): (u32, u32),
+        nr: i128,
+        span: Span,
+    ) -> Value {
+        // Multiply combines scales regardless of nominal wrapper, producing a
+        // bare `fixed<Il+Ir, Fl+Fr>` — the one op whose result type differs from
+        // its operands'.
+        if op == BinOp::Mul {
+            let Some(prod) = nl.checked_mul(nr) else {
+                return self.arith_overflow(span, "*");
+            };
+            let ty = Ty::Fixed { i: il.saturating_add(ir), f: fl.saturating_add(fr) };
+            return Value::Typed { ty: Box::new(ty), val: Box::new(Value::Int(prod)) };
+        }
+        let same_scale = (il, fl) == (ir, fr);
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                if !same_scale {
+                    return self.scale_mismatch(tl, (il, fl), tr, (ir, fr), span);
+                }
+                if tl != tr {
+                    // Same scale, distinct nominal types — a real nominal mix.
+                    return self.cross_type_mix(tl, tr, span);
+                }
+                let bits = il.saturating_add(fl);
+                match op {
+                    BinOp::Add => Value::Typed {
+                        ty: Box::new(tl.clone()),
+                        val: Box::new(Value::Int(wrap_bits(nl.wrapping_add(nr), bits, true))),
+                    },
+                    BinOp::Sub => Value::Typed {
+                        ty: Box::new(tl.clone()),
+                        val: Box::new(Value::Int(wrap_bits(nl.wrapping_sub(nr), bits, true))),
+                    },
+                    BinOp::Eq => Value::Bool(nl == nr),
+                    BinOp::Ne => Value::Bool(nl != nr),
+                    BinOp::Lt => Value::Bool(nl < nr),
+                    BinOp::Le => Value::Bool(nl <= nr),
+                    BinOp::Gt => Value::Bool(nl > nr),
+                    BinOp::Ge => Value::Bool(nl >= nr),
+                    _ => unreachable!(),
+                }
+            }
+            _ => {
+                self.error(
+                    span,
+                    format!(
+                        "`{}` is not defined on {} (use rescale + integer ops)",
+                        binop_symbol(op),
+                        tl.describe()
+                    ),
+                );
+                Value::Poison
+            }
+        }
+    }
+
+    /// The `[cross-type mix]` diagnostic (Appendix E case 3): two distinct
+    /// nominal types cannot be combined arithmetically.
+    fn cross_type_mix(&mut self, tl: &Ty, tr: &Ty, span: Span) -> Value {
+        self.error(
+            span,
+            format!("[cross-type mix] cannot mix {} and {}", tl.describe(), tr.describe()),
+        );
+        Value::Poison
+    }
+
+    /// The `[scale mismatch]` diagnostic (D2.10): two `fixed<>` values of
+    /// different scale met in an add/sub/comparison. Names an explicit `rescale`
+    /// to a common scale — the shift the author must write themselves (never a
+    /// silent shift).
+    fn scale_mismatch(&mut self, tl: &Ty, (il, fl): (u32, u32), tr: &Ty, (ir, fr): (u32, u32), span: Span) -> Value {
+        self.error(
+            span,
+            format!(
+                "[scale mismatch] cannot combine {} (fixed<{il},{fl}>) and {} (fixed<{ir},{fr}>) — \
+                 rescale one to a common scale, e.g. rescale<{ir},{fr}>(..)",
+                tl.describe(),
+                tr.describe()
+            ),
+        );
+        Value::Poison
     }
 
     /// Arithmetic `+ - * / %` (D-P2.3). `Int op Int` stays an exact `Int` and
@@ -559,18 +806,60 @@ impl<'a> Evaluator<'a> {
         if matches!(lo_v, Value::Poison) || matches!(hi_v, Value::Poison) {
             return Value::Poison;
         }
-        match (lo_v, hi_v) {
-            // An empty/negative range (`lo >= hi`) is allowed here; whether it
-            // iterates to nothing is decided when the range is consumed.
-            (Value::Int(lo), Value::Int(hi)) => Value::Range { lo, hi },
-            (l, h) => {
+        // Range bounds erase a `Value::Typed` to its stored int (§8.3). An
+        // empty/negative range (`lo >= hi`) is allowed here; whether it iterates
+        // to nothing is decided when the range is consumed.
+        match (lo_v.as_stored_int(), hi_v.as_stored_int()) {
+            (Some(lo), Some(hi)) => Value::Range { lo, hi },
+            _ => {
                 self.error(
                     span,
-                    format!("range bounds must be int, got {} and {}", l.type_name(), h.type_name()),
+                    format!(
+                        "range bounds must be int, got {} and {}",
+                        lo_v.type_name(),
+                        hi_v.type_name()
+                    ),
                 );
                 Value::Poison
             }
         }
+    }
+
+    /// `rescale<I,F>(x)` (T5, D2.10): reinterpret a fixed-point value under a
+    /// new `fixed<I,F>` scale. `x` must be a [`Value::Typed`] whose effective
+    /// underlying is [`Ty::Fixed`] (a bare `fixed<>` value or a newtype over
+    /// one); anything else is a diagnostic. The stored int is shifted by the
+    /// fraction-bit delta — arithmetic right shift (the `asr` the author needs)
+    /// when narrowing the fraction (`F_src > f`), left shift when widening — and
+    /// the result is retagged as a bare `fixed<I,F>`. So
+    /// `rescale<16,16>(fixed<32,32>_value)` shifts right by 16.
+    fn eval_rescale(&mut self, i: u32, f: u32, arg: &ast::Expr, span: Span, env: &mut Env) -> Value {
+        let v = self.eval_expr(arg, env);
+        if matches!(v, Value::Poison) {
+            return Value::Poison;
+        }
+        let Value::Typed { ty, val } = &v else {
+            self.error(span, format!("rescale expects a fixed<> value, got {}", v.type_name()));
+            return Value::Poison;
+        };
+        let Some(stored) = val.as_stored_int() else {
+            return Value::Poison;
+        };
+        let Ty::Fixed { f: src_f, .. } = self.effective_underlying(ty) else {
+            self.error(span, format!("rescale expects a fixed<> value, got {}", ty.describe()));
+            return Value::Poison;
+        };
+        // Shift by the fraction-bit delta: right (arithmetic) when narrowing the
+        // fraction, left when widening. A pathological delta ≥ 128 saturates the
+        // shifted value to 0 rather than panicking on an out-of-range shift.
+        let shifted = if src_f > f {
+            let d = src_f - f;
+            if d >= 128 { 0 } else { stored >> d }
+        } else {
+            let d = f - src_f;
+            if d >= 128 { 0 } else { stored << d }
+        };
+        Value::Typed { ty: Box::new(Ty::Fixed { i, f }), val: Box::new(Value::Int(shifted)) }
     }
 
     // ---- diagnostic helpers ------------------------------------------------
@@ -595,6 +884,26 @@ impl<'a> Evaluator<'a> {
             format!("`{sym}` not defined for {} and {}", lhs.type_name(), rhs.type_name()),
         );
         Value::Poison
+    }
+}
+
+/// Wrap `value` to `bits` low bits, two's-complement, honoring `signed` (T5,
+/// D-P3.3 / D2.9). This is the underlying-width wrap for sized/typed arithmetic:
+/// `Angle(200) + Angle(100)` (u8) → `300 & 0xFF` = 44; a signed i8 `100 + 100` →
+/// 200 → sign-extends to −56. `bits` is a whole underlying width (8/16/32 for a
+/// prim, `I+F` for a fixed) and always ≤ 127 in practice, so `1i128 << bits`
+/// never overflows.
+fn wrap_bits(value: i128, bits: u32, signed: bool) -> i128 {
+    if bits == 0 || bits >= 128 {
+        return value;
+    }
+    let mask = (1i128 << bits) - 1;
+    let low = value & mask;
+    if signed && (low & (1i128 << (bits - 1))) != 0 {
+        // The sign bit is set — subtract 2^bits to sign-extend into `i128`.
+        low - (1i128 << bits)
+    } else {
+        low
     }
 }
 

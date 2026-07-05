@@ -7,6 +7,7 @@
 //! small type-introspection helpers.
 use crate::ast::Expr;
 use crate::eval::Env;
+use crate::layout::Ty;
 use std::fmt;
 
 /// A comptime value.
@@ -76,6 +77,20 @@ pub enum Value {
     /// fn's name; the [`Evaluator`](crate::eval::Evaluator) resolves it against
     /// the file's fn index when the value is applied.
     FnRef(String),
+    /// A value carrying a sized nominal type (T5, D-P3.3): the FIRST place
+    /// comptime arithmetic wraps. Produced by newtype construction (`Name(x)`),
+    /// `fixed<>` multiplication, and `rescale`. `val` is normally a
+    /// [`Value::Int`] — the stored integer, which for a `fixed<I,F>` is the
+    /// SCALED value (`x·2^F`). A `Typed` value is transparent to everything
+    /// EXCEPT type-aware arithmetic and diagnostics: it erases to its stored int
+    /// (§8.3) via [`as_stored_int`](Value::as_stored_int). Bare comptime `int`
+    /// arithmetic is untouched — only these values wrap at their width/scale.
+    Typed {
+        /// The value's nominal type (a [`Ty::Newtype`] or a bare [`Ty::Fixed`]).
+        ty: Box<Ty>,
+        /// The stored integer (normally a [`Value::Int`]).
+        val: Box<Value>,
+    },
     /// An "error already reported here" sentinel (D-P2.9). Operations on
     /// `Poison` yield `Poison` silently so one bad subexpression does not fan
     /// out into a cascade of diagnostics.
@@ -84,6 +99,12 @@ pub enum Value {
 
 impl Value {
     /// A short, stable type name for use in type-mismatch diagnostics.
+    ///
+    /// A [`Value::Typed`] reports the generic `"typed"` here (this method's
+    /// `&'static str` return cannot carry the newtype's owned, dynamic name);
+    /// the type-aware arithmetic diagnostics that actually need the nominal
+    /// name (cross-type mix, scale mismatch) format it via
+    /// [`Ty::describe`](crate::layout::Ty::describe) directly.
     pub fn type_name(&self) -> &'static str {
         match self {
             Value::Int(_) => "int",
@@ -98,7 +119,22 @@ impl Value {
             Value::Unit => "unit",
             Value::Lambda { .. } => "lambda",
             Value::FnRef(_) => "fn",
+            Value::Typed { .. } => "typed",
             Value::Poison => "poison",
+        }
+    }
+
+    /// The stored `i128` for a value that erases to a bare integer — either a
+    /// [`Value::Int`] or a [`Value::Typed`] wrapping one. Used at every site
+    /// that needs a raw integer from a value that may be nominally typed (array
+    /// lengths, bitfield field values, string interpolation of a number, the
+    /// argument to `Name(x)`), honoring the "`Typed` erases to its stored int"
+    /// principle (§8.3). Returns `None` for any non-integer value.
+    pub fn as_stored_int(&self) -> Option<i128> {
+        match self {
+            Value::Int(n) => Some(*n),
+            Value::Typed { val, .. } => val.as_stored_int(),
+            _ => None,
         }
     }
 }
@@ -168,6 +204,9 @@ impl fmt::Display for Value {
             Value::Unit => f.write_str("()"),
             Value::Lambda { .. } => f.write_str("<lambda>"),
             Value::FnRef(name) => write!(f, "<fn {name}>"),
+            // A typed value renders as its inner (stored) value — the nominal
+            // type shows in diagnostics, not in the interpolated/printed value.
+            Value::Typed { val, .. } => write!(f, "{val}"),
             Value::Poison => f.write_str("<poison>"),
         }
     }

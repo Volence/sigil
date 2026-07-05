@@ -246,10 +246,14 @@ impl<'a> Evaluator<'a> {
                 if !self.check_arity(method, &args, 2, span) {
                     return Value::Poison;
                 }
-                let (start, end) = match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => (*a, *b),
-                    (Value::Poison, _) | (_, Value::Poison) => return Value::Poison,
-                    (a, b) => {
+                // Slice bounds erase a `Value::Typed` to its stored int (§8.3).
+                let (start, end) = match (args[0].as_stored_int(), args[1].as_stored_int()) {
+                    (Some(a), Some(b)) => (a, b),
+                    _ if matches!(args[0], Value::Poison) || matches!(args[1], Value::Poison) => {
+                        return Value::Poison;
+                    }
+                    _ => {
+                        let (a, b) = (&args[0], &args[1]);
                         self.error(
                             span,
                             format!(

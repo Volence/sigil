@@ -323,10 +323,16 @@ fn eval_helper(src: &str, name: &str) -> (Option<Value>, Vec<sigil_span::Diagnos
 }
 
 #[test]
-fn newtype_construction_in_range_erases_to_the_bare_int() {
+fn newtype_construction_in_range_produces_a_typed_value() {
+    // T5: construction now yields a `Value::Typed` carrying the nominal newtype,
+    // wrapping the checked stored int (was the erased bare `Int` in T4).
     let src = "module m\nnewtype PaletteLine = u8 where 0..63\nconst N = PaletteLine(40)\n";
     let (v, diags) = eval_helper(src, "N");
-    assert_eq!(v, Some(Value::Int(40)));
+    assert_eq!(v.as_ref().and_then(Value::as_stored_int), Some(40));
+    assert!(
+        matches!(&v, Some(Value::Typed { .. })),
+        "expected a Value::Typed, got {v:?}"
+    );
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }
 
@@ -359,6 +365,7 @@ fn newtype_without_where_still_checked_against_its_underlying_primitive() {
 
     let src = "module m\nnewtype Angle = u8\nconst N = Angle(200)\n";
     let (v, diags) = eval_helper(src, "N");
-    assert_eq!(v, Some(Value::Int(200)));
+    assert_eq!(v.as_ref().and_then(Value::as_stored_int), Some(200));
+    assert!(matches!(&v, Some(Value::Typed { .. })), "expected a Value::Typed, got {v:?}");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }
