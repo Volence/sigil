@@ -34,6 +34,16 @@ fn err(src: &str, name: &str) {
     assert_eq!(v, Some(Value::Poison), "expected Poison for `{name}`");
 }
 
+/// Like [`err`], but also pins the wording: some diagnostic must contain `msg`.
+fn err_msg(src: &str, name: &str, msg: &str) {
+    let (v, diags) = eval(src, name);
+    assert_eq!(v, Some(Value::Poison), "expected Poison for `{name}`");
+    assert!(
+        diags.iter().any(|d| d.message.contains(msg)),
+        "expected a diagnostic containing {msg:?} for `{name}`, got {diags:?}"
+    );
+}
+
 fn int(n: i128) -> Value {
     Value::Int(n)
 }
@@ -285,4 +295,181 @@ fn map_on_int_errors() {
 fn find_on_array_errors() {
     let src = "module m\nconst XS = [1, 2, 3]\nconst R = find(XS, 2)\n";
     err(src, "R");
+}
+
+// ---- pinned diagnostic wording (D-P2 error paths) -----------------------
+
+#[test]
+fn map_on_int_message_names_type() {
+    let src = "module m\nconst N = 5\nconst R = map(N, |x| x + 1)\n";
+    err_msg(src, "R", "not defined on int");
+}
+
+#[test]
+fn filter_non_bool_message() {
+    let src = "module m\nconst XS = [1, 2, 3]\nconst R = XS.filter(|x| x + 1)\n";
+    err_msg(src, "R", "must return bool");
+}
+
+#[test]
+fn slice_out_of_range_message() {
+    let src = "module m\nconst H = \"hi\"\nconst S = H.slice(0, 5)\n";
+    err_msg(src, "S", "out of range for string of length 2");
+}
+
+#[test]
+fn val_bad_message() {
+    let src = "module m\nconst S = \"xyz\"\nconst V = S.val()\n";
+    err_msg(src, "V", "cannot parse `xyz` as an integer");
+}
+
+// ---- builtin arity errors ----------------------------------------------
+
+#[test]
+fn map_with_no_fn_is_arity_error() {
+    let src = "module m\nconst XS = [1, 2, 3]\nconst R = XS.map()\n";
+    err_msg(src, "R", "`map` expects 1 argument(s), got 0");
+}
+
+#[test]
+fn len_with_arg_is_arity_error() {
+    let src = "module m\nconst XS = [1, 2, 3]\nconst R = XS.len(1)\n";
+    err_msg(src, "R", "`len` expects 0 argument(s), got 1");
+}
+
+#[test]
+fn fold_wrong_arg_count_is_arity_error() {
+    let src = "module m\nconst XS = [1, 2, 3]\nconst R = XS.fold(0)\n";
+    err_msg(src, "R", "`fold` expects 2 argument(s), got 1");
+}
+
+// ---- callable arity / not-callable --------------------------------------
+
+#[test]
+fn lambda_arity_mismatch_errors() {
+    let src = "module m\nconst XS = [1, 2, 3]\nconst R = XS.map(|a, b| a + b)\n";
+    err_msg(src, "R", "lambda expects 2 argument(s), got 1");
+}
+
+#[test]
+fn fn_ref_arity_mismatch_errors() {
+    // `add` takes two params; `map` applies it with one → arity error.
+    let src = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst XS = [1, 2, 3]\nconst R = XS.map(add)\n";
+    err_msg(src, "R", "function `add` expects 2 argument(s), got 1");
+}
+
+#[test]
+fn non_callable_map_arg_errors() {
+    let src = "module m\nconst XS = [1, 2, 3]\nconst R = XS.map(5)\n";
+    err_msg(src, "R", "value of type int is not callable");
+}
+
+// ---- empty sequences ----------------------------------------------------
+
+#[test]
+fn map_on_empty_array() {
+    let src = "module m\nconst E = []\nconst R = E.map(|x| x + 1)\n";
+    assert_eq!(ok(src, "R"), Value::Array(vec![]));
+}
+
+#[test]
+fn fold_on_empty_array_returns_init() {
+    let src = "module m\nconst E = []\nconst R = E.fold(7, |a, b| a + b)\n";
+    assert_eq!(ok(src, "R"), int(7));
+}
+
+// ---- string edge cases --------------------------------------------------
+
+#[test]
+fn find_empty_needle_is_zero() {
+    let src = "module m\nconst H = \"hello\"\nconst I = H.find(\"\")\n";
+    assert_eq!(ok(src, "I"), int(0));
+}
+
+#[test]
+fn slice_empty_range_is_empty_string() {
+    let src = "module m\nconst H = \"hello\"\nconst S = H.slice(2, 2)\n";
+    assert_eq!(ok(src, "S"), s(""));
+}
+
+#[test]
+fn slice_negative_start_errors() {
+    let src = "module m\nconst H = \"hello\"\nconst S = H.slice(-1, 2)\n";
+    err(src, "S");
+}
+
+// ---- val: bare-path form + more spellings + sign rejection --------------
+
+#[test]
+fn val_bare_path_form() {
+    // `s.val` (no parens) resolves in eval_path, mirroring `s.len`.
+    let src = "module m\nconst S = \"42\"\nconst V = S.val\n";
+    assert_eq!(ok(src, "V"), int(42));
+}
+
+#[test]
+fn val_hex_0x_spelling() {
+    let src = "module m\nconst S = \"0x1f\"\nconst V = S.val()\n";
+    assert_eq!(ok(src, "V"), int(31));
+}
+
+#[test]
+fn val_binary_0b_spelling() {
+    let src = "module m\nconst S = \"0b101\"\nconst V = S.val()\n";
+    assert_eq!(ok(src, "V"), int(5));
+}
+
+#[test]
+fn val_rejects_leading_plus() {
+    let src = "module m\nconst S = \"+5\"\nconst V = S.val()\n";
+    err(src, "V");
+}
+
+#[test]
+fn val_rejects_sign_after_dollar() {
+    let src = "module m\nconst S = \"$-5\"\nconst V = S.val()\n";
+    err(src, "V");
+}
+
+#[test]
+fn val_rejects_plus_after_dollar() {
+    let src = "module m\nconst S = \"$+5\"\nconst V = S.val()\n";
+    err(src, "V");
+}
+
+// ---- a string builtin on a range/array reports the surface type ---------
+// (`bogus` is not a builtin at all, so it is a silent Poison; a *string*
+// builtin name like `find` reaches the sequence dispatcher's fall-through and
+// exercises the receiver-type message.)
+
+#[test]
+fn string_builtin_on_range_reports_range() {
+    let src = "module m\nconst R = 0..4\nconst X = R.find(0)\n";
+    err_msg(src, "X", "`find` is not defined on range");
+}
+
+#[test]
+fn string_builtin_on_array_reports_array() {
+    let src = "module m\nconst XS = [1, 2, 3]\nconst X = XS.slice(0, 1)\n";
+    err_msg(src, "X", "`slice` is not defined on array");
+}
+
+// ---- lambda captures its defining environment BY VALUE ------------------
+
+#[test]
+fn lambda_captures_binding_by_value() {
+    // `g` closes over `base` when defined (base == 10). A later `base = 99`
+    // reassignment must NOT be seen by `g` (capture is by value), so mapping
+    // [1, 2] through `g` gives [11, 12], summing to 23 (not 209).
+    let src = "module m\n\
+comptime fn f() -> int {\n\
+    comptime var base = 10\n\
+    let g = |x| x + base\n\
+    base = 99\n\
+    let xs = [1, 2]\n\
+    let mapped = xs.map(g)\n\
+    return mapped |> fold(0, |a, b| a + b)\n\
+}\n\
+const R = f()\n";
+    assert_eq!(ok(src, "R"), int(23));
 }

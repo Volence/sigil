@@ -369,7 +369,9 @@ impl<'a> Evaluator<'a> {
     }
 
     /// Resolve a bare `a.b` where `a` is a value (D-P2.17/D-P2.18): a struct
-    /// field access, or the `.len` of an array/string/range. Anything else is an
+    /// field access, the `.len` of an array/string/range, or a string's `.val`
+    /// (the no-arg integer-parse builtin, so `s.val` and `s.val()` are
+    /// equivalent — mirroring `s.len`/`s.len` on a length). Anything else is an
     /// error yielding `Poison`; a `Poison` receiver propagates silently.
     ///
     /// Note the ordering: on a struct, `b` is *always* a field name (so a struct
@@ -388,6 +390,8 @@ impl<'a> Evaluator<'a> {
             }
             Value::Array(elems) if field == "len" => Value::Int(elems.len() as i128),
             Value::Str(s) if field == "len" => Value::Int(s.chars().count() as i128),
+            // The no-arg `val` builtin also reads as a bare path (`s.val`).
+            Value::Str(s) if field == "val" => self.str_val(&s, span),
             // A half-open `lo..hi` has `max(0, hi - lo)` elements.
             Value::Range { lo, hi } if field == "len" => Value::Int((hi - lo).max(0)),
             other => {
@@ -395,6 +399,20 @@ impl<'a> Evaluator<'a> {
                     span,
                     format!("`{field}` is not a field or `.len` of {}", other.type_name()),
                 );
+                Value::Poison
+            }
+        }
+    }
+
+    /// Parse a string as an `.emp` integer literal for the `val` builtin,
+    /// emitting a diagnostic and returning `Poison` on failure. Shared by the
+    /// bare-path (`s.val`) and call (`s.val()`) forms so their semantics cannot
+    /// drift apart.
+    fn str_val(&mut self, s: &str, span: Span) -> Value {
+        match parse_emp_int(s) {
+            Some(n) => Value::Int(n),
+            None => {
+                self.error(span, format!("cannot parse `{s}` as an integer"));
                 Value::Poison
             }
         }
@@ -856,6 +874,10 @@ impl<'a> Evaluator<'a> {
         arg_values: Vec<Value>,
         call_span: Span,
     ) -> Value {
+        // Arity gate. From `eval_call` this is redundant (`bind_args` already
+        // returns exactly `params.len()` values), but it is the LIVE check for
+        // the `apply_callable`/`FnRef` path — `xs.map(some_fn)` reaches here with
+        // whatever arity the builtin supplied. Do not delete it.
         if arg_values.len() != decl.params.len() {
             self.error(
                 call_span,
@@ -1015,12 +1037,14 @@ impl<'a> Evaluator<'a> {
     /// other receiver type is "`method` is not defined on <type>".
     fn eval_builtin(&mut self, receiver: Value, method: &str, args: Vec<Value>, span: Span) -> Value {
         match receiver {
-            Value::Array(elems) => self.eval_seq_builtin(elems, method, args, span),
+            Value::Array(elems) => self.eval_seq_builtin(elems, method, "array", args, span),
             // A range participates in the sequence builtins by materializing to a
-            // `Vec` of its `Int` elements (half-open `lo..hi`).
+            // `Vec` of its `Int` elements (half-open `lo..hi`). Its own type name
+            // is threaded through so an unknown method reports "range", not the
+            // post-materialization "array".
             Value::Range { lo, hi } => {
                 let elems: Vec<Value> = (lo..hi).map(Value::Int).collect();
-                self.eval_seq_builtin(elems, method, args, span)
+                self.eval_seq_builtin(elems, method, "range", args, span)
             }
             Value::Str(s) => self.eval_str_builtin(s, method, args, span),
             Value::Poison => Value::Poison,
@@ -1032,11 +1056,14 @@ impl<'a> Evaluator<'a> {
     }
 
     /// The array/range builtins: `len`, `map`, `filter`, `fold`. `elems` is the
-    /// already-materialized element sequence.
+    /// already-materialized element sequence; `recv_ty` is the original
+    /// receiver's type name (`"array"` or `"range"`) so an unknown method is
+    /// reported against the surface type, not the materialized one.
     fn eval_seq_builtin(
         &mut self,
         elems: Vec<Value>,
         method: &str,
+        recv_ty: &str,
         args: Vec<Value>,
         span: Span,
     ) -> Value {
@@ -1054,10 +1081,14 @@ impl<'a> Evaluator<'a> {
                 let f = args.into_iter().next().unwrap();
                 let mut out = Vec::with_capacity(elems.len());
                 for el in elems {
-                    out.push(self.apply_callable(f.clone(), vec![el], span));
-                    if self.aborted {
+                    // A `Poison` result (a bad callable, an abort, or an
+                    // already-reported element error) poisons the whole map and
+                    // stops — one diagnostic, no per-element cascade (D-P2.9).
+                    let r = self.apply_callable(f.clone(), vec![el], span);
+                    if matches!(r, Value::Poison) {
                         return Value::Poison;
                     }
+                    out.push(r);
                 }
                 Value::Array(out)
             }
@@ -1098,15 +1129,17 @@ impl<'a> Evaluator<'a> {
                 let mut acc = it.next().unwrap();
                 let f = it.next().unwrap();
                 for el in elems {
+                    // As with `map`, a `Poison` accumulator (bad combiner or
+                    // abort) short-circuits to one diagnostic (D-P2.9).
                     acc = self.apply_callable(f.clone(), vec![acc, el], span);
-                    if self.aborted {
+                    if matches!(acc, Value::Poison) {
                         return Value::Poison;
                     }
                 }
                 acc
             }
             _ => {
-                self.error(span, format!("`{method}` is not defined on array"));
+                self.error(span, format!("`{method}` is not defined on {recv_ty}"));
                 Value::Poison
             }
         }
@@ -1187,13 +1220,7 @@ impl<'a> Evaluator<'a> {
                 if !self.check_arity(method, &args, 0, span) {
                     return Value::Poison;
                 }
-                match parse_emp_int(&s) {
-                    Some(n) => Value::Int(n),
-                    None => {
-                        self.error(span, format!("cannot parse `{s}` as an integer"));
-                        Value::Poison
-                    }
-                }
+                self.str_val(&s, span)
             }
             _ => {
                 self.error(span, format!("`{method}` is not defined on string"));
@@ -1669,15 +1696,23 @@ fn parse_emp_int(s: &str) -> Option<i128> {
         Some(r) => (true, r),
         None => (false, t),
     };
-    let mag = if let Some(h) = rest.strip_prefix('$') {
-        i128::from_str_radix(h, 16).ok()
+    // Select the radix and the digit portion, stripping any prefix.
+    let (radix, digits) = if let Some(h) = rest.strip_prefix('$') {
+        (16, h)
     } else if let Some(h) = rest.strip_prefix("0x").or_else(|| rest.strip_prefix("0X")) {
-        i128::from_str_radix(h, 16).ok()
+        (16, h)
     } else if let Some(bits) = rest.strip_prefix("0b").or_else(|| rest.strip_prefix("0B")) {
-        i128::from_str_radix(bits, 2).ok()
+        (2, bits)
     } else {
-        rest.parse::<i128>().ok()
-    }?;
+        (10, rest)
+    };
+    // Reject any sign in the digit portion: Rust's `from_str_radix` accepts its
+    // own leading `+`/`-`, which would otherwise let `+5`, `$-5`, `$+5` through
+    // (our only sign is the one `-` stripped above).
+    if digits.starts_with('+') || digits.starts_with('-') {
+        return None;
+    }
+    let mag = i128::from_str_radix(digits, radix).ok()?;
     Some(if neg { -mag } else { mag })
 }
 
