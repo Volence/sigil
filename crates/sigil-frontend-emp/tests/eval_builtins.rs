@@ -473,3 +473,100 @@ comptime fn f() -> int {\n\
 const R = f()\n";
     assert_eq!(ok(src, "R"), int(23));
 }
+
+// ---- whole-branch review: cross-feature seam bugs -----------------------
+
+// (1) A `return` inside a lambda body must yield FROM the lambda, not leak out
+// through map/filter/fold to become the enclosing fn's return.
+
+#[test]
+fn lambda_return_yields_from_lambda_not_enclosing_fn() {
+    // Without the fix this returned Int(99) (the leaked lambda return) with no
+    // diagnostics; correct is: the lambda returns 99 for elements > 1, map gives
+    // [1, 99, 99], and `go` returns its length, 3.
+    let src = "module m\n\
+comptime fn go() -> int {\n\
+    let xs = [1, 2, 3]\n\
+    let ys = xs.map(|x| if x > 1 { return 99 } else { x })\n\
+    return ys.len\n\
+}\n\
+const R = go()\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(3)));
+    assert!(diags.is_empty(), "expected no diagnostics, got {diags:?}");
+}
+
+#[test]
+fn lambda_return_value_becomes_mapped_element() {
+    // Proves [1, 99, 99] concretely: summing the mapped array gives 199.
+    let src = "module m\n\
+comptime fn go() -> int {\n\
+    let xs = [1, 2, 3]\n\
+    return xs.map(|x| if x > 1 { return 99 } else { x }) |> fold(0, |a, b| a + b)\n\
+}\n\
+const R = go()\n";
+    assert_eq!(ok(src, "R"), int(1 + 99 + 99));
+}
+
+// (2) A locally-bound lambda / const-bound fn-ref must be callable by name.
+
+#[test]
+fn call_locally_bound_lambda_by_name() {
+    let src = "module m\n\
+comptime fn go() -> int {\n\
+    let f = |x| x + 1\n\
+    return f(10)\n\
+}\n\
+const R = go()\n";
+    assert_eq!(ok(src, "R"), int(11));
+}
+
+#[test]
+fn call_const_bound_fn_ref_by_name() {
+    let src = "module m\ncomptime fn dbl(x: int) -> int { return x * 2 }\nconst G = dbl\nconst R = G(5)\n";
+    assert_eq!(ok(src, "R"), int(10));
+}
+
+#[test]
+fn calling_non_callable_value_errors() {
+    let src = "module m\n\
+comptime fn go() -> int {\n\
+    let n = 3\n\
+    return n(1)\n\
+}\n\
+const R = go()\n";
+    err_msg(src, "R", "value of type int is not callable");
+}
+
+#[test]
+fn local_binding_does_not_break_top_level_fn_call() {
+    // A same-shaped call to a real top-level fn (no shadowing binding) still
+    // dispatches to `self.fns` — the call-by-name path must not regress this.
+    let src = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst R = add(2, 3)\n";
+    assert_eq!(ok(src, "R"), int(5));
+}
+
+// (3) Range builtins must not materialize eagerly: `len` is O(1), and
+// map/filter/fold charge a step per element so a huge range trips the budget.
+
+#[test]
+fn range_len_call_form_is_o1() {
+    // `(2..5).len()` → 3 via the call form (eval_builtin), computed without
+    // materializing the range.
+    let src = "module m\nconst R = 2..5\nconst L = R.len()\n";
+    assert_eq!(ok(src, "L"), int(3));
+}
+
+#[test]
+fn huge_range_map_hits_budget_not_oom() {
+    // A billion-element range would be ~16 GB if materialized; the per-element
+    // step charge must trip the comptime step budget instead. Aborts after
+    // ~budget iterations (sub-second .. a couple seconds in debug), NOT an OOM.
+    let src = "module m\nconst BIG = 0..1000000000\nconst R = BIG.map(|i| i)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("step budget exceeded")),
+        "expected a step-budget diagnostic, got {diags:?}"
+    );
+}

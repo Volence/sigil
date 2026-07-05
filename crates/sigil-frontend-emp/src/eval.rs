@@ -847,6 +847,40 @@ impl<'a> Evaluator<'a> {
             return Value::Poison;
         }
         let name = callee.segments[0].as_str();
+        // A single-segment callee may name a local/const *callable value* — a
+        // lambda bound by `let`, or a fn-ref (`const G = dbl`). Resolve it as a
+        // value first (locals shadow consts, matching `eval_path`); if callable,
+        // apply it. This sits between the builtin check and the user-`fns`
+        // lookup: builtin → local/const callable value → user fn → unknown.
+        let callable_val = if let Some(v) = env.lookup(name) {
+            Some(v.clone())
+        } else if self.consts.contains_key(name) {
+            Some(self.resolve_const(name, span))
+        } else {
+            None
+        };
+        if let Some(v) = callable_val {
+            match &v {
+                // An already-reported error propagates silently (D-P2.9).
+                Value::Poison => return Value::Poison,
+                Value::Lambda { .. } | Value::FnRef(_) => {
+                    let arg_values = self.eval_value_call_args(args, env);
+                    // A `return`/abort surfaced from an argument belongs to the
+                    // caller; bail before applying (as the user-fn path does).
+                    if self.aborted || self.pending_return.is_some() {
+                        return Value::Poison;
+                    }
+                    return self.apply_callable(v, arg_values, span);
+                }
+                other => {
+                    self.error(
+                        span,
+                        format!("value of type {} is not callable", other.type_name()),
+                    );
+                    return Value::Poison;
+                }
+            }
+        }
         // Copy the `&'a` decl out of the index so its body/params are borrowed
         // from the file, leaving `self` free to mutate across the body eval.
         let decl: &'a ast::ComptimeFnDecl = match self.fns.get(name).copied() {
@@ -1116,14 +1150,22 @@ impl<'a> Evaluator<'a> {
                     return Value::Poison;
                 }
                 // Run in the captured env (owned via the moved `Value`) plus a
-                // fresh scope holding the immutable params. Lambda bodies are
-                // pure expressions, so no `Flow`/return handling is needed.
+                // fresh scope holding the immutable params.
                 let mut lenv = captured;
                 lenv.push_scope();
                 for (p, v) in params.iter().zip(arg_values) {
                     lenv.define(p.clone(), v, false);
                 }
-                self.eval_expr(&body, &mut lenv)
+                let v = self.eval_expr(&body, &mut lenv);
+                // A `return` reached through an expression-position `if`/`for` in
+                // the body sets `pending_return`. `return` yields FROM the lambda
+                // (the intuitive reading), so consume it here — otherwise it would
+                // leak out through map/filter/fold → `eval_call` → the caller's
+                // `eval_operand` and become a `Flow::Return` for the WRONG fn.
+                if let Some(rv) = self.pending_return.take() {
+                    return rv;
+                }
+                v
             }
             Value::FnRef(name) => match self.fns.get(name.as_str()).copied() {
                 Some(decl) => self.call_fn_with_values(decl, arg_values, call_span),
@@ -1202,20 +1244,52 @@ impl<'a> Evaluator<'a> {
             .collect()
     }
 
+    /// Evaluate the positional arguments of a call to a *callable value* (a
+    /// lambda or fn-ref named at a single-segment callee). Named arguments are
+    /// not supported for value calls (there is no parameter list to bind them
+    /// to), so a named arg is a diagnostic; its value is still evaluated.
+    fn eval_value_call_args(&mut self, args: &[ast::Arg], env: &mut Env) -> Vec<Value> {
+        args.iter()
+            .map(|a| {
+                if a.name.is_some() {
+                    self.error(a.span, "a call to a lambda or fn value takes positional arguments only");
+                }
+                self.eval_expr(&a.value, env)
+            })
+            .collect()
+    }
+
     /// Dispatch a resolved builtin on its receiver value (D-P2.18). Arrays and
-    /// ranges share the sequence builtins (a range is materialized to its
-    /// elements); strings have their own set. A `Poison` receiver is silent; any
-    /// other receiver type is "`method` is not defined on <type>".
+    /// ranges share the sequence builtins (`len`/`map`/`filter`/`fold`); strings
+    /// have their own set. A `Poison` receiver is silent; any other receiver type
+    /// is "`method` is not defined on <type>".
+    ///
+    /// `len` is answered without materializing (O(1) on a range — its element
+    /// count is `max(0, hi - lo)` — so `r.len` / `r.len()` never allocate). For
+    /// map/filter/fold a range is consumed *lazily* with a per-element step
+    /// charge (`charge = true`), so a huge range trips the step budget rather
+    /// than the allocator; an array is already in memory (bounded), so it is not
+    /// re-charged (`charge = false`).
     fn eval_builtin(&mut self, receiver: Value, method: &str, args: Vec<Value>, span: Span) -> Value {
         match receiver {
-            Value::Array(elems) => self.eval_seq_builtin(elems, method, "array", args, span),
-            // A range participates in the sequence builtins by materializing to a
-            // `Vec` of its `Int` elements (half-open `lo..hi`). Its own type name
-            // is threaded through so an unknown method reports "range", not the
-            // post-materialization "array".
+            Value::Array(elems) => {
+                if method == "len" {
+                    if !self.check_arity(method, &args, 0, span) {
+                        return Value::Poison;
+                    }
+                    return Value::Int(elems.len() as i128);
+                }
+                self.eval_seq_ops(elems.into_iter(), method, "array", false, args, span)
+            }
             Value::Range { lo, hi } => {
-                let elems: Vec<Value> = (lo..hi).map(Value::Int).collect();
-                self.eval_seq_builtin(elems, method, "range", args, span)
+                if method == "len" {
+                    if !self.check_arity(method, &args, 0, span) {
+                        return Value::Poison;
+                    }
+                    // O(1): never materialize just to count.
+                    return Value::Int((hi - lo).max(0));
+                }
+                self.eval_seq_ops((lo..hi).map(Value::Int), method, "range", true, args, span)
             }
             Value::Str(s) => self.eval_str_builtin(s, method, args, span),
             Value::Poison => Value::Poison,
@@ -1226,32 +1300,34 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    /// The array/range builtins: `len`, `map`, `filter`, `fold`. `elems` is the
-    /// already-materialized element sequence; `recv_ty` is the original
-    /// receiver's type name (`"array"` or `"range"`) so an unknown method is
-    /// reported against the surface type, not the materialized one.
-    fn eval_seq_builtin(
+    /// The array/range sequence builtins `map`/`filter`/`fold` over an element
+    /// stream (`len` is answered by [`eval_builtin`](Self::eval_builtin) without
+    /// consuming the stream). `recv_ty` is the surface receiver type (`"array"`
+    /// or `"range"`) for the unknown-method message. When `charge` is set (ranges)
+    /// a step is charged per element as it is consumed, so an unbounded stream
+    /// aborts on the step budget instead of the allocator; arrays pass `false`
+    /// since they are already materialized and bounded.
+    fn eval_seq_ops<I: Iterator<Item = Value>>(
         &mut self,
-        elems: Vec<Value>,
+        elems: I,
         method: &str,
         recv_ty: &str,
+        charge: bool,
         args: Vec<Value>,
         span: Span,
     ) -> Value {
         match method {
-            "len" => {
-                if !self.check_arity(method, &args, 0, span) {
-                    return Value::Poison;
-                }
-                Value::Int(elems.len() as i128)
-            }
             "map" => {
                 if !self.check_arity(method, &args, 1, span) {
                     return Value::Poison;
                 }
                 let f = args.into_iter().next().unwrap();
-                let mut out = Vec::with_capacity(elems.len());
+                let mut out = Vec::new();
                 for el in elems {
+                    if charge && !self.bump_step() {
+                        self.abort(span, "step budget exceeded");
+                        return Value::Poison;
+                    }
                     // A `Poison` result (a bad callable, an abort, or an
                     // already-reported element error) poisons the whole map and
                     // stops — one diagnostic, no per-element cascade (D-P2.9).
@@ -1270,6 +1346,10 @@ impl<'a> Evaluator<'a> {
                 let f = args.into_iter().next().unwrap();
                 let mut out = Vec::new();
                 for el in elems {
+                    if charge && !self.bump_step() {
+                        self.abort(span, "step budget exceeded");
+                        return Value::Poison;
+                    }
                     match self.apply_callable(f.clone(), vec![el.clone()], span) {
                         Value::Bool(true) => out.push(el),
                         Value::Bool(false) => {}
@@ -1286,9 +1366,6 @@ impl<'a> Evaluator<'a> {
                             return Value::Poison;
                         }
                     }
-                    if self.aborted {
-                        return Value::Poison;
-                    }
                 }
                 Value::Array(out)
             }
@@ -1300,6 +1377,10 @@ impl<'a> Evaluator<'a> {
                 let mut acc = it.next().unwrap();
                 let f = it.next().unwrap();
                 for el in elems {
+                    if charge && !self.bump_step() {
+                        self.abort(span, "step budget exceeded");
+                        return Value::Poison;
+                    }
                     // As with `map`, a `Poison` accumulator (bad combiner or
                     // abort) short-circuits to one diagnostic (D-P2.9).
                     acc = self.apply_callable(f.clone(), vec![acc, el], span);
