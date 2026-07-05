@@ -305,7 +305,7 @@ fn fixed_too_wide_to_emit_is_diagnosed() {
     let src = "module m\ndata D: fixed<32, 32> = 0\n";
     let (_buf, diags) = data(src, "D");
     assert!(
-        diags.iter().any(|d| d.message.contains("too wide to emit")),
+        diags.iter().any(|d| d.message.contains("too wide to store as a scalar")),
         "expected a too-wide diagnostic, got {diags:?}"
     );
 }

@@ -146,6 +146,18 @@ pub struct Evaluator<'a> {
     /// (which guards layout sizing) because `eval_checked_struct_lit` also *calls*
     /// `layout_of_struct`, so the two must not share a stack.
     pub(crate) struct_construct_in_progress: Vec<String>,
+    /// The names of newtypes whose `where` refinement bound is currently being
+    /// evaluated, in reference order (T8 whole-branch review, Critical). A
+    /// newtype's bound can itself construct the SAME newtype
+    /// (`newtype N = u8 where 0 .. N(2)`); validating a `N(x)` then re-enters the
+    /// bound eval, which re-enters `N(...)`, recursing without bound and aborting
+    /// the process with a native stack overflow. This stack is DISTINCT from
+    /// [`layout_in_progress`](Self::layout_in_progress) on purpose: reusing the
+    /// layout stack would flag the LEGITIMATE `where 0 .. sizeof(S)` /
+    /// `struct S { x: N }` pattern (a size/layout re-entrancy, which shares
+    /// `layout_in_progress`) as a false cycle. Construction/refinement re-entrancy
+    /// and size/layout re-entrancy are genuinely different concerns.
+    pub(crate) refine_check_in_progress: Vec<String>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -174,6 +186,7 @@ impl<'a> Evaluator<'a> {
             in_progress: Vec::new(),
             data_memo: HashMap::new(),
             struct_construct_in_progress: Vec::new(),
+            refine_check_in_progress: Vec::new(),
         }
     }
 

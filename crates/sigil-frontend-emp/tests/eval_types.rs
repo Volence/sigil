@@ -5,7 +5,8 @@
 use sigil_frontend_emp::ast::{Expr, Path, Type};
 use sigil_frontend_emp::eval::eval_const;
 use sigil_frontend_emp::layout::{
-    check_in_range, check_value_fits_ty, layout_struct, layout_structs_shared, size_of_type,
+    check_in_range, check_value_fits_ty, eval_data, layout_struct, layout_structs_shared,
+    size_of_type,
 };
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::Value;
@@ -70,6 +71,35 @@ fn size_of_fixed() {
     let (sz, diags) = size_of_type(&file, &Type::Fixed { i: 8, f: 8 });
     assert_eq!(sz, 2);
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn wide_whole_byte_fixed_is_too_wide_at_layout() {
+    // Regression (T8 review, Minor 2): `fixed<32,32>` = 8 whole bytes sized
+    // cleanly at layout while emission (`lower_fixed`) rejected it as too wide,
+    // so a struct field of that type laid out and passed `(size:)`/`offsetof`
+    // yet its `data` emitted a buffer shorter than the layout. Layout must now
+    // agree it is un-storable and diagnose, matching emission.
+    let file = parse("module m\n");
+    let (_sz, diags) = size_of_type(&file, &Type::Fixed { i: 32, f: 32 });
+    assert!(
+        diags.iter().any(|d| d.message.contains("too wide to store as a scalar")),
+        "expected a too-wide diagnostic at layout, got {diags:?}"
+    );
+
+    // And it surfaces through a struct field.
+    let file = parse("module m\nstruct S { x: fixed<32, 32> }\n");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert!(
+        diags.iter().any(|d| d.message.contains("too wide to store as a scalar")),
+        "expected a too-wide diagnostic for the wide-fixed field, got {diags:?}"
+    );
+
+    // `fixed<16,16>` = 4 bytes stays fine (no false positive).
+    let file = parse("module m\n");
+    let (sz, diags) = size_of_type(&file, &Type::Fixed { i: 16, f: 16 });
+    assert_eq!(sz, 4);
+    assert!(diags.is_empty(), "fixed<16,16> must remain usable, got {diags:?}");
 }
 
 #[test]
@@ -242,6 +272,54 @@ fn oversized_array_length_is_diagnosed_not_truncated() {
     assert!(
         diags.iter().any(|d| d.message.contains("too large")),
         "expected an oversized-length diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn self_referential_newtype_where_bound_const_is_diagnosed_not_a_crash() {
+    // Regression (Critical, whole-branch T8): a newtype whose `where` bound
+    // constructs the SAME newtype (`newtype N = u8 where 0 .. N(2)`) recursed
+    // without bound and aborted the process with a native stack overflow.
+    // Constructing it (`const C = N(5)`) must now emit ONE cyclic-type
+    // diagnostic and poison, exactly like the underlying-chain cycle.
+    let file = parse("module m\nnewtype N = u8 where 0 .. N(2)\nconst C = N(5)\n");
+    let (v, diags) = eval_const(&file, "C");
+    assert!(
+        matches!(v, Some(Value::Poison)),
+        "self-referential newtype construction must poison, got {v:?}"
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic type")),
+        "expected a cyclic-type diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn self_referential_newtype_where_bound_data_is_diagnosed_not_a_crash() {
+    // Same Critical, reached via a `data` item field instead of a const.
+    let file = parse("module m\nnewtype N = u8 where 0 .. N(2)\ndata D: N = N(1)\n");
+    let (_buf, diags) = eval_data(&file, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic type")),
+        "expected a cyclic-type diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn newtype_where_bound_referencing_sizeof_is_not_a_false_cycle() {
+    // Regression (Critical fix must NOT over-guard): a newtype whose `where`
+    // bound reads `sizeof(S)` of a struct that itself has a field of the
+    // newtype is a legitimate size/layout re-entrancy — NOT a construction
+    // cycle — and resolves cleanly (val 0, no diagnostics). The construction
+    // guard must be DISTINCT from the layout guard so this keeps working.
+    let file = parse(
+        "module m\nnewtype N = u8 where 0 .. sizeof(S)\nstruct S { x: N }\nconst C = N(0)\n",
+    );
+    let (v, diags) = eval_const(&file, "C");
+    assert!(diags.is_empty(), "expected no diagnostics (legitimate re-entrancy), got {diags:?}");
+    assert!(
+        matches!(&v, Some(Value::Typed { .. })),
+        "N(0) should construct cleanly, got {v:?}"
     );
 }
 

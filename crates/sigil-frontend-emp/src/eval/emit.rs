@@ -99,8 +99,9 @@ impl<'a> Evaluator<'a> {
         let Some(bits) = self.fixed_width_bits(i, f, span) else {
             return DataBuf::empty();
         };
-        // Shared whole-byte check (emits the "not a whole number of bytes"
-        // diagnostic identically to `size_of_ty`).
+        // Shared sizing (emits BOTH the "not a whole number of bytes" and the
+        // ">4 bytes, too wide" diagnostics identically to `size_of_ty`, so layout
+        // and emission cannot disagree — T8 review, Minor 2).
         let width_bytes = self.fixed_byte_size(i, f, span);
         if bits % 8 != 0 {
             // A partial-byte fixed cannot be emitted as a scalar; the whole-byte
@@ -108,13 +109,7 @@ impl<'a> Evaluator<'a> {
             return DataBuf::empty();
         }
         if width_bytes > 4 {
-            self.error(
-                span,
-                format!(
-                    "{} is {width_bytes} bytes; too wide to emit as a scalar — rescale before storing",
-                    Ty::Fixed { i, f }.describe()
-                ),
-            );
+            // Too-wide diagnostic already fired in `fixed_byte_size`; just bail.
             return DataBuf::empty();
         }
         let lo = -(1i128 << (bits - 1));

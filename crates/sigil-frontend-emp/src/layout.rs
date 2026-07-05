@@ -770,13 +770,33 @@ impl<'a> Evaluator<'a> {
                     return true;
                 };
                 if let Some((lo_expr, hi_expr)) = &decl.refine {
-                    return match (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr)) {
+                    // A newtype whose `where` bound (transitively) constructs the
+                    // SAME newtype (`newtype N = u8 where 0 .. N(2)`) would re-enter
+                    // this validation without bound and abort the process with a
+                    // native stack overflow (T8 review, Critical). Guard on a
+                    // DEDICATED stack — NOT `layout_in_progress`, whose reuse would
+                    // falsely flag the legitimate `where 0 .. sizeof(S)` /
+                    // `struct S { x: N }` size re-entrancy — so a construction cycle
+                    // is diagnosed like the underlying-chain cycle above.
+                    if let Some(start) =
+                        self.refine_check_in_progress.iter().position(|n| n == name)
+                    {
+                        let mut chain: Vec<&str> =
+                            self.refine_check_in_progress[start..].iter().map(|s| s.as_str()).collect();
+                        chain.push(name);
+                        self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
+                        return false;
+                    }
+                    self.refine_check_in_progress.push(name.to_string());
+                    let result = match (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr)) {
                         (Some(lo), Some(hi)) => {
                             self.check_in_range(val, lo, hi, span, &format!("newtype {label}"))
                         }
                         // A non-int bound already reported via `eval_const_index`.
                         _ => false,
                     };
+                    self.refine_check_in_progress.pop();
+                    return result;
                 }
                 // Recurse into the underlying type but KEEP `label` — the author
                 // wrote `Angle(x)`, so the eventual `u8` range check must blame
@@ -828,7 +848,23 @@ impl<'a> Evaluator<'a> {
             self.error(span, format!("fixed<{i},{f}> is not a whole number of bytes"));
             return bits.div_ceil(8) as usize;
         }
-        (bits / 8) as usize
+        let width_bytes = (bits / 8) as usize;
+        // A whole-byte fixed wider than 4 bytes (e.g. `fixed<32,32>` = 8 bytes)
+        // is un-storable as a scalar — the 68k `.b/.w/.l` directives are 1/2/4
+        // bytes (T8 review, Minor 2). Emission (`lower_fixed`) already rejected
+        // it, but layout/sizeof silently sized it, so a struct field of such a
+        // type laid out and passed `(size:)`/`offsetof` while emission refused
+        // it. Diagnose here so layout and emission AGREE it is unusable. (This is
+        // the ONE shared site, so `lower_fixed` no longer re-reports.)
+        if width_bytes > 4 {
+            self.error(
+                span,
+                format!(
+                    "fixed<{i},{f}> is {width_bytes} bytes; too wide to store as a scalar (max 4) — rescale before storing"
+                ),
+            );
+        }
+        width_bytes
     }
 
     /// The bit width of a `fixed<I,F>` (`I + F`), guarding the two degenerate

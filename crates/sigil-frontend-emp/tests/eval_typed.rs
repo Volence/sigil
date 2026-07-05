@@ -108,15 +108,56 @@ fn same_type_comparison_yields_bool() {
 }
 
 #[test]
-fn cross_type_comparison_is_an_error() {
+fn cross_type_ordering_is_an_error() {
+    // Ordering (`<` `<=` `>` `>=`) across distinct nominal types is a cross-type
+    // mix — there is no meaningful ordering between an `Angle` and a `Pos`.
     let src = "module m\nnewtype Angle = u8\nnewtype Pos = u8\n\
-               const N = Angle(10) == Pos(10)\n";
+               const N = Angle(10) < Pos(10)\n";
     let (v, diags) = eval(src, "N");
     assert_eq!(v, Some(Value::Poison));
     assert!(
         diags.iter().any(|d| d.message.contains("[cross-type mix]")),
         "expected a cross-type-mix error, got {diags:?}"
     );
+}
+
+#[test]
+fn cross_type_equality_is_total_not_an_error() {
+    // Regression (T8 review, Minor 1): `==`/`!=` are TOTAL — they never error on
+    // a type mismatch. T5's routing sent any op with a `Typed` operand to the
+    // width-aware numeric path, which erroneously reported `[cross-type mix]`
+    // for `Angle == Pos`. Distinct nominal types are simply unequal.
+    let src = "module m\nnewtype Angle = u8\nnewtype Pos = u8\n\
+               const N = Angle(10) == Pos(10)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Bool(false)));
+    assert!(diags.is_empty(), "`==` is total, expected no diagnostics, got {diags:?}");
+}
+
+#[test]
+fn typed_equality_against_bool_is_total_not_an_error() {
+    // Regression (T8 review, Minor 1): `Angle(5) == true` must be `Bool(false)`
+    // with no diagnostic, not the `` `==` not defined for typed and bool `` error
+    // T5's routing introduced.
+    let src = "module m\nnewtype Angle = u8\nconst N = Angle(5) == true\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Bool(false)));
+    assert!(diags.is_empty(), "`==` is total, expected no diagnostics, got {diags:?}");
+
+    // And `!=` is its negation: `Angle(5) != true` → true.
+    let src = "module m\nnewtype Angle = u8\nconst N = Angle(5) != true\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Bool(true)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn typed_equality_against_matching_int_still_coerces() {
+    // The `Typed`-vs-int coercion stays: `Angle(5) == 5` compares stored ints.
+    let src = "module m\nnewtype Angle = u8\nconst N = Angle(5) == 5\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Bool(true)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }
 
 // ---- fixed<> scale rules (via newtype-over-fixed) ----------------------

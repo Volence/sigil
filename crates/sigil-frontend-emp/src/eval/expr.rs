@@ -333,6 +333,13 @@ impl<'a> Evaluator<'a> {
         let mut provided_vals: Vec<(String, Value)> = Vec::with_capacity(provided.len());
         for (fname, expr) in provided {
             let v = self.eval_expr(expr, env);
+            // A `return` (or abort) inside a field expr propagates uniformly —
+            // mirroring the sibling construction sites (T8 review, Minor 3). Pop
+            // the construction guard before bailing so the stack stays balanced.
+            if self.aborted || self.pending_return.is_some() {
+                self.struct_construct_in_progress.pop();
+                return Value::Poison;
+            }
             let fspan = crate::parser::expr_span(expr);
             if !decl.fields.iter().any(|f| &f.name == fname) {
                 self.error(fspan, format!("[struct.unknown-field] struct {ty_name} has no field `{fname}`"));
@@ -352,6 +359,11 @@ impl<'a> Evaluator<'a> {
                 out_fields.push((field.name.clone(), v.clone()));
             } else if let Some(default) = &field.default {
                 let dv = self.eval_expr(default, env);
+                // Same leaked-return / abort bail as the provided-field loop.
+                if self.aborted || self.pending_return.is_some() {
+                    self.struct_construct_in_progress.pop();
+                    return Value::Poison;
+                }
                 out_fields.push((field.name.clone(), dv));
             } else {
                 self.error(
@@ -396,6 +408,13 @@ impl<'a> Evaluator<'a> {
         let mut poisoned = false;
         for (fname, expr) in fields {
             let v = self.eval_expr(expr, env);
+            // A `return` (or abort) inside a field expr propagates uniformly —
+            // mirroring the sibling construction sites (`construct_enum_payload`,
+            // `eval_single_int_arg`, `eval_byte`/`eval_bytes`) so a leaked return
+            // is handled the same everywhere (T8 review, Minor 3).
+            if self.aborted || self.pending_return.is_some() {
+                return Value::Poison;
+            }
             let fspan = crate::parser::expr_span(expr);
             let Some(fl) = layout.fields.iter().find(|f| &f.name == fname) else {
                 self.error(fspan, format!("bitfield {ty_name} has no field `{fname}`"));
@@ -508,6 +527,17 @@ impl<'a> Evaluator<'a> {
     /// a non-int, non-typed operand (a `Float`, `Bool`, `Str`, …) is a plain type
     /// error.
     fn eval_typed_binary(&mut self, op: BinOp, lhs: Value, rhs: Value, span: Span) -> Value {
+        // `==`/`!=` are TOTAL (D-P2.3, `eval_equality`): they never error on a
+        // type mismatch. T5's routing sends any op with a `Typed` operand here
+        // first, which silently narrowed that contract — `Angle(5) == true` began
+        // erroring. When a `Typed` operand is NOT numerically comparable to the
+        // other (a non-int, non-same-type-`Typed` operand — e.g. `== true`, or a
+        // cross-type `Angle(5) == Pos(..)`), fall back to structural (in)equality
+        // rather than the width-aware numeric path (which would error). Same-type
+        // `Typed == Typed` and `Typed`-vs-int coercion still take the numeric path.
+        if matches!(op, BinOp::Eq | BinOp::Ne) && !typed_eq_is_numeric(&lhs, &rhs) {
+            return self.eval_equality(op, &lhs, &rhs);
+        }
         let (tl, nl, tr, nr) = match (lhs, rhs) {
             (Value::Typed { ty: tl, val: vl }, Value::Typed { ty: tr, val: vr }) => {
                 match (vl.as_stored_int(), vr.as_stored_int()) {
@@ -1303,6 +1333,25 @@ fn num_f64(v: &Value) -> Option<f64> {
 /// Structural value equality with numeric `Int`/`Float` promotion at the top
 /// level. Distinct kinds are unequal; same-kind aggregates use the derived
 /// structural `PartialEq` (nested numbers are *not* cross-promoted).
+/// Whether an `==`/`!=` between a `Typed` operand and another value should take
+/// the width-aware NUMERIC comparison path (comparing stored ints) rather than
+/// falling back to total structural equality. True only when both operands
+/// erase to the SAME nominal type's stored int (same-type `Typed == Typed`) or
+/// one is a `Typed` and the other a bare integer (the `Typed`-vs-int coercion).
+/// Everything else (a `Typed` vs a `Bool`/`Str`/`Float`, or two DIFFERENT
+/// nominal types) is not numerically comparable and must stay total.
+fn typed_eq_is_numeric(lhs: &Value, rhs: &Value) -> bool {
+    match (lhs, rhs) {
+        (Value::Typed { ty: tl, val: vl }, Value::Typed { ty: tr, val: vr }) => {
+            tl == tr && vl.as_stored_int().is_some() && vr.as_stored_int().is_some()
+        }
+        (Value::Typed { val, .. }, other) | (other, Value::Typed { val, .. }) => {
+            val.as_stored_int().is_some() && other.as_stored_int().is_some()
+        }
+        _ => false,
+    }
+}
+
 fn values_equal(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => x == y,
