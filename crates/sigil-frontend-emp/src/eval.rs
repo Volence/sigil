@@ -93,6 +93,24 @@ impl Env {
 /// guarding against runaway loops/recursion. Later tasks act on exhaustion.
 pub const STEP_BUDGET: u64 = 5_000_000;
 
+/// Maximum comptime-fn call depth (D-P2.16). A hard bound below the native
+/// stack limit so unbounded recursion is caught and *named* (see
+/// [`Evaluator::abort`]) instead of overflowing the process stack.
+pub const MAX_CALL_DEPTH: usize = 512;
+
+/// A control-flow signal threaded out of [`Evaluator::exec_stmts`].
+///
+/// A statement block either falls off its end (`Normal`, carrying the block's
+/// value — the last bare expression statement's value, or `Unit`) or hits an
+/// explicit `return` (`Return`, carrying the returned value, which stops the
+/// block and bubbles up to the enclosing `comptime fn` boundary).
+enum Flow {
+    /// The block ran to completion; the payload is its trailing value.
+    Normal(Value),
+    /// An explicit `return` fired; the payload is the returned value.
+    Return(Value),
+}
+
 /// The comptime evaluator's mutable state, threaded through evaluation.
 ///
 /// The `'a` lifetime ties the evaluator to a borrowed [`ast::File`]'s items:
@@ -117,6 +135,18 @@ pub struct Evaluator<'a> {
     consts: HashMap<&'a str, &'a ast::ConstDecl>,
     /// File-level `enum` decls, indexed by name (empty in the no-file mode).
     enums: HashMap<&'a str, &'a ast::EnumDecl>,
+    /// File-level `comptime fn` decls, indexed by name (empty in no-file mode).
+    fns: HashMap<&'a str, &'a ast::ComptimeFnDecl>,
+    /// Set once a hard limit (step budget or call depth) is hit (D-P2.16). While
+    /// set, [`eval_expr`](Evaluator::eval_expr) / [`exec_stmts`](Evaluator::exec_stmts)
+    /// short-circuit to `Poison` so evaluation unwinds without further work or
+    /// diagnostics.
+    aborted: bool,
+    /// A `return` that fired inside an *expression-position* `if` and must still
+    /// exit the enclosing fn. `eval_expr` sets it; the next `exec_stmts` step
+    /// picks it up and turns it into a [`Flow::Return`]. (Statement-position
+    /// `return`/`if` never need this — they flow through `exec_stmts` directly.)
+    pending_return: Option<Value>,
     /// Memoized const values, keyed by const name. A `Poison` entry records a
     /// const that already failed (cycle or error) so the failure does not
     /// re-report on subsequent references.
@@ -138,6 +168,9 @@ impl<'a> Evaluator<'a> {
             call_stack: Vec::new(),
             consts: HashMap::new(),
             enums: HashMap::new(),
+            fns: HashMap::new(),
+            aborted: false,
+            pending_return: None,
             const_memo: HashMap::new(),
             in_progress: Vec::new(),
         }
@@ -156,6 +189,9 @@ impl<'a> Evaluator<'a> {
                 }
                 ast::Item::Enum(e) => {
                     ev.enums.insert(e.name.as_str(), e);
+                }
+                ast::Item::ComptimeFn(f) => {
+                    ev.fns.insert(f.name.as_str(), f);
                 }
                 _ => {}
             }
@@ -185,7 +221,15 @@ impl<'a> Evaluator<'a> {
     /// `Call`, user-struct `StructLit`, `If`, `For`, and `Asm` are handled by
     /// later tasks (T4–T6); here they return `Poison` without a diagnostic.
     pub fn eval_expr(&mut self, expr: &ast::Expr, env: &mut Env) -> Value {
-        self.bump_step();
+        // Once evaluation has aborted (D-P2.16) or a `return` is pending out of an
+        // expression-position `if`, short-circuit so the tree unwinds silently.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        if !self.bump_step() {
+            self.abort(crate::parser::expr_span(expr), "step budget exceeded");
+            return Value::Poison;
+        }
         match expr {
             // Int literals are `i64` in the AST; widen to the `i128` comptime
             // domain (D-P2.13).
@@ -208,11 +252,21 @@ impl<'a> Evaluator<'a> {
             ast::Expr::TupleLit { elems, .. } => {
                 Value::Tuple(elems.iter().map(|e| self.eval_expr(e, env)).collect())
             }
-            // TODO(T4): evaluate comptime-fn / builtin calls.
-            ast::Expr::Call { .. } => Value::Poison,
+            ast::Expr::Call { callee, args, span } => self.eval_call(callee, args, *span, env),
             ast::Expr::StructLit { ty, fields, .. } => self.eval_struct_lit(ty, fields, env),
-            // TODO(T5): control flow.
-            ast::Expr::If { .. } => Value::Poison,
+            ast::Expr::If { cond, then, els, .. } => {
+                // As an expression, an `if` yields its chosen branch's value. If
+                // that branch hit `return`, stash it in `pending_return` so the
+                // enclosing `exec_stmts` turns it into a fn-level `Flow::Return`.
+                match self.eval_if(cond, then, els.as_deref(), env) {
+                    Flow::Normal(v) => v,
+                    Flow::Return(v) => {
+                        self.pending_return = Some(v.clone());
+                        v
+                    }
+                }
+            }
+            // TODO(T5): `for` comprehensions.
             ast::Expr::For { .. } => Value::Poison,
             // TODO(Plan 3/4): `asm { }` lowers to a `Code` value.
             ast::Expr::Asm { .. } => Value::Poison,
@@ -284,6 +338,316 @@ impl<'a> Evaluator<'a> {
         let fields =
             fields.iter().map(|(name, e)| (name.clone(), self.eval_expr(e, env))).collect();
         Value::Struct { ty_name, fields }
+    }
+
+    // ---- statement execution / control flow (T4) ---------------------------
+
+    /// Execute a statement block in order in `env`'s *current* scope, returning
+    /// a [`Flow`]: `Normal(v)` if the block fell off its end (with `v` the
+    /// trailing value), or `Return(v)` the moment an explicit `return` — or a
+    /// `return` inside a nested `if` — fires.
+    ///
+    /// The block's trailing value is the value of its final statement iff that
+    /// statement is a bare expression, else [`Value::Unit`]. Explicit `return`
+    /// is the primary idiom; trailing-expression is the fallback.
+    ///
+    /// Statements deferred to T5 (`for`/`while`/`comptime` blocks, `comptime var`,
+    /// assignment, `patch`, `bind`) are no-ops here so the executor stays total;
+    /// their semantics land with control flow in the next task.
+    fn exec_stmts(&mut self, stmts: &[ast::Stmt], env: &mut Env) -> Flow {
+        if self.aborted {
+            return Flow::Normal(Value::Poison);
+        }
+        let mut last = Value::Unit;
+        for stmt in stmts {
+            if self.aborted {
+                return Flow::Normal(Value::Poison);
+            }
+            match stmt {
+                ast::Stmt::Let { name, value, .. } => {
+                    let v = self.eval_expr(value, env);
+                    if let Some(r) = self.pending_return.take() {
+                        return Flow::Return(r);
+                    }
+                    env.define(name.clone(), v, false);
+                    last = Value::Unit;
+                }
+                ast::Stmt::LetTuple { names, value, span } => {
+                    let v = self.eval_expr(value, env);
+                    if let Some(r) = self.pending_return.take() {
+                        return Flow::Return(r);
+                    }
+                    self.bind_tuple(names, v, *span, env);
+                    last = Value::Unit;
+                }
+                ast::Stmt::Return { value, .. } => {
+                    let v = match value {
+                        Some(e) => self.eval_expr(e, env),
+                        None => Value::Unit,
+                    };
+                    // A `return` nested in the returned expression wins (it fired
+                    // first); otherwise return this statement's own value.
+                    if let Some(r) = self.pending_return.take() {
+                        return Flow::Return(r);
+                    }
+                    return Flow::Return(v);
+                }
+                ast::Stmt::Expr(e) => {
+                    let v = self.eval_expr(e, env);
+                    if let Some(r) = self.pending_return.take() {
+                        return Flow::Return(r);
+                    }
+                    last = v;
+                }
+                ast::Stmt::If(e) => {
+                    // Statement-position `if`: run it, propagate any `return`,
+                    // and (like all non-expression statements) contribute no
+                    // trailing value.
+                    if let ast::Expr::If { cond, then, els, .. } = e {
+                        match self.eval_if(cond, then, els.as_deref(), env) {
+                            Flow::Return(v) => return Flow::Return(v),
+                            Flow::Normal(_) => {}
+                        }
+                    }
+                    last = Value::Unit;
+                }
+                // TODO(T5): `for`/`while`/`comptime` blocks + `comptime var` /
+                // assignment / `patch` / `bind`. No-op for now (kept total so T5
+                // slots in without touching the handled arms above).
+                ast::Stmt::While { .. }
+                | ast::Stmt::ComptimeBlock { .. }
+                | ast::Stmt::For(_)
+                | ast::Stmt::Var { .. }
+                | ast::Stmt::Assign { .. }
+                | ast::Stmt::Patch { .. }
+                | ast::Stmt::Bind { .. } => {
+                    last = Value::Unit;
+                }
+            }
+        }
+        Flow::Normal(last)
+    }
+
+    /// Evaluate an `if` in either statement or expression position (D-P2.15).
+    ///
+    /// The condition must be `Bool`; a non-bool is an error (yielding `Poison`)
+    /// and a `Poison` condition propagates silently. The taken branch runs in a
+    /// fresh nested scope and its [`Flow`] (including a `Return`) is returned
+    /// as-is; a false condition with no `else` yields `Normal(Unit)`.
+    fn eval_if(
+        &mut self,
+        cond: &ast::Expr,
+        then: &[ast::Stmt],
+        els: Option<&[ast::Stmt]>,
+        env: &mut Env,
+    ) -> Flow {
+        if self.aborted {
+            return Flow::Normal(Value::Poison);
+        }
+        let c = self.eval_expr(cond, env);
+        // A `return` fired while evaluating the condition itself — propagate it.
+        if let Some(r) = self.pending_return.take() {
+            return Flow::Return(r);
+        }
+        match c {
+            Value::Poison => Flow::Normal(Value::Poison),
+            Value::Bool(true) => {
+                env.push_scope();
+                let f = self.exec_stmts(then, env);
+                env.pop_scope();
+                f
+            }
+            Value::Bool(false) => match els {
+                Some(e) => {
+                    env.push_scope();
+                    let f = self.exec_stmts(e, env);
+                    env.pop_scope();
+                    f
+                }
+                None => Flow::Normal(Value::Unit),
+            },
+            other => {
+                self.error(
+                    crate::parser::expr_span(cond),
+                    format!("if condition must be bool, got {}", other.type_name()),
+                );
+                Flow::Normal(Value::Poison)
+            }
+        }
+    }
+
+    /// Bind a tuple-destructuring `let (a, b, ...) = e`. The value must be a
+    /// [`Value::Tuple`] whose arity matches `names`; a mismatch (wrong arity or
+    /// non-tuple) is an error and every name is bound to `Poison` so downstream
+    /// use suppresses. A `Poison` value propagates silently (no new diagnostic).
+    fn bind_tuple(&mut self, names: &[String], value: Value, span: Span, env: &mut Env) {
+        match value {
+            Value::Tuple(elems) if elems.len() == names.len() => {
+                for (n, e) in names.iter().zip(elems) {
+                    env.define(n.clone(), e, false);
+                }
+                return;
+            }
+            Value::Poison => {}
+            ref other => {
+                let got = match other {
+                    Value::Tuple(elems) => format!("a {}-tuple", elems.len()),
+                    v => format!("a {}", v.type_name()),
+                };
+                self.error(
+                    span,
+                    format!("expected a {}-tuple to destructure, got {got}", names.len()),
+                );
+            }
+        }
+        for n in names {
+            env.define(n.clone(), Value::Poison, false);
+        }
+    }
+
+    /// Evaluate a call expression. A single-segment callee names a `comptime fn`;
+    /// an unknown single name is an error. A multi-segment callee is a
+    /// method-style receiver call (`xs.map(..)`) handled by T6 — returned as
+    /// silent `Poison` here.
+    fn eval_call(&mut self, callee: &ast::Path, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        // Multi-segment callee: a `recv.method(..)` builtin or enum constructor,
+        // both of which arrive in T6. Silently poison for now (no diagnostic).
+        if callee.segments.len() != 1 {
+            return Value::Poison;
+        }
+        let name = callee.segments[0].as_str();
+        // Copy the `&'a` decl out of the index so its body/params are borrowed
+        // from the file, leaving `self` free to mutate across the body eval.
+        let decl: &'a ast::ComptimeFnDecl = match self.fns.get(name).copied() {
+            Some(d) => d,
+            None => {
+                self.error(span, format!("unknown function `{name}`"));
+                return Value::Poison;
+            }
+        };
+        // Bind arguments (evaluated in the caller's env) to a positional slot
+        // vector aligned with the params.
+        let bound = self.bind_args(decl, args, span, env);
+        if self.aborted {
+            return Value::Poison;
+        }
+        // Recursion / stack safety (D-P2.16): bound the depth *before* recursing
+        // so runaway recursion is named, not a native stack overflow.
+        if self.call_stack.len() >= MAX_CALL_DEPTH {
+            self.abort(span, "recursion too deep");
+            return Value::Poison;
+        }
+        if !self.bump_step() {
+            self.abort(span, "step budget exceeded");
+            return Value::Poison;
+        }
+        self.call_stack.push((name.to_string(), span));
+        // Comptime fns are pure: a fresh env, seeing only their params (and, via
+        // `self`, file consts/fns) — never the caller's locals.
+        let mut fenv = Env::new();
+        for ((pname, _, _), v) in decl.params.iter().zip(bound) {
+            fenv.define(pname.clone(), v, false);
+        }
+        let flow = self.exec_stmts(&decl.body, &mut fenv);
+        self.call_stack.pop();
+        match flow {
+            Flow::Return(v) | Flow::Normal(v) => v,
+        }
+    }
+
+    /// Bind call `args` to `decl`'s parameters, returning a value per parameter
+    /// (in parameter order), `Poison`-filled where an argument is missing or a
+    /// binding error occurred — so a single clear diagnostic is emitted and the
+    /// call still proceeds without a crash.
+    ///
+    /// Positional args fill parameters left-to-right by position; named args fill
+    /// the parameter of that name. Errors: an unknown named parameter, a
+    /// parameter filled twice (positionally then by name, or twice by name), a
+    /// positional arg past the last parameter (`too many arguments`), and any
+    /// parameter left unfilled (`missing argument`).
+    fn bind_args(
+        &mut self,
+        decl: &ast::ComptimeFnDecl,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Vec<Value> {
+        let n = decl.params.len();
+        let mut slots: Vec<Option<Value>> = vec![None; n];
+        let mut pos = 0usize;
+        for arg in args {
+            let v = self.eval_expr(&arg.value, env);
+            match &arg.name {
+                None => {
+                    if pos >= n {
+                        self.error(arg.span, "too many arguments");
+                    } else if slots[pos].is_some() {
+                        let pname = &decl.params[pos].0;
+                        self.error(
+                            arg.span,
+                            format!("parameter `{pname}` given more than once"),
+                        );
+                        pos += 1;
+                    } else {
+                        slots[pos] = Some(v);
+                        pos += 1;
+                    }
+                }
+                Some(pname) => match decl.params.iter().position(|(p, _, _)| p == pname) {
+                    None => {
+                        self.error(arg.span, format!("unknown named parameter `{pname}`"));
+                    }
+                    Some(idx) => {
+                        if slots[idx].is_some() {
+                            self.error(
+                                arg.span,
+                                format!("parameter `{pname}` given more than once"),
+                            );
+                        } else {
+                            slots[idx] = Some(v);
+                        }
+                    }
+                },
+            }
+        }
+        slots
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| match s {
+                Some(v) => v,
+                None => {
+                    let pname = &decl.params[i].0;
+                    self.error(span, format!("missing argument `{pname}`"));
+                    Value::Poison
+                }
+            })
+            .collect()
+    }
+
+    /// Abort evaluation on a hard limit (step budget or call depth, D-P2.16).
+    ///
+    /// Sets the [`aborted`](Self::aborted) flag (so all in-flight evaluation
+    /// short-circuits and unwinds) and emits *one* error naming the active call
+    /// chain — the innermost non-terminating callees, not an opaque quota. Only
+    /// the first abort reports; later triggers during unwinding are ignored.
+    fn abort(&mut self, span: Span, reason: &str) {
+        if self.aborted {
+            return;
+        }
+        self.aborted = true;
+        let names: Vec<&str> = self.call_stack.iter().map(|(n, _)| n.as_str()).collect();
+        // Keep the message bounded when a deep chain repeats the same callee.
+        let chain = if names.len() > 12 {
+            format!("... -> {}", names[names.len() - 12..].join(" -> "))
+        } else {
+            names.join(" -> ")
+        };
+        let msg = if chain.is_empty() {
+            reason.to_string()
+        } else {
+            format!("{reason}: in {chain}")
+        };
+        self.error(span, msg);
     }
 
     /// Resolve the file-level const named `name`, evaluating it lazily and
@@ -676,6 +1040,29 @@ impl Default for Evaluator<'_> {
 /// `(Some(value), diags)` — `diags` may still be non-empty if the value
 /// contains a reported error (its `Poison` is surfaced as `Some(Poison)`).
 pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
+    // Run on a dedicated thread with a large stack so the native call stack has
+    // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
+    // not a native stack overflow, is what stops runaway recursion. A scoped
+    // thread lets the closure borrow `file`/`name` without a `'static` bound.
+    // (A per-call thread is cheap enough at comptime; a future task may hoist it
+    // to one evaluator-owned worker.)
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(EVAL_STACK_BYTES)
+            .spawn_scoped(scope, || eval_const_inner(file, name))
+            .expect("failed to spawn comptime evaluation thread")
+            .join()
+            .expect("comptime evaluation thread panicked")
+    })
+}
+
+/// Stack size for the comptime-evaluation thread (see [`eval_const`]). Sized to
+/// comfortably hold [`MAX_CALL_DEPTH`] comptime frames even in unoptimized
+/// debug builds, where per-frame stack usage is large.
+const EVAL_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// The body of [`eval_const`], run on the large-stack evaluation thread.
+fn eval_const_inner(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
     let mut ev = Evaluator::with_file(file);
     if !ev.consts.contains_key(name) {
         // Anchor the error at the module header — there is no const span to use.
