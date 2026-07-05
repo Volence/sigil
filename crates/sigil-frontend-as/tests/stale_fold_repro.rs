@@ -23,21 +23,20 @@
 //! `jmp`/`jsr` that grow abs.w→abs.l, +22 bytes total; the Z80 driver lands 22
 //! bytes early).
 //!
-//! ## The fix (T3)
+//! ## The fix (T3, landed)
 //!
-//! Move width selection into the front-end pass loop: pick abs.w/abs.l per pass
-//! from the current env, advance the cursor by the TRUE width, and let the
-//! existing `env == prev` convergence absorb the growth — exactly as asl's own
-//! repeat-until-stable does. Then folds and `phys_base` are true by
-//! construction, and both halves close.
+//! T3 moved width selection into the front-end pass loop: it picks abs.w/abs.l
+//! per pass from the current env, advances the cursor by the TRUE width, and
+//! lets the existing `env == prev` convergence absorb the growth — exactly as
+//! asl's own repeat-until-stable does. Folds and `phys_base` are now true by
+//! construction, and both halves of the defect close.
 //!
 //! ## This file
 //!
-//! The `#[ignore = "flips green in T3 …"]` tests assert the **asl-correct**
-//! bytes/LMAs (verified live against `asl 1.42` at authoring time). They FAIL
-//! today (that is the defect) and T3's exit criterion is removing their
-//! `#[ignore]`. The companion `*_documents_current_bug` tests pass today and pin
-//! the exact wrong output as a tripwire; T3 deletes them.
+//! These tests assert the **asl-correct** bytes/LMAs (verified live against
+//! `asl 1.42` at authoring time). Before T3 they failed (that was the defect);
+//! now that the front-end selects the true jmp/jsr width, they pass. The defect
+//! explanation above is kept as historical rationale for what they pin.
 
 use sigil_frontend_as::{assemble, Options};
 use sigil_ir::SymbolTable;
@@ -89,11 +88,8 @@ SecondSection:
 // asl 1.42 (`-cpu 68000 -q -L -U`) on SINGLE emits: 4EF9 0001 0006 0001 0006.
 // The grown jmp targets $10006 (correct) and the dc.l ALSO resolves to $10006.
 const SINGLE_ASL_CORRECT: &[u8] = &[0x4E, 0xF9, 0x00, 0x01, 0x00, 0x06, 0x00, 0x01, 0x00, 0x06];
-// What sigil emits today: the dc.l is folded at the baseline $10004 (jmp==4).
-const SINGLE_CURRENT_BUGGY: &[u8] = &[0x4E, 0xF9, 0x00, 0x01, 0x00, 0x06, 0x00, 0x01, 0x00, 0x04];
 
 #[test]
-#[ignore = "flips green in T3 (front-end width selection); asserts asl-correct bytes"]
 fn dc_l_after_grown_jmp_folds_correctly() {
     assert_eq!(
         assemble_flatten(SINGLE),
@@ -103,15 +99,6 @@ fn dc_l_after_grown_jmp_folds_correctly() {
 }
 
 #[test]
-fn dc_l_after_grown_jmp_documents_current_bug() {
-    // Tripwire: pins today's WRONG output (stale $10004). If this starts failing
-    // before T3, the fold path changed — investigate. T3 deletes this test and
-    // un-ignores `dc_l_after_grown_jmp_folds_correctly`.
-    assert_eq!(assemble_flatten(SINGLE), SINGLE_CURRENT_BUGGY);
-}
-
-#[test]
-#[ignore = "flips green in T3 (front-end width selection); asserts asl-correct LMA"]
 fn downstream_section_lma_reflows_after_growth() {
     let resolved = assemble_resolve(TWO);
     let second = resolved
@@ -124,16 +111,4 @@ fn downstream_section_lma_reflows_after_growth() {
         second.lma, 0x0A,
         "downstream section LMA must account for jmp/jsr width growth"
     );
-}
-
-#[test]
-fn downstream_section_lma_documents_current_bug() {
-    // Tripwire: today the second section lands at $8 (2 bytes early — baseline
-    // jmp=4 instead of the grown 6). T3 deletes this and un-ignores the reflow test.
-    let resolved = assemble_resolve(TWO);
-    let second = resolved
-        .iter()
-        .find(|s| s.labels.iter().any(|l| l.name == "SecondSection"))
-        .expect("SecondSection section present");
-    assert_eq!(second.lma, 0x08);
 }
