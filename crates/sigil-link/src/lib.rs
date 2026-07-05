@@ -44,20 +44,33 @@ impl LinkedImage {
 /// `stubs` (fixed external values, e.g. 68k leaf symbols in the harness).
 /// Returns all diagnostics on failure.
 ///
-/// Symbol redefinition (the same name defined by multiple sections/stubs) is
-/// currently last-write-wins; collision diagnostics tied to the real producer
-/// land in Plan 4 when the front-end drives this.
+/// A symbol name defined by two different sections is a hard `Error`
+/// diagnostic (a real collision at full-ROM link). A section label resolving
+/// against a `stubs` entry is legitimate and is not flagged.
 pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Vec<Diagnostic>> {
     let mut diags: Vec<Diagnostic> = Vec::new();
 
     // Pass 1: build the symbol table — stubs first, then each section's labels
     // at their phased VMA (vma_origin + offset).
     let mut syms = stubs.clone();
+    let mut defined_here: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for sec in sections {
         let origin = sec.vma_origin();
         for label in &sec.labels {
+            if let Some(prev) = defined_here.insert(label.name.clone(), sec.name.clone()) {
+                diags.push(diag(
+                    format!(
+                        "symbol `{}` redefined by section `{}` (already defined by section `{}`)",
+                        label.name, sec.name, prev
+                    ),
+                    Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+                ));
+            }
             syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
         }
+    }
+    if diags.iter().any(|d| d.level == Level::Error) {
+        return Err(diags);
     }
 
     // Pass 2: per section, copy image bytes and apply fixups.
@@ -440,6 +453,29 @@ mod tests {
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn link_reports_duplicate_section_symbol() {
+        let mk = |name: &str| Section {
+            name: name.into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0),
+            lma: 0,
+            labels: vec![Label { name: "Dup".into(), offset: 0 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x4E, 0x71],
+                fixups: vec![],
+                span: span(),
+            })],
+        };
+        let err = link(&[mk("a"), mk("b")], &SymbolTable::new()).unwrap_err();
+        assert!(
+            err.iter()
+                .any(|d| d.message.contains("Dup") && d.message.to_lowercase().contains("redefin")),
+            "expected a redefinition diagnostic for `Dup`, got: {:?}",
+            err
+        );
     }
 
     #[test]
