@@ -15,7 +15,10 @@ use sigil_backend_z80::z80::{Cond, Mnemonic, Operand, Reg16, Reg8};
 use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
 use sigil_ir::expr::{BinOp, Fold};
-use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable, SymbolValue};
+use sigil_ir::{
+    asl_width_rule, AbsWidth, DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable,
+    SymbolValue,
+};
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
 const EXPAND_CAP: usize = 64;
@@ -2552,6 +2555,39 @@ impl Asm {
         Some(ops)
     }
 
+    /// Lower a bare (unsuffixed) absolute-address EA operand — a symbol or an
+    /// expression used where a 68k EA is expected, e.g. `lea Sym, a0` or
+    /// `move.w Sym, d0`. asl width-selects abs.w/abs.l via `asl_width_rule`
+    /// (probe-verified EA-general in M1.D T2). We fold + select in the front
+    /// end (the T3 width-selection mechanism for the absolute-EA class), so the
+    /// instruction's Data fragment carries the true encoded length and the
+    /// multi-pass fixpoint converges. Uses `self.fold` (not `fold_imm`): an
+    /// unresolved-this-pass symbol folds to Poison → pessimistic abs.l (matching
+    /// asl's forward-symbol width guess). The first resolution can then only
+    /// shrink-or-stay (abs.l → abs.w/abs.l), so realistic forward refs converge.
+    /// (`asl_width_rule` is non-monotonic at the $FF8000 sign-extension wrap —
+    /// see the grow-only caveat in `sigil-link/relax.rs`; that region is
+    /// immediately-resolved high-RAM constants in Aeon, and `PASS_CAP` backstops
+    /// any pathological oscillation.) The name is recorded in `poison_refs` so a
+    /// genuinely-undefined symbol still errors on the converged pass.
+    fn abs_ea_from_expr(&mut self, e: &Expr, span: Span) -> M68kOperand {
+        let qualified = self.qualify_expr(e);
+        match self.fold(&qualified) {
+            Fold::Value(v) => match asl_width_rule(v, false) {
+                AbsWidth::W => M68kOperand::AbsW((v & 0xFFFF) as i16),
+                AbsWidth::L => M68kOperand::AbsL(v as i32),
+            },
+            Fold::Poison => {
+                for name in self.unresolved_names(&qualified) {
+                    self.poison_refs.push((name, span));
+                }
+                // Pessimistic abs.l while unresolved; the converged pass re-folds
+                // to a real value (or errors via poison_refs above).
+                M68kOperand::AbsL(0)
+            }
+        }
+    }
+
     /// Convert one operand atom (see [`Self::convert_atoms_m68k`]).
     fn convert_one_atom_m68k(
         &mut self,
@@ -2578,7 +2614,7 @@ impl Asm {
                     return None;
                 }
             }
-            OperandAtom::Value(Expr::Sym(name)) => {
+            OperandAtom::Value(e @ Expr::Sym(name)) => {
                 if let Some(n) = m68k_data_reg(name) {
                     M68kOperand::Dn(n)
                 } else if let Some(n) = m68k_addr_reg(name) {
@@ -2588,21 +2624,15 @@ impl Asm {
                 } else if name == "ccr" {
                     M68kOperand::Ccr
                 } else {
-                    self.err(
-                            span,
-                            format!(
-                                "absolute/symbolic operand `{name}` is out of scope for T5 (register-direct/#immediate/register-indirect only); deferred to T5b"
-                            ),
-                        );
-                    return None;
+                    // Bare symbol in EA position = absolute address; asl
+                    // width-selects abs.w/abs.l (M1.D T2).
+                    self.abs_ea_from_expr(e, span)
                 }
             }
-            OperandAtom::Value(_) => {
-                self.err(
-                        span,
-                        "bare numeric/expression operand implies 68k absolute addressing, out of scope for T5; deferred to T5b",
-                    );
-                return None;
+            OperandAtom::Value(e) => {
+                // Bare numeric/expression operand = 68k absolute addressing;
+                // width-selected like the bare-symbol case above (M1.D T2).
+                self.abs_ea_from_expr(e, span)
             }
             OperandAtom::Mem(_) => {
                 self.err(
@@ -4010,22 +4040,22 @@ mod tests {
     }
 
     #[test]
-    fn m68k_absolute_address_operand_diagnoses_t5_not_a_crash() {
-        // A bare symbol/number (no `#`, no parens) means 68k absolute addressing
-        // — out of scope for T4 (deferred to T5).
+    fn m68k_bare_absolute_operand_width_selects_abs_w() {
+        // A bare number (no `#`, no parens) means 68k absolute addressing. Since
+        // M1.D T2 this is in scope: asl width-selects abs.w for a target in
+        // [0,$7FFF]∪[$FF8000,$FFFFFF]. `$1234` ≤ $7FFF → abs.w: `30 38 12 34`.
         let src = "    cpu 68000\n    move.w $1234,d0\n";
         let opts = Options {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
         };
-        let diags =
-            run(src, &opts).expect_err("absolute address operand must be rejected, not lowered");
-        assert!(
-            diags.iter().any(|d| d.message.contains("T5")),
-            "expected a T5-deferral diagnostic, got: {:?}",
-            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
-        );
+        let m = run(src, &opts).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        assert_eq!(bytes, vec![0x30, 0x38, 0x12, 0x34]);
     }
 
     #[test]
