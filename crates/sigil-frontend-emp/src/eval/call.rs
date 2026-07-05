@@ -43,8 +43,12 @@ impl<'a> Evaluator<'a> {
         // A single-segment callee may name a local/const *callable value* — a
         // lambda bound by `let`, or a fn-ref (`const G = dbl`). Resolve it as a
         // value first (locals shadow consts, matching `eval_path`); if callable,
-        // apply it. This sits between the builtin check and the user-`fns`
-        // lookup: builtin → local/const callable value → user fn → unknown.
+        // apply it. Full dispatch order: builtin → local/const callable value →
+        // newtype/refined construction or enum cast (T4) → user fn → unknown.
+        // Newtypes/enums live in their own tables (`self.newtypes`/`self.enums`),
+        // disjoint from `self.fns`, so this new step can never shadow an
+        // existing fn call — it only fires for a `name` that is NOT a callable
+        // local/const AND IS declared as a newtype or enum.
         let callable_val = if let Some(v) = env.lookup(name) {
             Some(v.clone())
         } else if self.consts.contains_key(name) {
@@ -73,6 +77,16 @@ impl<'a> Evaluator<'a> {
                     return Value::Poison;
                 }
             }
+        }
+        // Newtype/refined construction (T4): `PaletteLine(40)`. Erases to the
+        // bare underlying value on success (no `Value::Typed` — that's T5).
+        if let Some(decl) = self.newtypes.get(name).copied() {
+            return self.construct_newtype(decl, args, span, env);
+        }
+        // Enum cast (T4): `Anim(1)`. The grammar has no `unchecked` escape-hatch
+        // cast yet (§4.4) — an out-of-range integer is simply an error for now.
+        if let Some(decl) = self.enums.get(name).copied() {
+            return self.cast_enum(decl, args, span, env);
         }
         // Copy the `&'a` decl out of the index so its body/params are borrowed
         // from the file, leaving `self` free to mutate across the body eval.
@@ -312,5 +326,141 @@ impl<'a> Evaluator<'a> {
                 }
             })
             .collect()
+    }
+
+    /// `Name(x)` where `Name` is a `newtype` (T4): comptime construction.
+    /// Evaluates the single argument, checks it against the newtype's
+    /// effective bounds via the shared [`check_value_fits_ty`](Self::check_value_fits_ty)
+    /// mechanism (D-P3.6), and returns the ERASED underlying value on success —
+    /// no `Value::Typed` wrapper (that's T5, which extends this exact call
+    /// site to add the type tag and newtype arithmetic).
+    fn construct_newtype(
+        &mut self,
+        decl: &'a ast::NewtypeDecl,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        let Some(arg_val) = self.eval_single_arg(&decl.name, args, span, env) else {
+            return Value::Poison;
+        };
+        let n = match arg_val {
+            Value::Int(n) => n,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    span,
+                    format!(
+                        "newtype `{}` construction expects an integer, got {}",
+                        decl.name,
+                        other.type_name()
+                    ),
+                );
+                return Value::Poison;
+            }
+        };
+        let ty = crate::layout::Ty::Newtype(decl.name.clone());
+        if self.check_value_fits_ty(&ty, n, span) {
+            Value::Int(n)
+        } else {
+            Value::Poison
+        }
+    }
+
+    /// `Name(x)` where `Name` is an `enum` (T4): a closed cast. Evaluates the
+    /// single argument and matches it against each variant's comptime
+    /// discriminant (see [`enum_variant_value`](Self::enum_variant_value)); a
+    /// match yields that nullary [`Value::Enum`], and no match is
+    /// `[enum.out-of-range]`. There is no `unchecked` escape-hatch cast in the
+    /// grammar yet (§4.4) — deferred to whichever later task adds it.
+    fn cast_enum(
+        &mut self,
+        decl: &'a ast::EnumDecl,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        let Some(arg_val) = self.eval_single_arg(&decl.name, args, span, env) else {
+            return Value::Poison;
+        };
+        let n = match arg_val {
+            Value::Int(n) => n,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    span,
+                    format!(
+                        "enum `{}` cast expects an integer, got {}",
+                        decl.name,
+                        other.type_name()
+                    ),
+                );
+                return Value::Poison;
+            }
+        };
+        for idx in 0..decl.variants.len() {
+            if self.enum_variant_value(decl, idx) == Some(n) {
+                return Value::Enum {
+                    ty_name: decl.name.clone(),
+                    variant: decl.variants[idx].name.clone(),
+                    payload: vec![],
+                };
+            }
+        }
+        self.error(span, format!("[enum.out-of-range] {n} is not a variant of {}", decl.name));
+        Value::Poison
+    }
+
+    /// Evaluate the comptime integer value of `decl`'s `idx`-th variant: its
+    /// explicit discriminant expression (`Idle = 0`) if given, else one more
+    /// than the previous variant's value (starting at 0 for the first variant)
+    /// — the conventional C/Rust-style auto-increment. A non-int discriminant
+    /// expression is a diagnostic (returns `None`); an already-`Poison` result
+    /// stays silent (D-P2.9).
+    fn enum_variant_value(&mut self, decl: &'a ast::EnumDecl, idx: usize) -> Option<i128> {
+        match &decl.variants[idx].value {
+            Some(expr) => match self.eval_expr(expr, &mut Env::new()) {
+                Value::Int(n) => Some(n),
+                Value::Poison => None,
+                other => {
+                    self.error(
+                        crate::parser::expr_span(expr),
+                        format!(
+                            "enum variant discriminant must be an integer, got {}",
+                            other.type_name()
+                        ),
+                    );
+                    None
+                }
+            },
+            None if idx == 0 => Some(0),
+            None => self.enum_variant_value(decl, idx - 1).map(|v| v + 1),
+        }
+    }
+
+    /// Evaluate the exactly-one positional argument a newtype/enum
+    /// construction-or-cast call takes (`Name(x)`), reporting and returning
+    /// `None` for the wrong arity; a named argument (`Name(x: 40)`) is also a
+    /// diagnostic but its value is still evaluated and returned (so a `Poison`
+    /// downstream propagates silently rather than compounding).
+    fn eval_single_arg(
+        &mut self,
+        ty_name: &str,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.error(
+                span,
+                format!("`{ty_name}` construction/cast expects exactly 1 argument, got {}", args.len()),
+            );
+            return None;
+        }
+        let arg = &args[0];
+        if arg.name.is_some() {
+            self.error(arg.span, format!("`{ty_name}` construction/cast takes a positional argument"));
+        }
+        Some(self.eval_expr(&arg.value, env))
     }
 }

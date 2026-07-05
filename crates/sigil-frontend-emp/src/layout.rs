@@ -116,6 +116,27 @@ pub struct FieldLayout {
     pub size: usize,
 }
 
+/// A resolved bitfield bit layout (T4): the repr's total bit width and each
+/// field's placement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BitfieldLayout {
+    /// The repr type's bit width (8, 16, or 32).
+    pub repr_bits: u32,
+    /// The fields, in declaration order.
+    pub fields: Vec<BitfieldFieldLayout>,
+}
+
+/// One field's placement within a [`BitfieldLayout`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct BitfieldFieldLayout {
+    /// The field's name.
+    pub name: String,
+    /// The field's width in bits.
+    pub bits: u32,
+    /// The field's least-significant bit position within the repr.
+    pub lsb: u32,
+}
+
 impl<'a> Evaluator<'a> {
     /// Resolve a syntactic [`ast::Type`] to a semantic [`Ty`], reporting (and
     /// returning [`Ty::Poison`] for) any error along the way.
@@ -602,6 +623,172 @@ impl<'a> Evaluator<'a> {
             false
         }
     }
+
+    /// Compute the bit layout of the bitfield named `name` (T4, D-P3.10).
+    ///
+    /// Fields are declared MSB→LSB: a `cursor` starts at `repr_bits` and walks
+    /// downward. A field with an explicit `@ N` anchor is placed at `lsb = N`
+    /// (asserting `N + bits <= repr_bits`, else `[bitfield.field-out-of-range]`)
+    /// and resets the cursor to `N`; an unanchored field is placed immediately
+    /// below the cursor (`lsb = cursor - bits`, asserting `bits <= cursor`, else
+    /// `[bitfield.overflow]`). Fields must FIT, not FILL — widths need not sum
+    /// to `repr_bits` (unused high/gap bits are simply 0). Overlapping field
+    /// ranges (however they arose — usually via anchors) are
+    /// `[bitfield.field-overlap]`.
+    ///
+    /// Bitfields don't recurse (a repr is always a primitive), so unlike
+    /// [`layout_of_struct`](Self::layout_of_struct) this needs no memo or
+    /// cycle-detection stack — every diagnostic below anchors at the
+    /// offending field's own span, so `_span` (kept for signature symmetry
+    /// with `layout_of_struct`, and so every call site already has one handy)
+    /// goes unused.
+    pub(crate) fn layout_of_bitfield(&mut self, name: &str, _span: Span) -> BitfieldLayout {
+        let Some(decl) = self.bitfields.get(name).copied() else {
+            debug_assert!(false, "layout_of_bitfield called for unknown bitfield `{name}`");
+            return BitfieldLayout { repr_bits: 0, fields: Vec::new() };
+        };
+        let repr_ty = self.resolve_type(&decl.repr);
+        let repr_bits: u32 = match &repr_ty {
+            Ty::Prim { width, signed: false } => u32::from(*width) * 8,
+            Ty::Poison => return BitfieldLayout { repr_bits: 0, fields: Vec::new() },
+            other => {
+                self.error(
+                    decl.span,
+                    format!("bitfield {name}: repr must be u8, u16, or u32, got {}", other.describe()),
+                );
+                return BitfieldLayout { repr_bits: 0, fields: Vec::new() };
+            }
+        };
+        let mut cursor = repr_bits;
+        // (lsb, bits) of every field placed so far, for the overlap check.
+        let mut placed: Vec<(u32, u32)> = Vec::with_capacity(decl.fields.len());
+        let mut fields = Vec::with_capacity(decl.fields.len());
+        for f in &decl.fields {
+            let lsb = if let Some(anchor) = f.anchor {
+                match anchor.checked_add(f.bits) {
+                    Some(top) if top <= repr_bits => {
+                        cursor = anchor;
+                        anchor
+                    }
+                    _ => {
+                        self.error(
+                            f.span,
+                            format!(
+                                "[bitfield.field-out-of-range] bitfield {name}: field {} ({} bit{} @ {anchor}) exceeds the {repr_bits}-bit repr",
+                                f.name, f.bits, if f.bits == 1 { "" } else { "s" }
+                            ),
+                        );
+                        continue;
+                    }
+                }
+            } else if f.bits <= cursor {
+                let lsb = cursor - f.bits;
+                cursor = lsb;
+                lsb
+            } else {
+                self.error(
+                    f.span,
+                    format!(
+                        "[bitfield.overflow] bitfield {name}: field {} ({} bit{}) overflows the {repr_bits}-bit repr (only {cursor} bit{} left)",
+                        f.name, f.bits, if f.bits == 1 { "" } else { "s" },
+                        if cursor == 1 { "" } else { "s" }
+                    ),
+                );
+                continue;
+            };
+            let hi = lsb + f.bits; // exclusive top
+            if placed.iter().any(|&(p_lsb, p_bits)| lsb < p_lsb + p_bits && p_lsb < hi) {
+                self.error(
+                    f.span,
+                    format!(
+                        "[bitfield.field-overlap] bitfield {name}: field {} (bits {lsb}..{}) overlaps another field",
+                        f.name, hi - 1
+                    ),
+                );
+                continue;
+            }
+            placed.push((lsb, f.bits));
+            fields.push(BitfieldFieldLayout { name: f.name.clone(), bits: f.bits, lsb });
+        }
+        BitfieldLayout { repr_bits, fields }
+    }
+
+    /// The ONE shared refinement mechanism (D-P3.6): check `val` against the
+    /// effective scalar bounds of `ty`, via [`check_in_range`](Self::check_in_range).
+    /// This backs newtype/refined construction (T4, `Name(x)`) — bitfield field
+    /// widths use `check_in_range` directly (each width already IS its own
+    /// `0..=(2^bits-1)` bound, computed in [`layout_of_bitfield`](Self::layout_of_bitfield)'s
+    /// caller) rather than routing through here.
+    ///
+    /// - [`Ty::Refined`] checks `val` against its own `lo..=hi`.
+    /// - [`Ty::Newtype`] checks against the newtype's own `where` bound if it
+    ///   declared one, else recurses into its resolved underlying type — cycle-
+    ///   guarded against the shared [`layout_in_progress`](Evaluator) stack
+    ///   (mirroring [`size_of_newtype`](Self::size_of_newtype)) so a
+    ///   `newtype A = B; newtype B = A` chain (with no `where` on either) is
+    ///   diagnosed, not a stack overflow.
+    /// - [`Ty::Prim`] checks against the primitive's natural range (`u8:
+    ///   0..=255`, `i8: -128..=127`, etc).
+    /// - Anything else (struct/bitfield/enum/…) is not a scalar refinement —
+    ///   there is no bound to check, so this returns `true` (those types are
+    ///   never constructed via the `Name(x)` call syntax this backs).
+    pub(crate) fn check_value_fits_ty(&mut self, ty: &Ty, val: i128, span: Span) -> bool {
+        match ty {
+            Ty::Refined { lo, hi, .. } => {
+                self.check_in_range(val, *lo, *hi, span, &format!("{} construction", ty.describe()))
+            }
+            Ty::Newtype(name) => {
+                if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
+                    let mut chain: Vec<&str> =
+                        self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
+                    chain.push(name);
+                    self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
+                    return false;
+                }
+                let Some(decl) = self.newtypes.get(name.as_str()).copied() else {
+                    // Unreachable in practice (mirrors `size_of_newtype`): the
+                    // caller only builds `Ty::Newtype(name)` for a name already
+                    // known in `self.newtypes`.
+                    return true;
+                };
+                if let Some((lo_expr, hi_expr)) = &decl.refine {
+                    return match (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr)) {
+                        (Some(lo), Some(hi)) => {
+                            self.check_in_range(val, lo, hi, span, &format!("newtype {name}"))
+                        }
+                        // A non-int bound already reported via `eval_const_index`.
+                        _ => false,
+                    };
+                }
+                self.layout_in_progress.push(name.to_string());
+                let underlying = self.resolve_type(&decl.underlying);
+                let ok = self.check_value_fits_ty(&underlying, val, span);
+                self.layout_in_progress.pop();
+                ok
+            }
+            Ty::Prim { width, signed } => {
+                let (lo, hi) = prim_bounds(*width, *signed);
+                self.check_in_range(val, lo, hi, span, &format!("{} value", ty.describe()))
+            }
+            _ => true,
+        }
+    }
+}
+
+/// The inclusive natural range of a `width`-byte primitive, signed or
+/// unsigned. `width` is always 1, 2, or 4 (the [`Ty::Prim`] invariant); any
+/// other width is unreachable and falls back to the full `i128` range so a
+/// future widening degrades gracefully instead of panicking.
+fn prim_bounds(width: u8, signed: bool) -> (i128, i128) {
+    match (width, signed) {
+        (1, false) => (0, u8::MAX as i128),
+        (1, true) => (i8::MIN as i128, i8::MAX as i128),
+        (2, false) => (0, u16::MAX as i128),
+        (2, true) => (i16::MIN as i128, i16::MAX as i128),
+        (4, false) => (0, u32::MAX as i128),
+        (4, true) => (i32::MIN as i128, i32::MAX as i128),
+        _ => (i128::MIN, i128::MAX),
+    }
 }
 
 // ---- test-friendly entry points ---------------------------------------
@@ -672,4 +859,33 @@ pub fn check_in_range(val: i128, lo: i128, hi: i128) -> (bool, Vec<Diagnostic>) 
     let span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
     let ok = ev.check_in_range(val, lo, hi, span, "range check");
     (ok, ev.diags)
+}
+
+/// Lay out the bitfield named `name` in `file` (T4), returning its
+/// [`BitfieldLayout`] (or `None` if no such bitfield) plus any diagnostics —
+/// the bitfield analogue of [`layout_struct`].
+pub fn layout_bitfield(file: &ast::File, name: &str) -> (Option<BitfieldLayout>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if !ev.bitfields.contains_key(name) {
+            ev.error(file.module.span, format!("no bitfield named `{name}`"));
+            return (None, ev.diags);
+        }
+        let layout = ev.layout_of_bitfield(name, file.module.span);
+        (Some(layout), ev.diags)
+    })
+}
+
+/// Resolve `ty` against `file`'s type tables and check `val` against its
+/// effective scalar bounds (T4, D-P3.6) — a thin wrapper over
+/// [`Evaluator::check_value_fits_ty`] for direct testing, mirroring
+/// [`size_of_type`].
+pub fn check_value_fits_ty(file: &ast::File, ty: &ast::Type, val: i128) -> (bool, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        let span = file.module.span;
+        let resolved = ev.resolve_type(ty);
+        let ok = ev.check_value_fits_ty(&resolved, val, span);
+        (ok, ev.diags)
+    })
 }

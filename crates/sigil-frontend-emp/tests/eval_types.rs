@@ -3,10 +3,12 @@
 //! Each case parses a full `.emp` file (asserting a clean parse), then drives
 //! the layout entry points and asserts on sizes/offsets and diagnostics.
 use sigil_frontend_emp::ast::{Expr, Path, Type};
+use sigil_frontend_emp::eval::eval_const;
 use sigil_frontend_emp::layout::{
-    check_in_range, layout_struct, layout_structs_shared, size_of_type,
+    check_in_range, check_value_fits_ty, layout_struct, layout_structs_shared, size_of_type,
 };
 use sigil_frontend_emp::parse_str;
+use sigil_frontend_emp::value::Value;
 use sigil_span::{SourceId, Span};
 
 fn span() -> Span {
@@ -271,4 +273,86 @@ fn check_in_range_inclusive_bounds() {
     let (ok, diags) = check_in_range(-1, 0, 63);
     assert!(!ok);
     assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
+}
+
+// ---- check_value_fits_ty: the shared refinement mechanism (T4) --------
+
+#[test]
+fn check_value_fits_ty_refined_newtype_boundaries() {
+    let file = parse("module m\nnewtype PaletteLine = u8 where 0..63\n");
+    let (ok, diags) = check_value_fits_ty(&file, &named("PaletteLine"), 40);
+    assert!(ok, "40 should fit PaletteLine (0..63): {diags:?}");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+
+    let (ok, diags) = check_value_fits_ty(&file, &named("PaletteLine"), 63);
+    assert!(ok, "63 (inclusive hi) should fit PaletteLine: {diags:?}");
+    assert!(diags.is_empty());
+
+    let (ok, diags) = check_value_fits_ty(&file, &named("PaletteLine"), 70);
+    assert!(!ok);
+    assert!(
+        diags.iter().any(|d| d.message.contains("70 not in 0..63")),
+        "was {diags:?}"
+    );
+}
+
+#[test]
+fn check_value_fits_ty_bare_primitive_boundaries() {
+    let file = parse("module m\n");
+    let (ok, diags) = check_value_fits_ty(&file, &named("u8"), 200);
+    assert!(ok, "200 fits u8: {diags:?}");
+    assert!(diags.is_empty());
+
+    let (ok, diags) = check_value_fits_ty(&file, &named("u8"), 300);
+    assert!(!ok);
+    assert!(diags.iter().any(|d| d.message.contains("300 not in 0..255")), "was {diags:?}");
+
+    let (ok, diags) = check_value_fits_ty(&file, &named("i8"), -128);
+    assert!(ok, "-128 fits i8: {diags:?}");
+    let (ok, diags) = check_value_fits_ty(&file, &named("i8"), -129);
+    assert!(!ok);
+    assert!(diags.iter().any(|d| d.message.contains("-129 not in -128..127")), "was {diags:?}");
+}
+
+// ---- newtype/refined construction: Name(x) (T4) ------------------------
+
+fn eval_helper(src: &str, name: &str) -> (Option<Value>, Vec<sigil_span::Diagnostic>) {
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    eval_const(&file, name)
+}
+
+#[test]
+fn newtype_construction_in_range_erases_to_the_bare_int() {
+    let src = "module m\nnewtype PaletteLine = u8 where 0..63\nconst N = PaletteLine(40)\n";
+    let (v, diags) = eval_helper(src, "N");
+    assert_eq!(v, Some(Value::Int(40)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn newtype_construction_out_of_range_is_diagnosed() {
+    let src = "module m\nnewtype PaletteLine = u8 where 0..63\nconst N = PaletteLine(70)\n";
+    let (v, diags) = eval_helper(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("70 not in 0..63")),
+        "was {diags:?}"
+    );
+}
+
+#[test]
+fn newtype_without_where_still_checked_against_its_underlying_primitive() {
+    let src = "module m\nnewtype Angle = u8\nconst N = Angle(300)\n";
+    let (v, diags) = eval_helper(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        diags.iter().any(|d| d.message.contains("300 not in 0..255")),
+        "was {diags:?}"
+    );
+
+    let src = "module m\nnewtype Angle = u8\nconst N = Angle(200)\n";
+    let (v, diags) = eval_helper(src, "N");
+    assert_eq!(v, Some(Value::Int(200)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }

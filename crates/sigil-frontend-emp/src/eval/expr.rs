@@ -49,7 +49,7 @@ impl<'a> Evaluator<'a> {
                 Value::Tuple(elems.iter().map(|e| self.eval_expr(e, env)).collect())
             }
             ast::Expr::Call { callee, args, span } => self.eval_call(callee, args, *span, env),
-            ast::Expr::StructLit { ty, fields, .. } => self.eval_struct_lit(ty, fields, env),
+            ast::Expr::StructLit { ty, fields, span } => self.eval_struct_lit(ty, fields, *span, env),
             ast::Expr::If { cond, then, els, .. } => {
                 // As an expression, an `if` yields its chosen branch's value. If
                 // that branch hit `return`, stash it in `pending_return` so the
@@ -231,20 +231,85 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    /// Build a struct value from a written literal (D-P2.14, value level only):
-    /// evaluate each field in order and tag the value with the type's last path
-    /// segment. No existence/field/size/default checks — those are Plan 3.
+    /// Build a struct or bitfield value from a written literal (D-P2.14). A
+    /// literal whose type name resolves to a `bitfield` (T4) packs its fields
+    /// to the erased repr integer, per [`eval_bitfield_lit`](Self::eval_bitfield_lit).
+    /// Otherwise (a plain struct, value level only): evaluate each field in
+    /// order and tag the value with the type's last path segment — no
+    /// existence/field/size/default checks (that is T7).
     fn eval_struct_lit(
         &mut self,
         ty: &ast::Path,
         fields: &[(String, ast::Expr)],
+        span: Span,
         env: &mut Env,
     ) -> Value {
         let ty_name = ty.segments.last().cloned().unwrap_or_default();
+        if self.bitfields.contains_key(ty_name.as_str()) {
+            return self.eval_bitfield_lit(&ty_name, fields, span, env);
+        }
         // Poison field values are preserved as-is (propagate, no new diagnostic).
         let fields =
             fields.iter().map(|(name, e)| (name.clone(), self.eval_expr(e, env))).collect();
         Value::Struct { ty_name, fields }
+    }
+
+    /// Build a bitfield value from a written literal (T4, §4.4): each provided
+    /// field is evaluated to an `Int` and range-checked against `0..=(2^bits-1)`
+    /// via [`check_in_range`](Self::check_in_range) — a bitfield field's width
+    /// IS a refinement, the same shared mechanism as newtype/enum bounds
+    /// (D-P3.6), not a special case. A field omitted from the literal defaults
+    /// to 0 (unused/omitted bits are 0). An unknown field name is a
+    /// diagnostic. On success, packs to `Σ field_val << field.lsb` and returns
+    /// the erased repr integer (bitfields have no runtime representation
+    /// beyond their packed value, §8.3) — a failure anywhere yields `Poison`
+    /// (evaluation still visits every field first, so multiple bad fields each
+    /// get their own diagnostic rather than short-circuiting on the first).
+    fn eval_bitfield_lit(
+        &mut self,
+        ty_name: &str,
+        fields: &[(String, ast::Expr)],
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        let layout = self.layout_of_bitfield(ty_name, span);
+        let mut packed: i128 = 0;
+        let mut poisoned = false;
+        for (fname, expr) in fields {
+            let v = self.eval_expr(expr, env);
+            let fspan = crate::parser::expr_span(expr);
+            let Some(fl) = layout.fields.iter().find(|f| &f.name == fname) else {
+                self.error(fspan, format!("bitfield {ty_name} has no field `{fname}`"));
+                poisoned = true;
+                continue;
+            };
+            match v {
+                Value::Poison => poisoned = true,
+                Value::Int(n) => {
+                    let max = (1i128 << fl.bits) - 1;
+                    if self.check_in_range(n, 0, max, fspan, &format!("bitfield field '{fname}'")) {
+                        packed |= n << fl.lsb;
+                    } else {
+                        poisoned = true;
+                    }
+                }
+                other => {
+                    self.error(
+                        fspan,
+                        format!(
+                            "bitfield field '{fname}' must be an integer, got {}",
+                            other.type_name()
+                        ),
+                    );
+                    poisoned = true;
+                }
+            }
+        }
+        if poisoned {
+            Value::Poison
+        } else {
+            Value::Int(packed)
+        }
     }
 
     /// Apply a unary operator (D-P2.3). A `Poison` operand propagates silently.
