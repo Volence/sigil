@@ -72,9 +72,27 @@ pub struct Evaluator<'a> {
     /// File-level `const` decls, indexed by name (empty in the no-file mode).
     consts: HashMap<&'a str, &'a ast::ConstDecl>,
     /// File-level `enum` decls, indexed by name (empty in the no-file mode).
-    enums: HashMap<&'a str, &'a ast::EnumDecl>,
+    /// `pub(crate)` so the [`layout`](crate::layout) module can size enum reprs.
+    pub(crate) enums: HashMap<&'a str, &'a ast::EnumDecl>,
     /// File-level `comptime fn` decls, indexed by name (empty in no-file mode).
     fns: HashMap<&'a str, &'a ast::ComptimeFnDecl>,
+    /// File-level `struct` decls, indexed by name (empty in the no-file mode).
+    /// `pub(crate)` for the [`layout`](crate::layout) module (T2).
+    pub(crate) structs: HashMap<&'a str, &'a ast::StructDecl>,
+    /// File-level `bitfield` decls, indexed by name (empty in no-file mode).
+    /// `pub(crate)` for the [`layout`](crate::layout) module (T2).
+    pub(crate) bitfields: HashMap<&'a str, &'a ast::BitfieldDecl>,
+    /// File-level `newtype` decls, indexed by name (empty in no-file mode).
+    /// `pub(crate)` for the [`layout`](crate::layout) module (T2).
+    pub(crate) newtypes: HashMap<&'a str, &'a ast::NewtypeDecl>,
+    /// Memoized struct layouts, keyed by struct name — the layout analogue of
+    /// [`const_memo`](Self::const_memo). A zero-size Poisoned layout records a
+    /// struct that already failed (cyclic layout) so it does not re-report.
+    pub(crate) struct_layout_memo: HashMap<String, crate::layout::Layout>,
+    /// The names of structs whose layout is currently being computed, in
+    /// reference order — the in-progress stack for cyclic-layout detection,
+    /// mirroring [`in_progress`](Self::in_progress) for consts.
+    pub(crate) layout_in_progress: Vec<String>,
     /// Set once a hard limit (step budget or call depth) is hit (D-P2.16). While
     /// set, [`eval_expr`](Evaluator::eval_expr) / [`exec_stmts`](Evaluator::exec_stmts)
     /// short-circuit to `Poison` so evaluation unwinds without further work or
@@ -119,6 +137,11 @@ impl<'a> Evaluator<'a> {
             consts: HashMap::new(),
             enums: HashMap::new(),
             fns: HashMap::new(),
+            structs: HashMap::new(),
+            bitfields: HashMap::new(),
+            newtypes: HashMap::new(),
+            struct_layout_memo: HashMap::new(),
+            layout_in_progress: Vec::new(),
             aborted: false,
             pending_return: None,
             comptime_ctx: 0,
@@ -143,6 +166,15 @@ impl<'a> Evaluator<'a> {
                 }
                 ast::Item::ComptimeFn(f) => {
                     ev.fns.insert(f.name.as_str(), f);
+                }
+                ast::Item::Struct(s) => {
+                    ev.structs.insert(s.name.as_str(), s);
+                }
+                ast::Item::Bitfield(b) => {
+                    ev.bitfields.insert(b.name.as_str(), b);
+                }
+                ast::Item::Newtype(n) => {
+                    ev.newtypes.insert(n.name.as_str(), n);
                 }
                 _ => {}
             }

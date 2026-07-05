@@ -2,6 +2,7 @@
 //! Lowering to IR is Plan 4; this crate depends on sigil-span ONLY.
 pub mod ast;
 pub mod eval;
+pub mod layout;
 pub mod lexer;
 pub mod parser;
 pub mod value;
