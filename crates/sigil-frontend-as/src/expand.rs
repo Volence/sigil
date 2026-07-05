@@ -3,20 +3,39 @@
 
 use crate::token::{Punct, Tok, Token};
 
-/// Reconstruct source text from a token slice (space-separated so tokens can't
-/// merge on re-lex). Used to build `ALLARGS`/positional-arg substitution text.
+/// Reconstruct source text from a token slice. A space is inserted between two
+/// tokens ONLY when omitting it would MERGE them on re-lex (both the left token's
+/// last char and the right token's first char are identifier chars) — e.g. `move`
+/// `d0` → `move d0`, but `#` `1` → `#1` (asl keeps the raw `#1`, no space). This
+/// matters byte-for-byte when a rendered macro argument is substituted into a
+/// STRING literal (debugger.asm's `%<…>` assert strings embed the `dest`/`src`
+/// params verbatim): a spurious space would become a literal byte. Used for
+/// `ALLARGS` / positional-arg substitution text.
 pub(crate) fn render_tokens(toks: &[Token]) -> String {
-    toks.iter()
-        .map(|t| match &t.tok {
+    let mut out = String::new();
+    for t in toks {
+        let s = match &t.tok {
             Tok::Ident(x) => x.clone(),
             Tok::Int(n) => n.to_string(),
             Tok::Float(f) => f.to_string(),
             Tok::Str(x) => format!("\"{x}\""),
             Tok::Dollar => "$".to_string(),
             Tok::Punct(p) => punct_str(*p).to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+        };
+        if let (Some(prev), Some(next)) = (out.chars().last(), s.chars().next()) {
+            if is_ident_char(prev) && is_ident_char(next) {
+                out.push(' ');
+            }
+        }
+        out.push_str(&s);
+    }
+    out
+}
+
+/// A character that can be part of an AS identifier/number — the boundary test
+/// for whether two adjacent rendered tokens would merge on re-lex.
+fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 fn punct_str(p: Punct) -> &'static str {

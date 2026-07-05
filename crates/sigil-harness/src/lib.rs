@@ -37,12 +37,26 @@ pub const REGION_B_LMA: u32 = 0x60000;
 /// [`sigil_link::emit_rom`] on it for a flat ROM. This is the one reference-build
 /// entry point shared by the CLI and the region gates.
 pub fn assemble_full_rom(aeon: &Path) -> Result<LinkedImage, String> {
+    assemble_full_rom_with(aeon, false)
+}
+
+/// Assemble the full **`__DEBUG__`** Aeon ROM (`DEBUG=1 ./build.sh`): everything
+/// `assemble_full_rom` does, plus `__DEBUG__` defined, which pulls in
+/// `debugger.asm`'s assertion / KDebug / `__FSTRING` error-message code. Used by
+/// the `m1d_debug_rom` gate (A2).
+pub fn assemble_full_rom_debug(aeon: &Path) -> Result<LinkedImage, String> {
+    assemble_full_rom_with(aeon, true)
+}
+
+/// Shared body of the two entry points above. `debug` toggles the `__DEBUG__`
+/// define; `SOUND_DRIVER_ENABLED` is always on (build.sh's default), no stubs.
+fn assemble_full_rom_with(aeon: &Path, debug: bool) -> Result<LinkedImage, String> {
     let root = aeon.join("games/sonic4/main.asm");
-    let opts = Options {
-        initial_cpu: Cpu::M68000,
-        defines: vec![("SOUND_DRIVER_ENABLED".to_string(), 1)],
-        include_root: Some(aeon.to_path_buf()),
-    };
+    let mut defines = vec![("SOUND_DRIVER_ENABLED".to_string(), 1)];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
     let module = assemble_root(&root, &opts)
         .map_err(|d| format!("assemble: {} diagnostics; first: {:?}", d.len(), d.first()))?;
     let stubs = SymbolTable::new();

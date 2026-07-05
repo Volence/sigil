@@ -1439,3 +1439,59 @@ Foo:
 	rts
 --- bytes ---
 48 D0 00 FF 4E 75
+=== t5_eqeq ===
+	cpu 68000
+	padding off
+	dc.b	(5==5), (5==6), (7<>7), (7<>8)
+--- bytes ---
+01 00 00 01
+=== t5_strcmp_nested ===
+	cpu 68000
+	padding off
+t	set	".w"
+	dc.b	((strlen(t)==2)&&(substr(t,0,1)==".")), (t==".w"), (substr(t,0,1)=="."), ("x"<>"y")
+--- bytes ---
+01 01 01 01
+=== t5_substr_edges ===
+	cpu 68000
+	padding off
+s	set	"abc"
+	dc.b	strlen(substr(s,3,-1)), strlen(substr(s,5,0)), strlen(substr(s,2,-1)), strlen(substr(s,1,10))
+	dc.b	$FF, substr(s,1,10), $FE
+--- bytes ---
+00 00 00 02 FF 62 63 FE
+=== t5_cmpa ===
+	cpu 68000
+	padding off
+	cmp.l	a0, a1
+	cmp.w	d0, a1
+	cmp.l	(a2), a3
+--- bytes ---
+B3 C8 B2 C0 B7 D2
+=== t5_macro_strarg ===
+	cpu 68000
+	padding off
+callee:	macro	op
+	switch	lowstring(op)
+	case	"d1"
+	dc.b	$11
+	elsecase
+	dc.b	$EE
+	endcase
+	endm
+outer:	macro
+.myop:	set	"d1"
+	callee	.myop
+	endm
+	outer
+--- bytes ---
+11
+=== t5_render_hash_in_string ===
+	cpu 68000
+	padding off
+m:	macro	arg
+	dc.b	"[arg]"
+	endm
+	m	#1
+--- bytes ---
+5B 23 31 5D

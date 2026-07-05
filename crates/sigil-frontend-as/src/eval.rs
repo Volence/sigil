@@ -380,6 +380,7 @@ impl Asm {
         let expanded = self.expand_calls(toks, 0);
         let expanded = self.expand_int_builtin(&expanded);
         let expanded = self.expand_str_builtins(&expanded);
+        let expanded = self.expand_str_comparisons(&expanded);
         let (e, rest) = crate::expr::parse_expr(&expanded)?;
         if !rest.is_empty() {
             self.err(span, "trailing tokens in expression");
@@ -579,6 +580,49 @@ impl Asm {
         out
     }
 
+    /// Fold `<string-expr> (= | <>) "literal"` sub-patterns to a `Tok::Int(0/1)`
+    /// so asl string comparisons compose INSIDE boolean expressions
+    /// (`&&`/`||`/parens), not just as a whole `if` condition. Runs after
+    /// [`Self::expand_str_builtins`] (so `strlen`/`strstr`/`val` are already
+    /// ints) and before `parse_expr`.
+    ///
+    /// The discriminator that a comparison is string-typed is a **string-literal
+    /// RHS** (asl: `"a"="b"` folds to 0/1 — probe `probe_strcmp` 2026-07-05:
+    /// `((strlen(t)==2)&&(substr(t,0,1)=="."))` = true, `("x"<>"y")` = 1). The
+    /// LHS is the trailing string-expr in the already-emitted output — a string
+    /// literal, a string-valued `set` symbol, or a `substr(...)`/`lowstring(...)`
+    /// call, exactly what [`Self::eval_str`] resolves. If the trailing tokens
+    /// don't resolve to a string the operator is left untouched (ordinary numeric
+    /// `=`), so a genuine `numeric = 5` is unaffected (its RHS isn't a string
+    /// anyway). Only `debugger.asm`'s `%<…>` decoder exercises this; latent until
+    /// the `__DEBUG__` build (M1.D T5).
+    fn expand_str_comparisons(&self, toks: &[Token]) -> Vec<Token> {
+        let mut out: Vec<Token> = Vec::new();
+        let mut i = 0;
+        while i < toks.len() {
+            let is_cmp = matches!(toks[i].tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne));
+            if is_cmp {
+                if let Some(Token { tok: Tok::Str(rhs), .. }) = toks.get(i + 1) {
+                    if let Some(lhs_len) = trailing_str_expr_len(&out) {
+                        let lhs = &out[out.len() - lhs_len..];
+                        if let Some(lv) = self.eval_str(lhs) {
+                            let ne = matches!(toks[i].tok, Tok::Punct(Punct::Ne));
+                            let eq = &lv == rhs;
+                            let span = toks[i].span;
+                            out.truncate(out.len() - lhs_len);
+                            out.push(Token { tok: Tok::Int((eq ^ ne) as i64), span });
+                            i += 2;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push(toks[i].clone());
+            i += 1;
+        }
+        out
+    }
+
     /// Dispatch one of the debug-string builtins that produce an INTEGER:
     ///
     /// - `strlen(str)` → character count.
@@ -688,14 +732,17 @@ impl Asm {
             return None;
         }
         let chars: Vec<char> = s.chars().collect();
-        let pos = pos as usize;
-        if pos > chars.len() {
-            return None;
-        }
+        // asl edge semantics (probe `probe_substr` 2026-07-05): a `pos` at OR past
+        // the end yields "" (not an error — `substr("abc",5,0)`=""), and a NEGATIVE
+        // len also yields "" (`substr("abc",3,-1)`=""). Both are hit by
+        // `debugger.asm`'s `%<…>` decoder when a token has no trailing param (e.g.
+        // `%<.w d0>` → `.__param: set substr(string, len, -1)` → "" → defaults to
+        // "hex"). A len past the end clamps to the available tail (already matched).
+        let pos = (pos as usize).min(chars.len());
         let end = match len {
-            0 => chars.len(),
+            0 => chars.len(),                             // len 0 = to end
             n if n > 0 => (pos + n as usize).min(chars.len()),
-            _ => return None,
+            _ => pos,                                      // negative len = empty
         };
         Some(chars[pos..end].iter().collect())
     }
@@ -1929,6 +1976,9 @@ impl Asm {
                 self.emit(&bytes, vec![], span);
                 continue;
             }
+            // Fold any nested string comparison (`substr(...)="x"`) to 0/1 before
+            // the numeric parse (mirrors `eval_all`; T5).
+            let expanded = self.expand_str_comparisons(&expanded);
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -3192,6 +3242,28 @@ impl Asm {
     /// would reject the glued-mnemonic case (the char right before the `.` is
     /// alphanumeric, e.g. the `e` in `move`), which is the primary asl-verified
     /// use (asl-verified: `move.ATTRIBUTE src,d0` with `foo.w d1` → `move.w d1,d0`).
+    /// Bind one macro argument, qualifying a bare `.`-local against the CALLER
+    /// scope (asl evaluates arguments in caller context — [`Self::scope`] still
+    /// holds that scope here, before the expansion swaps in its own).
+    ///
+    /// A `.`-local that names a **string-valued** `set` symbol is substituted BY
+    /// VALUE, as a quoted literal: the qualified name `" macro#N.local"` (space +
+    /// `#`) can't re-lex as a single identifier, so `switch`/`lowstring`/`substr`
+    /// in the callee couldn't resolve it — but the value round-trips.
+    /// `debugger.asm`'s `__FSTRING_*` pass `.__operand`/`.__param` string locals
+    /// into `__FSTRING_PushArgument` this way (probe `probe_argkind` 2026-07-05).
+    /// A label / int-local keeps the qualified NAME, resolved via the symbol table
+    /// (e.g. `aabb_axis_test`'s `.next_object` arg). Latent until __DEBUG__ (T5).
+    fn bind_macro_arg(&self, v: String, caller_scope: Option<&str>) -> String {
+        if is_bare_local(&v) {
+            if let Some(s) = self.resolve_str(&v) {
+                return format!("\"{s}\"");
+            }
+            return qualify(&v, caller_scope);
+        }
+        v
+    }
+
     fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
         if self.macro_depth >= EXPAND_CAP {
             let span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
@@ -3243,17 +3315,12 @@ impl Asm {
         // (`P_VFG := vFactorFg` → `P_VFG := ` on the empty branch, never taken).
         // `replace_word` treats `"` as a word boundary, so an empty binding also
         // collapses `"param"` → `""`, making the guard compare true.
-        let arg_values: Vec<(String, String)> = params
-            .iter()
-            .map(|p| {
-                let v = keyword
-                    .get(p)
-                    .cloned()
-                    .or_else(|| pos_iter.next())
-                    .unwrap_or_default();
-                (p.clone(), qualify_macro_arg(v, caller_scope.as_deref()))
-            })
-            .collect();
+        let mut arg_values: Vec<(String, String)> = Vec::with_capacity(params.len());
+        for p in &params {
+            let v = keyword.get(p).cloned().or_else(|| pos_iter.next()).unwrap_or_default();
+            let bound = self.bind_macro_arg(v, caller_scope.as_deref());
+            arg_values.push((p.clone(), bound));
+        }
         let mut expanded = Vec::new();
         for l in &body {
             let mut text = l.text.clone();
@@ -3443,6 +3510,49 @@ fn split_attribute_suffix(s: &str) -> Option<(&str, &'static str)> {
         Some((b, ".s"))
     } else {
         None
+    }
+}
+
+/// Length (in tokens) of the trailing string-expression at the END of `out`, or
+/// `None` if the last token can't begin a string comparison LHS. Used by
+/// [`Evaluator::expand_str_comparisons`] to find the operand to the left of a
+/// `=`/`<>` whose RHS is a string literal. A string-expr is: a string literal
+/// (1 token), a bare identifier (1 token — a candidate string-valued symbol,
+/// validated by `eval_str`), or a balanced `substr(...)`/`lowstring(...)` call
+/// ending in `)`.
+fn trailing_str_expr_len(out: &[Token]) -> Option<usize> {
+    let n = out.len();
+    let last = out.get(n - 1)?;
+    match &last.tok {
+        Tok::Str(_) | Tok::Ident(_) => Some(1),
+        Tok::Punct(Punct::RParen) => {
+            // Walk back to the matching `(`; the ident before it must name a
+            // string-producing builtin.
+            let mut depth = 0usize;
+            let mut j = n;
+            while j > 0 {
+                j -= 1;
+                match &out[j].tok {
+                    Tok::Punct(Punct::RParen) => depth += 1,
+                    Tok::Punct(Punct::LParen) => {
+                        depth -= 1;
+                        if depth == 0 {
+                            let name = match out.get(j.checked_sub(1)?)?.tok {
+                                Tok::Ident(ref s) => s.as_str(),
+                                _ => return None,
+                            };
+                            if name == "substr" || name == "lowstring" {
+                                return Some(n - (j - 1));
+                            }
+                            return None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        _ => None,
     }
 }
 
@@ -3848,6 +3958,14 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
         // A `Dn` destination is left alone — `add #4,d0` / `cmp #5,d0` are the
         // regular `<ea>,Dn` forms with an immediate source EA (distinct bytes).
         (Cmp, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Cmpi,
+        // A `cmp` with an ADDRESS-register destination is asl's spelling of
+        // `cmpa` (probe `probe_cmpa` 2026-07-05: `cmp.l a0,a1` == `cmpa.l a0,a1`
+        // == `B3C8`). Only `debugger.asm`'s `assert` macro (`cmp.ATTRIBUTE
+        // dest,src` with an An `dest`) exercises this — latent until __DEBUG__
+        // (M1.D T5). `add`/`sub` have the analogous `adda`/`suba` aliases, but no
+        // An-dest form of them appears in either build, so they are left to fail
+        // loud if one ever does (never silently mis-encoded).
+        (Cmp, [_, M68kOperand::An(_)]) => Cmpa,
         (And, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Andi,
         (Or, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Ori,
         (Add, [M68kOperand::Imm(_), d]) if is_mem_dest(d) => Addi,
@@ -3920,15 +4038,13 @@ fn collapse_zero_disp(op: &mut M68kOperand) {
 /// of literally `.w`/`.b`/`.l`/`.5` also satisfies `.` + alphanumerics and would
 /// be rewritten to `caller_scope.w` etc. Aeon never passes such a value as a
 /// macro argument (size suffixes ride on the mnemonic, not an argument slot).
-fn qualify_macro_arg(v: String, caller_scope: Option<&str>) -> String {
-    let is_bare_local = v.starts_with('.')
+/// A bare `.`-local name: `.` followed by one or more identifier chars and
+/// nothing else (e.g. `.next_object`, `.__operand`), as opposed to a dotted
+/// expression or a `.`-suffixed literal.
+fn is_bare_local(v: &str) -> bool {
+    v.starts_with('.')
         && v.len() > 1
-        && v[1..].chars().all(|c| c.is_alphanumeric() || c == '_');
-    if is_bare_local {
-        qualify(&v, caller_scope)
-    } else {
-        v
-    }
+        && v[1..].chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
 fn on_off(rest: &[Token]) -> bool {
