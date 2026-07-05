@@ -323,13 +323,25 @@ impl<'a> Evaluator<'a> {
             return l.clone();
         }
         if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
-            // Name the cycle as the chain from first entry to this repeat.
-            let mut chain: Vec<&str> =
-                self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
+            // The cycle is the in-progress slice from first entry to this repeat.
+            let cycle: Vec<String> = self.layout_in_progress[start..].to_vec();
+            let mut chain: Vec<&str> = cycle.iter().map(|s| s.as_str()).collect();
             chain.push(name);
+            // One diagnostic names the whole chain — not one error per member.
             self.error(span, format!("cyclic struct layout: {}", chain.join(" -> ")));
+            // Poison EVERY struct on the cycle, not just the repeated `name`.
+            // Each other member is mid-layout on this same in-progress chain and
+            // would otherwise be memoized — as a side effect of laying out the
+            // entry struct — with a plausible-looking but WRONG layout (non-empty
+            // fields, sizes computed over a poisoned-as-0 nested struct). A later
+            // direct query for any cycle member (e.g. T3's per-struct `(size: N)`
+            // verification over a shared `Evaluator`) must get the poison, not a
+            // lie. Unlike `Value::Poison`, a `Layout` cannot self-propagate poison
+            // through the field loop, so we seed the whole slice explicitly here.
             let poisoned = Layout { size: 0, fields: Vec::new() };
-            self.struct_layout_memo.insert(name.to_string(), poisoned.clone());
+            for member in &cycle {
+                self.struct_layout_memo.insert(member.clone(), poisoned.clone());
+            }
             return poisoned;
         }
         // Copy the `&'a StructDecl` out of the index so its fields are borrowed
@@ -433,6 +445,32 @@ pub fn layout_struct(file: &ast::File, name: &str) -> (Option<Layout>, Vec<Diagn
         }
         let layout = ev.layout_of_struct(name, file.module.span);
         (Some(layout), ev.diags)
+    })
+}
+
+/// Lay out several structs through a SINGLE shared [`Evaluator`] (unlike
+/// [`layout_struct`], which builds a fresh one per call), returning each query's
+/// layout (`None` for an unknown struct name) plus the accumulated diagnostics.
+///
+/// This exposes the *shared-memo* behaviour T3 relies on: per-struct `(size: N)`
+/// verification runs many `layout_of_struct` queries through one evaluator, so a
+/// direct query for a "middle" struct of a cycle must return the poisoned layout
+/// seeded when the cycle was first detected — not a stale, wrong finite layout.
+pub fn layout_structs_shared(
+    file: &ast::File,
+    names: &[&str],
+) -> (Vec<Option<Layout>>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        let mut out = Vec::with_capacity(names.len());
+        for &name in names {
+            if ev.structs.contains_key(name) {
+                out.push(Some(ev.layout_of_struct(name, file.module.span)));
+            } else {
+                out.push(None);
+            }
+        }
+        (out, ev.diags)
     })
 }
 

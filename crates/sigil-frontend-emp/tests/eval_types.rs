@@ -3,7 +3,9 @@
 //! Each case parses a full `.emp` file (asserting a clean parse), then drives
 //! the layout entry points and asserts on sizes/offsets and diagnostics.
 use sigil_frontend_emp::ast::{Expr, Path, Type};
-use sigil_frontend_emp::layout::{check_in_range, layout_struct, size_of_type};
+use sigil_frontend_emp::layout::{
+    check_in_range, layout_struct, layout_structs_shared, size_of_type,
+};
 use sigil_frontend_emp::parse_str;
 use sigil_span::{SourceId, Span};
 
@@ -154,6 +156,35 @@ fn mutual_struct_cycle_poisons_layout_not_just_size() {
         "poisoned layout must have no fields, had {:?}",
         layout.fields
     );
+}
+
+#[test]
+fn shared_evaluator_poisons_every_struct_on_the_cycle() {
+    // Regression (forward-looking): on a SHARED evaluator, laying out the entry
+    // struct of a cycle must poison EVERY member — so a later direct query for a
+    // "middle" struct returns the poison, not a stale wrong finite layout. (This
+    // is the shape T3's per-struct `(size: N)` verification will drive.)
+    let file = parse("module m\nstruct A { b: B }\nstruct B { a: A }\n");
+    let (layouts, diags) = layout_structs_shared(&file, &["A", "B"]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic struct layout")),
+        "expected a cyclic-layout diagnostic, got {diags:?}"
+    );
+    // Exactly one chain diagnostic — not one per cycle member.
+    assert_eq!(
+        diags.iter().filter(|d| d.message.contains("cyclic struct layout")).count(),
+        1,
+        "expected a single chain diagnostic, got {diags:?}"
+    );
+    // A (the entry) is poisoned.
+    let a = layouts[0].clone().expect("A should return a layout");
+    assert_eq!(a.size, 0);
+    assert!(a.fields.is_empty(), "A must have no fields, had {:?}", a.fields);
+    // B (queried directly on the SAME evaluator) is also poisoned — the fields
+    // are the tell: pre-fix, B memoized as `{size:0, fields:[a@0]}` (a lie).
+    let b = layouts[1].clone().expect("B should return a layout");
+    assert_eq!(b.size, 0, "B must be poisoned, was size {}", b.size);
+    assert!(b.fields.is_empty(), "B must have no fields, had {:?}", b.fields);
 }
 
 #[test]
