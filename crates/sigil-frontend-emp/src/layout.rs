@@ -100,14 +100,18 @@ impl<'a> Evaluator<'a> {
     /// type. Comptime-only types (`string`/`Width`/`Operand`, which appear only
     /// in comptime-enum payloads) are NOT data-layout types — resolving one as a
     /// *data* type is an unknown-type error here; those are exercised in T6.
-    pub(crate) fn resolve_type(&mut self, t: &ast::Type, span: Span) -> Ty {
+    ///
+    /// Every diagnostic here is anchored at a precise span carried by the
+    /// syntax itself (a `path.span` for a name, the length expression's span for
+    /// an array bound), so no caller-supplied fallback span is needed.
+    pub(crate) fn resolve_type(&mut self, t: &ast::Type) -> Ty {
         match t {
             ast::Type::Named(path) => {
                 if path.segments.len() != 1 {
                     // Multi-segment paths (module-qualified names) are not
                     // resolvable as data-layout types yet.
                     let full = path.segments.join(".");
-                    self.error(span, format!("unknown type: {full}"));
+                    self.error(path.span, format!("unknown type: {full}"));
                     return Ty::Poison;
                 }
                 let name = path.segments[0].as_str();
@@ -123,18 +127,27 @@ impl<'a> Evaluator<'a> {
                     _ if self.enums.contains_key(name) => Ty::Enum(name.to_string()),
                     _ if self.newtypes.contains_key(name) => Ty::Newtype(name.to_string()),
                     _ => {
-                        self.error(span, format!("unknown type: {name}"));
+                        self.error(path.span, format!("unknown type: {name}"));
                         Ty::Poison
                     }
                 }
             }
-            ast::Type::Ptr(inner) => Ty::Ptr(Box::new(self.resolve_type(inner, span))),
+            ast::Type::Ptr(inner) => Ty::Ptr(Box::new(self.resolve_type(inner))),
             ast::Type::Array(inner, len_expr) => {
-                let inner_ty = self.resolve_type(inner, span);
+                let inner_ty = self.resolve_type(inner);
+                let len_span = crate::parser::expr_span(len_expr);
                 match self.eval_const_index(len_expr) {
-                    Some(n) if n >= 0 => Ty::Array(Box::new(inner_ty), n as usize),
+                    // `n >= 0` and fits `usize`: a real array length. A huge but
+                    // in-`i128` length must NOT silently truncate via `as usize`.
+                    Some(n) if n >= 0 => match usize::try_from(n) {
+                        Ok(len) => Ty::Array(Box::new(inner_ty), len),
+                        Err(_) => {
+                            self.error(len_span, format!("array length {n} too large"));
+                            Ty::Poison
+                        }
+                    },
                     Some(n) => {
-                        self.error(span, format!("array length must be non-negative, got {n}"));
+                        self.error(len_span, format!("array length must be non-negative, got {n}"));
                         Ty::Poison
                     }
                     None => {
@@ -145,11 +158,11 @@ impl<'a> Evaluator<'a> {
                 }
             }
             ast::Type::Tuple(elems) => {
-                Ty::Tuple(elems.iter().map(|e| self.resolve_type(e, span)).collect())
+                Ty::Tuple(elems.iter().map(|e| self.resolve_type(e)).collect())
             }
             ast::Type::Fixed { i, f } => Ty::Fixed { i: *i, f: *f },
             ast::Type::Refined(inner, lo_expr, hi_expr) => {
-                let inner_ty = self.resolve_type(inner, span);
+                let inner_ty = self.resolve_type(inner);
                 let lo = self.eval_const_index(lo_expr);
                 let hi = self.eval_const_index(hi_expr);
                 match (lo, hi) {
@@ -192,10 +205,41 @@ impl<'a> Evaluator<'a> {
             // A pointer is 4 bytes and does NOT recurse into the pointee — this
             // is what makes by-pointer self-reference finite (D-P3.7).
             Ty::Ptr(_) => 4,
-            Ty::Array(inner, n) => self.size_of_ty(inner, span) * n,
-            Ty::Tuple(elems) => elems.iter().map(|e| self.size_of_ty(e, span)).sum(),
+            Ty::Array(inner, n) => {
+                // `elem_size * n` can overflow `usize`; diagnose rather than
+                // panic (debug) or wrap (release).
+                let elem = self.size_of_ty(inner, span);
+                match elem.checked_mul(*n) {
+                    Some(total) => total,
+                    None => {
+                        self.error(span, "type too large to size");
+                        0
+                    }
+                }
+            }
+            Ty::Tuple(elems) => {
+                // Sum with overflow checking; a wrapping sum would corrupt every
+                // downstream offset.
+                let mut total = 0usize;
+                for e in elems {
+                    let s = self.size_of_ty(e, span);
+                    match total.checked_add(s) {
+                        Some(t) => total = t,
+                        None => {
+                            self.error(span, "type too large to size");
+                            return 0;
+                        }
+                    }
+                }
+                total
+            }
             Ty::Fixed { i, f } => {
-                let bits = i + f;
+                // `i` and `f` are each a full `u32` per the parser, so `i + f`
+                // can overflow `u32` — widen the add.
+                let Some(bits) = i.checked_add(*f) else {
+                    self.error(span, format!("fixed<{i},{f}> is too large to size"));
+                    return 0;
+                };
                 if bits % 8 != 0 {
                     self.error(
                         span,
@@ -207,24 +251,16 @@ impl<'a> Evaluator<'a> {
                 (bits / 8) as usize
             }
             Ty::Refined { inner, .. } => self.size_of_ty(inner, span),
-            Ty::Newtype(name) => {
-                // Copy the underlying `Type` out (borrowed from the file) so
-                // `self` is free to be mutated by the recursive resolve/size.
-                let decl = self.newtypes.get(name.as_str()).copied();
-                match decl {
-                    Some(d) => {
-                        let underlying = self.resolve_type(&d.underlying, d.span);
-                        self.size_of_ty(&underlying, span)
-                    }
-                    None => 0,
-                }
-            }
+            // Newtype sizing recurses through the underlying type, which may
+            // form a `newtype A = B; newtype B = A` cycle that never passes
+            // through a `Ty::Struct` hop — so it needs its own cycle guard.
+            Ty::Newtype(name) => self.size_of_newtype(name, span),
             Ty::Enum(name) => {
                 // A plain enum always has a repr; default to `u8` (1) if absent.
                 let decl = self.enums.get(name.as_str()).copied();
                 match decl.and_then(|d| d.repr.as_ref()) {
                     Some(repr) => {
-                        let repr_ty = self.resolve_type(repr, span);
+                        let repr_ty = self.resolve_type(repr);
                         self.size_of_ty(&repr_ty, span)
                     }
                     None => 1,
@@ -234,7 +270,7 @@ impl<'a> Evaluator<'a> {
                 let decl = self.bitfields.get(name.as_str()).copied();
                 match decl {
                     Some(d) => {
-                        let repr_ty = self.resolve_type(&d.repr, d.span);
+                        let repr_ty = self.resolve_type(&d.repr);
                         self.size_of_ty(&repr_ty, span)
                     }
                     None => 0,
@@ -243,6 +279,33 @@ impl<'a> Evaluator<'a> {
             Ty::Struct(name) => self.layout_of_struct(name, span).size,
             Ty::Poison => 0,
         }
+    }
+
+    /// Byte size of the newtype named `name`, cycle-detected against the shared
+    /// [`layout_in_progress`](Evaluator) stack (which also carries in-flight
+    /// struct names). A `newtype A = B; newtype B = A` cycle — or a
+    /// newtype↔struct cycle that happens to close on a newtype hop — is reported
+    /// as `cyclic type: A -> B -> A` and sized 0, instead of overflowing the
+    /// native stack. Newtype sizes are not memoized (a deferred perf nit); the
+    /// underlying is re-resolved each time, which is cheap and side-effect-free.
+    fn size_of_newtype(&mut self, name: &str, span: Span) -> usize {
+        if let Some(start) = self.layout_in_progress.iter().position(|n| n == name) {
+            let mut chain: Vec<&str> =
+                self.layout_in_progress[start..].iter().map(|s| s.as_str()).collect();
+            chain.push(name);
+            self.error(span, format!("cyclic type: {}", chain.join(" -> ")));
+            return 0;
+        }
+        // Copy the `&'a NewtypeDecl` out so `self` is free to be mutated across
+        // the recursive resolve/size below (as `resolve_const`/`layout_of_struct`).
+        let Some(decl) = self.newtypes.get(name).copied() else {
+            return 0;
+        };
+        self.layout_in_progress.push(name.to_string());
+        let underlying = self.resolve_type(&decl.underlying);
+        let size = self.size_of_ty(&underlying, span);
+        self.layout_in_progress.pop();
+        size
     }
 
     /// Compute (or fetch the memoized) byte layout of the struct named `name`,
@@ -275,8 +338,12 @@ impl<'a> Evaluator<'a> {
         let decl: &'a ast::StructDecl = match self.structs.get(name).copied() {
             Some(d) => d,
             None => {
-                // Not a known struct — a Poisoned (zero-size) layout. The
-                // unknown-type diagnostic is the caller's (resolve_type's) job.
+                // Unreachable in practice: every caller (`resolve_type` →
+                // `Ty::Struct`, and `layout_struct`) pre-checks `self.structs`,
+                // so a `Ty::Struct(name)` names a real struct. Kept as a defined,
+                // non-panicking fallback (zero-size) so a future refactor that
+                // reaches here degrades gracefully rather than exploding.
+                debug_assert!(false, "layout_of_struct called for unknown struct `{name}`");
                 return Layout { size: 0, fields: Vec::new() };
             }
         };
@@ -284,12 +351,29 @@ impl<'a> Evaluator<'a> {
         let mut offset = 0usize;
         let mut fields = Vec::with_capacity(decl.fields.len());
         for field in &decl.fields {
-            let ty = self.resolve_type(&field.ty, field.span);
+            let ty = self.resolve_type(&field.ty);
             let size = self.size_of_ty(&ty, field.span);
             fields.push(FieldLayout { name: field.name.clone(), offset, ty, size });
-            offset += size;
+            // Offsets are bytes; a pathological struct could overflow `usize`.
+            match offset.checked_add(size) {
+                Some(o) => offset = o,
+                None => {
+                    self.error(field.span, "type too large to size");
+                    offset = 0;
+                }
+            }
         }
         self.layout_in_progress.pop();
+        // CRITICAL: a deeper recursive call may have closed a cycle back to
+        // `name` and already memoized a poisoned (zero-size) layout for it. That
+        // poison is the correct answer — do NOT overwrite it with the ordinary,
+        // numerically-wrong layout this frame just computed over the truncated
+        // (size-0) cyclic field. Unlike `Value::Poison`, a `Layout` does not
+        // self-propagate through the field loop, so this guard is what makes
+        // multi-hop / mutual struct cycles report a poisoned layout, not a lie.
+        if let Some(existing) = self.struct_layout_memo.get(name) {
+            return existing.clone();
+        }
         let layout = Layout { size: offset, fields };
         self.struct_layout_memo.insert(name.to_string(), layout.clone());
         layout
@@ -322,24 +406,34 @@ impl<'a> Evaluator<'a> {
 
 /// Resolve `ty` against `file`'s type tables and return its byte size plus any
 /// diagnostics — the layout analogue of [`eval_const`](crate::eval::eval_const).
+///
+/// Runs on the shared large-stack evaluation thread (see
+/// [`run_on_eval_stack`](crate::eval::run_on_eval_stack)): an array length or
+/// refinement bound can be a recursive comptime-fn call, so the layout entry
+/// points inherit the same native-stack headroom as `eval_const`.
 pub fn size_of_type(file: &ast::File, ty: &ast::Type) -> (usize, Vec<Diagnostic>) {
-    let mut ev = Evaluator::with_file(file);
-    let span = file.module.span;
-    let resolved = ev.resolve_type(ty, span);
-    let size = ev.size_of_ty(&resolved, span);
-    (size, ev.diags)
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        let span = file.module.span;
+        let resolved = ev.resolve_type(ty);
+        let size = ev.size_of_ty(&resolved, span);
+        (size, ev.diags)
+    })
 }
 
 /// Lay out the struct named `name` in `file`, returning its [`Layout`] (or
-/// `None` if no such struct) plus any diagnostics.
+/// `None` if no such struct) plus any diagnostics. Runs on the shared
+/// large-stack evaluation thread (see [`size_of_type`]).
 pub fn layout_struct(file: &ast::File, name: &str) -> (Option<Layout>, Vec<Diagnostic>) {
-    let mut ev = Evaluator::with_file(file);
-    if !ev.structs.contains_key(name) {
-        ev.error(file.module.span, format!("no struct named `{name}`"));
-        return (None, ev.diags);
-    }
-    let layout = ev.layout_of_struct(name, file.module.span);
-    (Some(layout), ev.diags)
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if !ev.structs.contains_key(name) {
+            ev.error(file.module.span, format!("no struct named `{name}`"));
+            return (None, ev.diags);
+        }
+        let layout = ev.layout_of_struct(name, file.module.span);
+        (Some(layout), ev.diags)
+    })
 }
 
 /// Check `val` against the INCLUSIVE range `lo..=hi` (D-P3.8), returning the

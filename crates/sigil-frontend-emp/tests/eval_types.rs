@@ -136,6 +136,75 @@ fn by_pointer_self_reference_is_finite() {
     assert_eq!(layout.fields[0].size, 4);
 }
 
+#[test]
+fn mutual_struct_cycle_poisons_layout_not_just_size() {
+    // Regression (Critical 1): the outer frame must NOT overwrite the poisoned
+    // layout a deeper call memoized. The returned layout must be the poisoned
+    // zero one — empty fields, size 0 — not a numerically-wrong `{size:2, ...}`.
+    let file = parse("module m\nstruct A { pad: u16, b: B }\nstruct B { a: A }\n");
+    let (layout, diags) = layout_struct(&file, "A");
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic struct layout")),
+        "expected a cyclic-layout diagnostic, got {diags:?}"
+    );
+    let layout = layout.expect("A should return a (poisoned) layout");
+    assert_eq!(layout.size, 0, "poisoned layout must be size 0, was {}", layout.size);
+    assert!(
+        layout.fields.is_empty(),
+        "poisoned layout must have no fields, had {:?}",
+        layout.fields
+    );
+}
+
+#[test]
+fn newtype_cycle_is_diagnosed_not_a_stack_overflow() {
+    // Regression (Critical 2): a `newtype A = B; newtype B = A` cycle never
+    // passes through a struct hop, so it must be caught by the newtype guard.
+    let file = parse("module m\nnewtype A = B\nnewtype B = A\n");
+    let (sz, diags) = size_of_type(&file, &named("A"));
+    assert_eq!(sz, 0);
+    assert!(
+        diags.iter().any(|d| d.message.contains("cyclic type")),
+        "expected a cyclic-type diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn fixed_non_byte_multiple_is_diagnosed_not_a_panic() {
+    // Regression (fixed sizing): `fixed<1,2>` = 3 bits, not a whole byte.
+    let file = parse("module m\n");
+    let (sz, diags) = size_of_type(&file, &Type::Fixed { i: 1, f: 2 });
+    // Best-effort ceil (3 bits -> 1 byte), plus a diagnostic.
+    assert_eq!(sz, 1);
+    assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("not a whole number of bytes"),
+        "was {:?}",
+        diags[0].message
+    );
+}
+
+#[test]
+fn oversized_array_length_is_diagnosed_not_truncated() {
+    // Regression (Important 3): a huge in-i128 length must not silently truncate
+    // through `as usize` — it must diagnose and poison (size 0).
+    let file = parse("module m\n");
+    // 2^100, far beyond usize but well within i128.
+    let big = Expr::Binary {
+        op: sigil_frontend_emp::ast::BinOp::Shl,
+        lhs: Box::new(Expr::Int(1, span())),
+        rhs: Box::new(Expr::Int(100, span())),
+        span: span(),
+    };
+    let ty = Type::Array(Box::new(named("u8")), big);
+    let (sz, diags) = size_of_type(&file, &ty);
+    assert_eq!(sz, 0);
+    assert!(
+        diags.iter().any(|d| d.message.contains("too large")),
+        "expected an oversized-length diagnostic, got {diags:?}"
+    );
+}
+
 // ---- check_in_range: inclusive on BOTH ends ----------------------------
 
 #[test]

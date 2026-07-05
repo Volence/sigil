@@ -281,14 +281,30 @@ impl Default for Evaluator<'_> {
 pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
-    // not a native stack overflow, is what stops runaway recursion. A scoped
-    // thread lets the closure borrow `file`/`name` without a `'static` bound.
-    // (A per-call thread is cheap enough at comptime; a future task may hoist it
-    // to one evaluator-owned worker.)
+    // not a native stack overflow, is what stops runaway recursion.
+    run_on_eval_stack(|| eval_const_inner(file, name))
+}
+
+/// Stack size for the comptime-evaluation thread (see [`eval_const`]). Sized to
+/// comfortably hold [`MAX_CALL_DEPTH`] comptime frames even in unoptimized
+/// debug builds, where per-frame stack usage is large.
+const EVAL_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Run `f` on a dedicated thread with a large ([`EVAL_STACK_BYTES`]) stack so
+/// the native call stack has headroom for deep comptime evaluation (the
+/// [`MAX_CALL_DEPTH`] bound, not a native overflow, is what stops runaway
+/// recursion — D-P2.16). Shared by [`eval_const`] and the layout entry points
+/// (which may drive comptime-fn calls via array lengths / refinement bounds).
+/// A scoped thread lets `f` borrow non-`'static` data (the source `File`).
+pub(crate) fn run_on_eval_stack<T, F>(f: F) -> T
+where
+    F: FnOnce() -> T + Send,
+    T: Send,
+{
     std::thread::scope(|scope| {
         let handle = std::thread::Builder::new()
             .stack_size(EVAL_STACK_BYTES)
-            .spawn_scoped(scope, || eval_const_inner(file, name))
+            .spawn_scoped(scope, f)
             .expect("failed to spawn comptime evaluation thread");
         match handle.join() {
             Ok(v) => v,
@@ -298,11 +314,6 @@ pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Di
         }
     })
 }
-
-/// Stack size for the comptime-evaluation thread (see [`eval_const`]). Sized to
-/// comfortably hold [`MAX_CALL_DEPTH`] comptime frames even in unoptimized
-/// debug builds, where per-frame stack usage is large.
-const EVAL_STACK_BYTES: usize = 64 * 1024 * 1024;
 
 /// The body of [`eval_const`], run on the large-stack evaluation thread.
 fn eval_const_inner(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
