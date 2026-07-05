@@ -1,1 +1,4 @@
 /target
+
+# git worktrees for isolated feature work
+.worktrees/
