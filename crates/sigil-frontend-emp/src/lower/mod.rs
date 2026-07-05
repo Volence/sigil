@@ -4,15 +4,16 @@
 //! (`value`, `eval`, `layout`) stays Core-free so it can be tested in isolation.
 //!
 //! T0 proves the seam with the thinnest working path: `data` items only, one
-//! 68000 section, defer-to-link placement (D-P4.2) — every pointer field becomes
-//! a symbolic `Abs32Be` fixup the linker resolves. Instruction lowering and the
-//! real per-CPU byte-order / fixup-kind table are T2+.
+//! section, defer-to-link placement (D-P4.2) — every pointer field becomes a
+//! symbolic fixup the linker resolves. T2 grows the real per-CPU byte-order /
+//! fixup-kind serializer, which lives in [`data`]. Instruction lowering is T3+.
+
+mod data;
 
 use crate::ast;
 use crate::layout::eval_data;
-use crate::value::{Cell, DataBuf};
 use sigil_ir::backend::{Cpu, IrStreamer};
-use sigil_ir::{Expr, Fixup, FixupKind, IrBuilder, Module};
+use sigil_ir::{IrBuilder, Module};
 use sigil_span::Diagnostic;
 
 /// Options controlling how a `.emp` module lowers to Core IR.
@@ -39,7 +40,9 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
         diags.append(&mut ds);
         let Some(buf) = buf else { continue };
 
-        let (bytes, fixups) = data_to_bytes(&buf);
+        let (bytes, fixups, mut stream_diags) =
+            data::stream_data(&buf, opts.initial_cpu, decl.span);
+        diags.append(&mut stream_diags);
         builder.define_label(&decl.name);
         builder.emit_data(&bytes, fixups, decl.span);
     }
@@ -47,39 +50,4 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     let (module, mut build_diags) = builder.finish();
     diags.append(&mut build_diags);
     (module, diags)
-}
-
-/// Serialize a checked [`DataBuf`] to image bytes plus fixups (offsets relative
-/// to the start of this buffer, i.e. within the `DataFragment` it becomes).
-///
-/// **T0 stub.** Scalars are emitted big-endian, which is correct for M68000 (the
-/// only CPU T0 lowers). T2 generalizes byte order to be CPU-driven and grows the
-/// fixup-kind selection into a real table; for now every pointer is `Abs32Be`
-/// (the Abs32 default — D-P3.7).
-fn data_to_bytes(buf: &DataBuf) -> (Vec<u8>, Vec<Fixup>) {
-    let mut bytes = Vec::with_capacity(buf.size);
-    let mut fixups = Vec::new();
-
-    for cell in &buf.cells {
-        match cell {
-            Cell::Scalar { value, width, .. } => {
-                // Big-endian (M68000 order): the low `width` bytes, MSB first.
-                let w = *width as usize;
-                bytes.extend_from_slice(&value.to_be_bytes()[16 - w..]);
-            }
-            Cell::Bytes(b) => bytes.extend_from_slice(b),
-            Cell::SymRef { name, width } => {
-                // The reserved hole is sized from the fixup kind so the two never
-                // drift; `width` is the DataBuf's independent record of the same
-                // fact (both 4 for Abs32 today — D-P3.7). When T2 adds Abs16Be /
-                // BankPtr16Le, kind selection must key off `width`.
-                let kind = FixupKind::Abs32Be;
-                debug_assert_eq!(*width as u32, kind.byte_width());
-                fixups.push(Fixup { kind, offset: bytes.len() as u32, target: Expr::Sym(name.clone()) });
-                bytes.resize(bytes.len() + kind.byte_width() as usize, 0);
-            }
-        }
-    }
-
-    (bytes, fixups)
 }

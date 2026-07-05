@@ -151,14 +151,29 @@ pub enum Cell {
     /// A run of width-1 bytes (from `byte`/`bytes`/`++`). Single bytes have no
     /// byte order, so this stays CPU-neutral as raw bytes.
     Bytes(Vec<u8>),
-    /// A pointer-typed field: a reference to a named symbol, `width` bytes wide
-    /// (4, the Abs32 default — D-P3.7). Plan 4 resolves the name to an address
-    /// and emits a fixup; Plan 3 does NOT.
+    /// A pointer-typed field: a reference to a named symbol, `width` bytes wide.
+    /// Plan 4 resolves the name to an address and emits a fixup; Plan 3 does NOT.
+    ///
+    /// `windowed` records whether this is a Z80 *bank pointer* (`winptr(sym)`,
+    /// §7.2 — a 2-byte windowed pointer, `BankPtr16Le`) versus a plain absolute
+    /// pointer (a 68k `Abs32`/`Abs16`). Plan 4's fixup-kind selection (D-P4.5)
+    /// reads (`width`, section CPU, `windowed`): a plain 68k pointer is
+    /// width 4 (`Abs32Be`) — the default (D-P3.7); a windowed Z80 pointer is
+    /// width 2 (`BankPtr16Le`). An un-windowed pointer in a Z80 section is the
+    /// `[cross-cpu.unwindowed-pointer]` error.
     SymRef {
         /// The referenced symbol's name.
         name: String,
-        /// Pointer byte width (4).
+        /// Pointer byte width (4 for a plain absolute pointer, 2 for a `winptr`).
         width: u8,
+        /// Whether this is a Z80 windowed bank pointer (`winptr(sym)`, §7.2).
+        ///
+        /// A `bool` suffices while the two pointer flavors are distinguishable by
+        /// `(width, windowed)`. If a THIRD flavor appears that a bool cannot name
+        /// (e.g. one not separable by width), migrate this to a
+        /// `PtrKind { Absolute, Windowed, … }` field rather than adding a second
+        /// bool.
+        windowed: bool,
     },
 }
 

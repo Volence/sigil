@@ -28,6 +28,9 @@ impl<'a> Evaluator<'a> {
                 // they are not user-shadowable, so dispatch them ahead of user fns.
                 "byte" => return self.eval_byte(args, span, env),
                 "bytes" => return self.eval_bytes(args, span, env),
+                // `winptr(sym)` (§7.2) — a Z80 windowed bank pointer, also a
+                // non-shadowable `Data` constructor.
+                "winptr" => return self.eval_winptr(args, span, env),
                 _ => {}
             }
         }

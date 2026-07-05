@@ -185,10 +185,76 @@ fn pointer_field_lowers_to_symref() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::SymRef { name: "init".into(), width: 4 },
+            Cell::SymRef { name: "init".into(), width: 4, windowed: false },
             Cell::Scalar { value: 3, width: 1, signed: false },
         ]
     );
+}
+
+// ---- winptr: the §7.2 windowed bank pointer -----------------------------
+
+#[test]
+fn winptr_of_fn_ref_is_windowed_width2_symref() {
+    // The happy path via the FnRef capture: `winptr(sfx)` → a one-cell
+    // Value::Data holding a 2-byte windowed SymRef (D-P4.5 / §7.2).
+    let src = "module m\n\
+               comptime fn sfx() -> u8 { 0 }\n\
+               data P = winptr(sfx)\n";
+    let (buf, diags) = data(src, "P");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 2);
+    assert_eq!(buf.cells, vec![Cell::SymRef { name: "sfx".into(), width: 2, windowed: true }]);
+}
+
+#[test]
+fn winptr_of_string_uses_the_str_capture_path() {
+    // `winptr("name")` captures the symbol name from a Value::Str (the second
+    // capture path, mirroring `lower_ptr`), yielding the same width-2 windowed
+    // SymRef.
+    let src = "module m\ndata P = winptr(\"sfx_jump\")\n";
+    let (buf, diags) = data(src, "P");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 2);
+    assert_eq!(
+        buf.cells,
+        vec![Cell::SymRef { name: "sfx_jump".into(), width: 2, windowed: true }]
+    );
+}
+
+#[test]
+fn winptr_wrong_arity_is_diagnosed() {
+    // Zero args and two args both trip the arity check.
+    let (buf, diags) = data("module m\ndata P = winptr()\n", "P");
+    assert!(
+        diags.iter().any(|d| d.message.contains("winptr") && d.message.contains("1 argument")),
+        "expected a winptr arity diagnostic, got: {diags:?}"
+    );
+    // A Poison result lowers to an empty buffer (no cells).
+    assert!(buf.expect("data buf").cells.is_empty());
+
+    let src = "module m\n\
+               comptime fn a() -> u8 { 0 }\n\
+               comptime fn b() -> u8 { 0 }\n\
+               data P = winptr(a, b)\n";
+    let (_buf, diags) = data(src, "P");
+    assert!(
+        diags.iter().any(|d| d.message.contains("winptr") && d.message.contains("1 argument")),
+        "expected a winptr arity diagnostic for two args, got: {diags:?}"
+    );
+}
+
+#[test]
+fn winptr_non_symbol_arg_is_poison_and_diagnosed() {
+    // A non-reference argument (an integer) cannot name a symbol: diagnostic +
+    // Poison (→ empty buffer).
+    let (buf, diags) = data("module m\ndata P = winptr(3)\n", "P");
+    assert!(
+        diags.iter().any(|d| d.message.contains("winptr") && d.message.contains("symbol reference")),
+        "expected a winptr non-symbol diagnostic, got: {diags:?}"
+    );
+    assert!(buf.expect("data buf").cells.is_empty());
 }
 
 // ---- enum-typed fields --------------------------------------------------
