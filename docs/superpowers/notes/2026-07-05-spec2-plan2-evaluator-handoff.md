@@ -102,3 +102,19 @@ leave a clear state for the wake-up review.
 
 - (start) Branch created off `11aaf0d`. Reading done: spec §4/§6/§6.8, Plan 1 carry-forward,
   current crate state (lexer/ast/parser, 55 tests, `Diagnostic{level,message,primary}`).
+- **Setup.** Verified Plan-1 AST has NO lambda/`|>` node (lexer only has single `|`=BitOr) and
+  `parse_expr_for_tests(src)->Expr` exists for expr-level tests; `true/false/none` are plain
+  `Path`s (no `Expr::Bool`). Recorded decisions **D-P2.12** (T6 must extend the frontend with
+  lambdas + `|>`) and **D-P2.13** (`i64` literal → `i128` widening) in the plan doc.
+- **T1 DONE** (`afe0089`). `value.rs` (`Value` enum per D-P2.2 + `Display` + `type_name`) and
+  `eval.rs` (`Env` scope-chain, `Binding`, `AssignError{NotFound,Immutable}`, `Evaluator`
+  {diags,steps,call_stack}, `STEP_BUDGET=5_000_000`, `eval_const` stub). Lambda lives in
+  `value.rs` (Env is cheaply/independently clonable). 25 unit tests. Self-reviewed by me — solid.
+- **T2 DONE** (impl `ab61c56`, review fixes `f549a57`). Pure `Evaluator::eval_expr` — all
+  BinOp/UnOp with CHECKED i128 arithmetic (overflow=error, D-P2.1), div/mod-by-zero, D-P2.3
+  promotion, comparisons→Bool (total, structural ==), short-circuit `&&`/`||`, `++` concat
+  (Str/Array), ranges, array/tuple literals, path true/false/none + env lookup, Poison
+  discipline (D-P2.9). Two-stage review PASSED (spec ✅ compliant; quality: Approve — all
+  Minor). Fixes folded: merged `unop_type_error`→`operand_type_error`, `eval_equality`→`&self`,
+  backfilled direct add/mul/sub/neg-overflow + wrong-type bitwise/shift tests. **102 tests**,
+  clippy clean. Call/StructLit/If/For/Asm return Poison placeholders for later tasks.

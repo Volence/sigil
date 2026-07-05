@@ -94,7 +94,18 @@ impl Env {
 pub const STEP_BUDGET: u64 = 5_000_000;
 
 /// The comptime evaluator's mutable state, threaded through evaluation.
-pub struct Evaluator {
+///
+/// The `'a` lifetime ties the evaluator to a borrowed [`ast::File`]'s items:
+/// [`Evaluator::with_file`] indexes the file's `const` and `enum` decls so bare
+/// names and `Enum.Variant` paths resolve to them. [`Value`] carries no lifetime
+/// (a [`Value::Lambda`] owns its body), so borrowing the file here is free of
+/// friction with the `&mut self` mutation during evaluation — the borrowed
+/// index is a distinct object from the mutated `diags`/memo.
+///
+/// [`Evaluator::new`] builds the empty-program evaluator (no file): in that mode
+/// there are no file consts/enums, so unknown names still error. This keeps the
+/// T2 pure-expression tests working unchanged.
+pub struct Evaluator<'a> {
     /// Diagnostics collected during evaluation.
     pub diags: Vec<Diagnostic>,
     /// Steps consumed so far, capped by [`STEP_BUDGET`].
@@ -102,12 +113,54 @@ pub struct Evaluator {
     /// The active call stack as `(fn name, call-site span)`, for budget and
     /// recursion-cycle reporting in later tasks.
     pub call_stack: Vec<(String, Span)>,
+    /// File-level `const` decls, indexed by name (empty in the no-file mode).
+    consts: HashMap<&'a str, &'a ast::ConstDecl>,
+    /// File-level `enum` decls, indexed by name (empty in the no-file mode).
+    enums: HashMap<&'a str, &'a ast::EnumDecl>,
+    /// Memoized const values, keyed by const name. A `Poison` entry records a
+    /// const that already failed (cycle or error) so the failure does not
+    /// re-report on subsequent references.
+    const_memo: HashMap<String, Value>,
+    /// The names of consts whose value expressions are currently being
+    /// evaluated, in reference order — the in-progress stack used to detect and
+    /// name cyclic const definitions.
+    in_progress: Vec<String>,
 }
 
-impl Evaluator {
-    /// Create a fresh evaluator with an empty diagnostic list and step count.
+impl<'a> Evaluator<'a> {
+    /// Create a fresh evaluator with no file context: an empty diagnostic list,
+    /// step count, and const/enum index. Bare names resolve only against the
+    /// local [`Env`]; there are no file-level consts or enums to fall back to.
     pub fn new() -> Self {
-        Evaluator { diags: Vec::new(), steps: 0, call_stack: Vec::new() }
+        Evaluator {
+            diags: Vec::new(),
+            steps: 0,
+            call_stack: Vec::new(),
+            consts: HashMap::new(),
+            enums: HashMap::new(),
+            const_memo: HashMap::new(),
+            in_progress: Vec::new(),
+        }
+    }
+
+    /// Create an evaluator that can resolve names against `file`'s top-level
+    /// `const` and `enum` items. Later duplicate names (a parse-level concern)
+    /// are resolved last-wins by the index build; duplicate diagnosis is not
+    /// this task's job.
+    pub fn with_file(file: &'a ast::File) -> Self {
+        let mut ev = Evaluator::new();
+        for item in &file.items {
+            match item {
+                ast::Item::Const(c) => {
+                    ev.consts.insert(c.name.as_str(), c);
+                }
+                ast::Item::Enum(e) => {
+                    ev.enums.insert(e.name.as_str(), e);
+                }
+                _ => {}
+            }
+        }
+        ev
     }
 
     /// Push an [`Error`](Level::Error) diagnostic at `span`.
@@ -157,8 +210,7 @@ impl Evaluator {
             }
             // TODO(T4): evaluate comptime-fn / builtin calls.
             ast::Expr::Call { .. } => Value::Poison,
-            // TODO(T4/T6): construct user structs.
-            ast::Expr::StructLit { .. } => Value::Poison,
+            ast::Expr::StructLit { ty, fields, .. } => self.eval_struct_lit(ty, fields, env),
             // TODO(T5): control flow.
             ast::Expr::If { .. } => Value::Poison,
             ast::Expr::For { .. } => Value::Poison,
@@ -167,33 +219,111 @@ impl Evaluator {
         }
     }
 
-    /// Resolve a path expression: the boolean/`none` keywords, then an `Env`
-    /// lookup; unknown names are an error.
+    /// Resolve a path expression: the boolean/`none` keywords; a single name
+    /// (local `Env` binding, then a file-level `const`); or a two-segment
+    /// `Enum.Variant` path. Local bindings shadow file consts. Unknown names,
+    /// and `Enum.Variant` for a known enum with no such variant, are errors.
     fn eval_path(&mut self, path: &ast::Path, env: &Env) -> Value {
         if path.segments.len() == 1 {
-            match path.segments[0].as_str() {
+            return match path.segments[0].as_str() {
                 // Booleans are single-segment paths (there is no `Expr::Bool`).
-                "true" => return Value::Bool(true),
-                "false" => return Value::Bool(false),
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
                 // `none` maps to Unit for now; revisit if a later task
                 // introduces a first-class Option value.
-                "none" => return Value::Unit,
+                "none" => Value::Unit,
                 name => {
+                    // Local bindings shadow file-level consts: check `env` first.
                     if let Some(v) = env.lookup(name) {
                         return v.clone();
                     }
-                    // TODO(T3): fall back to resolving file-level consts before
-                    // reporting the name as unknown.
+                    // Then fall back to a file-level const of the same name.
+                    if self.consts.contains_key(name) {
+                        return self.resolve_const(name, path.span);
+                    }
                     self.error(path.span, format!("unknown name `{name}`"));
-                    return Value::Poison;
+                    Value::Poison
                 }
+            };
+        }
+        // A two-segment `Enum.Variant` path resolves to a nullary enum value
+        // when `Enum` names a file-level enum. Payload-carrying construction
+        // (`Enum.Variant(x)`) parses as a `Call`, not a plain path.
+        if path.segments.len() == 2 {
+            let (ty, variant) = (path.segments[0].as_str(), path.segments[1].as_str());
+            if let Some(decl) = self.enums.get(ty) {
+                if decl.variants.iter().any(|(v, _, _)| v == variant) {
+                    return Value::Enum {
+                        ty_name: ty.to_string(),
+                        variant: variant.to_string(),
+                        payload: vec![],
+                    };
+                }
+                self.error(path.span, format!("enum `{ty}` has no variant `{variant}`"));
+                return Value::Poison;
             }
         }
-        // TODO(T3): resolve multi-segment paths (module/enum paths). For now
-        // any such path is reported as an unknown name.
+        // Any other multi-segment path (module paths, unknown enums) is an
+        // unknown name for now; later plans resolve `use`d/module paths.
         let full = path.segments.join(".");
         self.error(path.span, format!("unknown name `{full}`"));
         Value::Poison
+    }
+
+    /// Build a struct value from a written literal (D-P2.14, value level only):
+    /// evaluate each field in order and tag the value with the type's last path
+    /// segment. No existence/field/size/default checks — those are Plan 3.
+    fn eval_struct_lit(
+        &mut self,
+        ty: &ast::Path,
+        fields: &[(String, ast::Expr)],
+        env: &mut Env,
+    ) -> Value {
+        let ty_name = ty.segments.last().cloned().unwrap_or_default();
+        // Poison field values are preserved as-is (propagate, no new diagnostic).
+        let fields =
+            fields.iter().map(|(name, e)| (name.clone(), self.eval_expr(e, env))).collect();
+        Value::Struct { ty_name, fields }
+    }
+
+    /// Resolve the file-level const named `name`, evaluating it lazily and
+    /// memoizing the result. `ref_span` is the reference site, used to locate a
+    /// cyclic-definition error.
+    ///
+    /// - A memoized value (including a memoized `Poison`) is returned directly.
+    /// - If `name` is already on the in-progress stack, this reference closes a
+    ///   cycle: report `cyclic const definition: <chain>` at `ref_span`, memoize
+    ///   `Poison` for `name` so the cascade suppresses, and return `Poison`.
+    /// - Otherwise push `name`, evaluate its value expr in a fresh global-only
+    ///   env (consts see each other only by name, never each other's locals),
+    ///   pop, memoize, and return.
+    ///
+    /// Callers must only invoke this for a `name` known to be in `self.consts`.
+    fn resolve_const(&mut self, name: &str, ref_span: Span) -> Value {
+        if let Some(v) = self.const_memo.get(name) {
+            return v.clone();
+        }
+        if let Some(start) = self.in_progress.iter().position(|n| n == name) {
+            // Name the cycle as the chain from where it was first entered back
+            // to this repeated reference, e.g. `A -> B -> A`.
+            let mut chain: Vec<&str> = self.in_progress[start..].iter().map(|s| s.as_str()).collect();
+            chain.push(name);
+            self.error(ref_span, format!("cyclic const definition: {}", chain.join(" -> ")));
+            self.const_memo.insert(name.to_string(), Value::Poison);
+            return Value::Poison;
+        }
+        // Copy the `&'a ConstDecl` out of the index so its `value` expr is
+        // borrowed from the file (lifetime `'a`), not from `self`. That leaves
+        // `self` free to be mutated (diags/memo/in_progress) across the
+        // recursive `eval_expr` below.
+        let decl: &'a ast::ConstDecl =
+            self.consts.get(name).copied().expect("caller ensures the const exists");
+        self.in_progress.push(name.to_string());
+        let mut env = Env::new();
+        let v = self.eval_expr(&decl.value, &mut env);
+        self.in_progress.pop();
+        self.const_memo.insert(name.to_string(), v.clone());
+        v
     }
 
     /// Apply a unary operator (D-P2.3). A `Poison` operand propagates silently.
@@ -529,25 +659,31 @@ fn binop_symbol(op: BinOp) -> &'static str {
     }
 }
 
-impl Default for Evaluator {
+impl Default for Evaluator<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Evaluate the `const` item named `name` in `file` to a comptime [`Value`].
+/// Evaluate the top-level `const` named `name` in `file` to a comptime
+/// [`Value`], returning it alongside every diagnostic emitted.
 ///
-/// STUB: real const evaluation is Task 3. For now this only wires the module
-/// entry point: it locates a matching `const` item and returns `(None, diags)`.
-// TODO(Task 3): resolve the const's value expression via the evaluator and
-// return `(Some(value), diags)`.
+/// If no const of that name exists, returns `(None, [error])` reporting
+/// `no const named `<name>``. Otherwise resolution is lazy and memoized: the
+/// named const's value expression is evaluated, resolving referenced consts on
+/// demand and detecting cyclic definitions (which yield [`Value::Poison`] plus a
+/// diagnostic naming the cycle). A successful evaluation returns
+/// `(Some(value), diags)` — `diags` may still be non-empty if the value
+/// contains a reported error (its `Poison` is surfaced as `Some(Poison)`).
 pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
-    let mut ev = Evaluator::new();
-    let _found = file.items.iter().any(|item| {
-        matches!(item, crate::ast::Item::Const(c) if c.name == name)
-    });
-    // TODO(Task 3): actually evaluate `_found`'s value expression.
-    (None, std::mem::take(&mut ev.diags))
+    let mut ev = Evaluator::with_file(file);
+    if !ev.consts.contains_key(name) {
+        // Anchor the error at the module header — there is no const span to use.
+        ev.error(file.module.span, format!("no const named `{name}`"));
+        return (None, ev.diags);
+    }
+    let value = ev.resolve_const(name, file.module.span);
+    (Some(value), ev.diags)
 }
 
 #[cfg(test)]
@@ -669,10 +805,11 @@ mod tests {
     }
 
     #[test]
-    fn eval_const_stub_returns_none() {
+    fn eval_const_missing_reports_error() {
         let (v, diags) = crate::eval::eval_const(&empty_file(), "MISSING");
         assert!(v.is_none());
-        assert!(diags.is_empty());
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("no const named `MISSING`"));
     }
 
     fn empty_file() -> crate::ast::File {
