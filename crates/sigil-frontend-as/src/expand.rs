@@ -34,6 +34,15 @@ pub(crate) fn render_tokens(toks: &[Token]) -> String {
 
 /// A character that can be part of an AS identifier/number — the boundary test
 /// for whether two adjacent rendered tokens would merge on re-lex.
+///
+/// Deliberately identifier-only: it does NOT try to keep two adjacent PUNCT
+/// tokens from merging into a multi-char operator (e.g. a bare `Lt` then `Gt`
+/// re-lexing as `Ne`). Inserting a space there would defeat the whole point —
+/// a macro argument like `<<` embedded in a `%<…>` string must render as `<<`,
+/// not `< <`, to stay byte-exact. Adjacent bare comparison/shift operators do
+/// not occur in any Aeon macro argument (the lexer folds `<>`/`<<`/… into single
+/// tokens at their source), so the hazard is unreachable; both ROM gates prove
+/// the identifier-only rule byte-neutral for the real corpus.
 fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }

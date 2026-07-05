@@ -3257,6 +3257,10 @@ impl Asm {
     fn bind_macro_arg(&self, v: String, caller_scope: Option<&str>) -> String {
         if is_bare_local(&v) {
             if let Some(s) = self.resolve_str(&v) {
+                // Quoted so it re-lexes as one `Tok::Str`. Assumes the value has
+                // no embedded `"` — true for every debugger operand/param
+                // descriptor (`"d0"`, `".w"`, `"#"`, …); a value containing a
+                // quote would produce a broken literal (none occurs in aeon).
                 return format!("\"{s}\"");
             }
             return qualify(&v, caller_scope);
@@ -3521,8 +3525,12 @@ fn split_attribute_suffix(s: &str) -> Option<(&str, &'static str)> {
 /// validated by `eval_str`), or a balanced `substr(...)`/`lowstring(...)` call
 /// ending in `)`.
 fn trailing_str_expr_len(out: &[Token]) -> Option<usize> {
+    // `out.last()?` (not `out[n-1]`): an expression whose FIRST token is a
+    // comparison operator (`dc.b <>"x"`) reaches here with `out` empty — `n - 1`
+    // would underflow-panic in debug. Empty → no LHS → None (the malformed input
+    // then falls through to a normal "bad expression" diagnostic, not a crash).
+    let last = out.last()?;
     let n = out.len();
-    let last = out.get(n - 1)?;
     match &last.tok {
         Tok::Str(_) | Tok::Ident(_) => Some(1),
         Tok::Punct(Punct::RParen) => {
@@ -4071,6 +4079,19 @@ mod tests {
             .first()
             .map(|s| s.image_bytes())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn leading_comparison_operand_does_not_panic() {
+        // Regression (M1.D T5 review): `expand_str_comparisons` sees a `<>`/`=`
+        // with a string-literal RHS and an EMPTY left context, so
+        // `trailing_str_expr_len` must return None rather than underflow-panic on
+        // `out[n-1]`. The malformed operand must be handled gracefully (a
+        // diagnostic or the pre-existing silent-fold) — the point is it must not
+        // CRASH the assembler. Reaching this assert at all means no panic fired.
+        for src in ["\tcpu 68000\n\tdc.b <>\"x\"\n", "\tcpu 68000\n\tdc.b =\"x\"\n"] {
+            let _ = run(src, &Options::default());
+        }
     }
 
     #[test]
