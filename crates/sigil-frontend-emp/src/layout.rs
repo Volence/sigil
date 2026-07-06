@@ -972,8 +972,11 @@ pub fn eval_data_at(
 /// paths resolve against. `include_root = None` behaves exactly like
 /// [`eval_data_at`] (a comptime `embed(...)` inside the item then reports
 /// `[sandbox.no-root]`) — every existing caller of `eval_data`/`eval_data_at`
-/// is therefore unchanged. The lowering pass supplies the source file's
-/// directory as the root; tests point it at a fixtures directory.
+/// is therefore unchanged. Tests point the root at a fixtures directory; the
+/// lowering/CLI path does not yet supply a real root (wiring the source file's
+/// directory into `lower_data_item` is deferred to the Plan-5 hermeticity task),
+/// so through the production compile path `embed`/`import` currently report
+/// `[sandbox.no-root]` until that wiring lands.
 pub fn eval_data_with_root(
     file: &ast::File,
     name: &str,

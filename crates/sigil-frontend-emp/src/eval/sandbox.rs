@@ -203,10 +203,7 @@ impl<'a> Evaluator<'a> {
         if skip > file_len {
             self.error(
                 span,
-                format!(
-                    "[embed.range] embed slice skip={skip} len={} exceeds file length {file_len}",
-                    len_opt.unwrap_or(0)
-                ),
+                format!("[embed.range] embed skip={skip} exceeds file length {file_len}"),
             );
             return Value::Poison;
         }
@@ -245,11 +242,16 @@ impl<'a> Evaluator<'a> {
             return Err(());
         }
         match v.as_stored_int() {
-            Some(n) if n >= 0 => Ok(n as u64),
-            Some(n) => {
-                self.error(arg.span, format!("`{label}` must be non-negative, got {n}"));
-                Err(())
-            }
+            Some(n) => match u64::try_from(n) {
+                Ok(u) => Ok(u),
+                Err(_) => {
+                    self.error(
+                        arg.span,
+                        format!("`{label}` must be a non-negative value that fits u64, got {n}"),
+                    );
+                    Err(())
+                }
+            },
             None => match v {
                 Value::Poison => Err(()),
                 other => {
