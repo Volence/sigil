@@ -277,6 +277,14 @@ impl<'a> Evaluator<'a> {
         self.diags.push(Diagnostic { level: Level::Warning, message: msg.into(), primary: span });
     }
 
+    /// Push a [`Note`](Level::Note) diagnostic at `span`. Used to attach
+    /// follow-up context to a preceding error — e.g. the comptime-generator
+    /// call-site provenance note (§9, D-P4.11) emitted when a spliced comptime
+    /// call's generated table contains an error.
+    pub fn note(&mut self, span: Span, msg: impl Into<String>) {
+        self.diags.push(Diagnostic { level: Level::Note, message: msg.into(), primary: span });
+    }
+
     /// Charge one evaluation step. Returns `false` once [`STEP_BUDGET`] is
     /// exceeded so callers can bail out; keeps counting otherwise.
     pub fn bump_step(&mut self) -> bool {
