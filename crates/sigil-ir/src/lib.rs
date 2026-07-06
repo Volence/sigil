@@ -37,6 +37,19 @@ pub struct Label {
     pub offset: u32,
 }
 
+/// One width candidate of a [`Fragment::RelaxAbsSym`]: a complete instruction
+/// encoding (with the operand-address bytes zeroed as a placeholder) together
+/// with the single [`Fixup`] that patches its symbolic operand. The front-end
+/// builds both the `abs.w` and `abs.l` candidates; `resolve_layout` selects one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelaxCandidate {
+    /// The complete instruction bytes for this width (operand address zeroed).
+    pub bytes: Vec<u8>,
+    /// The operand relocation (`Abs16Be` for the `abs.w` candidate, `Abs32Be`
+    /// for `abs.l`); its `offset` is relative to the start of `bytes`.
+    pub fixup: Fixup,
+}
+
 /// A single unit of assembled content inside a [`Section`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Fragment {
@@ -53,6 +66,38 @@ pub enum Fragment {
     /// Abs16Be/Abs32Be operand fixup) BEFORE `link()` runs, so the helpers below
     /// never see it at link time.
     JmpJsrSym { is_jsr: bool, target: crate::expr::Expr, span: Span },
+    /// A straight-line instruction carrying ONE symbolic absolute-address operand
+    /// whose width (`abs.w`/`abs.l`) is deferred to the linker, so it can be
+    /// lowered **byte-exact** to whichever width `asl_width_rule` picks for the
+    /// resolved address of `target`. Like [`JmpJsrSym`](Self::JmpJsrSym) it is the
+    /// full instruction encoding — but that encoding is done by the FRONT-END, not
+    /// the linker: the caller supplies BOTH candidate encodings ([`short`] = the
+    /// `abs.w` form, [`long`] = the `abs.l` form), each a complete byte block plus
+    /// its own operand fixup (address bytes zeroed as placeholders), and
+    /// `resolve_layout` (sigil-link) merely SELECTS one — no m68k encoding logic
+    /// lives in the linker. Both candidates' fixups reference the SAME symbol
+    /// (`target`), whose resolved address drives the width choice via
+    /// `asl_width_rule`; `resolve_layout` lowers this to a `Data` fragment (the
+    /// chosen candidate's bytes + fixup) BEFORE `link()` runs, so the helpers
+    /// below never see it at link time. It is length-variable exactly like
+    /// `JmpJsrSym` (contributes `short.bytes.len()` at baseline, `long` when it
+    /// grows) and participates in the same relaxation fixpoint.
+    ///
+    /// [`short`]: RelaxCandidate
+    /// [`long`]: RelaxCandidate
+    RelaxAbsSym {
+        /// The `abs.w` encoding: complete instruction bytes (operand address
+        /// zeroed) plus its `Abs16Be` operand fixup at the right in-block offset.
+        short: RelaxCandidate,
+        /// The `abs.l` encoding: complete instruction bytes (operand address
+        /// zeroed) plus its `Abs32Be` operand fixup at the right in-block offset.
+        long: RelaxCandidate,
+        /// The symbol whose resolved address selects `short` vs `long` (the same
+        /// symbol both candidates' fixups reference).
+        target: crate::expr::Expr,
+        /// The source span that produced the instruction.
+        span: Span,
+    },
     /// AS `org <target>`: reposition the write cursor to `target` (a byte offset
     /// from the section start, already resolved by the front-end). Used both for
     /// the within-section back-patch idiom (`org Hdr / dc.b n / org End`, e.g.
@@ -113,6 +158,9 @@ impl Section {
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
                 }
+                Fragment::RelaxAbsSym { .. } => {
+                    unreachable!("RelaxAbsSym must be lowered by resolve_layout before layout/link")
+                }
             }
             if cursor > max_extent {
                 max_extent = cursor;
@@ -163,6 +211,9 @@ impl Section {
                 }
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
+                }
+                Fragment::RelaxAbsSym { .. } => {
+                    unreachable!("RelaxAbsSym must be lowered by resolve_layout before layout/link")
                 }
             }
         }
