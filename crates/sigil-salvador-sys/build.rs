@@ -1,4 +1,8 @@
 fn main() {
+    // Track the whole vendored tree: emitting any `rerun-if-changed` disables
+    // cargo's default whole-package tracking, so without this a vendored *header*
+    // edit (shrink.h/format.h/divsufsort_config.h/...) would not trigger a rebuild.
+    println!("cargo:rerun-if-changed=vendor");
     let mut b = cc::Build::new();
     b.include("vendor").include("vendor/libdivsufsort/include");
     for f in [

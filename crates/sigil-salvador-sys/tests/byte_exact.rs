@@ -30,8 +30,8 @@ fn compress_matches_reference_salvador_cli_output() {
 #[test]
 fn compress_empty_input_does_not_panic() {
     let out = sigil_salvador_sys::compress(&[]);
-    // salvador's format always ends with the "last byte" marker / EOD, so the
-    // empty-input stream is small but non-empty; just assert it doesn't panic
-    // and returns *something* deterministic-shaped (no crash on n == 0).
-    let _ = out;
+    // A 0-byte input drives salvador's block loop zero times, so it returns an
+    // empty stream (matching the CLI on a 0-byte file). The point of this test
+    // is only that the empty/`n == 0` path does not panic in the FFI wrapper.
+    assert!(out.is_empty());
 }
