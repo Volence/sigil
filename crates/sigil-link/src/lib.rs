@@ -120,6 +120,9 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before link")
                 }
+                Fragment::RelaxAbsSym { .. } => {
+                    unreachable!("RelaxAbsSym must be lowered by resolve_layout before link")
+                }
             }
         }
 

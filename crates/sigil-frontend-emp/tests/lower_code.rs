@@ -166,3 +166,156 @@ fn intra_asm_dbra_roundtrips_through_link() {
     assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
     assert_eq!(lower_link_68k(&code), vec![0x51, 0xC8, 0xFF, 0xFE]);
 }
+
+// ---- symbolic absolute-address operands → Fragment::RelaxAbsSym -----------
+
+/// Lower a `Value::Code` to a single 68k section's fragments (no link), so a
+/// test can inspect the emitted `RelaxAbsSym` directly.
+fn lower_module_68k(code: &Value) -> (sigil_ir::Module, Vec<sigil_span::Diagnostic>) {
+    let Value::Code(buf) = code else { panic!("expected Value::Code, got {code}") };
+    let mut builder = IrBuilder::new();
+    builder.switch_section("text", Cpu::M68000, None);
+    let mut diags = Vec::new();
+    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    let (module, _bdiags) = builder.finish();
+    (module, diags)
+}
+
+/// Assert the first (and only) fragment is a `RelaxAbsSym` whose candidates
+/// match `short`/`long` bytes, whose fixups are `Abs16Be`/`Abs32Be` at the SAME
+/// `offset`, and both referencing symbol `sym`.
+fn assert_relax_abs(src: &str, sym: &str, short: &[u8], long: &[u8], offset: u32) {
+    use sigil_ir::{Expr, Fixup, FixupKind, Fragment};
+    let (code, ediags) = eval_asm_with(src, &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(module.sections[0].fragments.len(), 1, "expected one fragment");
+    match &module.sections[0].fragments[0] {
+        Fragment::RelaxAbsSym { short: s, long: l, target, .. } => {
+            assert_eq!(s.bytes, short, "short (abs.w) bytes");
+            assert_eq!(l.bytes, long, "long (abs.l) bytes");
+            assert_eq!(s.fixup, Fixup { kind: FixupKind::Abs16Be, offset, target: Expr::Sym(sym.into()) });
+            assert_eq!(l.fixup, Fixup { kind: FixupKind::Abs32Be, offset, target: Expr::Sym(sym.into()) });
+            assert_eq!(*target, Expr::Sym(sym.into()));
+        }
+        other => panic!("expected RelaxAbsSym, got {other:?}"),
+    }
+}
+
+fn asm_1(instr: &str) -> String {
+    format!("module m\ncomptime fn f() -> Code {{\n    return asm {{\n        {instr}\n    }}\n}}\n")
+}
+
+#[test]
+fn move_w_abs_src_emits_relax() {
+    // move.w Foo, d0 — src abs, dst Dn (no ext). abs.w 30 38, abs.l 30 39.
+    assert_relax_abs(&asm_1("move.w Foo, d0"), "Foo", &[0x30, 0x38, 0x00, 0x00], &[0x30, 0x39, 0x00, 0x00, 0x00, 0x00], 2);
+}
+
+#[test]
+fn move_w_abs_dst_emits_relax() {
+    // move.w d0, Foo — dst abs (matches the linker's hand-built relax_move).
+    assert_relax_abs(&asm_1("move.w d0, Foo"), "Foo", &[0x31, 0xC0, 0x00, 0x00], &[0x33, 0xC0, 0x00, 0x00, 0x00, 0x00], 2);
+}
+
+#[test]
+fn move_l_abs_src_emits_relax() {
+    // move.l Foo, d0 — long-size data move; opcode word still one word, offset 2.
+    assert_relax_abs(&asm_1("move.l Foo, d0"), "Foo", &[0x20, 0x38, 0x00, 0x00], &[0x20, 0x39, 0x00, 0x00, 0x00, 0x00], 2);
+}
+
+#[test]
+fn lea_abs_emits_relax() {
+    // lea Foo, a0 → 41 F8 / 41 F9 (abs source, An dest has no ext).
+    assert_relax_abs(&asm_1("lea Foo, a0"), "Foo", &[0x41, 0xF8, 0x00, 0x00], &[0x41, 0xF9, 0x00, 0x00, 0x00, 0x00], 2);
+}
+
+#[test]
+fn tst_w_abs_emits_relax() {
+    // tst.w Foo → 4A 78 / 4A 79.
+    assert_relax_abs(&asm_1("tst.w Foo"), "Foo", &[0x4A, 0x78, 0x00, 0x00], &[0x4A, 0x79, 0x00, 0x00, 0x00, 0x00], 2);
+}
+
+#[test]
+fn clr_w_abs_emits_relax() {
+    // clr.w Foo → 42 78 / 42 79.
+    assert_relax_abs(&asm_1("clr.w Foo"), "Foo", &[0x42, 0x78, 0x00, 0x00], &[0x42, 0x79, 0x00, 0x00, 0x00, 0x00], 2);
+}
+
+#[test]
+fn abs_sym_selects_width_and_links() {
+    // End-to-end: move.w d0, Foo with Foo at a low (abs.w) address resolves to the
+    // short candidate and the linker patches the Abs16Be operand (0x1000).
+    let (code, ediags) = eval_asm_with(&asm_1("move.w d0, Foo"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let Value::Code(buf) = &code else { panic!("expected Value::Code") };
+    let mut builder = IrBuilder::new();
+    builder.switch_section("text", Cpu::M68000, None);
+    let mut diags = Vec::new();
+    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    let (module, _b) = builder.finish();
+    let mut syms = SymbolTable::new();
+    syms.define("Foo", sigil_ir::SymbolValue::Int(0x1000));
+    let resolved = sigil_link::resolve_layout(&module.sections, &syms, true).expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &syms).expect("link");
+    assert_eq!(linked.section("text").unwrap().bytes, vec![0x31, 0xC0, 0x10, 0x00]);
+}
+
+#[test]
+fn abs_sym_high_target_selects_long() {
+    // move.w d0, Foo with Foo above the abs.w range resolves to the abs.l (long)
+    // candidate: 6 bytes, Abs32Be operand patched with the full address.
+    let (code, ediags) = eval_asm_with(&asm_1("move.w d0, Foo"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let Value::Code(buf) = &code else { panic!("expected Value::Code") };
+    let mut builder = IrBuilder::new();
+    builder.switch_section("text", Cpu::M68000, None);
+    let mut diags = Vec::new();
+    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    let (module, _b) = builder.finish();
+    let mut syms = SymbolTable::new();
+    syms.define("Foo", sigil_ir::SymbolValue::Int(0x12345678));
+    let resolved = sigil_link::resolve_layout(&module.sections, &syms, true).expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &syms).expect("link");
+    assert_eq!(linked.section("text").unwrap().bytes, vec![0x33, 0xC0, 0x12, 0x34, 0x56, 0x78]);
+}
+
+#[test]
+fn two_symbolic_operands_diagnose() {
+    // move.w Foo, Bar — two symbolic operands is deferred, must diagnose (no panic).
+    let (code, ediags) = eval_asm_with(&asm_1("move.w Foo, Bar"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("two symbolic")),
+        "expected a two-symbolic-operands diagnostic, got: {diags:?}"
+    );
+}
+
+#[test]
+fn abs_sym_with_immediate_operand_diagnoses() {
+    // move.w #5, Foo — the immediate carries its own extension word, so the offset
+    // combination is out of scope for this first cut: diagnose, don't guess.
+    let (code, ediags) = eval_asm_with(&asm_1("move.w #5, Foo"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("extension-word operand")),
+        "expected an extension-word-combination diagnostic, got: {diags:?}"
+    );
+}
+
+#[test]
+fn abs_sym_with_displacement_operand_diagnoses() {
+    // move.w Foo, 4(a1) — the (d16,An) dest carries an extension word too: out of scope.
+    let (code, ediags) = eval_asm_with(&asm_1("move.w Foo, 4(a1)"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("extension-word operand")),
+        "expected an extension-word-combination diagnostic, got: {diags:?}"
+    );
+}

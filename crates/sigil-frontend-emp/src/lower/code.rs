@@ -29,7 +29,7 @@ use sigil_backend_m68k::M68kBackend;
 use sigil_backend_z80::z80::{Mnemonic as Z80Mnemonic, Operand as Z80Operand};
 use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer};
-use sigil_ir::{DataFragment, Expr, IrBuilder};
+use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, Fragment, IrBuilder, RelaxCandidate};
 use sigil_span::{Diagnostic, Level, Span};
 
 /// Lower every item of `code` into the currently-open section of `builder`,
@@ -116,6 +116,26 @@ fn lower_m68k_instr(
             }
         },
     };
+    // A single symbolic absolute-address operand defers its width (abs.w/abs.l)
+    // to the linker via a relaxable fragment (rather than the fixed generic path).
+    let sym_count = ops.iter().filter(|o| matches!(o, CodeOperand::Sym(_))).count();
+    match sym_count {
+        0 => {}
+        1 => {
+            lower_m68k_abs_sym(m, size, ops, span, builder, diags);
+            return;
+        }
+        _ => {
+            push_err(
+                diags,
+                span,
+                "[lower.abs-sym-operand] two symbolic operands in one instruction is not yet \
+                 supported",
+            );
+            return;
+        }
+    }
+
     let mut mops = Vec::with_capacity(ops.len());
     for op in ops {
         match m68k_operand(op) {
@@ -204,6 +224,139 @@ fn lower_m68k_dbcc(
         Ok(df) => emit_data_frag(builder, df),
         Err(e) => push_err(diags, span, e.message),
     }
+}
+
+/// Lower a straight-line instruction carrying exactly ONE symbolic
+/// absolute-address operand to a length-variable [`Fragment::RelaxAbsSym`]: the
+/// front-end encodes BOTH the `abs.w` and `abs.l` candidates (with a zeroed
+/// address placeholder), and the linker's `resolve_layout` selects one by the
+/// resolved target address (§5.6 `asl_width_rule`).
+///
+/// # Fixup offset (the byte-exactness crux)
+/// This first cut requires every OTHER operand to be extension-word-FREE
+/// (register / `(An)` / `-(An)` / `(An)+`) — see [`operand_has_ext_words`]. Under
+/// that restriction the symbolic operand's abs extension words are the LAST bytes
+/// of the encoding, after a single opcode word and no preceding extension words,
+/// so the fixup offset is exactly `short_bytes.len() - 2` (== `long_bytes.len() -
+/// 4`) — identical in both candidates, differing only in extension WIDTH (2 vs 4)
+/// and fixup KIND (`Abs16Be` vs `Abs32Be`).
+///
+/// What actually GUARANTEES the offset's placement is that `Sym` is the only
+/// extension-word producer in play: [`operand_has_ext_words`] rejects the two
+/// forms the emp `CodeOperand` model can express that carry ext words (`#imm`,
+/// `(d16,An)`), and the model has NO absolute / indexed / PC-relative EA form
+/// (the only absolute EA is `Sym` itself), so nothing else can precede the abs
+/// operand's ext words. The pre-emission length check below is NOT that proof —
+/// it is defense-in-depth against a broken backend / unexpected multi-word opcode.
+///
+/// A combination with a SECOND extension-word operand (`#imm`, `(d16,An)`) would
+/// move the offset and is deferred with a clear diagnostic.
+fn lower_m68k_abs_sym(
+    m: M68kMnemonic,
+    size: M68kSize,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // Build the two operand lists — identical except the symbolic operand is
+    // `AbsW(0)` in one and `AbsL(0)` in the other. Any OTHER operand must be
+    // extension-word-free so the abs operand's ext words stay last (offset exact).
+    let mut short_ops = Vec::with_capacity(ops.len());
+    let mut long_ops = Vec::with_capacity(ops.len());
+    let mut name: Option<&str> = None;
+    for op in ops {
+        match op {
+            CodeOperand::Sym(n) => {
+                name = Some(n);
+                short_ops.push(M68kOperand::AbsW(0));
+                long_ops.push(M68kOperand::AbsL(0));
+            }
+            other if operand_has_ext_words(other) => {
+                push_err(
+                    diags,
+                    span,
+                    "[lower.abs-sym-operand] a symbolic absolute operand combined with another \
+                     extension-word operand (#imm / (d16,An)) is not yet supported",
+                );
+                return;
+            }
+            other => match m68k_operand(other) {
+                Ok(o) => {
+                    short_ops.push(o);
+                    long_ops.push(o);
+                }
+                Err(msg) => {
+                    push_err(diags, span, msg);
+                    return;
+                }
+            },
+        }
+    }
+    let name = name.expect("caller guarantees exactly one symbolic operand");
+
+    // Refine against the abs.w operands; the choice is width-agnostic here (both
+    // `AbsW` and `AbsL` are memory-EA destinations, so `refine` picks the same
+    // mnemonic for either candidate).
+    let refined = refine_m68k_mnemonic(m, &short_ops);
+    let short_inst = M68kInst { mnemonic: refined, size, ops: short_ops };
+    let long_inst = M68kInst { mnemonic: refined, size, ops: long_ops };
+    let short_bytes = match M68kBackend.lower_inst(&short_inst, span) {
+        Ok(df) => df.bytes,
+        Err(e) => {
+            push_err(diags, span, e.message);
+            return;
+        }
+    };
+    let long_bytes = match M68kBackend.lower_inst(&long_inst, span) {
+        Ok(df) => df.bytes,
+        Err(e) => {
+            push_err(diags, span, e.message);
+            return;
+        }
+    };
+    // Defense-in-depth (NOT the offset-placement proof — that rests on
+    // `operand_has_ext_words` completeness + the emp `CodeOperand` model having no
+    // absolute/indexed/PC-relative EA but `Sym`, so `Sym` is the only ext-word
+    // producer; see the fn doc). This guard only checks the two candidates differ
+    // by exactly the abs.w→abs.l width delta (2 bytes) atop a ≥1-word opcode —
+    // catching a broken backend or an unexpected multi-word opcode before we place
+    // a fixup. A candidate pair that satisfied it while the abs ext were NOT last
+    // would still be mis-offset, which is why the real guarantee lives upstream.
+    if short_bytes.len() < 4 || long_bytes.len() != short_bytes.len() + 2 {
+        push_err(
+            diags,
+            span,
+            "[lower.abs-sym-operand] internal: abs.w/abs.l candidate widths are inconsistent",
+        );
+        return;
+    }
+    let offset = (short_bytes.len() - 2) as u32;
+    let target = Expr::Sym(name.to_string());
+    let advance = short_bytes.len() as u32; // baseline (abs.w) cursor advance
+    let frag = Fragment::RelaxAbsSym {
+        short: RelaxCandidate {
+            bytes: short_bytes,
+            fixup: Fixup { kind: FixupKind::Abs16Be, offset, target: target.clone() },
+        },
+        long: RelaxCandidate {
+            bytes: long_bytes,
+            fixup: Fixup { kind: FixupKind::Abs32Be, offset, target: target.clone() },
+        },
+        target,
+        span,
+    };
+    builder.emit_fragment(frag, advance);
+}
+
+/// True for a [`CodeOperand`] that contributes its own extension word(s) to the
+/// encoding (`#imm`, `(d16,An)`). These make the abs operand's ext offset
+/// position-dependent, so they are out of scope for the first symbolic-operand
+/// cut. Register / `(An)` / `-(An)` / `(An)+` forms are ext-free. A `Sym` is the
+/// symbolic operand itself (handled by the caller) and a `Cc` is never a valid
+/// EA — neither is classified here.
+fn operand_has_ext_words(op: &CodeOperand) -> bool {
+    matches!(op, CodeOperand::Imm(_) | CodeOperand::DispInd { .. })
 }
 
 /// Map a [`CodeOperand`] to a 68k [`M68kOperand`]. A symbolic operand only makes

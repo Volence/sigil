@@ -1,5 +1,7 @@
 //! Width selection + (next task) the bounded layout fixpoint (spec §5.4/§5.6).
-//! The only length-variable fragment in Aeon is bare-symbol `jmp`/`jsr`.
+//! The length-variable fragments in Aeon are bare-symbol `jmp`/`jsr`
+//! (`JmpJsrSym`) and a straight-line instruction with a width-deferred symbolic
+//! absolute operand (`RelaxAbsSym`); both defer their abs.w/abs.l width here.
 
 use sigil_ir::expr::Fold;
 pub use sigil_ir::{
@@ -8,15 +10,17 @@ pub use sigil_ir::{
 };
 use sigil_span::{Diagnostic, Level, Span};
 
-/// Current byte length of a fragment; `JmpJsrSym` uses the given width.
+/// Current byte length of a fragment; `JmpJsrSym`/`RelaxAbsSym` use the given width.
 ///
 /// `Org` returns 0: it is a cursor *reposition*, not a run of bytes, so it has
 /// no length in the monotonic-prefix-sum sense `shift_breakpoints` relies on.
 /// This is only sound because `resolve_layout` refuses (see the guard below)
-/// any section that mixes `Org` with a real-growth `JmpJsrSym`: with zero
-/// `JmpJsrSym` fragments in a section, every width in `widths[..]` stays
-/// `AbsWidth::W`, so `frag_len(frag, w)` is independent of `w` for every
-/// fragment (Org included) and `shift_offset` reduces to the identity
+/// any section that mixes `Org` with a real-growth width-variable fragment —
+/// and the guard now refuses BOTH `JmpJsrSym` and `RelaxAbsSym` (the
+/// `has_relaxable` predicate covers both). So in any section that also contains
+/// an `Org`, there are zero width-variable fragments, every width in
+/// `widths[..]` stays `AbsWidth::W`, `frag_len(frag, w)` is independent of `w`
+/// for every fragment (Org included), and `shift_offset` reduces to the identity
 /// function regardless of what value `Org` contributes here.
 fn frag_len(frag: &Fragment, w: AbsWidth) -> u32 {
     match frag {
@@ -25,19 +29,25 @@ fn frag_len(frag: &Fragment, w: AbsWidth) -> u32 {
         Fragment::Reserve { count, .. } => *count,
         Fragment::Org { .. } => 0,
         Fragment::JmpJsrSym { .. } => w.inst_len(),
+        // The chosen candidate's real byte length (abs.w = short, abs.l = long),
+        // so layout accounts for the exact instruction width like JmpJsrSym does.
+        Fragment::RelaxAbsSym { short, long, .. } => match w {
+            AbsWidth::W => short.bytes.len() as u32,
+            AbsWidth::L => long.bytes.len() as u32,
+        },
     }
 }
 
 /// Breakpoints mapping an all-abs.w (baseline) offset to the growth delta at that
 /// fragment boundary under the current widths. `widths[fi]` is the chosen width
-/// of fragment `fi` (only meaningful for `JmpJsrSym`; ignored otherwise).
+/// of fragment `fi` (meaningful for `JmpJsrSym`/`RelaxAbsSym`; ignored otherwise).
 fn shift_breakpoints(sec: &Section, widths: &[AbsWidth]) -> Vec<(u32, i64)> {
     let mut cur: u32 = 0;
     let mut orig: u32 = 0;
     let mut bps = vec![(0u32, 0i64)];
     for (fi, frag) in sec.fragments.iter().enumerate() {
         cur += frag_len(frag, widths[fi]);
-        orig += frag_len(frag, AbsWidth::W); // baseline: every JmpJsrSym at abs.w
+        orig += frag_len(frag, AbsWidth::W); // baseline: every width-variable fragment at abs.w
         bps.push((orig, cur as i64 - orig as i64));
     }
     bps
@@ -83,7 +93,8 @@ fn frag_span(f: &Fragment) -> Span {
         Fragment::Fill { span, .. }
         | Fragment::Reserve { span, .. }
         | Fragment::Org { span, .. }
-        | Fragment::JmpJsrSym { span, .. } => *span,
+        | Fragment::JmpJsrSym { span, .. }
+        | Fragment::RelaxAbsSym { span, .. } => *span,
     }
 }
 
@@ -137,12 +148,18 @@ pub fn resolve_layout(
             .find(|f| matches!(f, Fragment::Org { .. }))
             .map(frag_span)
             .expect("has_org implies an Org fragment");
-        let has_jmpjsr = sec.fragments.iter().any(|f| matches!(f, Fragment::JmpJsrSym { .. }));
-        if has_jmpjsr {
+        // A length-variable fragment (`JmpJsrSym` OR `RelaxAbsSym`) alongside an
+        // `Org` is the same hazard: the `shift_breakpoints` prefix-sum math is
+        // not Org-aware once a real width grows in the section.
+        let has_relaxable = sec
+            .fragments
+            .iter()
+            .any(|f| matches!(f, Fragment::JmpJsrSym { .. } | Fragment::RelaxAbsSym { .. }));
+        if has_relaxable {
             return Err(vec![Diagnostic {
                 level: Level::Error,
                 message: format!(
-                    "section `{}` mixes an `org` back-patch with a bare jmp/jsr — unsupported (resolve_layout's width-shift math is not Org-aware)",
+                    "section `{}` mixes an `org` back-patch with a relaxable instruction (jmp/jsr or a width-deferred operand) — unsupported (resolve_layout's width-shift math is not Org-aware)",
                     sec.name
                 ),
                 primary: org_span,
@@ -169,21 +186,21 @@ pub fn resolve_layout(
         }
     }
 
-    // Per-section, per-fragment width; JmpJsrSym entries start at abs.w (minimum).
+    // Per-section, per-fragment width; JmpJsrSym/RelaxAbsSym entries start at abs.w (minimum).
     let mut widths: Vec<Vec<AbsWidth>> =
         sections.iter().map(|s| vec![AbsWidth::W; s.fragments.len()]).collect();
 
     // Provably-sufficient pass cap: each pass that reports `grew` flips at least
-    // one JmpJsrSym W→L, and each fragment flips at most once, so at most
-    // `total_jmpjsr` passes can grow — pass `total_jmpjsr + 1` is guaranteed to
-    // observe no growth and converge. The non-convergence Err below is then an
-    // unreachable-in-practice backstop.
-    let total_jmpjsr: usize = sections
+    // one length-variable fragment (`JmpJsrSym` or `RelaxAbsSym`) W→L, and each
+    // fragment flips at most once, so at most `total_relaxable` passes can grow —
+    // pass `total_relaxable + 1` is guaranteed to observe no growth and converge.
+    // The non-convergence Err below is then an unreachable-in-practice backstop.
+    let total_relaxable: usize = sections
         .iter()
         .flat_map(|s| s.fragments.iter())
-        .filter(|f| matches!(f, Fragment::JmpJsrSym { .. }))
+        .filter(|f| matches!(f, Fragment::JmpJsrSym { .. } | Fragment::RelaxAbsSym { .. }))
         .count();
-    let cap = total_jmpjsr + 1;
+    let cap = total_relaxable + 1;
 
     // Span of a fragment that grew on the most recent pass, for the backstop diag.
     let mut last_grown_span: Option<Span> = None;
@@ -224,6 +241,28 @@ pub fn resolve_layout(
                         grew = true;
                     }
                 }
+                // Re-select each RelaxAbsSym width the same grow-only way: resolve
+                // `target`, apply the shared `asl_width_rule`, flip W→L if needed.
+                if let Fragment::RelaxAbsSym { target, span, .. } = frag {
+                    let v = match target.fold(&|n| syms.resolve(n, None)) {
+                        Fold::Value(v) => v,
+                        Fold::Poison => {
+                            return Err(vec![Diagnostic {
+                                level: Level::Error,
+                                message: format!(
+                                    "unresolved symbolic absolute operand in section {}",
+                                    sec.name
+                                ),
+                                primary: *span,
+                            }]);
+                        }
+                    };
+                    if asl_width_rule(v, dash_a) == AbsWidth::L && widths[si][fi] == AbsWidth::W {
+                        widths[si][fi] = AbsWidth::L;
+                        last_grown_span = Some(*span);
+                        grew = true;
+                    }
+                }
             }
         }
 
@@ -246,6 +285,21 @@ pub fn resolve_layout(
                         .map(|(fi, frag)| match frag {
                             Fragment::JmpJsrSym { is_jsr, target, span } => {
                                 lower_jmp_jsr(*is_jsr, target.clone(), widths[si][fi], *span)
+                            }
+                            // SELECT the width candidate the fixpoint chose and emit
+                            // it verbatim (no m68k encoding in the linker): the abs.w
+                            // `short` block for AbsWidth::W, the abs.l `long` block
+                            // otherwise, each carrying its own operand fixup.
+                            Fragment::RelaxAbsSym { short, long, span, .. } => {
+                                let cand = match widths[si][fi] {
+                                    AbsWidth::W => short,
+                                    AbsWidth::L => long,
+                                };
+                                Fragment::Data(DataFragment {
+                                    bytes: cand.bytes.clone(),
+                                    fixups: vec![cand.fixup.clone()],
+                                    span: *span,
+                                })
                             }
                             other => other.clone(),
                         })
@@ -278,11 +332,157 @@ pub fn resolve_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SymbolTable, SymbolValue};
+    use sigil_ir::{
+        Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, RelaxCandidate, Section,
+        SymbolTable, SymbolValue,
+    };
     use sigil_span::{SourceId, Span};
 
     fn sp() -> Span {
         Span { source: SourceId(0), start: 0, end: 0 }
+    }
+
+    /// A hand-built `RelaxAbsSym` modelling `move.w D0, (target).W/.L`: the abs.w
+    /// candidate is a 4-byte block (opcode 0x31C0 + Abs16Be operand at offset 2),
+    /// the abs.l candidate a 6-byte block (opcode 0x33C0 + Abs32Be operand at
+    /// offset 2). This task doesn't need the real encoder — only correct SELECTION
+    /// + fixup emission + length accounting — so plausible opcodes suffice.
+    fn relax_move(target: &str) -> Fragment {
+        Fragment::RelaxAbsSym {
+            short: RelaxCandidate {
+                bytes: vec![0x31, 0xC0, 0x00, 0x00],
+                fixup: Fixup { kind: FixupKind::Abs16Be, offset: 2, target: Expr::Sym(target.into()) },
+            },
+            long: RelaxCandidate {
+                bytes: vec![0x33, 0xC0, 0x00, 0x00, 0x00, 0x00],
+                fixup: Fixup { kind: FixupKind::Abs32Be, offset: 2, target: Expr::Sym(target.into()) },
+            },
+            target: Expr::Sym(target.into()),
+            span: sp(),
+        }
+    }
+
+    #[test]
+    fn resolve_relax_abs_selects_short_for_low_target() {
+        // Lo resolves into the abs.w range [0, 0x7FFF] → pick the `short` (abs.w)
+        // candidate: 4-byte block, Abs16Be operand fixup at offset 2.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Lo", SymbolValue::Int(0x1000));
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("Lo")],
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        match &out[0].fragments[0] {
+            Fragment::Data(d) => {
+                assert_eq!(d.bytes, vec![0x31, 0xC0, 0x00, 0x00]);
+                assert_eq!(d.fixups.len(), 1);
+                assert_eq!(d.fixups[0].kind, FixupKind::Abs16Be);
+                assert_eq!(d.fixups[0].offset, 2);
+            }
+            other => panic!("expected lowered Data, got {other:?}"),
+        }
+        // link() patches the Abs16Be operand with Lo's VMA (0x1000).
+        let linked = crate::link(&out, &stubs).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x31, 0xC0, 0x10, 0x00]);
+    }
+
+    #[test]
+    fn resolve_relax_abs_selects_short_for_ram_target() {
+        // A RAM-range target $FF8000 is abs.w too (16-bit sign extension) — the
+        // upper half of `asl_width_rule`'s abs.w set. Abs16Be writes the low 16
+        // bits (0x8000).
+        let mut stubs = SymbolTable::new();
+        stubs.define("Ram", SymbolValue::Int(0xFF_8000));
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("Ram")],
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        match &out[0].fragments[0] {
+            Fragment::Data(d) => {
+                assert_eq!(d.bytes, vec![0x31, 0xC0, 0x00, 0x00]);
+                assert_eq!(d.fixups[0].kind, FixupKind::Abs16Be);
+                assert_eq!(d.fixups[0].offset, 2);
+            }
+            other => panic!("expected lowered Data, got {other:?}"),
+        }
+        let linked = crate::link(&out, &stubs).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x31, 0xC0, 0x80, 0x00]);
+    }
+
+    #[test]
+    fn resolve_relax_abs_selects_long_for_mid_rom_target() {
+        // Hi = 0x12_3456 is > 0x7FFF and < 0xFF_8000 → abs.l: pick the `long`
+        // 6-byte candidate with an Abs32Be operand fixup at offset 2.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("Hi")],
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        match &out[0].fragments[0] {
+            Fragment::Data(d) => {
+                assert_eq!(d.bytes, vec![0x33, 0xC0, 0x00, 0x00, 0x00, 0x00]);
+                assert_eq!(d.fixups.len(), 1);
+                assert_eq!(d.fixups[0].kind, FixupKind::Abs32Be);
+                assert_eq!(d.fixups[0].offset, 2);
+            }
+            other => panic!("expected lowered Data, got {other:?}"),
+        }
+        let linked = crate::link(&out, &stubs).unwrap();
+        assert_eq!(
+            linked.section("c").unwrap().bytes,
+            vec![0x33, 0xC0, 0x00, 0x12, 0x34, 0x56]
+        );
+    }
+
+    #[test]
+    fn resolve_relax_abs_grows_and_shifts_following_label() {
+        // Layout-length accounting: a `RelaxAbsSym` to a high (abs.l) target grows
+        // from the baseline 4-byte `short` to the 6-byte `long`. A label `After`
+        // authored at all-abs.w offset 4 (immediately past the fragment) MUST shift
+        // to 6, and an Abs32Be reference to `After` in the following fragment must
+        // resolve to that shifted VMA — proving downstream addresses account for
+        // the chosen candidate's length.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "code".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![Label { name: "After".into(), offset: 4 }],
+            fragments: vec![
+                relax_move("Hi"),
+                Fragment::Data(DataFragment {
+                    bytes: vec![0, 0, 0, 0],
+                    fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("After".into()) }],
+                    span: sp(),
+                }),
+            ],
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
+        let linked = crate::link(&out, &stubs).unwrap();
+        // long move to Hi (6 bytes), then Abs32Be(After) = 0x00000006.
+        assert_eq!(
+            linked.section("code").unwrap().bytes,
+            vec![0x33, 0xC0, 0x00, 0x12, 0x34, 0x56, 0x00, 0x00, 0x00, 0x06]
+        );
     }
 
     #[test]
