@@ -69,6 +69,17 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     let mut builder = IrBuilder::new();
     let mut diags = Vec::new();
 
+    // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
+    // file as a faithful port of AS-assembled source, opting it into the
+    // byte-diff contract and silencing the modernization / faithful-port lints
+    // (the `[proc.*]` heuristic WARNINGs — never the hard errors). On a data-only
+    // module its observable byte effect is nil (proven byte-neutral by the Plan 6
+    // harness); its load-bearing width/lint pinning rides instruction ports (the
+    // attribute is read here so the mechanism is wired now, §3.2). Read straight
+    // from the source (`file.attrs`) rather than a caller option: the file itself
+    // declares its port status.
+    let as_compat = file.attrs.iter().any(|a| a.name == "as_compat");
+
     // Continuous physical LMA counter across sections in declaration order
     // (mirrors the AS front-end's `phys_base`). INVARIANT: `next_lma` is the
     // physical start of the currently-open section. `builder.current_offset()`
@@ -113,7 +124,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    opts.initial_cpu,
+                    proc::ProcCtx { cpu: opts.initial_cpu, as_compat },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -130,6 +141,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     file,
                     sec,
                     &Placement { cpu, origin: vma, include_root: opts.include_root.as_deref() },
+                    as_compat,
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -172,6 +184,7 @@ fn lower_section_items(
     file: &ast::File,
     sec: &ast::SectionDecl,
     placement: &Placement,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
@@ -187,7 +200,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    placement.cpu,
+                    proc::ProcCtx { cpu: placement.cpu, as_compat },
                     builder,
                     diags,
                     asm_counter,

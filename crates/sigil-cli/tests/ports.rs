@@ -118,3 +118,37 @@ fn emp_port_matches_as_reference() {
     let candidate = emp_candidate(DRUMTEST_EMP);
     assert_byte_identical(&reference, &candidate, "song_drumtest port");
 }
+
+/// T3 — `@as_compat` is proven **byte-neutral on the data path** (D-P6.3). The
+/// port ships with `@as_compat`; stripping that one attribute line must not
+/// change a single emitted byte (data emission is already AS-faithful — the
+/// attribute's only effect is silencing modernization lints, of which a
+/// data-only module has none). Both variants must also equal the AS reference.
+#[test]
+fn as_compat_is_byte_neutral_on_data() {
+    assert!(
+        DRUMTEST_EMP.contains("@as_compat"),
+        "precondition: the port declares @as_compat"
+    );
+    // Strip exactly the `@as_compat` attribute line to build the no-compat twin
+    // (prose comments mention the word, so filter the standalone attribute line,
+    // not every occurrence of the substring).
+    let without: String = DRUMTEST_EMP
+        .lines()
+        .filter(|l| l.trim() != "@as_compat")
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !without.lines().any(|l| l.trim() == "@as_compat"),
+        "the twin has no @as_compat attribute line"
+    );
+
+    let with_compat = emp_candidate(DRUMTEST_EMP);
+    let no_compat = emp_candidate(&without);
+    assert_byte_identical(&with_compat, &no_compat, "@as_compat byte-neutrality");
+
+    // And both still match the AS reference (byte-neutral means byte-exact).
+    let reference = as_reference(DRUMTEST_ASM);
+    assert_byte_identical(&reference, &with_compat, "with @as_compat vs AS");
+    assert_byte_identical(&reference, &no_compat, "without @as_compat vs AS");
+}
