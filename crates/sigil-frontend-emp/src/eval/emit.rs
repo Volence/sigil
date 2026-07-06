@@ -217,8 +217,18 @@ impl<'a> Evaluator<'a> {
         buf
     }
 
-    /// Lower a struct: the value must be a [`Value::Struct`] (already name/
-    /// default-checked by [`eval_checked_struct_lit`](Self::eval_checked_struct_lit)).
+    /// Lower a struct: the value must be a [`Value::Struct`]. A struct LITERAL
+    /// checked against `name` (via
+    /// [`eval_checked_struct_lit`](Self::eval_checked_struct_lit)) is already
+    /// name/default-checked — its `fields` are GUARANTEED to contain exactly one
+    /// entry per declared field, so the shape check below is a no-op for it.
+    /// A value that bypassed that check (chiefly `import`, Spec 2 Plan 5 — Task
+    /// 2, D-P5.4, whose generic `Value::Struct` comes straight from a JSON/TOML
+    /// object with no guarantee its keys match `name`'s fields at all) is
+    /// checked HERE instead: a declared field missing from `fields` is
+    /// `[struct.missing-field]`, and a `fields` entry naming no declared field is
+    /// `[struct.unknown-field]` — both diagnostics, not a silent mis-size.
+    ///
     /// Walk the struct's [`Layout`](crate::layout::Layout) fields in declaration
     /// order, lower each field's value against its field type, and concatenate —
     /// so the emitted cells fall at the layout's offsets.
@@ -230,10 +240,29 @@ impl<'a> Evaluator<'a> {
         // `layout_of_struct` returns an owned `Layout` (not borrowed from self),
         // so the field-lowering loop below is free to `&mut self`.
         let layout = self.layout_of_struct(name, span);
+        // The shape check (see the doc comment above): every declared field must
+        // be present, and every provided field must be declared. Reported before
+        // lowering so a shape mismatch surfaces even if every matched field
+        // would otherwise lower cleanly.
+        for fl in &layout.fields {
+            if !fields.iter().any(|(n, _)| n == &fl.name) {
+                self.error(
+                    span,
+                    format!("[struct.missing-field] struct {name}: field `{}` was not provided", fl.name),
+                );
+            }
+        }
+        for (fname, _) in fields {
+            if !layout.fields.iter().any(|fl| &fl.name == fname) {
+                self.error(span, format!("[struct.unknown-field] struct {name} has no field `{fname}`"));
+            }
+        }
         let mut buf = DataBuf::empty();
         for fl in &layout.fields {
             // A field absent from the value (a missing no-default field the
-            // checked literal filled with Poison) lowers silently to nothing.
+            // checked literal filled with Poison, or — now diagnosed above — an
+            // import shape mismatch) lowers silently to nothing past the
+            // diagnostic already reported.
             if let Some((_, v)) = fields.iter().find(|(n, _)| n == &fl.name) {
                 buf = DataBuf::concat(buf, self.lower_to_data(v, &fl.ty, span));
             }

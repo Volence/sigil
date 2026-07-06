@@ -1,13 +1,17 @@
 //! The capability sandbox (Spec 2, Plan 5 — Task 1): path resolution rooted
 //! at a fixed `include_root` directory, and a capture ledger recording every
-//! comptime file read. Shared infrastructure for `embed` (this task) and the
-//! later `import`/`zx0` builtins, which all need the SAME "stay inside the
-//! source directory" guard and the SAME provenance record of what was read.
+//! comptime file read. Shared infrastructure for `embed` (Task 1) and `import`
+//! (Task 2, this file's other half) — both builtins need the SAME "stay inside
+//! the source directory" guard and the SAME provenance record of what was read.
+//! A later `zx0` builtin reuses the same infra again.
 //!
-//! **Scope of this task:** `resolve_sandbox_path` (join + escape rejection)
-//! and `record_capture` (append-only ledger). The public accessor over
-//! [`captures`](Evaluator::captures) and the exhaustive path-escape/determinism
-//! tests are a LATER task — this file only records edges.
+//! **Task 1 scope:** `resolve_sandbox_path` (join + escape rejection) and
+//! `record_capture` (append-only ledger), plus `eval_embed`. **Task 2 scope**
+//! (this addition): `eval_import` — a comptime JSON/TOML file read mapped into
+//! generic comptime [`Value`]s (D-P5.4), reusing both of Task 1's edges
+//! unchanged. The public accessor over [`captures`](Evaluator::captures) and the
+//! exhaustive path-escape/determinism tests are a LATER task — this file only
+//! records edges.
 use super::{Env, Evaluator};
 use crate::ast;
 use crate::value::{Cell, DataBuf, Value};
@@ -258,6 +262,182 @@ impl<'a> Evaluator<'a> {
                     self.error(arg.span, format!("`{label}` must be an integer, got {}", other.type_name()));
                     Err(())
                 }
+            },
+        }
+    }
+
+    /// `import(path)` (Task 2, D-P5.4): reads a JSON or TOML file at comptime,
+    /// within the SAME capability sandbox as `embed`, and maps it into generic
+    /// comptime `Value`s rather than raw `Data` bytes:
+    ///
+    /// | source shape          | `Value`                                          |
+    /// |------------------------|--------------------------------------------------|
+    /// | object / table          | `Struct { ty_name: "<import>", fields }` (key order preserved) |
+    /// | array                    | `Array`                                          |
+    /// | integral number          | `Int`                                            |
+    /// | fractional number        | `Float`                                          |
+    /// | string                   | `Str`                                            |
+    /// | bool                     | `Bool`                                           |
+    /// | JSON `null`              | `Unit`                                           |
+    /// | TOML `Datetime`          | `[import.unsupported]` + `Poison` (no comptime equivalent) |
+    ///
+    /// A returned `Value::Struct` deliberately carries NO real type identity —
+    /// `ty_name` is always the placeholder `"<import>"`. `lower_struct`
+    /// (`emit.rs`) already matches struct fields BY NAME against the layout of
+    /// whatever `Ty` the surrounding `data` item declares, ignoring `ty_name`
+    /// entirely, so a typed `data P: Point = import("p.json")` lowers correctly
+    /// against `Point`'s layout with no additional wiring here — and the SAME
+    /// `lower_struct` now shape-checks (D-P5.4) that the value's keys exactly
+    /// match the declared fields, so a mismatched import is a diagnostic rather
+    /// than a silent mis-size.
+    ///
+    /// The file format is dispatched on the path's EXTENSION (case-insensitive):
+    /// `.json` → `serde_json`, `.toml` → `toml`; anything else is
+    /// `[import.format]`. `path` is the only argument (any named argument is
+    /// unknown-argument diagnostic, matching `embed`'s pattern for `skip`/`len`
+    /// but with nothing to name here). A sandbox-escaping path, an unreadable
+    /// file, or a parse error are all diagnostics that poison the result — never
+    /// a panic.
+    pub(super) fn eval_import(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let mut path_arg: Option<&ast::Arg> = None;
+        for arg in args {
+            match arg.name.as_deref() {
+                None => {
+                    if path_arg.is_some() {
+                        self.error(arg.span, "`import` takes exactly one positional path argument");
+                    } else {
+                        path_arg = Some(arg);
+                    }
+                }
+                Some(other) => {
+                    self.error(arg.span, format!("unknown named argument `{other}` to `import`"));
+                }
+            }
+        }
+        let Some(path_arg) = path_arg else {
+            self.error(span, "`import` requires a path argument");
+            return Value::Poison;
+        };
+        let path_val = self.eval_expr(&path_arg.value, env);
+        // A leaked return / abort from the path argument belongs to the caller.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let path = match path_val {
+            Value::Str(s) => s,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    path_arg.span,
+                    format!("`import` path must be a string, got {}", other.type_name()),
+                );
+                return Value::Poison;
+            }
+        };
+        let Some(resolved) = self.resolve_sandbox_path(&path, path_arg.span) else {
+            return Value::Poison;
+        };
+        // Dispatch on the EXTENSION before touching the file: an unsupported
+        // extension is diagnosed without needing a successful read.
+        let ext = resolved
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase());
+        if !matches!(ext.as_deref(), Some("json") | Some("toml")) {
+            self.error(span, "[import.format] import needs a .json or .toml file");
+            return Value::Poison;
+        }
+        let bytes = match std::fs::read(&resolved) {
+            Ok(b) => b,
+            Err(_) => {
+                self.error(span, format!("[import.read] cannot read {path}"));
+                return Value::Poison;
+            }
+        };
+        self.record_capture(&resolved, &bytes);
+        match ext.as_deref() {
+            Some("json") => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(v) => Self::json_to_value(&v),
+                Err(e) => {
+                    self.error(span, format!("[import.parse] {path}: {e}"));
+                    Value::Poison
+                }
+            },
+            Some("toml") => {
+                let text = match std::str::from_utf8(&bytes) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        self.error(span, format!("[import.parse] {path}: {e}"));
+                        return Value::Poison;
+                    }
+                };
+                match text.parse::<toml::Value>() {
+                    Ok(v) => self.toml_to_value(&v, span),
+                    Err(e) => {
+                        self.error(span, format!("[import.parse] {path}: {e}"));
+                        Value::Poison
+                    }
+                }
+            }
+            // The extension check above already restricted `ext` to these two.
+            _ => unreachable!("extension already checked to be json or toml"),
+        }
+    }
+
+    /// Map a `serde_json::Value` into a comptime [`Value`] (Task 2, D-P5.4).
+    /// JSON key order is preserved (the crate's `preserve_order` feature backs
+    /// `serde_json::Map` with an `IndexMap`) — chosen over sorting so a struct's
+    /// declared field order isn't required to match a lexical key order, and so
+    /// re-running `import` on an unchanged file is visibly stable/deterministic
+    /// against the SOURCE file's own key order, not an incidental sort.
+    fn json_to_value(v: &serde_json::Value) -> Value {
+        match v {
+            serde_json::Value::Null => Value::Unit,
+            serde_json::Value::Bool(b) => Value::Bool(*b),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Value::Int(i as i128)
+                } else if let Some(u) = n.as_u64() {
+                    Value::Int(u as i128)
+                } else {
+                    // Neither an i64 nor a u64 representation: a fractional
+                    // number, or an integer wider than 64 bits (serde_json
+                    // itself only models integers up to u64/i64) — either way
+                    // there is no exact `Int` to give, so fall back to `f64`.
+                    Value::Float(n.as_f64().unwrap_or(0.0))
+                }
+            }
+            serde_json::Value::String(s) => Value::Str(s.clone()),
+            serde_json::Value::Array(arr) => Value::Array(arr.iter().map(Self::json_to_value).collect()),
+            serde_json::Value::Object(map) => Value::Struct {
+                ty_name: "<import>".to_string(),
+                fields: map.iter().map(|(k, v)| (k.clone(), Self::json_to_value(v))).collect(),
+            },
+        }
+    }
+
+    /// Map a `toml::Value` into a comptime [`Value`] (Task 2, D-P5.4). Same
+    /// key-order-preserving choice as [`json_to_value`](Self::json_to_value)
+    /// (backed by the crate's `preserve_order` feature on the `toml` dep). A
+    /// `Datetime` has no comptime equivalent — `[import.unsupported]` +
+    /// `Poison` for that value (the surrounding object/array still builds
+    /// around it; only that one field/element is poisoned).
+    fn toml_to_value(&mut self, v: &toml::Value, span: Span) -> Value {
+        match v {
+            toml::Value::String(s) => Value::Str(s.clone()),
+            toml::Value::Integer(i) => Value::Int(*i as i128),
+            toml::Value::Float(f) => Value::Float(*f),
+            toml::Value::Boolean(b) => Value::Bool(*b),
+            toml::Value::Datetime(_) => {
+                self.error(span, "[import.unsupported] TOML datetime not supported");
+                Value::Poison
+            }
+            toml::Value::Array(arr) => {
+                Value::Array(arr.iter().map(|e| self.toml_to_value(e, span)).collect())
+            }
+            toml::Value::Table(map) => Value::Struct {
+                ty_name: "<import>".to_string(),
+                fields: map.iter().map(|(k, v)| (k.clone(), self.toml_to_value(v, span))).collect(),
             },
         }
     }

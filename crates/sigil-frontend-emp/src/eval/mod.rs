@@ -464,10 +464,39 @@ impl Default for Evaluator<'_> {
 /// `(Some(value), diags)` — `diags` may still be non-empty if the value
 /// contains a reported error (its `Poison` is surfaced as `Some(Poison)`).
 pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
+    eval_const_with_root(file, name, None)
+}
+
+/// Like [`eval_const`], but also threads a capability-sandbox `include_root`
+/// (Spec 2, Plan 5 — Task 2): the directory `embed`/`import` paths resolve
+/// against, mirroring [`crate::layout::eval_data_with_root`]. `include_root =
+/// None` behaves exactly like [`eval_const`] (a comptime `import(...)` inside
+/// the const then reports `[sandbox.no-root]`).
+///
+/// This is the seam a bare `const V = import(...)` test uses to observe the
+/// imported [`Value`] directly (no `data` item / byte layout needed) — the
+/// production compile path does not yet supply a real root for consts either
+/// (same deferred wiring note as `eval_data_with_root`).
+pub fn eval_const_with_root(
+    file: &crate::ast::File,
+    name: &str,
+    include_root: Option<&std::path::Path>,
+) -> (Option<Value>, Vec<Diagnostic>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
     // not a native stack overflow, is what stops runaway recursion.
-    run_on_eval_stack(|| eval_const_inner(file, name))
+    run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        if !ev.consts.contains_key(name) {
+            ev.error(file.module.span, format!("no const named `{name}`"));
+            return (None, ev.diags);
+        }
+        let value = ev.resolve_const(name, file.module.span);
+        (Some(value), ev.diags)
+    })
 }
 
 /// Stack size for the comptime-evaluation thread (see [`eval_const`]). Sized to
@@ -538,18 +567,6 @@ pub fn eval_proc_body(
         };
         (buf, ev.diags, ev.asm_counter)
     })
-}
-
-/// The body of [`eval_const`], run on the large-stack evaluation thread.
-fn eval_const_inner(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
-    let mut ev = Evaluator::with_file(file);
-    if !ev.consts.contains_key(name) {
-        // Anchor the error at the module header — there is no const span to use.
-        ev.error(file.module.span, format!("no const named `{name}`"));
-        return (None, ev.diags);
-    }
-    let value = ev.resolve_const(name, file.module.span);
-    (Some(value), ev.diags)
 }
 
 #[cfg(test)]
