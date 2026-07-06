@@ -380,10 +380,30 @@ The last is the big **structural** one — named RAM/ROM reads are pervasive; it
 of almost any file trips all of them in its first hundred lines. **→ top of the Plan 7 implementation
 list**, ahead of the fancier candidates.
 
-**Note on `dc.w -1` sentinels:** `u8`/`u16` correctly reject negatives (type-correct), but the
-`dc.w -1` object-list/ring-list terminator is *everywhere* in real code. Decide: rely on `i16` typing,
-a signed-in-unsigned rule, or (better) let the counted/sentinel collection construct (T2-d) emit the
-terminator natively so authors never write the raw `-1`.
+**Proposed fixes (probed 2026-07-06 — most are smaller than the gaps look):**
+- **`dc.w -1` sentinels — already solved; convention call, ZERO new code.** The signed emit path works
+  today: `[i16;1]=[-1]` → `FF FF`, `[i8;1]=[-1]` → `FF` (verified). So: signed *values* use `i8`/`i16`;
+  *sentinels/terminators* are owned by the counted-collection construct (T2-d) so authors never write a
+  raw `-1`; do NOT loosen `u8`/`u16` to accept negatives (keeps totality). Nothing to build — pick the
+  convention.
+- **char `'A'` + string `"text"` — mechanical add, ONE shared design decision: TEXT ENCODING.** Sonic
+  text isn't ASCII (`'A'` = a tile index, not 65). Decide: literals default to **raw ASCII/bytes**
+  (byte-exact for what's written); Sonic tile-text goes through a **charmap** (`charmap { A = $0A, … }`
+  + a `text"…"` that maps through it). Char/string literals and the charmap are ONE feature area — the
+  call is "raw vs charmap-mapped is *explicit*, not guessed." Strings also need an emit path in data
+  position (today `bytes("HI")` wants an array) with author-controlled termination (no implicit `0`).
+- **binary `%1010` — small add + a disambiguation rule.** Confirmed conflict: `%` IS `.emp`'s modulo
+  (`7 % 3` → `01`). Fix: `%` immediately followed by binary digits (no space) = a literal; otherwise
+  modulo — the universal assembler rule. (Alt: `0b1010` sidesteps the conflict, but `%` is the Sonic/AS
+  convention, so keep `%` with the immediate-digit rule.)
+- **symbolic operands `move.w Foo, d0` / `lea Table, a0` — real work, but a clear EXTENSION.** Route any
+  absolute-symbol operand through a link-time fixup (`Abs16Be`/`Abs32Be`, zero placeholder), width via
+  the SAME `asl_width_rule` already driving `jmp`/`jsr`. Today only control-flow targets defer to link;
+  the fix extends that path to all operands. Architecturally understood — implementation effort, not an
+  open question.
+- **Net:** exactly ONE true design decision (text encoding / charmap); one already-solved (pick a
+  convention); two mechanical (+ a tiny disambiguation); one real-but-clear work. So finalization
+  inherits the answers rather than re-deriving them.
 
 **Semantic landmines — invisible in source, catastrophic at runtime (design the type/dataflow layer
 with room for these even if built later):**
