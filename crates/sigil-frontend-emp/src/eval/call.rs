@@ -67,6 +67,12 @@ impl<'a> Evaluator<'a> {
                 // generic comptime `Value`s (a `Value::Struct`/`Array`/scalar
                 // tree) rather than raw `Data` bytes.
                 "import" => return self.eval_import(args, span, env),
+                // `zx0(data)` (Spec 2, Plan 5 — Task 3): ZX0-compresses a
+                // `Value::Data` at comptime, wrapped in the exact 4-byte
+                // header `aeon/build.sh` hand-emits — also a non-shadowable
+                // `Data` constructor. Reads no file itself (its input already
+                // carries its own capture edge), so it needs no sandbox root.
+                "zx0" => return self.eval_zx0(args, span, env),
                 _ => {}
             }
         }

@@ -441,6 +441,109 @@ impl<'a> Evaluator<'a> {
             },
         }
     }
+
+    /// `zx0(data)` (Spec 2, Plan 5 — Task 3): ZX0-compresses a [`Value::Data`]
+    /// at comptime and wraps it in the exact 4-byte header `aeon/build.sh`
+    /// hand-emits (its ZX0-wrapping loop, around line 118): `[u16 BE
+    /// uncompressed-size][0x00][0x02]` ++ the raw salvador stream —
+    /// byte-identical to the ROM's compressed art blobs.
+    ///
+    /// Unlike `embed`/`import`, `zx0` reads no file itself — its input `Data`
+    /// already carries its own capture edge from whatever `embed` produced
+    /// it — so it needs no sandbox root and never calls `record_capture`.
+    ///
+    /// `data` is the sole positional argument; it must already be a
+    /// [`Value::Data`] (typically `embed(...)`/`bytes([...])`, possibly built
+    /// up via `++`). Split into two halves for testability: this fn only
+    /// does argument arity/type checking, delegating the compress-and-wrap
+    /// work to [`zx0_from_data`](Self::zx0_from_data), which a unit test can
+    /// call directly with a hand-built `DataBuf` (e.g. an oversized input)
+    /// without constructing AST argument nodes.
+    pub(super) fn eval_zx0(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 1 {
+            self.error(span, format!("`zx0` expects exactly 1 argument, got {}", args.len()));
+            return Value::Poison;
+        }
+        if args[0].name.is_some() {
+            self.error(args[0].span, "`zx0` takes a positional argument");
+        }
+        let arg = self.eval_expr(&args[0].value, env);
+        // A leaked return / abort from the argument belongs to the caller.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let buf = match arg {
+            Value::Data(buf) => buf,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(span, format!("[zx0.arg] zx0 expects a Data value, got {}", other.type_name()));
+                return Value::Poison;
+            }
+        };
+        self.zx0_from_data(buf, span)
+    }
+
+    /// The compress-and-wrap core of `zx0` (Task 3). See
+    /// [`eval_zx0`](Self::eval_zx0)'s doc comment for why this is split out.
+    ///
+    /// Flattens `buf`'s cells to raw input bytes: `Cell::Bytes` extends
+    /// directly; a width-1 `Cell::Scalar` contributes its one (range-checked)
+    /// byte; a WIDER `Cell::Scalar` has no committed byte order yet (that's
+    /// Plan 4's 68k-BE-vs-Z80-LE lowering decision) and a `Cell::SymRef`
+    /// names an address not yet resolved (also Plan 4) — both are diagnostics
+    /// here, never a panic, since `zx0` can only compress concrete bytes.
+    /// Asserts the flattened length fits the wrapper's `u16` size field,
+    /// compresses via [`sigil_salvador_sys::compress`], and prepends the
+    /// 4-byte header ahead of the compressed stream.
+    pub(crate) fn zx0_from_data(&mut self, buf: DataBuf, span: Span) -> Value {
+        let mut input = Vec::with_capacity(buf.size);
+        for cell in &buf.cells {
+            match cell {
+                Cell::Bytes(b) => input.extend_from_slice(b),
+                Cell::Scalar { value, width: 1, .. } => {
+                    // Mirrors `byte`/`bytes`'s accepted range (`-128..=255`,
+                    // `eval/builtins.rs`'s `BYTE_LO`/`BYTE_HI`): a signed or
+                    // unsigned reading of one byte.
+                    if !(-128..=255).contains(value) {
+                        self.error(
+                            span,
+                            format!("[zx0.byte-range] zx0 input byte {value} does not fit 8 bits"),
+                        );
+                        return Value::Poison;
+                    }
+                    input.push((*value & 0xFF) as u8);
+                }
+                Cell::Scalar { .. } => {
+                    self.error(
+                        span,
+                        "[zx0.byte-order] zx0 input has a multi-byte scalar with no committed byte order — build it from raw bytes (embed/bytes)",
+                    );
+                    return Value::Poison;
+                }
+                Cell::SymRef { .. } => {
+                    self.error(span, "[zx0.symbolic] zx0 input has an unresolved symbol reference");
+                    return Value::Poison;
+                }
+            }
+        }
+        if input.len() > 0xFFFF {
+            self.error(
+                span,
+                format!(
+                    "[zx0.too-large] zx0 input is {} bytes, exceeds the 65535-byte u16 size field",
+                    input.len()
+                ),
+            );
+            return Value::Poison;
+        }
+        let n = input.len();
+        let compressed = sigil_salvador_sys::compress(&input);
+        let mut out = vec![(n >> 8) as u8, (n & 0xFF) as u8, 0x00, 0x02];
+        out.extend_from_slice(&compressed);
+        let mut result = DataBuf::empty();
+        result.push(Cell::Bytes(out));
+        Value::Data(result)
+    }
 }
 
 #[cfg(test)]
@@ -497,5 +600,67 @@ mod tests {
         let got = ev.resolve_sandbox_path("../etc/passwd", span());
         assert!(got.is_none());
         assert!(ev.diags.iter().any(|d| d.message.contains("[sandbox.path-escape]")));
+    }
+
+    // `zx0` unit tests: exercised via `zx0_from_data` directly (bypassing AST
+    // argument construction) for the shapes that are impractical to author as
+    // `.emp` source — an oversized input in particular. The realistic
+    // wrapper/end-to-end paths are covered by
+    // `tests/sandbox_zx0.rs`'s integration tests.
+
+    #[test]
+    fn zx0_from_data_too_large_input_errors() {
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Bytes(vec![0u8; 0x10000])); // 65536 bytes — one past the u16 max.
+        let result = ev.zx0_from_data(buf, span());
+        assert_eq!(result, Value::Poison);
+        assert!(ev.diags.iter().any(|d| d.message.contains("[zx0.too-large]")));
+    }
+
+    #[test]
+    fn zx0_from_data_multibyte_scalar_errors() {
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Scalar { value: 0x1234, width: 2, signed: false });
+        let result = ev.zx0_from_data(buf, span());
+        assert_eq!(result, Value::Poison);
+        assert!(ev.diags.iter().any(|d| d.message.contains("[zx0.byte-order]")));
+    }
+
+    #[test]
+    fn zx0_from_data_byte_range_errors() {
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Scalar { value: 999, width: 1, signed: false });
+        let result = ev.zx0_from_data(buf, span());
+        assert_eq!(result, Value::Poison);
+        assert!(ev.diags.iter().any(|d| d.message.contains("[zx0.byte-range]")));
+    }
+
+    #[test]
+    fn zx0_from_data_single_byte_scalar_and_bytes_mix() {
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Scalar { value: 5, width: 1, signed: false });
+        buf.push(Cell::Bytes(vec![5, 5, 5, 5]));
+        let result = ev.zx0_from_data(buf, span());
+        // 5 bytes of the same repeated value: header [0,5,0,2] then the raw
+        // salvador stream for `[5,5,5,5,5]`.
+        let expected_compressed = sigil_salvador_sys::compress(&[5, 5, 5, 5, 5]);
+        match result {
+            Value::Data(out) => {
+                assert_eq!(out.cells.len(), 1);
+                match &out.cells[0] {
+                    Cell::Bytes(b) => {
+                        let mut expected = vec![0x00, 0x05, 0x00, 0x02];
+                        expected.extend_from_slice(&expected_compressed);
+                        assert_eq!(b, &expected);
+                    }
+                    other => panic!("expected Cell::Bytes, got {other:?}"),
+                }
+            }
+            other => panic!("expected Value::Data, got {other:?}"),
+        }
     }
 }

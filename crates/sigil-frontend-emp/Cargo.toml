@@ -8,6 +8,7 @@ sigil-span = { path = "../sigil-span" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-backend-z80 = { path = "../sigil-backend-z80" }
 sigil-backend-m68k = { path = "../sigil-backend-m68k" }
+sigil-salvador-sys = { path = "../sigil-salvador-sys" }
 sha2 = "0.10"
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = { version = "0.8", features = ["preserve_order"] }

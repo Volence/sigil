@@ -251,6 +251,7 @@ dependencies = [
  "sigil-backend-z80",
  "sigil-ir",
  "sigil-link",
+ "sigil-salvador-sys",
  "sigil-span",
  "toml",
 ]
