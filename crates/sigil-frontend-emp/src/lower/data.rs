@@ -66,6 +66,29 @@ pub(super) fn stream_data(
                 });
                 bytes.resize(bytes.len() + kind.byte_width() as usize, 0);
             }
+            Cell::RelOffset { base, target } => {
+                // 68k big-endian signed word only (first cut); Z80 diagnosed.
+                if cpu != Cpu::M68000 {
+                    diags.push(err(
+                        span,
+                        "[offsets.non-68k] an offset table is a 68k word-offset idiom; \
+                         Z80 offset tables are not supported"
+                            .to_string(),
+                    ));
+                    bytes.resize(bytes.len() + 2, 0);
+                    continue;
+                }
+                fixups.push(Fixup {
+                    kind: FixupKind::RelWord16Be,
+                    offset: bytes.len() as u32,
+                    target: Expr::Binary {
+                        op: BinOp::Sub,
+                        lhs: Box::new(Expr::Sym(target.clone())),
+                        rhs: Box::new(Expr::Sym(base.clone())),
+                    },
+                });
+                bytes.resize(bytes.len() + 2, 0);
+            }
         }
     }
 
@@ -172,4 +195,46 @@ fn sym_target(name: &str, windowed: bool) -> Expr {
 /// Build an error diagnostic at `span`.
 fn err(span: Span, message: String) -> Diagnostic {
     Diagnostic { level: Level::Error, message, primary: span }
+}
+
+#[cfg(test)]
+mod rel_offset_tests {
+    use super::*;
+    use crate::value::{Cell, DataBuf};
+    use sigil_ir::backend::Cpu;
+    use sigil_ir::{expr::BinOp, Expr, FixupKind};
+    use sigil_span::{SourceId, Span};
+
+    fn span() -> Span {
+        Span { source: SourceId(0), start: 0, end: 0 }
+    }
+
+    #[test]
+    fn rel_offset_emits_relword16be_symbol_difference() {
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::RelOffset { base: "Tbl".into(), target: "Frame0".into() });
+        let (bytes, fixups, diags) = stream_data(&buf, Cpu::M68000, span());
+        assert!(diags.is_empty(), "unexpected diags: {diags:?}");
+        assert_eq!(bytes, vec![0x00, 0x00], "reserves a 2-byte hole");
+        assert_eq!(fixups.len(), 1);
+        assert_eq!(fixups[0].kind, FixupKind::RelWord16Be);
+        assert_eq!(fixups[0].offset, 0);
+        assert_eq!(
+            fixups[0].target,
+            Expr::Binary {
+                op: BinOp::Sub,
+                lhs: Box::new(Expr::Sym("Frame0".into())),
+                rhs: Box::new(Expr::Sym("Tbl".into())),
+            }
+        );
+    }
+
+    #[test]
+    fn rel_offset_in_z80_section_diagnoses() {
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::RelOffset { base: "Tbl".into(), target: "Frame0".into() });
+        let (bytes, _fixups, diags) = stream_data(&buf, Cpu::Z80, span());
+        assert_eq!(bytes.len(), 2, "still reserves the hole so sizes line up");
+        assert!(diags.iter().any(|d| d.message.contains("offset table")), "got: {diags:?}");
+    }
 }

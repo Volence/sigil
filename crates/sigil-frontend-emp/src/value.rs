@@ -175,6 +175,15 @@ pub enum Cell {
         /// bool.
         windowed: bool,
     },
+    /// A self-relative signed **word** offset for an `offsets` table entry:
+    /// emits `dc.w target - base` (2 bytes) via a `RelWord16Be` fixup. Distinct
+    /// from `SymRef` (an absolute pointer) — this is a symbol *difference*.
+    RelOffset {
+        /// The table's base symbol (the offsets block's own label).
+        base: String,
+        /// The entry's target symbol.
+        target: String,
+    },
 }
 
 impl Cell {
@@ -183,6 +192,7 @@ impl Cell {
     pub fn byte_size(&self) -> usize {
         match self {
             Cell::Scalar { width, .. } | Cell::SymRef { width, .. } => *width as usize,
+            Cell::RelOffset { .. } => 2,
             Cell::Bytes(b) => b.len(),
         }
     }
