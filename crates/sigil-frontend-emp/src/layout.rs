@@ -18,6 +18,7 @@ use crate::ast;
 use crate::eval::{Env, Evaluator};
 use crate::value::{DataBuf, Value};
 use sigil_span::{Diagnostic, Span};
+use std::path::PathBuf;
 
 /// A resolved `.emp` type (D-P3.1): the semantic counterpart of a syntactic
 /// [`ast::Type`], with named types resolved against the file's type tables and
@@ -964,10 +965,48 @@ pub fn eval_data_at(
     name: &str,
     here_base: Option<u32>,
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
+    eval_data_with_root(file, name, here_base, None)
+}
+
+/// Like [`eval_data_at`], but also threads a capability-sandbox
+/// `include_root` (Spec 2, Plan 5 — Task 1): the directory `embed`/`import`
+/// paths resolve against. `include_root = None` behaves exactly like
+/// [`eval_data_at`] (a comptime `embed(...)` inside the item then reports
+/// `[sandbox.no-root]`) — every existing caller of `eval_data`/`eval_data_at`
+/// is therefore unchanged. Tests point the root at a fixtures directory; the
+/// lowering/CLI path does not yet supply a real root (wiring the source file's
+/// directory into `lower_data_item` is deferred to the Plan-5 hermeticity task),
+/// so through the production compile path `embed`/`import` currently report
+/// `[sandbox.no-root]` until that wiring lands.
+/// A PUBLIC view of one recorded comptime file read (Spec 2, Plan 5 — Task 5,
+/// closing T1-review finding #3): the resolved path, its SHA-256 digest, and
+/// its byte length. Field-for-field identical to the internal
+/// `eval::sandbox::CaptureEdge` ledger entry — this type exists only so a
+/// caller outside the crate (a future build-manifest / provenance report) can
+/// read the ledger without reaching into a `pub(crate)` type.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Capture {
+    /// The resolved (sandbox-root-joined, normalized) path that was read.
+    pub path: PathBuf,
+    /// SHA-256 digest of the file's exact bytes at read time.
+    pub hash: [u8; 32],
+    /// The file's byte length.
+    pub len: u64,
+}
+
+pub fn eval_data_with_root(
+    file: &ast::File,
+    name: &str,
+    here_base: Option<u32>,
+    include_root: Option<&std::path::Path>,
+) -> (Option<DataBuf>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         if let Some(vma) = here_base {
             ev.set_here_base(vma);
+        }
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
         }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));
@@ -975,6 +1014,43 @@ pub fn eval_data_at(
         }
         let buf = ev.resolve_data(name, file.module.span);
         (Some(buf), ev.diags)
+    })
+}
+
+/// Like [`eval_data_with_root`], but ALSO returns the capture ledger — every
+/// comptime file read (`embed`/`import`) recorded during this evaluation
+/// (Spec 2, Plan 5 — Task 5, closing T1-review finding #3 + D-P5.6). Needed as
+/// its own seam because [`eval_data_with_root`] builds and drops its
+/// [`Evaluator`] entirely inside [`crate::eval::run_on_eval_stack`]'s closure —
+/// there is no other way for a caller to observe `ev.captures` afterwards.
+/// Ledger order is deterministic: `captures` is a plain `Vec` appended to in
+/// evaluation order, so re-running this on the same inputs yields identical
+/// output bytes AND an identical capture list.
+pub fn eval_data_captures(
+    file: &ast::File,
+    name: &str,
+    here_base: Option<u32>,
+    include_root: Option<&std::path::Path>,
+) -> (Option<DataBuf>, Vec<Capture>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if let Some(vma) = here_base {
+            ev.set_here_base(vma);
+        }
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        if !ev.datas.contains_key(name) {
+            ev.error(file.module.span, format!("no data item named `{name}`"));
+            return (None, Vec::new(), ev.diags);
+        }
+        let buf = ev.resolve_data(name, file.module.span);
+        let captures = ev
+            .captures
+            .iter()
+            .map(|c| Capture { path: c.path.clone(), hash: c.hash, len: c.len })
+            .collect();
+        (Some(buf), captures, ev.diags)
     })
 }
 

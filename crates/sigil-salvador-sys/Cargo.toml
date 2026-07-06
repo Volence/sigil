@@ -1,0 +1,9 @@
+[package]
+name = "sigil-salvador-sys"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+links = "salvador"
+
+[build-dependencies]
+cc = "1"

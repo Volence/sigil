@@ -58,7 +58,42 @@ impl<'a> Evaluator<'a> {
                 // position is threaded in via `here_base` (set per data item by
                 // the lowering pass); it is not user-shadowable.
                 "here" => return self.eval_here(args, span),
+                // `embed(path, skip, len)` (Spec 2, Plan 5 — Task 1): a comptime
+                // file read within the capability sandbox, also a
+                // non-shadowable `Data` constructor.
+                "embed" => return self.eval_embed(args, span, env),
+                // `import(path)` (Spec 2, Plan 5 — Task 2): a comptime JSON/TOML
+                // file read within the SAME capability sandbox, mapped into
+                // generic comptime `Value`s (a `Value::Struct`/`Array`/scalar
+                // tree) rather than raw `Data` bytes.
+                "import" => return self.eval_import(args, span, env),
+                // `zx0(data)` (Spec 2, Plan 5 — Task 3): ZX0-compresses a
+                // `Value::Data` at comptime, wrapped in the exact 4-byte
+                // header `aeon/build.sh` hand-emits — also a non-shadowable
+                // `Data` constructor. Reads no file itself (its input already
+                // carries its own capture edge), so it needs no sandbox root.
+                "zx0" => return self.eval_zx0(args, span, env),
                 _ => {}
+            }
+        }
+        // `math.{fn}(x)` / `as.{fn}(x)` (Spec 2, Plan 5 — Task 4, §6.6): the
+        // float namespaces. Routed on the callee's FIRST segment, ahead of the
+        // builtin/enum/user-fn dispatch below, so a `math.sin(x)` / `as.int(x)`
+        // call always resolves to the float table regardless of any same-named
+        // user construct.
+        //
+        // LIMITATION (T4 review): `math`/`as` are NOT yet reserved WORDS — the
+        // lexer/parser accept them as ordinary identifiers, so a user CAN still
+        // declare `enum math`/`let as = ...`. Because this arm wins, a 2-segment
+        // CALL like `math.Red(x)` on such a user `enum math` is hijacked here and
+        // reports `[float-ns.unknown]` instead of constructing the variant — a
+        // confusing-but-not-silently-wrong outcome (it still errors). Making
+        // `math`/`as` reserved declaration names (a clean diagnostic at the decl)
+        // is a small parser follow-up, tracked out of this milestone.
+        if callee.segments.len() == 2 {
+            let ns = callee.segments[0].as_str();
+            if ns == "math" || ns == "as" {
+                return self.eval_float_ns(ns, &callee.segments[1], args, span, env);
             }
         }
         // Builtins win over user fns and are the only method-form (`a.b(..)`)

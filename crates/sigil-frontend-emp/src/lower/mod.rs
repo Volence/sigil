@@ -17,15 +17,35 @@ mod proc;
 pub use code::lower_code_buf;
 
 use crate::ast;
-use crate::layout::{eval_attr_int, eval_data_at};
+use crate::layout::{eval_attr_int, eval_data_with_root};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
 use sigil_span::{Diagnostic, Level, Span};
+use std::path::{Path, PathBuf};
 
 /// Options controlling how a `.emp` module lowers to Core IR.
 pub struct LowerOptions {
     /// The CPU the initial (top-level, no `section {}`) section is encoded for.
     pub initial_cpu: Cpu,
+    /// The capability-sandbox root (Spec 2, Plan 5 — Task 5) `embed`/`import`
+    /// paths resolve against while lowering `data` items. `None` (the default
+    /// until a CLI wires the source file's directory in) means a comptime
+    /// `embed`/`import` inside any lowered `data` item reports
+    /// `[sandbox.no-root]`, exactly as it did before this option existed —
+    /// every pre-existing `LowerOptions { initial_cpu, .. }` construction is
+    /// therefore unaffected by adding this field.
+    pub include_root: Option<PathBuf>,
+}
+
+/// The CPU, physical origin (`here()` base), and sandbox root a `data` item
+/// lowers against — bundled into one struct so `lower_data_item`/
+/// `lower_section_items` stay under clippy's argument-count lint (mirroring
+/// how [`proc::Siblings`] already bundles a proc's fallthrough-adjacency
+/// context). Just a borrow of what the caller already has; no owned state.
+struct Placement<'a> {
+    cpu: Cpu,
+    origin: u32,
+    include_root: Option<&'a Path>,
 }
 
 /// Lower a `.emp` module into Core IR, returning the finished [`Module`] plus any
@@ -75,7 +95,17 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
                 // Default section: vma_origin == lma == `next_lma` (VMA base
                 // `None`, so origin == lma == its physical start).
-                lower_data_item(file, decl, opts.initial_cpu, next_lma, &mut builder, &mut diags);
+                lower_data_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        include_root: opts.include_root.as_deref(),
+                    },
+                    &mut builder,
+                    &mut diags,
+                );
             }
             ast::Item::Proc(decl) => {
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
@@ -96,7 +126,14 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 default_open = false;
                 let (cpu, vma) = section_attrs(file, sec, &mut diags);
                 builder.switch_section_lma(&sec.name, cpu, Some(vma), next_lma);
-                lower_section_items(file, sec, cpu, vma, &mut builder, &mut diags, &mut asm_counter);
+                lower_section_items(
+                    file,
+                    sec,
+                    &Placement { cpu, origin: vma, include_root: opts.include_root.as_deref() },
+                    &mut builder,
+                    &mut diags,
+                    &mut asm_counter,
+                );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
             }
@@ -127,13 +164,14 @@ fn ensure_default(
 }
 
 /// Lower the items nested inside a `section {}` block into the already-open
-/// section. `cpu` is the section's CPU (drives byte order + code lowering);
-/// `origin` is its VMA base, used to compute `here()` for each data item.
+/// section. `placement.cpu` is the section's CPU (drives byte order + code
+/// lowering); `placement.origin` is its VMA base, used to compute `here()` for
+/// each data item; `placement.include_root` is the sandbox root threaded to
+/// every data item's `embed`/`import`.
 fn lower_section_items(
     file: &ast::File,
     sec: &ast::SectionDecl,
-    cpu: Cpu,
-    origin: u32,
+    placement: &Placement,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
@@ -141,7 +179,7 @@ fn lower_section_items(
     for (index, item) in sec.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
-                lower_data_item(file, decl, cpu, origin, builder, diags);
+                lower_data_item(file, decl, placement, builder, diags);
             }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
@@ -149,7 +187,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    cpu,
+                    placement.cpu,
                     builder,
                     diags,
                     asm_counter,
@@ -161,22 +199,23 @@ fn lower_section_items(
 }
 
 /// Lower one `data` item: evaluate its checked buffer (with `here()` resolving to
-/// the item's start VMA = `origin + current_offset`), serialize it in `cpu`'s
+/// the item's start VMA = `origin + current_offset`, and `embed`/`import` paths
+/// resolving against `placement.include_root`), serialize it in `placement.cpu`'s
 /// byte order, then define its label and emit the bytes.
 fn lower_data_item(
     file: &ast::File,
     decl: &ast::DataDecl,
-    cpu: Cpu,
-    origin: u32,
+    placement: &Placement,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let here_base = origin + builder.current_offset();
-    let (buf, mut ds) = eval_data_at(file, &decl.name, Some(here_base));
+    let here_base = placement.origin + builder.current_offset();
+    let (buf, mut ds) =
+        eval_data_with_root(file, &decl.name, Some(here_base), placement.include_root);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
-    let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, cpu, decl.span);
+    let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
     builder.emit_data(&bytes, fixups, decl.span);

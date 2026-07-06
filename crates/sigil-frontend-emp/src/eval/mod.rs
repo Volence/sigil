@@ -16,9 +16,11 @@ mod control;
 mod emit;
 mod env;
 mod expr;
+mod float_ns;
 mod guards;
 mod literals;
 mod pattern;
+mod sandbox;
 mod typed;
 
 pub use env::{AssignError, Binding, Env};
@@ -27,6 +29,7 @@ use crate::ast;
 use crate::value::Value;
 use sigil_span::{Diagnostic, Level, Span};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Comptime step budget (D-P2.7): a coarse upper bound on evaluation work,
 /// guarding against runaway loops/recursion. Later tasks act on exhaustion.
@@ -180,6 +183,18 @@ pub struct Evaluator<'a> {
     /// the item's start VMA, so a `here()` mid-buffer (after some bytes in the
     /// SAME data item) still reads the item start, not the advanced position.
     here_base: Option<u32>,
+    /// The capability-sandbox root (Spec 2, Plan 5 — Task 1): the directory
+    /// `embed`/`import` paths resolve against. `None` outside a rooted
+    /// evaluation (e.g. the plain [`eval_const`] entry point), in which case a
+    /// comptime file read is `[sandbox.no-root]`. Set via
+    /// [`set_include_root`](Self::set_include_root) by the
+    /// [`layout::eval_data_with_root`](crate::layout::eval_data_with_root) seam.
+    include_root: Option<PathBuf>,
+    /// The capture ledger (Task 1): one [`sandbox::CaptureEdge`] per comptime
+    /// file read (`embed`, and later `import`/`zx0`), recording the resolved
+    /// path, its SHA-256 digest, and its byte length — the provenance record a
+    /// later hermeticity task exposes and asserts determinism from.
+    pub(crate) captures: Vec<sandbox::CaptureEdge>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -211,6 +226,8 @@ impl<'a> Evaluator<'a> {
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
             here_base: None,
+            include_root: None,
+            captures: Vec::new(),
         }
     }
 
@@ -448,10 +465,39 @@ impl Default for Evaluator<'_> {
 /// `(Some(value), diags)` — `diags` may still be non-empty if the value
 /// contains a reported error (its `Poison` is surfaced as `Some(Poison)`).
 pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
+    eval_const_with_root(file, name, None)
+}
+
+/// Like [`eval_const`], but also threads a capability-sandbox `include_root`
+/// (Spec 2, Plan 5 — Task 2): the directory `embed`/`import` paths resolve
+/// against, mirroring [`crate::layout::eval_data_with_root`]. `include_root =
+/// None` behaves exactly like [`eval_const`] (a comptime `import(...)` inside
+/// the const then reports `[sandbox.no-root]`).
+///
+/// This is the seam a bare `const V = import(...)` test uses to observe the
+/// imported [`Value`] directly (no `data` item / byte layout needed) — the
+/// production compile path does not yet supply a real root for consts either
+/// (same deferred wiring note as `eval_data_with_root`).
+pub fn eval_const_with_root(
+    file: &crate::ast::File,
+    name: &str,
+    include_root: Option<&std::path::Path>,
+) -> (Option<Value>, Vec<Diagnostic>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
     // not a native stack overflow, is what stops runaway recursion.
-    run_on_eval_stack(|| eval_const_inner(file, name))
+    run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        if !ev.consts.contains_key(name) {
+            ev.error(file.module.span, format!("no const named `{name}`"));
+            return (None, ev.diags);
+        }
+        let value = ev.resolve_const(name, file.module.span);
+        (Some(value), ev.diags)
+    })
 }
 
 /// Stack size for the comptime-evaluation thread (see [`eval_const`]). Sized to
@@ -522,18 +568,6 @@ pub fn eval_proc_body(
         };
         (buf, ev.diags, ev.asm_counter)
     })
-}
-
-/// The body of [`eval_const`], run on the large-stack evaluation thread.
-fn eval_const_inner(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
-    let mut ev = Evaluator::with_file(file);
-    if !ev.consts.contains_key(name) {
-        // Anchor the error at the module header — there is no const span to use.
-        ev.error(file.module.span, format!("no const named `{name}`"));
-        return (None, ev.diags);
-    }
-    let value = ev.resolve_const(name, file.module.span);
-    (Some(value), ev.diags)
 }
 
 #[cfg(test)]

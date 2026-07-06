@@ -9,8 +9,8 @@ use sigil_span::Span;
 /// The inclusive value range accepted by `byte`/`bytes` — an 8-bit cell may be
 /// written signed (`-128..=127`) or unsigned (`0..=255`), so the union is the
 /// accepted set; anything outside genuinely does not fit 8 bits.
-const BYTE_LO: i128 = -128;
-const BYTE_HI: i128 = 255;
+pub(crate) const BYTE_LO: i128 = -128;
+pub(crate) const BYTE_HI: i128 = 255;
 
 impl<'a> Evaluator<'a> {
     /// Dispatch a §6.8 builtin call, extracting the receiver and the builtin's

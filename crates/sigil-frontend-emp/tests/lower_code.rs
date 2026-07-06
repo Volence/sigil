@@ -154,3 +154,15 @@ fn intra_asm_branch_roundtrips_through_link() {
     assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
     assert_eq!(lower_link_68k(&code), vec![0x60, 0x00, 0xFF, 0xFE]);
 }
+
+#[test]
+fn intra_asm_dbra_roundtrips_through_link() {
+    // `dbra d0, .loop` targeting a `.loop:` in the SAME `asm {}` round-trips just
+    // like `bra.w` above: dbf d0,* opcode word = 0x51C8, then the placeholder
+    // displacement word gets a PcRelDisp16 fixup. Label and dbra both at offset 0
+    // → PcRelDisp16 = 0 - (0+2) = -2 = 0xFFFE.
+    let src = "module m\ncomptime fn f() -> Code {\n    return asm {\n    .loop:\n        dbra d0, .loop\n    }\n}\n";
+    let (code, diags) = eval_asm_with(src, &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x51, 0xC8, 0xFF, 0xFE]);
+}

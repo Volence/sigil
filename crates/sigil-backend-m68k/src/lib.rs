@@ -131,6 +131,32 @@ impl M68kBackend {
         }
     }
 
+    /// Lower a symbolic `dbcc`/`dbra` (`DBcc Dn,disp`) to the opcode word +
+    /// placeholder displacement + a PC-relative fixup. `dbcc` is always word-sized
+    /// (no size suffix — unlike `bra`/`Bcc` there is no `.s` form).
+    pub fn lower_dbcc(
+        &self,
+        cond: sigil_isa::m68k::Cond,
+        dn: u8,
+        target: Expr,
+        span: Span,
+    ) -> Result<DataFragment, LowerError> {
+        let inst = Instruction {
+            mnemonic: Mnemonic::Dbcc(cond),
+            size: Size::W,
+            ops: vec![Operand::Dn(dn), Operand::Disp(0)],
+        };
+        let encoded = m68k::encode(&inst).map_err(|e| LowerError { message: e.to_string() })?;
+        if encoded.len() != 4 {
+            return Err(LowerError { message: format!("dbcc expected 4 bytes, got {}", encoded.len()) });
+        }
+        Ok(DataFragment {
+            bytes: vec![encoded[0], encoded[1], 0x00, 0x00],
+            fixups: vec![Fixup { kind: FixupKind::PcRelDisp16, offset: 2, target }],
+            span,
+        })
+    }
+
     /// Lower an instruction carrying a symbolic `(d16,PC)` operand: encode with a
     /// `Pcd16(0)` placeholder, then attach a `PcRelDisp16` fixup at the byte
     /// offset of that extension word. `pcd16_offset` is that offset within the
@@ -276,6 +302,19 @@ mod tests {
         // Encoded length is 4; offset 3 makes offset+2 = 5 > 4.
         let err = M68kBackend.lower_pcrel_ea(&inst, 3, Expr::Sym("L".into()), span()).unwrap_err();
         assert!(err.message.contains("past instruction end"));
+    }
+
+    #[test]
+    fn lower_dbcc_emits_opcode_plus_pcreldisp16() {
+        // dbf d0,* → 0x51C8, then placeholder displacement word + PcRelDisp16 fixup.
+        let frag = M68kBackend
+            .lower_dbcc(Cond::F, 0u8, Expr::Sym("loop".into()), span())
+            .unwrap();
+        assert_eq!(frag.bytes, vec![0x51, 0xC8, 0x00, 0x00]);
+        assert_eq!(frag.fixups.len(), 1);
+        assert_eq!(frag.fixups[0].kind, FixupKind::PcRelDisp16);
+        assert_eq!(frag.fixups[0].offset, 2);
+        assert_eq!(frag.fixups[0].target, Expr::Sym("loop".into()));
     }
 
     #[test]
