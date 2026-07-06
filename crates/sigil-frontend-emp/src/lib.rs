@@ -1,9 +1,12 @@
-//! The modern .emp front-end: lexer + parser + AST (Spec 2, Plan 1).
-//! Lowering to IR is Plan 4; this crate depends on sigil-span ONLY.
+//! The modern .emp front-end: lexer + parser + AST (Spec 2, Plan 1) + the
+//! evaluator (Plans 2-3) and IR lowering (Plan 4). Only [`lower`] imports the
+//! Core IR / backend crates (D-P4.1); the evaluator (`value`, `eval`, `layout`)
+//! stays Core-free.
 pub mod ast;
 pub mod eval;
 pub mod layout;
 pub mod lexer;
+pub mod lower;
 pub mod parser;
 pub mod value;
 

@@ -256,13 +256,14 @@ impl<'a> Evaluator<'a> {
         };
         let mut buf = DataBuf::empty();
         match name {
-            Some(name) => buf.push(Cell::SymRef { name, width: 4 }),
+            // A plain absolute pointer (NOT windowed — that is `winptr(sym)`).
+            Some(name) => buf.push(Cell::SymRef { name, width: 4, windowed: false }),
             None => {
                 self.error(
                     span,
                     format!("pointer field needs a symbol reference, got {}", value.type_name()),
                 );
-                buf.push(Cell::SymRef { name: "<unresolved>".to_string(), width: 4 });
+                buf.push(Cell::SymRef { name: "<unresolved>".to_string(), width: 4, windowed: false });
             }
         }
         buf

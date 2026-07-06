@@ -7,6 +7,10 @@ use crate::expr::Expr;
 pub enum FixupKind {
     /// Resolve target to a VMA; write it as a little-endian `u16`.
     BankPtr16Le,
+    /// Resolve target to a VMA; write it as a big-endian `u16`. The 68k-section
+    /// counterpart to [`BankPtr16Le`](Self::BankPtr16Le): a 68000 reference to a
+    /// Z80 bank pointer (§7.2 / D-P4.7).
+    BankPtr16Be,
     /// Z80 `jr`/`djnz`: write `(target_vma - (site_vma + 2))` as a range-checked `i8`.
     Z80JrRel8,
     /// Scaffolding for the 68000 backend (M1); unused in M0.
@@ -35,7 +39,7 @@ impl FixupKind {
     /// Used by the linker to verify a fixup fits entirely within its fragment.
     pub fn byte_width(&self) -> u32 {
         match self {
-            FixupKind::BankPtr16Le | FixupKind::Abs16Be => 2,
+            FixupKind::BankPtr16Le | FixupKind::BankPtr16Be | FixupKind::Abs16Be => 2,
             FixupKind::PcRelDisp16 | FixupKind::HeaderChecksum => 2,
             FixupKind::Z80JrRel8 | FixupKind::PcRel8 | FixupKind::PcRelDisp8 => 1,
             FixupKind::Abs32Be => 4,
@@ -60,6 +64,7 @@ mod tests {
     #[test]
     fn byte_width_matches_kind() {
         assert_eq!(FixupKind::BankPtr16Le.byte_width(), 2);
+        assert_eq!(FixupKind::BankPtr16Be.byte_width(), 2);
         assert_eq!(FixupKind::Abs16Be.byte_width(), 2);
         assert_eq!(FixupKind::Z80JrRel8.byte_width(), 1);
         assert_eq!(FixupKind::Abs32Be.byte_width(), 4);

@@ -8,6 +8,7 @@
 use crate::ast::Expr;
 use crate::eval::Env;
 use crate::layout::Ty;
+use sigil_span::Span;
 use std::fmt;
 
 /// A comptime value.
@@ -97,6 +98,20 @@ pub enum Value {
     /// endianness and resolves NO pointer address — those are Plan 4; here the
     /// cells stay structured so Plan 4 can pick byte order and resolve fixups.
     Data(DataBuf),
+    /// A RESOLVED instruction list (T1, D-P4.3): the `Code` monoid's carrier and
+    /// the Plan 4 lowering seam for machine code, parallel to [`Value::Data`].
+    /// Produced by `asm { }` / `Code.empty` / `++` (T3); NOT a lazy template —
+    /// each `{expr}` splice is already resolved to a [`CodeOperand`] here.
+    Code(CodeBuf),
+    /// A comptime operand-size class (`b`/`w`/`l`/`s`) — the value a `{w}`
+    /// mnemonic-size splice resolves to (§6.2). Emp-side; carries no ISA.
+    Width(Width),
+    /// A comptime condition-code class (`ne`/`eq`/…) — the value a `{cc}`
+    /// mnemonic splice resolves to (`b{cc}`, §6.2). Emp-side; carries no ISA.
+    Cc(Cc),
+    /// A comptime register class (`d0`..`a7`) — the value a `{reg}` operand
+    /// splice resolves to (§6.2). Emp-side; carries no ISA.
+    Reg(Reg),
     /// An "error already reported here" sentinel (D-P2.9). Operations on
     /// `Poison` yield `Poison` silently so one bad subexpression does not fan
     /// out into a cascade of diagnostics.
@@ -136,14 +151,29 @@ pub enum Cell {
     /// A run of width-1 bytes (from `byte`/`bytes`/`++`). Single bytes have no
     /// byte order, so this stays CPU-neutral as raw bytes.
     Bytes(Vec<u8>),
-    /// A pointer-typed field: a reference to a named symbol, `width` bytes wide
-    /// (4, the Abs32 default — D-P3.7). Plan 4 resolves the name to an address
-    /// and emits a fixup; Plan 3 does NOT.
+    /// A pointer-typed field: a reference to a named symbol, `width` bytes wide.
+    /// Plan 4 resolves the name to an address and emits a fixup; Plan 3 does NOT.
+    ///
+    /// `windowed` records whether this is a Z80 *bank pointer* (`winptr(sym)`,
+    /// §7.2 — a 2-byte windowed pointer, `BankPtr16Le`) versus a plain absolute
+    /// pointer (a 68k `Abs32`/`Abs16`). Plan 4's fixup-kind selection (D-P4.5)
+    /// reads (`width`, section CPU, `windowed`): a plain 68k pointer is
+    /// width 4 (`Abs32Be`) — the default (D-P3.7); a windowed Z80 pointer is
+    /// width 2 (`BankPtr16Le`). An un-windowed pointer in a Z80 section is the
+    /// `[cross-cpu.unwindowed-pointer]` error.
     SymRef {
         /// The referenced symbol's name.
         name: String,
-        /// Pointer byte width (4).
+        /// Pointer byte width (4 for a plain absolute pointer, 2 for a `winptr`).
         width: u8,
+        /// Whether this is a Z80 windowed bank pointer (`winptr(sym)`, §7.2).
+        ///
+        /// A `bool` suffices while the two pointer flavors are distinguishable by
+        /// `(width, windowed)`. If a THIRD flavor appears that a bool cannot name
+        /// (e.g. one not separable by width), migrate this to a
+        /// `PtrKind { Absolute, Windowed, … }` field rather than adding a second
+        /// bool.
+        windowed: bool,
     },
 }
 
@@ -178,6 +208,241 @@ impl DataBuf {
     }
 }
 
+/// A RESOLVED instruction list (T1, D-P4.3): the `Code` monoid's carrier,
+/// parallel to [`DataBuf`]. Unlike a lazy template, every `{expr}` splice is
+/// already resolved to a [`CodeOperand`]; endianness and label/symbol addresses
+/// stay UNRESOLVED — those are Plan 4 lowering. Build it via
+/// [`concat`](CodeBuf::concat) / [`push`](CodeBuf::push).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CodeBuf {
+    /// The code fragment's ordered pieces, in emission order.
+    pub items: Vec<CodeItem>,
+}
+
+/// One ordered piece of a [`CodeBuf`] (T1): a label, a single instruction, or a
+/// [`DataBuf`] spliced into the code stream (§6.2).
+#[derive(Clone, Debug, PartialEq)]
+pub enum CodeItem {
+    /// A label definition: `.draw:` or `export .done:`.
+    Label {
+        /// The label's name.
+        name: String,
+        /// Whether the label is exported.
+        export: bool,
+        /// The defining site's span.
+        span: Span,
+    },
+    /// A single machine instruction: `mnemonic[.size] ops…`. `mnemonic` and
+    /// `size` are already resolved (a `{cc}` mnemonic splice or a `{w}` size
+    /// splice has been substituted into the strings/`Option<Width>`).
+    Instr {
+        /// The resolved mnemonic (e.g. `"move"`, `"bne"`).
+        mnemonic: String,
+        /// The resolved operand size, if any.
+        size: Option<Width>,
+        /// The resolved operands, in order.
+        ops: Vec<CodeOperand>,
+        /// The instruction's span.
+        span: Span,
+    },
+    /// A [`DataBuf`] spliced into a code stream (§6.2) — a `Data` value inlined
+    /// between instructions.
+    Inline(DataBuf),
+}
+
+/// A resolved splice operand value (T1): the CPU-neutral surface forms an
+/// `asm { }` operand can take once its `{expr}` splices are evaluated. This is
+/// the INTERNAL operand type inside [`CodeItem::Instr`], NOT a [`Value`] variant.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CodeOperand {
+    /// An immediate: `#42`.
+    Imm(i128),
+    /// A register: `d0`.
+    Reg(Reg),
+    /// A condition code used as an operand.
+    Cc(Cc),
+    /// A named symbol / label reference.
+    Sym(String),
+    /// Register indirect: `(a0)`.
+    Ind(Reg),
+    /// Pre-decrement indirect: `-(a7)`.
+    PreDec(Reg),
+    /// Post-increment indirect: `(a0)+`.
+    PostInc(Reg),
+    /// Displacement indirect: `4(a0)`.
+    DispInd {
+        /// The displacement.
+        disp: i128,
+        /// The base register.
+        reg: Reg,
+    },
+}
+
+/// A comptime operand-size class (§6.2), emp-side (no ISA import). Modeled on
+/// the 68k `b`/`w`/`l` sizes plus the branch `s` (short) suffix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Width {
+    /// Byte (`.b`).
+    B,
+    /// Word (`.w`).
+    W,
+    /// Long (`.l`).
+    L,
+    /// Short branch (`.s`).
+    S,
+}
+
+/// A comptime condition-code class (§6.2), emp-side. Membership mirrors the
+/// shape of the 68k condition set (`sigil_isa::m68k::Cond`) without importing it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cc {
+    /// True (always).
+    T,
+    /// False (never).
+    F,
+    /// High (unsigned `>`).
+    Hi,
+    /// Low or same (unsigned `<=`).
+    Ls,
+    /// Carry clear (unsigned `>=`).
+    Cc,
+    /// Carry set (unsigned `<`).
+    Cs,
+    /// Not equal.
+    Ne,
+    /// Equal.
+    Eq,
+    /// Overflow clear.
+    Vc,
+    /// Overflow set.
+    Vs,
+    /// Plus (non-negative).
+    Pl,
+    /// Minus (negative).
+    Mi,
+    /// Greater or equal (signed).
+    Ge,
+    /// Less than (signed).
+    Lt,
+    /// Greater than (signed).
+    Gt,
+    /// Less or equal (signed).
+    Le,
+}
+
+/// A comptime register class (§6.2), emp-side. The 68k data (`D0`..`D7`) and
+/// address (`A0`..`A7`) register files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reg {
+    /// Data register `d0`.
+    D0,
+    /// Data register `d1`.
+    D1,
+    /// Data register `d2`.
+    D2,
+    /// Data register `d3`.
+    D3,
+    /// Data register `d4`.
+    D4,
+    /// Data register `d5`.
+    D5,
+    /// Data register `d6`.
+    D6,
+    /// Data register `d7`.
+    D7,
+    /// Address register `a0`.
+    A0,
+    /// Address register `a1`.
+    A1,
+    /// Address register `a2`.
+    A2,
+    /// Address register `a3`.
+    A3,
+    /// Address register `a4`.
+    A4,
+    /// Address register `a5`.
+    A5,
+    /// Address register `a6`.
+    A6,
+    /// Address register `a7` (stack pointer).
+    A7,
+}
+
+impl CodeBuf {
+    /// The empty code fragment — the `Code` monoid's identity (`Code.empty`).
+    pub fn empty() -> Self {
+        CodeBuf { items: Vec::new() }
+    }
+
+    /// The monoid `++`: append `b`'s items after `a`'s.
+    pub fn concat(mut a: CodeBuf, b: CodeBuf) -> CodeBuf {
+        a.items.extend(b.items);
+        a
+    }
+
+    /// Push one item onto the fragment.
+    pub fn push(&mut self, item: CodeItem) {
+        self.items.push(item);
+    }
+}
+
+impl fmt::Display for Width {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Width::B => "b",
+            Width::W => "w",
+            Width::L => "l",
+            Width::S => "s",
+        })
+    }
+}
+
+impl fmt::Display for Cc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Cc::T => "t",
+            Cc::F => "f",
+            Cc::Hi => "hi",
+            Cc::Ls => "ls",
+            Cc::Cc => "cc",
+            Cc::Cs => "cs",
+            Cc::Ne => "ne",
+            Cc::Eq => "eq",
+            Cc::Vc => "vc",
+            Cc::Vs => "vs",
+            Cc::Pl => "pl",
+            Cc::Mi => "mi",
+            Cc::Ge => "ge",
+            Cc::Lt => "lt",
+            Cc::Gt => "gt",
+            Cc::Le => "le",
+        })
+    }
+}
+
+impl fmt::Display for Reg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Reg::D0 => "d0",
+            Reg::D1 => "d1",
+            Reg::D2 => "d2",
+            Reg::D3 => "d3",
+            Reg::D4 => "d4",
+            Reg::D5 => "d5",
+            Reg::D6 => "d6",
+            Reg::D7 => "d7",
+            Reg::A0 => "a0",
+            Reg::A1 => "a1",
+            Reg::A2 => "a2",
+            Reg::A3 => "a3",
+            Reg::A4 => "a4",
+            Reg::A5 => "a5",
+            Reg::A6 => "a6",
+            Reg::A7 => "a7",
+        })
+    }
+}
+
 impl Value {
     /// A short, stable type name for use in type-mismatch diagnostics.
     ///
@@ -202,6 +467,10 @@ impl Value {
             Value::FnRef(_) => "fn",
             Value::Typed { .. } => "typed",
             Value::Data(_) => "data",
+            Value::Code(_) => "code",
+            Value::Width(_) => "width",
+            Value::Cc(_) => "cc",
+            Value::Reg(_) => "reg",
             Value::Poison => "poison",
         }
     }
@@ -290,6 +559,10 @@ impl fmt::Display for Value {
             // type shows in diagnostics, not in the interpolated/printed value.
             Value::Typed { val, .. } => write!(f, "{val}"),
             Value::Data(buf) => write!(f, "data[{} bytes]", buf.size),
+            Value::Code(buf) => write!(f, "code[{} items]", buf.items.len()),
+            Value::Width(w) => write!(f, "{w}"),
+            Value::Cc(c) => write!(f, "{c}"),
+            Value::Reg(r) => write!(f, "{r}"),
             Value::Poison => f.write_str("<poison>"),
         }
     }

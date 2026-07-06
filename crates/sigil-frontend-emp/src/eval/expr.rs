@@ -14,8 +14,8 @@ impl<'a> Evaluator<'a> {
     /// already-[`Poison`](Value::Poison) operand yields `Poison` *silently*, so
     /// one bad subexpression never fans out into a cascade of diagnostics.
     ///
-    /// `Call`, user-struct `StructLit`, `If`, `For`, and `Asm` are handled by
-    /// later tasks (T4–T6); here they return `Poison` without a diagnostic.
+    /// `Call`, user-struct `StructLit`, `If`, and `For` are handled by other
+    /// tasks; `Asm` produces a [`Value::Code`](crate::value::Value::Code) (T3).
     pub fn eval_expr(&mut self, expr: &ast::Expr, env: &mut Env) -> Value {
         // Once evaluation has aborted (D-P2.16) or a `return` is pending out of an
         // expression-position `if`, short-circuit so the tree unwinds silently.
@@ -65,8 +65,11 @@ impl<'a> Evaluator<'a> {
             ast::Expr::For { var, iter, body, span } => {
                 self.eval_for(var, iter, body, *span, env)
             }
-            // TODO(Plan 3/4): `asm { }` lowers to a `Code` value.
-            ast::Expr::Asm { .. } => Value::Poison,
+            // `asm { }` evaluates to a resolved `Value::Code` (T3, D-P4.3): each
+            // statement becomes a `CodeItem` with its `{splice}`s resolved and
+            // typed HERE (not deferred), and non-`export` labels renamed fresh
+            // per instantiation for hygiene.
+            ast::Expr::Asm { body, span } => self.eval_asm(body, *span, env),
             // A lambda captures the *current* env by value (D2.12): the clone
             // snapshots the defining scope, so later mutation of it cannot leak
             // into an already-constructed lambda (matches `Env`'s clone contract).

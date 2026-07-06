@@ -9,6 +9,7 @@
 //! constructors, and the crate's top-level entry points ([`eval_const`]);
 //! the submodules contribute method groups via additional `impl Evaluator`
 //! blocks.
+mod asm;
 mod builtins;
 mod call;
 mod control;
@@ -161,6 +162,24 @@ pub struct Evaluator<'a> {
     /// `layout_in_progress`) as a false cycle. Construction/refinement re-entrancy
     /// and size/layout re-entrancy are genuinely different concerns.
     pub(crate) refine_check_in_progress: Vec<String>,
+    /// Monotonic instantiation counter for `asm { }` / `proc` label hygiene
+    /// (D-P4.6). Each `eval_asm` evaluation takes a fresh id `k`; the
+    /// [`LabelScope`](crate::lower::hygiene::LabelScope) built from it renames
+    /// non-`export` local labels to unique symbols (`$asm{k}$name`) so two
+    /// instantiations of the same template never collide, while references to a
+    /// `.name` label WITHIN one instantiation rewrite to the same fresh symbol so
+    /// intra-body branches still resolve. Exported labels take the stable,
+    /// caller-visible `Owner.name` spelling instead (§5.2) — the owner is the
+    /// proc name for a proc body and `k` for a raw `asm { }` (T5).
+    asm_counter: u32,
+    /// The VMA the `here()` comptime builtin resolves to (§7.1), or `None` when
+    /// no position is known (outside lowering). Set per data-item by the lowering
+    /// pass to `vma_origin + current_offset` — the VMA at the START of the item
+    /// being lowered. `here()` is a lowering-time query the pure evaluator cannot
+    /// answer on its own, so the position is threaded in here. LIMITATION: it is
+    /// the item's start VMA, so a `here()` mid-buffer (after some bytes in the
+    /// SAME data item) still reads the item start, not the advanced position.
+    here_base: Option<u32>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -190,7 +209,15 @@ impl<'a> Evaluator<'a> {
             data_memo: HashMap::new(),
             struct_construct_in_progress: Vec::new(),
             refine_check_in_progress: Vec::new(),
+            asm_counter: 0,
+            here_base: None,
         }
+    }
+
+    /// Set the VMA `here()` resolves to for the item about to be evaluated
+    /// (§7.1). The lowering pass calls this before resolving each data item.
+    pub(crate) fn set_here_base(&mut self, vma: u32) {
+        self.here_base = Some(vma);
     }
 
     /// Create an evaluator that can resolve names against `file`'s top-level
@@ -199,33 +226,43 @@ impl<'a> Evaluator<'a> {
     /// this task's job.
     pub fn with_file(file: &'a ast::File) -> Self {
         let mut ev = Evaluator::new();
-        for item in &file.items {
+        ev.index_items(&file.items);
+        ev
+    }
+
+    /// Register a list of items into the name indexes, recursing into
+    /// `section { ... }` blocks (§7.1) so a section-nested `data`/`const`/`fn`/…
+    /// is name-resolvable exactly like a top-level one (a flat namespace, as in
+    /// the AS model). Section placement itself is handled later, by the lowering
+    /// pass — this is purely the evaluator's name resolution.
+    fn index_items(&mut self, items: &'a [ast::Item]) {
+        for item in items {
             match item {
                 ast::Item::Const(c) => {
-                    ev.consts.insert(c.name.as_str(), c);
+                    self.consts.insert(c.name.as_str(), c);
                 }
                 ast::Item::Enum(e) => {
-                    ev.enums.insert(e.name.as_str(), e);
+                    self.enums.insert(e.name.as_str(), e);
                 }
                 ast::Item::ComptimeFn(f) => {
-                    ev.fns.insert(f.name.as_str(), f);
+                    self.fns.insert(f.name.as_str(), f);
                 }
                 ast::Item::Struct(s) => {
-                    ev.structs.insert(s.name.as_str(), s);
+                    self.structs.insert(s.name.as_str(), s);
                 }
                 ast::Item::Bitfield(b) => {
-                    ev.bitfields.insert(b.name.as_str(), b);
+                    self.bitfields.insert(b.name.as_str(), b);
                 }
                 ast::Item::Newtype(n) => {
-                    ev.newtypes.insert(n.name.as_str(), n);
+                    self.newtypes.insert(n.name.as_str(), n);
                 }
                 ast::Item::Data(d) => {
-                    ev.datas.insert(d.name.as_str(), d);
+                    self.datas.insert(d.name.as_str(), d);
                 }
+                ast::Item::Section(s) => self.index_items(&s.items),
                 _ => {}
             }
         }
-        ev
     }
 
     /// Push an [`Error`](Level::Error) diagnostic at `span`.
@@ -238,6 +275,14 @@ impl<'a> Evaluator<'a> {
     /// poison — the check that triggered it still has a usable value/layout.
     pub fn warn(&mut self, span: Span, msg: impl Into<String>) {
         self.diags.push(Diagnostic { level: Level::Warning, message: msg.into(), primary: span });
+    }
+
+    /// Push a [`Note`](Level::Note) diagnostic at `span`. Used to attach
+    /// follow-up context to a preceding error — e.g. the comptime-generator
+    /// call-site provenance note (§9, D-P4.11) emitted when a spliced comptime
+    /// call's generated table contains an error.
+    pub fn note(&mut self, span: Span, msg: impl Into<String>) {
+        self.diags.push(Diagnostic { level: Level::Note, message: msg.into(), primary: span });
     }
 
     /// Charge one evaluation step. Returns `false` once [`STEP_BUDGET`] is
@@ -436,6 +481,46 @@ where
             // message, and backtrace are preserved rather than flattened.
             Err(payload) => std::panic::resume_unwind(payload),
         }
+    })
+}
+
+/// Evaluate a `proc` body to a resolved [`CodeBuf`](crate::value::CodeBuf)
+/// against `file`'s comptime context (Plan 4, T4 — §5.1), returning it plus any
+/// diagnostics. This REUSES [`Evaluator::eval_asm`] — the exact same
+/// `AsmStmt`→`CodeBuf` walk `asm { }` instantiation uses — so proc lowering and
+/// `asm { }` share one operand/label path (D-P4.1). A proc body differs only in
+/// that it is parsed with `splices_allowed = false`, so no `{splice}` ever
+/// appears. The proc `name` is the owner scope for label hygiene (T5, §5.2): a
+/// non-export `.loop:` renames fresh per instantiation (an intra-proc reference
+/// still resolves) while an `export .entry:` becomes the caller-visible
+/// `name.entry` other code can `bra` to. Params are declarative register
+/// bindings (§5.1) that emit no code and need no env seeding — a body's register
+/// operand resolves via the register name directly. Returns `None` only if
+/// evaluation did not yield a `Code` value (it always does today; the guard keeps
+/// the seam total).
+///
+/// `asm_counter_start` seeds the instantiation counter (D-P4.6): lowering builds
+/// a FRESH evaluator per proc, so the counter would otherwise restart at 0 each
+/// proc and two comptime-generated `asm { }` bodies from different procs would
+/// mint colliding `$asm0…` symbols. The caller threads the counter across every
+/// proc (passing the previous proc's returned value in), keeping `k` globally
+/// monotonic. The advanced counter is returned as the third tuple element.
+pub fn eval_proc_body(
+    file: &crate::ast::File,
+    name: &str,
+    body: &[ast::AsmStmt],
+    span: Span,
+    asm_counter_start: u32,
+) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
+    run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.asm_counter = asm_counter_start;
+        let mut env = Env::new();
+        let buf = match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
+            Value::Code(buf) => Some(buf),
+            _ => None,
+        };
+        (buf, ev.diags, ev.asm_counter)
     })
 }
 

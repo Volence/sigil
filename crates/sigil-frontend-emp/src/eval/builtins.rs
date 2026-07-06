@@ -384,6 +384,46 @@ impl<'a> Evaluator<'a> {
         Value::Data(buf)
     }
 
+    /// `winptr(sym)` (§7.2 — the typed `sfx_winptr`): a one-cell [`Value::Data`]
+    /// holding a single 2-byte WINDOWED [`Cell::SymRef`] (`width: 2, windowed:
+    /// true`). A Z80 bank pointer: the linker resolves `sym` and writes a
+    /// little-endian `BankPtr16Le` window offset (D-P4.5). Composing through the
+    /// `Data` monoid (`winptr(a) ++ winptr(b)`), it flows into `data` emission
+    /// with no new path. The symbol NAME is captured exactly as
+    /// [`lower_ptr`](Self::lower_ptr) does — from a [`Value::FnRef`] (a bare
+    /// `comptime fn`/label name) or a [`Value::Str`] naming a symbol. No address
+    /// is resolved here (that is lowering); a non-reference argument is a
+    /// diagnostic and [`Poison`](Value::Poison).
+    pub(super) fn eval_winptr(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 1 {
+            self.error(span, format!("`winptr` expects exactly 1 argument, got {}", args.len()));
+            return Value::Poison;
+        }
+        if args[0].name.is_some() {
+            self.error(args[0].span, "`winptr` takes a positional argument");
+        }
+        let arg = self.eval_expr(&args[0].value, env);
+        // A leaked return / abort from the argument belongs to the caller.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let name = match arg {
+            Value::FnRef(n) => n,
+            Value::Str(s) => s,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    span,
+                    format!("`winptr` needs a symbol reference, got {}", other.type_name()),
+                );
+                return Value::Poison;
+            }
+        };
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::SymRef { name, width: 2, windowed: true });
+        Value::Data(buf)
+    }
+
     /// Evaluate the single positional integer argument shared by `byte` (and
     /// future scalar `Data` constructors). Wrong arity / a named arg is a
     /// diagnostic; a leaked return/abort from the argument belongs to the caller.
