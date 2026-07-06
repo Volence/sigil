@@ -46,18 +46,32 @@ pub(super) struct Siblings<'a> {
     pub items: &'a [ast::Item],
 }
 
+/// How a proc lowers: its CPU (drives code encoding + the terminator table) and
+/// whether the enclosing module is `@as_compat` (which silences the heuristic
+/// modernization WARNINGs). Bundled so `lower_proc` stays under clippy's
+/// argument-count lint (mirroring how [`Siblings`] bundles position).
+pub(super) struct ProcCtx {
+    /// The CPU this proc's body encodes for.
+    pub cpu: Cpu,
+    /// Module-level `@as_compat` — silence the faithful-port lints (D-P6.3).
+    pub as_compat: bool,
+}
+
 /// Lower one proc: define its label, evaluate + lower its body, then run the
 /// §5.1 fallthrough / clobber contract checks. `siblings` locates this proc in
 /// declaration order so declared fallthrough can check adjacency. `asm_counter`
 /// is the module-wide instantiation counter (D-P4.6): it seeds this proc's
 /// evaluator and is advanced by however many `asm { }` bodies it instantiates, so
 /// `k` stays globally monotonic across procs (a fresh evaluator per proc would
-/// otherwise reset it and collide labels).
+/// otherwise reset it and collide labels). `as_compat` (module `@as_compat`,
+/// Plan 6 D-P6.3) silences the heuristic modernization WARNINGs — undeclared
+/// fallthrough and the clobber lint — while leaving the hard `falls_into`
+/// adjacency ERROR untouched.
 pub(super) fn lower_proc(
     file: &ast::File,
     proc: &ast::ProcDecl,
     siblings: Siblings<'_>,
-    cpu: Cpu,
+    ctx: ProcCtx,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
@@ -69,19 +83,23 @@ pub(super) fn lower_proc(
     *asm_counter = next_counter;
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
-    super::lower_code_buf(&buf, cpu, builder, diags);
+    super::lower_code_buf(&buf, ctx.cpu, builder, diags);
 
-    // 2/3. Fallthrough contract. A declared `falls_into` demands adjacency; an
-    // undeclared but reachable fall-off the end warns.
+    // 2/3. Fallthrough contract. A declared `falls_into` demands adjacency (a
+    // hard ERROR when broken — never silenced); an undeclared but reachable
+    // fall-off the end is a modernization WARNING that `@as_compat` silences
+    // (Plan 6, D-P6.3: a faithful port opts out of the faithful-port lints).
     match &proc.falls_into {
         Some(next) => {
             check_fallthrough_adjacent(proc, next, siblings.index, siblings.items, diags)
         }
-        None => check_undeclared_fallthrough(proc, &buf, cpu, diags),
+        None if !ctx.as_compat => check_undeclared_fallthrough(proc, &buf, ctx.cpu, diags),
+        None => {}
     }
 
-    // 4. Clobbers lint (only when the proc actually declares a clobber set).
-    if !proc.clobbers.is_empty() {
+    // 4. Clobbers lint (only when the proc declares a clobber set) — likewise a
+    // modernization warning silenced under `@as_compat`.
+    if !proc.clobbers.is_empty() && !ctx.as_compat {
         check_clobbers(proc, &buf, diags);
     }
 }

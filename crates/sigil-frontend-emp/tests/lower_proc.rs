@@ -99,6 +99,49 @@ fn undeclared_fallthrough_warns() {
 }
 
 #[test]
+fn as_compat_silences_undeclared_fallthrough() {
+    // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` marks a faithful port
+    // and silences the modernization / faithful-port lints. The SAME proc that
+    // warns above (undeclared fallthrough) emits NO such warning under
+    // `@as_compat`.
+    let (_module, diags) =
+        lower("module m\n@as_compat\nproc p() {\n    moveq #0, d0\n}\n");
+    assert!(
+        !has_tag(&diags, "[proc.undeclared-fallthrough]"),
+        "@as_compat must silence the undeclared-fallthrough lint: {diags:?}"
+    );
+}
+
+#[test]
+fn as_compat_silences_clobber_undeclared() {
+    // Companion: `@as_compat` also silences the heuristic clobber lint. The same
+    // `move.l d2, d3` under `clobbers(d0, d1)` that warns above stays quiet here.
+    let src = "module m\n@as_compat\nproc p() clobbers(d0, d1) {\n    move.l d2, d3\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "@as_compat must silence the clobber-undeclared lint: {diags:?}"
+    );
+}
+
+#[test]
+fn as_compat_does_not_silence_hard_fallthrough_error() {
+    // `@as_compat` silences WARNING-level modernization lints, never a hard error.
+    // A broken `falls_into` (target not the immediately-following proc) is a
+    // correctness ERROR (`[proc.fallthrough-separated]`) and must still fire.
+    let src = "module m\n@as_compat\n\
+               proc a() falls_into c {\n    moveq #0, d0\n}\n\
+               proc b() {\n    rts\n}\n\
+               proc c() {\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let sep = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.fallthrough-separated]"))
+        .expect("a hard fallthrough-separated error must survive @as_compat");
+    assert_eq!(sep.level, Level::Error);
+}
+
+#[test]
 fn empty_proc_body_warns_fallthrough() {
     // An empty body has no terminating instruction, so it falls through → the
     // undeclared-fallthrough warning fires (pins the documented behavior).
