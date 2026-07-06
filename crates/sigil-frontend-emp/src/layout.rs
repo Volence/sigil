@@ -1065,17 +1065,31 @@ pub fn eval_data_captures(
 ///
 /// A target is a symbol NAME, not a comptime value: the reverse direction
 /// (`eval_path`'s `Name.Variant` ordinals) never evaluates it, and it names a
-/// LINK-time label (a `data`/`proc` symbol) that has no comptime value to
-/// evaluate to. So the name is taken SYNTACTICALLY from a bare `Path` (or a
-/// string literal) — for a single-segment path this is exactly the bare label
-/// name `define_label` emits, so the `RelWord16Be` fixup's `Sub(Sym(target),
-/// Sym(base))` matches by construction. An exotic non-path/non-string target
-/// (some other expression) is evaluated and its name extracted the same way
-/// [`lower_ptr`](crate::eval::Evaluator) does (a [`Value::FnRef`]/[`Value::Str`]),
-/// else it is a "must reference a label" error with an `<unresolved>`
-/// placeholder so the 2-byte slot still lands (sizes stay consistent). Dup /
-/// reserved-`count` validation is NOT re-done here — it lives once-per-compile
-/// in `lower::validate_offsets`.
+/// LINK-time label (a `data`/`proc`/offsets-base symbol) that has no comptime
+/// value to evaluate to. So the name is taken BY SHAPE — the path text of a
+/// bare `Path`, or the contents of a string literal. When the name genuinely
+/// names a link symbol (the intended use), the single-segment path is the same
+/// bare name `define_label` emits, so the `RelWord16Be` fixup's
+/// `Sub(Sym(target), Sym(base))` resolves. When it does NOT name a real symbol,
+/// the fixup surfaces at LINK time as an undefined-symbol error — this pass does
+/// not (and cannot, without a full symbol table) verify that a path names a
+/// real label. Two cases it DOES catch early, so the author is not left with
+/// only `sigil_link`'s generic "unresolved target" message:
+///
+/// - a single-segment path that resolves to a `const` (an easy mistake: a
+///   `const F0 = "frame0"` alias used as `M { A: F0 }` would silently emit a
+///   fixup to the nonexistent symbol `F0`) — diagnosed here as "is a const,
+///   not a label";
+/// - a non-path/non-string expression (e.g. `1 + 1`), evaluated and its name
+///   extracted the same way [`lower_ptr`](crate::eval::Evaluator) does (a
+///   [`Value::FnRef`]/[`Value::Str`]), else a "must reference a label" error.
+///
+/// Both use an `<unresolved>` placeholder so the 2-byte slot still lands (sizes
+/// stay consistent). A multi-segment path (`mod.thing`, a cross-module
+/// reference) is NOT resolved here — it is joined `a.b` and left for a later
+/// plan's cross-module resolution / the linker. Dup / reserved-`count`
+/// validation is NOT re-done here — it lives once-per-compile in
+/// `lower::validate_offsets`.
 pub fn eval_offsets_with_root(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
@@ -1086,15 +1100,38 @@ pub fn eval_offsets_with_root(
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
-        let mut env = Env::new();
         let mut buf = DataBuf::empty();
         for member in &decl.members {
+            // Fresh env per member (parity with `resolve_data`'s per-item
+            // `Env::new()`): a fallback `eval_expr` below must not see bindings
+            // leaked from an earlier member's evaluation.
+            let mut env = Env::new();
             let name = match &member.target {
-                // A bare label reference (`frame0`) or a module-qualified path
-                // (`mod.thing`): the symbol name IS the path text. A single
-                // segment is the bare label name (the common case); multi-segment
-                // is joined `a.b` (cross-module resolution is a later plan).
-                ast::Expr::Path(p) => p.segments.join("."),
+                ast::Expr::Path(p) => {
+                    // A single-segment path that is a KNOWN const is almost
+                    // certainly a mistake — a const is not a link label, so the
+                    // fixup would target a nonexistent symbol. Flag it clearly
+                    // here rather than let the author hit `sigil_link`'s generic
+                    // "unresolved target" message. Only a POSITIVELY-identified
+                    // const is rejected: a bare name absent from every registry
+                    // may still be a valid data/proc/offsets label, so it is
+                    // accepted and the linker catches a genuinely-undefined one.
+                    if p.segments.len() == 1 && ev.is_const(&p.segments[0]) {
+                        ev.error(
+                            member.span,
+                            format!(
+                                "offset entry `{}` target `{}` is a const, not a label; offsets targets must be labels",
+                                member.name, p.segments[0]
+                            ),
+                        );
+                        "<unresolved>".to_string()
+                    } else {
+                        // The symbol name IS the path text. Single segment is the
+                        // bare label name (the common case); multi-segment is
+                        // joined `a.b` (cross-module resolution is a later plan).
+                        p.segments.join(".")
+                    }
+                }
                 // A string literal names a symbol directly (mirrors `lower_ptr`'s
                 // `Value::Str` arm and `winptr("name")`).
                 ast::Expr::Str(s, _) => s.clone(),

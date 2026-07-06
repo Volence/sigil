@@ -11,7 +11,9 @@
 //! a clean parse), then evaluate a named const that references the offsets
 //! table via [`eval_const`], asserting on the resulting [`Value`] and
 //! diagnostics.
+use sigil_frontend_emp::ast;
 use sigil_frontend_emp::eval::eval_const;
+use sigil_frontend_emp::layout::eval_offsets_with_root;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::Value;
@@ -26,6 +28,17 @@ fn eval(src: &str, name: &str) -> (Option<Value>, Vec<sigil_span::Diagnostic>) {
 
 fn int(n: i128) -> Value {
     Value::Int(n)
+}
+
+/// Find the `offsets` decl named `name` in `file`.
+fn offsets_decl<'a>(file: &'a ast::File, name: &str) -> &'a ast::OffsetsDecl {
+    file.items
+        .iter()
+        .find_map(|it| match it {
+            ast::Item::Offsets(o) if o.name == name => Some(o),
+            _ => None,
+        })
+        .expect("offsets decl")
 }
 
 #[test]
@@ -122,4 +135,44 @@ fn ordinal_used_arithmetically() {
     let (v, diags) = eval(src, "X");
     assert_eq!(v, Some(int(11)));
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+// ---- forward emission (Task 6): non-label target diagnostics ------------
+
+#[test]
+fn const_alias_target_is_diagnosed_as_const() {
+    // A `const F0` used as an offsets target is a classic mistake — a const is
+    // not a link label, so the fixup would target a nonexistent symbol. It is
+    // caught early with a clear message rather than left to `sigil_link`'s
+    // generic "unresolved target". The other member (`t1`, an ordinary bare
+    // label) is accepted unchanged.
+    let src = "module m\nconst F0 = 7\noffsets M { A: F0, B: t1 }\n";
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
+    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None);
+    // Both entries still emit their 2-byte slot (placeholder for the const).
+    assert_eq!(buf.expect("buf").size, 4, "the 2-byte slot lands for every member");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("is a const"),
+        "diagnostic was {:?}",
+        diags[0].message
+    );
+}
+
+#[test]
+fn non_label_target_is_diagnosed() {
+    // A non-path, non-string target (`1 + 1`) cannot name a label: the fallback
+    // arm reports "must reference a label" and still lands the 2-byte slot.
+    let src = "module m\noffsets M { A: 1 + 1 }\n";
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
+    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None);
+    assert_eq!(buf.expect("buf").size, 2, "the 2-byte slot still lands");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("must reference a label"),
+        "diagnostic was {:?}",
+        diags[0].message
+    );
 }

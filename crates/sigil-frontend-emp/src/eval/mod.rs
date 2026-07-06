@@ -299,6 +299,16 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// Whether `name` is a file-level `const` (the same table `eval_path`
+    /// consults). Exposed for `offsets` forward lowering
+    /// ([`eval_offsets_with_root`](crate::layout::eval_offsets_with_root)) to
+    /// give a const-alias target a clear early diagnostic — a `const` is not a
+    /// valid offsets label. A read-only membership check, so the `consts` field
+    /// itself stays private.
+    pub(crate) fn is_const(&self, name: &str) -> bool {
+        self.consts.contains_key(name)
+    }
+
     /// Push an [`Error`](Level::Error) diagnostic at `span`.
     pub fn error(&mut self, span: Span, msg: impl Into<String>) {
         self.diags.push(Diagnostic { level: Level::Error, message: msg.into(), primary: span });
