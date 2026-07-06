@@ -82,6 +82,7 @@ fn assert_byte_identical(reference: &[u8], candidate: &[u8], what: &str) {
 }
 
 const DRUMTEST_ASM: &str = include_str!("vectors/ports/song_drumtest.asm");
+const DRUMTEST_EMP: &str = include_str!("vectors/ports/song_drumtest.emp");
 
 /// T1 — the AS reference side assembles standalone. Records the target choice:
 /// `song_drumtest.asm` assembles in isolation to exactly its 82 source bytes
@@ -105,4 +106,15 @@ fn as_reference_assembles_drumtest_standalone() {
 fn harness_pipeline_roundtrips_inline_bytes() {
     let bytes = emp_candidate("module t\ndata X: [u8; 3] = [$AA, $BB, $CC]\n");
     assert_byte_identical(&[0xAA, 0xBB, 0xCC], &bytes, "harness self-test");
+}
+
+/// T2 — THE CAPSTONE. The `.emp` port of `song_drumtest.asm` compiles through
+/// the modern front-end to bytes **byte-identical** to the AS-assembled
+/// original. This is Plan 6's core acceptance criterion: a real Aeon data file,
+/// ported and byte-exact.
+#[test]
+fn emp_port_matches_as_reference() {
+    let reference = as_reference(DRUMTEST_ASM);
+    let candidate = emp_candidate(DRUMTEST_EMP);
+    assert_byte_identical(&reference, &candidate, "song_drumtest port");
 }
