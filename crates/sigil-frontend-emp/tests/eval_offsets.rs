@@ -101,6 +101,20 @@ data D3: [u8; 1] = [3]
 }
 
 #[test]
+fn member_named_count_is_reserved() {
+    // `count` is the reserved pseudo-member (`M.count` is the entry count).
+    // A real member named `count` would be silently unreachable, so it is a
+    // hard error rather than a silent wrong answer.
+    let src = "module m\noffsets M { count: t0 }\n";
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
+    let (_module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
+    assert!(diags[0].message.contains("reserved"), "diagnostic was {:?}", diags[0].message);
+}
+
+#[test]
 fn ordinal_used_arithmetically() {
     // Ordinals are plain comptime ints usable like any other (D-P2 taste): no
     // distinct enum-like wrapper, no coercion needed.

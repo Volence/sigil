@@ -295,19 +295,35 @@ fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
     diags.push(Diagnostic { level: Level::Error, message, primary: span });
 }
 
-/// Once-per-compile validation of `offsets` blocks: a duplicate member name
-/// makes the reverse-direction ordinal ambiguous (`Name.Variant` resolution
-/// silently picks the first match), so it is a hard error. Reported HERE rather
-/// than in the evaluator's `index_items` because that runs per per-item
-/// evaluator (once per data item / proc) and would emit the diagnostic N times.
-/// Recurses into `section {}` blocks so a section-nested `offsets` is checked
-/// exactly like a top-level one (mirroring `index_items`' flat namespace).
+/// Once-per-compile validation of `offsets` blocks. Two hard errors: (1) a
+/// duplicate member name makes the reverse-direction ordinal ambiguous
+/// (`Name.Variant` resolution silently picks the first match); (2) a member
+/// named `count` collides with the reserved `Name.count` pseudo-member (the
+/// entry count), which `eval_path` resolves before members, so it would be
+/// silently unreachable. Both violate the totality tenet (no silent wrong
+/// answers). Reported HERE rather than in the evaluator's `index_items` because
+/// that runs per per-item evaluator (once per data item / proc) and would emit
+/// the diagnostic N times. Recurses into `section {}` blocks so a
+/// section-nested `offsets` is checked exactly like a top-level one (mirroring
+/// `index_items`' flat namespace).
 fn validate_offsets(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
     for item in items {
         match item {
             ast::Item::Offsets(decl) => {
                 let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for m in &decl.members {
+                    // `count` is a reserved pseudo-member: `Name.count` names the
+                    // table's entry count in `eval_path`. Reject a real member
+                    // named `count` rather than let it be silently unreachable
+                    // (the totality tenet — no silent wrong answers).
+                    if m.name == "count" {
+                        err(
+                            diags,
+                            m.span,
+                            "offset entry `count` is reserved (it names the table's entry count)"
+                                .to_string(),
+                        );
+                    }
                     if !seen.insert(m.name.as_str()) {
                         err(diags, m.span, format!("duplicate offset entry `{}`", m.name));
                     }
