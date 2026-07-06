@@ -28,7 +28,7 @@ pub use env::{AssignError, Binding, Env};
 use crate::ast;
 use crate::value::Value;
 use sigil_span::{Diagnostic, Level, Span};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Comptime step budget (D-P2.7): a coarse upper bound on evaluation work,
@@ -285,17 +285,13 @@ impl<'a> Evaluator<'a> {
                     self.datas.insert(d.name.as_str(), d);
                 }
                 ast::Item::Offsets(o) => {
+                    // Index for `Name.Variant` / `Name.count` resolution in
+                    // `eval_path`. Every per-item evaluator re-indexes the whole
+                    // file, so this MUST stay here — but duplicate-member ERROR
+                    // reporting must NOT (it would fire once per per-item
+                    // evaluator); that check lives once-per-compile in
+                    // `lower::validate_offsets`.
                     self.offsets.insert(o.name.as_str(), o);
-                    // A duplicate member name would make `.position()` silently
-                    // pick the first match (an ambiguous ordinal) — report it
-                    // ONCE per offsets decl, here at index time (Task 5 owns
-                    // this check; Task 6's forward emission does not re-add it).
-                    let mut seen: HashSet<&str> = HashSet::new();
-                    for m in &o.members {
-                        if !seen.insert(m.name.as_str()) {
-                            self.error(m.span, format!("duplicate offset entry `{}`", m.name));
-                        }
-                    }
                 }
                 ast::Item::Section(s) => self.index_items(&s.items),
                 _ => {}

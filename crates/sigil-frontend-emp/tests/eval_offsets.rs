@@ -12,8 +12,10 @@
 //! table via [`eval_const`], asserting on the resulting [`Value`] and
 //! diagnostics.
 use sigil_frontend_emp::eval::eval_const;
+use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::Value;
+use sigil_ir::backend::Cpu;
 
 /// Parse `src` (asserting a clean parse) and evaluate the const named `name`.
 fn eval(src: &str, name: &str) -> (Option<Value>, Vec<sigil_span::Diagnostic>) {
@@ -63,12 +65,39 @@ fn unknown_member_is_an_error() {
 
 #[test]
 fn duplicate_member_name_is_an_error() {
-    // The duplicate is diagnosed independently of any reference to `M` — it is
-    // detected when the offsets decl itself is indexed.
-    let src = "module m\noffsets M { A: t0, A: t1 }\nconst X = 0\n";
-    let (_v, diags) = eval(src, "X");
+    // A duplicate member name is a hard error (its ordinal would be ambiguous).
+    // The check is a once-per-compile lowering pass (`lower::validate_offsets`),
+    // so it is observed through `lower_module`, not the single-evaluator
+    // `eval_const` path. Independent of any reference to `M`.
+    let src = "module m\noffsets M { A: t0, A: t1 }\n";
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
+    let (_module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
     assert!(diags[0].message.contains("duplicate"), "diagnostic was {:?}", diags[0].message);
+}
+
+#[test]
+fn duplicate_member_reported_once_through_full_lowering() {
+    // Regression: the duplicate-member check must fire ONCE per compile, not
+    // once per per-item evaluator. `lower_module` builds a fresh evaluator per
+    // `data` item (for `Name.Variant` resolution), so a naive check in the
+    // evaluator's `index_items` would emit N copies for N data items. With ≥2
+    // data items present, assert EXACTLY ONE "duplicate" diagnostic.
+    let src = "\
+module m
+offsets M { A: t0, A: t1 }
+data D1: [u8; 1] = [1]
+data D2: [u8; 1] = [2]
+data D3: [u8; 1] = [3]
+";
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
+    let (_module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let dups: Vec<_> = diags.iter().filter(|d| d.message.contains("duplicate")).collect();
+    assert_eq!(dups.len(), 1, "expected exactly one duplicate diagnostic, got {diags:?}");
 }
 
 #[test]

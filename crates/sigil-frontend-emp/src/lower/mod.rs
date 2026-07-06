@@ -69,6 +69,13 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     let mut builder = IrBuilder::new();
     let mut diags = Vec::new();
 
+    // Whole-file comptime validation that must fire exactly ONCE per compile
+    // (not per per-item evaluator): duplicate `offsets` members. The evaluator's
+    // `index_items` populates the offsets map on EVERY `with_file` construction
+    // (once per data item / proc), so reporting there would duplicate the
+    // diagnostic; this driver runs once.
+    validate_offsets(&file.items, &mut diags);
+
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
     // byte-diff contract and silencing the modernization / faithful-port lints
@@ -286,4 +293,28 @@ fn attr_cpu(expr: &ast::Expr) -> Cpu {
 /// Push an error diagnostic at `span`.
 fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
     diags.push(Diagnostic { level: Level::Error, message, primary: span });
+}
+
+/// Once-per-compile validation of `offsets` blocks: a duplicate member name
+/// makes the reverse-direction ordinal ambiguous (`Name.Variant` resolution
+/// silently picks the first match), so it is a hard error. Reported HERE rather
+/// than in the evaluator's `index_items` because that runs per per-item
+/// evaluator (once per data item / proc) and would emit the diagnostic N times.
+/// Recurses into `section {}` blocks so a section-nested `offsets` is checked
+/// exactly like a top-level one (mirroring `index_items`' flat namespace).
+fn validate_offsets(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    for item in items {
+        match item {
+            ast::Item::Offsets(decl) => {
+                let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                for m in &decl.members {
+                    if !seen.insert(m.name.as_str()) {
+                        err(diags, m.span, format!("duplicate offset entry `{}`", m.name));
+                    }
+                }
+            }
+            ast::Item::Section(sec) => validate_offsets(&sec.items, diags),
+            _ => {}
+        }
+    }
 }
