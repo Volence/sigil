@@ -86,6 +86,10 @@ fn lower_m68k_instr(
         lower_m68k_branch(m, size, ops, span, builder, diags);
         return;
     }
+    if let M68kMnemonic::Dbcc(cond) = m {
+        lower_m68k_dbcc(cond, ops, span, builder, diags);
+        return;
+    }
     if matches!(m, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
         // A bare symbol target defers to the linker's width selection; an EA
         // operand (`(a0)`, ...) falls through to the generic path.
@@ -166,6 +170,37 @@ fn lower_m68k_branch(
         }
     };
     match M68kBackend.lower_branch(m, size, target, span) {
+        Ok(df) => emit_data_frag(builder, df),
+        Err(e) => push_err(diags, span, e.message),
+    }
+}
+
+/// `dbcc`/`dbra Dn, <target>`: always word-sized (no size suffix — unlike
+/// `bra`/`Bcc` there is no `.s` form, so a missing size is fine/expected here).
+/// The two operands are a DATA register and a single label target; both become
+/// a `dbf`/`db<cc>` opcode word + a PC-relative fixup via [`M68kBackend::lower_dbcc`].
+fn lower_m68k_dbcc(
+    cond: M68kCond,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let (dn, name) = match ops {
+        [CodeOperand::Reg(r), CodeOperand::Sym(name)] => match reg_kind(*r) {
+            (false, n) => (n, name),
+            (true, _) => {
+                push_err(diags, span, "[dbcc.operands] dbcc needs `dN, <label>`");
+                return;
+            }
+        },
+        _ => {
+            push_err(diags, span, "[dbcc.operands] dbcc needs `dN, <label>`");
+            return;
+        }
+    };
+    let target = Expr::Sym(name.clone());
+    match M68kBackend.lower_dbcc(cond, dn, target, span) {
         Ok(df) => emit_data_frag(builder, df),
         Err(e) => push_err(diags, span, e.message),
     }
