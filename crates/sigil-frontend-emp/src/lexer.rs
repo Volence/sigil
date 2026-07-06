@@ -120,6 +120,11 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                 i = finish_binary(src, b, i, i + 1, source, &mut out, &mut errs);
             }
             b'"' => { i = lex_string(src, b, i, source, &mut out, &mut errs); }
+            // A `'` reaching the top of the loop is never the Z80
+            // shadow-register apostrophe — the identifier arm above already
+            // absorbed that one trailing quote as part of the ident. So a
+            // bare `'` here always starts a char literal (raw ASCII, Task 3).
+            b'\'' => { i = lex_char(src, b, i, source, &mut out, &mut errs); }
             _ => {
                 // `get` returns None off a char boundary — no panic on non-ASCII.
                 let two = src.get(i..i + 2).unwrap_or("");
@@ -260,5 +265,79 @@ fn lex_string(src: &str, b: &[u8], mut i: usize, source: SourceId,
     }
     i += 1; // closing quote
     out.push(Token { tok: Tok::Str(val), span: span(s, i) });
+    i
+}
+
+/// Lex a char literal `'A'` into a plain [`Tok::Int`] — raw ASCII, so `'A'` is
+/// exactly the integer 65, flowing through the same paths as any other
+/// integer literal (e.g. `data D = byte('A')` emits `$41`).
+///
+/// Charmap-based text encoding (for on-screen tile text) is a separate,
+/// explicit opt-in future feature — out of scope here.
+///
+/// Mirrors [`lex_string`]'s scanning shape (escape handling, UTF-8-safe char
+/// stepping, unterminated detection) but a char literal wants exactly one
+/// character or escape between the quotes, and only ASCII (`0..=127`).
+fn lex_char(src: &str, b: &[u8], mut i: usize, source: SourceId,
+            out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
+    let s = i;
+    let span = |s: usize, e: usize| span_at(source, s, e);
+    i += 1; // opening quote
+
+    let mut values: Vec<u8> = Vec::new();
+    // A non-ASCII char or unknown escape is a more specific error than
+    // "empty"/"multi-character" — once seen, keep scanning to resync at the
+    // closing quote, but don't also report a count-based error afterward.
+    let mut bad = false;
+    while i < b.len() && b[i] != b'\'' && b[i] != b'\n' {
+        if b[i] == b'\\' && i + 1 < b.len() {
+            match b[i + 1] {
+                b'n' => values.push(b'\n'),
+                b't' => values.push(b'\t'),
+                b'\\' => values.push(b'\\'),
+                b'\'' => values.push(b'\''),
+                b'0' => values.push(0),
+                other => {
+                    errs.push(LexError { message: format!("unknown escape \\{}", other as char), span: span(i, i + 2) });
+                    bad = true;
+                }
+            }
+            i += 2;
+        } else {
+            // multi-byte UTF-8 safe: step by the full char
+            let ch = src[i..].chars().next().unwrap();
+            if ch.is_ascii() {
+                values.push(ch as u8);
+            } else {
+                errs.push(LexError {
+                    message: format!(
+                        "char literal must be ASCII; {ch:?} is not — use a numeric literal or an escape"
+                    ),
+                    span: span(i, i + ch.len_utf8()),
+                });
+                bad = true;
+            }
+            i += ch.len_utf8();
+        }
+    }
+
+    if i >= b.len() || b[i] != b'\'' {
+        errs.push(LexError { message: "unterminated char literal".into(), span: span(s, i) });
+        return i;
+    }
+    i += 1; // closing quote
+
+    if bad {
+        // A more specific error was already reported above.
+        return i;
+    }
+    match values.len() {
+        0 => errs.push(LexError { message: "empty char literal".into(), span: span(s, i) }),
+        1 => out.push(Token { tok: Tok::Int(values[0] as i64), span: span(s, i) }),
+        n => errs.push(LexError {
+            message: format!("char literal must be a single character; got {n}"),
+            span: span(s, i),
+        }),
+    }
     i
 }

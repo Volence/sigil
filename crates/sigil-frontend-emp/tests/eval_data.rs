@@ -76,6 +76,18 @@ fn binary_percent_literal_emits_the_right_byte() {
     assert_eq!(buf.cells, vec![Cell::Scalar { value: 0b10100101, width: 1, signed: false }]);
 }
 
+#[test]
+fn char_literal_emits_the_right_byte() {
+    // `'A'` (lexical gaps, Task 3) is raw ASCII 65 end-to-end through
+    // parse+eval+lower — a plain integer, no charmap involved.
+    let src = "module m\ndata D = byte('A')\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 1);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 0x41, width: 1, signed: false }]);
+}
+
 // ---- array data items ---------------------------------------------------
 
 #[test]

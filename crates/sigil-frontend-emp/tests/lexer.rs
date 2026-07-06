@@ -196,3 +196,104 @@ fn bare_apostrophe_is_an_error_not_a_panic() {
     let (_, errs) = lex("'", SourceId(0));
     assert_eq!(errs.len(), 1);
 }
+
+// ---- char 'A' literals (raw ASCII) — lexical gaps, Task 3 ---------------
+
+#[test]
+fn char_literals_are_raw_ascii_ints() {
+    assert_eq!(toks("'A'"), vec![Tok::Int(65), Tok::Eof]);
+    assert_eq!(toks("'a'"), vec![Tok::Int(97), Tok::Eof]);
+    assert_eq!(toks("'0'"), vec![Tok::Int(48), Tok::Eof]);
+    assert_eq!(toks("' '"), vec![Tok::Int(32), Tok::Eof]);
+    assert_eq!(toks("'~'"), vec![Tok::Int(126), Tok::Eof]);
+}
+
+#[test]
+fn char_literal_flows_like_a_plain_int_in_context() {
+    assert_eq!(
+        toks("byte('A')"),
+        vec![Tok::ident("byte"), Tok::LParen, Tok::Int(65), Tok::RParen, Tok::Eof]
+    );
+}
+
+#[test]
+fn char_literal_escapes() {
+    assert_eq!(toks(r"'\n'"), vec![Tok::Int(10), Tok::Eof]);
+    assert_eq!(toks(r"'\t'"), vec![Tok::Int(9), Tok::Eof]);
+    assert_eq!(toks(r"'\\'"), vec![Tok::Int(92), Tok::Eof]);
+    assert_eq!(toks(r"'\''"), vec![Tok::Int(39), Tok::Eof]);
+    assert_eq!(toks(r"'\0'"), vec![Tok::Int(0), Tok::Eof]);
+}
+
+#[test]
+fn char_literal_span_covers_quotes() {
+    let (tokens, _) = lex("'A'", SourceId(0));
+    assert_eq!(tokens[0].span.start, 0);
+    assert_eq!(tokens[0].span.end, 3);
+}
+
+#[test]
+fn empty_char_literal_is_an_error() {
+    let (_, errs) = lex("''", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("empty char literal"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn multi_char_literal_is_an_error() {
+    let (_, errs) = lex("'AB'", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(
+        errs[0].message.contains("single character") && errs[0].message.contains('2'),
+        "was {:?}",
+        errs[0].message
+    );
+}
+
+#[test]
+fn non_ascii_char_literal_is_an_error() {
+    let (_, errs) = lex("'é'", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(
+        errs[0].message.contains("ASCII") || errs[0].message.to_lowercase().contains("ascii"),
+        "was {:?}",
+        errs[0].message
+    );
+}
+
+#[test]
+fn unterminated_char_literal_before_newline_is_an_error() {
+    let (_, errs) = lex("'A\nfoo", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("unterminated"), "was {:?}", errs[0].message);
+    // lexing resyncs: the newline and `foo` still lex normally afterward.
+    let (tokens, _) = lex("'A\nfoo", SourceId(0));
+    assert!(tokens.iter().any(|t| t.tok == Tok::ident("foo")));
+}
+
+#[test]
+fn unterminated_char_literal_at_eof_is_an_error() {
+    let (_, errs) = lex("'A", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("unterminated"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn unknown_escape_in_char_literal_is_an_error() {
+    let (_, errs) = lex(r"'\q'", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("unknown escape"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn shadow_register_apostrophe_still_wins_over_char_literal() {
+    // `af'`/`bc'`/`de'`/`hl'` must still lex as single idents — the char-literal
+    // arm only ever fires on a `'` the ident arm did NOT already absorb.
+    assert_eq!(toks("af'"), vec![Tok::ident("af'"), Tok::Eof]);
+    assert_eq!(toks("bc'"), vec![Tok::ident("bc'"), Tok::Eof]);
+    assert_eq!(toks("de'"), vec![Tok::ident("de'"), Tok::Eof]);
+    assert_eq!(toks("hl'"), vec![Tok::ident("hl'"), Tok::Eof]);
+    // A second apostrophe (`af''`) still errors (whatever the exact message).
+    let (_, errs) = lex("af''", SourceId(0));
+    assert_eq!(errs.len(), 1, "second apostrophe should still be an error");
+}
