@@ -336,6 +336,12 @@ impl<'a> Evaluator<'a> {
     /// holding a width-1 run. The single argument must be an array; each element
     /// is range-checked to a byte (`-128..=255`) and stored as a `u8`. Any
     /// out-of-range or non-int element is a diagnostic and poisons the result.
+    ///
+    /// `bytes("HELLO")` (lexical gaps, Task 4) is the other accepted shape: a
+    /// string argument emits its RAW ASCII bytes directly, with NO implicit
+    /// trailing terminator — author-controlled termination is `bytes("HI") ++
+    /// byte(0)` or the `\0` string escape. A non-ASCII character is a
+    /// diagnostic (poisons), matching the Task 3 char-literal ASCII-only rule.
     pub(super) fn eval_bytes(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
         if args.len() != 1 {
             self.error(span, format!("`bytes` expects exactly 1 argument, got {}", args.len()));
@@ -348,6 +354,16 @@ impl<'a> Evaluator<'a> {
         // A leaked return / abort from the argument belongs to the caller.
         if self.aborted || self.pending_return.is_some() {
             return Value::Poison;
+        }
+        if let Value::Str(s) = &arg {
+            return match self.ascii_bytes(s, span) {
+                Some(out) => {
+                    let mut buf = DataBuf::empty();
+                    buf.push(Cell::Bytes(out));
+                    Value::Data(buf)
+                }
+                None => Value::Poison,
+            };
         }
         let elems = match arg {
             Value::Array(elems) => elems,

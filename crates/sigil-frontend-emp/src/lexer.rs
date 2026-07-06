@@ -247,6 +247,11 @@ fn lex_string(src: &str, b: &[u8], mut i: usize, source: SourceId,
                 b't' => val.push('\t'),
                 b'\\' => val.push('\\'),
                 b'"' => val.push('"'),
+                // Author-controlled termination (lexical gaps, Task 4): a
+                // string never gets an implicit trailing 0, but `\0` lets the
+                // author write one explicitly (`"HELLO\0"`). Mirrors
+                // `lex_char`'s escape set.
+                b'0' => val.push('\0'),
                 other => {
                     errs.push(LexError { message: format!("unknown escape \\{}", other as char), span: span(i, i + 2) });
                 }

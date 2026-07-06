@@ -88,6 +88,84 @@ fn char_literal_emits_the_right_byte() {
     assert_eq!(buf.cells, vec![Cell::Scalar { value: 0x41, width: 1, signed: false }]);
 }
 
+// ---- string literals in data position (lexical gaps, Task 4) ------------
+//
+// Ratified decision: string/char literals default to RAW ASCII bytes, and
+// termination is AUTHOR-CONTROLLED — `bytes(...)` NEVER emits an implicit
+// trailing 0. `bytes("HELLO")` is exactly the 5 ASCII bytes; a terminator is
+// only present if the author writes one (`++ byte(0)`, or the `\0` escape).
+
+#[test]
+fn bytes_of_string_emits_raw_ascii_no_terminator() {
+    let src = r#"module m
+data D = bytes("HELLO")
+"#;
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 5, "must NOT include an implicit trailing 0");
+    assert_eq!(buf.cells, vec![Cell::Bytes(vec![0x48, 0x45, 0x4C, 0x4C, 0x4F])]);
+}
+
+#[test]
+fn bytes_of_string_composes_with_an_explicit_terminator() {
+    // Author-controlled termination: `++ byte(0)` is how you ask for one.
+    let src = r#"module m
+data D = bytes("HI") ++ byte(0)
+"#;
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 3);
+    assert_eq!(
+        buf.cells,
+        vec![
+            Cell::Bytes(vec![0x48, 0x49]),
+            Cell::Scalar { value: 0, width: 1, signed: false },
+        ]
+    );
+}
+
+#[test]
+fn bytes_of_string_with_null_escape_emits_explicit_terminator() {
+    // The `\0` escape (Task 4 part 3) is the other author-controlled route to
+    // the same terminator byte, folded straight into the string content.
+    let src = r#"module m
+data D = bytes("HELLO\0")
+"#;
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 6);
+    assert_eq!(buf.cells, vec![Cell::Bytes(vec![0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x00])]);
+}
+
+#[test]
+fn bytes_of_non_ascii_string_is_diagnosed() {
+    // `bytes("é")` must NOT silently emit UTF-8 bytes — ASCII-only, same rule
+    // as the Task 3 char literal.
+    let src = "module m\ndata D = bytes(\"\u{e9}\")\n"; // "é"
+    let (buf, diags) = data(src, "D");
+    assert!(!diags.is_empty(), "expected an ASCII-only diagnostic, got none");
+    assert!(
+        diags.iter().any(|d| d.message.to_lowercase().contains("ascii")),
+        "expected an ASCII-only diagnostic, got {diags:?}"
+    );
+    // The failed conversion poisons silently to an empty buffer.
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn bytes_of_array_is_unchanged_by_the_string_addition() {
+    // Existing array behavior must be untouched.
+    let src = "module m\ndata D = bytes([1, 2, 3])\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 3);
+    assert_eq!(buf.cells, vec![Cell::Bytes(vec![1, 2, 3])]);
+}
+
 // ---- array data items ---------------------------------------------------
 
 #[test]

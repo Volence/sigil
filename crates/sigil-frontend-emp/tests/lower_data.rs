@@ -328,6 +328,96 @@ fn i16_array_shows_the_sentinel_in_terminator_position() {
     assert_eq!(linked_bytes(&module), vec![0x00, 0x0A, 0x00, 0x14, 0xFF, 0xFF]);
 }
 
+// ---- lexical gaps (Task 4): string literals against a byte-array type ---
+//
+// `data Msg: [u8;N] = "HELLO"` — a string literal used directly where the
+// declared type is a fixed-size array of a 1-byte primitive (`u8`/`i8`).
+// Same ASCII-only rule as `bytes(...)`, and the SAME exact-length check an
+// ordinary array literal gets: the author sizes `N` to include any
+// terminator themselves (no implicit trailing 0).
+
+#[test]
+fn string_against_matching_byte_array_type_emits_ascii_bytes() {
+    let (file, perrs) = parse_str("module m\ndata Msg: [u8;5] = \"HELLO\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F]);
+}
+
+#[test]
+fn string_shorter_than_declared_byte_array_is_length_mismatch_error() {
+    // No implicit terminator: a 5-byte string against a 4-byte array is a
+    // plain length mismatch, not a silent truncation.
+    let (file, perrs) = parse_str("module m\ndata Msg: [u8;4] = \"HELLO\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("length mismatch")
+            && d.message.contains('4')
+            && d.message.contains('5')),
+        "expected a length-mismatch diagnostic naming 4 and 5, got {diags:?}"
+    );
+}
+
+#[test]
+fn string_with_null_escape_sized_to_include_terminator_emits_it() {
+    // The author sizes the array to include the `\0` terminator explicitly.
+    let (file, perrs) = parse_str("module m\ndata Msg: [u8;6] = \"HELLO\\0\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x00]);
+}
+
+#[test]
+fn string_against_non_byte_element_array_type_stays_an_error() {
+    // A string is only special-cased for a 1-byte element type; `[u16;N]`
+    // stays the ordinary "expected an array" mismatch.
+    let (file, perrs) = parse_str("module m\ndata Msg: [u16;3] = \"HELLO\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("expected an array") && d.message.contains("string")),
+        "expected an 'expected an array ... got string' diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn string_against_byte_array_rejects_non_ascii() {
+    let src = "module m\ndata Msg: [u8;1] = \"\u{e9}\"\n"; // "é"
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.to_lowercase().contains("ascii")),
+        "expected an ASCII-only diagnostic, got {diags:?}"
+    );
+}
+
+// ---- lexical gaps (Task 4): pointer/symbol-ref non-collision ------------
+//
+// A string in a POINTER-typed field context must stay a SYMBOL NAME
+// (`Cell::SymRef` via `lower_ptr`, unchanged) — the byte-emission path added
+// above must never touch `Ty::Ptr`. Proven with the SAME fixup-shape
+// assertion `symref_makes_abs32_fixup` uses, but the pointer field is
+// initialized with a plain string literal instead of a bare fn name.
+#[test]
+fn string_in_pointer_field_is_still_a_symbol_ref_not_bytes() {
+    let src = "module m\n\
+               struct Obj { code: *u8, flags: u8 }\n\
+               data D: Obj = Obj{ code: \"some_symbol\", flags: 3 }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("some_symbol".into()) }]
+    );
+}
+
 #[test]
 fn u16_neg1_is_rejected_not_wrapped() {
     // The guardrail half of the convention: `u16` does NOT accept `-1` and

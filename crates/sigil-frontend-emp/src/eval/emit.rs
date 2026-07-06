@@ -179,7 +179,20 @@ impl<'a> Evaluator<'a> {
     /// Lower a `[T; n]` array: the value must be a [`Value::Array`] of length
     /// exactly `n` (a mismatch is diagnosed); lower each element against `elem`
     /// and concatenate.
+    ///
+    /// A [`Value::Str`] is accepted here too, but ONLY when `elem` is a 1-byte
+    /// primitive (`u8`/`i8`) — `data Msg: [u8;5] = "HELLO"` (lexical gaps, Task
+    /// 4). This is the byte-context reading of a string literal; it never
+    /// touches [`lower_ptr`], which owns the separate pointer-context reading
+    /// (a string names a SYMBOL there, unchanged). A string against any other
+    /// element type (`[u16;N]`, …) falls through to the ordinary
+    /// "expected an array" mismatch below.
     fn lower_array(&mut self, value: &Value, elem: &Ty, n: usize, span: Span) -> DataBuf {
+        if let Value::Str(s) = value {
+            if matches!(elem, Ty::Prim { width: 1, .. }) {
+                return self.lower_str_as_byte_array(s, n, span);
+            }
+        }
         let Value::Array(elems) = value else {
             self.error(span, format!("expected an array of length {n}, got {}", value.type_name()));
             return DataBuf::empty();
@@ -195,6 +208,50 @@ impl<'a> Evaluator<'a> {
             buf = DataBuf::concat(buf, self.lower_to_data(el, elem, span));
         }
         buf
+    }
+
+    /// Lower a string literal against a `[u8;n]`/`[i8;n]` array type (lexical
+    /// gaps, Task 4): raw ASCII bytes, exact-length checked the SAME way an
+    /// ordinary array literal is (`lower_array`'s length-mismatch diagnostic,
+    /// same wording) — the author sizes `n` to include any terminator; there
+    /// is no implicit trailing 0.
+    fn lower_str_as_byte_array(&mut self, s: &str, n: usize, span: Span) -> DataBuf {
+        let Some(bytes) = self.ascii_bytes(s, span) else {
+            return DataBuf::empty();
+        };
+        if bytes.len() != n {
+            self.error(
+                span,
+                format!("array length mismatch: expected {n} element(s), got {}", bytes.len()),
+            );
+        }
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Bytes(bytes));
+        buf
+    }
+
+    /// Convert a string's characters to raw ASCII bytes (T7/lexical gaps, Task
+    /// 4 — strings default to RAW ASCII in data position). A non-ASCII
+    /// character (any codepoint > 127) is `[emit.non-ascii]`, naming the
+    /// offending character, mirroring the char-literal ASCII-only rule (Task
+    /// 3); scanning stops at the first one and the whole conversion poisons to
+    /// `None`.
+    pub(super) fn ascii_bytes(&mut self, s: &str, span: Span) -> Option<Vec<u8>> {
+        let mut out = Vec::with_capacity(s.len());
+        for ch in s.chars() {
+            if ch.is_ascii() {
+                out.push(ch as u8);
+            } else {
+                self.error(
+                    span,
+                    format!(
+                        "[emit.non-ascii] string byte must be ASCII; {ch:?} is not — use a numeric literal or an escape"
+                    ),
+                );
+                return None;
+            }
+        }
+        Some(out)
     }
 
     /// Lower a tuple: the value must be a [`Value::Tuple`] of matching arity;

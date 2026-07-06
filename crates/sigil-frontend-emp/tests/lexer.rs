@@ -98,6 +98,16 @@ fn string_literals_with_escapes() {
 }
 
 #[test]
+fn string_literal_null_escape() {
+    // Lexical gaps, Task 4 part 3: `\0` in a string literal lexes to a literal
+    // NUL byte, so authors can write an explicit terminator themselves
+    // (`"HELLO\0"`) — no implicit trailing 0 is ever emitted for them.
+    assert_eq!(toks(r#""HELLO\0""#), vec![Tok::Str("HELLO\0".to_string()), Tok::Eof]);
+    // Consistent with the char-literal escape set (`'\0'` already lexes to 0).
+    assert_eq!(toks(r#""a\0b""#), vec![Tok::Str("a\0b".to_string()), Tok::Eof]);
+}
+
+#[test]
 fn bad_dollar_is_an_error() {
     let (_, errs) = lex("$zz", SourceId(0));
     assert_eq!(errs.len(), 1);
