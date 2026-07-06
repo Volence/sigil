@@ -162,14 +162,15 @@ pub struct Evaluator<'a> {
     /// `layout_in_progress`) as a false cycle. Construction/refinement re-entrancy
     /// and size/layout re-entrancy are genuinely different concerns.
     pub(crate) refine_check_in_progress: Vec<String>,
-    /// Monotonic instantiation counter for `asm { }` label hygiene (D-P4.6, T3).
-    /// Each `asm { }` evaluation takes a fresh id `k`, used to rename its
-    /// non-`export` local labels to unique symbols (`$asm{k}$name`) so that two
+    /// Monotonic instantiation counter for `asm { }` / `proc` label hygiene
+    /// (D-P4.6). Each `eval_asm` evaluation takes a fresh id `k`; the
+    /// [`LabelScope`](crate::lower::hygiene::LabelScope) built from it renames
+    /// non-`export` local labels to unique symbols (`$asm{k}$name`) so two
     /// instantiations of the same template never collide, while references to a
     /// `.name` label WITHIN one instantiation rewrite to the same fresh symbol so
-    /// intra-`asm{}` branches still resolve. The FULL hygiene model (`export`
-    /// making a label caller-visible as `Owner.name`, cross-`asm{}` references)
-    /// is T5; T3 only does the minimal counter + rename.
+    /// intra-body branches still resolve. Exported labels take the stable,
+    /// caller-visible `Owner.name` spelling instead (§5.2) — the owner is the
+    /// proc name for a proc body and `k` for a raw `asm { }` (T5).
     asm_counter: u32,
 }
 
@@ -456,21 +457,24 @@ where
 /// `AsmStmt`→`CodeBuf` walk `asm { }` instantiation uses — so proc lowering and
 /// `asm { }` share one operand/label path (D-P4.1). A proc body differs only in
 /// that it is parsed with `splices_allowed = false`, so no `{splice}` ever
-/// appears; the fresh-per-instantiation label rename still applies, letting an
-/// intra-proc `.loop:` reference resolve (the full `Owner.label` external model
-/// is T5). Params are declarative register bindings (§5.1) that emit no code and
-/// need no env seeding — a body's register operand resolves via the register
-/// name directly. Returns `None` only if evaluation did not yield a `Code` value
-/// (it always does today; the guard keeps the seam total).
+/// appears. The proc `name` is the owner scope for label hygiene (T5, §5.2): a
+/// non-export `.loop:` renames fresh per instantiation (an intra-proc reference
+/// still resolves) while an `export .entry:` becomes the caller-visible
+/// `name.entry` other code can `bra` to. Params are declarative register
+/// bindings (§5.1) that emit no code and need no env seeding — a body's register
+/// operand resolves via the register name directly. Returns `None` only if
+/// evaluation did not yield a `Code` value (it always does today; the guard keeps
+/// the seam total).
 pub fn eval_proc_body(
     file: &crate::ast::File,
+    name: &str,
     body: &[ast::AsmStmt],
     span: Span,
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         let mut env = Env::new();
-        match ev.eval_asm(body, span, &mut env) {
+        match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
             Value::Code(buf) => (Some(buf), ev.diags),
             _ => (None, ev.diags),
         }

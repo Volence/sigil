@@ -42,16 +42,7 @@ pub(super) fn stream_data(
     for cell in &buf.cells {
         match cell {
             Cell::Scalar { value, width, .. } => {
-                let w = *width as usize;
-                // The low `width` bytes in the section CPU's byte order. Ranges
-                // were already checked in Plan 3, so truncating to `width` is
-                // exact (a defensive re-check is unnecessary here).
-                let be = &value.to_be_bytes()[16 - w..];
-                match cpu {
-                    Cpu::M68000 => bytes.extend_from_slice(be),
-                    // Z80 is little-endian: reverse the big-endian window.
-                    Cpu::Z80 => bytes.extend(be.iter().rev().copied()),
-                }
+                bytes.extend(encode_scalar(*value, *width, cpu));
             }
             // Single bytes have no byte order — order-neutral, emit verbatim.
             Cell::Bytes(v) => bytes.extend_from_slice(v),
@@ -77,6 +68,20 @@ pub(super) fn stream_data(
     }
 
     (bytes, fixups, diags)
+}
+
+/// Serialize the low `width` bytes of `value` in `cpu`'s byte order (§4.5 / §7.2:
+/// M68000 big-endian, Z80 little-endian). Ranges are checked in Plan 3, so
+/// truncating to `width` is exact. Shared by the [`stream_data`] scalar path and
+/// T5's `patch`/`bind` back-patch ([`super::patch`]) so both commit endianness
+/// through ONE routine.
+pub(super) fn encode_scalar(value: i128, width: u8, cpu: Cpu) -> Vec<u8> {
+    let be = &value.to_be_bytes()[16 - width as usize..];
+    match cpu {
+        Cpu::M68000 => be.to_vec(),
+        // Z80 is little-endian: reverse the big-endian window.
+        Cpu::Z80 => be.iter().rev().copied().collect(),
+    }
 }
 
 /// Select the [`FixupKind`] for a `SymRef` from (`width`, section CPU,

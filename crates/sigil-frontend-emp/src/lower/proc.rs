@@ -48,7 +48,7 @@ pub(super) fn lower_proc(
 ) {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     builder.define_label(&proc.name);
-    let (buf, mut ds) = eval_proc_body(file, &proc.body, proc.span);
+    let (buf, mut ds) = eval_proc_body(file, &proc.name, &proc.body, proc.span);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
     super::lower_code_buf(&buf, cpu, builder, diags);

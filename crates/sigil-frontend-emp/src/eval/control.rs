@@ -161,7 +161,13 @@ impl<'a> Evaluator<'a> {
                     }
                     last = Value::Unit;
                 }
-                // TODO(Plan 4): `patch` / `bind`. No-op for now (kept total).
+                // `patch` / `bind` (§6.4, D-P4.10): the slot + back-patch
+                // mechanism lives in `lower::patch::PatchTable` (T5). These
+                // statements stay no-ops in the Core-free evaluator because the
+                // surface does not yet give a comptime body a section-emission
+                // position to route them into — wiring `Stmt::Patch`/`Stmt::Bind`
+                // to a live section table is a T6/T7 surface-integration concern
+                // (see the `lower::patch` module doc).
                 ast::Stmt::Patch { .. } | ast::Stmt::Bind { .. } => {
                     last = Value::Unit;
                 }

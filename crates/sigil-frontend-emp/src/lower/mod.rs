@@ -10,6 +10,8 @@
 
 mod code;
 mod data;
+pub(crate) mod hygiene;
+pub mod patch;
 mod proc;
 
 pub use code::lower_code_buf;

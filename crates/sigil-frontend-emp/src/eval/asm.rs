@@ -8,57 +8,80 @@
 //! is the `[asm.splice-kind]` diagnostic, naming the expected class and the
 //! value's [`type_name`](Value::type_name) for the "got" side (§6.2 `~describe`).
 //!
-//! Non-`export` labels are renamed fresh per instantiation for hygiene (D-P4.6,
-//! minimal for T3): a monotonic counter `k` on the [`Evaluator`](super::Evaluator)
-//! gives each block a unique id, `.name` → `$asm{k}$name`, and references to
-//! `.name` within the same block rewrite to the same fresh symbol so an
-//! intra-`asm{}` branch resolves. The FULL hygiene model (`export` opt-out,
-//! cross-`asm{}` refs) is T5 — here `export` is only recorded on the label.
+//! Label hygiene (T5, D-P4.6, §5.2/§5.3) is delegated to
+//! [`crate::lower::hygiene`]: a monotonic counter `k` on the
+//! [`Evaluator`](super::Evaluator) gives each instantiation a unique id, and a
+//! [`LabelScope`] maps each source label to its emitted symbol — a non-`export`
+//! `.name:` to the fresh, hidden `$asm{k}$name` (two instantiations never
+//! collide; an intra-body reference rewrites to the same fresh symbol so the
+//! branch resolves), and an `export .name:` to the stable, caller-visible
+//! `Owner.name` (§5.2). The owner is the `proc` name for a proc body and the
+//! instantiation id for a raw `asm { }`. This module only chooses the operand
+//! CLASS and consults the scope; the label-symbol spelling lives in ONE place
+//! (the hygiene module).
 
 use super::{Env, Evaluator};
 use crate::ast::{self, AsmStmt, InstrLine, Operand, TextOrSplice};
+use crate::lower::hygiene::{LabelScope, Owner};
 use crate::parser::expr_span;
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg, Value, Width};
 use sigil_span::Span;
-use std::collections::HashMap;
 
 impl Evaluator<'_> {
-    /// Evaluate an `asm { }` body to a [`Value::Code`]. Two passes: first collect
-    /// this instantiation's non-`export` local labels and assign each a fresh
-    /// renamed symbol; then build one [`CodeItem`] per statement, rewriting label
-    /// references against that rename map. A statement that fails to lower emits a
-    /// diagnostic and is dropped (its `Poison`-equivalent), so one bad line does
-    /// not abort the whole block.
-    pub(super) fn eval_asm(&mut self, body: &[AsmStmt], _span: Span, env: &mut Env) -> Value {
+    /// Evaluate a raw `asm { }` body to a [`Value::Code`]. Its owner scope is the
+    /// instantiation itself (a fresh `k`), so an exported label is stable per
+    /// §5.3 but not caller-nameable — see [`eval_asm_owned`](Self::eval_asm_owned)
+    /// for the proc case (owner = the proc name).
+    pub(super) fn eval_asm(&mut self, body: &[AsmStmt], span: Span, env: &mut Env) -> Value {
+        self.eval_asm_owned(body, span, env, None)
+    }
+
+    /// Evaluate an `asm { }` / `proc` body to a [`Value::Code`]. `owner_name` is
+    /// `Some(proc)` for a proc body (its exported labels are caller-visible as
+    /// `proc.name`, §5.2) and `None` for a raw `asm { }` (owner = the
+    /// instantiation id). Build the [`LabelScope`] first (mapping every source
+    /// label to its emitted symbol via the hygiene model), then build one
+    /// [`CodeItem`] per statement, resolving label references against that scope.
+    /// A statement that fails to lower emits a diagnostic and is dropped (its
+    /// `Poison`-equivalent), so one bad line does not abort the whole block.
+    pub(super) fn eval_asm_owned(
+        &mut self,
+        body: &[AsmStmt],
+        _span: Span,
+        env: &mut Env,
+        owner_name: Option<&str>,
+    ) -> Value {
         let k = self.asm_counter;
         self.asm_counter += 1;
+        let owner = match owner_name {
+            Some(name) => Owner::Proc(name.to_string()),
+            None => Owner::Asm(k),
+        };
 
-        // Pass 1: non-`export` label names → fresh unique symbols.
-        let mut renames: HashMap<String, String> = HashMap::new();
-        for stmt in body {
-            if let AsmStmt::Label { name, export, .. } = stmt {
-                if !export {
-                    renames.entry(name.clone()).or_insert_with(|| format!("$asm{k}${name}"));
-                }
-            }
-        }
+        // Resolve every source label to its emitted symbol up front (export →
+        // `Owner.name`, non-export → fresh `$asm{k}$name`).
+        let scope = LabelScope::build(
+            &owner,
+            k,
+            body.iter().filter_map(|stmt| match stmt {
+                AsmStmt::Label { name, export, .. } => Some((name.as_str(), *export)),
+                _ => None,
+            }),
+        );
 
-        // Pass 2: build the resolved item list.
+        // Build the resolved item list.
         let mut buf = CodeBuf::empty();
         for stmt in body {
             match stmt {
                 AsmStmt::Label { name, export, span } => {
-                    let out_name = if *export {
-                        // T5 owns the caller-visible `Owner.name` spelling; T3 only
-                        // records `export` and keeps the label's own name.
-                        name.clone()
-                    } else {
-                        renames[name].clone()
-                    };
-                    buf.push(CodeItem::Label { name: out_name, export: *export, span: *span });
+                    buf.push(CodeItem::Label {
+                        name: scope.label_def(name),
+                        export: *export,
+                        span: *span,
+                    });
                 }
                 AsmStmt::Instr(instr) => {
-                    if let Some(item) = self.lower_instr_to_item(instr, &renames, env) {
+                    if let Some(item) = self.lower_instr_to_item(instr, &scope, env) {
                         buf.push(item);
                     }
                 }
@@ -89,14 +112,14 @@ impl Evaluator<'_> {
     fn lower_instr_to_item(
         &mut self,
         instr: &InstrLine,
-        renames: &HashMap<String, String>,
+        scope: &LabelScope,
         env: &mut Env,
     ) -> Option<CodeItem> {
         let mnemonic = self.resolve_mnemonic(&instr.mnemonic, env)?;
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
         let mut ops = Vec::with_capacity(instr.operands.len());
         for op in &instr.operands {
-            ops.push(self.map_operand(op, renames, env)?);
+            ops.push(self.map_operand(op, scope, env)?);
         }
         Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span })
     }
@@ -167,7 +190,7 @@ impl Evaluator<'_> {
     fn map_operand(
         &mut self,
         op: &Operand,
-        renames: &HashMap<String, String>,
+        scope: &LabelScope,
         env: &mut Env,
     ) -> Option<CodeOperand> {
         match op {
@@ -187,7 +210,7 @@ impl Evaluator<'_> {
                     }
                 }
             }
-            Operand::Plain { expr, .. } => self.map_plain(expr, renames, env),
+            Operand::Plain { expr, .. } => self.map_plain(expr, scope, env),
             Operand::Ind { parts, span, .. } => {
                 let r = self.ind_single_reg(parts, *span, env)?;
                 Some(CodeOperand::Ind(r))
@@ -223,13 +246,24 @@ impl Evaluator<'_> {
     }
 
     /// Map a bare (`Plain`) operand expression. A single-segment path names a
-    /// register (→ [`CodeOperand::Reg`]) or, failing that, a symbol / `.local`
-    /// label (→ [`CodeOperand::Sym`], rewritten against `renames`). Anything else
-    /// is evaluated and classified like an operand splice.
+    /// register (→ [`CodeOperand::Reg`]) or, failing that, a `.local` / global
+    /// symbol (→ [`CodeOperand::Sym`], resolved against `scope`). A MULTI-segment
+    /// path is an external label reference `Owner.label` (§5.2, e.g.
+    /// `bra.w foo.entry`): join it dot-wise and resolve against `scope` — it is
+    /// not a local label, so it passes through as the caller-visible symbol the
+    /// defining owner exported. Anything else is evaluated and classified like an
+    /// operand splice.
+    ///
+    /// NOTE — this CHANGED prior behavior (T5): before, a bare multi-segment path
+    /// fell through to `eval_expr` / value-path evaluation; now ANY bare path is a
+    /// symbol reference. A comptime VALUE path in operand position must be written
+    /// as `#expr` (`Operand::Imm`) or a `{splice}` (`Operand::Splice`) — so a
+    /// future reader wondering why `move.l some.const, d0` is treated as a symbol
+    /// `some.const` rather than that const's value is oriented here.
     fn map_plain(
         &mut self,
         expr: &ast::Expr,
-        renames: &HashMap<String, String>,
+        scope: &LabelScope,
         env: &mut Env,
     ) -> Option<CodeOperand> {
         if let ast::Expr::Path(p) = expr {
@@ -238,8 +272,11 @@ impl Evaluator<'_> {
                 if let Some(r) = reg_from_name(seg) {
                     return Some(CodeOperand::Reg(r));
                 }
-                return Some(CodeOperand::Sym(resolve_sym(seg, renames)));
+                return Some(CodeOperand::Sym(scope.resolve_ref(seg)));
             }
+            // `Owner.label` — a cross-body reference to an exported label. Join the
+            // segments to the `Owner.label` spelling the defining owner emitted.
+            return Some(CodeOperand::Sym(scope.resolve_ref(&p.segments.join("."))));
         }
         let v = self.eval_expr(expr, env);
         self.classify_operand_splice(v, expr_span(expr))
@@ -358,18 +395,6 @@ fn reg_from_name(name: &str) -> Option<Reg> {
         "a7" => Reg::A7,
         _ => return None,
     })
-}
-
-/// Rewrite a symbol/label reference against the instantiation's rename map: a
-/// `.local` (or bare) name whose key is a renamed local label resolves to the
-/// fresh symbol; an external symbol passes through unchanged.
-fn resolve_sym(name: &str, renames: &HashMap<String, String>) -> String {
-    let key = name.strip_prefix('.').unwrap_or(name);
-    // TODO(T5 hygiene): an undefined `.local` reference (no matching label in
-    // this instantiation) currently keeps its bare `.name` and surfaces only as
-    // an unresolved symbol at link. Full hygiene (T5) should diagnose it at eval
-    // time as an unknown local label.
-    renames.get(key).cloned().unwrap_or_else(|| name.to_string())
 }
 
 /// The span of an operand, for diagnostics on the inner-operand paths.
