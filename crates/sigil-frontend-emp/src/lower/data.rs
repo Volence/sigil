@@ -19,6 +19,11 @@
 //! `BankPtr16Be` (a 68k reference to a Z80 bank pointer) was added in T6 (D-P4.7)
 //! alongside its Core [`FixupKind`] variant — the big-endian counterpart of
 //! `BankPtr16Le`.
+//!
+//! A [`Cell::RelOffset`] (an offset-table entry) does NOT go through
+//! `fixup_kind`: it always emits a fixed-width `RelWord16Be` (68k big-endian
+//! signed word) carrying a symbol *difference* `target - base`; a Z80 section is
+//! the `[offsets.non-68k]` error.
 
 use crate::value::{Cell, DataBuf};
 use sigil_ir::backend::Cpu;
@@ -78,6 +83,9 @@ pub(super) fn stream_data(
                     bytes.resize(bytes.len() + 2, 0);
                     continue;
                 }
+                // The reserved hole is tied to the fixup kind's width so the two
+                // never drift, mirroring the `SymRef` arm's invariant.
+                debug_assert_eq!(2, FixupKind::RelWord16Be.byte_width() as usize);
                 fixups.push(Fixup {
                     kind: FixupKind::RelWord16Be,
                     offset: bytes.len() as u32,

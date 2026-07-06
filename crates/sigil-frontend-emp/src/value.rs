@@ -187,8 +187,8 @@ pub enum Cell {
 }
 
 impl Cell {
-    /// The cell's byte size: a scalar/symref is its `width`, a byte run is its
-    /// length.
+    /// The cell's byte size: a scalar/symref is its `width`, a `RelOffset` is a
+    /// fixed 2-byte word, a byte run is its length.
     pub fn byte_size(&self) -> usize {
         match self {
             Cell::Scalar { width, .. } | Cell::SymRef { width, .. } => *width as usize,
