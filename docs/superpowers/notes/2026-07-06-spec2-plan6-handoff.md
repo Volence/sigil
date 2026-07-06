@@ -35,13 +35,13 @@ spec): how `sigil-frontend-as` and `sigil-frontend-emp` modules combine at the l
 whether there is a shared section/symbol namespace to merge them.
 
 ### Option 2 — promote a follow-up BEFORE Plan 6 (some are near-prerequisites)
-Sequence these with Volence; the first is arguably a real prerequisite for any live porting:
-1. **emp-compile CLI command (likely a prerequisite).** There is NO `sigil build --emp <file>` path
-   yet — `embed`/`import` only work through `lower_module` with a test-set `include_root`; through the
-   production CLI they'd hit `[sandbox.no-root]`. A CLI entry that parses a `.emp` file, sets
-   `include_root` from the source file's parent (canonicalized/absolutized — see the Plan-5 T5 review
-   note about relative-root cwd-dependence), lowers, and emits a `.bin` makes the sandbox usable for
-   real work. Small-to-moderate; `LowerOptions.include_root` already exists.
+Sequence these with Volence:
+1. **emp-compile CLI command — ✅ DONE (landed post-Plan-5, master `6d1dbcc`).** `sigil emp
+   <input.emp> [-o <output.bin>] [--hex]` parses → `lower_module` (with `include_root` = the source
+   file's canonicalized parent dir, so comptime `embed`/`import` resolve, §6.7) → `resolve_layout` →
+   `link` → `flatten`. Reviewed (APPROVED); the include-root derivation is regression-guarded by a
+   relative-path subprocess test (`crates/sigil-cli/tests/subcommands.rs`). So a `.emp` file can now be
+   compiled to a `.bin` from the CLI end-to-end — the prerequisite for live porting is satisfied.
 2. **Reserve `math`/`as` as declaration names** (parser follow-up). Today a user `enum math`/`let as`
    parses, and a 2-segment CALL like `math.Red(x)` is hijacked to the float namespace →
    `[float-ns.unknown]` (an error, never silently wrong — see `call.rs`'s documented limitation).
