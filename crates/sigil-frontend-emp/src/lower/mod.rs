@@ -17,7 +17,7 @@ mod proc;
 pub use code::lower_code_buf;
 
 use crate::ast;
-use crate::layout::{eval_attr_int, eval_data_with_root};
+use crate::layout::{eval_attr_int, eval_data_with_root, eval_offsets_with_root};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
 use sigil_span::{Diagnostic, Level, Span};
@@ -68,6 +68,13 @@ struct Placement<'a> {
 pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagnostic>) {
     let mut builder = IrBuilder::new();
     let mut diags = Vec::new();
+
+    // Whole-file comptime validation that must fire exactly ONCE per compile
+    // (not per per-item evaluator): duplicate `offsets` members. The evaluator's
+    // `index_items` populates the offsets map on EVERY `with_file` construction
+    // (once per data item / proc), so reporting there would duplicate the
+    // diagnostic; this driver runs once.
+    validate_offsets(&file.items, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -128,6 +135,20 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
+                );
+            }
+            ast::Item::Offsets(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
+                lower_offsets_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        include_root: opts.include_root.as_deref(),
+                    },
+                    &mut builder,
+                    &mut diags,
                 );
             }
             ast::Item::Section(sec) => {
@@ -194,6 +215,9 @@ fn lower_section_items(
             ast::Item::Data(decl) => {
                 lower_data_item(file, decl, placement, builder, diags);
             }
+            ast::Item::Offsets(decl) => {
+                lower_offsets_item(file, decl, placement, builder, diags);
+            }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
                 proc::lower_proc(
@@ -225,6 +249,30 @@ fn lower_data_item(
     let here_base = placement.origin + builder.current_offset();
     let (buf, mut ds) =
         eval_data_with_root(file, &decl.name, Some(here_base), placement.include_root);
+    diags.append(&mut ds);
+    let Some(buf) = buf else { return };
+
+    let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
+    diags.append(&mut stream_diags);
+    builder.define_label(&decl.name);
+    builder.emit_data(&bytes, fixups, decl.span);
+}
+
+/// Lower one `offsets` block (Spec 2, Plan 7 backlog #3 — Task 6, the FORWARD
+/// direction): evaluate its members to a [`Cell::RelOffset`](crate::value::Cell)
+/// per entry, serialize them (each a `dc.w target - base` `RelWord16Be` word),
+/// define the table's base label at its first byte, then emit the bytes +
+/// fixups. Unlike [`lower_data_item`] there is no `here_base`: a `RelOffset`
+/// resolves against the SYMBOLIC base label `decl.name`, folded at link time —
+/// not against a physical `here()` position.
+fn lower_offsets_item(
+    file: &ast::File,
+    decl: &ast::OffsetsDecl,
+    placement: &Placement,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -286,4 +334,44 @@ fn attr_cpu(expr: &ast::Expr) -> Cpu {
 /// Push an error diagnostic at `span`.
 fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
     diags.push(Diagnostic { level: Level::Error, message, primary: span });
+}
+
+/// Once-per-compile validation of `offsets` blocks. Two hard errors: (1) a
+/// duplicate member name makes the reverse-direction ordinal ambiguous
+/// (`Name.Variant` resolution silently picks the first match); (2) a member
+/// named `count` collides with the reserved `Name.count` pseudo-member (the
+/// entry count), which `eval_path` resolves before members, so it would be
+/// silently unreachable. Both violate the totality tenet (no silent wrong
+/// answers). Reported HERE rather than in the evaluator's `index_items` because
+/// that runs per per-item evaluator (once per data item / proc) and would emit
+/// the diagnostic N times. Recurses into `section {}` blocks so a
+/// section-nested `offsets` is checked exactly like a top-level one (mirroring
+/// `index_items`' flat namespace).
+fn validate_offsets(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    for item in items {
+        match item {
+            ast::Item::Offsets(decl) => {
+                let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                for m in &decl.members {
+                    // `count` is a reserved pseudo-member: `Name.count` names the
+                    // table's entry count in `eval_path`. Reject a real member
+                    // named `count` rather than let it be silently unreachable
+                    // (the totality tenet — no silent wrong answers).
+                    if m.name == "count" {
+                        err(
+                            diags,
+                            m.span,
+                            "offset entry `count` is reserved (it names the table's entry count)"
+                                .to_string(),
+                        );
+                    }
+                    if !seen.insert(m.name.as_str()) {
+                        err(diags, m.span, format!("duplicate offset entry `{}`", m.name));
+                    }
+                }
+            }
+            ast::Item::Section(sec) => validate_offsets(&sec.items, diags),
+            _ => {}
+        }
+    }
 }

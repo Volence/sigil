@@ -554,6 +554,10 @@ impl<'a> Evaluator<'a> {
                     self.error(span, "[zx0.symbolic] zx0 input has an unresolved symbol reference");
                     return Value::Poison;
                 }
+                Cell::RelOffset { .. } => {
+                    self.error(span, "[zx0.symbolic] zx0 input has an unresolved offset-table entry");
+                    return Value::Poison;
+                }
             }
         }
         if input.len() > 0xFFFF {

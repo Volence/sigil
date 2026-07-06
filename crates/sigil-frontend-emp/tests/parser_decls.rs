@@ -186,6 +186,16 @@ fn struct_decl_with_size_offsets_defaults() {
 }
 
 #[test]
+fn offsets_decl_parses_members() {
+    let f = ok("module m\noffsets Map { Idle: frame_idle, Shoot: frame_shoot }\n");
+    let Item::Offsets(o) = &f.items[0] else { panic!() };
+    assert_eq!(o.name, "Map");
+    assert_eq!(o.members.len(), 2);
+    assert_eq!(o.members[0].name, "Idle");
+    assert_eq!(o.members[1].name, "Shoot");
+}
+
+#[test]
 fn vars_region_and_overlay_forms() {
     // region form: `vars upper_ram { ... }`
     let f = ok("module m\nvars upper_ram {\n    Player_Pos_Ring: [u8; 256] @align(256),\n}\n");

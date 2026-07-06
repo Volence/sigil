@@ -97,6 +97,13 @@ pub struct Evaluator<'a> {
     /// [`resolve_data`](Self::resolve_data) lowers these to a checked
     /// [`DataBuf`](crate::value::DataBuf).
     pub(crate) datas: HashMap<&'a str, &'a ast::DataDecl>,
+    /// File-level `offsets` decls, indexed by name (empty in no-file mode).
+    /// Spec 2 Plan 7 backlog #3 (reverse direction): [`eval::expr`](expr)'s
+    /// `eval_path` resolves `Name.Variant` to the member's 0-based ordinal and
+    /// `Name.count` to `decl.members.len()` — plain comptime ints, mirroring how
+    /// [`enums`](Self::enums) resolves `Enum.Variant`. Forward emission
+    /// (`dc.w target - Name`) is a separate, later task.
+    pub(crate) offsets: HashMap<&'a str, &'a ast::OffsetsDecl>,
     /// Memoized struct layouts, keyed by struct name — the layout analogue of
     /// [`const_memo`](Self::const_memo). A zero-size Poisoned layout records a
     /// struct that already failed (cyclic layout) so it does not re-report.
@@ -213,6 +220,7 @@ impl<'a> Evaluator<'a> {
             bitfields: HashMap::new(),
             newtypes: HashMap::new(),
             datas: HashMap::new(),
+            offsets: HashMap::new(),
             struct_layout_memo: HashMap::new(),
             bitfield_layout_memo: HashMap::new(),
             layout_in_progress: Vec::new(),
@@ -276,10 +284,29 @@ impl<'a> Evaluator<'a> {
                 ast::Item::Data(d) => {
                     self.datas.insert(d.name.as_str(), d);
                 }
+                ast::Item::Offsets(o) => {
+                    // Index for `Name.Variant` / `Name.count` resolution in
+                    // `eval_path`. Every per-item evaluator re-indexes the whole
+                    // file, so this MUST stay here — but duplicate-member ERROR
+                    // reporting must NOT (it would fire once per per-item
+                    // evaluator); that check lives once-per-compile in
+                    // `lower::validate_offsets`.
+                    self.offsets.insert(o.name.as_str(), o);
+                }
                 ast::Item::Section(s) => self.index_items(&s.items),
                 _ => {}
             }
         }
+    }
+
+    /// Whether `name` is a file-level `const` (the same table `eval_path`
+    /// consults). Exposed for `offsets` forward lowering
+    /// ([`eval_offsets_with_root`](crate::layout::eval_offsets_with_root)) to
+    /// give a const-alias target a clear early diagnostic — a `const` is not a
+    /// valid offsets label. A read-only membership check, so the `consts` field
+    /// itself stays private.
+    pub(crate) fn is_const(&self, name: &str) -> bool {
+        self.consts.contains_key(name)
     }
 
     /// Push an [`Error`](Level::Error) diagnostic at `span`.

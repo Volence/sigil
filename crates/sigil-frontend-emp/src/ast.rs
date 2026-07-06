@@ -57,6 +57,8 @@ pub enum Item {
     Bitfield(BitfieldDecl),
     /// `struct ...` declaration.
     Struct(StructDecl),
+    /// `offsets ...` declaration.
+    Offsets(OffsetsDecl),
     /// `vars ...` declaration.
     Vars(VarsDecl),
     /// `data ...` declaration.
@@ -198,6 +200,32 @@ pub struct StructField {
     /// Default value, e.g. the `0` in `= 0`.
     pub default: Option<Expr>,
     /// Span of the whole field.
+    pub span: Span,
+}
+
+/// An `offsets Name { Variant: target, ... }` block: a bidirectional offset
+/// table. Forward: emits `dc.w target - Name` per member. Reverse: introduces
+/// the comptime ordinal constants `Name.Variant` (0-based) and `Name.count`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OffsetsDecl {
+    /// Whether this offsets block is exported (`pub offsets`).
+    pub public: bool,
+    /// The offset table's name.
+    pub name: String,
+    /// The table's members, in declaration order.
+    pub members: Vec<OffsetsMember>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// One `Variant: target` entry of an [`OffsetsDecl`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct OffsetsMember {
+    /// The ordinal's name (`Name.Variant`).
+    pub name: String,
+    /// The target label reference (a path expression).
+    pub target: Expr,
+    /// Span of the whole member.
     pub span: Span,
 }
 

@@ -19,7 +19,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SymbolTable};
-use sigil_span::Level;
+use sigil_span::{Diagnostic, Level};
 
 /// Assemble a single `.asm` source string through the AS front-end in isolation
 /// (68k mode — the ports are 68k `dc.b` data), link with an empty external
@@ -55,6 +55,39 @@ fn emp_candidate(emp: &str) -> Vec<u8> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("emp link failed: {d:?}"));
     sigil_link::flatten(&linked, 0x00)
+}
+
+/// Like [`emp_candidate`], but for the offsets-totality proof (Spec 2, Plan 7
+/// backlog #3, Task 8): the `RelWord16Be` signed-word-range check lives in
+/// `sigil_link::link`, so a genuinely overflowing offset table is a
+/// `resolve_layout`/`link`-stage `Err`, not a panic. Parse and lower are still
+/// expected to succeed (an offsets overflow is a LINK-time fact — nothing
+/// upstream can see it), so those two stages still assert clean and panic with
+/// their diagnostics on failure, exactly like `emp_candidate`; only the
+/// `resolve_layout`/`link` seam returns its diagnostics to the caller instead
+/// of unwrapping them. Returns an empty `Vec` if compilation fully succeeds
+/// (so a test asserting a specific error message still fails informatively
+/// rather than panicking here).
+fn emp_link_diags(emp: &str) -> Vec<Diagnostic> {
+    let (file, pdiags) = parse_str(emp);
+    assert!(
+        pdiags.iter().all(|d| d.level != Level::Error),
+        "emp parse errors: {pdiags:?}"
+    );
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != Level::Error),
+        "emp lower errors: {ldiags:?}"
+    );
+    let resolved = match sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true) {
+        Ok(sections) => sections,
+        Err(diags) => return diags,
+    };
+    match sigil_link::link(&resolved, &SymbolTable::new()) {
+        Ok(_) => Vec::new(),
+        Err(diags) => diags,
+    }
 }
 
 /// Assert two byte streams are identical, reporting the first differing offset
@@ -227,5 +260,182 @@ fn mixed_build_cross_seam_name_collision_errors() {
             && d.message.contains("Song_DrumTest")
             && d.message.contains("redefined")),
         "expected a `Song_DrumTest redefined` error, got: {err:?}"
+    );
+}
+
+/// Plan 7 backlog #3 (Task 6) — the FORWARD direction of an `offsets` block:
+/// it emits one `dc.w target - base` word per member and defines its base label
+/// at the table's first byte. Three offset words (6 bytes) precede three
+/// one-byte data items, so `frame0`@6, `frame1`@7, `frame2`@8, and the words
+/// resolve to `frame{n} - Map` = 6, 7, 8 (signed word, big-endian).
+#[test]
+fn offsets_forward_emits_word_offsets() {
+    let emp = "module m\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 offsets Map { F0: frame0, F1: frame1, F2: frame2 }\n\
+                 data frame0: [u8; 1] = [$11]\n\
+                 data frame1: [u8; 1] = [$22]\n\
+                 data frame2: [u8; 1] = [$33]\n\
+               }\n";
+    let bytes = emp_candidate(emp);
+    assert_eq!(bytes, vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x11, 0x22, 0x33]);
+}
+
+/// Plan 7 backlog #3 (Task 7) — byte-diff cross-check of the `offsets` FORWARD
+/// direction against the AS front-end's OWN (independent) computation of
+/// `dc.w Target-Base`.
+///
+/// A throwaway probe (since deleted) confirmed `directive_dc_w`'s
+/// `Target-Base` operand folds cleanly here: on the converged pass both `Map`
+/// and each `F{n}` label are already in the seeded env, so `self.fold(&qe)`
+/// resolves the whole subtraction to a concrete `Fold::Value` — no
+/// `Fixup`/poison path is exercised, and no "unresolved word expression" error
+/// fires. So the AS reference below is a genuine second, independent
+/// computation of the same offsets (not a hand-computed golden standing in for
+/// one), which is what makes this a real cross-check rather than a tautology.
+///
+/// Layout (both sides): `Map` labels the table's first byte (address 0). Three
+/// `dc.w` entries = 6 bytes occupy addresses 0..6, so `F0`@6, `F1`@7, `F2`@8 —
+/// matching `offsets_forward_emits_word_offsets` above bit-for-bit, so the AS
+/// and emp sides describe the identical layout.
+#[test]
+fn offsets_byte_identical_to_as_reference() {
+    let asm = "Map:\n\
+               \tdc.w F0-Map, F1-Map, F2-Map\n\
+               F0:\n\
+               \tdc.b $11\n\
+               F1:\n\
+               \tdc.b $22\n\
+               F2:\n\
+               \tdc.b $33\n";
+    let reference = as_reference(asm);
+    // Sanity-check the independent AS computation against the hand worked-out
+    // layout before using it as the byte-diff golden.
+    assert_eq!(reference, vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x11, 0x22, 0x33]);
+
+    let emp = "module m\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 offsets Map { F0: frame0, F1: frame1, F2: frame2 }\n\
+                 data frame0: [u8; 1] = [$11]\n\
+                 data frame1: [u8; 1] = [$22]\n\
+                 data frame2: [u8; 1] = [$33]\n\
+               }\n";
+    let candidate = emp_candidate(emp);
+    assert_byte_identical(&reference, &candidate, "offsets vs AS dc.w Target-Base");
+}
+
+/// Plan 7 backlog #3 (Task 7) — the NEGATIVE-offset case: a member whose
+/// target is defined BEFORE the offsets block's own base label, so
+/// `target - base` is negative and must round-trip through two's-complement
+/// as a signed 16-bit word.
+///
+/// Layout: `Zero` (2 bytes, `$99,$88`) sits at addresses 0..2. `Map` (the
+/// offsets base) labels the table's first byte, right after `Zero`, at
+/// address 2 — deliberately EVEN, so `directive_dc_w`'s own word-alignment
+/// padding (it pads to an even address before emitting, independent of any
+/// `padding off` convention) is a no-op and doesn't perturb the layout being
+/// tested. The lone member's target is `Zero`, so the word is
+/// `Zero - Map = 0 - 2 = -2`, which as a big-endian `i16` is `0xFF 0xFE`. A
+/// trailing `Pad` byte (`$00`) at address 4 proves nothing after the table got
+/// perturbed (no implicit padding under the emp/AS `padding off` convention).
+#[test]
+fn offsets_negative_forward_offset_byte_identical_to_as_reference() {
+    let asm = "Zero:\n\
+               \tdc.b $99, $88\n\
+               Map:\n\
+               \tdc.w Zero-Map\n\
+               Pad:\n\
+               \tdc.b $00\n";
+    let reference = as_reference(asm);
+    assert_eq!(reference, vec![0x99, 0x88, 0xFF, 0xFE, 0x00]);
+
+    let emp = "module m\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 data zero: [u8; 2] = [$99, $88]\n\
+                 offsets Map { Z: zero }\n\
+                 data pad: [u8; 1] = [$00]\n\
+               }\n";
+    let candidate = emp_candidate(emp);
+    assert_byte_identical(&reference, &candidate, "offsets negative offset vs AS dc.w Target-Base");
+}
+
+/// Plan 7 backlog #3 (Task 8) — TOTALITY: an offset that overflows the signed
+/// 16-bit word range is a COMPILE ERROR, not a silently-wrapped/truncated
+/// value. `RelWord16Be` accepts `target - base` in `-$8000..=$7FFF`; this test
+/// forces `target - base` to `$8002` (well past `+$7FFF`) by inserting a
+/// 32768-byte data run (`pad`) between the offsets block's own base label
+/// (`Tbl`, at offset 0) and its target (`far`).
+///
+/// The 32768-byte run is built from a range (`0..32768`) mapped to the byte
+/// `0` — `(0..32768).map(|_| 0)` does not parse directly (a parenthesized
+/// receiver is not a path — method calls require a path/const receiver, see
+/// `eval_builtins.rs`'s equivalent workaround), so the range and the mapped
+/// array are bound to consts first, then referenced by name from the `data`
+/// item — there is no array-repeat LITERAL syntax in the language, but this
+/// comptime `map` over a `Range` is the ergonomic equivalent and comfortably
+/// inside the 5,000,000-step comptime budget.
+///
+/// Layout: `Tbl` (the offsets base) at offset 0, its own 2-byte word at
+/// offset 0..2, `pad` at offset 2..32770, `far` at offset 32770. So
+/// `far - Tbl = 32770 = $8002`, past `+$7FFF` by 3 — a genuine overflow, not
+/// an off-by-one artifact of the boundary itself.
+#[test]
+fn offsets_overflow_is_a_compile_error() {
+    let emp = "module m\n\
+               const PadRange = 0..32768\n\
+               const PadArr = PadRange.map(|_| 0)\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 offsets Tbl { Far: far }\n\
+                 data pad: [u8; 32768] = PadArr\n\
+                 data far: [u8; 1] = [$99]\n\
+               }\n";
+    let diags = emp_link_diags(emp);
+    assert!(
+        diags.iter().any(|d| d.message.contains("signed-word range")),
+        "expected a signed-word-range diagnostic, got: {diags:?}"
+    );
+}
+
+/// Plan 7 backlog #3 (Task 8) — an `offsets` REVERSE ordinal (`Map.Seed`) is a
+/// plain comptime int usable anywhere one is expected, including as an
+/// ordinary emitted data byte — not merely inside a `const` expression (which
+/// `eval_offsets.rs` already covers). `Map` declares three members in order
+/// (`Idle`=0, `Shoot`=1, `Seed`=2); `Id` emits `Map.Seed` (2) as a `[u8; 1]`
+/// data byte, landing as the image's LAST byte after the 3 offset words (6B)
+/// and the 3 one-byte targets (3B).
+#[test]
+fn offsets_ordinal_usable_as_byte() {
+    let emp = "module m\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 offsets Map { Idle: a, Shoot: b, Seed: c }\n\
+                 data a: [u8; 1] = [$11]\n\
+                 data b: [u8; 1] = [$22]\n\
+                 data c: [u8; 1] = [$33]\n\
+                 data Id: [u8; 1] = [Map.Seed]\n\
+               }\n";
+    let bytes = emp_candidate(emp);
+    // 3 offset words (6B) + a,b,c (3B) + Id (1B == Map.Seed == 2).
+    assert_eq!(
+        bytes,
+        vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x11, 0x22, 0x33, 0x02]
+    );
+    assert_eq!(bytes.last(), Some(&0x02));
+}
+
+/// Plan 7 backlog #3 (Task 8) — the documented `examples/offset_table.emp`
+/// (both `offsets` directions, in the house style of `examples/pitcher_plant
+/// .emp`) actually compiles end-to-end through the full modern pipeline, not
+/// merely parses. Mirrors how `song_drumtest.emp` is pulled in above
+/// (`include_str!`, relative to this test file).
+#[test]
+fn example_offset_table_compiles() {
+    let src = include_str!("../../../examples/offset_table.emp");
+    let bytes = emp_candidate(src);
+    assert!(!bytes.is_empty());
+    // Spot-check the documented layout so a silent regression can't pass this:
+    // 3 offset words (6B) + 3 one-byte targets + CurrentState + StateCount.
+    assert_eq!(
+        bytes,
+        vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x00, 0x01, 0x02, 0x00, 0x03]
     );
 }

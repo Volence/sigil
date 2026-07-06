@@ -213,6 +213,22 @@ impl<'a> Evaluator<'a> {
                 self.error(path.span, format!("enum `{a}` has no variant `{b}`"));
                 return Value::Poison;
             }
+            // Step 3: an `Offsets.Member` comptime ordinal, or `Offsets.count`
+            // (Spec 2 Plan 7 backlog #3, reverse direction). Unlike an
+            // `Enum.Variant`, these are plain comptime ints (`Value::Int`), NOT a
+            // distinct value/type — `offsets` introduces no new type, only named
+            // constants. Forward emission (`dc.w target - Name`) is a separate,
+            // later task; this is purely name resolution.
+            if let Some(decl) = self.offsets.get(a) {
+                if b == "count" {
+                    return Value::Int(decl.members.len() as i128);
+                }
+                if let Some(index) = decl.members.iter().position(|m| m.name == b) {
+                    return Value::Int(index as i128);
+                }
+                self.error(path.span, format!("offsets `{a}` has no member `{b}`"));
+                return Value::Poison;
+            }
         }
         // Any other multi-segment path (module paths, unknown enums) is an
         // unknown name for now; later plans resolve `use`d/module paths.

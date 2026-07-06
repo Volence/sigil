@@ -1,0 +1,67 @@
+// ===========================================================================
+// OFFSET TABLE — the `offsets Name { Variant: target, ... }` construct
+// ===========================================================================
+// Demonstrates BOTH directions of `offsets` (Spec 2, Plan 7 backlog #3):
+//
+//   FORWARD (`AttackTable` itself, used as a label): emits one
+//   `dc.w target - AttackTable` word per member, in declaration order — the
+//   classic 68k "offset table" used to dispatch on a small index (e.g.
+//   `move.w (AttackTable,d1.w), d1` / `jmp (AttackTable,d1.w)`-style idioms).
+//   The legacy hand-written form was:
+//
+//       AttackTable:
+//           dc.w Attack_Idle   - AttackTable
+//           dc.w Attack_Windup - AttackTable
+//           dc.w Attack_Fire   - AttackTable
+//
+//   — two chances to typo the base label on every line, and reordering or
+//   inserting a member means manually recounting every place that names an
+//   index into it (see REVERSE, below). Here the base label, each member's
+//   target expression, and the word's range check (±$7FFF — a COMPILE ERROR
+//   past that, not a silently-wrapped offset) are all handled by the
+//   compiler; the table can be reordered freely with no external bookkeeping.
+//
+//   REVERSE (`AttackTable.Variant`): a comptime ordinal — the ZERO-BASED
+//   index of `Variant` in declaration order, usable anywhere a plain int is
+//   (arithmetic, another data byte, a case value, ...). This replaces a
+//   hand-synced constant block that had to be kept in lockstep with the table
+//   by eye:
+//
+//       AttackState_Idle   = 0
+//       AttackState_Windup = 1
+//       AttackState_Fire   = 2
+//
+//   `AttackTable.count` is the reserved pseudo-member: the member count (3
+//   here) — the legacy equivalent of a hand-maintained `AttackState_Count`
+//   used for a bounds check, again now derived instead of duplicated.
+// ===========================================================================
+
+module m
+
+section attack (cpu: m68000, vma: $000000) {
+    // FORWARD: the dispatch table. `AttackTable` is both the base label the
+    // offsets fold against and the label an outside jump table would name to
+    // reach this one.
+    offsets AttackTable {
+        Idle: Attack_Idle,
+        Windup: Attack_Windup,
+        Fire: Attack_Fire
+    }
+
+    // The three targets the table points at (stand-ins for real routines —
+    // kept as single tag bytes so the example stays small).
+    data Attack_Idle: [u8; 1] = [$00]
+    data Attack_Windup: [u8; 1] = [$01]
+    data Attack_Fire: [u8; 1] = [$02]
+
+    // REVERSE: the badnik boots into its Idle state. `AttackTable.Idle` is
+    // the comptime ordinal (0) — read at compile time, so this byte and the
+    // table's member ORDER can never drift apart the way a hand-written
+    // `AttackState_Idle = 0` constant could.
+    data CurrentState: [u8; 1] = [AttackTable.Idle]
+
+    // `AttackTable.count` — the reserved member-count pseudo-member, landed
+    // here as a plain data byte (the legacy idiom used it in a
+    // `cmpi.b #AttackState_Count, d0`-style bounds check).
+    data StateCount: [u8; 1] = [AttackTable.count]
+}

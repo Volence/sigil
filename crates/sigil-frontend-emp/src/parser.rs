@@ -200,6 +200,7 @@ impl Parser {
         if self.at_kw("enum") { return Some(Item::Enum(self.enum_decl(public, false))); }
         if self.at_kw("bitfield") { return Some(Item::Bitfield(self.bitfield_decl(public))); }
         if self.at_kw("struct") { return Some(Item::Struct(self.struct_decl(public))); }
+        if self.at_kw("offsets") { return Some(Item::Offsets(self.offsets_decl(public))); }
         if self.at_kw("vars") { return Some(Item::Vars(self.vars_decl(public))); }
         if self.at_kw("data") { return Some(Item::Data(self.data_decl(public))); }
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
@@ -587,6 +588,31 @@ impl Parser {
         self.skip_newlines();
         self.expect(&Tok::RBrace, "`}`");
         StructDecl { public, name, size, fields, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse an `offsets Name { Variant: target, ... }` declaration.
+    fn offsets_decl(&mut self, public: bool) -> OffsetsDecl {
+        let start = self.span();
+        self.bump(); // `offsets`
+        let name = self.expect_ident("offsets name");
+        self.expect(&Tok::LBrace, "`{`");
+        let mut members = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            let mspan = self.span();
+            let mname = self.expect_ident("offset entry name");
+            self.expect(&Tok::Colon, "`:`");
+            let target = self.expr();
+            members.push(OffsetsMember { name: mname, target, span: mspan });
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        OffsetsDecl { public, name, members, span: start.merge(self.prev_span()) }
     }
 
     /// Parse a `vars region { .. }` (region form) or `vars name: region { .. }`
