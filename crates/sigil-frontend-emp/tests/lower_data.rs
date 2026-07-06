@@ -261,3 +261,177 @@ fn mixed_table_byte_diff_68k() {
         vec![Fixup { kind: FixupKind::Abs32Be, offset: 2, target: Expr::Sym("init".into()) }]
     );
 }
+
+// ---- lexical gaps (Task 2): the `dc.w -1` signed-sentinel convention ----
+//
+// Real AS/Sonic assembly writes `dc.w -1` / `dc.b -1` as a sentinel or
+// terminator: the two's-complement bit pattern `$FFFF` / `$FF`. In `.emp` the
+// author reaches that bit pattern by writing a NEGATIVE VALUE of a SIGNED
+// type (`i16`/`i8`), never by loosening an unsigned type. The convention,
+// locked byte-for-byte below:
+//
+//   * Signed *values* (including sentinels) use `i8`/`i16` (or wider). A
+//     literal `-1` in an `i16` slot lowers, through the ordinary emit path
+//     (`sigil_frontend_emp::eval::emit`'s `[emit.out-of-range]` check, which
+//     signed types pass since -1 is in `-32768..=32767`), to the two's-
+//     complement image bytes `$FF $FF` on this big-endian (M68000) target —
+//     `encode_scalar` (`lower/data.rs`) gets there by taking `(-1i128)
+//     .to_be_bytes()`'s low `width` bytes, which are already all-`$FF` for
+//     any negative one regardless of width. No new code: this is exercised
+//     through the *unmodified* T2 byte-order seam covered elsewhere in this
+//     file (`multibyte_scalar_is_big_endian`, `scalar_byte_order_per_cpu`).
+//   * `u8`/`u16` are NOT loosened to accept negatives. `data T: u16 = -1`
+//     is refused at emission time with `[emit.out-of-range]`, the same
+//     totality guard that refuses `300` for a `u8` (see `eval_data.rs`'s
+//     `array_element_out_of_type_range_is_emit_error` /
+//     `refined_out_of_range_diagnoses_at_emission`). This is deliberate:
+//     unsigned types never silently truncate/wrap a negative into a large
+//     positive bit pattern — if you want the `$FFFF` bit pattern, say so with
+//     a signed type, not by feeding `-1` to `u16`.
+//   * A counted/terminated collection (e.g. a future `sentinel`-terminated
+//     list builtin) owns its own terminator cell internally so *authors*
+//     never hand-write a raw `-1` sentinel themselves; this test only locks
+//     the underlying scalar encoding such a builtin would rely on.
+
+#[test]
+fn i16_neg1_lowers_to_ffff_signed_sentinel_bytes() {
+    // `dc.w -1` ($FFFF) via `i16`. Bytes, not the structured `Cell`, are the
+    // point — this is the lowest byte-producing layer reachable from a test
+    // (`lower_module` → `sigil_link::flatten`), matching `roundtrip_bytes`/
+    // `multibyte_scalar_is_big_endian` above.
+    let (file, perrs) = parse_str("module m\ndata T: [i16; 1] = [-1]\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0xFF, 0xFF]);
+}
+
+#[test]
+fn i8_neg1_lowers_to_ff_signed_sentinel_byte() {
+    // `dc.b -1` ($FF) via `i8`.
+    let (file, perrs) = parse_str("module m\ndata T: [i8; 1] = [-1]\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0xFF]);
+}
+
+#[test]
+fn i16_array_shows_the_sentinel_in_terminator_position() {
+    // The realistic shape: a run of positive values followed by a `-1`
+    // terminator, e.g. an AS `dc.w 10, 20, -1` table. Two positive `i16`s
+    // big-endian, then the `$FFFF` sentinel.
+    let (file, perrs) = parse_str("module m\ndata T: [i16; 3] = [10, 20, -1]\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x0A, 0x00, 0x14, 0xFF, 0xFF]);
+}
+
+// ---- lexical gaps (Task 4): string literals against a byte-array type ---
+//
+// `data Msg: [u8;N] = "HELLO"` — a string literal used directly where the
+// declared type is a fixed-size array of a 1-byte primitive (`u8`/`i8`).
+// Same ASCII-only rule as `bytes(...)`, and the SAME exact-length check an
+// ordinary array literal gets: the author sizes `N` to include any
+// terminator themselves (no implicit trailing 0).
+
+#[test]
+fn string_against_matching_byte_array_type_emits_ascii_bytes() {
+    let (file, perrs) = parse_str("module m\ndata Msg: [u8;5] = \"HELLO\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F]);
+}
+
+#[test]
+fn string_shorter_than_declared_byte_array_is_length_mismatch_error() {
+    // No implicit terminator: a 5-byte string against a 4-byte array is a
+    // plain length mismatch, not a silent truncation.
+    let (file, perrs) = parse_str("module m\ndata Msg: [u8;4] = \"HELLO\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("length mismatch")
+            && d.message.contains('4')
+            && d.message.contains('5')),
+        "expected a length-mismatch diagnostic naming 4 and 5, got {diags:?}"
+    );
+}
+
+#[test]
+fn string_with_null_escape_sized_to_include_terminator_emits_it() {
+    // The author sizes the array to include the `\0` terminator explicitly.
+    let (file, perrs) = parse_str("module m\ndata Msg: [u8;6] = \"HELLO\\0\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x00]);
+}
+
+#[test]
+fn string_against_non_byte_element_array_type_stays_an_error() {
+    // A string is only special-cased for a 1-byte element type; `[u16;N]`
+    // stays the ordinary "expected an array" mismatch.
+    let (file, perrs) = parse_str("module m\ndata Msg: [u16;3] = \"HELLO\"\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("expected an array") && d.message.contains("string")),
+        "expected an 'expected an array ... got string' diagnostic, got {diags:?}"
+    );
+}
+
+#[test]
+fn string_against_byte_array_rejects_non_ascii() {
+    let src = "module m\ndata Msg: [u8;1] = \"\u{e9}\"\n"; // "é"
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.to_lowercase().contains("ascii")),
+        "expected an ASCII-only diagnostic, got {diags:?}"
+    );
+}
+
+// ---- lexical gaps (Task 4): pointer/symbol-ref non-collision ------------
+//
+// A string in a POINTER-typed field context must stay a SYMBOL NAME
+// (`Cell::SymRef` via `lower_ptr`, unchanged) — the byte-emission path added
+// above must never touch `Ty::Ptr`. Proven with the SAME fixup-shape
+// assertion `symref_makes_abs32_fixup` uses, but the pointer field is
+// initialized with a plain string literal instead of a bare fn name.
+#[test]
+fn string_in_pointer_field_is_still_a_symbol_ref_not_bytes() {
+    let src = "module m\n\
+               struct Obj { code: *u8, flags: u8 }\n\
+               data D: Obj = Obj{ code: \"some_symbol\", flags: 3 }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("some_symbol".into()) }]
+    );
+}
+
+#[test]
+fn u16_neg1_is_rejected_not_wrapped() {
+    // The guardrail half of the convention: `u16` does NOT accept `-1` and
+    // silently wrap it to `$FFFF`. It is an `[emit.out-of-range]` error, the
+    // same totality check `eval_data.rs`'s
+    // `refined_out_of_range_diagnoses_at_emission` exercises for `300` on a
+    // `u8` — this is that same check's negative-value edge, named here
+    // because it's the reason the convention says "use `i16`/`i8`", not
+    // "loosen `u16`/`u8`".
+    let (file, perrs) = parse_str("module m\ndata T: [u16; 1] = [-1]\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
+        "expected an [emit.out-of-range] refusing -1 for u16, got {diags:?}"
+    );
+}

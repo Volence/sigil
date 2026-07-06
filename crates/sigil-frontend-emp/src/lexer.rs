@@ -11,7 +11,8 @@ use sigil_span::{SourceId, Span};
 pub enum Tok {
     /// An identifier or keyword (keywords are not distinguished by the lexer).
     Ident(String),
-    /// An integer literal: decimal, `$`-hex, or `0b`-binary.
+    /// An integer literal: decimal, `$`-hex, or binary (`0b`-prefixed or
+    /// `%`-prefixed, when `%` is immediately followed by a binary digit).
     Int(i64),
     /// A floating-point literal (digits, `.`, digits).
     Float(f64),
@@ -111,7 +112,19 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                 push!(Tok::Ident(src[s..i].to_string()), s, i);
             }
             b'0'..=b'9' | b'$' => { i = lex_number(src, b, i, source, &mut out, &mut errs); }
+            // `%` immediately followed by a binary digit is a binary literal
+            // (`%1010`); `%` followed by anything else (whitespace, `2`..`9`,
+            // a letter, EOF, ...) stays the modulo operator (`7 % 3`), handled
+            // by the catch-all operator arm below.
+            b'%' if i + 1 < b.len() && matches!(b[i + 1], b'0' | b'1') => {
+                i = finish_binary(src, b, i, i + 1, source, &mut out, &mut errs);
+            }
             b'"' => { i = lex_string(src, b, i, source, &mut out, &mut errs); }
+            // A `'` reaching the top of the loop is never the Z80
+            // shadow-register apostrophe — the identifier arm above already
+            // absorbed that one trailing quote as part of the ident. So a
+            // bare `'` here always starts a char literal (raw ASCII, Task 3).
+            b'\'' => { i = lex_char(src, b, i, source, &mut out, &mut errs); }
             _ => {
                 // `get` returns None off a char boundary — no panic on non-ASCII.
                 let two = src.get(i..i + 2).unwrap_or("");
@@ -173,18 +186,12 @@ fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
         return i;
     }
     if b[i] == b'0' && i + 1 < b.len() && b[i + 1] == b'b' {
-        i += 2;
-        let ds = i;
-        while i < b.len() && (b[i] == b'0' || b[i] == b'1') { i += 1; }
-        if ds == i {
-            errs.push(LexError { message: "expected binary digits after `0b`".into(), span: span(s, i) });
-            return i;
+        let ds = i + 2;
+        if ds >= b.len() || !matches!(b[ds], b'0' | b'1') {
+            errs.push(LexError { message: "expected binary digits after `0b`".into(), span: span(s, ds) });
+            return ds;
         }
-        match i64::from_str_radix(&src[ds..i], 2) {
-            Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
-            Err(_) => errs.push(LexError { message: "binary literal out of range".into(), span: span(s, i) }),
-        }
-        return i;
+        return finish_binary(src, b, s, ds, source, out, errs);
     }
     while i < b.len() && b[i].is_ascii_digit() { i += 1; }
     // float: dot followed by a digit (so `0..256` stays Int DotDot Int)
@@ -206,6 +213,27 @@ fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
     i
 }
 
+/// Scan the maximal run of binary digits starting at `ds`, parse it as a
+/// radix-2 integer, and push either an [`Tok::Int`] token or an out-of-range
+/// error whose span runs from `s` (the literal's first byte, `%` or `0`).
+///
+/// The single home for the binary digit-run loop, the `from_str_radix(_, 2)`
+/// parse, and the "binary literal out of range" message, shared by the `0b`
+/// and `%` syntaxes so they can never drift. Callers guarantee `b[ds]` is a
+/// binary digit, so the run is non-empty. Returns the index past the last
+/// consumed digit.
+fn finish_binary(src: &str, b: &[u8], s: usize, ds: usize, source: SourceId,
+                 out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
+    let span = |s: usize, e: usize| span_at(source, s, e);
+    let mut i = ds;
+    while i < b.len() && (b[i] == b'0' || b[i] == b'1') { i += 1; }
+    match i64::from_str_radix(&src[ds..i], 2) {
+        Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
+        Err(_) => errs.push(LexError { message: "binary literal out of range".into(), span: span(s, i) }),
+    }
+    i
+}
+
 fn lex_string(src: &str, b: &[u8], mut i: usize, source: SourceId,
               out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
     let s = i;
@@ -219,6 +247,11 @@ fn lex_string(src: &str, b: &[u8], mut i: usize, source: SourceId,
                 b't' => val.push('\t'),
                 b'\\' => val.push('\\'),
                 b'"' => val.push('"'),
+                // Author-controlled termination (lexical gaps, Task 4): a
+                // string never gets an implicit trailing 0, but `\0` lets the
+                // author write one explicitly (`"HELLO\0"`). Mirrors
+                // `lex_char`'s escape set.
+                b'0' => val.push('\0'),
                 other => {
                     errs.push(LexError { message: format!("unknown escape \\{}", other as char), span: span(i, i + 2) });
                 }
@@ -237,5 +270,79 @@ fn lex_string(src: &str, b: &[u8], mut i: usize, source: SourceId,
     }
     i += 1; // closing quote
     out.push(Token { tok: Tok::Str(val), span: span(s, i) });
+    i
+}
+
+/// Lex a char literal `'A'` into a plain [`Tok::Int`] — raw ASCII, so `'A'` is
+/// exactly the integer 65, flowing through the same paths as any other
+/// integer literal (e.g. `data D = byte('A')` emits `$41`).
+///
+/// Charmap-based text encoding (for on-screen tile text) is a separate,
+/// explicit opt-in future feature — out of scope here.
+///
+/// Mirrors [`lex_string`]'s scanning shape (escape handling, UTF-8-safe char
+/// stepping, unterminated detection) but a char literal wants exactly one
+/// character or escape between the quotes, and only ASCII (`0..=127`).
+fn lex_char(src: &str, b: &[u8], mut i: usize, source: SourceId,
+            out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
+    let s = i;
+    let span = |s: usize, e: usize| span_at(source, s, e);
+    i += 1; // opening quote
+
+    let mut values: Vec<u8> = Vec::new();
+    // A non-ASCII char or unknown escape is a more specific error than
+    // "empty"/"multi-character" — once seen, keep scanning to resync at the
+    // closing quote, but don't also report a count-based error afterward.
+    let mut bad = false;
+    while i < b.len() && b[i] != b'\'' && b[i] != b'\n' {
+        if b[i] == b'\\' && i + 1 < b.len() {
+            match b[i + 1] {
+                b'n' => values.push(b'\n'),
+                b't' => values.push(b'\t'),
+                b'\\' => values.push(b'\\'),
+                b'\'' => values.push(b'\''),
+                b'0' => values.push(0),
+                other => {
+                    errs.push(LexError { message: format!("unknown escape \\{}", other as char), span: span(i, i + 2) });
+                    bad = true;
+                }
+            }
+            i += 2;
+        } else {
+            // multi-byte UTF-8 safe: step by the full char
+            let ch = src[i..].chars().next().unwrap();
+            if ch.is_ascii() {
+                values.push(ch as u8);
+            } else {
+                errs.push(LexError {
+                    message: format!(
+                        "char literal must be ASCII; {ch:?} is not — use a numeric literal or an escape"
+                    ),
+                    span: span(i, i + ch.len_utf8()),
+                });
+                bad = true;
+            }
+            i += ch.len_utf8();
+        }
+    }
+
+    if i >= b.len() || b[i] != b'\'' {
+        errs.push(LexError { message: "unterminated char literal".into(), span: span(s, i) });
+        return i;
+    }
+    i += 1; // closing quote
+
+    if bad {
+        // A more specific error was already reported above.
+        return i;
+    }
+    match values.len() {
+        0 => errs.push(LexError { message: "empty char literal".into(), span: span(s, i) }),
+        1 => out.push(Token { tok: Tok::Int(values[0] as i64), span: span(s, i) }),
+        n => errs.push(LexError {
+            message: format!("char literal must be a single character; got {n}"),
+            span: span(s, i),
+        }),
+    }
     i
 }

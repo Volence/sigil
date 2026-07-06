@@ -98,6 +98,16 @@ fn string_literals_with_escapes() {
 }
 
 #[test]
+fn string_literal_null_escape() {
+    // Lexical gaps, Task 4 part 3: `\0` in a string literal lexes to a literal
+    // NUL byte, so authors can write an explicit terminator themselves
+    // (`"HELLO\0"`) — no implicit trailing 0 is ever emitted for them.
+    assert_eq!(toks(r#""HELLO\0""#), vec![Tok::Str("HELLO\0".to_string()), Tok::Eof]);
+    // Consistent with the char-literal escape set (`'\0'` already lexes to 0).
+    assert_eq!(toks(r#""a\0b""#), vec![Tok::Str("a\0b".to_string()), Tok::Eof]);
+}
+
+#[test]
 fn bad_dollar_is_an_error() {
     let (_, errs) = lex("$zz", SourceId(0));
     assert_eq!(errs.len(), 1);
@@ -109,6 +119,56 @@ fn non_ascii_is_an_error_not_a_panic() {
     assert_eq!(errs.len(), 1);
     // lexing continues after the bad char
     assert!(toks_out.iter().any(|t| t.tok == Tok::ident("b")));
+}
+
+// ---- binary `%` literals (lexical gaps, Task 1) -------------------------
+
+#[test]
+fn binary_percent_literals() {
+    assert_eq!(toks("%1010"), vec![Tok::Int(0b1010), Tok::Eof]);
+    assert_eq!(toks("%0"), vec![Tok::Int(0), Tok::Eof]);
+    assert_eq!(toks("%1"), vec![Tok::Int(1), Tok::Eof]);
+    assert_eq!(toks("%10100101"), vec![Tok::Int(165), Tok::Eof]);
+    assert_eq!(toks("%11111111"), vec![Tok::Int(255), Tok::Eof]);
+}
+
+#[test]
+fn percent_stays_modulo_when_not_immediately_followed_by_binary_digit() {
+    // Spaced modulo still works: `7 % 3` is Int Percent Int.
+    assert_eq!(toks("7 % 3"), vec![Tok::Int(7), Tok::Percent, Tok::Int(3), Tok::Eof]);
+    // `%` followed by a non-binary digit is modulo, then a separate Int.
+    assert_eq!(toks("%2"), vec![Tok::Percent, Tok::Int(2), Tok::Eof]);
+    // `%` followed by whitespace is modulo, whitespace is skipped as usual.
+    assert_eq!(toks("% 1010"), vec![Tok::Percent, Tok::Int(1010), Tok::Eof]);
+    // `%` followed by a letter is modulo, then a separate identifier.
+    assert_eq!(toks("%a"), vec![Tok::Percent, Tok::ident("a"), Tok::Eof]);
+    // A bare trailing `%` at EOF stays modulo.
+    assert_eq!(toks("%"), vec![Tok::Percent, Tok::Eof]);
+}
+
+#[test]
+fn binary_run_stops_at_first_non_binary_digit() {
+    // maximal munch: the binary run ends at the first char that is not `0`/`1`,
+    // so `%1012` is Int(0b101) followed by a separate Int(2).
+    assert_eq!(toks("%1012"), vec![Tok::Int(0b101), Tok::Int(2), Tok::Eof]);
+    // the `0b`-prefixed path cuts off identically.
+    assert_eq!(toks("0b1012"), vec![Tok::Int(0b101), Tok::Int(2), Tok::Eof]);
+}
+
+#[test]
+fn binary_percent_span_covers_percent_through_last_digit() {
+    let (tokens, _) = lex("%1010", SourceId(0));
+    assert_eq!(tokens[0].span.start, 0);
+    assert_eq!(tokens[0].span.end, 5);
+}
+
+#[test]
+fn binary_percent_out_of_range_is_an_error() {
+    // 65 binary digits overflow i64's range, like the `0b`-prefixed path.
+    let src = format!("%{}", "1".repeat(65));
+    let (_, errs) = lex(&src, SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("out of range"), "was {:?}", errs[0].message);
 }
 
 // ---- Z80 shadow-register apostrophe (B1) --------------------------------
@@ -145,4 +205,105 @@ fn bare_apostrophe_is_an_error_not_a_panic() {
     // A `'` not following an identifier is an unexpected character, not a crash.
     let (_, errs) = lex("'", SourceId(0));
     assert_eq!(errs.len(), 1);
+}
+
+// ---- char 'A' literals (raw ASCII) — lexical gaps, Task 3 ---------------
+
+#[test]
+fn char_literals_are_raw_ascii_ints() {
+    assert_eq!(toks("'A'"), vec![Tok::Int(65), Tok::Eof]);
+    assert_eq!(toks("'a'"), vec![Tok::Int(97), Tok::Eof]);
+    assert_eq!(toks("'0'"), vec![Tok::Int(48), Tok::Eof]);
+    assert_eq!(toks("' '"), vec![Tok::Int(32), Tok::Eof]);
+    assert_eq!(toks("'~'"), vec![Tok::Int(126), Tok::Eof]);
+}
+
+#[test]
+fn char_literal_flows_like_a_plain_int_in_context() {
+    assert_eq!(
+        toks("byte('A')"),
+        vec![Tok::ident("byte"), Tok::LParen, Tok::Int(65), Tok::RParen, Tok::Eof]
+    );
+}
+
+#[test]
+fn char_literal_escapes() {
+    assert_eq!(toks(r"'\n'"), vec![Tok::Int(10), Tok::Eof]);
+    assert_eq!(toks(r"'\t'"), vec![Tok::Int(9), Tok::Eof]);
+    assert_eq!(toks(r"'\\'"), vec![Tok::Int(92), Tok::Eof]);
+    assert_eq!(toks(r"'\''"), vec![Tok::Int(39), Tok::Eof]);
+    assert_eq!(toks(r"'\0'"), vec![Tok::Int(0), Tok::Eof]);
+}
+
+#[test]
+fn char_literal_span_covers_quotes() {
+    let (tokens, _) = lex("'A'", SourceId(0));
+    assert_eq!(tokens[0].span.start, 0);
+    assert_eq!(tokens[0].span.end, 3);
+}
+
+#[test]
+fn empty_char_literal_is_an_error() {
+    let (_, errs) = lex("''", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("empty char literal"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn multi_char_literal_is_an_error() {
+    let (_, errs) = lex("'AB'", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(
+        errs[0].message.contains("single character") && errs[0].message.contains('2'),
+        "was {:?}",
+        errs[0].message
+    );
+}
+
+#[test]
+fn non_ascii_char_literal_is_an_error() {
+    let (_, errs) = lex("'é'", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(
+        errs[0].message.contains("ASCII") || errs[0].message.to_lowercase().contains("ascii"),
+        "was {:?}",
+        errs[0].message
+    );
+}
+
+#[test]
+fn unterminated_char_literal_before_newline_is_an_error() {
+    let (_, errs) = lex("'A\nfoo", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("unterminated"), "was {:?}", errs[0].message);
+    // lexing resyncs: the newline and `foo` still lex normally afterward.
+    let (tokens, _) = lex("'A\nfoo", SourceId(0));
+    assert!(tokens.iter().any(|t| t.tok == Tok::ident("foo")));
+}
+
+#[test]
+fn unterminated_char_literal_at_eof_is_an_error() {
+    let (_, errs) = lex("'A", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("unterminated"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn unknown_escape_in_char_literal_is_an_error() {
+    let (_, errs) = lex(r"'\q'", SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("unknown escape"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn shadow_register_apostrophe_still_wins_over_char_literal() {
+    // `af'`/`bc'`/`de'`/`hl'` must still lex as single idents — the char-literal
+    // arm only ever fires on a `'` the ident arm did NOT already absorb.
+    assert_eq!(toks("af'"), vec![Tok::ident("af'"), Tok::Eof]);
+    assert_eq!(toks("bc'"), vec![Tok::ident("bc'"), Tok::Eof]);
+    assert_eq!(toks("de'"), vec![Tok::ident("de'"), Tok::Eof]);
+    assert_eq!(toks("hl'"), vec![Tok::ident("hl'"), Tok::Eof]);
+    // A second apostrophe (`af''`) still errors (whatever the exact message).
+    let (_, errs) = lex("af''", SourceId(0));
+    assert_eq!(errs.len(), 1, "second apostrophe should still be an error");
 }
