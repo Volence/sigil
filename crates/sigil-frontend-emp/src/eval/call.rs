@@ -8,6 +8,29 @@ use crate::value::Value;
 use sigil_span::Span;
 
 impl<'a> Evaluator<'a> {
+    /// `here()` (§7.1): the current VMA, resolved to `vma_origin +
+    /// current_offset` at the START of the data item being lowered (threaded in
+    /// via [`here_base`](Evaluator::here_base) by the lowering pass). Takes no
+    /// arguments. Outside lowering (`here_base` unset) it is an error — the pure
+    /// evaluator has no position to report. Preserves the §7.1 `rept 38h -
+    /// here()` gap-fill semantics when `here()` names a data item's own start.
+    pub(super) fn eval_here(&mut self, args: &[ast::Arg], span: Span) -> Value {
+        if !args.is_empty() {
+            self.error(span, format!("`here` takes no arguments, got {}", args.len()));
+            return Value::Poison;
+        }
+        match self.here_base {
+            Some(vma) => Value::Int(vma as i128),
+            None => {
+                self.error(
+                    span,
+                    "`here()` is only valid inside a section during lowering (no current position)",
+                );
+                Value::Poison
+            }
+        }
+    }
+
     /// Evaluate a call expression. Dispatch order (D-P2.10): if the callee's
     /// last segment is a §6.8 builtin (`len`/`map`/`filter`/`fold`/`find`/
     /// `slice`/`val`), it is a builtin method call — builtins are *not*
@@ -31,6 +54,10 @@ impl<'a> Evaluator<'a> {
                 // `winptr(sym)` (§7.2) — a Z80 windowed bank pointer, also a
                 // non-shadowable `Data` constructor.
                 "winptr" => return self.eval_winptr(args, span, env),
+                // `here()` (§7.1) — the current VMA. A lowering-time query: the
+                // position is threaded in via `here_base` (set per data item by
+                // the lowering pass); it is not user-shadowable.
+                "here" => return self.eval_here(args, span),
                 _ => {}
             }
         }

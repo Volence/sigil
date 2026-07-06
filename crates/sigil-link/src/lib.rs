@@ -180,6 +180,20 @@ fn apply_fixup(
             bytes[site_abs as usize] = lo;
             bytes[(site_abs + 1) as usize] = hi;
         }
+        FixupKind::BankPtr16Be => {
+            // The 68k-section counterpart to BankPtr16Le: same windowed low-16
+            // value, written big-endian (§7.2 / D-P4.7).
+            if (site_abs as usize) + 1 >= bytes.len() {
+                diags.push(diag(
+                    format!("BankPtr16Be fixup at offset {site_abs} would write past section end in section {section}"),
+                    span,
+                ));
+                return;
+            }
+            let v = value as u16;
+            bytes[site_abs as usize] = (v >> 8) as u8;
+            bytes[(site_abs + 1) as usize] = (v & 0xFF) as u8;
+        }
         FixupKind::Z80JrRel8 => {
             if site_abs as usize >= bytes.len() {
                 diags.push(diag(

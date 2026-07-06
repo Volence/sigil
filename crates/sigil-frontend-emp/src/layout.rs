@@ -953,14 +953,41 @@ pub fn layout_structs_shared(
 /// shared large-stack evaluation thread (see [`size_of_type`]): a data value can
 /// drive comptime-fn calls (array element expressions, defaults).
 pub fn eval_data(file: &ast::File, name: &str) -> (Option<DataBuf>, Vec<Diagnostic>) {
+    eval_data_at(file, name, None)
+}
+
+/// Like [`eval_data`], but threads a `here_base` VMA so a `here()` (§7.1) inside
+/// the item resolves to the item's start VMA. The lowering pass supplies the
+/// position (`vma_origin + current_offset`); other callers pass `None`.
+pub fn eval_data_at(
+    file: &ast::File,
+    name: &str,
+    here_base: Option<u32>,
+) -> (Option<DataBuf>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        if let Some(vma) = here_base {
+            ev.set_here_base(vma);
+        }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));
             return (None, ev.diags);
         }
         let buf = ev.resolve_data(name, file.module.span);
         (Some(buf), ev.diags)
+    })
+}
+
+/// Evaluate an arbitrary comptime `expr` against `file`'s tables to an integer
+/// (§7.1) — used by the lowering pass to resolve a section's `vma:` attribute.
+/// Returns `None` (with any diagnostics) if the expression is not a comptime
+/// integer.
+pub fn eval_attr_int(file: &ast::File, expr: &ast::Expr) -> (Option<i128>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        let mut env = Env::new();
+        let v = ev.eval_expr(expr, &mut env);
+        (v.as_stored_int(), ev.diags)
     })
 }
 

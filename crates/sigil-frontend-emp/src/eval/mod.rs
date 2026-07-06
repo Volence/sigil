@@ -172,6 +172,14 @@ pub struct Evaluator<'a> {
     /// caller-visible `Owner.name` spelling instead (§5.2) — the owner is the
     /// proc name for a proc body and `k` for a raw `asm { }` (T5).
     asm_counter: u32,
+    /// The VMA the `here()` comptime builtin resolves to (§7.1), or `None` when
+    /// no position is known (outside lowering). Set per data-item by the lowering
+    /// pass to `vma_origin + current_offset` — the VMA at the START of the item
+    /// being lowered. `here()` is a lowering-time query the pure evaluator cannot
+    /// answer on its own, so the position is threaded in here. LIMITATION: it is
+    /// the item's start VMA, so a `here()` mid-buffer (after some bytes in the
+    /// SAME data item) still reads the item start, not the advanced position.
+    here_base: Option<u32>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -202,7 +210,14 @@ impl<'a> Evaluator<'a> {
             struct_construct_in_progress: Vec::new(),
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
+            here_base: None,
         }
+    }
+
+    /// Set the VMA `here()` resolves to for the item about to be evaluated
+    /// (§7.1). The lowering pass calls this before resolving each data item.
+    pub(crate) fn set_here_base(&mut self, vma: u32) {
+        self.here_base = Some(vma);
     }
 
     /// Create an evaluator that can resolve names against `file`'s top-level
@@ -211,33 +226,43 @@ impl<'a> Evaluator<'a> {
     /// this task's job.
     pub fn with_file(file: &'a ast::File) -> Self {
         let mut ev = Evaluator::new();
-        for item in &file.items {
+        ev.index_items(&file.items);
+        ev
+    }
+
+    /// Register a list of items into the name indexes, recursing into
+    /// `section { ... }` blocks (§7.1) so a section-nested `data`/`const`/`fn`/…
+    /// is name-resolvable exactly like a top-level one (a flat namespace, as in
+    /// the AS model). Section placement itself is handled later, by the lowering
+    /// pass — this is purely the evaluator's name resolution.
+    fn index_items(&mut self, items: &'a [ast::Item]) {
+        for item in items {
             match item {
                 ast::Item::Const(c) => {
-                    ev.consts.insert(c.name.as_str(), c);
+                    self.consts.insert(c.name.as_str(), c);
                 }
                 ast::Item::Enum(e) => {
-                    ev.enums.insert(e.name.as_str(), e);
+                    self.enums.insert(e.name.as_str(), e);
                 }
                 ast::Item::ComptimeFn(f) => {
-                    ev.fns.insert(f.name.as_str(), f);
+                    self.fns.insert(f.name.as_str(), f);
                 }
                 ast::Item::Struct(s) => {
-                    ev.structs.insert(s.name.as_str(), s);
+                    self.structs.insert(s.name.as_str(), s);
                 }
                 ast::Item::Bitfield(b) => {
-                    ev.bitfields.insert(b.name.as_str(), b);
+                    self.bitfields.insert(b.name.as_str(), b);
                 }
                 ast::Item::Newtype(n) => {
-                    ev.newtypes.insert(n.name.as_str(), n);
+                    self.newtypes.insert(n.name.as_str(), n);
                 }
                 ast::Item::Data(d) => {
-                    ev.datas.insert(d.name.as_str(), d);
+                    self.datas.insert(d.name.as_str(), d);
                 }
+                ast::Item::Section(s) => self.index_items(&s.items),
                 _ => {}
             }
         }
-        ev
     }
 
     /// Push an [`Error`](Level::Error) diagnostic at `span`.

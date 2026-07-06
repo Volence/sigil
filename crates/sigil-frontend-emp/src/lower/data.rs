@@ -13,11 +13,12 @@
 //! | 68000, width 4                   | `Abs32Be`                              |
 //! | 68000, width 2                   | `Abs16Be`                              |
 //! | Z80, windowed (`winptr`)         | `BankPtr16Le`                          |
+//! | 68000, windowed (`winptr`)       | `BankPtr16Be` (T6, D-P4.7)             |
 //! | Z80, un-windowed 68k pointer     | ERROR `[cross-cpu.unwindowed-pointer]` |
 //!
-//! `BankPtr16Be` (a 68k reference to a bank pointer) is deferred to T6 (D-P4.7):
-//! it does NOT exist in Core's [`FixupKind`] yet, so a case that would need it
-//! diagnoses rather than emit a wrong kind.
+//! `BankPtr16Be` (a 68k reference to a Z80 bank pointer) was added in T6 (D-P4.7)
+//! alongside its Core [`FixupKind`] variant — the big-endian counterpart of
+//! `BankPtr16Le`.
 
 use crate::value::{Cell, DataBuf};
 use sigil_ir::backend::Cpu;
@@ -87,8 +88,9 @@ pub(super) fn encode_scalar(value: i128, width: u8, cpu: Cpu) -> Vec<u8> {
 /// Select the [`FixupKind`] for a `SymRef` from (`width`, section CPU,
 /// `windowed`) per the D-P4.5 table. Returns `None` (after recording a
 /// diagnostic) for a case with no representable kind: an un-windowed pointer in
-/// a Z80 section (`[cross-cpu.unwindowed-pointer]`, §7.2), or a shape deferred
-/// to a later task (`BankPtr16Be`, T6 / D-P4.7; a bare Z80-local `Abs16Le`).
+/// a Z80 section (`[cross-cpu.unwindowed-pointer]`, §7.2), or a shape still
+/// deferred to a later task (a bare Z80-local `Abs16Le`). The 68k windowed
+/// pointer (`BankPtr16Be`, T6 / D-P4.7) is now represented.
 fn fixup_kind(
     cpu: Cpu,
     width: u8,
@@ -101,18 +103,9 @@ fn fixup_kind(
         // A 68k absolute pointer: width picks Abs32/Abs16 (both big-endian).
         (Cpu::M68000, 4, false) => Some(FixupKind::Abs32Be),
         (Cpu::M68000, 2, false) => Some(FixupKind::Abs16Be),
-        // A 68k reference to a bank pointer would be `BankPtr16Be` — deferred.
-        (Cpu::M68000, 2, true) => {
-            // TODO(T6): BankPtr16Be — a 68k reference to a windowed bank pointer.
-            diags.push(err(
-                span,
-                format!(
-                    "[cross-cpu.unsupported] windowed pointer to `{name}` in a 68000 section \
-                     needs BankPtr16Be, which is not yet supported"
-                ),
-            ));
-            None
-        }
+        // A 68k reference to a Z80 bank pointer: the big-endian counterpart of
+        // `BankPtr16Le` (§7.2 / D-P4.7). Added in T6 alongside the Core kind.
+        (Cpu::M68000, 2, true) => Some(FixupKind::BankPtr16Be),
         // A Z80 windowed bank pointer: little-endian 16-bit window offset.
         (Cpu::Z80, 2, true) => Some(FixupKind::BankPtr16Le),
         // A 68k-address constant in Z80 data is an error unless explicitly

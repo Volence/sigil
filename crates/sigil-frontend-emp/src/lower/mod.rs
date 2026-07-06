@@ -17,46 +17,60 @@ mod proc;
 pub use code::lower_code_buf;
 
 use crate::ast;
-use crate::layout::eval_data;
+use crate::layout::{eval_attr_int, eval_data_at};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
-use sigil_span::Diagnostic;
+use sigil_span::{Diagnostic, Level, Span};
 
 /// Options controlling how a `.emp` module lowers to Core IR.
 pub struct LowerOptions {
-    /// The CPU the initial section is encoded for.
+    /// The CPU the initial (top-level, no `section {}`) section is encoded for.
     pub initial_cpu: Cpu,
 }
 
-/// Lower every `data` item in `file` into a single Core IR section, returning the
-/// finished [`Module`] plus any diagnostics (from evaluation or lowering).
+/// Lower a `.emp` module into Core IR, returning the finished [`Module`] plus any
+/// diagnostics (from evaluation or lowering).
 ///
-/// T0 scope: `data` items only. Each item's checked [`DataBuf`] is emitted as one
-/// `emit_data` call under a label named after the item, so `sigil-link` can
-/// resolve references to it.
+/// Top-level `data`/`proc` items lower into the default `text` section (VMA==LMA).
+/// A `section name (cpu:, vma:) { .. }` (§7.1) opens a placed section: its bytes
+/// land at the next physical LMA (a continuous counter across sections in
+/// declaration order — emp's own placement policy, map-file regions being
+/// S2-D3-deferred), while its labels/PC compute at the explicit `vma:` base. A
+/// `cpu: z80` section lowers its code as Z80 and serializes its data
+/// little-endian; the CPU flows through to the streamer and `lower_code_buf`.
+///
+/// NOTE: `"text"` is NOT a unique section handle. Interleaving top-level items
+/// with `section {}` blocks can emit several distinct `Section`s all named
+/// `"text"` (one per run of top-level items). Placement is by `lma`, never by
+/// name — do not rely on name uniqueness (`LinkedImage::section("text")` returns
+/// the FIRST match). This is fine because those sections carry disjoint labels
+/// and non-overlapping LMAs; it is only a naming concern.
 pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagnostic>) {
     let mut builder = IrBuilder::new();
     let mut diags = Vec::new();
 
-    builder.switch_section("text", opts.initial_cpu, None);
+    // Continuous physical LMA counter across sections in declaration order
+    // (mirrors the AS front-end's `phys_base`). INVARIANT: `next_lma` is the
+    // physical start of the currently-open section. `builder.current_offset()`
+    // (0 when nothing is open) is that section's length, so `next_lma +=
+    // current_offset()` right before every `switch_section_lma` folds the
+    // just-closed section's bytes and leaves `next_lma` at the new section's
+    // start. The default `text` section is opened LAZILY (only when a top-level
+    // item needs it), so a module that is all `section {}`s — or two adjacent
+    // sections — materializes no empty `text` sections.
+    let mut next_lma: u32 = 0;
+    let mut default_open = false;
 
-    // Walk items in declaration order. Data emits its serialized buffer; a proc
-    // emits its label + lowered body (T4). The proc arm needs the item's index
-    // to check declared-fallthrough adjacency against the following item.
     for (index, item) in file.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
-                let (buf, mut ds) = eval_data(file, &decl.name);
-                diags.append(&mut ds);
-                let Some(buf) = buf else { continue };
-
-                let (bytes, fixups, mut stream_diags) =
-                    data::stream_data(&buf, opts.initial_cpu, decl.span);
-                diags.append(&mut stream_diags);
-                builder.define_label(&decl.name);
-                builder.emit_data(&bytes, fixups, decl.span);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
+                // Default section: vma_origin == lma == `next_lma` (VMA base
+                // `None`, so origin == lma == its physical start).
+                lower_data_item(file, decl, opts.initial_cpu, next_lma, &mut builder, &mut diags);
             }
             ast::Item::Proc(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
                 proc::lower_proc(
                     file,
                     decl,
@@ -67,6 +81,17 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut diags,
                 );
             }
+            ast::Item::Section(sec) => {
+                // Close whatever is open (default text or a prior adjacent
+                // section), folding its length into the counter.
+                next_lma += builder.current_offset();
+                default_open = false;
+                let (cpu, vma) = section_attrs(file, sec, &mut diags);
+                builder.switch_section_lma(&sec.name, cpu, Some(vma), next_lma);
+                lower_section_items(file, sec, cpu, vma, &mut builder, &mut diags);
+                // Leave the named section open; the next item (or `finish`)
+                // folds its length.
+            }
             _ => {}
         }
     }
@@ -74,4 +99,122 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     let (module, mut build_diags) = builder.finish();
     diags.append(&mut build_diags);
     (module, diags)
+}
+
+/// Ensure the default `text` section is the currently-open one before lowering a
+/// top-level item. If a named section (or nothing) is open, fold its length into
+/// `next_lma` and open `text` at that physical offset (VMA==LMA). A no-op when
+/// the default is already open.
+fn ensure_default(
+    builder: &mut IrBuilder,
+    next_lma: &mut u32,
+    default_open: &mut bool,
+    cpu: Cpu,
+) {
+    if !*default_open {
+        *next_lma += builder.current_offset();
+        builder.switch_section_lma("text", cpu, None, *next_lma);
+        *default_open = true;
+    }
+}
+
+/// Lower the items nested inside a `section {}` block into the already-open
+/// section. `cpu` is the section's CPU (drives byte order + code lowering);
+/// `origin` is its VMA base, used to compute `here()` for each data item.
+fn lower_section_items(
+    file: &ast::File,
+    sec: &ast::SectionDecl,
+    cpu: Cpu,
+    origin: u32,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for (index, item) in sec.items.iter().enumerate() {
+        match item {
+            ast::Item::Data(decl) => {
+                lower_data_item(file, decl, cpu, origin, builder, diags);
+            }
+            // Fallthrough adjacency is checked within THIS section's item list.
+            ast::Item::Proc(decl) => {
+                proc::lower_proc(file, decl, index, &sec.items, cpu, builder, diags);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Lower one `data` item: evaluate its checked buffer (with `here()` resolving to
+/// the item's start VMA = `origin + current_offset`), serialize it in `cpu`'s
+/// byte order, then define its label and emit the bytes.
+fn lower_data_item(
+    file: &ast::File,
+    decl: &ast::DataDecl,
+    cpu: Cpu,
+    origin: u32,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let here_base = origin + builder.current_offset();
+    let (buf, mut ds) = eval_data_at(file, &decl.name, Some(here_base));
+    diags.append(&mut ds);
+    let Some(buf) = buf else { return };
+
+    let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, cpu, decl.span);
+    diags.append(&mut stream_diags);
+    builder.define_label(&decl.name);
+    builder.emit_data(&bytes, fixups, decl.span);
+}
+
+/// Read a section's `cpu:`/`vma:` attributes (§7.1). `cpu:` defaults to
+/// `M68000` (`z80` selects [`Cpu::Z80`]); `vma:` is evaluated to a comptime
+/// integer (defaulting to 0, with a diagnostic if it is not an integer).
+/// Unknown attribute names are diagnosed but otherwise ignored.
+fn section_attrs(
+    file: &ast::File,
+    sec: &ast::SectionDecl,
+    diags: &mut Vec<Diagnostic>,
+) -> (Cpu, u32) {
+    let mut cpu = Cpu::M68000;
+    let mut vma: u32 = 0;
+    for (name, expr) in &sec.attrs {
+        match name.as_str() {
+            "cpu" => cpu = attr_cpu(expr),
+            "vma" => {
+                let (n, mut ds) = eval_attr_int(file, expr);
+                diags.append(&mut ds);
+                match n {
+                    Some(v) => vma = v as u32,
+                    // Point at the value expression itself (it carries its own
+                    // span), not the whole section, for precision.
+                    None => err(
+                        diags,
+                        crate::parser::expr_span(expr),
+                        format!("section `{}` `vma:` is not a comptime integer", sec.name),
+                    ),
+                }
+            }
+            other => err(
+                diags,
+                sec.span,
+                format!("section `{}` has unknown attribute `{other}`", sec.name),
+            ),
+        }
+    }
+    (cpu, vma)
+}
+
+/// Resolve a `cpu:` attribute expression to a [`Cpu`]: `z80` (case-insensitive)
+/// selects [`Cpu::Z80`]; anything else defaults to [`Cpu::M68000`].
+fn attr_cpu(expr: &ast::Expr) -> Cpu {
+    if let ast::Expr::Path(p) = expr {
+        if p.segments.last().is_some_and(|s| s.eq_ignore_ascii_case("z80")) {
+            return Cpu::Z80;
+        }
+    }
+    Cpu::M68000
+}
+
+/// Push an error diagnostic at `span`.
+fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
+    diags.push(Diagnostic { level: Level::Error, message, primary: span });
 }

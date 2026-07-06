@@ -182,12 +182,11 @@ fn winptr_in_z80_is_bankptr16le() {
 }
 
 #[test]
-fn winptr_in_68k_is_unsupported_deferred_to_t6() {
+fn winptr_in_68k_is_bankptr16be() {
     // A `winptr(sym)` in a 68000 section hits `(M68000, 2, true)` — a 68k
-    // reference to a bank pointer, which would need `BankPtr16Be` (deferred to
-    // T6 / D-P4.7). Until then it must diagnose, NOT emit a wrong kind. This
-    // test is also a tripwire: when T6 adds `BankPtr16Be`, it will fail loudly
-    // and force this arm to be revisited.
+    // reference to a Z80 bank pointer, which T6 now represents with the new Core
+    // `BankPtr16Be` kind (§7.2 / D-P4.7), the big-endian counterpart of
+    // `BankPtr16Le`. (Was the T2 tripwire `winptr_in_68k_is_unsupported_...`.)
     let src = "module m\n\
                comptime fn sfx() -> u8 { 0 }\n\
                data P = winptr(sfx)\n";
@@ -195,14 +194,12 @@ fn winptr_in_68k_is_unsupported_deferred_to_t6() {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
     let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
-    assert!(
-        diags.iter().any(|d| d.message.contains("[cross-cpu.unsupported]")
-            && d.message.contains("sfx")),
-        "expected an unsupported (deferred BankPtr16Be) diagnostic naming `sfx`, got: {diags:?}"
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: Expr::Sym("sfx".into()) }]
     );
-    // No fixup is emitted for the unrepresentable kind (the 2-byte hole is still
-    // reserved so sizes line up).
-    assert!(section_fixups(&module).is_empty(), "no fixup for the deferred kind");
+    // The 2-byte hole is present in the image (zero-filled before linking).
     assert_eq!(raw_data_bytes(&module), vec![0x00, 0x00]);
 }
 
