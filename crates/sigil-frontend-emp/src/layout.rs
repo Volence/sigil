@@ -964,10 +964,29 @@ pub fn eval_data_at(
     name: &str,
     here_base: Option<u32>,
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
+    eval_data_with_root(file, name, here_base, None)
+}
+
+/// Like [`eval_data_at`], but also threads a capability-sandbox
+/// `include_root` (Spec 2, Plan 5 — Task 1): the directory `embed`/`import`
+/// paths resolve against. `include_root = None` behaves exactly like
+/// [`eval_data_at`] (a comptime `embed(...)` inside the item then reports
+/// `[sandbox.no-root]`) — every existing caller of `eval_data`/`eval_data_at`
+/// is therefore unchanged. The lowering pass supplies the source file's
+/// directory as the root; tests point it at a fixtures directory.
+pub fn eval_data_with_root(
+    file: &ast::File,
+    name: &str,
+    here_base: Option<u32>,
+    include_root: Option<&std::path::Path>,
+) -> (Option<DataBuf>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         if let Some(vma) = here_base {
             ev.set_here_base(vma);
+        }
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
         }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));

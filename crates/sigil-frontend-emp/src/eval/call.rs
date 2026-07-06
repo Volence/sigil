@@ -58,6 +58,10 @@ impl<'a> Evaluator<'a> {
                 // position is threaded in via `here_base` (set per data item by
                 // the lowering pass); it is not user-shadowable.
                 "here" => return self.eval_here(args, span),
+                // `embed(path, skip, len)` (Spec 2, Plan 5 — Task 1): a comptime
+                // file read within the capability sandbox, also a
+                // non-shadowable `Data` constructor.
+                "embed" => return self.eval_embed(args, span, env),
                 _ => {}
             }
         }

@@ -19,6 +19,7 @@ mod expr;
 mod guards;
 mod literals;
 mod pattern;
+mod sandbox;
 mod typed;
 
 pub use env::{AssignError, Binding, Env};
@@ -27,6 +28,7 @@ use crate::ast;
 use crate::value::Value;
 use sigil_span::{Diagnostic, Level, Span};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Comptime step budget (D-P2.7): a coarse upper bound on evaluation work,
 /// guarding against runaway loops/recursion. Later tasks act on exhaustion.
@@ -180,6 +182,18 @@ pub struct Evaluator<'a> {
     /// the item's start VMA, so a `here()` mid-buffer (after some bytes in the
     /// SAME data item) still reads the item start, not the advanced position.
     here_base: Option<u32>,
+    /// The capability-sandbox root (Spec 2, Plan 5 — Task 1): the directory
+    /// `embed`/`import` paths resolve against. `None` outside a rooted
+    /// evaluation (e.g. the plain [`eval_const`] entry point), in which case a
+    /// comptime file read is `[sandbox.no-root]`. Set via
+    /// [`set_include_root`](Self::set_include_root) by the
+    /// [`layout::eval_data_with_root`](crate::layout::eval_data_with_root) seam.
+    include_root: Option<PathBuf>,
+    /// The capture ledger (Task 1): one [`sandbox::CaptureEdge`] per comptime
+    /// file read (`embed`, and later `import`/`zx0`), recording the resolved
+    /// path, its SHA-256 digest, and its byte length — the provenance record a
+    /// later hermeticity task exposes and asserts determinism from.
+    pub(crate) captures: Vec<sandbox::CaptureEdge>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -211,6 +225,8 @@ impl<'a> Evaluator<'a> {
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
             here_base: None,
+            include_root: None,
+            captures: Vec::new(),
         }
     }
 
