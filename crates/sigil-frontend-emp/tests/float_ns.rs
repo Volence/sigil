@@ -111,3 +111,22 @@ fn unknown_float_fn_errors() {
         "diagnostics were {diags_b:?}"
     );
 }
+
+/// Regression (T4 review): `2^127` (= 1.7014118346046923e38, representable as
+/// f64 but one past `i128::MAX`) must be REJECTED by `as.int`, not silently
+/// saturated to `i128::MAX` by a bare `as` cast. Exercises the exclusive upper
+/// bound of the range guard.
+#[test]
+fn as_int_rejects_two_pow_127_boundary() {
+    // 2^127 written out in full (the lexer has no `e` exponent form); the
+    // nearest f64 is exactly 2^127 == `i128::MAX as f64`, one past `i128::MAX`.
+    let src = "module m\nconst V = as.int(170141183460469231731687303715884105728.0)\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (v, ds) = eval_const(&file, "V");
+    assert_eq!(v, Some(Value::Poison));
+    assert!(
+        ds.iter().any(|d| d.message.contains("[float-ns.int-range]")),
+        "expected [float-ns.int-range], got {ds:?}"
+    );
+}

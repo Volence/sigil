@@ -59,6 +59,7 @@ impl<'a> Evaluator<'a> {
         let arg = &args[0];
         if arg.name.is_some() {
             self.error(span, format!("`{ns}.{fn_name}` takes a positional argument"));
+            return Value::Poison;
         }
         let arg_val = self.eval_expr(&arg.value, env);
         // A `return`/abort surfaced from the argument belongs to the caller
@@ -98,7 +99,13 @@ impl<'a> Evaluator<'a> {
                 // is an error, never a silent saturate/wrap) rather than rely
                 // on Rust's `as` float-to-int cast, which saturates instead of
                 // reporting a fitness problem.
-                if f.is_finite() && (MIN_I128_AS_F64..=MAX_I128_AS_F64).contains(&f) {
+                // NOTE the EXCLUSIVE upper bound: `MAX_I128_AS_F64` rounds UP to
+                // 2^127 (one past `i128::MAX`), so an inclusive bound would admit
+                // `f == 2^127`, which then saturates under `f as i128` to
+                // `i128::MAX` — a silent wrong value. Excluding the endpoint
+                // rejects `2^127` while still admitting the largest representable
+                // f64 strictly below it (`2^127 − 2^75`), which casts cleanly.
+                if f.is_finite() && (MIN_I128_AS_F64..MAX_I128_AS_F64).contains(&f) {
                     Value::Int(f as i128)
                 } else {
                     self.error(
@@ -121,7 +128,7 @@ impl<'a> Evaluator<'a> {
 const MIN_I128_AS_F64: f64 = i128::MIN as f64;
 /// `i128::MAX` as an `f64` — the high end of the `as.int` range guard. This
 /// rounds UP from the true `i128::MAX` (an `f64` mantissa cannot represent it
-/// exactly), which is fine here: it is only used to reject genuinely
-/// out-of-range values (NaN/infinity or magnitudes far beyond 128 bits), not
-/// to pick out the exact boundary integer.
+/// exactly) to exactly `2^127`, so the guard uses it as an EXCLUSIVE upper
+/// bound: `2^127` itself does not fit `i128` and must be rejected, while every
+/// representable f64 strictly below it does fit.
 const MAX_I128_AS_F64: f64 = i128::MAX as f64;

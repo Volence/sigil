@@ -77,9 +77,19 @@ impl<'a> Evaluator<'a> {
             }
         }
         // `math.{fn}(x)` / `as.{fn}(x)` (Spec 2, Plan 5 — Task 4, §6.6): the
-        // reserved, non-shadowable float namespaces. Routed on the callee's
-        // FIRST segment, ahead of the builtin/enum/user-fn dispatch below, so
-        // `math`/`as` can never be shadowed by a user fn or enum of that name.
+        // float namespaces. Routed on the callee's FIRST segment, ahead of the
+        // builtin/enum/user-fn dispatch below, so a `math.sin(x)` / `as.int(x)`
+        // call always resolves to the float table regardless of any same-named
+        // user construct.
+        //
+        // LIMITATION (T4 review): `math`/`as` are NOT yet reserved WORDS — the
+        // lexer/parser accept them as ordinary identifiers, so a user CAN still
+        // declare `enum math`/`let as = ...`. Because this arm wins, a 2-segment
+        // CALL like `math.Red(x)` on such a user `enum math` is hijacked here and
+        // reports `[float-ns.unknown]` instead of constructing the variant — a
+        // confusing-but-not-silently-wrong outcome (it still errors). Making
+        // `math`/`as` reserved declaration names (a clean diagnostic at the decl)
+        // is a small parser follow-up, tracked out of this milestone.
         if callee.segments.len() == 2 {
             let ns = callee.segments[0].as_str();
             if ns == "math" || ns == "as" {
