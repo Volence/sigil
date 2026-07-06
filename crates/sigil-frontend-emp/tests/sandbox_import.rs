@@ -187,3 +187,50 @@ fn import_missing_file() {
     );
     assert_eq!(v, Some(Value::Poison));
 }
+
+// ---- number/null/datetime mapping edge cases (T2 review follow-up) --------
+
+#[test]
+fn import_json_null_is_unit() {
+    // JSON `null` maps to `Value::Unit` (D-P5.4).
+    let src = "module m\nconst V = import(\"import_types.json\")\n";
+    let (v, diags) = const_value(src, "V");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(field(v.as_ref().unwrap(), "n"), &Value::Unit);
+}
+
+#[test]
+fn import_integral_valued_float_is_float() {
+    // `2.0` is stored by serde_json as f64 → `Value::Float`, NOT `Int`
+    // (an honest float even though its value is integral).
+    let src = "module m\nconst V = import(\"import_types.json\")\n";
+    let (v, diags) = const_value(src, "V");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(field(v.as_ref().unwrap(), "whole"), &Value::Float(2.0));
+}
+
+#[test]
+fn import_wide_unsigned_int_is_int() {
+    // u64::MAX exceeds i64 but fits u64 → `is_u64()` → `Value::Int(i128)`.
+    let src = "module m\nconst V = import(\"import_types.json\")\n";
+    let (v, diags) = const_value(src, "V");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        field(v.as_ref().unwrap(), "big"),
+        &Value::Int(18_446_744_073_709_551_615_i128)
+    );
+}
+
+#[test]
+fn import_toml_datetime_unsupported() {
+    // TOML has a native datetime; there is no comptime equivalent, so it maps
+    // to `[import.unsupported]` + `Poison` for that value (D-P5.4).
+    let src = "module m\nconst V = import(\"import_datetime.toml\")\n";
+    let (v, diags) = const_value(src, "V");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[import.unsupported]")),
+        "expected an [import.unsupported] diagnostic, got {diags:?}"
+    );
+    // The table is still built; the datetime field alone is Poison.
+    assert_eq!(field(v.as_ref().unwrap(), "d"), &Value::Poison);
+}

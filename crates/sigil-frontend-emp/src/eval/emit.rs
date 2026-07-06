@@ -228,6 +228,9 @@ impl<'a> Evaluator<'a> {
     /// checked HERE instead: a declared field missing from `fields` is
     /// `[struct.missing-field]`, and a `fields` entry naming no declared field is
     /// `[struct.unknown-field]` — both diagnostics, not a silent mis-size.
+    /// (A literal is a no-op here only when lowered against its OWN type; a
+    /// mismatched explicit annotation — `data P: Point = Other{...}` — is a
+    /// genuine shape mismatch and deliberately trips the same check.)
     ///
     /// Walk the struct's [`Layout`](crate::layout::Layout) fields in declaration
     /// order, lower each field's value against its field type, and concatenate —
