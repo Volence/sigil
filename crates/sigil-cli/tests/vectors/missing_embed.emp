@@ -1,0 +1,2 @@
+module m
+data D = embed("does_not_exist.bin")
