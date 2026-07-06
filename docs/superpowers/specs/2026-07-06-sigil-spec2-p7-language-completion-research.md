@@ -354,3 +354,60 @@ golden vectors from the reference ROMs, same pattern as the ZX0 test vectors). T
 **Sequencing:** low urgency for the Aeon migration (embed the blobs), but high strategic value for the
 "other games" goal. Pure-Rust ports (or vendored `-sys` crates like salvador) both viable; gate each
 on committed compress/decompress vectors.
+
+---
+
+# Part V — Language surface gaps & semantic landmines (the un-obvious corners)
+
+Prompted by Volence (2026-07-06): a deliberate review of the *low-visibility* design corners — the
+things nobody thinks about until they bite. Each behavior below was **probed live** against
+`sigil emp`.
+
+**Handled well (the dangerous corner is safe):** out-of-range emission ERRORS, never silently
+truncates — `$100` into `u8` → `[emit.out-of-range] 256 does not fit u8`. Totality tenet holds.
+
+**Lexical gaps that bite on the FIRST real port (small to add, invisible until hit):**
+| You write (real AS) | `.emp` today (actual error) | Needs |
+|---|---|---|
+| `dc.b %10100101` | `expected an expression, found Percent` | **binary `%` literals** |
+| `dc.b 'A'` | `unexpected character '` | **char literals** |
+| `dc.b "text"` / `bytes("HI")` | `bytes expects an array, got string` | **string → bytes in data** |
+| `dc.w -1` (sentinel) | `-1 does not fit u8` (needs explicit `i8`/`i16`) | **signed literals / native sentinels** |
+| `move.w Foo, d0`, `lea Table, a0` | `symbolic operand … not yet supported (only branch/jmp/jsr defer to link)` | **symbolic operands in straight-line instrs** |
+
+The last is the big **structural** one — named RAM/ROM reads are pervasive; it's what separates
+"ports data files" from "ports code files." The four literal gaps are trivial individually but a port
+of almost any file trips all of them in its first hundred lines. **→ top of the Plan 7 implementation
+list**, ahead of the fancier candidates.
+
+**Note on `dc.w -1` sentinels:** `u8`/`u16` correctly reject negatives (type-correct), but the
+`dc.w -1` object-list/ring-list terminator is *everywhere* in real code. Decide: rely on `i16` typing,
+a signed-in-unsigned rule, or (better) let the counted/sentinel collection construct (T2-d) emit the
+terminator natively so authors never write the raw `-1`.
+
+**Semantic landmines — invisible in source, catastrophic at runtime (design the type/dataflow layer
+with room for these even if built later):**
+- **CCR flag liveness** — a `move` between `cmp` and `bne` silently flips the branch (`move` sets
+  flags; `lea`/`movea` don't). The classic silent-insertion bug. → deferred **S2-D7** dataflow pass.
+- **Odd-address word/long access** — the 68000 *traps*. `.emp` already warns on odd struct fields
+  (`[layout.odd-field]`); the access-site version is broader.
+- **DMA source crossing a 128 KB boundary** — VDP corrupts silently. → alignment/placement invariant
+  (sibling of the bank type).
+- **Comptime ↔ link phasing** — a comptime value depending on a label's *final address* is the
+  `FmPitchTable`-oscillation class. Be deliberate about which values are known at comptime vs link.
+- **`here()` / `$` under phase** — VMA ≠ LMA; `here()` must be the phased VMA, not physical LMA.
+  Easy to flip; load-bearing for the inline Z80 blob.
+
+**Grammar forward-compatibility (the meta one):** every keyword added *later* can break code that used
+the word as a name (`patch`/`bind`/`math`/`as` are already contextual). **Decide the reserved-word
+policy + reserve headroom now** — cheap pre-release, painful after.
+
+**Label model — reviewed 2026-07-06, verdict GOOD (keep), three settled calls:**
+1. **`.` = "member of," on purpose** — local label / field / module path / exported-label ref
+   (`foo.entry`) are one consistent model. Proc-scoping (not AS's "last global label") fixes AS's
+   fragile re-scoping hazard; owner-mangling (`$foo$loop`) makes cross-proc collisions impossible by
+   construction (was the Plan-4 CRITICAL).
+2. **No anonymous labels (`bra +`/`bne -`)** — decided AGAINST; named `.skip:` locals are clearer and
+   proc-scoping makes them cheap. Revisit only on demonstrated naming fatigue.
+3. **Debug un-mangling** — internal `$foo$loop` should render as friendly `foo.loop` in `.lst`/Oracle
+   (Spec 4 debug info, not a Spec 2 concern).
