@@ -277,6 +277,11 @@ fn apply_fixup(
         FixupKind::HeaderChecksum => {
             diags.push(diag("HeaderChecksum is a post-image pass, not an in-fragment fixup".into(), span));
         }
+        FixupKind::RelWord16Be => {
+            // Not yet consumed anywhere in the IR (no producer exists yet); real
+            // apply_fixup behavior for the offset-table idiom is a later task.
+            diags.push(diag("RelWord16Be fixup application is not yet implemented".into(), span));
+        }
     }
 }
 

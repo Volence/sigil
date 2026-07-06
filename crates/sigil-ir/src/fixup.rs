@@ -17,6 +17,13 @@ pub enum FixupKind {
     Abs16Be,
     /// Scaffolding for the 68000 backend (M1); unused in M0.
     Abs32Be,
+    /// A self-relative signed **word** offset (`dc.w Target-Base`): the offset
+    /// table idiom. Unlike [`Abs16Be`](Self::Abs16Be) (an absolute address
+    /// truncated to 16 bits), this writes a *signed relative displacement* — the
+    /// [`Fixup`]'s `target` is a symbol **difference** (`Sub(Sym(t), Sym(base))`),
+    /// so the folded value IS the offset. Range i16 (`[-0x8000, 0x7FFF]`),
+    /// big-endian; overflow is an error (totality). Fixed width — no relaxation.
+    RelWord16Be,
     /// 8-bit branch displacement in the opcode low byte (`bra.s`/`bsr.s`/`Bcc.s`).
     /// `disp = target - (site_vma + 1)` (PC ref = op+2, byte at op+1); range i8.
     PcRel8,
@@ -39,7 +46,10 @@ impl FixupKind {
     /// Used by the linker to verify a fixup fits entirely within its fragment.
     pub fn byte_width(&self) -> u32 {
         match self {
-            FixupKind::BankPtr16Le | FixupKind::BankPtr16Be | FixupKind::Abs16Be => 2,
+            FixupKind::BankPtr16Le
+            | FixupKind::BankPtr16Be
+            | FixupKind::Abs16Be
+            | FixupKind::RelWord16Be => 2,
             FixupKind::PcRelDisp16 | FixupKind::HeaderChecksum => 2,
             FixupKind::Z80JrRel8 | FixupKind::PcRel8 | FixupKind::PcRelDisp8 => 1,
             FixupKind::Abs32Be => 4,
@@ -76,5 +86,10 @@ mod tests {
         assert_eq!(FixupKind::PcRelDisp16.byte_width(), 2);
         assert_eq!(FixupKind::PcRelDisp8.byte_width(), 1);
         assert_eq!(FixupKind::HeaderChecksum.byte_width(), 2);
+    }
+
+    #[test]
+    fn rel_word_16_be_is_two_bytes() {
+        assert_eq!(FixupKind::RelWord16Be.byte_width(), 2);
     }
 }
