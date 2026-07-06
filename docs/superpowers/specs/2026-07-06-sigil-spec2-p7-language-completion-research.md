@@ -274,3 +274,51 @@ Plus **typed `ref<Entity>` relation fields** (Treasure's `$58`/`$5C` parent/chil
    must decide how much object-model opinion `.emp` should hold vs. leave to each engine (the
    Sonic-vs-Treasure-vs-Vectorman divergence is real: `.emp` should *enable* all three encodings,
    not *impose* one).
+
+---
+
+# Part III — External reference: NESHLA, and the control-flow question (2026-07-06)
+
+Volence's friend pointed at **NESHLA** (NES High Level Assembler, Brian Provinciano —
+`neshla.sourceforge.net`), a high-level assembler for the 6502/NES. Reviewed for `.emp` inspiration.
+
+**What NESHLA is.** A *high-level* assembler: structured control flow (`if`/`else`, `while`,
+`do-while`, `forever`, `switch`), functions with typed **parameters** + a calling convention
+(`return`/`noreturn`), typed variables + expression arithmetic, preprocessor/modules (defines,
+includes, **ROM/RAM banks & blocks**, padding, **interrupt vectors**), and a real stdlib
+(`STD.H`/`NES.H`: assignment/bitwise/boolean/math/memory/stack + NES hardware macros). It
+**replaces the instruction stream** with C-like syntax and generates the 6502.
+
+**Where it sits vs `.emp`.** NESHLA takes the *opposite* stance on the core question: it abstracts
+control flow / functions / expressions into C-like surface syntax and emits the instructions.
+`.emp`'s **tenet 3** (D2.13, "Haskell semantics, not surface syntax") deliberately keeps
+**instruction lines as classic 68000/Z80 asm** — the high-level power lives in the
+comptime/type/data layer, not in replacing `bne`/`bsr`. This is load-bearing for byte-exact
+migration: a compiler that chooses your branch instructions can't reproduce AS's exact bytes.
+
+**The one genuine open DECISION it surfaces (for finalization, with Fable):**
+- *Optional structured control-flow sugar for **new-style code only*** (never `@as_compat` ports).
+  NESHLA is strong evidence `if`/`while` blocks that lower to branches are popular and readable.
+  Counter: it blurs the "you always know the bytes" guarantee even for new code, and adds a second
+  way to write control flow.
+- **Recommendation (lean DEFER):** keep tenet 3 as the default — instruction lines stay asm — and
+  do *not* build control-flow sugar unless a concrete authored new-style file shows it earns its
+  keep. `.emp`'s differentiator is *types over a fixed byte layout*, not *hiding the instructions*.
+  Revisit post-migration if real new-style code demands it. Keeps the byte-exact guarantee uniform.
+  (Deliberately NOT added to the before/after visualizer, which shows adopted wins — this is a fork,
+  not a win.)
+
+**Compatible inspirations — fold into existing candidates, not new philosophy:**
+- **Richer stdlib/prelude with hardware helpers.** NESHLA's `NES.H` (audio/video/mapper macros)
+  validates the deferred **S2-D3 prelude** and gives content ideas: the aeon prelude should ship
+  VDP/DMA/Z80/bank helpers, not just `Sst`/`Draw_Sprite`.
+- **First-class interrupt-vector table.** NESHLA declares vectors — reinforces catalog **#11
+  (hot-swap handlers)**; the vector table itself should be a declared construct, not raw `dc.l` at
+  `$FFxx`.
+- **Banks/blocks + padding as constructs** — aligns with catalog **#5 (bank placement)** + map-file
+  placement (S2-D3).
+- **Function params + calling convention** — a lighter cousin of the deferred **S2-D6 register
+  contracts**; calibrate how far `.emp` proc contracts go.
+
+**Reject:** C-like runtime expression arithmetic (`x = a + b*c` → generated instructions) — the
+"`.emp` is not a C compiler" line; comptime already does expression math, runtime stays asm.
