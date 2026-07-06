@@ -501,10 +501,10 @@ impl<'a> Evaluator<'a> {
             match cell {
                 Cell::Bytes(b) => input.extend_from_slice(b),
                 Cell::Scalar { value, width: 1, .. } => {
-                    // Mirrors `byte`/`bytes`'s accepted range (`-128..=255`,
-                    // `eval/builtins.rs`'s `BYTE_LO`/`BYTE_HI`): a signed or
-                    // unsigned reading of one byte.
-                    if !(-128..=255).contains(value) {
+                    // Mirrors `byte`/`bytes`'s accepted range: a signed or
+                    // unsigned reading of one byte. Reuse the SAME constants so
+                    // the two byte-domain sites cannot silently drift apart.
+                    if !(super::builtins::BYTE_LO..=super::builtins::BYTE_HI).contains(value) {
                         self.error(
                             span,
                             format!("[zx0.byte-range] zx0 input byte {value} does not fit 8 bits"),
@@ -636,6 +636,49 @@ mod tests {
         let result = ev.zx0_from_data(buf, span());
         assert_eq!(result, Value::Poison);
         assert!(ev.diags.iter().any(|d| d.message.contains("[zx0.byte-range]")));
+    }
+
+    #[test]
+    fn zx0_from_data_empty_input() {
+        // n == 0: header is `[0,0,0,2]`, and salvador on empty input yields an
+        // empty stream — matching what build.sh would emit for a 0-byte file.
+        let mut ev = Evaluator::new();
+        let result = ev.zx0_from_data(DataBuf::empty(), span());
+        let expected_compressed = sigil_salvador_sys::compress(&[]);
+        match result {
+            Value::Data(out) => match &out.cells[0] {
+                Cell::Bytes(b) => {
+                    let mut expected = vec![0x00, 0x00, 0x00, 0x02];
+                    expected.extend_from_slice(&expected_compressed);
+                    assert_eq!(b, &expected);
+                }
+                other => panic!("expected Cell::Bytes, got {other:?}"),
+            },
+            other => panic!("expected Value::Data, got {other:?}"),
+        }
+        assert!(ev.diags.is_empty(), "empty input should not diagnose: {:?}", ev.diags);
+    }
+
+    #[test]
+    fn zx0_from_data_max_u16_input() {
+        // n == 65535: the ALLOWED boundary (65536 is the rejected one). The
+        // size field is `[0xFF, 0xFF]` and no `[zx0.too-large]` fires.
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Bytes(vec![7u8; 0xFFFF]));
+        let result = ev.zx0_from_data(buf, span());
+        let expected_compressed = sigil_salvador_sys::compress(&[7u8; 0xFFFF]);
+        match result {
+            Value::Data(out) => match &out.cells[0] {
+                Cell::Bytes(b) => {
+                    assert_eq!(&b[..4], &[0xFF, 0xFF, 0x00, 0x02]);
+                    assert_eq!(&b[4..], &expected_compressed[..]);
+                }
+                other => panic!("expected Cell::Bytes, got {other:?}"),
+            },
+            other => panic!("expected Value::Data, got {other:?}"),
+        }
+        assert!(ev.diags.iter().all(|d| !d.message.contains("[zx0.too-large]")));
     }
 
     #[test]
