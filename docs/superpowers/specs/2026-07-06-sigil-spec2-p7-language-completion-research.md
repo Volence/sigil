@@ -322,3 +322,35 @@ migration: a compiler that chooses your branch instructions can't reproduce AS's
 
 **Reject:** C-like runtime expression arithmetic (`x = a + b*c` → generated instructions) — the
 "`.emp` is not a C compiler" line; comptime already does expression math, runtime stays asm.
+
+---
+
+# Part IV — Compression builtins (absorb the remaining generators; port other Sonic games)
+
+Prompted by Volence (2026-07-06): `.emp` ships exactly **one** compression builtin today — `zx0()`
+(Plan 5, via vendored salvador). Everything else is compressed **outside** the assembler (in
+`build.sh` / Python tools) and pulled in as opaque pre-compressed bytes via `embed()`.
+
+**What's actually in use (grep-confirmed):**
+- **Aeon:** ZX0 (`zx0()`, shipped) + **S4LZ** (aeon's own LZ, `aeon/tools/s4lz.py`, ~40 refs on the
+  ROM path — currently `embed()`ed as opaque "S4LZ blocks").
+- **Classic Sonic games (S1/S2/S3K):** **Nemesis** (274 files — art/sprites), **Kosinski** (133 —
+  level art), **Kosinski Moduled** (S2/S3K large/DMA data), **Enigma** (30 — 16×16 block mappings),
+  **Saxman** (10 — SMPS sound; `saxman.exe` ships), + **Comper** (1, homebrew).
+
+**Byte-exactness note:** none of these are *required* as builtins to hit byte-exactness — the
+pre-compressed blob can always be `embed()`ed (Core §7.3 treats S4LZ/ZX0 pages as opaque, byte-fixed).
+`zx0()` earned its builtin status because compressing *at assemble time* is byte-exact by
+construction and deletes a `build.sh` step.
+
+**The candidate:** absorb the family as comptime builtins — `s4lz()`, `nemesis()`, `kosinski()`,
+`kosinski_m()` (moduled), `enigma()`, `saxman()` — the way `zx0()` absorbed salvador (each gated on
+golden vectors from the reference ROMs, same pattern as the ZX0 test vectors). Two payoffs:
+1. **Finishes absorbing the `build.sh` generators** (the D2 vision) — no external compress step.
+2. **Unlocks porting *other* Sonic games to `.emp`**, not just Aeon — S1/S2/S3K are built almost
+   entirely on Nemesis + Kosinski + Enigma + Saxman, so those builtins are the enabling dependency
+   for `.emp` becoming a general Sonic-disassembly assembler.
+
+**Sequencing:** low urgency for the Aeon migration (embed the blobs), but high strategic value for the
+"other games" goal. Pure-Rust ports (or vendored `-sys` crates like salvador) both viable; gate each
+on committed compress/decompress vectors.
