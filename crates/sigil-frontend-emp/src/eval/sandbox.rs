@@ -119,6 +119,13 @@ impl<'a> Evaluator<'a> {
         // `embed` of a not-yet-created file) — canonicalize would itself fail
         // on a nonexistent path, so skip straight to returning the lexical
         // result and let the builtin's own read fail with its own diagnostic.
+        //
+        // TOCTOU: the builtin later reads the LEXICAL `resolved` path, so a
+        // symlink swapped between this check and that read could bypass
+        // containment. This is acceptable for a single-threaded, build-time
+        // comptime evaluator with no concurrent adversary — it is not a
+        // live-attacker sandbox; it stops an honest source tree from
+        // accidentally (or a `..`/symlink-in-tree from casually) escaping root.
         if resolved.exists() {
             if let Ok(canon) = std::fs::canonicalize(&resolved) {
                 if !canon.starts_with(&root) {

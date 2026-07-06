@@ -125,21 +125,40 @@ fn eval_data_captures_is_deterministic_across_runs() {
 ///   - `SystemTime`/`Instant::now` (wall-clock/monotonic reads)
 ///   - `std::process::` (subprocess spawn / exit)
 ///
-/// As of this test, EVERY hit for ALL FIVE patterns across the entire `src/`
-/// tree is confined to `eval/sandbox.rs`. A future PR that adds a genuinely new
-/// legitimate use elsewhere must extend an explicit allowlist here (documenting
-/// why), rather than silently widening the hermeticity boundary — so this test
-/// is a tripwire, not a rubber stamp. This is meaningfully stricter (and no
-/// less flaky) than a substring-in-comments concern: none of these five
-/// patterns is a word that shows up incidentally in prose or unrelated code.
+/// Each facility is matched in BOTH spellings — the fully-qualified call style
+/// (`std::fs::read`) AND the imported style (`use std::fs; fs::read`, including
+/// `use std::fs as f` and `use std::fs::read`). Since any use of one of these
+/// facilities requires either a fully-qualified path or a `use` of its module,
+/// the two pattern sets together close the `use`-aliasing bypass (an earlier
+/// version keyed only on `std::fs::` and would have missed `use std::fs;`).
+///
+/// As of this test, EVERY hit across the entire `src/` tree is confined to
+/// `eval/sandbox.rs`. A future PR that adds a genuinely new legitimate use
+/// elsewhere must extend an explicit allowlist here (documenting why), rather
+/// than silently widening the hermeticity boundary — so this test is a
+/// tripwire, not a rubber stamp. (It is a source-substring guard, not a
+/// type-level proof: a determined author could still reach the outside world
+/// via a transitive dependency or `unsafe`/FFI that names none of these — the
+/// guard raises the bar against ACCIDENTAL edges, it does not sandbox a hostile
+/// contributor.)
 #[test]
 fn no_hidden_external_world_edges_outside_sandbox_rs() {
     let forbidden = [
+        // Fully-qualified call style (`std::fs::read(...)`).
         "std::env::",
         "std::fs::",
         "SystemTime",
         "Instant::now",
         "std::process::",
+        // Imported style (`use std::fs; fs::read(...)`, incl. `as` aliases and
+        // `use std::fs::read`). Any use of these facilities needs EITHER a
+        // fully-qualified path (caught above) OR a `use` of the module (caught
+        // here), so the two sets together close the aliasing bypass. `use
+        // std::fmt`/`std::cmp`/etc. do not contain these substrings.
+        "use std::env",
+        "use std::fs",
+        "use std::process",
+        "use std::time",
     ];
     // The ONE file allowed to reference any of the above — the declared
     // capability-sandbox edge itself.
