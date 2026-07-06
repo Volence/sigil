@@ -247,3 +247,81 @@ fn offsets_forward_emits_word_offsets() {
     let bytes = emp_candidate(emp);
     assert_eq!(bytes, vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x11, 0x22, 0x33]);
 }
+
+/// Plan 7 backlog #3 (Task 7) — byte-diff cross-check of the `offsets` FORWARD
+/// direction against the AS front-end's OWN (independent) computation of
+/// `dc.w Target-Base`.
+///
+/// A throwaway probe (since deleted) confirmed `directive_dc_w`'s
+/// `Target-Base` operand folds cleanly here: on the converged pass both `Map`
+/// and each `F{n}` label are already in the seeded env, so `self.fold(&qe)`
+/// resolves the whole subtraction to a concrete `Fold::Value` — no
+/// `Fixup`/poison path is exercised, and no "unresolved word expression" error
+/// fires. So the AS reference below is a genuine second, independent
+/// computation of the same offsets (not a hand-computed golden standing in for
+/// one), which is what makes this a real cross-check rather than a tautology.
+///
+/// Layout (both sides): `Map` labels the table's first byte (address 0). Three
+/// `dc.w` entries = 6 bytes occupy addresses 0..6, so `F0`@6, `F1`@7, `F2`@8 —
+/// matching `offsets_forward_emits_word_offsets` above bit-for-bit, so the AS
+/// and emp sides describe the identical layout.
+#[test]
+fn offsets_byte_identical_to_as_reference() {
+    let asm = "Map:\n\
+               \tdc.w F0-Map, F1-Map, F2-Map\n\
+               F0:\n\
+               \tdc.b $11\n\
+               F1:\n\
+               \tdc.b $22\n\
+               F2:\n\
+               \tdc.b $33\n";
+    let reference = as_reference(asm);
+    // Sanity-check the independent AS computation against the hand worked-out
+    // layout before using it as the byte-diff golden.
+    assert_eq!(reference, vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x11, 0x22, 0x33]);
+
+    let emp = "module m\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 offsets Map { F0: frame0, F1: frame1, F2: frame2 }\n\
+                 data frame0: [u8; 1] = [$11]\n\
+                 data frame1: [u8; 1] = [$22]\n\
+                 data frame2: [u8; 1] = [$33]\n\
+               }\n";
+    let candidate = emp_candidate(emp);
+    assert_byte_identical(&reference, &candidate, "offsets vs AS dc.w Target-Base");
+}
+
+/// Plan 7 backlog #3 (Task 7) — the NEGATIVE-offset case: a member whose
+/// target is defined BEFORE the offsets block's own base label, so
+/// `target - base` is negative and must round-trip through two's-complement
+/// as a signed 16-bit word.
+///
+/// Layout: `Zero` (2 bytes, `$99,$88`) sits at addresses 0..2. `Map` (the
+/// offsets base) labels the table's first byte, right after `Zero`, at
+/// address 2 — deliberately EVEN, so `directive_dc_w`'s own word-alignment
+/// padding (it pads to an even address before emitting, independent of any
+/// `padding off` convention) is a no-op and doesn't perturb the layout being
+/// tested. The lone member's target is `Zero`, so the word is
+/// `Zero - Map = 0 - 2 = -2`, which as a big-endian `i16` is `0xFF 0xFE`. A
+/// trailing `Pad` byte (`$00`) at address 4 proves nothing after the table got
+/// perturbed (no implicit padding under the emp/AS `padding off` convention).
+#[test]
+fn offsets_negative_forward_offset_byte_identical_to_as_reference() {
+    let asm = "Zero:\n\
+               \tdc.b $99, $88\n\
+               Map:\n\
+               \tdc.w Zero-Map\n\
+               Pad:\n\
+               \tdc.b $00\n";
+    let reference = as_reference(asm);
+    assert_eq!(reference, vec![0x99, 0x88, 0xFF, 0xFE, 0x00]);
+
+    let emp = "module m\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 data zero: [u8; 2] = [$99, $88]\n\
+                 offsets Map { Z: zero }\n\
+                 data pad: [u8; 1] = [$00]\n\
+               }\n";
+    let candidate = emp_candidate(emp);
+    assert_byte_identical(&reference, &candidate, "offsets negative offset vs AS dc.w Target-Base");
+}
