@@ -17,7 +17,7 @@ mod proc;
 pub use code::lower_code_buf;
 
 use crate::ast;
-use crate::layout::{eval_attr_int, eval_data_with_root};
+use crate::layout::{eval_attr_int, eval_data_with_root, eval_offsets_with_root};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
 use sigil_span::{Diagnostic, Level, Span};
@@ -137,6 +137,20 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut asm_counter,
                 );
             }
+            ast::Item::Offsets(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
+                lower_offsets_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        include_root: opts.include_root.as_deref(),
+                    },
+                    &mut builder,
+                    &mut diags,
+                );
+            }
             ast::Item::Section(sec) => {
                 // Close whatever is open (default text or a prior adjacent
                 // section), folding its length into the counter.
@@ -201,6 +215,9 @@ fn lower_section_items(
             ast::Item::Data(decl) => {
                 lower_data_item(file, decl, placement, builder, diags);
             }
+            ast::Item::Offsets(decl) => {
+                lower_offsets_item(file, decl, placement, builder, diags);
+            }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
                 proc::lower_proc(
@@ -232,6 +249,30 @@ fn lower_data_item(
     let here_base = placement.origin + builder.current_offset();
     let (buf, mut ds) =
         eval_data_with_root(file, &decl.name, Some(here_base), placement.include_root);
+    diags.append(&mut ds);
+    let Some(buf) = buf else { return };
+
+    let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
+    diags.append(&mut stream_diags);
+    builder.define_label(&decl.name);
+    builder.emit_data(&bytes, fixups, decl.span);
+}
+
+/// Lower one `offsets` block (Spec 2, Plan 7 backlog #3 — Task 6, the FORWARD
+/// direction): evaluate its members to a [`Cell::RelOffset`](crate::value::Cell)
+/// per entry, serialize them (each a `dc.w target - base` `RelWord16Be` word),
+/// define the table's base label at its first byte, then emit the bytes +
+/// fixups. Unlike [`lower_data_item`] there is no `here_base`: a `RelOffset`
+/// resolves against the SYMBOLIC base label `decl.name`, folded at link time —
+/// not against a physical `here()` position.
+fn lower_offsets_item(
+    file: &ast::File,
+    decl: &ast::OffsetsDecl,
+    placement: &Placement,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 

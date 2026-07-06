@@ -16,7 +16,7 @@
 //! and the field-mismatch diff are all T3 — layered on top of what is here.
 use crate::ast;
 use crate::eval::{Env, Evaluator};
-use crate::value::{DataBuf, Value};
+use crate::value::{Cell, DataBuf, Value};
 use sigil_span::{Diagnostic, Span};
 use std::path::PathBuf;
 
@@ -1051,6 +1051,77 @@ pub fn eval_data_captures(
             .map(|c| Capture { path: c.path.clone(), hash: c.hash, len: c.len })
             .collect();
         (Some(buf), captures, ev.diags)
+    })
+}
+
+/// Lower an `offsets Name { Variant: target, ... }` block (Spec 2, Plan 7
+/// backlog #3, Task 6 — the FORWARD direction) to a checked, CPU-neutral
+/// [`DataBuf`]: one [`Cell::RelOffset`] per member (each a `dc.w target - Name`
+/// word), whose `base` is the table's own label (`decl.name`) and whose
+/// `target` is the member's referenced symbol. The sibling of
+/// [`eval_data_with_root`] for `offsets` items — it threads `include_root` for
+/// signature parity (a target `Expr` is a symbol reference, so no `embed`/
+/// `import` runs here today), and its diagnostics/labels flow the same way.
+///
+/// A target is a symbol NAME, not a comptime value: the reverse direction
+/// (`eval_path`'s `Name.Variant` ordinals) never evaluates it, and it names a
+/// LINK-time label (a `data`/`proc` symbol) that has no comptime value to
+/// evaluate to. So the name is taken SYNTACTICALLY from a bare `Path` (or a
+/// string literal) — for a single-segment path this is exactly the bare label
+/// name `define_label` emits, so the `RelWord16Be` fixup's `Sub(Sym(target),
+/// Sym(base))` matches by construction. An exotic non-path/non-string target
+/// (some other expression) is evaluated and its name extracted the same way
+/// [`lower_ptr`](crate::eval::Evaluator) does (a [`Value::FnRef`]/[`Value::Str`]),
+/// else it is a "must reference a label" error with an `<unresolved>`
+/// placeholder so the 2-byte slot still lands (sizes stay consistent). Dup /
+/// reserved-`count` validation is NOT re-done here — it lives once-per-compile
+/// in `lower::validate_offsets`.
+pub fn eval_offsets_with_root(
+    file: &ast::File,
+    decl: &ast::OffsetsDecl,
+    include_root: Option<&std::path::Path>,
+) -> (Option<DataBuf>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let mut env = Env::new();
+        let mut buf = DataBuf::empty();
+        for member in &decl.members {
+            let name = match &member.target {
+                // A bare label reference (`frame0`) or a module-qualified path
+                // (`mod.thing`): the symbol name IS the path text. A single
+                // segment is the bare label name (the common case); multi-segment
+                // is joined `a.b` (cross-module resolution is a later plan).
+                ast::Expr::Path(p) => p.segments.join("."),
+                // A string literal names a symbol directly (mirrors `lower_ptr`'s
+                // `Value::Str` arm and `winptr("name")`).
+                ast::Expr::Str(s, _) => s.clone(),
+                // Any other expression is evaluated; a `FnRef`/`Str` yields the
+                // name (as `lower_ptr` extracts it), anything else is an error.
+                other => {
+                    let v = ev.eval_expr(other, &mut env);
+                    match v {
+                        Value::FnRef(n) => n,
+                        Value::Str(s) => s,
+                        _ => {
+                            ev.error(
+                                crate::parser::expr_span(other),
+                                format!(
+                                    "offset entry `{}` must reference a label, got {}",
+                                    member.name,
+                                    v.type_name()
+                                ),
+                            );
+                            "<unresolved>".to_string()
+                        }
+                    }
+                }
+            };
+            buf.push(Cell::RelOffset { base: decl.name.clone(), target: name });
+        }
+        (Some(buf), ev.diags)
     })
 }
 

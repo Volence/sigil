@@ -229,3 +229,21 @@ fn mixed_build_cross_seam_name_collision_errors() {
         "expected a `Song_DrumTest redefined` error, got: {err:?}"
     );
 }
+
+/// Plan 7 backlog #3 (Task 6) — the FORWARD direction of an `offsets` block:
+/// it emits one `dc.w target - base` word per member and defines its base label
+/// at the table's first byte. Three offset words (6 bytes) precede three
+/// one-byte data items, so `frame0`@6, `frame1`@7, `frame2`@8, and the words
+/// resolve to `frame{n} - Map` = 6, 7, 8 (signed word, big-endian).
+#[test]
+fn offsets_forward_emits_word_offsets() {
+    let emp = "module m\n\
+               section s (cpu: m68000, vma: $000000) {\n\
+                 offsets Map { F0: frame0, F1: frame1, F2: frame2 }\n\
+                 data frame0: [u8; 1] = [$11]\n\
+                 data frame1: [u8; 1] = [$22]\n\
+                 data frame2: [u8; 1] = [$33]\n\
+               }\n";
+    let bytes = emp_candidate(emp);
+    assert_eq!(bytes, vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x11, 0x22, 0x33]);
+}
