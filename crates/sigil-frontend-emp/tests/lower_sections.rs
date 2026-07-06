@@ -73,7 +73,7 @@ fn two_sections_place_at_vma_and_continuous_lma() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "lower: {diags:?}");
 
     let a = section(&module, "a");
@@ -112,7 +112,7 @@ fn cross_section_pointer_resolves_to_target_vma() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "lower: {diags:?}");
 
     assert_eq!(
@@ -137,7 +137,7 @@ fn z80_section_serializes_little_endian() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "lower: {diags:?}");
     assert_eq!(linked_section_bytes(&module, "z"), vec![0x34, 0x12]);
 }
@@ -155,7 +155,7 @@ fn here_resolves_to_item_start_vma_and_advances() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "lower: {diags:?}");
     // H0 = $8000 → 80 00 ; H1 = $8002 → 80 02.
     assert_eq!(linked_section_bytes(&module, "s"), vec![0x80, 0x00, 0x80, 0x02]);
@@ -168,7 +168,7 @@ fn here_outside_a_placed_section_uses_default_origin() {
                data H: u16 = here()\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "lower: {diags:?}");
     assert_eq!(linked_section_bytes(&module, "text"), vec![0x00, 0x00]);
 }
@@ -195,7 +195,7 @@ fn cross_cpu_bank_pointers_pick_le_and_be_by_section() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "lower: {diags:?}");
 
     // z80 windowed pointer → BankPtr16Le, targeting the masked symbol.
@@ -226,7 +226,7 @@ fn unknown_section_attribute_is_diagnosed() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(
         diags.iter().any(|d| d.message.contains("unknown attribute `foo`")),
         "expected an unknown-attribute diagnostic, got: {diags:?}"
@@ -243,7 +243,7 @@ fn non_integer_vma_is_diagnosed() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(
         diags.iter().any(|d| d.message.contains("`vma:` is not a comptime integer")),
         "expected a non-integer vma diagnostic, got: {diags:?}"
@@ -260,7 +260,7 @@ fn here_with_arguments_is_arity_error() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(
         diags.iter().any(|d| d.message.contains("`here` takes no arguments")),
         "expected a here() arity diagnostic, got: {diags:?}"
@@ -279,7 +279,7 @@ fn here_outside_a_lowering_context_is_error() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(
         diags.iter().any(|d| d.message.contains("only valid inside a section during lowering")),
         "expected a here()-outside-lowering diagnostic, got: {diags:?}"
@@ -296,7 +296,7 @@ fn unwindowed_pointer_in_z80_section_is_error() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(
         diags.iter().any(|d| d.message.contains("[cross-cpu.unwindowed-pointer]")
             && d.message.contains("Target")),

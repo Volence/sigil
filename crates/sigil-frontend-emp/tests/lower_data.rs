@@ -27,7 +27,7 @@ fn roundtrip_bytes() {
     let (file, perrs) = parse_str("module m\ndata X: [u8; 3] = [1, 2, 3]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
@@ -44,7 +44,7 @@ fn multibyte_scalar_is_big_endian() {
     let (file, perrs) = parse_str("module m\ndata W: u16 = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
@@ -63,7 +63,7 @@ fn symref_makes_abs32_fixup() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, _diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, _diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
 
     // The point is the fixup SHAPE, not its resolution: an Abs32Be fixup at
     // offset 0 of the data fragment, targeting the symbol `init`.
@@ -140,11 +140,11 @@ fn scalar_byte_order_per_cpu() {
     let (file, perrs) = parse_str("module m\ndata W: u16 = 258\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (be_mod, be_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (be_mod, be_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(be_diags.is_empty(), "unexpected 68k diagnostics: {be_diags:?}");
     assert_eq!(linked_bytes(&be_mod), vec![0x01, 0x02]);
 
-    let (le_mod, le_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80 });
+    let (le_mod, le_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
     assert!(le_diags.is_empty(), "unexpected Z80 diagnostics: {le_diags:?}");
     assert_eq!(linked_bytes(&le_mod), vec![0x02, 0x01]);
 }
@@ -159,7 +159,7 @@ fn symref_width4_68k_is_abs32be() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -178,7 +178,7 @@ fn winptr_in_z80_is_bankptr16le() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -209,7 +209,7 @@ fn winptr_in_68k_is_bankptr16be() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -230,7 +230,7 @@ fn unwindowed_pointer_in_z80_is_error() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80 });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
     assert!(
         diags.iter().any(|d| d.message.contains("[cross-cpu.unwindowed-pointer]")
             && d.message.contains("init")),
@@ -251,7 +251,7 @@ fn mixed_table_byte_diff_68k() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     // tag=0x1234 (BE) | code=0x00000000 (Abs32 hole) | flag=0x7F. The pointer
     // targets an external `init`, so byte-diff the raw pre-link image.

@@ -107,6 +107,29 @@ impl<'a> Evaluator<'a> {
             );
             return None;
         }
+        // Symlink containment (T5, closing T1-review finding #1): the LEXICAL
+        // check above only catches a `..`-escape written directly in `path` —
+        // it says nothing about a symlink INSIDE the root whose target points
+        // OUTSIDE it (e.g. `root/link -> /etc/passwd`), since the lexical join
+        // never touches the filesystem. If `resolved` exists on disk, resolve
+        // it FOR REAL (`fs::canonicalize` follows every symlink component) and
+        // re-check containment against the (already-canonical) `root`; a
+        // resolved-but-escaping target is still `[sandbox.path-escape]`. If it
+        // does NOT exist, this is the legitimate "missing file" case (e.g.
+        // `embed` of a not-yet-created file) — canonicalize would itself fail
+        // on a nonexistent path, so skip straight to returning the lexical
+        // result and let the builtin's own read fail with its own diagnostic.
+        if resolved.exists() {
+            if let Ok(canon) = std::fs::canonicalize(&resolved) {
+                if !canon.starts_with(&root) {
+                    self.error(
+                        span,
+                        "[sandbox.path-escape] embed/import path must stay within the source directory",
+                    );
+                    return None;
+                }
+            }
+        }
         Some(resolved)
     }
 
@@ -600,6 +623,85 @@ mod tests {
         let got = ev.resolve_sandbox_path("../etc/passwd", span());
         assert!(got.is_none());
         assert!(ev.diags.iter().any(|d| d.message.contains("[sandbox.path-escape]")));
+    }
+
+    /// A scratch directory (named by `tag`, so distinct tests never collide)
+    /// under this crate's own `target/` build directory, cleaned up by each
+    /// test that creates one.
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("sandbox-test-scratch")
+            .join(tag);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create scratch dir");
+        dir
+    }
+
+    #[test]
+    fn resolve_sandbox_path_normal_in_root_file_resolves() {
+        let root = scratch_dir("normal");
+        std::fs::write(root.join("real.bin"), b"hello").expect("write fixture");
+        let mut ev = Evaluator::new();
+        ev.set_include_root(root.clone());
+        let got = ev.resolve_sandbox_path("real.bin", span());
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        assert_eq!(got, Some(canonical_root.join("real.bin")));
+        assert!(ev.diags.is_empty(), "unexpected diagnostics: {:?}", ev.diags);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn resolve_sandbox_path_rejects_symlink_escaping_root() {
+        use std::os::unix::fs::symlink;
+
+        // `outside/secret.bin` lives OUTSIDE the sandbox root; `root/link_name`
+        // is a symlink pointing at it. The LEXICAL join of `link_name` onto
+        // `root` never leaves `root` — only following the symlink for real
+        // reveals the escape.
+        let base = scratch_dir("symlink-escape");
+        let root = base.join("root");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&root).expect("create root");
+        std::fs::create_dir_all(&outside).expect("create outside");
+        let secret = outside.join("secret.bin");
+        std::fs::write(&secret, b"outside bytes").expect("write secret");
+        let link = root.join("link_name");
+        symlink(&secret, &link).expect("create symlink");
+
+        let mut ev = Evaluator::new();
+        ev.set_include_root(root.clone());
+        let got = ev.resolve_sandbox_path("link_name", span());
+        assert!(got.is_none(), "expected the symlink escape to be rejected");
+        assert!(
+            ev.diags.iter().any(|d| d.message.contains("[sandbox.path-escape]")),
+            "expected [sandbox.path-escape], got {:?}",
+            ev.diags
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn resolve_sandbox_path_allows_symlink_staying_in_root() {
+        use std::os::unix::fs::symlink;
+
+        // A symlink INSIDE the root pointing at another file also INSIDE the
+        // root must still resolve — the containment check must not reject
+        // every symlink, only ones that escape.
+        let root = scratch_dir("symlink-contained");
+        let real = root.join("real.bin");
+        std::fs::write(&real, b"contained bytes").expect("write real");
+        let link = root.join("link_name");
+        symlink(&real, &link).expect("create symlink");
+
+        let mut ev = Evaluator::new();
+        ev.set_include_root(root.clone());
+        let got = ev.resolve_sandbox_path("link_name", span());
+        assert!(got.is_some(), "expected the in-root symlink to resolve: {:?}", ev.diags);
+        assert!(ev.diags.is_empty(), "unexpected diagnostics: {:?}", ev.diags);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     // `zx0` unit tests: exercised via `zx0_from_data` directly (bypassing AST
