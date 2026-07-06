@@ -11,7 +11,8 @@ use sigil_span::{SourceId, Span};
 pub enum Tok {
     /// An identifier or keyword (keywords are not distinguished by the lexer).
     Ident(String),
-    /// An integer literal: decimal, `$`-hex, or `0b`-binary.
+    /// An integer literal: decimal, `$`-hex, or binary (`0b`-prefixed or
+    /// `%`-prefixed, when `%` is immediately followed by a binary digit).
     Int(i64),
     /// A floating-point literal (digits, `.`, digits).
     Float(f64),
@@ -111,6 +112,13 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                 push!(Tok::Ident(src[s..i].to_string()), s, i);
             }
             b'0'..=b'9' | b'$' => { i = lex_number(src, b, i, source, &mut out, &mut errs); }
+            // `%` immediately followed by a binary digit is a binary literal
+            // (`%1010`); `%` followed by anything else (whitespace, `2`..`9`,
+            // a letter, EOF, ...) stays the modulo operator (`7 % 3`), handled
+            // by the catch-all operator arm below.
+            b'%' if i + 1 < b.len() && matches!(b[i + 1], b'0' | b'1') => {
+                i = finish_binary(src, b, i, i + 1, source, &mut out, &mut errs);
+            }
             b'"' => { i = lex_string(src, b, i, source, &mut out, &mut errs); }
             _ => {
                 // `get` returns None off a char boundary — no panic on non-ASCII.
@@ -173,18 +181,12 @@ fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
         return i;
     }
     if b[i] == b'0' && i + 1 < b.len() && b[i + 1] == b'b' {
-        i += 2;
-        let ds = i;
-        while i < b.len() && (b[i] == b'0' || b[i] == b'1') { i += 1; }
-        if ds == i {
-            errs.push(LexError { message: "expected binary digits after `0b`".into(), span: span(s, i) });
-            return i;
+        let ds = i + 2;
+        if ds >= b.len() || !matches!(b[ds], b'0' | b'1') {
+            errs.push(LexError { message: "expected binary digits after `0b`".into(), span: span(s, ds) });
+            return ds;
         }
-        match i64::from_str_radix(&src[ds..i], 2) {
-            Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
-            Err(_) => errs.push(LexError { message: "binary literal out of range".into(), span: span(s, i) }),
-        }
-        return i;
+        return finish_binary(src, b, s, ds, source, out, errs);
     }
     while i < b.len() && b[i].is_ascii_digit() { i += 1; }
     // float: dot followed by a digit (so `0..256` stays Int DotDot Int)
@@ -202,6 +204,27 @@ fn lex_number(src: &str, b: &[u8], mut i: usize, source: SourceId,
     match src[s..i].parse::<i64>() {
         Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
         Err(_) => errs.push(LexError { message: "integer literal out of range".into(), span: span(s, i) }),
+    }
+    i
+}
+
+/// Scan the maximal run of binary digits starting at `ds`, parse it as a
+/// radix-2 integer, and push either an [`Tok::Int`] token or an out-of-range
+/// error whose span runs from `s` (the literal's first byte, `%` or `0`).
+///
+/// The single home for the binary digit-run loop, the `from_str_radix(_, 2)`
+/// parse, and the "binary literal out of range" message, shared by the `0b`
+/// and `%` syntaxes so they can never drift. Callers guarantee `b[ds]` is a
+/// binary digit, so the run is non-empty. Returns the index past the last
+/// consumed digit.
+fn finish_binary(src: &str, b: &[u8], s: usize, ds: usize, source: SourceId,
+                 out: &mut Vec<Token>, errs: &mut Vec<LexError>) -> usize {
+    let span = |s: usize, e: usize| span_at(source, s, e);
+    let mut i = ds;
+    while i < b.len() && (b[i] == b'0' || b[i] == b'1') { i += 1; }
+    match i64::from_str_radix(&src[ds..i], 2) {
+        Ok(v) => out.push(Token { tok: Tok::Int(v), span: span(s, i) }),
+        Err(_) => errs.push(LexError { message: "binary literal out of range".into(), span: span(s, i) }),
     }
     i
 }

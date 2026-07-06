@@ -65,6 +65,17 @@ fn bytes_element_out_of_range_is_diagnosed() {
     );
 }
 
+#[test]
+fn binary_percent_literal_emits_the_right_byte() {
+    // `%10100101` (lexical gaps, Task 1) end-to-end through parse+eval+lower.
+    let src = "module m\ndata D = byte(%10100101)\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let buf = buf.expect("data buf");
+    assert_eq!(buf.size, 1);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 0b10100101, width: 1, signed: false }]);
+}
+
 // ---- array data items ---------------------------------------------------
 
 #[test]

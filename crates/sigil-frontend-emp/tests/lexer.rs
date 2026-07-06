@@ -111,6 +111,56 @@ fn non_ascii_is_an_error_not_a_panic() {
     assert!(toks_out.iter().any(|t| t.tok == Tok::ident("b")));
 }
 
+// ---- binary `%` literals (lexical gaps, Task 1) -------------------------
+
+#[test]
+fn binary_percent_literals() {
+    assert_eq!(toks("%1010"), vec![Tok::Int(0b1010), Tok::Eof]);
+    assert_eq!(toks("%0"), vec![Tok::Int(0), Tok::Eof]);
+    assert_eq!(toks("%1"), vec![Tok::Int(1), Tok::Eof]);
+    assert_eq!(toks("%10100101"), vec![Tok::Int(165), Tok::Eof]);
+    assert_eq!(toks("%11111111"), vec![Tok::Int(255), Tok::Eof]);
+}
+
+#[test]
+fn percent_stays_modulo_when_not_immediately_followed_by_binary_digit() {
+    // Spaced modulo still works: `7 % 3` is Int Percent Int.
+    assert_eq!(toks("7 % 3"), vec![Tok::Int(7), Tok::Percent, Tok::Int(3), Tok::Eof]);
+    // `%` followed by a non-binary digit is modulo, then a separate Int.
+    assert_eq!(toks("%2"), vec![Tok::Percent, Tok::Int(2), Tok::Eof]);
+    // `%` followed by whitespace is modulo, whitespace is skipped as usual.
+    assert_eq!(toks("% 1010"), vec![Tok::Percent, Tok::Int(1010), Tok::Eof]);
+    // `%` followed by a letter is modulo, then a separate identifier.
+    assert_eq!(toks("%a"), vec![Tok::Percent, Tok::ident("a"), Tok::Eof]);
+    // A bare trailing `%` at EOF stays modulo.
+    assert_eq!(toks("%"), vec![Tok::Percent, Tok::Eof]);
+}
+
+#[test]
+fn binary_run_stops_at_first_non_binary_digit() {
+    // maximal munch: the binary run ends at the first char that is not `0`/`1`,
+    // so `%1012` is Int(0b101) followed by a separate Int(2).
+    assert_eq!(toks("%1012"), vec![Tok::Int(0b101), Tok::Int(2), Tok::Eof]);
+    // the `0b`-prefixed path cuts off identically.
+    assert_eq!(toks("0b1012"), vec![Tok::Int(0b101), Tok::Int(2), Tok::Eof]);
+}
+
+#[test]
+fn binary_percent_span_covers_percent_through_last_digit() {
+    let (tokens, _) = lex("%1010", SourceId(0));
+    assert_eq!(tokens[0].span.start, 0);
+    assert_eq!(tokens[0].span.end, 5);
+}
+
+#[test]
+fn binary_percent_out_of_range_is_an_error() {
+    // 65 binary digits overflow i64's range, like the `0b`-prefixed path.
+    let src = format!("%{}", "1".repeat(65));
+    let (_, errs) = lex(&src, SourceId(0));
+    assert_eq!(errs.len(), 1);
+    assert!(errs[0].message.contains("out of range"), "was {:?}", errs[0].message);
+}
+
 // ---- Z80 shadow-register apostrophe (B1) --------------------------------
 
 #[test]
