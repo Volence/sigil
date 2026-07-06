@@ -2,6 +2,7 @@
 //!
 //! Usage: `sigil <input.asm> [-o <output.bin>] [--hex]`
 //!        `sigil parse <input.emp>`
+//!        `sigil emp <input.emp> [-o <output.bin>] [--hex]`
 //!        `sigil build --aeon <dir> [-o <output.bin>]`
 //!        `sigil diff --aeon <dir>`
 //!
@@ -27,6 +28,7 @@ fn main() {
 
     match args.get(1).map(String::as_str) {
         Some("parse") => return run_parse(),
+        Some("emp") => return run_emp(&args[2..]),
         Some("build") => return run_build(&args[2..]),
         Some("diff") => return run_diff(&args[2..]),
         _ => {}
@@ -149,6 +151,136 @@ fn run_parse() {
         println!("{path}:{line}:{col}: {}", d.message);
     }
     process::exit(1);
+}
+
+/// Compile a Spec 2 `.emp` source string to its flat linked binary image.
+/// Mirrors the top-level `.asm` path but through the emp front end: parse →
+/// [`lower_module`](sigil_frontend_emp::lower::lower_module) (threading
+/// `include_root` so comptime `embed`/`import` resolve against the source
+/// directory, §6.7) → [`resolve_layout`](sigil_link::resolve_layout) (emp defers
+/// jmp/jsr width + layout to link, D-P4.2) → [`link`](sigil_link::link) →
+/// [`flatten`](sigil_link::flatten). Returns the image bytes (or `None` if a
+/// hard error stopped compilation) plus ALL diagnostics collected; the caller
+/// renders them and treats any `Error`-level diagnostic as fatal.
+fn compile_emp(
+    src: &str,
+    include_root: Option<&std::path::Path>,
+) -> (Option<Vec<u8>>, Vec<sigil_span::Diagnostic>) {
+    let (file, mut diags) = sigil_frontend_emp::parse_str(src);
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return (None, diags);
+    }
+    let opts = sigil_frontend_emp::lower::LowerOptions {
+        initial_cpu: sigil_ir::Cpu::M68000,
+        include_root: include_root.map(std::path::Path::to_path_buf),
+    };
+    let (module, lower_diags) = sigil_frontend_emp::lower::lower_module(&file, &opts);
+    diags.extend(lower_diags);
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return (None, diags);
+    }
+    let resolved =
+        match sigil_link::resolve_layout(&module.sections, &sigil_ir::SymbolTable::new(), true) {
+            Ok(sections) => sections,
+            Err(mut ds) => {
+                diags.append(&mut ds);
+                return (None, diags);
+            }
+        };
+    let linked = match sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()) {
+        Ok(image) => image,
+        Err(mut ds) => {
+            diags.append(&mut ds);
+            return (None, diags);
+        }
+    };
+    (Some(sigil_link::flatten(&linked, 0x00)), diags)
+}
+
+/// `sigil emp <input.emp> [-o <output.bin>] [--hex]` — compile a Spec 2 `.emp`
+/// module to a flat binary image. `embed`/`import` paths resolve against the
+/// source file's own directory (the capability-sandbox include-root, §6.7),
+/// canonicalized so a comptime capture path is stable regardless of cwd.
+fn run_emp(args: &[String]) {
+    let mut input: Option<String> = None;
+    let mut output: Option<String> = None;
+    let mut hex = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" => {
+                i += 1;
+                match args.get(i) {
+                    Some(path) => output = Some(path.clone()),
+                    None => {
+                        eprintln!("error: -o requires a path argument");
+                        process::exit(2);
+                    }
+                }
+            }
+            "--hex" => hex = true,
+            other => {
+                if input.is_none() {
+                    input = Some(other.to_string());
+                } else {
+                    eprintln!("error: unexpected argument '{other}'");
+                    process::exit(2);
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let input = match input {
+        Some(path) => path,
+        None => {
+            eprintln!("usage: sigil emp <input.emp> [-o <output.bin>] [--hex]");
+            process::exit(2);
+        }
+    };
+
+    let src = match std::fs::read_to_string(&input) {
+        Ok(text) => text,
+        Err(err) => {
+            eprintln!("error: cannot read {input}: {err}");
+            process::exit(1);
+        }
+    };
+
+    // Include-root = the source file's own directory (empty parent → cwd),
+    // canonicalized so the sandbox and capture ledger see a stable absolute path.
+    let parent = std::path::Path::new(&input).parent().unwrap_or(std::path::Path::new(""));
+    let root_dir = if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
+    let root = std::fs::canonicalize(root_dir).ok();
+    let (image, diags) = compile_emp(&src, root.as_deref());
+
+    if !diags.is_empty() {
+        let mut map = sigil_span::SourceMap::new();
+        map.add(src);
+        for d in &diags {
+            let (line, col) = map.location(d.primary);
+            eprintln!("{input}:{line}:{col}: {}", d.message);
+        }
+    }
+
+    let fatal = diags.iter().any(|d| d.level == sigil_span::Level::Error);
+    let image = match image {
+        Some(img) if !fatal => img,
+        _ => process::exit(1),
+    };
+
+    if let Some(out_path) = output {
+        if let Err(err) = std::fs::write(&out_path, &image) {
+            eprintln!("error: cannot write {out_path}: {err}");
+            process::exit(1);
+        }
+    }
+    if hex {
+        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
+        println!("{}", rendered.join(" "));
+    }
+    println!("built: {} bytes", image.len());
 }
 
 /// Parse `--aeon <dir>` (required) and, if `allow_output` is set, an optional
@@ -315,4 +447,26 @@ fn run_diff(args: &[String]) {
         process::exit(1);
     }
     println!("OK: both regions byte-identical");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    /// `compile_emp` must resolve an `embed(...)` in the source against the
+    /// file's own directory (the include-root the CLI supplies) and lower it to
+    /// the embedded bytes — the end-to-end proof that the production emp path
+    /// wires `include_root` (Plan 5's sandbox is otherwise `[sandbox.no-root]`).
+    #[test]
+    fn compile_emp_resolves_embed_against_source_dir() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors");
+        let src = std::fs::read_to_string(dir.join("prog.emp")).expect("read prog.emp");
+        let (image, diags) = crate::compile_emp(&src, Some(&dir));
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "unexpected error diagnostics: {diags:?}"
+        );
+        let blob = std::fs::read(dir.join("blob.bin")).expect("read blob.bin");
+        assert_eq!(image.expect("image bytes"), blob);
+    }
 }
