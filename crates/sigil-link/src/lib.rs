@@ -278,9 +278,18 @@ fn apply_fixup(
             diags.push(diag("HeaderChecksum is a post-image pass, not an in-fragment fixup".into(), span));
         }
         FixupKind::RelWord16Be => {
-            // Not yet consumed anywhere in the IR (no producer exists yet); real
-            // apply_fixup behavior for the offset-table idiom is a later task.
-            diags.push(diag("RelWord16Be fixup application is not yet implemented".into(), span));
+            // A self-relative signed word offset (`dc.w Target-Base`): `target`
+            // is a symbol difference, so `value` is already the offset. Range i16.
+            if !(-0x8000..=0x7FFF).contains(&value) {
+                diags.push(diag(
+                    format!("offset out of signed-word range ({value}) in section {section}"),
+                    span,
+                ));
+                return;
+            }
+            let w = value as i16 as u16;
+            bytes[site_abs as usize] = (w >> 8) as u8;
+            bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
         }
     }
 }
@@ -565,6 +574,87 @@ mod tests {
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn rel_word_16_be_writes_symbol_difference() {
+        // base at offset 0, target at offset 6; word[0] = target - base = 6.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x1000,
+            labels: vec![
+                Label { name: "Base".into(), offset: 0 },
+                Label { name: "Tgt".into(), offset: 6 },
+            ],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x00, 0x00],
+                fixups: vec![Fixup {
+                    kind: FixupKind::RelWord16Be,
+                    offset: 0,
+                    target: Expr::Binary {
+                        op: sigil_ir::expr::BinOp::Sub,
+                        lhs: Box::new(Expr::Sym("Tgt".into())),
+                        rhs: Box::new(Expr::Sym("Base".into())),
+                    },
+                }],
+                span: span(),
+            })],
+        };
+        let linked = link(&[sec], &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x00, 0x06]);
+    }
+
+    #[test]
+    fn rel_word_16_be_negative_offset_two_complement() {
+        // target BEFORE base: Tgt at 0, Base at 4 → offset -4 = 0xFFFC.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x1000,
+            labels: vec![
+                Label { name: "Tgt".into(), offset: 0 },
+                Label { name: "Base".into(), offset: 4 },
+            ],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x00, 0x00],
+                fixups: vec![Fixup {
+                    kind: FixupKind::RelWord16Be,
+                    offset: 0,
+                    target: Expr::Binary {
+                        op: sigil_ir::expr::BinOp::Sub,
+                        lhs: Box::new(Expr::Sym("Tgt".into())),
+                        rhs: Box::new(Expr::Sym("Base".into())),
+                    },
+                }],
+                span: span(),
+            })],
+        };
+        let linked = link(&[sec], &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0xFF, 0xFC]);
+    }
+
+    #[test]
+    fn rel_word_16_be_overflow_diagnoses() {
+        // Base at 0, target at 0x8000 → +32768 exceeds +0x7FFF → error.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x1000,
+            labels: vec![
+                Label { name: "Base".into(), offset: 0 },
+                Label { name: "Far".into(), offset: 0x8000 },
+            ],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x00, 0x00],
+                fixups: vec![Fixup {
+                    kind: FixupKind::RelWord16Be,
+                    offset: 0,
+                    target: Expr::Binary {
+                        op: sigil_ir::expr::BinOp::Sub,
+                        lhs: Box::new(Expr::Sym("Far".into())),
+                        rhs: Box::new(Expr::Sym("Base".into())),
+                    },
+                }],
+                span: span(),
+            })],
+        };
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("signed-word range")), "got: {:?}", err);
     }
 
     #[test]
