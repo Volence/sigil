@@ -76,6 +76,16 @@ impl<'a> Evaluator<'a> {
                 _ => {}
             }
         }
+        // `math.{fn}(x)` / `as.{fn}(x)` (Spec 2, Plan 5 — Task 4, §6.6): the
+        // reserved, non-shadowable float namespaces. Routed on the callee's
+        // FIRST segment, ahead of the builtin/enum/user-fn dispatch below, so
+        // `math`/`as` can never be shadowed by a user fn or enum of that name.
+        if callee.segments.len() == 2 {
+            let ns = callee.segments[0].as_str();
+            if ns == "math" || ns == "as" {
+                return self.eval_float_ns(ns, &callee.segments[1], args, span, env);
+            }
+        }
         // Builtins win over user fns and are the only method-form (`a.b(..)`)
         // calls handled here.
         if let Some(method) = callee.segments.last() {

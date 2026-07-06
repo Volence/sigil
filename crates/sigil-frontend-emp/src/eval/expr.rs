@@ -560,8 +560,10 @@ impl<'a> Evaluator<'a> {
 }
 
 /// Coerce a numeric value to `f64` for mixed Int/Float promotion; `None` for
-/// non-numeric kinds.
-fn num_f64(v: &Value) -> Option<f64> {
+/// non-numeric kinds. `pub(super)` so [`float_ns`](super::float_ns) reuses the
+/// exact same coercion for `as.*`/`math.*` argument evaluation (Spec 2,
+/// Plan 5 — Task 4) instead of duplicating it.
+pub(super) fn num_f64(v: &Value) -> Option<f64> {
     match v {
         Value::Int(n) => Some(*n as f64),
         Value::Float(x) => Some(*x),

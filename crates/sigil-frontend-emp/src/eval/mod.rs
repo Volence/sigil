@@ -16,6 +16,7 @@ mod control;
 mod emit;
 mod env;
 mod expr;
+mod float_ns;
 mod guards;
 mod literals;
 mod pattern;
