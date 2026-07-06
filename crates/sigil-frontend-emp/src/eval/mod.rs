@@ -28,7 +28,7 @@ pub use env::{AssignError, Binding, Env};
 use crate::ast;
 use crate::value::Value;
 use sigil_span::{Diagnostic, Level, Span};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 /// Comptime step budget (D-P2.7): a coarse upper bound on evaluation work,
@@ -97,6 +97,13 @@ pub struct Evaluator<'a> {
     /// [`resolve_data`](Self::resolve_data) lowers these to a checked
     /// [`DataBuf`](crate::value::DataBuf).
     pub(crate) datas: HashMap<&'a str, &'a ast::DataDecl>,
+    /// File-level `offsets` decls, indexed by name (empty in no-file mode).
+    /// Spec 2 Plan 7 backlog #3 (reverse direction): [`eval::expr`](expr)'s
+    /// `eval_path` resolves `Name.Variant` to the member's 0-based ordinal and
+    /// `Name.count` to `decl.members.len()` — plain comptime ints, mirroring how
+    /// [`enums`](Self::enums) resolves `Enum.Variant`. Forward emission
+    /// (`dc.w target - Name`) is a separate, later task.
+    pub(crate) offsets: HashMap<&'a str, &'a ast::OffsetsDecl>,
     /// Memoized struct layouts, keyed by struct name — the layout analogue of
     /// [`const_memo`](Self::const_memo). A zero-size Poisoned layout records a
     /// struct that already failed (cyclic layout) so it does not re-report.
@@ -213,6 +220,7 @@ impl<'a> Evaluator<'a> {
             bitfields: HashMap::new(),
             newtypes: HashMap::new(),
             datas: HashMap::new(),
+            offsets: HashMap::new(),
             struct_layout_memo: HashMap::new(),
             bitfield_layout_memo: HashMap::new(),
             layout_in_progress: Vec::new(),
@@ -275,6 +283,19 @@ impl<'a> Evaluator<'a> {
                 }
                 ast::Item::Data(d) => {
                     self.datas.insert(d.name.as_str(), d);
+                }
+                ast::Item::Offsets(o) => {
+                    self.offsets.insert(o.name.as_str(), o);
+                    // A duplicate member name would make `.position()` silently
+                    // pick the first match (an ambiguous ordinal) — report it
+                    // ONCE per offsets decl, here at index time (Task 5 owns
+                    // this check; Task 6's forward emission does not re-add it).
+                    let mut seen: HashSet<&str> = HashSet::new();
+                    for m in &o.members {
+                        if !seen.insert(m.name.as_str()) {
+                            self.error(m.span, format!("duplicate offset entry `{}`", m.name));
+                        }
+                    }
                 }
                 ast::Item::Section(s) => self.index_items(&s.items),
                 _ => {}
