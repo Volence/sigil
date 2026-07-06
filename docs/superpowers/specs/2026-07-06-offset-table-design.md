@@ -22,8 +22,9 @@ deliberate, bidirectional abstraction.
 **In (this milestone — full bidirectional):**
 - Forward: emit `dc.w target − base` words, base = the table's own start label, each range-checked
   to signed word (±$7FFF) with overflow as a **compile error** (totality).
-- Reverse: the block is a closed comptime enum; `Table.Variant` = ordinal index (0-based),
-  usable as a checked integer in data/immediate positions; `Table.count` = entry count.
+- Reverse: the block also declares **named comptime ordinal constants** — `Table.Variant` = its
+  0-based index in the table, an ordinary comptime integer; `Table.count` = entry count. (Named
+  integer constants, NOT a distinct enum type — see the decision note below.)
 - 68k big-endian sections only.
 
 **Deferred (each its own future item — diagnosed, not mis-handled):**
@@ -58,13 +59,28 @@ data frame_seed  = [ ... ]
   `data`/`proc`/label — NOT a `const`, which folds early and never relocates).
 - **Forward:** the block emits `count` big-endian words; word *i* = `entries[i].target − Table`.
   The table's own start label is `Table` (the block name is the base symbol).
-- **Reverse:** `Table` is also a closed enum. `Table.Idle == 0`, `.Shoot == 1`, `.Seed == 2`.
-  A `Table.Variant` value coerces to its ordinal integer where a number is expected
-  (`dc.b Table.Seed`, immediates, indices) — checked, erasing, zero runtime cost. `Table.count`
-  is a comptime integer. Referencing entries by name means inserting a row can never silently
-  renumber downstream ids.
+- **Reverse:** the block also introduces the named ordinal constants `Table.Idle == 0`,
+  `Table.Shoot == 1`, `Table.Seed == 2` — ordinary comptime integers usable directly wherever a
+  number is expected (`dc.b Table.Seed`, immediates, indices), erasing to zero runtime cost.
+  `Table.count` is a comptime integer. Referencing entries by name means inserting a row can never
+  silently renumber downstream ids. Unknown `Table.Variant` and duplicate variant names are
+  compile errors.
 
-`offsets` is `pub`-able like any declaration to export the base symbol + enum across modules.
+`offsets` is `pub`-able like any declaration to export the base symbol + the ordinal constants
+across modules.
+
+### Decision note: constants, not a distinct enum type (2026-07-06)
+
+The reverse direction is deliberately **named integer constants**, not a distinct closed-enum
+type. Rationale: (1) it directly replaces the 778 hand-synced `ObjID_x = $n` / `SndID_x = $n`
+*integer* constants, which is the actual win; (2) a distinct enum type would need an implicit
+enum→byte coercion at every `dc.b`/immediate use-site — exactly the kind of silent coercion a
+Haskell-flavored language avoids (tenet: illegal states don't compile, no lossy implicits); (3)
+the type-safety benefit of a distinct id type (and exhaustive `match` over it) only pays off for
+**state dispatch**, which is explicitly out of scope here (research R1). Promoting `offsets` ids to
+a distinct `newtype`/closed-enum — for cross-table id type-safety and exhaustive dispatch — is a
+clean, byte-neutral future layer (newtypes are erasing, §4.1) and is left for the encoding-agnostic
+dispatch construct that will consume these tables.
 
 ## Architecture
 
@@ -110,10 +126,10 @@ plain `Fragment::Data` + fixup, resolved at link time exactly like `Abs16Be`.
   zero bytes with one fixup per entry — `Fixup { kind: RelWord16Be, offset: i*2,
   target: Sub(Sym(entry.target), Sym(Name)) }`. Introduce a `Cell::RelOffset { base, target }`
   mirroring `Cell::SymRef`, so `stream_data` handles it alongside the existing cell kinds.
-- **Reverse (id-enum):** register `Name` as a closed enum type in the comptime value/type
-  environment; `Name.Variant` resolves to its 0-based ordinal (a checked integer, erasing);
-  `Name.count` = entry count. Duplicate variant names are a compile error; an unknown
-  `Name.Variant` is a compile error (closed enum, totality).
+- **Reverse (ordinal constants):** register each `Name.Variant` as a named comptime integer
+  constant (its 0-based ordinal) in the comptime value environment, plus `Name.count`. These are
+  plain integers — no distinct enum type, no coercion machinery (see the Decision note). Duplicate
+  variant names are a compile error; an unknown `Name.Variant` reference is a compile error.
 
 The base symbol `Name` must be emitted as a label at the table's start address so the
 `Sub(target, Name)` fold resolves it — i.e. the `offsets` block defines the label `Name` at the
@@ -144,8 +160,9 @@ This investigation gates *which* reference the tests use; it does not change pie
   Include a **negative** offset (a target defined *before* the base) to exercise two's-complement.
 - **Totality:** an offset that exceeds +$7FFF is a compile **error** (emp-only assertion; AS
   silently truncates via `v as u16` — the intended, documented divergence).
-- **id-enum:** `Name.Variant` ordinals are 0,1,2,…; `Name.count` correct; `Name.Variant` usable as
-  `dc.b` and as an immediate; a duplicate variant and an unknown `Name.Variant` each error.
+- **Ordinal constants:** `Name.Variant` values are 0,1,2,…; `Name.count` correct; `Name.Variant`
+  usable as a `dc.b` and as an immediate; a duplicate variant and an unknown `Name.Variant` each
+  error.
 - **End-to-end:** `sigil emp <file.emp>` compiles a small module using `offsets` for both a
   mapping table (forward) and an object-index id (reverse) and produces the expected bytes.
 
