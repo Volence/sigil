@@ -174,3 +174,103 @@ S2-D3 (prelude + scan/manifest module resolution — already the composition spi
 5. **Bank/window placement** — gates the *sound* subsystem migration.
 6. **Counted/sparse collections**, then the **byte-command DSL** (largest; may stage).
 7. Tier 3 as encountered during migration (`pbyte`, tail-call, fill-byte, charmaps…).
+
+---
+
+# Part II — Addendum (2026-07-06): non-Sonic engines + demoscene/modern passes
+
+Two further passes after the first six agents: **Agent E** mined six **non-Sonic** Genesis
+disassemblies (Treasure's Gunstar Heroes & Alien Soldier, Technosoft's Thunder Force IV,
+BlueSky's Vectorman, Sonic Team's Ristar, and Batman & Robin), and **Agent F** covered the
+**68k/Genesis demoscene** + modern low-level languages (Zig/Odin/Terra/Kaitai) online. The
+non-Sonic pass is the most consequential: it **challenges the Sonic-derived candidate set**,
+because these are different studios' engines. Claims verified against raw assembly.
+
+## The two findings that REVISE Part I
+
+### R1. The offset-table's `dc.w Target-Base` encoding does NOT generalize to *state dispatch*
+Indexed jump-table dispatch is **universal** (all six engines), so the *concept* (T1-a/T1-b)
+stands. But Sonic's **self-relative word-offset encoding** — Part I's #1 idiom — is a Sonic-ism
+for *state dispatch*: **Vectorman** stores raw absolute 32-bit code pointers
+(`move.l #NewState, $4(a4)` — no table at all), **Ristar** stores IDs pre-shifted ×4, **Treasure**
+uses word-index tables. So the offset-table stays the right answer for **data pointer tables**
+(mappings, DPLC, art — where it's #1 by volume), but the **dispatch/state construct must be
+encoding-agnostic** (offset-relative *or* absolute-pointer *or* pre-shifted-index, chosen per
+target) **and admit states as first-class function values**, not only enum indices. Baking
+Sonic's offset form into state dispatch would misfit 3 of 6 engines. → **split T1-a (data offset
+table) from T1-b (state machine); make T1-b encoding-agnostic.**
+
+### R2. Byte-command DSL + state machine should MERGE into a scripted coroutine construct
+Sonic revealed byte-command DSLs only for **leaf** subsystems (animation/palette/sound).
+**Batman & Robin's entire object model is a two-level threaded-code bytecode interpreter** —
+every object's behavior is a script of handler addresses walked by `movea.w (a2)+,a0; jmp (a0)`
+(across 8 files), and the `$0820` **`yield`** opcode saves the script PC *as the state* (a
+coroutine on the 68000; Ristar echoes it with yield-on-IRQ decompression). → **promote T1-b +
+T1-c into one first-class *scripted state-machine / coroutine* construct** that lowers to
+threaded dispatch, with **`yield` as a language primitive** and a compiler-tracked resume-point
+type. This is the single feature that most distinguishes a Treasure/Batman-class engine from
+Sonic, and it subsumes both prior candidates into a more powerful one.
+
+## New candidates the non-Sonic + demoscene passes add
+
+### T2-e. Hot-swappable / RAM-patched interrupt handlers — **near-universal (5/5)**
+Every HBlank-effect engine patches its handler at runtime: `$FFFFEE00` (Treasure), `$F0F8`
+(TF4), `$FFFF9D2E` (Vectorman), `$FFEA70` (Ristar — writes an inline `4EF9 jmp.l` opcode into
+RAM to kill per-scanline indirection). Sonic used fixed ROM handlers, so this never surfaced.
+→ a **hot-swappable interrupt-handler construct** (declare/install/replace per level) with the
+inline-JMP thunk as a codegen option and a **verified vector write**. Converges with Agent F's
+**safe operand-field labels for self-modifying code** (name the immediate/displacement slot so
+runtime patches address by name, not `+2` offset math) — the same underlying need: *typed,
+safe runtime code patching*.
+
+### T2-f. Split update/render pipeline + bounded VBlank transfer queue
+Three engines (Vectorman, Ristar, Alien Soldier) separate an **update** phase (logic) from a
+**render** phase (priority-sorted display-list build, capacity-capped), then drain a
+**pre-computed queue** in VBlank with *zero* math. Vectorman double-buffers with a per-entry
+byte budget (`cmpi.w #$B40`); Ristar bails gracefully at the 80-sprite cap; nullable render
+pointers give free culling. → entity types with distinct **`update`/`render` phases** + a
+**deferred-transfer/display-list queue type** with a compiler-known **capacity + byte budget**
+(static assert where possible, checked overflow-policy otherwise). Converges with Agent F's
+**DMA/FIFO cost model** (`words*2.4+5.6`) — the queue's budget is exactly that closed form.
+
+### T2-g. Cycle-budget & DMA-budget assertions — empirical demand for **S2-D7**
+Demoscene raster/DMA effects live or die on cycles (~480/line; "twisters break without exact
+FIFO/DMA timing"). Demos hand-count cycles today; external tools (68kcounter) exist. Folding a
+68k instruction-timing table into comptime enables `assert cycles(hblank_handler) <= 480` and
+`assert dma_cycles(queue) < vblank_budget`. **This is the deferred S2-D7 (`@budget`/
+`@cycles_exact`) — the research shows it is less optional than it looked.** Plan 7 should
+re-weight S2-D7 from "post-v1" toward "in scope," at least the cycle/DMA-budget slice.
+
+### T2-h. Multiple collection *kinds* — flat-array is the outlier
+Sonic's flat single-table SST scan is the *minority*: Batman uses an intrusive **doubly-linked
+list** (O(1) alloc), Vectorman a **terminator dispatch list** + separate data blocks, TF4
+**type-segregated pools** (32-byte stride, AI-free loop), Ristar a **pool feeding priority-banded
+linked lists**. → the collection model must offer **linked-list / pooled-segregated /
+priority-banded** kinds, not hardwire "flat array of fixed-stride slots." (Generalizes T2-d.)
+Plus **typed `ref<Entity>` relation fields** (Treasure's `$58`/`$5C` parent/child/sibling links,
+447/305 refs) with a relation kind + optional engine-maintained list membership.
+
+### T3-h..T3-k (smaller, from Agent F)
+- **Bit-level packed structs + layout-introspection asserts** (Zig `@offsetOf`/`@bitSizeOf`):
+  extend bitfields to bit-granularity for `art_tile`/sprite-attr/VDP-command words + the 64-byte
+  object map; `comptime assert offsetof(Object.subtype)==0x21` guards layout drift.
+- **Struct-of-Arrays layout (`#soa`)** (Odin): Genesis tables are column-major (per-line scroll
+  pairs, sprite-attr columns) — author AoS, emit columns.
+- **Typed VDP/DMA command builder**: `vdp_reg(n,v) => 0x8000|(n<<8)|v` with `n: 0..24` refinement
+  — a concrete instance of the byte-command DSL for the two APIs every Genesis program touches.
+- **Declarative binary-format DSL** (Kaitai/DFDL): describe a ROM table's shape once → emit +
+  typecheck. Validates the format-DSL thesis; the "emit code, not just data" frontier (Terra)
+  pushes comptime to generate instruction sequences (unrolled speedcode), not only constants.
+
+## Revised takeaways for the Plan 7 finalization decision
+1. **Offset-table** remains the #1 *data-table* buy and the Plan-6 unblocker — but **decouple it
+   from state dispatch**, which becomes its own encoding-agnostic + function-value construct.
+2. The **scripted state-machine / coroutine (`yield`)** is now the marquee object-model feature —
+   bigger and more differentiating than the "byte-command DSL" framing suggested.
+3. **Hot-swap interrupts, the update/render+VBlank-queue pipeline, and cycle/DMA budgets** are new
+   Tier-2 buys with strong cross-engine + demoscene convergence; the last **revives S2-D7**.
+4. `.emp`'s **collection model** should be multi-kind (linked-list/pool/priority), not flat-array.
+5. These are engine-architecture features — larger than data-table constructs. Plan 7 finalization
+   must decide how much object-model opinion `.emp` should hold vs. leave to each engine (the
+   Sonic-vs-Treasure-vs-Vectorman divergence is real: `.emp` should *enable* all three encodings,
+   not *impose* one).
