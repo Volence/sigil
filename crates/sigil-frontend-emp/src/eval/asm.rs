@@ -59,10 +59,9 @@ impl Evaluator<'_> {
         };
 
         // Resolve every source label to its emitted symbol up front (export →
-        // `Owner.name`, non-export → fresh `$asm{k}$name`).
+        // `Owner.name`, non-export → owner-scoped hidden symbol).
         let scope = LabelScope::build(
             &owner,
-            k,
             body.iter().filter_map(|stmt| match stmt {
                 AsmStmt::Label { name, export, .. } => Some((name.as_str(), *export)),
                 _ => None,

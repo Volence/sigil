@@ -34,21 +34,39 @@ use sigil_ir::IrBuilder;
 use sigil_span::{Diagnostic, Level, Span};
 use std::collections::HashSet;
 
+/// This proc's position among its declaration-order siblings — the context a
+/// declared `falls_into` needs to check physical adjacency (§5.1). Bundling the
+/// `(index, items)` pair keeps [`lower_proc`]'s signature within the arg budget
+/// and reads as one concept ("where this proc sits").
+pub(super) struct Siblings<'a> {
+    /// This proc's index within `items`.
+    pub index: usize,
+    /// The declaration-order item list this proc belongs to (the module's items,
+    /// or a `section {}` block's items).
+    pub items: &'a [ast::Item],
+}
+
 /// Lower one proc: define its label, evaluate + lower its body, then run the
-/// §5.1 fallthrough / clobber contract checks. `index`/`items` locate this proc
-/// in declaration order so declared fallthrough can check adjacency.
+/// §5.1 fallthrough / clobber contract checks. `siblings` locates this proc in
+/// declaration order so declared fallthrough can check adjacency. `asm_counter`
+/// is the module-wide instantiation counter (D-P4.6): it seeds this proc's
+/// evaluator and is advanced by however many `asm { }` bodies it instantiates, so
+/// `k` stays globally monotonic across procs (a fresh evaluator per proc would
+/// otherwise reset it and collide labels).
 pub(super) fn lower_proc(
     file: &ast::File,
     proc: &ast::ProcDecl,
-    index: usize,
-    items: &[ast::Item],
+    siblings: Siblings<'_>,
     cpu: Cpu,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
+    asm_counter: &mut u32,
 ) {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     builder.define_label(&proc.name);
-    let (buf, mut ds) = eval_proc_body(file, &proc.name, &proc.body, proc.span);
+    let (buf, mut ds, next_counter) =
+        eval_proc_body(file, &proc.name, &proc.body, proc.span, *asm_counter);
+    *asm_counter = next_counter;
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
     super::lower_code_buf(&buf, cpu, builder, diags);
@@ -56,7 +74,9 @@ pub(super) fn lower_proc(
     // 2/3. Fallthrough contract. A declared `falls_into` demands adjacency; an
     // undeclared but reachable fall-off the end warns.
     match &proc.falls_into {
-        Some(next) => check_fallthrough_adjacent(proc, next, index, items, diags),
+        Some(next) => {
+            check_fallthrough_adjacent(proc, next, siblings.index, siblings.items, diags)
+        }
         None => check_undeclared_fallthrough(proc, &buf, cpu, diags),
     }
 

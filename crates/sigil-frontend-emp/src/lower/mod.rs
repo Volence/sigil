@@ -61,6 +61,14 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     let mut next_lma: u32 = 0;
     let mut default_open = false;
 
+    // The instantiation counter for `asm { }` / `proc` label hygiene (D-P4.6),
+    // threaded across EVERY proc in the module (top-level AND section-nested) so
+    // `k` stays globally monotonic. Lowering builds a fresh evaluator per proc,
+    // which would otherwise restart `k` at 0 each proc and mint colliding
+    // `$asm0…` symbols for `asm {}` bodies generated in different procs. Each
+    // proc seeds from this value and hands back the advanced one.
+    let mut asm_counter: u32 = 0;
+
     for (index, item) in file.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
@@ -74,11 +82,11 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 proc::lower_proc(
                     file,
                     decl,
-                    index,
-                    &file.items,
+                    proc::Siblings { index, items: &file.items },
                     opts.initial_cpu,
                     &mut builder,
                     &mut diags,
+                    &mut asm_counter,
                 );
             }
             ast::Item::Section(sec) => {
@@ -88,7 +96,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 default_open = false;
                 let (cpu, vma) = section_attrs(file, sec, &mut diags);
                 builder.switch_section_lma(&sec.name, cpu, Some(vma), next_lma);
-                lower_section_items(file, sec, cpu, vma, &mut builder, &mut diags);
+                lower_section_items(file, sec, cpu, vma, &mut builder, &mut diags, &mut asm_counter);
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
             }
@@ -128,6 +136,7 @@ fn lower_section_items(
     origin: u32,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
+    asm_counter: &mut u32,
 ) {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -136,7 +145,15 @@ fn lower_section_items(
             }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
-                proc::lower_proc(file, decl, index, &sec.items, cpu, builder, diags);
+                proc::lower_proc(
+                    file,
+                    decl,
+                    proc::Siblings { index, items: &sec.items },
+                    cpu,
+                    builder,
+                    diags,
+                    asm_counter,
+                );
             }
             _ => {}
         }

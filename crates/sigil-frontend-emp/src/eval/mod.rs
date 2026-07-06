@@ -498,19 +498,29 @@ where
 /// operand resolves via the register name directly. Returns `None` only if
 /// evaluation did not yield a `Code` value (it always does today; the guard keeps
 /// the seam total).
+///
+/// `asm_counter_start` seeds the instantiation counter (D-P4.6): lowering builds
+/// a FRESH evaluator per proc, so the counter would otherwise restart at 0 each
+/// proc and two comptime-generated `asm { }` bodies from different procs would
+/// mint colliding `$asm0…` symbols. The caller threads the counter across every
+/// proc (passing the previous proc's returned value in), keeping `k` globally
+/// monotonic. The advanced counter is returned as the third tuple element.
 pub fn eval_proc_body(
     file: &crate::ast::File,
     name: &str,
     body: &[ast::AsmStmt],
     span: Span,
-) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>) {
+    asm_counter_start: u32,
+) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.asm_counter = asm_counter_start;
         let mut env = Env::new();
-        match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
-            Value::Code(buf) => (Some(buf), ev.diags),
-            _ => (None, ev.diags),
-        }
+        let buf = match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
+            Value::Code(buf) => Some(buf),
+            _ => None,
+        };
+        (buf, ev.diags, ev.asm_counter)
     })
 }
 

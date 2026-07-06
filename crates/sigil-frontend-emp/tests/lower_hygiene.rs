@@ -1,49 +1,21 @@
 //! T5 (Plan 4) — label hygiene finalization (§5.2/§5.3, D-P4.6). Proves the
-//! finished model end-to-end through link:
+//! finished model end-to-end through `lower_module` + link:
 //!
-//! - two instantiations of the SAME `asm { }` template define DISTINCT internal
-//!   (non-export) labels — no collision — and both round-trip through link;
+//! - two procs that each define a non-export `.loop:` get DISTINCT owner-scoped
+//!   symbols (`$foo$loop` / `$bar$loop`) — no collision — and the module links
+//!   (the whole-branch review's CRITICAL: the most common Sonic-asm idiom);
+//! - the same comptime-fn-generated `asm { }` (with a local label) called from
+//!   two different procs links cleanly — the instantiation counter `k` is
+//!   globally monotonic across procs, so the two internal labels stay distinct;
 //! - an `export .entry:` in a `proc foo` is caller-visible as `foo.entry` and a
 //!   `bra.w foo.entry` from another proc resolves to it;
 //! - a reference to a NON-export label from outside its scope does NOT resolve
 //!   (link reports it unresolved) — hygiene actually hides it.
 
-use sigil_frontend_emp::ast::{self, Expr, Stmt};
-use sigil_frontend_emp::eval::{Env, Evaluator};
-use sigil_frontend_emp::lower::{lower_code_buf, lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
-use sigil_frontend_emp::value::{CodeBuf, CodeItem, Value};
-use sigil_ir::backend::{Cpu, IrStreamer};
-use sigil_ir::{IrBuilder, Module, SymbolTable};
-
-/// Pull the `asm { }` expression out of a one-fn module's `return asm { ... }`.
-fn asm_expr(src: &str) -> Expr {
-    let (file, diags) = parse_str(src);
-    assert!(diags.is_empty(), "unexpected parse diagnostics: {diags:?}");
-    for item in file.items {
-        if let ast::Item::ComptimeFn(f) = item {
-            for stmt in f.body {
-                if let Stmt::Return { value: Some(e), .. } = stmt {
-                    if matches!(e, Expr::Asm { .. }) {
-                        return e;
-                    }
-                }
-            }
-        }
-    }
-    panic!("no `asm {{ }}` expression found in source");
-}
-
-/// The label-definition symbols of a `CodeBuf`, in order.
-fn label_names(buf: &CodeBuf) -> Vec<String> {
-    buf.items
-        .iter()
-        .filter_map(|it| match it {
-            CodeItem::Label { name, .. } => Some(name.clone()),
-            _ => None,
-        })
-        .collect()
-}
+use sigil_ir::backend::Cpu;
+use sigil_ir::{Module, SymbolTable};
 
 /// Lower a module (parse asserted clean) for the 68k.
 fn lower(src: &str) -> (Module, Vec<sigil_span::Diagnostic>) {
@@ -52,45 +24,58 @@ fn lower(src: &str) -> (Module, Vec<sigil_span::Diagnostic>) {
     lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 })
 }
 
+/// The label names defined across every section of a lowered module.
+fn all_labels(module: &Module) -> Vec<String> {
+    module.sections.iter().flat_map(|s| s.labels.iter().map(|l| l.name.clone())).collect()
+}
+
 #[test]
-fn two_instantiations_define_distinct_internal_labels_and_both_link() {
-    // The SAME template evaluated twice (shared evaluator → the instantiation
-    // counter advances) must mint TWO distinct `.wait` symbols, so concatenating
-    // both fragments into one section links WITHOUT a duplicate-symbol error.
-    let src = "module m\ncomptime fn f() -> Code {\n    return asm {\n    .wait:\n        bra.w .wait\n    }\n}\n";
-    let e = asm_expr(src);
-    let mut ev = Evaluator::new();
-    let mut env = Env::new();
-    let v1 = ev.eval_expr(&e, &mut env);
-    let v2 = ev.eval_expr(&e, &mut env);
-    assert!(ev.diags.is_empty(), "unexpected eval diagnostics: {:?}", ev.diags);
-    let (Value::Code(a), Value::Code(b)) = (&v1, &v2) else {
-        panic!("expected two Value::Code");
-    };
-
-    // Distinct internal labels — the hygiene guarantee.
-    let (la, lb) = (label_names(a), label_names(b));
-    assert_eq!(la.len(), 1);
-    assert_eq!(lb.len(), 1);
-    assert_ne!(la[0], lb[0], "two instantiations must not share a label symbol: {la:?} vs {lb:?}");
-    assert!(la[0].starts_with("$asm"), "non-export label should be mangled: {}", la[0]);
-
-    // Both fragments in ONE section link cleanly (no collision, each branch
-    // resolves to its own `.wait`).
-    let mut builder = IrBuilder::new();
-    builder.switch_section("text", Cpu::M68000, None);
-    let mut diags = Vec::new();
-    lower_code_buf(a, Cpu::M68000, &mut builder, &mut diags);
-    lower_code_buf(b, Cpu::M68000, &mut builder, &mut diags);
+fn two_procs_with_same_local_label_get_distinct_symbols_and_link() {
+    // THE whole-branch CRITICAL: two procs that each define `.loop:` (the most
+    // common Sonic idiom) must NOT collide. Each proc's local label is scoped to
+    // its owner (`$foo$loop` / `$bar$loop`), so lowering emits distinct symbols
+    // and the module links (no `redefined` error).
+    let src = "module m\n\
+               proc foo() {\n.loop:\n    bra.w .loop\n}\n\
+               proc bar() {\n.loop:\n    bra.w .loop\n}\n";
+    let (module, diags) = lower(src);
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
-    let (module, bdiags) = builder.finish();
-    assert!(bdiags.is_empty(), "unexpected builder diagnostics: {bdiags:?}");
+
+    let labels = all_labels(&module);
+    assert!(labels.contains(&"$foo$loop".to_string()), "expected $foo$loop, got {labels:?}");
+    assert!(labels.contains(&"$bar$loop".to_string()), "expected $bar$loop, got {labels:?}");
+
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
-    // buf1: .wait@0, bra.w@0 (disp -2). buf2: .wait@4, bra.w@4 (disp -2).
+    // Both branches resolve intra-proc (label and bra at the same offset → -2).
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link must succeed");
     let bytes = sigil_link::flatten(&linked, 0x00);
     assert_eq!(bytes, vec![0x60, 0x00, 0xFF, 0xFE, 0x60, 0x00, 0xFF, 0xFE]);
+}
+
+#[test]
+fn same_asm_template_from_two_procs_links_cleanly() {
+    // A comptime fn returns an `asm { }` with an internal `.wait:`; two different
+    // procs each splice it via a statement-call. Because the instantiation counter
+    // is globally monotonic across procs (not reset per proc), the two `.wait`
+    // instantiations mint DISTINCT `$asm{k}$wait` symbols — so the module links
+    // (guards requirement 2: `asm {}`-in-two-procs must not collide).
+    let src = "module m\n\
+               comptime fn spin() -> Code {\n    return asm {\n.wait:\n    bra.w .wait\n    }\n}\n\
+               proc foo() {\n    spin()\n    rts\n}\n\
+               proc bar() {\n    spin()\n    rts\n}\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+
+    // Two DISTINCT mangled `.wait` symbols (one per instantiation).
+    let waits: Vec<String> =
+        all_labels(&module).into_iter().filter(|n| n.ends_with("$wait")).collect();
+    assert_eq!(waits.len(), 2, "expected two distinct wait labels, got {waits:?}");
+    assert_ne!(waits[0], waits[1], "the two asm instantiations must not share a symbol: {waits:?}");
+
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    sigil_link::link(&resolved, &SymbolTable::new()).expect("link must succeed");
 }
 
 #[test]
