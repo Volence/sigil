@@ -9,7 +9,22 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Fixup, FixupKind, Fragment, Module, Section, SymbolTable};
+use sigil_ir::expr::BinOp;
+use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Module, Section, SymbolTable};
+
+/// The masked fixup target a `winptr(sym)` lowers to: `(sym & 0x7FFF) | 0x8000`
+/// (AS `sfx_winptr`, `SFX_WIN_MASK`/`SFX_WIN_BASE`).
+fn winptr_target(name: &str) -> Expr {
+    Expr::Binary {
+        op: BinOp::Or,
+        lhs: Box::new(Expr::Binary {
+            op: BinOp::And,
+            lhs: Box::new(Expr::Sym(name.into())),
+            rhs: Box::new(Expr::Int(0x7FFF)),
+        }),
+        rhs: Box::new(Expr::Int(0x8000)),
+    }
+}
 
 /// Find a section by name in a lowered module (the default `text` sections are
 /// interleaved between placed sections, so `first()` is not enough here).
@@ -162,12 +177,14 @@ fn here_outside_a_placed_section_uses_default_origin() {
 
 #[test]
 fn cross_cpu_bank_pointers_pick_le_and_be_by_section() {
-    // One module, three sections: a z80 `Sfx` symbol, a z80 table with a
-    // windowed pointer to it (→ BankPtr16Le), and a 68k table with the SAME
-    // windowed pointer (→ BankPtr16Be, the new Core kind). The two write the
-    // resolved low-16 in OPPOSITE byte orders.
+    // One module, three sections: a `Sfx` symbol at a 68k-ROM-blob address
+    // ($6569A — an out-of-window address, so the SFX bank-window mask is actually
+    // EXERCISED), a z80 table with a windowed pointer to it (→ BankPtr16Le), and a
+    // 68k table with the SAME windowed pointer (→ BankPtr16Be). Each fixup targets
+    // the MASKED symbol `(Sfx & 0x7FFF) | 0x8000` (AS `sfx_winptr`); the two write
+    // the resolved windowed value $D69A in OPPOSITE byte orders.
     let src = "module m\n\
-               section sdata (cpu: z80, vma: $1234) {\n\
+               section sdata (cpu: z80, vma: $6569A) {\n\
                  data Sfx: u8 = $00\n\
                }\n\
                section ztab (cpu: z80, vma: $8000) {\n\
@@ -181,21 +198,23 @@ fn cross_cpu_bank_pointers_pick_le_and_be_by_section() {
     let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000 });
     assert!(diags.is_empty(), "lower: {diags:?}");
 
-    // z80 windowed pointer → BankPtr16Le.
+    // z80 windowed pointer → BankPtr16Le, targeting the masked symbol.
     assert_eq!(
         fixups_of(&module, "ztab"),
-        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: sigil_ir::Expr::Sym("Sfx".into()) }]
+        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: winptr_target("Sfx") }]
     );
     // 68k reference to a bank pointer → BankPtr16Be (the new Core kind).
     assert_eq!(
         fixups_of(&module, "mtab"),
-        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: sigil_ir::Expr::Sym("Sfx".into()) }]
+        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: winptr_target("Sfx") }]
     );
 
-    // Linked: Sfx VMA $1234 → LE 34 12 (ztab), BE 12 34 (mtab).
-    assert_eq!(linked_section_bytes(&module, "ztab"), vec![0x34, 0x12]);
-    assert_eq!(linked_section_bytes(&module, "mtab"), vec![0x12, 0x34]);
+    // Linked: Sfx VMA $6569A → ($6569A & 0x7FFF) | 0x8000 = $D69A.
+    // LE $D69A → 9A D6 (ztab), BE $D69A → D6 9A (mtab).
+    assert_eq!(linked_section_bytes(&module, "ztab"), vec![0x9A, 0xD6]);
+    assert_eq!(linked_section_bytes(&module, "mtab"), vec![0xD6, 0x9A]);
 }
+
 
 // ---- negative paths: attribute + here() diagnostics -------------------------
 

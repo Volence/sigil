@@ -5,7 +5,22 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
+use sigil_ir::expr::BinOp;
 use sigil_ir::{Expr, Fixup, FixupKind, Fragment, SymbolTable};
+
+/// The masked fixup target a `winptr(sym)` lowers to: `(sym & 0x7FFF) | 0x8000`
+/// (AS `sfx_winptr`). Used by the windowed-pointer fixup-shape assertions below.
+fn winptr_target(name: &str) -> Expr {
+    Expr::Binary {
+        op: BinOp::Or,
+        lhs: Box::new(Expr::Binary {
+            op: BinOp::And,
+            lhs: Box::new(Expr::Sym(name.into())),
+            rhs: Box::new(Expr::Int(0x7FFF)),
+        }),
+        rhs: Box::new(Expr::Int(0x8000)),
+    }
+}
 
 #[test]
 fn roundtrip_bytes() {
@@ -155,7 +170,8 @@ fn symref_width4_68k_is_abs32be() {
 #[test]
 fn winptr_in_z80_is_bankptr16le() {
     // `winptr(sym)` in a Z80 section → 2 zero bytes + a BankPtr16Le fixup at
-    // offset 0 targeting the symbol (D-P4.5 row 3).
+    // offset 0 targeting the WINDOW-MASKED symbol `(sfx & 0x7FFF) | 0x8000`
+    // (D-P4.5 row 3, matching AS `sfx_winptr`).
     let src = "module m\n\
                comptime fn sfx() -> u8 { 0 }\n\
                data P = winptr(sfx)\n";
@@ -166,7 +182,7 @@ fn winptr_in_z80_is_bankptr16le() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
-        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: Expr::Sym("sfx".into()) }]
+        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: winptr_target("sfx") }]
     );
     // The 2-byte hole is present in the image (zero-filled before linking).
     let section = module.sections.first().expect("one section");
@@ -197,7 +213,7 @@ fn winptr_in_68k_is_bankptr16be() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
-        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: Expr::Sym("sfx".into()) }]
+        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: winptr_target("sfx") }]
     );
     // The 2-byte hole is present in the image (zero-filled before linking).
     assert_eq!(raw_data_bytes(&module), vec![0x00, 0x00]);

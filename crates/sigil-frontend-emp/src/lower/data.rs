@@ -22,6 +22,7 @@
 
 use crate::value::{Cell, DataBuf};
 use sigil_ir::backend::Cpu;
+use sigil_ir::expr::BinOp;
 use sigil_ir::{Expr, Fixup, FixupKind};
 use sigil_span::{Diagnostic, Level, Span};
 
@@ -61,7 +62,7 @@ pub(super) fn stream_data(
                 fixups.push(Fixup {
                     kind,
                     offset: bytes.len() as u32,
-                    target: Expr::Sym(name.clone()),
+                    target: sym_target(name, *windowed),
                 });
                 bytes.resize(bytes.len() + kind.byte_width() as usize, 0);
             }
@@ -139,6 +140,32 @@ fn fixup_kind(
             ));
             None
         }
+    }
+}
+
+/// The fixup target for a `SymRef`. A plain (un-windowed) reference is the bare
+/// symbol; a WINDOWED (`winptr`) reference applies the SFX bank-window mask —
+/// `(addr & 0x7FFF) | 0x8000` — matching AS `sfx_winptr`
+/// (`SFX_WIN_MASK=0x7FFF`, `SFX_WIN_BASE=0x8000`) and the linker's own
+/// `BankPtr16Le`/`BankPtr16Be` test convention. The mask maps a 68k-ROM-blob
+/// address (e.g. `$6569A → $D69A`) into the z80's `$8000..$FFFF` window; it is
+/// idempotent for a symbol that already resolves inside the window (a z80 label
+/// in a `vma:$8000` section), so it is safe to apply unconditionally to every
+/// windowed symref (both LE and BE kinds).
+fn sym_target(name: &str, windowed: bool) -> Expr {
+    let sym = Expr::Sym(name.to_string());
+    if !windowed {
+        return sym;
+    }
+    // (addr & 0x7FFF) | 0x8000
+    Expr::Binary {
+        op: BinOp::Or,
+        lhs: Box::new(Expr::Binary {
+            op: BinOp::And,
+            lhs: Box::new(sym),
+            rhs: Box::new(Expr::Int(0x7FFF)),
+        }),
+        rhs: Box::new(Expr::Int(0x8000)),
     }
 }
 
