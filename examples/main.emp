@@ -1,0 +1,92 @@
+// ===========================================================================
+// main.emp — top-level module for the full-.emp world (MOCK / illustrative)
+// ===========================================================================
+// This is what replaces the top of games/sonic4/main.asm. The job main.asm
+// did with a long list of `include "..."` lines is split into THREE separate
+// jobs here, because in .emp a file is a *module*, not a blob of text:
+//
+//   1. MEMBERSHIP  — which modules are in the build   (was: `include` present)
+//   2. PLACEMENT   — where each module's bytes land    (was: `include` ORDER)
+//   3. REFERENCE   — how one module names another's    (was: one flat AS
+//                    symbols                              label namespace)
+//
+// `include` bundled all three into one line. Pulling them apart is the whole
+// point of leaving textual include behind: the linker composes the image from
+// placed sections + a shared symbol table (both already exist in the codebase),
+// instead of the assembler pasting text in a fixed order.
+// ===========================================================================
+
+module sonic4.main
+
+
+// --- (2) PLACEMENT: declare the ROM's regions -------------------------------
+// In main.asm the address of a thing was "wherever include order put it."
+// Here each ROM region is a named section with an explicit base. A module that
+// says `in obj_bank` lands in THIS section; the linker packs its members and
+// enforces the region's budget. This is the map-file / placement policy
+// (S2-D3) — the replacement for "include order decides the address."
+
+section vectors  (cpu: m68k, vma: $000000)   // 68k reset/exception vectors
+section header   (cpu: m68k, vma: $000100)   // ROM header
+section engine   (cpu: m68k, vma: $000200)   // core engine code
+section obj_bank (cpu: m68k, vma: $010000)   // object code   ($10000..$20000)
+section data     (cpu: m68k, vma: $020000)   // tables, mappings, animations
+section z80drv   (cpu: z80,  vma: $000000)   // sound driver, phase-0 inline
+
+
+// --- (1) MEMBERSHIP: which modules make up the build ------------------------
+// `use` names a module this file depends on. The build compiles every module
+// reachable from `main` and hands all their sections to ONE link. There is no
+// "paste the text here" — a `use` line is a dependency edge, not an insertion
+// point. (Cross-module `use` RESOLUTION is the S2-D3 piece still being built;
+// the grammar below is final.)
+
+use badniks.pitcher_plant           // brings PitcherPlant's entry into scope
+use engine.objects.dispatch         // the object-index table
+use engine.player.sonic
+use data.collision.heightmaps       // a binary ASSET module (see part 4 below)
+
+
+// --- (3) REFERENCE: how modules name each other -----------------------------
+// The object index maps an object id to the proc that runs it. In main.asm
+// this was a table of bare labels that happened to be globally visible. Here
+// the entry is a `pub` symbol imported by `use`; the linker resolves it across
+// files through the shared symbol table — regardless of which section it's in.
+//
+// `code: pitcher_plant.init` is a symbolic reference to the exported entry of
+// the badniks.pitcher_plant module. No address is written here; the linker
+// fills it once obj_bank is placed.
+
+data ObjectIndex = [
+    ObjEntry{ id: $0B, code: pitcher_plant.init },   // was: dc.l PitcherPlant
+    // ... other objects ...
+]
+
+
+// --- (4) ASSETS: raw binary art / mappings / collision ----------------------
+// `include` did two different jobs; only the source-inclusion job is replaced
+// by the module system above. The OTHER job — `BINCLUDE "foo.bin"` / `incbin`,
+// which pastes raw bytes (compressed art, tilesets, mappings.bin, collision,
+// DAC samples) into the ROM — is replaced by the capability sandbox `embed()`
+// (Plan 5, already merged). An asset is just a data module that declares its
+// region and pulls its bytes in from disk; paths resolve against the file's
+// include-root, sandboxed (symlink containment + content-hash capture ledger).
+//
+// This is what `use data.collision.heightmaps` above refers to. In its own file
+// (data/collision/heightmaps.emp) it is simply:
+//
+//     module data.collision.heightmaps in collision_bank
+//
+//     // BINCLUDE "…/heightmaps.bin"  →  embed(); skip/len cover partial files
+//     pub data HeightMaps = embed("data/collision/heightmaps.bin")
+//
+//     // build-time-compressed art: salvador-in-build.sh + BINCLUDE  →  zx0(embed(…))
+//     pub data TitleArt   = zx0(embed("art/title_raw.bin"))
+//
+//     // structured data (palette/editor JSON/TOML)  →  import() → typed values
+//     pub data Palette: [Color; 64] = import("data/palettes/title.json")
+//
+// The bytes land wherever the map places `collision_bank` — replacing "BINCLUDE
+// at this exact point in the include order." Mappings that today are `.asm`
+// SOURCE tables (not .bin) instead become ordinary `.emp` data modules — and are
+// exactly where the offset-table construct (see the roadmap note) would shine.

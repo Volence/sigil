@@ -1,0 +1,51 @@
+// ===========================================================================
+// objects/badniks/pitcher_plant.emp — a MODULE (MOCK / illustrative)
+// ===========================================================================
+// The same object that main.asm used to pull in with:
+//
+//     include "games/sonic4/objects/badniks/pitcher_plant.asm"
+//
+// Nothing here says "put me at address X." The module declares WHICH region it
+// belongs to (`in obj_bank`) and WHAT it exports (`pub`); the linker does the
+// placing and the wiring. That is the trade: the file no longer knows or cares
+// where it lands, and main.emp no longer pastes its text.
+// ===========================================================================
+
+// `in obj_bank` = "my bytes belong to main.emp's obj_bank section." This is the
+// membership half of the old `include`, made explicit and checked (obj_bank has
+// a 64KB budget the linker enforces). One file = one module.
+module badniks.pitcher_plant in obj_bank
+
+
+// A `use` names what THIS module needs from others. Only `pub` names are
+// importable, so a module's surface is deliberate — the opposite of AS, where
+// every label was globally visible whether you meant it to be or not.
+use engine.objects.sst          // the Sst overlay type + field accessors
+use engine.objects.helpers      // ObjectMove, Draw_Sprite, spawn, ObjDef
+
+
+const WAIT_TIME:    u8  = 64
+const ATTACK_RANGE: u16 = $60
+const SEED_VEL_Y:   i16 = -$200
+
+
+// `pub proc init` is the module's exported ENTRY — the one name main.emp's
+// ObjectIndex referenced as `pitcher_plant.init`. Non-`pub` procs (wait, shoot)
+// are private to this module: reachable by fallthrough/local jumps here, but
+// invisible to the rest of the ROM. In AS all three would have been global.
+pub proc init (a0: *Sst) falls_into wait {
+    // ... set up art, animation, initial state ...
+    move.w  #WAIT_TIME, timer(a0)         // typed SST field, not `$24(a0)`
+}
+
+// Private. `falls_into wait` above DECLARES that init drops into this proc, so
+// the two must stay adjacent — the compiler enforces it instead of relying on
+// source order the way the legacy tree did.
+proc wait (a0: *Sst) clobbers(d0) {
+    // ... idle until the player is within ATTACK_RANGE, then jump to shoot ...
+}
+
+proc shoot (a0: *Sst) {
+    // ... play the shoot anim; on FIRE_FRAME, spawn the seed ...
+    jsr     ObjectMove                    // resolved via `use engine.objects.helpers`
+}

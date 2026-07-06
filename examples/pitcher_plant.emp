@@ -3,10 +3,33 @@
 // ===========================================================================
 // Source:   sonic_hack/code/objects/badniks/PitcherPlant.asm (legacy AS syntax)
 // Language: Sigil Spec 2 (.emp) — empyrean/docs/SIGIL_SPEC2_LANGUAGE.md
-// Status:   parses with `sigil parse` today; ASSEMBLES once Spec 2 Plans 2-4
-//           land (comptime evaluation, layout, lowering). Names like Sst,
-//           Draw_Sprite, spawn, ObjDef come from the game prelude and engine
-//           modules — nothing resolves yet, but the grammar is final.
+//
+// STATUS (2026-07-06, after Spec 2 Plans 1–5 landed):
+//   * PARSES today: `sigil parse examples/pitcher_plant.emp` → OK, 15 items.
+//     The grammar is final; every construct below is real, landed syntax.
+//   * Does NOT yet LOWER (`sigil emp …`): this file is a full-fidelity object
+//     that leans on machinery deferred past Plan 5. `sigil emp` reports each
+//     as an `unknown name`/`unknown type`/`not a recognized mnemonic` — none
+//     are grammar errors; all are unresolved-dependency errors. What it needs:
+//       - the GAME PRELUDE + cross-module `use` resolution (S2-D3): `Sst`,
+//         `ObjDef`, `ArtTile`, `Collision`, `Size`, `Vel`, `Player_1`,
+//         `Draw_Sprite`, `ObjectMove`, `Map_PitcherPlant`, `VRAM_PITCHER_PLANT`;
+//       - SST-overlay field-access-as-displacement — `timer(a0)`, `x_pos(a0)`
+//         (Plan-4 follow-up pool);
+//       - comptime object-helpers in statement position — `anim`, `routine`,
+//         `spawn`, `facing_abs`, `despawn_below_level` (prelude comptime macros,
+//         S2-D3);
+//       - proc-name-as-pointer value — `code: init` (Plan-4 pool; today the
+//         evaluator wants a resolvable symbol, not a bare proc name);
+//       - symbolic operand in a straight-line instruction — `move.w
+//         Player_1.x_pos, d0` (only branch/jmp/jsr targets defer to the linker
+//         today);
+//       - `jbra`/`jbsr` auto-reaching pseudo-ops + conditional-branch
+//         relaxation — new-style branch sizing (only jmp/jsr width defers to
+//         link today; see the control-transfer note below).
+//   So this file is the standing acceptance target for that deferred work: it
+//   compiles end-to-end the day the prelude + those pool items land, no grammar
+//   change required. (Appendix D in the language spec argues its byte layout.)
 //
 // WHAT THIS OBJECT DOES (identical behavior to the legacy original):
 //   A stationary carnivorous plant. It idles until the player approaches
@@ -21,12 +44,17 @@
 // the object-code ROM section ($10000..$20000 in Aeon), which the engine's
 // `objroutine()` 16-bit dispatch offsets require. In the legacy tree this
 // placement was implied by include order in the top-level .asm; here it is
-// declared, and the linker enforces the 64KB budget.
+// declared, and the linker places `obj_bank` and enforces its 64KB budget.
+// (See examples/main.emp for how a module is discovered + composed without
+// `include`: scan-by-`module`-header membership, map-file region placement,
+// symbol reference through the shared link table.)
 module badniks.pitcher_plant in obj_bank
 
-// No `use` lines needed: the game prelude auto-imports the names every
-// object file touches (Sst and its fields, Draw_Sprite, ObjectMove,
-// ObjDef, spawn/anim/routine helpers, collision + render-flag constants).
+// No `use` lines needed: the game prelude auto-imports the names every object
+// file touches (Sst and its fields, Draw_Sprite, ObjectMove, ObjDef,
+// spawn/anim/routine helpers, collision + render-flag constants). Prelude
+// contents + cross-module resolution are S2-D3, deferred to the first real
+// port — which is why the prelude names above don't resolve yet.
 
 // --- Per-object variables (the SST overlay) --------------------------------
 // Every live object owns one SST ("Sprite Status Table" entry) — an $50-byte
@@ -107,6 +135,19 @@ data SeedDef = ObjDef{
 // SST's code pointer holds, once per frame, with a0 = this object's SST.
 // `routine <label>` is the prelude helper that stores a new state routine
 // (the legacy `move.w #objroutine(...),(a0)` idiom).
+//
+// Control transfers: instruction lines stay classic 68000 asm (tenet 3), but
+// this is NEW-STYLE code (not an @as_compat port), so it uses the auto-reaching
+// pseudo-ops `jbra`/`jbsr` for direct LABEL targets — the assembler picks
+// bra.s/bra.w (escalating to jmp) and bsr.s/bsr.w (escalating to jsr); all four
+// ops are CCR-transparent, so the choice is flag-safe. Plain `jmp`/`jsr` stay
+// for COMPUTED targets only (e.g. the object dispatcher's `jmp (offset)`, which
+// no branch can express); sized `bra.s`/etc. are only for @as_compat pins.
+// Conditional branches (bne/bhi) have no far form, so they just auto-size .s↔.w.
+// STATUS: `jbra`/`jbsr` and unsized-branch relaxation aren't wired into the emp
+// front-end yet (only jmp/jsr width defers to link, D-P4.2), so `sigil emp`
+// can't lower these — a branch-relaxation follow-up item this file waits on,
+// alongside the prelude.
 
 // State 0: first-frame init. Runs once, then falls through into `wait`
 // for the same frame — `falls_into` DECLARES the fallthrough, so reordering
@@ -121,8 +162,6 @@ proc wait (a0: *Sst) clobbers(d0) {
     // Re-arm delay: do nothing until the countdown expires.
     subq.b  #1, timer(a0)                // timer--
     bne     .draw                        // still counting? just animate
-                                         //   (branch size auto-relaxed —
-                                         //    no .s/.w bookkeeping in .emp)
 
     // Countdown hit zero: is the player close enough, on our facing side?
     // The legacy version duplicated this check for left/right facing
@@ -140,12 +179,12 @@ proc wait (a0: *Sst) clobbers(d0) {
     move.b  #SHOOT_WINDUP, timer(a0)     // shoot anim runs 40 frames
     anim    Anim.Shoot                   // prelude helper: set anim + reset
     routine shoot                        // next frame, run `shoot` instead
-    bra     .draw
+    jbra    .draw
 
 .rearm:
     move.b  #WAIT_TIME, timer(a0)        // wait another 64 frames
 .draw:
-    jmp     Draw_Sprite                  // animate + queue sprite + offscreen
+    jbra    Draw_Sprite                  // animate + queue sprite + offscreen
                                          //   check (legacy AnimateSprite +
                                          //   MarkObjGone tail)
 }
@@ -173,7 +212,7 @@ proc shoot (a0: *Sst) {
     anim    Anim.Idle
     routine wait
 .draw:
-    jmp     Draw_Sprite
+    jbra    Draw_Sprite
 }
 
 // State (projectile): the seed's per-frame update. Pure ballistics.
@@ -182,6 +221,6 @@ proc seed (a0: *Sst) {
                                          //   below the level's kill plane
                                          //   (legacy Obj_DeleteIfBelowLevel)
     add.w   #SEED_GRAVITY, y_vel(a0)     // gravity pulls the arc down
-    jsr     ObjectMove                   // engine: pos += vel (16.16 math)
-    jmp     Draw_Sprite
+    jbsr    ObjectMove                   // engine: pos += vel (16.16 math)
+    jbra    Draw_Sprite
 }
