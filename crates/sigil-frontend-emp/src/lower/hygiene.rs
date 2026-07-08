@@ -31,38 +31,51 @@
 use std::collections::HashMap;
 
 /// The owner scope of an `asm { }` / `proc` body — what an exported label's
-/// caller-visible `Owner.name` symbol is derived from.
+/// caller-visible `Owner.name` symbol is derived from. Every owner carries the
+/// enclosing MODULE id (`a.b.c`, the dotted `module` path) so a hidden local
+/// symbol is unique across the whole multi-module program, not just within one
+/// module (Plan 7 #4): the proc name / instantiation id `k` are only unique
+/// within a module, so two modules with a `proc init` (or an `asm {}` whose `k`
+/// reset to the same value) would otherwise mint colliding `$init$loop` /
+/// `$asm{k}$wait` symbols into the flat linker table.
 #[derive(Clone, Debug)]
 pub enum Owner {
-    /// A `proc foo`: an exported `.name:` is caller-visible as `foo.name`.
-    Proc(String),
-    /// A raw `asm { }` instantiation `k`: an exported label is still stable per
-    /// §5.3, spelled `$asm{k}.name`. (The common case is exported labels in
+    /// A `proc foo` in module `modid`: an exported `.name:` is caller-visible as
+    /// `foo.name`; a private `.name:` is the module-scoped `$modid$foo$name`.
+    Proc { module: String, name: String },
+    /// A raw `asm { }` instantiation `k` in module `modid`: an exported label is
+    /// still stable per §5.3, spelled `$asm{k}.name`; a private label is the
+    /// module-scoped `$modid$asm{k}$name`. (The common case is exported labels in
     /// procs; this keeps the model consistent for the rare exported-in-`asm{}`
     /// case without a caller having a name to reach it by.)
-    Asm(u32),
+    Asm { module: String, k: u32 },
 }
 
 impl Owner {
     /// The exported label's stable, caller-visible symbol `Owner.name` (§5.2).
+    /// NOT module-qualified: exported (top-level) symbols are the raw names the
+    /// resolve/rename pass maps to their canonical `module.id.name` form — this
+    /// mangling is only for the hidden `$…$` locals that pass skips.
     fn export_symbol(&self, name: &str) -> String {
         match self {
-            Owner::Proc(p) => format!("{p}.{name}"),
-            Owner::Asm(k) => format!("$asm{k}.{name}"),
+            Owner::Proc { name: p, .. } => format!("{p}.{name}"),
+            Owner::Asm { k, .. } => format!("$asm{k}.{name}"),
         }
     }
 
     /// The hidden, globally-unique symbol for a non-`export` local label
-    /// (D-P4.6). A proc owner prefixes with its (unique) name — `$foo$loop` — so
-    /// the same `.loop` in another proc is a DISTINCT symbol; a raw `asm { }`
-    /// owner prefixes with its globally-monotonic instantiation id `k` —
-    /// `$asm{k}$name`. The `$`-wrapped spelling is unspellable from source, so the
-    /// label stays hidden. Distinct from [`export_symbol`](Self::export_symbol)'s
+    /// (D-P4.6, Plan 7 #4). The MODULE id leads so the symbol is unique across the
+    /// whole program; then a proc owner adds its (module-unique) name —
+    /// `$modid$foo$loop` — so the same `.loop` in another proc or another module
+    /// is a DISTINCT symbol, and a raw `asm { }` owner adds its instantiation id
+    /// `k` — `$modid$asm{k}$name`. The `$`-wrapped spelling is unspellable from
+    /// source (so the label stays hidden) and already unique (so the rename pass
+    /// correctly skips it). Distinct from [`export_symbol`](Self::export_symbol)'s
     /// dot spelling, so an internal and an exported label never collide.
     fn local_symbol(&self, name: &str) -> String {
         match self {
-            Owner::Proc(p) => format!("${p}${name}"),
-            Owner::Asm(k) => format!("$asm{k}${name}"),
+            Owner::Proc { module, name: p } => format!("${module}${p}${name}"),
+            Owner::Asm { module, k } => format!("${module}$asm{k}${name}"),
         }
     }
 }
@@ -118,9 +131,20 @@ impl LabelScope {
 mod tests {
     use super::*;
 
+    /// A `Proc` owner in module `m` (the common single-file test module id).
+    fn proc_owner(name: &str) -> Owner {
+        Owner::Proc { module: "m".into(), name: name.into() }
+    }
+
+    /// An `Asm` owner (instantiation `k`) in module `m`.
+    fn asm_owner(k: u32) -> Owner {
+        Owner::Asm { module: "m".into(), k }
+    }
+
     #[test]
     fn export_label_is_owner_dot_name_for_a_proc() {
-        let scope = LabelScope::build(&Owner::Proc("foo".into()), [("entry", true)].into_iter());
+        // Exported labels are NOT module-qualified (the rename pass handles them).
+        let scope = LabelScope::build(&proc_owner("foo"), [("entry", true)].into_iter());
         assert_eq!(scope.label_def("entry"), "foo.entry");
         // Intra-body and external references both land on the same symbol.
         assert_eq!(scope.resolve_ref(".entry"), "foo.entry");
@@ -130,32 +154,57 @@ mod tests {
     #[test]
     fn non_export_proc_label_is_scoped_to_its_owner() {
         // The SAME `.loop` in two different procs gets DISTINCT symbols — the
-        // owner (proc name) is what makes them unique (no counter involved).
-        let foo = LabelScope::build(&Owner::Proc("foo".into()), [("loop", false)].into_iter());
-        let bar = LabelScope::build(&Owner::Proc("bar".into()), [("loop", false)].into_iter());
-        assert_eq!(foo.label_def("loop"), "$foo$loop");
-        assert_eq!(bar.label_def("loop"), "$bar$loop");
+        // owner (proc name), under its module id, is what makes them unique.
+        let foo = LabelScope::build(&proc_owner("foo"), [("loop", false)].into_iter());
+        let bar = LabelScope::build(&proc_owner("bar"), [("loop", false)].into_iter());
+        assert_eq!(foo.label_def("loop"), "$m$foo$loop");
+        assert_eq!(bar.label_def("loop"), "$m$bar$loop");
         assert_ne!(foo.label_def("loop"), bar.label_def("loop"));
         // An intra-body reference rewrites to the same owner-scoped symbol.
-        assert_eq!(foo.resolve_ref(".loop"), "$foo$loop");
+        assert_eq!(foo.resolve_ref(".loop"), "$m$foo$loop");
+    }
+
+    #[test]
+    fn non_export_local_label_is_scoped_to_its_module() {
+        // Plan 7 #4: the SAME proc name `init` in two DIFFERENT modules gets
+        // DISTINCT symbols — the module id is what makes them unique. (Within a
+        // module the proc name already disambiguates; across modules only the
+        // module prefix does.)
+        let a = LabelScope::build(
+            &Owner::Proc { module: "a".into(), name: "init".into() },
+            [("loop", false)].into_iter(),
+        );
+        let b = LabelScope::build(
+            &Owner::Proc { module: "b".into(), name: "init".into() },
+            [("loop", false)].into_iter(),
+        );
+        assert_eq!(a.label_def("loop"), "$a$init$loop");
+        assert_eq!(b.label_def("loop"), "$b$init$loop");
+        assert_ne!(a.label_def("loop"), b.label_def("loop"));
     }
 
     #[test]
     fn non_export_asm_label_is_scoped_to_its_instantiation() {
-        // Raw `asm { }` owners use the globally-monotonic instantiation id `k`.
-        let a = LabelScope::build(&Owner::Asm(0), [("wait", false)].into_iter());
-        let b = LabelScope::build(&Owner::Asm(1), [("wait", false)].into_iter());
-        assert_eq!(a.label_def("wait"), "$asm0$wait");
-        assert_eq!(b.label_def("wait"), "$asm1$wait");
+        // Raw `asm { }` owners use the instantiation id `k`, under the module id.
+        let a = LabelScope::build(&asm_owner(0), [("wait", false)].into_iter());
+        let b = LabelScope::build(&asm_owner(1), [("wait", false)].into_iter());
+        assert_eq!(a.label_def("wait"), "$m$asm0$wait");
+        assert_eq!(b.label_def("wait"), "$m$asm1$wait");
         assert_ne!(a.label_def("wait"), b.label_def("wait"));
-        assert_eq!(a.resolve_ref(".wait"), "$asm0$wait");
+        assert_eq!(a.resolve_ref(".wait"), "$m$asm0$wait");
+        // Plan 7 #4: the SAME `k` in two modules is still distinct (counter reset).
+        let other = LabelScope::build(
+            &Owner::Asm { module: "other".into(), k: 0 },
+            [("wait", false)].into_iter(),
+        );
+        assert_ne!(a.label_def("wait"), other.label_def("wait"));
     }
 
     #[test]
     fn external_reference_passes_through_unchanged() {
         // A `foo.entry` reference from a DIFFERENT body (not in this scope's map)
         // is left as the dot-joined external symbol.
-        let scope = LabelScope::build(&Owner::Asm(7), [("wait", false)].into_iter());
+        let scope = LabelScope::build(&asm_owner(7), [("wait", false)].into_iter());
         assert_eq!(scope.resolve_ref("foo.entry"), "foo.entry");
         // A reference to a hidden non-export label by an owner spelling does NOT
         // find the fresh symbol — it stays unresolved (passes through).

@@ -65,9 +65,10 @@ fn renames_cross_module_branch_target() {
 
 #[test]
 fn proc_local_symbols_pass_through_unchanged() {
-    // A proc-local `.loop` is hygiene-mangled to `$a$loop`. The rename map holds
-    // only bare top-level names, so the mangled local must survive VERBATIM in
-    // both the label list and the branch fixup target — hygiene preservation.
+    // A proc-local `.loop` is hygiene-mangled to `$x$a$loop` (module-qualified per
+    // Plan 7 #4: `$<modid>$<proc>$<name>`). The rename map holds only bare
+    // top-level names, so the mangled local must survive VERBATIM in both the
+    // label list and the branch fixup target — hygiene preservation.
     let (file, d) = parse_str("module x\nproc a (a0: *u8) {\n.loop:\n  bra.w .loop\n}\n");
     assert!(d.iter().all(|x| x.level != sigil_span::Level::Error), "{d:?}");
     let (mut module, _) =
@@ -82,12 +83,12 @@ fn proc_local_symbols_pass_through_unchanged() {
     let labels: Vec<String> =
         module.sections.iter().flat_map(|s| &s.labels).map(|l| l.name.clone()).collect();
     assert!(labels.iter().any(|l| l == "x.a"), "top-level label renamed, got {labels:?}");
-    assert!(labels.iter().any(|l| l == "$a$loop"), "mangled local label must survive, got {labels:?}");
+    assert!(labels.iter().any(|l| l == "$x$a$loop"), "mangled local label must survive, got {labels:?}");
 
     // ...and in the branch fixup target.
     let all_targets: Vec<String> =
         module.sections.iter().flat_map(|s| &s.fragments).flat_map(fixup_targets).collect();
-    assert!(all_targets.iter().any(|t| t == "$a$loop"), "mangled local target must survive, got {all_targets:?}");
+    assert!(all_targets.iter().any(|t| t == "$x$a$loop"), "mangled local target must survive, got {all_targets:?}");
 }
 
 // Test helper: collect every symbol name appearing in a fragment's fixup targets.

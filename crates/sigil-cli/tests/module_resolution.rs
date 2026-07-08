@@ -557,3 +557,103 @@ fn three_module_corpus_compiles_end_to_end() {
         "expected a non-empty binary"
     );
 }
+
+#[test]
+fn two_modules_same_proc_local_label_do_not_collide() {
+    // CROSS-MODULE PRIVATE-LABEL COLLISION (Plan 7 #4): two DIFFERENT modules each
+    // define `pub proc init` containing a non-export `.loop:`. Proc-local labels
+    // are owner-scoped as `$init$loop` — but the owner (proc name) is only unique
+    // WITHIN a module. Absent module-qualification, both modules mint the SAME
+    // `$init$loop`, so the flat linker symbol table sees `$init$loop` redefined.
+    // Module-qualifying the hygiene local symbol (`$<modid>$init$loop`) makes the
+    // two private labels distinct. The entry `use`s a pub const from each module
+    // so BFS reaches both (and thus lowers both `init` procs).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "a.emp",
+        "module a\npub const Hook_A: u8 = $AA\n\
+         pub proc init (a0: *u8) {\n    nop\n.loop:\n    bra.w .loop\n}\n",
+    );
+    write(
+        root,
+        "b.emp",
+        "module b\npub const Hook_B: u8 = $BB\n\
+         pub proc init (a0: *u8) {\n    nop\n.loop:\n    bra.w .loop\n}\n",
+    );
+    write(
+        root,
+        "entry.emp",
+        "module entry\nuse a.{Hook_A}\nuse b.{Hook_B}\n\
+         pub data Refs: [u8;2] = [Hook_A, Hook_B]\n",
+    );
+    let out = root.join("out.bin");
+    let output = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("entry.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "two modules with an identically-named private proc label must link, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(out.exists());
+}
+
+#[test]
+fn two_modules_asm_splice_local_label_do_not_collide() {
+    // The COUNTER-RESET twin: two modules each splice a comptime-generated `asm {}`
+    // (owning a non-export `.wait:`) inside a proc. The `asm {}` instantiation
+    // counter `k` restarts at 0 per `lower_module` call, so both modules mint the
+    // SAME `$asm0$wait`. Distinct proc names (`go_a`/`go_b`) isolate this to the
+    // counter collision (not the proc-name collision above). Module-qualifying the
+    // asm local symbol (`$<modid>$asm{k}$wait`) resolves it.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "a.emp",
+        "module a\npub const Tag_A: u8 = $AA\n\
+         comptime fn spin() -> Code {\n    return asm {\n.wait:\n    bra.w .wait\n    }\n}\n\
+         pub proc go_a (a0: *u8) {\n    spin()\n    rts\n}\n",
+    );
+    write(
+        root,
+        "b.emp",
+        "module b\npub const Tag_B: u8 = $BB\n\
+         comptime fn spin() -> Code {\n    return asm {\n.wait:\n    bra.w .wait\n    }\n}\n\
+         pub proc go_b (a0: *u8) {\n    spin()\n    rts\n}\n",
+    );
+    write(
+        root,
+        "entry.emp",
+        "module entry\nuse a.{Tag_A}\nuse b.{Tag_B}\n\
+         pub data Refs: [u8;2] = [Tag_A, Tag_B]\n",
+    );
+    let out = root.join("out.bin");
+    let output = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("entry.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "two modules splicing an asm{{}} with the same local label must link, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(out.exists());
+}
