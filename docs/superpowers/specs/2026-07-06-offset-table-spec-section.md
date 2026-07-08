@@ -1,5 +1,10 @@
 # Proposed spec section — `offsets` (for `empyrean/docs/SIGIL_SPEC2_LANGUAGE.md`)
 
+> **LIFTED 2026-07-06 (Fable):** integrated into `empyrean/docs/SIGIL_SPEC2_LANGUAGE.md` as §4.7
+> + decision D2.15, with one addition — the deferred `start:` ordinal-origin knob is tagged
+> *classic-Sonic-ports-only* (Aeon dispatches objects via address registers + `jmp`/`jsr`, ids
+> appear only in object layout — Volence, 2026-07-06). This file is now historical.
+
 > **Not committed to empyrean by the implementation branch.** `empyrean` is a separate
 > repo with pending WIP in `SIGIL_SPEC2_LANGUAGE.md`, and spec authorship is Fable's role.
 > This is the drafted §4.7 to lift into that file (after §4.6, before §5), in the doc's voice.
