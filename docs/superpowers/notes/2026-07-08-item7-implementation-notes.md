@@ -72,4 +72,4 @@ placement code.
 
 | Task | Test | RED command | RED result | GREEN commit |
 |------|------|-------------|------------|---------------|
-|      |      |             |            |               |
+| 1 | `single_file_growth_overlap_is_fixed` (`crates/sigil-cli/tests/placement_fix.rs`) | `cargo test -p sigil-cli --test placement_fix` | FAILED — first-diff: `left: [78, 249, 0, 0, 222, 173, 190, 239]` (master, 8B = `4E F9 00 00 DE AD BE EF`, `data`'s `DE AD` clobbered the grown jmp operand) vs `right: [78, 249, 0, 0, 128, 0, 222, 173, 190, 239]` (correct, 10B = `4E F9 00 00 80 00 DE AD BE EF`). CLI run on the source confirms master image byte-for-byte. | (pending — later placement-fix task) |
