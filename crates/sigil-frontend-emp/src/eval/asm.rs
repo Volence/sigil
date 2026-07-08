@@ -265,6 +265,9 @@ impl Evaluator<'_> {
                         if let Some(base) = self.reg_pointee_struct.get(&reg).cloned() {
                             let (d, size) =
                                 self.resolve_field_disp(&base, field, expr_span(disp))?;
+                            // Overrun is diagnosed but the operand is emitted anyway
+                            // (deliberate error-recovery): the displacement is valid,
+                            // so downstream passes still see a well-formed operand.
                             self.check_field_overrun(field, size, width, *span);
                             return Some(CodeOperand::DispInd { disp: d, reg });
                         }
@@ -298,7 +301,10 @@ impl Evaluator<'_> {
     /// diagnostic (D6.A3). Only a one-part register-indirect `(aN)` yields a
     /// register; anything else (indexed/absolute, a non-register base) yields
     /// `None` and the shared displacement path below re-derives it, reporting as
-    /// today. This is the read-only twin of [`inner_ind_reg`](Self::inner_ind_reg).
+    /// today. This peek is SYNTACTIC only: it matches a LITERAL register spelling
+    /// (`a0`) in the AST and never evaluates — an evaluated or aliased base (e.g.
+    /// a `{splice}` or a const naming a register) yields `None` here and falls
+    /// through to the shared [`inner_ind_reg`](Self::inner_ind_reg) path.
     fn peek_inner_reg(&self, inner: &Operand) -> Option<Reg> {
         let Operand::Ind { parts, .. } = inner else { return None };
         if parts.len() != 1 {
@@ -395,12 +401,14 @@ impl Evaluator<'_> {
             Some(Width::S) | None => return,
         };
         if access > field_size {
+            // `width` is `Some(_)` here: the `None`/`.s` arms above already
+            // returned, so match it out rather than `unwrap()`.
+            let Some(w) = width else { return };
             self.error(
                 span,
                 format!(
-                    "[operand.field-overrun] .{width} access reads {access} bytes but field `{field}` is {field_size} byte{}",
+                    "[operand.field-overrun] .{w} access reads {access} bytes but field `{field}` is {field_size} byte{}",
                     if field_size == 1 { "" } else { "s" },
-                    width = width.unwrap(),
                 ),
             );
         }

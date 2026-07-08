@@ -508,3 +508,51 @@ fn field_access_narrower_than_field_is_legal() {
     assert!(errs.is_empty(), "narrower access must be legal, got: {errs:?}");
     assert_eq!(proc_bytes(&module), vec![0x10, 0x28, 0x00, 0x2F, 0x4E, 0x75]);
 }
+
+// ---- 9. per-proc register typing is scoped (T6 review ride-along) ---------
+
+#[test]
+fn field_access_reg_typing_is_per_proc() {
+    // `a0` is `*Sst` in proc `p1` but has NO param binding in proc `p2`. The
+    // register→struct map is rebuilt per proc, so `p2`'s `timer(a0)` must NOT
+    // resolve in field space — it falls to comptime eval and errors as a plain
+    // unknown NAME (not `[operand.unknown-field]`). A leaked binding would let
+    // `p2` silently resolve `timer` against `*Sst`.
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p1 (a0: *Sst) {{\n    tst.b timer(a0)\n    rts\n}}\n\
+         proc p2 () {{\n    tst.b timer(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("timer")),
+        "want an unknown-name error on `timer` in p2, got: {errs:?}"
+    );
+    assert!(
+        !errs.iter().any(|m| m.contains("[operand.unknown-field]")),
+        "p2's untyped a0 must not consult field space, got: {errs:?}"
+    );
+}
+
+#[test]
+fn field_access_multi_param_types_the_right_register() {
+    // One proc with TWO typed params: `a0: *Sst`, `a1: *Other`. `timer` is an
+    // Sst-overlay field, NOT any field of `Other` — so `timer(a1)` resolves in
+    // `*Other`'s field space, misses, and the `[operand.unknown-field]` error
+    // must name `*Other` (a0's binding must not leak onto a1).
+    let src = format!(
+        "module m\n{SST}\
+         struct Other (size: 4) {{ flag: u8, _pad: [u8; 3] @ 1 }}\n\
+         vars V: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst, a1: *Other) {{\n    tst.b timer(a1)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.unknown-field]") && m.contains("*Other")),
+        "want [operand.unknown-field] naming *Other (not *Sst), got: {errs:?}"
+    );
+    assert!(
+        !errs.iter().any(|m| m.contains("*Sst")),
+        "a0's *Sst binding must not leak onto a1, got: {errs:?}"
+    );
+}

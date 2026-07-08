@@ -647,17 +647,19 @@ pub fn eval_proc_body(
         // pointee type MUST NOT report: an unresolvable/non-struct pointee simply
         // does not participate — its own decl-site diagnostics belong elsewhere,
         // and duplicating them here would double-report. So resolve on a scratch
-        // evaluator whose diagnostics are discarded.
+        // evaluator whose diagnostics are discarded — built ONCE per proc (not
+        // once per param): its only job is to run type resolution silently.
+        let mut probe = Evaluator::with_file(file);
         for (pname, pty, pspan) in params {
             let Some(reg) = crate::value::Reg::from_name(pname) else { continue };
             if let ast::Type::Ptr(inner) = pty {
-                let mut probe = Evaluator::with_file(file);
                 let inner_ty = probe.resolve_type(inner);
                 if let Some(sname) = probe.struct_name_for_offsetof(&inner_ty, *pspan) {
                     ev.reg_pointee_struct.insert(reg, sname);
                 }
             }
         }
+        drop(probe);
         let mut env = Env::new();
         let buf = match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
             Value::Code(buf) => Some(buf),
