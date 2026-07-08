@@ -189,6 +189,18 @@ impl<'a> Evaluator<'a> {
                     if self.fns.contains_key(name) {
                         return Value::FnRef(name.to_string());
                     }
+                    // D-PP.3 label-value FALLBACK: in comptime VALUE position
+                    // (a data-item field initializer or a call argument), a name
+                    // the evaluator does not know is a DEFERRED LINK SYMBOL — a
+                    // `proc`/`data` reference resolved at link, exactly as the
+                    // string form `"init"` is. Confined to `label_ctx` so a pure
+                    // comptime expression keeps its loud `unknown name`. Existing
+                    // name resolution (local → const → fn, above) WINS, so a
+                    // same-named const shadows the label interpretation (D-PP.3
+                    // precedence). Registers win earlier still, in `eval_call_arg`.
+                    if self.label_ctx_active() {
+                        return Value::Label(name.to_string());
+                    }
                     self.error(path.span, format!("unknown name `{name}`"));
                     Value::Poison
                 }
@@ -277,9 +289,17 @@ impl<'a> Evaluator<'a> {
                 return Value::Poison;
             }
         }
-        // Any other multi-segment path (module paths, unknown enums) is an
-        // unknown name for now; later plans resolve `use`d/module paths.
+        // Any other multi-segment path (module paths, unknown enums).
         let full = path.segments.join(".");
+        // D-PP.3: a DOTTED bareword in comptime VALUE position that resolves to
+        // nothing above (not a value field-access, not an Enum/offsets/dispatch
+        // member) is a module-qualified LINK SYMBOL — `pitcher_plant.init`,
+        // `badniks.pitcher_plant.init` — deferred to link exactly as the string
+        // form `"pitcher_plant.init"` is (both resolve through the same
+        // `canonicalize_name` module-suffix rule). Confined to `label_ctx`.
+        if self.label_ctx_active() {
+            return Value::Label(full);
+        }
         self.error(path.span, format!("unknown name `{full}`"));
         Value::Poison
     }

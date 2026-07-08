@@ -112,6 +112,20 @@ pub enum Value {
     /// A comptime register class (`d0`..`a7`) — the value a `{reg}` operand
     /// splice resolves to (§6.2). Emp-side; carries no ISA.
     Reg(Reg),
+    /// A first-class LABEL VALUE (D-PP.3): a reference to a named link symbol — a
+    /// `proc` or `data` item, module-local / imported / prelude. Produced when a
+    /// bareword (or dotted path) in comptime VALUE position resolves to nothing
+    /// the evaluator knows (no local/const/comptime-fn), so it is DEFERRED to
+    /// link exactly as the string form `"init"` is. Carries only the (possibly
+    /// dotted) symbol NAME; the address is NOT resolved here — a label value
+    /// lowers to the same [`Cell::SymRef`] the string form does (`lower_ptr`) and
+    /// splices to the same [`CodeOperand::Sym`] (`classify_operand_splice`), so a
+    /// link-time fixup resolves it. Distinct from [`Value::Str`] on purpose: a
+    /// label is a symbol reference, so it type-errors in a non-pointer field
+    /// (naming `label`), rejects comptime address arithmetic (`init + 2`), and
+    /// binds ONLY a `Label`-typed comptime fn param — none of which a raw string
+    /// should do. It NEVER folds to a comptime integer (emission stays link-time).
+    Label(String),
     /// An "error already reported here" sentinel (D-P2.9). Operations on
     /// `Poison` yield `Poison` silently so one bad subexpression does not fan
     /// out into a cascade of diagnostics.
@@ -508,6 +522,7 @@ impl Value {
             Value::Width(_) => "width",
             Value::Cc(_) => "cc",
             Value::Reg(_) => "reg",
+            Value::Label(_) => "label",
             Value::Poison => "poison",
         }
     }
@@ -600,6 +615,9 @@ impl fmt::Display for Value {
             Value::Width(w) => write!(f, "{w}"),
             Value::Cc(c) => write!(f, "{c}"),
             Value::Reg(r) => write!(f, "{r}"),
+            // A label renders as its bare symbol name (no quotes — it is not a
+            // string): `<label init>` distinguishes it in diagnostics.
+            Value::Label(n) => write!(f, "<label {n}>"),
             Value::Poison => f.write_str("<poison>"),
         }
     }
@@ -705,6 +723,17 @@ mod tests {
     }
 
     #[test]
+    fn display_label() {
+        // A label renders as its bare symbol name — no quotes (it is not a
+        // string), distinct from a `Str` in diagnostics.
+        assert_eq!(Value::Label("init".to_string()).to_string(), "<label init>");
+        assert_eq!(
+            Value::Label("pitcher_plant.init".to_string()).to_string(),
+            "<label pitcher_plant.init>"
+        );
+    }
+
+    #[test]
     fn type_names() {
         assert_eq!(i(1).type_name(), "int");
         assert_eq!(Value::Float(1.0).type_name(), "float");
@@ -733,6 +762,7 @@ mod tests {
             "lambda"
         );
         assert_eq!(Value::FnRef("f".into()).type_name(), "fn");
+        assert_eq!(Value::Label("init".into()).type_name(), "label");
         assert_eq!(Value::Data(DataBuf::empty()).type_name(), "data");
         assert_eq!(Value::Poison.type_name(), "poison");
     }

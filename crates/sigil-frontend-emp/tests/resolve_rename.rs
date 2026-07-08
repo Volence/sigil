@@ -91,6 +91,39 @@ fn proc_local_symbols_pass_through_unchanged() {
     assert!(all_targets.iter().any(|t| t == "$x$a$loop"), "mangled local target must survive, got {all_targets:?}");
 }
 
+#[test]
+fn module_qualified_reference_resolves_to_canonical() {
+    // D-PP.3: a MODULE-QUALIFIED reference (`pitcher_plant.init`) — where the
+    // leading segment(s) are a suffix of the DEFINING module id and the final
+    // segment is an in-scope short name — resolves to the imported canonical.
+    // This fixes the qualified STRING form and gives dotted label barewords the
+    // same resolution. The rename map holds `init -> badniks.pitcher_plant.init`
+    // (the `use`-imported canonical).
+    use sigil_frontend_emp::resolve::rename::canonicalize_name;
+    let mut map = HashMap::new();
+    map.insert("init".to_string(), "badniks.pitcher_plant.init".to_string());
+
+    // The bare name still resolves (whole-name hit).
+    assert_eq!(canonicalize_name("init", &map).as_deref(), Some("badniks.pitcher_plant.init"));
+    // A one-segment module qualifier that is a SUFFIX of the id resolves.
+    assert_eq!(
+        canonicalize_name("pitcher_plant.init", &map).as_deref(),
+        Some("badniks.pitcher_plant.init")
+    );
+    // The FULL module id qualifier resolves too.
+    assert_eq!(
+        canonicalize_name("badniks.pitcher_plant.init", &map).as_deref(),
+        Some("badniks.pitcher_plant.init")
+    );
+    // A NON-suffix qualifier must NOT resolve (segment-aligned suffix only —
+    // `plant` is not a segment of `pitcher_plant`).
+    assert_eq!(canonicalize_name("plant.init", &map), None);
+    // A qualifier that is a substring but not segment-aligned must NOT resolve.
+    assert_eq!(canonicalize_name("badniks.plant.init", &map), None);
+    // An unknown final segment is unresolved regardless of qualifier.
+    assert_eq!(canonicalize_name("pitcher_plant.nope", &map), None);
+}
+
 // Test helper: collect every symbol name appearing in a fragment's fixup targets.
 fn fixup_targets(f: &sigil_ir::Fragment) -> Vec<String> {
     let mut out = Vec::new();

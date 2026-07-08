@@ -340,6 +340,10 @@ impl<'a> Evaluator<'a> {
         let name = match value {
             Value::FnRef(n) => Some(n.clone()),
             Value::Str(s) => Some(s.clone()),
+            // A first-class LABEL value (D-PP.3) — a bareword/dotted proc/data
+            // reference — lowers to the SAME `Cell::SymRef` the string form
+            // does, so `code: init` == `code: "init"` byte-for-byte.
+            Value::Label(n) => Some(n.clone()),
             // Poison is filtered by `lower_to_data`, so `_` is a genuine non-ref.
             _ => None,
         };

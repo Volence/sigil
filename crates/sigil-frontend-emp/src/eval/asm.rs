@@ -730,7 +730,11 @@ impl Evaluator<'_> {
         match v {
             Value::Poison => None,
             Value::Reg(r) => Some(CodeOperand::Reg(r)),
-            Value::FnRef(n) | Value::Str(n) => Some(CodeOperand::Sym(n)),
+            // A Label param spliced into an operand position (`jsr {p}`,
+            // `lea {p}, a1`) produces the same symbol operand as the string form
+            // (D-PP.3) — a link-time reference, byte-identical to `jsr {t}` with
+            // a `string` param.
+            Value::FnRef(n) | Value::Str(n) | Value::Label(n) => Some(CodeOperand::Sym(n)),
             other => {
                 if let Some(n) = other.as_stored_int() {
                     Some(CodeOperand::Imm(n))

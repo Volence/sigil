@@ -249,6 +249,15 @@ pub struct Evaluator<'a> {
     /// section) — a bare statement call is a proc-body construct, so it is only
     /// recognized when this is `Some`.
     cpu: Option<sigil_ir::backend::Cpu>,
+    /// Depth of enclosing LABEL-VALUE contexts (D-PP.3). Non-zero only while
+    /// evaluating a data-item field initializer or a call argument (bumped by
+    /// [`in_label_ctx`](Self::in_label_ctx)); an otherwise-unknown bareword /
+    /// dotted path in [`eval_path`](Self::eval_path) becomes a
+    /// [`Value::Label`](crate::value::Value::Label) only when this is non-zero,
+    /// so a pure comptime expression (`const x = bogus`) keeps its loud
+    /// `unknown name`. A COUNTER (not a bool) so nested value positions restore
+    /// correctly.
+    label_ctx: u32,
 }
 
 impl<'a> Evaluator<'a> {
@@ -289,7 +298,33 @@ impl<'a> Evaluator<'a> {
             captures: Vec::new(),
             reg_pointee_struct: HashMap::new(),
             cpu: None,
+            label_ctx: 0,
         }
+    }
+
+    /// Run `body` with label-value resolution ENABLED (D-PP.3), restoring the
+    /// prior depth on the way out. In this scope an otherwise-unknown bareword /
+    /// dotted path in [`eval_path`](Self::eval_path) becomes a
+    /// [`Value::Label`](crate::value::Value::Label) (a deferred link symbol)
+    /// instead of the `unknown name` error — the fallback is confined to the two
+    /// comptime VALUE positions the spec names (data-item field initializers and
+    /// call arguments), so a pure comptime expression context keeps its loud
+    /// `unknown name`. A DEPTH counter (not a bool) so nesting — a call-arg whose
+    /// value is a struct literal whose field is a bareword — stays enabled
+    /// throughout and restores correctly.
+    pub(super) fn in_label_ctx<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
+        self.label_ctx += 1;
+        let out = body(self);
+        self.label_ctx -= 1;
+        out
+    }
+
+    /// Whether label-value resolution is currently enabled (inside a data-item
+    /// field initializer or a call argument, D-PP.3). The fallback in
+    /// [`eval_path`](Self::eval_path) consults this so a bareword only becomes a
+    /// label where a symbol reference is meaningful.
+    pub(super) fn label_ctx_active(&self) -> bool {
+        self.label_ctx > 0
     }
 
     /// Set the VMA `here()` resolves to for the item about to be evaluated

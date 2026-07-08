@@ -346,22 +346,29 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
-        self.eval_expr(expr, env)
+        // A call argument is a comptime VALUE position (D-PP.3): a bareword or
+        // dotted path naming a proc/data item — otherwise unknown to the
+        // evaluator — becomes a LABEL value (`routine shoot`, `spawn(SeedDef,…)`).
+        // Registers already won above; existing name resolution (local/const/fn)
+        // still wins inside `eval_expr` — the label is only the final fallback.
+        self.in_label_ctx(|this| this.eval_expr(expr, env))
     }
 
-    /// The register-vs-param-type check (D-PP.2): a `Value::Reg` argument is legal
-    /// ONLY where the parameter's declared type is `Reg`, and a `Reg` parameter
-    /// accepts ONLY a register. Any other pairing is a type error naming the
-    /// expected type — so `set_timer(d3)` (register into a `u8` param) and a
-    /// non-register into a `Reg` param both diagnose cleanly rather than silently
-    /// misrouting into a downstream splice-kind error. Non-`Reg` value/param
-    /// pairings are NOT checked here (comptime fns are otherwise loosely typed at
-    /// bind time today); this narrowly guards the register class the new arg path
+    /// The comptime-only-class arg/param check (D-PP.2 `Reg`, D-PP.3 `Label`): a
+    /// `Value::Reg`/`Value::Label` argument is legal ONLY where the parameter's
+    /// declared type is the matching comptime-only name, and a `Reg`/`Label`
+    /// parameter accepts ONLY that class. Any mismatch is a type error NAMING the
+    /// class — so `set_timer(d3)` (register into `u8`), `routine(5)` (int into
+    /// `Label`), and `takes(shoot)` (label into `u8`) all diagnose cleanly rather
+    /// than silently misrouting into a downstream splice-kind error. Other
+    /// value/param pairings stay loosely typed at bind time (as before); this
+    /// narrowly guards the two comptime-only classes the new arg paths
     /// introduced. An already-poisoned argument is skipped (its error is reported).
     fn check_reg_arg_type(&mut self, v: &Value, pty: &ast::Type, span: Span) {
         if matches!(v, Value::Poison) {
             return;
         }
+        // Register class (D-PP.2).
         let param_is_reg = param_type_is_reg(pty);
         match (matches!(v, Value::Reg(_)), param_is_reg) {
             (true, false) => self.error(
@@ -374,6 +381,22 @@ impl<'a> Evaluator<'a> {
             (false, true) => self.error(
                 span,
                 format!("expected a register (a `Reg` argument), got {}", v.type_name()),
+            ),
+            _ => {}
+        }
+        // Label class (D-PP.3), symmetric to the register check.
+        let param_is_label = param_type_is_label(pty);
+        match (matches!(v, Value::Label(_)), param_is_label) {
+            (true, false) => self.error(
+                span,
+                format!(
+                    "a label is not a valid `{}` argument — only a `Label` parameter accepts a label",
+                    type_display(pty)
+                ),
+            ),
+            (false, true) => self.error(
+                span,
+                format!("expected a label (a `Label` argument), got {}", v.type_name()),
             ),
             _ => {}
         }
@@ -704,6 +727,15 @@ impl<'a> Evaluator<'a> {
 /// so it is recognized structurally here at the one place that needs it.
 fn param_type_is_reg(ty: &ast::Type) -> bool {
     matches!(ty, ast::Type::Named(p) if p.segments.len() == 1 && p.segments[0] == "Reg")
+}
+
+/// Whether a parameter's declared type is the comptime-only `Label` type
+/// (D-PP.3): a single-segment `Named` path spelled exactly `Label`. Like `Reg`,
+/// `Label` is not a data-layout type — `resolve_type` never sees it (a `Label`
+/// param never reaches data emission) — so it is recognized structurally here,
+/// at the one place that needs it (the arg/param class check).
+fn param_type_is_label(ty: &ast::Type) -> bool {
+    matches!(ty, ast::Type::Named(p) if p.segments.len() == 1 && p.segments[0] == "Label")
 }
 
 /// A human-readable rendering of a parameter type for a diagnostic's "expected"
