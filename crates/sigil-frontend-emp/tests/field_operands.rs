@@ -267,6 +267,60 @@ proc read() {
     assert_eq!(*rhs, Expr::Int(2), "field operand offset must be offsetof(Sst, x_pos) = 2");
 }
 
+#[test]
+fn local_data_item_shadows_imported_type_stub() {
+    // NAME SHADOW coherence (spec-review ISSUE-1): the consumer declares its OWN
+    // `data Player_1: Local` while the prelude also exports `pub data Player_1:
+    // Sst` (whose type-only stub is injected). The LOCAL item must win for BOTH
+    // the base symbol AND the struct type/offsets — mixing the local base with
+    // the imported struct's offset would emit a silently-wrong address. Local
+    // `x_pos` sits at offset 6 (`a,b,c: u16` precede it); imported `Sst.x_pos`
+    // sits at 2 — the operand's Add target must carry 6.
+    let consumer = "\
+module app
+struct Local { a: u16, b: u16, c: u16, x_pos: u16 }
+data Player_1: Local = Local{ a: 1, b: 2, c: 3, x_pos: $77 }
+data Copy: Local = Local{ a: 1, b: 2, c: 3, x_pos: Player_1.x_pos }
+proc read() {
+    move.w Player_1.x_pos, d0
+    rts
+}
+";
+    let (sections, diags) = build(
+        &[("m.emp", PRELUDE_SRC), ("app.emp", consumer)],
+        "app",
+        Some("m"),
+    );
+    // HALF B coherence companion: `Copy`'s `Player_1.x_pos` VALUE read must hit
+    // the LOCAL item (a clean comptime read of $77) — an imported-stub win would
+    // be the loud [value.cross-module] error instead. Checked via the diag set.
+    assert!(
+        errors(&diags).is_empty(),
+        "local shadow must resolve coherently (both halves local), got: {:?}",
+        errors(&diags)
+    );
+    use sigil_ir::{Expr, Fragment};
+    let (lhs, rhs) = sections
+        .iter()
+        .flat_map(|s| s.fragments.iter())
+        .find_map(|f| match f {
+            Fragment::RelaxAbsSym { target: Expr::Binary { lhs, rhs, .. }, .. } => {
+                Some((lhs.clone(), rhs.clone()))
+            }
+            _ => None,
+        })
+        .expect("expected a RelaxAbsSym with an Add target for the field operand");
+    assert!(
+        matches!(&*lhs, Expr::Sym(n) if n.ends_with("Player_1")),
+        "shadowed operand's base symbol must still be Player_1, got {lhs:?}"
+    );
+    assert_eq!(
+        *rhs,
+        Expr::Int(6),
+        "shadowed operand must use the LOCAL struct's offsetof(Local, x_pos) = 6, not the imported Sst's 2"
+    );
+}
+
 // ---- HALF B: comptime field VALUE reads ------------------------------------
 
 #[test]

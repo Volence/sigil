@@ -498,18 +498,21 @@ impl<'a> Evaluator<'a> {
     /// duplicating them here would double-report. The caller decides what a
     /// `None` means (fall through to a link symbol, or error) at its own span.
     pub(crate) fn data_item_struct_name(&mut self, name: &str) -> Option<String> {
-        // The annotation `Type` to resolve: a cross-module type-only import
-        // carries its struct NAME directly (the defining module stamped it; the
-        // local `datas` map does not hold the item), otherwise the local data
-        // item's explicit `ty` or its struct-literal initializer's named type
-        // (§4.5, mirroring `resolve_data`'s inference).
-        let ann: ast::Type = if let Some(sname) = self.imported_item_types.get(name) {
-            ast::Type::Named(ast::Path {
-                segments: vec![sname.clone()],
-                span: Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
-            })
-        } else {
-            let decl: &'a ast::DataDecl = self.datas.get(name).copied()?;
+        // The annotation `Type` to resolve. The LOCAL data item wins over a
+        // cross-module type-only import under a name shadow (spec-review
+        // ISSUE-1): the operand's base symbol resolves to the local item's
+        // label, so its OFFSETS must come from the local item's struct too —
+        // consulting the imported stub first would fuse the local base with the
+        // FOREIGN struct's field table, a silently-wrong address (and disagree
+        // with the value half, which already reads the local item). Local-wins
+        // also matches the value ladder's precedence everywhere else; a
+        // shadow-warning lint is ledger material. Only when there is NO local
+        // item does the imported stub's stamped struct name apply. The local
+        // type comes from the explicit `ty` annotation, or from a struct-
+        // literal initializer that names its own type (§4.5, mirroring
+        // `resolve_data`'s inference).
+        let ann: ast::Type = if let Some(decl) = self.datas.get(name).copied() {
+            let decl: &'a ast::DataDecl = decl;
             match &decl.ty {
                 Some(t) => t.clone(),
                 None => match &decl.value {
@@ -517,6 +520,13 @@ impl<'a> Evaluator<'a> {
                     _ => return None,
                 },
             }
+        } else if let Some(sname) = self.imported_item_types.get(name) {
+            ast::Type::Named(ast::Path {
+                segments: vec![sname.clone()],
+                span: Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+            })
+        } else {
+            return None;
         };
         // Resolve + peel to a struct through the SAME ladder `offsetof(T, f)`
         // uses. Resolution MUST NOT report (see doc): snapshot the diag length
