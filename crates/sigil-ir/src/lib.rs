@@ -201,6 +201,35 @@ impl Section {
         self.vma_base.unwrap_or(self.lma)
     }
 
+    /// The shared cursor-replay skeleton behind `vma_len`/`placement_span`
+    /// (this file) and `final_size` (sigil-link's `relax.rs`): walk
+    /// `self.fragments` with a write cursor, `Org { target, .. }` SEEKS the
+    /// cursor to `target` (backward or forward — it is a reposition, not a run
+    /// of bytes), every other fragment ADVANCES the cursor by `len_of(index,
+    /// frag)`, and the result is the highest offset the cursor ever reached
+    /// (not merely its final position — a trailing `org` that seeks backward
+    /// without re-advancing past the prior extent must not shrink the answer).
+    /// `len_of` receives the fragment's index in `self.fragments` so callers
+    /// that key off per-fragment link-time state (e.g. `relax.rs`'s
+    /// `rungs[fi]`) can do so without a second pass. Each caller supplies its
+    /// own length rule for the width-variable fragments (`JmpJsrSym`,
+    /// `RelaxAbsSym`, `RelaxLadder`) via `len_of`; this primitive is agnostic
+    /// to that policy.
+    pub fn replay_extent(&self, len_of: impl Fn(usize, &Fragment) -> u32) -> u32 {
+        let mut cursor: u32 = 0;
+        let mut max_extent: u32 = 0;
+        for (i, frag) in self.fragments.iter().enumerate() {
+            match frag {
+                Fragment::Org { target, .. } => cursor = *target,
+                other => cursor += len_of(i, other),
+            }
+            if cursor > max_extent {
+                max_extent = cursor;
+            }
+        }
+        max_extent
+    }
+
     /// Number of bytes this section contributes to the ROM image
     /// (`Data` + `Fill`, replayed through a write cursor that `Org` may seek
     /// backward or forward; `Reserve` contributes nothing). Equal to the
@@ -214,30 +243,28 @@ impl Section {
     /// Number of bytes of address space (VMA/PC) this section spans
     /// (`Data` + `Fill` + `Reserve`, cursor-replayed the same way as
     /// `image_len`/`image_bytes` so `Org` seeks are accounted for).
+    ///
+    /// Length rule: `Data`/`Fill`/`Reserve` contribute their real byte count;
+    /// the width-variable fragments (`JmpJsrSym`/`RelaxAbsSym`/`RelaxLadder`)
+    /// must already be lowered to `Data` by `resolve_layout` before this runs
+    /// — panics otherwise (see `placement_span` for the pre-relaxation twin
+    /// that instead sizes them at their MAX width).
     pub fn vma_len(&self) -> u32 {
-        let mut cursor: u32 = 0;
-        let mut max_extent: u32 = 0;
-        for frag in &self.fragments {
-            match frag {
-                Fragment::Data(d) => cursor += d.bytes.len() as u32,
-                Fragment::Fill { count, .. } => cursor += *count,
-                Fragment::Reserve { count, .. } => cursor += *count,
-                Fragment::Org { target, .. } => cursor = *target,
-                Fragment::JmpJsrSym { .. } => {
-                    unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
-                }
-                Fragment::RelaxAbsSym { .. } => {
-                    unreachable!("RelaxAbsSym must be lowered by resolve_layout before layout/link")
-                }
-                Fragment::RelaxLadder { .. } => {
-                    unreachable!("RelaxLadder must be lowered by resolve_layout before layout/link")
-                }
+        self.replay_extent(|_, frag| match frag {
+            Fragment::Data(d) => d.bytes.len() as u32,
+            Fragment::Fill { count, .. } => *count,
+            Fragment::Reserve { count, .. } => *count,
+            Fragment::Org { .. } => unreachable!("Org is handled by replay_extent directly"),
+            Fragment::JmpJsrSym { .. } => {
+                unreachable!("JmpJsrSym must be lowered by resolve_layout before layout/link")
             }
-            if cursor > max_extent {
-                max_extent = cursor;
+            Fragment::RelaxAbsSym { .. } => {
+                unreachable!("RelaxAbsSym must be lowered by resolve_layout before layout/link")
             }
-        }
-        max_extent
+            Fragment::RelaxLadder { .. } => {
+                unreachable!("RelaxLadder must be lowered by resolve_layout before layout/link")
+            }
+        })
     }
 
     /// MAXIMUM address-space span this section can occupy, computed WITHOUT
@@ -259,29 +286,21 @@ impl Section {
     /// reference to match. For a section with no width-variable fragment,
     /// `placement_span == vma_len` exactly (data-only sections place identically).
     pub fn placement_span(&self) -> u32 {
-        let mut cursor: u32 = 0;
-        let mut max_extent: u32 = 0;
-        for frag in &self.fragments {
-            match frag {
-                Fragment::Data(d) => cursor += d.bytes.len() as u32,
-                Fragment::Fill { count, .. } => cursor += *count,
-                Fragment::Reserve { count, .. } => cursor += *count,
-                Fragment::Org { target, .. } => cursor = *target,
-                Fragment::JmpJsrSym { .. } => cursor += AbsWidth::L.inst_len(),
-                Fragment::RelaxAbsSym { long, .. } => cursor += long.bytes.len() as u32,
-                // The LAST candidate is the largest (bytes.len() non-decreasing),
-                // so packing siblings by it guarantees the post-relaxation
-                // `vma_len` never exceeds this pre-relaxation placement span —
-                // the same over-reserve argument as `JmpJsrSym`/`RelaxAbsSym`.
-                Fragment::RelaxLadder { candidates, .. } => {
-                    cursor += candidates.last().map(|c| c.bytes.len() as u32).unwrap_or(0)
-                }
+        self.replay_extent(|_, frag| match frag {
+            Fragment::Data(d) => d.bytes.len() as u32,
+            Fragment::Fill { count, .. } => *count,
+            Fragment::Reserve { count, .. } => *count,
+            Fragment::Org { .. } => unreachable!("Org is handled by replay_extent directly"),
+            Fragment::JmpJsrSym { .. } => AbsWidth::L.inst_len(),
+            Fragment::RelaxAbsSym { long, .. } => long.bytes.len() as u32,
+            // The LAST candidate is the largest (bytes.len() non-decreasing),
+            // so packing siblings by it guarantees the post-relaxation
+            // `vma_len` never exceeds this pre-relaxation placement span —
+            // the same over-reserve argument as `JmpJsrSym`/`RelaxAbsSym`.
+            Fragment::RelaxLadder { candidates, .. } => {
+                candidates.last().map(|c| c.bytes.len() as u32).unwrap_or(0)
             }
-            if cursor > max_extent {
-                max_extent = cursor;
-            }
-        }
-        max_extent
+        })
     }
 
     /// Replay every image-contributing fragment through a write cursor: `Data`/
@@ -293,6 +312,16 @@ impl Section {
     /// length is the highest offset ever reached, so a trailing backward `org`
     /// that doesn't re-advance past the prior extent leaves the tail bytes
     /// intact (asl-confirmed).
+    ///
+    /// NOT built on `replay_extent`: that primitive tracks a `u32` LENGTH
+    /// (`len_of` returns how far to advance), but this replay WRITES bytes —
+    /// a backward `Org` here must overwrite already-written content in place
+    /// (`out[cursor..end].copy_from_slice`), which has no length-only
+    /// equivalent. Forcing this into `replay_extent`'s closure shape would
+    /// require threading the output buffer through `len_of` as a side effect,
+    /// which obscures the skeleton rather than sharing it. It still mirrors
+    /// `replay_extent`'s cursor/Org/max-extent shape by hand; keep the two in
+    /// sync if that shape ever changes.
     pub fn image_bytes(&self) -> Vec<u8> {
         let mut out: Vec<u8> = Vec::new();
         let mut cursor: usize = 0;

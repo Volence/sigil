@@ -81,30 +81,20 @@ fn frag_len(frag: &Fragment, rung: usize) -> u32 {
     }
 }
 
-/// The section's FINAL image extent under the CURRENT rungs (R7p.2): the same
-/// cursor-replay shape as `Section::placement_span` (ir lib.rs), but counting
-/// each relaxable fragment at its CURRENT rung width (via `frag_len`) instead of
-/// its MAX width, and honoring `Org` extent identically. This is what the
-/// link-time placement pass advances the group cursor by — a chained successor's
-/// base derives from its predecessors' FINAL sizes, not their baked baselines.
+/// The section's FINAL image extent under the CURRENT rungs (R7p.2): delegates
+/// to `Section::replay_extent` (ir lib.rs) — the same cursor-replay shape as
+/// `Section::placement_span`/`vma_len` — but counting each relaxable fragment
+/// at its CURRENT rung width (via `frag_len(frag, rungs[fi])`) instead of its
+/// MAX width. This is what the link-time placement pass advances the group
+/// cursor by — a chained successor's base derives from its predecessors' FINAL
+/// sizes, not their baked baselines.
 ///
-/// `Org` seeks the cursor (`frag_len` returns 0 for it, so the cursor is set to
-/// `target` here); `Reserve` advances the cursor but contributes no image bytes —
-/// both mirror `placement_span`/`vma_len` so the max-extent is the address-space
-/// span, matching what the placer reserved.
+/// `replay_extent` handles `Org`'s seek itself (never calls `frag_len` for it);
+/// `Reserve` advances the cursor via `frag_len`'s `*count` arm but contributes
+/// no image bytes, mirroring `placement_span`/`vma_len` so the max-extent is
+/// the address-space span, matching what the placer reserved.
 fn final_size(sec: &Section, rungs: &[usize]) -> u32 {
-    let mut cursor: u32 = 0;
-    let mut max_extent: u32 = 0;
-    for (fi, frag) in sec.fragments.iter().enumerate() {
-        match frag {
-            Fragment::Org { target, .. } => cursor = *target,
-            other => cursor += frag_len(other, rungs[fi]),
-        }
-        if cursor > max_extent {
-            max_extent = cursor;
-        }
-    }
-    max_extent
+    sec.replay_extent(|fi, frag| frag_len(frag, rungs[fi]))
 }
 
 /// The section's final IMAGE extent under the current rungs — the byte count
