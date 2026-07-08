@@ -80,11 +80,17 @@ fn multi_section_jsr_and_branch_link_correctly() {
             }),
             Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
         ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
     };
     let target = Section {
         name: "target".into(), cpu: Cpu::M68000, vma_base: None, lma: 0x100,
         labels: vec![Label { name: "Target".into(), offset: 0 }],
         fragments: vec![Fragment::Data(DataFragment { bytes: vec![0x4E, 0x75], fixups: vec![], span: sp() })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
     };
     let map = MemoryMap::new(
         vec![Region { name: "rom".into(), lma_base: 0, size: 0x1000, kind: RegionKind::Rom, vma_base: None }],
@@ -108,6 +114,9 @@ fn abs_l_jmp_flows_through_emit_rom() {
     let code = Section {
         name: "code".into(), cpu: Cpu::M68000, vma_base: None, lma: 0, labels: vec![],
         fragments: vec![Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
     };
     let map = MemoryMap::new(
         vec![Region { name: "rom".into(), lma_base: 0, size: 0x1000, kind: RegionKind::Rom, vma_base: None }],

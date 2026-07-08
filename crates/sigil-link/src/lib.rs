@@ -489,7 +489,7 @@ pub fn apply_header_checksum(rom: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SymbolTable, SymbolValue};
+    use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SectionPlacement, SymbolTable, SymbolValue};
     use sigil_span::{SourceId, Span};
 
     // ---- deferred link-time assertions (D-H.4/D-H.6) --------------------------
@@ -507,6 +507,9 @@ mod tests {
                 fixups: vec![],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         }
     }
 
@@ -597,6 +600,9 @@ mod tests {
             lma: 0x60000,
             labels: vec![Label { name: "SfxBlobWinTab".to_string(), offset: 0x45F }],
             fragments: frags,
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         }
     }
 
@@ -617,6 +623,9 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         }
     }
 
@@ -655,6 +664,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: winptr }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("tab").unwrap().bytes, vec![0x9A, 0xD6]);
@@ -675,6 +687,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target: Expr::Sym("here".to_string()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         // site VMA of the disp byte's instruction = 0x8000; target = 0x8002; disp = 0x8002 - (0x8000 + 2) = 0.
@@ -695,6 +710,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target: Expr::Sym("far".to_string()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
@@ -713,6 +731,9 @@ mod tests {
                 fixups: vec![],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[mk("a"), mk("b")], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -735,6 +756,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRelDisp16, offset: 2, target: Expr::Sym("t".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x60, 0x00, 0x00, 0x7E]);
@@ -752,6 +776,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("t".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
     }
@@ -770,6 +797,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("next".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -789,6 +819,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("far".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
@@ -816,6 +849,9 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x00, 0x06]);
@@ -843,6 +879,9 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0xFF, 0xFC]);
@@ -870,6 +909,9 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("signed-word range")), "got: {:?}", err);
@@ -903,6 +945,9 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -934,6 +979,9 @@ mod tests {
                 }),
                 Fragment::Data(DataFragment { bytes: vec![0xCC, 0xDD], fixups: vec![], span: span() }),
             ],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -952,6 +1000,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("T".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("s").unwrap().bytes, vec![0x00, 0x12, 0x34, 0x56]);
@@ -969,6 +1020,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Ok".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         assert_eq!(link(&[ok], &stubs).unwrap().section("ok").unwrap().bytes, vec![0x12, 0x34]);
 
@@ -979,6 +1033,9 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Big".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = link(&[bad], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
@@ -1000,6 +1057,9 @@ mod tests {
             lma: 2,
             labels: vec![],
             fragments: vec![Fragment::Data(DataFragment { bytes: vec![0xAA, 0xBB], fixups: vec![], span: span() })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let linked = link(&[a], &SymbolTable::new()).unwrap();
         // Bytes at LMA 2..4; positions 0,1 gap-filled with 0x00.

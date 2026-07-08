@@ -1,7 +1,7 @@
 //! `IrBuilder`: the concrete `IrStreamer` that materialises a `Module`.
 
 use crate::backend::{Cpu, IrStreamer};
-use crate::{DataFragment, Fixup, Fragment, Label, LinkAssert, Module, Section};
+use crate::{DataFragment, Fixup, Fragment, Label, LinkAssert, Module, Section, SectionPlacement};
 use sigil_span::{Diagnostic, Span};
 
 /// One section under construction: metadata + a running byte cursor.
@@ -14,6 +14,11 @@ struct OpenSection {
     fragments: Vec<Fragment>,
     cursor: u32,     // VMA/PC offset from section start (counts Data+Fill+Reserve)
     max_offset: u32, // highest `cursor` ever reached (the org back-patch "extent")
+    // R7p.1 provenance: the first section a builder opens is Pinned (base = baked
+    // lma), every subsequent one Chained (base packed after its predecessor).
+    // `reserved_span` is filled from `max_offset` at close; `group` is the
+    // anonymous group (`None`) under the builder default.
+    placement: SectionPlacement,
 }
 
 impl OpenSection {
@@ -52,6 +57,12 @@ impl IrBuilder {
                 lma: o.lma,
                 labels: o.labels,
                 fragments: o.fragments,
+                placement: o.placement,
+                // The span the placer reserved for this section = its closing
+                // cursor high-water mark (R7p.1); group is the anonymous group
+                // under the builder default (frontends override in later work).
+                reserved_span: o.max_offset,
+                group: None,
             });
         }
     }
@@ -102,6 +113,10 @@ impl IrBuilder {
     /// (`lma = vma_base.unwrap_or(0)`) for backends/tests that don't model phase.
     pub fn switch_section_lma(&mut self, name: &str, cpu: Cpu, vma_base: Option<u32>, lma: u32) {
         self.close();
+        // First section of this builder run → Pinned (base = baked lma); every
+        // subsequent one → Chained (R7p.1). `close()` ran above, so an empty
+        // `done` means nothing has been opened yet in this run.
+        let placement = self.placement_for_next();
         self.open = Some(OpenSection {
             name: name.to_string(),
             cpu,
@@ -111,7 +126,19 @@ impl IrBuilder {
             fragments: Vec::new(),
             cursor: 0,
             max_offset: 0,
+            placement,
         });
+    }
+
+    /// The R7p.1 placement for the section about to open: `Pinned` if none has
+    /// yet been opened in this builder run, else `Chained`. Call AFTER `close()`
+    /// so `done` reflects all sections already opened.
+    fn placement_for_next(&self) -> SectionPlacement {
+        if self.done.is_empty() {
+            SectionPlacement::Pinned
+        } else {
+            SectionPlacement::Chained
+        }
     }
 
     /// Seek the open section's write cursor to `target` (backward or forward)
@@ -150,6 +177,7 @@ impl IrBuilder {
 impl IrStreamer for IrBuilder {
     fn switch_section(&mut self, name: &str, cpu: Cpu, vma_base: Option<u32>) {
         self.close();
+        let placement = self.placement_for_next();
         self.open = Some(OpenSection {
             name: name.to_string(),
             cpu,
@@ -159,6 +187,7 @@ impl IrStreamer for IrBuilder {
             fragments: Vec::new(),
             cursor: 0,
             max_offset: 0,
+            placement,
         });
     }
 
@@ -342,6 +371,33 @@ mod tests {
         let sec = &module.sections[0];
         assert!(matches!(sec.fragments[1], Fragment::Org { target: 0, .. }));
         assert!(matches!(sec.fragments[3], Fragment::Org { target: 4, .. }));
+    }
+
+    #[test]
+    fn switch_section_lma_stamps_placement_provenance() {
+        // R7p.1 default rule: the FIRST section a builder opens is Pinned (its
+        // base is the baked lma); every subsequent one is Chained. Each carries
+        // `reserved_span` = its closing cursor extent (`max_offset`) and the
+        // anonymous group (`None`) — inert provenance until the placement pass.
+        use crate::SectionPlacement;
+        let mut b = IrBuilder::new();
+        b.switch_section_lma("first", Cpu::M68000, None, 0x1000);
+        b.emit_data(&[0, 1, 2, 3, 4], vec![], span()); // 5 bytes
+        b.switch_section_lma("second", Cpu::M68000, None, 0x2000);
+        b.emit_data(&[0, 1, 2], vec![], span()); // 3 bytes
+
+        let (module, _diags) = b.finish();
+        assert_eq!(module.sections.len(), 2);
+
+        let first = &module.sections[0];
+        assert_eq!(first.placement, SectionPlacement::Pinned);
+        assert_eq!(first.reserved_span, 5);
+        assert_eq!(first.group, None);
+
+        let second = &module.sections[1];
+        assert_eq!(second.placement, SectionPlacement::Chained);
+        assert_eq!(second.reserved_span, 3);
+        assert_eq!(second.group, None);
     }
 
     #[test]

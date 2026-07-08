@@ -40,6 +40,9 @@ fn two_section_ab_layout_and_cross_fixup() {
         lma: 0x400,
         labels: vec![],
         fragments: vec![Fragment::Data(a_frag)],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
     };
 
     // Region B: SfxBlobWinTab at VMA $8000 + $45F = $845F.
@@ -53,6 +56,9 @@ fn two_section_ab_layout_and_cross_fixup() {
             Fragment::Fill { value: 0x00, count: 0x45F, span: span() },
             Fragment::Data(DataFragment { bytes: vec![0x9A, 0xD6], fixups: vec![], span: span() }),
         ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
     };
 
     let linked = link(&[region_a, region_b], &SymbolTable::new()).expect("link ok");

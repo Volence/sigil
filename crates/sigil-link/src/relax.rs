@@ -565,6 +565,12 @@ pub fn resolve_layout(
                         lma: sec.lma,
                         labels,
                         fragments,
+                        // Provenance is carried through the relax rebuild verbatim
+                        // (R7p.1): relaxation only lowers fragments/shifts labels;
+                        // it never re-places a section.
+                        placement: sec.placement,
+                        reserved_span: sec.reserved_span,
+                        group: sec.group.clone(),
                     }
                 })
                 .collect();
@@ -721,6 +727,9 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![relax_move("Lo")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -751,6 +760,9 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![relax_move("Ram")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -778,6 +790,9 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![relax_move("Hi")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -820,6 +835,9 @@ mod tests {
                     span: sp(),
                 }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -848,6 +866,9 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Target".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // The jmp lowered to abs.l (6-byte Data), and Target shifted 4 → 6.
@@ -877,6 +898,9 @@ mod tests {
                 Fragment::Fill { value: 0, count: 7, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // Both jmps grew to abs.l; A shifted 0x0F → 0x13 (0x0F + 4).
@@ -917,6 +941,9 @@ mod tests {
                     span: sp(),
                 }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -941,6 +968,9 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Low".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -959,6 +989,9 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         let linked = crate::link(&out, &stubs).unwrap();
@@ -979,6 +1012,9 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: true, target: Expr::Sym("T".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x75], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -1002,6 +1038,9 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[code], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1018,6 +1057,9 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Nope".into()), span: sp() }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         assert!(resolve_layout(&[sec], &SymbolTable::new(), true).is_err());
     }
@@ -1069,6 +1111,9 @@ mod tests {
                 Fragment::Org { target: 4, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![1], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1093,6 +1138,9 @@ mod tests {
                 Fragment::Org { target: 8, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![1], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1121,6 +1169,9 @@ mod tests {
                 Fragment::Org { target: 0, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1155,6 +1206,9 @@ mod tests {
                 Fragment::Org { target: 4, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![4], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 5);
@@ -1180,6 +1234,9 @@ mod tests {
                 jbra("L"),
                 Fragment::Data(DataFragment { bytes: vec![0; 6], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1212,6 +1269,9 @@ mod tests {
                 Fragment::Fill { value: 0, count: 0x400, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1246,6 +1306,9 @@ mod tests {
             lma: 0x40_0000,
             labels: vec![],
             fragments: vec![jbra("Lo")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1272,6 +1335,9 @@ mod tests {
             lma: 0x40_0000,
             labels: vec![],
             fragments: vec![jbra("Hi")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1300,6 +1366,9 @@ mod tests {
                 Fragment::Data(DataFragment { bytes: vec![0; 4], fixups: vec![], span: sp() }),
                 jbra("L"),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[1] {
@@ -1329,6 +1398,9 @@ mod tests {
             lma: 0,
             labels: vec![Label { name: "L".into(), offset: 2 }],
             fragments: vec![jbra("L")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1378,6 +1450,9 @@ mod tests {
                 jbra("Back"),                                         // [0x7E, 0x80)
                 Fragment::Fill { value: 0, count: 0x80, span: sp() }, // [0x80, 0x100), Far @ 0x100
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // frag0 grew to bra.w (Far ~0x100 ahead, out of i8).
@@ -1429,6 +1504,9 @@ mod tests {
                 jbra("Lo"),                                             // backward to VMA 0
                 Fragment::Fill { value: 0, count: 0x8000, span: sp() }, // pad out to Far
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // frag2 must be a 4-byte jmp abs.w (rung 2), NOT bra.w: its backward disp
@@ -1474,6 +1552,9 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![bne_ladder("VeryFar")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1500,6 +1581,9 @@ mod tests {
             lma: 0x20_0000,
             labels: vec![],
             fragments: vec![bne_ladder("WayBack")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1518,6 +1602,9 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![jbra("Nope")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1543,6 +1630,9 @@ mod tests {
                 target: Expr::Sym("L".into()),
                 span: sp(),
             }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let secs = [sec];
         if cfg!(debug_assertions) {
@@ -1576,6 +1666,9 @@ mod tests {
                 target: Expr::Sym("L".into()),
                 span: sp(),
             }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
         };
         let secs = [sec];
         if cfg!(debug_assertions) {
