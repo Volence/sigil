@@ -28,7 +28,7 @@ fn data_monoid_concat_builds_cells() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 5, width: 1, signed: false },
+            Cell::Scalar { value: 5, width: 1, signed: false, le: false },
             Cell::Bytes(vec![1, 2, 3]),
         ]
     );
@@ -73,7 +73,7 @@ fn binary_percent_literal_emits_the_right_byte() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
     assert_eq!(buf.size, 1);
-    assert_eq!(buf.cells, vec![Cell::Scalar { value: 0b10100101, width: 1, signed: false }]);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 0b10100101, width: 1, signed: false, le: false }]);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn char_literal_emits_the_right_byte() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
     assert_eq!(buf.size, 1);
-    assert_eq!(buf.cells, vec![Cell::Scalar { value: 0x41, width: 1, signed: false }]);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 0x41, width: 1, signed: false, le: false }]);
 }
 
 // ---- string literals in data position (lexical gaps, Task 4) ------------
@@ -121,7 +121,7 @@ data D = bytes("HI") ++ byte(0)
         buf.cells,
         vec![
             Cell::Bytes(vec![0x48, 0x49]),
-            Cell::Scalar { value: 0, width: 1, signed: false },
+            Cell::Scalar { value: 0, width: 1, signed: false, le: false },
         ]
     );
 }
@@ -178,10 +178,10 @@ fn array_of_i8_lowers_to_signed_byte_scalars() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 1, width: 1, signed: true },
-            Cell::Scalar { value: -2, width: 1, signed: true },
-            Cell::Scalar { value: 3, width: 1, signed: true },
-            Cell::Scalar { value: -4, width: 1, signed: true },
+            Cell::Scalar { value: 1, width: 1, signed: true, le: false },
+            Cell::Scalar { value: -2, width: 1, signed: true, le: false },
+            Cell::Scalar { value: 3, width: 1, signed: true, le: false },
+            Cell::Scalar { value: -4, width: 1, signed: true, le: false },
         ]
     );
 }
@@ -219,8 +219,8 @@ fn struct_data_lowers_to_field_cells() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 258, width: 2, signed: false },
-            Cell::Scalar { value: 7, width: 1, signed: false },
+            Cell::Scalar { value: 258, width: 2, signed: false, le: false },
+            Cell::Scalar { value: 7, width: 1, signed: false, le: false },
         ]
     );
 }
@@ -255,8 +255,8 @@ fn struct_default_fills_omitted_field() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 1, width: 1, signed: false },
-            Cell::Scalar { value: 9, width: 1, signed: false },
+            Cell::Scalar { value: 1, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 9, width: 1, signed: false, le: false },
         ]
     );
 }
@@ -287,7 +287,7 @@ fn pointer_field_lowers_to_symref() {
         buf.cells,
         vec![
             Cell::SymRef { name: "init".into(), width: 4, windowed: false },
-            Cell::Scalar { value: 3, width: 1, signed: false },
+            Cell::Scalar { value: 3, width: 1, signed: false, le: false },
         ]
     );
 }
@@ -373,8 +373,8 @@ fn enum_field_lowers_to_discriminant_scalar() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 2, width: 1, signed: false },
-            Cell::Scalar { value: 7, width: 1, signed: false },
+            Cell::Scalar { value: 2, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 7, width: 1, signed: false, le: false },
         ]
     );
 }
@@ -453,7 +453,7 @@ fn fixed_value_emits_signed_scalar_at_byte_width() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
     assert_eq!(buf.size, 4);
-    assert_eq!(buf.cells, vec![Cell::Scalar { value: 65536, width: 4, signed: true }]);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 65536, width: 4, signed: true, le: false }]);
 }
 
 #[test]
@@ -485,7 +485,7 @@ fn newtype_lowers_at_underlying_width() {
     let (buf, diags) = data(src, "D");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
-    assert_eq!(buf.cells, vec![Cell::Scalar { value: 258, width: 2, signed: false }]);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 258, width: 2, signed: false, le: false }]);
 }
 
 #[test]
@@ -494,7 +494,7 @@ fn refined_lowers_at_underlying_width() {
     let (buf, diags) = data(src, "D");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
-    assert_eq!(buf.cells, vec![Cell::Scalar { value: 50, width: 1, signed: false }]);
+    assert_eq!(buf.cells, vec![Cell::Scalar { value: 50, width: 1, signed: false, le: false }]);
 }
 
 #[test]
@@ -521,8 +521,8 @@ fn tuple_lowers_each_element() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 1, width: 1, signed: false },
-            Cell::Scalar { value: 258, width: 2, signed: false },
+            Cell::Scalar { value: 1, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 258, width: 2, signed: false, le: false },
         ]
     );
 }

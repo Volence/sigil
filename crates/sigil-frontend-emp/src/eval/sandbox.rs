@@ -744,7 +744,7 @@ mod tests {
     fn zx0_from_data_multibyte_scalar_errors() {
         let mut ev = Evaluator::new();
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: 0x1234, width: 2, signed: false });
+        buf.push(Cell::Scalar { value: 0x1234, width: 2, signed: false, le: false });
         let result = ev.zx0_from_data(buf, span());
         assert_eq!(result, Value::Poison);
         assert!(ev.diags.iter().any(|d| d.message.contains("[zx0.byte-order]")));
@@ -754,7 +754,7 @@ mod tests {
     fn zx0_from_data_byte_range_errors() {
         let mut ev = Evaluator::new();
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: 999, width: 1, signed: false });
+        buf.push(Cell::Scalar { value: 999, width: 1, signed: false, le: false });
         let result = ev.zx0_from_data(buf, span());
         assert_eq!(result, Value::Poison);
         assert!(ev.diags.iter().any(|d| d.message.contains("[zx0.byte-range]")));
@@ -807,7 +807,7 @@ mod tests {
     fn zx0_from_data_single_byte_scalar_and_bytes_mix() {
         let mut ev = Evaluator::new();
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: 5, width: 1, signed: false });
+        buf.push(Cell::Scalar { value: 5, width: 1, signed: false, le: false });
         buf.push(Cell::Bytes(vec![5, 5, 5, 5]));
         let result = ev.zx0_from_data(buf, span());
         // 5 bytes of the same repeated value: header [0,5,0,2] then the raw

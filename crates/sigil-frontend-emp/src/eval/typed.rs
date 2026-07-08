@@ -69,7 +69,7 @@ impl<'a> Evaluator<'a> {
             (Ty::Fixed { i: il, f: fl }, Ty::Fixed { i: ir, f: fr }) => {
                 self.fixed_op(op, &tl, (*il, *fl), nl, &tr, (*ir, *fr), nr, span)
             }
-            (Ty::Prim { width, signed }, Ty::Prim { .. }) => {
+            (Ty::Prim { width, signed, .. }, Ty::Prim { .. }) => {
                 // Prim-underlying values must share the SAME nominal type (there
                 // is no meaningful cross-newtype arithmetic — D2.9 / Appendix E).
                 if tl != tr {

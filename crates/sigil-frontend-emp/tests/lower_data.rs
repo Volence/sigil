@@ -435,3 +435,88 @@ fn u16_neg1_is_rejected_not_wrapped() {
         "expected an [emit.out-of-range] refusing -1 for u16, got {diags:?}"
     );
 }
+
+// ---- Task 1 (sound-migration T0): `u16le` data cells (R-T0.1, DSM.7) ----
+//
+// An explicit little-endian 16-bit type keyword, usable from ANY section
+// (the point: a 68k-side section emitting Z80-consumed bytes). NOT CPU
+// inference — the `le` flag always wins over the section's CPU. No `u32le`,
+// no other endian variant (YAGNI until a customer exists).
+
+#[test]
+fn u16le_scalar_in_68k_section_emits_little_endian() {
+    // `data X: u16le = $1234` in a (cpu: m68000) section → bytes 34 12 (the
+    // opposite order from `multibyte_scalar_is_big_endian`'s plain `u16`).
+    let (file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x34, 0x12]);
+}
+
+#[test]
+fn u16le_equals_u16_on_z80() {
+    // Z80 sections are already little-endian: `u16le` must emit EXACTLY what
+    // plain `u16` emits there — no double byte-swap.
+    let (le_file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (le_mod, le_diags) = lower_module(&le_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    assert!(le_diags.is_empty(), "unexpected lowering diagnostics: {le_diags:?}");
+
+    let (be_file, perrs) = parse_str("module m\ndata X: u16 = $1234\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (be_mod, be_diags) = lower_module(&be_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    assert!(be_diags.is_empty(), "unexpected lowering diagnostics: {be_diags:?}");
+
+    assert_eq!(linked_bytes(&le_mod), linked_bytes(&be_mod));
+    assert_eq!(linked_bytes(&le_mod), vec![0x34, 0x12]);
+}
+
+#[test]
+fn u16le_linkexpr_cell_uses_value16le_on_68k() {
+    // A link-expr value (`bankid("L")`) landing in a `u16le` cell must select
+    // `FixupKind::Value16Le` even in a 68k (normally big-endian) section — the
+    // `le` flag overrides the section CPU for fixup-kind selection too, not
+    // just the plain-scalar path.
+    let src = "module m\n\
+               section s (cpu: m68000, vma: $8000) {\n\
+                 data L: u16le = bankid(\"L\")\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup {
+            kind: FixupKind::Value16Le,
+            offset: 0,
+            target: Expr::Binary {
+                op: BinOp::Shr,
+                lhs: Box::new(Expr::Binary {
+                    op: BinOp::And,
+                    lhs: Box::new(Expr::Sym("L".into())),
+                    rhs: Box::new(Expr::Int(0x7F8000)),
+                }),
+                rhs: Box::new(Expr::Int(15)),
+            },
+        }]
+    );
+    // `L` is placed at vma $8000 (bank 1): the fold value is 1. Value16Le
+    // writes it little-endian: [01, 00].
+    assert_eq!(linked_bytes(&module), vec![0x01, 0x00]);
+}
+
+#[test]
+fn u16le_range_rules_are_identical_to_u16() {
+    // The `le` flag never affects the accepted range — still 0..=$FFFF, so an
+    // out-of-range value errors exactly like plain `u16` (see
+    // `u16_neg1_is_rejected_not_wrapped` above): `-1` is refused, not wrapped.
+    let (file, perrs) = parse_str("module m\ndata T: [u16le; 1] = [-1]\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
+        "expected an [emit.out-of-range] refusing -1 for u16le, got {diags:?}"
+    );
+}

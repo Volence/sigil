@@ -352,7 +352,7 @@ impl<'a> Evaluator<'a> {
         // `signed: false` flag (`byte(-5)` stores 251, matching how `bytes` does
         // it); the accepted input range stays the `-128..=255` union above.
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: n & 0xFF, width: 1, signed: false });
+        buf.push(Cell::Scalar { value: n & 0xFF, width: 1, signed: false, le: false });
         Value::Data(buf)
     }
 

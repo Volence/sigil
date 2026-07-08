@@ -450,14 +450,14 @@ fn band_entry_data_item_lowers_to_the_right_cells_at_the_right_widths() {
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 43392, width: 2, signed: false },
-            Cell::Scalar { value: 4224, width: 2, signed: false },
-            Cell::Scalar { value: 7, width: 1, signed: false },
-            Cell::Scalar { value: 0, width: 1, signed: false },
-            Cell::Scalar { value: 0, width: 1, signed: false },
-            Cell::Scalar { value: 0, width: 1, signed: false },
-            Cell::Scalar { value: 0, width: 1, signed: false },
-            Cell::Scalar { value: 0, width: 1, signed: false },
+            Cell::Scalar { value: 43392, width: 2, signed: false, le: false },
+            Cell::Scalar { value: 4224, width: 2, signed: false, le: false },
+            Cell::Scalar { value: 7, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 0, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 0, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 0, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 0, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 0, width: 1, signed: false, le: false },
         ]
     );
 }
@@ -612,10 +612,10 @@ data TABLE = build_table([0, 1, 2, 3])
     assert_eq!(
         buf.cells,
         vec![
-            Cell::Scalar { value: 0, width: 1, signed: false },
-            Cell::Scalar { value: 129, width: 1, signed: false },
-            Cell::Scalar { value: 2, width: 1, signed: false },
-            Cell::Scalar { value: 131, width: 1, signed: false },
+            Cell::Scalar { value: 0, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 129, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 2, width: 1, signed: false, le: false },
+            Cell::Scalar { value: 131, width: 1, signed: false, le: false },
         ]
     );
 }

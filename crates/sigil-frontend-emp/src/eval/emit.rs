@@ -37,7 +37,7 @@ impl<'a> Evaluator<'a> {
             return self.lower_link_expr(expr, ty, span);
         }
         match ty {
-            Ty::Prim { width, signed } => self.lower_prim(value, *width, *signed, span),
+            Ty::Prim { width, signed, le } => self.lower_prim(value, *width, *signed, *le, span),
             Ty::Fixed { i, f } => self.lower_fixed(value, *i, *f, span),
             // A newtype/refined value erases to its stored int (§8.3) and is
             // emitted at the EFFECTIVE UNDERLYING width — re-checking the range
@@ -78,16 +78,18 @@ impl<'a> Evaluator<'a> {
     /// range, and emit one [`Cell::Scalar`]. The cell is emitted even on a range
     /// failure (best-effort) so a struct's total size still lines up with its
     /// layout — the diagnostic is what matters.
-    fn lower_prim(&mut self, value: &Value, width: u8, signed: bool, span: Span) -> DataBuf {
-        let ty = Ty::Prim { width, signed };
+    fn lower_prim(&mut self, value: &Value, width: u8, signed: bool, le: bool, span: Span) -> DataBuf {
+        let ty = Ty::Prim { width, signed, le };
         let Some(n) = value.as_stored_int() else {
             self.emit_expected_int(value, &ty, span);
             return DataBuf::empty();
         };
+        // `le` never affects the accepted range (R-T0.1) — identical bounds to
+        // the non-`le` primitive of the same (width, signed).
         let (lo, hi) = prim_bounds(width, signed);
         self.emit_range_check(n, lo, hi, &ty.describe(), span);
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: n, width, signed });
+        buf.push(Cell::Scalar { value: n, width, signed, le });
         buf
     }
 
@@ -125,7 +127,7 @@ impl<'a> Evaluator<'a> {
         let hi = (1i128 << (bits - 1)) - 1;
         self.emit_range_check(n, lo, hi, &Ty::Fixed { i, f }.describe(), span);
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: n, width: width_bytes as u8, signed: true });
+        buf.push(Cell::Scalar { value: n, width: width_bytes as u8, signed: true, le: false });
         buf
     }
 
@@ -142,7 +144,7 @@ impl<'a> Evaluator<'a> {
             return DataBuf::empty();
         };
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: n, width: (layout.repr_bits / 8) as u8, signed: false });
+        buf.push(Cell::Scalar { value: n, width: (layout.repr_bits / 8) as u8, signed: false, le: false });
         buf
     }
 
@@ -169,7 +171,7 @@ impl<'a> Evaluator<'a> {
         };
         let (width, signed) = self.enum_repr_prim(name, span);
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Scalar { value: disc, width, signed });
+        buf.push(Cell::Scalar { value: disc, width, signed, le: false });
         buf
     }
 
@@ -178,7 +180,7 @@ impl<'a> Evaluator<'a> {
     fn enum_repr_prim(&mut self, name: &str, _span: Span) -> (u8, bool) {
         let repr = self.enums.get(name).copied().and_then(|d| d.repr.as_ref());
         if let Some(repr) = repr {
-            if let Ty::Prim { width, signed } = self.resolve_type(repr) {
+            if let Ty::Prim { width, signed, .. } = self.resolve_type(repr) {
                 return (width, signed);
             }
         }
@@ -421,8 +423,13 @@ impl<'a> Evaluator<'a> {
         let Some(width) = self.self_ref_width(ty, span) else {
             return DataBuf::empty();
         };
+        // `u16le` (R-T0.1): the `le` override survives through a residual
+        // arithmetic tree exactly like it survives a plain scalar — a
+        // `data B: u16le = bankid("L")` in a 68k section must still select
+        // `Value16Le`, not the section's default `Value16Be`.
+        let le = self.self_ref_le(ty, span);
         let mut buf = DataBuf::empty();
-        buf.push(Cell::Expr { expr: expr.clone(), width });
+        buf.push(Cell::Expr { expr: expr.clone(), width, le });
         buf
     }
 
@@ -452,6 +459,27 @@ impl<'a> Evaluator<'a> {
                 );
                 None
             }
+        }
+    }
+
+    /// The `u16le` override (R-T0.1) for a `Cell::Expr` field of type `ty`,
+    /// mirroring [`self_ref_width`](Self::self_ref_width)'s traversal through
+    /// `Newtype`/`Refined` down to the underlying primitive. A pointer never
+    /// carries the flag (always `false`). `span` is only used if a
+    /// `Newtype`/`Refined` traversal needs to re-report a cyclic-type error;
+    /// in practice `self_ref_width` (called first, same `ty`/`span`) already
+    /// reports and bails on any such error, so this path is silent in
+    /// practice — but stays total rather than assuming that ordering.
+    fn self_ref_le(&mut self, ty: &Ty, span: Span) -> bool {
+        match ty {
+            Ty::Prim { le, .. } => *le,
+            Ty::Newtype(_) | Ty::Refined { .. } => {
+                match self.effective_underlying(ty, span) {
+                    Ty::Prim { le, .. } => le,
+                    _ => false,
+                }
+            }
+            _ => false,
         }
     }
 

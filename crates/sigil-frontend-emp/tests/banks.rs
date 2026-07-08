@@ -259,7 +259,7 @@ fn embed_len_is_comptime_byte_length() {
     assert_eq!(buf.size, 1, "one u8 cell");
     assert_eq!(
         buf.cells,
-        vec![sigil_frontend_emp::value::Cell::Scalar { value: 12, width: 1, signed: false }],
+        vec![sigil_frontend_emp::value::Cell::Scalar { value: 12, width: 1, signed: false, le: false }],
         "K.len must fold to 12",
     );
 }
@@ -279,7 +279,7 @@ fn embed_slice_len_is_slice_length() {
     let buf = buf.expect("data buf");
     assert_eq!(
         buf.cells,
-        vec![sigil_frontend_emp::value::Cell::Scalar { value: 4, width: 1, signed: false }],
+        vec![sigil_frontend_emp::value::Cell::Scalar { value: 4, width: 1, signed: false, le: false }],
     );
 }
 
@@ -329,7 +329,7 @@ fn bankid_of_fn_ref_captures_name() {
     };
     assert_eq!(
         buf.expect("data buf").cells,
-        vec![Cell::Expr { expr: expected, width: 1 }],
+        vec![Cell::Expr { expr: expected, width: 1, le: false }],
         "bankid(sfx) must build (sfx & $7F8000) >> 15 over Sym(\"sfx\")",
     );
 }
