@@ -98,6 +98,44 @@ pub enum Fragment {
         /// The source span that produced the instruction.
         span: Span,
     },
+    /// An instruction with several COMPLETE candidate encodings, ordered from
+    /// smallest to largest, exactly one of which the linker selects to reach
+    /// `target`. Generalizes [`RelaxAbsSym`](Self::RelaxAbsSym)'s two-way
+    /// short/long choice to an ordered ladder of N rungs (e.g. an unsized branch
+    /// `bra.s → bra.w`, or `jbra`'s `bra.s → bra.w → jmp abs.w → jmp abs.l`, or a
+    /// future Z80 `jr → jp`), so a single fragment can model an instruction that
+    /// relaxes across several forms.
+    ///
+    /// # Contract (enforced by `resolve_layout`)
+    ///
+    /// - `candidates` is non-empty and its `bytes.len()` is **non-decreasing** in
+    ///   order (smallest complete encoding first). The front-end is the only
+    ///   producer and must uphold this; `resolve_layout` `debug_assert!`s it and
+    ///   defends against an empty ladder with a loud diagnostic in release.
+    /// - `resolve_layout` (sigil-link) picks the FIRST candidate whose fixup KIND
+    ///   can reach the resolved `target`, and NEVER shrinks a prior choice
+    ///   (grow-only, for termination). **Reach is derived entirely from each
+    ///   candidate's [`FixupKind`]** — no branch semantics leak into a new tag
+    ///   enum, which is what makes the ladder CPU-agnostic (a Z80 `jr → jp` ladder
+    ///   reuses it via `Z80JrRel8`). See `relax.rs::rung_reaches`.
+    /// - Note each candidate may carry a DIFFERENT fixup `offset` (a 2-byte branch
+    ///   holds its disp in the low byte at offset 1; a 4-byte word form holds a
+    ///   disp word at offset 2), so the reach test uses each candidate's own
+    ///   fixup offset against the fragment's current start VMA.
+    /// - Like the other relaxables it is lowered to a [`Data`](Self::Data)
+    ///   fragment (the chosen candidate's bytes + its single fixup) BEFORE
+    ///   `link()` runs, so the layout/link helpers below never see it.
+    RelaxLadder {
+        /// The complete candidate encodings, ordered smallest → largest; each is
+        /// a full instruction byte block (operand/displacement bytes zeroed) plus
+        /// the single fixup that patches it. ≥1 entry, `bytes.len()` non-decreasing.
+        candidates: Vec<RelaxCandidate>,
+        /// The symbol whose resolved address drives the rung choice (the same
+        /// symbol every candidate's fixup references).
+        target: crate::expr::Expr,
+        /// The source span that produced the instruction.
+        span: Span,
+    },
     /// AS `org <target>`: reposition the write cursor to `target` (a byte offset
     /// from the section start, already resolved by the front-end). Used both for
     /// the within-section back-patch idiom (`org Hdr / dc.b n / org End`, e.g.
@@ -161,6 +199,9 @@ impl Section {
                 Fragment::RelaxAbsSym { .. } => {
                     unreachable!("RelaxAbsSym must be lowered by resolve_layout before layout/link")
                 }
+                Fragment::RelaxLadder { .. } => {
+                    unreachable!("RelaxLadder must be lowered by resolve_layout before layout/link")
+                }
             }
             if cursor > max_extent {
                 max_extent = cursor;
@@ -198,6 +239,13 @@ impl Section {
                 Fragment::Org { target, .. } => cursor = *target,
                 Fragment::JmpJsrSym { .. } => cursor += AbsWidth::L.inst_len(),
                 Fragment::RelaxAbsSym { long, .. } => cursor += long.bytes.len() as u32,
+                // The LAST candidate is the largest (bytes.len() non-decreasing),
+                // so packing siblings by it guarantees the post-relaxation
+                // `vma_len` never exceeds this pre-relaxation placement span —
+                // the same over-reserve argument as `JmpJsrSym`/`RelaxAbsSym`.
+                Fragment::RelaxLadder { candidates, .. } => {
+                    cursor += candidates.last().map(|c| c.bytes.len() as u32).unwrap_or(0)
+                }
             }
             if cursor > max_extent {
                 max_extent = cursor;
@@ -251,6 +299,9 @@ impl Section {
                 }
                 Fragment::RelaxAbsSym { .. } => {
                     unreachable!("RelaxAbsSym must be lowered by resolve_layout before layout/link")
+                }
+                Fragment::RelaxLadder { .. } => {
+                    unreachable!("RelaxLadder must be lowered by resolve_layout before layout/link")
                 }
             }
         }
