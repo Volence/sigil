@@ -422,3 +422,138 @@ fn section_with_no_matching_region_errors() {
         "stderr: {err}"
     );
 }
+
+#[test]
+fn cross_module_offsets_table_bytes_are_exact() {
+    // DELIVERABLE 1 (discharges the §4.7 cross-module-target deferral): an
+    // `offsets` table in the ENTRY module points at `pub data` targets that live
+    // in ANOTHER module. Prove the emitted `dc.w target - base` words are
+    // byte-exact after cross-module linking.
+    //
+    // Both modules land `in data`, so `--map` fixes every address. Packing is in
+    // module DISCOVERY order (entry first, then BFS-reached deps), and items pack
+    // in declaration order within a module.
+    //
+    //   LAYOUT ARITHMETIC (computed INDEPENDENTLY of read-back):
+    //     region `data` base = 0x20000  (from the map below)
+    //     entry `tab` packs first:  T  (offsets, 2 members * 2 bytes = 4 bytes)
+    //       T  @ base + 0            (0x20000 .. 0x20004)
+    //     `targets` (reached via `use targets`) packs next, decl order A then B:
+    //       A  @ base + 4            (0x20004, 1 byte = $AA)
+    //       B  @ base + 5            (0x20005, 1 byte = $BB)
+    //     offsets words are `dc.w target - T`, big-endian:
+    //       First  = addr(A) - addr(T) = (base+4) - (base+0) = 4  -> 0x00 0x04
+    //       Second = addr(B) - addr(T) = (base+5) - (base+0) = 5  -> 0x00 0x05
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"data\"\nlma_base = 0x20000\nsize = 0x20\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "targets.emp",
+        "module targets in data\npub data A: [u8;1] = [$AA]\npub data B: [u8;1] = [$BB]\n",
+    );
+    write(
+        root,
+        "tab.emp",
+        "module tab in data\nuse targets.{A, B}\npub offsets T {\n    First:  A,\n    Second: B,\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("tab.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // Independently computed expected words (see LAYOUT ARITHMETIC above).
+    let base = 0x20000usize;
+    let addr_t = base; // 0x20000
+    let addr_a = base + 4; // 0x20004
+    let addr_b = base + 5; // 0x20005
+    let first = (addr_a - addr_t) as u16; // 4
+    let second = (addr_b - addr_t) as u16; // 5
+    assert_eq!(
+        &bytes[addr_t..addr_t + 4],
+        &[
+            (first >> 8) as u8,
+            (first & 0xFF) as u8,
+            (second >> 8) as u8,
+            (second & 0xFF) as u8,
+        ],
+        "offsets words: dc.w (A - T), (B - T) big-endian"
+    );
+    // Pin the target bytes too, so a mis-packed layout can't accidentally satisfy
+    // the offset math.
+    assert_eq!(bytes[addr_a], 0xAA, "A target byte");
+    assert_eq!(bytes[addr_b], 0xBB, "B target byte");
+}
+
+#[test]
+fn three_module_corpus_compiles_end_to_end() {
+    // DELIVERABLE 2: the headline #4 mechanisms compose in one image.
+    //   prelude.emp  -> `pub struct ObjDef` auto-imported everywhere (no `use`)
+    //   art.emp      -> a shared `pub data` label, referenced cross-module
+    //   obj.emp      -> ENTRY: `use art.{Map_Thing}`, a `proc`, and a struct-
+    //                   literal `data` whose two pointer fields fix up across
+    //                   modules (one to a local proc label, one to art's label).
+    // Proves: prelude type auto-import + cross-module `use` of a data label +
+    // a struct-literal with two cross-module pointer fixups + a proc, all linked
+    // into one non-empty binary.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "prelude.emp",
+        "module prelude\npub struct ObjDef (size: 8) { code: *u8, map: *u8 }\n",
+    );
+    write(
+        root,
+        "art.emp",
+        "module art\npub data Map_Thing: [u8; 2] = [$12, $34]\n",
+    );
+    write(
+        root,
+        "obj.emp",
+        "module obj\nuse art.{Map_Thing}\nproc init (a0: *u8) {\n    rts\n}\n\
+         pub data Def = ObjDef{ code: \"init\", map: \"Map_Thing\" }\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("obj.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--prelude",
+            "prelude",
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected 3-module build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        std::fs::metadata(&outbin).unwrap().len() > 0,
+        "expected a non-empty binary"
+    );
+}
