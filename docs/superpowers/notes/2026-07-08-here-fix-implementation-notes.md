@@ -117,3 +117,29 @@ Implementer choices:
   errors wrap as a null-span diagnostic.
 - compile_emp (single-file) passes module.link_asserts; run_emp_program passes the
   concatenated build_program asserts to both tails.
+
+## T6 — acceptance-list integration tests (design items 1-8, CLI level)
+
+File: crates/sigil-cli/tests/here_relaxation_fix.rs (8 tests). Items 3+5 stay
+unit-side in sigil-frontend-emp/tests/here_provisional.rs; item 6's byte pin is
+ports.rs::example_guards_compiles (untouched).
+
+RED evidence (verified by patching the eval_here provisional arm back to master
+semantics — python patch + os.replace restore + touch; NOT git checkout):
+- FAILED under master semantics: budget_guard_fails_at_link_after_growth,
+  budget_guard_fails_via_cli_binary (item 1 — stale $8002 <= $8003 passes
+  silently), deferred_message_mixes_frozen_text_and_final_address (item 4),
+  deferred_fatal_does_not_suppress_later_items (item 8b — master's eager fatal
+  aborts lowering, Tail never lowers).
+- PASSED either way (positive controls, by design): item 2 mirror, item 7
+  two-module no-collision, guards.emp zero-diagnostics, item 8a all-collected
+  (its budget fails even at baseline, so master's eager path also reports both).
+
+Notes:
+- item 7 proves D-H.8 uniqueness end-to-end: two modules each mint
+  __here$<module>$0; a collision would trip link()'s duplicate-label detection.
+- item 8b splits the pipeline: lower/link succeed (Tail bytes AB CD present at
+  s[2..4]) and check_link_asserts then fails the build — deferral never stops
+  lowering (D-H.7).
+- Process gotcha recorded: os.replace restores an OLD mtime; cargo reused the
+  patched rlib until a `touch`. Future probes: touch after restore.
