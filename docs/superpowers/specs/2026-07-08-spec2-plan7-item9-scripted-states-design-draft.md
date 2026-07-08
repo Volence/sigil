@@ -106,6 +106,11 @@ raw procs per object, and mixing is legal.
    `wait_frames N` is per-frame sugar (tick timer, yield through the epilogue until
    elapsed), not a blocking wait.
 
+**(9b — D9.2/D9.5/D9.6 — shipped on branch plan7-item9, 2026-07-08: surface frozen as
+R9b.1–R9b.12 in docs/superpowers/plans/2026-07-08-spec2-plan7-item9b-script-yield.md;
+exhibit examples/game/badniks/pitcher_plant_script.emp alongside the untouched proc
+version; spec §5.6 + D2.24 drafted in the empyrean working tree.)**
+
 ## What this is NOT (scope guards)
 
 - Not an object system: no update/render phases (T2-f), no collections (T2-d/h), no
