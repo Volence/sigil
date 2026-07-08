@@ -585,19 +585,25 @@ pub fn resolve_layout(
 
 /// The `[branch.out-of-reach]` diagnostic for a ladder that maxed at its last
 /// rung and still cannot reach. The message is DERIVED from the last candidate's
-/// fixup kind: today the only ladder shape that can exhaust is a conditional /
-/// unsized branch whose last rung is `PcRelDisp16` (no far form), so we name the
-/// signed distance and the ±32766 word range and end with the D2.18 trampoline
-/// note. Any other exhausting kind would be a new far form and should extend
-/// this message.
+/// fixup kind: today the only ladder shape that can exhaust is an unsized
+/// branch (`Bcc`/`bra`/`bsr`) whose last rung is `PcRelDisp16` (no far form), so
+/// we name the signed distance and the ±32766 word range, then steer BOTH
+/// mnemonic classes (Core cannot see which one built the ladder): conditionals
+/// have no far form (jbcc deferred, D2.18); unconditional bra/bsr should use
+/// jbra/jbsr. Any other exhausting kind would be a new far form and should
+/// extend this message.
 fn out_of_reach_diag(cand: &RelaxCandidate, frag_start: u32, target: i64, span: Span, section: &str) -> Diagnostic {
     let site_vma = frag_start as i64 + cand.fixup.offset as i64;
     let msg = match cand.fixup.kind {
         FixupKind::PcRelDisp16 => {
             // The signed distance N is measured from the disp word's own VMA.
+            // Core cannot see the MNEMONIC behind the ladder (only its fixup
+            // kinds), so the steer covers both exhausting shapes honestly: a
+            // conditional has no far form at all, while an unconditional
+            // bra/bsr should switch to jbra/jbsr (which fall back to jmp/jsr).
             let disp = target - site_vma;
             format!(
-                "[branch.out-of-reach] branch target in section {section} is {disp} bytes away (max \u{00B1}32766); conditional branches have no far form — jbcc trampolines are deferred (D2.18)"
+                "[branch.out-of-reach] branch target in section {section} is {disp} bytes away (max \u{00B1}32766); a conditional branch has no far form (jbcc trampolines are deferred, D2.18) — for an unconditional bra/bsr, use jbra/jbsr instead"
             )
         }
         FixupKind::PcRel8 => {
@@ -1456,7 +1462,9 @@ mod tests {
     fn ladder_conditional_out_of_reach_reports_signed_distance() {
         // A 2-rung conditional (bne.s → bne.w) whose target is beyond i16 word
         // reach has NO far form → the convergence sweep reports [branch.out-of-reach]
-        // naming the signed distance and the trampoline-deferred note.
+        // naming the signed distance and steering BOTH mnemonic classes (Core
+        // cannot see which built the ladder): jbcc-deferred for conditionals,
+        // jbra/jbsr for unconditional bra/bsr.
         let mut stubs = SymbolTable::new();
         stubs.define("VeryFar", SymbolValue::Int(0x20_0000)); // >> i16 from site ~0
         let sec = Section {
@@ -1471,7 +1479,8 @@ mod tests {
         assert!(
             err.iter().any(|d| d.message.contains("[branch.out-of-reach]")
                 && d.message.contains("bytes away")
-                && d.message.contains("jbcc trampolines are deferred (D2.18)")),
+                && d.message.contains("jbcc trampolines are deferred, D2.18")
+                && d.message.contains("use jbra/jbsr instead")),
             "got: {:?}",
             err
         );

@@ -295,10 +295,14 @@ fn unsized_bne_out_of_reach_is_core_error() {
         has_tag(&errs, "[branch.out-of-reach]"),
         "an unreachable unsized bne must be Core's out-of-reach error, got: {errs:?}"
     );
-    // The message names the signed distance (a positive number here, forward).
+    // The message names the signed distance (a positive number here, forward)
+    // and steers BOTH mnemonic classes (Core cannot see which built the ladder):
+    // jbcc-deferred for a conditional, jbra/jbsr for an unconditional bra/bsr.
     assert!(
-        errs.iter().any(|d| d.message.contains("bytes away")),
-        "the out-of-reach message must name the distance, got: {errs:?}"
+        errs.iter().any(|d| d.message.contains("bytes away")
+            && d.message.contains("jbcc trampolines are deferred, D2.18")
+            && d.message.contains("use jbra/jbsr instead")),
+        "the out-of-reach message must name the distance and both steers, got: {errs:?}"
     );
 }
 

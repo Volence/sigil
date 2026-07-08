@@ -210,16 +210,12 @@ impl M68kBackend {
         // `lower_branch` emits EXACTLY one PC-relative fixup for `.s`/`.w`, so
         // `next()` is total; a missing fixup would be a `lower_branch` bug, not a
         // caller error — surface it as an internal LowerError rather than panic.
-        let short_fx = short
-            .fixups
-            .into_iter()
-            .next()
-            .ok_or_else(|| LowerError { message: "internal: bra.s emitted no fixup".into() })?;
-        let word_fx = word
-            .fixups
-            .into_iter()
-            .next()
-            .ok_or_else(|| LowerError { message: "internal: bra.w emitted no fixup".into() })?;
+        let short_fx = short.fixups.into_iter().next().ok_or_else(|| LowerError {
+            message: "internal: unsized branch .s rung emitted no fixup".into(),
+        })?;
+        let word_fx = word.fixups.into_iter().next().ok_or_else(|| LowerError {
+            message: "internal: unsized branch .w rung emitted no fixup".into(),
+        })?;
         Ok(vec![
             RelaxCandidate { bytes: short.bytes, fixup: short_fx },
             RelaxCandidate { bytes: word.bytes, fixup: word_fx },
