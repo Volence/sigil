@@ -627,6 +627,18 @@ fn lower_dispatch_item(
 /// (non-integer, zero, or not a power of two) is the single R7m.1 diagnostic
 /// naming the section, and `bank` falls back to `None`. Unknown attribute
 /// names are diagnosed but otherwise ignored.
+///
+/// `bank:` + an explicit `vma:` together is a hard error, `[section.bank-vma]`
+/// (DSM.2, resolves L7.5), regardless of which attribute is written first: the
+/// `bank:` no-straddle check (Task 2) runs in LMA space, while `bankid()`/
+/// `winptr()` fold LABEL (VMA) addresses. A `vma:` pin can decouple the two —
+/// the section's bytes land at one address (LMA) while its labels resolve at
+/// another (the pinned VMA) — so the bank id / window pointer folded from the
+/// label would silently describe the WRONG physical bank on hardware. A bank
+/// section's labels must therefore follow its placed LMA; `vma:` is rejected
+/// outright rather than risk that decoupling. Poison-tolerant like the other
+/// attribute diagnostics here: `bank` still returns `Some`, so the section
+/// still lowers (Task 2's placement seam does the rest with a real value).
 fn section_attrs(
     file: &ast::File,
     sec: &ast::SectionDecl,
@@ -674,6 +686,19 @@ fn section_attrs(
                 format!("section `{}` has unknown attribute `{other}`", sec.name),
             ),
         }
+    }
+    if bank.is_some() && vma.is_some() {
+        err(
+            diags,
+            sec.span,
+            format!(
+                "[section.bank-vma] section `{}`: a bank: section's labels must follow its \
+                 placed LMA — an explicit vma: can decouple bankid()/winptr() (VMA) from the \
+                 no-straddle check (LMA), yielding a wrong latch value on hardware. Drop vma: \
+                 (labels follow placement) or drop bank:.",
+                sec.name
+            ),
+        );
     }
     (cpu, vma, bank)
 }

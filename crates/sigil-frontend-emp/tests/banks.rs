@@ -34,10 +34,16 @@ fn bank_attr_threads_to_section_bank() {
     assert_eq!(s.bank, Some(0x8000));
 }
 
+// NOTE: before DSM.2 (resolves L7.5) this test exercised `bank:` + `vma:`
+// composing together freely; that combination is now the rejected
+// `[section.bank-vma]` shape (see the DSM.2 tests below), so this composes
+// `cpu:` + `bank:` in any order instead — a bank section's labels follow its
+// placed LMA (no `vma:` pin), which is the only shape `bank:` may compose
+// with.
 #[test]
-fn bank_attr_composes_with_cpu_and_vma_in_any_order() {
+fn bank_attr_composes_with_cpu_in_any_order() {
     let src = "module m\n\
-               section s (vma: $8000, bank: $4000, cpu: z80) {\n\
+               section s (bank: $4000, cpu: z80) {\n\
                  data X: u8 = 0\n\
                }\n";
     let (file, perrs) = parse_str(src);
@@ -46,7 +52,7 @@ fn bank_attr_composes_with_cpu_and_vma_in_any_order() {
     assert!(diags.is_empty(), "lower: {diags:?}");
     let s = section(&module, "s");
     assert_eq!(s.bank, Some(0x4000));
-    assert_eq!(s.vma_base, Some(0x8000));
+    assert_eq!(s.vma_base, None);
     assert_eq!(s.cpu, Cpu::Z80);
 }
 
@@ -467,6 +473,91 @@ fn bankid_non_symbol_argument_is_diagnosed() {
         diags.iter().any(|d| d.message.contains("`bankid` needs a symbol reference")),
         "expected the symbol-reference diagnostic, got: {diags:?}"
     );
+}
+
+// ---- DSM.2 (resolves L7.5): `bank:` + explicit `vma:` is a compile error ----
+//
+// The `bank:` no-straddle check runs in LMA space while `bankid()`/`winptr()`
+// fold label addresses (VMA); an explicit `vma:` on a bank section can
+// silently decouple the two, so the computed latch value would be wrong on
+// hardware. A bank section's labels must follow its placed LMA — so the
+// combination is rejected outright, regardless of attribute order.
+
+#[test]
+fn bank_with_explicit_vma_is_diagnosed() {
+    let src = "module m\n\
+               section s (cpu: m68000, bank: $8000, vma: $FF0000) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (_module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[section.bank-vma]")
+            && d.message.contains("bank")
+            && d.message.contains("vma")),
+        "expected the [section.bank-vma] diagnostic, got: {diags:?}"
+    );
+}
+
+#[test]
+fn bank_with_explicit_vma_is_diagnosed_regardless_of_attribute_order() {
+    let src = "module m\n\
+               section s (vma: $FF0000, cpu: m68000, bank: $8000) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (_module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[section.bank-vma]")),
+        "expected the [section.bank-vma] diagnostic regardless of attr order, got: {diags:?}"
+    );
+}
+
+#[test]
+fn bank_with_explicit_vma_still_lowers_the_section_poison_tolerant() {
+    // Mirrors how `[section.bank-attr]`-style attribute failures behave: the
+    // diagnostic fires but the section still lowers (no cascading crash) —
+    // the data item's label is still defined.
+    let src = "module m\n\
+               section s (cpu: m68000, bank: $8000, vma: $FF0000) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[section.bank-vma]")),
+        "expected the [section.bank-vma] diagnostic, got: {diags:?}"
+    );
+    let s = section(&module, "s");
+    assert!(
+        s.labels.iter().any(|l| l.name == "X"),
+        "the section must still lower its data item; labels: {:?}",
+        s.labels.iter().map(|l| &l.name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn bank_without_vma_still_works() {
+    // The dac_samples.emp exhibit shape: `bank:` alone, no `vma:` — must stay
+    // green (labels follow placement, R7p.5).
+    let src = "module m\n\
+               section s (bank: $8000) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    let s = section(&module, "s");
+    assert_eq!(s.bank, Some(0x8000));
+    assert_eq!(s.vma_base, None);
 }
 
 #[test]
