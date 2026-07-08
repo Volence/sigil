@@ -2,3 +2,4 @@
 //! `use`/prelude names, place items, and produce one linkable Vec<Section>.
 pub mod imports;
 pub mod manifest;
+pub mod rename;
