@@ -247,3 +247,67 @@ fn overlay_non_byte_array_window_rejected() {
         "want [overlay.window-not-bytes] for a non-[u8;N] field, got: {d:?}"
     );
 }
+
+#[test]
+fn overlay_signed_byte_array_window_rejected() {
+    // `[i8; N]` is not a `[u8; N]` window (D6.A1 v1: unsigned bytes only).
+    let src = "module m\n\
+        struct S (size: 8) { win: [i8; 8] }\n\
+        vars V: win { t: u8 }\n";
+    let d = msgs(src);
+    assert!(
+        d.iter().any(|m| m.contains("[overlay.window-not-bytes]") && m.contains("win")),
+        "want [overlay.window-not-bytes] for an [i8;N] window, got: {d:?}"
+    );
+}
+
+// ---- bare-window scan must not force unrelated struct layouts -----------
+
+#[test]
+fn bare_window_scan_does_not_validate_unrelated_structs() {
+    // `Bad` is never referenced: its `[layout.odd-field]`-worthy layout (u16 at
+    // offset 1) must stay unvalidated, exactly as it would with no overlay in
+    // the module (struct decl checks fire only when a layout is FORCED). The
+    // bare-window candidate scan must match by AST field name, not by laying
+    // out every in-scope struct.
+    let src = "module m\n\
+        struct Bad (size: 3) { a: u8, w: u16 }\n\
+        struct S (size: 9) { a: u8, win: [u8; 8] @ 1 }\n\
+        vars V: win { t: u8 }\n";
+    let d = msgs(src);
+    assert!(
+        !d.iter().any(|m| m.contains("[layout.odd-field] struct Bad")),
+        "declaring a bare-window overlay must not validate unrelated structs, got: {d:?}"
+    );
+}
+
+// ---- offsetof on an overlay: unknown field -------------------------------
+
+#[test]
+fn overlay_offsetof_unknown_field() {
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         data d: [u8;1] = [offsetof(V, no_such)]\n"
+    );
+    let d = msgs(&src);
+    assert!(
+        d.iter().any(|m| m.contains("offsetof") && m.contains("V") && m.contains("no_such")),
+        "want the overlay unknown-field offsetof error, got: {d:?}"
+    );
+}
+
+// ---- >2-segment window path ----------------------------------------------
+
+#[test]
+fn overlay_three_segment_window_path_rejected() {
+    // The parser accepts `ident (. ident)*` unbounded, so a 3-segment path
+    // reaches resolution and must get the bad-window error naming the form.
+    let src = "module m\n\
+        struct S (size: 8) { win: [u8; 8] }\n\
+        vars V: a.b.c { t: u8 }\n";
+    let d = msgs(src);
+    assert!(
+        d.iter().any(|m| m.contains("[overlay.bad-window]") && m.contains("a.b.c")),
+        "want [overlay.bad-window] for a 3-segment window path, got: {d:?}"
+    );
+}

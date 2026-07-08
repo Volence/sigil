@@ -591,9 +591,12 @@ impl<'a> Evaluator<'a> {
             );
             return poison(self, base_struct);
         };
-        // The window must be a `[u8; N]` byte array (D6.A1 v1 restriction).
+        // The window must be a `[u8; N]` byte array (D6.A1 v1 restriction) —
+        // UNSIGNED bytes exactly, so `[i8; N]` is rejected too.
         let window_n = match &window.ty {
-            Ty::Array(elem, n) if matches!(**elem, Ty::Prim { width: 1, .. }) => *n as i128,
+            Ty::Array(elem, n) if matches!(**elem, Ty::Prim { width: 1, signed: false }) => {
+                *n as i128
+            }
             _ => {
                 self.error(
                     decl.span,
@@ -676,23 +679,32 @@ impl<'a> Evaluator<'a> {
     /// suggesting the dotted form; exactly one → resolve to `(struct, field)`.
     /// Returns `None` (after reporting) on 0 / ≥2.
     ///
-    /// Matching is by NAME regardless of the field's type — the `[u8; N]`
-    /// restriction is enforced uniformly in [`overlay_layout`](Self::overlay_layout)
-    /// (so a lone non-byte-array `w` surfaces the precise `[overlay.window-not-bytes]`
-    /// rather than a misleading unknown-window).
+    /// Matching is by AST FIELD NAME regardless of the field's type — the
+    /// `[u8; N]` restriction is enforced uniformly in
+    /// [`overlay_layout`](Self::overlay_layout) (so a lone non-byte-array `w`
+    /// surfaces the precise `[overlay.window-not-bytes]` rather than a
+    /// misleading unknown-window).
+    ///
+    /// CRITICAL: the scan must NOT force `layout_of_struct` on the candidates —
+    /// forcing layout runs each struct's declaration checks
+    /// (size/offset/odd-field) as a side effect, so merely declaring a
+    /// bare-window overlay would switch on validation for every UNRELATED
+    /// in-scope struct, and the bare vs dotted spellings of the same overlay
+    /// would produce different module diagnostics. Only the single chosen base
+    /// struct is laid out, by [`overlay_layout`](Self::overlay_layout) — exactly
+    /// as the dotted path behaves.
     fn resolve_bare_window(&mut self, w: &str, span: Span) -> Option<(String, String)> {
         // Deterministic candidate order: struct decls in source order. `structs`
         // is a HashMap, so sort by each struct's declaration span to keep the
         // ambiguity message (and its fix-it) stable across runs.
-        let mut names: Vec<String> = self.structs.keys().map(|s| s.to_string()).collect();
-        names.sort_by_key(|n| self.structs.get(n.as_str()).map(|s| s.span.start));
-        let mut hits: Vec<String> = Vec::new();
-        for sname in &names {
-            let layout = self.layout_of_struct(sname, span);
-            if layout.fields.iter().any(|f| f.name == w) {
-                hits.push(sname.clone());
-            }
-        }
+        let mut hits: Vec<(u32, String)> = self
+            .structs
+            .iter()
+            .filter(|(_, decl)| decl.fields.iter().any(|f| f.name == w))
+            .map(|(sname, decl)| (decl.span.start, sname.to_string()))
+            .collect();
+        hits.sort();
+        let hits: Vec<String> = hits.into_iter().map(|(_, s)| s).collect();
         match hits.as_slice() {
             [] => {
                 self.error(
