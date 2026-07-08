@@ -1333,7 +1333,11 @@ pub fn eval_data_at(
     name: &str,
     here: Option<HerePos>,
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
-    eval_data_with_root(file, name, here, None)
+    // Non-lowering callers (tests, `eval_data`) do not link, so a deferred
+    // `LinkAssert` from a data-item guard has no consumer here — drop it. The
+    // lowering pass calls `eval_data_with_root` directly and drains the asserts.
+    let (buf, _asserts, diags) = eval_data_with_root(file, name, here, None);
+    (buf, diags)
 }
 
 /// Like [`eval_data_at`], but also threads a capability-sandbox
@@ -1367,7 +1371,7 @@ pub fn eval_data_with_root(
     name: &str,
     here: Option<HerePos>,
     include_root: Option<&std::path::Path>,
-) -> (Option<DataBuf>, Vec<Diagnostic>) {
+) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.apply_here_pos(here);
@@ -1376,11 +1380,12 @@ pub fn eval_data_with_root(
         }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));
-            return (None, ev.diags);
+            return (None, Vec::new(), ev.diags);
         }
         let buf = ev.resolve_data(name, file.module.span);
         check_max_size(&mut ev, name, buf.size, file.module.span);
-        (Some(buf), ev.diags)
+        let asserts = ev.take_link_asserts();
+        (Some(buf), asserts, ev.diags)
     })
 }
 

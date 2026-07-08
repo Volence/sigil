@@ -231,6 +231,11 @@ pub struct Evaluator<'a> {
     /// so the lowering pass knows to actually define the anchor label (D-H.8: a
     /// guard-position anchor is minted only when `here()` was used).
     here_anchor: Option<String>,
+    /// Deferred link-time assertions (D-H.4): `ensure`/`ensure_fatal` guards whose
+    /// condition evaluated to a provisional `here()` [`LinkExpr`](Value::LinkExpr).
+    /// `eval_guard` records one here instead of passing/failing the guard at
+    /// comptime; the lowering pass drains them (like `diags`) onto the module.
+    link_asserts: Vec<sigil_ir::LinkAssert>,
     /// Set true the first time a PROVISIONAL `here()` is evaluated (D-H.8): it
     /// records that the anchor label named by [`here_anchor`](Self::here_anchor)
     /// is actually referenced, so the lowering pass defines it (an item guard's
@@ -339,6 +344,7 @@ impl<'a> Evaluator<'a> {
             here_base: None,
             here_anchor: None,
             here_used: false,
+            link_asserts: Vec::new(),
             include_root: None,
             captures: Vec::new(),
             reg_pointee_struct: HashMap::new(),
@@ -404,9 +410,15 @@ impl<'a> Evaluator<'a> {
     /// Whether a provisional `here()` was actually evaluated (D-H.8) — the signal
     /// the lowering pass uses to define an item-guard's anonymous anchor label
     /// only on use. Consumed by the deferred-guard path (D-H.4, T4).
-    #[allow(dead_code)] // wired into the item-guard anchor-minting path in T4
     pub(crate) fn here_anchor_used(&self) -> bool {
         self.here_used
+    }
+
+    /// Take the deferred link-time assertions collected during this evaluation
+    /// (D-H.4), leaving the evaluator's list empty. The lowering pass drains these
+    /// onto the module (like `diags`).
+    pub(crate) fn take_link_asserts(&mut self) -> Vec<sigil_ir::LinkAssert> {
+        std::mem::take(&mut self.link_asserts)
     }
 
     /// Apply a [`HerePos`](crate::layout::HerePos): an exact position sets a bare

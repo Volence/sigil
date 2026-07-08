@@ -160,3 +160,70 @@ fn provisional_here_arithmetic_then_emit_refuses() {
         "expected [here.provisional] for arithmetic-then-emit, got: {ds:?}"
     );
 }
+
+// ---- T4: deferred guards (D-H.4/D-H.5/D-H.8) --------------------------------
+
+/// A provisional `ensure_fatal(here() <= N, ...)` DEFERS: the module carries a
+/// LinkAssert (not a comptime pass/fail), and — because here() was used — an
+/// anonymous anchor label `__here$m$0` is defined at the guard's cursor (D-H.8).
+///
+/// RED on master: master folds here() to a baseline int and the guard passes
+/// silently at comptime (no LinkAssert, no anchor).
+#[test]
+fn provisional_item_guard_defers_and_mints_anchor() {
+    let src = "module m\n\
+               section s (cpu: m68000, vma: $8000) {\n\
+                 proc p () {\n\
+                   jbra Far\n\
+                 }\n\
+                 ensure_fatal(here() <= $9000, \"overran at {here()}\")\n\
+                 proc Far () {\n\
+                   rts\n\
+                 }\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (m, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let errs: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+    assert!(errs.is_empty(), "provisional guard must defer (no comptime error): {errs:?}");
+    assert_eq!(m.link_asserts.len(), 1, "expected exactly one deferred LinkAssert");
+    let a = &m.link_asserts[0];
+    assert!(a.fatal, "ensure_fatal should carry fatal=true");
+    // The message keeps its comptime text and a lazy Expr part for `{here()}`.
+    assert!(
+        a.message.iter().any(|p| matches!(p, sigil_ir::MsgPart::Expr(_))),
+        "the {{here()}} placeholder must be a lazy Expr part: {:?}",
+        a.message
+    );
+    // An anonymous anchor label was minted (D-H.8).
+    let has_anchor = m
+        .sections
+        .iter()
+        .flat_map(|s| &s.labels)
+        .any(|l| l.name.starts_with("__here$"));
+    assert!(has_anchor, "expected a minted __here$ anchor label");
+}
+
+/// A provisional guard that does NOT use here() (e.g. `here` never appears —
+/// but the section is provisional) still mints no anchor when here() is unused.
+/// Here we prove the negative: an EXACT-position guard using here() defers
+/// nothing and mints no anchor (byte-identical to before).
+#[test]
+fn exact_item_guard_does_not_defer() {
+    let src = "module m\n\
+               section s (cpu: m68000, vma: $8000) {\n\
+                 data D: u16 = $0000\n\
+                 ensure_fatal(here() <= $9000, \"ok\")\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (m, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "exact guard should pass silently: {diags:?}");
+    assert!(m.link_asserts.is_empty(), "exact guard must not defer");
+    assert!(
+        !m.sections.iter().flat_map(|s| &s.labels).any(|l| l.name.starts_with("__here$")),
+        "no anchor for an exact-position guard"
+    );
+}

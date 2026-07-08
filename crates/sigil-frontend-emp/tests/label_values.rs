@@ -85,7 +85,7 @@ fn build(files: &[(&str, &str)], entry: &str) -> Vec<Diagnostic> {
         mdiags.iter().filter(|d| d.level == Level::Error).collect::<Vec<_>>()
     );
     let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
-    let (_sections, diags) = build_program(&manifest, entry, None, &opts);
+    let (_sections, _asserts, diags) = build_program(&manifest, entry, None, &opts);
     diags
 }
 

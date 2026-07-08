@@ -1,7 +1,7 @@
 //! `IrBuilder`: the concrete `IrStreamer` that materialises a `Module`.
 
 use crate::backend::{Cpu, IrStreamer};
-use crate::{DataFragment, Fixup, Fragment, Label, Module, Section};
+use crate::{DataFragment, Fixup, Fragment, Label, LinkAssert, Module, Section};
 use sigil_span::{Diagnostic, Span};
 
 /// One section under construction: metadata + a running byte cursor.
@@ -31,6 +31,10 @@ pub struct IrBuilder {
     done: Vec<Section>,
     open: Option<OpenSection>,
     diags: Vec<Diagnostic>,
+    /// Deferred link-time assertions (D-H.4) collected during lowering; carried
+    /// onto the finished [`Module`]. Empty for any program without a provisional
+    /// `here()` guard.
+    link_asserts: Vec<LinkAssert>,
 }
 
 impl IrBuilder {
@@ -121,10 +125,16 @@ impl IrBuilder {
         s.bump_max();
     }
 
+    /// Record a deferred link-time assertion (D-H.4) — a guard whose condition
+    /// became a provisional `here()` value. Drained onto the finished module.
+    pub fn push_link_assert(&mut self, assert: LinkAssert) {
+        self.link_asserts.push(assert);
+    }
+
     /// Consume the builder: close the open section and return the module + diags.
     pub fn finish(mut self) -> (Module, Vec<Diagnostic>) {
         self.close();
-        (Module { sections: self.done }, self.diags)
+        (Module { sections: self.done, link_asserts: self.link_asserts }, self.diags)
     }
 
     /// Borrow the open section, panicking if a fragment is emitted with no

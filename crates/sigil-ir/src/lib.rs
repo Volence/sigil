@@ -1,5 +1,8 @@
 //! IR for the Sigil assembler: fragments, sections, symbols, streaming, and image assembly.
 
+pub mod assert;
+pub use assert::{LinkAssert, MsgPart};
+
 pub mod backend;
 pub use backend::Cpu;
 
@@ -323,6 +326,12 @@ pub struct Symbol {
 pub struct Module {
     /// Ordered list of sections.
     pub sections: Vec<Section>,
+    /// Deferred link-time assertions (D-H.4): `ensure`/`ensure_fatal` guards whose
+    /// condition became a provisional `here()` link-time value. Evaluated by the
+    /// linker against the post-`resolve_layout` symbol table; multi-module
+    /// `build_program` concatenates each module's list. Empty for every program
+    /// with no provisional-`here()` guard — the byte-neutral default.
+    pub link_asserts: Vec<LinkAssert>,
 }
 
 /// Trait for types that can receive a stream of raw bytes from a front-end.
@@ -358,6 +367,7 @@ impl ModuleBuilder {
                 labels: Vec::new(),
                 fragments: self.fragments,
             }],
+            link_asserts: Vec::new(),
         }
     }
 }

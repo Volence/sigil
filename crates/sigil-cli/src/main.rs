@@ -372,7 +372,10 @@ fn run_emp_program(
         include_root,
     };
 
-    let (mut sections, mut pdiags) = resolve::build_program(&manifest, &entry_id, prelude, &opts);
+    // `_link_asserts`: deferred link-time guards (D-H.4), consumed by the link
+    // tails in T5. Bound here so the multi-module concatenation is already wired.
+    let (mut sections, _link_asserts, mut pdiags) =
+        resolve::build_program(&manifest, &entry_id, prelude, &opts);
     diags.append(&mut pdiags);
 
     render_program_diags(&manifest, &diags);

@@ -67,3 +67,31 @@ Implementer choices:
 - self_ref_width: Ptr=>4, Prim=>declared width, Newtype/Refined=>underlying, else
   a loud "needs u16/u32/pointer" error.
 - A non-Sym residual tree (arithmetic-then-emit) => here_provisional_error (L-H.2).
+
+## T4 — LinkAssert record + deferral + MsgPart interpolation + Module plumbing
+
+RED evidence:
+- tests/here_provisional.rs::provisional_item_guard_defers_and_mints_anchor:
+  disabling the LinkExpr-cond defer dispatch in eval_guard -> the guard folds/
+  passes at comptime, m.link_asserts empty, no __here$ anchor -> test FAILS
+  (verified via python patch+restore; git checkout is NOT used on tracked files).
+- exact_item_guard_does_not_defer proves the exact path is untouched (no defer).
+
+Implementer choices:
+- sigil-ir: new assert.rs — LinkAssert { cond: Expr, message: Vec<MsgPart>, fatal,
+  span } + MsgPart { Text(String), Expr(ir::Expr) }. Module gains link_asserts.
+- IrBuilder gains link_asserts + push_link_assert; finish() carries them.
+- Evaluator gains link_asserts + take_link_asserts. eval_guard: a LinkExpr cond
+  -> defer_guard: freeze message via interpolate_parts (comptime {expr} -> Text,
+  LinkExpr {here()} -> Expr), push LinkAssert, return Unit.
+- eval_item_guard now returns ItemGuardOutcome { cont, diags, link_asserts,
+  anchor_used } and takes a HerePos. lower_item_guard (new, shared by top-level +
+  section arms) mints the anonymous anchor __here$<module>$<n> (`$` unlexable),
+  defines it on anchor_used, drains asserts. Counter threaded through
+  lower_section_items.
+- Data-item guards: eval_data_with_root now returns (buf, asserts, diags);
+  lower_data_item drains them (anchor = item's own label).
+- build_program returns (sections, link_asserts, diags); rename_module also
+  canonicalizes each LinkAssert's cond + lazy message Exprs. Test/CLI callers
+  updated to the 3-tuple (CLI's _link_asserts consumed in T5).
+- D-H.7: deferred guards never stop lowering; only a comptime-exact fatal aborts.

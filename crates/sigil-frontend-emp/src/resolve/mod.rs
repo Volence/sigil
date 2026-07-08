@@ -202,9 +202,12 @@ pub fn build_program(
     entry_id: &str,
     prelude_id: Option<&str>,
     opts: &LowerOptions,
-) -> (Vec<Section>, Vec<Diagnostic>) {
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     let mut diags = Vec::new();
     let mut sections = Vec::new();
+    // Deferred link-time assertions (D-H.4) from every reachable module,
+    // concatenated (post-rename) — the whole-program list the linker decides.
+    let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
 
     // 1. Reachability BFS over `use` edges from the entry (and the prelude seed).
     let reachable = reachable_modules(manifest, entry_id, prelude_id, &mut diags);
@@ -307,9 +310,10 @@ pub fn build_program(
 
         rename::rename_module(&mut module, env.rename_map());
         sections.extend(module.sections);
+        link_asserts.extend(module.link_asserts);
     }
 
-    (sections, diags)
+    (sections, link_asserts, diags)
 }
 
 /// Assign each section a physical LMA from the memory map, keyed by SECTION NAME

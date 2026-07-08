@@ -74,6 +74,19 @@ pub fn rename_module(module: &mut Module, map: &HashMap<String, String>) {
             rename_fragment(frag, map);
         }
     }
+    // Deferred link-time assertions (D-H.4) reference symbols too — the guard's
+    // condition and any lazy `{expr}` message parts. Their anonymous `here()`
+    // anchors carry `$` (never in `map`, module-qualified already), but a cond
+    // like `here() <= End_marker` names an ordinary cross-module symbol that must
+    // be canonicalized like any fixup target.
+    for a in &mut module.link_asserts {
+        rewrite_expr(&mut a.cond, map);
+        for part in &mut a.message {
+            if let sigil_ir::MsgPart::Expr(e) = part {
+                rewrite_expr(e, map);
+            }
+        }
+    }
 }
 
 fn rename_fragment(frag: &mut Fragment, map: &HashMap<String, String>) {
