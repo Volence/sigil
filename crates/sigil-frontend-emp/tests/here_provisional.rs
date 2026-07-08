@@ -142,23 +142,44 @@ fn provisional_here_into_u8_field_refuses() {
     );
 }
 
-/// D-H.3: an ARITHMETICALLY-combined provisional here() emitted into a cell is
-/// [here.provisional] (the general link-expr data cell is deferred, L-H.2).
+/// DELIBERATE PIN UPDATE (Plan 7 #7-main Task 3, D7.3/R7m.4 — S2-D13f
+/// un-deferred): an ARITHMETICALLY-combined provisional here() emitted into a
+/// data cell now EMITS as a general link-expr VALUE cell (`Cell::Expr` →
+/// `ValueN` fixup), REPLACING the here-fix design's case-5 `[here.provisional]`
+/// arithmetic-then-emit refusal. The here-fix design (D-H.3) deferred the
+/// general link-expr data cell to L-H.2 and refused this path; R7m.4 lifts that
+/// deferral verbatim, so the SAME source now compiles and folds at link.
+///
+/// Every OTHER provisional refusal is UNCHANGED (asserted elsewhere in this
+/// file): array length, if-condition, max_size, byte/bytes elements, vma: — all
+/// still `[here.provisional]`; and a PLAIN width-1 `here()` SymRef stays an
+/// error (`provisional_here_into_u8_field_refuses`) since a bare-symbol address
+/// cell has no 8-bit kind. Only Cell::Expr (a residual arithmetic tree) carries
+/// width 1.
 #[test]
-fn provisional_here_arithmetic_then_emit_refuses() {
+fn provisional_here_arithmetic_then_emit_now_emits_value_cell() {
+    // `here() + 4` into a u32 field: no longer a refusal — it emits and folds.
     let src = "module m\n\
-               proc p () {\n\
-                 jbra Far\n\
-               }\n\
-               data Bad: u32 = here() + 4\n\
-               proc Far () {\n\
-                 rts\n\
+               section s (cpu: m68000, vma: $8000) {\n\
+                 proc p () {\n\
+                   jbra Far\n\
+                 }\n\
+                 data Ok: u32 = here() + 4\n\
+                 data Pad = bytes(for i in 0..200 { 0 })\n\
+                 proc Far () {\n\
+                   rts\n\
+                 }\n\
                }\n";
     let ds = msgs(src);
     assert!(
-        ds.iter().any(|m| m.contains("[here.provisional]")),
-        "expected [here.provisional] for arithmetic-then-emit, got: {ds:?}"
+        !ds.iter().any(|m| m.contains("[here.provisional]")),
+        "arithmetic-then-emit must NO LONGER refuse (D7.3/R7m.4), got: {ds:?}"
     );
+    // And it folds to the FINAL value: Ok sits at $8004 (jbra grows to bra.w),
+    // here()+4 = $8008, big-endian u32.
+    let m = lower_ok(src);
+    let bytes = linked_bytes(&m, "s");
+    assert_eq!(&bytes[4..8], &[0x00, 0x00, 0x80, 0x08], "here()+4 must fold to $8008; got {:02X?}", &bytes[4..8]);
 }
 
 // ---- T4: deferred guards (D-H.4/D-H.5/D-H.8) --------------------------------

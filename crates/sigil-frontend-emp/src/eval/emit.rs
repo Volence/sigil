@@ -373,38 +373,58 @@ impl<'a> Evaluator<'a> {
         buf
     }
 
-    /// Lower a PROVISIONAL `here()` value into a data cell (D-H.3). A PLAIN
-    /// `LinkExpr(Sym(anchor))` — the item's own label — emits a `Cell::SymRef` of
-    /// the field's declared width (`self_ref_width`), an ordinary symbol-address
-    /// cell the linker fixes up to the anchor's post-relaxation VMA. Width 1 is an
-    /// error (no 8-bit absolute fixup kind). An arithmetically-combined link value
-    /// (a non-`Sym` residual tree) is `[here.provisional]` (L-H.2 deferral).
+    /// Lower a link-time value (a [`Value::LinkExpr`]) into a data cell.
+    ///
+    /// Two paths, deliberately kept distinct (R7m.4/R7m.5):
+    ///
+    /// - A PLAIN `LinkExpr(Sym(anchor))` — a bare symbol reference, chiefly a
+    ///   provisional `here()` (the item's own label) — keeps its byte-proven
+    ///   D-H.3 lowering UNCHANGED: a `Cell::SymRef` of the field's declared width
+    ///   (`self_ref_width`), an ADDRESS cell the linker fixes up to the anchor's
+    ///   post-relaxation VMA. Width 1 stays an error (no 8-bit absolute address
+    ///   kind — a `SymRef` is a pointer). This path is frozen (winptr/SymRef
+    ///   byte-identity, R7m.5).
+    ///
+    /// - An ARITHMETICALLY-combined link value (a non-`Sym` residual tree —
+    ///   `here() + 2`, `bankid(L)`, …) now EMITS as a general link-expr data cell
+    ///   (`Cell::Expr`, S2-D13f un-deferred, D7.3/R7m.4) — REPLACING the old
+    ///   `[here.provisional]` arithmetic-then-emit refusal (here-fix design case
+    ///   5). It is a VALUE, not an address: width 1 is REQUIRED (aeon's `ds_bank`
+    ///   is one byte), and the linker range-checks the fold against an UNSIGNED
+    ///   window, never an address range.
     fn lower_link_expr(
         &mut self,
         expr: &sigil_ir::expr::Expr,
         ty: &Ty,
         span: Span,
     ) -> DataBuf {
-        let sigil_ir::expr::Expr::Sym(name) = expr else {
-            // An arithmetic-then-emit link value: the general link-expr data cell
-            // is deferred (L-H.2); refuse loudly rather than mis-emit.
-            self.here_provisional_error(span);
-            return DataBuf::empty();
-        };
+        // A bare symbol keeps the frozen SymRef address lowering (byte-proven).
+        if let sigil_ir::expr::Expr::Sym(name) = expr {
+            let Some(width) = self.self_ref_width(ty, span) else {
+                return DataBuf::empty();
+            };
+            if width == 1 {
+                self.error(
+                    span,
+                    "[here.provisional] a provisional `here()` cannot emit into a 1-byte field — \
+                     an absolute address needs 2 or 4 bytes (u16/u32 or a pointer)"
+                        .to_string(),
+                );
+                return DataBuf::empty();
+            }
+            let mut buf = DataBuf::empty();
+            buf.push(Cell::SymRef { name: name.clone(), width, windowed: false });
+            return buf;
+        }
+        // A residual arithmetic tree: the general link-expr VALUE cell. Width is
+        // the declared cell width exactly like a `Cell::Scalar` (§ w ∈ {1,2,4}),
+        // reusing `self_ref_width` — but width 1 is ALLOWED here (a value, not an
+        // address), so we bypass the SymRef-only 1-byte refusal above.
         let Some(width) = self.self_ref_width(ty, span) else {
             return DataBuf::empty();
         };
-        if width == 1 {
-            self.error(
-                span,
-                "[here.provisional] a provisional `here()` cannot emit into a 1-byte field — \
-                 an absolute address needs 2 or 4 bytes (u16/u32 or a pointer)"
-                    .to_string(),
-            );
-            return DataBuf::empty();
-        }
         let mut buf = DataBuf::empty();
-        buf.push(Cell::SymRef { name: name.clone(), width, windowed: false });
+        buf.push(Cell::Expr { expr: expr.clone(), width });
         buf
     }
 

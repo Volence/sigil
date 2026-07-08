@@ -71,6 +71,18 @@ pub(super) fn stream_data(
                 });
                 bytes.resize(bytes.len() + kind.byte_width() as usize, 0);
             }
+            Cell::Expr { expr, width } => {
+                // A general link-expr VALUE cell (S2-D13f / R7m.4): the carried
+                // residual tree IS the fixup target verbatim; the kind is
+                // width/CPU-selected (68k=Be, Z80=Le), and — unlike an address
+                // kind — the linker writes the folded integer verbatim after an
+                // UNSIGNED-window range check. The reserved hole is tied to the
+                // kind's width so the two never drift, mirroring `SymRef`.
+                let kind = value_fixup_kind(cpu, *width);
+                debug_assert_eq!(*width as u32, kind.byte_width());
+                fixups.push(Fixup { kind, offset: bytes.len() as u32, target: expr.clone() });
+                bytes.resize(bytes.len() + kind.byte_width() as usize, 0);
+            }
             Cell::RelOffset { base, target } => {
                 // 68k big-endian signed word only (first cut); Z80 diagnosed.
                 if cpu != Cpu::M68000 {
@@ -174,6 +186,24 @@ fn fixup_kind(
     }
 }
 
+/// Select the VALUE [`FixupKind`] for a [`Cell::Expr`] from (`width`, section
+/// CPU) per R7m.4. Endianness follows the section CPU (68k=Be, Z80=Le); width 1
+/// is CPU-neutral. These VALUE kinds write the folded integer verbatim after an
+/// unsigned-window range check — deliberately DISTINCT from the address kinds
+/// (`Abs16Be`/`BankPtr16Le`). `width` is the declared cell width, already
+/// constrained to {1, 2, 4} by `self_ref_width`; a stray width would be a
+/// front-end bug, so the fallthrough asserts rather than inventing a kind.
+fn value_fixup_kind(cpu: Cpu, width: u8) -> FixupKind {
+    match (cpu, width) {
+        (_, 1) => FixupKind::Value8,
+        (Cpu::M68000, 2) => FixupKind::Value16Be,
+        (Cpu::Z80, 2) => FixupKind::Value16Le,
+        (Cpu::M68000, 4) => FixupKind::Value32Be,
+        (Cpu::Z80, 4) => FixupKind::Value32Le,
+        _ => unreachable!("Cell::Expr width must be 1, 2, or 4 (got {width})"),
+    }
+}
+
 /// The fixup target for a `SymRef`. A plain (un-windowed) reference is the bare
 /// symbol; a WINDOWED (`winptr`) reference applies the SFX bank-window mask —
 /// `(addr & 0x7FFF) | 0x8000` — matching AS `sfx_winptr`
@@ -235,6 +265,39 @@ mod rel_offset_tests {
                 rhs: Box::new(Expr::Sym("Tbl".into())),
             }
         );
+    }
+
+    /// A `Cell::Expr` (general link-expr VALUE, S2-D13f) selects a width/CPU
+    /// `ValueN` kind: 68k → big-endian, Z80 → little-endian. This is the (d)
+    /// front-end seam of R7m.4 — the carried residual tree is the fixup target
+    /// verbatim; the kind carries the endianness.
+    #[test]
+    fn cell_expr_selects_value_kind_by_width_and_cpu() {
+        let expr = Expr::Binary {
+            op: BinOp::Add,
+            lhs: Box::new(Expr::Sym("H".into())),
+            rhs: Box::new(Expr::Int(2)),
+        };
+        let cases = [
+            (Cpu::M68000, 1u8, FixupKind::Value8),
+            (Cpu::Z80, 1, FixupKind::Value8), // width 1 is CPU-neutral
+            (Cpu::M68000, 2, FixupKind::Value16Be),
+            (Cpu::Z80, 2, FixupKind::Value16Le),
+            (Cpu::M68000, 4, FixupKind::Value32Be),
+            (Cpu::Z80, 4, FixupKind::Value32Le),
+        ];
+        for (cpu, width, want_kind) in cases {
+            let mut buf = DataBuf::empty();
+            buf.push(Cell::Expr { expr: expr.clone(), width });
+            let (bytes, fixups, diags) = stream_data(&buf, cpu, span());
+            assert!(diags.is_empty(), "unexpected diags for {cpu:?}/{width}: {diags:?}");
+            assert_eq!(bytes.len(), width as usize, "reserves a width-{width} hole");
+            assert_eq!(fixups.len(), 1);
+            assert_eq!(fixups[0].kind, want_kind, "{cpu:?}/{width}");
+            assert_eq!(fixups[0].offset, 0);
+            // The target is the residual tree verbatim (no address masking).
+            assert_eq!(fixups[0].target, expr);
+        }
     }
 
     #[test]

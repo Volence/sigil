@@ -215,6 +215,21 @@ pub enum Cell {
         /// The entry's target symbol.
         target: String,
     },
+    /// A general link-time value expression, `width` bytes wide (S2-D13f /
+    /// R7m.4). A [`Value::LinkExpr`] landing in a data cell of declared width
+    /// `w ∈ {1, 2, 4}` lowers to this. Plan 4 selects a width/CPU `ValueN` fixup
+    /// kind (`Value8`/`Value16Be`/`Value16Le`/`Value32Be`/`Value32Le`); the
+    /// linker folds `expr` against the FINAL table and writes the integer
+    /// verbatim after an UNSIGNED-window range check. DISTINCT from `SymRef`:
+    /// that is an *address* pointer (masked/sign-checked); this is a plain
+    /// integer value carrying an arbitrary residual tree (`here() + 2`,
+    /// `bankid(L)`, …), not just a bare symbol.
+    Expr {
+        /// The residual link-time expression to fold at link.
+        expr: sigil_ir::expr::Expr,
+        /// Byte width: 1, 2, or 4.
+        width: u8,
+    },
 }
 
 impl Cell {
@@ -222,7 +237,9 @@ impl Cell {
     /// fixed 2-byte word, a byte run is its length.
     pub fn byte_size(&self) -> usize {
         match self {
-            Cell::Scalar { width, .. } | Cell::SymRef { width, .. } => *width as usize,
+            Cell::Scalar { width, .. }
+            | Cell::SymRef { width, .. }
+            | Cell::Expr { width, .. } => *width as usize,
             Cell::RelOffset { .. } => 2,
             Cell::Bytes(b) => b.len(),
         }

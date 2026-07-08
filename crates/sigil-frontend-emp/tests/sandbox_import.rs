@@ -77,6 +77,7 @@ fn cells_to_be_bytes(buf: &DataBuf) -> Vec<u8> {
             Cell::Bytes(b) => out.extend_from_slice(b),
             Cell::SymRef { .. } => panic!("unexpected SymRef cell in a plain scalar struct"),
             Cell::RelOffset { .. } => panic!("unexpected RelOffset cell in a plain scalar struct"),
+            Cell::Expr { .. } => panic!("unexpected Expr (link-expr) cell in a plain scalar struct"),
         }
     }
     out

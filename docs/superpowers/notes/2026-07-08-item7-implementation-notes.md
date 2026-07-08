@@ -292,3 +292,103 @@ oscillating (verified by test (e)).
 - `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (no `bank:` users
   in the shipped corpus → zero diffs; the two pre-existing master-only SKIPPED
   files unchanged).
+
+---
+
+## Task 3 — general link-expr data cells (`Cell::Expr` + `ValueN` fixup kinds, S2-D13f un-deferred)
+
+Un-defers ledger S2-D13(f) per ruling R7m.4. A `Value::LinkExpr` landing in a
+data cell of declared width w ∈ {1,2,4} now lowers to a new
+`Cell::Expr { expr, width }` → a width/CPU-selected VALUE fixup, folded at link
+and unsigned-window range-checked on write. This REPLACES the here-fix design's
+D-H.3 "arithmetic-then-emit" `[here.provisional]` refusal (acceptance case 5).
+
+### What changed (files)
+
+- `crates/sigil-ir/src/fixup.rs`: 5 new `FixupKind`s — `Value8` (any CPU),
+  `Value16Be`/`Value16Le`, `Value32Be`/`Value32Le` (endianness by section CPU:
+  68k=Be, Z80=Le). `byte_width()` extended (1/2/2/4/4). Deliberately DISTINCT
+  from the address kinds (`Abs16Be` sign-checks an address; `BankPtr16Le` masks)
+  — VALUE kinds write the folded integer verbatim after an unsigned-window check.
+- `crates/sigil-frontend-emp/src/value.rs`: new `Cell::Expr { expr, width }`
+  beside Scalar/Bytes/SymRef/RelOffset; `byte_size()` returns `width`.
+- `crates/sigil-frontend-emp/src/eval/emit.rs` (`lower_link_expr`): split into
+  two paths — a PLAIN `LinkExpr(Sym(..))` keeps its frozen `Cell::SymRef` address
+  lowering UNCHANGED (byte-proven, R7m.5; width-1 still an error there — a bare
+  symbol is an address, no 8-bit kind); a residual arithmetic tree now emits a
+  `Cell::Expr` (width from the declared cell exactly like a Scalar; width 1
+  ALLOWED here — it is a value, not an address).
+- `crates/sigil-frontend-emp/src/lower/data.rs` (`stream_data`): new `Cell::Expr`
+  arm carries the residual `expr` VERBATIM as the fixup target, kind selected by
+  `value_fixup_kind(cpu, width)`; hole tied to `kind.byte_width()`.
+- `crates/sigil-frontend-emp/src/eval/sandbox.rs`: `zx0_from_data` gains a
+  `Cell::Expr` arm (an unresolved link-expr value cannot be a compress input —
+  `[zx0.symbolic]`), mirroring the SymRef/RelOffset arms.
+- `crates/sigil-link/src/lib.rs` (`apply_fixup`): 5 new arms → one shared
+  `write_value` helper doing the UNSIGNED-window range check
+  (`0 ≤ v < 2^(8·width)`; a fold outside — including negative — is
+  `[value.out-of-range]` naming the section, folded value, and window) then a
+  verbatim BE/LE write. Span carried is the cell's `d.span`.
+
+### Compiler-driven audit (enum-variant additions)
+
+- `Cell` match sites: `stream_data` (data.rs), `zx0_from_data` (sandbox.rs),
+  `byte_size` (value.rs), and one test helper (`tests/sandbox_import.rs`
+  scalar-flatten) — all updated. No other `match cell` producers.
+- `FixupKind` match sites: `apply_fixup` (lib.rs) + `byte_width` (fixup.rs) —
+  updated. `relax.rs`'s two `cand.fixup.kind` matches keep their `other =>` error
+  arms: a data-cell VALUE fixup is never a RelaxLadder rung, so those arms stay
+  correctly unreachable for Value kinds (a construction-contract violation if hit).
+
+### Tests — RED first (impl src stashed), then GREEN
+
+banks.rs (a/b/c full compile+link path via resolve_layout+link):
+- (a) `link_expr_width2_68k_folds_big_endian`: `here()+2` (u16, 68k) after a jbra
+  that grows to bra.w → item at $8004, folds $8006, bytes `80 06`. RED→GREEN.
+- (b) `link_expr_width1_emits_value8`: `here()>>15` (u8) at $8004 → 1 (Value8).
+  RED→GREEN.
+- (c) `link_expr_overflow_is_range_error`: `here()+$8000` (u16) folds $10004 ≥
+  $10000 → `[value.out-of-range]` naming 65540 + "16-bit". RED→GREEN.
+- (d) Z80 endianness: Z80 has no `jbra` (no relaxable → no provisional here() in
+  a Z80 section until Task 4's bankid), so the CPU→endianness selection is proven
+  at its two real seams (comment in banks.rs records this):
+  - `crates/sigil-frontend-emp/src/lower/data.rs` unit test
+    `cell_expr_selects_value_kind_by_width_and_cpu`: all 6 (cpu,width) → correct
+    ValueN kind + target-verbatim. RED→GREEN.
+  - `crates/sigil-link/src/lib.rs` unit test `value16_le_folds_little_endian`
+    (the R7m.5 Z80 probe): Value16Le folds $8006 → LE `06 80`. Plus
+    `value16_be_folds_big_endian`, `value8_writes_verbatim_in_window` (bank-id
+    idiom → 1), `value16_overflow_is_range_error` (65540), and
+    `value8_negative_fold_is_range_error` (a NEGATIVE fold is a range error, not
+    a two's-complement wrap). RED→GREEN.
+
+### DELIBERATE (e) pin update (design-sanctioned, D7.3/R7m.4 — itemized)
+
+- `crates/sigil-frontend-emp/tests/here_provisional.rs`: the here-fix case-5 pin
+  `provisional_here_arithmetic_then_emit_refuses` (asserted `[here.provisional]`)
+  is RENAMED to `provisional_here_arithmetic_then_emit_now_emits_value_cell` and
+  now asserts the OPPOSITE: `here()+4` (u32) NO LONGER refuses and folds to
+  $8008 (bytes `00 00 80 08`) through the full link path. The test doc-comment
+  cites D7.3/R7m.4 and the S2-D13f un-deferral verbatim.
+- EVERY OTHER provisional refusal is UNCHANGED and still asserts refusal:
+  `provisional_here_as_array_length_refuses`, `provisional_here_in_if_condition_refuses`,
+  `provisional_here_into_u8_field_refuses` (a PLAIN width-1 here() SymRef stays
+  an error — a bare-symbol address cell has no 8-bit kind; only `Cell::Expr`
+  carries width 1), `provisional_here_as_max_size_refuses_specifically`,
+  `provisional_here_in_byte_refuses_specifically`,
+  `provisional_here_in_bytes_element_refuses_specifically`,
+  `provisional_here_as_section_vma_refuses_specifically`. The rept-count /
+  array-length / if-condition / max_size families are untouched.
+
+### Gate (Task 3)
+
+- `cargo test -p sigil-frontend-emp` (banks, here_provisional, lib) → all green;
+  `cargo test -p sigil-link` → all green (value kinds 5/5).
+- `cargo test --workspace --no-fail-fast` → EXACTLY the 4 allowlisted harness
+  reds (`full_build_reproduces_sound_driver_regions`,
+  `vector_table_matches_reference_rom_first_256_bytes`,
+  `full_debug_rom_matches_assembled_reference`,
+  `full_rom_matches_assembled_reference`); nothing else red.
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean.
+- `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (no LinkExpr-cell
+  users in the shipped corpus → zero diffs; pitcher_plant + script pins intact).
