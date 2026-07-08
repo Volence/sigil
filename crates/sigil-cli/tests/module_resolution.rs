@@ -256,3 +256,78 @@ fn missing_use_reports_add_use_fixit() {
         "stderr was: {stderr}"
     );
 }
+
+#[test]
+fn module_lands_in_named_section_and_budget_overflow_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"obj_bank\"\nlma_base = 0x10000\nsize = 4\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    // 8 bytes into a 4-byte region → overflow.
+    write(
+        root,
+        "big.emp",
+        "module big in obj_bank\npub data Blob: [u8; 8] = [1,2,3,4,5,6,7,8]\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("big.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("over by") && err.contains("obj_bank"),
+        "stderr: {err}"
+    );
+}
+
+#[test]
+fn module_placed_in_region_builds_when_it_fits() {
+    // Same shape but the region is large enough (0x10 bytes ≥ 8) → success, and a
+    // non-empty binary is written.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"obj_bank\"\nlma_base = 0x10000\nsize = 0x10\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "fits.emp",
+        "module fits in obj_bank\npub data Blob: [u8; 8] = [1,2,3,4,5,6,7,8]\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("fits.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The region places the 8 bytes at LMA 0x10000, so the ROM runs 0x10000..0x10008.
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes.len(), 0x10008, "section placed at its region LMA base");
+    assert_eq!(&bytes[0x10000..0x10008], &[1, 2, 3, 4, 5, 6, 7, 8]);
+}

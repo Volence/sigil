@@ -8,9 +8,10 @@ use crate::ast;
 use crate::lower::{lower_module, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
 use manifest::{Manifest, ParsedModule};
+use sigil_ir::map::MemoryMap;
 use sigil_ir::Section;
 use sigil_span::{Diagnostic, Level, Span};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 /// Name of a `pub`, comptime-only item — the only kind we inject. Such an item
@@ -180,6 +181,43 @@ pub fn build_program(
     }
 
     (sections, diags)
+}
+
+/// Assign each section a physical LMA from the memory map, keyed by SECTION NAME
+/// → REGION NAME (§7). The concatenated sections handed back by [`build_program`]
+/// carry module-local LMAs (each module's own physical counter starts near 0), so
+/// they must be re-based into their declared map region before link/emit. For
+/// each section, find the region whose `name` matches the section's, then set
+/// `section.lma = region.lma_base + <bytes already placed in that region>`,
+/// packing multiple same-named sections sequentially within the region (in the
+/// order they appear). `vma_base` is preserved untouched — placement only moves
+/// bytes physically, never their VMA/PC. A section whose name matches NO region is
+/// a hard [`Level::Error`]; region-budget overflow is caught later by
+/// `emit_rom`/`validate_section` (§7.3).
+pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+    // Cumulative bytes placed so far in each region, by region name.
+    let mut used: HashMap<&str, u32> = HashMap::new();
+    for sec in sections.iter_mut() {
+        let Some(region) = map.regions.iter().find(|r| r.name == sec.name) else {
+            diags.push(Diagnostic {
+                level: Level::Error,
+                message: format!("section `{}` has no region in the map", sec.name),
+                // No span: the offending name comes from the module's `in <section>`
+                // header, but the section itself carries none here. Best available.
+                primary: Span {
+                    source: sigil_span::SourceId(0),
+                    start: 0,
+                    end: 0,
+                },
+            });
+            continue;
+        };
+        let cursor = used.entry(region.name.as_str()).or_insert(0);
+        sec.lma = region.lma_base + *cursor;
+        *cursor += sec.image_len();
+    }
+    diags
 }
 
 /// BFS from `entry_id` (and, if `Some`, the `prelude_id` seed) over `use` edges.

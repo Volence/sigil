@@ -292,6 +292,7 @@ dependencies = [
  "sigil-ir",
  "sigil-link",
  "sigil-span",
+ "tempfile",
 ]
 
 [[package]]

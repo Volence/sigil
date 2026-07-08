@@ -239,6 +239,7 @@ fn run_emp(args: &[String]) {
     let mut output: Option<String> = None;
     let mut root_arg: Option<String> = None;
     let mut prelude: Option<String> = None;
+    let mut map_arg: Option<String> = None;
     let mut hex = false;
 
     let mut i = 0;
@@ -247,6 +248,7 @@ fn run_emp(args: &[String]) {
             "-o" => output = Some(flag_value(args, &mut i, "-o")),
             "--root" => root_arg = Some(flag_value(args, &mut i, "--root")),
             "--prelude" => prelude = Some(flag_value(args, &mut i, "--prelude")),
+            "--map" => map_arg = Some(flag_value(args, &mut i, "--map")),
             "--hex" => hex = true,
             other => {
                 if input.is_none() {
@@ -271,8 +273,19 @@ fn run_emp(args: &[String]) {
     // Multi-module path: `--root <dir>` gathers, resolves, and links the whole
     // reachable program. Single-file path (no `--root`) is unchanged.
     if let Some(root_dir) = root_arg {
-        run_emp_program(&input, &root_dir, prelude.as_deref(), output.as_deref(), hex);
+        run_emp_program(
+            &input,
+            &root_dir,
+            prelude.as_deref(),
+            map_arg.as_deref(),
+            output.as_deref(),
+            hex,
+        );
         return;
+    }
+    if map_arg.is_some() {
+        eprintln!("error: --map requires --root (region placement is a multi-module concern)");
+        process::exit(2);
     }
 
     let src = match std::fs::read_to_string(&input) {
@@ -318,6 +331,7 @@ fn run_emp_program(
     input: &str,
     root_dir: &str,
     prelude: Option<&str>,
+    map_path: Option<&str>,
     output: Option<&str>,
     hex: bool,
 ) {
@@ -340,7 +354,7 @@ fn run_emp_program(
         include_root,
     };
 
-    let (sections, mut pdiags) = resolve::build_program(&manifest, &entry_id, prelude, &opts);
+    let (mut sections, mut pdiags) = resolve::build_program(&manifest, &entry_id, prelude, &opts);
     diags.append(&mut pdiags);
 
     render_program_diags(&manifest, &diags);
@@ -348,15 +362,66 @@ fn run_emp_program(
         process::exit(1);
     }
 
-    let image = match link_sections(&sections) {
-        Ok(image) => image,
-        Err(ds) => {
-            render_program_diags(&manifest, &ds);
-            process::exit(1);
+    // `--map`: load the region map, place each section into its named region, then
+    // link and emit through `emit_rom` (which validates each section's region
+    // budget, §7.3). Without `--map`, keep today's `flatten` behavior unchanged.
+    let image = match map_path {
+        Some(path) => {
+            let toml = match std::fs::read_to_string(path) {
+                Ok(text) => text,
+                Err(err) => {
+                    eprintln!("error: cannot read {path}: {err}");
+                    process::exit(1);
+                }
+            };
+            let map = match sigil_link::load_map(&toml) {
+                Ok(m) => m,
+                Err(err) => {
+                    eprintln!("error: cannot load map {path}: {err}");
+                    process::exit(1);
+                }
+            };
+            let pdiags = resolve::place_sections(&mut sections, &map);
+            render_program_diags(&manifest, &pdiags);
+            if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+                process::exit(1);
+            }
+            match link_rom(&sections, &map) {
+                Ok(rom) => rom,
+                Err(msg) => {
+                    eprintln!("error: {msg}");
+                    process::exit(1);
+                }
+            }
         }
+        None => match link_sections(&sections) {
+            Ok(image) => image,
+            Err(ds) => {
+                render_program_diags(&manifest, &ds);
+                process::exit(1);
+            }
+        },
     };
 
     emit_image(&image, output, hex);
+}
+
+/// Region-placed emp link seam: `resolve_layout` → `link` → `emit_rom` against the
+/// memory map, so each section is validated for region containment/budget (§7.3)
+/// and gaps are filled with the map's default byte. Layout/link diagnostics are
+/// flattened into a single error string (the map-path error channel).
+fn link_rom(
+    sections: &[sigil_ir::Section],
+    map: &sigil_ir::map::MemoryMap,
+) -> Result<Vec<u8>, String> {
+    let empty = sigil_ir::SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(sections, &empty, true).map_err(|ds| {
+        ds.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")
+    })?;
+    let linked = sigil_link::link(&resolved, &empty).map_err(|ds| {
+        ds.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")
+    })?;
+    sigil_link::emit_rom(&linked, map)
 }
 
 /// Render multi-module diagnostics as `path:line:col: message`. The manifest
