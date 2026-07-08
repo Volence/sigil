@@ -59,6 +59,8 @@ pub enum Item {
     Struct(StructDecl),
     /// `offsets ...` declaration.
     Offsets(OffsetsDecl),
+    /// `dispatch ...` declaration.
+    Dispatch(DispatchDecl),
     /// `vars ...` declaration.
     Vars(VarsDecl),
     /// `data ...` declaration.
@@ -237,6 +239,61 @@ pub struct OffsetsDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OffsetsMember {
     /// The ordinal's name (`Name.Variant`).
+    pub name: String,
+    /// The target label reference (a path expression).
+    pub target: Expr,
+    /// Span of the whole member.
+    pub span: Span,
+}
+
+/// A `dispatch Name (encoding: E) { Member: target, ... }` block: an
+/// encoding-agnostic typed state-dispatch table (D6.B1). Forward: emits a
+/// code-pointer table per `encoding` (later task). Reverse: introduces the
+/// pre-scaled comptime ordinal constants `Name.Member` and `Name.count`
+/// (D6.B3, later task). The member grammar deliberately mirrors
+/// [`OffsetsDecl`]'s `Name: target` shape; `Member: { ... }` (inline body /
+/// scripted state) is reserved for a future backlog item (#9) and is a
+/// parse error here, not a silently-accepted alternate form.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DispatchDecl {
+    /// Whether this dispatch table is exported (`pub dispatch`).
+    pub public: bool,
+    /// The dispatch table's name.
+    pub name: String,
+    /// The table's emission/ordinal-scaling encoding (required — no default).
+    pub encoding: DispatchEncoding,
+    /// The table's members, in declaration order.
+    pub members: Vec<DispatchMember>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// The `(encoding: E)` knob of a [`DispatchDecl`] (D6.B2). Exactly two
+/// encodings in v1; the construct enables encodings and imposes none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DispatchEncoding {
+    /// `dc.w member_target - Name` per member (signed-word range-checked,
+    /// reuses the `offsets` RelOffset machinery). Ordinals pre-scaled ×2.
+    WordOffsets,
+    /// `dc.l target` per member (Abs32 fixups). Ordinals pre-scaled ×4.
+    LongPtrs,
+}
+
+impl DispatchEncoding {
+    /// The ordinal pre-scale factor (D6.B3): `Name.Member` = ordinal × this
+    /// factor. Consumed by a later task (reverse-constant lowering).
+    pub fn scale(&self) -> i128 {
+        match self {
+            DispatchEncoding::WordOffsets => 2,
+            DispatchEncoding::LongPtrs => 4,
+        }
+    }
+}
+
+/// One `Member: target` entry of a [`DispatchDecl`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct DispatchMember {
+    /// The member's name (`Name.Member`).
     pub name: String,
     /// The target label reference (a path expression).
     pub target: Expr,

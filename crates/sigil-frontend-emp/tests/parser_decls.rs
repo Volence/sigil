@@ -377,3 +377,44 @@ fn nested_section_is_rejected() {
         "want [section.nested], got: {diags:?}"
     );
 }
+
+// ---- dispatch (D6.B1) ----------------------------------------------------
+
+#[test]
+fn dispatch_decl_parses() {
+    let f = ok("module m\ndispatch Routines (encoding: word_offsets) { Init: init, Wait: wait }\n");
+    let Item::Dispatch(d) = &f.items[0] else { panic!() };
+    assert_eq!(d.name, "Routines");
+    assert_eq!(d.encoding, DispatchEncoding::WordOffsets);
+    assert_eq!(d.members.len(), 2);
+    assert_eq!(d.members[0].name, "Init");
+}
+
+#[test]
+fn dispatch_decl_parses_long_ptrs() {
+    let f = ok("module m\ndispatch Routines (encoding: long_ptrs) { Init: init }\n");
+    let Item::Dispatch(d) = &f.items[0] else { panic!() };
+    assert_eq!(d.encoding, DispatchEncoding::LongPtrs);
+}
+
+#[test]
+fn pub_dispatch_parses() {
+    let f = ok("module m\npub dispatch Routines (encoding: word_offsets) { Init: init }\n");
+    let Item::Dispatch(d) = &f.items[0] else { panic!() };
+    assert!(d.public);
+}
+
+#[test]
+fn dispatch_requires_encoding() {
+    // No default encoding — research finding R1: enable encodings, impose none.
+    let (_f, diags) = parse_str("module m\ndispatch R { A: x }\n");
+    assert!(diags.iter().any(|d| d.message.contains("encoding")));
+    let (_f, diags) = parse_str("module m\ndispatch R (encoding: sideways) { A: x }\n");
+    assert!(diags.iter().any(|d| d.message.contains("word_offsets") && d.message.contains("long_ptrs")));
+}
+
+#[test]
+fn dispatch_reserves_inline_body_form() {
+    let (_f, diags) = parse_str("module m\ndispatch R (encoding: word_offsets) { A: { rts } }\n");
+    assert!(diags.iter().any(|d| d.message.contains("reserved")), "got: {diags:?}");
+}
