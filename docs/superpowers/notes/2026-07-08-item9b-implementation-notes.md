@@ -81,3 +81,61 @@ Implementation:
 Post-fold-in: `cargo test -p sigil-frontend-emp --test script` → 4 passed;
 whole crate → 46 suite-result lines, all ok, 0 failures; clippy
 `-D warnings` clean.
+
+## T2 — `lower/script.rs`: desugar + hidden resume table + body lowering
+
+### Probe (mandated design evidence — throwaway, deleted before commit)
+
+Parsed `proc p (a0: *S) { jbra done\n jbra .top\n move.w #2, $20(a0) }` and
+Debug-printed the InstrLines. The synthesis mirrors these EXACT shapes:
+
+- `jbra done` (global ident): `Instr(InstrLine { mnemonic: [Text("jbra")],
+  size: None, operands: [Plain { expr: Path(Path { segments: ["done"] }),
+  size: None, span }] })`.
+- `jbra .top` (dot-local): identical, but the segment string KEEPS the leading
+  dot — `Path { segments: [".top"] }` (NOT `"top"`). So the loop-back / local
+  epilogue jbra is built as `Path([".__loop$0"])` / `Path([".<name>"])`.
+- `move.w #2, $20(a0)`: `Instr(InstrLine { mnemonic: [Text("move")],
+  size: Some(Text("w")), operands: [ Imm(Int(2, span)),
+  DispInd { disp: Int(32, span), inner: Ind { parts: [(Path(["a0"]), None)],
+  size: None, span }, span } ] })`. The displacement is a NUMERIC `Int` (the
+  field offset), so the yield store is independent of bare-field-access rules.
+
+`Reg` names print `a0`..`a7`/`d0`..`d7` (inverse of `from_name`); an address
+register is detected by the `'a'` first byte of that spelling.
+
+### Owner / module-string (R9b.11 — one source of truth)
+
+`eval_asm_owned` (eval/asm.rs:56–59) builds `Owner::Proc { module:
+self.module_id, name }` where `module_id = file.module.path.segments.join(".")`
+(eval/mod.rs:453). `lower_script_item` computes the SAME `Owner::Proc { module,
+name: script_name }` and derives each resume row's final name via
+`Owner::local_symbol("__resume$k")` → `$<module>$<script>$__resume$<k>`. The
+table's `DispatchTarget::Label(Expr::Str(final_name))` passes through
+`eval_dispatch_with_root`'s Str arm verbatim, so the row targets exactly the
+symbol the body's `__resume$k` label definition renames to. `local_symbol` was
+exposed `pub(super)`; `proc::ends_in_terminator` likewise (was private).
+
+### RED (before implementation)
+
+`cargo test -p sigil-frontend-emp --test script` — the 4 T1 parse tests passed;
+the 6 T2 tests all failed (Item::Script fell into the lowering wildcard → only
+the trailing `proc done` emitted, e.g. byte-exact tests got `[0x4E,0x75]` vs the
+full 18-byte image; the diagnostic tests got `msgs: []`).
+
+### Byte-vector verification
+
+Probes A/B/C reproduced EXACTLY as hand-derived in the plan — no expectation was
+touched:
+- A (word_offsets, one yield): `00 04 00 0E 4E 71 31 7C 00 02 00 20 60 02 4E 75 4E 75`.
+- B (long_ptrs, ×4 ordinal WORD): `00 00 00 08 00 00 00 12 4E 71 31 7C 00 04 00 20 60 02 4E 75 4E 75`.
+- C (loop → `__loop$0` + `jbra` back = `60 F4`): `00 04 00 0E 4E 71 31 7C 00 02 00 20 60 02 60 F4 4E 75`.
+
+### GREEN
+
+`cargo test -p sigil-frontend-emp --test script` → 10 passed (4 T1 + 6 T2), 0
+failed. Whole crate: 52-suite run, all ok, 0 failures. `cargo clippy -p
+sigil-frontend-emp --all-targets -- -D warnings` clean. Workspace: the only red
+is the pre-existing `full_build_reproduces_sound_driver_regions` (`strlen()`
+builtin in the sound-driver corpus) — confirmed failing on a clean stash of this
+work, i.e. an allowlisted red, not introduced by T2.

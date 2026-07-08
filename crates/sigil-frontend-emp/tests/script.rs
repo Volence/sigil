@@ -140,3 +140,155 @@ script s (a0: *S) {
         "expected the dispatch-style required-encoding error, got: {msgs:?}"
     );
 }
+
+// ---- 2. lowering: hidden table + resume segments (R9b.2/R9b.5/R9b.6) ------
+
+const SCRIPT_TYPES: &str = "\
+newtype ScriptPc = u16
+struct S (size: $24) {
+    _pad0: [u8; $20],
+    resume: ScriptPc @ $20,
+    _pad1: [u8; 2] @ $22,
+}
+";
+
+#[test]
+fn one_yield_word_offsets_byte_exact() {
+    // Probe A (see plan): table [entry=+4, resume1=+14]; yield stores the
+    // ×2 ordinal (#2) into resume ($20(a0)) then jbra's the epilogue.
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    nop
+    yield
+    rts
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x04, 0x00, 0x0E, // table
+            0x4E, 0x71, // nop
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20, // move.w #2,$20(a0)
+            0x60, 0x02, // jbra done → bra.s +2
+            0x4E, 0x75, // __resume$1: rts
+            0x4E, 0x75, // done: rts
+        ]
+    );
+}
+
+#[test]
+fn one_yield_long_ptrs_byte_exact() {
+    // Probe B: 4-byte rows; the stored ordinal scales ×4 (#4).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: long_ptrs) shows done {{
+    nop
+    yield
+    rts
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x12, // table
+            0x4E, 0x71,
+            0x31, 0x7C, 0x00, 0x04, 0x00, 0x20,
+            0x60, 0x02,
+            0x4E, 0x75,
+            0x4E, 0x75,
+        ]
+    );
+}
+
+#[test]
+fn loop_desugars_to_label_plus_jbra_back() {
+    // Probe C: yield's resume point is the loop-bottom jbra, which jumps
+    // back to the hidden loop label (bra.s −12).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    loop {{
+        nop
+        yield
+    }}
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x04, 0x00, 0x0E,
+            0x4E, 0x71,
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20,
+            0x60, 0x02,
+            0x60, 0xF4, // __resume$1: jbra .__loop$0 → bra.s −12
+            0x4E, 0x75,
+        ]
+    );
+}
+
+// ---- 3. diagnostics (R9b.3/R9b.5/R9b.9) ------------------------------------
+
+#[test]
+fn bare_yield_without_epilogue_errors() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) {{
+    yield
+}}
+"
+    );
+    let msgs = msgs(&src);
+    assert_eq!(
+        msgs.iter().filter(|m| m.contains("[script.no-epilogue]")).count(),
+        1,
+        "msgs: {msgs:?}"
+    );
+}
+
+#[test]
+fn script_without_scriptpc_field_errors() {
+    let src = "\
+module m
+struct S (size: 2) { x: u16 }
+script brain (a0: *S) (encoding: word_offsets) shows done {
+    yield done
+}
+proc done () { rts }
+";
+    let msgs = msgs(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.no-resume-slot]")),
+        "msgs: {msgs:?}"
+    );
+}
+
+#[test]
+fn script_fallthrough_warns() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    nop
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert_eq!(
+        msgs.iter().filter(|m| m.contains("[script.fallthrough]")).count(),
+        1,
+        "msgs: {msgs:?}"
+    );
+}

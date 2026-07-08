@@ -160,8 +160,11 @@ fn check_undeclared_fallthrough(
 
 /// True when the buf's LAST instruction is an unconditional terminator — the
 /// shared core of the proc- and dispatch-body fallthrough lints (same
-/// last-mnemonic heuristic, S2-D6/D7 defers full reachability).
-fn ends_in_terminator(buf: &crate::value::CodeBuf, cpu: Cpu) -> bool {
+/// last-mnemonic heuristic, S2-D6/D7 defers full reachability). Exposed
+/// `pub(super)` so `lower/script.rs`'s `[script.fallthrough]` check (R9b.9) can
+/// reuse the very same terminator recognition (D9.6: a script body that reaches
+/// its closing `}` without a terminator runs into whatever follows).
+pub(super) fn ends_in_terminator(buf: &crate::value::CodeBuf, cpu: Cpu) -> bool {
     buf.items
         .iter()
         .rev()

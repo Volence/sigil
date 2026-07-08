@@ -13,6 +13,7 @@ mod data;
 pub(crate) mod hygiene;
 pub mod patch;
 mod proc;
+mod script;
 
 pub use code::lower_code_buf;
 pub(crate) use code::is_recognized_mnemonic;
@@ -257,8 +258,25 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     diags.append(&mut d);
                 }
             }
-            // #9b Task 2: `ast::Item::Script(decl)` hooks in here — desugar to
-            // a hidden resume table + flattened proc body (lower/script.rs).
+            // #9b Task 2: desugar to a hidden resume table + flattened proc
+            // body (lower/script.rs), same placement/argument sources as the
+            // adjacent Dispatch arm.
+            ast::Item::Script(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                script::lower_script_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        include_root: opts.include_root.as_deref(),
+                    },
+                    as_compat,
+                    &mut builder,
+                    &mut diags,
+                    &mut asm_counter,
+                );
+            }
             _ => {}
         }
     }
@@ -382,8 +400,11 @@ fn lower_section_items(
                     diags.append(&mut d);
                 }
             }
-            // #9b Task 2: `ast::Item::Script(decl)` hooks in here (in-section
-            // placement) — same desugar as the top-level arm (lower/script.rs).
+            // #9b Task 2: in-section placement — same desugar as the top-level
+            // arm (lower/script.rs), mirroring the adjacent Dispatch arm.
+            ast::Item::Script(decl) => {
+                script::lower_script_item(file, decl, placement, as_compat, builder, diags, asm_counter);
+            }
             _ => {}
         }
     }
