@@ -162,7 +162,13 @@ fn lower_m68k_instr(
     };
     // A single symbolic absolute-address operand defers its width (abs.w/abs.l)
     // to the linker via a relaxable fragment (rather than the fixed generic path).
-    let sym_count = ops.iter().filter(|o| matches!(o, CodeOperand::Sym(_))).count();
+    // A `SymOff` (the D-PP.5 `Item.field` field-address form) is the SAME abs seam
+    // — an absolute address whose fixup target is a `sym + off` sum — so it counts
+    // and routes identically.
+    let sym_count = ops
+        .iter()
+        .filter(|o| matches!(o, CodeOperand::Sym(_) | CodeOperand::SymOff { .. }))
+        .count();
     match sym_count {
         0 => {}
         1 => {
@@ -444,11 +450,26 @@ fn lower_m68k_abs_sym(
     // extension-word-free so the abs operand's ext words stay last (offset exact).
     let mut short_ops = Vec::with_capacity(ops.len());
     let mut long_ops = Vec::with_capacity(ops.len());
-    let mut name: Option<&str> = None;
+    // The abs operand's fixup target: a bare `Sym` for `move.w Foo, d0`, or a
+    // `sym + off` sum for the D-PP.5 `Item.field` field-address form. Captured
+    // as the Core `Expr` so the linker folds it (rename canonicalizes the inner
+    // `Sym`; `asl_width_rule` widths the folded SUM).
+    let mut target: Option<Expr> = None;
     for op in ops {
         match op {
             CodeOperand::Sym(n) => {
-                name = Some(n);
+                target = Some(Expr::Sym(n.clone()));
+                short_ops.push(M68kOperand::AbsW(0));
+                long_ops.push(M68kOperand::AbsL(0));
+            }
+            CodeOperand::SymOff { sym, off } => {
+                target = Some(Expr::Binary {
+                    op: sigil_ir::expr::BinOp::Add,
+                    lhs: Box::new(Expr::Sym(sym.clone())),
+                    // The field offset is a small non-negative struct offset;
+                    // Core `Expr::Int` is `i64`, so narrow the `i128` offset.
+                    rhs: Box::new(Expr::Int(*off as i64)),
+                });
                 short_ops.push(M68kOperand::AbsW(0));
                 long_ops.push(M68kOperand::AbsL(0));
             }
@@ -473,7 +494,7 @@ fn lower_m68k_abs_sym(
             },
         }
     }
-    let name = name.expect("caller guarantees exactly one symbolic operand");
+    let target = target.expect("caller guarantees exactly one symbolic operand");
 
     // Refine against the abs.w operands; the choice is width-agnostic here (both
     // `AbsW` and `AbsL` are memory-EA destinations, so `refine` picks the same
@@ -512,7 +533,6 @@ fn lower_m68k_abs_sym(
         return;
     }
     let offset = (short_bytes.len() - 2) as u32;
-    let target = Expr::Sym(name.to_string());
     let advance = short_bytes.len() as u32; // baseline (abs.w) cursor advance
     let frag = Fragment::RelaxAbsSym {
         short: RelaxCandidate {
@@ -586,6 +606,13 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         CodeOperand::Sym(name) => Err(format!(
             "symbolic operand `{name}` in a straight-line instruction is not yet supported \
              (only branch / jmp / jsr targets defer to the linker)"
+        )),
+        // A `SymOff` (D-PP.5 field-address operand) is always routed through
+        // `lower_m68k_abs_sym` by the sym-count dispatch, exactly like `Sym`, so
+        // it never reaches this generic per-operand mapper.
+        CodeOperand::SymOff { sym, off } => Err(format!(
+            "field-address operand `{sym} + {off}` in a straight-line instruction is not yet \
+             supported (routed via the abs-sym relaxation seam)"
         )),
     }
 }

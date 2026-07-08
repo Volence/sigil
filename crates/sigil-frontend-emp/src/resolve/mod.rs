@@ -38,6 +38,24 @@ fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
     }
 }
 
+/// Name of a `pub data` item whose type annotation is a single bare `Named`
+/// type (a struct / newtype / refined name) — the only shape a TYPE-ONLY stub
+/// can be injected for (D-PP.5). Returns `None` for a non-public data item, one
+/// with no type annotation, or one whose type is an array / pointer / tuple
+/// (those are not struct-typed field-access receivers). Whether the named type
+/// is REALLY a struct is decided later, in the consumer's evaluator (a bad name
+/// errors loudly there via `layout_of_struct`) — the resolver only filters on
+/// the annotation SHAPE, which needs no type index here.
+fn pub_struct_data_name(item: &ast::Item) -> Option<&str> {
+    match item {
+        ast::Item::Data(d) if d.public => match &d.ty {
+            Some(ast::Type::Named(p)) if p.segments.len() == 1 => Some(&d.name),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Collect the pub comptime-only items directly in `items` AND one level inside
 /// any `section {}` body (sections do not nest further — Task 1 rejects that at
 /// parse time — so a single level of recursion is exhaustive), matching `pred`.
@@ -54,6 +72,25 @@ fn collect_pub_comptime(
     out: &mut Vec<ast::Item>,
 ) {
     for item in items {
+        // A `pub data` item of struct type (D-PP.5): inject a TYPE-ONLY clone so
+        // the consumer's evaluator learns its struct type for `Item.field`
+        // field-address operands, WITHOUT re-emitting its bytes. This is the
+        // data-item analogue of the comptime-item injection below — a data item
+        // emits, so it cannot ride the `pub_comptime_name` path; the `type_only`
+        // flag strips its bytes at lowering while keeping its name+type visible.
+        if let Some(name) = pub_struct_data_name(item) {
+            if pred(name) {
+                if let ast::Item::Data(d) = item {
+                    let mut stub = d.clone();
+                    stub.type_only = true;
+                    // The stub carries only its name + `ty`; blank the initializer
+                    // to a Unit so a stray eval can never read the (absent) value.
+                    stub.value = ast::Expr::TupleLit { elems: vec![], span: d.span };
+                    stub.max_size = None;
+                    out.push(ast::Item::Data(stub));
+                }
+            }
+        }
         if pub_comptime_name(item).is_some_and(pred) {
             let mut cloned = item.clone();
             // TODO(perf): this stamp re-resolves the overlay's window PER CONSUMER

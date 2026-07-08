@@ -287,6 +287,18 @@ pub enum CodeOperand {
     Cc(Cc),
     /// A named symbol / label reference.
     Sym(String),
+    /// A symbol + constant byte offset — a `Item.field` field-address memory
+    /// operand (D-PP.5). `sym` is the data item's link symbol, `off` the field's
+    /// `offsetof` within its struct; lowering rides the same `RelaxAbsSym` seam
+    /// as [`Sym`](CodeOperand::Sym) but with fixup target `sym + off` (a foldable
+    /// `Add`), so the linker widths the SUM by `asl_width_rule`. Distinct from a
+    /// `DispInd` — there is NO base register; this is an ABSOLUTE address.
+    SymOff {
+        /// The data item's link symbol.
+        sym: String,
+        /// The field's byte offset within the item's struct.
+        off: i128,
+    },
     /// Register indirect: `(a0)`.
     Ind(Reg),
     /// Pre-decrement indirect: `-(a7)`.

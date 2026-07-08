@@ -218,11 +218,20 @@ impl<'a> Evaluator<'a> {
             if a == "Data" && b == "empty" {
                 return Value::Data(crate::value::DataBuf::empty());
             }
-            // Step 1: does `a` resolve to a *value* (local binding, then const)?
+            // Step 1: does `a` resolve to a *value* (local binding, then const,
+            // then a module-local DATA ITEM's comptime value)? Local/const win
+            // first (existing precedence, D2.12). The data-item receiver is the
+            // D-PP.5 VALUE half (`Def.art`): a module-local data item with a
+            // struct-literal initializer is evaluated lazily (with cycle
+            // detection) and its field read — this WINS before the U3 label
+            // fallback, so a data item named like a proc resolves to its field
+            // value, not a link symbol.
             let a_val = if let Some(v) = env.lookup(a) {
                 Some(v.clone())
             } else if self.consts.contains_key(a) {
                 Some(self.resolve_const(a, path.span))
+            } else if self.data_value_readable(a) {
+                Some(self.resolve_data_value(a, path.span))
             } else {
                 None
             };

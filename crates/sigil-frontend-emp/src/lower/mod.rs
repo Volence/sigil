@@ -368,6 +368,13 @@ fn lower_data_item(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
+    // A cross-module TYPE-ONLY injection (D-PP.5) carries no bytes — it exists
+    // only so the consumer's evaluator learns the item's struct type for
+    // `Item.field` field-address operands. Emit nothing (no label, no data); the
+    // real item's bytes are emitted once, by its defining module.
+    if decl.type_only {
+        return;
+    }
     let here_base = placement.origin + builder.current_offset();
     let (buf, mut ds) =
         eval_data_with_root(file, &decl.name, Some(here_base), placement.include_root);

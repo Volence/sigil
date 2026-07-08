@@ -663,6 +663,40 @@ impl Evaluator<'_> {
                 }
                 return Some(CodeOperand::Sym(scope.resolve_ref(seg)));
             }
+            // D-PP.5 — `Item.field` field-ADDRESS operand: a two-segment path
+            // whose FIRST segment names a known struct-typed data item (module-
+            // local OR a cross-module type-only import) and whose SECOND segment
+            // names a field of that struct denotes the FIELD'S ADDRESS. Lower it
+            // like the bare symbolic operand but with target `Item + offsetof`
+            // (a `SymOff`, which `lower_m68k_abs_sym` turns into an `Add` fixup).
+            // ONE field segment only; unknown first segment / >2 segments fall
+            // through to today's `Owner.label` link-symbol behavior below.
+            if p.segments.len() == 2 {
+                let (item, field) = (p.segments[0].as_str(), p.segments[1].as_str());
+                if let Some(struct_name) = self.data_item_struct_name(item) {
+                    // A known struct-typed item: the field MUST exist (a loud
+                    // comptime error naming struct+field otherwise — NOT a silent
+                    // link-symbol pass-through). `field_in_struct` reports nothing
+                    // on a miss, so name it here.
+                    match self.field_in_struct(&struct_name, field, expr_span(expr)) {
+                        Some((off, _size)) => {
+                            return Some(CodeOperand::SymOff {
+                                sym: scope.resolve_ref(item),
+                                off,
+                            });
+                        }
+                        None => {
+                            self.error(
+                                expr_span(expr),
+                                format!(
+                                    "[operand.unknown-field] struct `{struct_name}` (of `{item}`) has no field `{field}`"
+                                ),
+                            );
+                            return None;
+                        }
+                    }
+                }
+            }
             // `Owner.label` — a cross-body reference to an exported label. Join the
             // segments to the `Owner.label` spelling the defining owner emitted.
             return Some(CodeOperand::Sym(scope.resolve_ref(&p.segments.join("."))));

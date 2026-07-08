@@ -372,6 +372,14 @@ pub struct DataDecl {
     pub value: Expr,
     /// Span of the whole declaration.
     pub span: Span,
+    /// A cross-module TYPE-ONLY injection (D-PP.5), NOT a source construct:
+    /// always `false` from the parser. The resolver sets it on the clone of a
+    /// `pub data` item of struct type it prepends to a consumer module, so the
+    /// consumer's evaluator learns the item's struct type (for `Item.field`
+    /// field-address operands) WITHOUT emitting the item's bytes a second time.
+    /// Lowering skips a `type_only` item entirely (no label, no bytes); the
+    /// evaluator indexes only its `(name → struct)` binding, never its `value`.
+    pub type_only: bool,
 }
 
 /// A `proc name(params...) { body... }` declaration.
