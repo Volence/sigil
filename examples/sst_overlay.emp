@@ -1,0 +1,86 @@
+// ===========================================================================
+// SST OVERLAY — field access as displacement, worked exhibit
+// ===========================================================================
+// Demonstrates Spec 2, Plan 7 backlog #6, Part A (D6.A of
+// docs/superpowers/specs/2026-07-07-spec2-plan7-item6-overlay-dispatch-design.md):
+// a typed overlay window over a struct's byte-array field, and bare / qualified
+// field-name displacements (`timer(a0)`, `V.timer(a1)`) that lower BYTE-IDENTICAL
+// to the raw offset they compute — no `objvarsCheck`-style manual arithmetic,
+// no magic numbers.
+//
+// This is the COMPILES-TODAY counterpart to `examples/pitcher_plant.emp`, which
+// exhibits the full object (art, animation, spawn, `jbra`/`jbsr`, the game
+// prelude) but is still blocked on machinery this branch doesn't ship. Every
+// construct below — the struct, the overlay, bare/qualified field access, the
+// narrower-than-field byte read — is real and lowers end-to-end RIGHT NOW.
+// `sigil emp examples/sst_overlay.emp` produces bytes; so does `sigil parse`.
+//
+// STRUCT LAYOUT NOTE: this codebase's struct layout is DENSE — `@ offset` is an
+// ASSERTION over the packed field order, not a placement with gaps. So, unlike
+// the design doc's sparse spelling, explicit `_pad` filler fields carry the
+// spacing between the fields we actually care about. `Sst` below mirrors the
+// SST const in crates/sigil-frontend-emp/tests/overlay.rs exactly (same shape,
+// teaching comments instead of test terseness).
+// ===========================================================================
+
+module m
+
+// --- The Sprite Status Table shape -----------------------------------------
+// A cut-down stand-in for the engine's real $50-byte per-object record: id,
+// position, velocity, and a 34-byte "sst_custom" scratch window ($2E..$4F)
+// reserved for object-specific state. Real objects overlay their own typed
+// fields onto that window instead of poking raw offsets.
+struct Sst (size: $50) {
+    id: u16,                  // object type id                      — offset 0
+    _pad0: [u8; 14] @ $2,     // (unused fields elided from this exhibit)
+    x_pos: u16 @ $10,         // world X position                    — offset $10
+    _pad1: [u8; 8] @ $12,
+    y_vel: u16 @ $1A,         // Y velocity (8.8 fixed point)        — offset $1A
+    _pad2: [u8; 18] @ $1C,
+    sst_custom: [u8; 34] @ $2E, // per-object scratch window          — offset $2E
+}
+
+// --- The overlay -------------------------------------------------------------
+// `PlantV` declares two fields packed into `sst_custom`: `timer` at
+// window-relative 0 (in-memory offset $2E), `charge` at window-relative 1
+// (in-memory offset $2F). The compiler checks this against the 34-byte window
+// capacity at THIS declaration — no separate manual "does it fit" arithmetic.
+//
+// NOTE: `charge: u16` lands at in-memory offset $2F, which is ODD. That fires
+// the design-mandated `[layout.odd-field]` WARNING (not an error) — expected
+// and left in deliberately: it is exactly the same warning the parallel case
+// gets in overlay.rs (`field_access_overlay_field_nonzero_offset`), and this
+// exhibit's `move.b charge(a0), d0` below shows the standard big-endian
+// high-byte idiom for reading half of a misaligned/odd-based word field.
+vars PlantV: sst_custom {
+    timer: u8,       // frames until next state change
+    charge: u16,     // accumulated charge for the next shot
+}
+
+// --- Tuning constant ----------------------------------------------------------
+const WAIT_TIME: u8 = 64   // legacy $40 — frames between attacks
+
+// --- Bare field access on a TYPED register ------------------------------------
+// `a0: *Sst` types the register, so bare field names resolve in FIELD SPACE
+// (Sst's direct fields union PlantV's overlay fields) to a comptime integer
+// offset — taking the identical DispInd -> Disp16An path a literal displacement
+// would. `timer(a0)` => $2E(a0); `x_pos(a0)` => $10(a0); `y_vel(a0)` => $1A(a0).
+proc tick (a0: *Sst) {
+    subq.b  #1, timer(a0)        // timer-- : overlay field, bare access
+    move.w  x_pos(a0), d0        // x_pos   : direct struct field, bare access
+    move.w  y_vel(a0), d1        // y_vel   : direct struct field, bare access
+    move.b  charge(a0), d2       // charge  : narrower-than-field read (1 of 2
+                                  //   bytes) is legal with no lint — the
+                                  //   big-endian high-byte idiom.
+    rts
+}
+
+// --- Qualified field access on an UNTYPED register ----------------------------
+// `a1` has no param type here, so a BARE field name would fall to plain
+// comptime-name lookup and fail. The two-segment form `PlantV.timer(a1)` names
+// its field space explicitly — legal on ANY address register, typed or not —
+// and resolves to the same $2E displacement `timer(a0)` computed above.
+proc peek () {
+    tst.b   PlantV.timer(a1)     // qualified overlay access on untyped a1
+    rts
+}

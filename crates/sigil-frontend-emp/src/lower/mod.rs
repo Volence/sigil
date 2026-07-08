@@ -17,7 +17,10 @@ mod proc;
 pub use code::lower_code_buf;
 
 use crate::ast;
-use crate::layout::{eval_attr_int, eval_data_with_root, eval_offsets_with_root};
+use crate::layout::{
+    eval_attr_int, eval_data_with_root, eval_dispatch_with_root, eval_offsets_with_root,
+    validate_overlay,
+};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
 use sigil_span::{Diagnostic, Level, Span};
@@ -75,6 +78,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // (once per data item / proc), so reporting there would duplicate the
     // diagnostic; this driver runs once.
     validate_offsets(&file.items, &mut diags);
+    validate_dispatch(&file.items, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -105,6 +109,18 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // unchanged — only the section NAME differs, so a later region-placement pass
     // (keyed by section name) can route the module's bytes to its map region.
     let default_name = file.module.in_section.as_deref().unwrap_or("text");
+
+    // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
+    // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
+    // overlay's layout, and each per-item evaluator is fresh (own memo) — so an
+    // erroring overlay that is also referenced via `sizeof`/`offsetof` in a data
+    // item would report twice (once per pass). The struct exemplar reports once
+    // only because lowering has NO always-on struct pass: its single forcing
+    // evaluator is the referencing item's. To match that once-per-compile
+    // behavior, `dedup_overlay_pass_diags` (end of this fn) drops later EXACT
+    // copies (level+span+message) of the diagnostics collected here — exactness
+    // means a genuinely distinct diagnostic can never be suppressed.
+    let mut overlay_pass_diags: Vec<Diagnostic> = Vec::new();
 
     // The instantiation counter for `asm { }` / `proc` label hygiene (D-P4.6),
     // threaded across EVERY proc in the module (top-level AND section-nested) so
@@ -158,6 +174,20 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut diags,
                 );
             }
+            ast::Item::Dispatch(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                lower_dispatch_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        include_root: opts.include_root.as_deref(),
+                    },
+                    &mut builder,
+                    &mut diags,
+                );
+            }
             ast::Item::Ensure(decl) => {
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
                 // Default section: VMA == LMA == `next_lma`, so the current
@@ -186,11 +216,23 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
+                    &mut overlay_pass_diags,
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
                 if !cont {
                     break; // a fatal guard inside the section stops the module (D5.3).
+                }
+            }
+            ast::Item::Vars(decl) => {
+                // Overlay form (`vars Name: window { .. }`): force its layout so
+                // the always-on declaration checks (window/capacity/shadow) fire
+                // (D6.A2); it emits ZERO bytes. Region form (`name: None`) is
+                // inert by design (Plan 7 #6 OUT-list).
+                if let Some(name) = &decl.name {
+                    let mut d = validate_overlay(file, name, decl.span);
+                    overlay_pass_diags.extend(d.iter().cloned());
+                    diags.append(&mut d);
                 }
             }
             _ => {}
@@ -199,7 +241,34 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
 
     let (module, mut build_diags) = builder.finish();
     diags.append(&mut build_diags);
+    dedup_overlay_pass_diags(&mut diags, &overlay_pass_diags);
     (module, diags)
+}
+
+/// Drop later EXACT copies (same level, span, AND message — [`Diagnostic`]'s
+/// full `Eq`) of the diagnostics the always-on overlay-validation pass produced,
+/// keeping the FIRST occurrence wherever it appeared (a referencing data item
+/// may lower before OR after the `vars` decl). Diagnostics not in the pass set
+/// are untouched, so pre-existing duplication behavior (e.g. two data items each
+/// forcing an odd-field struct warning, no overlay involved) is unchanged, and a
+/// DISTINCT diagnostic — differing in span, message, or level — can never be
+/// suppressed. See the `overlay_pass_diags` comment in [`lower_module`] for the
+/// struct-vs-overlay root cause.
+fn dedup_overlay_pass_diags(diags: &mut Vec<Diagnostic>, pass: &[Diagnostic]) {
+    if pass.is_empty() {
+        return;
+    }
+    // O(n·m) scans: both lists are per-module diagnostic sets — tiny.
+    let mut kept: Vec<Diagnostic> = Vec::new();
+    diags.retain(|d| {
+        if pass.contains(d) {
+            if kept.contains(d) {
+                return false;
+            }
+            kept.push(d.clone());
+        }
+        true
+    });
 }
 
 /// Ensure the default (top-level items) section — named `name`, which is the
@@ -229,6 +298,7 @@ fn ensure_default(
 ///
 /// Returns `false` when a failing `ensure_fatal` in this section aborted
 /// evaluation, so the caller stops lowering the module's remaining items (D5.3).
+#[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
 fn lower_section_items(
     file: &ast::File,
     sec: &ast::SectionDecl,
@@ -237,6 +307,7 @@ fn lower_section_items(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
+    overlay_pass_diags: &mut Vec<Diagnostic>,
 ) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -245,6 +316,9 @@ fn lower_section_items(
             }
             ast::Item::Offsets(decl) => {
                 lower_offsets_item(file, decl, placement, builder, diags);
+            }
+            ast::Item::Dispatch(decl) => {
+                lower_dispatch_item(file, decl, placement, builder, diags);
             }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
@@ -265,6 +339,15 @@ fn lower_section_items(
                 diags.append(&mut d);
                 if !cont {
                     return false; // ensure_fatal in-section: stop the whole module.
+                }
+            }
+            ast::Item::Vars(decl) => {
+                // Same as the top-level arm: overlay form → force layout so its
+                // always-on checks fire, zero bytes; region form → inert.
+                if let Some(name) = &decl.name {
+                    let mut d = validate_overlay(file, name, decl.span);
+                    overlay_pass_diags.extend(d.iter().cloned());
+                    diags.append(&mut d);
                 }
             }
             _ => {}
@@ -303,6 +386,9 @@ fn lower_data_item(
 /// fixups. Unlike [`lower_data_item`] there is no `here_base`: a `RelOffset`
 /// resolves against the SYMBOLIC base label `decl.name`, folded at link time —
 /// not against a physical `here()` position.
+///
+/// NOTE: [`lower_dispatch_item`] mirrors this function's shape (eval → stream →
+/// define base label → emit) — consider both when editing the lowering flow.
 fn lower_offsets_item(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
@@ -311,6 +397,46 @@ fn lower_offsets_item(
     diags: &mut Vec<Diagnostic>,
 ) {
     let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root);
+    diags.append(&mut ds);
+    let Some(buf) = buf else { return };
+
+    let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
+    diags.append(&mut stream_diags);
+    builder.define_label(&decl.name);
+    builder.emit_data(&bytes, fixups, decl.span);
+}
+
+/// Lower one `dispatch` block's FORWARD emission (Spec 2, Plan 7 backlog #6,
+/// Part B — D6.B2). The sibling of [`lower_offsets_item`]: it evaluates the
+/// members to a [`DataBuf`] via [`eval_dispatch_with_root`] (RelOffset cells
+/// for `word_offsets`, `SymRef` `dc.l`/Abs32 cells for `long_ptrs`), serializes
+/// them in `placement.cpu`'s byte order, defines the table's base label
+/// (`decl.name`) at its first byte, then emits the bytes + fixups. Dispatch is
+/// 68k-only in v1 for BOTH encodings: a `cpu: z80` section is rejected by the
+/// `[dispatch.non-68k]` guard below (at the dispatch's own span) before eval.
+fn lower_dispatch_item(
+    file: &ast::File,
+    decl: &ast::DispatchDecl,
+    placement: &Placement,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // D6.B1: 68k sections only in v1, mirroring `[offsets.non-68k]`. Guard HERE
+    // (at the dispatch's own span, with a dispatch-specific code) rather than
+    // rely on the shared `RelOffset` streamer arm, which would report the
+    // `offsets`-flavored `[offsets.non-68k]` message.
+    if placement.cpu != Cpu::M68000 {
+        err(
+            diags,
+            decl.span,
+            "[dispatch.non-68k] a dispatch table is a 68k idiom; \
+             Z80 dispatch tables are not supported"
+                .to_string(),
+        );
+        return;
+    }
+
+    let (buf, mut ds) = eval_dispatch_with_root(file, decl, placement.include_root);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -385,6 +511,9 @@ fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
 /// the diagnostic N times. Recurses into `section {}` blocks so a
 /// section-nested `offsets` is checked exactly like a top-level one (mirroring
 /// `index_items`' flat namespace).
+///
+/// NOTE: [`validate_dispatch`] mirrors this function's shape (reserved-`count`
+/// + duplicate-member checks, section recursion) — consider both when editing.
 fn validate_offsets(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
     for item in items {
         match item {
@@ -409,6 +538,40 @@ fn validate_offsets(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
                 }
             }
             ast::Item::Section(sec) => validate_offsets(&sec.items, diags),
+            _ => {}
+        }
+    }
+}
+
+/// Once-per-compile validation of `dispatch` blocks (Spec 2, Plan 7 #6 — D6.B3),
+/// mirroring [`validate_offsets`] exactly: (1) a member named `count` collides
+/// with the reserved `Name.count` pseudo-member (the member count), which
+/// `eval_path` resolves before members, so it would be silently unreachable;
+/// (2) a duplicate member name makes the reverse-direction ordinal ambiguous.
+/// Both violate the totality tenet (no silent wrong answers). Reported HERE
+/// (once per compile) rather than in `index_items` (which re-runs per per-item
+/// evaluator). Recurses into `section {}` blocks so a section-nested `dispatch`
+/// is checked like a top-level one.
+fn validate_dispatch(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    for item in items {
+        match item {
+            ast::Item::Dispatch(decl) => {
+                let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                for m in &decl.members {
+                    if m.name == "count" {
+                        err(
+                            diags,
+                            m.span,
+                            "dispatch member `count` is reserved (it names the table's member count)"
+                                .to_string(),
+                        );
+                    }
+                    if !seen.insert(m.name.as_str()) {
+                        err(diags, m.span, format!("duplicate dispatch member `{}`", m.name));
+                    }
+                }
+            }
+            ast::Item::Section(sec) => validate_dispatch(&sec.items, diags),
             _ => {}
         }
     }

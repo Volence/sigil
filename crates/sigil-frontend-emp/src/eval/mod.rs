@@ -104,10 +104,31 @@ pub struct Evaluator<'a> {
     /// [`enums`](Self::enums) resolves `Enum.Variant`. Forward emission
     /// (`dc.w target - Name`) is a separate, later task.
     pub(crate) offsets: HashMap<&'a str, &'a ast::OffsetsDecl>,
+    /// File-level `dispatch` decls, indexed by name (empty in no-file mode).
+    /// Spec 2 Plan 7 backlog #6, Part B (reverse direction): [`eval::expr`](expr)'s
+    /// `eval_path` resolves `Name.Member` to the member's ordinal PRE-SCALED by
+    /// the encoding (×2 for `word_offsets`, ×4 for `long_ptrs` — D6.B3) and
+    /// `Name.count` to `decl.members.len()` UNSCALED. Plain comptime ints,
+    /// mirroring how [`offsets`](Self::offsets) resolves `Name.Variant`. Also
+    /// consulted by the forward-emission target kind check
+    /// ([`is_data`](Self::is_data)/[`is_dispatch`](Self::is_dispatch)).
+    pub(crate) dispatches: HashMap<&'a str, &'a ast::DispatchDecl>,
+    /// Named SST overlay decls (`vars Name: window { .. }`), indexed by name
+    /// (Spec 2, Plan 7 #6, Part A). Only the *named* overlay form is indexed;
+    /// the region form (`vars region { .. }`, `name: None`) stays inert.
+    /// [`overlay_layout`](crate::layout::Evaluator::overlay_layout) resolves each
+    /// to an [`OverlayInfo`](crate::layout::OverlayInfo) (window + field layout).
+    pub(crate) overlays: HashMap<&'a str, &'a ast::VarsDecl>,
     /// Memoized struct layouts, keyed by struct name — the layout analogue of
     /// [`const_memo`](Self::const_memo). A zero-size Poisoned layout records a
     /// struct that already failed (cyclic layout) so it does not re-report.
     pub(crate) struct_layout_memo: HashMap<String, crate::layout::Layout>,
+    /// Memoized overlay layouts, keyed by overlay name (Spec 2, Plan 7 #6).
+    /// Mirrors [`struct_layout_memo`](Self::struct_layout_memo): each overlay's
+    /// window resolution + field layout + declaration checks
+    /// (overflow/shadow/unknown/ambiguous window) run and report EXACTLY once,
+    /// then the result (poisoned or not) is reused across every reference.
+    pub(crate) overlay_layout_memo: HashMap<String, crate::layout::OverlayInfo>,
     /// Memoized bitfield layouts, keyed by bitfield name (T4). Mirrors
     /// [`struct_layout_memo`](Self::struct_layout_memo): a malformed bitfield
     /// (overlap/overflow) is validated and diagnosed exactly ONCE, then reused
@@ -211,6 +232,15 @@ pub struct Evaluator<'a> {
     /// path, its SHA-256 digest, and its byte length — the provenance record a
     /// later hermeticity task exposes and asserts determinism from.
     pub(crate) captures: Vec<sandbox::CaptureEdge>,
+    /// The struct a proc-body param's address register points at (Spec 2, Plan 7
+    /// #6, Part A — D6.A3). Populated per-proc by [`eval_proc_body`] from each
+    /// `(aN: *S)` param whose pointee bottoms out (through newtype/refined) at a
+    /// struct `S`; a non-struct pointee (`*u8`) never enters the map. A bare
+    /// single-segment displacement `f(aN)` on a register present here resolves in
+    /// FIELD SPACE (direct fields ∪ in-scope overlays over `S`), not as a comptime
+    /// expression — so a field name lowers to its byte offset and a const never
+    /// silently shadows it. Empty for a raw `asm { }` (no param types there).
+    pub(crate) reg_pointee_struct: HashMap<crate::value::Reg, String>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -230,7 +260,10 @@ impl<'a> Evaluator<'a> {
             newtypes: HashMap::new(),
             datas: HashMap::new(),
             offsets: HashMap::new(),
+            dispatches: HashMap::new(),
+            overlays: HashMap::new(),
             struct_layout_memo: HashMap::new(),
+            overlay_layout_memo: HashMap::new(),
             bitfield_layout_memo: HashMap::new(),
             layout_in_progress: Vec::new(),
             aborted: false,
@@ -246,6 +279,7 @@ impl<'a> Evaluator<'a> {
             here_base: None,
             include_root: None,
             captures: Vec::new(),
+            reg_pointee_struct: HashMap::new(),
         }
     }
 
@@ -312,6 +346,22 @@ impl<'a> Evaluator<'a> {
                     // `lower::validate_offsets`.
                     self.offsets.insert(o.name.as_str(), o);
                 }
+                ast::Item::Dispatch(d) => {
+                    // Index for `Name.Member` / `Name.count` resolution in
+                    // `eval_path` and the target kind check. Duplicate-member /
+                    // reserved-`count` ERROR reporting lives once-per-compile in
+                    // `lower::validate_dispatch`, NOT here (this re-indexes on
+                    // every per-item evaluator, mirroring the `Offsets` arm).
+                    self.dispatches.insert(d.name.as_str(), d);
+                }
+                ast::Item::Vars(v) => {
+                    // Only the NAMED overlay form (`vars Name: window { .. }`)
+                    // is indexed; the region form (`name: None`) is inert by
+                    // design (Plan 7 #6 OUT-list — no region allocation).
+                    if let Some(name) = &v.name {
+                        self.overlays.insert(name.as_str(), v);
+                    }
+                }
                 ast::Item::Section(s) => self.index_items(&s.items),
                 _ => {}
             }
@@ -326,6 +376,59 @@ impl<'a> Evaluator<'a> {
     /// itself stays private.
     pub(crate) fn is_const(&self, name: &str) -> bool {
         self.consts.contains_key(name)
+    }
+
+    /// Whether `name` is a file-level `data` item (module-local, section-nested
+    /// one level via `index_items`). Used by the `dispatch` forward-emission
+    /// target kind check (D6.B4): a member targeting a `data` item is
+    /// `[dispatch.target-not-code]`.
+    pub(crate) fn is_data(&self, name: &str) -> bool {
+        self.datas.contains_key(name)
+    }
+
+    /// Whether `name` is a file-level `offsets` table (its base label is a
+    /// data-emitting item, not code). Used by the `dispatch` target kind check.
+    pub(crate) fn is_offsets(&self, name: &str) -> bool {
+        self.offsets.contains_key(name)
+    }
+
+    /// Whether `name` is a file-level `dispatch` table (its own base label is a
+    /// data-emitting item, not code). Used by the `dispatch` target kind check.
+    pub(crate) fn is_dispatch(&self, name: &str) -> bool {
+        self.dispatches.contains_key(name)
+    }
+
+    /// Whether `name` is a named SST overlay (`vars Name: window { .. }`), which
+    /// defines no emitted symbol at all. Used by the `dispatch` target kind
+    /// check to name the miss precisely rather than let it drift to link.
+    pub(crate) fn is_overlay(&self, name: &str) -> bool {
+        self.overlays.contains_key(name)
+    }
+
+    /// The human-readable kind of `name` if it resolves module-locally to a
+    /// NON-CODE item (`data`/`const`/`offsets`/`dispatch`/overlay `vars`), else
+    /// `None`. Drives the `dispatch` target kind check (D6.B4): a target that
+    /// resolves here is `[dispatch.target-not-code]`; `None` means either a
+    /// `proc` (code — accepted) or an unknown name (left to link). Items are
+    /// section-nested one level via [`index_items`](Self::index_items), so this
+    /// sees section-nested data/consts too. Precedence is irrelevant — the maps
+    /// are expected disjoint (no module-local cross-kind duplicate-name check
+    /// exists here; name resolution errors on genuine collisions elsewhere), so
+    /// the first match names the kind.
+    pub(crate) fn non_code_kind(&self, name: &str) -> Option<&'static str> {
+        if self.is_data(name) {
+            Some("data item")
+        } else if self.is_const(name) {
+            Some("const")
+        } else if self.is_offsets(name) {
+            Some("offset table")
+        } else if self.is_dispatch(name) {
+            Some("dispatch table")
+        } else if self.is_overlay(name) {
+            Some("overlay")
+        } else {
+            None
+        }
     }
 
     /// Push an [`Error`](Level::Error) diagnostic at `span`.
@@ -600,6 +703,7 @@ where
 pub fn eval_proc_body(
     file: &crate::ast::File,
     name: &str,
+    params: &[(String, ast::Type, Span)],
     body: &[ast::AsmStmt],
     span: Span,
     asm_counter_start: u32,
@@ -607,6 +711,26 @@ pub fn eval_proc_body(
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.asm_counter = asm_counter_start;
+        // Bind each `(aN: *S)` param whose pointee bottoms out at a struct into
+        // the register→struct map (D6.A3). A bare-field displacement `f(aN)` on
+        // such a register then resolves in field space. Param NAMES are register
+        // spellings (§5.1), matching the clobber-lint model. Resolving the
+        // pointee type MUST NOT report: an unresolvable/non-struct pointee simply
+        // does not participate — its own decl-site diagnostics belong elsewhere,
+        // and duplicating them here would double-report. So resolve on a scratch
+        // evaluator whose diagnostics are discarded — built ONCE per proc (not
+        // once per param): its only job is to run type resolution silently.
+        let mut probe = Evaluator::with_file(file);
+        for (pname, pty, pspan) in params {
+            let Some(reg) = crate::value::Reg::from_name(pname) else { continue };
+            if let ast::Type::Ptr(inner) = pty {
+                let inner_ty = probe.resolve_type(inner);
+                if let Some(sname) = probe.struct_name_for_offsetof(&inner_ty, *pspan) {
+                    ev.reg_pointee_struct.insert(reg, sname);
+                }
+            }
+        }
+        drop(probe);
         let mut env = Env::new();
         let buf = match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
             Value::Code(buf) => Some(buf),

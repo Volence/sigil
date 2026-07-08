@@ -83,6 +83,15 @@ impl<'a> Evaluator<'a> {
             // already diagnosed by `resolve_type`, so an already-`Poison`
             // resolved type stays silent here.
             ast::Expr::SizeOf(ty, span) => {
+                // An overlay name (`sizeof(V)`) is not a data-layout `Ty`, so
+                // check the overlay index FIRST (D6.A9) — its laid-out size is
+                // the answer. Anything else falls through to type sizing.
+                if let Some(oname) = overlay_name(ty) {
+                    if self.overlays.contains_key(oname.as_str()) {
+                        let info = self.overlay_layout(&oname, *span);
+                        return if info.poisoned { Value::Poison } else { Value::Int(info.size) };
+                    }
+                }
                 let resolved = self.resolve_type(ty);
                 if matches!(resolved, crate::layout::Ty::Poison) {
                     return Value::Poison;
@@ -93,6 +102,27 @@ impl<'a> Evaluator<'a> {
             // `Refined`/`Newtype` wrappers) at a struct; `field` must be one of
             // its fields. Either failure is a diagnostic + `Poison`.
             ast::Expr::OffsetOf(ty, field_name, span) => {
+                // `offsetof(V, f)` on an overlay name = the field's offset WITHIN
+                // the overlay (NOT including the window offset — D6.A9). Checked
+                // before type resolution, since `V` is not a data-layout `Ty`.
+                if let Some(oname) = overlay_name(ty) {
+                    if self.overlays.contains_key(oname.as_str()) {
+                        let info = self.overlay_layout(&oname, *span);
+                        if info.poisoned {
+                            return Value::Poison;
+                        }
+                        return match info.fields.iter().find(|(n, _, _)| n == field_name) {
+                            Some((_, off, _)) => Value::Int(*off),
+                            None => {
+                                self.error(
+                                    *span,
+                                    format!("offsetof: overlay {oname} has no field {field_name}"),
+                                );
+                                Value::Poison
+                            }
+                        };
+                    }
+                }
                 let resolved = self.resolve_type(ty);
                 if matches!(resolved, crate::layout::Ty::Poison) {
                     return Value::Poison;
@@ -227,6 +257,23 @@ impl<'a> Evaluator<'a> {
                     return Value::Int(index as i128);
                 }
                 self.error(path.span, format!("offsets `{a}` has no member `{b}`"));
+                return Value::Poison;
+            }
+            // Step 3b: a `Dispatch.Member` PRE-SCALED comptime ordinal, or
+            // `Dispatch.count` (Spec 2 Plan 7 backlog #6, Part B — D6.B3).
+            // `Name.Member` = ordinal × encoding.scale() (×2 for `word_offsets`,
+            // ×4 for `long_ptrs`): the routine byte S3K stores in `routine(a0)`
+            // and `add.w`s into the table. `Name.count` = member count, UNSCALED.
+            // Plain comptime ints (`Value::Int`), like the `offsets` ordinals —
+            // `dispatch` introduces no new type in v1 (a state newtype is #9).
+            if let Some(decl) = self.dispatches.get(a) {
+                if b == "count" {
+                    return Value::Int(decl.members.len() as i128);
+                }
+                if let Some(index) = decl.members.iter().position(|m| m.name == b) {
+                    return Value::Int(index as i128 * decl.encoding.scale());
+                }
+                self.error(path.span, format!("dispatch `{a}` has no member `{b}`"));
                 return Value::Poison;
             }
         }
@@ -618,5 +665,16 @@ pub(super) fn binop_symbol(op: BinOp) -> &'static str {
         BinOp::And => "&&",
         BinOp::Or => "||",
         BinOp::Concat => "++",
+    }
+}
+
+/// The single-segment name of a `sizeof(T)`/`offsetof(T, f)` type argument, if it
+/// is a bare `Named` path — the only shape an overlay name can take. Returns
+/// `None` for pointers, arrays, multi-segment paths, etc., so the caller falls
+/// through to ordinary type resolution (Spec 2, Plan 7 #6 — D6.A9).
+fn overlay_name(ty: &ast::Type) -> Option<String> {
+    match ty {
+        ast::Type::Named(path) if path.segments.len() == 1 => Some(path.segments[0].clone()),
+        _ => None,
     }
 }

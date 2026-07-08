@@ -138,6 +138,30 @@ pub struct BitfieldFieldLayout {
     pub lsb: u32,
 }
 
+/// A resolved SST overlay layout (Spec 2, Plan 7 #6, Part A — D6.A1/A2/A7/A9):
+/// a typed view over a `[u8; N]` window field of a base struct. The overlay's
+/// fields lay out by struct rules (declaration order, no padding), and their
+/// offsets are OVERLAY-RELATIVE — the window's own offset within the base
+/// struct is added only at the field-access sugar site (D6.A9, the next task),
+/// never here. A poisoned overlay (window unresolved / capacity blown /
+/// shadowing) carries `poisoned = true` so a re-query stays silent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverlayInfo {
+    /// The base struct this overlay's window belongs to.
+    pub base_struct: String,
+    /// The window field's byte offset within the base struct.
+    pub window_offset: i128,
+    /// The window field's byte size (its `N` in `[u8; N]`).
+    pub window_size: i128,
+    /// The overlay's fields, in declaration order: `(name, overlay-relative
+    /// offset, byte size)`.
+    pub fields: Vec<(String, i128, i128)>,
+    /// The overlay's total laid-out byte size (`sizeof`).
+    pub size: i128,
+    /// True once a declaration check failed and reported; suppresses re-report.
+    pub poisoned: bool,
+}
+
 impl<'a> Evaluator<'a> {
     /// Resolve a syntactic [`ast::Type`] to a semantic [`Ty`], reporting (and
     /// returning [`Ty::Poison`] for) any error along the way.
@@ -484,6 +508,226 @@ impl<'a> Evaluator<'a> {
         self.layout_in_progress.pop();
         self.struct_layout_memo.insert(name.to_string(), layout.clone());
         layout
+    }
+
+    /// Compute (or fetch the memoized) [`OverlayInfo`] for the SST overlay named
+    /// `name` (Spec 2, Plan 7 #6 — D6.A1/A2/A7/A9), mirroring
+    /// [`layout_of_struct`](Self::layout_of_struct)'s memoized, report-once shape.
+    ///
+    /// Steps: (1) resolve the region path to a `[u8; N]` window field of an
+    /// in-scope struct (D6.A1); (2) lay out the overlay's fields by struct rules
+    /// (declaration order, no padding — reusing [`size_of_ty`](Self::size_of_ty))
+    /// with the odd-field warning (D6.A2); (3) reject any field whose name equals
+    /// a DIRECT base-struct field (D6.A7 shadow check); (4) reject a total size
+    /// exceeding the window's N bytes (D6.A2 capacity). Every failure path
+    /// reports once and memoizes a `poisoned` result so a re-query stays silent.
+    ///
+    /// Overlays cannot form a layout cycle (an overlay never references another
+    /// overlay), so — unlike [`layout_of_struct`](Self::layout_of_struct) — this
+    /// needs no in-progress stack; every diagnostic anchors at `decl.span` (or a
+    /// field's span), so the caller-supplied `_span` goes unused (kept for
+    /// signature symmetry, mirroring [`layout_of_bitfield`](Self::layout_of_bitfield)).
+    pub(crate) fn overlay_layout(&mut self, name: &str, _span: Span) -> OverlayInfo {
+        if let Some(o) = self.overlay_layout_memo.get(name) {
+            return o.clone();
+        }
+        let poison = |this: &mut Self, base: String| {
+            let o = OverlayInfo {
+                base_struct: base,
+                window_offset: 0,
+                window_size: 0,
+                fields: Vec::new(),
+                size: 0,
+                poisoned: true,
+            };
+            this.overlay_layout_memo.insert(name.to_string(), o.clone());
+            o
+        };
+        // Copy the `&'a VarsDecl` out so `self` is free to be mutated across the
+        // recursive resolve/size calls below (mirrors `layout_of_struct`).
+        let decl: &'a ast::VarsDecl = match self.overlays.get(name).copied() {
+            Some(d) => d,
+            None => {
+                debug_assert!(false, "overlay_layout called for unknown overlay `{name}`");
+                return poison(self, String::new());
+            }
+        };
+        // (1) Window resolution (D6.A1). The region path is either dotted
+        // `[Struct, window]` or bare `[window]`; >2 segments name the dotted form.
+        let (base_struct, window_field) = match decl.region.as_slice() {
+            [w] => match self.resolve_bare_window(w, decl.span) {
+                Some(pair) => pair,
+                None => return poison(self, String::new()),
+            },
+            [s, w] => (s.clone(), w.clone()),
+            _ => {
+                self.error(
+                    decl.span,
+                    format!(
+                        "[overlay.bad-window] overlay `{name}` window path `{}` has too many segments — use `Struct.window`",
+                        decl.region.join(".")
+                    ),
+                );
+                return poison(self, String::new());
+            }
+        };
+        // The named struct must exist.
+        if !self.structs.contains_key(base_struct.as_str()) {
+            self.error(
+                decl.span,
+                format!(
+                    "[overlay.unknown-window] overlay `{name}` targets unknown struct `{base_struct}`"
+                ),
+            );
+            return poison(self, base_struct);
+        }
+        let base_layout = self.layout_of_struct(&base_struct, decl.span);
+        let Some(window) = base_layout.fields.iter().find(|f| f.name == window_field).cloned() else {
+            self.error(
+                decl.span,
+                format!(
+                    "[overlay.unknown-window] overlay `{name}` window `{base_struct}.{window_field}` names no field of struct `{base_struct}`"
+                ),
+            );
+            return poison(self, base_struct);
+        };
+        // The window must be a `[u8; N]` byte array (D6.A1 v1 restriction) —
+        // UNSIGNED bytes exactly, so `[i8; N]` is rejected too.
+        let window_n = match &window.ty {
+            Ty::Array(elem, n) if matches!(**elem, Ty::Prim { width: 1, signed: false }) => {
+                *n as i128
+            }
+            _ => {
+                self.error(
+                    decl.span,
+                    format!(
+                        "[overlay.window-not-bytes] overlay `{name}` window `{base_struct}.{window_field}` is `{}` — overlay windows must be `[u8; N]` (v1)",
+                        window.ty.describe()
+                    ),
+                );
+                return poison(self, base_struct);
+            }
+        };
+        let window_offset = window.offset as i128;
+        // (3) Shadow check (D6.A7): an overlay field colliding with a DIRECT base
+        // field. Reported at the overlay decl; does not stop layout of the rest.
+        let mut shadowed = false;
+        for f in &decl.fields {
+            if base_layout.fields.iter().any(|bf| bf.name == f.name) {
+                self.error(
+                    f.span,
+                    format!(
+                        "[overlay.shadows-field] overlay `{name}` field `{}` shadows a direct field of struct `{base_struct}`",
+                        f.name
+                    ),
+                );
+                shadowed = true;
+            }
+        }
+        // (2) Field layout by struct rules: declaration order, no padding.
+        let mut offset: i128 = 0;
+        let mut fields: Vec<(String, i128, i128)> = Vec::with_capacity(decl.fields.len());
+        for f in &decl.fields {
+            let ty = self.resolve_type(&f.ty);
+            let size = self.size_of_ty(&ty, f.span) as i128;
+            // `[layout.odd-field]` (§4.3) applies to overlay word/long fields —
+            // keyed on the RUNTIME parity: the field's in-memory offset within
+            // the base struct is `window_offset + overlay-relative offset`, and
+            // an odd window base flips it. Keying on the relative offset alone
+            // would both false-warn (odd base + odd rel = even memory) and
+            // silently miss (odd base + even rel = odd memory).
+            let mem_offset = window_offset + offset;
+            if matches!(size, 2 | 4) && mem_offset % 2 == 1 {
+                self.warn(
+                    f.span,
+                    format!(
+                        "[layout.odd-field] overlay {name}: field {} ({}-byte) at odd offset {mem_offset} within `{base_struct}` (window base {window_offset} + {offset})",
+                        f.name, size
+                    ),
+                );
+            }
+            fields.push((f.name.clone(), offset, size));
+            offset += size;
+        }
+        let total = offset;
+        // (4) Capacity (D6.A2): total > window N is an error at the overlay decl.
+        if total > window_n {
+            self.error(
+                decl.span,
+                format!(
+                    "[overlay.window-overflow] overlay `{name}` is {total} bytes — exceeds `{base_struct}.{window_field}` window of {window_n} bytes (over by {})",
+                    total - window_n
+                ),
+            );
+            return poison(self, base_struct);
+        }
+        let info = OverlayInfo {
+            base_struct,
+            window_offset,
+            window_size: window_n,
+            fields,
+            size: total,
+            poisoned: shadowed,
+        };
+        self.overlay_layout_memo.insert(name.to_string(), info.clone());
+        info
+    }
+
+    /// Resolve a bare overlay window name `w` (D6.A1): scan in-scope structs for
+    /// a field named `w`. Zero hits → `[overlay.unknown-window]`; ≥2 →
+    /// `[overlay.ambiguous-window]` listing the candidates as `S.w` and
+    /// suggesting the dotted form; exactly one → resolve to `(struct, field)`.
+    /// Returns `None` (after reporting) on 0 / ≥2.
+    ///
+    /// Matching is by AST FIELD NAME regardless of the field's type — the
+    /// `[u8; N]` restriction is enforced uniformly in
+    /// [`overlay_layout`](Self::overlay_layout) (so a lone non-byte-array `w`
+    /// surfaces the precise `[overlay.window-not-bytes]` rather than a
+    /// misleading unknown-window).
+    ///
+    /// CRITICAL: the scan must NOT force `layout_of_struct` on the candidates —
+    /// forcing layout runs each struct's declaration checks
+    /// (size/offset/odd-field) as a side effect, so merely declaring a
+    /// bare-window overlay would switch on validation for every UNRELATED
+    /// in-scope struct, and the bare vs dotted spellings of the same overlay
+    /// would produce different module diagnostics. Only the single chosen base
+    /// struct is laid out, by [`overlay_layout`](Self::overlay_layout) — exactly
+    /// as the dotted path behaves.
+    fn resolve_bare_window(&mut self, w: &str, span: Span) -> Option<(String, String)> {
+        // Deterministic candidate order: struct decls in source order. `structs`
+        // is a HashMap, so sort by each struct's declaration span to keep the
+        // ambiguity message (and its fix-it) stable across runs.
+        let mut hits: Vec<(u32, String)> = self
+            .structs
+            .iter()
+            .filter(|(_, decl)| decl.fields.iter().any(|f| f.name == w))
+            .map(|(sname, decl)| (decl.span.start, sname.to_string()))
+            .collect();
+        hits.sort();
+        let hits: Vec<String> = hits.into_iter().map(|(_, s)| s).collect();
+        match hits.as_slice() {
+            [] => {
+                self.error(
+                    span,
+                    format!(
+                        "[overlay.unknown-window] no in-scope struct has a `[u8; N]` field named `{w}`"
+                    ),
+                );
+                None
+            }
+            [only] => Some((only.clone(), w.to_string())),
+            many => {
+                let candidates =
+                    many.iter().map(|s| format!("{s}.{w}")).collect::<Vec<_>>().join(", ");
+                self.error(
+                    span,
+                    format!(
+                        "[overlay.ambiguous-window] window `{w}` is ambiguous across {candidates} — qualify it as `Struct.{w}`"
+                    ),
+                );
+                None
+            }
+        }
     }
 
     /// D-P3.9 `(size: N)` verification: if `decl` declares an explicit size,
@@ -1136,6 +1380,10 @@ pub fn eval_data_captures(
 /// plan's cross-module resolution / the linker. Dup / reserved-`count`
 /// validation is NOT re-done here — it lives once-per-compile in
 /// `lower::validate_offsets`.
+///
+/// NOTE: [`eval_dispatch_with_root`] mirrors this function's shape (fresh env
+/// per member, `Path`/`Str`/eval target extraction, `<unresolved>` placeholder)
+/// — consider both when editing the target-extraction logic.
 pub fn eval_offsets_with_root(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
@@ -1205,6 +1453,126 @@ pub fn eval_offsets_with_root(
             buf.push(Cell::RelOffset { base: decl.name.clone(), target: name });
         }
         (Some(buf), ev.diags)
+    })
+}
+
+/// Lower a `dispatch Name (encoding: E) { Member: target, ... }` block's
+/// FORWARD emission (Spec 2, Plan 7 backlog #6, Part B — D6.B2) to a checked,
+/// CPU-neutral [`DataBuf`]. The sibling of [`eval_offsets_with_root`] for
+/// `dispatch` items; it REUSES the same [`Cell::RelOffset`] cell for the
+/// `word_offsets` encoding — each member emits a `dc.w member_target - Name`
+/// word whose `base` is the table's own label (`decl.name`) and whose `target`
+/// is the member's referenced symbol, folded at link time to a signed word
+/// (`RelWord16Be`). The base label (`decl.name`) is defined at the table's
+/// first byte by the caller ([`lower_dispatch_item`](crate::lower)), exactly
+/// as for `offsets`.
+///
+/// Both v1 encodings ship (D6.B2): `word_offsets` emits the `RelOffset` word
+/// above; `long_ptrs` emits a 4-byte ABSOLUTE pointer (`dc.l target`, Abs32)
+/// per member, reusing the same [`Cell::SymRef`] the struct-data label-pointer
+/// field emits. Target extraction, scale/indexing, base label, validation, and
+/// the kind check are all encoding-generic; only the cell shape differs.
+///
+/// Target-name extraction mirrors `eval_offsets_with_root` by SHAPE (a bare
+/// `Path` is a symbol name, a `Str` names it directly, anything else is
+/// evaluated and its `FnRef`/`Str` name taken). ADDITIONALLY, per D6.B4, a
+/// single-segment target that resolves MODULE-LOCALLY to a non-code item
+/// (`data`/`const`/`offsets`/`vars`/`dispatch`, recursing one section level
+/// via `index_items`) is `[dispatch.target-not-code]` — a dispatch table into
+/// data is the jump-to-garbage this construct exists to kill. A name that is
+/// unresolvable module-locally (a proc, or a cross-module `use`d target) is
+/// left to the linker (v1 does not kind-check cross-module; link fails loudly
+/// on a genuinely-undefined symbol). Dup / reserved-`count` validation lives
+/// once-per-compile in `lower::validate_dispatch`, not here.
+pub fn eval_dispatch_with_root(
+    file: &ast::File,
+    decl: &ast::DispatchDecl,
+    include_root: Option<&std::path::Path>,
+) -> (Option<DataBuf>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let mut buf = DataBuf::empty();
+        for member in &decl.members {
+            // Fresh env per member (parity with `eval_offsets_with_root`).
+            let mut env = Env::new();
+            let name = match &member.target {
+                ast::Expr::Path(p) => {
+                    if p.segments.len() == 1 {
+                        // D6.B4: module-local kind check. Only a POSITIVELY
+                        // non-code item is rejected; a bare name that is a proc
+                        // OR is unknown here is accepted and left to link.
+                        if let Some(kind) = ev.non_code_kind(&p.segments[0]) {
+                            ev.error(
+                                member.span,
+                                format!(
+                                    "[dispatch.target-not-code] dispatch `{}` member `{}` targets {kind} `{}` — a dispatch table must point at code",
+                                    decl.name, member.name, p.segments[0]
+                                ),
+                            );
+                            "<unresolved>".to_string()
+                        } else {
+                            p.segments.join(".")
+                        }
+                    } else {
+                        // Multi-segment (cross-module) target: kind-unchecked in
+                        // v1 (D6.B4 ledger note); joined `a.b` for the linker.
+                        p.segments.join(".")
+                    }
+                }
+                ast::Expr::Str(s, _) => s.clone(),
+                other => {
+                    let v = ev.eval_expr(other, &mut env);
+                    match v {
+                        Value::FnRef(n) => n,
+                        Value::Str(s) => s,
+                        _ => {
+                            ev.error(
+                                crate::parser::expr_span(other),
+                                format!(
+                                    "dispatch `{}` member `{}` must reference a label, got {}",
+                                    decl.name,
+                                    member.name,
+                                    v.type_name()
+                                ),
+                            );
+                            "<unresolved>".to_string()
+                        }
+                    }
+                }
+            };
+            // Target extraction above is encoding-generic; only the cell shape
+            // differs. `word_offsets` emits a self-relative signed word
+            // (`dc.w target - Name`, RelWord16Be) reusing the `offsets`
+            // machinery; `long_ptrs` emits a 4-byte ABSOLUTE pointer
+            // (`dc.l target`, Abs32) reusing the same `Cell::SymRef` the
+            // struct-data label-pointer field emits (`lower_ptr`, emit.rs).
+            match decl.encoding {
+                ast::DispatchEncoding::WordOffsets => {
+                    buf.push(Cell::RelOffset { base: decl.name.clone(), target: name });
+                }
+                ast::DispatchEncoding::LongPtrs => {
+                    buf.push(Cell::SymRef { name, width: 4, windowed: false });
+                }
+            }
+        }
+        (Some(buf), ev.diags)
+    })
+}
+
+/// Force the named SST overlay's layout so its always-on declaration checks
+/// (window resolution, capacity, shadow) fire whether or not anything accesses
+/// the overlay (Spec 2, Plan 7 #6 — D6.A2 "always-on"). Returns the diagnostics;
+/// the overlay itself emits ZERO bytes, so there is no buffer to return. The
+/// region form (`vars region { .. }`, `name: None`) is inert — the caller must
+/// not invoke this for it.
+pub fn validate_overlay(file: &ast::File, name: &str, span: Span) -> Vec<Diagnostic> {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.overlay_layout(name, span);
+        ev.diags
     })
 }
 

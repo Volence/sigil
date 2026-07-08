@@ -75,11 +75,16 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
         ast::Item::Data(d) if d.public => Some(d.name.clone()),
         ast::Item::Proc(p) if p.public => Some(p.name.clone()),
         ast::Item::Offsets(o) if o.public => Some(o.name.clone()),
+        ast::Item::Dispatch(d) if d.public => Some(d.name.clone()),
         ast::Item::Const(c) if c.public => Some(c.name.clone()),
         ast::Item::Struct(s) if s.public => Some(s.name.clone()),
         ast::Item::Enum(e) if e.public => Some(e.name.clone()),
         ast::Item::Bitfield(b) if b.public => Some(b.name.clone()),
         ast::Item::Newtype(n) if n.public => Some(n.name.clone()),
+        // `pub vars` OVERLAY form (`vars Name: window { .. }`, D6.A8): a named,
+        // exportable, comptime-only module item. The region form (`name: None`)
+        // has no name and is never exported.
+        ast::Item::Vars(v) if v.public => v.name.clone(),
         _ => None,
     }
 }
@@ -100,11 +105,19 @@ fn collect_defined(items: &[ast::Item], out: &mut Vec<String>) {
             ast::Item::Data(d) => out.push(d.name.clone()),
             ast::Item::Proc(p) => out.push(p.name.clone()),
             ast::Item::Offsets(o) => out.push(o.name.clone()),
+            ast::Item::Dispatch(d) => out.push(d.name.clone()),
             ast::Item::Const(c) => out.push(c.name.clone()),
             ast::Item::Struct(s) => out.push(s.name.clone()),
             ast::Item::Enum(e) => out.push(e.name.clone()),
             ast::Item::Bitfield(b) => out.push(b.name.clone()),
             ast::Item::Newtype(n) => out.push(n.name.clone()),
+            // Overlay-form `vars` (D6.A8): a named module item. Region form
+            // (`name: None`) defines no name.
+            ast::Item::Vars(v) => {
+                if let Some(name) = &v.name {
+                    out.push(name.clone());
+                }
+            }
             ast::Item::Section(sec) => collect_defined(&sec.items, out),
             _ => {}
         }
@@ -132,13 +145,11 @@ impl<'a> ResolveEnv<'a> {
 
         // Resolve explicit `use` imports into their OWN map first, so the
         // collision check is scoped to genuine EQUAL-precedence conflicts
-        // (use-vs-use) — not spurious use-shadows-prelude ones.
+        // (use-vs-use) — not spurious use-shadows-prelude ones. Recurses one
+        // level into `section {}` bodies so a section-nested `use` is honored
+        // too (sections do not nest further — Task 1 rejects that at parse time).
         let mut use_map: HashMap<String, String> = HashMap::new();
-        for item in &file.items {
-            if let ast::Item::Use(u) = item {
-                resolve_use(module_id, u, index, &mut use_map, &mut diags);
-            }
-        }
+        collect_uses(&file.items, module_id, index, &mut use_map, &mut diags);
 
         // Compose the final map in precedence order (later overlays win silently):
         //   prelude pub names (lowest) < explicit `use` < own definitions (highest).
@@ -178,6 +189,25 @@ impl<'a> ResolveEnv<'a> {
         match owners.as_slice() {
             [only] => Some(format!("add `use {only}.{{{name}}}`")),
             _ => None, // ambiguous or none → generic error, no single fix-it
+        }
+    }
+}
+
+/// Walk `items` calling `resolve_use` on every `Item::Use`, recursing one level
+/// into `section {}` bodies so a section-nested `use` is honored too (mirrors
+/// `collect_exported`/`collect_defined`'s recursion shape).
+fn collect_uses(
+    items: &[ast::Item],
+    module_id: &str,
+    index: &ExportIndex,
+    map: &mut HashMap<String, String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for item in items {
+        match item {
+            ast::Item::Use(u) => resolve_use(module_id, u, index, map, diags),
+            ast::Item::Section(sec) => collect_uses(&sec.items, module_id, index, map, diags),
+            _ => {}
         }
     }
 }

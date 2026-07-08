@@ -201,15 +201,20 @@ fn vars_region_and_overlay_forms() {
     let f = ok("module m\nvars upper_ram {\n    Player_Pos_Ring: [u8; 256] @align(256),\n}\n");
     let Item::Vars(v) = &f.items[0] else { panic!() };
     assert_eq!(v.name, None);
-    assert_eq!(v.region, "upper_ram");
+    assert_eq!(v.region, vec!["upper_ram".to_string()]);
     assert!(v.fields[0].align.is_some());
 
     // overlay form: `vars PitcherPlantV: sst_custom { timer: u8 }`
     let f = ok("module m\nvars PitcherPlantV: sst_custom { timer: u8 }\n");
     let Item::Vars(v) = &f.items[0] else { panic!() };
     assert_eq!(v.name.as_deref(), Some("PitcherPlantV"));
-    assert_eq!(v.region, "sst_custom");
+    assert_eq!(v.region, vec!["sst_custom".to_string()]);
     assert_eq!(v.fields[0].name, "timer");
+
+    // dotted window form: `vars X: Sst.sst_custom { timer: u8 }`
+    let f = ok("module m\nvars X: Sst.sst_custom { timer: u8 }\n");
+    let Item::Vars(v) = &f.items[0] else { panic!() };
+    assert_eq!(v.region, vec!["Sst".to_string(), "sst_custom".to_string()]);
 }
 
 #[test]
@@ -356,4 +361,60 @@ fn ensure_usable_as_ordinary_data_name() {
     let f = ok("module m\ndata ensure: [u8; 2] = [1, 2]\n");
     let Item::Data(d) = &f.items[0] else { panic!("expected a data item named `ensure`") };
     assert_eq!(d.name, "ensure");
+}
+
+#[test]
+fn nested_section_is_rejected() {
+    // A `section {}` nested inside another `section {}` has no ratified
+    // placement-within-placement meaning (locked decision) — and `lower_section_items`
+    // has no `Item::Section` arm, so it would silently drop everything inside
+    // (data bytes, guards, capacity checks). Reject it loudly at parse time instead.
+    let (_f, diags) = parse_str(
+        "module m\nsection outer {\n  section inner {\n    data d: [u8; 1] = [$FF]\n  }\n}\n",
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("[section.nested]")),
+        "want [section.nested], got: {diags:?}"
+    );
+}
+
+// ---- dispatch (D6.B1) ----------------------------------------------------
+
+#[test]
+fn dispatch_decl_parses() {
+    let f = ok("module m\ndispatch Routines (encoding: word_offsets) { Init: init, Wait: wait }\n");
+    let Item::Dispatch(d) = &f.items[0] else { panic!() };
+    assert_eq!(d.name, "Routines");
+    assert_eq!(d.encoding, DispatchEncoding::WordOffsets);
+    assert_eq!(d.members.len(), 2);
+    assert_eq!(d.members[0].name, "Init");
+}
+
+#[test]
+fn dispatch_decl_parses_long_ptrs() {
+    let f = ok("module m\ndispatch Routines (encoding: long_ptrs) { Init: init }\n");
+    let Item::Dispatch(d) = &f.items[0] else { panic!() };
+    assert_eq!(d.encoding, DispatchEncoding::LongPtrs);
+}
+
+#[test]
+fn pub_dispatch_parses() {
+    let f = ok("module m\npub dispatch Routines (encoding: word_offsets) { Init: init }\n");
+    let Item::Dispatch(d) = &f.items[0] else { panic!() };
+    assert!(d.public);
+}
+
+#[test]
+fn dispatch_requires_encoding() {
+    // No default encoding — research finding R1: enable encodings, impose none.
+    let (_f, diags) = parse_str("module m\ndispatch R { A: x }\n");
+    assert!(diags.iter().any(|d| d.message.contains("encoding")));
+    let (_f, diags) = parse_str("module m\ndispatch R (encoding: sideways) { A: x }\n");
+    assert!(diags.iter().any(|d| d.message.contains("word_offsets") && d.message.contains("long_ptrs")));
+}
+
+#[test]
+fn dispatch_reserves_inline_body_form() {
+    let (_f, diags) = parse_str("module m\ndispatch R (encoding: word_offsets) { A: { rts } }\n");
+    assert!(diags.iter().any(|d| d.message.contains("reserved")), "got: {diags:?}");
 }

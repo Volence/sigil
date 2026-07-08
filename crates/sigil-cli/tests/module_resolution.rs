@@ -523,6 +523,136 @@ fn cross_module_offsets_table_bytes_are_exact() {
 }
 
 #[test]
+fn cross_module_dispatch_table_bytes_are_exact() {
+    // A `word_offsets` dispatch table in the ENTRY module points at `pub proc`
+    // targets that live in ANOTHER module (D6.B4: targets resolve at link,
+    // cross-module included — the SAME machinery `offsets` targets ride).
+    // Prove the emitted `dc.w target - Name` words are byte-exact after
+    // cross-module linking.
+    //
+    //   LAYOUT ARITHMETIC (computed INDEPENDENTLY of read-back):
+    //     region `data` base = 0x20000  (from the map below)
+    //     entry `tab` packs first: `Routines` (dispatch, 2 members * 2 = 4 bytes)
+    //       Routines @ base + 0        (0x20000 .. 0x20004)
+    //     `procs` (reached via `use procs`) packs next, decl order init then wait:
+    //       init @ base + 4            (0x20004, `rts` = 4E 75)
+    //       wait @ base + 6            (0x20006, `rts` = 4E 75)
+    //     dispatch words are `dc.w target - Routines`, big-endian:
+    //       Init = addr(init) - addr(Routines) = 4 -> 0x00 0x04
+    //       Wait = addr(wait) - addr(Routines) = 6 -> 0x00 0x06
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"data\"\nlma_base = 0x20000\nsize = 0x20\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "procs.emp",
+        "module procs in data\npub proc init() { rts }\npub proc wait() { rts }\n",
+    );
+    write(
+        root,
+        "tab.emp",
+        "module tab in data\nuse procs.{init, wait}\npub dispatch Routines (encoding: word_offsets) {\n    Init: init,\n    Wait: wait,\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("tab.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    let base = 0x20000usize;
+    // dc.w (init - Routines), (wait - Routines) big-endian = 00 04 00 06.
+    assert_eq!(&bytes[base..base + 4], &[0x00, 0x04, 0x00, 0x06], "dispatch words");
+    // Pin the target bytes (rts = 4E 75) so a mis-packed layout can't satisfy
+    // the offset math by accident.
+    assert_eq!(&bytes[base + 4..base + 8], &[0x4E, 0x75, 0x4E, 0x75], "init/wait rts");
+}
+
+#[test]
+fn cross_module_long_ptrs_dispatch_table_bytes_are_exact() {
+    // Mirror of `cross_module_dispatch_table_bytes_are_exact` for the
+    // `long_ptrs` encoding: the entry module's dispatch table emits a 4-byte
+    // ABSOLUTE pointer (`dc.l target`, Abs32 fixup) per member at `use`d procs
+    // that live in ANOTHER module (D6.B4/B2: targets resolve at link,
+    // cross-module included).
+    //
+    //   LAYOUT ARITHMETIC (computed INDEPENDENTLY of read-back):
+    //     region `data` base = 0x20000  (from the map below)
+    //     entry `tab` packs first: `Routines` (dispatch, 2 members * 4 = 8 bytes)
+    //       Routines @ base + 0        (0x20000 .. 0x20008)
+    //     `procs` (reached via `use procs`) packs next, decl order init then wait:
+    //       init @ base + 8            (0x20008, `rts` = 4E 75)
+    //       wait @ base + 10           (0x2000A, `rts` = 4E 75)
+    //     dispatch longs are `dc.l target` = the ABSOLUTE address, big-endian:
+    //       Init = addr(init) = 0x00020008 -> 00 02 00 08
+    //       Wait = addr(wait) = 0x0002000A -> 00 02 00 0A
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"data\"\nlma_base = 0x20000\nsize = 0x20\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "procs.emp",
+        "module procs in data\npub proc init() { rts }\npub proc wait() { rts }\n",
+    );
+    write(
+        root,
+        "tab.emp",
+        "module tab in data\nuse procs.{init, wait}\npub dispatch Routines (encoding: long_ptrs) {\n    Init: init,\n    Wait: wait,\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("tab.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    let base = 0x20000usize;
+    // dc.l addr(init), addr(wait) big-endian = 00 02 00 08, 00 02 00 0A.
+    assert_eq!(
+        &bytes[base..base + 8],
+        &[0x00, 0x02, 0x00, 0x08, 0x00, 0x02, 0x00, 0x0A],
+        "dispatch longs"
+    );
+    // Pin the target bytes (rts = 4E 75) so a mis-packed layout can't satisfy
+    // the address math by accident.
+    assert_eq!(&bytes[base + 8..base + 12], &[0x4E, 0x75, 0x4E, 0x75], "init/wait rts");
+}
+
+#[test]
 fn three_module_corpus_compiles_end_to_end() {
     // DELIVERABLE 2: the headline #4 mechanisms compose in one image.
     //   prelude.emp  -> `pub struct ObjDef` auto-imported everywhere (no `use`)
@@ -1121,5 +1251,271 @@ fn whole_module_use_warns_it_imports_nothing() {
     assert!(
         stderr.contains("whole-module `use other`") && stderr.contains("imports no names"),
         "expected a whole-module-use warning, stderr: {stderr}"
+    );
+}
+
+// ---- Plan 7 #6 audit fix: section-nested pub comptime defs never injected
+// cross-module (ambient_items + use Glob/List injection) --------------------
+
+#[test]
+fn section_nested_prelude_const_is_injected_cross_module() {
+    // `ambient_items`'s prelude branch iterated `p.file.items` flat, so a `pub
+    // const` nested in a `section {}` in the prelude was exported (Task 0.5 fixed
+    // the export collectors) but never PREPENDED as an ambient item — the
+    // consumer's data item saw `unknown name MAGIC`. Must now build.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "prelude.emp",
+        "module prelude\nsection s {\n  pub const MAGIC: u8 = $42\n}\n",
+    );
+    write(root, "game.emp", "module game\npub data D: [u8;1] = [MAGIC]\n");
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--prelude",
+            "prelude",
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested prelude const must be injected cross-module, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x42], "MAGIC resolves to the section-nested prelude const");
+}
+
+#[test]
+fn section_nested_use_struct_is_injected_cross_module() {
+    // Twin of the prelude case for the `use` Glob/List injection branch (~:72-89):
+    // a `pub struct` nested in a `section {}` in a `use`d module is exported but
+    // never injected as an ambient item, so the consumer's struct literal saw
+    // `unknown type: Pt`. Must now build with the struct's fields laid out.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\nsection s {\n  pub struct Pt (size: 2) { x: u8, y: u8 }\n}\n",
+    );
+    write(
+        root,
+        "game.emp",
+        "module game\nuse lib.{Pt}\npub data p = Pt{ x: 1, y: 2 }\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested use'd struct type must be injected cross-module, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x01, 0x02], "Pt{{x:1,y:2}} lays out as two bytes");
+}
+
+// ---- Plan 7 #6 audit fix: `use` nested in section{} silently ignored ------
+
+#[test]
+fn section_nested_use_of_const_is_honored() {
+    // `reachable_modules` BFS, `ResolveEnv::build`, AND `ambient_items` all scan
+    // `Item::Use` flat over `file.items` — a `use` nested in a `section {}` is
+    // invisible to all three, so `helper` is never even discovered as reachable
+    // and `Helper` is "unresolved... add use helper.{Helper}" even though that
+    // exact line is already present, just section-nested. Must now build.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "helper.emp", "module helper\npub const Helper: u8 = 7\n");
+    write(
+        root,
+        "game.emp",
+        "module game\nsection s {\n  use helper.{Helper}\n  data d: [u8;1] = [Helper]\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested use must be honored, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x07], "Helper resolves via the section-nested use");
+}
+
+#[test]
+fn section_nested_use_of_proc_resolves_via_rename_map() {
+    // Twin of the const case, but the section-nested `use`d name is a PROC
+    // referenced by `jmp` — exercises `ResolveEnv::build`'s rename map (not just
+    // `ambient_items`' comptime injection), and `reachable_modules`' BFS (helper
+    // is only discovered because the section-nested `use` names it).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "helper.emp",
+        "module helper\npub proc Helper (a0: *u8) {\n    rts\n}\n",
+    );
+    write(
+        root,
+        "game.emp",
+        "module game\nsection s {\n  use helper.{Helper}\n  proc go (a0: *u8) {\n    jmp Helper\n  }\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested use of a proc must resolve via the rename map, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // Sequential pack, discovery order game then helper: go @ 0 is `jmp Helper`,
+    // Helper @ 6 (jmp reserves a 6-byte span) is `rts`. jmp relaxes to abs.w
+    // (target 6 ≤ 0x7FFF, 4 bytes), leaving a 2-byte gap — same shape as
+    // `two_modules_cross_reference_and_link`.
+    assert_eq!(bytes.len(), 8, "sequential pack: go span 6 + Helper span 2");
+    assert_eq!(&bytes[0..4], &[0x4E, 0xF8, 0x00, 0x06], "jmp Helper -> helper @ LMA 6");
+    assert_eq!(&bytes[6..8], &[0x4E, 0x75], "helper.Helper rts at LMA 6");
+}
+
+/// A pitcher-plant-shaped SST struct with a `sst_custom` byte-array window at
+/// `$2E` (34 bytes), spelled with explicit `reserved` padding so every `@offset`
+/// matches the packed layout (this codebase's `@offset` is an ASSERTION over the
+/// dense layout, not a placement with gaps). Reused by the cross-module overlay
+/// tests below.
+const SST_LIB: &str = "struct Sst (size: $50) {\n    \
+    id: u16,\n    \
+    _pad0: [u8; 14] @ $2,\n    \
+    x_pos: u16 @ $10,\n    \
+    _pad1: [u8; 8] @ $12,\n    \
+    y_vel: u16 @ $1A,\n    \
+    _pad2: [u8; 18] @ $1C,\n    \
+    sst_custom: [u8; 34] @ $2E,\n\
+}\n";
+
+#[test]
+fn cross_module_pub_overlay_bare_field_access() {
+    // D6.A8: a `pub vars` overlay is an ordinary module item shared by `use`. The
+    // lib exports the base struct AND the overlay; the consumer `use`s both and
+    // gets BARE field access on a `*Sst`-typed register: `timer(a0)` lowers to
+    // `$2E(a0)`-class bytes. The entry (consumer) is discovered first and packs
+    // from 0, so its proc is the whole image: subq.b #1,(d16,a0)=5328, ext 002E,
+    // rts=4E75. The lib emits ZERO bytes (struct + overlay are both comptime).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        &format!("module lib\npub {SST_LIB}pub vars V: sst_custom {{ timer: u8 }}\n"),
+    );
+    write(
+        root,
+        "consumer.emp",
+        "module consumer\nuse lib.{Sst, V}\n\
+         proc p (a0: *Sst) {\n    subq.b #1, timer(a0)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("consumer.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module overlay build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x53, 0x28, 0x00, 0x2E, 0x4E, 0x75],
+        "subq.b #1, timer(a0) with a cross-module pub overlay"
+    );
+}
+
+#[test]
+fn cross_module_pub_overlay_qualified_field_access() {
+    // D6.A4 + D6.A8: the qualified form `V.timer(a1)` works cross-module on an
+    // UNTYPED register (the qualification is the type assertion). tst.b (d16,a1)
+    // = 4A29, ext 002E, rts.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        &format!("module lib\npub {SST_LIB}pub vars V: sst_custom {{ timer: u8 }}\n"),
+    );
+    write(
+        root,
+        "consumer.emp",
+        "module consumer\nuse lib.{Sst, V}\n\
+         proc p () {\n    tst.b V.timer(a1)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("consumer.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module qualified overlay build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x29, 0x00, 0x2E, 0x4E, 0x75],
+        "tst.b V.timer(a1) with a cross-module pub overlay"
     );
 }

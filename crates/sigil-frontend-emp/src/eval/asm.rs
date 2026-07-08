@@ -147,7 +147,7 @@ impl Evaluator<'_> {
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
         let mut ops = Vec::with_capacity(instr.operands.len());
         for op in &instr.operands {
-            ops.push(self.map_operand(op, scope, env)?);
+            ops.push(self.map_operand(op, scope, env, size)?);
         }
         Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span })
     }
@@ -220,6 +220,7 @@ impl Evaluator<'_> {
         op: &Operand,
         scope: &LabelScope,
         env: &mut Env,
+        width: Option<Width>,
     ) -> Option<CodeOperand> {
         match op {
             Operand::Imm(e) => {
@@ -252,6 +253,45 @@ impl Evaluator<'_> {
                 Some(CodeOperand::PostInc(r))
             }
             Operand::DispInd { disp, inner, span } => {
+                // D6.A3: a BARE single-segment displacement `f(aN)` on a register
+                // whose declared param type bottoms out at `*S` resolves ONLY in
+                // FIELD SPACE (S's direct fields ∪ in-scope overlays over S) — a
+                // field name lowers to its byte offset, and a const never silently
+                // shadows it. Peek the register WITHOUT reporting (a bad register
+                // is diagnosed on the shared path below, preserving today's
+                // diagnostics); only the field-space case diverges.
+                if let Some(field) = single_segment_field(disp) {
+                    if let Some(reg) = self.peek_inner_reg(inner) {
+                        if let Some(base) = self.reg_pointee_struct.get(&reg).cloned() {
+                            let (d, size) =
+                                self.resolve_field_disp(&base, field, expr_span(disp))?;
+                            // Overrun is diagnosed but the operand is emitted anyway
+                            // (deliberate error-recovery): the displacement is valid,
+                            // so downstream passes still see a well-formed operand.
+                            self.check_field_overrun(field, size, width, *span);
+                            return Some(CodeOperand::DispInd { disp: d, reg });
+                        }
+                    }
+                }
+                // D6.A4: a QUALIFIED two-segment displacement `Qual.field(aN)`
+                // resolves in field space on ANY address register (the
+                // qualification is the type assertion). If `Qual` names an overlay
+                // or struct → field-space resolution; otherwise (e.g. an `offsets`
+                // ordinal `T.B`) fall through to comptime eval unchanged.
+                if let Some((qual, field)) = two_segment_field(disp) {
+                    if self.overlays.contains_key(qual) || self.structs.contains_key(qual) {
+                        if let Some(reg) = self.peek_inner_reg(inner) {
+                            let (d, size) =
+                                self.resolve_qualified_field(qual, field, expr_span(disp))?;
+                            // Same deliberate error-recovery as the bare form.
+                            self.check_field_overrun(field, size, width, *span);
+                            return Some(CodeOperand::DispInd { disp: d, reg });
+                        }
+                    }
+                }
+                // All other shapes (multi-segment paths, non-path exprs, untyped
+                // register) keep today's semantics: comptime-eval the disp, then
+                // resolve the register — byte-for-byte unchanged.
                 let dv = self.eval_expr(disp, env);
                 if matches!(dv, Value::Poison) {
                     return None;
@@ -270,6 +310,192 @@ impl Evaluator<'_> {
                 let v = self.eval_expr(e, env);
                 self.classify_operand_splice(v, expr_span(e))
             }
+        }
+    }
+
+    /// Peek the base register of a `(aN)` inner operand WITHOUT emitting any
+    /// diagnostic (D6.A3). Only a one-part register-indirect `(aN)` yields a
+    /// register; anything else (indexed/absolute, a non-register base) yields
+    /// `None` and the shared displacement path below re-derives it, reporting as
+    /// today. This peek is SYNTACTIC only: it matches a LITERAL register spelling
+    /// (`a0`) in the AST and never evaluates — an evaluated or aliased base (e.g.
+    /// a `{splice}` or a const naming a register) yields `None` here and falls
+    /// through to the shared [`inner_ind_reg`](Self::inner_ind_reg) path.
+    fn peek_inner_reg(&self, inner: &Operand) -> Option<Reg> {
+        let Operand::Ind { parts, .. } = inner else { return None };
+        if parts.len() != 1 {
+            return None;
+        }
+        if let ast::Expr::Path(p) = &parts[0].0 {
+            if p.segments.len() == 1 {
+                return reg_from_name(&p.segments[0]);
+            }
+        }
+        None
+    }
+
+    /// Resolve a bare field name against struct `base`'s FIELD SPACE (D6.A3):
+    /// `base`'s direct fields ∪ the fields of every in-scope overlay whose
+    /// `base_struct` is `base`. Returns `(displacement, field-byte-size)` where
+    /// the displacement is the direct field's struct offset or `window_offset +
+    /// overlay-relative offset`. Zero hits → `[operand.unknown-field]` (NO const
+    /// fallback on a typed register); ≥2 hits across distinct overlays →
+    /// `[operand.ambiguous-field]` listing the qualified candidates.
+    fn resolve_field_disp(
+        &mut self,
+        base: &str,
+        field: &str,
+        span: Span,
+    ) -> Option<(i128, i128)> {
+        // Direct field first (a direct field can never be shadowed by an overlay:
+        // `[overlay.shadows-field]` rejects that at the overlay decl, D6.A7).
+        if let Some(hit) = self.field_in_struct(base, field, span) {
+            return Some(hit);
+        }
+        // Overlay fields: scan every in-scope overlay whose window belongs to
+        // `base`. Collect qualified hits so an ambiguity can name them. The
+        // overlay index is a HashMap; sort candidate names for a stable message.
+        let mut overlay_names: Vec<String> = self.overlays.keys().map(|s| s.to_string()).collect();
+        overlay_names.sort();
+        let mut hits: Vec<(String, i128, i128)> = Vec::new();
+        for oname in overlay_names {
+            // Only overlays whose window belongs to `base` are candidates for the
+            // bare form (the overlay-qualified form skips this base filter).
+            if self.overlay_layout(&oname, span).base_struct != base {
+                continue;
+            }
+            if let Some((disp, size)) = self.field_in_overlay(&oname, field, span) {
+                hits.push((oname, disp, size));
+            }
+        }
+        match hits.as_slice() {
+            [] => {
+                self.error(
+                    span,
+                    format!(
+                        "[operand.unknown-field] `*{base}` has no field or in-scope overlay field `{field}`"
+                    ),
+                );
+                None
+            }
+            [(_, disp, size)] => Some((*disp, *size)),
+            many => {
+                let candidates = many
+                    .iter()
+                    .map(|(o, _, _)| format!("{o}.{field}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.error(
+                    span,
+                    format!(
+                        "[operand.ambiguous-field] field `{field}` is ambiguous across {candidates} — qualify it as `Overlay.{field}`"
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    /// Look up a DIRECT field of struct `base` by name, returning `(struct
+    /// offset, field-byte-size)` if present. Shared by the bare field-space scan
+    /// (D6.A3) and the struct-qualified form (D6.A4).
+    fn field_in_struct(&mut self, base: &str, field: &str, span: Span) -> Option<(i128, i128)> {
+        let layout = self.layout_of_struct(base, span);
+        layout
+            .fields
+            .iter()
+            .find(|f| f.name == field)
+            .map(|f| (f.offset as i128, f.size as i128))
+    }
+
+    /// Look up a field of the indexed overlay named `overlay` by name, returning
+    /// `(window_offset + overlay-relative offset, field-byte-size)` if present. A
+    /// poisoned overlay layout yields `None`. Shared by the bare scan (via a
+    /// window-match filter, D6.A3) and the overlay-qualified form (D6.A4).
+    fn field_in_overlay(
+        &mut self,
+        overlay: &str,
+        field: &str,
+        span: Span,
+    ) -> Option<(i128, i128)> {
+        let info = self.overlay_layout(overlay, span);
+        if info.poisoned {
+            return None;
+        }
+        info.fields
+            .iter()
+            .find(|(n, _, _)| n == field)
+            .map(|(_, rel, size)| (info.window_offset + rel, *size))
+    }
+
+    /// D6.A4 — QUALIFIED field access `Qual.field(aN)`: a two-segment
+    /// displacement path resolves in field space explicitly and is legal on ANY
+    /// address register (the qualification IS the type assertion). If `qual`
+    /// names an indexed overlay → resolve `field` among ITS fields; else if it
+    /// names a struct → resolve `field` among its DIRECT fields; ELSE → `None`
+    /// (caller falls through to today's comptime eval, so an `offsets`/const
+    /// first segment keeps its ordinal meaning). A recognized qualifier with an
+    /// unknown field is `[operand.unknown-field]` naming the qualifier.
+    fn resolve_qualified_field(
+        &mut self,
+        qual: &str,
+        field: &str,
+        span: Span,
+    ) -> Option<(i128, i128)> {
+        if self.overlays.contains_key(qual) {
+            if let Some(hit) = self.field_in_overlay(qual, field, span) {
+                return Some(hit);
+            }
+            self.error(
+                span,
+                format!("[operand.unknown-field] overlay `{qual}` has no field `{field}`"),
+            );
+            return None;
+        }
+        if self.structs.contains_key(qual) {
+            if let Some(hit) = self.field_in_struct(qual, field, span) {
+                return Some(hit);
+            }
+            self.error(
+                span,
+                format!("[operand.unknown-field] struct `{qual}` has no field `{field}`"),
+            );
+            return None;
+        }
+        None
+    }
+
+    /// D6.A6: an access WIDER than the resolved field crosses a named boundary →
+    /// `[operand.field-overrun]`. Narrower or equal is legal (the big-endian
+    /// high-byte idiom), no lint. An unsized instruction (no `.b/.w/.l`) carries
+    /// no access width here, so the check is skipped — the width is decided later
+    /// by the encoder and the field boundary cannot be judged at this seam.
+    fn check_field_overrun(
+        &mut self,
+        field: &str,
+        field_size: i128,
+        width: Option<Width>,
+        span: Span,
+    ) {
+        let access = match width {
+            Some(Width::B) => 1,
+            Some(Width::W) => 2,
+            Some(Width::L) => 4,
+            // `.s` is a branch-displacement size, never an operand access width;
+            // and no-suffix means "decided later" — skip in both cases.
+            Some(Width::S) | None => return,
+        };
+        if access > field_size {
+            // `width` is `Some(_)` here: the `None`/`.s` arms above already
+            // returned, so match it out rather than `unwrap()`.
+            let Some(w) = width else { return };
+            self.error(
+                span,
+                format!(
+                    "[operand.field-overrun] .{w} access reads {access} bytes but field `{field}` is {field_size} byte{}",
+                    if field_size == 1 { "" } else { "s" },
+                ),
+            );
         }
     }
 
@@ -403,26 +629,39 @@ fn width_from_text(t: &str) -> Option<Width> {
 }
 
 /// A register name (`d0`..`d7`, `a0`..`a7`) to its [`Reg`], else `None`.
+/// Thin alias for [`Reg::from_name`] (the canonical map), kept for the local
+/// call sites' brevity.
 fn reg_from_name(name: &str) -> Option<Reg> {
-    Some(match name {
-        "d0" => Reg::D0,
-        "d1" => Reg::D1,
-        "d2" => Reg::D2,
-        "d3" => Reg::D3,
-        "d4" => Reg::D4,
-        "d5" => Reg::D5,
-        "d6" => Reg::D6,
-        "d7" => Reg::D7,
-        "a0" => Reg::A0,
-        "a1" => Reg::A1,
-        "a2" => Reg::A2,
-        "a3" => Reg::A3,
-        "a4" => Reg::A4,
-        "a5" => Reg::A5,
-        "a6" => Reg::A6,
-        "a7" => Reg::A7,
-        _ => return None,
-    })
+    Reg::from_name(name)
+}
+
+/// The single bare identifier of a displacement expression, if it is exactly a
+/// one-segment [`ast::Expr::Path`] (D6.A3/A5). A multi-segment path, a literal,
+/// arithmetic, or a call yields `None` — those keep today's comptime-eval
+/// semantics (field names participate only as the ENTIRE displacement).
+/// A path segment that spells a register (`a0`) is NOT a field name; excluding
+/// it keeps `a0(a0)` on the comptime path where it errors as today.
+fn single_segment_field(disp: &ast::Expr) -> Option<&str> {
+    if let ast::Expr::Path(p) = disp {
+        if p.segments.len() == 1 && reg_from_name(&p.segments[0]).is_none() {
+            return Some(&p.segments[0]);
+        }
+    }
+    None
+}
+
+/// The `(qualifier, field)` of a displacement expression that is exactly a
+/// TWO-segment [`ast::Expr::Path`] (`Qual.field`, D6.A4). A path of any other
+/// arity yields `None`. The caller decides whether `qualifier` names an overlay
+/// or struct (field space) or falls through to comptime eval (`offsets` ordinal,
+/// dotted const, …) — this helper only splits the two segments.
+fn two_segment_field(disp: &ast::Expr) -> Option<(&str, &str)> {
+    if let ast::Expr::Path(p) = disp {
+        if p.segments.len() == 2 {
+            return Some((&p.segments[0], &p.segments[1]));
+        }
+    }
+    None
 }
 
 /// The span of an operand, for diagnostics on the inner-operand paths.

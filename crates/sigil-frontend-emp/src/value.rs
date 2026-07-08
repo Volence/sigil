@@ -342,7 +342,7 @@ pub enum Cc {
 
 /// A comptime register class (§6.2), emp-side. The 68k data (`D0`..`D7`) and
 /// address (`A0`..`A7`) register files.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Reg {
     /// Data register `d0`.
     D0,
@@ -376,6 +376,33 @@ pub enum Reg {
     A6,
     /// Address register `a7` (stack pointer).
     A7,
+}
+
+impl Reg {
+    /// Parse a register name (`d0`..`d7`, `a0`..`a7`) to its [`Reg`], else
+    /// `None`. The canonical spelling→register map, shared by the operand mapper
+    /// and the proc-param binding (D6.A3); it is the inverse of [`Display`].
+    pub fn from_name(name: &str) -> Option<Reg> {
+        Some(match name {
+            "d0" => Reg::D0,
+            "d1" => Reg::D1,
+            "d2" => Reg::D2,
+            "d3" => Reg::D3,
+            "d4" => Reg::D4,
+            "d5" => Reg::D5,
+            "d6" => Reg::D6,
+            "d7" => Reg::D7,
+            "a0" => Reg::A0,
+            "a1" => Reg::A1,
+            "a2" => Reg::A2,
+            "a3" => Reg::A3,
+            "a4" => Reg::A4,
+            "a5" => Reg::A5,
+            "a6" => Reg::A6,
+            "a7" => Reg::A7,
+            _ => return None,
+        })
+    }
 }
 
 impl CodeBuf {

@@ -27,14 +27,42 @@ fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
         ast::Item::Bitfield(d) if d.public => Some(&d.name),
         ast::Item::Newtype(d) if d.public => Some(&d.name),
         ast::Item::ComptimeFn(d) if d.public => Some(&d.name),
+        // `pub vars` OVERLAY form (`vars Name: window { .. }`, D6.A8): overlays
+        // are ordinary module items shared by `use`, so a consumer that imports
+        // the overlay (and its base struct) gets qualified/bare field access. The
+        // overlay emits ZERO bytes when lowered — only always-on decl checks fire
+        // — so it is safe to inject like a struct. The REGION form (`name: None`)
+        // is not a comptime item and is never injected.
+        ast::Item::Vars(d) if d.public && d.name.is_some() => d.name.as_deref(),
         _ => None,
+    }
+}
+
+/// Collect the pub comptime-only items directly in `items` AND one level inside
+/// any `section {}` body (sections do not nest further — Task 1 rejects that at
+/// parse time — so a single level of recursion is exhaustive), matching `pred`.
+/// Mirrors `imports::collect_exported`/`collect_defined`'s recursion shape.
+fn collect_pub_comptime(
+    items: &[ast::Item],
+    pred: &impl Fn(&str) -> bool,
+    out: &mut Vec<ast::Item>,
+) {
+    for item in items {
+        if pub_comptime_name(item).is_some_and(pred) {
+            out.push(item.clone());
+        }
+        if let ast::Item::Section(sec) = item {
+            collect_pub_comptime(&sec.items, pred, out);
+        }
     }
 }
 
 /// Collect the pub comptime-only items (const/struct/enum/bitfield/newtype/comptime fn)
 /// that `module` should see from the prelude and from the modules it `use`s. These are
 /// PREPENDED to the module's items so the evaluator resolves cross-module types/consts,
-/// without emitting any bytes (lower_module skips these item kinds).
+/// without emitting any bytes (lower_module skips these item kinds). Recurses one level
+/// into `section {}` bodies (see `collect_pub_comptime`) so a section-nested `pub const`/
+/// `pub struct`/etc. is injected too, not just exported.
 fn ambient_items(
     module: &ParsedModule,
     prelude: Option<&ParsedModule>,
@@ -45,52 +73,52 @@ fn ambient_items(
     // Prelude first (own items, added in Part B, shadow these via last-wins).
     if let Some(p) = prelude {
         if p.id != module.id {
-            out.extend(
-                p.file
-                    .items
-                    .iter()
-                    .filter(|it| pub_comptime_name(it).is_some())
-                    .cloned(),
-            );
+            collect_pub_comptime(&p.file.items, &|_| true, &mut out);
         }
     }
 
     // Then `use`-imported pub comptime-only items (these shadow prelude, matching
     // the prelude<use precedence; own items shadow both via Part B ordering).
-    for item in &module.file.items {
-        let ast::Item::Use(u) = item else { continue };
-        let base = u.base.segments.join(".");
-        let Some(&bi) = manifest.by_id.get(&base) else {
-            continue;
-        };
-        let base_mod = &manifest.modules[bi];
-        if base_mod.id == module.id {
-            continue; // never inject a module's own items.
-        }
-        match &u.names {
-            ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
-            ast::UseNames::Glob => out.extend(
-                base_mod
-                    .file
-                    .items
-                    .iter()
-                    .filter(|it| pub_comptime_name(it).is_some())
-                    .cloned(),
-            ),
-            ast::UseNames::List(names) => out.extend(
-                base_mod
-                    .file
-                    .items
-                    .iter()
-                    .filter(|it| {
-                        pub_comptime_name(it).is_some_and(|n| names.iter().any(|w| w == n))
-                    })
-                    .cloned(),
-            ),
-        }
-    }
+    // Recurses one level into `section {}` bodies so a section-nested `use` is
+    // honored too, not just top-level ones.
+    ambient_from_uses(&module.file.items, module, manifest, &mut out);
 
     out
+}
+
+fn ambient_from_uses(
+    items: &[ast::Item],
+    module: &ParsedModule,
+    manifest: &Manifest,
+    out: &mut Vec<ast::Item>,
+) {
+    for item in items {
+        match item {
+            ast::Item::Use(u) => {
+                let base = u.base.segments.join(".");
+                let Some(&bi) = manifest.by_id.get(&base) else {
+                    continue;
+                };
+                let base_mod = &manifest.modules[bi];
+                if base_mod.id == module.id {
+                    continue; // never inject a module's own items.
+                }
+                match &u.names {
+                    ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
+                    ast::UseNames::Glob => {
+                        collect_pub_comptime(&base_mod.file.items, &|_| true, out)
+                    }
+                    ast::UseNames::List(names) => collect_pub_comptime(
+                        &base_mod.file.items,
+                        &|n| names.iter().any(|w| w == n),
+                        out,
+                    ),
+                }
+            }
+            ast::Item::Section(sec) => ambient_from_uses(&sec.items, module, manifest, out),
+            _ => {}
+        }
+    }
 }
 
 /// Compile the whole reachable module program rooted at `entry_id` into one flat
@@ -300,14 +328,31 @@ fn reachable_modules(
             }
         };
         order.push(idx);
-        for item in &manifest.modules[idx].file.items {
-            if let ast::Item::Use(u) = item {
-                let target = u.base.segments.join(".");
-                enqueue(&mut queue, &mut seen, target, u.span);
-            }
-        }
+        enqueue_uses(&manifest.modules[idx].file.items, &mut queue, &mut seen, &enqueue);
     }
     order
+}
+
+/// Enqueue the BFS target of every `Item::Use` in `items`, recursing one level
+/// into `section {}` bodies (sections do not nest further — Task 1 rejects that
+/// at parse time) so a section-nested `use` is discovered too, not just
+/// top-level ones.
+fn enqueue_uses(
+    items: &[ast::Item],
+    queue: &mut VecDeque<(String, Span)>,
+    seen: &mut HashSet<String>,
+    enqueue: &impl Fn(&mut VecDeque<(String, Span)>, &mut HashSet<String>, String, Span),
+) {
+    for item in items {
+        match item {
+            ast::Item::Use(u) => {
+                let target = u.base.segments.join(".");
+                enqueue(queue, seen, target, u.span);
+            }
+            ast::Item::Section(sec) => enqueue_uses(&sec.items, queue, seen, enqueue),
+            _ => {}
+        }
+    }
 }
 
 /// For every fixup target symbol in `module`, emit an error diagnostic if it is

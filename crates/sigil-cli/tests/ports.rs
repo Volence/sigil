@@ -495,3 +495,138 @@ fn example_guards_compiles() {
         vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x00, 0x01, 0x02, 0x10, 0x20, 0x30, 0x40]
     );
 }
+
+/// Plan 7 #6 Part A — the documented `examples/sst_overlay.emp` (SST overlay +
+/// field-access-as-displacement, D6.A) compiles end-to-end with zero errors.
+/// This is the compiles-today counterpart to the still-blocked
+/// `examples/pitcher_plant.emp`; `emp_candidate` already asserts no Error-level
+/// parse/lower diagnostics, so a clean run here proves the whole exhibit lowers.
+///
+/// Bytes hand-derived from the struct/overlay layout (mirrors
+/// crates/sigil-frontend-emp/tests/overlay.rs's `SST` const: `Sst` is $50 bytes,
+/// `x_pos` at $10, `y_vel` at $1A, `sst_custom` (34 bytes) at $2E) and standard
+/// 68000 opcode encodings already proven byte-exact in that file:
+///   proc tick (a0: *Sst):
+///     subq.b  #1, timer(a0)   -> timer is PlantV's first overlay field, overlay-
+///                                 relative 0, so in-memory offset = window $2E.
+///                                 SUBQ.B #1,(d16,A0) = 0x5328, ext $002E.
+///     move.w  x_pos(a0), d0   -> x_pos is a DIRECT struct field at $10.
+///                                 MOVE.W (d16,A0),D0 = 0x3028, ext $0010.
+///     move.w  y_vel(a0), d1   -> y_vel is a DIRECT struct field at $1A, dest D1.
+///                                 MOVE.W (d16,A0),D1 = 0x3228, ext $001A.
+///     move.b  charge(a0), d2  -> charge follows timer (u8) in the overlay, so its
+///                                 overlay-relative offset is 1 -> in-memory $2F.
+///                                 Reading 1 of its 2 bytes is legal (narrower than
+///                                 field). MOVE.B (d16,A0),D2 = 0x1428, ext $002F.
+///     rts                     -> 0x4E75.
+///   proc peek ():
+///     tst.b   PlantV.timer(a1) -> qualified access on an UNTYPED a1, same $2E
+///                                 in-memory offset as the bare form above.
+///                                 TST.B (d16,A1) = 0x4A29, ext $002E.
+///     rts                     -> 0x4E75.
+#[test]
+fn example_sst_overlay_compiles() {
+    let src = include_str!("../../../examples/sst_overlay.emp");
+    let bytes = emp_candidate(src);
+    assert_eq!(
+        bytes,
+        vec![
+            0x53, 0x28, 0x00, 0x2E, // subq.b #1, timer(a0)   == $2E(a0)
+            0x30, 0x28, 0x00, 0x10, // move.w x_pos(a0), d0   == $10(a0)
+            0x32, 0x28, 0x00, 0x1A, // move.w y_vel(a0), d1   == $1A(a0)
+            0x14, 0x28, 0x00, 0x2F, // move.b charge(a0), d2  == $2F(a0)
+            0x4E, 0x75, // rts
+            0x4A, 0x29, 0x00, 0x2E, // tst.b PlantV.timer(a1) == $2E(a1)
+            0x4E, 0x75, // rts
+        ]
+    );
+}
+
+/// `examples/dispatch.emp` — Spec 2, Plan 7 backlog #6, Part B (D6.B) worked
+/// exhibit: the SAME three procs (`Init`/`Wait`/`Shoot`) dispatched through
+/// BOTH shipped encodings, `word_offsets` then `long_ptrs`, each followed by a
+/// routine-byte-idiom `data` item consuming a pre-scaled ordinal. Declaration
+/// order is tables-then-procs (both tables before any proc), so every
+/// `word_offsets` delta is a small POSITIVE forward offset — the idiomatic
+/// S3K spelling — and every `long_ptrs` entry is a forward absolute pointer.
+///
+/// Layout (origin 0, harness flattens at `0x00`):
+///   Routines (word_offsets, 3 members × 2 bytes)   @ $00, 6 bytes
+///   initial_routine: [u8;1] = [Routines.Init]      @ $06, 1 byte
+///   wait_routine:     [u8;1] = [Routines.Wait]      @ $07, 1 byte
+///   PtrRoutines (long_ptrs, 3 members × 4 bytes)    @ $08, 12 bytes
+///   ptr_wait_routine: [u8;1] = [PtrRoutines.Wait]   @ $14, 1 byte
+///   proc Init  (moveq #0,d0 ; rts)                  @ $15, 4 bytes
+///   proc Wait  (move.w #64,d1 ; rts)                @ $19, 6 bytes
+///   proc Shoot (moveq #1,d0 ; rts)                  @ $1F, 4 bytes
+///   total: $23 (35) bytes
+///
+/// Target addresses: Init=$15, Wait=$19, Shoot=$1F.
+///
+/// `Routines` (word_offsets, base $00, ordinals ×2):
+///   dc.w Init  - Routines = $15 - $00 = $0015
+///   dc.w Wait  - Routines = $19 - $00 = $0019
+///   dc.w Shoot - Routines = $1F - $00 = $001F
+///   Routines.Init = ordinal 0 * 2 = 0; Routines.Wait = ordinal 1 * 2 = 2.
+///
+/// `PtrRoutines` (long_ptrs, absolute, ordinals ×4):
+///   dc.l Init  = $00000015
+///   dc.l Wait  = $00000019
+///   dc.l Shoot = $0000001F
+///   PtrRoutines.Wait = ordinal 1 * 4 = 4.
+///
+/// Instruction encodings (proven in dispatch.rs / lower_corpus.rs /
+/// lower_proc.rs / m68k.rs): `moveq #n,d0` = `70 nn` (quick-family, `0111
+/// rrr0 dddddddd`, reg=d0); `move.w #64,d1` = MOVE word-size (size bits
+/// `11`), dest D1/Dn mode (`dst_mode=000,dst_reg=001`), src `#imm` mode
+/// (`111,100`) => word `0011 001 000 111 100` = `0x323C`, extension word
+/// `$0040`; `rts` = `4E 75`.
+#[test]
+fn example_dispatch_compiles() {
+    let src = include_str!("../../../examples/dispatch.emp");
+    let bytes = emp_candidate(src);
+    assert_eq!(
+        bytes,
+        vec![
+            // Routines (word_offsets): dc.w Init-Routines, Wait-Routines, Shoot-Routines
+            0x00, 0x15, 0x00, 0x19, 0x00, 0x1F,
+            // initial_routine: [Routines.Init] = 0
+            0x00,
+            // wait_routine: [Routines.Wait] = 2
+            0x02,
+            // PtrRoutines (long_ptrs): dc.l Init, Wait, Shoot
+            0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x19, 0x00, 0x00, 0x00, 0x1F,
+            // ptr_wait_routine: [PtrRoutines.Wait] = 4
+            0x04,
+            // proc Init: moveq #0,d0 ; rts
+            0x70, 0x00, 0x4E, 0x75,
+            // proc Wait: move.w #64,d1 ; rts
+            0x32, 0x3C, 0x00, 0x40, 0x4E, 0x75,
+            // proc Shoot: moveq #1,d0 ; rts
+            0x70, 0x01, 0x4E, 0x75,
+        ]
+    );
+}
+
+// ---- Plan 7 #6 audit fix: nested `section {}` is rejected loudly ---------
+
+/// A `section {}` nested inside another `section {}` used to be silently
+/// dropped by `lower_section_items` (no `Item::Section` arm there) — losing
+/// data bytes, an `ensure_fatal` guard, AND an over-capacity `(max_size:)`
+/// check all at once. It must now be rejected at PARSE time with
+/// `[section.nested]`, never reaching lowering.
+#[test]
+fn nested_section_with_guards_and_capacity_is_rejected_at_parse_not_silently_dropped() {
+    let src = "module m\n\
+        section outer {\n\
+        section inner {\n\
+        ensure_fatal(false, \"x\")\n\
+        data T (max_size: 1): [u8; 4] = [1, 2, 3, 4]\n\
+        }\n\
+        }\n";
+    let (_file, diags) = parse_str(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[section.nested]")),
+        "want [section.nested], got: {diags:?}"
+    );
+}

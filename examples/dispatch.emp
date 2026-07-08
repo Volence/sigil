@@ -1,0 +1,83 @@
+// ===========================================================================
+// DISPATCH — the `dispatch Name (encoding: ...) { Member: target, ... }` construct
+// ===========================================================================
+// Demonstrates Spec 2, Plan 7 backlog #6, Part B (D6.B of
+// docs/superpowers/specs/2026-07-07-spec2-plan7-item6-overlay-dispatch-design.md):
+// a typed state-dispatch table over proc targets, in BOTH shipped encodings.
+//
+// WHY THE ENCODING KNOB EXISTS (research finding R1): a self-relative
+// `dc.w target - Name` word table is the classic Sonic/S3K object routine-table
+// idiom — small (2 bytes/member), reached with `move.w (Table,d0.w), d1` /
+// `jmp (Table,d1.w)` off a routine-index byte the object stores in its own
+// state. But that self-relative encoding is a SONIC-ISM, not a law of 68k
+// dispatch tables: Vectorman/Ristar-class engines use a flat `dc.l target`
+// absolute-pointer table instead (4 bytes/member, loaded straight into an
+// address register with no base-relative add). `dispatch` is ONE construct
+// that ENABLES both idioms via the `(encoding: ...)` knob — it imposes
+// neither. That is why the knob is required on every `dispatch`, with no
+// default: picking one silently would bless a single hardware-era idiom as
+// "the" dispatch table, which is exactly the bias this construct exists to
+// avoid.
+//
+// ORDINALS PRE-SCALE PER ENCODING: `Name.Member` is a comptime ordinal sized
+// to its table's own element width — ready to drop straight into a routine-index
+// byte/word with NO manual "index * element size" arithmetic at every use site.
+// `word_offsets` scales ×2 (each element is one `dc.w`); `long_ptrs` scales ×4
+// (each element is one `dc.l`). `Name.count` is always the plain, UNSCALED
+// member count, for bounds checks. Below, the SAME three states are dispatched
+// through both encodings — `Routines.Wait` reads 2 under `word_offsets` and
+// would read 8 under `long_ptrs` (see `PtrRoutines.Wait` in the second table),
+// because each table's ordinals are scaled to what THAT table actually stores.
+// ===========================================================================
+
+module m
+
+// --- Table 1: word_offsets, the Sonic/S3K routine-table idiom ----------------
+// Emits `dc.w Member - Routines` per member, self-relative to the table's own
+// base label — the classic `jmp (Routines,d1.w)` shape, table declared first
+// so every member is a small FORWARD offset (the idiomatic S3K spelling).
+// Ordinals pre-scale ×2.
+dispatch Routines (encoding: word_offsets) {
+    Init:  Init,
+    Wait:  Wait,
+    Shoot: Shoot,
+}
+
+// The routine-byte idiom this table exists for: an object stores the CURRENT
+// routine as a pre-scaled index byte, boots into `Routines.Init` (0), and the
+// engine's dispatch stub adds it straight onto `Routines` with no runtime
+// multiply. `Routines.Wait` = ordinal 1 * scale 2 = 2.
+data initial_routine: [u8; 1] = [Routines.Init]
+data wait_routine: [u8; 1] = [Routines.Wait]
+
+// --- Table 2: long_ptrs, the Vectorman/Ristar pointer-table idiom ------------
+// SAME three procs, second table, opposite encoding: emits `dc.l Member`
+// absolute pointers — no base-relative arithmetic, loaded straight into an
+// address register (`movea.l (PtrRoutines,d1.l), a1`-style). Ordinals
+// pre-scale ×4 (`PtrRoutines.Wait` = ordinal 1 * scale 4 = 4).
+dispatch PtrRoutines (encoding: long_ptrs) {
+    Init:  Init,
+    Wait:  Wait,
+    Shoot: Shoot,
+}
+
+data ptr_wait_routine: [u8; 1] = [PtrRoutines.Wait]
+
+// --- The three states --------------------------------------------------------
+// Tiny stand-ins for a badnik's Init/Wait/Shoot routines — just enough body
+// (moveq / move.w / rts) to prove real code is being dispatched to, no
+// jbra/jbsr, no comptime helpers.
+proc Init () {
+    moveq   #0, d0      // d0 = 0 : fresh object, state index 0
+    rts
+}
+
+proc Wait () {
+    move.w  #64, d1      // d1 = 64 : frames to wait before the next shot
+    rts
+}
+
+proc Shoot () {
+    moveq   #1, d0      // d0 = 1 : advance to "just fired" state
+    rts
+}

@@ -201,6 +201,7 @@ impl Parser {
         if self.at_kw("bitfield") { return Some(Item::Bitfield(self.bitfield_decl(public))); }
         if self.at_kw("struct") { return Some(Item::Struct(self.struct_decl(public))); }
         if self.at_kw("offsets") { return Some(Item::Offsets(self.offsets_decl(public))); }
+        if self.at_kw("dispatch") { return Some(Item::Dispatch(self.dispatch_decl(public))); }
         if self.at_kw("vars") { return Some(Item::Vars(self.vars_decl(public))); }
         if self.at_kw("data") { return Some(Item::Data(self.data_decl(public))); }
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
@@ -253,9 +254,9 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 15] = ["use", "const", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 16] = ["use", "const", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "comptime", "section", "pub",
-                                     "newtype", "offsets", "ensure", "ensure_fatal"];
+                                     "newtype", "offsets", "dispatch", "ensure", "ensure_fatal"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -644,6 +645,105 @@ impl Parser {
         OffsetsDecl { public, name, members, span: start.merge(self.prev_span()) }
     }
 
+    /// Parse a `dispatch Name (encoding: E) { Member: target, ... }`
+    /// declaration (D6.B1). The `(encoding: E)` attribute is REQUIRED (no
+    /// default — D6.B2); the member grammar mirrors [`Self::offsets_decl`],
+    /// except `Member: { ... }` (inline body) is a reserved-but-rejected
+    /// form (D6.B6), not an alternate member shape.
+    fn dispatch_decl(&mut self, public: bool) -> DispatchDecl {
+        let start = self.span();
+        self.bump(); // `dispatch`
+        let name = self.expect_ident("dispatch name");
+        let encoding = self.dispatch_encoding_attr();
+        self.expect(&Tok::LBrace, "`{`");
+        let mut members = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            let mspan = self.span();
+            let mname = self.expect_ident("dispatch member name");
+            self.expect(&Tok::Colon, "`:`");
+            if self.at(&Tok::LBrace) {
+                let bspan = self.span();
+                self.diag_at(
+                    bspan,
+                    "dispatch member bodies (`Member: { \u{2026} }`) are reserved for scripted \
+                     states (backlog #9) — bind a proc label instead",
+                );
+                // Recover by consuming the braced block so the cascade stays
+                // a single clear error instead of spraying through its
+                // contents as bogus top-level tokens.
+                self.skip_balanced_braces();
+            } else {
+                let target = self.expr();
+                members.push(DispatchMember { name: mname, target, span: mspan });
+            }
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        DispatchDecl { public, name, encoding, members, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse the required `(encoding: E)` attribute of a `dispatch` decl.
+    /// Missing parens/key, or an unknown encoding ident, each produce one
+    /// error mentioning the valid encodings; parsing continues with a
+    /// best-guess default (`word_offsets`) so the member list still parses.
+    fn dispatch_encoding_attr(&mut self) -> DispatchEncoding {
+        if !self.eat(&Tok::LParen) {
+            let sp = self.span();
+            self.diag_at(sp, "dispatch requires an `(encoding: word_offsets | long_ptrs)` attribute");
+            return DispatchEncoding::WordOffsets;
+        }
+        if !self.eat_kw("encoding") {
+            let sp = self.span();
+            self.diag_at(sp, "expected `encoding:` in dispatch attribute list");
+        }
+        self.expect(&Tok::Colon, "`:`");
+        let esp = self.span();
+        let ident = self.expect_ident("dispatch encoding");
+        let encoding = match ident.as_str() {
+            "word_offsets" => DispatchEncoding::WordOffsets,
+            "long_ptrs" => DispatchEncoding::LongPtrs,
+            other => {
+                self.diag_at(
+                    esp,
+                    format!(
+                        "unknown dispatch encoding `{other}` — valid encodings are \
+                         `word_offsets` and `long_ptrs`"
+                    ),
+                );
+                DispatchEncoding::WordOffsets
+            }
+        };
+        self.expect(&Tok::RParen, "`)`");
+        encoding
+    }
+
+    /// Consume a `{ ... }` block, honoring nested braces, without
+    /// interpreting its contents. Used to recover from the reserved
+    /// dispatch inline-body form (D6.B6) with a single diagnostic instead
+    /// of spraying errors through the block's contents.
+    fn skip_balanced_braces(&mut self) {
+        if !self.eat(&Tok::LBrace) { return; }
+        let mut depth = 1i32;
+        loop {
+            match self.peek() {
+                Tok::Eof => return,
+                Tok::LBrace => { depth += 1; self.bump(); }
+                Tok::RBrace => {
+                    depth -= 1;
+                    self.bump();
+                    if depth == 0 { return; }
+                }
+                _ => { self.bump(); }
+            }
+        }
+    }
+
     /// Parse a `vars region { .. }` (region form) or `vars name: region { .. }`
     /// (overlay form) declaration.
     fn vars_decl(&mut self, public: bool) -> VarsDecl {
@@ -651,10 +751,14 @@ impl Parser {
         self.bump(); // `vars`
         let first = self.expect_ident("region or overlay name");
         let (name, region) = if self.eat(&Tok::Colon) {
-            let region = self.expect_ident("overlay region (e.g. sst_custom)");
+            let mut region = vec![self.expect_ident("overlay region (e.g. sst_custom)")];
+            while self.at(&Tok::Dot) && matches!(self.peek2(), Tok::Ident(_)) {
+                self.bump(); // .
+                region.push(self.expect_ident("name"));
+            }
             (Some(first), region)
         } else {
-            (None, first)
+            (None, vec![first])
         };
         self.expect(&Tok::LBrace, "`{`");
         let mut fields = Vec::new();
@@ -1283,6 +1387,22 @@ impl Parser {
                 self.skip_newlines();
                 if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
                 match self.item() {
+                    Some(Item::Section(inner)) => {
+                        // Sections do not nest (locked decision): placement-within-
+                        // placement has no ratified meaning, and `lower_section_items`
+                        // has no `Item::Section` arm — it would silently drop
+                        // everything inside (data bytes, guards, capacity checks).
+                        // Reject loudly here instead; dropping the inner item is safe
+                        // because the diagnostic makes the loss visible.
+                        self.diag_at(
+                            inner.span,
+                            format!(
+                                "[section.nested] section `{}` is nested inside section `{name}` \
+                                 — sections do not nest; declare it at module level",
+                                inner.name
+                            ),
+                        );
+                    }
                     Some(i) => items.push(i),
                     None => self.recover_to_next_decl(true),
                 }
