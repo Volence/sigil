@@ -798,15 +798,24 @@ impl<'a> Evaluator<'a> {
     }
 }
 
+/// The Genesis cartridge bank-latch mask: bits 15–22 of a 68k ROM address form
+/// the 9-bit-latch bank id (D7.3). Shared by `eval_bankid` (which builds it into
+/// the residual tree) and `expr_carries_bank_mask` (which scans for it), so "the
+/// mask appears in one place" is a compile-time fact, not a comment.
+pub(crate) const BANK_MASK: i64 = 0x7F8000;
+
 /// Whether a residual link-time tree carries the Genesis bank-latch mask
 /// (`$7F8000`) — the marker of a `bankid()`-derived value (D7.3/R7m.3). The mask
-/// literal appears ONLY in `eval_bankid`, so a structural scan for it is an
+/// is built into the tree ONLY by `eval_bankid` (both sites share [`BANK_MASK`],
+/// so the one-place invariant is compiler-enforced), making a structural scan an
 /// honest, non-invasive provenance check (no tag threaded through the tuple
 /// variant). Recurses through the operator tree so a composed value
-/// (`bankid(A) == bankid(B)`) is still recognized.
+/// (`bankid(A) == bankid(B)`) is still recognized. Accepted trade: a USER-written
+/// `& $7F8000` over a provisional value also matches, yielding the bank-flavored
+/// refusal on an already-erroring path — wrong wording at worst, never wrong
+/// behavior.
 fn expr_carries_bank_mask(e: &sigil_ir::expr::Expr) -> bool {
     use sigil_ir::expr::Expr;
-    const BANK_MASK: i64 = 0x7F8000;
     match e {
         Expr::Int(n) => *n == BANK_MASK,
         Expr::Sym(_) => false,

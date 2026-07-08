@@ -511,15 +511,16 @@ impl<'a> Evaluator<'a> {
                 return Value::Poison;
             }
         };
-        // Build the residual tree `(Sym & 0x7F8000) >> 15`. The mask isolates the
-        // bank-select bits of the 24-bit ROM address; the shift moves them to the
-        // low bits so the result IS the bank ordinal. Folded by the linker once
-        // `sym`'s final address is known.
+        // Build the residual tree `(Sym & BANK_MASK) >> 15`. The mask isolates
+        // the bank-select bits of the 24-bit ROM address; the shift moves them to
+        // the low bits so the result IS the bank ordinal. Folded by the linker
+        // once `sym`'s final address is known. The shared const doubles as the
+        // provenance marker `expr_carries_bank_mask` scans for.
         use sigil_ir::expr::{BinOp, Expr};
         let masked = Expr::Binary {
             op: BinOp::And,
             lhs: Box::new(Expr::Sym(name)),
-            rhs: Box::new(Expr::Int(0x7F8000)),
+            rhs: Box::new(Expr::Int(super::expr::BANK_MASK)),
         };
         let shifted = Expr::Binary {
             op: BinOp::Shr,
