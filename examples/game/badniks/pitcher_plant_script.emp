@@ -1,0 +1,136 @@
+// Pitcher Plant badnik — the `script` exhibit (Plan 7 #9b — D9.2/D9.6).
+// This is the SAME badnik as pitcher_plant.emp, but its brain is written as
+// ONE `script` coroutine instead of the three hand-threaded procs
+// (init/wait/shoot) the proc version uses. A stationary plant: idles until the
+// player comes within 96px of its facing side, plays a shoot animation, spits
+// a seed on the mouth-open frame, re-arms.
+//
+// Standing acceptance exhibit ALONGSIDE the proc version — both compile
+// end-to-end through the game prelude (S2-D3) and jbra/jbsr relaxation
+// (D2.18). The equivalence (state-per-state) is argued in
+// docs/superpowers/notes/2026-07-08-item9b-implementation-notes.md (T5).
+//
+// What a `script` buys over the three procs:
+//   - `yield` IS the state store — it writes the next-frame resume point into
+//     the SAME `Sst.resume @ $20` slot the proc version's `routine` helper
+//     writes by hand (D9.5: the script PC IS the routine pointer storage), and
+//     exits through the ONE declared per-frame epilogue (`shows Draw_Sprite`).
+//     So there are no `routine`/`falls_into` calls anywhere here.
+//   - user labels (`.wait_tick`, `.windup_tick`) work ACROSS yield boundaries:
+//     the body is a single flattened proc-shaped scope, so a `jbra .wait_tick`
+//     in a resume segment resolves to the label before the yield for free.
+
+module badniks.pitcher_plant_script in obj_bank
+
+/// Per-object state, overlaid on the SST's 34-byte custom window — same shape
+/// as the proc version.
+vars PitcherPlantV: sst_custom {
+    timer: u8,                          // frames until the next state change
+}
+
+const WAIT_TIME: u8 = 64                // frames between attacks
+const ATTACK_RANGE: u16 = $60           // proximity that triggers a shot
+const SHOOT_WINDUP: u8 = $28            // length of the shoot animation
+const FIRE_FRAME: u8 = 16               // seed launches when timer hits this
+
+// Seed ballistics, 8.8 fixed-point. spawn() negates X when the plant is
+// x-flipped, so negative X always means "toward my facing".
+const SEED_VEL_X: i16 = -$200
+const SEED_VEL_Y: i16 = -$200
+const SEED_GRAVITY: i16 = $20
+
+/// Animation table + animation ids, one declaration (as in the proc version).
+offsets Ani {
+    Idle:  ani_idle,
+    Seed:  ani_seed,
+    Shoot: ani_shoot,
+}
+
+// Scripts: [speed, frame..., $FF] loops; $FD, id switches animation.
+data ani_idle:  [u8; 4] = [7, 0, 1, $FF]
+data ani_seed:  [u8; 4] = [3, 5, 6, $FF]
+data ani_shoot: [u8; 6] = [4, 2, 3, 4, $FD, Ani.Idle]
+
+/// What the level's object list spawns. `code: brain` — the entry point is the
+/// script's hidden table (member 0 = the entry segment), not a proc.
+pub data Def = ObjDef{
+    code:  brain,
+    map:   Map_PitcherPlant,
+    art:   ArtTile{ tile: VRAM_PITCHER_PLANT, pal: 0, pri: 0 },
+    col:   Collision.Hurt,
+    zpri:  3,
+    size:  Size{ w: 16, h: 28 },        // hitbox: plant body, not the stem
+    anim:  Ani.Idle,
+    vel:   Vel{ x: 0, y: 0 },           // stationary at spawn (struct literals need every field)
+    frame: 0,                           // starting frame; Ani.Idle's script drives it from here
+}
+
+/// The projectile — spawned by the shoot windup, never by a level.
+data SeedDef = ObjDef{
+    code:  seed,
+    map:   Map_PitcherPlant,            // shares the plant's art
+    art:   Def.art,
+    col:   Collision.Projectile,
+    zpri:  2,
+    size:  Size{ w: 3, h: 3 },
+    vel:   Vel{ x: SEED_VEL_X, y: SEED_VEL_Y },
+    anim:  Ani.Seed,
+    frame: 5,
+}
+
+/// The whole brain as ONE coroutine. `shows Draw_Sprite` is the per-frame
+/// epilogue: every bare `yield` stores its resume ordinal into `Sst.resume`
+/// and exits through `Draw_Sprite`. The three proc-version states map to three
+/// segments of this one body:
+///   init  → the entry segment (before `loop`)
+///   wait  → the `.wait_tick` resume loop (yield once per frame while counting)
+///   shoot → the `.windup_tick` resume loop (yield once per frame while firing)
+script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
+    move.b  #WAIT_TIME, timer(a0)       // init (entry segment): arm the timer
+    loop {
+        // --- wait: count down one frame at a time until the timer elapses ---
+    .wait_tick:
+        subq.b  #1, timer(a0)
+        beq     .check                  // elapsed → run the proximity check
+        yield                           // still waiting: draw + resume next frame…
+        jbra    .wait_tick              // …then keep counting down
+
+        // --- proximity check: is the player within range on our facing side? ---
+    .check:
+        move.w  Player_1.x_pos, d0
+        sub.w   x_pos(a0), d0
+        facing_abs d0                   // signed distance, normalized to facing
+        cmp.w   #ATTACK_RANGE, d0
+        bhi     .rearm                  // out of range → re-arm, back to waiting
+
+        // --- shoot windup: play the anim, fire on FIRE_FRAME, count down ---
+        move.b  #SHOOT_WINDUP, timer(a0)
+        anim    Ani.Shoot
+    .windup_tick:
+        subq.b  #1, timer(a0)
+        cmpi.b  #FIRE_FRAME, timer(a0)
+        bne     .no_fire
+        spawn(SeedDef, offset: Vec{ x: -16, y: -4 }, flip: inherit)
+    .no_fire:
+        tst.b   timer(a0)
+        beq     .rearmed                // windup done → switch back to idle anim
+        yield                           // still winding up: draw + resume next frame…
+        jbra    .windup_tick            // …then keep counting down
+
+        // --- re-arm: back to the idle animation, reset the wait timer ---
+    .rearmed:
+        anim    Ani.Idle
+    .rearm:
+        move.b  #WAIT_TIME, timer(a0)
+        yield                           // draw this frame; resume at the loop top
+    }
+}
+
+/// The projectile's per-frame brain — verbatim from the proc version (a seed is
+/// a separate object, not a state of the plant, so it stays a proc).
+proc seed (a0: *Sst) {
+    despawn_below_level                 // delete self below the kill plane
+    add.w   #SEED_GRAVITY, y_vel(a0)
+    jbsr    ObjectMove
+    jbra    Draw_Sprite
+}

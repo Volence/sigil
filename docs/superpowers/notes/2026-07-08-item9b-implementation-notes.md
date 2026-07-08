@@ -288,3 +288,82 @@ the quality review (2026-07-08) for the controller to schedule.
 - Byte-neutrality verified: pitcher_plant_acceptance passes UNCHANGED (2 tests, 340-byte pin
   intact) and the CLI build reports 340 bytes. The proc exhibit's `routine shoot`/`routine wait`
   call sites are untouched.
+
+## T5 — the exhibit + equivalence
+
+New sibling module `examples/game/badniks/pitcher_plant_script.emp` (module
+`badniks.pitcher_plant_script in obj_bank`): the SAME badnik as
+`pitcher_plant.emp`, brain rewritten as ONE `script brain (a0: *Sst)
+(encoding: word_offsets) shows Draw_Sprite`. Own `vars PitcherPlantV`/consts/
+`offsets Ani`/ani data/`pub data Def`/`SeedDef`; `seed` stays a `proc`
+verbatim (a seed is a separate object, not a plant state). The proc version is
+UNTOUCHED (its 340-byte acceptance pin remains the R9b.7 regression guard).
+
+Build (verified, clean): `cargo run -p sigil-cli -- emp
+examples/game/badniks/pitcher_plant_script.emp --root examples/game --prelude
+prelude` → exit 0, ZERO diagnostics, **358 bytes**. Pinned by
+`crates/sigil-cli/tests/pitcher_plant_script_acceptance.rs`
+(`script_exhibit_builds_clean_and_pins_hidden_table`).
+
+### State mapping (proc → script)
+
+| proc version | script version |
+|---|---|
+| `init` (`move.b #WAIT_TIME, timer(a0)` then `falls_into wait`) | the ENTRY segment (before `loop`); `falls_into` is gone — the entry segment simply flows into the loop |
+| `wait` (per-frame countdown, `routine wait` re-store) | the `.wait_tick` resume loop: `subq.b #1, timer(a0)` / `beq .check` / `yield` / `jbra .wait_tick` |
+| `shoot` (per-frame windup countdown + FIRE_FRAME spawn, `routine shoot`) | the `.windup_tick` resume loop: `subq` / `cmpi.b #FIRE_FRAME` / `spawn(...)` / `tst.b` / `beq .rearmed` / `yield` / `jbra .windup_tick` |
+| `routine wait` / `routine shoot` (manual `pea`/`move.w (a7)+, Sst.resume(a0)`) | `yield`'s synthesized `move.w #<ordinal×2>, resume(a0)` — the SAME `resume @ $20` slot, D9.5 made literal |
+
+The proximity check (`Player_1.x_pos` / `sub` / `facing_abs` / `cmp
+#ATTACK_RANGE` / `bhi .rearm`) and the `.rearm`/`.rearmed` re-arm (anim Idle,
+reset timer) fold inline into the one loop body. `.wait_tick`/`.check`/
+`.windup_tick`/`.no_fire`/`.rearmed`/`.rearm` are ordinary proc-local labels
+that resolve across the yield boundaries for free (single flattened body,
+R9b.11).
+
+### The hidden table (verified)
+
+`brain` labels the table at obj_bank offset 0x40 (= `Def.code`'s fixup value).
+3 bare `yield`s → 4 rows, word_offsets → 8 bytes:
+
+| row | bytes | offset from base | resume point |
+|---|---|---|---|
+| 0 (entry) | `00 08` | +8 | `move.b #WAIT_TIME` (entry segment, = table width `2*(1+3)`) |
+| 1 | `00 1E` | +30 | `.wait_tick`'s `jbra .wait_tick` back-edge (bra.s `60 EE`) |
+| 2 | `00 6C` | +108 | `.windup_tick`'s `jbra .windup_tick` back-edge (bra.s `60 D2`) |
+| 3 | `00 82` | +130 | the `.rearm` tail yield's loop-top back-edge (bra.s `60 8A`) |
+
+Each yield's resume point is the `jbra` immediately AFTER it — so on the next
+frame the engine indexes the table with the stored ordinal, lands on the
+back-edge, and re-enters the countdown/loop-top. Rows are strictly increasing
+(a straight-line body invariant the acceptance test checks).
+
+### What differs from the proc version (equivalence caveats)
+
+- **Epilogue:** the proc version has THREE per-proc `jbra Draw_Sprite` tails
+  (one each in `wait`/`shoot`/`seed`). The script funnels EVERY frame exit
+  through the ONE declared `shows Draw_Sprite` epilogue — `yield` synthesizes
+  the `jbra <epilogue>` per site (bare `yield` uses `shows`). `seed`, still a
+  proc, keeps its own explicit `jbra Draw_Sprite`.
+- **State ids:** the proc version stores a proc ADDRESS (`pea wait`/`pea
+  shoot`, low word) into `resume`. The script stores a hidden table ORDINAL
+  (`#2`/`#4`/`#6` = index×2) — the engine dispatches through the table rather
+  than jumping to a raw address. Same slot, typed (`ScriptPc`), abstracted.
+- **Byte size:** 358 (script) vs 340 (proc). The script pays 8 bytes for the
+  hidden table plus the per-frame `move.w #ordinal, resume(a0)` stores; the
+  proc pays `routine` helper `pea`+`move.w` stores at fewer sites. Not
+  byte-identical (nor expected to be — R9b.12 pins the proc version, argues
+  the script version by equivalence).
+
+### Authoring friction
+
+NONE. The exhibit compiled clean on the FIRST attempt (exit 0, zero
+diagnostics, 358 bytes) directly from the plan's Task-5 sketch — the only
+adjustments from the sketch were cosmetic (comment voice, label ordering) and
+substituting `beq` for the sketch's flow where the proc version used `bne`-to-
+tail (the script's yield-per-frame structure inverts the sense: `beq .check`
+"elapsed → act" vs the proc's `bne .draw` "not elapsed → just draw"). No
+compiler defect surfaced; every construct the plan promised (statement-position
+`anim`/`spawn`/`facing_abs` each on their own line, `yield` bare + labels
+across yields, `loop`) worked end-to-end exactly as `tests/script.rs`
+predicted.
