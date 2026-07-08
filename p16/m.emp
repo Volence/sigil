@@ -1,5 +1,0 @@
-module m
-struct A { f: u16 }
-const D: A = A{ f: $AAAA }
-data D: A = A{ f: $1234 }
-data Use: [u16;1] = [D.f]

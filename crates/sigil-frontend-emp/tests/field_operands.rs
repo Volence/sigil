@@ -452,3 +452,51 @@ data Ord: [u8; 1] = [T.B]
     // `T.B` is the 0-based ordinal of member B = 1.
     assert_eq!(label_bytes(&module, "text", "Ord", 1), vec![0x01]);
 }
+
+#[test]
+fn const_wins_over_data_value_read() {
+    // Precedence pin (U3 ladder, folded from a review probe): a CONST and a data
+    // item sharing a name — `D.f` in value position reads the CONST's field
+    // ($AAAA), never the data item's initializer ($1234). Step 1's value tier is
+    // local -> const -> data-value; the data-value read slots BEHIND const.
+    let src = "\
+module m
+struct A { f: u16 }
+const D: A = A{ f: $AAAA }
+data D: A = A{ f: $1234 }
+data Use: [u16;1] = [D.f]
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "const-shadowed read must resolve: {:?}", errors(&diags));
+    assert_eq!(
+        label_bytes(&module, "text", "Use", 2),
+        vec![0xAA, 0xAA],
+        "D.f must read the CONST's field value, not the same-named data item's"
+    );
+}
+
+#[test]
+fn jmp_field_operand_is_absolute_address_transfer() {
+    // Behavior pin (review M2): `jmp Item.field` — a SymOff operand on jmp/jsr —
+    // routes through the abs-sym seam (the `[CodeOperand::Sym]` jmp guard matches
+    // only a BARE symbol), emitting a RelaxAbsSym absolute-address transfer:
+    // jmp abs.w = 4E F8 + addr16 (abs.l = 4E F9 + addr32). Low address selects
+    // abs.w; the target is Player_1 + offsetof(Sst, x_pos) = base + 2.
+    let src = "\
+module m
+struct Sst { id: u16, x_pos: u16, y_pos: u16 }
+data Player_1: Sst = Sst{ id: 1, x_pos: 2, y_pos: 3 }
+proc go() {
+    jmp Player_1.x_pos
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected errors: {:?}", errors(&diags));
+    let s = section(&module, "text");
+    let addr = label_offset(s, "Player_1") + 0x02;
+    assert_eq!(
+        label_bytes(&module, "text", "go", 4),
+        vec![0x4E, 0xF8, (addr >> 8) as u8, (addr & 0xFF) as u8],
+        "jmp Item.field must encode jmp abs.w of Player_1 + 2 = {addr:#x}"
+    );
+}

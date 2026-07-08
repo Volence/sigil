@@ -136,7 +136,10 @@ fn lower_m68k_instr(
     }
     if matches!(m, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
         // A bare symbol target defers to the linker's width selection; an EA
-        // operand (`(a0)`, ...) falls through to the generic path.
+        // operand (`(a0)`, ...) falls through to the generic path. NOTE: a
+        // `SymOff` (`jmp Item.field`) deliberately does NOT match this guard —
+        // it falls through to the sym-count dispatch below and becomes an
+        // absolute-address transfer via the abs-sym seam (see that site).
         if let [CodeOperand::Sym(name)] = ops {
             let frag = M68kBackend.lower_jmp_jsr_sym(
                 matches!(m, M68kMnemonic::Jsr),
@@ -164,7 +167,10 @@ fn lower_m68k_instr(
     // to the linker via a relaxable fragment (rather than the fixed generic path).
     // A `SymOff` (the D-PP.5 `Item.field` field-address form) is the SAME abs seam
     // — an absolute address whose fixup target is a `sym + off` sum — so it counts
-    // and routes identically.
+    // and routes identically. This includes `jmp`/`jsr Item.field` (which the bare-
+    // Sym guard above passes over): they become absolute-address transfers through
+    // THIS seam (RelaxAbsSym, byte-pinned by `jmp_field_operand_is_absolute_
+    // address_transfer`), not the `JmpJsrSym` linker ladder.
     let sym_count = ops
         .iter()
         .filter(|o| matches!(o, CodeOperand::Sym(_) | CodeOperand::SymOff { .. }))
