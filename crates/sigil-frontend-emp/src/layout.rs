@@ -1380,6 +1380,10 @@ pub fn eval_data_captures(
 /// plan's cross-module resolution / the linker. Dup / reserved-`count`
 /// validation is NOT re-done here — it lives once-per-compile in
 /// `lower::validate_offsets`.
+///
+/// NOTE: [`eval_dispatch_with_root`] mirrors this function's shape (fresh env
+/// per member, `Path`/`Str`/eval target extraction, `<unresolved>` placeholder)
+/// — consider both when editing the target-extraction logic.
 pub fn eval_offsets_with_root(
     file: &ast::File,
     decl: &ast::OffsetsDecl,

@@ -412,8 +412,9 @@ impl<'a> Evaluator<'a> {
     /// `proc` (code — accepted) or an unknown name (left to link). Items are
     /// section-nested one level via [`index_items`](Self::index_items), so this
     /// sees section-nested data/consts too. Precedence is irrelevant — the maps
-    /// are disjoint by construction (name resolution errors on genuine
-    /// collisions elsewhere), so the first match names the kind.
+    /// are expected disjoint (no module-local cross-kind duplicate-name check
+    /// exists here; name resolution errors on genuine collisions elsewhere), so
+    /// the first match names the kind.
     pub(crate) fn non_code_kind(&self, name: &str) -> Option<&'static str> {
         if self.is_data(name) {
             Some("data item")

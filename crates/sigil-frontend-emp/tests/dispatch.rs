@@ -115,6 +115,45 @@ const Y = R.count
 }
 
 #[test]
+fn long_ptrs_ordinals_are_prescaled_x4_and_count_is_unscaled() {
+    // `long_ptrs` ordinals are pre-scaled ×4 (D6.B3): A=0, B=4, C=8.
+    // `R.count` is UNSCALED = member count = 3. A `data` item reading
+    // `[R.B, R.count, R.A]` as `u8`s emits 04 03 00. (The ordinals resolve via
+    // `eval_path` regardless of the forward-emission task — live TODAY.)
+    let src = "\
+module m
+dispatch R (encoding: long_ptrs) { A: x, B: y, C: z }
+proc x() { rts }
+proc y() { rts }
+proc z() { rts }
+data ids: [u8; 3] = [R.B, R.count, R.A]
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    // The `data ids` item is emitted LAST, so its 3 bytes are the tail of the
+    // image regardless of the forward table's size (0 pre-Task-11, 12 after) —
+    // this ride-along pins the ×4 ordinals, not the emission.
+    assert_eq!(&bytes[bytes.len() - 3..], &[0x04, 0x03, 0x00]);
+}
+
+#[test]
+fn empty_dispatch_builds_and_count_is_zero() {
+    // An empty dispatch table builds with no diagnostics and emits no forward
+    // bytes; `R.count` is 0. Assert via a data byte so the whole pipeline runs.
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) { }
+data c: [u8; 1] = [R.count]
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    // The table is 0 bytes, so the data byte is at offset 0.
+    assert_eq!(bytes[0], 0x00, "R.count == 0");
+}
+
+#[test]
 fn unknown_member_is_an_error() {
     let src = "\
 module m
@@ -209,6 +248,69 @@ dispatch Routines (encoding: word_offsets) { Init: init }
 }
 
 #[test]
+fn target_offsets_table_is_not_code() {
+    // A member targeting a module-local `offsets` table names "offset table".
+    let src = "\
+module m
+offsets Tbl { A: init }
+dispatch Routines (encoding: word_offsets) { Init: Tbl }
+proc init() { rts }
+";
+    let errs = msgs(src);
+    assert_eq!(
+        errs.iter().filter(|m| m.contains("[dispatch.target-not-code]")).count(),
+        1,
+        "errs: {errs:?}"
+    );
+    assert!(
+        errs.iter().any(|m| m.contains("offset table")),
+        "message should name the kind (offset table): {errs:?}"
+    );
+}
+
+#[test]
+fn target_dispatch_table_is_not_code() {
+    // A member targeting a module-local `dispatch` table (here a self-reference)
+    // names "dispatch table".
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) { A: R }
+";
+    let errs = msgs(src);
+    assert_eq!(
+        errs.iter().filter(|m| m.contains("[dispatch.target-not-code]")).count(),
+        1,
+        "errs: {errs:?}"
+    );
+    assert!(
+        errs.iter().any(|m| m.contains("dispatch table")),
+        "message should name the kind (dispatch table): {errs:?}"
+    );
+}
+
+#[test]
+fn target_overlay_is_not_code() {
+    // A member targeting a module-local overlay (`vars Name: window { .. }`)
+    // names "overlay".
+    let src = "\
+module m
+struct S (size: $8) { pad: [u8; 8] @ $0 }
+vars V: pad { t: u8 }
+dispatch Routines (encoding: word_offsets) { Init: V }
+";
+    let errs = msgs(src);
+    assert_eq!(
+        errs.iter().filter(|m| m.contains("[dispatch.target-not-code]")).count(),
+        1,
+        "errs: {errs:?}"
+    );
+    assert!(
+        errs.iter().any(|m| m.contains("overlay")),
+        "message should name the kind (overlay): {errs:?}"
+    );
+}
+
+#[test]
 fn undefined_target_is_left_to_link_not_module_local_error() {
     // A name that resolves module-locally to NOTHING gets no early
     // [dispatch.target-not-code] error — it is left to link (v1 does not
@@ -270,7 +372,7 @@ section s (cpu: z80, vma: $8000) {
     );
 }
 
-// ---- 8. section-nested dispatch lowers -----------------------------------
+// ---- 7. section-nested dispatch lowers -----------------------------------
 
 #[test]
 fn section_nested_dispatch_lowers() {

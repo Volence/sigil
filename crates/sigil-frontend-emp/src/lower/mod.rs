@@ -386,6 +386,9 @@ fn lower_data_item(
 /// fixups. Unlike [`lower_data_item`] there is no `here_base`: a `RelOffset`
 /// resolves against the SYMBOLIC base label `decl.name`, folded at link time —
 /// not against a physical `here()` position.
+///
+/// NOTE: [`lower_dispatch_item`] mirrors this function's shape (eval → stream →
+/// define base label → emit) — consider both when editing the lowering flow.
 fn lower_offsets_item(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
@@ -508,6 +511,9 @@ fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
 /// the diagnostic N times. Recurses into `section {}` blocks so a
 /// section-nested `offsets` is checked exactly like a top-level one (mirroring
 /// `index_items`' flat namespace).
+///
+/// NOTE: [`validate_dispatch`] mirrors this function's shape (reserved-`count`
+/// + duplicate-member checks, section recursion) — consider both when editing.
 fn validate_offsets(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
     for item in items {
         match item {
