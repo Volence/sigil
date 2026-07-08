@@ -331,3 +331,94 @@ fn module_placed_in_region_builds_when_it_fits() {
     assert_eq!(bytes.len(), 0x10008, "section placed at its region LMA base");
     assert_eq!(&bytes[0x10000..0x10008], &[1, 2, 3, 4, 5, 6, 7, 8]);
 }
+
+#[test]
+fn two_modules_same_region_pack_cumulatively() {
+    // The core Task 4 behavior: two modules both `in obj_bank`, each with a small
+    // `pub data` block, must pack SEQUENTIALLY within the one region — B lands at
+    // `lma_base + A.len`, not overlapping A. Entry `a` `use`s a const from `b` so
+    // BFS reaches both (entry is discovered first, so its section packs first).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"obj_bank\"\nlma_base = 0x10000\nsize = 0x10\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    // b: a 3-byte block + a pub const the entry references (forces reachability).
+    write(
+        root,
+        "b.emp",
+        "module b in obj_bank\npub const Marker: u8 = $EE\npub data BlobB: [u8; 3] = [$AA, $BB, $CC]\n",
+    );
+    // a (entry): a 4-byte block whose first byte is b's const → both reachable.
+    write(
+        root,
+        "a.emp",
+        "module a in obj_bank\nuse b.{Marker}\npub data BlobA: [u8; 4] = [Marker, 1, 2, 3]\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("a.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // A (entry, discovered first) packs at the region base; B follows at base + 4.
+    assert_eq!(&bytes[0x10000..0x10004], &[0xEE, 1, 2, 3], "A at region base");
+    assert_eq!(
+        &bytes[0x10004..0x10007],
+        &[0xAA, 0xBB, 0xCC],
+        "B packed sequentially after A (no overlap)"
+    );
+    // ROM ends right after B — no padding, so total length pins the packing.
+    assert_eq!(bytes.len(), 0x10007, "cumulative pack: base + 4 + 3");
+}
+
+#[test]
+fn section_with_no_matching_region_errors() {
+    // A module placed `in <name>` whose name matches NO region in the map is a hard
+    // error (`resolve::place_sections`), naming the miss clearly.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"obj_bank\"\nlma_base = 0x10000\nsize = 0x10\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "orphan.emp",
+        "module orphan in nowhere_region\npub data X: [u8; 2] = [1, 2]\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("orphan.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("has no region in the map") && err.contains("nowhere_region"),
+        "stderr: {err}"
+    );
+}

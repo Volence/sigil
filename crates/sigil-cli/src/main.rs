@@ -188,14 +188,24 @@ fn compile_emp(
     }
 }
 
-/// The shared emp link seam: `resolve_layout` (emp defers jmp/jsr width + layout
-/// to link) → `link` → `flatten`, against one flat empty [`SymbolTable`] so
-/// cross-module (and cross-section) references resolve. Byte-identical whether
-/// fed one module's sections or a whole concatenated program.
+/// The shared emp link prefix: `resolve_layout` (emp defers jmp/jsr width +
+/// layout to link) → `link`, against one flat empty [`SymbolTable`] so
+/// cross-module (and cross-section) references resolve. The two link tails —
+/// `flatten` (no map) and `emit_rom` (map) — reuse this identical prefix, so they
+/// differ only in the final materialization step. Byte-identical whether fed one
+/// module's sections or a whole concatenated program.
+fn link_to_image(
+    sections: &[sigil_ir::Section],
+) -> Result<sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>> {
+    let empty = sigil_ir::SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(sections, &empty, true)?;
+    sigil_link::link(&resolved, &empty)
+}
+
+/// The no-map link seam: [`link_to_image`] then `flatten` (gap-fill 0x00, no
+/// region validation).
 fn link_sections(sections: &[sigil_ir::Section]) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
-    let resolved = sigil_link::resolve_layout(sections, &sigil_ir::SymbolTable::new(), true)?;
-    let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())?;
-    Ok(sigil_link::flatten(&linked, 0x00))
+    Ok(sigil_link::flatten(&link_to_image(sections)?, 0x00))
 }
 
 /// The shared emp output tail: write `image` to `output` (if given), print it as
@@ -414,11 +424,7 @@ fn link_rom(
     sections: &[sigil_ir::Section],
     map: &sigil_ir::map::MemoryMap,
 ) -> Result<Vec<u8>, String> {
-    let empty = sigil_ir::SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(sections, &empty, true).map_err(|ds| {
-        ds.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")
-    })?;
-    let linked = sigil_link::link(&resolved, &empty).map_err(|ds| {
+    let linked = link_to_image(sections).map_err(|ds| {
         ds.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")
     })?;
     sigil_link::emit_rom(&linked, map)

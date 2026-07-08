@@ -205,6 +205,9 @@ pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnost
                 message: format!("section `{}` has no region in the map", sec.name),
                 // No span: the offending name comes from the module's `in <section>`
                 // header, but the section itself carries none here. Best available.
+                // TODO: thread the module-header span (like report_unresolved uses
+                // pm.file.module.span) so this renders at the `in <name>` clause
+                // instead of a misleading <first-file>:1:1.
                 primary: Span {
                     source: sigil_span::SourceId(0),
                     start: 0,
@@ -215,7 +218,13 @@ pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnost
         };
         let cursor = used.entry(region.name.as_str()).or_insert(0);
         sec.lma = region.lma_base + *cursor;
-        *cursor += sec.image_len();
+        // Advance by the ADDRESS-SPAN length (`vma_len`), not `image_len`: a
+        // section with trailing `ds`/`Reserve` occupies VMA/LMA space that emits
+        // no image bytes, so packing the next same-region sibling by `image_len`
+        // would land it inside the reserved span — a silent VMA==LMA overlap that
+        // `flatten_checked` (image-byte ranges only) never catches. For sections
+        // without reserves `vma_len == image_len`, so no behavior change today.
+        *cursor += sec.vma_len();
     }
     diags
 }
