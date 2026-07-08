@@ -44,3 +44,61 @@ Implementation:
   hygienic label and skips the `[dispatch.target-not-code]` kind check (R9a.5 —
   code by construction); the three existing `Label` arms are unchanged.
 - lower/mod.rs body lowering is Task 2 — untouched here.
+
+## T2 — inline bodies lower as anonymous procs after the table
+
+RED evidence (`cargo test -p sigil-frontend-emp --test dispatch`, 5 new tests,
+all failed — 21 passed; 5 failed):
+- `inline_body_lowers_after_table_byte_exact` — link error, unresolved fixup:
+  ```
+  link: [Diagnostic { level: Error, message: "unresolved target expression
+  for fixup in section text at offset 0", ... }]
+  ```
+- `inline_body_long_ptrs_byte_exact` — link error, unresolved symbol:
+  ```
+  link: [Diagnostic { level: Error, message: "unresolved symbol
+  `__dispatch$m$R$A` for fixup in section text at offset 0", ... }]
+  ```
+- `section_nested_inline_body_lowers` — link error, unresolved target
+  expression in section `code` at offset 0.
+- `inline_body_without_terminator_warns_fallthrough` — `msgs: []`, expected 1
+  `[dispatch.body-fallthrough]` (found 0).
+- `empty_inline_body_emits_row_and_warns` — `diags: []`, no
+  `[dispatch.body-fallthrough]` warning.
+
+The byte tests failed because the `__dispatch$…` label the table row targets was
+never DEFINED and its body never emitted (label undefined → unresolved fixup at
+link). The warning tests failed because `check_member_body_fallthrough` did not
+exist.
+
+GREEN:
+- All 5 new tests pass. Full dispatch suite: `cargo test -p sigil-frontend-emp
+  --test dispatch` → 26 passed; 0 failed (21 pre-existing + 5 new).
+- Whole crate: `cargo test -p sigil-frontend-emp` → all suites pass, 0 failures.
+- `cargo clippy -p sigil-frontend-emp --all-targets -- -D warnings` → clean.
+
+Byte derivation (hand-checked, not reverse-fit from output):
+- `word_offsets` row = big-endian `target - table_base`. Table is 2 rows × 2
+  bytes = 4 bytes. Init's body starts at +4 → `00 04`; wait (named proc) at +6
+  → `00 06`. `rts` = `4E 75`. Image: `00 04 00 06 4E 75 4E 75`.
+- `long_ptrs` row = big-endian absolute address, link base 0. Table 2 rows × 4
+  = 8 bytes. Body A at +8 → `00 00 00 08`; b at +10 → `00 00 00 0A`. Image:
+  `00 00 00 08 00 00 00 0A 4E 75 4E 75`.
+- Empty body: 1 row × 2 bytes → `00 02`; body emits no bytes, so the label sits
+  at +2 (whatever follows), and the fallthrough warning fires (no terminator).
+
+Implementation:
+- proc.rs: extracted `ends_in_terminator(buf, cpu)` (the shared last-mnemonic
+  heuristic) and rewrote `check_undeclared_fallthrough` to call it (behavior
+  identical, no message change). Added `check_member_body_fallthrough` (R9a.4)
+  emitting `[dispatch.body-fallthrough]` at the member span, the member-flavored
+  mirror of the proc lint.
+- lower/mod.rs: `lower_dispatch_item` gained `as_compat: bool` and
+  `asm_counter: &mut u32` params. After the `emit_data` call it iterates the
+  members in declaration order (R9a.1); each `DispatchTarget::Body` defines its
+  hygienic `dispatch_body_label`, then lowers through the SAME
+  `eval_proc_body(&[], …)` + `lower_code_buf` path a named proc takes (D-P4.1,
+  R9a.3 — empty params, no clobbers/falls_into surface), threading the module
+  `asm_counter`. The `@as_compat`-gated `check_member_body_fallthrough` runs
+  after lowering. Both call sites (top-level loop + `lower_section_items`) pass
+  the new args. Doc comment extended with the 9a sentence.

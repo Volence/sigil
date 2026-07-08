@@ -143,12 +143,7 @@ fn check_undeclared_fallthrough(
     cpu: Cpu,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let last_mnemonic = buf.items.iter().rev().find_map(|it| match it {
-        CodeItem::Instr { mnemonic, .. } => Some(mnemonic.as_str()),
-        _ => None,
-    });
-    let terminates = last_mnemonic.is_some_and(|m| is_terminator(m, cpu));
-    if !terminates {
+    if !ends_in_terminator(buf, cpu) {
         push(
             diags,
             Level::Warning,
@@ -158,6 +153,48 @@ fn check_undeclared_fallthrough(
                  unconditional terminator and does not declare `falls_into` — it will run into \
                  whatever follows it",
                 proc.name
+            ),
+        );
+    }
+}
+
+/// True when the buf's LAST instruction is an unconditional terminator — the
+/// shared core of the proc- and dispatch-body fallthrough lints (same
+/// last-mnemonic heuristic, S2-D6/D7 defers full reachability).
+fn ends_in_terminator(buf: &crate::value::CodeBuf, cpu: Cpu) -> bool {
+    buf.items
+        .iter()
+        .rev()
+        .find_map(|it| match it {
+            CodeItem::Instr { mnemonic, .. } => Some(mnemonic.as_str()),
+            _ => None,
+        })
+        .is_some_and(|m| is_terminator(m, cpu))
+}
+
+/// 9a (R9a.4): a dispatch member's inline body is an anonymous proc with no
+/// `falls_into` surface — a body that can reach its closing `}` without an
+/// unconditional terminator runs into the next member's body (or whatever
+/// follows the dispatch). Member-flavored mirror of
+/// [`check_undeclared_fallthrough`]; silenced under `@as_compat` by the caller,
+/// like every modernization lint.
+pub(super) fn check_member_body_fallthrough(
+    table: &str,
+    member: &crate::ast::DispatchMember,
+    buf: &crate::value::CodeBuf,
+    cpu: Cpu,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if !ends_in_terminator(buf, cpu) {
+        push(
+            diags,
+            Level::Warning,
+            member.span,
+            format!(
+                "[dispatch.body-fallthrough] dispatch `{table}` member `{}`'s inline body can \
+                 reach its closing `}}` without an unconditional terminator — it will run into \
+                 whatever follows it",
+                member.name
             ),
         );
     }
