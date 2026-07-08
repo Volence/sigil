@@ -44,6 +44,7 @@ fn two_section_ab_layout_and_cross_fixup() {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
     };
 
     // Region B: SfxBlobWinTab at VMA $8000 + $45F = $845F.
@@ -61,6 +62,7 @@ fn two_section_ab_layout_and_cross_fixup() {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
     };
 
     let linked = link(&[region_a, region_b], &SymbolTable::new()).expect("link ok");

@@ -215,42 +215,80 @@ fn here_outside_a_placed_section_uses_default_origin() {
 fn cross_cpu_bank_pointers_pick_le_and_be_by_section() {
     // One module, three sections: a `Sfx` symbol at a 68k-ROM-blob address
     // ($6569A — an out-of-window address, so the SFX bank-window mask is actually
-    // EXERCISED), a z80 table with a windowed pointer to it (→ BankPtr16Le), and a
-    // 68k table with the SAME windowed pointer (→ BankPtr16Be). Each fixup targets
-    // the MASKED symbol `(Sfx & 0x7FFF) | 0x8000` (AS `sfx_winptr`); the two write
-    // the resolved windowed value $D69A in OPPOSITE byte orders.
+    // EXERCISED), a z80 table with a windowed pointer to it (→ Value16Le, R-T0.5),
+    // and a 68k table with the SAME windowed pointer (→ Value16Be). Each fixup
+    // targets the MASKED tree `(Sfx & 0x7FFF) | 0x8000` (AS `sfx_winptr`); the two
+    // write the resolved windowed value $D69A in OPPOSITE byte orders — IDENTICAL
+    // bytes to the pre-R-T0.5 BankPtr16Le/Be path.
     let src = "module m\n\
                section sdata (cpu: z80, vma: $6569A) {\n\
                  data Sfx: u8 = $00\n\
                }\n\
                section ztab (cpu: z80, vma: $8000) {\n\
-                 data ZP = winptr(\"Sfx\")\n\
+                 data ZP: u16 = winptr(\"Sfx\")\n\
                }\n\
                section mtab (cpu: m68000, vma: $C000) {\n\
-                 data MP = winptr(\"Sfx\")\n\
+                 data MP: u16 = winptr(\"Sfx\")\n\
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
     assert!(diags.is_empty(), "lower: {diags:?}");
 
-    // z80 windowed pointer → BankPtr16Le, targeting the masked symbol.
+    // z80 windowed pointer → Value16Le, targeting the masked tree.
     assert_eq!(
         fixups_of(&module, "ztab"),
-        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: winptr_target("Sfx") }]
+        vec![Fixup { kind: FixupKind::Value16Le, offset: 0, target: winptr_target("Sfx") }]
     );
-    // 68k reference to a bank pointer → BankPtr16Be (the new Core kind).
+    // 68k windowed pointer → Value16Be.
     assert_eq!(
         fixups_of(&module, "mtab"),
-        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: winptr_target("Sfx") }]
+        vec![Fixup { kind: FixupKind::Value16Be, offset: 0, target: winptr_target("Sfx") }]
     );
 
     // Linked: Sfx VMA $6569A → ($6569A & 0x7FFF) | 0x8000 = $D69A.
-    // LE $D69A → 9A D6 (ztab), BE $D69A → D6 9A (mtab).
+    // LE $D69A → 9A D6 (ztab), BE $D69A → D6 9A (mtab). Unchanged bytes.
     assert_eq!(linked_section_bytes(&module, "ztab"), vec![0x9A, 0xD6]);
     assert_eq!(linked_section_bytes(&module, "mtab"), vec![0xD6, 0x9A]);
 }
 
+
+/// R-T0.5 — the L7.3 byte-identity condition: `data P: u16 = winptr("L")` in
+/// BOTH a 68k and a Z80 section must produce IDENTICAL bytes before AND after
+/// the winptr-over-link-exprs switch. The constants below are the bytes the
+/// PRE-change winptr (`Cell::SymRef{windowed}` → `BankPtr16Be`/`BankPtr16Le`)
+/// produced, captured on HEAD~ and PINNED here; the post-change winptr
+/// (`Value::LinkExpr` → `Cell::Expr` → `Value16Be`/`Value16Le`) must match them
+/// byte for byte.
+///
+/// `L` sits in a `vma: $6569A` section — an OUT-of-window address, so the mask
+/// `(L & $7FFF) | $8000` = ($569A | $8000) = $D69A is genuinely exercised (not a
+/// no-op on an already-windowed address). 68k writes it big-endian (`D6 9A`);
+/// Z80 writes it little-endian (`9A D6`).
+#[test]
+fn winptr_data_cell_byte_identical_via_linkexpr() {
+    let src = "module m\n\
+               section anchor (cpu: z80, vma: $6569A) {\n\
+                 data L: u8 = $00\n\
+               }\n\
+               section mtab (cpu: m68000, vma: $C000) {\n\
+                 data MP: u16 = winptr(\"L\")\n\
+               }\n\
+               section ztab (cpu: z80, vma: $E000) {\n\
+                 data ZP: u16 = winptr(\"L\")\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "lower: {diags:?}");
+
+    // PINNED pre-change bytes (winptr($6569A) = $D69A): 68k big-endian, Z80
+    // little-endian. These are the exact bytes HEAD~'s BankPtr16Be/Le path wrote.
+    const MP_68K_BE: [u8; 2] = [0xD6, 0x9A];
+    const ZP_Z80_LE: [u8; 2] = [0x9A, 0xD6];
+    assert_eq!(linked_section_bytes(&module, "mtab"), MP_68K_BE, "68k winptr bytes must not drift");
+    assert_eq!(linked_section_bytes(&module, "ztab"), ZP_Z80_LE, "Z80 winptr bytes must not drift");
+}
 
 // ---- negative paths: attribute + here() diagnostics -------------------------
 

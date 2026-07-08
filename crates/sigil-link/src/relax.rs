@@ -761,6 +761,18 @@ pub fn resolve_layout(
                 return Err(vec![diag]);
             }
 
+            // (c4) equ fold (R-T0.3): the placement⇄relaxation fixpoint has
+            // converged and every label's VMA in `syms` is FINAL, so an `equ`
+            // whose value references a label (`bankid(L)`/`winptr(L)`/`L + 4`)
+            // now folds to a stable integer. Fold all sections' `equ_syms`
+            // multi-pass (an equ may reference another equ) against `syms`; the
+            // result rewrites each equ's `expr` to `Expr::Int(v)` in the lowered
+            // sections below, so `link()` defines them as concrete `SymbolValue`s
+            // BEFORE it applies fixups (a cross-section fixup can then target an
+            // equ). An unresolvable equ (after the pass cap) or a cycle is a loud
+            // link error naming the symbol and its first unresolved dependency.
+            let folded = fold_equ_syms(&placed, &syms)?;
+
             // (d) Converged & every ladder reaches: lower fragments + shift labels.
             let out = placed
                 .iter()
@@ -825,6 +837,11 @@ pub fn resolve_layout(
                         reserved_span: sec.reserved_span,
                         group: sec.group.clone(),
                         bank: sec.bank,
+                        // R-T0.3: each equ's `expr` is REPLACED by its folded
+                        // integer (`Expr::Int(v)`), computed above against the
+                        // final label VMAs. `link()` re-folds these (now trivial)
+                        // and defines them before fixups.
+                        equ_syms: folded[si].clone(),
                     }
                 })
                 .collect();
@@ -841,6 +858,158 @@ pub fn resolve_layout(
             .or_else(|| sections.iter().flat_map(|s| s.fragments.iter()).map(frag_span).next())
             .unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 }),
     }])
+}
+
+/// Bounded multi-pass cap for the `equ` fold (R-T0.3): an `equ` may reference
+/// ANOTHER equ (`equ A = B + 1; equ B = bankid(L)`), so one pass over the equ
+/// list is not enough — a later-declared dependency resolves an earlier
+/// dependent on the next pass. Each pass that makes progress resolves at least
+/// one more equ, so a chain of N equs settles in ≤ N passes; the cap bounds a
+/// cycle (`equ X = Y; equ Y = X`) to a loud error instead of a spin. 8 is well
+/// above any realistic hand-authored equ chain depth.
+const MAX_EQU_PASSES: usize = 8;
+
+/// Fold every section's `equ_syms` against the FINAL post-placement symbol table
+/// `syms` (R-T0.3), returning per-section `Vec<EquSym>` whose every `expr` is a
+/// concrete `Expr::Int(v)`. An equ may reference a label (its VMA is final in
+/// `syms`) OR another equ — so this iterates up to [`MAX_EQU_PASSES`], seeding a
+/// scratch lookup that overlays already-folded equ values on top of `syms`.
+///
+/// Unresolvable after the cap (an equ naming a symbol that never resolves, or a
+/// cycle) is a loud `Error` naming the symbol and its FIRST unresolved
+/// dependency — never a silent poison. Duplicate NAMES are not this function's
+/// concern: `link()`'s Pass-1 `defined_here` map (which also sees labels) is the
+/// single dup-symbol channel, so an equ colliding with a label or another equ is
+/// caught there.
+fn fold_equ_syms(
+    placed: &[Section],
+    syms: &SymbolTable,
+) -> Result<Vec<Vec<sigil_ir::EquSym>>, Vec<Diagnostic>> {
+    use std::collections::HashMap;
+
+    // Fast path: no equs anywhere → return the (empty) per-section lists verbatim.
+    let total: usize = placed.iter().map(|s| s.equ_syms.len()).sum();
+    if total == 0 {
+        return Ok(placed.iter().map(|s| s.equ_syms.clone()).collect());
+    }
+
+    // `folded_vals[name] = value` for every equ resolved so far, overlaid on `syms`.
+    let mut folded_vals: HashMap<String, i64> = HashMap::new();
+
+    for _ in 0..MAX_EQU_PASSES {
+        let mut progressed = false;
+        let mut all_done = true;
+        for sec in placed {
+            for eq in &sec.equ_syms {
+                if folded_vals.contains_key(&eq.name) {
+                    continue;
+                }
+                // Lookup overlays already-folded equ values on the label table.
+                let lookup =
+                    |n: &str| folded_vals.get(n).copied().or_else(|| syms.resolve(n, None));
+                match eq.expr.fold(&lookup) {
+                    Fold::Value(v) => {
+                        folded_vals.insert(eq.name.clone(), v);
+                        progressed = true;
+                    }
+                    Fold::Poison => all_done = false,
+                }
+            }
+        }
+        if all_done {
+            break;
+        }
+        if !progressed {
+            // No equ resolved this pass yet some remain unresolved → a cycle or a
+            // dangling dependency. Name the first still-unresolved equ and its
+            // first unresolved dependency (a symbol the current table cannot fold).
+            return Err(vec![unresolved_equ_diag(placed, syms, &folded_vals)]);
+        }
+    }
+
+    // Any equ still unresolved after the cap is an error (same diagnostic shape).
+    if placed.iter().any(|s| s.equ_syms.iter().any(|e| !folded_vals.contains_key(&e.name))) {
+        return Err(vec![unresolved_equ_diag(placed, syms, &folded_vals)]);
+    }
+
+    // Rewrite every equ's expr to its folded integer.
+    Ok(placed
+        .iter()
+        .map(|s| {
+            s.equ_syms
+                .iter()
+                .map(|e| sigil_ir::EquSym {
+                    name: e.name.clone(),
+                    // Every equ is resolved here (checked above), so the map is
+                    // total; fall back to the original expr defensively.
+                    expr: folded_vals
+                        .get(&e.name)
+                        .map(|v| Expr::Int(*v))
+                        .unwrap_or_else(|| e.expr.clone()),
+                    span: e.span,
+                })
+                .collect()
+        })
+        .collect())
+}
+
+/// Build the loud "unresolvable equ" diagnostic (R-T0.3) for the FIRST equate
+/// that could not be folded: name the equate and the first symbol its `expr`
+/// references that neither the label table nor a resolved equ can supply (its
+/// first unresolved dependency — which, for `equ X = Y; equ Y = X`, is the other
+/// arm of the cycle). Points at the equate's own span.
+fn unresolved_equ_diag(
+    placed: &[Section],
+    syms: &SymbolTable,
+    folded_vals: &std::collections::HashMap<String, i64>,
+) -> Diagnostic {
+    for sec in placed {
+        for eq in &sec.equ_syms {
+            if folded_vals.contains_key(&eq.name) {
+                continue;
+            }
+            let dep = first_unresolved_sym(&eq.expr, syms, folded_vals)
+                .unwrap_or_else(|| "<unknown>".to_string());
+            return Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "unresolvable equ `{}`: its first unresolved dependency `{}` is not defined \
+                     (an undefined symbol, or an equ cycle)",
+                    eq.name, dep
+                ),
+                primary: eq.span,
+            };
+        }
+    }
+    // Unreachable: only called when some equ is unresolved.
+    Diagnostic {
+        level: Level::Error,
+        message: "internal: unresolved equ with no unresolved equ found".to_string(),
+        primary: Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+    }
+}
+
+/// The first symbol in `expr` that neither `folded_vals` (already-folded equs)
+/// nor `syms` (final label VMAs) can resolve — the concrete dependency to name
+/// in the unresolvable-equ diagnostic.
+fn first_unresolved_sym(
+    expr: &Expr,
+    syms: &SymbolTable,
+    folded_vals: &std::collections::HashMap<String, i64>,
+) -> Option<String> {
+    match expr {
+        Expr::Int(_) => None,
+        Expr::Sym(name) => {
+            if folded_vals.contains_key(name) || syms.resolve(name, None).is_some() {
+                None
+            } else {
+                Some(name.clone())
+            }
+        }
+        Expr::Unary { operand, .. } => first_unresolved_sym(operand, syms, folded_vals),
+        Expr::Binary { lhs, rhs, .. } => first_unresolved_sym(lhs, syms, folded_vals)
+            .or_else(|| first_unresolved_sym(rhs, syms, folded_vals)),
+    }
 }
 
 /// The `[branch.out-of-reach]` diagnostic for a ladder that maxed at its last
@@ -985,6 +1154,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1019,6 +1189,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1050,6 +1221,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1096,6 +1268,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1128,6 +1301,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // The jmp lowered to abs.l (6-byte Data), and Target shifted 4 → 6.
@@ -1161,6 +1335,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // Both jmps grew to abs.l; A shifted 0x0F → 0x13 (0x0F + 4).
@@ -1205,6 +1380,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1233,6 +1409,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -1255,6 +1432,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         let linked = crate::link(&out, &stubs).unwrap();
@@ -1279,6 +1457,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -1306,6 +1485,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[code], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1326,6 +1506,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         assert!(resolve_layout(&[sec], &SymbolTable::new(), true).is_err());
     }
@@ -1381,6 +1562,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1409,6 +1591,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1441,6 +1624,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1479,6 +1663,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 5);
@@ -1508,6 +1693,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1544,6 +1730,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1582,6 +1769,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1612,6 +1800,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1644,6 +1833,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[1] {
@@ -1677,6 +1867,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1730,6 +1921,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // frag0 grew to bra.w (Far ~0x100 ahead, out of i8).
@@ -1785,6 +1977,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // frag2 must be a 4-byte jmp abs.w (rung 2), NOT bra.w: its backward disp
@@ -1834,6 +2027,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1864,6 +2058,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1892,6 +2087,7 @@ mod tests {
             reserved_span: 0x1000,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let rom = Section {
             name: "reset".into(),
@@ -1908,6 +2104,7 @@ mod tests {
             reserved_span: 4,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         // Must resolve cleanly — no "colliding pins" error.
         let out = resolve_layout(&[ram, rom], &SymbolTable::new(), true)
@@ -1928,6 +2125,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1957,6 +2155,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let secs = [sec];
         if cfg!(debug_assertions) {
@@ -1994,6 +2193,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let secs = [sec];
         if cfg!(debug_assertions) {
@@ -2011,5 +2211,179 @@ mod tests {
                 err
             );
         }
+    }
+
+    // ---- equ fold post-placement (R-T0.3) ------------------------------------
+
+    use sigil_ir::expr::BinOp;
+
+    /// The `bankid` residual tree the evaluator builds: `(Sym & $7F8000) >> 15`.
+    fn bankid_tree(name: &str) -> Expr {
+        Expr::Binary {
+            op: BinOp::Shr,
+            lhs: Box::new(Expr::Binary {
+                op: BinOp::And,
+                lhs: Box::new(Expr::Sym(name.into())),
+                rhs: Box::new(Expr::Int(0x7F_8000)),
+            }),
+            rhs: Box::new(Expr::Int(15)),
+        }
+    }
+
+    /// The `winptr` residual tree (post R-T0.5): `(Sym & $7FFF) | $8000`.
+    fn winptr_tree(name: &str) -> Expr {
+        Expr::Binary {
+            op: BinOp::Or,
+            lhs: Box::new(Expr::Binary {
+                op: BinOp::And,
+                lhs: Box::new(Expr::Sym(name.into())),
+                rhs: Box::new(Expr::Int(0x7FFF)),
+            }),
+            rhs: Box::new(Expr::Int(0x8000)),
+        }
+    }
+
+    fn equ(name: &str, expr: Expr) -> sigil_ir::EquSym {
+        sigil_ir::EquSym { name: name.into(), expr, span: sp() }
+    }
+
+    /// A section pinned at `lma` (no vma phase, so labels follow the LMA per
+    /// R7p.5) with a label `L` at offset 0 and the given equ_syms.
+    fn equ_section(lma: u32, label: &str, equ_syms: Vec<sigil_ir::EquSym>) -> Section {
+        Section {
+            name: "s".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma,
+            labels: vec![Label { name: label.into(), offset: 0 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
+                fixups: vec![],
+                span: sp(),
+            })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms,
+        }
+    }
+
+    #[test]
+    fn equ_bankid_folds_to_symbol_at_link() {
+        // A section PINNED at $58000 with label `L` @ $58000 (VMA == LMA, R7p.5).
+        // Three equs: B = bankid(L), P = winptr(L), N = 6 (comptime int).
+        //   bankid($58000) = ($58000 & $7F8000) >> 15 = $58000 >> 15 = 0xB.
+        //   winptr($58000) = ($58000 & $7FFF) | $8000 = 0 | $8000 = $8000.
+        let sec = equ_section(
+            0x5_8000,
+            "L",
+            vec![
+                equ("B", bankid_tree("L")),
+                equ("P", winptr_tree("L")),
+                equ("N", Expr::Int(6)),
+            ],
+        );
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        // The folded equ_syms carry concrete Int exprs.
+        let e = &out[0].equ_syms;
+        assert_eq!(e.iter().find(|s| s.name == "B").unwrap().expr, Expr::Int(0xB));
+        assert_eq!(e.iter().find(|s| s.name == "P").unwrap().expr, Expr::Int(0x8000));
+        assert_eq!(e.iter().find(|s| s.name == "N").unwrap().expr, Expr::Int(6));
+        // And link() defines them (no fixups here — the folded-expr assertion above
+        // is the primary proof; link succeeding proves Pass-1b accepts them).
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(&linked.section("s").unwrap().bytes[..6], &[0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+    }
+
+    #[test]
+    fn equ_chain_folds_and_cycle_is_loud() {
+        // Chain: A = B + 1 ; B = bankid(L). B folds pass 1 ($58000 → 0xB); A folds
+        // pass 2 (0xB + 1 = 0xC). Multi-pass proof.
+        let a_expr = Expr::Binary {
+            op: BinOp::Add,
+            lhs: Box::new(Expr::Sym("B".into())),
+            rhs: Box::new(Expr::Int(1)),
+        };
+        let sec = equ_section(0x5_8000, "L", vec![equ("A", a_expr), equ("B", bankid_tree("L"))]);
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        let e = &out[0].equ_syms;
+        assert_eq!(e.iter().find(|s| s.name == "B").unwrap().expr, Expr::Int(0xB));
+        assert_eq!(e.iter().find(|s| s.name == "A").unwrap().expr, Expr::Int(0xC));
+
+        // Cycle: X = Y ; Y = X → unresolvable, loud error naming the cycle.
+        let cyc = equ_section(
+            0x5_8000,
+            "L",
+            vec![equ("X", Expr::Sym("Y".into())), equ("Y", Expr::Sym("X".into()))],
+        );
+        let err = resolve_layout(&[cyc], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("unresolvable equ")
+                && (d.message.contains('X') || d.message.contains('Y'))),
+            "expected a loud equ-cycle diagnostic naming X/Y, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn equ_referencing_undefined_symbol_is_loud() {
+        // An equ referencing a symbol no label/equ/stub defines → loud error
+        // naming the equ and its first unresolved dependency.
+        let sec = equ_section(0x5_8000, "L", vec![equ("Q", Expr::Sym("Nope".into()))]);
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("unresolvable equ `Q`")
+                && d.message.contains("Nope")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn cross_section_fixup_targets_equ_symbol() {
+        // The seam Task 5 relies on: section `s` defines `equ B = bankid(L)`;
+        // section `w` (a SECOND section) has a Value8 fixup targeting `B`. After
+        // resolve_layout folds B ($58000 → bank 0xB) and link() defines it, the
+        // cross-section fixup writes 0x0B.
+        let a = equ_section(0x5_8000, "L", vec![equ("B", bankid_tree("L"))]);
+        let w = Section {
+            name: "w".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0x1000,
+            labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x00],
+                fixups: vec![Fixup {
+                    kind: FixupKind::Value8,
+                    offset: 0,
+                    target: Expr::Sym("B".into()),
+                }],
+                span: sp(),
+            })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let out = resolve_layout(&[a, w], &SymbolTable::new(), true).unwrap();
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("w").unwrap().bytes, vec![0x0B]);
+    }
+
+    #[test]
+    fn duplicate_equ_name_is_dup_symbol_error() {
+        // Two equs with the SAME name across two sections → the existing
+        // dup-symbol channel (equ funnels through the same `defined_here` map).
+        let a = equ_section(0x5_8000, "L", vec![equ("Dup", Expr::Int(1))]);
+        let mut b = equ_section(0x6_0000, "M", vec![equ("Dup", Expr::Int(2))]);
+        b.name = "s2".into();
+        let out = resolve_layout(&[a, b], &SymbolTable::new(), true).unwrap();
+        let err = crate::link(&out, &SymbolTable::new()).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("Dup")
+                && d.message.to_lowercase().contains("redefin")),
+            "expected a dup-symbol diagnostic for `Dup`, got: {err:?}"
+        );
     }
 }

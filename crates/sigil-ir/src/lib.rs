@@ -40,6 +40,21 @@ pub struct Label {
     pub offset: u32,
 }
 
+/// An `equ NAME = expr` link-level symbol carried on its [`Section`] (R-T0.3):
+/// a name that becomes a `SymbolValue::Int` folded POST-placement (after the
+/// placement⇄relaxation fixpoint converges and every label VMA is final), so an
+/// equ may reference a label's final address — or another equ. Its `expr` is a
+/// link-time expression: `Expr::Int(n)` for a comptime integer, or the residual
+/// tree an evaluator `Value::LinkExpr` carried (e.g. `bankid`/`winptr` over a
+/// label). Unlike a [`Label`], its value is NOT `origin + offset` — it is the
+/// folded `expr` verbatim, which is why it is a distinct carrier and not a label.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EquSym {
+    pub name: String,
+    pub expr: crate::expr::Expr,
+    pub span: Span,
+}
+
 /// One width candidate of a [`Fragment::RelaxAbsSym`]: a complete instruction
 /// encoding (with the operand-address bytes zeroed as a placeholder) together
 /// with the single [`Fixup`] that patches its symbolic operand. The front-end
@@ -193,6 +208,11 @@ pub struct Section {
     /// window this section must never straddle. `None` ⇒ no bank constraint.
     /// INERT until the placement pass (Task 2) enforces it.
     pub bank: Option<u32>,
+    /// `equ NAME = expr` link-level symbols attached to this carrier section
+    /// (R-T0.3): folded to `SymbolValue::Int` at link, POST-placement, before
+    /// fixup application, so cross-section fixups can target them. Empty for a
+    /// section with no equates — the byte-neutral default.
+    pub equ_syms: Vec<EquSym>,
 }
 
 impl Section {
@@ -436,6 +456,7 @@ impl ModuleBuilder {
                 reserved_span,
                 group: None,
                 bank: None,
+                equ_syms: Vec::new(),
             }],
             link_asserts: Vec::new(),
         }
@@ -495,6 +516,7 @@ mod tests {
             reserved_span: 3,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         assert_eq!(section.image_bytes(), vec![0x00, 0x3E, 0x05]);
     }
@@ -542,6 +564,7 @@ mod tests {
             reserved_span: 3 + 4 + 8,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         // Data(3) + Fill(4) contribute image bytes; Reserve(8) contributes NONE.
         assert_eq!(sec.image_len(), 3 + 4);
@@ -589,6 +612,7 @@ mod tests {
             reserved_span: 4,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         // The byte at the back-patched offset (0x00) now differs from the
         // original placeholder — proving a real overwrite, not an append.
@@ -619,6 +643,7 @@ mod tests {
             reserved_span: 18,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let mut want = vec![1, 2, 3, 4];
         want.extend(std::iter::repeat_n(0x00, 12));
@@ -654,6 +679,7 @@ mod tests {
             reserved_span: 8,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         assert_eq!(sec.image_bytes(), vec![0x63, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(sec.image_len(), 8);

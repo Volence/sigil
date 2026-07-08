@@ -78,14 +78,17 @@ fn zx0_matches_build_sh_reference() {
 }
 
 #[test]
-fn zx0_symbolic_input_errors() {
-    // `winptr(sym)` yields a `Data` holding a single `Cell::SymRef` — an
-    // unresolved symbol reference with no concrete bytes to compress.
+fn zx0_link_expr_input_errors() {
+    // `winptr(sym)` is now a `Value::LinkExpr` (R-T0.5), not a `Data` blob — a
+    // link-time value with no concrete bytes to compress. zx0 rejects any
+    // non-`Data` argument with `[zx0.arg]` (naming the actual type, `link-expr`),
+    // so a `zx0(winptr(...))` is still a loud error, just via the arg-type check
+    // rather than the intra-Data `[zx0.symbolic]` scan.
     let src = "module m\ndata C = zx0(winptr(\"Foo\"))\n";
     let (buf, diags) = data(src, "C");
     assert!(
-        diags.iter().any(|d| d.message.contains("[zx0.symbolic]")),
-        "expected a [zx0.symbolic] diagnostic, got {diags:?}"
+        diags.iter().any(|d| d.message.contains("[zx0.arg]") && d.message.contains("link-expr")),
+        "expected a [zx0.arg] diagnostic naming link-expr, got {diags:?}"
     );
     assert_eq!(buf.expect("data buf").size, 0);
 }

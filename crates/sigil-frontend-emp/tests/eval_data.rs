@@ -294,34 +294,47 @@ fn pointer_field_lowers_to_symref() {
 
 // ---- winptr: the §7.2 windowed bank pointer -----------------------------
 
+/// The residual tree `winptr(sym)` now yields (R-T0.5): `(sym & $7FFF) | $8000`.
+fn winptr_tree(name: &str) -> sigil_ir::expr::Expr {
+    use sigil_ir::expr::{BinOp, Expr};
+    Expr::Binary {
+        op: BinOp::Or,
+        lhs: Box::new(Expr::Binary {
+            op: BinOp::And,
+            lhs: Box::new(Expr::Sym(name.into())),
+            rhs: Box::new(Expr::Int(0x7FFF)),
+        }),
+        rhs: Box::new(Expr::Int(0x8000)),
+    }
+}
+
 #[test]
-fn winptr_of_fn_ref_is_windowed_width2_symref() {
-    // The happy path via the FnRef capture: `winptr(sfx)` → a one-cell
-    // Value::Data holding a 2-byte windowed SymRef (D-P4.5 / §7.2).
+fn winptr_of_fn_ref_is_windowed_link_expr_cell() {
+    // The happy path via the FnRef capture (R-T0.5): `winptr(sfx)` is now a
+    // Value::LinkExpr `(sfx & $7FFF) | $8000`. Emitted into a `u16` field it
+    // lowers to a general link-expr VALUE cell (`Cell::Expr`, width 2), whose
+    // Value16Be/Value16Le fixup writes IDENTICAL bytes to the old windowed
+    // SymRef (proven end-to-end in lower_sections.rs).
     let src = "module m\n\
                comptime fn sfx() -> u8 { 0 }\n\
-               data P = winptr(sfx)\n";
+               data P: u16 = winptr(sfx)\n";
     let (buf, diags) = data(src, "P");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
     assert_eq!(buf.size, 2);
-    assert_eq!(buf.cells, vec![Cell::SymRef { name: "sfx".into(), width: 2, windowed: true }]);
+    assert_eq!(buf.cells, vec![Cell::Expr { expr: winptr_tree("sfx"), width: 2, le: false }]);
 }
 
 #[test]
 fn winptr_of_string_uses_the_str_capture_path() {
     // `winptr("name")` captures the symbol name from a Value::Str (the second
-    // capture path, mirroring `lower_ptr`), yielding the same width-2 windowed
-    // SymRef.
-    let src = "module m\ndata P = winptr(\"sfx_jump\")\n";
+    // capture path), yielding the same windowed link-expr VALUE cell.
+    let src = "module m\ndata P: u16 = winptr(\"sfx_jump\")\n";
     let (buf, diags) = data(src, "P");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
     assert_eq!(buf.size, 2);
-    assert_eq!(
-        buf.cells,
-        vec![Cell::SymRef { name: "sfx_jump".into(), width: 2, windowed: true }]
-    );
+    assert_eq!(buf.cells, vec![Cell::Expr { expr: winptr_tree("sfx_jump"), width: 2, le: false }]);
 }
 
 #[test]

@@ -428,16 +428,24 @@ impl<'a> Evaluator<'a> {
         Value::Data(buf)
     }
 
-    /// `winptr(sym)` (§7.2 — the typed `sfx_winptr`): a one-cell [`Value::Data`]
-    /// holding a single 2-byte WINDOWED [`Cell::SymRef`] (`width: 2, windowed:
-    /// true`). A Z80 bank pointer: the linker resolves `sym` and writes a
-    /// little-endian `BankPtr16Le` window offset (D-P4.5). Composing through the
-    /// `Data` monoid (`winptr(a) ++ winptr(b)`), it flows into `data` emission
-    /// with no new path. The symbol NAME is captured exactly as
-    /// [`lower_ptr`](Self::lower_ptr) does — from a [`Value::FnRef`] (a bare
-    /// `comptime fn`/label name) or a [`Value::Str`] naming a symbol. No address
-    /// is resolved here (that is lowering); a non-reference argument is a
-    /// diagnostic and [`Poison`](Value::Poison).
+    /// `winptr(sym)` (§7.2 — the typed `sfx_winptr`): the SFX bank-window pointer
+    /// of a symbol, `(sym & $7FFF) | $8000`, as a [`Value::LinkExpr`] residual
+    /// tree (R-T0.5, discharging ledger L7.3). The mask maps a 68k-ROM-blob
+    /// address into the Z80's `$8000..$FFFF` window (idempotent for a symbol that
+    /// already resolves inside it). It is a LINK-TIME value — the address is not
+    /// final until `resolve_layout` — so it rides the D2.23 link-expr machinery
+    /// exactly like [`eval_bankid`](Self::eval_bankid): arithmetic composes via
+    /// operator lifting, an `equ P = winptr(L)` folds post-placement (R-T0.3),
+    /// and emission into a `u16` data cell lowers to a general `Cell::Expr` VALUE
+    /// cell (`Value16Be` on 68k / `Value16Le` on Z80), producing IDENTICAL bytes
+    /// to the pre-R-T0.5 `Cell::SymRef{windowed}`/`BankPtr16Be`/`BankPtr16Le`
+    /// path (the mask keeps the folded value in `[$8000, $FFFF]`, so it always
+    /// fits the u16 window the VALUE kinds range-check against).
+    ///
+    /// The argument contract is EXACTLY `bankid`'s: one positional symbol
+    /// reference (a bare label/`comptime fn` name → [`Value::FnRef`], or a
+    /// [`Value::Str`] naming a symbol). A non-reference argument is a diagnostic
+    /// and [`Poison`](Value::Poison). No address is resolved here (that is link).
     pub(super) fn eval_winptr(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
         if args.len() != 1 {
             self.error(span, format!("`winptr` expects exactly 1 argument, got {}", args.len()));
@@ -463,9 +471,22 @@ impl<'a> Evaluator<'a> {
                 return Value::Poison;
             }
         };
-        let mut buf = DataBuf::empty();
-        buf.push(Cell::SymRef { name, width: 2, windowed: true });
-        Value::Data(buf)
+        // Build the residual tree `(Sym & $7FFF) | $8000` — the SFX bank-window
+        // mask/base (AS `sfx_winptr`, `SFX_WIN_MASK`/`SFX_WIN_BASE`), matching the
+        // linker's own BankPtr test convention and the old `sym_target` masking.
+        // Folded by the linker once `sym`'s final address is known.
+        use sigil_ir::expr::{BinOp, Expr};
+        let masked = Expr::Binary {
+            op: BinOp::And,
+            lhs: Box::new(Expr::Sym(name)),
+            rhs: Box::new(Expr::Int(0x7FFF)),
+        };
+        let windowed = Expr::Binary {
+            op: BinOp::Or,
+            lhs: Box::new(masked),
+            rhs: Box::new(Expr::Int(0x8000)),
+        };
+        Value::LinkExpr(windowed)
     }
 
     /// `bankid(sym)` (§7.x — D7.3/R7m.3): the Genesis cartridge BANK ID of a

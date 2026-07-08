@@ -84,6 +84,7 @@ fn multi_section_jsr_and_branch_link_correctly() {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
     };
     let target = Section {
         name: "target".into(), cpu: Cpu::M68000, vma_base: None, lma: 0x100,
@@ -93,6 +94,7 @@ fn multi_section_jsr_and_branch_link_correctly() {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
     };
     let map = MemoryMap::new(
         vec![Region { name: "rom".into(), lma_base: 0, size: 0x1000, kind: RegionKind::Rom, vma_base: None }],
@@ -120,6 +122,7 @@ fn abs_l_jmp_flows_through_emit_rom() {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
     };
     let map = MemoryMap::new(
         vec![Region { name: "rom".into(), lma_base: 0, size: 0x1000, kind: RegionKind::Rom, vma_base: None }],

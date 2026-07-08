@@ -168,13 +168,15 @@ fn symref_width4_68k_is_abs32be() {
 }
 
 #[test]
-fn winptr_in_z80_is_bankptr16le() {
-    // `winptr(sym)` in a Z80 section → 2 zero bytes + a BankPtr16Le fixup at
-    // offset 0 targeting the WINDOW-MASKED symbol `(sfx & 0x7FFF) | 0x8000`
-    // (D-P4.5 row 3, matching AS `sfx_winptr`).
+fn winptr_in_z80_is_value16le() {
+    // `winptr(sym): u16` in a Z80 section (R-T0.5): now a general link-expr VALUE
+    // cell → a `Value16Le` fixup at offset 0 targeting the WINDOW-MASKED tree
+    // `(sfx & 0x7FFF) | 0x8000` (the SAME target the old `BankPtr16Le` carried).
+    // The folded value stays in [$8000,$FFFF], so its bytes are IDENTICAL to the
+    // pre-R-T0.5 BankPtr16Le path (proven in lower_sections.rs).
     let src = "module m\n\
                comptime fn sfx() -> u8 { 0 }\n\
-               data P = winptr(sfx)\n";
+               data P: u16 = winptr(sfx)\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
@@ -182,7 +184,7 @@ fn winptr_in_z80_is_bankptr16le() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
-        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: winptr_target("sfx") }]
+        vec![Fixup { kind: FixupKind::Value16Le, offset: 0, target: winptr_target("sfx") }]
     );
     // The 2-byte hole is present in the image (zero-filled before linking).
     let section = module.sections.first().expect("one section");
@@ -198,14 +200,14 @@ fn winptr_in_z80_is_bankptr16le() {
 }
 
 #[test]
-fn winptr_in_68k_is_bankptr16be() {
-    // A `winptr(sym)` in a 68000 section hits `(M68000, 2, true)` — a 68k
-    // reference to a Z80 bank pointer, which T6 now represents with the new Core
-    // `BankPtr16Be` kind (§7.2 / D-P4.7), the big-endian counterpart of
-    // `BankPtr16Le`. (Was the T2 tripwire `winptr_in_68k_is_unsupported_...`.)
+fn winptr_in_68k_is_value16be() {
+    // A `winptr(sym): u16` in a 68000 section (R-T0.5): a general link-expr VALUE
+    // cell → `Value16Be`, targeting the same masked tree. The big-endian
+    // counterpart of `winptr_in_z80_is_value16le`; bytes unchanged from the old
+    // `BankPtr16Be` path.
     let src = "module m\n\
                comptime fn sfx() -> u8 { 0 }\n\
-               data P = winptr(sfx)\n";
+               data P: u16 = winptr(sfx)\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
@@ -213,7 +215,7 @@ fn winptr_in_68k_is_bankptr16be() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
-        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: winptr_target("sfx") }]
+        vec![Fixup { kind: FixupKind::Value16Be, offset: 0, target: winptr_target("sfx") }]
     );
     // The 2-byte hole is present in the image (zero-filled before linking).
     assert_eq!(raw_data_bytes(&module), vec![0x00, 0x00]);
