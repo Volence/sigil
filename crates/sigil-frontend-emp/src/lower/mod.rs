@@ -290,6 +290,12 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut asm_counter,
                 );
             }
+            // `Item::Const` and `Item::Equ` are name-resolution-only items (no
+            // bytes, no label) — the evaluator's `consts`/`equs` index is where
+            // their values live. `Item::Equ` (R-T0.2) is accept-and-ignore HERE
+            // on purpose: this task delivers grammar + AST + evaluator name
+            // binding only. Task 3 attaches equ_syms to `ir::Section` and folds
+            // them at link (the whole reason an equ exists).
             _ => {}
         }
     }
@@ -418,6 +424,8 @@ fn lower_section_items(
             ast::Item::Script(decl) => {
                 script::lower_script_item(file, decl, placement, as_compat, builder, diags, asm_counter);
             }
+            // See the top-level arm's note: `Item::Equ` (R-T0.2) is
+            // accept-and-ignore this task; Task 3 attaches it to IR.
             _ => {}
         }
     }

@@ -98,6 +98,23 @@ impl Parser {
             String::from("<error>")
         }
     }
+    /// Like [`Parser::expect_ident`], but rejects the small set of names
+    /// reserved as DECLARATION names (currently just `equ` — R-T0.2: `equ` is
+    /// a new top-level item keyword, so a declaration named `equ` would be
+    /// silently ambiguous with the item opener). Deliberately narrow: this
+    /// does NOT reserve `equ` in ordinary value/path/field-name positions
+    /// (those keep calling plain `expect_ident`), matching how every other
+    /// contextual keyword in this grammar (`const`, `enum`, ...) stays an
+    /// unreserved name outside its own opener position.
+    fn expect_decl_name(&mut self, what: &str) -> String {
+        if self.at_kw("equ") {
+            let span = self.span();
+            self.diag_at(span, format!("`equ` is reserved and cannot be used as {what}"));
+            self.bump();
+            return String::from("<error>");
+        }
+        self.expect_ident(what)
+    }
     fn skip_newlines(&mut self) { while self.eat(&Tok::Newline) {} }
     fn expect_line_end(&mut self) {
         if !self.at(&Tok::Eof) && !self.eat(&Tok::Newline) {
@@ -197,6 +214,7 @@ impl Parser {
         }
         if self.at_kw("use") { return Some(Item::Use(self.use_decl())); }
         if self.at_kw("const") { return Some(Item::Const(self.const_decl(public))); }
+        if self.at_kw("equ") { return Some(Item::Equ(self.equ_decl(public))); }
         if self.at_kw("enum") { return Some(Item::Enum(self.enum_decl(public, false))); }
         if self.at_kw("bitfield") { return Some(Item::Bitfield(self.bitfield_decl(public))); }
         if self.at_kw("struct") { return Some(Item::Struct(self.struct_decl(public))); }
@@ -255,7 +273,7 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 17] = ["use", "const", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 18] = ["use", "const", "equ", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "script", "comptime", "section", "pub",
                                      "newtype", "offsets", "dispatch", "ensure", "ensure_fatal"];
         let mut depth = 0i32;
@@ -445,13 +463,27 @@ impl Parser {
     fn const_decl(&mut self, public: bool) -> ConstDecl {
         let start = self.span();
         self.bump(); // `const`
-        let name = self.expect_ident("constant name");
+        let name = self.expect_decl_name("a constant name");
         let ty = if self.eat(&Tok::Colon) { Some(self.ty()) } else { None };
         self.expect(&Tok::Eq, "`=`");
         let value = self.expr();
         let span = start.merge(self.prev_span());
         self.expect_line_end();
         ConstDecl { public, name, ty, value, span }
+    }
+
+    /// An `equ NAME = expr` declaration (R-T0.2): grammar mirrors
+    /// [`Parser::const_decl`] minus the optional type annotation — an equ's
+    /// value is always an untyped comptime int or link-time expression.
+    fn equ_decl(&mut self, public: bool) -> EquDecl {
+        let start = self.span();
+        self.bump(); // `equ`
+        let name = self.expect_decl_name("an equ name");
+        self.expect(&Tok::Eq, "`=`");
+        let value = self.expr();
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        EquDecl { is_pub: public, name, value, span }
     }
 
     /// Parse an `enum Name: repr { variants... }` (`comptime == false`, repr

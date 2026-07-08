@@ -444,6 +444,37 @@ fn bankid_as_array_length_refuses_with_bank_message() {
     );
 }
 
+// ---- R-T0.2: a comptime READ of an equ bound to a LinkExpr refuses loudly ----
+
+/// An `equ` binds lazily even when its value is link-time (`bankid(...)`) —
+/// that's fine, binding never forces evaluation eagerly. But a COMPTIME READ
+/// of that equ's value in a comptime-required position (here: an array size)
+/// must hit the SAME `[bank.provisional]` refusal a bare `bankid(...)` would,
+/// because equ reads route through the identical `resolve_const`/
+/// `reject_if_provisional` path consts use — not a crash, not silent.
+#[test]
+fn equ_bound_to_bankid_refuses_on_comptime_array_size_read() {
+    let src = "module m\n\
+               section s (cpu: m68000, vma: $8000) {\n\
+                 data L: u8 = 0\n\
+                 equ B = bankid(\"L\")\n\
+                 data Bad: [u8; B] = []\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (_m, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[bank.provisional]")
+            && d.message.contains("emit it into a data cell or guard it with ensure")),
+        "expected the [bank.provisional] steering message reading equ B, got: {diags:?}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[here.provisional]")),
+        "equ-wrapped bankid must not surface the here() message, got: {diags:?}"
+    );
+}
+
 // ---- R7m.3 (e): argument-form errors mirror winptr's -------------------------
 
 /// (e) Wrong arity is diagnosed exactly like `winptr` (arity + "got N").

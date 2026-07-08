@@ -79,6 +79,13 @@ pub struct Evaluator<'a> {
     pub call_stack: Vec<(String, Span)>,
     /// File-level `const` decls, indexed by name (empty in the no-file mode).
     consts: HashMap<&'a str, &'a ast::ConstDecl>,
+    /// File-level `equ` decls, indexed by name (empty in the no-file mode).
+    /// Resolved through the SAME lazy/memoized/cycle-guarded path as
+    /// [`consts`](Self::consts) (R-T0.2 — an equ's value is a comptime
+    /// int or a link-time expression, resolved identically to a const's;
+    /// the only semantic difference is what a later lowering task does with
+    /// the result).
+    equs: HashMap<&'a str, &'a ast::EquDecl>,
     /// File-level `enum` decls, indexed by name (empty in the no-file mode).
     /// `pub(crate)` so the [`layout`](crate::layout) module can size enum reprs.
     pub(crate) enums: HashMap<&'a str, &'a ast::EnumDecl>,
@@ -318,6 +325,7 @@ impl<'a> Evaluator<'a> {
             steps: 0,
             call_stack: Vec::new(),
             consts: HashMap::new(),
+            equs: HashMap::new(),
             enums: HashMap::new(),
             fns: HashMap::new(),
             structs: HashMap::new(),
@@ -465,6 +473,9 @@ impl<'a> Evaluator<'a> {
             match item {
                 ast::Item::Const(c) => {
                     self.consts.insert(c.name.as_str(), c);
+                }
+                ast::Item::Equ(e) => {
+                    self.equs.insert(e.name.as_str(), e);
                 }
                 ast::Item::Enum(e) => {
                     self.enums.insert(e.name.as_str(), e);
@@ -799,19 +810,30 @@ impl<'a> Evaluator<'a> {
         self.error(span, msg);
     }
 
-    /// Resolve the file-level const named `name`, evaluating it lazily and
-    /// memoizing the result. `ref_span` is the reference site, used to locate a
-    /// cyclic-definition error.
+    /// Resolve the file-level const OR equ named `name`, evaluating it lazily
+    /// and memoizing the result. `ref_span` is the reference site, used to
+    /// locate a cyclic-definition error.
+    ///
+    /// `equ` (R-T0.2) shares this ENTIRE path with `const` — same memo, same
+    /// in-progress cycle stack, same fresh global-only env — because an equ's
+    /// value is resolved exactly like a const's; the only difference is what a
+    /// later lowering task does with the result (link-symbol emission vs.
+    /// nothing). Sharing one memo/cycle-stack pair means a const and an equ of
+    /// the SAME name would collide (one clobbers the other's memo entry); that
+    /// is an existing-shape limitation shared with how two same-named consts
+    /// already behave (last-wins at index-build time, per `index_items`'s
+    /// doc), not a new one introduced here.
     ///
     /// - A memoized value (including a memoized `Poison`) is returned directly.
     /// - If `name` is already on the in-progress stack, this reference closes a
     ///   cycle: report `cyclic const definition: <chain>` at `ref_span`, memoize
     ///   `Poison` for `name` so the cascade suppresses, and return `Poison`.
     /// - Otherwise push `name`, evaluate its value expr in a fresh global-only
-    ///   env (consts see each other only by name, never each other's locals),
-    ///   pop, memoize, and return.
+    ///   env (consts/equs see each other only by name, never each other's
+    ///   locals), pop, memoize, and return.
     ///
-    /// Callers must only invoke this for a `name` known to be in `self.consts`.
+    /// Callers must only invoke this for a `name` known to be in `self.consts`
+    /// or `self.equs`.
     fn resolve_const(&mut self, name: &str, ref_span: Span) -> Value {
         if let Some(v) = self.const_memo.get(name) {
             return v.clone();
@@ -825,15 +847,21 @@ impl<'a> Evaluator<'a> {
             self.const_memo.insert(name.to_string(), Value::Poison);
             return Value::Poison;
         }
-        // Copy the `&'a ConstDecl` out of the index so its `value` expr is
-        // borrowed from the file (lifetime `'a`), not from `self`. That leaves
-        // `self` free to be mutated (diags/memo/in_progress) across the
-        // recursive `eval_expr` below.
-        let decl: &'a ast::ConstDecl =
-            self.consts.get(name).copied().expect("caller ensures the const exists");
+        // Copy the value expr out of the index so it is borrowed from the file
+        // (lifetime `'a`), not from `self`. That leaves `self` free to be
+        // mutated (diags/memo/in_progress) across the recursive `eval_expr`
+        // below. Consts are checked first (existing precedence, D2.12);
+        // `equs` is the R-T0.2 fallback.
+        let value_expr: &'a ast::Expr = if let Some(decl) = self.consts.get(name).copied() {
+            &decl.value
+        } else {
+            let decl: &'a ast::EquDecl =
+                self.equs.get(name).copied().expect("caller ensures the const/equ exists");
+            &decl.value
+        };
         self.in_progress.push(name.to_string());
         let mut env = Env::new();
-        let v = self.eval_expr(&decl.value, &mut env);
+        let v = self.eval_expr(value_expr, &mut env);
         self.in_progress.pop();
         self.const_memo.insert(name.to_string(), v.clone());
         v
@@ -954,7 +982,11 @@ pub fn eval_const_with_root(
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
-        if !ev.consts.contains_key(name) {
+        if !ev.consts.contains_key(name) && !ev.equs.contains_key(name) {
+            // Message unchanged for the pure-const-absent case (existing
+            // callers/tests pin this exact wording); `equ` (R-T0.2) is folded
+            // into the same lookup rather than earning a separate entry point,
+            // since it resolves through the identical `resolve_const` path.
             ev.error(file.module.span, format!("no const named `{name}`"));
             return (None, ev.diags);
         }

@@ -183,7 +183,7 @@ impl<'a> Evaluator<'a> {
                     if let Some(v) = env.lookup(name) {
                         return v.clone();
                     }
-                    if self.consts.contains_key(name) {
+                    if self.consts.contains_key(name) || self.equs.contains_key(name) {
                         return self.resolve_const(name, path.span);
                     }
                     if self.fns.contains_key(name) {

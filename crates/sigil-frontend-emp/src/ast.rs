@@ -51,6 +51,11 @@ pub enum Item {
     Use(UseDecl),
     /// `const ...` declaration.
     Const(ConstDecl),
+    /// `equ ...` declaration (R-T0.2): an assembler equate. Distinct from
+    /// [`Item::Const`] — its whole purpose is to become a link-level symbol
+    /// (that emission is a later task); deliberately not folded into
+    /// `pub const` so existing `pub const` semantics never silently change.
+    Equ(EquDecl),
     /// `enum ...` declaration.
     Enum(EnumDecl),
     /// `bitfield ...` declaration.
@@ -124,6 +129,24 @@ pub struct ConstDecl {
     /// Optional explicit type annotation.
     pub ty: Option<Type>,
     /// The constant's value expression.
+    pub value: Expr,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// An `equ NAME = expr` declaration (R-T0.2): an assembler equate — an item
+/// whose ENTIRE purpose is to become a link-level symbol. Grammar mirrors
+/// [`ConstDecl`] minus the type annotation (equ values are untyped comptime
+/// ints or link-time expressions; Task 3 adds the `[equ.value]` restriction
+/// diagnostic at lowering). `pub equ` makes it module-visible exactly like
+/// other `pub` items.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EquDecl {
+    /// Whether this equ is exported (`pub equ`).
+    pub is_pub: bool,
+    /// The equate's name — the symbol it becomes at link (Task 3).
+    pub name: String,
+    /// The equate's value expression.
     pub value: Expr,
     /// Span of the whole declaration.
     pub span: Span,
