@@ -28,6 +28,7 @@ fn data_section(name: &str, lma: u32, label: &str, bytes: Vec<u8>) -> Section {
         placement: SectionPlacement::Chained,
         reserved_span: 0,
         group: None,
+        bank: None,
     }
 }
 
@@ -57,6 +58,7 @@ fn chained_successor_follows_grown_predecessor_final_size() {
         placement: SectionPlacement::Pinned,
         reserved_span: 4, // baked baseline (abs.w) extent
         group: None,
+        bank: None,
     };
     let data = data_section("data", 4, "Tail", vec![0xDE, 0xAD, 0xBE, 0xEF]);
     let out = sigil_link::resolve_layout(&[code, data], &stubs, true).unwrap();
@@ -94,6 +96,7 @@ fn max_span_reservation_holds_gap_when_final_is_smaller() {
         placement: SectionPlacement::Pinned,
         reserved_span: 6, // max-span (abs.l) reservation, à la placement_span()
         group: None,
+        bank: None,
     };
     let data = data_section("data", 6, "Tail", vec![0xDE, 0xAD, 0xBE, 0xEF]);
     let out = sigil_link::resolve_layout(&[code, data], &stubs, true).unwrap();
@@ -128,6 +131,7 @@ fn colliding_pins_are_a_loud_link_error() {
         placement: SectionPlacement::Pinned,
         reserved_span: 4,
         group: None,
+        bank: None,
     };
     // `beta` pinned at 0x102 → [0x102, 0x106) intersects alpha's [0x100, 0x104).
     let b = Section {
@@ -144,6 +148,7 @@ fn colliding_pins_are_a_loud_link_error() {
         placement: SectionPlacement::Pinned,
         reserved_span: 4,
         group: None,
+        bank: None,
     };
     let err = sigil_link::resolve_layout(&[a, b], &SymbolTable::new(), true).unwrap_err();
     assert!(
@@ -189,6 +194,7 @@ fn placement_growth_feeds_relaxation_growth_to_a_joint_fixpoint() {
         placement: SectionPlacement::Pinned,
         reserved_span: 4,
         group: None,
+        bank: None,
     };
     let s1 = Section {
         name: "s1".into(),
@@ -200,6 +206,7 @@ fn placement_growth_feeds_relaxation_growth_to_a_joint_fixpoint() {
         placement: SectionPlacement::Chained,
         reserved_span: 0x7FFA,
         group: None,
+        bank: None,
     };
     let s2 = Section {
         name: "s2".into(),
@@ -211,6 +218,7 @@ fn placement_growth_feeds_relaxation_growth_to_a_joint_fixpoint() {
         placement: SectionPlacement::Chained,
         reserved_span: 2,
         group: None,
+        bank: None,
     };
     let s3 = Section {
         name: "s3".into(),
@@ -226,6 +234,7 @@ fn placement_growth_feeds_relaxation_growth_to_a_joint_fixpoint() {
         placement: SectionPlacement::Chained,
         reserved_span: 4,
         group: None,
+        bank: None,
     };
     let mut stubs = SymbolTable::new();
     stubs.define("Hi", SymbolValue::Int(0x12_3456));

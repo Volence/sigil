@@ -583,6 +583,7 @@ mod placement_provenance_tests {
             placement: SectionPlacement::Chained,
             reserved_span: 0,
             group: None,
+            bank: None,
         }
     }
 

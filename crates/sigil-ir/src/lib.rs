@@ -189,6 +189,10 @@ pub struct Section {
     pub reserved_span: u32,
     /// Placement group (region name under `--map`); `None` ⇒ the anonymous group.
     pub group: Option<String>,
+    /// The `bank:` attribute (§7-main, R7m.1): a positive power-of-two byte
+    /// window this section must never straddle. `None` ⇒ no bank constraint.
+    /// INERT until the placement pass (Task 2) enforces it.
+    pub bank: Option<u32>,
 }
 
 impl Section {
@@ -402,6 +406,7 @@ impl ModuleBuilder {
                 placement: SectionPlacement::Pinned,
                 reserved_span,
                 group: None,
+                bank: None,
             }],
             link_asserts: Vec::new(),
         }
@@ -460,6 +465,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 3,
             group: None,
+            bank: None,
         };
         assert_eq!(section.image_bytes(), vec![0x00, 0x3E, 0x05]);
     }
@@ -506,6 +512,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 3 + 4 + 8,
             group: None,
+            bank: None,
         };
         // Data(3) + Fill(4) contribute image bytes; Reserve(8) contributes NONE.
         assert_eq!(sec.image_len(), 3 + 4);
@@ -552,6 +559,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 4,
             group: None,
+            bank: None,
         };
         // The byte at the back-patched offset (0x00) now differs from the
         // original placeholder — proving a real overwrite, not an append.
@@ -581,6 +589,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 18,
             group: None,
+            bank: None,
         };
         let mut want = vec![1, 2, 3, 4];
         want.extend(std::iter::repeat_n(0x00, 12));
@@ -615,6 +624,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 8,
             group: None,
+            bank: None,
         };
         assert_eq!(sec.image_bytes(), vec![0x63, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(sec.image_len(), 8);

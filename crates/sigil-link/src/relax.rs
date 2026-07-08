@@ -704,10 +704,13 @@ pub fn resolve_layout(
                         fragments,
                         // Provenance is carried through the relax rebuild verbatim
                         // (R7p.1): relaxation only lowers fragments/shifts labels;
-                        // it never re-places a section.
+                        // it never re-places a section. `bank` (R7m.1) is the same
+                        // kind of provenance — carried verbatim for Task 2's
+                        // placement seam to read.
                         placement: sec.placement,
                         reserved_span: sec.reserved_span,
                         group: sec.group.clone(),
+                        bank: sec.bank,
                     }
                 })
                 .collect();
@@ -867,6 +870,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -900,6 +904,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -930,6 +935,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -975,6 +981,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1006,6 +1013,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // The jmp lowered to abs.l (6-byte Data), and Target shifted 4 → 6.
@@ -1038,6 +1046,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // Both jmps grew to abs.l; A shifted 0x0F → 0x13 (0x0F + 4).
@@ -1081,6 +1090,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1108,6 +1118,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -1129,6 +1140,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         let linked = crate::link(&out, &stubs).unwrap();
@@ -1152,6 +1164,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -1178,6 +1191,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[code], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1197,6 +1211,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         assert!(resolve_layout(&[sec], &SymbolTable::new(), true).is_err());
     }
@@ -1251,6 +1266,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1278,6 +1294,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1309,6 +1326,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1346,6 +1364,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 5);
@@ -1374,6 +1393,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1409,6 +1429,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1446,6 +1467,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1475,6 +1497,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1506,6 +1529,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[1] {
@@ -1538,6 +1562,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1590,6 +1615,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // frag0 grew to bra.w (Far ~0x100 ahead, out of i8).
@@ -1644,6 +1670,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // frag2 must be a 4-byte jmp abs.w (rung 2), NOT bra.w: its backward disp
@@ -1692,6 +1719,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1721,6 +1749,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1742,6 +1771,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1770,6 +1800,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let secs = [sec];
         if cfg!(debug_assertions) {
@@ -1806,6 +1837,7 @@ mod tests {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let secs = [sec];
         if cfg!(debug_assertions) {

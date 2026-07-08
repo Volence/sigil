@@ -43,6 +43,7 @@ fn two_section_ab_layout_and_cross_fixup() {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
     };
 
     // Region B: SfxBlobWinTab at VMA $8000 + $45F = $845F.
@@ -59,6 +60,7 @@ fn two_section_ab_layout_and_cross_fixup() {
             placement: sigil_ir::SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
     };
 
     let linked = link(&[region_a, region_b], &SymbolTable::new()).expect("link ok");

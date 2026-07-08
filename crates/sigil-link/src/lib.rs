@@ -510,6 +510,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         }
     }
 
@@ -603,6 +604,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         }
     }
 
@@ -626,6 +628,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         }
     }
 
@@ -667,6 +670,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("tab").unwrap().bytes, vec![0x9A, 0xD6]);
@@ -690,6 +694,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         // site VMA of the disp byte's instruction = 0x8000; target = 0x8002; disp = 0x8002 - (0x8000 + 2) = 0.
@@ -713,6 +718,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
@@ -734,6 +740,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[mk("a"), mk("b")], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -759,6 +766,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x60, 0x00, 0x00, 0x7E]);
@@ -779,6 +787,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
     }
@@ -800,6 +809,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -822,6 +832,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
@@ -852,6 +863,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x00, 0x06]);
@@ -882,6 +894,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0xFF, 0xFC]);
@@ -912,6 +925,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("signed-word range")), "got: {:?}", err);
@@ -948,6 +962,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -982,6 +997,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -1003,6 +1019,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("s").unwrap().bytes, vec![0x00, 0x12, 0x34, 0x56]);
@@ -1023,6 +1040,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         assert_eq!(link(&[ok], &stubs).unwrap().section("ok").unwrap().bytes, vec![0x12, 0x34]);
 
@@ -1036,6 +1054,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let err = link(&[bad], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
@@ -1060,6 +1079,7 @@ mod tests {
             placement: SectionPlacement::Pinned,
             reserved_span: 0,
             group: None,
+            bank: None,
         };
         let linked = link(&[a], &SymbolTable::new()).unwrap();
         // Bytes at LMA 2..4; positions 0,1 gap-filled with 0x00.

@@ -19,6 +19,11 @@ struct OpenSection {
     // `reserved_span` is filled from `max_offset` at close; `group` is the
     // anonymous group (`None`) under the builder default.
     placement: SectionPlacement,
+    // #7-main (R7m.1): the `bank:` attribute, set via `set_section_bank` right
+    // after the section opens (the front-end evaluates `section_attrs` before
+    // `switch_section_lma`, so this is always `None` at open and set explicitly
+    // when present). Inert until the Task 2 placement seam reads it.
+    bank: Option<u32>,
 }
 
 impl OpenSection {
@@ -70,6 +75,7 @@ impl IrBuilder {
                 // under the builder default (frontends override in later work).
                 reserved_span: o.max_offset,
                 group: None,
+                bank: o.bank,
             });
         }
     }
@@ -135,7 +141,17 @@ impl IrBuilder {
             cursor: 0,
             max_offset: 0,
             placement,
+            bank: None,
         });
+    }
+
+    /// #7-main (R7m.1): set the currently-open section's `bank:` attribute.
+    /// The front-end evaluates `section_attrs` right after opening a section
+    /// (before emitting any content), so this always targets the section that
+    /// was just opened. Panics if no section is open (front-end bug, mirroring
+    /// `section_mut`).
+    pub fn set_section_bank(&mut self, bank: Option<u32>) {
+        self.section_mut().bank = bank;
     }
 
     /// The R7p.1 placement for the section about to open: `Pinned` if none has
@@ -205,6 +221,7 @@ impl IrStreamer for IrBuilder {
             cursor: 0,
             max_offset: 0,
             placement,
+            bank: None,
         });
     }
 
