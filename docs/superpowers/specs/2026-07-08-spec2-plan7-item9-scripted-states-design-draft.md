@@ -29,6 +29,9 @@ raw procs per object, and mixing is legal.
   shipped machinery, and it deliberately does NOT introduce state/yield semantics.
   The coroutine gets its own surface (D9.2) rather than overloading dispatch bodies —
   a dispatch is a TABLE; a script is a PROGRAM. Conflating them bends tenet 1.
+  **(9a shipped on branch plan7-item9, 2026-07-08 — plan + rulings R9a.1–R9a.6 in
+  docs/superpowers/plans/2026-07-08-spec2-plan7-item9a-dispatch-inline-bodies.md; RED
+  evidence in the 9a implementation notes.)**
 - **D9.2 — the coroutine construct: `script`.** Sketch (surface deliberately unfrozen):
 
   ```
