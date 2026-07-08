@@ -48,3 +48,22 @@ Implementer choices:
   at the item's start byte (D-H.3). Item-guard anonymous anchors are T4.
 - eval_here: Some(_)+anchor => LinkExpr(Sym), sets here_used; Some(vma) => Int(vma).
 - here_anchor_used()/#[allow(dead_code)] until T4 wires the guard anchor-minting.
+
+## T3 — data-emitted plain here() -> SymRef via item label (D-H.3)
+
+RED evidence:
+- tests/here_provisional.rs::provisional_here_emits_item_final_vma_as_symref:
+  disabling the lower_to_data LinkExpr interceptor -> the LinkExpr reaches
+  lower_prim -> "expected int" lower error -> test panics (confirmed by patching
+  out the interceptor and re-running). After T3: emits $00008004 (H's final VMA
+  after jbra grows bra.s->bra.w), NOT the stale baseline $8002.
+- u8-field and arithmetic-then-emit refusals: RED = no interceptor => generic
+  "expected int" / silent, no [here.provisional].
+
+Implementer choices:
+- lower_to_data intercepts Value::LinkExpr before per-type lowering. A plain
+  Sym(anchor) => Cell::SymRef { name: anchor, width: self_ref_width(ty) }; the
+  D-P4.5 selection widths it (2->Abs16Be, 4->Abs32Be). width==1 => error.
+- self_ref_width: Ptr=>4, Prim=>declared width, Newtype/Refined=>underlying, else
+  a loud "needs u16/u32/pointer" error.
+- A non-Sym residual tree (arithmetic-then-emit) => here_provisional_error (L-H.2).

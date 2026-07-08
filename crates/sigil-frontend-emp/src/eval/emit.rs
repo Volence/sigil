@@ -27,6 +27,17 @@ impl<'a> Evaluator<'a> {
         if matches!(value, Value::Poison) || matches!(ty, Ty::Poison) {
             return DataBuf::empty();
         }
+        // A PROVISIONAL `here()` (D-H.3): a link-time value emitted into a data
+        // cell. A PLAIN one — `LinkExpr(Sym(anchor))`, the item's own label —
+        // becomes a `Cell::SymRef` of the field's declared width, resolved through
+        // the existing D-P4.5 fixup selection (width 4 → Abs32Be, width 2 →
+        // Abs16Be; width 1 is an error — no 8-bit absolute kind exists). An
+        // ARITHMETICALLY-combined link value (a non-`Sym` residual tree) is
+        // `[here.provisional]` for now — the general link-expr data cell is
+        // deferred (L-H.2); the guard path (D-H.4) is where arithmetic is served.
+        if let Value::LinkExpr(expr) = value {
+            return self.lower_link_expr(expr, ty, span);
+        }
         match ty {
             Ty::Prim { width, signed } => self.lower_prim(value, *width, *signed, span),
             Ty::Fixed { i, f } => self.lower_fixed(value, *i, *f, span),
@@ -360,6 +371,70 @@ impl<'a> Evaluator<'a> {
             }
         }
         buf
+    }
+
+    /// Lower a PROVISIONAL `here()` value into a data cell (D-H.3). A PLAIN
+    /// `LinkExpr(Sym(anchor))` — the item's own label — emits a `Cell::SymRef` of
+    /// the field's declared width (`self_ref_width`), an ordinary symbol-address
+    /// cell the linker fixes up to the anchor's post-relaxation VMA. Width 1 is an
+    /// error (no 8-bit absolute fixup kind). An arithmetically-combined link value
+    /// (a non-`Sym` residual tree) is `[here.provisional]` (L-H.2 deferral).
+    fn lower_link_expr(
+        &mut self,
+        expr: &sigil_ir::expr::Expr,
+        ty: &Ty,
+        span: Span,
+    ) -> DataBuf {
+        let sigil_ir::expr::Expr::Sym(name) = expr else {
+            // An arithmetic-then-emit link value: the general link-expr data cell
+            // is deferred (L-H.2); refuse loudly rather than mis-emit.
+            self.here_provisional_error(span);
+            return DataBuf::empty();
+        };
+        let Some(width) = self.self_ref_width(ty, span) else {
+            return DataBuf::empty();
+        };
+        if width == 1 {
+            self.error(
+                span,
+                "[here.provisional] a provisional `here()` cannot emit into a 1-byte field — \
+                 an absolute address needs 2 or 4 bytes (u16/u32 or a pointer)"
+                    .to_string(),
+            );
+            return DataBuf::empty();
+        }
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::SymRef { name: name.clone(), width, windowed: false });
+        buf
+    }
+
+    /// The byte width a provisional `here()` `Cell::SymRef` takes in a field of
+    /// type `ty` (D-H.3): a pointer is 4; a primitive is its declared width
+    /// (through newtype/refined to the underlying primitive). Any other field type
+    /// cannot hold an absolute address — a loud error yielding `None`.
+    fn self_ref_width(&mut self, ty: &Ty, span: Span) -> Option<u8> {
+        match ty {
+            Ty::Ptr(_) => Some(4),
+            Ty::Prim { width, .. } => Some(*width),
+            Ty::Newtype(_) | Ty::Refined { .. } => {
+                let underlying = self.effective_underlying(ty, span);
+                if matches!(underlying, Ty::Poison) {
+                    return None;
+                }
+                self.self_ref_width(&underlying, span)
+            }
+            other => {
+                self.error(
+                    span,
+                    format!(
+                        "[here.provisional] a provisional `here()` cannot emit into a {} field — \
+                         it needs a u16/u32 or a pointer field to hold its link-time address",
+                        other.describe()
+                    ),
+                );
+                None
+            }
+        }
     }
 
     /// The emission range-check (D-P3.3): if `n` falls outside `lo..=hi`, report
