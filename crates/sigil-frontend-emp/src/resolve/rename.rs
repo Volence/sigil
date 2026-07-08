@@ -7,13 +7,38 @@ use sigil_ir::expr::Expr;
 use sigil_ir::{Fragment, Module};
 use std::collections::HashMap;
 
+/// Resolve one symbol/label name through the rename `map`, handling dotted
+/// exported labels (`Owner.local`, e.g. `foo.entry` from `export .entry:` in
+/// `proc foo`). Precedence:
+/// 1. whole-name hit — an ordinary top-level name mapped to its canonical;
+/// 2. dotted-owner hit — the segment before the FIRST dot is a mapped name, so
+///    module-qualify to `<renamed-owner>.<rest>` (`foo.entry` → `a.foo.entry`).
+///    This fixes the false-reject of exported labels AND module-qualifies the
+///    owner, so two modules' private `proc foo { export .entry }` no longer
+///    collide in the flat link table.
+///
+/// Returns `None` when neither applies (name passes through unchanged) — e.g.
+/// `$`-hygiene locals, which never appear in `map`.
+pub fn canonicalize_name(name: &str, map: &HashMap<String, String>) -> Option<String> {
+    if let Some(canon) = map.get(name) {
+        return Some(canon.clone());
+    }
+    if let Some((owner, rest)) = name.split_once('.') {
+        if let Some(owner_canon) = map.get(owner) {
+            return Some(format!("{owner_canon}.{rest}"));
+        }
+    }
+    None
+}
+
 /// Rewrite `module` in place: rename `Label.name` and every fixup target `Expr`
-/// per `map` (short name → canonical). Names absent from `map` are left as-is.
+/// per `map` (short name → canonical), including dotted exported labels via
+/// [`canonicalize_name`]. Names absent from `map` are left as-is.
 pub fn rename_module(module: &mut Module, map: &HashMap<String, String>) {
     for sec in &mut module.sections {
         for label in &mut sec.labels {
-            if let Some(canon) = map.get(&label.name) {
-                label.name = canon.clone();
+            if let Some(canon) = canonicalize_name(&label.name, map) {
+                label.name = canon;
             }
         }
         for frag in &mut sec.fragments {
@@ -42,8 +67,8 @@ fn rename_fragment(frag: &mut Fragment, map: &HashMap<String, String>) {
 fn rewrite_expr(e: &mut Expr, map: &HashMap<String, String>) {
     match e {
         Expr::Sym(name) => {
-            if let Some(canon) = map.get(name) {
-                *name = canon.clone();
+            if let Some(canon) = canonicalize_name(name, map) {
+                *name = canon;
             }
         }
         Expr::Binary { lhs, rhs, .. } => {

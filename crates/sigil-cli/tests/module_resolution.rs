@@ -917,6 +917,139 @@ fn cross_module_offsets_target_section_nested_bytes_are_exact() {
 }
 
 #[test]
+fn exported_dotted_label_resolves_under_root() {
+    // AUDIT FIX (Task 0.6): an exported proc label (`export .entry:` → emitted as
+    // dotted `foo.entry`) is neither a `$`-hygiene local nor a rename-map key, so
+    // `report_unresolved` rejected ANY `--root` reference to it as
+    // `unknown symbol foo.entry`. Single-file gives `60 00 FF FE` (bra.w to self);
+    // `--root` must now match after teaching the rename pass dotted symbols.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "f.emp",
+        "module f\nproc foo (a0: *u8) {\nexport .entry:\n    bra.w foo.entry\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("f.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "exported dotted label must resolve under --root, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x60, 0x00, 0xFF, 0xFE],
+        "bra.w foo.entry to self must byte-match single-file mode"
+    );
+}
+
+#[test]
+fn two_modules_same_exported_dotted_label_do_not_collide() {
+    // Latent finding #2: an exported `.entry:` is emitted `Owner.name` (`foo.entry`),
+    // NOT module-qualified. Two modules each with a private `proc foo` exporting
+    // `.entry:` therefore both mint `foo.entry` → duplicate symbol in the flat link
+    // table. Module-qualifying the dotted label on BOTH def and ref sides
+    // (`a.foo.entry`, `b.foo.entry`) makes them distinct. Entry `use`s each module's
+    // pub wrapper so BFS lowers both `foo` procs.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "a.emp",
+        "module a\nproc foo (a0: *u8) {\nexport .entry:\n    rts\n}\n\
+         pub proc wrap_a (a0: *u8) {\n    jmp foo.entry\n}\n",
+    );
+    write(
+        root,
+        "b.emp",
+        "module b\nproc foo (a0: *u8) {\nexport .entry:\n    rts\n}\n\
+         pub proc wrap_b (a0: *u8) {\n    jmp foo.entry\n}\n",
+    );
+    write(
+        root,
+        "entry.emp",
+        "module entry\nuse a.{wrap_a}\nuse b.{wrap_b}\n\
+         proc init (a0: *u8) {\n    jsr wrap_a\n    jmp wrap_b\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("entry.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "two modules exporting the same dotted label must link, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(outbin.exists());
+}
+
+#[test]
+fn cross_module_exported_dotted_label_reference_links() {
+    // The importing side of the dotted-label fix: `use a.{foo}` + `jmp foo.entry`
+    // must resolve the exported label across modules. The importer has `foo` in its
+    // rename map (→ `a.foo`), so `foo.entry` module-qualifies to `a.foo.entry`,
+    // matching a's own label. Byte-check the resolved jmp target.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "a.emp",
+        "module a\npub proc foo (a0: *u8) {\n    nop\nexport .entry:\n    rts\n}\n",
+    );
+    write(
+        root,
+        "b.emp",
+        "module b\nuse a.{foo}\nproc init (a0: *u8) {\n    jmp foo.entry\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("b.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "cross-module exported dotted label must link, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // b (entry) discovered first reserves a 6-byte jmp span at LMA 0; a's `foo`
+    // lands at LMA 6 with `nop` (4E 71) then `.entry` at LMA 8. `jmp foo.entry`
+    // relaxes to abs.w (target 8 ≤ 0x7FFF) → 4E F8 00 08.
+    assert_eq!(
+        &bytes[0..4],
+        &[0x4E, 0xF8, 0x00, 0x08],
+        "jmp foo.entry → a.foo.entry @ LMA 8"
+    );
+}
+
+#[test]
 fn whole_module_use_warns_it_imports_nothing() {
     // M5: `use other` (whole-module, no `.{…}`/`.*`) binds no names, so it is a
     // silent no-op today. Emit a warning at the `use` decl so a later `other.Name`
