@@ -29,7 +29,13 @@ impl ExportIndex {
         let mut exported = HashSet::new();
         for (id, file) in modules {
             for name in exported_names(file) {
-                by_name.entry(name.clone()).or_default().push((*id).to_string());
+                // Guard against the same module appearing twice in `modules`:
+                // a duplicated (module, name) must NOT double-count, or
+                // `suggest_use` would wrongly see the name as ambiguous.
+                let owners = by_name.entry(name.clone()).or_default();
+                if !owners.iter().any(|o| o == id) {
+                    owners.push((*id).to_string());
+                }
                 exported.insert(((*id).to_string(), name));
             }
         }
@@ -115,7 +121,8 @@ impl<'a> ResolveEnv<'a> {
         if let Some((pid, pfile)) = prelude {
             if pid != module_id {
                 for name in exported_names(pfile) {
-                    map.insert(name.clone(), canonical(pid, &name));
+                    let c = canonical(pid, &name);
+                    map.insert(name, c);
                 }
             }
         }
@@ -123,7 +130,8 @@ impl<'a> ResolveEnv<'a> {
             map.insert(name, canon);
         }
         for name in defined_names(file) {
-            map.insert(name.clone(), canonical(module_id, &name));
+            let c = canonical(module_id, &name);
+            map.insert(name, c);
         }
         (ResolveEnv { map, index }, diags)
     }
@@ -176,9 +184,14 @@ fn resolve_use(
             }
         }
         ast::UseNames::Glob => {
-            // Re-scan the export index for everything under `base`.
+            // Re-scan the export index for everything under `base`. A glob whose
+            // base matches NO module in the index is almost always a typo — flag
+            // it (mirrors the List arm's "no such name" feedback) rather than
+            // silently importing nothing.
+            let mut matched_any = false;
             for (name, owners) in index.by_name.iter() {
                 if owners.iter().any(|o| o == &base) {
+                    matched_any = true;
                     if let Some(prev) = map.insert(name.clone(), canonical(&base, name)) {
                         if prev != canonical(&base, name) {
                             diags.push(Diagnostic {
@@ -191,6 +204,13 @@ fn resolve_use(
                         }
                     }
                 }
+            }
+            if !matched_any {
+                diags.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!("glob `use {base}.*` matches no module with `pub` names"),
+                    primary: u.span,
+                });
             }
         }
         ast::UseNames::Whole => {
