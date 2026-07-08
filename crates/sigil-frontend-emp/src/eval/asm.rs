@@ -363,6 +363,11 @@ impl Evaluator<'_> {
                 if matches!(v, Value::Poison) {
                     return None;
                 }
+                // A provisional here() immediate gets the SPECIFIC D-H.2
+                // steering message, not the generic "must be an integer".
+                if self.reject_if_provisional(&v, expr_span(e)).is_some() {
+                    return None;
+                }
                 match v.as_stored_int() {
                     Some(n) => Some(CodeOperand::Imm(n)),
                     None => {
@@ -429,6 +434,11 @@ impl Evaluator<'_> {
                 // resolve the register — byte-for-byte unchanged.
                 let dv = self.eval_expr(disp, env);
                 if matches!(dv, Value::Poison) {
+                    return None;
+                }
+                // A provisional here() displacement gets the SPECIFIC D-H.2
+                // steering message.
+                if self.reject_if_provisional(&dv, *span).is_some() {
                     return None;
                 }
                 let Some(d) = dv.as_stored_int() else {
@@ -772,6 +782,10 @@ impl Evaluator<'_> {
             other => {
                 if let Some(n) = other.as_stored_int() {
                     Some(CodeOperand::Imm(n))
+                } else if self.reject_if_provisional(&other, span).is_some() {
+                    // A provisional here() splice gets the SPECIFIC D-H.2
+                    // steering message, not the generic `[asm.splice-kind]`.
+                    None
                 } else {
                     self.splice_kind_err(span, "int, Reg, or Sym", &other);
                     None

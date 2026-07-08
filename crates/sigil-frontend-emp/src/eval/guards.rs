@@ -5,20 +5,37 @@ use crate::ast;
 use crate::value::Value;
 use sigil_span::{Diagnostic, Span};
 
-/// Evaluate one item-position guard (D5.2). Builds a fresh evaluator over the
-/// file (the same harness as a data item: eval stack + `here_base` +
+/// The outcome of an item-position guard evaluation (D5.2 / D-H.4). `cont` is
+/// `false` only when a failing comptime `ensure_fatal` aborted (stop the module's
+/// remaining items, D5.3). `link_asserts` are any deferred guards (D-H.4) to drain
+/// onto the module. `anchor_used` records whether a PROVISIONAL `here()` in the
+/// guard actually referenced its anonymous anchor, so the lowering pass defines
+/// the anchor label only on use (D-H.8).
+pub(crate) struct ItemGuardOutcome {
+    /// Keep lowering the module's remaining items? (false = a fatal comptime abort.)
+    pub cont: bool,
+    /// Diagnostics from the guard evaluation.
+    pub diags: Vec<Diagnostic>,
+    /// Deferred link-time assertions produced by this guard (D-H.4).
+    pub link_asserts: Vec<sigil_ir::LinkAssert>,
+    /// Whether a provisional `here()` referenced the guard's anonymous anchor.
+    pub anchor_used: bool,
+}
+
+/// Evaluate one item-position guard (D5.2 / D-H.4). Builds a fresh evaluator over
+/// the file (the same harness as a data item: eval stack + `here` position +
 /// `include_root`), evaluates the stored call expression — the
 /// `ensure`/`ensure_fatal` special-case in [`Evaluator::eval_expr`] (via
-/// `eval/call.rs`) does arity/interpolation/abort — and returns
-/// `(continue_lowering, diagnostics)`. `continue_lowering` is `false` only when a
-/// failing `ensure_fatal` set the abort flag (D5.3), signalling the caller to
-/// stop lowering the module's remaining items.
+/// `eval/call.rs`) does arity/interpolation/abort/deferral — and returns an
+/// [`ItemGuardOutcome`]. At an EXACT position the guard passes/fails at comptime
+/// exactly as before; at a PROVISIONAL one a `here()` condition DEFERS to a
+/// `LinkAssert` (D-H.4) and the guard's `here()` anchor may be used (D-H.8).
 pub(crate) fn eval_item_guard(
     file: &crate::ast::File,
     decl: &crate::ast::EnsureDecl,
-    here_base: u32,
+    here: crate::layout::HerePos,
     include_root: Option<&std::path::Path>,
-) -> (bool, Vec<Diagnostic>) {
+) -> ItemGuardOutcome {
     // `decl.fatal` records which keyword the parser saw; dispatch itself keys
     // off the stored call's CALLEE name (`eval/call.rs`). Assert the two agree
     // so any future parser divergence between the keyword and the captured call
@@ -31,13 +48,18 @@ pub(crate) fn eval_item_guard(
     );
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
-        ev.set_here_base(here_base);
+        ev.apply_here_pos(Some(here));
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
         let mut env = Env::new();
         let _ = ev.eval_expr(&decl.call, &mut env);
-        (!ev.was_aborted(), ev.diags)
+        ItemGuardOutcome {
+            cont: !ev.was_aborted(),
+            anchor_used: ev.here_anchor_used(),
+            link_asserts: ev.take_link_asserts(),
+            diags: ev.diags,
+        }
     })
 }
 
@@ -74,6 +96,13 @@ impl<'a> Evaluator<'a> {
         // A `return` surfaced from the condition, or an abort, unwinds silently.
         if self.aborted || self.pending_return.is_some() {
             return Value::Poison;
+        }
+        // D-H.4: a PROVISIONAL `here()` condition is a link-time value — the guard
+        // is neither passed nor failed at comptime. DEFER: freeze the message
+        // (D-H.5) and record a `LinkAssert` the linker evaluates against the
+        // post-relaxation symbol table. Returns `Unit` (the guard yields nothing).
+        if let Value::LinkExpr(cond_expr) = cond {
+            return self.defer_guard(fatal, cond_expr, &args[1].value, span, env);
         }
         match cond {
             // Already-reported error in the condition: stay silent (D-P2.9).
@@ -118,6 +147,142 @@ impl<'a> Evaluator<'a> {
                 );
                 Value::Poison
             }
+        }
+    }
+
+    /// Defer an `ensure`/`ensure_fatal` guard whose condition became a link-time
+    /// value (D-H.4). Evaluates and freezes the message (D-H.5) — comptime parts
+    /// to `MsgPart::Text`, a link-time `{expr}` placeholder to `MsgPart::Expr` —
+    /// and records a [`LinkAssert`](sigil_ir::LinkAssert) on the evaluator, which
+    /// the lowering pass drains onto the module. Returns [`Value::Unit`]: the
+    /// guard is neither passed nor failed here. A non-string message / arity error
+    /// stays a comptime error exactly as an eager guard (it never defers).
+    fn defer_guard(
+        &mut self,
+        fatal: bool,
+        cond: sigil_ir::expr::Expr,
+        message_expr: &ast::Expr,
+        span: Span,
+        env: &mut Env,
+    ) -> Value {
+        let kw = if fatal { "ensure_fatal" } else { "ensure" };
+        let msg = self.eval_expr(message_expr, env);
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let template = match msg {
+            Value::Str(s) => s,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    span,
+                    format!("`{kw}` message must be a string, got {}", other.type_name()),
+                );
+                return Value::Poison;
+            }
+        };
+        let message = self.interpolate_parts(&template, env, span);
+        self.link_asserts.push(sigil_ir::LinkAssert { cond, message, fatal, span });
+        Value::Unit
+    }
+
+    /// Interpolate a DEFERRED guard message into [`MsgPart`](sigil_ir::MsgPart)
+    /// runs (D-H.5): literal text and comptime `{expr}` placeholders freeze to
+    /// [`Text`](sigil_ir::MsgPart::Text) NOW (the comptime env is about to
+    /// disappear), while a placeholder whose value is itself a provisional
+    /// `here()` [`LinkExpr`](Value::LinkExpr) becomes an
+    /// [`Expr`](sigil_ir::MsgPart::Expr) folded and rendered at link on failure.
+    /// Adjacent `Text` runs are coalesced. Mirrors [`interpolate`](Self::interpolate)'s
+    /// lexing of `{{`/`}}`/`{…}`; the ONLY difference is the per-placeholder
+    /// eager-vs-lazy split.
+    fn interpolate_parts(&mut self, s: &str, env: &mut Env, span: Span) -> Vec<sigil_ir::MsgPart> {
+        use sigil_ir::MsgPart;
+        let mut parts: Vec<MsgPart> = Vec::new();
+        let mut lit = String::new();
+        // Push a literal run (coalescing) and clear the accumulator.
+        let flush = |lit: &mut String, parts: &mut Vec<MsgPart>| {
+            if !lit.is_empty() {
+                match parts.last_mut() {
+                    Some(MsgPart::Text(t)) => t.push_str(lit),
+                    _ => parts.push(MsgPart::Text(std::mem::take(lit))),
+                }
+                lit.clear();
+            }
+        };
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '{' if chars.peek() == Some(&'{') => {
+                    chars.next();
+                    lit.push('{');
+                }
+                '}' if chars.peek() == Some(&'}') => {
+                    chars.next();
+                    lit.push('}');
+                }
+                '{' => {
+                    let mut inner = String::new();
+                    let mut closed = false;
+                    for nc in chars.by_ref() {
+                        if nc == '}' {
+                            closed = true;
+                            break;
+                        }
+                        inner.push(nc);
+                    }
+                    if !closed {
+                        self.error(span, "unterminated `{` in guard message");
+                        lit.push('{');
+                        lit.push_str(&inner);
+                        break;
+                    }
+                    match self.interp_one_part(&inner, env, span) {
+                        // A link-time placeholder becomes an Expr part (folded at
+                        // link); flush the pending literal first to preserve order.
+                        MsgPart::Expr(e) => {
+                            flush(&mut lit, &mut parts);
+                            parts.push(MsgPart::Expr(e));
+                        }
+                        // A comptime placeholder is already rendered text.
+                        MsgPart::Text(t) => lit.push_str(&t),
+                    }
+                }
+                _ => lit.push(c),
+            }
+        }
+        flush(&mut lit, &mut parts);
+        parts
+    }
+
+    /// Evaluate one deferred-message placeholder to a [`MsgPart`](sigil_ir::MsgPart)
+    /// (D-H.5): a provisional `here()` [`LinkExpr`](Value::LinkExpr) becomes a
+    /// lazy [`Expr`](sigil_ir::MsgPart::Expr) part; every other value is rendered
+    /// to [`Text`](sigil_ir::MsgPart::Text) eagerly (its `Display`, a string
+    /// unquoted — same rule as [`interp_one`](Self::interp_one)). A lex/parse
+    /// failure or a `Poison` value renders the `<?>` placeholder with one
+    /// diagnostic, exactly as the eager path.
+    fn interp_one_part(&mut self, inner: &str, env: &mut Env, span: Span) -> sigil_ir::MsgPart {
+        use sigil_ir::MsgPart;
+        let bad = |ev: &mut Self, reason: &str| -> MsgPart {
+            ev.error(span, format!("cannot interpolate `{{{inner}}}`: {reason}"));
+            MsgPart::Text("<?>".to_string())
+        };
+        let (toks, lex_errs) = crate::lexer::lex(inner, span.source);
+        if !lex_errs.is_empty() {
+            return bad(self, "lex error");
+        }
+        let mut p = crate::parser::Parser::new(toks);
+        let expr = p.expr();
+        if !p.into_diagnostics().is_empty() {
+            return bad(self, "parse error");
+        }
+        match self.eval_expr(&expr, env) {
+            Value::Poison => bad(self, "evaluation failed"),
+            // A provisional `here()` placeholder folds at link — keep it lazy so
+            // the message reports the REAL final address (D-H.5).
+            Value::LinkExpr(e) => MsgPart::Expr(e),
+            Value::Str(s) => MsgPart::Text(s),
+            other => MsgPart::Text(other.to_string()),
         }
     }
 

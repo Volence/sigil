@@ -309,6 +309,12 @@ impl<'a> Evaluator<'a> {
     fn eval_const_index(&mut self, expr: &ast::Expr) -> Option<i128> {
         let mut env = Env::new();
         let v = self.eval_expr(expr, &mut env);
+        // A provisional `here()` (a `LinkExpr`) cannot size an array or bound a
+        // refinement (D-H.2) — refuse with the specific `[here.provisional]`
+        // message rather than the generic "expected an integer" below.
+        if self.reject_if_provisional(&v, crate::parser::expr_span(expr)).is_some() {
+            return None;
+        }
         // A `Value::Typed` (a newtype/fixed value) erases to its stored int
         // (§8.3), so a nominally-typed comptime value is still a usable array
         // length / refinement bound.
@@ -1291,6 +1297,24 @@ pub fn layout_structs_shared(
     })
 }
 
+/// The position a `here()` (§7.1) resolves to inside a lowered item — the
+/// exact/provisional distinction the fix turns on (D-H.1). `base` is the item's
+/// start VMA at the baseline layout (every relaxable counted at its smallest
+/// rung). `anchor` is `None` at an EXACT position (`here()` → `Value::Int(base)`,
+/// byte-identical to before the fix) or `Some(label)` at a PROVISIONAL one, where
+/// the open section already holds a size-relaxable fragment so the physical VMA
+/// can still shift; `here()` then yields `Value::LinkExpr(Sym(label))`, resolved
+/// against the anchor's post-relaxation VMA at link. For a data item the anchor
+/// is the item's OWN label (D-H.3); for an item guard it is an anonymous label
+/// the lowering pass mints on use (D-H.8).
+#[derive(Clone, Debug)]
+pub struct HerePos {
+    /// The item's start VMA at baseline layout.
+    pub base: u32,
+    /// The provisional anchor label, or `None` at an exact position.
+    pub anchor: Option<String>,
+}
+
 /// Lower the `data` item named `name` in `file` to a checked, CPU-neutral
 /// [`DataBuf`] (T7, D-P3.5), returning it (or `None` if no such data item) plus
 /// any diagnostics — the emission analogue of [`layout_struct`]. Runs on the
@@ -1300,15 +1324,20 @@ pub fn eval_data(file: &ast::File, name: &str) -> (Option<DataBuf>, Vec<Diagnost
     eval_data_at(file, name, None)
 }
 
-/// Like [`eval_data`], but threads a `here_base` VMA so a `here()` (§7.1) inside
-/// the item resolves to the item's start VMA. The lowering pass supplies the
-/// position (`vma_origin + current_offset`); other callers pass `None`.
+/// Like [`eval_data`], but threads a `here` position so a `here()` (§7.1) inside
+/// the item resolves to the item's start VMA (exact) or its link-time anchor
+/// (provisional). The lowering pass supplies the position; other callers pass
+/// `None` (no position — `here()` is an error).
 pub fn eval_data_at(
     file: &ast::File,
     name: &str,
-    here_base: Option<u32>,
+    here: Option<HerePos>,
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
-    eval_data_with_root(file, name, here_base, None)
+    // Non-lowering callers (tests, `eval_data`) do not link, so a deferred
+    // `LinkAssert` from a data-item guard has no consumer here — drop it. The
+    // lowering pass calls `eval_data_with_root` directly and drains the asserts.
+    let (buf, _asserts, diags) = eval_data_with_root(file, name, here, None);
+    (buf, diags)
 }
 
 /// Like [`eval_data_at`], but also threads a capability-sandbox
@@ -1340,24 +1369,23 @@ pub struct Capture {
 pub fn eval_data_with_root(
     file: &ast::File,
     name: &str,
-    here_base: Option<u32>,
+    here: Option<HerePos>,
     include_root: Option<&std::path::Path>,
-) -> (Option<DataBuf>, Vec<Diagnostic>) {
+) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
-        if let Some(vma) = here_base {
-            ev.set_here_base(vma);
-        }
+        ev.apply_here_pos(here);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));
-            return (None, ev.diags);
+            return (None, Vec::new(), ev.diags);
         }
         let buf = ev.resolve_data(name, file.module.span);
         check_max_size(&mut ev, name, buf.size, file.module.span);
-        (Some(buf), ev.diags)
+        let asserts = ev.take_link_asserts();
+        (Some(buf), asserts, ev.diags)
     })
 }
 
@@ -1397,10 +1425,14 @@ fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
             }
         }
         None => {
-            ev.error(
-                span,
-                format!("`max_size` must be a comptime integer, got {}", v.type_name()),
-            );
+            // A provisional here() capacity bound gets the SPECIFIC D-H.2
+            // steering message, not the generic "must be a comptime integer".
+            if ev.reject_if_provisional(&v, span).is_none() {
+                ev.error(
+                    span,
+                    format!("`max_size` must be a comptime integer, got {}", v.type_name()),
+                );
+            }
         }
     }
 }
@@ -1417,14 +1449,12 @@ fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
 pub fn eval_data_captures(
     file: &ast::File,
     name: &str,
-    here_base: Option<u32>,
+    here: Option<HerePos>,
     include_root: Option<&std::path::Path>,
 ) -> (Option<DataBuf>, Vec<Capture>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
-        if let Some(vma) = here_base {
-            ev.set_here_base(vma);
-        }
+        ev.apply_here_pos(here);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
@@ -1439,6 +1469,10 @@ pub fn eval_data_captures(
             .iter()
             .map(|c| Capture { path: c.path.clone(), hash: c.hash, len: c.len })
             .collect();
+        // Any deferred LinkAsserts (D-H.4) are deliberately DROPPED here, like
+        // `eval_data_at`: this seam's callers are non-lowering (capture-ledger
+        // tests, always `here: None`), so there is no linker to decide them. The
+        // lowering pass drains asserts via `eval_data_with_root` instead.
         (Some(buf), captures, ev.diags)
     })
 }
@@ -1709,6 +1743,14 @@ pub fn eval_attr_int(file: &ast::File, expr: &ast::Expr) -> (Option<i128>, Vec<D
         let mut ev = Evaluator::with_file(file);
         let mut env = Env::new();
         let v = ev.eval_expr(expr, &mut env);
+        // Unreachable today — this evaluator carries no here-position, so a
+        // `here()` in an attribute is the "no current position" error before a
+        // LinkExpr could form — but front it anyway (D-H.2's specific message)
+        // so a future position-threaded attribute cannot silently regress to
+        // the generic "not a comptime integer".
+        if ev.reject_if_provisional(&v, crate::parser::expr_span(expr)).is_some() {
+            return (None, ev.diags);
+        }
         (v.as_stored_int(), ev.diags)
     })
 }

@@ -288,6 +288,11 @@ impl<'a> Evaluator<'a> {
             },
             None => match v {
                 Value::Poison => Err(()),
+                // A provisional here() gets the SPECIFIC D-H.2 steering message.
+                v @ Value::LinkExpr(_) => {
+                    self.reject_if_provisional(&v, arg.span);
+                    Err(())
+                }
                 other => {
                     self.error(arg.span, format!("`{label}` must be an integer, got {}", other.type_name()));
                     Err(())

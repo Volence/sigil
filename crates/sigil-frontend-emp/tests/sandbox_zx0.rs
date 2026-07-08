@@ -20,7 +20,8 @@ fn vectors_dir() -> PathBuf {
 fn data(src: &str, name: &str) -> (Option<DataBuf>, Vec<Diagnostic>) {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
-    eval_data_with_root(&file, name, None, Some(&vectors_dir()))
+    let (buf, _asserts, ds) = eval_data_with_root(&file, name, None, Some(&vectors_dir()));
+    (buf, ds)
 }
 
 /// Flatten a `DataBuf`'s cells to raw bytes for comparison — every cell here

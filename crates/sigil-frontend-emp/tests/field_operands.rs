@@ -76,7 +76,8 @@ fn build(files: &[(&str, &str)], entry: &str, prelude: Option<&str>) -> (Vec<Sec
         mdiags.iter().filter(|d| d.level == Level::Error).collect::<Vec<_>>()
     );
     let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
-    build_program(&manifest, entry, prelude, &opts)
+    let (sections, _asserts, diags) = build_program(&manifest, entry, prelude, &opts);
+    (sections, diags)
 }
 
 // `Sst` is a PUB struct (so the consumer sees the type) and `Player_1` a PUB

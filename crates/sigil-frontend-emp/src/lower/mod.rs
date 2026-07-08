@@ -20,7 +20,7 @@ pub(crate) use code::is_recognized_mnemonic;
 use crate::ast;
 use crate::layout::{
     eval_attr_int, eval_data_with_root, eval_dispatch_with_root, eval_offsets_with_root,
-    validate_overlay,
+    validate_overlay, HerePos,
 };
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
@@ -131,6 +131,16 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // proc seeds from this value and hands back the advanced one.
     let mut asm_counter: u32 = 0;
 
+    // Monotonic counter for item-guard anonymous `here()` ANCHOR labels (D-H.8),
+    // threaded across every guard in the module (top-level AND section-nested) so
+    // each provisional item guard that uses `here()` mints a program-unique name
+    // `__here$<module>$<n>`. `$` is unlexable by both the emp and AS frontends, so
+    // an anchor can never collide with a user symbol; module-qualification +
+    // counter keeps it unique across the whole multi-module program (`link()` has
+    // whole-program duplicate-label detection).
+    let module_id = file.module.path.segments.join(".");
+    let mut here_anchor_counter: u32 = 0;
+
     for (index, item) in file.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
@@ -194,10 +204,16 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // Default section: VMA == LMA == `next_lma`, so the current
                 // position VMA is `next_lma + current_offset()` — the same
                 // `here_base` a data item at this position would see.
-                let here = next_lma + builder.current_offset();
-                let (cont, mut d) =
-                    crate::eval::guards::eval_item_guard(file, decl, here, opts.include_root.as_deref());
-                diags.append(&mut d);
+                let cont = lower_item_guard(
+                    file,
+                    decl,
+                    next_lma,
+                    &module_id,
+                    &mut here_anchor_counter,
+                    opts.include_root.as_deref(),
+                    &mut builder,
+                    &mut diags,
+                );
                 if !cont {
                     break; // ensure_fatal: stop the module's remaining items (D5.3).
                 }
@@ -214,6 +230,8 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     sec,
                     &Placement { cpu, origin: vma, include_root: opts.include_root.as_deref() },
                     as_compat,
+                    &module_id,
+                    &mut here_anchor_counter,
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -305,6 +323,8 @@ fn lower_section_items(
     sec: &ast::SectionDecl,
     placement: &Placement,
     as_compat: bool,
+    module_id: &str,
+    here_anchor_counter: &mut u32,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
@@ -334,10 +354,16 @@ fn lower_section_items(
                 );
             }
             ast::Item::Ensure(decl) => {
-                let here = placement.origin + builder.current_offset();
-                let (cont, mut d) =
-                    crate::eval::guards::eval_item_guard(file, decl, here, placement.include_root);
-                diags.append(&mut d);
+                let cont = lower_item_guard(
+                    file,
+                    decl,
+                    placement.origin,
+                    module_id,
+                    here_anchor_counter,
+                    placement.include_root,
+                    builder,
+                    diags,
+                );
                 if !cont {
                     return false; // ensure_fatal in-section: stop the whole module.
                 }
@@ -355,6 +381,62 @@ fn lower_section_items(
         }
     }
     true
+}
+
+/// Classify the `here()` position for an item whose provisional anchor (when the
+/// open section already holds a size-relaxable fragment) is `anchor_name` — for a
+/// data item its own label, which `lower_data_item` defines at exactly this byte
+/// (D-H.3). At an EXACT position (no relaxable yet) the anchor is `None` and
+/// `here()` returns the byte-identical `Value::Int(base)`; at a PROVISIONAL one it
+/// is `Some(anchor_name)` and `here()` returns a link-time value (D-H.1).
+fn here_pos(builder: &IrBuilder, origin: u32, anchor_name: &str) -> HerePos {
+    let base = origin + builder.current_offset();
+    let anchor = builder.section_has_relaxable().then(|| anchor_name.to_string());
+    HerePos { base, anchor }
+}
+
+/// Lower one item-position guard (D5.2 / D-H.4). At an EXACT position it evaluates
+/// eagerly (byte-identical to before — a passing guard is silent, a failing
+/// `ensure_fatal` stops the module's remaining items via the `false` return). At
+/// a PROVISIONAL position it hands the guard an anonymous `here()` ANCHOR
+/// (`__here$<module>$<n>`, D-H.8); if the guard actually used `here()`, the anchor
+/// label is defined at the current cursor and any deferred `LinkAssert`s are
+/// drained onto the builder (the linker decides them post-relaxation). A deferred
+/// guard NEVER stops lowering (D-H.7: lowering already finished) — only a
+/// comptime-exact fatal guard does. Returns `false` only for that comptime abort.
+#[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
+fn lower_item_guard(
+    file: &ast::File,
+    decl: &ast::EnsureDecl,
+    origin: u32,
+    module_id: &str,
+    here_anchor_counter: &mut u32,
+    include_root: Option<&Path>,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) -> bool {
+    // Provisional position → mint a candidate anonymous anchor for the guard's
+    // `here()` (D-H.8); the label is only DEFINED below if the guard used it.
+    let provisional = builder.section_has_relaxable();
+    let anchor_name = format!("__here${module_id}${}", *here_anchor_counter);
+    let base = origin + builder.current_offset();
+    let here = HerePos {
+        base,
+        anchor: provisional.then(|| anchor_name.clone()),
+    };
+    let mut outcome = crate::eval::guards::eval_item_guard(file, decl, here, include_root);
+    diags.append(&mut outcome.diags);
+    if provisional && outcome.anchor_used {
+        // Define the anchor at the guard's cursor (its `here()` VMA), advance the
+        // counter so the next provisional guard mints a distinct name, and drain
+        // the deferred assertions.
+        builder.define_label(&anchor_name);
+        *here_anchor_counter += 1;
+    }
+    for a in outcome.link_asserts {
+        builder.push_link_assert(a);
+    }
+    outcome.cont
 }
 
 /// Lower one `data` item: evaluate its checked buffer (with `here()` resolving to
@@ -375,9 +457,9 @@ fn lower_data_item(
     if decl.type_only {
         return;
     }
-    let here_base = placement.origin + builder.current_offset();
-    let (buf, mut ds) =
-        eval_data_with_root(file, &decl.name, Some(here_base), placement.include_root);
+    let here = here_pos(builder, placement.origin, &decl.name);
+    let (buf, asserts, mut ds) =
+        eval_data_with_root(file, &decl.name, Some(here), placement.include_root);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -385,6 +467,11 @@ fn lower_data_item(
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
     builder.emit_data(&bytes, fixups, decl.span);
+    // Drain any deferred guards from inside the item's initializer (D-H.4): their
+    // anchor is the item's own label, defined just above.
+    for a in asserts {
+        builder.push_link_assert(a);
+    }
 }
 
 /// Lower one `offsets` block (Spec 2, Plan 7 backlog #3 — Task 6, the FORWARD

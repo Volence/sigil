@@ -179,7 +179,7 @@ fn compile_emp(
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return (None, diags);
     }
-    match link_sections(&module.sections) {
+    match link_sections(&module.sections, &module.link_asserts) {
         Ok(image) => (Some(image), diags),
         Err(mut ds) => {
             diags.append(&mut ds);
@@ -189,23 +189,37 @@ fn compile_emp(
 }
 
 /// The shared emp link prefix: `resolve_layout` (emp defers jmp/jsr width +
-/// layout to link) → `link`, against one flat empty [`SymbolTable`] so
-/// cross-module (and cross-section) references resolve. The two link tails —
-/// `flatten` (no map) and `emit_rom` (map) — reuse this identical prefix, so they
-/// differ only in the final materialization step. Byte-identical whether fed one
-/// module's sections or a whole concatenated program.
+/// layout to link) → `link` → the deferred link-assertion checker (D-H.6), against
+/// one flat empty [`SymbolTable`] so cross-module (and cross-section) references
+/// resolve. The two link tails — `flatten` (no map) and `emit_rom` (map) — reuse
+/// this identical prefix, so they differ only in the final materialization step.
+/// Byte-identical whether fed one module's sections or a whole concatenated
+/// program. A failing deferred `ensure`/`ensure_fatal` (D-H.4) is an `Error`
+/// diagnostic here — folded against the POST-relaxation symbol table (`asserts`
+/// empty ⇒ no check, byte-neutral).
 fn link_to_image(
     sections: &[sigil_ir::Section],
+    asserts: &[sigil_ir::LinkAssert],
 ) -> Result<sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>> {
     let empty = sigil_ir::SymbolTable::new();
     let resolved = sigil_link::resolve_layout(sections, &empty, true)?;
-    sigil_link::link(&resolved, &empty)
+    let image = sigil_link::link(&resolved, &empty)?;
+    // The link succeeded and labels are at their final post-relaxation VMAs — now
+    // decide the deferred guards against exactly those addresses (D-H.6/D-H.7).
+    let assert_diags = sigil_link::check_link_asserts(&resolved, &empty, asserts);
+    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(assert_diags);
+    }
+    Ok(image)
 }
 
 /// The no-map link seam: [`link_to_image`] then `flatten` (gap-fill 0x00, no
 /// region validation).
-fn link_sections(sections: &[sigil_ir::Section]) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
-    Ok(sigil_link::flatten(&link_to_image(sections)?, 0x00))
+fn link_sections(
+    sections: &[sigil_ir::Section],
+    asserts: &[sigil_ir::LinkAssert],
+) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
+    Ok(sigil_link::flatten(&link_to_image(sections, asserts)?, 0x00))
 }
 
 /// The shared emp output tail: write `image` to `output` (if given), print it as
@@ -372,7 +386,10 @@ fn run_emp_program(
         include_root,
     };
 
-    let (mut sections, mut pdiags) = resolve::build_program(&manifest, &entry_id, prelude, &opts);
+    // `link_asserts`: deferred link-time guards (D-H.4), decided by the link tails
+    // below against the post-relaxation symbol table.
+    let (mut sections, link_asserts, mut pdiags) =
+        resolve::build_program(&manifest, &entry_id, prelude, &opts);
     diags.append(&mut pdiags);
 
     render_program_diags(&manifest, &diags);
@@ -404,10 +421,10 @@ fn run_emp_program(
             if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
                 process::exit(1);
             }
-            match link_rom(&sections, &map) {
+            match link_rom(&sections, &link_asserts, &map) {
                 Ok(rom) => rom,
-                Err(msg) => {
-                    eprintln!("error: {msg}");
+                Err(ds) => {
+                    render_program_diags(&manifest, &ds);
                     process::exit(1);
                 }
             }
@@ -419,7 +436,7 @@ fn run_emp_program(
             // resolve to distinct, non-overlapping addresses (single reachable
             // module → one section at 0, unchanged).
             resolve::place_sequential(&mut sections, 0);
-            match link_sections(&sections) {
+            match link_sections(&sections, &link_asserts) {
                 Ok(image) => image,
                 Err(ds) => {
                     render_program_diags(&manifest, &ds);
@@ -432,18 +449,25 @@ fn run_emp_program(
     emit_image(&image, output, hex);
 }
 
-/// Region-placed emp link seam: `resolve_layout` → `link` → `emit_rom` against the
-/// memory map, so each section is validated for region containment/budget (§7.3)
-/// and gaps are filled with the map's default byte. Layout/link diagnostics are
-/// flattened into a single error string (the map-path error channel).
+/// Region-placed emp link seam: `resolve_layout` → `link` → deferred-assert check
+/// (D-H.6) → `emit_rom` against the memory map, so each section is validated for
+/// region containment/budget (§7.3) and gaps are filled with the map's default
+/// byte. A failing deferred guard (D-H.4) surfaces as a proper span-carrying
+/// diagnostic (same channel as the no-map tail); an `emit_rom` region/placement
+/// error is wrapped as a single null-span diagnostic.
 fn link_rom(
     sections: &[sigil_ir::Section],
+    asserts: &[sigil_ir::LinkAssert],
     map: &sigil_ir::map::MemoryMap,
-) -> Result<Vec<u8>, String> {
-    let linked = link_to_image(sections).map_err(|ds| {
-        ds.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")
-    })?;
-    sigil_link::emit_rom(&linked, map)
+) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
+    let linked = link_to_image(sections, asserts)?;
+    sigil_link::emit_rom(&linked, map).map_err(|msg| {
+        vec![sigil_span::Diagnostic {
+            level: sigil_span::Level::Error,
+            message: msg,
+            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        }]
+    })
 }
 
 /// Render multi-module diagnostics as `path:line:col: message`. The manifest

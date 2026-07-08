@@ -252,6 +252,13 @@ impl<'a> Evaluator<'a> {
                 if !self.check_arity(method, &args, 2, span) {
                     return Value::Poison;
                 }
+                // A provisional `here()` bound cannot slice at comptime (D-H.2).
+                if let Some(v) = self.reject_if_provisional(&args[0], span) {
+                    return v;
+                }
+                if let Some(v) = self.reject_if_provisional(&args[1], span) {
+                    return v;
+                }
                 // Slice bounds erase a `Value::Typed` to its stored int (§8.3).
                 let (start, end) = match (args[0].as_stored_int(), args[1].as_stored_int()) {
                     (Some(a), Some(b)) => (a, b),
@@ -385,6 +392,10 @@ impl<'a> Evaluator<'a> {
                 None => {
                     if matches!(el, Value::Poison) {
                         poisoned = true;
+                    } else if self.reject_if_provisional(el, span).is_some() {
+                        // A provisional here() element gets the SPECIFIC D-H.2
+                        // steering message, not the generic "must be an integer".
+                        poisoned = true;
                     } else {
                         self.error(span, format!("`bytes` element must be an integer, got {}", el.type_name()));
                         poisoned = true;
@@ -463,6 +474,10 @@ impl<'a> Evaluator<'a> {
         }
         if let Some(n) = v.as_stored_int() {
             return Some(n);
+        }
+        // A provisional here() argument gets the SPECIFIC D-H.2 steering message.
+        if self.reject_if_provisional(&v, span).is_some() {
+            return None;
         }
         match v {
             Value::Poison => None,

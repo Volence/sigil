@@ -73,6 +73,10 @@ impl<'a> Evaluator<'a> {
         if matches!(arg_val, Value::Poison) {
             return Value::Poison;
         }
+        // A provisional `here()` cannot feed a comptime float function (D-H.2).
+        if let Some(v) = self.reject_if_provisional(&arg_val, span) {
+            return v;
+        }
         let x = match num_f64(&arg_val) {
             Some(x) => x,
             None => {

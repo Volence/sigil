@@ -20,6 +20,18 @@ impl<'a> Evaluator<'a> {
             return Value::Poison;
         }
         match self.here_base {
+            // PROVISIONAL position (D-H.1): the section already holds a relaxable
+            // fragment, so the physical VMA can still shift under relaxation. Yield
+            // a link-time value anchored to the position's label — the linker folds
+            // it against the anchor's post-relaxation VMA. Mark the anchor used
+            // (D-H.8) so the lowering pass defines it.
+            Some(_) if self.here_anchor.is_some() => {
+                self.here_used = true;
+                let anchor = self.here_anchor.clone().expect("here_anchor is Some");
+                Value::LinkExpr(sigil_ir::expr::Expr::Sym(anchor))
+            }
+            // EXACT position: the byte-identical `Value::Int` path — every program
+            // with no relaxable before its `here()` is untouched.
             Some(vma) => Value::Int(vma as i128),
             None => {
                 self.error(
@@ -643,6 +655,12 @@ impl<'a> Evaluator<'a> {
                     // A typed discriminant erases to its stored int (§8.3).
                     v if v.as_stored_int().is_some() => v.as_stored_int(),
                     Value::Poison => None,
+                    // A provisional here() discriminant gets the SPECIFIC D-H.2
+                    // steering message, not the generic "must be an integer".
+                    v @ Value::LinkExpr(_) => {
+                        self.reject_if_provisional(&v, crate::parser::expr_span(expr));
+                        None
+                    }
                     other => {
                         self.error(
                             crate::parser::expr_span(expr),
@@ -706,6 +724,10 @@ impl<'a> Evaluator<'a> {
         // `Angle(Frame(5))`-style nesting is accepted transparently.
         if let Some(n) = arg_val.as_stored_int() {
             return Some(n);
+        }
+        // A provisional here() argument gets the SPECIFIC D-H.2 steering message.
+        if self.reject_if_provisional(&arg_val, span).is_some() {
+            return None;
         }
         match arg_val {
             // An already-reported error propagates silently (D-P2.9).

@@ -22,7 +22,8 @@ fn vectors_dir() -> PathBuf {
 fn data(src: &str, name: &str) -> (Option<DataBuf>, Vec<Diagnostic>) {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
-    eval_data_with_root(&file, name, None, Some(&vectors_dir()))
+    let (buf, _asserts, ds) = eval_data_with_root(&file, name, None, Some(&vectors_dir()));
+    (buf, ds)
 }
 
 const FIXTURE_BYTES: [u8; 12] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];

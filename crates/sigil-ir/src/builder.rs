@@ -1,7 +1,7 @@
 //! `IrBuilder`: the concrete `IrStreamer` that materialises a `Module`.
 
 use crate::backend::{Cpu, IrStreamer};
-use crate::{DataFragment, Fixup, Fragment, Label, Module, Section};
+use crate::{DataFragment, Fixup, Fragment, Label, LinkAssert, Module, Section};
 use sigil_span::{Diagnostic, Span};
 
 /// One section under construction: metadata + a running byte cursor.
@@ -31,6 +31,10 @@ pub struct IrBuilder {
     done: Vec<Section>,
     open: Option<OpenSection>,
     diags: Vec<Diagnostic>,
+    /// Deferred link-time assertions (D-H.4) collected during lowering; carried
+    /// onto the finished [`Module`]. Empty for any program without a provisional
+    /// `here()` guard.
+    link_asserts: Vec<LinkAssert>,
 }
 
 impl IrBuilder {
@@ -56,6 +60,29 @@ impl IrBuilder {
     /// single source of truth for the front-end's `$`/label position.
     pub fn current_offset(&self) -> u32 {
         self.open.as_ref().map_or(0, |o| o.cursor)
+    }
+
+    /// Whether the currently-open section already contains a SIZE-RELAXABLE
+    /// fragment (`JmpJsrSym` | `RelaxAbsSym` | `RelaxLadder`) — one whose final
+    /// byte length `resolve_layout` may still grow (D-H.1). When true, the current
+    /// write position is PROVISIONAL: a `here()` resolved to `current_offset()`
+    /// counts every such fragment at its baseline (smallest) rung, so the physical
+    /// VMA can still shift under relaxation. The lowering pass consults this to
+    /// decide whether a `here()` yields an exact `Value::Int` (byte-identical to
+    /// today) or a link-time `Value::LinkExpr`. Same-section tracking suffices:
+    /// cross-section origin staleness hits labels and `here()` equally (the
+    /// label-equivalence invariant, ledger L-H.1). `false` when no section is open.
+    pub fn section_has_relaxable(&self) -> bool {
+        self.open.as_ref().is_some_and(|o| {
+            o.fragments.iter().any(|f| {
+                matches!(
+                    f,
+                    Fragment::JmpJsrSym { .. }
+                        | Fragment::RelaxAbsSym { .. }
+                        | Fragment::RelaxLadder { .. }
+                )
+            })
+        })
     }
 
     /// The highest `current_offset()` ever reached in the currently-open
@@ -98,10 +125,16 @@ impl IrBuilder {
         s.bump_max();
     }
 
+    /// Record a deferred link-time assertion (D-H.4) — a guard whose condition
+    /// became a provisional `here()` value. Drained onto the finished module.
+    pub fn push_link_assert(&mut self, assert: LinkAssert) {
+        self.link_asserts.push(assert);
+    }
+
     /// Consume the builder: close the open section and return the module + diags.
     pub fn finish(mut self) -> (Module, Vec<Diagnostic>) {
         self.close();
-        (Module { sections: self.done }, self.diags)
+        (Module { sections: self.done, link_asserts: self.link_asserts }, self.diags)
     }
 
     /// Borrow the open section, panicking if a fragment is emitted with no
@@ -252,6 +285,24 @@ mod tests {
         let sec = &module.sections[0];
         assert_eq!(sec.fragments, vec![frag]);
         assert_eq!(sec.labels, vec![crate::Label { name: "After".into(), offset: 4 }]);
+    }
+
+    #[test]
+    fn section_has_relaxable_flips_after_a_relaxable_fragment() {
+        let mut b = IrBuilder::new();
+        assert!(!b.section_has_relaxable()); // no section open
+        b.switch_section("s", Cpu::M68000, None);
+        assert!(!b.section_has_relaxable()); // empty section
+        b.emit_data(&[0x4E, 0x71], vec![], span());
+        assert!(!b.section_has_relaxable()); // plain data does not relax
+        b.emit_fragment(
+            Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("T".into()), span: span() },
+            4,
+        );
+        assert!(b.section_has_relaxable()); // a jmp/jsr can grow → provisional
+        // A fresh section resets the query (per-section tracking).
+        b.switch_section("t", Cpu::M68000, None);
+        assert!(!b.section_has_relaxable());
     }
 
     #[test]
