@@ -13,33 +13,20 @@ use sigil_span::{Diagnostic, Level, Span};
 use std::collections::{HashSet, VecDeque};
 use std::path::Path;
 
-/// A comptime-only item never emits bytes when lowered (`lower_module`'s item
-/// loop skips these kinds), so it is safe to PREPEND to another module's item
-/// list to make its name visible to the evaluator without changing output.
-/// Returns `Some` for `const`/`struct`/`enum`/`bitfield`/`newtype`/`comptime fn`.
-fn is_comptime_only(item: &ast::Item) -> bool {
-    matches!(
-        item,
-        ast::Item::Const(_)
-            | ast::Item::Struct(_)
-            | ast::Item::Enum(_)
-            | ast::Item::Bitfield(_)
-            | ast::Item::Newtype(_)
-            | ast::Item::ComptimeFn(_)
-    )
-}
-
-/// True if a comptime-only item is `pub` (exported). Non-comptime kinds are not
-/// injected, so their publicness is irrelevant here.
-fn is_pub_comptime(item: &ast::Item) -> bool {
+/// Name of a `pub`, comptime-only item — the only kind we inject. Such an item
+/// never emits bytes when lowered (`lower_module`'s item loop skips these kinds),
+/// so it is safe to PREPEND to another module's item list to make its name
+/// visible to the evaluator without changing output. Returns `Some(name)` for a
+/// pub `const`/`struct`/`enum`/`bitfield`/`newtype`/`comptime fn`; else `None`.
+fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
     match item {
-        ast::Item::Const(d) => d.public,
-        ast::Item::Struct(d) => d.public,
-        ast::Item::Enum(d) => d.public,
-        ast::Item::Bitfield(d) => d.public,
-        ast::Item::Newtype(d) => d.public,
-        ast::Item::ComptimeFn(d) => d.public,
-        _ => false,
+        ast::Item::Const(d) if d.public => Some(&d.name),
+        ast::Item::Struct(d) if d.public => Some(&d.name),
+        ast::Item::Enum(d) if d.public => Some(&d.name),
+        ast::Item::Bitfield(d) if d.public => Some(&d.name),
+        ast::Item::Newtype(d) if d.public => Some(&d.name),
+        ast::Item::ComptimeFn(d) if d.public => Some(&d.name),
+        _ => None,
     }
 }
 
@@ -61,7 +48,7 @@ fn ambient_items(
                 p.file
                     .items
                     .iter()
-                    .filter(|it| is_comptime_only(it) && is_pub_comptime(it))
+                    .filter(|it| pub_comptime_name(it).is_some())
                     .cloned(),
             );
         }
@@ -72,7 +59,9 @@ fn ambient_items(
     for item in &module.file.items {
         let ast::Item::Use(u) = item else { continue };
         let base = u.base.segments.join(".");
-        let Some(&bi) = manifest.by_id.get(&base) else { continue };
+        let Some(&bi) = manifest.by_id.get(&base) else {
+            continue;
+        };
         let base_mod = &manifest.modules[bi];
         if base_mod.id == module.id {
             continue; // never inject a module's own items.
@@ -84,7 +73,7 @@ fn ambient_items(
                     .file
                     .items
                     .iter()
-                    .filter(|it| is_comptime_only(it) && is_pub_comptime(it))
+                    .filter(|it| pub_comptime_name(it).is_some())
                     .cloned(),
             ),
             ast::UseNames::List(names) => out.extend(
@@ -92,27 +81,15 @@ fn ambient_items(
                     .file
                     .items
                     .iter()
-                    .filter(|it| is_comptime_only(it) && is_pub_comptime(it))
-                    .filter(|it| comptime_name(it).is_some_and(|n| names.iter().any(|w| w == n)))
+                    .filter(|it| {
+                        pub_comptime_name(it).is_some_and(|n| names.iter().any(|w| w == n))
+                    })
                     .cloned(),
             ),
         }
     }
 
     out
-}
-
-/// The declared name of a comptime-only item, for `use`-list filtering.
-fn comptime_name(item: &ast::Item) -> Option<&str> {
-    match item {
-        ast::Item::Const(d) => Some(&d.name),
-        ast::Item::Struct(d) => Some(&d.name),
-        ast::Item::Enum(d) => Some(&d.name),
-        ast::Item::Bitfield(d) => Some(&d.name),
-        ast::Item::Newtype(d) => Some(&d.name),
-        ast::Item::ComptimeFn(d) => Some(&d.name),
-        _ => None,
-    }
 }
 
 /// Compile the whole reachable module program rooted at `entry_id` into one flat
@@ -158,7 +135,9 @@ pub fn build_program(
     });
 
     // Prelude as a ParsedModule (for ambient comptime-def gathering).
-    let prelude_pm = prelude_id.and_then(|pid| manifest.by_id.get(pid)).map(|&i| &manifest.modules[i]);
+    let prelude_pm = prelude_id
+        .and_then(|pid| manifest.by_id.get(pid))
+        .map(|&i| &manifest.modules[i]);
 
     // 4. Per-module: resolve names, lower, report unresolved, rename, concat.
     for &i in &reachable {
@@ -172,14 +151,26 @@ pub fn build_program(
         // Prepend imported pub comptime-only defs (prelude + `use`d) so the
         // evaluator resolves cross-module types/consts. These emit no bytes and
         // no labels (lower_module skips these kinds), so output is byte-identical
-        // to lowering `pm.file` directly when the ambient list is empty.
+        // to lowering `pm.file` directly. The common no-prelude/no-comptime-use
+        // path has an empty ambient list and lowers BY REFERENCE (zero clones);
+        // only the injected path builds a synthetic file.
         let ambient = ambient_items(pm, prelude_pm, manifest);
-        let synthetic = ast::File {
-            module: pm.file.module.clone(),
-            attrs: pm.file.attrs.clone(),
-            items: ambient.into_iter().chain(pm.file.items.iter().cloned()).collect(),
+        let (mut module, ldiags) = if ambient.is_empty() {
+            lower_module(&pm.file, opts) // zero-clone common path.
+        } else {
+            // The own-items clone here could later be avoided by having the
+            // evaluator index a separate ambient slice (deferred — preludes are
+            // small).
+            let synthetic = ast::File {
+                module: pm.file.module.clone(),
+                attrs: pm.file.attrs.clone(),
+                items: ambient
+                    .into_iter()
+                    .chain(pm.file.items.iter().cloned())
+                    .collect(),
+            };
+            lower_module(&synthetic, opts)
         };
-        let (mut module, ldiags) = lower_module(&synthetic, opts);
         diags.extend(ldiags);
 
         report_unresolved(pm, &module, &env, &mut diags);
@@ -205,16 +196,20 @@ fn reachable_modules(
     prelude_id: Option<&str>,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<usize> {
-    let seed_span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
+    let seed_span = Span {
+        source: sigil_span::SourceId(0),
+        start: 0,
+        end: 0,
+    };
     let mut order = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut queue: VecDeque<(String, Span)> = VecDeque::new();
 
     // Insert into `seen` at ENQUEUE time so an id is never queued twice.
     let enqueue = |queue: &mut VecDeque<(String, Span)>,
-                       seen: &mut HashSet<String>,
-                       id: String,
-                       span: Span| {
+                   seen: &mut HashSet<String>,
+                   id: String,
+                   span: Span| {
         if seen.insert(id.clone()) {
             queue.push_back((id, span));
         }

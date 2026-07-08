@@ -37,7 +37,11 @@ fn two_modules_cross_reference_and_link() {
     // `jmp Draw_Sprite`. Pin the exact length so a mis-linked cross-module fixup
     // (which would change the emitted width/bytes) can't pass silently.
     assert!(out.exists());
-    assert_eq!(std::fs::metadata(&out).unwrap().len(), 4, "expected a 4-byte image");
+    assert_eq!(
+        std::fs::metadata(&out).unwrap().len(),
+        4,
+        "expected a 4-byte image"
+    );
 }
 
 #[test]
@@ -48,7 +52,11 @@ fn transitive_chain_discovers_third_module() {
     // exercise transitivity).
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    write(root, "chain/c.emp", "module chain.c\npub proc c_fn (a0: *u8) {\n    rts\n}\n");
+    write(
+        root,
+        "chain/c.emp",
+        "module chain.c\npub proc c_fn (a0: *u8) {\n    rts\n}\n",
+    );
     write(
         root,
         "chain/b.emp",
@@ -71,7 +79,10 @@ fn transitive_chain_discovers_third_module() {
         ])
         .status()
         .unwrap();
-    assert!(status.success(), "transitive 3-module compile should succeed");
+    assert!(
+        status.success(),
+        "transitive 3-module compile should succeed"
+    );
     assert!(out.exists() && std::fs::metadata(&out).unwrap().len() > 0);
 }
 
@@ -106,7 +117,11 @@ fn prelude_types_resolve_without_use() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     // Prelude exports a struct type used by the object module with NO `use`.
-    write(root, "prelude.emp", "module prelude\npub struct ObjDef (size: 4) { code: *u8 }\n");
+    write(
+        root,
+        "prelude.emp",
+        "module prelude\npub struct ObjDef (size: 4) { code: *u8 }\n",
+    );
     write(
         root,
         "badniks/plant.emp",
@@ -127,8 +142,88 @@ fn prelude_types_resolve_without_use() {
         ])
         .status()
         .unwrap();
-    assert!(status.success(), "prelude struct should resolve without an explicit use");
+    assert!(
+        status.success(),
+        "prelude struct should resolve without an explicit use"
+    );
     assert!(std::fs::metadata(&out).unwrap().len() >= 4); // Def = one *u8 pointer (fixup to init)
+}
+
+#[test]
+fn prelude_absent_fails_with_unknown_type() {
+    // Negative twin of `prelude_types_resolve_without_use`: the SAME module,
+    // compiled WITHOUT `--prelude`, must fail because `ObjDef` is not visible.
+    // This proves the prelude is load-bearing (not that the type resolves anyway).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "prelude.emp",
+        "module prelude\npub struct ObjDef (size: 4) { code: *u8 }\n",
+    );
+    write(
+        root,
+        "badniks/plant.emp",
+        "module badniks.plant\nproc init (a0: *u8) {\n    rts\n}\n\
+         pub data Def = ObjDef{ code: \"init\" }\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("badniks/plant.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            // no `--prelude` → ObjDef is not auto-imported.
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "compile must fail without the prelude"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ObjDef"),
+        "stderr should name the unknown type ObjDef, was: {stderr}"
+    );
+}
+
+#[test]
+fn use_imported_type_resolves_without_prelude() {
+    // Exercises the `use`-path ambient branch (UseNames::List): a `use`d module's
+    // pub struct TYPE must be injected so the importing module's `data` literal
+    // resolves it — with NO prelude involved. Prior cross-module tests only import
+    // procs (labels), which the comptime filter drops, so this branch was untested.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "b.emp",
+        "module b\npub struct Foo (size: 4) { p: *u8 }\n",
+    );
+    write(
+        root,
+        "a.emp",
+        "module a\nuse b.{Foo}\nproc lbl (a0: *u8) {\n    rts\n}\n\
+         pub data D = Foo{ p: \"lbl\" }\n",
+    );
+    let out = root.join("out.bin");
+    let status = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("a.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "a `use`d struct type should resolve without a prelude"
+    );
+    assert!(std::fs::metadata(&out).unwrap().len() >= 4); // D = one *u8 pointer (fixup to lbl)
 }
 
 #[test]
