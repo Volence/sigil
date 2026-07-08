@@ -651,10 +651,14 @@ impl Parser {
         self.bump(); // `vars`
         let first = self.expect_ident("region or overlay name");
         let (name, region) = if self.eat(&Tok::Colon) {
-            let region = self.expect_ident("overlay region (e.g. sst_custom)");
+            let mut region = vec![self.expect_ident("overlay region (e.g. sst_custom)")];
+            while self.at(&Tok::Dot) && matches!(self.peek2(), Tok::Ident(_)) {
+                self.bump(); // .
+                region.push(self.expect_ident("name"));
+            }
             (Some(first), region)
         } else {
-            (None, first)
+            (None, vec![first])
         };
         self.expect(&Tok::LBrace, "`{`");
         let mut fields = Vec::new();

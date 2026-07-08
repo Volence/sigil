@@ -201,15 +201,20 @@ fn vars_region_and_overlay_forms() {
     let f = ok("module m\nvars upper_ram {\n    Player_Pos_Ring: [u8; 256] @align(256),\n}\n");
     let Item::Vars(v) = &f.items[0] else { panic!() };
     assert_eq!(v.name, None);
-    assert_eq!(v.region, "upper_ram");
+    assert_eq!(v.region, vec!["upper_ram".to_string()]);
     assert!(v.fields[0].align.is_some());
 
     // overlay form: `vars PitcherPlantV: sst_custom { timer: u8 }`
     let f = ok("module m\nvars PitcherPlantV: sst_custom { timer: u8 }\n");
     let Item::Vars(v) = &f.items[0] else { panic!() };
     assert_eq!(v.name.as_deref(), Some("PitcherPlantV"));
-    assert_eq!(v.region, "sst_custom");
+    assert_eq!(v.region, vec!["sst_custom".to_string()]);
     assert_eq!(v.fields[0].name, "timer");
+
+    // dotted window form: `vars X: Sst.sst_custom { timer: u8 }`
+    let f = ok("module m\nvars X: Sst.sst_custom { timer: u8 }\n");
+    let Item::Vars(v) = &f.items[0] else { panic!() };
+    assert_eq!(v.region, vec!["Sst".to_string(), "sst_custom".to_string()]);
 }
 
 #[test]

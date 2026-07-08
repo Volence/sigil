@@ -249,11 +249,13 @@ pub struct OffsetsMember {
 pub struct VarsDecl {
     /// Whether this vars block is exported (`pub vars`).
     pub public: bool,
-    /// `vars upper_ram { .. }` → name None, region "upper_ram".
-    /// `vars PitcherPlantV: sst_custom { .. }` → name Some("PitcherPlantV"), region "sst_custom".
+    /// `vars upper_ram { .. }` → name None, region ["upper_ram"].
+    /// `vars PitcherPlantV: sst_custom { .. }` → name Some("PitcherPlantV"), region ["sst_custom"].
+    /// `vars X: Sst.sst_custom { .. }` → name Some("X"), region ["Sst", "sst_custom"] (dotted
+    /// window path, disambiguating which struct's byte-array field the overlay targets).
     pub name: Option<String>,
-    /// The memory region this block is allocated into.
-    pub region: String,
+    /// The memory region (or dotted window path) this block is allocated into.
+    pub region: Vec<String>,
     /// The block's fields, in declaration order.
     pub fields: Vec<VarsField>,
     /// Span of the whole declaration.
