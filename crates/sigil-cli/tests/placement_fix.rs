@@ -73,3 +73,77 @@ fn single_file_growth_overlap_is_fixed() {
          baked 4-byte baseline"
     );
 }
+
+#[test]
+fn named_section_labels_follow_placed_lma() {
+    // Plan 7 item-7-pre Task 6 / ruling R7p.5: a NAMED `section {}` WITHOUT an
+    // explicit `vma:` attribute must resolve its labels from wherever the
+    // section actually gets PLACED (link time), not from a silently-defaulted
+    // `vma: 0`. Before this fix, `section_attrs` (sigil-frontend-emp/src/
+    // lower/mod.rs:599-635) always defaulted `vma = 0` and lower/mod.rs:231
+    // ALWAYS passed `Some(vma)` to `switch_section_lma` — so a vma-less named
+    // section got `vma_base = Some(0)` baked in, and its labels resolved from
+    // address 0 forever, no matter where the section's bytes actually landed.
+    //
+    // Two modules under `--root`, no `--map` (sequential packing, BUG-I3-fixed
+    // by `place_sequential`): the entry module is discovered first, so its
+    // default `text` section packs FIRST; the second module's named `blob`
+    // section (no `vma:`) packs SECOND, right after it.
+    //
+    // LAYOUT ARITHMETIC (computed INDEPENDENTLY of read-back):
+    //   entry's default `text` section: one `pub data P = ObjDef{ p: "X" }`.
+    //     `ObjDef` is a size-4 struct with a single `*u8` field → P emits ONE
+    //     4-byte pointer fixup (Abs32, not size-relaxable) = a fixed 4-byte span.
+    //     text packs first @ LMA 0, reserved span 4.
+    //   blob_mod's `section blob { pub data X: [u8;1] = [$AA] }` (NO vma:):
+    //     packs SECOND, right after text's 4-byte span → blob @ LMA 4.
+    //     X is blob's only byte, so X's address == blob's base == 4.
+    //   P's pointer fixup must therefore resolve to X's PLACED address, 4:
+    //     dc.l $00000004 -> 00 00 00 04.
+    //   On master (pre-fix) behavior, the vma-less `blob` section bakes
+    //   `vma_base = Some(0)`, so X resolves to 0 regardless of placement:
+    //     dc.l $00000000 -> 00 00 00 00  (WRONG — this is the RED this test pins).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("prelude.emp"),
+        "module prelude\npub struct ObjDef (size: 4) { p: *u8 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("blob_mod.emp"),
+        "module blob_mod\nsection blob {\n    pub data X: [u8;1] = [$AA]\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("entry.emp"),
+        "module entry\nuse blob_mod.{X}\npub data P = ObjDef{ p: \"X\" }\n",
+    )
+    .unwrap();
+    let out = root.join("out.bin");
+    let output = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("entry.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--prelude",
+            "prelude",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "two-module named-section-without-vma compile should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let bytes = std::fs::read(&out).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x00, 0x00, 0x00, 0x04, 0xAA],
+        "P's pointer field must fix up to X's PLACED address (4), not the \
+         silently-defaulted vma:0 — X's own byte ($AA) follows at offset 4"
+    );
+}

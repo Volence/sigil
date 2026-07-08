@@ -61,9 +61,14 @@ struct Placement<'a> {
 /// A `section name (cpu:, vma:) { .. }` (§7.1) opens a placed section: its bytes
 /// land at the next physical LMA (a continuous counter across sections in
 /// declaration order — emp's own placement policy, map-file regions being
-/// S2-D3-deferred), while its labels/PC compute at the explicit `vma:` base. A
-/// `cpu: z80` section lowers its code as Z80 and serializes its data
-/// little-endian; the CPU flows through to the streamer and `lower_code_buf`.
+/// S2-D3-deferred). An explicit `vma:` is a PIN: labels/PC compute at that exact
+/// base regardless of where the section's bytes end up. Omitting `vma:` (R7p.5,
+/// Plan 7 item-7-pre Task 6) makes the section behave exactly like the default
+/// section: `vma_base = None`, so its labels/PC follow wherever the section is
+/// actually PLACED at link time (`Section::vma_origin()`) — never silently
+/// pinned to address 0. A `cpu: z80` section lowers its code as Z80 and
+/// serializes its data little-endian; the CPU flows through to the streamer and
+/// `lower_code_buf`.
 ///
 /// NOTE: `"text"` is NOT a unique section handle. Interleaving top-level items
 /// with `section {}` blocks can emit several distinct `Section`s all named
@@ -228,11 +233,18 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 next_lma += builder.current_offset();
                 default_open = false;
                 let (cpu, vma) = section_attrs(file, sec, &mut diags);
-                builder.switch_section_lma(&sec.name, cpu, Some(vma), next_lma);
+                builder.switch_section_lma(&sec.name, cpu, vma, next_lma);
+                // R7p.5: an explicit `vma:` is a pin (labels resolve from that
+                // fixed base, `origin` matches it exactly). Absent `vma:`, the
+                // section's labels follow wherever it's actually PLACED — mirror
+                // `ensure_default`'s own pattern (`vma_base: None`, `origin:
+                // next_lma`, the section's provisional physical start) instead of
+                // silently defaulting to 0.
+                let origin = vma.unwrap_or(next_lma);
                 let cont = lower_section_items(
                     file,
                     sec,
-                    &Placement { cpu, origin: vma, include_root: opts.include_root.as_deref() },
+                    &Placement { cpu, origin, include_root: opts.include_root.as_deref() },
                     as_compat,
                     &module_id,
                     &mut here_anchor_counter,
@@ -597,16 +609,24 @@ fn lower_dispatch_item(
 }
 
 /// Read a section's `cpu:`/`vma:` attributes (§7.1). `cpu:` defaults to
-/// `M68000` (`z80` selects [`Cpu::Z80`]); `vma:` is evaluated to a comptime
-/// integer (defaulting to 0, with a diagnostic if it is not an integer).
-/// Unknown attribute names are diagnosed but otherwise ignored.
+/// `M68000` (`z80` selects [`Cpu::Z80`]). `vma:`, when present, is evaluated to
+/// a comptime integer and returned as `Some` — a PIN: the section's labels
+/// resolve from that exact base (unchanged behavior). Absent `vma:` returns
+/// `None` (R7p.5, Plan 7 item-7-pre Task 6): the section's labels follow
+/// wherever it's actually PLACED at link time (`Section::vma_origin() =
+/// vma_base.unwrap_or(lma)`), exactly like the default (top-level items)
+/// section already behaves (`ensure_default` always passes `None`) — a named
+/// section is no longer silently pinned to `vma: 0` just for omitting the
+/// attribute. An invalid (non-integer) `vma:` expression still diagnoses and
+/// falls back to the `None` (follow-placement) behavior. Unknown attribute
+/// names are diagnosed but otherwise ignored.
 fn section_attrs(
     file: &ast::File,
     sec: &ast::SectionDecl,
     diags: &mut Vec<Diagnostic>,
-) -> (Cpu, u32) {
+) -> (Cpu, Option<u32>) {
     let mut cpu = Cpu::M68000;
-    let mut vma: u32 = 0;
+    let mut vma: Option<u32> = None;
     for (name, expr) in &sec.attrs {
         match name.as_str() {
             "cpu" => cpu = attr_cpu(expr),
@@ -614,7 +634,7 @@ fn section_attrs(
                 let (n, mut ds) = eval_attr_int(file, expr);
                 diags.append(&mut ds);
                 match n {
-                    Some(v) => vma = v as u32,
+                    Some(v) => vma = Some(v as u32),
                     // Point at the value expression itself (it carries its own
                     // span), not the whole section, for precision.
                     None => err(

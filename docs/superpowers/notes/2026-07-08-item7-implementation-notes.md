@@ -74,6 +74,7 @@ placement code.
 |------|------|-------------|------------|---------------|
 | 1 | `single_file_growth_overlap_is_fixed` (`crates/sigil-cli/tests/placement_fix.rs`) | `cargo test -p sigil-cli --test placement_fix` | FAILED — first-diff: `left: [78, 249, 0, 0, 222, 173, 190, 239]` (master, 8B = `4E F9 00 00 DE AD BE EF`, `data`'s `DE AD` clobbered the grown jmp operand) vs `right: [78, 249, 0, 0, 128, 0, 222, 173, 190, 239]` (correct, 10B = `4E F9 00 00 80 00 DE AD BE EF`). CLI run on the source confirms master image byte-for-byte. | GREEN at the Task-4 commit below. |
 | 4 | `final_placement::{chained_successor_follows_grown_predecessor_final_size, colliding_pins_are_a_loud_link_error, placement_growth_feeds_relaxation_growth_to_a_joint_fixpoint}` (`crates/sigil-link/tests/final_placement.rs`) | `cargo test -p sigil-link --test final_placement` | FAILED (3 of 4) — (a) chained successor `left: 4` vs `right: 6` (baked baseline not the grown final); (c) `unwrap_err()` on `Ok` (no overlap check yet); (d) `left: 4` vs `right: 6` (no placement pass). Test (b) max-span degeneracy passed pre-impl (input lmas already correct). | GREEN at the Task-4 commit below (all 4). |
+| 6 | `named_section_labels_follow_placed_lma` (`crates/sigil-cli/tests/placement_fix.rs`) | `cargo test -p sigil-cli --test placement_fix named_section_labels_follow_placed_lma` | FAILED — `left: [0, 0, 0, 0, 170]` (P's pointer fixed up to X @ silently-defaulted `vma:0`) vs `right: [0, 0, 0, 4, 170]` (X's true PLACED address, 4). Two modules, no `--map`: entry's default `text` section (one 4-byte pointer, `pub data P = ObjDef{ p: "X" }`) packs first @ LMA 0; `blob_mod`'s `section blob { pub data X: [u8;1] = [$AA] }` (NO `vma:`) packs second @ LMA 4 — pre-fix the vma-less section baked `vma_base = Some(0)`, so X resolved to 0 regardless of where it actually landed. | GREEN at the Task-6 commit below. |
 
 ## T4 — the link-time placement pass + placement⇄relaxation joint fixpoint
 
@@ -150,3 +151,76 @@ parent 1b18ce6 and confirmed zero new reds / byte-identical placement-sensitive 
 m0_regions, m1c). T4 quality review: APPROVED, 4 minors (none blocking); carry-forward constraint for
 #7-main: do NOT add a fifth cursor-replay loop for the bank bump — extract the ir replay primitive first
 (rule-of-three already at four: vma_len / placement_span / image_bytes / final_size).
+
+## T6 — named sections without `vma:` follow their placed address (R7p.5)
+
+**The defect.** `section_attrs` (`crates/sigil-frontend-emp/src/lower/mod.rs`)
+defaulted an absent `vma:` attribute to the plain integer `0`, and the
+`Item::Section` arm ALWAYS passed `Some(vma)` to `builder.switch_section_lma`
+— so a NAMED section that omitted `vma:` baked `vma_base = Some(0)`. Per
+`Section::vma_origin() = vma_base.unwrap_or(lma)`, that PINS every label in the
+section to address 0 forever, no matter where T4's link-time placement pass
+(`resolve_layout`) actually puts the section's bytes. This is exactly the
+silent-wrong-address class item-7-pre exists to kill, and it would have
+poisoned the upcoming `bankid()` builtin (item-7-main), which reads a label's
+resolved address.
+
+**The fix.** `section_attrs` now returns `(Cpu, Option<u32>)`: an explicit
+`vma:` still evaluates to `Some(v)` (a PIN — byte-identical to before). An
+absent `vma:` now returns `None`, threaded straight into
+`switch_section_lma`'s `vma_base` parameter — the SAME `None` the default
+(top-level items) section has always used via `ensure_default`. The
+`Item::Section` arm's `Placement.origin` (which feeds `here()`'s EXACT-position
+byte-identical `Value::Int` computation, per `here_pos`) now uses
+`vma.unwrap_or(next_lma)` — mirroring exactly how `ensure_default` always
+passes `origin: next_lma` regardless of `vma_base` being `None`. No other
+`Placement` construction site changed; `next_lma` (the running physical LMA
+counter) is unaffected by this task.
+
+**Two independent test layers, both RED-first:**
+
+- `crates/sigil-frontend-emp/tests/lower_sections.rs::named_section_without_vma_has_no_pinned_vma_base`
+  — unit-level `lower_module` test: section `a` keeps an explicit `vma: $0`
+  pin (`vma_base == Some(0)`, unchanged); section `b` omits `vma:` and must
+  get `vma_base == None`, with `vma_origin()` falling back to its physical
+  `lma` (2, right after `a`'s 2 bytes) rather than 0.
+- `crates/sigil-cli/tests/placement_fix.rs::named_section_labels_follow_placed_lma`
+  — program-path CLI test (spawns `CARGO_BIN_EXE_sigil`, mirrors the file's
+  existing test's style): two modules under `--root`, no `--map` (sequential
+  packing). `blob_mod`'s `section blob { pub data X: [u8;1] = [$AA] }` has NO
+  `vma:`; the entry module's `pub data P = ObjDef{ p: "X" }` (prelude struct
+  with one `*u8` field) fixes up a pointer to X. RED (pre-fix):
+  `[0, 0, 0, 0, 170]` (X resolved to the baked `vma:0`). GREEN (post-fix):
+  `[0, 0, 0, 4, 170]` (X resolves to its true placed address, 4 — right after
+  the entry's 4-byte pointer span).
+
+**DEFAULT section pin, verified unchanged (not just by construction).**
+`lower_sections.rs::here_outside_a_placed_section_uses_default_origin`
+(pre-existing, untouched) still asserts a top-level `data H: u16 = here()`
+resolves to `0x0000` — `ensure_default` was never touched by this task and
+stayed green through the whole change.
+
+**Explicit-`vma:` pins, verified unchanged.** Every pre-existing test with an
+explicit `section s (vma: $N) { .. }` (`two_sections_place_at_vma_and_continuous_lma`,
+`cross_section_pointer_resolves_to_target_vma`, the `module_resolution.rs`
+section-nested tests, etc.) stayed green untouched — `Some(v)` pin semantics
+are byte-for-byte identical to before.
+
+### Verification ladder (all green)
+
+- (i) `cargo test -p sigil-cli --test placement_fix` → 2/2 ok (Task-1 +
+  Task-6 both green together).
+- (ii) `cargo test -p sigil-frontend-emp --test lower_sections` → 13/13 ok.
+- (iii) `cargo test --workspace --no-fail-fast` → EXACTLY the 4 allowlisted
+  sigil-harness reds (`full_build_reproduces_sound_driver_regions`,
+  `vector_table_matches_reference_rom_first_256_bytes`,
+  `full_debug_rom_matches_assembled_reference`,
+  `full_rom_matches_assembled_reference`); nothing else red. Re-confirmed
+  after adding the unit-level pin test.
+- (iv) `cargo clippy --workspace --all-targets -- -D warnings` → clean.
+- (v) `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (zero
+  `DIFFERS`; the two pre-existing `SKIPPED` files are the same master-only
+  compile failures noted at T0, unrelated to this branch). No corpus
+  divergence to itemize — the pitcher_plant exhibits (340B/358B) are
+  untouched because every section in the corpus that carries cross-referenced
+  labels already declares an explicit `vma:`.
