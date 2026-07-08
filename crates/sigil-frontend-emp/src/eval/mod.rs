@@ -17,7 +17,7 @@ mod emit;
 mod env;
 mod expr;
 mod float_ns;
-mod guards;
+pub(crate) mod guards;
 mod literals;
 mod pattern;
 mod sandbox;
@@ -253,6 +253,12 @@ impl<'a> Evaluator<'a> {
     /// (§7.1). The lowering pass calls this before resolving each data item.
     pub(crate) fn set_here_base(&mut self, vma: u32) {
         self.here_base = Some(vma);
+    }
+
+    /// Whether evaluation aborted (a failing `ensure_fatal`, D5.3). The item-guard
+    /// harness reads this to decide whether to keep lowering the module's items.
+    pub(crate) fn was_aborted(&self) -> bool {
+        self.aborted
     }
 
     /// Create an evaluator that can resolve names against `file`'s top-level

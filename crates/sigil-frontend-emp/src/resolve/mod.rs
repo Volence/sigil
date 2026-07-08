@@ -330,8 +330,15 @@ fn report_unresolved(
                 if s.starts_with('$') {
                     continue; // proc-local hygiene symbol — resolved intra-module.
                 }
-                if env.rename_map().contains_key(&s) {
-                    continue; // resolvable to a canonical symbol.
+                // Resolvable to a canonical symbol — directly, or (for a dotted
+                // exported label `Owner.local`) via its OWNER segment. The same
+                // dotted-owner rule the rename pass uses (`canonicalize_name`), so
+                // an accepted reference is exactly one the rename pass rewrites.
+                // NOTE: acceptance guarantees REWRITABILITY, not existence — a
+                // dotted name with a known owner but a typo'd local (`foo.typo`)
+                // passes here and surfaces at link time as an undefined symbol.
+                if rename::canonicalize_name(&s, env.rename_map()).is_some() {
+                    continue;
                 }
                 if !seen.insert(s.clone()) {
                     continue; // already reported this name.

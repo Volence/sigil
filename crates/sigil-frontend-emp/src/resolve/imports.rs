@@ -48,10 +48,25 @@ impl ExportIndex {
     }
 }
 
-/// The `pub` top-level names of a file (all item kinds that can be referenced
-/// across modules: data/proc/offsets/const/struct/enum/bitfield/newtype).
+/// The `pub` names of a file (all item kinds that can be referenced across
+/// modules: data/proc/offsets/const/struct/enum/bitfield/newtype). Recurses into
+/// `section {}` bodies so section-nested `pub` items are exported too — without
+/// this a `pub data` inside a section is invisible cross-module (Task 0.5 fix).
 pub fn exported_names(file: &ast::File) -> Vec<String> {
-    file.items.iter().filter_map(item_pub_name).collect()
+    let mut out = Vec::new();
+    collect_exported(&file.items, &mut out);
+    out
+}
+
+fn collect_exported(items: &[ast::Item], out: &mut Vec<String>) {
+    for item in items {
+        if let Some(name) = item_pub_name(item) {
+            out.push(name);
+        }
+        if let ast::Item::Section(sec) = item {
+            collect_exported(&sec.items, out);
+        }
+    }
 }
 
 /// The name of any `pub` top-level item, or None for private / `use` / `section`.
@@ -69,22 +84,31 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
     }
 }
 
-/// Every top-level name a file DEFINES (pub or private), for own-canonical mapping.
+/// Every name a file DEFINES (pub or private), for own-canonical mapping.
+/// Recurses into `section {}` bodies so section-nested items enter the rename map
+/// and `report_unresolved` accepts references to them (Task 0.5 fix). Kept
+/// consistent with `exported_names`: same recursion, same item kinds.
 fn defined_names(file: &ast::File) -> Vec<String> {
-    file.items
-        .iter()
-        .filter_map(|it| match it {
-            ast::Item::Data(d) => Some(d.name.clone()),
-            ast::Item::Proc(p) => Some(p.name.clone()),
-            ast::Item::Offsets(o) => Some(o.name.clone()),
-            ast::Item::Const(c) => Some(c.name.clone()),
-            ast::Item::Struct(s) => Some(s.name.clone()),
-            ast::Item::Enum(e) => Some(e.name.clone()),
-            ast::Item::Bitfield(b) => Some(b.name.clone()),
-            ast::Item::Newtype(n) => Some(n.name.clone()),
-            _ => None,
-        })
-        .collect()
+    let mut out = Vec::new();
+    collect_defined(&file.items, &mut out);
+    out
+}
+
+fn collect_defined(items: &[ast::Item], out: &mut Vec<String>) {
+    for it in items {
+        match it {
+            ast::Item::Data(d) => out.push(d.name.clone()),
+            ast::Item::Proc(p) => out.push(p.name.clone()),
+            ast::Item::Offsets(o) => out.push(o.name.clone()),
+            ast::Item::Const(c) => out.push(c.name.clone()),
+            ast::Item::Struct(s) => out.push(s.name.clone()),
+            ast::Item::Enum(e) => out.push(e.name.clone()),
+            ast::Item::Bitfield(b) => out.push(b.name.clone()),
+            ast::Item::Newtype(n) => out.push(n.name.clone()),
+            ast::Item::Section(sec) => collect_defined(&sec.items, out),
+            _ => {}
+        }
+    }
 }
 
 /// One module's short-name → canonical-symbol resolution table.

@@ -3,7 +3,43 @@
 use super::{Env, Evaluator};
 use crate::ast;
 use crate::value::Value;
-use sigil_span::Span;
+use sigil_span::{Diagnostic, Span};
+
+/// Evaluate one item-position guard (D5.2). Builds a fresh evaluator over the
+/// file (the same harness as a data item: eval stack + `here_base` +
+/// `include_root`), evaluates the stored call expression — the
+/// `ensure`/`ensure_fatal` special-case in [`Evaluator::eval_expr`] (via
+/// `eval/call.rs`) does arity/interpolation/abort — and returns
+/// `(continue_lowering, diagnostics)`. `continue_lowering` is `false` only when a
+/// failing `ensure_fatal` set the abort flag (D5.3), signalling the caller to
+/// stop lowering the module's remaining items.
+pub(crate) fn eval_item_guard(
+    file: &crate::ast::File,
+    decl: &crate::ast::EnsureDecl,
+    here_base: u32,
+    include_root: Option<&std::path::Path>,
+) -> (bool, Vec<Diagnostic>) {
+    // `decl.fatal` records which keyword the parser saw; dispatch itself keys
+    // off the stored call's CALLEE name (`eval/call.rs`). Assert the two agree
+    // so any future parser divergence between the keyword and the captured call
+    // is caught in debug builds instead of silently mis-dispatching.
+    debug_assert!(
+        matches!(&decl.call, ast::Expr::Call { callee, .. }
+            if callee.segments.len() == 1
+                && callee.segments[0] == if decl.fatal { "ensure_fatal" } else { "ensure" }),
+        "EnsureDecl.fatal disagrees with the stored call's callee"
+    );
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.set_here_base(here_base);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let mut env = Env::new();
+        let _ = ev.eval_expr(&decl.call, &mut env);
+        (!ev.was_aborted(), ev.diags)
+    })
+}
 
 impl<'a> Evaluator<'a> {
     /// Evaluate an `ensure` / `ensure_fatal` guard (§6.5). `fatal` selects the

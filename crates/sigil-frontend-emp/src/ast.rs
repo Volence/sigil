@@ -71,6 +71,21 @@ pub enum Item {
     Section(SectionDecl),
     /// `newtype ...` declaration.
     Newtype(NewtypeDecl),
+    /// An item-position `ensure(...)` / `ensure_fatal(...)` guard (§6.5, D5.1).
+    Ensure(EnsureDecl),
+}
+
+/// An item-position guard: `ensure(cond, "msg")` / `ensure_fatal(cond, "msg")`
+/// between items. `call` is the WHOLE call expression — evaluation reuses the
+/// evaluator's guard special-case (arity, interpolation, `aborted`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnsureDecl {
+    /// True for `ensure_fatal`.
+    pub fatal: bool,
+    /// The full `ensure(...)` call expression.
+    pub call: Expr,
+    /// Span of the whole item.
+    pub span: Span,
 }
 
 /// A `use base.{a, b}` / `use base.*` / `use base` import.
@@ -267,6 +282,9 @@ pub struct DataDecl {
     pub name: String,
     /// Optional explicit type annotation; inferable when the literal names its type.
     pub ty: Option<Type>,
+    /// Optional `(max_size: expr)` capacity bound (D5.4): the checked buffer's
+    /// byte length must not exceed it. Always-on; overflow is an error.
+    pub max_size: Option<Expr>,
     /// The data item's value expression.
     pub value: Expr,
     /// Span of the whole declaration.

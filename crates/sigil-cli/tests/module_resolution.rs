@@ -774,6 +774,320 @@ fn no_map_multi_module_places_at_distinct_lmas() {
 }
 
 #[test]
+fn section_nested_items_resolve_under_root() {
+    // AUDIT FIX (Task 0.5): `exported_names`/`defined_names` iterated ONLY
+    // top-level `file.items` — no recursion into `section {}` bodies — so any
+    // data/proc/offsets nested in a section never entered the rename map and
+    // `report_unresolved` rejected references to it (including the offsets table's
+    // OWN base label) as `unknown symbol`. Single-file mode worked; `--root`
+    // failed. Here an offsets table + its two data targets are ALL section-nested;
+    // `--root` must now produce the SAME bytes single-file mode gives:
+    //   00 04 00 05 AA BB  (dc.w A-T, B-T then the two target bytes).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "m.emp",
+        "module m\nsection s (vma: $0) {\n\
+         offsets T {\n    A: X,\n    B: Y,\n}\n\
+         data X: [u8;1] = [$AA]\n\
+         data Y: [u8;1] = [$BB]\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("m.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested offsets/data must resolve under --root, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x00, 0x04, 0x00, 0x05, 0xAA, 0xBB],
+        "section-nested table must byte-match single-file mode"
+    );
+}
+
+#[test]
+fn section_nested_proc_cross_reference_resolves_under_root() {
+    // The proc twin of the audit repro: `proc go { jmp Helper }` and its sibling
+    // `proc Helper` are BOTH section-nested. Single-file gives `4E F8 00 04 4E 75`
+    // (jmp relaxes to abs.w → Helper @ 4). `--root` must match.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "p.emp",
+        "module p\nsection s (vma: $0) {\n\
+         proc go (a0: *u8) {\n    jmp Helper\n}\n\
+         proc Helper (a0: *u8) {\n    rts\n}\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("p.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested proc cross-reference must resolve under --root, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4E, 0xF8, 0x00, 0x04, 0x4E, 0x75],
+        "section-nested proc jmp must byte-match single-file mode"
+    );
+}
+
+#[test]
+fn cross_module_offsets_target_section_nested_bytes_are_exact() {
+    // The §4.7 cross-module-target deferral, but with BOTH the offsets table and
+    // its cross-module targets section-nested (the top-level variant is covered by
+    // `cross_module_offsets_table_bytes_are_exact`). The `data` region packs
+    // sections cumulatively in module-discovery order: entry `tab`'s `data` section
+    // (offsets T, 4 bytes) at LMA base 0x20000, then `targets`'s `data` section at
+    // LMA 0x20004. Each section's explicit VMA is set to its resulting LMA so labels
+    // resolve distinctly (A @ 0x20004, B @ 0x20005). Words: dc.w (A-T)=4, (B-T)=5.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"data\"\nlma_base = 0x20000\nsize = 0x20\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "targets.emp",
+        "module targets in data\nsection data (vma: $20004) {\n\
+         pub data A: [u8;1] = [$AA]\n\
+         pub data B: [u8;1] = [$BB]\n}\n",
+    );
+    write(
+        root,
+        "tab.emp",
+        "module tab in data\nuse targets.{A, B}\nsection data (vma: $20000) {\n\
+         pub offsets T {\n    First:  A,\n    Second: B,\n}\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("tab.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "cross-module section-nested offsets target must resolve, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    let base = 0x20000usize;
+    assert_eq!(
+        &bytes[base..base + 4],
+        &[0x00, 0x04, 0x00, 0x05],
+        "offsets words: dc.w (A - T), (B - T) big-endian"
+    );
+    assert_eq!(bytes[base + 4], 0xAA, "A target byte");
+    assert_eq!(bytes[base + 5], 0xBB, "B target byte");
+}
+
+#[test]
+fn exported_dotted_label_resolves_under_root() {
+    // AUDIT FIX (Task 0.6): an exported proc label (`export .entry:` → emitted as
+    // dotted `foo.entry`) is neither a `$`-hygiene local nor a rename-map key, so
+    // `report_unresolved` rejected ANY `--root` reference to it as
+    // `unknown symbol foo.entry`. Single-file gives `60 00 FF FE` (bra.w to self);
+    // `--root` must now match after teaching the rename pass dotted symbols.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "f.emp",
+        "module f\nproc foo (a0: *u8) {\nexport .entry:\n    bra.w foo.entry\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("f.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "exported dotted label must resolve under --root, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x60, 0x00, 0xFF, 0xFE],
+        "bra.w foo.entry to self must byte-match single-file mode"
+    );
+}
+
+#[test]
+fn two_modules_same_exported_dotted_label_do_not_collide() {
+    // Latent finding #2: an exported `.entry:` is emitted `Owner.name` (`foo.entry`),
+    // NOT module-qualified. Two modules each with a private `proc foo` exporting
+    // `.entry:` therefore both mint `foo.entry` → duplicate symbol in the flat link
+    // table. Module-qualifying the dotted label on BOTH def and ref sides
+    // (`a.foo.entry`, `b.foo.entry`) makes them distinct. Entry `use`s each module's
+    // pub wrapper so BFS lowers both `foo` procs.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "a.emp",
+        "module a\nproc foo (a0: *u8) {\nexport .entry:\n    rts\n}\n\
+         pub proc wrap_a (a0: *u8) {\n    jmp foo.entry\n}\n",
+    );
+    write(
+        root,
+        "b.emp",
+        "module b\nproc foo (a0: *u8) {\nexport .entry:\n    rts\n}\n\
+         pub proc wrap_b (a0: *u8) {\n    jmp foo.entry\n}\n",
+    );
+    write(
+        root,
+        "entry.emp",
+        "module entry\nuse a.{wrap_a}\nuse b.{wrap_b}\n\
+         proc init (a0: *u8) {\n    jsr wrap_a\n    jmp wrap_b\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("entry.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "two modules exporting the same dotted label must link, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(outbin.exists());
+}
+
+#[test]
+fn cross_module_exported_dotted_label_reference_links() {
+    // The importing side of the dotted-label fix: `use a.{foo}` + `jmp foo.entry`
+    // must resolve the exported label across modules. The importer has `foo` in its
+    // rename map (→ `a.foo`), so `foo.entry` module-qualifies to `a.foo.entry`,
+    // matching a's own label. Byte-check the resolved jmp target.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "a.emp",
+        "module a\npub proc foo (a0: *u8) {\n    nop\nexport .entry:\n    rts\n}\n",
+    );
+    write(
+        root,
+        "b.emp",
+        "module b\nuse a.{foo}\nproc init (a0: *u8) {\n    jmp foo.entry\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("b.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "cross-module exported dotted label must link, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // b (entry) discovered first reserves a 6-byte jmp span at LMA 0; a's `foo`
+    // lands at LMA 6 with `nop` (4E 71) then `.entry` at LMA 8. `jmp foo.entry`
+    // relaxes to abs.w (target 8 ≤ 0x7FFF) → 4E F8 00 08.
+    assert_eq!(
+        &bytes[0..4],
+        &[0x4E, 0xF8, 0x00, 0x08],
+        "jmp foo.entry → a.foo.entry @ LMA 8"
+    );
+}
+
+#[test]
+fn item_guard_sees_prelude_const_across_modules() {
+    // Plan 7 #5: an item-position guard in the game module references a `pub const`
+    // auto-imported from the prelude (no explicit `use`). The prelude's comptime
+    // defs are prepended as ambient items before lowering, so the guard resolves
+    // `MAX_OBJS` and passes. Build succeeds and the data byte is written.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "prelude.emp", "module prelude\npub const MAX_OBJS = 32\n");
+    write(
+        root,
+        "game.emp",
+        "module game\nensure(MAX_OBJS % 8 == 0, \"objs {MAX_OBJS}\")\n\
+         pub data D: [u8;1] = [$42]\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--prelude",
+            "prelude",
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "cross-module prelude-const guard must compile, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x42], "guard is zero-byte; only the data byte lands");
+}
+
+#[test]
 fn whole_module_use_warns_it_imports_nothing() {
     // M5: `use other` (whole-module, no `.{…}`/`.*`) binds no names, so it is a
     // silent no-op today. Emit a warning at the `use` decl so a later `other.Name`

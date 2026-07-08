@@ -158,6 +158,19 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut diags,
                 );
             }
+            ast::Item::Ensure(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                // Default section: VMA == LMA == `next_lma`, so the current
+                // position VMA is `next_lma + current_offset()` — the same
+                // `here_base` a data item at this position would see.
+                let here = next_lma + builder.current_offset();
+                let (cont, mut d) =
+                    crate::eval::guards::eval_item_guard(file, decl, here, opts.include_root.as_deref());
+                diags.append(&mut d);
+                if !cont {
+                    break; // ensure_fatal: stop the module's remaining items (D5.3).
+                }
+            }
             ast::Item::Section(sec) => {
                 // Close whatever is open (default text or a prior adjacent
                 // section), folding its length into the counter.
@@ -165,7 +178,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 default_open = false;
                 let (cpu, vma) = section_attrs(file, sec, &mut diags);
                 builder.switch_section_lma(&sec.name, cpu, Some(vma), next_lma);
-                lower_section_items(
+                let cont = lower_section_items(
                     file,
                     sec,
                     &Placement { cpu, origin: vma, include_root: opts.include_root.as_deref() },
@@ -176,6 +189,9 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
+                if !cont {
+                    break; // a fatal guard inside the section stops the module (D5.3).
+                }
             }
             _ => {}
         }
@@ -210,6 +226,9 @@ fn ensure_default(
 /// lowering); `placement.origin` is its VMA base, used to compute `here()` for
 /// each data item; `placement.include_root` is the sandbox root threaded to
 /// every data item's `embed`/`import`.
+///
+/// Returns `false` when a failing `ensure_fatal` in this section aborted
+/// evaluation, so the caller stops lowering the module's remaining items (D5.3).
 fn lower_section_items(
     file: &ast::File,
     sec: &ast::SectionDecl,
@@ -218,7 +237,7 @@ fn lower_section_items(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
-) {
+) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
@@ -239,9 +258,19 @@ fn lower_section_items(
                     asm_counter,
                 );
             }
+            ast::Item::Ensure(decl) => {
+                let here = placement.origin + builder.current_offset();
+                let (cont, mut d) =
+                    crate::eval::guards::eval_item_guard(file, decl, here, placement.include_root);
+                diags.append(&mut d);
+                if !cont {
+                    return false; // ensure_fatal in-section: stop the whole module.
+                }
+            }
             _ => {}
         }
     }
+    true
 }
 
 /// Lower one `data` item: evaluate its checked buffer (with `here()` resolving to
