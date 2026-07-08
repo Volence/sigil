@@ -1123,3 +1123,82 @@ fn whole_module_use_warns_it_imports_nothing() {
         "expected a whole-module-use warning, stderr: {stderr}"
     );
 }
+
+// ---- Plan 7 #6 audit fix: section-nested pub comptime defs never injected
+// cross-module (ambient_items + use Glob/List injection) --------------------
+
+#[test]
+fn section_nested_prelude_const_is_injected_cross_module() {
+    // `ambient_items`'s prelude branch iterated `p.file.items` flat, so a `pub
+    // const` nested in a `section {}` in the prelude was exported (Task 0.5 fixed
+    // the export collectors) but never PREPENDED as an ambient item — the
+    // consumer's data item saw `unknown name MAGIC`. Must now build.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "prelude.emp",
+        "module prelude\nsection s {\n  pub const MAGIC: u8 = $42\n}\n",
+    );
+    write(root, "game.emp", "module game\npub data D: [u8;1] = [MAGIC]\n");
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--prelude",
+            "prelude",
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested prelude const must be injected cross-module, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x42], "MAGIC resolves to the section-nested prelude const");
+}
+
+#[test]
+fn section_nested_use_struct_is_injected_cross_module() {
+    // Twin of the prelude case for the `use` Glob/List injection branch (~:72-89):
+    // a `pub struct` nested in a `section {}` in a `use`d module is exported but
+    // never injected as an ambient item, so the consumer's struct literal saw
+    // `unknown type: Pt`. Must now build with the struct's fields laid out.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\nsection s {\n  pub struct Pt (size: 2) { x: u8, y: u8 }\n}\n",
+    );
+    write(
+        root,
+        "game.emp",
+        "module game\nuse lib.{Pt}\npub data p = Pt{ x: 1, y: 2 }\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested use'd struct type must be injected cross-module, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x01, 0x02], "Pt{{x:1,y:2}} lays out as two bytes");
+}

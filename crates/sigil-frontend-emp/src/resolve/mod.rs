@@ -31,10 +31,31 @@ fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
     }
 }
 
+/// Collect the pub comptime-only items directly in `items` AND one level inside
+/// any `section {}` body (sections do not nest further — Task 1 rejects that at
+/// parse time — so a single level of recursion is exhaustive), matching `pred`.
+/// Mirrors `imports::collect_exported`/`collect_defined`'s recursion shape.
+fn collect_pub_comptime(
+    items: &[ast::Item],
+    pred: &impl Fn(&str) -> bool,
+    out: &mut Vec<ast::Item>,
+) {
+    for item in items {
+        if pub_comptime_name(item).is_some_and(pred) {
+            out.push(item.clone());
+        }
+        if let ast::Item::Section(sec) = item {
+            collect_pub_comptime(&sec.items, pred, out);
+        }
+    }
+}
+
 /// Collect the pub comptime-only items (const/struct/enum/bitfield/newtype/comptime fn)
 /// that `module` should see from the prelude and from the modules it `use`s. These are
 /// PREPENDED to the module's items so the evaluator resolves cross-module types/consts,
-/// without emitting any bytes (lower_module skips these item kinds).
+/// without emitting any bytes (lower_module skips these item kinds). Recurses one level
+/// into `section {}` bodies (see `collect_pub_comptime`) so a section-nested `pub const`/
+/// `pub struct`/etc. is injected too, not just exported.
 fn ambient_items(
     module: &ParsedModule,
     prelude: Option<&ParsedModule>,
@@ -45,13 +66,7 @@ fn ambient_items(
     // Prelude first (own items, added in Part B, shadow these via last-wins).
     if let Some(p) = prelude {
         if p.id != module.id {
-            out.extend(
-                p.file
-                    .items
-                    .iter()
-                    .filter(|it| pub_comptime_name(it).is_some())
-                    .cloned(),
-            );
+            collect_pub_comptime(&p.file.items, &|_| true, &mut out);
         }
     }
 
@@ -69,23 +84,11 @@ fn ambient_items(
         }
         match &u.names {
             ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
-            ast::UseNames::Glob => out.extend(
-                base_mod
-                    .file
-                    .items
-                    .iter()
-                    .filter(|it| pub_comptime_name(it).is_some())
-                    .cloned(),
-            ),
-            ast::UseNames::List(names) => out.extend(
-                base_mod
-                    .file
-                    .items
-                    .iter()
-                    .filter(|it| {
-                        pub_comptime_name(it).is_some_and(|n| names.iter().any(|w| w == n))
-                    })
-                    .cloned(),
+            ast::UseNames::Glob => collect_pub_comptime(&base_mod.file.items, &|_| true, &mut out),
+            ast::UseNames::List(names) => collect_pub_comptime(
+                &base_mod.file.items,
+                &|n| names.iter().any(|w| w == n),
+                &mut out,
             ),
         }
     }
