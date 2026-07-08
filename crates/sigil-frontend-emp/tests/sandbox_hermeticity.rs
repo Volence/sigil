@@ -170,7 +170,13 @@ fn no_hidden_external_world_edges_outside_sandbox_rs() {
     //     pure function of a single `.emp` source. It never participates in
     //     `data` evaluation, so it does not widen the evaluator's hermeticity
     //     boundary.
-    let allowlisted_paths = ["eval/sandbox.rs", "resolve/manifest.rs"];
+    //   - `resolve/mod.rs`: the cross-module build driver (Spec 2 §3). Its
+    //     `entry_id_for_path` matches the CLI's entry path against the manifest's
+    //     module paths, which requires `std::fs::canonicalize` to compare through
+    //     symlinks/relative segments — a build-driver path-resolution concern,
+    //     not evaluation. Like `manifest.rs` it never participates in `data`
+    //     evaluation, so it does not widen the evaluator's hermeticity boundary.
+    let allowlisted_paths = ["eval/sandbox.rs", "resolve/manifest.rs", "resolve/mod.rs"];
 
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut offenders: Vec<String> = Vec::new();

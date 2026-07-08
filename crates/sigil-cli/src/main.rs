@@ -179,22 +179,55 @@ fn compile_emp(
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return (None, diags);
     }
-    let resolved =
-        match sigil_link::resolve_layout(&module.sections, &sigil_ir::SymbolTable::new(), true) {
-            Ok(sections) => sections,
-            Err(mut ds) => {
-                diags.append(&mut ds);
-                return (None, diags);
-            }
-        };
-    let linked = match sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()) {
-        Ok(image) => image,
+    match link_sections(&module.sections) {
+        Ok(image) => (Some(image), diags),
         Err(mut ds) => {
             diags.append(&mut ds);
-            return (None, diags);
+            (None, diags)
         }
-    };
-    (Some(sigil_link::flatten(&linked, 0x00)), diags)
+    }
+}
+
+/// The shared emp link seam: `resolve_layout` (emp defers jmp/jsr width + layout
+/// to link) → `link` → `flatten`, against one flat empty [`SymbolTable`] so
+/// cross-module (and cross-section) references resolve. Byte-identical whether
+/// fed one module's sections or a whole concatenated program.
+fn link_sections(sections: &[sigil_ir::Section]) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
+    let resolved = sigil_link::resolve_layout(sections, &sigil_ir::SymbolTable::new(), true)?;
+    let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())?;
+    Ok(sigil_link::flatten(&linked, 0x00))
+}
+
+/// The shared emp output tail: write `image` to `output` (if given), print it as
+/// `--hex` (if set), and always report `built: N bytes`. Exits non-zero on a
+/// write failure.
+fn emit_image(image: &[u8], output: Option<&str>, hex: bool) {
+    if let Some(out_path) = output {
+        if let Err(err) = std::fs::write(out_path, image) {
+            eprintln!("error: cannot write {out_path}: {err}");
+            process::exit(1);
+        }
+    }
+    if hex {
+        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
+        println!("{}", rendered.join(" "));
+    }
+    println!("built: {} bytes", image.len());
+}
+
+/// Consume the value following a value-taking flag at `args[*i]`, advancing `i`.
+/// A missing value — or one that looks like another flag (`-`-prefixed) — is a
+/// usage error (exit 2), so e.g. `--root -o` cannot silently swallow `-o` as the
+/// root directory.
+fn flag_value(args: &[String], i: &mut usize, flag: &str) -> String {
+    *i += 1;
+    match args.get(*i) {
+        Some(v) if !v.starts_with('-') => v.clone(),
+        _ => {
+            eprintln!("error: {flag} requires a value argument");
+            process::exit(2);
+        }
+    }
 }
 
 /// `sigil emp <input.emp> [-o <output.bin>] [--hex]` — compile a Spec 2 `.emp`
@@ -211,36 +244,9 @@ fn run_emp(args: &[String]) {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "-o" => {
-                i += 1;
-                match args.get(i) {
-                    Some(path) => output = Some(path.clone()),
-                    None => {
-                        eprintln!("error: -o requires a path argument");
-                        process::exit(2);
-                    }
-                }
-            }
-            "--root" => {
-                i += 1;
-                match args.get(i) {
-                    Some(path) => root_arg = Some(path.clone()),
-                    None => {
-                        eprintln!("error: --root requires a path argument");
-                        process::exit(2);
-                    }
-                }
-            }
-            "--prelude" => {
-                i += 1;
-                match args.get(i) {
-                    Some(id) => prelude = Some(id.clone()),
-                    None => {
-                        eprintln!("error: --prelude requires a module id argument");
-                        process::exit(2);
-                    }
-                }
-            }
+            "-o" => output = Some(flag_value(args, &mut i, "-o")),
+            "--root" => root_arg = Some(flag_value(args, &mut i, "--root")),
+            "--prelude" => prelude = Some(flag_value(args, &mut i, "--prelude")),
             "--hex" => hex = true,
             other => {
                 if input.is_none() {
@@ -299,17 +305,7 @@ fn run_emp(args: &[String]) {
         _ => process::exit(1),
     };
 
-    if let Some(out_path) = output {
-        if let Err(err) = std::fs::write(&out_path, &image) {
-            eprintln!("error: cannot write {out_path}: {err}");
-            process::exit(1);
-        }
-    }
-    if hex {
-        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
-        println!("{}", rendered.join(" "));
-    }
-    println!("built: {} bytes", image.len());
+    emit_image(&image, output.as_deref(), hex);
 }
 
 /// The multi-module `sigil emp <entry> --root <dir>` path: scan the root, derive
@@ -352,33 +348,15 @@ fn run_emp_program(
         process::exit(1);
     }
 
-    let resolved = match sigil_link::resolve_layout(&sections, &sigil_ir::SymbolTable::new(), true) {
-        Ok(sections) => sections,
-        Err(ds) => {
-            render_program_diags(&manifest, &ds);
-            process::exit(1);
-        }
-    };
-    let linked = match sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()) {
+    let image = match link_sections(&sections) {
         Ok(image) => image,
         Err(ds) => {
             render_program_diags(&manifest, &ds);
             process::exit(1);
         }
     };
-    let image = sigil_link::flatten(&linked, 0x00);
 
-    if let Some(out_path) = output {
-        if let Err(err) = std::fs::write(out_path, &image) {
-            eprintln!("error: cannot write {out_path}: {err}");
-            process::exit(1);
-        }
-    }
-    if hex {
-        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
-        println!("{}", rendered.join(" "));
-    }
-    println!("built: {} bytes", image.len());
+    emit_image(&image, output, hex);
 }
 
 /// Render multi-module diagnostics as `path:line:col: message`. The manifest
@@ -394,23 +372,32 @@ fn render_program_diags(
     if diags.is_empty() {
         return;
     }
-    // Rebuild the SourceMap in SourceId order: sources is keyed by SourceId, whose
-    // numeric value is the sorted-file index the manifest allocated.
-    let mut ids: Vec<&sigil_span::SourceId> = manifest.sources.keys().collect();
-    ids.sort_by_key(|id| id.0);
+    // Rebuild the SourceMap so its internal index equals the SourceId for EVERY
+    // id in `0..=max_id`, including any gap (a file that failed to read has a
+    // `sources` entry — dense by construction in `Manifest::scan` — but a gap
+    // could still arise defensively; fill it with empty text so `map.location`
+    // never over-indexes). `SourceMap::add` assigns ids sequentially from 0, so
+    // adding one text per k in order aligns index ↔ SourceId.
+    let max_id = manifest.sources.keys().map(|id| id.0).max().unwrap_or(0);
     let mut map = sigil_span::SourceMap::new();
-    for id in &ids {
-        let path = &manifest.sources[id];
-        let text = std::fs::read_to_string(path).unwrap_or_default();
+    for k in 0..=max_id {
+        let text = manifest
+            .sources
+            .get(&sigil_span::SourceId(k))
+            .map(|p| std::fs::read_to_string(p).unwrap_or_default())
+            .unwrap_or_default();
         map.add(text);
     }
     for d in diags {
+        // Only render a location when the id is both known to `sources` AND within
+        // the rebuilt map's bounds — otherwise fall back to the bare message so a
+        // stray/out-of-range source id can never panic mid-error-report.
         match manifest.sources.get(&d.primary.source) {
-            Some(path) => {
+            Some(path) if d.primary.source.0 <= max_id => {
                 let (line, col) = map.location(d.primary);
                 eprintln!("{}:{line}:{col}: {}", path.display(), d.message);
             }
-            None => eprintln!("error: {}", d.message),
+            _ => eprintln!("error: {}", d.message),
         }
     }
 }

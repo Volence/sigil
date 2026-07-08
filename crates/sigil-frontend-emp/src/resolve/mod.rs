@@ -9,7 +9,7 @@ use crate::lower::{lower_module, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
 use manifest::Manifest;
 use sigil_ir::Section;
-use sigil_span::{Diagnostic, Level};
+use sigil_span::{Diagnostic, Level, Span};
 use std::collections::{HashSet, VecDeque};
 use std::path::Path;
 
@@ -75,34 +75,46 @@ pub fn build_program(
 
 /// BFS from `entry_id` (and, if `Some`, the `prelude_id` seed) over `use` edges.
 /// A `use a.b.c` edge targets the module id `a.b.c`. Unknown ids get an error
-/// diagnostic and are skipped. Returns reachable module indices in discovery
-/// order (deduped).
+/// diagnostic (anchored at the `use` decl that named them) and are skipped.
+/// Returns reachable module indices in discovery order.
+///
+/// Each queue entry carries the [`Span`] to blame if the id turns out unknown:
+/// a `use` decl's own span for edges, and a zero span for the entry/prelude
+/// seeds (which come from the CLI, not from source).
 fn reachable_modules(
     manifest: &Manifest,
     entry_id: &str,
     prelude_id: Option<&str>,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<usize> {
+    let seed_span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
     let mut order = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    let mut queue: VecDeque<String> = VecDeque::new();
+    let mut queue: VecDeque<(String, Span)> = VecDeque::new();
 
-    queue.push_back(entry_id.to_string());
+    // Insert into `seen` at ENQUEUE time so an id is never queued twice.
+    let enqueue = |queue: &mut VecDeque<(String, Span)>,
+                       seen: &mut HashSet<String>,
+                       id: String,
+                       span: Span| {
+        if seen.insert(id.clone()) {
+            queue.push_back((id, span));
+        }
+    };
+
+    enqueue(&mut queue, &mut seen, entry_id.to_string(), seed_span);
     if let Some(pid) = prelude_id {
-        queue.push_back(pid.to_string());
+        enqueue(&mut queue, &mut seen, pid.to_string(), seed_span);
     }
 
-    while let Some(id) = queue.pop_front() {
-        if !seen.insert(id.clone()) {
-            continue;
-        }
+    while let Some((id, blame)) = queue.pop_front() {
         let idx = match manifest.by_id.get(&id) {
             Some(&idx) => idx,
             None => {
                 diags.push(Diagnostic {
                     level: Level::Error,
                     message: format!("no module `{id}` found under the scan root"),
-                    primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+                    primary: blame,
                 });
                 continue;
             }
@@ -111,9 +123,7 @@ fn reachable_modules(
         for item in &manifest.modules[idx].file.items {
             if let ast::Item::Use(u) = item {
                 let target = u.base.segments.join(".");
-                if !seen.contains(&target) {
-                    queue.push_back(target);
-                }
+                enqueue(&mut queue, &mut seen, target, u.span);
             }
         }
     }
@@ -153,6 +163,8 @@ fn report_unresolved(
                 diags.push(Diagnostic {
                     level: Level::Error,
                     message,
+                    // TODO: thread fixup spans so this anchors at the use-site
+                    // rather than the module header (best available today).
                     primary: pm.file.module.span,
                 });
             }

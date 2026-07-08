@@ -56,6 +56,14 @@ impl Manifest {
         collect_emp(root, root, &mut files, &mut diags);
         files.sort();
         for (i, path) in files.iter().enumerate() {
+            // Allocate the SourceId and register its path BEFORE the fallible read,
+            // so EVERY allocated id has a `sources` entry. Otherwise a file that
+            // fails to read (TOCTOU: removed/chmod'd between the dir-walk and the
+            // read) would be skipped in `sources` while the id counter advances,
+            // leaving `sources` keys non-dense and breaking the id↔sorted-index
+            // density invariant a positional diagnostic renderer relies on.
+            let source = SourceId(i as u32);
+            sources.insert(source, path.clone());
             let src = match std::fs::read_to_string(path) {
                 Ok(s) => s,
                 Err(e) => {
@@ -67,10 +75,6 @@ impl Manifest {
                     continue;
                 }
             };
-            // One SourceId per file, so `file.module.span.source` disambiguates
-            // which file a downstream diagnostic points at.
-            let source = SourceId(i as u32);
-            sources.insert(source, path.clone());
             let (file, mut pdiags) = crate::parse_file(&src, source);
             diags.append(&mut pdiags);
             let id = file.module.path.segments.join(".");

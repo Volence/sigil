@@ -33,7 +33,72 @@ fn two_modules_cross_reference_and_link() {
         .status()
         .unwrap();
     assert!(status.success(), "multi-module compile should succeed");
+    // The happy path emits a deterministic image: one `rts` (Draw_Sprite) + one
+    // `jmp Draw_Sprite`. Pin the exact length so a mis-linked cross-module fixup
+    // (which would change the emitted width/bytes) can't pass silently.
+    assert!(out.exists());
+    assert_eq!(std::fs::metadata(&out).unwrap().len(), 4, "expected a 4-byte image");
+}
+
+#[test]
+fn transitive_chain_discovers_third_module() {
+    // A `use`s B, B `use`s C. A branches to a name imported from B; B branches to
+    // a name imported from C. C is only reachable THROUGH B — this proves the
+    // `reachable_modules` BFS discovers it transitively (two 2-module tests never
+    // exercise transitivity).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "chain/c.emp", "module chain.c\npub proc c_fn (a0: *u8) {\n    rts\n}\n");
+    write(
+        root,
+        "chain/b.emp",
+        "module chain.b\nuse chain.c.{c_fn}\npub proc b_fn (a0: *u8) {\n    jmp c_fn\n}\n",
+    );
+    write(
+        root,
+        "chain/a.emp",
+        "module chain.a\nuse chain.b.{b_fn}\nproc init (a0: *u8) {\n    jmp b_fn\n}\n",
+    );
+    let out = root.join("out.bin");
+    let status = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("chain/a.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success(), "transitive 3-module compile should succeed");
     assert!(out.exists() && std::fs::metadata(&out).unwrap().len() > 0);
+}
+
+#[test]
+fn unknown_module_id_reports_diagnostic() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "badniks/plant.emp",
+        "module badniks.plant\nuse missing.mod.{Foo}\nproc init (a0: *u8) {\n    rts\n}\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("badniks/plant.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no module `missing.mod` found under the scan root"),
+        "stderr was: {stderr}"
+    );
 }
 
 #[test]
