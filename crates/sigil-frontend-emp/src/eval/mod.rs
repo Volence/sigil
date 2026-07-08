@@ -223,6 +223,15 @@ pub struct Evaluator<'a> {
     /// path, its SHA-256 digest, and its byte length — the provenance record a
     /// later hermeticity task exposes and asserts determinism from.
     pub(crate) captures: Vec<sandbox::CaptureEdge>,
+    /// The struct a proc-body param's address register points at (Spec 2, Plan 7
+    /// #6, Part A — D6.A3). Populated per-proc by [`eval_proc_body`] from each
+    /// `(aN: *S)` param whose pointee bottoms out (through newtype/refined) at a
+    /// struct `S`; a non-struct pointee (`*u8`) never enters the map. A bare
+    /// single-segment displacement `f(aN)` on a register present here resolves in
+    /// FIELD SPACE (direct fields ∪ in-scope overlays over `S`), not as a comptime
+    /// expression — so a field name lowers to its byte offset and a const never
+    /// silently shadows it. Empty for a raw `asm { }` (no param types there).
+    pub(crate) reg_pointee_struct: HashMap<crate::value::Reg, String>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -260,6 +269,7 @@ impl<'a> Evaluator<'a> {
             here_base: None,
             include_root: None,
             captures: Vec::new(),
+            reg_pointee_struct: HashMap::new(),
         }
     }
 
@@ -622,6 +632,7 @@ where
 pub fn eval_proc_body(
     file: &crate::ast::File,
     name: &str,
+    params: &[(String, ast::Type, Span)],
     body: &[ast::AsmStmt],
     span: Span,
     asm_counter_start: u32,
@@ -629,6 +640,24 @@ pub fn eval_proc_body(
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.asm_counter = asm_counter_start;
+        // Bind each `(aN: *S)` param whose pointee bottoms out at a struct into
+        // the register→struct map (D6.A3). A bare-field displacement `f(aN)` on
+        // such a register then resolves in field space. Param NAMES are register
+        // spellings (§5.1), matching the clobber-lint model. Resolving the
+        // pointee type MUST NOT report: an unresolvable/non-struct pointee simply
+        // does not participate — its own decl-site diagnostics belong elsewhere,
+        // and duplicating them here would double-report. So resolve on a scratch
+        // evaluator whose diagnostics are discarded.
+        for (pname, pty, pspan) in params {
+            let Some(reg) = crate::value::Reg::from_name(pname) else { continue };
+            if let ast::Type::Ptr(inner) = pty {
+                let mut probe = Evaluator::with_file(file);
+                let inner_ty = probe.resolve_type(inner);
+                if let Some(sname) = probe.struct_name_for_offsetof(&inner_ty, *pspan) {
+                    ev.reg_pointee_struct.insert(reg, sname);
+                }
+            }
+        }
         let mut env = Env::new();
         let buf = match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
             Value::Code(buf) => Some(buf),

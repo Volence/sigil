@@ -311,3 +311,200 @@ fn overlay_three_segment_window_path_rejected() {
         "want [overlay.bad-window] for a 3-segment window path, got: {d:?}"
     );
 }
+
+// =========================================================================
+// Task 6 — field-access-as-displacement, bare form (D6.A3/A5/A6/A10).
+//
+// In a proc body `proc p (a0: *Sst) { … }`, a bare field name in the
+// displacement position `f(a0)` resolves in FIELD SPACE (S's direct fields ∪
+// in-scope overlays over S) to the comptime integer offset, taking the IDENTICAL
+// `DispInd → Disp16An` path as an integer literal (byte-neutral, D6.A10).
+// =========================================================================
+
+/// Full linked byte image of a lowered module's (single) default section — the
+/// proc-body form of [`linked_bytes`]. Procs emit into the default section too.
+fn proc_bytes(m: &Module) -> Vec<u8> {
+    linked_bytes(m)
+}
+
+// ---- 1. headline: overlay field lowers to $2E-class bytes ----------------
+
+#[test]
+fn field_access_headline_subq() {
+    // `timer` is the first overlay field over `sst_custom` (window $2E), so its
+    // in-memory offset is $2E. `subq.b #1, timer(a0)` must lower byte-identically
+    // to `subq.b #1, $2E(a0)`: SUBQ.B #1,(d16,A0) = 0x5328, ext word $002E, RTS.
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst) {{\n    subq.b #1, timer(a0)\n    rts\n}}\n"
+    );
+    let (module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "expected no errors, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x53, 0x28, 0x00, 0x2E, 0x4E, 0x75]);
+}
+
+// ---- 2. direct struct field ----------------------------------------------
+
+#[test]
+fn field_access_direct_struct_field() {
+    // `x_pos` is a DIRECT field of `Sst` at offset $10 — resolves in field space
+    // with no overlay involved. `move.w x_pos(a0), d0` = 0x3028, ext $0010, RTS.
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst) {{\n    move.w x_pos(a0), d0\n    rts\n}}\n"
+    );
+    let (module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "expected no errors, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x30, 0x28, 0x00, 0x10, 0x4E, 0x75]);
+}
+
+// ---- 3. overlay field at a non-zero overlay offset -----------------------
+
+#[test]
+fn field_access_overlay_field_nonzero_offset() {
+    // `charge: u16` follows `timer: u8`, so its overlay-relative offset is 1;
+    // in-memory offset = window $2E + 1 = $2F. `move.w charge(a0), d0` = 0x3028,
+    // ext $002F, RTS. This ALSO legitimately warns `[layout.odd-field]` (the u16
+    // lands at an odd memory offset) — a WARNING, not an error.
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8, charge: u16 }}\n\
+         proc p (a0: *Sst) {{\n    move.w charge(a0), d0\n    rts\n}}\n"
+    );
+    let (module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "expected no errors, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x30, 0x28, 0x00, 0x2F, 0x4E, 0x75]);
+    let all = msgs(&src);
+    assert!(
+        all.iter().any(|m| m.contains("[layout.odd-field]") && m.contains("charge")),
+        "want the overlay odd-field warning on `charge`, got: {all:?}"
+    );
+}
+
+// ---- 4. byte-neutrality (D6.A10) -----------------------------------------
+
+#[test]
+fn field_access_is_byte_neutral_with_literal() {
+    // `timer(a0)` (field name) and `$2E(a0)` (integer literal) must emit
+    // byte-identical images — the field name takes the identical DispInd path.
+    let named = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst) {{\n    subq.b #1, timer(a0)\n    rts\n}}\n"
+    );
+    let literal = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst) {{\n    subq.b #1, $2E(a0)\n    rts\n}}\n"
+    );
+    let (m_named, e_named) = lower_errors(&named);
+    let (m_lit, e_lit) = lower_errors(&literal);
+    assert!(e_named.is_empty(), "named errors: {e_named:?}");
+    assert!(e_lit.is_empty(), "literal errors: {e_lit:?}");
+    assert_eq!(proc_bytes(&m_named), proc_bytes(&m_lit), "field name must be byte-neutral");
+}
+
+// ---- 5. no const fallback on a typed register ----------------------------
+
+#[test]
+fn field_access_no_const_fallback_on_typed_reg() {
+    // A module-level `const timer` shadows nothing: on a TYPED register the
+    // displacement resolves ONLY in field space. With no overlay in scope and no
+    // direct field `timer`, this is `[operand.unknown-field]` naming `*Sst` — it
+    // must NOT silently use the const's value.
+    let src = format!(
+        "module m\n{SST}const timer: u8 = 9\n\
+         proc p (a0: *Sst) {{\n    tst.b timer(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.unknown-field]") && m.contains("*Sst")),
+        "want [operand.unknown-field] naming *Sst (no const fallback), got: {errs:?}"
+    );
+}
+
+// ---- 6. untyped register keeps today's semantics -------------------------
+
+#[test]
+fn field_access_untyped_reg_comptime_evals_const() {
+    // On an UNTYPED register (`a1: *u8` — pointee not a struct), a bare-identifier
+    // displacement keeps today's comptime-eval semantics: `MYCONST` ($20) is used
+    // as the displacement. `tst.b $20(a1)` = 0x4A29, ext $0020, RTS.
+    let src = "module m\n\
+        const MYCONST: u8 = $20\n\
+        proc p (a1: *u8) {\n    tst.b MYCONST(a1)\n    rts\n}\n";
+    let (module, errs) = lower_errors(src);
+    assert!(errs.is_empty(), "expected no errors, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x4A, 0x29, 0x00, 0x20, 0x4E, 0x75]);
+}
+
+#[test]
+fn field_access_untyped_reg_does_not_consult_field_space() {
+    // Even with an overlay IN SCOPE, a bare field name on an UNTYPED register is
+    // NOT resolved in field space — it falls to today's comptime eval, which
+    // errors as a plain unknown NAME (not `[operand.unknown-field]`).
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p (a1: *u8) {{\n    tst.b timer(a1)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("timer")),
+        "want an unknown-name error on `timer`, got: {errs:?}"
+    );
+    assert!(
+        !errs.iter().any(|m| m.contains("[operand.unknown-field]")),
+        "field space must not be consulted for a non-struct pointee, got: {errs:?}"
+    );
+}
+
+// ---- 7. ambiguous field --------------------------------------------------
+
+#[test]
+fn field_access_ambiguous_field() {
+    // Two overlays over `sst_custom` both declare `timer`; a bare `timer(a0)`
+    // cannot choose between them → `[operand.ambiguous-field]` naming both
+    // qualified candidates.
+    let src = format!(
+        "module m\n{SST}vars V1: sst_custom {{ timer: u8 }}\n\
+         vars V2: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst) {{\n    tst.b timer(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| {
+            m.contains("[operand.ambiguous-field]")
+                && m.contains("V1.timer")
+                && m.contains("V2.timer")
+        }),
+        "want [operand.ambiguous-field] naming V1.timer and V2.timer, got: {errs:?}"
+    );
+}
+
+// ---- 8. field-overrun ----------------------------------------------------
+
+#[test]
+fn field_access_overrun_wider_than_field() {
+    // `move.w timer(a0), d0` reads 2 bytes but `timer` is a 1-byte field — it
+    // crosses the named boundary → `[operand.field-overrun]` (D6.A6).
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst) {{\n    move.w timer(a0), d0\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.field-overrun]") && m.contains("timer")),
+        "want [operand.field-overrun] naming timer, got: {errs:?}"
+    );
+}
+
+#[test]
+fn field_access_narrower_than_field_is_legal() {
+    // `move.b charge(a0), d0` reads 1 byte of a 2-byte field — the big-endian
+    // high-byte idiom is legal with no lint. `charge` at overlay-rel 1 → mem $2F.
+    // move.b (d16,a0),d0 = 0x1028, ext $002F, RTS.
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8, charge: u16 }}\n\
+         proc p (a0: *Sst) {{\n    move.b charge(a0), d0\n    rts\n}}\n"
+    );
+    let (module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "narrower access must be legal, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x10, 0x28, 0x00, 0x2F, 0x4E, 0x75]);
+}
