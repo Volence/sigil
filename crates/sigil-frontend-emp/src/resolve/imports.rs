@@ -141,6 +141,13 @@ impl<'a> ResolveEnv<'a> {
         self.map.get(name).cloned()
     }
 
+    /// The full short-name → canonical-symbol map, for the rename pass. Borrowed
+    /// (not consumed) so the driver can still call [`resolve`](Self::resolve) /
+    /// [`suggest_use`](Self::suggest_use) for unresolved-reference diagnostics.
+    pub fn rename_map(&self) -> &std::collections::HashMap<String, String> {
+        &self.map
+    }
+
     /// If `name` is exported by exactly one other module, produce the fix-it text.
     pub fn suggest_use(&self, name: &str) -> Option<String> {
         let owners = self.index.by_name.get(name)?;

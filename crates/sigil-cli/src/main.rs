@@ -204,6 +204,8 @@ fn compile_emp(
 fn run_emp(args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
+    let mut root_arg: Option<String> = None;
+    let mut prelude: Option<String> = None;
     let mut hex = false;
 
     let mut i = 0;
@@ -215,6 +217,26 @@ fn run_emp(args: &[String]) {
                     Some(path) => output = Some(path.clone()),
                     None => {
                         eprintln!("error: -o requires a path argument");
+                        process::exit(2);
+                    }
+                }
+            }
+            "--root" => {
+                i += 1;
+                match args.get(i) {
+                    Some(path) => root_arg = Some(path.clone()),
+                    None => {
+                        eprintln!("error: --root requires a path argument");
+                        process::exit(2);
+                    }
+                }
+            }
+            "--prelude" => {
+                i += 1;
+                match args.get(i) {
+                    Some(id) => prelude = Some(id.clone()),
+                    None => {
+                        eprintln!("error: --prelude requires a module id argument");
                         process::exit(2);
                     }
                 }
@@ -235,10 +257,17 @@ fn run_emp(args: &[String]) {
     let input = match input {
         Some(path) => path,
         None => {
-            eprintln!("usage: sigil emp <input.emp> [-o <output.bin>] [--hex]");
+            eprintln!("usage: sigil emp <input.emp> [--root <dir>] [--prelude <module.id>] [-o <output.bin>] [--hex]");
             process::exit(2);
         }
     };
+
+    // Multi-module path: `--root <dir>` gathers, resolves, and links the whole
+    // reachable program. Single-file path (no `--root`) is unchanged.
+    if let Some(root_dir) = root_arg {
+        run_emp_program(&input, &root_dir, prelude.as_deref(), output.as_deref(), hex);
+        return;
+    }
 
     let src = match std::fs::read_to_string(&input) {
         Ok(text) => text,
@@ -281,6 +310,109 @@ fn run_emp(args: &[String]) {
         println!("{}", rendered.join(" "));
     }
     println!("built: {} bytes", image.len());
+}
+
+/// The multi-module `sigil emp <entry> --root <dir>` path: scan the root, derive
+/// the entry module id from the entry path, build the whole reachable program
+/// ([`build_program`](sigil_frontend_emp::resolve::build_program)), and — if no
+/// error diagnostics — run the same `resolve_layout` → `link` → `flatten` seam as
+/// the single-file path. Diagnostics render as `path:line:col: message` using a
+/// [`SourceMap`](sigil_span::SourceMap) rebuilt in the manifest's SourceId order.
+fn run_emp_program(
+    input: &str,
+    root_dir: &str,
+    prelude: Option<&str>,
+    output: Option<&str>,
+    hex: bool,
+) {
+    use sigil_frontend_emp::resolve;
+    use std::path::Path;
+
+    let (manifest, mut diags) = resolve::manifest::Manifest::scan(Path::new(root_dir));
+
+    let entry_id = match resolve::entry_id_for_path(&manifest, Path::new(input)) {
+        Some(id) => id,
+        None => {
+            eprintln!("error: entry file {input} is not a module under --root {root_dir}");
+            process::exit(1);
+        }
+    };
+
+    let include_root = std::fs::canonicalize(root_dir).ok();
+    let opts = sigil_frontend_emp::lower::LowerOptions {
+        initial_cpu: sigil_ir::Cpu::M68000,
+        include_root,
+    };
+
+    let (sections, mut pdiags) = resolve::build_program(&manifest, &entry_id, prelude, &opts);
+    diags.append(&mut pdiags);
+
+    render_program_diags(&manifest, &diags);
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        process::exit(1);
+    }
+
+    let resolved = match sigil_link::resolve_layout(&sections, &sigil_ir::SymbolTable::new(), true) {
+        Ok(sections) => sections,
+        Err(ds) => {
+            render_program_diags(&manifest, &ds);
+            process::exit(1);
+        }
+    };
+    let linked = match sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()) {
+        Ok(image) => image,
+        Err(ds) => {
+            render_program_diags(&manifest, &ds);
+            process::exit(1);
+        }
+    };
+    let image = sigil_link::flatten(&linked, 0x00);
+
+    if let Some(out_path) = output {
+        if let Err(err) = std::fs::write(out_path, &image) {
+            eprintln!("error: cannot write {out_path}: {err}");
+            process::exit(1);
+        }
+    }
+    if hex {
+        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
+        println!("{}", rendered.join(" "));
+    }
+    println!("built: {} bytes", image.len());
+}
+
+/// Render multi-module diagnostics as `path:line:col: message`. The manifest
+/// parsed each file under a sequential [`SourceId`](sigil_span::SourceId) (sorted
+/// order); we rebuild a [`SourceMap`](sigil_span::SourceMap) in that same order so
+/// `map.location` is correct, and prefix with the file recorded in
+/// `manifest.sources`. Diagnostics with an unmapped source id fall back to the
+/// bare message.
+fn render_program_diags(
+    manifest: &sigil_frontend_emp::resolve::manifest::Manifest,
+    diags: &[sigil_span::Diagnostic],
+) {
+    if diags.is_empty() {
+        return;
+    }
+    // Rebuild the SourceMap in SourceId order: sources is keyed by SourceId, whose
+    // numeric value is the sorted-file index the manifest allocated.
+    let mut ids: Vec<&sigil_span::SourceId> = manifest.sources.keys().collect();
+    ids.sort_by_key(|id| id.0);
+    let mut map = sigil_span::SourceMap::new();
+    for id in &ids {
+        let path = &manifest.sources[id];
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        map.add(text);
+    }
+    for d in diags {
+        match manifest.sources.get(&d.primary.source) {
+            Some(path) => {
+                let (line, col) = map.location(d.primary);
+                eprintln!("{}:{line}:{col}: {}", path.display(), d.message);
+            }
+            None => eprintln!("error: {}", d.message),
+        }
+    }
 }
 
 /// Parse `--aeon <dir>` (required) and, if `allow_output` is set, an optional
