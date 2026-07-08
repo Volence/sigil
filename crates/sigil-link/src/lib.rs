@@ -400,6 +400,65 @@ fn apply_fixup(
             bytes[site_abs as usize] = (w >> 8) as u8;
             bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
         }
+        // General link-expr VALUE kinds (S2-D13f / R7m.4): write the folded
+        // integer VERBATIM after an UNSIGNED-window range check
+        // (`0 ≤ value < 2^(8·width)`). A fold outside that window — including a
+        // negative value — is an Error naming the section, the folded value, and
+        // the window. Endianness is the kind's own (68k=Be, Z80=Le); width 1 is
+        // order-neutral. Deliberately NOT an address range check (no sign
+        // extension, no masking) — that is the address kinds' job.
+        FixupKind::Value8 => write_value(bytes, site_abs, value, 1, false, section, span, diags),
+        FixupKind::Value16Be => write_value(bytes, site_abs, value, 2, false, section, span, diags),
+        FixupKind::Value16Le => write_value(bytes, site_abs, value, 2, true, section, span, diags),
+        FixupKind::Value32Be => write_value(bytes, site_abs, value, 4, false, section, span, diags),
+        FixupKind::Value32Le => write_value(bytes, site_abs, value, 4, true, section, span, diags),
+    }
+}
+
+/// Write a general link-expr VALUE (S2-D13f / R7m.4): range-check `value`
+/// against the UNSIGNED window `0 ≤ value < 2^(8·width)`, then write its low
+/// `width` bytes in the requested byte order (`little` = Z80). A fold outside
+/// the window (including negative) is an Error naming the section, the folded
+/// value, and the window — NOT a silent truncation or sign-extension.
+#[allow(clippy::too_many_arguments)]
+fn write_value(
+    bytes: &mut [u8],
+    site_abs: u32,
+    value: i64,
+    width: u8,
+    little: bool,
+    section: &str,
+    span: Span,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let w = width as usize;
+    if (site_abs as usize) + w > bytes.len() {
+        diags.push(diag(
+            format!("value fixup at offset {site_abs} (width {w}) would write past section end in section {section}"),
+            span,
+        ));
+        return;
+    }
+    // Unsigned window: `2^64` overflows i64, so bound width-8 separately — but a
+    // value cell is never wider than 4, so `1 << (8·width)` is always in range.
+    let limit: i128 = 1i128 << (8 * w as u32);
+    let v = value as i128;
+    if v < 0 || v >= limit {
+        diags.push(diag(
+            format!(
+                "[value.out-of-range] link-expr value {v} does not fit an unsigned {}-bit cell (0..{}) in section {section}",
+                8 * w,
+                limit - 1
+            ),
+            span,
+        ));
+        return;
+    }
+    let u = value as u64;
+    // Big-endian: high byte first. Little-endian: low byte first.
+    for i in 0..w {
+        let shift = if little { 8 * i } else { 8 * (w - 1 - i) };
+        bytes[site_abs as usize + i] = (u >> shift) as u8;
     }
 }
 
@@ -489,7 +548,7 @@ pub fn apply_header_checksum(rom: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SymbolTable, SymbolValue};
+    use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SectionPlacement, SymbolTable, SymbolValue};
     use sigil_span::{SourceId, Span};
 
     // ---- deferred link-time assertions (D-H.4/D-H.6) --------------------------
@@ -507,6 +566,10 @@ mod tests {
                 fixups: vec![],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         }
     }
 
@@ -597,6 +660,10 @@ mod tests {
             lma: 0x60000,
             labels: vec![Label { name: "SfxBlobWinTab".to_string(), offset: 0x45F }],
             fragments: frags,
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         }
     }
 
@@ -617,6 +684,10 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         }
     }
 
@@ -655,6 +726,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: winptr }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("tab").unwrap().bytes, vec![0x9A, 0xD6]);
@@ -675,6 +750,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target: Expr::Sym("here".to_string()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         // site VMA of the disp byte's instruction = 0x8000; target = 0x8002; disp = 0x8002 - (0x8000 + 2) = 0.
@@ -695,9 +774,116 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target: Expr::Sym("far".to_string()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
+    }
+
+    // ---- general link-expr VALUE cells (S2-D13f / R7m.4) ---------------------
+
+    /// A `ValueN` fixup writes the FOLDED integer verbatim in its byte order,
+    /// AFTER an unsigned-window range check. `A` at $8004; target `A + 2` folds
+    /// to $8006. Value16Be (68k) → 80 06; Value16Le (Z80) → 06 80; Value8 →
+    /// low byte only.
+    fn value_section(cpu: Cpu, kind: FixupKind, width: usize) -> Section {
+        // A at offset 4 in a vma:$8000 section: leading 4 bytes then the value hole.
+        let bytes = vec![0u8; 4 + width];
+        Section {
+            name: "s".into(),
+            cpu,
+            vma_base: Some(0x8000),
+            lma: 0,
+            labels: vec![Label { name: "A".into(), offset: 4 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes,
+                fixups: vec![Fixup {
+                    kind,
+                    offset: 4,
+                    target: Expr::Binary {
+                        op: sigil_ir::expr::BinOp::Add,
+                        lhs: Box::new(Expr::Sym("A".into())),
+                        rhs: Box::new(Expr::Int(2)),
+                    },
+                }],
+                span: span(),
+            })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+        }
+    }
+
+    #[test]
+    fn value16_be_folds_big_endian() {
+        let sec = value_section(Cpu::M68000, FixupKind::Value16Be, 2);
+        let linked = link(&[sec], &SymbolTable::new()).unwrap();
+        assert_eq!(&linked.section("s").unwrap().bytes[4..6], &[0x80, 0x06]);
+    }
+
+    #[test]
+    fn value16_le_folds_little_endian() {
+        // The R7m.5 Z80 probe: same fold ($8006), written little-endian.
+        let sec = value_section(Cpu::Z80, FixupKind::Value16Le, 2);
+        let linked = link(&[sec], &SymbolTable::new()).unwrap();
+        assert_eq!(&linked.section("s").unwrap().bytes[4..6], &[0x06, 0x80]);
+    }
+
+    #[test]
+    fn value8_writes_verbatim_in_window() {
+        // A value8 cell requires the fold to fit 0..255 (unsigned window, NOT a
+        // truncation). `A >> 15` — the bank-id idiom — at $8004 folds to 1.
+        let mut sec = value_section(Cpu::M68000, FixupKind::Value8, 1);
+        if let Fragment::Data(d) = &mut sec.fragments[0] {
+            d.fixups[0].target = Expr::Binary {
+                op: sigil_ir::expr::BinOp::Shr,
+                lhs: Box::new(Expr::Sym("A".into())),
+                rhs: Box::new(Expr::Int(15)),
+            };
+        }
+        let linked = link(&[sec], &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("s").unwrap().bytes[4], 0x01);
+    }
+
+    #[test]
+    fn value16_overflow_is_range_error() {
+        // A at $8004; target `A + $8000` folds to $10004 ≥ $10000 → out of the
+        // unsigned 16-bit window. Error naming the value, not a silent truncation.
+        let mut sec = value_section(Cpu::M68000, FixupKind::Value16Be, 2);
+        if let Fragment::Data(d) = &mut sec.fragments[0] {
+            d.fixups[0].target = Expr::Binary {
+                op: sigil_ir::expr::BinOp::Add,
+                lhs: Box::new(Expr::Sym("A".into())),
+                rhs: Box::new(Expr::Int(0x8000)),
+            };
+        }
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("[value.out-of-range]")
+                && d.message.contains("65540")
+                && d.message.contains("16-bit")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn value8_negative_fold_is_range_error() {
+        // A value that folds NEGATIVE ($8004 - $8010 = -12) does not fit the
+        // unsigned window — an Error, never a two's-complement wrap.
+        let mut sec = value_section(Cpu::M68000, FixupKind::Value8, 1);
+        if let Fragment::Data(d) = &mut sec.fragments[0] {
+            d.fixups[0].target = Expr::Binary {
+                op: sigil_ir::expr::BinOp::Sub,
+                lhs: Box::new(Expr::Sym("A".into())),
+                rhs: Box::new(Expr::Int(0x8010)),
+            };
+        }
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(err.iter().any(|d| d.message.contains("[value.out-of-range]")), "got: {err:?}");
     }
 
     #[test]
@@ -713,6 +899,10 @@ mod tests {
                 fixups: vec![],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[mk("a"), mk("b")], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -735,6 +925,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRelDisp16, offset: 2, target: Expr::Sym("t".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x60, 0x00, 0x00, 0x7E]);
@@ -752,6 +946,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("t".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
     }
@@ -770,6 +968,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("next".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -789,6 +991,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("far".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
@@ -816,6 +1022,10 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x00, 0x06]);
@@ -843,6 +1053,10 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0xFF, 0xFC]);
@@ -870,6 +1084,10 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("signed-word range")), "got: {:?}", err);
@@ -903,6 +1121,10 @@ mod tests {
                 }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -934,6 +1156,10 @@ mod tests {
                 }),
                 Fragment::Data(DataFragment { bytes: vec![0xCC, 0xDD], fixups: vec![], span: span() }),
             ],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -952,6 +1178,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("T".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("s").unwrap().bytes, vec![0x00, 0x12, 0x34, 0x56]);
@@ -969,6 +1199,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Ok".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         assert_eq!(link(&[ok], &stubs).unwrap().section("ok").unwrap().bytes, vec![0x12, 0x34]);
 
@@ -979,6 +1213,10 @@ mod tests {
                 fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("Big".into()) }],
                 span: span(),
             })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = link(&[bad], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
@@ -1000,6 +1238,10 @@ mod tests {
             lma: 2,
             labels: vec![],
             fragments: vec![Fragment::Data(DataFragment { bytes: vec![0xAA, 0xBB], fixups: vec![], span: span() })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let linked = link(&[a], &SymbolTable::new()).unwrap();
         // Bytes at LMA 2..4; positions 0,1 gap-filled with 0x00.

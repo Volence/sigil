@@ -150,6 +150,21 @@ pub enum Fragment {
     Org { target: u32, fill: u8, span: Span },
 }
 
+/// How a [`Section`]'s BASE (its LMA) is derived at link time (R7p.1). Inert
+/// provenance until the placement pass reads it: a `Pinned` section keeps its
+/// baked `lma` verbatim; a `Chained` section's base is computed by its placer
+/// (packed after its predecessor). The `IrBuilder` default rule stamps the
+/// first section of a builder run `Pinned` and every subsequent one `Chained`;
+/// the emp/AS frontends and `place_sections`/`place_sequential` are the
+/// authoritative writers in later work.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SectionPlacement {
+    /// Base is the section's own baked `lma` (an explicit `org`/first section).
+    Pinned,
+    /// Base is derived at link time by packing after the prior section.
+    Chained,
+}
+
 /// A named, ordered collection of [`Fragment`]s laid out at a fixed LMA, whose
 /// labels/PC are computed at `vma_base` (VMA≠LMA when phased).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -166,6 +181,18 @@ pub struct Section {
     pub labels: Vec<Label>,
     /// Ordered list of fragments that make up this section.
     pub fragments: Vec<Fragment>,
+    /// How this section's BASE derives at link (R7p.1). Inert until the
+    /// placement pass reads it.
+    pub placement: SectionPlacement,
+    /// The address-space span its placer reserved for it (the closing cursor
+    /// extent at build time — `OpenSection::max_offset`).
+    pub reserved_span: u32,
+    /// Placement group (region name under `--map`); `None` ⇒ the anonymous group.
+    pub group: Option<String>,
+    /// The `bank:` attribute (§7-main, R7m.1): a positive power-of-two byte
+    /// window this section must never straddle. `None` ⇒ no bank constraint.
+    /// INERT until the placement pass (Task 2) enforces it.
+    pub bank: Option<u32>,
 }
 
 impl Section {
@@ -358,6 +385,16 @@ impl ModuleBuilder {
 
     /// Consume the builder and return the assembled [`Module`].
     pub fn finish(self) -> Module {
+        // This builder emits only `Data` fragments (`emit_bytes`), so the span
+        // its (sole, Pinned-at-0) section reserves is just their total length.
+        let reserved_span = self
+            .fragments
+            .iter()
+            .map(|f| match f {
+                Fragment::Data(d) => d.bytes.len() as u32,
+                _ => 0,
+            })
+            .sum();
         Module {
             sections: vec![Section {
                 name: "text".to_string(),
@@ -366,6 +403,10 @@ impl ModuleBuilder {
                 lma: 0,
                 labels: Vec::new(),
                 fragments: self.fragments,
+                placement: SectionPlacement::Pinned,
+                reserved_span,
+                group: None,
+                bank: None,
             }],
             link_asserts: Vec::new(),
         }
@@ -419,6 +460,12 @@ mod tests {
                 Fragment::Data(DataFragment { bytes: vec![0x00, 0x3E], fixups: vec![], span }),
                 Fragment::Data(DataFragment { bytes: vec![0x05], fixups: vec![], span }),
             ],
+            // Pre-placement literal: Pinned at its stated lma, anonymous group,
+            // reserved_span = its vma extent (3 bytes). Inert here.
+            placement: SectionPlacement::Pinned,
+            reserved_span: 3,
+            group: None,
+            bank: None,
         };
         assert_eq!(section.image_bytes(), vec![0x00, 0x3E, 0x05]);
     }
@@ -460,6 +507,12 @@ mod tests {
                 Fragment::Fill { value: 0x00, count: 4, span },
                 Fragment::Reserve { count: 8, span },
             ],
+            // Pre-placement literal: Pinned at 0x60000, anonymous group,
+            // reserved_span = its vma extent (3+4+8). Inert here.
+            placement: SectionPlacement::Pinned,
+            reserved_span: 3 + 4 + 8,
+            group: None,
+            bank: None,
         };
         // Data(3) + Fill(4) contribute image bytes; Reserve(8) contributes NONE.
         assert_eq!(sec.image_len(), 3 + 4);
@@ -501,6 +554,12 @@ mod tests {
                 Fragment::Org { target: 4, fill: 0x00, span }, // org End (resume at offset 4)
                 Fragment::Data(DataFragment { bytes: vec![0x04], fixups: vec![], span }),
             ],
+            // Pre-placement literal: Pinned at 0, anonymous group,
+            // reserved_span = the extent high-water mark (4). Inert here.
+            placement: SectionPlacement::Pinned,
+            reserved_span: 4,
+            group: None,
+            bank: None,
         };
         // The byte at the back-patched offset (0x00) now differs from the
         // original placeholder — proving a real overwrite, not an append.
@@ -525,6 +584,12 @@ mod tests {
                 Fragment::Org { target: 16, fill: 0x00, span },
                 Fragment::Data(DataFragment { bytes: vec![5, 6], fixups: vec![], span }),
             ],
+            // Pre-placement literal: Pinned at 0, anonymous group,
+            // reserved_span = its vma extent (18). Inert here.
+            placement: SectionPlacement::Pinned,
+            reserved_span: 18,
+            group: None,
+            bank: None,
         };
         let mut want = vec![1, 2, 3, 4];
         want.extend(std::iter::repeat_n(0x00, 12));
@@ -554,6 +619,12 @@ mod tests {
                 Fragment::Org { target: 0, fill: 0x00, span },
                 Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span }),
             ],
+            // Pre-placement literal: Pinned at 0, anonymous group,
+            // reserved_span = the extent high-water mark (8). Inert here.
+            placement: SectionPlacement::Pinned,
+            reserved_span: 8,
+            group: None,
+            bank: None,
         };
         assert_eq!(sec.image_bytes(), vec![0x63, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(sec.image_len(), 8);

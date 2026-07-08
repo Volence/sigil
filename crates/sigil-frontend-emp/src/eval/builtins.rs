@@ -104,6 +104,23 @@ impl<'a> Evaluator<'a> {
                 self.eval_seq_ops((lo..hi).map(Value::Int), method, "range", true, args, span)
             }
             Value::Str(s) => self.eval_str_builtin(s, method, args, span),
+            // `data.len` (R7m.7): the comptime BYTE length of a `Value::Data`
+            // buffer — `DataBuf::size` is the running sum of every cell's byte
+            // size, kept in step by `push`/`concat`, so this is O(1) and exact
+            // (an `embed(...)` blob's length, a `winptr(...)` cell = 2, …). Only
+            // `len` is defined on data (no `map`/`filter`/… — a byte buffer is not
+            // a comptime sequence of `Value`s); any other method is the standard
+            // "not defined on data".
+            Value::Data(buf) => {
+                if method == "len" {
+                    if !self.check_arity(method, &args, 0, span) {
+                        return Value::Poison;
+                    }
+                    return Value::Int(buf.size as i128);
+                }
+                self.error(span, format!("`{method}` is not defined on data"));
+                Value::Poison
+            }
             Value::Poison => Value::Poison,
             other => {
                 self.error(span, format!("`{method}` is not defined on {}", other.type_name()));
@@ -449,6 +466,68 @@ impl<'a> Evaluator<'a> {
         let mut buf = DataBuf::empty();
         buf.push(Cell::SymRef { name, width: 2, windowed: true });
         Value::Data(buf)
+    }
+
+    /// `bankid(sym)` (§7.x — D7.3/R7m.3): the Genesis cartridge BANK ID of a
+    /// symbol, `(sym & $7F8000) >> 15`, as a [`Value::LinkExpr`] residual tree.
+    /// The Z80 sees ROM through a 32KB window selected by a 9-bit latch; the bank
+    /// id is which 32KB page the address lands in. It is a LINK-TIME value (the
+    /// address is not final until `resolve_layout`), so it rides the D2.23 machinery
+    /// wholesale — no bespoke fixup kind: arithmetic composes via operator lifting,
+    /// `ensure(bankid(A) == bankid(B), …)` defers to a `LinkAssert` automatically
+    /// (D-H.4, zero new code), emission into a data cell lowers to `Cell::Expr`
+    /// (S2-D13f, R7m.4), and a comptime-required context refuses via the existing
+    /// `reject_if_provisional` choke point (steered by `[bank.provisional]`).
+    ///
+    /// The latch mask/shift constants (`$7F8000`/15) are the Genesis cartridge
+    /// banking scheme and appear ONLY here (D7.3) — never in user code.
+    ///
+    /// The argument contract is EXACTLY `winptr`'s: one positional symbol
+    /// reference (a bare label/`comptime fn` name → [`Value::FnRef`], or a
+    /// [`Value::Str`] naming a symbol). A non-reference argument is a diagnostic
+    /// and [`Poison`](Value::Poison). No address is resolved here (that is link).
+    pub(super) fn eval_bankid(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 1 {
+            self.error(span, format!("`bankid` expects exactly 1 argument, got {}", args.len()));
+            return Value::Poison;
+        }
+        if args[0].name.is_some() {
+            self.error(args[0].span, "`bankid` takes a positional argument");
+        }
+        let arg = self.eval_expr(&args[0].value, env);
+        // A leaked return / abort from the argument belongs to the caller.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let name = match arg {
+            Value::FnRef(n) => n,
+            Value::Str(s) => s,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    span,
+                    format!("`bankid` needs a symbol reference, got {}", other.type_name()),
+                );
+                return Value::Poison;
+            }
+        };
+        // Build the residual tree `(Sym & BANK_MASK) >> 15`. The mask isolates
+        // the bank-select bits of the 24-bit ROM address; the shift moves them to
+        // the low bits so the result IS the bank ordinal. Folded by the linker
+        // once `sym`'s final address is known. The shared const doubles as the
+        // provenance marker `expr_carries_bank_mask` scans for.
+        use sigil_ir::expr::{BinOp, Expr};
+        let masked = Expr::Binary {
+            op: BinOp::And,
+            lhs: Box::new(Expr::Sym(name)),
+            rhs: Box::new(Expr::Int(super::expr::BANK_MASK)),
+        };
+        let shifted = Expr::Binary {
+            op: BinOp::Shr,
+            lhs: Box::new(masked),
+            rhs: Box::new(Expr::Int(15)),
+        };
+        Value::LinkExpr(shifted)
     }
 
     /// Evaluate the single positional integer argument shared by `byte` (and

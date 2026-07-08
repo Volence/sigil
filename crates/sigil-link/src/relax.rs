@@ -21,7 +21,7 @@
 use sigil_ir::expr::Fold;
 pub use sigil_ir::{
     asl_width_rule, AbsWidth, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, RelaxCandidate,
-    Section, SymbolTable, SymbolValue,
+    Section, SectionPlacement, SymbolTable, SymbolValue,
 };
 use sigil_span::{Diagnostic, Level, Span};
 
@@ -79,6 +79,196 @@ fn frag_len(frag: &Fragment, rung: usize) -> u32 {
             candidates.get(rung).map(|c| c.bytes.len() as u32).unwrap_or(0)
         }
     }
+}
+
+/// The section's FINAL image extent under the CURRENT rungs (R7p.2): the same
+/// cursor-replay shape as `Section::placement_span` (ir lib.rs), but counting
+/// each relaxable fragment at its CURRENT rung width (via `frag_len`) instead of
+/// its MAX width, and honoring `Org` extent identically. This is what the
+/// link-time placement pass advances the group cursor by — a chained successor's
+/// base derives from its predecessors' FINAL sizes, not their baked baselines.
+///
+/// `Org` seeks the cursor (`frag_len` returns 0 for it, so the cursor is set to
+/// `target` here); `Reserve` advances the cursor but contributes no image bytes —
+/// both mirror `placement_span`/`vma_len` so the max-extent is the address-space
+/// span, matching what the placer reserved.
+fn final_size(sec: &Section, rungs: &[usize]) -> u32 {
+    let mut cursor: u32 = 0;
+    let mut max_extent: u32 = 0;
+    for (fi, frag) in sec.fragments.iter().enumerate() {
+        match frag {
+            Fragment::Org { target, .. } => cursor = *target,
+            other => cursor += frag_len(other, rungs[fi]),
+        }
+        if cursor > max_extent {
+            max_extent = cursor;
+        }
+    }
+    max_extent
+}
+
+/// The link-time placement pass (R7p.2). Walk sections in vec order with a cursor
+/// PER `group`: a `Pinned` section resets its group cursor to its baked anchor
+/// (`sec.lma`); a `Chained` section lands at its group cursor. The cursor then
+/// advances by `max(reserved_span, final_size(sec, rungs))` — the reserved-span
+/// arm preserves the multi-module max-span gaps (byte-identity, R7p.6), the
+/// final-size arm corrects the growth-past-baseline understatement (the L-H.1
+/// fix). REWRITES `sec.lma` in place. Returns whether any lma moved this pass (so
+/// the joint fixpoint knows placement is not yet stable).
+fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
+    // Per-group write cursor. `None` group shares one anonymous cursor.
+    let mut cursors: std::collections::HashMap<Option<String>, u32> =
+        std::collections::HashMap::new();
+    let mut moved = false;
+    for (si, sec) in placed.iter_mut().enumerate() {
+        let mut base = match sec.placement {
+            SectionPlacement::Pinned => {
+                // A pin resets its group cursor to its baked anchor value.
+                sec.lma
+            }
+            SectionPlacement::Chained => {
+                // A chained section lands at its group cursor (or its baked lma if
+                // it is the first section seen in its group — defensive: the
+                // front-ends always stamp the first-per-group `Pinned`).
+                *cursors.get(&sec.group).unwrap_or(&sec.lma)
+            }
+        };
+        // The section's FINAL image extent under the current rungs. Hoisted (not
+        // recomputed) so the bank seam below reuses this one value — do NOT add a
+        // fifth cursor-replay loop (the T4 carry-forward constraint).
+        let final_sz = final_size(sec, &rungs[si]);
+        // #7-main: bank bump seam (D7.2). If this section carries a bank
+        // constraint and its `[base, base+final)` extent would STRADDLE an
+        // N-boundary, bump a CHAINED base to the next multiple of N. Bump ONLY
+        // when straddling — a section that fits before the boundary stays put
+        // (D7.2: aeon's always-`align $8000` wastes up to N bytes; the invariant
+        // is no-straddle, alignment is just one strategy). PINNED sections are
+        // NEVER moved — their address is authoritative — but they are still
+        // checked post-fixpoint (a straddling pin is a loud error, not a bump).
+        // A content-larger-than-N section is unsatisfiable → the §7.3 "over by K
+        // bytes" budget error, reported post-fixpoint by `bank_diag`: it may
+        // bump ONCE here to an aligned base, where `next_multiple_of` becomes a
+        // no-op, so placement stays stable while the error fires. A bump only
+        // ever increases `base`, so grow-only termination is preserved.
+        if let Some(n) = sec.bank {
+            if sec.placement == SectionPlacement::Chained
+                && final_sz > 0
+                && base / n != (base + final_sz - 1) / n
+            {
+                base = base.next_multiple_of(n);
+            }
+        }
+        let advance = sec.reserved_span.max(final_sz);
+        if sec.lma != base {
+            sec.lma = base;
+            moved = true;
+        }
+        cursors.insert(sec.group.clone(), base + advance);
+    }
+    moved
+}
+
+/// The R7m.2 always-on bank checks, run POST-fixpoint against the FINAL converged
+/// placement (D7.5 discharged STRUCTURALLY in the linker — same diagnostic channel
+/// as the overlap check, no synthesized LinkAssert rows). Two failure modes, each
+/// returning the FIRST offender as an `Error` diagnostic:
+///   - content larger than the bank (`final > n`) → the §7.3 "over by K bytes"
+///     budget error naming the section (K decimal, matching map.rs validate_section);
+///   - a section whose final `[first_byte, last_byte]` straddles an N-boundary
+///     (`first / n != last / n`) → an error naming the section, its `[start,end)`
+///     extent, and the boundary it crosses. For CHAINED sections the constructive
+///     bump in `place_pass` makes the straddle case unreachable; this catches
+///     straddling PINS (which are never moved). Empty (final == 0) sections place
+///     no bytes and are skipped.
+fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
+    for (si, sec) in placed.iter().enumerate() {
+        let Some(n) = sec.bank else { continue };
+        let final_sz = final_size(sec, &rungs[si]);
+        if final_sz == 0 {
+            continue;
+        }
+        let span = sec.fragments.first().map(frag_span).unwrap_or(Span {
+            source: sigil_span::SourceId(0),
+            start: 0,
+            end: 0,
+        });
+        // Content larger than the bank is unsatisfiable — §7.3 budget style
+        // ("over by K bytes", K decimal per map.rs validate_section).
+        if final_sz > n {
+            return Some(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "section `{}` ({:#X} bytes) cannot fit a {:#X} bank — over by {} bytes",
+                    sec.name,
+                    final_sz,
+                    n,
+                    final_sz - n
+                ),
+                primary: span,
+            });
+        }
+        let start = sec.lma;
+        let end = sec.lma + final_sz;
+        // Straddle: first and last byte fall in different N-windows. Unreachable
+        // for chained sections (the bump discharges it constructively); this is
+        // the catch for a straddling PIN, which is never moved.
+        if start / n != (end - 1) / n {
+            let boundary = (start / n + 1) * n;
+            return Some(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "section `{}` [{start:#X}, {end:#X}) straddles the {boundary:#X} bank boundary ({n:#X}-byte bank)",
+                    sec.name
+                ),
+                primary: span,
+            });
+        }
+    }
+    None
+}
+
+/// The R7p.4 overlap check: after the joint fixpoint converges, return the first
+/// pair of NON-EMPTY placed sections whose `[lma, lma + final_size)` ranges
+/// intersect, as an `Error` diagnostic naming BOTH sections and both hex extents.
+/// Empty (zero-final-size) sections place no bytes, so they can neither clobber
+/// nor be clobbered and are skipped (mirroring `flatten`/`flatten_checked`).
+fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
+    // Collect (start, end, name, span) for every non-empty section, then scan
+    // every pair. O(n²), but n is the section count (small), and this runs once
+    // at convergence — not per pass.
+    let ranges: Vec<(u32, u32, &str, Span)> = placed
+        .iter()
+        .enumerate()
+        .filter_map(|(si, sec)| {
+            let size = final_size(sec, &rungs[si]);
+            if size == 0 {
+                return None;
+            }
+            let span = sec.fragments.first().map(frag_span).unwrap_or(Span {
+                source: sigil_span::SourceId(0),
+                start: 0,
+                end: 0,
+            });
+            Some((sec.lma, sec.lma + size, sec.name.as_str(), span))
+        })
+        .collect();
+    for i in 0..ranges.len() {
+        for j in (i + 1)..ranges.len() {
+            let (a_lo, a_hi, a_name, a_span) = ranges[i];
+            let (b_lo, b_hi, b_name, _) = ranges[j];
+            // Half-open ranges intersect iff each starts before the other ends.
+            if a_lo < b_hi && b_lo < a_hi {
+                return Some(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "sections `{a_name}` [{a_lo:#X}, {a_hi:#X}) and `{b_name}` [{b_lo:#X}, {b_hi:#X}) overlap in the image (colliding pins)"
+                    ),
+                    primary: a_span,
+                });
+            }
+        }
+    }
+    None
 }
 
 /// Breakpoints mapping an all-rung-0 (baseline) offset to the growth delta at
@@ -348,27 +538,43 @@ pub fn resolve_layout(
     let mut rungs: Vec<Vec<usize>> =
         sections.iter().map(|s| vec![0usize; s.fragments.len()]).collect();
 
+    // The joint placement⇄relaxation fixpoint (R7p.3) operates on a MUTABLE copy:
+    // each outer pass re-derives every chained section's lma from the current
+    // rungs (the placement pass, R7p.2), so `placed`'s lmas are truth-telling
+    // final addresses. `rungs` persists across passes and is grow-only (the
+    // existing ladder invariant); placement is a deterministic function of
+    // rungs + pins, so once rungs stabilize one final placement is fixed.
+    let mut placed: Vec<Section> = sections.to_vec();
+
     // Provably-sufficient pass cap: each pass that reports `grew` advances at
     // least one relaxable fragment's rung by ≥1 (a length change), and each
     // fragment can advance at most `rung_count − 1` times (grow-only). So at most
-    // `Σ(rung_count − 1)` passes can grow — one more pass observes no growth and
-    // converges. (JmpJsrSym/RelaxAbsSym contribute 1 each = the old total-flips
-    // bound; a 4-rung ladder contributes 3.) The non-convergence Err below is an
-    // unreachable-in-practice backstop.
+    // `Σ(rung_count − 1)` passes can grow — after that, one placement pass settles
+    // the chained lmas from the stable rungs and the next pass observes neither a
+    // rung growth nor an lma move → convergence. (JmpJsrSym/RelaxAbsSym contribute
+    // 1 each = the old total-flips bound; a 4-rung ladder contributes 3.) The
+    // `.max(64)` is the honesty backstop the ruling asks for; the non-convergence
+    // Err below is unreachable-in-practice by the grow-only/deterministic argument.
     let total_flips: usize = sections
         .iter()
         .flat_map(|s| s.fragments.iter())
         .map(|f| rung_count(f) - 1)
         .sum();
-    let cap = total_flips + 1;
+    let cap = (total_flips + 2).max(64);
 
     // Span of a fragment that grew on the most recent pass, for the backstop diag.
     let mut last_grown_span: Option<Span> = None;
 
     for _ in 0..cap {
+        // (0) Placement pass (R7p.2): re-derive every chained section's lma from
+        // the current rungs. A moved lma moves that section's labels (its
+        // `vma_origin` shifts when `vma_base` is None), which the symbol-table
+        // rebuild in (a) picks up — the intended truth-telling per D7.4.
+        let moved = place_pass(&mut placed, &rungs);
+
         // (a) Build the symbol table with label VMAs shifted under current rungs.
         let mut syms = stubs.clone();
-        for (si, sec) in sections.iter().enumerate() {
+        for (si, sec) in placed.iter().enumerate() {
             let origin = sec.vma_origin();
             let bps = shift_breakpoints(sec, &rungs[si]);
             for label in &sec.labels {
@@ -381,7 +587,7 @@ pub fn resolve_layout(
         // fragment's byte LENGTH — a same-length rung move (e.g. bra.w → jmp
         // abs.w, both 4 bytes) is recorded but needs no relayout.
         let mut grew = false;
-        for (si, sec) in sections.iter().enumerate() {
+        for (si, sec) in placed.iter().enumerate() {
             let origin = sec.vma_origin();
             let bps = shift_breakpoints(sec, &rungs[si]);
             for fi in 0..sec.fragments.len() {
@@ -478,14 +684,17 @@ pub fn resolve_layout(
             }
         }
 
-        if !grew {
+        // Converged only when NEITHER a rung grew NOR an lma moved this pass
+        // (R7p.3): a placement move can change a cross-section branch distance, so
+        // we must re-run selection at the new addresses before lowering.
+        if !grew && !moved {
             // (c) Convergence sweep: every RelaxLadder's chosen candidate must
             // actually reach the target. A ladder that maxed at its last rung and
             // still cannot reach (tonight: a conditional/unsized branch whose last
             // rung is PcRelDisp16 — the only ladder shape that can exhaust) is a
             // hard error naming the signed distance. Collect ALL such errors.
             let mut errs: Vec<Diagnostic> = Vec::new();
-            for (si, sec) in sections.iter().enumerate() {
+            for (si, sec) in placed.iter().enumerate() {
                 let origin = sec.vma_origin();
                 let bps = shift_breakpoints(sec, &rungs[si]);
                 for fi in 0..sec.fragments.len() {
@@ -510,8 +719,28 @@ pub fn resolve_layout(
                 return Err(errs);
             }
 
+            // (c2) Overlap check (R7p.4): the joint fixpoint has converged, so
+            // every section's placed `[lma, lma + final_size)` range is final.
+            // Any two NON-EMPTY ranges that intersect are a loud link error naming
+            // BOTH sections and both extents (hex). Chained sections cannot overlap
+            // by construction (their cursor advances past each predecessor); this
+            // catches colliding PINS on any path — single-file, multi-module, or
+            // harness — since they all funnel through `resolve_layout`.
+            if let Some(diag) = overlap_diag(&placed, &rungs) {
+                return Err(vec![diag]);
+            }
+
+            // (c3) Bank no-straddle check (R7m.2 / D7.5): every `bank:` section
+            // (pinned included) must fit within a single N-window at its FINAL
+            // placement. Over-bank content and straddling pins are loud errors
+            // here — same diagnostic channel as the overlap check, discharged
+            // structurally rather than via a synthesized LinkAssert row.
+            if let Some(diag) = bank_diag(&placed, &rungs) {
+                return Err(vec![diag]);
+            }
+
             // (d) Converged & every ladder reaches: lower fragments + shift labels.
-            let out = sections
+            let out = placed
                 .iter()
                 .enumerate()
                 .map(|(si, sec)| {
@@ -565,6 +794,15 @@ pub fn resolve_layout(
                         lma: sec.lma,
                         labels,
                         fragments,
+                        // Provenance is carried through the relax rebuild verbatim
+                        // (R7p.1): relaxation only lowers fragments/shifts labels;
+                        // it never re-places a section. `bank` (R7m.1) is the same
+                        // kind of provenance — carried verbatim for Task 2's
+                        // placement seam to read.
+                        placement: sec.placement,
+                        reserved_span: sec.reserved_span,
+                        group: sec.group.clone(),
+                        bank: sec.bank,
                     }
                 })
                 .collect();
@@ -721,6 +959,10 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![relax_move("Lo")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -751,6 +993,10 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![relax_move("Ram")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -778,6 +1024,10 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![relax_move("Hi")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -820,6 +1070,10 @@ mod tests {
                     span: sp(),
                 }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -848,6 +1102,10 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Target".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // The jmp lowered to abs.l (6-byte Data), and Target shifted 4 → 6.
@@ -877,6 +1135,10 @@ mod tests {
                 Fragment::Fill { value: 0, count: 7, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // Both jmps grew to abs.l; A shifted 0x0F → 0x13 (0x0F + 4).
@@ -917,6 +1179,10 @@ mod tests {
                     span: sp(),
                 }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -941,6 +1207,10 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Low".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -959,6 +1229,10 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         let linked = crate::link(&out, &stubs).unwrap();
@@ -979,6 +1253,10 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: true, target: Expr::Sym("T".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x75], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
@@ -1002,6 +1280,10 @@ mod tests {
                 Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[code], &stubs, true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 6);
@@ -1018,6 +1300,10 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Nope".into()), span: sp() }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         assert!(resolve_layout(&[sec], &SymbolTable::new(), true).is_err());
     }
@@ -1069,6 +1355,10 @@ mod tests {
                 Fragment::Org { target: 4, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![1], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1093,6 +1383,10 @@ mod tests {
                 Fragment::Org { target: 8, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![1], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1121,6 +1415,10 @@ mod tests {
                 Fragment::Org { target: 0, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x63], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1155,6 +1453,10 @@ mod tests {
                 Fragment::Org { target: 4, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![4], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 5);
@@ -1180,6 +1482,10 @@ mod tests {
                 jbra("L"),
                 Fragment::Data(DataFragment { bytes: vec![0; 6], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1212,6 +1518,10 @@ mod tests {
                 Fragment::Fill { value: 0, count: 0x400, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1246,6 +1556,10 @@ mod tests {
             lma: 0x40_0000,
             labels: vec![],
             fragments: vec![jbra("Lo")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1272,6 +1586,10 @@ mod tests {
             lma: 0x40_0000,
             labels: vec![],
             fragments: vec![jbra("Hi")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         match &out[0].fragments[0] {
@@ -1300,6 +1618,10 @@ mod tests {
                 Fragment::Data(DataFragment { bytes: vec![0; 4], fixups: vec![], span: sp() }),
                 jbra("L"),
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[1] {
@@ -1329,6 +1651,10 @@ mod tests {
             lma: 0,
             labels: vec![Label { name: "L".into(), offset: 2 }],
             fragments: vec![jbra("L")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         match &out[0].fragments[0] {
@@ -1378,6 +1704,10 @@ mod tests {
                 jbra("Back"),                                         // [0x7E, 0x80)
                 Fragment::Fill { value: 0, count: 0x80, span: sp() }, // [0x80, 0x100), Far @ 0x100
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         // frag0 grew to bra.w (Far ~0x100 ahead, out of i8).
@@ -1429,6 +1759,10 @@ mod tests {
                 jbra("Lo"),                                             // backward to VMA 0
                 Fragment::Fill { value: 0, count: 0x8000, span: sp() }, // pad out to Far
             ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // frag2 must be a 4-byte jmp abs.w (rung 2), NOT bra.w: its backward disp
@@ -1474,6 +1808,10 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![bne_ladder("VeryFar")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1500,6 +1838,10 @@ mod tests {
             lma: 0x20_0000,
             labels: vec![],
             fragments: vec![bne_ladder("WayBack")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
         assert!(
@@ -1518,6 +1860,10 @@ mod tests {
             lma: 0,
             labels: vec![],
             fragments: vec![jbra("Nope")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
         assert!(
@@ -1543,6 +1889,10 @@ mod tests {
                 target: Expr::Sym("L".into()),
                 span: sp(),
             }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let secs = [sec];
         if cfg!(debug_assertions) {
@@ -1576,6 +1926,10 @@ mod tests {
                 target: Expr::Sym("L".into()),
                 span: sp(),
             }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
         };
         let secs = [sec];
         if cfg!(debug_assertions) {

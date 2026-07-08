@@ -1871,6 +1871,11 @@ impl Asm {
         let phys_target = (target_abs as i64 - self.state.disp) as u32;
         if !self.in_section {
             self.phys_base = phys_target;
+            // R7p.1: the org is an explicit placement authority. The next section
+            // opened here must be `Pinned` at this counter (its gap from the
+            // predecessor is intentional), not `Chained` and compacted by the
+            // link-time placement pass.
+            self.builder.pin_next_section();
             return;
         }
         // A section is open. `base` is the VMA of its first byte; `rel` is the
@@ -1889,6 +1894,11 @@ impl Asm {
         } else {
             self.close_section();
             self.phys_base = phys_target;
+            // Forward org past the section extent → the next auto-opened section
+            // is `Pinned` at the org'd counter (R7p.1): its gap is an intentional
+            // inter-section gap, which the placement pass must preserve rather
+            // than compact (`org_forward_new_section` golden).
+            self.builder.pin_next_section();
         }
     }
 

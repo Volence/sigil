@@ -563,6 +563,10 @@ impl<'a> Evaluator<'a> {
                     self.error(span, "[zx0.symbolic] zx0 input has an unresolved offset-table entry");
                     return Value::Poison;
                 }
+                Cell::Expr { .. } => {
+                    self.error(span, "[zx0.symbolic] zx0 input has an unresolved link-expr value");
+                    return Value::Poison;
+                }
             }
         }
         if input.len() > 0xFFFF {

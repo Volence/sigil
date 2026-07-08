@@ -39,6 +39,29 @@ pub enum FixupKind {
     /// the whole file, NOT through `apply_fixup`; present here for `byte_width`
     /// bookkeeping and future in-fragment modelling.
     HeaderChecksum,
+    /// A general link-expr data VALUE, width 1 (Spec 2, S2-D13f / R7m.4). Writes
+    /// the folded target integer VERBATIM after an UNSIGNED-window range check
+    /// (`0 ≤ v < 2^8`). Deliberately DISTINCT from the address kinds
+    /// ([`Abs16Be`](Self::Abs16Be) range-checks as a *signed* address;
+    /// [`BankPtr16Le`](Self::BankPtr16Le) *masks*) — a value cell inherits neither
+    /// semantics. Byte order is irrelevant at width 1. Any CPU.
+    Value8,
+    /// A general link-expr data VALUE, width 2, big-endian (68k sections).
+    /// Unsigned-window range check (`0 ≤ v < 2^16`), then the folded integer is
+    /// written verbatim big-endian.
+    Value16Be,
+    /// A general link-expr data VALUE, width 2, little-endian (Z80 sections).
+    /// Unsigned-window range check (`0 ≤ v < 2^16`), then written verbatim
+    /// little-endian.
+    Value16Le,
+    /// A general link-expr data VALUE, width 4, big-endian (68k sections).
+    /// Unsigned-window range check (`0 ≤ v < 2^32`), then written verbatim
+    /// big-endian.
+    Value32Be,
+    /// A general link-expr data VALUE, width 4, little-endian (Z80 sections).
+    /// Unsigned-window range check (`0 ≤ v < 2^32`), then written verbatim
+    /// little-endian.
+    Value32Le,
 }
 
 impl FixupKind {
@@ -53,6 +76,9 @@ impl FixupKind {
             FixupKind::PcRelDisp16 | FixupKind::HeaderChecksum => 2,
             FixupKind::Z80JrRel8 | FixupKind::PcRel8 | FixupKind::PcRelDisp8 => 1,
             FixupKind::Abs32Be => 4,
+            FixupKind::Value8 => 1,
+            FixupKind::Value16Be | FixupKind::Value16Le => 2,
+            FixupKind::Value32Be | FixupKind::Value32Le => 4,
         }
     }
 }

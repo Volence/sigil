@@ -100,6 +100,42 @@ fn two_sections_place_at_vma_and_continuous_lma() {
 }
 
 #[test]
+fn named_section_without_vma_has_no_pinned_vma_base() {
+    // R7p.5 (Plan 7 item-7-pre Task 6): a NAMED section with NO `vma:` attribute
+    // must get `vma_base == None` — the SAME "follow wherever it's placed"
+    // contract the default (top-level items) section already has — never a
+    // silently-defaulted `Some(0)` pin. `a` here has an explicit `vma: $0`
+    // (a genuine pin, still `Some(0)` — unchanged by this fix); `b` omits
+    // `vma:` entirely and must be `None`, with `vma_origin()` falling back to
+    // its physical `lma` (2, right after `a`'s 2 bytes) rather than 0.
+    let src = "module m\n\
+               section a (cpu: m68000, vma: $0) {\n\
+                 data Aval: u16 = $1111\n\
+               }\n\
+               section b (cpu: m68000) {\n\
+                 data Bval: u16 = $2222\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "lower: {diags:?}");
+
+    let a = section(&module, "a");
+    assert_eq!(a.vma_base, Some(0x0000), "explicit `vma: $0` stays a pin");
+
+    let b = section(&module, "b");
+    assert_eq!(b.vma_base, None, "no `vma:` attribute -> vma_base is None, not Some(0)");
+    assert_eq!(b.lma, 2, "b's bytes physically follow a's 2 bytes");
+    assert_eq!(
+        b.vma_origin(),
+        2,
+        "vma_origin() falls back to lma (2) — Bval must NOT resolve from address 0"
+    );
+    assert_eq!(b.labels[0].name, "Bval");
+    assert_eq!(b.vma_origin() + b.labels[0].offset, 2);
+}
+
+#[test]
 fn cross_section_pointer_resolves_to_target_vma() {
     // Section `a` (68k) holds a pointer to `Bval`, defined in section `b` at VMA
     // $8000. The Abs32Be fixup resolves across sections to $00008000.

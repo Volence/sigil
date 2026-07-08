@@ -1,7 +1,7 @@
 //! `IrBuilder`: the concrete `IrStreamer` that materialises a `Module`.
 
 use crate::backend::{Cpu, IrStreamer};
-use crate::{DataFragment, Fixup, Fragment, Label, LinkAssert, Module, Section};
+use crate::{DataFragment, Fixup, Fragment, Label, LinkAssert, Module, Section, SectionPlacement};
 use sigil_span::{Diagnostic, Span};
 
 /// One section under construction: metadata + a running byte cursor.
@@ -14,6 +14,16 @@ struct OpenSection {
     fragments: Vec<Fragment>,
     cursor: u32,     // VMA/PC offset from section start (counts Data+Fill+Reserve)
     max_offset: u32, // highest `cursor` ever reached (the org back-patch "extent")
+    // R7p.1 provenance: the first section a builder opens is Pinned (base = baked
+    // lma), every subsequent one Chained (base packed after its predecessor).
+    // `reserved_span` is filled from `max_offset` at close; `group` is the
+    // anonymous group (`None`) under the builder default.
+    placement: SectionPlacement,
+    // #7-main (R7m.1): the `bank:` attribute, set via `set_section_bank` right
+    // after the section opens (the front-end evaluates `section_attrs` before
+    // `switch_section_lma`, so this is always `None` at open and set explicitly
+    // when present). Inert until the Task 2 placement seam reads it.
+    bank: Option<u32>,
 }
 
 impl OpenSection {
@@ -35,6 +45,13 @@ pub struct IrBuilder {
     /// onto the finished [`Module`]. Empty for any program without a provisional
     /// `here()` guard.
     link_asserts: Vec<LinkAssert>,
+    /// R7p.1: force the NEXT `switch_section_lma` to stamp `Pinned` regardless of
+    /// whether a section has already opened. Set by the AS front-end after an
+    /// `org` that JUMPS the physical counter (an explicit placement authority, not
+    /// a natural chain advance) — so a forward-org gap survives the link-time
+    /// placement pass instead of being compacted (`org_forward_new_section`).
+    /// Cleared once consumed.
+    force_next_pinned: bool,
 }
 
 impl IrBuilder {
@@ -52,6 +69,13 @@ impl IrBuilder {
                 lma: o.lma,
                 labels: o.labels,
                 fragments: o.fragments,
+                placement: o.placement,
+                // The span the placer reserved for this section = its closing
+                // cursor high-water mark (R7p.1); group is the anonymous group
+                // under the builder default (frontends override in later work).
+                reserved_span: o.max_offset,
+                group: None,
+                bank: o.bank,
             });
         }
     }
@@ -102,6 +126,11 @@ impl IrBuilder {
     /// (`lma = vma_base.unwrap_or(0)`) for backends/tests that don't model phase.
     pub fn switch_section_lma(&mut self, name: &str, cpu: Cpu, vma_base: Option<u32>, lma: u32) {
         self.close();
+        // First section of this builder run → Pinned (base = baked lma); every
+        // subsequent one → Chained (R7p.1). `close()` ran above, so an empty
+        // `done` means nothing has been opened yet in this run. An `org`-jump
+        // override (`force_next_pinned`) forces `Pinned` regardless.
+        let placement = self.placement_for_next();
         self.open = Some(OpenSection {
             name: name.to_string(),
             cpu,
@@ -111,7 +140,38 @@ impl IrBuilder {
             fragments: Vec::new(),
             cursor: 0,
             max_offset: 0,
+            placement,
+            bank: None,
         });
+    }
+
+    /// #7-main (R7m.1): set the currently-open section's `bank:` attribute.
+    /// The front-end evaluates `section_attrs` right after opening a section
+    /// (before emitting any content), so this always targets the section that
+    /// was just opened. Panics if no section is open (front-end bug, mirroring
+    /// `section_mut`).
+    pub fn set_section_bank(&mut self, bank: Option<u32>) {
+        self.section_mut().bank = bank;
+    }
+
+    /// The R7p.1 placement for the section about to open: `Pinned` if none has
+    /// yet been opened in this builder run OR an `org`-jump override is pending
+    /// (`force_next_pinned`), else `Chained`. Call AFTER `close()` so `done`
+    /// reflects all sections already opened; CONSUMES the override.
+    fn placement_for_next(&mut self) -> SectionPlacement {
+        let forced = std::mem::replace(&mut self.force_next_pinned, false);
+        if forced || self.done.is_empty() {
+            SectionPlacement::Pinned
+        } else {
+            SectionPlacement::Chained
+        }
+    }
+
+    /// R7p.1: mark the NEXT opened section `Pinned` (an explicit-placement
+    /// authority — the AS `org`-jump). Idempotent until consumed by the next
+    /// `switch_section_lma`/`switch_section`.
+    pub fn pin_next_section(&mut self) {
+        self.force_next_pinned = true;
     }
 
     /// Seek the open section's write cursor to `target` (backward or forward)
@@ -150,6 +210,7 @@ impl IrBuilder {
 impl IrStreamer for IrBuilder {
     fn switch_section(&mut self, name: &str, cpu: Cpu, vma_base: Option<u32>) {
         self.close();
+        let placement = self.placement_for_next();
         self.open = Some(OpenSection {
             name: name.to_string(),
             cpu,
@@ -159,6 +220,8 @@ impl IrStreamer for IrBuilder {
             fragments: Vec::new(),
             cursor: 0,
             max_offset: 0,
+            placement,
+            bank: None,
         });
     }
 
@@ -342,6 +405,33 @@ mod tests {
         let sec = &module.sections[0];
         assert!(matches!(sec.fragments[1], Fragment::Org { target: 0, .. }));
         assert!(matches!(sec.fragments[3], Fragment::Org { target: 4, .. }));
+    }
+
+    #[test]
+    fn switch_section_lma_stamps_placement_provenance() {
+        // R7p.1 default rule: the FIRST section a builder opens is Pinned (its
+        // base is the baked lma); every subsequent one is Chained. Each carries
+        // `reserved_span` = its closing cursor extent (`max_offset`) and the
+        // anonymous group (`None`) — inert provenance until the placement pass.
+        use crate::SectionPlacement;
+        let mut b = IrBuilder::new();
+        b.switch_section_lma("first", Cpu::M68000, None, 0x1000);
+        b.emit_data(&[0, 1, 2, 3, 4], vec![], span()); // 5 bytes
+        b.switch_section_lma("second", Cpu::M68000, None, 0x2000);
+        b.emit_data(&[0, 1, 2], vec![], span()); // 3 bytes
+
+        let (module, _diags) = b.finish();
+        assert_eq!(module.sections.len(), 2);
+
+        let first = &module.sections[0];
+        assert_eq!(first.placement, SectionPlacement::Pinned);
+        assert_eq!(first.reserved_span, 5);
+        assert_eq!(first.group, None);
+
+        let second = &module.sections[1];
+        assert_eq!(second.placement, SectionPlacement::Chained);
+        assert_eq!(second.reserved_span, 3);
+        assert_eq!(second.group, None);
     }
 
     #[test]

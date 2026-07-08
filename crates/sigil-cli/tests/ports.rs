@@ -224,6 +224,12 @@ fn mixed_build_cross_seam_symbol_resolves() {
 
     let mut sections = emp_sections(emp);
     sections.extend(as_sections(asm));
+    // Mirror production `build_program`'s no-map tail: two independently-lowered
+    // modules each stamp their first section `Pinned` at lma 0, so they must be
+    // placed sequentially to distinct LMAs before the link-time placement pass
+    // (R7p.4 now flags two Pinned-at-0 sections as colliding pins). The cross-seam
+    // symbol resolves from `payload`'s VMA ($8000), so its LMA is irrelevant here.
+    sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
@@ -250,6 +256,10 @@ fn mixed_build_cross_seam_name_collision_errors() {
 
     let mut sections = emp_sections(emp);
     sections.extend(as_sections(asm));
+    // Place sequentially (as production does) so the two Pinned-at-0 first
+    // sections don't trip R7p.4's colliding-pins check before we reach the
+    // intended cross-seam name-collision error at `link`.
+    sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));

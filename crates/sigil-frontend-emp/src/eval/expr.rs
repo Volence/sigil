@@ -339,6 +339,11 @@ impl<'a> Evaluator<'a> {
             Value::Str(s) if field == "val" => self.str_val(&s, span),
             // A half-open `lo..hi` has `max(0, hi - lo)` elements.
             Value::Range { lo, hi } if field == "len" => Value::Int((hi - lo).max(0)),
+            // `data.len` (R7m.7): the comptime BYTE length of a `Value::Data`
+            // buffer — the same answer the call form gives (`eval_builtin`), so a
+            // bare-path `Kick.len` and a `Kick.len()` call agree. `DataBuf::size`
+            // is kept in step with the cells by `push`/`concat`.
+            Value::Data(buf) if field == "len" => Value::Int(buf.size as i128),
             other => {
                 self.error(
                     span,
@@ -754,16 +759,69 @@ impl<'a> Evaluator<'a> {
         Value::Poison
     }
 
-    /// If `v` is a [`Value::LinkExpr`], emit `[here.provisional]` and return
+    /// The `bankid()`-specific variant of [`here_provisional_error`](Self::here_provisional_error)
+    /// (D7.3/R7m.3): a `bankid()` value in a comptime-required position gets a
+    /// message that STEERS toward emission/guarding rather than the `here()`
+    /// branch-sizing advice (which does not apply — bankid is link-time by
+    /// construction, not because of an unsized branch). Same `[bank.provisional]`
+    /// refusal class, its own steering text.
+    pub(crate) fn bank_provisional_error(&mut self, span: Span) -> Value {
+        self.error(
+            span,
+            "[bank.provisional] bankid() is a link-time value; it cannot size or steer comptime \
+             evaluation — emit it into a data cell or guard it with ensure"
+                .to_string(),
+        );
+        Value::Poison
+    }
+
+    /// If `v` is a [`Value::LinkExpr`], emit the refusal error and return
     /// `Some(Poison)` — the caller (a site that needs a concrete comptime value)
     /// short-circuits on it. `None` means `v` is not a provisional link value, so
     /// the caller proceeds unchanged. The single choke point every comptime
     /// consumer routes a possibly-provisional value through.
+    ///
+    /// The message STEERS by provenance (R7m.3): a residual tree carrying the
+    /// Genesis bank-latch mask (`$7F8000`) is a `bankid()`-derived value — that
+    /// mask appears ONLY in `eval_bankid` (D7.3), so its presence is a reliable
+    /// provenance marker without threading a tag through every `LinkExpr` site.
+    /// Such a value gets `[bank.provisional]`; every other link-time value
+    /// (chiefly a provisional `here()`) keeps `[here.provisional]`.
     pub(crate) fn reject_if_provisional(&mut self, v: &Value, span: Span) -> Option<Value> {
-        if matches!(v, Value::LinkExpr(_)) {
-            Some(self.here_provisional_error(span))
-        } else {
-            None
+        match v {
+            Value::LinkExpr(e) if expr_carries_bank_mask(e) => {
+                Some(self.bank_provisional_error(span))
+            }
+            Value::LinkExpr(_) => Some(self.here_provisional_error(span)),
+            _ => None,
+        }
+    }
+}
+
+/// The Genesis cartridge bank-latch mask: bits 15–22 of a 68k ROM address form
+/// the 9-bit-latch bank id (D7.3). Shared by `eval_bankid` (which builds it into
+/// the residual tree) and `expr_carries_bank_mask` (which scans for it), so "the
+/// mask appears in one place" is a compile-time fact, not a comment.
+pub(crate) const BANK_MASK: i64 = 0x7F8000;
+
+/// Whether a residual link-time tree carries the Genesis bank-latch mask
+/// (`$7F8000`) — the marker of a `bankid()`-derived value (D7.3/R7m.3). The mask
+/// is built into the tree ONLY by `eval_bankid` (both sites share [`BANK_MASK`],
+/// so the one-place invariant is compiler-enforced), making a structural scan an
+/// honest, non-invasive provenance check (no tag threaded through the tuple
+/// variant). Recurses through the operator tree so a composed value
+/// (`bankid(A) == bankid(B)`) is still recognized. Accepted trade: a USER-written
+/// `& $7F8000` over a provisional value also matches, yielding the bank-flavored
+/// refusal on an already-erroring path — wrong wording at worst, never wrong
+/// behavior.
+fn expr_carries_bank_mask(e: &sigil_ir::expr::Expr) -> bool {
+    use sigil_ir::expr::Expr;
+    match e {
+        Expr::Int(n) => *n == BANK_MASK,
+        Expr::Sym(_) => false,
+        Expr::Unary { operand, .. } => expr_carries_bank_mask(operand),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_carries_bank_mask(lhs) || expr_carries_bank_mask(rhs)
         }
     }
 }

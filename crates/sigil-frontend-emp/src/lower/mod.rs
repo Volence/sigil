@@ -61,9 +61,14 @@ struct Placement<'a> {
 /// A `section name (cpu:, vma:) { .. }` (§7.1) opens a placed section: its bytes
 /// land at the next physical LMA (a continuous counter across sections in
 /// declaration order — emp's own placement policy, map-file regions being
-/// S2-D3-deferred), while its labels/PC compute at the explicit `vma:` base. A
-/// `cpu: z80` section lowers its code as Z80 and serializes its data
-/// little-endian; the CPU flows through to the streamer and `lower_code_buf`.
+/// S2-D3-deferred). An explicit `vma:` is a PIN: labels/PC compute at that exact
+/// base regardless of where the section's bytes end up. Omitting `vma:` (R7p.5,
+/// Plan 7 item-7-pre Task 6) makes the section behave exactly like the default
+/// section: `vma_base = None`, so its labels/PC follow wherever the section is
+/// actually PLACED at link time (`Section::vma_origin()`) — never silently
+/// pinned to address 0. A `cpu: z80` section lowers its code as Z80 and
+/// serializes its data little-endian; the CPU flows through to the streamer and
+/// `lower_code_buf`.
 ///
 /// NOTE: `"text"` is NOT a unique section handle. Interleaving top-level items
 /// with `section {}` blocks can emit several distinct `Section`s all named
@@ -227,12 +232,20 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // section), folding its length into the counter.
                 next_lma += builder.current_offset();
                 default_open = false;
-                let (cpu, vma) = section_attrs(file, sec, &mut diags);
-                builder.switch_section_lma(&sec.name, cpu, Some(vma), next_lma);
+                let (cpu, vma, bank) = section_attrs(file, sec, &mut diags);
+                builder.switch_section_lma(&sec.name, cpu, vma, next_lma);
+                builder.set_section_bank(bank);
+                // R7p.5: an explicit `vma:` is a pin (labels resolve from that
+                // fixed base, `origin` matches it exactly). Absent `vma:`, the
+                // section's labels follow wherever it's actually PLACED — mirror
+                // `ensure_default`'s own pattern (`vma_base: None`, `origin:
+                // next_lma`, the section's provisional physical start) instead of
+                // silently defaulting to 0.
+                let origin = vma.unwrap_or(next_lma);
                 let cont = lower_section_items(
                     file,
                     sec,
-                    &Placement { cpu, origin: vma, include_root: opts.include_root.as_deref() },
+                    &Placement { cpu, origin, include_root: opts.include_root.as_deref() },
                     as_compat,
                     &module_id,
                     &mut here_anchor_counter,
@@ -596,17 +609,32 @@ fn lower_dispatch_item(
     }
 }
 
-/// Read a section's `cpu:`/`vma:` attributes (§7.1). `cpu:` defaults to
-/// `M68000` (`z80` selects [`Cpu::Z80`]); `vma:` is evaluated to a comptime
-/// integer (defaulting to 0, with a diagnostic if it is not an integer).
-/// Unknown attribute names are diagnosed but otherwise ignored.
+/// Read a section's `cpu:`/`vma:`/`bank:` attributes (§7.1, §7-main). `cpu:`
+/// defaults to `M68000` (`z80` selects [`Cpu::Z80`]). `vma:`, when present, is
+/// evaluated to a comptime integer and returned as `Some` — a PIN: the
+/// section's labels resolve from that exact base (unchanged behavior). Absent
+/// `vma:` returns `None` (R7p.5, Plan 7 item-7-pre Task 6): the section's
+/// labels follow wherever it's actually PLACED at link time
+/// (`Section::vma_origin() = vma_base.unwrap_or(lma)`), exactly like the
+/// default (top-level items) section already behaves (`ensure_default` always
+/// passes `None`) — a named section is no longer silently pinned to `vma: 0`
+/// just for omitting the attribute. An invalid (non-integer) `vma:` expression
+/// still diagnoses and falls back to the `None` (follow-placement) behavior.
+/// `bank:` (R7m.1), when present, must evaluate to a comptime POSITIVE
+/// POWER-OF-TWO integer — the Z80-window banking invariant this section's
+/// placement must never straddle (enforced at link time, Task 2; this
+/// function only parses + validates the attribute's shape). Any other value
+/// (non-integer, zero, or not a power of two) is the single R7m.1 diagnostic
+/// naming the section, and `bank` falls back to `None`. Unknown attribute
+/// names are diagnosed but otherwise ignored.
 fn section_attrs(
     file: &ast::File,
     sec: &ast::SectionDecl,
     diags: &mut Vec<Diagnostic>,
-) -> (Cpu, u32) {
+) -> (Cpu, Option<u32>, Option<u32>) {
     let mut cpu = Cpu::M68000;
-    let mut vma: u32 = 0;
+    let mut vma: Option<u32> = None;
+    let mut bank: Option<u32> = None;
     for (name, expr) in &sec.attrs {
         match name.as_str() {
             "cpu" => cpu = attr_cpu(expr),
@@ -614,13 +642,29 @@ fn section_attrs(
                 let (n, mut ds) = eval_attr_int(file, expr);
                 diags.append(&mut ds);
                 match n {
-                    Some(v) => vma = v as u32,
+                    Some(v) => vma = Some(v as u32),
                     // Point at the value expression itself (it carries its own
                     // span), not the whole section, for precision.
                     None => err(
                         diags,
                         crate::parser::expr_span(expr),
                         format!("section `{}` `vma:` is not a comptime integer", sec.name),
+                    ),
+                }
+            }
+            "bank" => {
+                let (n, mut ds) = eval_attr_int(file, expr);
+                diags.append(&mut ds);
+                // Power-of-two check per R7m.1: n > 0 && n & (n-1) == 0.
+                match n {
+                    Some(v) if v > 0 && (v & (v - 1)) == 0 => bank = Some(v as u32),
+                    _ => err(
+                        diags,
+                        crate::parser::expr_span(expr),
+                        format!(
+                            "section `{}` `bank:` must be a positive power-of-two comptime integer",
+                            sec.name
+                        ),
                     ),
                 }
             }
@@ -631,7 +675,7 @@ fn section_attrs(
             ),
         }
     }
-    (cpu, vma)
+    (cpu, vma, bank)
 }
 
 /// Resolve a `cpu:` attribute expression to a [`Cpu`]: `z80` (case-insensitive)

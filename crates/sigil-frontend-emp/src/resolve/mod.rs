@@ -9,7 +9,7 @@ use crate::lower::{lower_module, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
 use manifest::{Manifest, ParsedModule};
 use sigil_ir::map::MemoryMap;
-use sigil_ir::Section;
+use sigil_ir::{Section, SectionPlacement};
 use sigil_span::{Diagnostic, Level, Span};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
@@ -349,8 +349,21 @@ pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnost
             });
             continue;
         };
-        let cursor = used.entry(region.name.as_str()).or_insert(0);
+        let region_name = region.name.as_str();
+        // §7p: this placer, not the builder's baked chain, is the placement
+        // authority on the `--map` path — overwrite provenance on every section
+        // it places rather than trusting whatever `IrBuilder` stamped. The FIRST
+        // section landed in a given region is `Pinned` at that region's
+        // `lma_base`; every subsequent section sharing the region is `Chained`
+        // (its base derives from the prior one at link time). `group` records
+        // the region name so the later placement pass can tell sections apart
+        // by destination.
+        let first_in_region = !used.contains_key(region_name);
+        let cursor = used.entry(region_name).or_insert(0);
         sec.lma = region.lma_base + *cursor;
+        sec.placement =
+            if first_in_region { SectionPlacement::Pinned } else { SectionPlacement::Chained };
+        sec.group = Some(region.name.clone());
         // Advance by the MAX address-span length (`placement_span`), not
         // `image_len` and not `vma_len`. `placement_span` (a) counts trailing
         // `ds`/`Reserve` (VMA/LMA space that emits no image bytes) so a sibling
@@ -360,7 +373,11 @@ pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnost
         // placement sees BEFORE `resolve_layout` lowers them (so `vma_len`'s
         // `unreachable!` would crash any code module). For data-only sections
         // `placement_span == vma_len == image_len`, so no behavior change there.
-        *cursor += sec.placement_span();
+        // Also RECORDED as `reserved_span` — the placement-provenance field a
+        // later link-time pass (T4) will read instead of re-deriving it.
+        let span = sec.placement_span();
+        *cursor += span;
+        sec.reserved_span = span;
     }
     diags
 }
@@ -376,9 +393,18 @@ pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnost
 /// relaxables), so a later short-relax leaves a small gap but never an overlap.
 pub fn place_sequential(sections: &mut [Section], base: u32) {
     let mut cursor = base;
-    for sec in sections.iter_mut() {
+    for (i, sec) in sections.iter_mut().enumerate() {
         sec.lma = cursor;
-        cursor += sec.placement_span();
+        // §7p: this placer is the placement authority on the no-`--map` path —
+        // overwrite provenance rather than trusting the builder's baked chain.
+        // The first section overall is `Pinned` at `base`; every subsequent one
+        // is `Chained` (packed after its predecessor at link time). There is no
+        // region here, so `group` stays the anonymous group (`None`).
+        sec.placement = if i == 0 { SectionPlacement::Pinned } else { SectionPlacement::Chained };
+        sec.group = None;
+        let span = sec.placement_span();
+        cursor += span;
+        sec.reserved_span = span;
     }
 }
 
@@ -525,4 +551,110 @@ pub fn entry_id_for_path(manifest: &Manifest, entry_path: &Path) -> Option<Strin
         }
     }
     None
+}
+
+#[cfg(test)]
+mod placement_provenance_tests {
+    use super::*;
+    use sigil_ir::map::{Region, RegionKind};
+    use sigil_ir::{Cpu, DataFragment, Fragment, SectionPlacement};
+    use sigil_span::SourceId;
+
+    fn span() -> Span {
+        Span { source: SourceId(0), start: 0, end: 0 }
+    }
+
+    /// A bare, pre-placement section carrying `len` bytes of `Data` and stale
+    /// (builder-baked) provenance — `Chained`/`reserved_span: 0`/`group: None`
+    /// regardless of `len`, so a passing test proves the placer OVERWROTE these
+    /// fields rather than merely observing the builder's own defaults.
+    fn stub_section(name: &str, len: u32) -> Section {
+        Section {
+            name: name.to_string(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0u8; len as usize],
+                fixups: vec![],
+                span: span(),
+            })],
+            placement: SectionPlacement::Chained,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+        }
+    }
+
+    #[test]
+    fn place_sequential_marks_first_pinned_rest_chained_with_max_span() {
+        let mut sections = vec![stub_section("a", 4), stub_section("b", 3), stub_section("c", 5)];
+        place_sequential(&mut sections, 0x1000);
+
+        assert_eq!(sections[0].placement, SectionPlacement::Pinned);
+        assert_eq!(sections[0].lma, 0x1000);
+        assert_eq!(sections[0].reserved_span, sections[0].placement_span());
+        assert_eq!(sections[0].reserved_span, 4);
+        assert_eq!(sections[0].group, None);
+
+        assert_eq!(sections[1].placement, SectionPlacement::Chained);
+        assert_eq!(sections[1].reserved_span, sections[1].placement_span());
+        assert_eq!(sections[1].reserved_span, 3);
+        assert_eq!(sections[1].group, None);
+
+        assert_eq!(sections[2].placement, SectionPlacement::Chained);
+        assert_eq!(sections[2].reserved_span, sections[2].placement_span());
+        assert_eq!(sections[2].reserved_span, 5);
+        assert_eq!(sections[2].group, None);
+    }
+
+    #[test]
+    fn place_sections_stamps_group_and_first_per_region_pinned() {
+        let map = MemoryMap::new(
+            vec![
+                Region {
+                    name: "regionA".to_string(),
+                    lma_base: 0x2000,
+                    size: 0x100,
+                    kind: RegionKind::Rom,
+                    vma_base: None,
+                },
+                Region {
+                    name: "regionB".to_string(),
+                    lma_base: 0x5000,
+                    size: 0x100,
+                    kind: RegionKind::Rom,
+                    vma_base: None,
+                },
+            ],
+            0xFF,
+        );
+        // Two sections placed into regionA (first-then-second), one into regionB.
+        let mut sections =
+            vec![stub_section("regionA", 4), stub_section("regionB", 6), stub_section("regionA", 2)];
+        let diags = place_sections(&mut sections, &map);
+        assert!(diags.is_empty());
+
+        // First section landed in regionA: Pinned at the region's lma_base.
+        assert_eq!(sections[0].placement, SectionPlacement::Pinned);
+        assert_eq!(sections[0].lma, 0x2000);
+        assert_eq!(sections[0].group, Some("regionA".to_string()));
+        assert_eq!(sections[0].reserved_span, sections[0].placement_span());
+        assert_eq!(sections[0].reserved_span, 4);
+
+        // First section landed in regionB: also Pinned (first-per-region, not
+        // first-overall) at ITS region's lma_base.
+        assert_eq!(sections[1].placement, SectionPlacement::Pinned);
+        assert_eq!(sections[1].lma, 0x5000);
+        assert_eq!(sections[1].group, Some("regionB".to_string()));
+        assert_eq!(sections[1].reserved_span, sections[1].placement_span());
+        assert_eq!(sections[1].reserved_span, 6);
+
+        // Second section into regionA: Chained (not the first in its region).
+        assert_eq!(sections[2].placement, SectionPlacement::Chained);
+        assert_eq!(sections[2].group, Some("regionA".to_string()));
+        assert_eq!(sections[2].reserved_span, sections[2].placement_span());
+        assert_eq!(sections[2].reserved_span, 2);
+    }
 }
