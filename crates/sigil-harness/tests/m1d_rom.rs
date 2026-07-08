@@ -33,7 +33,7 @@
 
 use std::path::PathBuf;
 
-use sigil_harness::assemble_full_rom;
+use sigil_harness::{assemble_full_rom, assert_rom_matches, CONVSYM_REWRITTEN};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -44,10 +44,10 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// The only offsets at which Sigil's assembled ROM legitimately differs from the
-/// pinned `s4.bin`: the checksum and the low half of the ROM-end pointer, both
-/// rewritten by the out-of-scope `convsym`/`fixheader` post-steps (see header).
-const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
+// `CONVSYM_REWRITTEN` (imported from `sigil_harness`): the only offsets at which
+// Sigil's assembled ROM legitimately differs from the pinned `s4.bin` — the
+// checksum and the low half of the ROM-end pointer, both rewritten by the
+// out-of-scope `convsym`/`fixheader` post-steps (see module header above).
 
 #[test]
 fn full_rom_matches_assembled_reference() {
@@ -79,40 +79,5 @@ fn full_rom_matches_assembled_reference() {
     // this is the assembled (pre-convsym-append) ROM length. Pinned like the
     // `m1c_vector_table` stub addresses.
     const ASSEMBLED_LEN: usize = 0x658B4;
-    assert_eq!(
-        rom.len(),
-        ASSEMBLED_LEN,
-        "sigil assembled ROM length changed (a dropped/added section?); \
-         expected EndOfRom {ASSEMBLED_LEN:#x}"
-    );
-    assert!(
-        rom.len() <= refrom.len(),
-        "sigil ROM {} longer than reference {}",
-        rom.len(),
-        refrom.len()
-    );
-
-    // Every differing offset within our emitted range must be one of the four
-    // convsym/fixheader-rewritten header bytes — nothing else.
-    let diffs: Vec<usize> = (0..rom.len()).filter(|&i| rom[i] != refrom[i]).collect();
-    let unexpected: Vec<String> = diffs
-        .iter()
-        .filter(|i| !CONVSYM_REWRITTEN.contains(i))
-        .map(|&i| format!("{i:#x} (sigil {:#04x} != ref {:#04x})", rom[i], refrom[i]))
-        .collect();
-    assert!(
-        unexpected.is_empty(),
-        "sigil ROM diverges from the assembled reference at {} unexpected offset(s): {}",
-        unexpected.len(),
-        unexpected.join(", ")
-    );
-    // And confirm the expected four genuinely differ (guards against the
-    // reference silently changing shape under us — e.g. a rebuild without the
-    // convsym append would make these match and this assertion catch it).
-    for &i in CONVSYM_REWRITTEN {
-        assert!(
-            i < rom.len() && rom[i] != refrom[i],
-            "expected convsym-rewritten byte at {i:#x} to differ, but it matched"
-        );
-    }
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "sigil");
 }

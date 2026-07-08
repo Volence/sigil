@@ -67,7 +67,9 @@ use std::path::{Path, PathBuf};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
-use sigil_harness::assemble_mixed_dac_as_side;
+use sigil_harness::{
+    assemble_mixed_dac_as_side, assert_rom_matches, CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
+};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SymbolTable};
 
@@ -80,17 +82,10 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// The only offsets at which the assembled ROM legitimately differs from
-/// `s4.bin`: the header checksum and the low half of the ROM-end pointer, both
-/// rewritten by the out-of-scope `convsym -a`/`fixheader` post-steps. IDENTICAL
-/// to `m1d_rom`'s set — the mixed build's ROM content is byte-identical to the
-/// all-`.asm` build, so `convsym` rewrites the same four bytes to the same
-/// values relative to the same assembled length.
-const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
-/// The debug reference's convsym/fixheader-rewritten set (from `m1d_debug_rom`):
-/// the larger `__DEBUG__` deb2 append pushes the ROM-end pointer over a byte
-/// boundary, so three bytes ($1A5/$1A6/$1A7) differ instead of two.
-const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
+// `CONVSYM_REWRITTEN` / `CONVSYM_REWRITTEN_DEBUG` (imported from `sigil_harness`):
+// IDENTICAL to `m1d_rom` / `m1d_debug_rom`'s sets — the mixed build's ROM content
+// is byte-identical to the all-`.asm` build, so `convsym` rewrites the same
+// bytes to the same values relative to the same assembled length.
 
 /// The assembled (pre-convsym-append) ROM length pins, from `m1d_rom` /
 /// `m1d_debug_rom` — `EndOfRom` of each build shape. The mixed build reproduces
@@ -166,56 +161,15 @@ fn placed_emp_sections(aeon: &Path) -> Vec<Section> {
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "place_sections errors (region-per-section): {pdiags:?}"
     );
-    sections
-}
 
-/// Assert two ROMs are byte-identical modulo the convsym allowlist, reporting the
-/// first UNEXPECTED differing offset with 16 bytes of context from each side (the
-/// DSM.9 STOP-RULE evidence format), then confirming the allowlisted bytes
-/// genuinely differ (guards against the reference silently changing shape).
-fn assert_rom_matches(rom: &[u8], refrom: &[u8], allow: &[usize], expected_len: usize) {
-    assert_eq!(
-        rom.len(),
-        expected_len,
-        "mixed ROM length changed (dropped/added section, or the org skip lost content?); \
-         expected EndOfRom {expected_len:#x}"
-    );
+    // The `text` carrier MUST stay zero-byte — the whole "benign at LMA 0"
+    // argument (module doc) rests on it contributing no image bytes.
     assert!(
-        rom.len() <= refrom.len(),
-        "mixed ROM {} longer than reference {}",
-        rom.len(),
-        refrom.len()
+        sections.iter().filter(|s| s.name == "text").all(|s| s.image_bytes().is_empty()),
+        "emp `text` carrier gained image bytes — the zero-byte-carrier invariant is broken"
     );
 
-    let unexpected: Vec<usize> =
-        (0..rom.len()).filter(|&i| rom[i] != refrom[i] && !allow.contains(&i)).collect();
-    if let Some(&i) = unexpected.first() {
-        let ctx = |b: &[u8]| {
-            let lo = i.saturating_sub(0);
-            let hi = (i + 16).min(b.len());
-            b[lo..hi].to_vec()
-        };
-        panic!(
-            "DSM.9 STOP: mixed ROM diverges from the reference at {} unexpected offset(s); \
-             FIRST at {i:#x} (mixed {:#04x} != ref {:#04x})\n\
-             mixed[{i:#x}..] = {:02X?}\n  ref[{i:#x}..] = {:02X?}\n\
-             (all unexpected offsets: {:#X?})",
-            unexpected.len(),
-            rom[i],
-            refrom[i],
-            ctx(rom),
-            ctx(refrom),
-            unexpected,
-        );
-    }
-    // The allowlisted bytes MUST genuinely differ — else the reference changed
-    // shape under us (e.g. a rebuild without the convsym append).
-    for &i in allow {
-        assert!(
-            i < rom.len() && rom[i] != refrom[i],
-            "expected convsym-rewritten byte at {i:#x} to differ, but it matched"
-        );
-    }
+    sections
 }
 
 /// Shared body: assemble the AS side (gate ON, `debug` toggling `__DEBUG__`),
@@ -257,7 +211,7 @@ fn mixed_dac_rom_matches_assembled_reference() {
         return;
     };
     let rom = build_mixed_rom(&aeon, false);
-    assert_rom_matches(&rom, &refrom, CONVSYM_REWRITTEN, ASSEMBLED_LEN);
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed");
 }
 
 /// `__DEBUG__` mixed build == `aeon/s4.debug.bin`, modulo the five convsym bytes.
@@ -276,5 +230,11 @@ fn mixed_dac_debug_rom_matches_assembled_reference() {
         return;
     };
     let rom = build_mixed_rom(&aeon, true);
-    assert_rom_matches(&rom, &refrom, CONVSYM_REWRITTEN_DEBUG, DEBUG_ASSEMBLED_LEN);
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed debug",
+    );
 }

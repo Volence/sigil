@@ -103,3 +103,87 @@ pub fn assemble_mixed_dac_as_side(aeon: &Path, debug: bool) -> Result<Module, St
 pub fn region_at_lma(img: &LinkedImage, lma: u32) -> Option<&[u8]> {
     img.sections.iter().find(|s| s.lma == lma).map(|s| s.bytes.as_slice())
 }
+
+/// The only offsets at which Sigil's assembled (non-debug) ROM legitimately
+/// differs from the pinned `s4.bin`: the header checksum and the low half of the
+/// `dc.l EndOfRom-1` ROM-end pointer, both rewritten by the out-of-scope
+/// `convsym -a`/`fixheader` post-steps (`convsym -a` appends the MD-Debugger
+/// `deb2` symbol table and rewrites two header fields; `fixheader` re-checksums
+/// the appended image — M1.B models `convsym` as a no-op, so Sigil's `emit_rom`
+/// target is the pre-append ASSEMBLED ROM). See `m1d_rom`/`m1d_debug_rom`/
+/// `mixed_dac_rom` for the full provenance.
+pub const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
+/// The debug reference's convsym/fixheader-rewritten set: the larger `__DEBUG__`
+/// deb2 append pushes the ROM-end pointer over a byte boundary, so three bytes
+/// (`$1A5`/`$1A6`/`$1A7`) differ instead of two.
+pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
+
+/// Assert `rom` is byte-identical to `refrom` modulo the `allow`-listed offsets,
+/// after pinning `rom`'s length to `expected_len` (guards against a regression
+/// that drops/adds a trailing section while leaving the header-adjacent prefix —
+/// and the allowlisted diffs — byte-identical, which would otherwise silently
+/// pass the diff check below).
+///
+/// On mismatch, reports the FIRST unexpected differing offset with 16 bytes of
+/// context from each side (the DSM.9 STOP-RULE evidence format), plus every
+/// unexpected offset's sigil/ref byte values, then panics. Finally confirms the
+/// allowlisted bytes genuinely differ — this guards against the reference
+/// silently changing shape under us (e.g. a rebuild without the convsym append
+/// would make these match, and this assertion would catch it).
+///
+/// `label` names the ROM under test in panic messages (e.g. `"mixed"`,
+/// `"sigil"`, `"sigil debug"`) so failures from different gates are
+/// distinguishable.
+pub fn assert_rom_matches(
+    rom: &[u8],
+    refrom: &[u8],
+    expected_len: usize,
+    allow: &[usize],
+    label: &str,
+) {
+    assert_eq!(
+        rom.len(),
+        expected_len,
+        "{label} ROM length changed (dropped/added section, or an org skip lost content?); \
+         expected EndOfRom {expected_len:#x}"
+    );
+    assert!(
+        rom.len() <= refrom.len(),
+        "{label} ROM {} longer than reference {}",
+        rom.len(),
+        refrom.len()
+    );
+
+    let unexpected: Vec<usize> =
+        (0..rom.len()).filter(|&i| rom[i] != refrom[i] && !allow.contains(&i)).collect();
+    if let Some(&i) = unexpected.first() {
+        let ctx = |b: &[u8]| {
+            let hi = (i + 16).min(b.len());
+            b[i..hi].to_vec()
+        };
+        let detail: Vec<String> = unexpected
+            .iter()
+            .map(|&j| format!("{j:#x} ({label} {:#04x} != ref {:#04x})", rom[j], refrom[j]))
+            .collect();
+        panic!(
+            "{label} ROM diverges from the reference at {} unexpected offset(s); \
+             FIRST at {i:#x} ({label} {:#04x} != ref {:#04x})\n\
+             {label}[{i:#x}..] = {:02X?}\n  ref[{i:#x}..] = {:02X?}\n\
+             (all unexpected offsets: {})",
+            unexpected.len(),
+            rom[i],
+            refrom[i],
+            ctx(rom),
+            ctx(refrom),
+            detail.join(", "),
+        );
+    }
+    // The allowlisted bytes MUST genuinely differ — else the reference changed
+    // shape under us (e.g. a rebuild without the convsym append).
+    for &i in allow {
+        assert!(
+            i < rom.len() && rom[i] != refrom[i],
+            "expected convsym-rewritten byte at {i:#x} to differ, but it matched"
+        );
+    }
+}

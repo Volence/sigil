@@ -9,12 +9,15 @@
 //! ```
 use std::path::PathBuf;
 
-use sigil_harness::assemble_full_rom_debug;
+use sigil_harness::{assemble_full_rom_debug, CONVSYM_REWRITTEN};
 
 // convsym rewrites the checksum (0x18E) and the low half of the ROM-end pointer
 // (0x1A6); fixheader re-checksums. These are the only *legitimate* diffs (A1/A2
-// scope decision).
-const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
+// scope decision). NOTE: this example diffs against the plain (non-debug) 4-byte
+// set for a quick triage pass; `m1d_debug_rom`'s gate uses the debug-specific
+// 5-byte `CONVSYM_REWRITTEN_DEBUG` set (the deb2 append is larger and pushes the
+// ROM-end pointer over a byte boundary), so a few extra "unexpected" diffs at
+// $1A5 are expected noise here — this tool is a triage aid, not the gate.
 
 fn main() {
     let aeon = PathBuf::from(
