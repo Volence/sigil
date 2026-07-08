@@ -739,3 +739,174 @@ fn nested_section_with_guards_and_capacity_is_rejected_at_parse_not_silently_dro
         "want [section.nested], got: {diags:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DSM.8 T0 gate — cross-source probes, BOTH directions (sound-migration Task
+// 5). These are the design's T0 acceptance proof that the .emp<->.asm symbol
+// seam works end-to-end through the REAL front-end pipelines (parse ->
+// lower/assemble -> place_sequential -> resolve_layout -> link), the exact
+// composition the DAC-bank port (next tasks) depends on. Miniatures of aeon's
+// `engine/sound/dac_sample_tab.asm` descriptor shape (db bank / dw ptr / dw
+// len) and its `data/sound/dac_samples.asm` `SND_*_BANK/PTR/LEN` equ shape.
+// ---------------------------------------------------------------------------
+
+/// Probe A (.emp -> .asm): an emp section defines a 6-byte blob pinned at VMA
+/// $58000 plus three `equ` link symbols derived from it (`bankid`, `winptr`,
+/// and a plain comptime-int length); a Z80 AS source consumes all three via
+/// `db`/`dw`, unresolved at assembly time (deferred fixups), resolved at the
+/// shared link. Mirrors aeon's `DacSampleTable` descriptor field order
+/// (db bank / dw ptr / dw len) and `dac_samples.asm`'s
+/// `SND_*_BANK = (Sym & $7F8000) >> 15` / `SND_*_PTR = (Sym & $7FFF) | $8000`
+/// shape, but expressed through the language's `bankid()`/`winptr()`
+/// builtins instead of hand-spelled mask/shift equs.
+///
+/// Falsification (recorded per the task's TDD-loose requirement): before
+/// pinning, this assertion was run with a DELIBERATELY WRONG bank byte
+/// (`$0A` instead of the correct `$0B`) to confirm the harness actually
+/// threads the real fold end-to-end rather than trivially passing on a
+/// copy-pasted golden. That run produced a genuine panic:
+///   `assertion `left == right` failed: DacProbeTab descriptor bytes must
+///    be bank=$0B, ptr=$8000 LE, len=6 LE`
+///   `  left: [11, 0, 128, 6, 0]`
+///   ` right: [10, 0, 128, 6, 0]`
+/// — `left` (the REAL, computed value) is `[0x0B, 0x00, 0x80, 0x06, 0x00]`,
+/// matching the independently hand-computed expectation; `right` was the
+/// deliberately-wrong golden. This proves the equ->db/dw seam is live
+/// rather than vacuous — the assertion below pins the CORRECT value,
+/// independently computed: `(0x58000 & 0x7F8000) >> 15 = 0xB`.
+#[test]
+fn probe_a_emp_equ_consumed_by_as_db_dw() {
+    // emp side: a (cpu: m68000, vma: $58000) section holding a 6-byte blob,
+    // plus equ SND_PROBE_BANK/PTR/LEN derived from it — the .asm consumer
+    // references these equ NAMES, never the blob symbol directly (mirrors
+    // aeon: the Z80 table reads SND_* constants, not the raw sample label).
+    let emp = "module probe.dac\n\
+               section blob (cpu: m68000, vma: $58000) {\n\
+                 data Dac_Probe: [u8;6] = [$11,$22,$33,$44,$55,$66]\n\
+                 equ SND_PROBE_BANK = bankid(\"Dac_Probe\")\n\
+                 equ SND_PROBE_PTR = winptr(\"Dac_Probe\")\n\
+                 equ SND_PROBE_LEN = 6\n\
+               }\n";
+    // AS side: a verbatim miniature of dac_sample_tab.asm's descriptor shape.
+    let asm = "cpu z80\n\
+               DacProbeTab:\n\
+               \tdb SND_PROBE_BANK\n\
+               \tdw SND_PROBE_PTR\n\
+               \tdw SND_PROBE_LEN\n";
+
+    let mut sections = emp_sections(emp);
+    sections.extend(as_sections(asm));
+    // Mirror the T4 no-map tail: two independently-lowered/assembled sections
+    // each stamp their first section Pinned at lma 0, so place sequentially
+    // before resolve_layout/link (R7p.4 colliding-pins guard). LMA is
+    // irrelevant to the bankid/winptr fold, which is VMA-derived (the emp
+    // section carries its own explicit `vma: $58000`, untouched by
+    // place_sequential — it only rewrites `lma`/`placement`/`group`).
+    sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link across the emp->as seam failed: {d:?}"));
+
+    // The AS consumer lands in the auto-named `sec0` section (mirrors T4).
+    let tab = linked.section("sec0").expect("AS consumer section `sec0`");
+    // bank $0B (58000 -> bank 11), ptr $8000 LE = 00 80, len 6 LE = 06 00.
+    assert_eq!(
+        tab.bytes,
+        vec![0x0B, 0x00, 0x80, 0x06, 0x00],
+        "DacProbeTab descriptor bytes must be bank=$0B, ptr=$8000 LE, len=6 LE"
+    );
+}
+
+/// Probe B (.asm -> .emp): an AS source defines a 68k label at a pinned VMA;
+/// an emp module's `ensure(bankid("AsProbeLabel") == $B, ...)` reads it
+/// through the shared symbol table as a deferred link-time assert. Two
+/// variants: (a) the label genuinely lands in bank $B -> link succeeds;
+/// (b) the label is pinned elsewhere (bank 2) -> link FAILS with the
+/// ensure's own message.
+///
+/// Falsification (recorded per the task's TDD-loose requirement), BOTH
+/// variants exercised in the wrong direction before pinning:
+///
+/// Variant (a)'s `build(0x58000)` (expect `Ok`) was first run as
+/// `build(0x10000)` (the WRONG bank) to confirm `check_link_asserts`
+/// genuinely observes the cross-source AS label's real address rather
+/// than vacuously passing. It panicked with `expected link to succeed,
+/// got: Err([Diagnostic { level: Error, message: "engine-table
+/// co-residency", ... }])` — a real Error, carrying the guard's own
+/// message verbatim.
+///
+/// Variant (b)'s `build(0x10000).expect_err(...)` (expect `Err`) was
+/// first run as `build(0x58000).expect_err(...)` (the CORRECT bank) to
+/// confirm the negative test isn't vacuous either. It panicked with
+/// `wrong-bank label must fail the deferred ensure: LinkedImage {
+/// sections: [..., LinkedSection { name: "sec360448", lma: 1, bytes:
+/// [0, 0] }] }` — i.e. the build genuinely SUCCEEDED at the correct bank
+/// ($58000 = 360448 decimal, hence AS's auto-generated `sec360448`
+/// section name), so `.expect_err` had nothing to unwrap and panicked on
+/// the `Ok`.
+///
+/// Both failures prove the mechanism is live end-to-end (AS label defined →
+/// shared symbol table → emp `bankid()` fold → `ensure` defer →
+/// `check_link_asserts` evaluation → message propagation), not vacuous in
+/// either direction. The tests below pin the CORRECT split: variant (a)
+/// uses $58000 (bank $B, succeeds with zero diagnostics), variant (b) uses
+/// $10000 (bank 2, fails loudly with the same message).
+mod probe_b {
+    use super::*;
+
+    /// Build sections+asserts for a given AS label pin, mirroring the CLI's
+    /// own `link_to_image` prefix (`resolve_layout` -> `link` ->
+    /// `check_link_asserts`), so "link fails" means exactly what production
+    /// build failure means, not a bespoke assertion-only path.
+    fn build(as_label_vma: u32) -> Result<sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>> {
+        // AS side: a label pinned at an explicit VMA via `phase`.
+        let asm = format!("cpu 68000\nphase ${as_label_vma:X}\nAsProbeLabel:\n\tdc.w 0\n");
+        // emp side: a deferred bankid ensure against that cross-source label.
+        let emp = "module probe.ensure\n\
+                   ensure(bankid(\"AsProbeLabel\") == $B, \"engine-table co-residency\")\n\
+                   data Anchor: u8 = 0\n";
+
+        let (file, pdiags) = parse_str(emp);
+        assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
+        let (module, ldiags) =
+            lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
+
+        let mut sections = module.sections;
+        sections.extend(as_sections(&asm));
+        sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
+
+        let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+            .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+        let linked = sigil_link::link(&resolved, &SymbolTable::new())
+            .unwrap_or_else(|d| panic!("link: {d:?}"));
+        let assert_diags =
+            sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts);
+        if assert_diags.iter().any(|d| d.level == Level::Error) {
+            return Err(assert_diags);
+        }
+        Ok(linked)
+    }
+
+    /// (a) the label genuinely lands in bank $B ($58000) -> the ensure holds,
+    /// link succeeds with zero assert diagnostics.
+    #[test]
+    fn label_in_bank_b_link_succeeds() {
+        let result = build(0x58000);
+        assert!(result.is_ok(), "expected link to succeed, got: {result:?}");
+    }
+
+    /// (b) the label is pinned elsewhere (bank 2, $10000) -> the ensure's
+    /// condition folds false and the build fails with the guard's own
+    /// message, "engine-table co-residency".
+    #[test]
+    fn label_in_wrong_bank_link_fails_with_ensure_message() {
+        let err = build(0x10000).expect_err("wrong-bank label must fail the deferred ensure");
+        assert!(
+            err.iter().any(|d| d.message.contains("engine-table co-residency")),
+            "expected the ensure's own message in the link failure, got: {err:?}"
+        );
+    }
+}
