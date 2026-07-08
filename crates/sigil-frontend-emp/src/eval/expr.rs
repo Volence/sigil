@@ -259,6 +259,23 @@ impl<'a> Evaluator<'a> {
                 self.error(path.span, format!("offsets `{a}` has no member `{b}`"));
                 return Value::Poison;
             }
+            // Step 3b: a `Dispatch.Member` PRE-SCALED comptime ordinal, or
+            // `Dispatch.count` (Spec 2 Plan 7 backlog #6, Part B — D6.B3).
+            // `Name.Member` = ordinal × encoding.scale() (×2 for `word_offsets`,
+            // ×4 for `long_ptrs`): the routine byte S3K stores in `routine(a0)`
+            // and `add.w`s into the table. `Name.count` = member count, UNSCALED.
+            // Plain comptime ints (`Value::Int`), like the `offsets` ordinals —
+            // `dispatch` introduces no new type in v1 (a state newtype is #9).
+            if let Some(decl) = self.dispatches.get(a) {
+                if b == "count" {
+                    return Value::Int(decl.members.len() as i128);
+                }
+                if let Some(index) = decl.members.iter().position(|m| m.name == b) {
+                    return Value::Int(index as i128 * decl.encoding.scale());
+                }
+                self.error(path.span, format!("dispatch `{a}` has no member `{b}`"));
+                return Value::Poison;
+            }
         }
         // Any other multi-segment path (module paths, unknown enums) is an
         // unknown name for now; later plans resolve `use`d/module paths.

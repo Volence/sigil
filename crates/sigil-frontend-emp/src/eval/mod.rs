@@ -104,6 +104,15 @@ pub struct Evaluator<'a> {
     /// [`enums`](Self::enums) resolves `Enum.Variant`. Forward emission
     /// (`dc.w target - Name`) is a separate, later task.
     pub(crate) offsets: HashMap<&'a str, &'a ast::OffsetsDecl>,
+    /// File-level `dispatch` decls, indexed by name (empty in no-file mode).
+    /// Spec 2 Plan 7 backlog #6, Part B (reverse direction): [`eval::expr`](expr)'s
+    /// `eval_path` resolves `Name.Member` to the member's ordinal PRE-SCALED by
+    /// the encoding (×2 for `word_offsets`, ×4 for `long_ptrs` — D6.B3) and
+    /// `Name.count` to `decl.members.len()` UNSCALED. Plain comptime ints,
+    /// mirroring how [`offsets`](Self::offsets) resolves `Name.Variant`. Also
+    /// consulted by the forward-emission target kind check
+    /// ([`is_data`](Self::is_data)/[`is_dispatch`](Self::is_dispatch)).
+    pub(crate) dispatches: HashMap<&'a str, &'a ast::DispatchDecl>,
     /// Named SST overlay decls (`vars Name: window { .. }`), indexed by name
     /// (Spec 2, Plan 7 #6, Part A). Only the *named* overlay form is indexed;
     /// the region form (`vars region { .. }`, `name: None`) stays inert.
@@ -251,6 +260,7 @@ impl<'a> Evaluator<'a> {
             newtypes: HashMap::new(),
             datas: HashMap::new(),
             offsets: HashMap::new(),
+            dispatches: HashMap::new(),
             overlays: HashMap::new(),
             struct_layout_memo: HashMap::new(),
             overlay_layout_memo: HashMap::new(),
@@ -336,6 +346,14 @@ impl<'a> Evaluator<'a> {
                     // `lower::validate_offsets`.
                     self.offsets.insert(o.name.as_str(), o);
                 }
+                ast::Item::Dispatch(d) => {
+                    // Index for `Name.Member` / `Name.count` resolution in
+                    // `eval_path` and the target kind check. Duplicate-member /
+                    // reserved-`count` ERROR reporting lives once-per-compile in
+                    // `lower::validate_dispatch`, NOT here (this re-indexes on
+                    // every per-item evaluator, mirroring the `Offsets` arm).
+                    self.dispatches.insert(d.name.as_str(), d);
+                }
                 ast::Item::Vars(v) => {
                     // Only the NAMED overlay form (`vars Name: window { .. }`)
                     // is indexed; the region form (`name: None`) is inert by
@@ -358,6 +376,58 @@ impl<'a> Evaluator<'a> {
     /// itself stays private.
     pub(crate) fn is_const(&self, name: &str) -> bool {
         self.consts.contains_key(name)
+    }
+
+    /// Whether `name` is a file-level `data` item (module-local, section-nested
+    /// one level via `index_items`). Used by the `dispatch` forward-emission
+    /// target kind check (D6.B4): a member targeting a `data` item is
+    /// `[dispatch.target-not-code]`.
+    pub(crate) fn is_data(&self, name: &str) -> bool {
+        self.datas.contains_key(name)
+    }
+
+    /// Whether `name` is a file-level `offsets` table (its base label is a
+    /// data-emitting item, not code). Used by the `dispatch` target kind check.
+    pub(crate) fn is_offsets(&self, name: &str) -> bool {
+        self.offsets.contains_key(name)
+    }
+
+    /// Whether `name` is a file-level `dispatch` table (its own base label is a
+    /// data-emitting item, not code). Used by the `dispatch` target kind check.
+    pub(crate) fn is_dispatch(&self, name: &str) -> bool {
+        self.dispatches.contains_key(name)
+    }
+
+    /// Whether `name` is a named SST overlay (`vars Name: window { .. }`), which
+    /// defines no emitted symbol at all. Used by the `dispatch` target kind
+    /// check to name the miss precisely rather than let it drift to link.
+    pub(crate) fn is_overlay(&self, name: &str) -> bool {
+        self.overlays.contains_key(name)
+    }
+
+    /// The human-readable kind of `name` if it resolves module-locally to a
+    /// NON-CODE item (`data`/`const`/`offsets`/`dispatch`/overlay `vars`), else
+    /// `None`. Drives the `dispatch` target kind check (D6.B4): a target that
+    /// resolves here is `[dispatch.target-not-code]`; `None` means either a
+    /// `proc` (code — accepted) or an unknown name (left to link). Items are
+    /// section-nested one level via [`index_items`](Self::index_items), so this
+    /// sees section-nested data/consts too. Precedence is irrelevant — the maps
+    /// are disjoint by construction (name resolution errors on genuine
+    /// collisions elsewhere), so the first match names the kind.
+    pub(crate) fn non_code_kind(&self, name: &str) -> Option<&'static str> {
+        if self.is_data(name) {
+            Some("data item")
+        } else if self.is_const(name) {
+            Some("const")
+        } else if self.is_offsets(name) {
+            Some("offset table")
+        } else if self.is_dispatch(name) {
+            Some("dispatch table")
+        } else if self.is_overlay(name) {
+            Some("overlay")
+        } else {
+            None
+        }
     }
 
     /// Push an [`Error`](Level::Error) diagnostic at `span`.

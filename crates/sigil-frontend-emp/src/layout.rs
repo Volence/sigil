@@ -1452,6 +1452,106 @@ pub fn eval_offsets_with_root(
     })
 }
 
+/// Lower a `dispatch Name (encoding: E) { Member: target, ... }` block's
+/// FORWARD emission (Spec 2, Plan 7 backlog #6, Part B — D6.B2) to a checked,
+/// CPU-neutral [`DataBuf`]. The sibling of [`eval_offsets_with_root`] for
+/// `dispatch` items; it REUSES the same [`Cell::RelOffset`] cell for the
+/// `word_offsets` encoding — each member emits a `dc.w member_target - Name`
+/// word whose `base` is the table's own label (`decl.name`) and whose `target`
+/// is the member's referenced symbol, folded at link time to a signed word
+/// (`RelWord16Be`). The base label (`decl.name`) is defined at the table's
+/// first byte by the caller ([`lower_dispatch_item`](crate::lower)), exactly
+/// as for `offsets`.
+///
+/// This task ships `word_offsets` only; `long_ptrs` EMISSION (a `dc.l target`
+/// Abs32 table) is a later task (#11), so a `long_ptrs` decl produces an empty
+/// buffer here (its ordinals still resolve via `eval_path`). The scale/indexing
+/// plumbing is encoding-generic; only the cell shape is word-specific.
+///
+/// Target-name extraction mirrors `eval_offsets_with_root` by SHAPE (a bare
+/// `Path` is a symbol name, a `Str` names it directly, anything else is
+/// evaluated and its `FnRef`/`Str` name taken). ADDITIONALLY, per D6.B4, a
+/// single-segment target that resolves MODULE-LOCALLY to a non-code item
+/// (`data`/`const`/`offsets`/`vars`/`dispatch`, recursing one section level
+/// via `index_items`) is `[dispatch.target-not-code]` — a dispatch table into
+/// data is the jump-to-garbage this construct exists to kill. A name that is
+/// unresolvable module-locally (a proc, or a cross-module `use`d target) is
+/// left to the linker (v1 does not kind-check cross-module; link fails loudly
+/// on a genuinely-undefined symbol). Dup / reserved-`count` validation lives
+/// once-per-compile in `lower::validate_dispatch`, not here.
+pub fn eval_dispatch_with_root(
+    file: &ast::File,
+    decl: &ast::DispatchDecl,
+    include_root: Option<&std::path::Path>,
+) -> (Option<DataBuf>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let mut buf = DataBuf::empty();
+        for member in &decl.members {
+            // Fresh env per member (parity with `eval_offsets_with_root`).
+            let mut env = Env::new();
+            let name = match &member.target {
+                ast::Expr::Path(p) => {
+                    if p.segments.len() == 1 {
+                        // D6.B4: module-local kind check. Only a POSITIVELY
+                        // non-code item is rejected; a bare name that is a proc
+                        // OR is unknown here is accepted and left to link.
+                        if let Some(kind) = ev.non_code_kind(&p.segments[0]) {
+                            ev.error(
+                                member.span,
+                                format!(
+                                    "[dispatch.target-not-code] dispatch `{}` member `{}` targets {kind} `{}` — a dispatch table must point at code",
+                                    decl.name, member.name, p.segments[0]
+                                ),
+                            );
+                            "<unresolved>".to_string()
+                        } else {
+                            p.segments.join(".")
+                        }
+                    } else {
+                        // Multi-segment (cross-module) target: kind-unchecked in
+                        // v1 (D6.B4 ledger note); joined `a.b` for the linker.
+                        p.segments.join(".")
+                    }
+                }
+                ast::Expr::Str(s, _) => s.clone(),
+                other => {
+                    let v = ev.eval_expr(other, &mut env);
+                    match v {
+                        Value::FnRef(n) => n,
+                        Value::Str(s) => s,
+                        _ => {
+                            ev.error(
+                                crate::parser::expr_span(other),
+                                format!(
+                                    "dispatch `{}` member `{}` must reference a label, got {}",
+                                    decl.name,
+                                    member.name,
+                                    v.type_name()
+                                ),
+                            );
+                            "<unresolved>".to_string()
+                        }
+                    }
+                }
+            };
+            match decl.encoding {
+                ast::DispatchEncoding::WordOffsets => {
+                    buf.push(Cell::RelOffset { base: decl.name.clone(), target: name });
+                }
+                // `long_ptrs` EMISSION is Task 11. Emit nothing here so the
+                // ordinals (`eval_path`) still work; the forward table lands
+                // when #11 wires the `dc.l`/Abs32 cell.
+                ast::DispatchEncoding::LongPtrs => {}
+            }
+        }
+        (Some(buf), ev.diags)
+    })
+}
+
 /// Force the named SST overlay's layout so its always-on declaration checks
 /// (window resolution, capacity, shadow) fire whether or not anything accesses
 /// the overlay (Spec 2, Plan 7 #6 — D6.A2 "always-on"). Returns the diagnostics;

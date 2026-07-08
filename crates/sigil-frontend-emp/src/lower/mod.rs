@@ -17,7 +17,10 @@ mod proc;
 pub use code::lower_code_buf;
 
 use crate::ast;
-use crate::layout::{eval_attr_int, eval_data_with_root, eval_offsets_with_root, validate_overlay};
+use crate::layout::{
+    eval_attr_int, eval_data_with_root, eval_dispatch_with_root, eval_offsets_with_root,
+    validate_overlay,
+};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
 use sigil_span::{Diagnostic, Level, Span};
@@ -75,6 +78,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // (once per data item / proc), so reporting there would duplicate the
     // diagnostic; this driver runs once.
     validate_offsets(&file.items, &mut diags);
+    validate_dispatch(&file.items, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -159,6 +163,20 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
             ast::Item::Offsets(decl) => {
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
                 lower_offsets_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        include_root: opts.include_root.as_deref(),
+                    },
+                    &mut builder,
+                    &mut diags,
+                );
+            }
+            ast::Item::Dispatch(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                lower_dispatch_item(
                     file,
                     decl,
                     &Placement {
@@ -299,6 +317,9 @@ fn lower_section_items(
             ast::Item::Offsets(decl) => {
                 lower_offsets_item(file, decl, placement, builder, diags);
             }
+            ast::Item::Dispatch(decl) => {
+                lower_dispatch_item(file, decl, placement, builder, diags);
+            }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
                 proc::lower_proc(
@@ -373,6 +394,46 @@ fn lower_offsets_item(
     diags: &mut Vec<Diagnostic>,
 ) {
     let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root);
+    diags.append(&mut ds);
+    let Some(buf) = buf else { return };
+
+    let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
+    diags.append(&mut stream_diags);
+    builder.define_label(&decl.name);
+    builder.emit_data(&bytes, fixups, decl.span);
+}
+
+/// Lower one `dispatch` block's FORWARD emission (Spec 2, Plan 7 backlog #6,
+/// Part B — D6.B2). The sibling of [`lower_offsets_item`]: it evaluates the
+/// members to a [`DataBuf`] via [`eval_dispatch_with_root`] (RelOffset cells
+/// for `word_offsets`, reusing the `offsets` machinery), serializes them in
+/// `placement.cpu`'s byte order — a `cpu: z80` section surfaces the
+/// `[dispatch.non-68k]` guard in [`data::stream_data`]'s `RelOffset` arm —
+/// defines the table's base label (`decl.name`) at its first byte, then emits
+/// the bytes + fixups. `long_ptrs` emission (Task 11) lands zero bytes here.
+fn lower_dispatch_item(
+    file: &ast::File,
+    decl: &ast::DispatchDecl,
+    placement: &Placement,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // D6.B1: 68k sections only in v1, mirroring `[offsets.non-68k]`. Guard HERE
+    // (at the dispatch's own span, with a dispatch-specific code) rather than
+    // rely on the shared `RelOffset` streamer arm, which would report the
+    // `offsets`-flavored `[offsets.non-68k]` message.
+    if placement.cpu != Cpu::M68000 {
+        err(
+            diags,
+            decl.span,
+            "[dispatch.non-68k] a dispatch table is a 68k word-offset idiom; \
+             Z80 dispatch tables are not supported"
+                .to_string(),
+        );
+        return;
+    }
+
+    let (buf, mut ds) = eval_dispatch_with_root(file, decl, placement.include_root);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -471,6 +532,40 @@ fn validate_offsets(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
                 }
             }
             ast::Item::Section(sec) => validate_offsets(&sec.items, diags),
+            _ => {}
+        }
+    }
+}
+
+/// Once-per-compile validation of `dispatch` blocks (Spec 2, Plan 7 #6 — D6.B3),
+/// mirroring [`validate_offsets`] exactly: (1) a member named `count` collides
+/// with the reserved `Name.count` pseudo-member (the member count), which
+/// `eval_path` resolves before members, so it would be silently unreachable;
+/// (2) a duplicate member name makes the reverse-direction ordinal ambiguous.
+/// Both violate the totality tenet (no silent wrong answers). Reported HERE
+/// (once per compile) rather than in `index_items` (which re-runs per per-item
+/// evaluator). Recurses into `section {}` blocks so a section-nested `dispatch`
+/// is checked like a top-level one.
+fn validate_dispatch(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    for item in items {
+        match item {
+            ast::Item::Dispatch(decl) => {
+                let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                for m in &decl.members {
+                    if m.name == "count" {
+                        err(
+                            diags,
+                            m.span,
+                            "dispatch member `count` is reserved (it names the table's member count)"
+                                .to_string(),
+                        );
+                    }
+                    if !seen.insert(m.name.as_str()) {
+                        err(diags, m.span, format!("duplicate dispatch member `{}`", m.name));
+                    }
+                }
+            }
+            ast::Item::Section(sec) => validate_dispatch(&sec.items, diags),
             _ => {}
         }
     }

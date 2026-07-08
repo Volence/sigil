@@ -523,6 +523,69 @@ fn cross_module_offsets_table_bytes_are_exact() {
 }
 
 #[test]
+fn cross_module_dispatch_table_bytes_are_exact() {
+    // A `word_offsets` dispatch table in the ENTRY module points at `pub proc`
+    // targets that live in ANOTHER module (D6.B4: targets resolve at link,
+    // cross-module included — the SAME machinery `offsets` targets ride).
+    // Prove the emitted `dc.w target - Name` words are byte-exact after
+    // cross-module linking.
+    //
+    //   LAYOUT ARITHMETIC (computed INDEPENDENTLY of read-back):
+    //     region `data` base = 0x20000  (from the map below)
+    //     entry `tab` packs first: `Routines` (dispatch, 2 members * 2 = 4 bytes)
+    //       Routines @ base + 0        (0x20000 .. 0x20004)
+    //     `procs` (reached via `use procs`) packs next, decl order init then wait:
+    //       init @ base + 4            (0x20004, `rts` = 4E 75)
+    //       wait @ base + 6            (0x20006, `rts` = 4E 75)
+    //     dispatch words are `dc.w target - Routines`, big-endian:
+    //       Init = addr(init) - addr(Routines) = 4 -> 0x00 0x04
+    //       Wait = addr(wait) - addr(Routines) = 6 -> 0x00 0x06
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"data\"\nlma_base = 0x20000\nsize = 0x20\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "procs.emp",
+        "module procs in data\npub proc init() { rts }\npub proc wait() { rts }\n",
+    );
+    write(
+        root,
+        "tab.emp",
+        "module tab in data\nuse procs.{init, wait}\npub dispatch Routines (encoding: word_offsets) {\n    Init: init,\n    Wait: wait,\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("tab.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    let base = 0x20000usize;
+    // dc.w (init - Routines), (wait - Routines) big-endian = 00 04 00 06.
+    assert_eq!(&bytes[base..base + 4], &[0x00, 0x04, 0x00, 0x06], "dispatch words");
+    // Pin the target bytes (rts = 4E 75) so a mis-packed layout can't satisfy
+    // the offset math by accident.
+    assert_eq!(&bytes[base + 4..base + 8], &[0x4E, 0x75, 0x4E, 0x75], "init/wait rts");
+}
+
+#[test]
 fn three_module_corpus_compiles_end_to_end() {
     // DELIVERABLE 2: the headline #4 mechanisms compose in one image.
     //   prelude.emp  -> `pub struct ObjDef` auto-imported everywhere (no `use`)
