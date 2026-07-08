@@ -627,13 +627,18 @@ impl<'a> Evaluator<'a> {
         for f in &decl.fields {
             let ty = self.resolve_type(&f.ty);
             let size = self.size_of_ty(&ty, f.span) as i128;
-            // `[layout.odd-field]` (§4.3) applies to overlay word/long fields at
-            // an odd OVERLAY-relative offset, exactly as for structs.
-            if matches!(size, 2 | 4) && offset % 2 == 1 {
+            // `[layout.odd-field]` (§4.3) applies to overlay word/long fields —
+            // keyed on the RUNTIME parity: the field's in-memory offset within
+            // the base struct is `window_offset + overlay-relative offset`, and
+            // an odd window base flips it. Keying on the relative offset alone
+            // would both false-warn (odd base + odd rel = even memory) and
+            // silently miss (odd base + even rel = odd memory).
+            let mem_offset = window_offset + offset;
+            if matches!(size, 2 | 4) && mem_offset % 2 == 1 {
                 self.warn(
                     f.span,
                     format!(
-                        "[layout.odd-field] overlay {name}: field {} ({}-byte) at odd offset {offset}",
+                        "[layout.odd-field] overlay {name}: field {} ({}-byte) at odd offset {mem_offset} within `{base_struct}` (window base {window_offset} + {offset})",
                         f.name, size
                     ),
                 );

@@ -106,6 +106,18 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // (keyed by section name) can route the module's bytes to its map region.
     let default_name = file.module.in_section.as_deref().unwrap_or("text");
 
+    // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
+    // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
+    // overlay's layout, and each per-item evaluator is fresh (own memo) — so an
+    // erroring overlay that is also referenced via `sizeof`/`offsetof` in a data
+    // item would report twice (once per pass). The struct exemplar reports once
+    // only because lowering has NO always-on struct pass: its single forcing
+    // evaluator is the referencing item's. To match that once-per-compile
+    // behavior, `dedup_overlay_pass_diags` (end of this fn) drops later EXACT
+    // copies (level+span+message) of the diagnostics collected here — exactness
+    // means a genuinely distinct diagnostic can never be suppressed.
+    let mut overlay_pass_diags: Vec<Diagnostic> = Vec::new();
+
     // The instantiation counter for `asm { }` / `proc` label hygiene (D-P4.6),
     // threaded across EVERY proc in the module (top-level AND section-nested) so
     // `k` stays globally monotonic. Lowering builds a fresh evaluator per proc,
@@ -186,6 +198,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
+                    &mut overlay_pass_diags,
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
@@ -199,7 +212,9 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // (D6.A2); it emits ZERO bytes. Region form (`name: None`) is
                 // inert by design (Plan 7 #6 OUT-list).
                 if let Some(name) = &decl.name {
-                    diags.append(&mut validate_overlay(file, name, decl.span));
+                    let mut d = validate_overlay(file, name, decl.span);
+                    overlay_pass_diags.extend(d.iter().cloned());
+                    diags.append(&mut d);
                 }
             }
             _ => {}
@@ -208,7 +223,34 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
 
     let (module, mut build_diags) = builder.finish();
     diags.append(&mut build_diags);
+    dedup_overlay_pass_diags(&mut diags, &overlay_pass_diags);
     (module, diags)
+}
+
+/// Drop later EXACT copies (same level, span, AND message — [`Diagnostic`]'s
+/// full `Eq`) of the diagnostics the always-on overlay-validation pass produced,
+/// keeping the FIRST occurrence wherever it appeared (a referencing data item
+/// may lower before OR after the `vars` decl). Diagnostics not in the pass set
+/// are untouched, so pre-existing duplication behavior (e.g. two data items each
+/// forcing an odd-field struct warning, no overlay involved) is unchanged, and a
+/// DISTINCT diagnostic — differing in span, message, or level — can never be
+/// suppressed. See the `overlay_pass_diags` comment in [`lower_module`] for the
+/// struct-vs-overlay root cause.
+fn dedup_overlay_pass_diags(diags: &mut Vec<Diagnostic>, pass: &[Diagnostic]) {
+    if pass.is_empty() {
+        return;
+    }
+    // O(n·m) scans: both lists are per-module diagnostic sets — tiny.
+    let mut kept: Vec<Diagnostic> = Vec::new();
+    diags.retain(|d| {
+        if pass.contains(d) {
+            if kept.contains(d) {
+                return false;
+            }
+            kept.push(d.clone());
+        }
+        true
+    });
 }
 
 /// Ensure the default (top-level items) section — named `name`, which is the
@@ -238,6 +280,7 @@ fn ensure_default(
 ///
 /// Returns `false` when a failing `ensure_fatal` in this section aborted
 /// evaluation, so the caller stops lowering the module's remaining items (D5.3).
+#[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
 fn lower_section_items(
     file: &ast::File,
     sec: &ast::SectionDecl,
@@ -246,6 +289,7 @@ fn lower_section_items(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
+    overlay_pass_diags: &mut Vec<Diagnostic>,
 ) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -280,7 +324,9 @@ fn lower_section_items(
                 // Same as the top-level arm: overlay form → force layout so its
                 // always-on checks fire, zero bytes; region form → inert.
                 if let Some(name) = &decl.name {
-                    diags.append(&mut validate_overlay(file, name, decl.span));
+                    let mut d = validate_overlay(file, name, decl.span);
+                    overlay_pass_diags.extend(d.iter().cloned());
+                    diags.append(&mut d);
                 }
             }
             _ => {}

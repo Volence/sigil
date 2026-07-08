@@ -179,6 +179,61 @@ fn overlay_dotted_window_matches_bare() {
     assert_eq!(linked_bytes(&module), vec![0x01, 0x03]);
 }
 
+// ---- odd-field lint keys on WINDOW-ABSOLUTE parity ----------------------
+//
+// The lint's job is runtime honesty: what matters is the field's in-memory
+// offset within the base struct (`window_offset + overlay-relative offset`),
+// not the overlay-relative offset alone. An odd window base flips the parity.
+
+#[test]
+fn overlay_odd_window_base_no_false_positive() {
+    // `win` sits at struct offset 1 (ODD base). `w: u16` at overlay-relative
+    // offset 1 lands at in-memory offset 1+1 = 2 — EVEN, so NO odd-field
+    // warning may fire (keying on the relative offset alone would false-warn).
+    let src = "module m\n\
+        struct S (size: 9) { a: u8, win: [u8; 8] @ 1 }\n\
+        vars V: win { t: u8, w: u16 }\n";
+    let d = msgs(src);
+    assert!(
+        !d.iter().any(|m| m.contains("[layout.odd-field]") && m.contains("overlay V")),
+        "u16 at even in-memory offset must not warn, got: {d:?}"
+    );
+}
+
+#[test]
+fn overlay_odd_window_base_catches_odd_memory_offset() {
+    // Same odd window base; `w: u16` at overlay-relative offset 0 lands at
+    // in-memory offset 1+0 = 1 — ODD, so the warning MUST fire (keying on the
+    // relative offset alone would silently miss it).
+    let src = "module m\n\
+        struct S (size: 9) { a: u8, win: [u8; 8] @ 1 }\n\
+        vars V: win { w: u16 }\n";
+    let d = msgs(src);
+    assert!(
+        d.iter().any(|m| {
+            m.contains("[layout.odd-field]") && m.contains("overlay V") && m.contains("field w")
+        }),
+        "u16 at odd in-memory offset must warn, got: {d:?}"
+    );
+}
+
+// ---- decl errors report ONCE across passes -------------------------------
+
+#[test]
+fn overlay_error_reported_once_across_passes() {
+    // An erroring overlay that is BOTH validated by the always-on `Item::Vars`
+    // arm AND referenced via `sizeof` in a data item must report its decl error
+    // exactly once — matching the struct exemplar, whose decl checks fire only
+    // in the single forcing evaluator.
+    let src = format!(
+        "module m\n{SST}vars V: no_such_window {{ t: u8 }}\n\
+         data d: [u8;1] = [sizeof(V)]\n"
+    );
+    let d = msgs(&src);
+    let n = d.iter().filter(|m| m.contains("[overlay.unknown-window]")).count();
+    assert_eq!(n, 1, "overlay decl error must report exactly once, got {n}: {d:?}");
+}
+
 // ---- 7. non-byte-array window is rejected (v1) --------------------------
 
 #[test]
