@@ -312,7 +312,7 @@ impl Desugar<'_> {
         for stmt in stmts {
             match stmt {
                 ScriptStmt::Asm(a) => out.push(a.clone()),
-                ScriptStmt::Loop { body, .. } => self.desugar_loop(body, out),
+                ScriptStmt::Loop { body, span } => self.desugar_loop(body, *span, out),
                 ScriptStmt::Yield { epilogue, span } => self.desugar_yield(epilogue, *span, out),
             }
         }
@@ -320,15 +320,19 @@ impl Desugar<'_> {
 
     /// `loop { … }` → `__loop$d:` + flattened body + `jbra .__loop$d` (R9b.6).
     /// Allocate `d` BEFORE walking the body so a nested loop gets a distinct id.
-    fn desugar_loop(&mut self, body: &[ScriptStmt], out: &mut Vec<AsmStmt>) {
+    /// The hidden label and the back-edge `jbra` both carry the LOOP
+    /// STATEMENT's span (quality review, T2 fold-in): a link-time
+    /// `[branch.out-of-reach]` on the back-edge then points at the `loop { }`
+    /// site instead of rendering at byte 0.
+    fn desugar_loop(&mut self, body: &[ScriptStmt], span: Span, out: &mut Vec<AsmStmt>) {
         let d = self.loop_count;
         self.loop_count += 1;
         let label = format!("__loop${d}");
-        out.push(AsmStmt::Label { name: label.clone(), export: false, span: sp() });
+        out.push(AsmStmt::Label { name: label.clone(), export: false, span });
         self.walk(body, out);
         // `jbra .__loop$d` — a dot-local reference (the probe showed a dot-local
         // operand keeps the leading dot inside the single path segment).
-        out.push(jbra(&format!(".{label}")));
+        out.push(jbra(&format!(".{label}"), span));
     }
 
     /// `yield [label]` → store the scaled ordinal into the resume slot, `jbra`
@@ -358,9 +362,12 @@ impl Desugar<'_> {
         // member index pre-scaled by the encoding (R9b.2: long_ptrs stores the
         // ×4 ordinal WORD, not a pointer — the slot is uniformly 2 bytes). The
         // displacement is the NUMERIC field offset (an int literal), so the
-        // store is independent of bare-field-access rules.
+        // store is independent of bare-field-access rules. Both synthesized
+        // InstrLines carry the YIELD SITE's span (quality review, T2 fold-in):
+        // a link-time `[branch.out-of-reach]` on the epilogue jbra then renders
+        // at the `yield` site instead of at byte 0.
         let ordinal = (k as i128) * self.encoding.scale();
-        out.push(yield_store(ordinal as i64, self.slot.offset, &self.slot.reg));
+        out.push(yield_store(ordinal as i64, self.slot.offset, &self.slot.reg, span));
         // The epilogue exit: `jbra <label>` (global ident) or `jbra .<label>`
         // (dot-local), mirroring the parser's operand shapes exactly.
         let target = if epilogue.local {
@@ -368,7 +375,7 @@ impl Desugar<'_> {
         } else {
             epilogue.name.clone()
         };
-        out.push(jbra(&target));
+        out.push(jbra(&target, span));
         // The resume point: the engine's saved PC lands here next frame.
         out.push(AsmStmt::Label { name: resume_name(k), export: false, span });
     }
@@ -384,52 +391,50 @@ fn resume_name(k: usize) -> String {
 /// Synthesize `move.w #<ordinal>, <offset>(<reg>)` — the yield store (R9b.5).
 /// The operand shapes mirror the probe EXACTLY: an `Operand::Imm(Int)` and an
 /// `Operand::DispInd { disp: Int(offset), inner: Ind { parts: [(Path(reg), None)] } }`.
-fn yield_store(ordinal: i64, offset: i64, reg: &str) -> AsmStmt {
+/// `span` is the originating `yield` SITE's span (quality review, T2 fold-in):
+/// stamped on the whole `InstrLine` (and its sub-expressions) so a link-time
+/// diagnostic against this store renders at the yield, not at byte 0.
+fn yield_store(ordinal: i64, offset: i64, reg: &str, span: Span) -> AsmStmt {
     let inner = Operand::Ind {
-        parts: vec![(path_expr(reg), None)],
+        parts: vec![(path_expr(reg, span), None)],
         size: None,
-        span: sp(),
+        span,
     };
     AsmStmt::Instr(InstrLine {
         mnemonic: vec![TextOrSplice::Text("move".into())],
         size: Some(TextOrSplice::Text("w".into())),
         operands: vec![
-            Operand::Imm(Expr::Int(ordinal, sp())),
+            Operand::Imm(Expr::Int(ordinal, span)),
             Operand::DispInd {
-                disp: Expr::Int(offset, sp()),
+                disp: Expr::Int(offset, span),
                 inner: Box::new(inner),
-                span: sp(),
+                span,
             },
         ],
-        span: sp(),
+        span,
     })
 }
 
 /// Synthesize `jbra <target>` where `target` is a bare ident (global) or a
 /// `.local` (the leading dot lives inside the single path segment, per the
-/// probe). A single `Operand::Plain { expr: Path([target]) }` operand.
-fn jbra(target: &str) -> AsmStmt {
+/// probe). A single `Operand::Plain { expr: Path([target]) }` operand. `span`
+/// is the originating yield/loop SITE's span (quality review, T2 fold-in): a
+/// link-time `[branch.out-of-reach]` on this jbra renders there instead of at
+/// byte 0.
+fn jbra(target: &str, span: Span) -> AsmStmt {
     AsmStmt::Instr(InstrLine {
         mnemonic: vec![TextOrSplice::Text("jbra".into())],
         size: None,
-        operands: vec![Operand::Plain { expr: path_expr(target), size: None, span: sp() }],
-        span: sp(),
+        operands: vec![Operand::Plain { expr: path_expr(target, span), size: None, span }],
+        span,
     })
 }
 
 /// A single-segment `Expr::Path` (the probe's operand shape for a bare
 /// register / label / dot-local). The segment string carries the name verbatim
-/// (`.top` keeps its leading dot).
-fn path_expr(seg: &str) -> Expr {
-    Expr::Path(Path { segments: vec![seg.to_string()], span: sp() })
-}
-
-/// A synthetic span for desugar-minted AST. The desugar carries the yield/loop
-/// SITE span on the resume/loop LABELS (so a diagnostic points at real source);
-/// the synthesized instruction spans point nowhere real, which is fine — they
-/// carry no user-visible diagnostic in the happy path.
-fn sp() -> Span {
-    Span { source: sigil_span::SourceId(0), start: 0, end: 0 }
+/// (`.top` keeps its leading dot). `span` is the caller's site span.
+fn path_expr(seg: &str, span: Span) -> Expr {
+    Expr::Path(Path { segments: vec![seg.to_string()], span })
 }
 
 /// Push an error diagnostic at `span`.

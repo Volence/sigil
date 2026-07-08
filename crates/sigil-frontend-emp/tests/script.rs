@@ -292,3 +292,281 @@ proc done () {{ rts }}
         "msgs: {msgs:?}"
     );
 }
+
+// ---- 4. Task 3 coverage: overrides, hygiene, guards, edges ----------------
+//
+// These pin behavior the spec review already adversarially probed (see the
+// plan's "Pre-derived byte references" + the nested-loop/override/zero-yield
+// reference points quoted in the Task 3 section) — most are expected to be
+// first-run green.
+
+#[test]
+fn yield_per_site_epilogue_overrides_shows() {
+    // `shows done` + a per-site `yield other` override: the jbra must target
+    // `other`, not `done`. Layout is identical to Probe A (nop / yield / rts)
+    // up through the resume label, but with TWO procs after the script body
+    // (`done` first, then `other`) so the override is observable:
+    //   table:  00 04  00 0E                     (entry=+4, resume1=+14)
+    //   +4  nop:                4E 71
+    //   +6  move.w #2,$20(a0):  31 7C 00 02 00 20  (ordinal 1*2)
+    //   +12 jbra other:         60 ??              bra.s, PC+2=14
+    //   +14 __resume$1: rts:    4E 75
+    //   +16 done: rts:          4E 75
+    //   +18 other: rts:         4E 75
+    // jbra's target is `other` at +18: disp = 18 - (12+2) = 4 → 60 04.
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    nop
+    yield other
+    rts
+}}
+proc done () {{ rts }}
+proc other () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x04, 0x00, 0x0E, // table
+            0x4E, 0x71, // nop
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20, // move.w #2,$20(a0)
+            0x60, 0x04, // jbra other → bra.s +4 (targets `other` at +18, not `done` at +16)
+            0x4E, 0x75, // __resume$1: rts
+            0x4E, 0x75, // done: rts
+            0x4E, 0x75, // other: rts
+        ]
+    );
+}
+
+#[test]
+fn yield_local_epilogue_resolves() {
+    // `yield .fin` — a dot-local per-site epilogue defined LATER in the SAME
+    // script (at its end). Single-hygiene-scope flattening means the label is
+    // visible to the yield above it, same as any proc-local forward reference.
+    //
+    // Byte-length derivation (first pass; corrected after a real run — see
+    // note below): table(4) + nop(2) + store(6) + jbra(?) + resume(0) + rts(2).
+    // The naive guess is jbra = 2 bytes (bra.s) for 16 total. The ACTUAL
+    // linked length is 18: `__resume$1` and `.fin` are BOTH zero-width labels
+    // sitting at the exact byte immediately after the jbra, so the jbra's
+    // rung-0 (bra.s) displacement would be exactly 0 — the reserved 0x00
+    // word-form escape byte, which is UNENCODABLE as a short branch (pinned
+    // by `sigil-link`'s own `ladder_skips_bra_s_on_disp_zero` unit test).
+    // Relaxation therefore skips straight to rung 1 (bra.w, 4 bytes), adding
+    // 2 bytes over the naive guess: 16 + 2 = 18. This is a real, previously
+    // documented linker behavior (not a script-lowering bug), so the
+    // assertion below pins the corrected value with the arithmetic shown.
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) {{
+    nop
+    yield .fin
+    .fin:
+    rts
+}}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(linked_bytes(&module).len(), 18);
+}
+
+#[test]
+fn nested_loops_get_distinct_labels() {
+    // `loop { loop { nop / yield } }`: the inner and outer loops must mint
+    // DISTINCT `__loop$d` labels (loop_count incremented before the nested
+    // walk) so the two back-edge jbras land on different targets:
+    //   table:  00 04  00 0E                      (entry=+4, resume1=+14)
+    //   +4  __loop$0: / __loop$1: (coincide)  nop: 4E 71
+    //   +6  move.w #2,$20(a0):                31 7C 00 02 00 20
+    //   +12 jbra done:                        60 04   (bra.s, PC+2=14, target=18)
+    //   +14 __resume$1: jbra .__loop$1:       60 F4   (bra.s, PC+2=16, target=4 → -12)
+    //   +16 jbra .__loop$0:                   60 F2   (bra.s, PC+2=18, target=4 → -14)
+    //   +18 done: rts:                        4E 75
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    loop {{
+        loop {{
+            nop
+            yield
+        }}
+    }}
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x04, 0x00, 0x0E, // table
+            0x4E, 0x71, // nop
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20, // move.w #2,$20(a0)
+            0x60, 0x04, // jbra done → bra.s +4
+            0x60, 0xF4, // __resume$1: jbra .__loop$1 → bra.s -12
+            0x60, 0xF2, // jbra .__loop$0 → bra.s -14
+            0x4E, 0x75, // done: rts
+        ]
+    );
+}
+
+#[test]
+fn user_label_crosses_yield_boundary() {
+    // THE load-bearing hygiene property (R9b's single-eval rationale): a user
+    // label defined BEFORE a yield is referenced by a `jbra` AFTER it, in the
+    // resume segment. Single flattened-body evaluation means this resolves
+    // like any ordinary proc-local forward/backward reference — no separate
+    // per-segment scope to trip over.
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .tick:
+    nop
+    yield
+    jbra .tick
+}}
+proc done () {{ rts }}
+"
+    );
+    let (_module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+}
+
+#[test]
+fn zero_yield_script_emits_entry_only_table() {
+    // No `yield` at all: the hidden table has exactly ONE row (member 0, the
+    // entry segment) — `00 02` (word_offsets, 1 row, body starts at +2) —
+    // followed by the body's single `rts` (4E 75).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) {{
+    rts
+}}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
+}
+
+#[test]
+fn script_in_z80_section_errors() {
+    // Mirror of `dispatch_in_z80_section_is_non_68k` (dispatch.rs): the guard
+    // fires BEFORE resume-slot discovery / any body work, so the struct `S`
+    // need not even be well-formed — the section's CPU alone is enough to
+    // refuse. Must not panic.
+    let src = "\
+module m
+section s (cpu: z80, vma: $8000) {
+    script brain (a0: *S) (encoding: word_offsets) shows done {
+        yield
+    }
+}
+";
+    let msgs = msgs(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.non-68k]")),
+        "expected [script.non-68k]: {msgs:?}"
+    );
+}
+
+#[test]
+fn script_under_as_compat_silences_fallthrough() {
+    // Mirror of `as_compat_silences_undeclared_fallthrough` (lower_proc.rs):
+    // `@as_compat` right after `module m` silences the WARNING-level
+    // modernization lint — the same body that warns `[script.fallthrough]`
+    // in `script_fallthrough_warns` above stays quiet here.
+    let src = format!(
+        "module m\n@as_compat\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    nop
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        !msgs.iter().any(|m| m.contains("[script.fallthrough]")),
+        "@as_compat must silence [script.fallthrough]: {msgs:?}"
+    );
+}
+
+#[test]
+fn ambiguous_resume_slot_errors() {
+    // A struct with TWO `ScriptPc` fields makes the resume slot ambiguous —
+    // `[script.ambiguous-resume-slot]`, not a panic or a silent pick.
+    let src = "\
+module m
+newtype ScriptPc = u16
+struct S (size: $24) {
+    _pad0: [u8; $20],
+    resume: ScriptPc @ $20,
+    resume2: ScriptPc @ $22,
+}
+script brain (a0: *S) (encoding: word_offsets) shows done {
+    yield
+}
+proc done () { rts }
+";
+    let msgs = msgs(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.ambiguous-resume-slot]")),
+        "expected [script.ambiguous-resume-slot]: {msgs:?}"
+    );
+}
+
+#[test]
+fn resume_width_errors() {
+    // `newtype ScriptPc = u32` — a 4-byte field fails the "the slot is a word"
+    // width check: `[script.resume-width]`.
+    let src = "\
+module m
+newtype ScriptPc = u32
+struct S (size: $24) {
+    _pad0: [u8; $20],
+    resume: ScriptPc @ $20,
+}
+script brain (a0: *S) (encoding: word_offsets) shows done {
+    yield
+}
+proc done () { rts }
+";
+    let msgs = msgs(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.resume-width]")),
+        "expected [script.resume-width]: {msgs:?}"
+    );
+}
+
+#[test]
+fn comptime_call_inside_script_expands() {
+    // A statement-position comptime call inside a script body goes through the
+    // same `asm{}`-instantiation machinery as in a proc/dispatch body (mirror
+    // of `inline_body_statement_comptime_call_expands`, dispatch.rs). No
+    // `yield` at all, so the table is entry-only (`00 02`) and the body is the
+    // comptime fn's expansion (`rts` = 4E 75).
+    let src = "\
+module m
+comptime fn epi() -> Code {
+    return asm {
+        rts
+    }
+}
+newtype ScriptPc = u16
+struct S (size: $24) {
+    _pad0: [u8; $20],
+    resume: ScriptPc @ $20,
+}
+script brain (a0: *S) (encoding: word_offsets) {
+    epi()
+}
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
+}

@@ -174,3 +174,108 @@ byte-pinned like the cross-module dispatch tests):
 GREEN: both new tests pass byte-exact; `cargo test -p sigil-frontend-emp`
 (46 ok suites) and `-p sigil-cli` fully green; clippy `-D warnings` clean on
 both crates.
+
+## T3 — coverage: overrides, hygiene-across-yields, guards, edges
+
+Ten tests added (Task 3's numbered list), same `SCRIPT_TYPES` const + `lower`/
+`msgs`/`linked_bytes` helpers reused from T2. First-run result: **9 of 10
+green immediately**, exactly as the plan predicted (the spec review had
+already adversarially probed most of this ground); one needed a byte
+derivation correction (arithmetic bug in the plan writer's own hand-derivation,
+not a code bug).
+
+First-run green (9): `yield_per_site_epilogue_overrides_shows`,
+`nested_loops_get_distinct_labels`, `user_label_crosses_yield_boundary`,
+`zero_yield_script_emits_entry_only_table`, `script_in_z80_section_errors`,
+`script_under_as_compat_silences_fallthrough`, `ambiguous_resume_slot_errors`,
+`resume_width_errors`, `comptime_call_inside_script_expands`.
+
+- **1 (overrides byte-exact):** confirmed the reviewer's quoted reference
+  point verbatim — `yield other` with `done`/`other` procs after the script
+  produces jbra `60 04` (target `other` at +18, PC+2=14, disp=4). Table stays
+  `00 04 00 0E` (identical layout to Probe A up to the resume label — only the
+  jbra's target differs).
+- **3 (nested loops byte-exact):** confirmed the reviewer's quoted shape —
+  inner back-edge `60 F4` (disp −12, target the coincident loop-top offset 4),
+  outer back-edge `60 F2` (disp −14, same target, one instruction further downstream).
+  Full 20-byte image hand-derived and pinned (stronger than the plan's
+  "byte length or full bytes" minimum bar).
+- **5 (zero-yield byte-exact):** reproduced the plan's quoted reference exactly,
+  `00 02 4E 75` — a 1-row table (entry only) + `rts`.
+- **10 (comptime-in-script):** zero yields, so it collapses to the same
+  `00 02 4E 75` shape as #5, sourced from the comptime fn's `asm { rts }`
+  expansion instead of a literal `rts` — pins that `epi()` on its own
+  statement line inside a script body goes through the same asm-instantiation
+  path dispatch's inline bodies use (asm_counter threading unaffected by the
+  script desugar prepending the entry label).
+
+**Needed a derivation fix (1): `yield_local_epilogue_resolves` (#2).**
+First-run assertion `linked_bytes(&module).len() == 16` FAILED: actual was 18.
+Root cause (not a script-lowering bug): `.fin` is defined immediately after
+`yield .fin`'s synthesized `jbra`, at the SAME offset as the `__resume$1`
+label (both zero-width, coincident). At the jbra's rung-0 (`bra.s`, 2-byte)
+trial encoding, the displacement bottoms out to exactly 0 — the reserved
+0x00-disp-byte escape that signals "read the following word instead," which
+is UNENCODABLE as a short branch. `sigil-link`'s own relax ladder already
+pins this exact rule (`relax.rs::ladder_skips_bra_s_on_disp_zero`), so
+relaxation correctly promotes to rung 1 (`bra.w`, 4 bytes), adding the 2
+bytes the naive hand-count missed. Fixed the test to assert `len() == 18`
+with the full derivation (including the disp-0 escape citation) shown in the
+test's doc comment — no code was touched; this is a real, previously-tested
+linker behavior surfacing through a new caller, not a script-specific defect.
+
+**Verification:** `cargo test -p sigil-frontend-emp --test script` → 20
+passed, 0 failed (10 from T1/T2 + 10 new). Whole crate: all suites green,
+`cargo clippy -p sigil-frontend-emp --all-targets -- -D warnings` clean.
+
+No DONE_WITH_CONCERNS items — the one failure diagnosed to a correct,
+independently-pinned linker behavior, not a script lowering defect.
+
+## T2/T3 fold-in: yield-site spans on synthesized instructions
+
+Quality review finding (2026-07-08, post-T2): `yield_store` and `jbra`
+(script.rs's synthesized-instruction helpers) stamped every `InstrLine` /
+sub-expression with `sp()` — a zero span (`SourceId(0)`, `0..0`) — meaning a
+link-time `[branch.out-of-reach]` on an epilogue `jbra` or a loop back-edge
+would render at byte 0 of source file 0 instead of pointing at the `yield` or
+`loop { }` that produced it. The `sp()` docblock claimed "no user-visible
+diagnostic path," which the review showed was wrong (the out-of-reach case is
+real for a script with enough body between a yield and a far-away epilogue,
+or a huge loop body).
+
+Fix: `desugar_yield` and `desugar_loop` already receive the statement's real
+`Span` (the yield's span for resume-label placement; loop now also threads
+its own span via `ScriptStmt::Loop { span, .. }`, previously discarded with
+`..`). Both are now passed all the way through:
+- `yield_store(ordinal, offset, reg, span)` — the `move.w` `InstrLine` and
+  every sub-expression/operand (`Imm`, `DispInd`, the inner `Ind`, `path_expr`
+  for the register) carry the yield's span.
+- `jbra(target, span)` — the `InstrLine`, its `Operand::Plain`, and its
+  `path_expr` carry the caller's span (yield's span for the epilogue exit and
+  the no-epilogue-error resume label path; the loop STATEMENT's span for the
+  back-edge and the hidden loop label).
+- `path_expr(seg, span)` picked up a `span` parameter (both call sites had a
+  real span available once the above threaded through), which let `sp()` be
+  deleted outright — nothing else in the file used it.
+
+No byte or behavior change (spans do not affect emitted bytes): confirmed via
+the full T1–T3 script suite (20/20 green, byte-exact tests unchanged) and the
+whole-crate suite (all green), plus `cargo clippy -p sigil-frontend-emp
+--all-targets -- -D warnings` clean.
+
+## Deferred (rule-of-three)
+
+The table-emit shape — evaluate a synthesized/parsed declaration → 
+`stream_data` → `builder.define_label(name)` → `builder.emit_data(bytes,
+fixups, span)` — now has **three** verbatim (or near-verbatim) instances:
+`lower_offsets_item`, `lower_dispatch_item` (the table half), and
+`lower_script_item` (the hidden resume table half, step 5). Per the house
+rule-of-three, this is now warranted for extraction into a shared helper
+(something like `fn emit_streamed_table(bytes_result, placement, name,
+builder, diags)`). Deferred to the checkpoint conversation rather than done
+opportunistically here: `lower_script.rs` also has its own local variations
+(the table's `DispatchDecl` is itself synthesized, not parsed, and the
+Task-2 T2-fold-in already touched `lower/mod.rs` resolver arms once this
+session) — a clean extraction deserves its own reviewed diff rather than
+riding along inside a coverage-tests-plus-span-fix commit. Flagged here per
+the quality review (2026-07-08) for the controller to schedule.
