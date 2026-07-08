@@ -139,3 +139,38 @@ sigil-frontend-emp --all-targets -- -D warnings` clean. Workspace: the only red
 is the pre-existing `full_build_reproduces_sound_driver_regions` (`strlen()`
 builtin in the sound-driver corpus) — confirmed failing on a clean stash of this
 work, i.e. an allowlisted red, not introduced by T2.
+
+### T2 fold-in (spec review): `Item::Script` resolver arms
+
+The review found the ONE contract violation in T2: `Item::Script` was absent
+from `resolve/imports.rs`, which only the PROGRAM path (`build_program`, i.e.
+CLI `--root`) exercises — the unit-test `lower_module` harness bypasses the
+resolve pass entirely, which is why T2's byte tests could not catch it.
+
+1. **`collect_defined` (defined-names map):** a script's hidden table SELF-
+   references its base label (`dc.w resume_k - name` rows), so without a
+   Script arm ANY script — even unreferenced — failed `report_unresolved`.
+2. **`item_pub_name` (pub exports):** `pub script` exported nothing,
+   contradicting R9b.8 ("pub script exports it like pub dispatch").
+
+Fix: `ast::Item::Script` arms mirroring the adjacent `Dispatch` arms in both
+functions. (Parity check: `resolve/mod.rs`'s injectable-item list is the
+comptime TYPE-injection channel — Proc/Dispatch/Offsets are absent there too,
+so no third arm is needed.)
+
+Regression tests (the established item-4 program-path pattern:
+`crates/sigil-cli/tests/module_resolution.rs`, CLI + tempdir + `--root`,
+byte-pinned like the cross-module dispatch tests):
+- `script_compiles_unreferenced_under_program_path` — solo module, script
+  unreferenced; out.bin = the 18-byte Probe A image. RED (pre-fix):
+  `m.emp:1:1: unknown symbol `brain``.
+- `cross_module_pub_script_resolves_via_use` — `pub script brain` in
+  `engine`, entry `obj` does `use engine.{brain}` + `jmp brain`; 24 bytes =
+  jmp abs.w `4E F8 00 06` + 2-gap + the Probe-A image verbatim at LMA 6 (the
+  script image is position-relative: RelOffset rows + short jbra). RED
+  (pre-fix): `module `engine` has no `pub` name `brain`` + two cascading
+  unknown-symbol errors.
+
+GREEN: both new tests pass byte-exact; `cargo test -p sigil-frontend-emp`
+(46 ok suites) and `-p sigil-cli` fully green; clippy `-D warnings` clean on
+both crates.
