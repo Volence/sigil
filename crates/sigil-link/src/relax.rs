@@ -116,6 +116,8 @@ fn shift_offset(bps: &[(u32, i64)], orig_off: u32) -> u32 {
 /// `shift_breakpoints`/`shift_offset` are built on), shifted into the current
 /// layout, plus the section origin. This is the reach-test site VMA a ladder
 /// candidate measures its displacement from.
+// TODO(perf): O(fi) prefix walk per ladder per pass; once ladders get dense, thread a
+// running accumulator through the selection loop + convergence sweep instead.
 fn frag_start_vma(sec: &Section, bps: &[(u32, i64)], origin: u32, fi: usize) -> u32 {
     let mut baseline_off: u32 = 0;
     for prev in &sec.fragments[..fi] {
@@ -234,9 +236,11 @@ pub fn resolve_layout(
     stubs: &SymbolTable,
     dash_a: bool,
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
-    // Defensive: an empty RelaxLadder is a front-end construction-contract
-    // violation. `debug_assert!` catches it in tests; in release we refuse loudly
-    // rather than silently mis-lower a zero-rung ladder.
+    // Defensive: an empty or mis-ordered RelaxLadder is a front-end
+    // construction-contract violation. `debug_assert!` catches both in tests; in
+    // release we refuse loudly rather than silently mis-lower a zero-rung ladder
+    // or break the grow-only length argument (a decreasing pair would let a rung
+    // grow while the fragment SHRINKS, corrupting the prefix-sum layout math).
     let mut construction_errs: Vec<Diagnostic> = Vec::new();
     for sec in sections {
         for frag in &sec.fragments {
@@ -252,6 +256,19 @@ pub fn resolve_layout(
                         message: format!(
                             "internal: empty RelaxLadder (zero candidates) in section {} — the front-end must emit at least one candidate encoding",
                             sec.name
+                        ),
+                        primary: *span,
+                    });
+                } else if let Some(w) =
+                    candidates.windows(2).find(|w| w[0].bytes.len() > w[1].bytes.len())
+                {
+                    construction_errs.push(Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "internal: mis-ordered RelaxLadder in section {} — candidate lengths must be non-decreasing (found {} bytes followed by {}); the front-end must order candidates smallest → largest",
+                            sec.name,
+                            w[0].bytes.len(),
+                            w[1].bytes.len()
                         ),
                         primary: *span,
                     });
@@ -1528,6 +1545,44 @@ mod tests {
         } else {
             let err = resolve_layout(&secs, &SymbolTable::new(), true).unwrap_err();
             assert!(err.iter().any(|d| d.message.contains("empty RelaxLadder")), "got: {:?}", err);
+        }
+    }
+
+    #[test]
+    fn misordered_ladder_is_a_loud_construction_error_in_release() {
+        // Symmetric to the empty-ladder guard: candidates whose bytes.len()
+        // DECREASES at an adjacent pair (here 4-byte bra.w before 2-byte bra.s)
+        // violate the construction contract — a decreasing pair would let a rung
+        // grow while the fragment shrinks, corrupting the prefix-sum layout math.
+        // Debug builds trip the debug_assert; release builds must refuse with a
+        // loud diagnostic rather than proceed.
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![Label { name: "L".into(), offset: 8 }],
+            fragments: vec![Fragment::RelaxLadder {
+                candidates: vec![bra_w("L"), bra_s("L")], // 4 bytes then 2: mis-ordered
+                target: Expr::Sym("L".into()),
+                span: sp(),
+            }],
+        };
+        let secs = [sec];
+        if cfg!(debug_assertions) {
+            // debug_assert! would panic; assert the panic happens.
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                resolve_layout(&secs, &SymbolTable::new(), true)
+            }));
+            assert!(r.is_err(), "mis-ordered ladder must trip the debug_assert");
+        } else {
+            let err = resolve_layout(&secs, &SymbolTable::new(), true).unwrap_err();
+            assert!(
+                err.iter().any(|d| d.message.contains("mis-ordered RelaxLadder")
+                    && d.message.contains("non-decreasing")),
+                "got: {:?}",
+                err
+            );
         }
     }
 }
