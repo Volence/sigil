@@ -7,11 +7,113 @@ pub mod rename;
 use crate::ast;
 use crate::lower::{lower_module, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
-use manifest::Manifest;
+use manifest::{Manifest, ParsedModule};
 use sigil_ir::Section;
 use sigil_span::{Diagnostic, Level, Span};
 use std::collections::{HashSet, VecDeque};
 use std::path::Path;
+
+/// A comptime-only item never emits bytes when lowered (`lower_module`'s item
+/// loop skips these kinds), so it is safe to PREPEND to another module's item
+/// list to make its name visible to the evaluator without changing output.
+/// Returns `Some` for `const`/`struct`/`enum`/`bitfield`/`newtype`/`comptime fn`.
+fn is_comptime_only(item: &ast::Item) -> bool {
+    matches!(
+        item,
+        ast::Item::Const(_)
+            | ast::Item::Struct(_)
+            | ast::Item::Enum(_)
+            | ast::Item::Bitfield(_)
+            | ast::Item::Newtype(_)
+            | ast::Item::ComptimeFn(_)
+    )
+}
+
+/// True if a comptime-only item is `pub` (exported). Non-comptime kinds are not
+/// injected, so their publicness is irrelevant here.
+fn is_pub_comptime(item: &ast::Item) -> bool {
+    match item {
+        ast::Item::Const(d) => d.public,
+        ast::Item::Struct(d) => d.public,
+        ast::Item::Enum(d) => d.public,
+        ast::Item::Bitfield(d) => d.public,
+        ast::Item::Newtype(d) => d.public,
+        ast::Item::ComptimeFn(d) => d.public,
+        _ => false,
+    }
+}
+
+/// Collect the pub comptime-only items (const/struct/enum/bitfield/newtype/comptime fn)
+/// that `module` should see from the prelude and from the modules it `use`s. These are
+/// PREPENDED to the module's items so the evaluator resolves cross-module types/consts,
+/// without emitting any bytes (lower_module skips these item kinds).
+fn ambient_items(
+    module: &ParsedModule,
+    prelude: Option<&ParsedModule>,
+    manifest: &Manifest,
+) -> Vec<ast::Item> {
+    let mut out = Vec::new();
+
+    // Prelude first (own items, added in Part B, shadow these via last-wins).
+    if let Some(p) = prelude {
+        if p.id != module.id {
+            out.extend(
+                p.file
+                    .items
+                    .iter()
+                    .filter(|it| is_comptime_only(it) && is_pub_comptime(it))
+                    .cloned(),
+            );
+        }
+    }
+
+    // Then `use`-imported pub comptime-only items (these shadow prelude, matching
+    // the prelude<use precedence; own items shadow both via Part B ordering).
+    for item in &module.file.items {
+        let ast::Item::Use(u) = item else { continue };
+        let base = u.base.segments.join(".");
+        let Some(&bi) = manifest.by_id.get(&base) else { continue };
+        let base_mod = &manifest.modules[bi];
+        if base_mod.id == module.id {
+            continue; // never inject a module's own items.
+        }
+        match &u.names {
+            ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
+            ast::UseNames::Glob => out.extend(
+                base_mod
+                    .file
+                    .items
+                    .iter()
+                    .filter(|it| is_comptime_only(it) && is_pub_comptime(it))
+                    .cloned(),
+            ),
+            ast::UseNames::List(names) => out.extend(
+                base_mod
+                    .file
+                    .items
+                    .iter()
+                    .filter(|it| is_comptime_only(it) && is_pub_comptime(it))
+                    .filter(|it| comptime_name(it).is_some_and(|n| names.iter().any(|w| w == n)))
+                    .cloned(),
+            ),
+        }
+    }
+
+    out
+}
+
+/// The declared name of a comptime-only item, for `use`-list filtering.
+fn comptime_name(item: &ast::Item) -> Option<&str> {
+    match item {
+        ast::Item::Const(d) => Some(&d.name),
+        ast::Item::Struct(d) => Some(&d.name),
+        ast::Item::Enum(d) => Some(&d.name),
+        ast::Item::Bitfield(d) => Some(&d.name),
+        ast::Item::Newtype(d) => Some(&d.name),
+        ast::Item::ComptimeFn(d) => Some(&d.name),
+        _ => None,
+    }
+}
 
 /// Compile the whole reachable module program rooted at `entry_id` into one flat
 /// list of linkable [`Section`]s. BFS over `use` edges (plus the optional prelude
@@ -55,13 +157,29 @@ pub fn build_program(
             .map(|&i| (manifest.modules[i].id.as_str(), &manifest.modules[i].file))
     });
 
+    // Prelude as a ParsedModule (for ambient comptime-def gathering).
+    let prelude_pm = prelude_id.and_then(|pid| manifest.by_id.get(pid)).map(|&i| &manifest.modules[i]);
+
     // 4. Per-module: resolve names, lower, report unresolved, rename, concat.
     for &i in &reachable {
         let pm = &manifest.modules[i];
+        // ResolveEnv/report_unresolved/rename all operate on the ORIGINAL file &
+        // env — the rename map is this module's own defs + its label imports. The
+        // prepended comptime items belong to OTHER modules and must not be renamed.
         let (env, ediags) = ResolveEnv::build(&pm.id, &pm.file, &index, prelude);
         diags.extend(ediags);
 
-        let (mut module, ldiags) = lower_module(&pm.file, opts);
+        // Prepend imported pub comptime-only defs (prelude + `use`d) so the
+        // evaluator resolves cross-module types/consts. These emit no bytes and
+        // no labels (lower_module skips these kinds), so output is byte-identical
+        // to lowering `pm.file` directly when the ambient list is empty.
+        let ambient = ambient_items(pm, prelude_pm, manifest);
+        let synthetic = ast::File {
+            module: pm.file.module.clone(),
+            attrs: pm.file.attrs.clone(),
+            items: ambient.into_iter().chain(pm.file.items.iter().cloned()).collect(),
+        };
+        let (mut module, ldiags) = lower_module(&synthetic, opts);
         diags.extend(ldiags);
 
         report_unresolved(pm, &module, &env, &mut diags);

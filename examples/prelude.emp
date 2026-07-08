@@ -1,0 +1,7 @@
+// Aeon game prelude (PROPOSED — contents reviewed at the milestone checkpoint).
+// Its pub names auto-import into every module of the build (Spec 2 §3.4).
+module prelude
+
+pub struct ObjDef (size: 4) {
+    code: *u8,
+}

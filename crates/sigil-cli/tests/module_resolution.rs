@@ -102,6 +102,36 @@ fn unknown_module_id_reports_diagnostic() {
 }
 
 #[test]
+fn prelude_types_resolve_without_use() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    // Prelude exports a struct type used by the object module with NO `use`.
+    write(root, "prelude.emp", "module prelude\npub struct ObjDef (size: 4) { code: *u8 }\n");
+    write(
+        root,
+        "badniks/plant.emp",
+        "module badniks.plant\nproc init (a0: *u8) {\n    rts\n}\n\
+         pub data Def = ObjDef{ code: \"init\" }\n",
+    );
+    let out = root.join("out.bin");
+    let status = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("badniks/plant.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--prelude",
+            "prelude",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success(), "prelude struct should resolve without an explicit use");
+    assert!(std::fs::metadata(&out).unwrap().len() >= 4); // Def = one *u8 pointer (fixup to init)
+}
+
+#[test]
 fn missing_use_reports_add_use_fixit() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
