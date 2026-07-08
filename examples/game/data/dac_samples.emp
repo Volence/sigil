@@ -1,0 +1,94 @@
+// ===========================================================================
+// game/data/dac_samples.emp — the DAC-sample bank exhibit (Plan 7 #7-main, D7.6)
+// ===========================================================================
+// A faithful .emp port of aeon's games/sonic4/data/sound/dac_samples.asm SHAPE.
+// In aeon, the Z80-window banking invariant is hand-maintained with three
+// pieces of ceremony:
+//
+//   1. `align $8000` before the sample bank — forces the whole payload onto a
+//      32KB window boundary so ONE bank id covers every sample.
+//   2. a hand-written `if (Dac_Kick >> 15) <> ((last_end-1) >> 15) / fatal`
+//      straddle guard — a 32KB boundary must not fall inside the bank.
+//   3. per-sample `= (addr & $7F8000) >> 15` / `= (addr & $7FFF) | $8000` /
+//      `= end - start` constants, hand-spelled with the raw mask/shift magic.
+//
+// In THIS exhibit those three hand-written invariants collapse into the
+// language:
+//
+//   1. `section dac_bank (bank: $8000)` — the linker's placement pass bumps the
+//      section to the next 32KB boundary IFF its content would straddle one, and
+//      an always-on post-placement check re-verifies no bank: section crosses a
+//      boundary (D7.2 / D7.5 / R7m.2). No `align`, no hand-written fatal.
+//   2. `bankid(L)` folds to `(addr & $7F8000) >> 15` at LINK, once the final
+//      address is known (D7.3 / R7m.3) — the mask/shift magic lives ONCE, in the
+//      builtin, not copied per-sample.
+//   3. `winptr(L)` folds to `(addr & $7FFF) | $8000` (§7.2, pre-existing).
+//   4. length comes from the embedded blob's comptime `.len` (R7m.7); the
+//      `0 < len < $8000` guard is a comptime `ensure` (lengths are comptime
+//      ints, so the guard checks at COMPILE time, exactly as aeon's `fatal`
+//      did — but as a first-class construct rather than a hand-rolled `if`).
+//
+// Padding / placement differ from aeon by design (D7.2): aeon `align $8000`s the
+// bank to an absolute boundary; here the bank section carries `vma: $8000` so its
+// LABELS resolve above the window boundary (a NONZERO bank id — the point of the
+// exhibit) while its bytes chain from LMA 0 in the flat image. The exhibit argues
+// equivalence of the DERIVED VALUES (bank id / window ptr / length), not identity
+// of padding — see dac_bank_acceptance.rs for the byte-by-byte derivation.
+// ===========================================================================
+
+module data.dac_samples
+
+
+// --- the three synthetic sample blobs, bound to consts so their `.len` is a
+// readable comptime int (a `data K = embed(...)` item's value is NOT readable
+// back — the struct-literal-only `data_value_readable` gate — so the blob is
+// bound to a `const` first, then emitted AND measured from that binding). The
+// bytes are synthetic recognizable patterns, NOT real PCM (kick 6B, snare 5B,
+// hat 4B). ---
+const KickBlob  = embed("data/dac/kick.bin")   // 6 bytes: 11 22 33 44 55 66
+const SnareBlob = embed("data/dac/snare.bin")  // 5 bytes: A1 A2 A3 A4 A5
+const HatBlob   = embed("data/dac/hat.bin")    // 4 bytes: F0 F1 F2 F3
+
+
+// ===========================================================================
+// The shared DAC bank — one `(bank: $8000)` section holding all three blobs
+// contiguously. `vma: $8000` puts the labels in bank 1 (a NONZERO bank id);
+// `bank: $8000` makes the linker guarantee no sample straddles the 32KB window
+// (replacing aeon's `align` + hand-written straddle `fatal`).
+// ===========================================================================
+section dac_bank (cpu: m68000, vma: $8000, bank: $8000) {
+    data Dac_Kick  = KickBlob     // @ vma $8000
+    data Dac_Snare = SnareBlob    // @ vma $8006
+    data Dac_Hat   = HatBlob      // @ vma $800B
+}
+
+
+// ===========================================================================
+// The SND_* descriptor table — the per-sample {bank, ptr, len} the Z80 driver
+// reads. Each sample emits three cells, exactly aeon's SND_*_BANK/PTR/LEN shape:
+//   - bank: width-1 `bankid(L)`  → (L & $7F8000) >> 15   (link-folded)
+//   - ptr:  width-2 `winptr(L)`  → (L & $7FFF) | $8000    (link-folded, BE)
+//   - len:  width-2 comptime int → the blob's byte length (compile-time)
+// The comptime `ensure(0 < len && len < $8000, …)` on each length is aeon's
+// `0 < len < $8000` invariant as a first-class guard (comptime, since the
+// lengths are comptime ints).
+// ===========================================================================
+section snd_table (cpu: m68000) {
+    // kick descriptor
+    ensure(0 < KickBlob.len && KickBlob.len < $8000, "kick length out of window range")
+    data SND_KICK_BANK: u8  = bankid("Dac_Kick")
+    data SND_KICK_PTR:  u16 = winptr("Dac_Kick")
+    data SND_KICK_LEN:  u16 = KickBlob.len
+
+    // snare descriptor
+    ensure(0 < SnareBlob.len && SnareBlob.len < $8000, "snare length out of window range")
+    data SND_SNARE_BANK: u8  = bankid("Dac_Snare")
+    data SND_SNARE_PTR:  u16 = winptr("Dac_Snare")
+    data SND_SNARE_LEN:  u16 = SnareBlob.len
+
+    // hat descriptor
+    ensure(0 < HatBlob.len && HatBlob.len < $8000, "hat length out of window range")
+    data SND_HAT_BANK: u8  = bankid("Dac_Hat")
+    data SND_HAT_PTR:  u16 = winptr("Dac_Hat")
+    data SND_HAT_LEN:  u16 = HatBlob.len
+}

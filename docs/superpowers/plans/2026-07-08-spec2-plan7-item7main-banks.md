@@ -84,10 +84,10 @@
 **Files:**
 - Create: `examples/game/data/dac_samples.emp`, `examples/game/data/dac/*.bin`, `crates/sigil-cli/tests/dac_bank_acceptance.rs`
 
-- [ ] **Step 1:** Author fixtures + exhibit per R7m.6. Hand-derive the full expected image in the test (aeon-scheme equivalence argued in comments: each SND_* value cross-computed from the fixture addresses).
-- [ ] **Step 2:** Failing acceptance test (exhibit not yet written correctly ≡ RED first), then make it pass.
-- [ ] **Step 3:** Negative straddle probe + positive bump pin (R7m.6, tmpdir).
-- [ ] **Step 4:** Standing pins re-verified: pitcher_plant 340B + script 358B untouched. Full gate + corpus byte-diff. Commit: `feat(7): dac_samples exhibit — bank section + bankid/winptr table + straddle probes (D7.6)`.
+- [x] **Step 1:** Author fixtures + exhibit per R7m.6. Hand-derive the full expected image in the test (aeon-scheme equivalence argued in comments: each SND_* value cross-computed from the fixture addresses).
+- [x] **Step 2:** Failing acceptance test (exhibit not yet written correctly ≡ RED first), then make it pass. (RED evidence: bank at `vma: $0000` → bankid folds to 0, byte-diff at 0xF.)
+- [x] **Step 3:** Negative straddle probe + positive bump pin (R7m.6, tmpdir). (Bump pin proved load-bearing: `bank: $40` fits → no bump; `bank: $10` straddles → bumped.)
+- [x] **Step 4:** Standing pins re-verified: pitcher_plant 340B + script 358B untouched. Full gate + corpus byte-diff. Commit: `feat(7): dac_samples exhibit — bank section + bankid/winptr table + straddle probes (D7.6)`.
 
 ### Task 6: Whole-branch adversarial review + checkpoint prep
 

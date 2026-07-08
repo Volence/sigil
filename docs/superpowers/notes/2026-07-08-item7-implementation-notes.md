@@ -500,3 +500,86 @@ un-deferred it. Rewritten to point at `lower_link_expr`'s two-path split.
 - `cargo clippy --workspace --all-targets -- -D warnings` → clean.
 - `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (no bankid users in
   the shipped corpus; pitcher_plant + script pins intact).
+
+---
+
+# Task 5 — the dac_samples exhibit + acceptance (D7.6 / R7m.6)
+
+## What was built
+
+A faithful `.emp` port of aeon's `games/sonic4/data/sound/dac_samples.asm`
+STRUCTURE, as its own entry module compiled through the real multi-module CLI
+(`--root examples/game --prelude prelude`), plus the pinned acceptance test and
+two straddle probes.
+
+- **Fixtures** (synthetic, committed, NOT real PCM):
+  - `examples/game/data/dac/kick.bin`  — 6 bytes `11 22 33 44 55 66`
+  - `examples/game/data/dac/snare.bin` — 5 bytes `A1 A2 A3 A4 A5`
+  - `examples/game/data/dac/hat.bin`   — 4 bytes `F0 F1 F2 F3`
+- **Exhibit** `examples/game/data/dac_samples.emp` (`module data.dac_samples`):
+  three `const K = embed(...)` bindings (the const-bind is REQUIRED to read
+  `.len` back — a `data K = embed(...)` item's value is not readable, the
+  StructLit-only `data_value_readable` gate); one `section dac_bank (cpu:
+  m68000, vma: $8000, bank: $8000)` holding the three blobs contiguously; a
+  second `section snd_table (cpu: m68000)` emitting per-sample `bankid()`
+  (width 1) / `winptr()` (width 2, BE) / `.len` (width 2) — the
+  `SND_*_BANK/PTR/LEN` shape — with a comptime `ensure(0 < len && len < $8000,
+  …)` guard per sample. The header comment states the three aeon hand-written
+  invariants (`align $8000`, straddle `fatal`, per-sample mask/shift constants)
+  that the `bank:` property + `bankid()`/`winptr()` builtins + comptime `ensure`
+  replace.
+
+## Derived SND_* values (link-true, VMA-derived; cross-computed by hand)
+
+The `bank:` no-straddle check is LMA-based (physical placement); the bank id is
+VMA-derived. The exhibit gives `dac_bank` `vma: $8000` so its LABELS resolve in
+bank 1 (a NONZERO bank id — the point of the exhibit) while its BYTES chain
+from LMA 0 (blobs at image offset 0). This VMA/LMA split is the D7.2-expected
+divergence from aeon's `align $8000` (aeon aligns the physical ROM address; the
+exhibit argues equivalence of the DERIVED VALUES, not padding identity).
+
+| sample    | vma    | bankid `(a&$7F8000)>>15` | winptr `(a&$7FFF)|$8000` (BE) | len |
+|-----------|--------|--------------------------|-------------------------------|-----|
+| Dac_Kick  | $8000  | 1                        | $8000                         | 6   |
+| Dac_Snare | $8006  | 1                        | $8006                         | 5   |
+| Dac_Hat   | $800B  | 1                        | $800B                         | 4   |
+
+Full image = 130 bytes: dac_bank (15 B, LMA 0x00..0x0F) → snd_table (3×5 = 15 B,
+0x0F..0x1E) → prelude `text` (Map_PitcherPlant + 4 stub procs + Player_1 Sst,
+0x1E..0x82). Hand-derived byte-for-byte in `dac_bank_acceptance.rs`.
+
+## RED-first evidence
+
+- **Positive acceptance (A):** set the bank section to `vma: $0000` → `bankid`
+  folds to 0; test failed at offset 0xF (`expected 0x01 != got 0x00`) — proving
+  the bank id is genuinely link-true, not an echo. Restored → green.
+- **Bump pin (B):** the bump probe uses `bank: $10` with an 8-byte section at
+  cursor 0xC (would span [0xC,0x14), straddling 0x10 → bumped to 0x10). Proved
+  load-bearing by re-running with `bank: $40`: [0xC,0x14) FITS the $40 window →
+  NO bump → the section stays at 0xC (byte 0xEE at 0xC, not 0x10). This confirms
+  the probe exercises bump-only-when-straddling (D7.2), not always-align.
+
+## Tests (crates/sigil-cli/tests/dac_bank_acceptance.rs)
+
+- `dac_samples_full_image_is_byte_exact` — full 130-byte image, zero diagnostics,
+  `built: 130 bytes`.
+- `oversized_bank_section_fails_over_by` — `(bank: $10)` with 18 bytes → CLI
+  fails, stderr contains `over by`.
+- `chained_bank_section_bumps_when_it_would_straddle` — the positive bump pin
+  (byte at 0x10 == 0xEE, 0xC..0x10 gap zero-filled, byte at 0xC == 0x00).
+
+## Gate (Task 5)
+
+- `cargo test -p sigil-cli --test dac_bank_acceptance` → 3/3 green.
+- Standing pins: `pitcher_plant_acceptance` (340 B) + `pitcher_plant_script_acceptance`
+  (358 B) → green, untouched.
+- `cargo test --workspace --no-fail-fast` → EXACTLY the 4 allowlisted harness
+  reds (`full_build_reproduces_sound_driver_regions`,
+  `vector_table_matches_reference_rom_first_256_bytes`,
+  `full_debug_rom_matches_assembled_reference`, `full_rom_matches_assembled_reference`),
+  nothing else.
+- `cargo clippy --workspace --all-targets` → clean (the winptr `(a&$7FFF)|$8000`
+  identity_op that clippy flagged in the derivation is spelled through runtime
+  `bankid()`/`winptr()` helper fns so the mask/shift reads verbatim).
+- `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (dac_samples is a
+  new entry, not in the corpus set; prelude untouched so pitcher_plant pins hold).
