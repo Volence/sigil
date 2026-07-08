@@ -1519,3 +1519,184 @@ fn cross_module_pub_overlay_qualified_field_access() {
         "tst.b V.timer(a1) with a cross-module pub overlay"
     );
 }
+
+/// A minimal SST lib whose window `sst_custom` sits at offset $2 (right after a
+/// `u16` id). Reused by the bare-window-binding-site tests below, where the point
+/// is that the overlay's window offset is fixed by the DEFINING struct — $2 —
+/// regardless of any same-named window field a consumer might declare.
+const SST_LIB_SMALL: &str =
+    "pub struct Sst { id: u16, sst_custom: [u8; 8] }\npub vars PlantV: sst_custom { timer: u8 }\n";
+
+#[test]
+fn bare_overlay_window_binds_at_definition_site_not_consumer() {
+    // Failure mode (1): the consumer imports ONLY the overlay (not the base
+    // struct) and declares an UNRELATED struct that happens to have a same-named
+    // `sst_custom` window field at a DIFFERENT offset. A bare window must bind at
+    // the overlay's DEFINITION site — lib.Sst, window offset $2 — never re-resolve
+    // against the consumer's `Other` (window $8). Expected: tst.b (d16,a0)=4A28,
+    // ext $0002, rts=4E75. (Pre-fix: $0008, bound to the consumer's struct.)
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib.emp", &format!("module lib\n{SST_LIB_SMALL}"));
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{PlantV}\n\
+         struct Other { hp: u16, filler: [u8; 6], sst_custom: [u8; 4] }\n\
+         proc tick (a0: *Other) {\n    tst.b PlantV.timer(a0)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module overlay build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x28, 0x00, 0x02, 0x4E, 0x75],
+        "PlantV.timer(a0) must bind at the overlay's definition site (window $2), not the consumer's Other.sst_custom ($8)"
+    );
+}
+
+#[test]
+fn imported_overlay_not_broken_by_colliding_consumer_struct() {
+    // Failure mode (2): the consumer imports BOTH the base struct and the overlay,
+    // AND declares an unrelated struct with a same-named `sst_custom` window field.
+    // A consumer must not be able to break a library overlay by re-triggering
+    // bare-window ambiguity in ITS namespace — the binding is already fixed at the
+    // definition site. Expected: qualified `PlantV.timer(a1)` still lowers cleanly
+    // to tst.b (d16,a1)=4A29, ext $0002, rts. (Pre-fix: `[overlay.ambiguous-window]`
+    // + `[operand.unknown-field]`.)
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib.emp", &format!("module lib\n{SST_LIB_SMALL}"));
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{Sst, PlantV}\n\
+         struct Other { hp: u16, filler: [u8; 6], sst_custom: [u8; 4] }\n\
+         proc tick () {\n    tst.b PlantV.timer(a1)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "a colliding consumer struct must not break an imported overlay, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75],
+        "PlantV.timer(a1) stays bound at the definition site (window $2)"
+    );
+}
+
+#[test]
+fn bare_overlay_bare_field_access_binds_at_definition_site() {
+    // Control: bare field access `timer(a0)` on a `*Sst`-typed register in a
+    // consumer that imports BOTH the base struct and the overlay. The overlay's
+    // window binding (lib.Sst, offset $2) travels with the injected overlay, so
+    // the bare-on-typed-register path resolves it against the register's pointee.
+    // subq.b #1,(d16,a0)=5328, ext $0002, rts.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib.emp", &format!("module lib\n{SST_LIB_SMALL}"));
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{Sst, PlantV}\n\
+         proc tick (a0: *Sst) {\n    subq.b #1, timer(a0)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module bare-field build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x53, 0x28, 0x00, 0x02, 0x4E, 0x75],
+        "bare timer(a0) on *Sst binds at the definition site (window $2)"
+    );
+}
+
+#[test]
+fn dotted_overlay_window_stays_immune_cross_module() {
+    // Control: the DOTTED window form (`vars X: Sst.sst_custom { .. }`) is already
+    // immune to consumer re-resolution and must stay byte-identical. Consumer
+    // imports only the overlay and declares an unrelated same-named window field;
+    // qualified access still binds at $2. tst.b (d16,a1)=4A29, ext $0002, rts.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\npub struct Sst { id: u16, sst_custom: [u8; 8] }\n\
+         pub vars DotV: Sst.sst_custom { timer: u8 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{DotV}\n\
+         struct Other { hp: u16, filler: [u8; 6], sst_custom: [u8; 4] }\n\
+         proc tick () {\n    tst.b DotV.timer(a1)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module dotted-window build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75],
+        "dotted DotV.timer(a1) stays bound at $2 regardless of consumer structs"
+    );
+}

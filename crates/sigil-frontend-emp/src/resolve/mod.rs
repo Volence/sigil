@@ -42,17 +42,38 @@ fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
 /// any `section {}` body (sections do not nest further — Task 1 rejects that at
 /// parse time — so a single level of recursion is exhaustive), matching `pred`.
 /// Mirrors `imports::collect_exported`/`collect_defined`'s recursion shape.
+///
+/// `def_file` is the DEFINING module's file — the namespace an injected overlay's
+/// window must resolve against (Plan 7 #8). Each collected `pub vars` overlay clone
+/// has its window resolved here and STAMPED (`resolved_window`), so the consumer
+/// binds it at the definition site verbatim rather than re-scanning its own structs.
 fn collect_pub_comptime(
+    def_file: &ast::File,
     items: &[ast::Item],
     pred: &impl Fn(&str) -> bool,
     out: &mut Vec<ast::Item>,
 ) {
     for item in items {
         if pub_comptime_name(item).is_some_and(pred) {
-            out.push(item.clone());
+            let mut cloned = item.clone();
+            stamp_overlay_window(def_file, &mut cloned);
+            out.push(cloned);
         }
         if let ast::Item::Section(sec) = item {
-            collect_pub_comptime(&sec.items, pred, out);
+            collect_pub_comptime(def_file, &sec.items, pred, out);
+        }
+    }
+}
+
+/// Stamp an injected `pub vars` overlay's window binding, resolved against its
+/// DEFINING file (Plan 7 #8). No-op for any non-overlay item (or a region-form
+/// `vars`, or an overlay whose window fails to resolve — a poisoned overlay stays
+/// silent in the consumer as before). This is what makes a bare-window overlay
+/// bind where it was defined instead of re-resolving in the consumer's namespace.
+fn stamp_overlay_window(def_file: &ast::File, item: &mut ast::Item) {
+    if let ast::Item::Vars(v) = item {
+        if let Some(name) = v.name.clone() {
+            v.resolved_window = crate::layout::resolve_overlay_window(def_file, &name);
         }
     }
 }
@@ -73,7 +94,7 @@ fn ambient_items(
     // Prelude first (own items, added in Part B, shadow these via last-wins).
     if let Some(p) = prelude {
         if p.id != module.id {
-            collect_pub_comptime(&p.file.items, &|_| true, &mut out);
+            collect_pub_comptime(&p.file, &p.file.items, &|_| true, &mut out);
         }
     }
 
@@ -106,9 +127,10 @@ fn ambient_from_uses(
                 match &u.names {
                     ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
                     ast::UseNames::Glob => {
-                        collect_pub_comptime(&base_mod.file.items, &|_| true, out)
+                        collect_pub_comptime(&base_mod.file, &base_mod.file.items, &|_| true, out)
                     }
                     ast::UseNames::List(names) => collect_pub_comptime(
+                        &base_mod.file,
                         &base_mod.file.items,
                         &|n| names.iter().any(|w| w == n),
                         out,
