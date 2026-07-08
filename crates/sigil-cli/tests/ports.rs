@@ -496,6 +496,52 @@ fn example_guards_compiles() {
     );
 }
 
+/// Plan 7 #6 Part A — the documented `examples/sst_overlay.emp` (SST overlay +
+/// field-access-as-displacement, D6.A) compiles end-to-end with zero errors.
+/// This is the compiles-today counterpart to the still-blocked
+/// `examples/pitcher_plant.emp`; `emp_candidate` already asserts no Error-level
+/// parse/lower diagnostics, so a clean run here proves the whole exhibit lowers.
+///
+/// Bytes hand-derived from the struct/overlay layout (mirrors
+/// crates/sigil-frontend-emp/tests/overlay.rs's `SST` const: `Sst` is $50 bytes,
+/// `x_pos` at $10, `y_vel` at $1A, `sst_custom` (34 bytes) at $2E) and standard
+/// 68000 opcode encodings already proven byte-exact in that file:
+///   proc tick (a0: *Sst):
+///     subq.b  #1, timer(a0)   -> timer is PlantV's first overlay field, overlay-
+///                                 relative 0, so in-memory offset = window $2E.
+///                                 SUBQ.B #1,(d16,A0) = 0x5328, ext $002E.
+///     move.w  x_pos(a0), d0   -> x_pos is a DIRECT struct field at $10.
+///                                 MOVE.W (d16,A0),D0 = 0x3028, ext $0010.
+///     move.w  y_vel(a0), d1   -> y_vel is a DIRECT struct field at $1A, dest D1.
+///                                 MOVE.W (d16,A0),D1 = 0x3228, ext $001A.
+///     move.b  charge(a0), d2  -> charge follows timer (u8) in the overlay, so its
+///                                 overlay-relative offset is 1 -> in-memory $2F.
+///                                 Reading 1 of its 2 bytes is legal (narrower than
+///                                 field). MOVE.B (d16,A0),D2 = 0x1428, ext $002F.
+///     rts                     -> 0x4E75.
+///   proc peek ():
+///     tst.b   PlantV.timer(a1) -> qualified access on an UNTYPED a1, same $2E
+///                                 in-memory offset as the bare form above.
+///                                 TST.B (d16,A1) = 0x4A29, ext $002E.
+///     rts                     -> 0x4E75.
+#[test]
+fn example_sst_overlay_compiles() {
+    let src = include_str!("../../../examples/sst_overlay.emp");
+    let bytes = emp_candidate(src);
+    assert_eq!(
+        bytes,
+        vec![
+            0x53, 0x28, 0x00, 0x2E, // subq.b #1, timer(a0)   == $2E(a0)
+            0x30, 0x28, 0x00, 0x10, // move.w x_pos(a0), d0   == $10(a0)
+            0x32, 0x28, 0x00, 0x1A, // move.w y_vel(a0), d1   == $1A(a0)
+            0x14, 0x28, 0x00, 0x2F, // move.b charge(a0), d2  == $2F(a0)
+            0x4E, 0x75, // rts
+            0x4A, 0x29, 0x00, 0x2E, // tst.b PlantV.timer(a1) == $2E(a1)
+            0x4E, 0x75, // rts
+        ]
+    );
+}
+
 // ---- Plan 7 #6 audit fix: nested `section {}` is rejected loudly ---------
 
 /// A `section {}` nested inside another `section {}` used to be silently
