@@ -181,3 +181,12 @@ table, or the AS frontend would start accepting them):
   — rule of three; revisit at the third ladder client.
 - `[branch.suboptimal-size]` lint.
 - Auditor-B cosmetic `<unresolved>` secondary diagnostic (shared offsets/dispatch pattern).
+- **`here()` vs relaxation (whole-branch review NOTE-1, PRE-EXISTING but now routine):**
+  `here()` reads the mid-lowering cursor, which advances relaxables at their BASELINE rung
+  (jbra: 2 bytes; bare jmp/jsr: 4) — a comptime value emitted from `here()` after a fragment
+  that later GROWS is stale by the growth delta, though the image layout itself is correct.
+  Master has the identical edge via JmpJsrSym abs.w→abs.l; ladders make it reachable from any
+  `jbra`/unsized branch crossing >127 bytes. Affects the `ensure_fatal(here() <= $9000)`
+  budget idiom (guards.emp:58): a section overrunning by ≤ Σ(growth) could pass silently.
+  Ledger: either spec the "no relaxables between here() and the position it guards"
+  constraint, or teach relaxation to fix up emitted here() values. Not fixed on this branch.
