@@ -138,3 +138,15 @@ emp section's VMA, so its LMA is irrelevant. R7p.4 left un-weakened.
   `sigil-frontend-emp` all green, `m1b_gate` 5/5.
 - (iv) `cargo clippy --workspace --all-targets -- -D warnings` → clean.
 - (v) `bash scripts/corpus_bytediff.sh` → `RESULT: all identical`.
+
+## T5 closure (controller, 2026-07-08)
+
+Task 5's substance landed inside T4's commit 20ace91 (implementer-flagged deviation, spec-review-verified):
+the AS front-end inherits first-Pinned/rest-Chained provenance from the IrBuilder default (one builder per
+program run), and `directive_org`'s two counter-jump sites pin org'd sections (`pin_next_section`) so
+intentional gaps survive placement. No further AS provenance work found. Evidence: full harness from the
+worktree = EXACTLY the 4 allowlisted reds (aeon strlen drift); spec reviewer independently diffed against
+parent 1b18ce6 and confirmed zero new reds / byte-identical placement-sensitive pins (m1b_gate 5/5,
+m0_regions, m1c). T4 quality review: APPROVED, 4 minors (none blocking); carry-forward constraint for
+#7-main: do NOT add a fifth cursor-replay loop for the bank bump — extract the ir replay primitive first
+(rule-of-three already at four: vma_len / placement_span / image_bytes / final_size).
