@@ -561,6 +561,8 @@ fn lower_dispatch_item(
             eval_proc_body(file, &label, &[], body, member.span, *asm_counter, placement.cpu);
         *asm_counter = next_counter;
         diags.append(&mut ds);
+        // `None` = the body failed to EVALUATE (already diagnosed) — skip it.
+        // An EMPTY body is `Some(empty buf)` and still reaches the lint below.
         let Some(buf) = buf else { continue };
         lower_code_buf(&buf, placement.cpu, as_compat, builder, diags);
         if !as_compat {

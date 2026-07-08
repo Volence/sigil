@@ -591,3 +591,77 @@ section code (vma: $100) {
     assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
     assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
 }
+
+#[test]
+fn inline_bodies_local_labels_are_hygienic_per_member() {
+    // Two bodies each declare `.top` — each body is its own anonymous proc, so
+    // the labels must not collide (per-instantiation hygiene, D-P4.6), and a
+    // backward jbra inside a body relaxes as usual.
+    //   table:    00 04  00 08   (A's body at +4, B's at +8)
+    //   A's body: 4E 71          (nop, .top)
+    //             60 FC          (bra.s .top — jbra's smallest rung, disp −4)
+    //   B's body: 4E 75          (rts, its own .top)
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) {
+    A: {
+        .top:
+        nop
+        jbra .top
+    },
+    B: {
+        .top:
+        rts
+    },
+}
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![0x00, 0x04, 0x00, 0x08, 0x4E, 0x71, 0x60, 0xFC, 0x4E, 0x75]
+    );
+}
+
+#[test]
+fn inline_body_statement_comptime_call_expands() {
+    // A statement-position comptime call inside a body goes through the same
+    // asm{}-instantiation machinery as in a proc (asm_counter threading).
+    // (Statement calls need their own line — same rule as in a proc body.)
+    let src = "\
+module m
+comptime fn epi() -> Code {
+    return asm {
+        rts
+    }
+}
+dispatch R (encoding: word_offsets) {
+    A: {
+        epi()
+    },
+}
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
+}
+
+#[test]
+fn duplicate_member_with_body_still_errors() {
+    // validate_dispatch is target-shape-agnostic: duplicate names error even
+    // when one of them is a body member.
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) {
+    A: { rts },
+    A: a,
+}
+proc a() { rts }
+";
+    let msgs = msgs(src);
+    assert_eq!(
+        msgs.iter().filter(|m| m.contains("duplicate dispatch member")).count(),
+        1,
+        "msgs: {msgs:?}"
+    );
+}

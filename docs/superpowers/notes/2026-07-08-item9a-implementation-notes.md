@@ -102,3 +102,49 @@ Implementation:
   `asm_counter`. The `@as_compat`-gated `check_member_body_fallthrough` runs
   after lowering. Both call sites (top-level loop + `lower_section_items`) pass
   the new args. Doc comment extended with the 9a sentence.
+
+## T3 — coverage: hygiene, comptime calls, duplicate members
+
+Three new tests appended to the section-9 group in `tests/dispatch.rs`, plus
+one comment (no behavior change) in `lower/mod.rs`. All three passed on FIRST
+run — no RED phase, per the task brief (Tasks 1-2 already landed the behavior
+under test; this task is coverage, not new implementation).
+
+- `inline_bodies_local_labels_are_hygienic_per_member` — already-green. Two
+  bodies each declare `.top`; per-instantiation hygiene (D-P4.6) keeps them
+  from colliding, and a backward `jbra .top` relaxes to `bra.s` (smallest
+  rung). Confirms the anonymous-proc-per-body model actually isolates local
+  labels, not just that lowering succeeds.
+- `inline_body_statement_comptime_call_expands` — already-green. A
+  statement-position `epi()` comptime call inside a body threads the module
+  `asm_counter` through `eval_proc_body` exactly as it would in a named proc
+  body. Written on its own line per the parser's statement-call-needs-its-own-
+  line rule (verified in the Task 2 review — `A: { epi() }` on one line is a
+  parse error).
+- `duplicate_member_with_body_still_errors` — already-green (positive
+  control). `validate_dispatch`'s duplicate-name check runs over member names
+  only, before any target-shape inspection, so a `Body` member colliding with
+  a `Label` member errors exactly like two `Label` members. This test exists
+  to pin that target-shape-agnosticism explicitly, not because a regression
+  was suspected.
+
+Byte derivation for the hygiene test (hand-checked): table = 2 rows × 2 bytes
+= 4. A's body at +4: `nop` = `4E 71`, then `jbra .top` back to +4 — displacement
+from the branch's next instruction (+8) to +4 is −4, fits `bra.s` (byte
+displacement) = `60 FC`. B's body at +8: `rts` = `4E 75`, its own `.top` (no
+jump). Image: `00 04 00 08 4E 71 60 FC 4E 75`. Comptime-call test: 1 row × 2
+bytes = `00 02`, then the `epi()`-expanded body is a single `rts` = `4E 75`.
+Image: `00 02 4E 75`.
+
+Results:
+- `cargo test -p sigil-frontend-emp --test dispatch` → 29 passed; 0 failed (26
+  pre-existing + 3 new).
+- Whole crate: `cargo test -p sigil-frontend-emp` → all suites pass, 0
+  failures.
+- `cargo clippy -p sigil-frontend-emp --all-targets -- -D warnings` → clean.
+
+Implementation (comment only, no behavior change):
+- lower/mod.rs (~line 564, in the inline-body lowering loop): added a
+  two-line comment above `let Some(buf) = buf else { continue };`
+  distinguishing "body failed to evaluate → skip" from "empty body still
+  reaches the fallthrough lint below" (Task 2 code-quality review fold-in).
