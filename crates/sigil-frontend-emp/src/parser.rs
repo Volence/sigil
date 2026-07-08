@@ -647,9 +647,9 @@ impl Parser {
 
     /// Parse a `dispatch Name (encoding: E) { Member: target, ... }`
     /// declaration (D6.B1). The `(encoding: E)` attribute is REQUIRED (no
-    /// default — D6.B2); the member grammar mirrors [`Self::offsets_decl`],
-    /// except `Member: { ... }` (inline body) is a reserved-but-rejected
-    /// form (D6.B6), not an alternate member shape.
+    /// default — D6.B2); the member grammar mirrors [`Self::offsets_decl`].
+    /// `Member: { … }` (inline body, 9a — D9.1) parses the same statement
+    /// grammar as a `proc` body (labels, instruction lines, comptime calls).
     fn dispatch_decl(&mut self, public: bool) -> DispatchDecl {
         let start = self.span();
         self.bump(); // `dispatch`
@@ -664,19 +664,24 @@ impl Parser {
             let mname = self.expect_ident("dispatch member name");
             self.expect(&Tok::Colon, "`:`");
             if self.at(&Tok::LBrace) {
-                let bspan = self.span();
-                self.diag_at(
-                    bspan,
-                    "dispatch member bodies (`Member: { \u{2026} }`) are reserved for scripted \
-                     states (backlog #9) — bind a proc label instead",
-                );
-                // Recover by consuming the braced block so the cascade stays
-                // a single clear error instead of spraying through its
-                // contents as bogus top-level tokens.
-                self.skip_balanced_braces();
+                // 9a (D9.1): `Member: { … }` — an inline body, sugar for an
+                // anonymous per-member proc. Same statement grammar as a
+                // `proc` body (labels, instruction lines, comptime calls).
+                self.bump(); // `{`
+                let body = self.asm_body(/* splices_allowed = */ false);
+                self.expect(&Tok::RBrace, "`}`");
+                members.push(DispatchMember {
+                    name: mname,
+                    target: DispatchTarget::Body(body),
+                    span: mspan.merge(self.prev_span()),
+                });
             } else {
                 let target = self.expr();
-                members.push(DispatchMember { name: mname, target, span: mspan });
+                members.push(DispatchMember {
+                    name: mname,
+                    target: DispatchTarget::Label(target),
+                    span: mspan,
+                });
             }
             self.skip_newlines();
             if !self.eat(&Tok::Comma) { break; }
@@ -721,27 +726,6 @@ impl Parser {
         };
         self.expect(&Tok::RParen, "`)`");
         encoding
-    }
-
-    /// Consume a `{ ... }` block, honoring nested braces, without
-    /// interpreting its contents. Used to recover from the reserved
-    /// dispatch inline-body form (D6.B6) with a single diagnostic instead
-    /// of spraying errors through the block's contents.
-    fn skip_balanced_braces(&mut self) {
-        if !self.eat(&Tok::LBrace) { return; }
-        let mut depth = 1i32;
-        loop {
-            match self.peek() {
-                Tok::Eof => return,
-                Tok::LBrace => { depth += 1; self.bump(); }
-                Tok::RBrace => {
-                    depth -= 1;
-                    self.bump();
-                    if depth == 0 { return; }
-                }
-                _ => { self.bump(); }
-            }
-        }
     }
 
     /// Parse a `vars region { .. }` (region form) or `vars name: region { .. }`

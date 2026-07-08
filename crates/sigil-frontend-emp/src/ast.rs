@@ -252,8 +252,9 @@ pub struct OffsetsMember {
 /// pre-scaled comptime ordinal constants `Name.Member` and `Name.count`
 /// (D6.B3, later task). The member grammar deliberately mirrors
 /// [`OffsetsDecl`]'s `Name: target` shape; `Member: { ... }` (inline body /
-/// scripted state) is reserved for a future backlog item (#9) and is a
-/// parse error here, not a silently-accepted alternate form.
+/// scripted state) is the 9a inline-body form: sugar for an anonymous
+/// per-member proc — a hygienic label sharing the same encoding row as a
+/// named target, with NO state/yield semantics (D9.1).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DispatchDecl {
     /// Whether this dispatch table is exported (`pub dispatch`).
@@ -290,15 +291,26 @@ impl DispatchEncoding {
     }
 }
 
-/// One `Member: target` entry of a [`DispatchDecl`].
+/// One `Member: target` / `Member: { … }` entry of a [`DispatchDecl`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct DispatchMember {
     /// The member's name (`Name.Member`).
     pub name: String,
-    /// The target label reference (a path expression).
-    pub target: Expr,
+    /// The member's right-hand side: a label reference or an inline body.
+    pub target: DispatchTarget,
     /// Span of the whole member.
     pub span: Span,
+}
+
+/// A dispatch member's right-hand side (Plan 7 #9a — D9.1).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DispatchTarget {
+    /// `Member: target` — a label reference (path / string / comptime expr).
+    Label(Expr),
+    /// `Member: { … }` — an inline body: sugar for an anonymous per-member
+    /// proc (hygienic label, same encoding row as a named target). NO
+    /// state/yield semantics — that is 9b's `script` construct (D9.2).
+    Body(Vec<AsmStmt>),
 }
 
 /// A `vars [name:] region { fields... }` declaration.

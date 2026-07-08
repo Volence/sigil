@@ -1617,6 +1617,16 @@ pub fn eval_offsets_with_root(
 /// left to the linker (v1 does not kind-check cross-module; link fails loudly
 /// on a genuinely-undefined symbol). Dup / reserved-`count` validation lives
 /// once-per-compile in `lower::validate_dispatch`, not here.
+/// The hygienic label of a dispatch member's inline body (Plan 7 #9a).
+/// `$` is unlexable by both frontends (the `__here$<module>$<n>` precedent,
+/// D-H.8), so it can never collide with a user symbol; module+table+member is
+/// program-unique (duplicate members are a `validate_dispatch` error, and
+/// duplicate table names are whole-program duplicate-label link errors — the
+/// same story as the table's own base label today).
+pub(crate) fn dispatch_body_label(module: &ast::Path, table: &str, member: &str) -> String {
+    format!("__dispatch${}${table}${member}", module.segments.join("."))
+}
+
 pub fn eval_dispatch_with_root(
     file: &ast::File,
     decl: &ast::DispatchDecl,
@@ -1632,49 +1642,57 @@ pub fn eval_dispatch_with_root(
             // Fresh env per member (parity with `eval_offsets_with_root`).
             let mut env = Env::new();
             let name = match &member.target {
-                ast::Expr::Path(p) => {
-                    if p.segments.len() == 1 {
-                        // D6.B4: module-local kind check. Only a POSITIVELY
-                        // non-code item is rejected; a bare name that is a proc
-                        // OR is unknown here is accepted and left to link.
-                        if let Some(kind) = ev.non_code_kind(&p.segments[0]) {
-                            ev.error(
-                                member.span,
-                                format!(
-                                    "[dispatch.target-not-code] dispatch `{}` member `{}` targets {kind} `{}` — a dispatch table must point at code",
-                                    decl.name, member.name, p.segments[0]
-                                ),
-                            );
-                            "<unresolved>".to_string()
+                // 9a: an inline body's row targets the anonymous proc's
+                // hygienic label; it is code by construction, so the
+                // [dispatch.target-not-code] kind check does not apply.
+                ast::DispatchTarget::Body(_) => {
+                    dispatch_body_label(&file.module.path, &decl.name, &member.name)
+                }
+                ast::DispatchTarget::Label(target) => match target {
+                    ast::Expr::Path(p) => {
+                        if p.segments.len() == 1 {
+                            // D6.B4: module-local kind check. Only a POSITIVELY
+                            // non-code item is rejected; a bare name that is a proc
+                            // OR is unknown here is accepted and left to link.
+                            if let Some(kind) = ev.non_code_kind(&p.segments[0]) {
+                                ev.error(
+                                    member.span,
+                                    format!(
+                                        "[dispatch.target-not-code] dispatch `{}` member `{}` targets {kind} `{}` — a dispatch table must point at code",
+                                        decl.name, member.name, p.segments[0]
+                                    ),
+                                );
+                                "<unresolved>".to_string()
+                            } else {
+                                p.segments.join(".")
+                            }
                         } else {
+                            // Multi-segment (cross-module) target: kind-unchecked in
+                            // v1 (D6.B4 ledger note); joined `a.b` for the linker.
                             p.segments.join(".")
                         }
-                    } else {
-                        // Multi-segment (cross-module) target: kind-unchecked in
-                        // v1 (D6.B4 ledger note); joined `a.b` for the linker.
-                        p.segments.join(".")
                     }
-                }
-                ast::Expr::Str(s, _) => s.clone(),
-                other => {
-                    let v = ev.eval_expr(other, &mut env);
-                    match v {
-                        Value::FnRef(n) => n,
-                        Value::Str(s) => s,
-                        _ => {
-                            ev.error(
-                                crate::parser::expr_span(other),
-                                format!(
-                                    "dispatch `{}` member `{}` must reference a label, got {}",
-                                    decl.name,
-                                    member.name,
-                                    v.type_name()
-                                ),
-                            );
-                            "<unresolved>".to_string()
+                    ast::Expr::Str(s, _) => s.clone(),
+                    other => {
+                        let v = ev.eval_expr(other, &mut env);
+                        match v {
+                            Value::FnRef(n) => n,
+                            Value::Str(s) => s,
+                            _ => {
+                                ev.error(
+                                    crate::parser::expr_span(other),
+                                    format!(
+                                        "dispatch `{}` member `{}` must reference a label, got {}",
+                                        decl.name,
+                                        member.name,
+                                        v.type_name()
+                                    ),
+                                );
+                                "<unresolved>".to_string()
+                            }
                         }
                     }
-                }
+                },
             };
             // Target extraction above is encoding-generic; only the cell shape
             // differs. `word_offsets` emits a self-relative signed word

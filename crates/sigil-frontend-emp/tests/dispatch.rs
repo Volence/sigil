@@ -478,3 +478,25 @@ section s (cpu: z80, vma: $8000) {
         "expected [dispatch.non-68k]: {errs:?}"
     );
 }
+
+// ---- 9. inline member bodies (Plan 7 #9a — D9.1) --------------------------
+
+#[test]
+fn inline_body_member_parses_and_lowers_clean() {
+    // 9a resolves the seam reserved since #6: `Member: { … }` is sugar for an
+    // anonymous per-member proc. Mixing body and label members is legal.
+    let src = "\
+module m
+dispatch Routines (encoding: word_offsets) {
+    Init: { rts },
+    Wait: wait,
+}
+proc wait() { rts }
+";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (_, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let errs: Vec<_> = diags.into_iter().map(|d| d.message).collect();
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+}

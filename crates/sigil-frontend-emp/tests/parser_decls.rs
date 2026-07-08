@@ -414,7 +414,16 @@ fn dispatch_requires_encoding() {
 }
 
 #[test]
-fn dispatch_reserves_inline_body_form() {
-    let (_f, diags) = parse_str("module m\ndispatch R (encoding: word_offsets) { A: { rts } }\n");
-    assert!(diags.iter().any(|d| d.message.contains("reserved")), "got: {diags:?}");
+fn dispatch_inline_body_parses_as_body_target() {
+    // 9a (D9.1): the once-reserved `Member: { … }` form now parses as an
+    // inline body (`DispatchTarget::Body`), sugar for an anonymous per-member
+    // proc — NOT a diagnostic. Mixing body and label members is legal.
+    let (f, diags) = parse_str(
+        "module m\ndispatch R (encoding: word_offsets) { A: { rts }, B: b }\n",
+    );
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let Item::Dispatch(d) = &f.items[0] else { panic!() };
+    assert_eq!(d.members.len(), 2);
+    assert!(matches!(&d.members[0].target, DispatchTarget::Body(_)));
+    assert!(matches!(&d.members[1].target, DispatchTarget::Label(_)));
 }
