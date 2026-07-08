@@ -1283,6 +1283,22 @@ impl Parser {
                 self.skip_newlines();
                 if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
                 match self.item() {
+                    Some(Item::Section(inner)) => {
+                        // Sections do not nest (locked decision): placement-within-
+                        // placement has no ratified meaning, and `lower_section_items`
+                        // has no `Item::Section` arm — it would silently drop
+                        // everything inside (data bytes, guards, capacity checks).
+                        // Reject loudly here instead; dropping the inner item is safe
+                        // because the diagnostic makes the loss visible.
+                        self.diag_at(
+                            inner.span,
+                            format!(
+                                "[section.nested] section `{}` is nested inside section `{name}` \
+                                 — sections do not nest; declare it at module level",
+                                inner.name
+                            ),
+                        );
+                    }
                     Some(i) => items.push(i),
                     None => self.recover_to_next_decl(true),
                 }

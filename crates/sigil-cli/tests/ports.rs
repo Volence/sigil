@@ -495,3 +495,26 @@ fn example_guards_compiles() {
         vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x00, 0x01, 0x02, 0x10, 0x20, 0x30, 0x40]
     );
 }
+
+// ---- Plan 7 #6 audit fix: nested `section {}` is rejected loudly ---------
+
+/// A `section {}` nested inside another `section {}` used to be silently
+/// dropped by `lower_section_items` (no `Item::Section` arm there) — losing
+/// data bytes, an `ensure_fatal` guard, AND an over-capacity `(max_size:)`
+/// check all at once. It must now be rejected at PARSE time with
+/// `[section.nested]`, never reaching lowering.
+#[test]
+fn nested_section_with_guards_and_capacity_is_rejected_at_parse_not_silently_dropped() {
+    let src = "module m\n\
+        section outer {\n\
+        section inner {\n\
+        ensure_fatal(false, \"x\")\n\
+        data T (max_size: 1): [u8; 4] = [1, 2, 3, 4]\n\
+        }\n\
+        }\n";
+    let (_file, diags) = parse_str(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[section.nested]")),
+        "want [section.nested], got: {diags:?}"
+    );
+}

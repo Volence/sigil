@@ -357,3 +357,18 @@ fn ensure_usable_as_ordinary_data_name() {
     let Item::Data(d) = &f.items[0] else { panic!("expected a data item named `ensure`") };
     assert_eq!(d.name, "ensure");
 }
+
+#[test]
+fn nested_section_is_rejected() {
+    // A `section {}` nested inside another `section {}` has no ratified
+    // placement-within-placement meaning (locked decision) — and `lower_section_items`
+    // has no `Item::Section` arm, so it would silently drop everything inside
+    // (data bytes, guards, capacity checks). Reject it loudly at parse time instead.
+    let (_f, diags) = parse_str(
+        "module m\nsection outer {\n  section inner {\n    data d: [u8; 1] = [$FF]\n  }\n}\n",
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("[section.nested]")),
+        "want [section.nested], got: {diags:?}"
+    );
+}
