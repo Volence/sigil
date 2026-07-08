@@ -143,9 +143,15 @@ impl Evaluator<'_> {
     /// `ProvFrame::Comptime`; see the `AsmStmt::Call` arm's comment for why a
     /// structured provenance frame cannot attach to the fragment yet). Shared by
     /// every statement-position call spelling (paren `AsmStmt::Call`, bare
-    /// D-PP.1 — and U2's named-arg sites next), so the note's wording and its
-    /// errors-only trigger stay in ONE place. Only an ERROR warrants the note
-    /// (the message speaks of an error); a stray warning would not.
+    /// D-PP.1), so the note's wording and its errors-only trigger stay in ONE
+    /// place. Only an ERROR warrants the note (the message speaks of an error);
+    /// a stray warning would not.
+    ///
+    /// D-PP.4 (named call arguments) does NOT add a third spelling here: named
+    /// args are paren-form only (see `operand_to_arg`'s doc comment below for
+    /// why the bare spelling's operand grammar cannot represent `name: expr`
+    /// without ambiguity) — `bind_args` in `eval/call.rs` is the one binder both
+    /// existing spellings already share.
     fn note_if_comptime_error(&mut self, watermark: usize, call_site: Span) {
         let new_error = self.diags[watermark..].iter().any(|d| d.level == Level::Error);
         if new_error {
@@ -809,7 +815,22 @@ fn two_segment_field(disp: &ast::Expr) -> Option<(&str, &str)> {
 /// Any addressing-mode-only shape (`#imm`, `(a0)`, `-(a7)`, `(a0)+`, a
 /// size-suffixed operand, a `{splice}`) is NOT a valid call argument → `None`,
 /// which the caller turns into a clear diagnostic. The reconstructed `Arg` is
-/// always positional; NAMED bare-call arguments are U2, out of scope here.
+/// always positional.
+///
+/// NAMED bare-call arguments (D-PP.4) were investigated and NOT built: the
+/// operand grammar has no shape for `name: expr`. `operand()` (parser.rs) hits
+/// the bareword `name`, parses it as a `Plain` expression, and then the
+/// trailing `:` fails `expect_line_end_or_rbrace` — a genuine (and already
+/// LOUD, pre-existing) parse error, not a silent misparse. Teaching the
+/// operand grammar to accept a trailing `:` after a bare ident is exactly the
+/// token shape `.name:` (a local label definition, parsed at the STATEMENT
+/// level, ahead of `instr_line`) already claims one dot away from — adding it
+/// to `operand()` too would need a lookahead rule to keep the two apart, for
+/// no real gain: the tranche's only named-arg call site (`spawn(...)`) is
+/// already paren-form. Decision: named args are PAREN-FORM ONLY (see
+/// `bind_args` in `eval/call.rs`); the bare spelling stays positional-only,
+/// and `f name: v` keeps its existing loud parse error unchanged (pinned by
+/// `bare_form_named_looking_arg_is_a_loud_parse_error` in `tests/bare_calls.rs`).
 fn operand_to_arg(op: &Operand) -> Option<ast::Arg> {
     let value = match op {
         Operand::Plain { expr, size: None, .. } => expr.clone(),

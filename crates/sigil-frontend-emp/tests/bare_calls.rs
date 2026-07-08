@@ -390,3 +390,49 @@ proc paren (a0: *u8) {
         .collect();
     assert!(fall.is_empty(), "bare and paren both terminate via spliced rts: {fall:?}");
 }
+
+// =============================================================================
+// D-PP.4 — named call arguments: the bare-spelling decision
+// =============================================================================
+//
+// D-PP.4 is otherwise a paren-form-only feature (see `eval_fns.rs`'s
+// "D-PP.4" section for the binder tests). The bare statement-call spelling
+// (D-PP.1) reverses each parsed instruction OPERAND back into a positional
+// `Arg` (`operand_to_arg` in `eval/asm.rs`) — there is no operand shape for
+// `name: expr`, because the operand grammar's trailing-size/local-label
+// machinery already claims a bare `ident :` prefix in ways that would be
+// genuinely ambiguous to repurpose (`.draw:` label syntax, and — decisively —
+// the operand parser already stops at the colon with a diagnostic today, so
+// this is confirmed a PARSE-TIME rejection, not a semantic gap to plumb).
+// Fallback taken: named args are PAREN-FORM ONLY; a bare-form `k: v` stays a
+// loud parse error (never silently dropped or silently repositioned). The
+// tranche's only named-arg call (`spawn(SeedDef, offset: ..., flip: ...)`) is
+// already paren-form in the exhibit, so this fallback satisfies the
+// acceptance corpus without bare-form grammar surgery.
+
+/// `f offset: 1` (bare statement call, named-looking arg) must NOT parse
+/// clean and must NOT silently reinterpret `offset` as a positional register/
+/// path arg while dropping `: 1` — it stays the pre-existing loud parse error
+/// at the colon.
+#[test]
+fn bare_form_named_looking_arg_is_a_loud_parse_error() {
+    let src = "\
+module m
+
+comptime fn f(offset: int) -> int { return offset }
+
+proc p (a0: *u8) {
+    f offset: 1
+    rts
+}
+";
+    let (_file, diags) = sigil_frontend_emp::parse_str(src);
+    assert!(
+        !diags.is_empty(),
+        "bare-form `name: expr` must be a loud parse error, not a silent parse"
+    );
+    assert!(
+        diags.iter().any(|d| d.level == Level::Error),
+        "expected at least one ERROR diagnostic, got: {diags:?}"
+    );
+}

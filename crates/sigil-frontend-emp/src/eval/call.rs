@@ -385,10 +385,15 @@ impl<'a> Evaluator<'a> {
     /// call still proceeds without a crash.
     ///
     /// Positional args fill parameters left-to-right by position; named args fill
-    /// the parameter of that name. Errors: an unknown named parameter, a
-    /// parameter filled twice (positionally then by name, or twice by name), a
-    /// positional arg past the last parameter (`too many arguments`), and any
-    /// parameter left unfilled (`missing argument`).
+    /// the parameter of that name, and once a named arg has appeared, no FURTHER
+    /// positional arg is allowed (D-PP.4 — "positional args first, then named":
+    /// a positional arg trailing a named one is a loud, rule-naming error rather
+    /// than silently landing in whatever slot `pos` has reached). Errors: a
+    /// positional arg after a named one, an unknown named parameter, a parameter
+    /// filled twice (positionally then by name, or twice by name), a positional
+    /// arg past the last parameter (`too many arguments`), and any parameter left
+    /// unfilled (`missing argument` — D-PP.4 builds no default values, so a
+    /// param that is simply never mentioned is always this error).
     fn bind_args(
         &mut self,
         decl: &ast::ComptimeFnDecl,
@@ -399,6 +404,7 @@ impl<'a> Evaluator<'a> {
         let n = decl.params.len();
         let mut slots: Vec<Option<Value>> = vec![None; n];
         let mut pos = 0usize;
+        let mut seen_named = false;
         for arg in args {
             // A `return` fired in an earlier arg (its value belongs to the
             // caller) or an abort — stop binding so we don't pile spurious
@@ -416,7 +422,13 @@ impl<'a> Evaluator<'a> {
             let v = self.eval_call_arg(&arg.value, env);
             match &arg.name {
                 None => {
-                    if pos >= n {
+                    if seen_named {
+                        self.error(
+                            arg.span,
+                            "a positional argument after a named argument is not allowed \
+                             — positional arguments must come first",
+                        );
+                    } else if pos >= n {
                         self.error(arg.span, "too many arguments");
                     } else if slots[pos].is_some() {
                         let pname = &decl.params[pos].0;
@@ -431,22 +443,25 @@ impl<'a> Evaluator<'a> {
                         pos += 1;
                     }
                 }
-                Some(pname) => match decl.params.iter().position(|(p, _, _)| p == pname) {
-                    None => {
-                        self.error(arg.span, format!("unknown named parameter `{pname}`"));
-                    }
-                    Some(idx) => {
-                        if slots[idx].is_some() {
-                            self.error(
-                                arg.span,
-                                format!("parameter `{pname}` given more than once"),
-                            );
-                        } else {
-                            self.check_reg_arg_type(&v, &decl.params[idx].1, arg.span);
-                            slots[idx] = Some(v);
+                Some(pname) => {
+                    seen_named = true;
+                    match decl.params.iter().position(|(p, _, _)| p == pname) {
+                        None => {
+                            self.error(arg.span, format!("unknown named parameter `{pname}`"));
+                        }
+                        Some(idx) => {
+                            if slots[idx].is_some() {
+                                self.error(
+                                    arg.span,
+                                    format!("parameter `{pname}` given more than once"),
+                                );
+                            } else {
+                                self.check_reg_arg_type(&v, &decl.params[idx].1, arg.span);
+                                slots[idx] = Some(v);
+                            }
                         }
                     }
-                },
+                }
             }
         }
         // If a return/abort interrupted arg binding, the slots are incomplete by

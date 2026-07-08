@@ -143,6 +143,155 @@ fn duplicate_argument_errors() {
     );
 }
 
+// ---- D-PP.4: named call arguments (Spec 2, Plan 7 — pitcher_plant tranche) --
+//
+// The paren-form binder above (`named_args_out_of_order` /
+// `positional_then_named_args` / the four error tests) predates this tranche
+// (T4/T6). D-PP.4's new rule is the one direction that was NOT yet rejected:
+// a positional argument AFTER a named one. The tests below exercise that rule
+// plus the tranche's motivating call shape (`spawn(SeedDef, offset: Vec{...},
+// flip: inherit)`): struct-literal and enum-const named-arg VALUES, Reg as a
+// named arg, and the "named arg to a non-comptime-fn callable" rejections
+// (lambda, builtin) that must stay clean rather than silently going
+// positional.
+
+#[test]
+fn positional_after_named_errors() {
+    // `add(b: 2, 1)` — a positional arg trailing a named one. Today (pre
+    // D-PP.4) this silently binds `1` into the first open slot (`a`),
+    // producing 3 with zero diagnostics — exactly the silent misbinding
+    // D-PP.4 forbids. Must be a loud, rule-naming error instead.
+    let src = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst R = add(b: 2, 1)\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.message.contains("positional") && d.message.contains("after")),
+        "diagnostics were {diags:?}"
+    );
+}
+
+#[test]
+fn positional_after_named_does_not_silently_bind() {
+    // Companion to the error-message assertion: the RESULT must not be the
+    // silently-misbound value (3) — it must poison, proving the bad arg
+    // never reaches a slot.
+    let src = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst R = add(b: 2, 1)\n";
+    let (v, _) = eval(src, "R");
+    assert_ne!(v, Some(int(3)), "must not silently bind the trailing positional arg");
+}
+
+#[test]
+fn spawn_shaped_call_positional_then_two_named() {
+    // The tranche's motivating call shape: one positional arg, then two named
+    // args whose VALUES are a struct literal and an enum const — ordinary
+    // comptime expressions, per D-PP.4.
+    let src = "module m\n\
+        struct Vec { x: i16, y: i16 }\n\
+        enum Flip: u8 { none = 0, inherit = 1 }\n\
+        pub const inherit: Flip = Flip.inherit\n\
+        comptime fn spawn(def: int, offset: Vec, flip: Flip) -> int {\n\
+        \x20   return def + offset.x + offset.y\n\
+        }\n\
+        const R = spawn(7, offset: Vec{ x: -16, y: -4 }, flip: inherit)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(7 - 16 - 4)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn all_named_args_any_order() {
+    let src = "module m\n\
+        struct Vec { x: i16, y: i16 }\n\
+        comptime fn spawn(def: int, offset: Vec) -> int { return def + offset.x }\n\
+        const R = spawn(offset: Vec{ x: 5, y: 0 }, def: 1)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(6)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn byte_identical_named_vs_positional() {
+    // `f(1, k: 2)` and `f(1, 2)` must bind to the exact same values — named
+    // args are sugar over the same positional slots, not a distinct path.
+    let src_named = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst R = add(1, b: 2)\n";
+    let src_pos = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst R = add(1, 2)\n";
+    let (v_named, d_named) = eval(src_named, "R");
+    let (v_pos, d_pos) = eval(src_pos, "R");
+    assert_eq!(v_named, v_pos);
+    assert_eq!(v_named, Some(int(3)));
+    assert!(d_named.is_empty() && d_pos.is_empty());
+}
+
+#[test]
+fn no_default_values_missing_named_param_still_errors() {
+    // D-PP.4 explicitly builds no defaults: leaving a param unbound (even one
+    // that was never mentioned positionally OR by name) is still "missing
+    // argument", exactly like the existing all-positional case.
+    let src = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst R = add(a: 1)\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.message.contains("missing argument") && d.message.contains("b")),
+        "diagnostics were {diags:?}"
+    );
+}
+
+#[test]
+fn named_arg_duplicate_named_and_named() {
+    let src = "module m\ncomptime fn add(a: int, b: int) -> int { return a + b }\nconst R = add(a: 1, a: 2, b: 3)\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.message.contains("more than once")),
+        "diagnostics were {diags:?}"
+    );
+}
+
+#[test]
+fn named_reg_arg_binds_like_positional_reg_arg() {
+    // Reg is a comptime-only param type (D-PP.2); named-arg binding must
+    // route the same bareword-wins-as-register rule through, not just the
+    // positional path. `facing_abs(r: d3)` must equal `facing_abs(d3)`.
+    let src_named = "module m\ncomptime fn pick(r: Reg) -> int { return 1 }\nconst R = pick(r: d3)\n";
+    let src_pos = "module m\ncomptime fn pick(r: Reg) -> int { return 1 }\nconst R = pick(d3)\n";
+    let (v_named, d_named) = eval(src_named, "R");
+    let (v_pos, _) = eval(src_pos, "R");
+    assert_eq!(v_named, Some(int(1)));
+    assert_eq!(v_named, v_pos);
+    assert!(d_named.is_empty(), "unexpected diagnostics: {d_named:?}");
+}
+
+#[test]
+fn named_arg_to_lambda_is_a_clean_error() {
+    // Lambdas have positional-only params (no name list to bind against) —
+    // a named arg there must be a clean, specific diagnostic, not silent
+    // positional treatment.
+    let src = "module m\n\
+        comptime fn go() -> int {\n\
+        \x20   let f = |x| x + 1\n\
+        \x20   return f(x: 10)\n\
+        }\n\
+        const R = go()\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.message.contains("positional")),
+        "diagnostics were {diags:?}"
+    );
+}
+
+#[test]
+fn named_arg_to_builtin_is_rejected() {
+    // Builtins (map/filter/fold/...) take positional args only.
+    let src = "module m\n\
+        comptime fn go() -> int {\n\
+        \x20   let xs = [1, 2, 3]\n\
+        \x20   return xs.fold(init: 0, f: |a, b| a + b)\n\
+        }\n\
+        const R = go()\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.message.contains("positional")),
+        "diagnostics were {diags:?}"
+    );
+}
+
 #[test]
 fn unknown_function_errors() {
     let src = "module m\nconst R = nope(1)\n";
