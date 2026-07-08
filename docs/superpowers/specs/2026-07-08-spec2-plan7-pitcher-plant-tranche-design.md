@@ -134,6 +134,32 @@ Genuinely missing (the tranche's feature work):
 Two-stage reviews on U1/U3/U4 (load-bearing grammar/operand semantics); single-pass on
 U2/U5/U6.
 
+## Execution amendments (recorded as the tasks landed)
+
+- **D-PP.6 corpus root AMENDED to `examples/game/`** (`--root examples` is unusable: four
+  pre-existing `module m` exhibit files collide there — master baseline noise, not this
+  branch's to fix). Prelude = `examples/game/prelude.emp` (`module prelude`); exhibit
+  moved to `examples/game/badniks/pitcher_plant.emp`; the illustrative mock's module id
+  retitled `composition_pitcher_plant` to stop colliding. Acceptance:
+  `sigil emp examples/game/badniks/pitcher_plant.emp --root examples/game --prelude prelude`
+  → **exit 0, zero diagnostics, 340 bytes — pinned byte-exact (hand-derived first, matched
+  the compiler on first comparison) in crates/sigil-cli/tests/pitcher_plant_acceptance.rs**.
+- Sanctioned exhibit edits: exactly two lines (`vel:`/`frame:` added to `Def` — struct
+  literals require every field; no defaults tonight).
+- U3 spec-review ISSUE-2 (data-item comptime field-read didn't exist; gap-analysis a4 was
+  wrong) was folded into U4 and built — both halves of the `Item.field` fork shipped.
+- U4 shadow defect (local item + imported type-stub → local base with IMPORTED offset)
+  found by review and fixed: local wins for base AND type, coherently across both halves.
+- Named args (D-PP.4) turned out mostly pre-existing; the real gap was
+  positional-after-named silently mis-binding (fixed). Bare-form named args: the operand
+  grammar already rejects `k: v` loudly — named args are paren-form only (recorded).
+- `routine(p: Label)` helper authored as `pea {p}` / `move.w (a7)+, Sst.routine(a0)` —
+  register-free so it composes under any `clobbers(...)` set (a `lea` scratch register
+  would trip `[proc.clobber-undeclared]` on procs that don't declare it).
+- `spawn(..., flip: Flip)`: enum values don't splice as immediates (verified fact), so the
+  helper branches comptime on `flip == Flip.inherit` between template variants; the
+  non-inherit arm is a documented, unexercised stub.
+
 ## Deferred (ledger candidates from this tranche)
 
 - Default parameter values for comptime fns; struct-literal rest-fill/zero-default.
@@ -141,3 +167,17 @@ U2/U5/U6.
 - Migrating `string`-typed splice params to `Label`.
 - Multi-segment field-address operands (`A.b.c`).
 - Region-form `vars` + map allocation for a REAL `Player_1` (#7 — unchanged).
+- Unknown-bareword label values defer to a LINK error whose span is module-level — a real
+  DX cost vs the old line-precise comptime "unknown name" (U3 ISSUE-1, design-sanctioned).
+- Cross-module type-only stubs inject only for data items with an EXPLICIT single-segment
+  type annotation (`pub data Player_1: Sst = …`); literal-inferred types don't travel (U5).
+- Shadow-warning lint when a local data item shadows an imported one (U4 fix makes it
+  coherent; a lint would make it visible).
+- Cross-module data-item VALUE reads (`[value.cross-module]` today, by design).
+- SymOff branch-target rejection message is the generic "branch needs a single label
+  target" (U4 M3). `jmp Item.field` = absolute transfer via the abs-sym seam (documented
+  + byte-pinned, deliberate).
+- Pre-existing vacuous fixture: resolve_rename.rs::renames_labels_and_fixup_targets
+  discards lowering diags over a top-level bare-array label source (spotted during U3).
+- Enum-value immediate splices (`#{flip}`) — a typed conversion story would simplify the
+  spawn-helper pattern.
