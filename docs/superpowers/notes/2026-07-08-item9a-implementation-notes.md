@@ -148,3 +148,20 @@ Implementation (comment only, no behavior change):
   two-line comment above `let Some(buf) = buf else { continue };`
   distinguishing "body failed to evaluate → skip" from "empty body still
   reaches the fallthrough lint below" (Task 2 code-quality review fold-in).
+
+## T5 — gate + byte-diff probe vs master (controller-run)
+
+- `cargo test --workspace --no-fail-fast`: exactly the 4 allowlisted sigil-harness reds
+  (full_build_reproduces_sound_driver_regions, vector_table_matches_reference_rom_first_256_bytes,
+  full_debug_rom_matches_assembled_reference, full_rom_matches_assembled_reference — the aeon
+  sound-driver strlen drift), ZERO new failures.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- Exhibit: `pitcher_plant.emp --root examples/game --prelude prelude` → built: 340 bytes, exit 0,
+  zero diagnostics, on BOTH branch and master (359d9cd) — `cmp` BYTE-IDENTICAL (the 9a
+  byte-exactness bar: programs not using inline bodies are unchanged).
+- Spec §5.5 "Reserved seam" paragraph replaced with the shipped inline-bodies contract in the
+  empyrean WORKING TREE (uncommitted, Volence's cadence); design doc D9.1 marked shipped.
+
+9a complete on branch plan7-item9: T1 247c932 (+1b0febf review fold-in), T2 d48a3e8,
+T3 19e6e57, docs 05ecc90/66e543f. Two-stage reviews passed on T1 (spec ✅, quality ✅ after
+doc-reorder fold-in) and T2 (spec ✅ incl. 4 adversarial probes, quality ✅ no fix-first).
