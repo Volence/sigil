@@ -29,6 +29,9 @@ raw procs per object, and mixing is legal.
   shipped machinery, and it deliberately does NOT introduce state/yield semantics.
   The coroutine gets its own surface (D9.2) rather than overloading dispatch bodies —
   a dispatch is a TABLE; a script is a PROGRAM. Conflating them bends tenet 1.
+  **(9a shipped on branch plan7-item9, 2026-07-08 — plan + rulings R9a.1–R9a.6 in
+  docs/superpowers/plans/2026-07-08-spec2-plan7-item9a-dispatch-inline-bodies.md; RED
+  evidence in the 9a implementation notes.)**
 - **D9.2 — the coroutine construct: `script`.** Sketch (surface deliberately unfrozen):
 
   ```
@@ -102,6 +105,11 @@ raw procs per object, and mixing is legal.
    a compile error rather than a silent rts (an object that never draws is the footgun).
    `wait_frames N` is per-frame sugar (tick timer, yield through the epilogue until
    elapsed), not a blocking wait.
+
+**(9b — D9.2/D9.5/D9.6 — shipped on branch plan7-item9, 2026-07-08: surface frozen as
+R9b.1–R9b.12 in docs/superpowers/plans/2026-07-08-spec2-plan7-item9b-script-yield.md;
+exhibit examples/game/badniks/pitcher_plant_script.emp alongside the untouched proc
+version; spec §5.6 + D2.24 drafted in the empyrean working tree.)**
 
 ## What this is NOT (scope guards)
 

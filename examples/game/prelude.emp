@@ -32,6 +32,12 @@ module prelude
 // engine's exact names for those two bytes aren't load-bearing here — only
 // that badniks have somewhere real to keep "current animation id" and
 // "current state routine" outside of `sst_custom`.
+/// The script-PC type (Plan 7 #9b — D9.3/R9b.4): the value a `script`'s
+/// `yield` stores into the resume slot — a table ordinal pre-scaled by the
+/// script's encoding, always one word. The `script` construct discovers the
+/// resume slot by this type: the pointee struct's unique `ScriptPc` field.
+pub newtype ScriptPc = u16
+
 pub struct Sst (size: $50) {
     id: u16,                     // object type id                — offset 0
     _pad0: [u8; 14] @ $2,        // unused header fields, elided from this exhibit
@@ -49,8 +55,12 @@ pub struct Sst (size: $50) {
                                   // of home for it — offset $1C)
     _pad3: [u8; 3] @ $1D,        // (animation-script cursor/timer, elided)
 
-    routine: u16 @ $20,          // current state-routine id/slot (this
-                                  // exhibit's choice of home — offset $20)
+    resume: ScriptPc @ $20,      // the next-frame routine/resume slot (this
+                                  // exhibit's choice of home — offset $20).
+                                  // D9.5: the script PC IS the routine pointer
+                                  // storage — the `routine` helper writes it
+                                  // manually; a `script`'s `yield` writes it
+                                  // automatically. Same storage, typed.
     _pad4: [u8; 12] @ $22,       // (remaining header fields, elided)
 
     sst_custom: [u8; 34] @ $2E,  // per-object scratch window       — offset $2E
@@ -210,7 +220,7 @@ pub data Player_1: Sst = Sst{
     y_vel:      0,
     anim:       0,
     _pad3:      [0, 0, 0],
-    routine:    0,
+    resume:     0,
     _pad4:      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     sst_custom: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 }
@@ -229,7 +239,7 @@ pub comptime fn anim(id: u8) -> Code {
     }
 }
 
-/// Sets the current object's state routine. `Sst.routine` (see above) is a
+/// Sets the current object's state routine. `Sst.resume` (see above) is a
 /// 16-bit field this mock engine treats as "the low word of the routine's
 /// address" — enough to be a real, derivable store without needing a real
 /// dispatch table. `pea {p}` pushes the routine's address (the `Label` param
@@ -237,10 +247,12 @@ pub comptime fn anim(id: u8) -> Code {
 /// field — a register-free way to move a label's address into memory, so
 /// this helper is safe to call from procs with a narrow `clobbers(...)` set
 /// (only `a7`/the stack pointer moves, which the clobber lint doesn't track).
+/// D9.5: this is the MANUAL spelling of what a `script`'s `yield` automates —
+/// both write the same `resume` storage (the script PC IS the state).
 pub comptime fn routine(p: Label) -> Code {
     return asm {
         pea     {p}
-        move.w  (a7)+, Sst.routine(a0)
+        move.w  (a7)+, Sst.resume(a0)
     }
 }
 

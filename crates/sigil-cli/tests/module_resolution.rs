@@ -1865,3 +1865,132 @@ fn overlay_odd_field_warning_reports_once_across_modules() {
         "the warning is the overlay's own field declaration — anchor in lib.emp, got: {stderr}"
     );
 }
+
+#[test]
+fn script_compiles_unreferenced_under_program_path() {
+    // Plan 7 #9b (review fold-in): a `script`'s hidden resume table SELF-
+    // references its base label (`dc.w resume_k - brain` rows), so the script's
+    // NAME must enter the resolver's own-defined map — even a completely
+    // UNREFERENCED script fails `report_unresolved` under `--root` otherwise
+    // ("unknown symbol `brain`"). The unit-test harness (`lower_module`
+    // directly) bypasses the resolve pass, which is why only the program path
+    // catches this.
+    //
+    //   No `--map` → sequential pack from 0; the single module's image is
+    //   byte-identical to the 9b plan's Probe A (18 bytes):
+    //     brain @ 0:  00 04 00 0E                (table: entry=+4, resume1=+14)
+    //           @ 4:  4E 71                      (nop)
+    //           @ 6:  31 7C 00 02 00 20          (move.w #2,$20(a0))
+    //           @12:  60 02                      (jbra done → bra.s +2)
+    //           @14:  4E 75                      (__resume$1: rts)
+    //     done  @16:  4E 75
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "m.emp",
+        "module m\n\
+         newtype ScriptPc = u16\n\
+         struct S (size: $24) {\n    _pad0: [u8; $20],\n    resume: ScriptPc @ $20,\n    _pad1: [u8; 2] @ $22,\n}\n\
+         script brain (a0: *S) (encoding: word_offsets) shows done {\n    nop\n    yield\n    rts\n}\n\
+         proc done () { rts }\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("m.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![
+            0x00, 0x04, 0x00, 0x0E, // table
+            0x4E, 0x71, // nop
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20, // move.w #2,$20(a0)
+            0x60, 0x02, // jbra done
+            0x4E, 0x75, // __resume$1: rts
+            0x4E, 0x75, // done: rts
+        ],
+        "solo script under --root = the Probe A image"
+    );
+}
+
+#[test]
+fn cross_module_pub_script_resolves_via_use() {
+    // Plan 7 #9b (review fold-in, R9b.8): `pub script` exports the table's base
+    // label — the engine handle — like `pub dispatch`. A consumer module
+    // `use`s it and references it; the resolver must export the name
+    // (`item_pub_name`) for the `use` to resolve.
+    //
+    //   LAYOUT ARITHMETIC (computed INDEPENDENTLY of read-back; mirrors
+    //   `two_modules_cross_reference_and_link`):
+    //     no `--map` → sequential pack from 0. Entry `obj` packs first: its
+    //     `jmp brain` reserves the MAX abs.l span (6 bytes), then relaxes to
+    //     abs.w (target 6 ≤ 0x7FFF, 4 bytes) leaving a 2-byte gap.
+    //       obj    @ 0: jmp brain abs.w = 4E F8 00 06
+    //       gap    @ 4: 00 00
+    //     `engine` (reached via `use engine`) lands at LMA 6: the script's
+    //     18-byte Probe-A image is internally position-relative (RelOffset
+    //     table rows, short jbra), so it reproduces verbatim at any base.
+    //       brain  @ 6 .. done @ 22 (rts = 4E 75, ends at 24)
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "engine.emp",
+        "module engine\n\
+         newtype ScriptPc = u16\n\
+         struct S (size: $24) {\n    _pad0: [u8; $20],\n    resume: ScriptPc @ $20,\n    _pad1: [u8; 2] @ $22,\n}\n\
+         pub script brain (a0: *S) (encoding: word_offsets) shows done {\n    nop\n    yield\n    rts\n}\n\
+         proc done () { rts }\n",
+    );
+    write(
+        root,
+        "obj.emp",
+        "module obj\nuse engine.{brain}\nproc init () {\n    jmp brain\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("obj.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes.len(), 24, "obj max-span 6 + engine 18");
+    assert_eq!(&bytes[0..4], &[0x4E, 0xF8, 0x00, 0x06], "jmp brain → table @ LMA 6");
+    assert_eq!(
+        &bytes[6..24],
+        &[
+            0x00, 0x04, 0x00, 0x0E, // table (position-relative — Probe A verbatim)
+            0x4E, 0x71,
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20,
+            0x60, 0x02,
+            0x4E, 0x75,
+            0x4E, 0x75,
+        ],
+        "the script image at its packed base"
+    );
+}

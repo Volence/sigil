@@ -13,11 +13,13 @@ mod data;
 pub(crate) mod hygiene;
 pub mod patch;
 mod proc;
+mod script;
 
 pub use code::lower_code_buf;
 pub(crate) use code::is_recognized_mnemonic;
 
 use crate::ast;
+use crate::eval::eval_proc_body;
 use crate::layout::{
     eval_attr_int, eval_data_with_root, eval_dispatch_with_root, eval_offsets_with_root,
     validate_overlay, HerePos,
@@ -195,8 +197,10 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         origin: next_lma,
                         include_root: opts.include_root.as_deref(),
                     },
+                    as_compat,
                     &mut builder,
                     &mut diags,
+                    &mut asm_counter,
                 );
             }
             ast::Item::Ensure(decl) => {
@@ -253,6 +257,25 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     overlay_pass_diags.extend(d.iter().cloned());
                     diags.append(&mut d);
                 }
+            }
+            // #9b Task 2: desugar to a hidden resume table + flattened proc
+            // body (lower/script.rs), same placement/argument sources as the
+            // adjacent Dispatch arm.
+            ast::Item::Script(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                script::lower_script_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        include_root: opts.include_root.as_deref(),
+                    },
+                    as_compat,
+                    &mut builder,
+                    &mut diags,
+                    &mut asm_counter,
+                );
             }
             _ => {}
         }
@@ -339,7 +362,7 @@ fn lower_section_items(
                 lower_offsets_item(file, decl, placement, builder, diags);
             }
             ast::Item::Dispatch(decl) => {
-                lower_dispatch_item(file, decl, placement, builder, diags);
+                lower_dispatch_item(file, decl, placement, as_compat, builder, diags, asm_counter);
             }
             // Fallthrough adjacency is checked within THIS section's item list.
             ast::Item::Proc(decl) => {
@@ -376,6 +399,11 @@ fn lower_section_items(
                     overlay_pass_diags.extend(d.iter().cloned());
                     diags.append(&mut d);
                 }
+            }
+            // #9b Task 2: in-section placement — same desugar as the top-level
+            // arm (lower/script.rs), mirroring the adjacent Dispatch arm.
+            ast::Item::Script(decl) => {
+                script::lower_script_item(file, decl, placement, as_compat, builder, diags, asm_counter);
             }
             _ => {}
         }
@@ -509,12 +537,17 @@ fn lower_offsets_item(
 /// (`decl.name`) at its first byte, then emits the bytes + fixups. Dispatch is
 /// 68k-only in v1 for BOTH encodings: a `cpu: z80` section is rejected by the
 /// `[dispatch.non-68k]` guard below (at the dispatch's own span) before eval.
+///
+/// 9a: after the table, each `Member: { … }` inline body lowers as an anonymous
+/// proc at `__dispatch$<module>$<table>$<member>`, in member order (R9a.1-R9a.4).
 fn lower_dispatch_item(
     file: &ast::File,
     decl: &ast::DispatchDecl,
     placement: &Placement,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
+    asm_counter: &mut u32,
 ) {
     // D6.B1: 68k sections only in v1, mirroring `[offsets.non-68k]`. Guard HERE
     // (at the dispatch's own span, with a dispatch-specific code) rather than
@@ -539,6 +572,28 @@ fn lower_dispatch_item(
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
     builder.emit_data(&bytes, fixups, decl.span);
+
+    // 9a (D9.1, R9a.1): inline bodies lower immediately after the table, in
+    // member order, as anonymous procs — hygienic label, then the SAME
+    // eval_proc_body + lower_code_buf path a named proc takes (D-P4.1). No
+    // params / clobbers / falls_into surface (R9a.3): a member needing a proc
+    // contract binds a named proc instead.
+    for member in &decl.members {
+        let ast::DispatchTarget::Body(body) = &member.target else { continue };
+        let label = crate::layout::dispatch_body_label(&file.module.path, &decl.name, &member.name);
+        builder.define_label(&label);
+        let (buf, mut ds, next_counter) =
+            eval_proc_body(file, &label, &[], body, member.span, *asm_counter, placement.cpu);
+        *asm_counter = next_counter;
+        diags.append(&mut ds);
+        // `None` = the body failed to EVALUATE (already diagnosed) — skip it.
+        // An EMPTY body is `Some(empty buf)` and still reaches the lint below.
+        let Some(buf) = buf else { continue };
+        lower_code_buf(&buf, placement.cpu, as_compat, builder, diags);
+        if !as_compat {
+            proc::check_member_body_fallthrough(&decl.name, member, &buf, placement.cpu, diags);
+        }
+    }
 }
 
 /// Read a section's `cpu:`/`vma:` attributes (§7.1). `cpu:` defaults to

@@ -478,3 +478,190 @@ section s (cpu: z80, vma: $8000) {
         "expected [dispatch.non-68k]: {errs:?}"
     );
 }
+
+// ---- 9. inline member bodies (Plan 7 #9a — D9.1) --------------------------
+
+#[test]
+fn inline_body_member_parses_and_lowers_clean() {
+    // 9a resolves the seam reserved since #6: `Member: { … }` is sugar for an
+    // anonymous per-member proc. Mixing body and label members is legal.
+    let src = "\
+module m
+dispatch Routines (encoding: word_offsets) {
+    Init: { rts },
+    Wait: wait,
+}
+proc wait() { rts }
+";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (_, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let errs: Vec<_> = diags.into_iter().map(|d| d.message).collect();
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+}
+
+// ---- 9a T2: inline bodies lower as anonymous procs after the table -------
+
+#[test]
+fn inline_body_lowers_after_table_byte_exact() {
+    // R9a.1: bodies lower immediately after the table, in member order. The
+    // Init row points at the anonymous proc (+4); Wait at the named proc (+6):
+    //   table:       00 04  00 06
+    //   Init's body: 4E 75          (rts)
+    //   wait:        4E 75          (rts)
+    let src = "\
+module m
+dispatch Routines (encoding: word_offsets) {
+    Init: { rts },
+    Wait: wait,
+}
+proc wait() { rts }
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x04, 0x00, 0x06, 0x4E, 0x75, 0x4E, 0x75]);
+}
+
+#[test]
+fn inline_body_long_ptrs_byte_exact() {
+    // Same shape under long_ptrs: 2 rows × 4 bytes, then the bodies.
+    //   table: 00 00 00 08  00 00 00 0A
+    //   A:     4E 75   b: 4E 75
+    let src = "\
+module m
+dispatch R (encoding: long_ptrs) {
+    A: { rts },
+    B: b,
+}
+proc b() { rts }
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x0A, 0x4E, 0x75, 0x4E, 0x75]
+    );
+}
+
+#[test]
+fn inline_body_without_terminator_warns_fallthrough() {
+    // R9a.4: a body that can reach its `}` without an unconditional terminator
+    // warns [dispatch.body-fallthrough] (mirror of [proc.undeclared-fallthrough]).
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) {
+    A: { nop },
+}
+";
+    let msgs = msgs(src);
+    assert_eq!(
+        msgs.iter().filter(|m| m.contains("[dispatch.body-fallthrough]")).count(),
+        1,
+        "msgs: {msgs:?}"
+    );
+}
+
+#[test]
+fn empty_inline_body_emits_row_and_warns() {
+    // An empty body is legal (its label sits at whatever follows) but cannot
+    // terminate, so the fallthrough warning fires; the table row still emits.
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) {
+    A: { },
+}
+";
+    let (module, diags) = lower(src);
+    assert!(diags.iter().any(|m| m.contains("[dispatch.body-fallthrough]")), "diags: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x02]);
+}
+
+#[test]
+fn section_nested_inline_body_lowers() {
+    let src = "\
+module m
+section code (vma: $100) {
+    dispatch R (encoding: word_offsets) {
+        A: { rts },
+    }
+}
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
+}
+
+#[test]
+fn inline_bodies_local_labels_are_hygienic_per_member() {
+    // Two bodies each declare `.top` — each body is its own anonymous proc, so
+    // the labels must not collide (per-instantiation hygiene, D-P4.6), and a
+    // backward jbra inside a body relaxes as usual.
+    //   table:    00 04  00 08   (A's body at +4, B's at +8)
+    //   A's body: 4E 71          (nop, .top)
+    //             60 FC          (bra.s .top — jbra's smallest rung, disp −4)
+    //   B's body: 4E 75          (rts, its own .top)
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) {
+    A: {
+        .top:
+        nop
+        jbra .top
+    },
+    B: {
+        .top:
+        rts
+    },
+}
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![0x00, 0x04, 0x00, 0x08, 0x4E, 0x71, 0x60, 0xFC, 0x4E, 0x75]
+    );
+}
+
+#[test]
+fn inline_body_statement_comptime_call_expands() {
+    // A statement-position comptime call inside a body goes through the same
+    // asm{}-instantiation machinery as in a proc (asm_counter threading).
+    // (Statement calls need their own line — same rule as in a proc body.)
+    let src = "\
+module m
+comptime fn epi() -> Code {
+    return asm {
+        rts
+    }
+}
+dispatch R (encoding: word_offsets) {
+    A: {
+        epi()
+    },
+}
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
+}
+
+#[test]
+fn duplicate_member_with_body_still_errors() {
+    // validate_dispatch is target-shape-agnostic: duplicate names error even
+    // when one of them is a body member.
+    let src = "\
+module m
+dispatch R (encoding: word_offsets) {
+    A: { rts },
+    A: a,
+}
+proc a() { rts }
+";
+    let msgs = msgs(src);
+    assert_eq!(
+        msgs.iter().filter(|m| m.contains("duplicate dispatch member")).count(),
+        1,
+        "msgs: {msgs:?}"
+    );
+}

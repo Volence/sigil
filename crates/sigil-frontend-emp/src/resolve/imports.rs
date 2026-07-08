@@ -76,6 +76,11 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
         ast::Item::Proc(p) if p.public => Some(p.name.clone()),
         ast::Item::Offsets(o) if o.public => Some(o.name.clone()),
         ast::Item::Dispatch(d) if d.public => Some(d.name.clone()),
+        // `pub script` exports the hidden resume table's BASE label — the
+        // engine handle — exactly like `pub dispatch` (Plan 7 #9b, R9b.8). The
+        // resume labels themselves stay hidden (`$…$` symbols the rename pass
+        // skips); only the base name crosses modules.
+        ast::Item::Script(s) if s.public => Some(s.name.clone()),
         ast::Item::Const(c) if c.public => Some(c.name.clone()),
         ast::Item::Struct(s) if s.public => Some(s.name.clone()),
         ast::Item::Enum(e) if e.public => Some(e.name.clone()),
@@ -106,6 +111,12 @@ fn collect_defined(items: &[ast::Item], out: &mut Vec<String>) {
             ast::Item::Proc(p) => out.push(p.name.clone()),
             ast::Item::Offsets(o) => out.push(o.name.clone()),
             ast::Item::Dispatch(d) => out.push(d.name.clone()),
+            // A script's name labels its hidden resume table, and the table's
+            // OWN rows self-reference it (`dc.w resume_k - name`), so the name
+            // must enter the own-defined map — without this arm ANY script
+            // (even unreferenced) fails `report_unresolved` under the program
+            // path (Plan 7 #9b review fold-in).
+            ast::Item::Script(s) => out.push(s.name.clone()),
             ast::Item::Const(c) => out.push(c.name.clone()),
             ast::Item::Struct(s) => out.push(s.name.clone()),
             ast::Item::Enum(e) => out.push(e.name.clone()),
