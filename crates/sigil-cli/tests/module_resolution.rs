@@ -33,15 +33,22 @@ fn two_modules_cross_reference_and_link() {
         .status()
         .unwrap();
     assert!(status.success(), "multi-module compile should succeed");
-    // The happy path emits a deterministic image: one `rts` (Draw_Sprite) + one
-    // `jmp Draw_Sprite`. Pin the exact length so a mis-linked cross-module fixup
-    // (which would change the emitted width/bytes) can't pass silently.
+    // No `--map` → sections pack SEQUENTIALLY from 0 (BUG I3 fix): the entry
+    // (badniks.plant, discovered first) reserves its MAX span — a `jmp` is 6 bytes
+    // at abs.l — so engine.helpers lands at LMA 6, NOT overlapping at 0. The jmp
+    // then relaxes to abs.w (target 6 ≤ 0x7FFF, 4 bytes), leaving a 2-byte gap.
+    //   plant  @ 0: jmp Draw_Sprite abs.w = 4E F8 00 06   (target = helpers @ 6)
+    //   gap    @ 4: 00 00                                  (relax short of the 6-span)
+    //   helper @ 6: rts = 4E 75
     assert!(out.exists());
+    let bytes = std::fs::read(&out).unwrap();
+    assert_eq!(bytes.len(), 8, "sequential pack: plant span 6 + helpers span 2");
     assert_eq!(
-        std::fs::metadata(&out).unwrap().len(),
-        4,
-        "expected a 4-byte image"
+        &bytes[0..4],
+        &[0x4E, 0xF8, 0x00, 0x06],
+        "jmp Draw_Sprite → helpers @ LMA 6 (distinct, non-overlapping)"
     );
+    assert_eq!(&bytes[6..8], &[0x4E, 0x75], "engine.helpers rts at LMA 6");
 }
 
 #[test]
@@ -83,7 +90,18 @@ fn transitive_chain_discovers_third_module() {
         status.success(),
         "transitive 3-module compile should succeed"
     );
-    assert!(out.exists() && std::fs::metadata(&out).unwrap().len() > 0);
+    // No `--map` → sequential packing in BFS discovery order a, b, c. Each of a/b
+    // reserves a 6-byte jmp span; c reserves 2 (rts):
+    //   a @ 0:  jmp b_fn  → b_fn @ 6  → abs.w 4E F8 00 06
+    //   b @ 6:  jmp c_fn  → c_fn @ 12 → abs.w 4E F8 00 0C
+    //   c @ 12: rts = 4E 75
+    // Both jmps relax to abs.w (4 bytes) inside their 6-byte spans → 2-byte gaps.
+    assert!(out.exists());
+    let bytes = std::fs::read(&out).unwrap();
+    assert_eq!(bytes.len(), 14, "sequential pack: 6 + 6 + 2");
+    assert_eq!(&bytes[0..4], &[0x4E, 0xF8, 0x00, 0x06], "a: jmp b_fn @ 6");
+    assert_eq!(&bytes[6..10], &[0x4E, 0xF8, 0x00, 0x0C], "b: jmp c_fn @ 12");
+    assert_eq!(&bytes[12..14], &[0x4E, 0x75], "c: rts @ 12");
 }
 
 #[test]
@@ -656,4 +674,138 @@ fn two_modules_asm_splice_local_label_do_not_collide() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(out.exists());
+}
+
+#[test]
+fn map_placement_on_code_module_does_not_panic() {
+    // BUG C1: a `--map` build whose module contains ANY `jmp`/`jsr`-to-symbol used
+    // to PANIC — `place_sections` advanced its cursor by `vma_len()`, which hits
+    // `unreachable!` on the still-unlowered `JmpJsrSym` fragment (placement runs
+    // BEFORE `resolve_layout`). With the panic-safe `placement_span`, placement
+    // succeeds and the section lands at its region base.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("sigil.map.toml"),
+        "fill = 0x00\n\n[[region]]\nname = \"code\"\nlma_base = 0x100\nsize = 0x10\nkind = \"rom\"\n",
+    )
+    .unwrap();
+    write(
+        root,
+        "solo.emp",
+        "module solo in code\npub proc p (a0: *u8) {\n    jmp p\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("solo.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--map",
+            root.join("sigil.map.toml").to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "code module with `--map` must not panic, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // Section placed at region base 0x100. `p` @ 0x100 → jmp abs.w (0x100 ≤
+    // 0x7FFF) = 4E F8 01 00.
+    assert!(bytes.len() >= 0x104, "image reaches the region base at 0x100");
+    assert_eq!(
+        &bytes[0x100..0x104],
+        &[0x4E, 0xF8, 0x01, 0x00],
+        "jmp p at region base 0x100 (abs.w to 0x100)"
+    );
+}
+
+#[test]
+fn no_map_multi_module_places_at_distinct_lmas() {
+    // BUG I3: without `--map` no placement happened, so every module's section kept
+    // `lma == 0` and silently OVERLAPPED at the origin. `place_sequential` now packs
+    // them contiguously, so the second module's label resolves to a DISTINCT,
+    // non-overlapping address (not 0). Entry `main` `jmp`s a pub proc from `helper`.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "helper.emp",
+        "module helper\npub proc target (a0: *u8) {\n    rts\n}\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse helper.{target}\nproc init (a0: *u8) {\n    jmp target\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "no-map multi-module compile must succeed, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // main (entry, discovered first) reserves a 6-byte jmp span at LMA 0; helper
+    // lands at LMA 6 — NOT overlapping at 0. `target` therefore resolves to 6, and
+    // the jmp relaxes to abs.w within its span (2-byte gap at bytes 4..6).
+    assert_eq!(bytes.len(), 8, "sequential pack: main span 6 + helper span 2");
+    assert_eq!(
+        &bytes[0..4],
+        &[0x4E, 0xF8, 0x00, 0x06],
+        "jmp target → helper @ LMA 6 (proves I3 fixed: not overlapping at 0)"
+    );
+    assert_eq!(&bytes[6..8], &[0x4E, 0x75], "helper `target` rts at LMA 6");
+}
+
+#[test]
+fn whole_module_use_warns_it_imports_nothing() {
+    // M5: `use other` (whole-module, no `.{…}`/`.*`) binds no names, so it is a
+    // silent no-op today. Emit a warning at the `use` decl so a later `other.Name`
+    // reference isn't mysterious. The module still compiles (warning, not error).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "other.emp", "module other\npub data X: [u8;1] = [$22]\n");
+    write(
+        root,
+        "entry.emp",
+        "module entry\nuse other\npub data D: [u8;1] = [$11]\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("entry.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "whole-module use is a warning, not an error, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("whole-module `use other`") && stderr.contains("imports no names"),
+        "expected a whole-module-use warning, stderr: {stderr}"
+    );
 }

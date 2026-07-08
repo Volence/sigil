@@ -353,6 +353,14 @@ fn run_emp_program(
     let entry_id = match resolve::entry_id_for_path(&manifest, Path::new(input)) {
         Some(id) => id,
         None => {
+            // Surface the manifest's own diagnostics FIRST: a mistyped/nonexistent
+            // `--root` makes `scan` emit `cannot read module root …` AND yields no
+            // modules (so entry-id resolution fails) — rendering only the generic
+            // "not a module under --root" would bury the real cause.
+            render_program_diags(&manifest, &diags);
+            if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+                process::exit(1);
+            }
             eprintln!("error: entry file {input} is not a module under --root {root_dir}");
             process::exit(1);
         }
@@ -404,13 +412,21 @@ fn run_emp_program(
                 }
             }
         }
-        None => match link_sections(&sections) {
-            Ok(image) => image,
-            Err(ds) => {
-                render_program_diags(&manifest, &ds);
-                process::exit(1);
+        None => {
+            // No `--map`: nothing would otherwise place these sections, so every
+            // module's section would keep `lma == 0` and overlap at the origin
+            // (BUG I3). Pack them sequentially from 0 so cross-module branches
+            // resolve to distinct, non-overlapping addresses (single reachable
+            // module → one section at 0, unchanged).
+            resolve::place_sequential(&mut sections, 0);
+            match link_sections(&sections) {
+                Ok(image) => image,
+                Err(ds) => {
+                    render_program_diags(&manifest, &ds);
+                    process::exit(1);
+                }
             }
-        },
+        }
     };
 
     emit_image(&image, output, hex);

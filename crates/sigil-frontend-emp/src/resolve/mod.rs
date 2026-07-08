@@ -218,15 +218,35 @@ pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnost
         };
         let cursor = used.entry(region.name.as_str()).or_insert(0);
         sec.lma = region.lma_base + *cursor;
-        // Advance by the ADDRESS-SPAN length (`vma_len`), not `image_len`: a
-        // section with trailing `ds`/`Reserve` occupies VMA/LMA space that emits
-        // no image bytes, so packing the next same-region sibling by `image_len`
-        // would land it inside the reserved span — a silent VMA==LMA overlap that
-        // `flatten_checked` (image-byte ranges only) never catches. For sections
-        // without reserves `vma_len == image_len`, so no behavior change today.
-        *cursor += sec.vma_len();
+        // Advance by the MAX address-span length (`placement_span`), not
+        // `image_len` and not `vma_len`. `placement_span` (a) counts trailing
+        // `ds`/`Reserve` (VMA/LMA space that emits no image bytes) so a sibling
+        // never lands inside the reserved span — a silent overlap `flatten_checked`
+        // never catches — AND (b) is panic-safe on the width-variable `jmp`/`jsr`
+        // (`JmpJsrSym`) / deferred-operand (`RelaxAbsSym`) fragments, which
+        // placement sees BEFORE `resolve_layout` lowers them (so `vma_len`'s
+        // `unreachable!` would crash any code module). For data-only sections
+        // `placement_span == vma_len == image_len`, so no behavior change there.
+        *cursor += sec.placement_span();
     }
     diags
+}
+
+/// Pack every section CONTIGUOUSLY from `base`, in order, assigning each an LMA:
+/// `sections[i].lma = base + Σ placement_span(sections[..i])`. This is the
+/// no-`--map` default: without a region map nothing would place, so every module's
+/// section would keep `lma == 0` and silently OVERLAP at the image origin (BUG I3).
+/// Sequential packing makes a multi-module no-map build correct-by-default —
+/// distinct, non-overlapping LMAs, so cross-module branches resolve to the right
+/// addresses. `vma_base` is preserved untouched (placement moves bytes physically,
+/// never their VMA/PC). `placement_span` is the MAX span (long width for
+/// relaxables), so a later short-relax leaves a small gap but never an overlap.
+pub fn place_sequential(sections: &mut [Section], base: u32) {
+    let mut cursor = base;
+    for sec in sections.iter_mut() {
+        sec.lma = cursor;
+        cursor += sec.placement_span();
+    }
 }
 
 /// BFS from `entry_id` (and, if `Some`, the `prelude_id` seed) over `use` edges.

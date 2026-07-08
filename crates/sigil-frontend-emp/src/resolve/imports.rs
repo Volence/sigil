@@ -221,8 +221,18 @@ fn resolve_use(
             }
         }
         ast::UseNames::Whole => {
-            // `use base` (whole) — qualified refs handled at rename time (2c).
+            // `use base` (whole) binds NO short names: only `use base.{…}` (List)
+            // and `use base.*` (Glob) put names in scope. A whole-module `use` is
+            // therefore a no-op for name resolution — a later `base.Name` reference
+            // won't resolve through it — so warn rather than let that be mysterious.
             let _ = module_id;
+            diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!(
+                    "whole-module `use {base}` imports no names — use `use {base}.{{…}}` or `use {base}.*` to bring names into scope"
+                ),
+                primary: u.span,
+            });
         }
     }
 }
