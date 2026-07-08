@@ -84,6 +84,48 @@ script brain (a0: *S) (encoding: word_offsets) shows Draw_Sprite {
 }
 
 #[test]
+fn deep_loop_nesting_is_an_error_not_an_abort() {
+    // Mirror of parser_bodies.rs::deep_block_nesting_is_an_error_not_an_abort:
+    // `loop {` nested past MAX_EXPR_DEPTH must produce a diagnostic (and keep
+    // parsing following items), not recurse until the process aborts.
+    let opens = "loop {\n".repeat(600);
+    let closes = "}\n".repeat(600);
+    let src = format!(
+        "module m\nscript s (a0: *S) (encoding: word_offsets) shows done {{\n\
+         {opens}{closes}}}\nconst GOOD: u8 = 1\n"
+    );
+    let (f, diags) = parse_str(&src);
+    assert!(!diags.is_empty());
+    assert!(
+        diags.iter().any(|d| d.message.contains("nesting too deep")),
+        "expected a nesting-depth diagnostic, got: {diags:?}"
+    );
+    assert!(diags.len() < 50, "diagnostic flood: {}", diags.len());
+    assert!(f
+        .items
+        .iter()
+        .any(|i| matches!(i, sigil_frontend_emp::ast::Item::Const(c) if c.name == "GOOD")));
+}
+
+#[test]
+fn yield_tolerates_same_line_close() {
+    // Parity with instruction lines (`{ nop }` parses): a `}` may close the
+    // body on the same line as a `yield`.
+    let src = "\
+module m
+script s (a0: *S) (encoding: word_offsets) shows done { yield }
+";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let Some(sigil_frontend_emp::ast::Item::Script(s)) = file.items.first() else {
+        panic!("expected Item::Script, got {:?}", file.items.first())
+    };
+    assert_eq!(s.body.len(), 1);
+    assert!(matches!(&s.body[0],
+        sigil_frontend_emp::ast::ScriptStmt::Yield { epilogue: None, .. }));
+}
+
+#[test]
 fn script_requires_encoding_attr() {
     let src = "\
 module m

@@ -694,19 +694,20 @@ impl Parser {
         DispatchDecl { public, name, encoding, members, span: start.merge(self.prev_span()) }
     }
 
-    /// Parse the required `(encoding: E)` attribute of a `dispatch` decl.
+    /// Parse the required `(encoding: E)` attribute of a `dispatch` or
+    /// `script` decl (construct-neutral wording — both require it).
     /// Missing parens/key, or an unknown encoding ident, each produce one
     /// error mentioning the valid encodings; parsing continues with a
     /// best-guess default (`word_offsets`) so the member list still parses.
     fn dispatch_encoding_attr(&mut self) -> DispatchEncoding {
         if !self.eat(&Tok::LParen) {
             let sp = self.span();
-            self.diag_at(sp, "dispatch requires an `(encoding: word_offsets | long_ptrs)` attribute");
+            self.diag_at(sp, "this declaration requires an `(encoding: word_offsets | long_ptrs)` attribute");
             return DispatchEncoding::WordOffsets;
         }
         if !self.eat_kw("encoding") {
             let sp = self.span();
-            self.diag_at(sp, "expected `encoding:` in dispatch attribute list");
+            self.diag_at(sp, "expected `encoding:` in the attribute list");
         }
         self.expect(&Tok::Colon, "`:`");
         let esp = self.span();
@@ -808,12 +809,10 @@ impl Parser {
         DataDecl { public, name, ty, max_size, value, span, type_only: false }
     }
 
-    /// Parse a `proc name(params...) [clobbers(...)] [falls_into name] { body }`
-    /// declaration.
-    fn proc_decl(&mut self, public: bool) -> ProcDecl {
-        let start = self.span();
-        self.bump(); // `proc`
-        let name = self.expect_ident("proc name");
+    /// Parse a parenthesized `(name: Ty, ...)` typed-register parameter list
+    /// (trailing comma tolerated). Shared by `proc` and `script` — R9b.1 pins
+    /// script params as "exactly as `proc`", so there is ONE grammar.
+    fn param_list(&mut self) -> Vec<(String, Type, Span)> {
         self.expect(&Tok::LParen, "`(`");
         let mut params = Vec::new();
         if !self.at(&Tok::RParen) {
@@ -828,6 +827,16 @@ impl Parser {
             }
         }
         self.expect(&Tok::RParen, "`)`");
+        params
+    }
+
+    /// Parse a `proc name(params...) [clobbers(...)] [falls_into name] { body }`
+    /// declaration.
+    fn proc_decl(&mut self, public: bool) -> ProcDecl {
+        let start = self.span();
+        self.bump(); // `proc`
+        let name = self.expect_ident("proc name");
+        let params = self.param_list();
         let mut clobbers = Vec::new();
         let mut falls_into = None;
         loop {
@@ -860,20 +869,7 @@ impl Parser {
         let start = self.span();
         self.bump(); // `script`
         let name = self.expect_ident("script name");
-        self.expect(&Tok::LParen, "`(`");
-        let mut params = Vec::new();
-        if !self.at(&Tok::RParen) {
-            loop {
-                let pspan = self.span();
-                let pname = self.expect_ident("parameter (register) name");
-                self.expect(&Tok::Colon, "`:`");
-                let pty = self.ty();
-                params.push((pname, pty, pspan));
-                if !self.eat(&Tok::Comma) { break; }
-                if self.at(&Tok::RParen) { break; } // trailing comma
-            }
-        }
-        self.expect(&Tok::RParen, "`)`");
+        let params = self.param_list();
         let encoding = self.dispatch_encoding_attr();
         let epilogue = if self.eat_kw("shows") { Some(self.script_label()) } else { None };
         self.expect(&Tok::LBrace, "`{`");
@@ -895,6 +891,11 @@ impl Parser {
     /// Neither collides with real code: no 68k/Z80 mnemonic is named `loop`
     /// or `yield`, and a comptime CALL is only recognized with an adjacent
     /// `(` (so a fn named `yield` is unreachable here anyway — fine).
+    ///
+    /// The `loop` arm recurses, so it is guarded by the same `block_depth`
+    /// counter/ceiling as [`Parser::stmt_block`] (and for the same reason:
+    /// nested `loop {` is shaped like a paren-bomb, and an unbounded descent
+    /// would abort the process on adversarial input instead of diagnosing).
     fn script_body(&mut self) -> Vec<ScriptStmt> {
         let mut out = Vec::new();
         loop {
@@ -903,9 +904,19 @@ impl Parser {
             if self.at_kw("loop") {
                 let start = self.span();
                 self.bump(); // `loop`
+                if self.block_depth >= MAX_EXPR_DEPTH {
+                    let span = self.span();
+                    self.diag_at(span, "block nesting too deep (max 128)");
+                    // Do not recurse into `script_body` again; consume the
+                    // whole `{ ... }` so this loop provably makes progress.
+                    self.skip_unparsed_block();
+                    continue;
+                }
+                self.block_depth += 1;
                 self.expect(&Tok::LBrace, "`{`");
                 let body = self.script_body();
                 self.expect(&Tok::RBrace, "`}`");
+                self.block_depth -= 1;
                 out.push(ScriptStmt::Loop { body, span: start.merge(self.prev_span()) });
                 continue;
             }
@@ -920,7 +931,9 @@ impl Parser {
                 } else {
                     None
                 };
-                self.expect_line_end();
+                // Same line-end rule as instruction lines: a `}` may close
+                // the body on the same line (`{ yield }` parses like `{ nop }`).
+                self.expect_line_end_or_rbrace();
                 out.push(ScriptStmt::Yield { epilogue, span: start.merge(self.prev_span()) });
                 continue;
             }
@@ -1270,23 +1283,7 @@ impl Parser {
         if self.block_depth >= MAX_EXPR_DEPTH {
             let span = self.span();
             self.diag_at(span, "block nesting too deep (max 128)");
-            // Do not recurse into `stmt`/`stmt_block` again. Recovery must
-            // CONSUME so the caller provably makes progress: scan forward to
-            // the block's `{` (whatever garbage precedes it), then
-            // balance-scan to its matching `}` and consume that too. Only
-            // Eof stops us early.
-            while !self.at(&Tok::LBrace) && !self.at(&Tok::Eof) { self.bump(); }
-            if self.eat(&Tok::LBrace) {
-                let mut d = 1i32;
-                while d > 0 && !self.at(&Tok::Eof) {
-                    match self.peek() {
-                        Tok::LBrace => d += 1,
-                        Tok::RBrace => d -= 1,
-                        _ => {}
-                    }
-                    self.bump();
-                }
-            }
+            self.skip_unparsed_block();
             return Vec::new();
         }
         self.block_depth += 1;
@@ -1300,6 +1297,27 @@ impl Parser {
         self.expect(&Tok::RBrace, "`}`");
         self.block_depth -= 1;
         out
+    }
+
+    /// Depth-guard recovery for a `{ ... }` block the parser refuses to
+    /// recurse into (shared by [`Parser::stmt_block`] and `script_body`'s
+    /// `loop` arm). Recovery must CONSUME so the caller provably makes
+    /// progress: scan forward to the block's `{` (whatever garbage precedes
+    /// it), then balance-scan to its matching `}` and consume that too. Only
+    /// Eof stops us early.
+    fn skip_unparsed_block(&mut self) {
+        while !self.at(&Tok::LBrace) && !self.at(&Tok::Eof) { self.bump(); }
+        if self.eat(&Tok::LBrace) {
+            let mut d = 1i32;
+            while d > 0 && !self.at(&Tok::Eof) {
+                match self.peek() {
+                    Tok::LBrace => d += 1,
+                    Tok::RBrace => d -= 1,
+                    _ => {}
+                }
+                self.bump();
+            }
+        }
     }
 
     /// A single comptime statement inside a `comptime fn` body (or a nested
