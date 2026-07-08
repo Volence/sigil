@@ -2008,8 +2008,36 @@ impl Asm {
                     continue;
                 }
             };
-            let v = self.fold_imm(&e, span, -128, 0xFF);
-            self.emit(&[v as u8], vec![], span);
+            // Fold against the current env. A value in range emits its byte; an
+            // out-of-range value clamps + diagnoses (asl parity, via fold_imm's
+            // path); an UNRESOLVED expression (bare symbol OR compound) DEFERS to
+            // the linker as a general link-expr VALUE — one placeholder byte $00 +
+            // a `Value8` fixup carrying the full parsed+qualified expr tree
+            // (R-T0.4). This is the consumption half of the .emp→.asm seam: aeon's
+            // `dac_sample_tab.asm` reads `SND_*` bank ids via `db BANK`, and those
+            // constants move to `.emp` as link-folded equ symbols. In an ALL-AS
+            // assembly everything folds by the final pass and this arm never fires
+            // (byte-diff net). Mirrors `directive_dw`'s deferral, at width 1.
+            let qe = self.qualify_expr(&e);
+            match self.fold(&qe) {
+                Fold::Value(v) => {
+                    if !(-128..=0xFF).contains(&v) {
+                        self.err(span, format!("operand {v} out of range {}..={}", -128, 0xFF));
+                    }
+                    self.emit(&[v.clamp(-128, 0xFF) as u8], vec![], span);
+                }
+                Fold::Poison => {
+                    self.emit(
+                        &[0x00],
+                        vec![Fixup {
+                            kind: FixupKind::Value8,
+                            offset: 0,
+                            target: qe,
+                        }],
+                        span,
+                    );
+                }
+            }
         }
     }
 
@@ -2031,23 +2059,32 @@ impl Asm {
                     self.emit(&[(w & 0xFF) as u8, (w >> 8) as u8], vec![], span);
                 }
                 Fold::Poison => {
-                    // A bare unresolved symbol defers to the linker as a
-                    // little-endian address fixup; a compound unresolved
-                    // expression is a real error (byte-stable placeholder).
-                    if matches!(qe, Expr::Sym(_)) {
-                        self.emit(
-                            &[0x00, 0x00],
-                            vec![Fixup {
-                                kind: FixupKind::BankPtr16Le,
-                                offset: 0,
-                                target: qe,
-                            }],
-                            span,
-                        );
-                    } else {
-                        self.err(span, "unresolved word expression");
-                        self.emit(&[0x00, 0x00], vec![], span);
-                    }
+                    // ANY unresolved expression (bare symbol OR compound) defers
+                    // to the linker as a general link-expr VALUE — two placeholder
+                    // bytes + a `Value16Le` fixup carrying the full parsed+
+                    // qualified expr tree (R-T0.4; the linker folds arbitrary
+                    // trees, per the `RelWord16Be` offset-table precedent).
+                    //
+                    // This deliberately REPLACES the old `BankPtr16Le` special
+                    // case (which deferred ONLY a bare `Expr::Sym` and rejected
+                    // compounds): `Value16Le` writes the folded value VERBATIM
+                    // after an unsigned-window range check, whereas `BankPtr16Le`
+                    // is an ADDRESS kind — its 68k `BankPtr16Be` counterpart masks
+                    // the windowed low-16, and truncating an out-of-range fold to
+                    // `value as u16` is the silent-wrong-bytes class. A
+                    // `dw SND_KICK_LEN` where LEN=$057E must emit $057E verbatim,
+                    // not silently masked/truncated; window masking, when needed,
+                    // belongs in SOURCE (aeon's `sfx_winptr()` macro writes
+                    // `(v & $7FFF) | $8000` explicitly, and that tree folds here).
+                    self.emit(
+                        &[0x00, 0x00],
+                        vec![Fixup {
+                            kind: FixupKind::Value16Le,
+                            offset: 0,
+                            target: qe,
+                        }],
+                        span,
+                    );
                 }
             }
         }
@@ -2055,6 +2092,12 @@ impl Asm {
 
     /// `dc.w <expr>,...` — big-endian 16-bit words (asl: BE, unlike the Z80
     /// `dw`'s little-endian). Mirrors `directive_dw`'s expr-list parsing.
+    ///
+    /// DELIBERATE ASYMMETRY (R-T0.4): unlike `db`/`dw`, the 68k `dc.w`/`dc.l`
+    /// unresolved arm is NOT migrated to the general `Value*` deferral — it keeps
+    /// its bare-`Sym`→`Abs16Be`/`Abs32Be` (address) behavior. No cross-seam
+    /// customer consumes a deferred 68k `dc.w` VALUE yet, so touching it would be
+    /// scope creep; the Z80 `db`/`dw` are the .emp→.asm seam.
     fn directive_dc_w(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         self.pad_word_align(span);
