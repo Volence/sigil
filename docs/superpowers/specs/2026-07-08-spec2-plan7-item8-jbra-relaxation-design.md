@@ -16,9 +16,12 @@ audits of the #6 merge (d1e4288..90a21b6).
   (disp = target − site where site is the extension word's own VMA = op+2; range i16, BE).
   Sized `bra.s/.w`/`Bcc` lower to Data + these fixups (backend-m68k lib.rs:96–132) and the
   linker resolves targets globally — cross-module sized branches work today.
-- **The AS frontend does NOT use PcRel8/PcRelDisp16 fixups** — it resolves displacements
-  before encoding (isa m68k.rs:822–878, `fixup_target()` upstream). So a strictness change in
-  `apply_fixup` for these kinds cannot disturb AS-port byte-exactness.
+- **ERRATUM (caught by the T1 spec review):** the claim that the AS frontend never emits
+  PcRel8/PcRelDisp16 fixups was WRONG — `lower_m68k_branch` (frontend-as eval.rs:2367) routes
+  `.s` branches through the backend's symbolic `PcRel8` fixup, resolved at link. The disp-0
+  apply guard is nevertheless safe for AS ports: a `.s` branch to op+2 is unencodable on the
+  68000 (asl rejects it too), so no byte-exact port can legitimately trip it; the full AS
+  suite stays green with the guard in place.
 - **The relaxation fixpoint** (relax.rs `resolve_layout`) is grow-only W→L over per-fragment
   `AbsWidth` state, pass-capped by total flips + 1, with an Org/Reserve mixing guard
   (`has_relaxable`). `AbsWidth` is consumed nowhere outside relax.rs + the abs-sym frontend
