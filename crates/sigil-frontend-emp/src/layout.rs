@@ -1467,10 +1467,11 @@ pub fn eval_offsets_with_root(
 /// first byte by the caller ([`lower_dispatch_item`](crate::lower)), exactly
 /// as for `offsets`.
 ///
-/// This task ships `word_offsets` only; `long_ptrs` EMISSION (a `dc.l target`
-/// Abs32 table) is a later task (#11), so a `long_ptrs` decl produces an empty
-/// buffer here (its ordinals still resolve via `eval_path`). The scale/indexing
-/// plumbing is encoding-generic; only the cell shape is word-specific.
+/// Both v1 encodings ship (D6.B2): `word_offsets` emits the `RelOffset` word
+/// above; `long_ptrs` emits a 4-byte ABSOLUTE pointer (`dc.l target`, Abs32)
+/// per member, reusing the same [`Cell::SymRef`] the struct-data label-pointer
+/// field emits. Target extraction, scale/indexing, base label, validation, and
+/// the kind check are all encoding-generic; only the cell shape differs.
 ///
 /// Target-name extraction mirrors `eval_offsets_with_root` by SHAPE (a bare
 /// `Path` is a symbol name, a `Str` names it directly, anything else is
@@ -1542,14 +1543,19 @@ pub fn eval_dispatch_with_root(
                     }
                 }
             };
+            // Target extraction above is encoding-generic; only the cell shape
+            // differs. `word_offsets` emits a self-relative signed word
+            // (`dc.w target - Name`, RelWord16Be) reusing the `offsets`
+            // machinery; `long_ptrs` emits a 4-byte ABSOLUTE pointer
+            // (`dc.l target`, Abs32) reusing the same `Cell::SymRef` the
+            // struct-data label-pointer field emits (`lower_ptr`, emit.rs).
             match decl.encoding {
                 ast::DispatchEncoding::WordOffsets => {
                     buf.push(Cell::RelOffset { base: decl.name.clone(), target: name });
                 }
-                // `long_ptrs` EMISSION is Task 11. Emit nothing here so the
-                // ordinals (`eval_path`) still work; the forward table lands
-                // when #11 wires the `dc.l`/Abs32 cell.
-                ast::DispatchEncoding::LongPtrs => {}
+                ast::DispatchEncoding::LongPtrs => {
+                    buf.push(Cell::SymRef { name, width: 4, windowed: false });
+                }
             }
         }
         (Some(buf), ev.diags)

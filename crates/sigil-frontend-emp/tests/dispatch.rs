@@ -1,10 +1,11 @@
 //! `dispatch Name (encoding: word_offsets) { Member: target, ... }` — the
 //! encoding-agnostic typed state-dispatch table (Spec 2, Plan 7 backlog #6,
-//! Part B — D6.B2/B3/B4/B5). This task ships the `word_offsets` encoding:
-//! forward emission (`dc.w member_target - Name` per member, on the shipped
-//! `offsets` RelOffset machinery), the pre-scaled `Name.Member` / `Name.count`
-//! ordinals, and the module-local `[dispatch.target-not-code]` kind check.
-//! `long_ptrs` EMISSION is a later task (Task 11).
+//! Part B — D6.B2/B3/B4/B5). Both v1 encodings ship: `word_offsets` forward
+//! emission (`dc.w member_target - Name` per member, on the shipped `offsets`
+//! RelOffset machinery) and `long_ptrs` (`dc.l target` Abs32 pointers, reusing
+//! the struct-data label-pointer `SymRef` cell), plus the pre-scaled
+//! `Name.Member` / `Name.count` ordinals (×2 / ×4) and the module-local
+//! `[dispatch.target-not-code]` kind check.
 //!
 //! Each case parses a full `.emp` file, lowers it via the same `lower_module`
 //! entry the CLI uses, and asserts on the resulting diagnostics / linked bytes
@@ -132,8 +133,8 @@ data ids: [u8; 3] = [R.B, R.count, R.A]
     assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
     let bytes = linked_bytes(&module);
     // The `data ids` item is emitted LAST, so its 3 bytes are the tail of the
-    // image regardless of the forward table's size (0 pre-Task-11, 12 after) —
-    // this ride-along pins the ×4 ordinals, not the emission.
+    // image regardless of the forward table's size — this test pins the ×4
+    // ordinals specifically, decoupled from the `long_ptrs` emission.
     assert_eq!(&bytes[bytes.len() - 3..], &[0x04, 0x03, 0x00]);
 }
 
@@ -394,4 +395,86 @@ section s (cpu: m68000, vma: $8000) {
     // Same table bytes as the top-level case.
     let bytes = linked_bytes(&module);
     assert_eq!(&bytes[0..4], &[0x00, 0x04, 0x00, 0x06]);
+}
+
+// ---- 8. long_ptrs emission (D6.B2) ---------------------------------------
+
+#[test]
+fn long_ptrs_table_bytes_are_exact() {
+    // A `long_ptrs` dispatch emits `dc.l target` (4-byte ABSOLUTE pointer,
+    // big-endian, Abs32 fixup) per member in declaration order, base label
+    // `Routines` at the table's first byte. Followed by two procs.
+    // The harness default-section origin is 0 (the word_offsets test's image
+    // `00 04 00 06...` = init−Routines = 4 with Routines@0), so absolute
+    // addresses ARE the offsets:
+    //   table (8 bytes): Routines@0 → init@8, wait@10 (0x0A)
+    //     dc.l init = 00 00 00 08
+    //     dc.l wait = 00 00 00 0A
+    //   init@8:  4E 75
+    //   wait@10: 4E 75
+    let src = "\
+module m
+dispatch Routines (encoding: long_ptrs) {
+    Init: init,
+    Wait: wait,
+}
+proc init() { rts }
+proc wait() { rts }
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x0A, 0x4E, 0x75, 0x4E, 0x75]
+    );
+}
+
+#[test]
+fn word_offsets_and_long_ptrs_coexist_per_decl() {
+    // Two dispatch tables over the SAME two procs, one `word_offsets` and one
+    // `long_ptrs`, in one module. Proves the encoding switch is per-decl and the
+    // two encodings coexist. Layout (origin 0), tables then procs:
+    //   W (word_offsets, 4 bytes) @ 0:  dc.w init−W, wait−W
+    //   L (long_ptrs, 8 bytes)    @ 4:  dc.l init, wait
+    //   init @ 12 (0x0C): 4E 75
+    //   wait @ 14 (0x0E): 4E 75
+    // W words: init−W = 12−0 = 0x0C, wait−W = 14−0 = 0x0E.
+    // L longs: init = 0x0000000C, wait = 0x0000000E.
+    let src = "\
+module m
+dispatch W (encoding: word_offsets) { Init: init, Wait: wait }
+dispatch L (encoding: long_ptrs) { Init: init, Wait: wait }
+proc init() { rts }
+proc wait() { rts }
+";
+    let (module, errs) = lower(src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x0C, 0x00, 0x0E, // W: word offsets
+            0x00, 0x00, 0x00, 0x0C, 0x00, 0x00, 0x00, 0x0E, // L: long ptrs
+            0x4E, 0x75, 0x4E, 0x75, // init, wait
+        ]
+    );
+}
+
+#[test]
+fn long_ptrs_in_z80_section_is_non_68k() {
+    // A `long_ptrs` dispatch in a `cpu: z80` section is rejected with the
+    // generalized (encoding-neutral) `[dispatch.non-68k]` message — dispatch is
+    // 68k-only for BOTH encodings in v1.
+    let src = "\
+module m
+section s (cpu: z80, vma: $8000) {
+    dispatch R (encoding: long_ptrs) { A: a, B: b }
+    proc a() { rts }
+    proc b() { rts }
+}
+";
+    let (_module, errs) = lower(src);
+    assert!(
+        errs.iter().any(|m| m.contains("[dispatch.non-68k]")),
+        "expected [dispatch.non-68k]: {errs:?}"
+    );
 }

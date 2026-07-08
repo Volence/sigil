@@ -409,11 +409,11 @@ fn lower_offsets_item(
 /// Lower one `dispatch` block's FORWARD emission (Spec 2, Plan 7 backlog #6,
 /// Part B — D6.B2). The sibling of [`lower_offsets_item`]: it evaluates the
 /// members to a [`DataBuf`] via [`eval_dispatch_with_root`] (RelOffset cells
-/// for `word_offsets`, reusing the `offsets` machinery), serializes them in
-/// `placement.cpu`'s byte order — a `cpu: z80` section surfaces the
-/// `[dispatch.non-68k]` guard in [`data::stream_data`]'s `RelOffset` arm —
-/// defines the table's base label (`decl.name`) at its first byte, then emits
-/// the bytes + fixups. `long_ptrs` emission (Task 11) lands zero bytes here.
+/// for `word_offsets`, `SymRef` `dc.l`/Abs32 cells for `long_ptrs`), serializes
+/// them in `placement.cpu`'s byte order, defines the table's base label
+/// (`decl.name`) at its first byte, then emits the bytes + fixups. Dispatch is
+/// 68k-only in v1 for BOTH encodings: a `cpu: z80` section is rejected by the
+/// `[dispatch.non-68k]` guard below (at the dispatch's own span) before eval.
 fn lower_dispatch_item(
     file: &ast::File,
     decl: &ast::DispatchDecl,
@@ -429,7 +429,7 @@ fn lower_dispatch_item(
         err(
             diags,
             decl.span,
-            "[dispatch.non-68k] a dispatch table is a 68k word-offset idiom; \
+            "[dispatch.non-68k] a dispatch table is a 68k idiom; \
              Z80 dispatch tables are not supported"
                 .to_string(),
         );
