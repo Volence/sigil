@@ -72,28 +72,46 @@ fn ambient_items(
 
     // Then `use`-imported pub comptime-only items (these shadow prelude, matching
     // the prelude<use precedence; own items shadow both via Part B ordering).
-    for item in &module.file.items {
-        let ast::Item::Use(u) = item else { continue };
-        let base = u.base.segments.join(".");
-        let Some(&bi) = manifest.by_id.get(&base) else {
-            continue;
-        };
-        let base_mod = &manifest.modules[bi];
-        if base_mod.id == module.id {
-            continue; // never inject a module's own items.
-        }
-        match &u.names {
-            ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
-            ast::UseNames::Glob => collect_pub_comptime(&base_mod.file.items, &|_| true, &mut out),
-            ast::UseNames::List(names) => collect_pub_comptime(
-                &base_mod.file.items,
-                &|n| names.iter().any(|w| w == n),
-                &mut out,
-            ),
-        }
-    }
+    // Recurses one level into `section {}` bodies so a section-nested `use` is
+    // honored too, not just top-level ones.
+    ambient_from_uses(&module.file.items, module, manifest, &mut out);
 
     out
+}
+
+fn ambient_from_uses(
+    items: &[ast::Item],
+    module: &ParsedModule,
+    manifest: &Manifest,
+    out: &mut Vec<ast::Item>,
+) {
+    for item in items {
+        match item {
+            ast::Item::Use(u) => {
+                let base = u.base.segments.join(".");
+                let Some(&bi) = manifest.by_id.get(&base) else {
+                    continue;
+                };
+                let base_mod = &manifest.modules[bi];
+                if base_mod.id == module.id {
+                    continue; // never inject a module's own items.
+                }
+                match &u.names {
+                    ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
+                    ast::UseNames::Glob => {
+                        collect_pub_comptime(&base_mod.file.items, &|_| true, out)
+                    }
+                    ast::UseNames::List(names) => collect_pub_comptime(
+                        &base_mod.file.items,
+                        &|n| names.iter().any(|w| w == n),
+                        out,
+                    ),
+                }
+            }
+            ast::Item::Section(sec) => ambient_from_uses(&sec.items, module, manifest, out),
+            _ => {}
+        }
+    }
 }
 
 /// Compile the whole reachable module program rooted at `entry_id` into one flat
@@ -303,14 +321,31 @@ fn reachable_modules(
             }
         };
         order.push(idx);
-        for item in &manifest.modules[idx].file.items {
-            if let ast::Item::Use(u) = item {
-                let target = u.base.segments.join(".");
-                enqueue(&mut queue, &mut seen, target, u.span);
-            }
-        }
+        enqueue_uses(&manifest.modules[idx].file.items, &mut queue, &mut seen, &enqueue);
     }
     order
+}
+
+/// Enqueue the BFS target of every `Item::Use` in `items`, recursing one level
+/// into `section {}` bodies (sections do not nest further — Task 1 rejects that
+/// at parse time) so a section-nested `use` is discovered too, not just
+/// top-level ones.
+fn enqueue_uses(
+    items: &[ast::Item],
+    queue: &mut VecDeque<(String, Span)>,
+    seen: &mut HashSet<String>,
+    enqueue: &impl Fn(&mut VecDeque<(String, Span)>, &mut HashSet<String>, String, Span),
+) {
+    for item in items {
+        match item {
+            ast::Item::Use(u) => {
+                let target = u.base.segments.join(".");
+                enqueue(queue, seen, target, u.span);
+            }
+            ast::Item::Section(sec) => enqueue_uses(&sec.items, queue, seen, enqueue),
+            _ => {}
+        }
+    }
 }
 
 /// For every fixup target symbol in `module`, emit an error diagnostic if it is

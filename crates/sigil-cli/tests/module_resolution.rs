@@ -1202,3 +1202,86 @@ fn section_nested_use_struct_is_injected_cross_module() {
     let bytes = std::fs::read(&outbin).unwrap();
     assert_eq!(bytes, vec![0x01, 0x02], "Pt{{x:1,y:2}} lays out as two bytes");
 }
+
+// ---- Plan 7 #6 audit fix: `use` nested in section{} silently ignored ------
+
+#[test]
+fn section_nested_use_of_const_is_honored() {
+    // `reachable_modules` BFS, `ResolveEnv::build`, AND `ambient_items` all scan
+    // `Item::Use` flat over `file.items` — a `use` nested in a `section {}` is
+    // invisible to all three, so `helper` is never even discovered as reachable
+    // and `Helper` is "unresolved... add use helper.{Helper}" even though that
+    // exact line is already present, just section-nested. Must now build.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "helper.emp", "module helper\npub const Helper: u8 = 7\n");
+    write(
+        root,
+        "game.emp",
+        "module game\nsection s {\n  use helper.{Helper}\n  data d: [u8;1] = [Helper]\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested use must be honored, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x07], "Helper resolves via the section-nested use");
+}
+
+#[test]
+fn section_nested_use_of_proc_resolves_via_rename_map() {
+    // Twin of the const case, but the section-nested `use`d name is a PROC
+    // referenced by `jmp` — exercises `ResolveEnv::build`'s rename map (not just
+    // `ambient_items`' comptime injection), and `reachable_modules`' BFS (helper
+    // is only discovered because the section-nested `use` names it).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "helper.emp",
+        "module helper\npub proc Helper (a0: *u8) {\n    rts\n}\n",
+    );
+    write(
+        root,
+        "game.emp",
+        "module game\nsection s {\n  use helper.{Helper}\n  proc go (a0: *u8) {\n    jmp Helper\n  }\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "section-nested use of a proc must resolve via the rename map, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    // Sequential pack, discovery order game then helper: go @ 0 is `jmp Helper`,
+    // Helper @ 6 (jmp reserves a 6-byte span) is `rts`. jmp relaxes to abs.w
+    // (target 6 ≤ 0x7FFF, 4 bytes), leaving a 2-byte gap — same shape as
+    // `two_modules_cross_reference_and_link`.
+    assert_eq!(bytes.len(), 8, "sequential pack: go span 6 + Helper span 2");
+    assert_eq!(&bytes[0..4], &[0x4E, 0xF8, 0x00, 0x06], "jmp Helper -> helper @ LMA 6");
+    assert_eq!(&bytes[6..8], &[0x4E, 0x75], "helper.Helper rts at LMA 6");
+}
