@@ -224,3 +224,14 @@ are byte-for-byte identical to before.
   divergence to itemize — the pitcher_plant exhibits (340B/358B) are
   untouched because every section in the corpus that carries cross-referenced
   labels already declares an explicit `vma:`.
+
+## 7-pre T7 whole-plan gate (controller, 2026-07-08)
+
+All 7-pre tasks complete: T0 4e4adfd, T1 0322bfc, T2 7dc8d33, T3 1b18ce6, T4 20ace91 (+T5 substance),
+T5-closure af98a5f, T6 5294687. Gate at 5294687: workspace reds = EXACTLY the 4 allowlisted harness tests;
+clippy -D warnings clean; corpus_bytediff all identical (pitcher_plant 340B/358B pins intact);
+module_resolution gap pins untouched; T1 RED → GREEN (single-file overlap corrected: 10-byte image).
+Reviews: T4 spec review ✅ (independent parent-diff verification) + quality review APPROVED (4 minors,
+none blocking; carry-forward: extract the ir cursor-replay primitive before any fifth copy in 7-main).
+T6 controller-verified (RED-first evidence + corpus + static audit for vma:0 dependents — zero found).
+Whole-branch adversarial review deferred to the end of 7-main per the handoff (covers both halves).

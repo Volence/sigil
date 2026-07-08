@@ -54,17 +54,17 @@
 - Create: `docs/superpowers/notes/2026-07-08-item7-implementation-notes.md`
 - Create: `scripts/corpus_bytediff.sh` (worktree-local helper; NOT committed if the house prefers — commit it, it's the review probe #9 lacked)
 
-- [ ] **Step 1:** Create the notes file with the here-fix format header (see `2026-07-08-item9b-implementation-notes.md` for shape): worktree, branch, T0 evidence (4 allowlisted reds + clippy clean), and an empty "RED evidence" table.
-- [ ] **Step 2:** Write `scripts/corpus_bytediff.sh`: builds every `examples/*.emp` single-file (`sigil emp <f> -o …`) and the two standing game invocations (`--root examples/game --prelude prelude` for `badniks/pitcher_plant.emp` and `badniks/pitcher_plant_script.emp`) from BOTH the worktree and a pristine master checkout (use `git worktree` or `git -C … stash`-free build via the main checkout), then byte-diffs each pair and prints a per-file verdict. Skip files master fails to build.
-- [ ] **Step 3:** Run it worktree-vs-master at HEAD==master; expect all-identical (sanity that the probe itself works). Record in notes.
-- [ ] **Step 4:** Commit: `test(7-pre): corpus byte-diff probe + notes scaffold`.
+- [x] **Step 1:** Create the notes file with the here-fix format header (see `2026-07-08-item9b-implementation-notes.md` for shape): worktree, branch, T0 evidence (4 allowlisted reds + clippy clean), and an empty "RED evidence" table.
+- [x] **Step 2:** Write `scripts/corpus_bytediff.sh`: builds every `examples/*.emp` single-file (`sigil emp <f> -o …`) and the two standing game invocations (`--root examples/game --prelude prelude` for `badniks/pitcher_plant.emp` and `badniks/pitcher_plant_script.emp`) from BOTH the worktree and a pristine master checkout (use `git worktree` or `git -C … stash`-free build via the main checkout), then byte-diffs each pair and prints a per-file verdict. Skip files master fails to build.
+- [x] **Step 3:** Run it worktree-vs-master at HEAD==master; expect all-identical (sanity that the probe itself works). Record in notes.
+- [x] **Step 4:** Commit: `test(7-pre): corpus byte-diff probe + notes scaffold`.
 
 ### Task 1: The RED repro — today's silent overlap, recorded
 
 **Files:**
 - Create: `crates/sigil-cli/tests/placement_fix.rs`
 
-- [ ] **Step 1:** Write the failing test `single_file_growth_overlap_is_fixed` (program-path: spawn the CLI like module_resolution.rs does). Source shape (single file, two sections — the baked `next_lma` chain path):
+- [x] **Step 1:** Write the failing test `single_file_growth_overlap_is_fixed` (program-path: spawn the CLI like module_resolution.rs does). Source shape (single file, two sections — the baked `next_lma` chain path):
   ```
   module m
   section code (vma: $8000) {
@@ -77,8 +77,8 @@
   }
   ```
   `jmp p` targets VMA $8000 → asl width rule picks abs.l (6 bytes) — 2 bytes past the baseline-4 the `next_lma` chain counted, so on master `data`'s baked lma overlaps `code`'s last 2 bytes and unchecked `flatten` writes `$DE $AD` over the jmp operand's tail. Hand-derive BOTH images in the test comment (master's corrupt 8-byte image vs the correct 10-byte one: `4E F9 00 00 80 00  DE AD BE EF`) and assert the CORRECT bytes.
-- [ ] **Step 2:** Run it; confirm it FAILS on the branch (which is still master-identical) with the corrupt image. Paste the failure into the notes file's RED table.
-- [ ] **Step 3:** Commit: `test(7-pre): RED repro — baseline-chained section silently overlapped under jmp growth`.
+- [x] **Step 2:** Run it; confirm it FAILS on the branch (which is still master-identical) with the corrupt image. Paste the failure into the notes file's RED table.
+- [x] **Step 3:** Commit: `test(7-pre): RED repro — baseline-chained section silently overlapped under jmp growth`.
 
 ### Task 2: `ir::Section` placement provenance
 
@@ -86,9 +86,9 @@
 - Modify: `crates/sigil-ir/src/lib.rs` (Section struct, ~:200), `crates/sigil-ir/src/builder.rs` (OpenSection + close() + switch_section_lma)
 - Test: `crates/sigil-ir/src/builder.rs` unit tests
 
-- [ ] **Step 1:** Failing unit test: two `switch_section_lma` calls on one builder yield sections `[Pinned, Chained]` with `reserved_span` = each section's cursor length at close and `group == None`.
-- [ ] **Step 2:** Add `SectionPlacement`, the three fields (R7p.1), thread through `OpenSection`/`close()`. First `switch_section_lma` on a builder → `Pinned`; subsequent → `Chained`. `reserved_span` = closing cursor (`max_offset`). Let the compiler drive every other construction site (relax.rs :513–571 rebuild PRESERVES placement/reserved_span/group verbatim; test builders).
-- [ ] **Step 3:** Workspace builds + test passes. Commit: `feat(7-pre): Section placement provenance (Pinned/Chained + reserved_span + group)`.
+- [x] **Step 1:** Failing unit test: two `switch_section_lma` calls on one builder yield sections `[Pinned, Chained]` with `reserved_span` = each section's cursor length at close and `group == None`.
+- [x] **Step 2:** Add `SectionPlacement`, the three fields (R7p.1), thread through `OpenSection`/`close()`. First `switch_section_lma` on a builder → `Pinned`; subsequent → `Chained`. `reserved_span` = closing cursor (`max_offset`). Let the compiler drive every other construction site (relax.rs :513–571 rebuild PRESERVES placement/reserved_span/group verbatim; test builders).
+- [x] **Step 3:** Workspace builds + test passes. Commit: `feat(7-pre): Section placement provenance (Pinned/Chained + reserved_span + group)`.
 
 ### Task 3: Placers become provenance-writers
 
@@ -96,9 +96,9 @@
 - Modify: `crates/sigil-frontend-emp/src/resolve/mod.rs:330–383` (place_sections, place_sequential)
 - Test: existing resolve tests + new unit tests alongside
 
-- [ ] **Step 1:** Failing tests: (a) `place_sequential` marks first `Pinned(base)`, rest `Chained`, all `reserved_span = placement_span()`, `group = None`; (b) `place_sections` sets `group = Some(region)` and per-region first-`Pinned`-at-`lma_base`.
-- [ ] **Step 2:** Implement. KEEP the lma-writing behavior for now (the link pass takes over in Task 4; green gate must hold at every commit).
-- [ ] **Step 3:** Full `cargo test --workspace` — only the 4 allowlisted reds + the Task-1 RED. Commit.
+- [x] **Step 1:** Failing tests: (a) `place_sequential` marks first `Pinned(base)`, rest `Chained`, all `reserved_span = placement_span()`, `group = None`; (b) `place_sections` sets `group = Some(region)` and per-region first-`Pinned`-at-`lma_base`.
+- [x] **Step 2:** Implement. KEEP the lma-writing behavior for now (the link pass takes over in Task 4; green gate must hold at every commit).
+- [x] **Step 3:** Full `cargo test --workspace` — only the 4 allowlisted reds + the Task-1 RED. Commit.
 
 ### Task 4: The link-time placement pass + joint fixpoint
 
@@ -107,19 +107,19 @@
 - Create: `crates/sigil-link/tests/final_placement.rs`
 - Modify: `crates/sigil-cli/src/main.rs:200–214, :395–449` (both tails call the new seam)
 
-- [ ] **Step 1:** Failing linker-level tests (build Sections by hand): (a) chained section after a JmpJsrSym section whose rung grows → successor base = pred base + 6 (not 4); (b) max-span provenance (`reserved_span` = 6, final 4) → successor stays at +6 (degeneracy); (c) two Pinned sections colliding → Error naming both; (d) fixpoint: growth caused BY re-placement (a jmp whose target crosses $8000 only after its section moves) converges and both effects land.
-- [ ] **Step 2:** Implement R7p.2 + R7p.3: placement fn, outer fixpoint (persisted grow-only rungs), overlap check (R7p.4), leave the `// #7-main: bank bump seam` marker. Wire both CLI tails + the harness path through the new orchestration (the old direct `resolve_layout` callers migrate; keep the public API story coherent).
-- [ ] **Step 3:** Task-1 RED goes GREEN. Run the FULL gate: workspace tests (exactly 4 allowlisted reds), clippy clean, `scripts/corpus_bytediff.sh` (all identical except the Task-1 class — none expected in the shipped corpus), module_resolution gap pins untouched.
-- [ ] **Step 4:** Record evidence in notes; commit: `feat(7-pre): final-size placement — link-time pass + placement⇄relaxation joint fixpoint (D7.4)`.
+- [x] **Step 1:** Failing linker-level tests (build Sections by hand): (a) chained section after a JmpJsrSym section whose rung grows → successor base = pred base + 6 (not 4); (b) max-span provenance (`reserved_span` = 6, final 4) → successor stays at +6 (degeneracy); (c) two Pinned sections colliding → Error naming both; (d) fixpoint: growth caused BY re-placement (a jmp whose target crosses $8000 only after its section moves) converges and both effects land.
+- [x] **Step 2:** Implement R7p.2 + R7p.3: placement fn, outer fixpoint (persisted grow-only rungs), overlap check (R7p.4), leave the `// #7-main: bank bump seam` marker. Wire both CLI tails + the harness path through the new orchestration (the old direct `resolve_layout` callers migrate; keep the public API story coherent).
+- [x] **Step 3:** Task-1 RED goes GREEN. Run the FULL gate: workspace tests (exactly 4 allowlisted reds), clippy clean, `scripts/corpus_bytediff.sh` (all identical except the Task-1 class — none expected in the shipped corpus), module_resolution gap pins untouched.
+- [x] **Step 4:** Record evidence in notes; commit: `feat(7-pre): final-size placement — link-time pass + placement⇄relaxation joint fixpoint (D7.4)`.
 
 ### Task 5: AS front-end provenance + s4 byte-identity
 
 **Files:**
 - Modify: `crates/sigil-frontend-as/src/eval.rs:1728–1756`
 
-- [ ] **Step 1:** Set provenance at the AS `switch_section_lma` site per R7p.1 (first `Pinned`, rest `Chained`, `reserved_span` = the `phys_base` advance).
-- [ ] **Step 2:** Run the harness (`cargo test -p sigil-harness`): EXACTLY the same 4 allowlisted reds, every other test green — the m1b/m0/m1c placement-sensitive pins are the proof the joint fixpoint degenerates on the AS path. Any NEW red = stop, diagnose, never allowlist.
-- [ ] **Step 3:** Commit: `feat(7-pre): AS front-end placement provenance — s4 path byte-identical`.
+- [x] **Step 1:** Set provenance at the AS `switch_section_lma` site per R7p.1 (first `Pinned`, rest `Chained`, `reserved_span` = the `phys_base` advance).
+- [x] **Step 2:** Run the harness (`cargo test -p sigil-harness`): EXACTLY the same 4 allowlisted reds, every other test green — the m1b/m0/m1c placement-sensitive pins are the proof the joint fixpoint degenerates on the AS path. Any NEW red = stop, diagnose, never allowlist.
+- [x] **Step 3:** Commit: `feat(7-pre): AS front-end placement provenance — s4 path byte-identical`.
 
 ### Task 6: The vma-follows-placement default (R7p.5)
 
@@ -127,15 +127,15 @@
 - Modify: `crates/sigil-frontend-emp/src/lower/mod.rs:599–635` (section_attrs) + :231 (the Some(vma) pass-through)
 - Test: `crates/sigil-cli/tests/placement_fix.rs`
 
-- [ ] **Step 1:** Failing CLI test `named_section_labels_follow_placed_lma`: two modules, second holds `section blob { pub data X … }` (NO vma attr), entry jmp-references a proc after it; assert X's emitted address (via a pointer cell to X in the entry) equals its PLACED address, not 0.
-- [ ] **Step 2:** `section_attrs` returns `Option<u32>` for vma (None when absent); thread `Some(vma)` → attr-present only. Default section behavior unchanged (verify what `ensure_default` passes today and pin it in a test).
-- [ ] **Step 3:** Full gate + corpus byte-diff. Any diff = itemize in notes with the argument (R7p.5 bar). Commit.
+- [x] **Step 1:** Failing CLI test `named_section_labels_follow_placed_lma`: two modules, second holds `section blob { pub data X … }` (NO vma attr), entry jmp-references a proc after it; assert X's emitted address (via a pointer cell to X in the entry) equals its PLACED address, not 0.
+- [x] **Step 2:** `section_attrs` returns `Option<u32>` for vma (None when absent); thread `Some(vma)` → attr-present only. Default section behavior unchanged (verify what `ensure_default` passes today and pin it in a test).
+- [x] **Step 3:** Full gate + corpus byte-diff. Any diff = itemize in notes with the argument (R7p.5 bar). Commit.
 
 ### Task 7: Whole-plan gate + review checkpoint
 
-- [ ] **Step 1:** Full workspace gate + clippy + corpus byte-diff + harness, all recorded in notes.
-- [ ] **Step 2:** Two-stage review (spec review against D7.4/R7p.*, then code-quality review) — subagent-driven per house process; controller independently re-runs the probes.
-- [ ] **Step 3:** Commit any fold-ins; mark this plan's checkboxes; hand off to the 7-main plan.
+- [x] **Step 1:** Full workspace gate + clippy + corpus byte-diff + harness, all recorded in notes.
+- [x] **Step 2:** Two-stage review (spec review against D7.4/R7p.*, then code-quality review) — subagent-driven per house process; controller independently re-runs the probes.
+- [x] **Step 3:** Commit any fold-ins; mark this plan's checkboxes; hand off to the 7-main plan.
 
 ## Self-review notes (plan author)
 
