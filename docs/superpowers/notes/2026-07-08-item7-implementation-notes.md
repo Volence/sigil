@@ -529,30 +529,42 @@ two straddle probes.
   that the `bank:` property + `bankid()`/`winptr()` builtins + comptime `ensure`
   replace.
 
-## Derived SND_* values (link-true, VMA-derived; cross-computed by hand)
+## Derived SND_* values (link-true, PHYSICAL VMA==LMA; cross-computed by hand)
 
-The `bank:` no-straddle check is LMA-based (physical placement); the bank id is
-VMA-derived. The exhibit gives `dac_bank` `vma: $8000` so its LABELS resolve in
-bank 1 (a NONZERO bank id — the point of the exhibit) while its BYTES chain
-from LMA 0 (blobs at image offset 0). This VMA/LMA split is the D7.2-expected
-divergence from aeon's `align $8000` (aeon aligns the physical ROM address; the
-exhibit argues equivalence of the DERIVED VALUES, not padding identity).
+> **UPDATED at the whole-branch review fold-in (1a).** The original Task-5 draft
+> gave `dac_bank` `vma: $8000` while its bytes chained from LMA 0 — a VMA/LMA
+> split that decoupled the (LMA-space) no-straddle check from the (VMA-derived)
+> bank id. The review flagged this as dishonest (the bank id 1 was true only in
+> VMA space; on hardware the latch would be wrong). The exhibit is now HONEST:
+> `dac_bank` carries NO `vma:` (labels follow the placed LMA, R7p.5), and a
+> `--map` region places it at `lma_base $8000`. So VMA == LMA == $8000 — the
+> bytes physically sit in bank 1 AND the labels resolve there, and `bankid()`
+> folds to 1 PHYSICALLY TRUE. The residual concern is recorded as ledger L7.5.
 
-| sample    | vma    | bankid `(a&$7F8000)>>15` | winptr `(a&$7FFF)|$8000` (BE) | len |
-|-----------|--------|--------------------------|-------------------------------|-----|
-| Dac_Kick  | $8000  | 1                        | $8000                         | 6   |
-| Dac_Snare | $8006  | 1                        | $8006                         | 5   |
-| Dac_Hat   | $800B  | 1                        | $800B                         | 4   |
+| sample    | vma == lma | bankid `(a&$7F8000)>>15` | winptr `(a&$7FFF)|$8000` (BE) | len |
+|-----------|------------|--------------------------|-------------------------------|-----|
+| Dac_Kick  | $8000      | 1                        | $8000                         | 6   |
+| Dac_Snare | $8006      | 1                        | $8006                         | 5   |
+| Dac_Hat   | $800B      | 1                        | $800B                         | 4   |
 
-Full image = 130 bytes: dac_bank (15 B, LMA 0x00..0x0F) → snd_table (3×5 = 15 B,
-0x0F..0x1E) → prelude `text` (Map_PitcherPlant + 4 stub procs + Player_1 Sst,
-0x1E..0x82). Hand-derived byte-for-byte in `dac_bank_acceptance.rs`.
+`--map` region layout (one region per section, matched by section name):
+`snd_table` @ 0x0000 (size 0x10) → `text` (prelude default) @ 0x0010 (size 0x80)
+→ `dac_bank` @ 0x8000 (size 0x8000). `emit_rom` pads the ROM from 0 with the
+map fill (0x00) and applies the header checksum at 0x18E (in the zero-fill gap).
+ROM spans 0x0000..0x800F (32783 bytes). The acceptance test asserts the three
+MEANINGFUL windows (`snd_table` 0x00..0x0F + 1 fill, `text` 0x10..0x74,
+`dac_bank` 0x8000..0x800F), not the 32KB of intervening fill. Hand-derived
+byte-for-byte in `dac_bank_acceptance.rs`.
 
 ## RED-first evidence
 
-- **Positive acceptance (A):** set the bank section to `vma: $0000` → `bankid`
-  folds to 0; test failed at offset 0xF (`expected 0x01 != got 0x00`) — proving
-  the bank id is genuinely link-true, not an echo. Restored → green.
+- **Positive acceptance (A):** point the `dac_bank` region's `lma_base` at a
+  bank-0 address (e.g. 0x0100 instead of 0x8000) → `bankid` folds to 0 and
+  `winptr` to 0x8100; the snd_table window's first descriptor becomes
+  `00 8100 0006` instead of `01 8000 0006` — proving the bank id is genuinely
+  link-true from the PHYSICAL placement, not an echo. (The pre-fold-in RED used
+  a `vma: $0000` phase on the section; the honest exhibit has no `vma:`, so the
+  RED knob is now the region's LMA — verified by hand build during the fold-in.)
 - **Bump pin (B):** the bump probe uses `bank: $10` with an 8-byte section at
   cursor 0xC (would span [0xC,0x14), straddling 0x10 → bumped to 0x10). Proved
   load-bearing by re-running with `bank: $40`: [0xC,0x14) FITS the $40 window →
@@ -561,8 +573,13 @@ Full image = 130 bytes: dac_bank (15 B, LMA 0x00..0x0F) → snd_table (3×5 = 15
 
 ## Tests (crates/sigil-cli/tests/dac_bank_acceptance.rs)
 
-- `dac_samples_full_image_is_byte_exact` — full 130-byte image, zero diagnostics,
-  `built: 130 bytes`.
+- `dac_samples_windows_are_byte_exact` — the `--map` build (map written into the
+  test tmpdir), zero diagnostics, `built: 32783 bytes` (0x800F); asserts the
+  three meaningful windows byte-for-byte. (Renamed from
+  `dac_samples_full_image_is_byte_exact` at the fold-in: the honest exhibit's
+  ROM is 32KB of mostly-fill, so we assert windows, not the whole image.) This
+  also discharges the review's Minor — no prior test drove a `bank:` section
+  through the `--map`/`emit_rom` region path.
 - `oversized_bank_section_fails_over_by` — `(bank: $10)` with 18 bytes → CLI
   fails, stderr contains `over by`.
 - `chained_bank_section_bumps_when_it_would_straddle` — the positive bump pin
@@ -583,3 +600,69 @@ Full image = 130 bytes: dac_bank (15 B, LMA 0x00..0x0F) → snd_table (3×5 = 15
   `bankid()`/`winptr()` helper fns so the mask/shift reads verbatim).
 - `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (dac_samples is a
   new entry, not in the corpus set; prelude untouched so pitcher_plant pins hold).
+
+---
+
+# Whole-branch review fold-in — completion checkpoint (controller, 2026-07-08)
+
+**Verdict.** The whole-branch adversarial review (7-pre + 7-main together)
+returned **checkpoint-ready** with ONE IMPORTANT fix (finding 1a) and closure
+items, all folded into a single commit here. No merge without a Volence
+checkpoint (plan Task 6 boxes stay open until then).
+
+**Finding 1a (IMPORTANT) — fixed.** `bank:`'s no-straddle check runs on LMA
+(physical) extents while `bankid()`/`winptr()` fold label VMAs. The Task-5
+exhibit used `section dac_bank (vma: $8000, bank: $8000)` chained at LMA 0, so
+its bank-id 1 was VMA-derived while the bytes physically sat in bank 0 — a
+silent VMA/LMA decouple (wrong latch on hardware). The exhibit now models the
+SAFE shape: `dac_bank` has NO `vma:` (labels follow placed LMA, R7p.5) and a
+`--map` region places it at `lma_base $8000`, so VMA == LMA == $8000 and
+`bankid()` folds to 1 physically true. The acceptance test compiles with `--map`
+(map written into the test tmpdir), asserts the three meaningful windows, and
+now also exercises a `bank:` section through the `--map`/`emit_rom` region path
+(the review's Minor). Only ONE honest exhibit is kept — the vma-split shape is
+NOT retained anywhere in `examples/` (a naive user copies exhibits). The
+residual VMA/LMA-coupling concern is recorded as **ledger L7.5**.
+
+## Accepted deviations (itemized for the maintainer)
+
+- **(a) here-fix acceptance case 5 flipped to emission (D7.3-sanctioned).** The
+  here-fix pin `provisional_here_arithmetic_then_emit_refuses` (asserted
+  `[here.provisional]`) is renamed
+  `provisional_here_arithmetic_then_emit_now_emits_value_cell` and asserts the
+  OPPOSITE — S2-D13f is un-deferred, so a residual link-expr arithmetic tree now
+  emits a `Cell::Expr` value cell rather than refusing. Every OTHER provisional
+  refusal (array length, if-condition, plain width-1 SymRef, max_size, byte,
+  section vma) is unchanged and still asserts refusal.
+- **(b) [value.out-of-range] message carries span but omits expr text (R7m.4
+  deviation, accepted).** The range-check diagnostic on a value-cell fold names
+  the section, the folded value, and the window (`0 ≤ v < 2^(8w)`), carrying the
+  cell's `d.span`, but does NOT re-print the source expression text. Accepted as
+  a small honest deviation from R7m.4's ideal (the span points the user at the
+  offending cell).
+- **(c) [bank.provisional] provenance by structural mask-scan.** The refusal
+  code for a comptime-required `bankid()` is `[bank.provisional]` (the preferred
+  option, not the `[here.provisional]`-with-parenthetical fallback). Rather than
+  thread a provenance tag through `Value::LinkExpr(Expr)` (invasive: ~20
+  destructure sites, `lift_binary` reconstructs the variant), the refusal choke
+  point recursively scans the residual tree for the bank-latch mask literal
+  `$7F8000`, which appears in EXACTLY ONE place (`eval_bankid`) — a reliable,
+  read-only, non-invasive provenance marker. Composed values
+  (`bankid(A) == bankid(B)`) still carry the mask in a subtree, so they are
+  recognized too.
+- **(d) ports.rs mixed-build tests place_sequential first.** The two
+  `mixed_build_cross_seam_*` tests manually concatenate two independently-lowered
+  modules (each first section `Pinned` at lma 0); R7p.4 correctly flags the two
+  Pinned-at-0 ranges as colliding pins. Fixed by calling
+  `place_sequential(&mut sections, 0)` first (mirroring production
+  `build_program`'s no-map tail) — the cross-seam symbol resolves from the emp
+  section's VMA, so its LMA is irrelevant. R7p.4 left un-weakened.
+
+## Open flags (carried to the post-merge checkpoint)
+
+- **Empyrean spec integration (§7.x / D2.25) is NOT done here** — explicitly
+  Fable's at the post-merge checkpoint (R7m.8).
+- **L7.1 packing linker** re-evaluated when the sound migration starts
+  (Volence: "don't forget c").
+- **L7.5 (NEW)** — the VMA/LMA-coupling for `bank:` — likewise re-evaluated at
+  the sound migration (with L7.4).

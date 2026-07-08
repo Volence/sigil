@@ -136,3 +136,4 @@ prerequisite for the sound-subsystem migration.
 | L7.2 | Multi-latch / SRAM / mapper banking schemes | a demanding port |
 | L7.3 | `winptr` re-expressed over general link-exprs (byte-diff-clean quality pass) | next quality tranche touching it |
 | L7.4 | Z80-driver-side bank consumption idioms (latch-write sequences, re-bank protocols) | the sound migration itself |
+| L7.5 | VMA/LMA coupling for bank: — the no-straddle check is LMA-space while bankid()/winptr() fold VMAs; a phase-style vma: on a bank: section can silently decouple them (latch value wrong on hardware). Either couple the check to the space bankid reads, or reject bank: + explicit vma: mismatch | the sound migration (with L7.4) |

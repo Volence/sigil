@@ -28,12 +28,15 @@
 //      ints, so the guard checks at COMPILE time, exactly as aeon's `fatal`
 //      did — but as a first-class construct rather than a hand-rolled `if`).
 //
-// Padding / placement differ from aeon by design (D7.2): aeon `align $8000`s the
-// bank to an absolute boundary; here the bank section carries `vma: $8000` so its
-// LABELS resolve above the window boundary (a NONZERO bank id — the point of the
-// exhibit) while its bytes chain from LMA 0 in the flat image. The exhibit argues
-// equivalence of the DERIVED VALUES (bank id / window ptr / length), not identity
-// of padding — see dac_bank_acceptance.rs for the byte-by-byte derivation.
+// Placement is HONEST here (review 1a): the bank section carries NO `vma:` — a
+// named section without `vma:` has `vma_base = None`, so its labels follow its
+// PLACED LMA (R7p.5). The `--map` region for `dac_bank` sits at `lma_base $8000`,
+// so its bytes physically live in bank 1 AND its labels resolve there — VMA == LMA
+// == $8000. The bank id folds to 1 because the bytes are genuinely in bank 1, not
+// because a `vma:` phase decoupled the label address from the physical placement
+// (see L7.5). The exhibit argues equivalence of the DERIVED VALUES (bank id /
+// window ptr / length) with aeon; padding differs by design (D7.2) — see
+// dac_bank_acceptance.rs for the byte-by-byte derivation and the map layout.
 // ===========================================================================
 
 module data.dac_samples
@@ -52,14 +55,16 @@ const HatBlob   = embed("data/dac/hat.bin")    // 4 bytes: F0 F1 F2 F3
 
 // ===========================================================================
 // The shared DAC bank — one `(bank: $8000)` section holding all three blobs
-// contiguously. `vma: $8000` puts the labels in bank 1 (a NONZERO bank id);
-// `bank: $8000` makes the linker guarantee no sample straddles the 32KB window
-// (replacing aeon's `align` + hand-written straddle `fatal`).
+// contiguously. NO `vma:` — the labels follow the section's placed LMA (R7p.5),
+// and the `--map` region places `dac_bank` at `lma_base $8000`, so the bytes
+// physically sit in bank 1 (a NONZERO, PHYSICALLY-TRUE bank id). `bank: $8000`
+// makes the linker guarantee no sample straddles the 32KB window (replacing
+// aeon's `align` + hand-written straddle `fatal`).
 // ===========================================================================
-section dac_bank (cpu: m68000, vma: $8000, bank: $8000) {
-    data Dac_Kick  = KickBlob     // @ vma $8000
-    data Dac_Snare = SnareBlob    // @ vma $8006
-    data Dac_Hat   = HatBlob      // @ vma $800B
+section dac_bank (cpu: m68000, bank: $8000) {
+    data Dac_Kick  = KickBlob     // @ lma == vma $8000
+    data Dac_Snare = SnareBlob    // @ lma == vma $8006
+    data Dac_Hat   = HatBlob      // @ lma == vma $800B
 }
 
 

@@ -44,9 +44,9 @@
 - Modify: `crates/sigil-frontend-emp/src/lower/mod.rs:599–635`, `crates/sigil-ir/src/lib.rs` (Section), `crates/sigil-ir/src/builder.rs`
 - Test: `crates/sigil-frontend-emp/tests/banks.rs` (new)
 
-- [ ] **Step 1:** Failing tests: (a) `section s (bank: $8000)` lowers to `Section.bank == Some(0x8000)`; (b) `bank: 3` → the R7m.1 error; (c) `bank: 0` → same; (d) unknown-attr diagnostics unchanged.
-- [ ] **Step 2:** Implement (attr eval mirrors `vma:`'s `eval_attr_int`; power-of-two check `n & (n-1) == 0 && n > 0`). `switch_section_lma` grows the bank parameter or a builder setter — compiler-driven audit of construction sites.
-- [ ] **Step 3:** Green + full gate. Commit: `feat(7): bank: section attribute → ir::Section.bank`.
+- [x] **Step 1:** Failing tests: (a) `section s (bank: $8000)` lowers to `Section.bank == Some(0x8000)`; (b) `bank: 3` → the R7m.1 error; (c) `bank: 0` → same; (d) unknown-attr diagnostics unchanged.
+- [x] **Step 2:** Implement (attr eval mirrors `vma:`'s `eval_attr_int`; power-of-two check `n & (n-1) == 0 && n > 0`). `switch_section_lma` grows the bank parameter or a builder setter — compiler-driven audit of construction sites.
+- [x] **Step 3:** Green + full gate. Commit: `feat(7): bank: section attribute → ir::Section.bank`.
 
 ### Task 2: Bump + no-straddle check in the placement pass
 
@@ -54,9 +54,9 @@
 - Modify: `crates/sigil-link/src/relax.rs` (the 7-pre seam), `crates/sigil-link/src/lib.rs`
 - Test: `crates/sigil-link/tests/final_placement.rs` (extend)
 
-- [ ] **Step 1:** Failing linker tests: (a) chained bank-$100 section at cursor $F8 with $10 bytes → placed at $100 (bumped); (b) same section at cursor $F8 with $8 bytes → stays $F8 (no straddle → NO bump — the not-aeon's-always-align point of D7.2); (c) content $110 > $100 → "over by $10 bytes" error; (d) a PINNED bank section pinned astride a boundary → the R7m.2 post-check error (not silently moved); (e) bump interacts with the fixpoint (a bump that changes a branch distance re-relaxes and converges).
-- [ ] **Step 2:** Implement at the seam per R7m.2.
-- [ ] **Step 3:** Green + full gate + corpus byte-diff (no bank: users in the shipped corpus → zero diffs). Commit: `feat(7): no-straddle bank placement — bump-only-when-straddling + always-on final check (D7.2/D7.5)`.
+- [x] **Step 1:** Failing linker tests: (a) chained bank-$100 section at cursor $F8 with $10 bytes → placed at $100 (bumped); (b) same section at cursor $F8 with $8 bytes → stays $F8 (no straddle → NO bump — the not-aeon's-always-align point of D7.2); (c) content $110 > $100 → "over by $10 bytes" error; (d) a PINNED bank section pinned astride a boundary → the R7m.2 post-check error (not silently moved); (e) bump interacts with the fixpoint (a bump that changes a branch distance re-relaxes and converges).
+- [x] **Step 2:** Implement at the seam per R7m.2.
+- [x] **Step 3:** Green + full gate + corpus byte-diff (no bank: users in the shipped corpus → zero diffs). Commit: `feat(7): no-straddle bank placement — bump-only-when-straddling + always-on final check (D7.2/D7.5)`.
 
 ### Task 3: `Cell::Expr` + value fixup kinds (S2-D13f)
 
@@ -64,9 +64,9 @@
 - Modify: `crates/sigil-frontend-emp/src/value.rs:170–218`, `crates/sigil-frontend-emp/src/lower/data.rs:56–161`, `crates/sigil-ir/src/fixup.rs`, `crates/sigil-link/src/lib.rs` (apply arm)
 - Test: `crates/sigil-frontend-emp/tests/banks.rs` + a linker fold/range test
 
-- [ ] **Step 1:** Failing tests: (a) a LinkExpr emitted at width 2 in a 68k section produces `Value16Be` bytes of the folded value; (b) width 1 works; (c) fold overflowing the width → error naming cell + value; (d) Z80 section width 2 → little-endian (the R7m.5 probe rides this); (e) the OLD `[here.provisional]` arithmetic-then-emit refusal case (here-fix acceptance #5) now EMITS correctly instead — update that pinned test deliberately and note it (design-sanctioned un-deferral, D7.3 verbatim).
-- [ ] **Step 2:** Implement: Cell variant, D-P4.5 table extension, fixup kinds + apply arms with unsigned range check.
-- [ ] **Step 3:** Green + full gate. Commit: `feat(7): general link-expr data cells — Cell::Expr + ValueN fixup kinds (S2-D13f un-deferred)`.
+- [x] **Step 1:** Failing tests: (a) a LinkExpr emitted at width 2 in a 68k section produces `Value16Be` bytes of the folded value; (b) width 1 works; (c) fold overflowing the width → error naming cell + value; (d) Z80 section width 2 → little-endian (the R7m.5 probe rides this); (e) the OLD `[here.provisional]` arithmetic-then-emit refusal case (here-fix acceptance #5) now EMITS correctly instead — update that pinned test deliberately and note it (design-sanctioned un-deferral, D7.3 verbatim).
+- [x] **Step 2:** Implement: Cell variant, D-P4.5 table extension, fixup kinds + apply arms with unsigned range check.
+- [x] **Step 3:** Green + full gate. Commit: `feat(7): general link-expr data cells — Cell::Expr + ValueN fixup kinds (S2-D13f un-deferred)`.
 
 ### Task 4: `bankid()` builtin (+ embed `.len` verification)
 
@@ -74,10 +74,10 @@
 - Modify: `crates/sigil-frontend-emp/src/eval/call.rs:54–89`, `crates/sigil-frontend-emp/src/eval/builtins.rs`
 - Test: `crates/sigil-frontend-emp/tests/banks.rs`
 
-- [ ] **Step 1:** RECON step (R7m.7): a test `embed("f.bin").len` — if it already passes, pin it; if not, extend `len` to `Value::Data` first (own failing-test/implement/commit micro-cycle).
-- [ ] **Step 2:** Failing tests for `bankid`: (a) `bankid(Label)` in a width-1 cell emits the folded `(addr & $7F8000) >> 15`; (b) `ensure(bankid(A) == bankid(B), …)` with A/B in different banks fails AT LINK with the message; (c) same-bank passes silently; (d) `bankid` in a comptime-required position (array length) → the R7m.3 refusal message; (e) argument-form errors mirror winptr's.
-- [ ] **Step 3:** Implement per R7m.3 (non-shadowable list + an `eval_bankid` beside `eval_winptr`).
-- [ ] **Step 4:** Green + full gate. Commit: `feat(7): bankid() — link-time bank id over LinkExpr (D7.3)`.
+- [x] **Step 1:** RECON step (R7m.7): a test `embed("f.bin").len` — if it already passes, pin it; if not, extend `len` to `Value::Data` first (own failing-test/implement/commit micro-cycle).
+- [x] **Step 2:** Failing tests for `bankid`: (a) `bankid(Label)` in a width-1 cell emits the folded `(addr & $7F8000) >> 15`; (b) `ensure(bankid(A) == bankid(B), …)` with A/B in different banks fails AT LINK with the message; (c) same-bank passes silently; (d) `bankid` in a comptime-required position (array length) → the R7m.3 refusal message; (e) argument-form errors mirror winptr's.
+- [x] **Step 3:** Implement per R7m.3 (non-shadowable list + an `eval_bankid` beside `eval_winptr`).
+- [x] **Step 4:** Green + full gate. Commit: `feat(7): bankid() — link-time bank id over LinkExpr (D7.3)`.
 
 ### Task 5: The dac_samples exhibit + acceptance
 
