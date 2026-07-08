@@ -689,12 +689,25 @@ impl Parser {
         let start = self.span();
         self.bump(); // `data`
         let name = self.expect_ident("data item name");
+        // Optional `(max_size: expr)` capacity attribute (D5.4). Mirrors
+        // `struct Name (size: expr)`; sits BEFORE the `: Ty` annotation so the
+        // grammar is `data Name (max_size: E) [: Ty] = value`.
+        let max_size = if self.eat(&Tok::LParen) {
+            if !self.eat_kw("max_size") {
+                let sp = self.span();
+                self.diag_at(sp, "expected `max_size:` in data attribute list");
+            }
+            self.expect(&Tok::Colon, "`:`");
+            let e = self.expr();
+            self.expect(&Tok::RParen, "`)`");
+            Some(e)
+        } else { None };
         let ty = if self.eat(&Tok::Colon) { Some(self.ty()) } else { None };
         self.expect(&Tok::Eq, "`=`");
         let value = self.expr();
         let span = start.merge(self.prev_span());
         self.expect_line_end();
-        DataDecl { public, name, ty, value, span }
+        DataDecl { public, name, ty, max_size, value, span }
     }
 
     /// Parse a `proc name(params...) [clobbers(...)] [falls_into name] { body }`

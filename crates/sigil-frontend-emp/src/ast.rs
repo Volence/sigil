@@ -282,6 +282,9 @@ pub struct DataDecl {
     pub name: String,
     /// Optional explicit type annotation; inferable when the literal names its type.
     pub ty: Option<Type>,
+    /// Optional `(max_size: expr)` capacity bound (D5.4): the checked buffer's
+    /// byte length must not exceed it. Always-on; overflow is an error.
+    pub max_size: Option<Expr>,
     /// The data item's value expression.
     pub value: Expr,
     /// Span of the whole declaration.

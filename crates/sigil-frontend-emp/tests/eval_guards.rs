@@ -174,3 +174,52 @@ fn non_terminating_recursion_names_the_chain() {
         "expected a recursion diagnostic naming `spin`, got {diags:?}"
     );
 }
+
+// ---- (max_size:) capacity attribute (D5.4) ------------------------------
+
+/// Parse `src` (clean) and evaluate the data item `name`, returning diagnostic
+/// messages — routes through `eval_data_with_root`, where `max_size` is enforced.
+fn data_diags(src: &str, name: &str) -> Vec<String> {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (_buf, diags) = sigil_frontend_emp::layout::eval_data_at(&file, name, None);
+    diags.into_iter().map(|d| d.message).collect()
+}
+
+#[test]
+fn max_size_fitting_is_silent() {
+    let d = data_diags("module m\ndata T (max_size: 4): [u8; 4] = [1,2,3,4]\n", "T");
+    assert!(d.is_empty(), "a fitting buffer must be silent, got {d:?}");
+}
+
+#[test]
+fn max_size_overflow_is_an_error_with_over_by() {
+    let d = data_diags("module m\ndata T (max_size: 3): [u8; 5] = [1,2,3,4,5]\n", "T");
+    assert_eq!(d.len(), 1, "one overflow diagnostic, got {d:?}");
+    let m = &d[0];
+    assert!(m.contains("5 bytes"), "names the actual size: {m}");
+    assert!(m.contains("max_size 3"), "names the bound: {m}");
+    assert!(m.contains("over by 2 bytes"), "names the overrun: {m}");
+}
+
+#[test]
+fn max_size_expr_may_reference_a_const() {
+    // u16 * 4 = 8 bytes; BUF = 8 → fits exactly.
+    let d = data_diags("module m\nconst BUF = 8\ndata T (max_size: BUF): [u16; 4] = [1,2,3,4]\n", "T");
+    assert!(d.is_empty(), "a const-bounded fitting buffer must be silent, got {d:?}");
+}
+
+#[test]
+fn max_size_negative_is_an_error() {
+    let d = data_diags("module m\ndata T (max_size: -1): [u8; 1] = [1]\n", "T");
+    assert!(d.iter().any(|m| m.contains("max_size")), "error must name max_size, got {d:?}");
+}
+
+#[test]
+fn max_size_non_int_is_an_error() {
+    let d = data_diags("module m\ndata T (max_size: \"big\"): [u8; 1] = [1]\n", "T");
+    assert!(
+        d.iter().any(|m| m.contains("max_size") && m.contains("must be a comptime integer")),
+        "got {d:?}"
+    );
+}

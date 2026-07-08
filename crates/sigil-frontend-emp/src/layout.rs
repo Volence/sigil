@@ -1013,8 +1013,45 @@ pub fn eval_data_with_root(
             return (None, ev.diags);
         }
         let buf = ev.resolve_data(name, file.module.span);
+        check_max_size(&mut ev, name, buf.size, file.module.span);
         (Some(buf), ev.diags)
     })
+}
+
+/// Enforce a data item's `(max_size: expr)` capacity bound (D5.4). Evaluates the
+/// `max_size` expression with the item's evaluator, requires a non-negative
+/// comptime integer, and errors if the checked buffer's byte length `buf_len`
+/// exceeds it — phrased like §7.3's region overflow. A no-op when the item has no
+/// `max_size`. Kept on the `eval_data_with_root`/`eval_data_captures` path so BOTH
+/// top-level and section-nested data items are covered by one check.
+fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
+    let Some(max_expr) = ev.datas.get(name).and_then(|d| d.max_size.clone()) else {
+        return;
+    };
+    match ev.eval_expr(&max_expr, &mut Env::new()) {
+        // An already-reported error in the expression stays silent (D-P2.9).
+        Value::Poison => {}
+        Value::Int(n) if n < 0 => {
+            ev.error(span, format!("`max_size` must be >= 0, got {n}"));
+        }
+        Value::Int(n) => {
+            if buf_len as i128 > n {
+                ev.error(
+                    span,
+                    format!(
+                        "data `{name}` is {buf_len} bytes — exceeds max_size {n} (over by {} bytes)",
+                        buf_len as i128 - n
+                    ),
+                );
+            }
+        }
+        other => {
+            ev.error(
+                span,
+                format!("`max_size` must be a comptime integer, got {}", other.type_name()),
+            );
+        }
+    }
 }
 
 /// Like [`eval_data_with_root`], but ALSO returns the capture ledger — every
@@ -1045,6 +1082,7 @@ pub fn eval_data_captures(
             return (None, Vec::new(), ev.diags);
         }
         let buf = ev.resolve_data(name, file.module.span);
+        check_max_size(&mut ev, name, buf.size, file.module.span);
         let captures = ev
             .captures
             .iter()
