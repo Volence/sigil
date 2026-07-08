@@ -556,3 +556,137 @@ fn field_access_multi_param_types_the_right_register() {
         "a0's *Sst binding must not leak onto a1, got: {errs:?}"
     );
 }
+
+// =========================================================================
+// Task 7 — qualified field access on ANY address register (D6.A4).
+//
+// A TWO-segment displacement `Overlay.field(aN)` / `Struct.field(aN)` resolves
+// in FIELD SPACE explicitly — the qualification IS the author's type assertion,
+// so it is legal on ANY address register (typed or not). Resolution: first
+// segment names an indexed overlay → resolve the second among ITS fields
+// (disp = window_offset + field offset); else names a struct → resolve among
+// its DIRECT fields (disp = field offset); else → existing comptime eval,
+// byte-for-byte unchanged (preserves e.g. `offsets` ordinals as displacements).
+// =========================================================================
+
+// ---- 1. overlay-qualified access on an UNTYPED register ------------------
+
+#[test]
+fn qualified_overlay_field_on_untyped_reg() {
+    // `a1` has NO param binding, yet `V.timer(a1)` resolves: the qualification
+    // is the type assertion. `timer` is the first overlay field over `sst_custom`
+    // (window $2E), so disp = $2E. `tst.b V.timer(a1)` = 0x4A29, ext $002E, RTS.
+    // (TST.B = 0100 1010 00 mmm rrr; d16(An) mode=101, a1 reg=001 → 0x4A29.)
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p () {{\n    tst.b V.timer(a1)\n    rts\n}}\n"
+    );
+    let (module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "expected no errors, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x4A, 0x29, 0x00, 0x2E, 0x4E, 0x75]);
+}
+
+// ---- 2. struct-qualified access on an UNTYPED register -------------------
+
+#[test]
+fn qualified_struct_field_on_untyped_reg() {
+    // `Sst.x_pos(a1)` — struct-qualified direct field at offset $10, untyped reg.
+    // `tst.b Sst.x_pos(a1)` = 0x4A29, ext $0010, RTS.
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p () {{\n    tst.b Sst.x_pos(a1)\n    rts\n}}\n"
+    );
+    let (module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "expected no errors, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x4A, 0x29, 0x00, 0x10, 0x4E, 0x75]);
+}
+
+// ---- 3. qualified form disambiguates the two-overlay case ----------------
+
+#[test]
+fn qualified_form_disambiguates_ambiguous_overlays() {
+    // Two overlays over `sst_custom` both declare `timer` (bare `timer(a0)` is
+    // [operand.ambiguous-field], see Task 6). The qualified `V1.timer(a0)`
+    // resolves cleanly — no ambiguity. Here a0 IS typed `*Sst`, proving the
+    // qualified form works on a typed register too.
+    let src = format!(
+        "module m\n{SST}vars V1: sst_custom {{ timer: u8 }}\n\
+         vars V2: sst_custom {{ timer: u8 }}\n\
+         proc p (a0: *Sst) {{\n    tst.b V1.timer(a0)\n    rts\n}}\n"
+    );
+    let (module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "qualified form must disambiguate, got: {errs:?}");
+    assert_eq!(proc_bytes(&module), vec![0x4A, 0x28, 0x00, 0x2E, 0x4E, 0x75]);
+}
+
+// ---- 4. regression: non-field two-segment path stays comptime ------------
+
+#[test]
+fn qualified_offsets_ordinal_stays_comptime() {
+    // `T` is an `offsets` table, NOT an overlay/struct — so `T.B(a0)` must keep
+    // today's comptime meaning: `T.B` is ordinal 1, used as the displacement.
+    // Field space only claims OVERLAY/STRUCT first segments. `tst.b $1(a0)` =
+    // 0x4A28, ext $0001, RTS. (a0 IS typed, proving field space is not consulted
+    // for an offsets first-segment.)
+    let src = "module m\n\
+        data x: [u8;1] = [$AA]\n\
+        data y: [u8;1] = [$BB]\n\
+        offsets T { A: x, B: y }\n\
+        struct S (size: 4) { f: u8, _pad: [u8; 3] @ 1 }\n\
+        proc p (a0: *S) {\n    tst.b T.B(a0)\n    rts\n}\n";
+    let (module, errs) = lower_errors(src);
+    assert!(errs.is_empty(), "expected no errors, got: {errs:?}");
+    // The proc is the LAST item; assert the instruction bytes appear in the image
+    // with ext word $0001 (ordinal 1). Locate the tst.b opcode 0x4A28.
+    let bytes = proc_bytes(&module);
+    let pos = bytes
+        .windows(4)
+        .position(|w| w == [0x4A, 0x28, 0x00, 0x01])
+        .unwrap_or_else(|| panic!("want tst.b $1(a0) = 4A 28 00 01 in {bytes:?}"));
+    assert_eq!(&bytes[pos..pos + 4], &[0x4A, 0x28, 0x00, 0x01]);
+}
+
+// ---- 5. unknown second segment names the qualifier -----------------------
+
+#[test]
+fn qualified_overlay_unknown_field_names_overlay() {
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p () {{\n    tst.b V.nope(a1)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.unknown-field]") && m.contains("V")),
+        "want [operand.unknown-field] naming overlay V, got: {errs:?}"
+    );
+}
+
+#[test]
+fn qualified_struct_unknown_field_names_struct() {
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p () {{\n    tst.b Sst.nope(a1)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.unknown-field]") && m.contains("Sst")),
+        "want [operand.unknown-field] naming struct Sst, got: {errs:?}"
+    );
+}
+
+// ---- 6. overrun through qualified access ---------------------------------
+
+#[test]
+fn qualified_field_overrun() {
+    // `move.w V.timer(a1), d0` reads 2 bytes of a 1-byte field → overrun, exactly
+    // as in the bare form (the qualified path runs the same overrun check).
+    let src = format!(
+        "module m\n{SST}vars V: sst_custom {{ timer: u8 }}\n\
+         proc p () {{\n    move.w V.timer(a1), d0\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.field-overrun]") && m.contains("timer")),
+        "want [operand.field-overrun] naming timer, got: {errs:?}"
+    );
+}

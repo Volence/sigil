@@ -273,6 +273,22 @@ impl Evaluator<'_> {
                         }
                     }
                 }
+                // D6.A4: a QUALIFIED two-segment displacement `Qual.field(aN)`
+                // resolves in field space on ANY address register (the
+                // qualification is the type assertion). If `Qual` names an overlay
+                // or struct → field-space resolution; otherwise (e.g. an `offsets`
+                // ordinal `T.B`) fall through to comptime eval unchanged.
+                if let Some((qual, field)) = two_segment_field(disp) {
+                    if self.overlays.contains_key(qual) || self.structs.contains_key(qual) {
+                        if let Some(reg) = self.peek_inner_reg(inner) {
+                            let (d, size) =
+                                self.resolve_qualified_field(qual, field, expr_span(disp))?;
+                            // Same deliberate error-recovery as the bare form.
+                            self.check_field_overrun(field, size, width, *span);
+                            return Some(CodeOperand::DispInd { disp: d, reg });
+                        }
+                    }
+                }
                 // All other shapes (multi-segment paths, non-path exprs, untyped
                 // register) keep today's semantics: comptime-eval the disp, then
                 // resolve the register — byte-for-byte unchanged.
@@ -333,9 +349,8 @@ impl Evaluator<'_> {
     ) -> Option<(i128, i128)> {
         // Direct field first (a direct field can never be shadowed by an overlay:
         // `[overlay.shadows-field]` rejects that at the overlay decl, D6.A7).
-        let layout = self.layout_of_struct(base, span);
-        if let Some(f) = layout.fields.iter().find(|f| f.name == field) {
-            return Some((f.offset as i128, f.size as i128));
+        if let Some(hit) = self.field_in_struct(base, field, span) {
+            return Some(hit);
         }
         // Overlay fields: scan every in-scope overlay whose window belongs to
         // `base`. Collect qualified hits so an ambiguity can name them. The
@@ -344,12 +359,13 @@ impl Evaluator<'_> {
         overlay_names.sort();
         let mut hits: Vec<(String, i128, i128)> = Vec::new();
         for oname in overlay_names {
-            let info = self.overlay_layout(&oname, span);
-            if info.poisoned || info.base_struct != base {
+            // Only overlays whose window belongs to `base` are candidates for the
+            // bare form (the overlay-qualified form skips this base filter).
+            if self.overlay_layout(&oname, span).base_struct != base {
                 continue;
             }
-            if let Some((_, rel, size)) = info.fields.iter().find(|(n, _, _)| n == field) {
-                hits.push((oname, info.window_offset + rel, *size));
+            if let Some((disp, size)) = self.field_in_overlay(&oname, field, span) {
+                hits.push((oname, disp, size));
             }
         }
         match hits.as_slice() {
@@ -378,6 +394,75 @@ impl Evaluator<'_> {
                 None
             }
         }
+    }
+
+    /// Look up a DIRECT field of struct `base` by name, returning `(struct
+    /// offset, field-byte-size)` if present. Shared by the bare field-space scan
+    /// (D6.A3) and the struct-qualified form (D6.A4).
+    fn field_in_struct(&mut self, base: &str, field: &str, span: Span) -> Option<(i128, i128)> {
+        let layout = self.layout_of_struct(base, span);
+        layout
+            .fields
+            .iter()
+            .find(|f| f.name == field)
+            .map(|f| (f.offset as i128, f.size as i128))
+    }
+
+    /// Look up a field of the indexed overlay named `overlay` by name, returning
+    /// `(window_offset + overlay-relative offset, field-byte-size)` if present. A
+    /// poisoned overlay layout yields `None`. Shared by the bare scan (via a
+    /// window-match filter, D6.A3) and the overlay-qualified form (D6.A4).
+    fn field_in_overlay(
+        &mut self,
+        overlay: &str,
+        field: &str,
+        span: Span,
+    ) -> Option<(i128, i128)> {
+        let info = self.overlay_layout(overlay, span);
+        if info.poisoned {
+            return None;
+        }
+        info.fields
+            .iter()
+            .find(|(n, _, _)| n == field)
+            .map(|(_, rel, size)| (info.window_offset + rel, *size))
+    }
+
+    /// D6.A4 — QUALIFIED field access `Qual.field(aN)`: a two-segment
+    /// displacement path resolves in field space explicitly and is legal on ANY
+    /// address register (the qualification IS the type assertion). If `qual`
+    /// names an indexed overlay → resolve `field` among ITS fields; else if it
+    /// names a struct → resolve `field` among its DIRECT fields; ELSE → `None`
+    /// (caller falls through to today's comptime eval, so an `offsets`/const
+    /// first segment keeps its ordinal meaning). A recognized qualifier with an
+    /// unknown field is `[operand.unknown-field]` naming the qualifier.
+    fn resolve_qualified_field(
+        &mut self,
+        qual: &str,
+        field: &str,
+        span: Span,
+    ) -> Option<(i128, i128)> {
+        if self.overlays.contains_key(qual) {
+            if let Some(hit) = self.field_in_overlay(qual, field, span) {
+                return Some(hit);
+            }
+            self.error(
+                span,
+                format!("[operand.unknown-field] overlay `{qual}` has no field `{field}`"),
+            );
+            return None;
+        }
+        if self.structs.contains_key(qual) {
+            if let Some(hit) = self.field_in_struct(qual, field, span) {
+                return Some(hit);
+            }
+            self.error(
+                span,
+                format!("[operand.unknown-field] struct `{qual}` has no field `{field}`"),
+            );
+            return None;
+        }
+        None
     }
 
     /// D6.A6: an access WIDER than the resolved field crosses a named boundary →
@@ -560,6 +645,20 @@ fn single_segment_field(disp: &ast::Expr) -> Option<&str> {
     if let ast::Expr::Path(p) = disp {
         if p.segments.len() == 1 && reg_from_name(&p.segments[0]).is_none() {
             return Some(&p.segments[0]);
+        }
+    }
+    None
+}
+
+/// The `(qualifier, field)` of a displacement expression that is exactly a
+/// TWO-segment [`ast::Expr::Path`] (`Qual.field`, D6.A4). A path of any other
+/// arity yields `None`. The caller decides whether `qualifier` names an overlay
+/// or struct (field space) or falls through to comptime eval (`offsets` ordinal,
+/// dotted const, …) — this helper only splits the two segments.
+fn two_segment_field(disp: &ast::Expr) -> Option<(&str, &str)> {
+    if let ast::Expr::Path(p) = disp {
+        if p.segments.len() == 2 {
+            return Some((&p.segments[0], &p.segments[1]));
         }
     }
     None

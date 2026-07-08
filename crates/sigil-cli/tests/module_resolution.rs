@@ -1285,3 +1285,107 @@ fn section_nested_use_of_proc_resolves_via_rename_map() {
     assert_eq!(&bytes[0..4], &[0x4E, 0xF8, 0x00, 0x06], "jmp Helper -> helper @ LMA 6");
     assert_eq!(&bytes[6..8], &[0x4E, 0x75], "helper.Helper rts at LMA 6");
 }
+
+/// A pitcher-plant-shaped SST struct with a `sst_custom` byte-array window at
+/// `$2E` (34 bytes), spelled with explicit `reserved` padding so every `@offset`
+/// matches the packed layout (this codebase's `@offset` is an ASSERTION over the
+/// dense layout, not a placement with gaps). Reused by the cross-module overlay
+/// tests below.
+const SST_LIB: &str = "struct Sst (size: $50) {\n    \
+    id: u16,\n    \
+    _pad0: [u8; 14] @ $2,\n    \
+    x_pos: u16 @ $10,\n    \
+    _pad1: [u8; 8] @ $12,\n    \
+    y_vel: u16 @ $1A,\n    \
+    _pad2: [u8; 18] @ $1C,\n    \
+    sst_custom: [u8; 34] @ $2E,\n\
+}\n";
+
+#[test]
+fn cross_module_pub_overlay_bare_field_access() {
+    // D6.A8: a `pub vars` overlay is an ordinary module item shared by `use`. The
+    // lib exports the base struct AND the overlay; the consumer `use`s both and
+    // gets BARE field access on a `*Sst`-typed register: `timer(a0)` lowers to
+    // `$2E(a0)`-class bytes. The entry (consumer) is discovered first and packs
+    // from 0, so its proc is the whole image: subq.b #1,(d16,a0)=5328, ext 002E,
+    // rts=4E75. The lib emits ZERO bytes (struct + overlay are both comptime).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        &format!("module lib\npub {SST_LIB}pub vars V: sst_custom {{ timer: u8 }}\n"),
+    );
+    write(
+        root,
+        "consumer.emp",
+        "module consumer\nuse lib.{Sst, V}\n\
+         proc p (a0: *Sst) {\n    subq.b #1, timer(a0)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("consumer.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module overlay build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x53, 0x28, 0x00, 0x2E, 0x4E, 0x75],
+        "subq.b #1, timer(a0) with a cross-module pub overlay"
+    );
+}
+
+#[test]
+fn cross_module_pub_overlay_qualified_field_access() {
+    // D6.A4 + D6.A8: the qualified form `V.timer(a1)` works cross-module on an
+    // UNTYPED register (the qualification is the type assertion). tst.b (d16,a1)
+    // = 4A29, ext 002E, rts.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        &format!("module lib\npub {SST_LIB}pub vars V: sst_custom {{ timer: u8 }}\n"),
+    );
+    write(
+        root,
+        "consumer.emp",
+        "module consumer\nuse lib.{Sst, V}\n\
+         proc p () {\n    tst.b V.timer(a1)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("consumer.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module qualified overlay build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x29, 0x00, 0x2E, 0x4E, 0x75],
+        "tst.b V.timer(a1) with a cross-module pub overlay"
+    );
+}

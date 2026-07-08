@@ -27,6 +27,13 @@ fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
         ast::Item::Bitfield(d) if d.public => Some(&d.name),
         ast::Item::Newtype(d) if d.public => Some(&d.name),
         ast::Item::ComptimeFn(d) if d.public => Some(&d.name),
+        // `pub vars` OVERLAY form (`vars Name: window { .. }`, D6.A8): overlays
+        // are ordinary module items shared by `use`, so a consumer that imports
+        // the overlay (and its base struct) gets qualified/bare field access. The
+        // overlay emits ZERO bytes when lowered — only always-on decl checks fire
+        // — so it is safe to inject like a struct. The REGION form (`name: None`)
+        // is not a comptime item and is never injected.
+        ast::Item::Vars(d) if d.public && d.name.is_some() => d.name.as_deref(),
         _ => None,
     }
 }

@@ -80,6 +80,10 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
         ast::Item::Enum(e) if e.public => Some(e.name.clone()),
         ast::Item::Bitfield(b) if b.public => Some(b.name.clone()),
         ast::Item::Newtype(n) if n.public => Some(n.name.clone()),
+        // `pub vars` OVERLAY form (`vars Name: window { .. }`, D6.A8): a named,
+        // exportable, comptime-only module item. The region form (`name: None`)
+        // has no name and is never exported.
+        ast::Item::Vars(v) if v.public => v.name.clone(),
         _ => None,
     }
 }
@@ -105,6 +109,13 @@ fn collect_defined(items: &[ast::Item], out: &mut Vec<String>) {
             ast::Item::Enum(e) => out.push(e.name.clone()),
             ast::Item::Bitfield(b) => out.push(b.name.clone()),
             ast::Item::Newtype(n) => out.push(n.name.clone()),
+            // Overlay-form `vars` (D6.A8): a named module item. Region form
+            // (`name: None`) defines no name.
+            ast::Item::Vars(v) => {
+                if let Some(name) = &v.name {
+                    out.push(name.clone());
+                }
+            }
             ast::Item::Section(sec) => collect_defined(&sec.items, out),
             _ => {}
         }
