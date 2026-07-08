@@ -18,7 +18,7 @@
 use std::path::Path;
 
 use sigil_frontend_as::{assemble_root, Options};
-use sigil_ir::{Cpu, SymbolTable};
+use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;
 
 /// Region A base LMA in the assembled ROM: the resident phase-0 Z80 driver.
@@ -64,6 +64,35 @@ fn assemble_full_rom_with(aeon: &Path, debug: bool) -> Result<LinkedImage, Strin
         .map_err(|d| format!("resolve_layout: {} diagnostics; first: {:?}", d.len(), d.first()))?;
     sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("link: {} diagnostics; first: {:?}", d.len(), d.first()))
+}
+
+/// Assemble the AS side of the MIXED `.asm`+`.emp` build: everything
+/// `assemble_full_rom` does (SOUND_DRIVER_ENABLED on, no stubs), PLUS
+/// `SIGIL_EMP_DAC` defined so `main.asm`'s `gameSoundDataIncludes` macro SKIPS
+/// `dac_samples.asm` and `org $60000` resumes placement for the Moving-Trucks
+/// bank (leaving the $50000/$58000 DAC banks for the `.emp` side to supply).
+/// `debug` toggles `__DEBUG__` exactly as the two `assemble_full_rom*` entry
+/// points do — the mixed harness proves BOTH debug shapes compose.
+///
+/// Returns the UNLINKED [`Module`] (raw sections), not a `LinkedImage`: the
+/// mixed harness concatenates these with the `.emp` module's placed sections and
+/// runs ONE `resolve_layout` + `link` over the union, so the cross-seam symbols
+/// (`SND_*_BANK/PTR/LEN` etc.) resolve through a single shared symbol table.
+pub fn assemble_mixed_dac_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        // `asl`'s `ifndef` tests symbol EXISTENCE, so any value works; 1 mirrors
+        // the other `-D` defines. This is the gate that flips main.asm's
+        // dac_samples.asm include to `org $60000`.
+        ("SIGIL_EMP_DAC".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts)
+        .map_err(|d| format!("assemble (mixed AS side): {} diagnostics; first: {:?}", d.len(), d.first()))
 }
 
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by

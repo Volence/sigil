@@ -8,3 +8,8 @@ sigil-span = { path = "../sigil-span" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-link = { path = "../sigil-link" }
 sigil-frontend-as = { path = "../sigil-frontend-as" }
+
+[dev-dependencies]
+# The mixed .asm+.emp harness (mixed_dac_rom) composes the emp front-end's
+# output with the AS side; only the tests need it, hence dev-only.
+sigil-frontend-emp = { path = "../sigil-frontend-emp" }
