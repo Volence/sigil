@@ -1050,6 +1050,44 @@ fn cross_module_exported_dotted_label_reference_links() {
 }
 
 #[test]
+fn item_guard_sees_prelude_const_across_modules() {
+    // Plan 7 #5: an item-position guard in the game module references a `pub const`
+    // auto-imported from the prelude (no explicit `use`). The prelude's comptime
+    // defs are prepended as ambient items before lowering, so the guard resolves
+    // `MAX_OBJS` and passes. Build succeeds and the data byte is written.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "prelude.emp", "module prelude\npub const MAX_OBJS = 32\n");
+    write(
+        root,
+        "game.emp",
+        "module game\nensure(MAX_OBJS % 8 == 0, \"objs {MAX_OBJS}\")\n\
+         pub data D: [u8;1] = [$42]\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("game.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "--prelude",
+            "prelude",
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "cross-module prelude-const guard must compile, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(bytes, vec![0x42], "guard is zero-byte; only the data byte lands");
+}
+
+#[test]
 fn whole_module_use_warns_it_imports_nothing() {
     // M5: `use other` (whole-module, no `.{…}`/`.*`) binds no names, so it is a
     // silent no-op today. Emit a warning at the `use` decl so a later `other.Name`

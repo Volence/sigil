@@ -114,7 +114,7 @@ cross-module exported-label references (`use a.foo` + `bra.w foo.entry`) resolve
 - Modify: `crates/sigil-frontend-emp/src/parser.rs` (`item()` ~192-222, `recover_to_next_decl` OPENERS ~239)
 - Test: the existing parser-items test file (grep `Item::Offsets` under `crates/sigil-frontend-emp/tests/` and add alongside)
 
-- [ ] **Step 1: Write the failing parser tests** (adapt assertion style to the neighboring `offsets` parser tests):
+- [x] **Step 1: Write the failing parser tests** (adapt assertion style to the neighboring `offsets` parser tests):
 
 ```rust
 #[test]
@@ -148,9 +148,9 @@ fn ensure_ident_not_followed_by_paren_still_errors_as_declaration() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cargo test -p sigil-frontend-emp item_level_ensure` → FAIL (no `Item::Ensure`).
+- [x] **Step 2: Run to verify failure** — `cargo test -p sigil-frontend-emp item_level_ensure` → FAIL (no `Item::Ensure`).
 
-- [ ] **Step 3: Add the AST node (EXACT shape, adjust doc style):**
+- [x] **Step 3: Add the AST node (EXACT shape, adjust doc style):**
 
 In `ast.rs` after `Item::Newtype` (~73):
 
@@ -176,7 +176,7 @@ pub struct EnsureDecl {
 }
 ```
 
-- [ ] **Step 4: Parser dispatch (MIRROR of the `comptime` peek2 pattern, parser.rs:208-217):**
+- [x] **Step 4: Parser dispatch (MIRROR of the `comptime` peek2 pattern, parser.rs:208-217):**
 
 In `item()`, before the `section` line (~218):
 
@@ -199,7 +199,7 @@ In `item()`, before the `section` line (~218):
 
 (Verify `self.expr()` starting at the ident indeed yields the `Call` — that is how call expressions parse everywhere else; if the local idiom differs, follow it. Also check whether the `pub`-rejection for `use`/`section` at ~194 should simply gain these two keywords instead — prefer the smallest diff.)
 
-- [ ] **Step 5: OPENERS fix (EXACT):** in `recover_to_next_decl` (~239) extend the array:
+- [x] **Step 5: OPENERS fix (EXACT):** in `recover_to_next_decl` (~239) extend the array:
 
 ```rust
         const OPENERS: [&str; 15] = ["use", "const", "enum", "bitfield", "struct",
@@ -209,9 +209,9 @@ In `item()`, before the `section` line (~218):
 
 (`"offsets"` was missing — pre-existing recovery gap, D5.6.)
 
-- [ ] **Step 6: Run tests** — `cargo test -p sigil-frontend-emp` → the new tests PASS, zero regressions.
+- [x] **Step 6: Run tests** — `cargo test -p sigil-frontend-emp` → the new tests PASS, zero regressions.
 
-- [ ] **Step 7: Green gate + commit**
+- [x] **Step 7: Green gate + commit**
 
 ```bash
 cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings
@@ -227,7 +227,7 @@ git add -A && git commit -m "feat(emp-parse): item-position ensure/ensure_fatal 
 - Modify: `crates/sigil-frontend-emp/src/lower/mod.rs` (top-level match ~118-182, `lower_section_items` ~213-245)
 - Test: create `crates/sigil-frontend-emp/tests/lower_guards.rs`
 
-- [ ] **Step 1: Write the failing tests** (harness: mirror how `lower_module` is driven in existing lower tests — grep `lower_module(` under `tests/`):
+- [x] **Step 1: Write the failing tests** (harness: mirror how `lower_module` is driven in existing lower tests — grep `lower_module(` under `tests/`):
 
 ```rust
 //! Item-position guards: evaluated in item order at lowering time, zero bytes,
@@ -279,9 +279,9 @@ fn unknown_name_in_guard_condition_diagnoses_without_crash() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cargo test -p sigil-frontend-emp --test lower_guards` → FAIL (guard items currently fall into the `_ => {}` arm, silently ignored).
+- [x] **Step 2: Run to verify failure** — `cargo test -p sigil-frontend-emp --test lower_guards` → FAIL (guard items currently fall into the `_ => {}` arm, silently ignored).
 
-- [ ] **Step 3: Add the evaluation harness (MIRROR of `eval_data_with_root`, layout.rs:997-1010):**
+- [x] **Step 3: Add the evaluation harness (MIRROR of `eval_data_with_root`, layout.rs:997-1010):**
 
 In `eval/guards.rs`:
 
@@ -314,7 +314,7 @@ pub(crate) fn eval_item_guard(
 
 Follow `eval_data_with_root` line-for-line for the harness details (env/type-pass/diag draining); the comments above mark the three places to check.
 
-- [ ] **Step 4: Wire the lowering arms.** In `lower/mod.rs` top-level loop, after the `Item::Offsets` arm (~160), replacing coverage the `_ => {}` arm was giving:
+- [x] **Step 4: Wire the lowering arms.** In `lower/mod.rs` top-level loop, after the `Item::Offsets` arm (~160), replacing coverage the `_ => {}` arm was giving:
 
 ```rust
             ast::Item::Ensure(decl) => {
@@ -329,9 +329,9 @@ Follow `eval_data_with_root` line-for-line for the harness details (env/type-pas
 
 CAREFUL with `here` in the default section: data items compute `here_base = placement.origin + builder.current_offset()` where `origin` is `next_lma` (lower/mod.rs:126-128, 258). Match that exactly. In `lower_section_items` (~223) add the same arm with `placement.origin + builder.current_offset()` and return the stop signal to the caller (change the fn to return `bool`, or thread a `&mut bool` — pick the smallest diff; a fatal inside a section block must also stop the module's remaining top-level items).
 
-- [ ] **Step 5: Run tests** — `cargo test -p sigil-frontend-emp --test lower_guards` → PASS; full package green.
+- [x] **Step 5: Run tests** — `cargo test -p sigil-frontend-emp --test lower_guards` → PASS; full package green.
 
-- [ ] **Step 6: Green gate + commit**
+- [x] **Step 6: Green gate + commit**
 
 ```bash
 cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings
@@ -348,7 +348,7 @@ git add -A && git commit -m "feat(emp-lower): evaluate item-position guards in o
 - Modify: `crates/sigil-frontend-emp/src/layout.rs` (where the data `DataBuf` is produced/returned — inside the `eval_data_with_root` path so ALL data items are covered)
 - Test: `crates/sigil-frontend-emp/tests/eval_guards.rs` (append a `max_size` section)
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
 
 ```rust
 // ---- (max_size:) capacity attribute (D5.4) ------------------------------
@@ -380,9 +380,9 @@ fn max_size_non_int_is_an_error() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — parse error on `(max_size:` → FAIL as expected.
+- [x] **Step 2: Run to verify failure** — parse error on `(max_size:` → FAIL as expected.
 
-- [ ] **Step 3: AST field (EXACT):** add to `DataDecl`:
+- [x] **Step 3: AST field (EXACT):** add to `DataDecl`:
 
 ```rust
     /// Optional `(max_size: expr)` capacity bound (D5.4): the checked buffer's
@@ -392,7 +392,7 @@ fn max_size_non_int_is_an_error() {
 
 (Fix all construction sites the compiler flags — tests included — with `max_size: None`.)
 
-- [ ] **Step 4: Parser (MIRROR of `struct_decl`'s `(size: expr)` parsing — grep `size:` in `struct_decl` and copy its shape):** in `data_decl` after `let name = ...` (~662):
+- [x] **Step 4: Parser (MIRROR of `struct_decl`'s `(size: expr)` parsing — grep `size:` in `struct_decl` and copy its shape):** in `data_decl` after `let name = ...` (~662):
 
 ```rust
         let max_size = if self.at(&Tok::LParen) {
@@ -407,7 +407,7 @@ fn max_size_non_int_is_an_error() {
         };
 ```
 
-- [ ] **Step 5: Enforcement (in the `eval_data_with_root` path, layout.rs):** after the checked `DataBuf` is produced and its byte length known, when `decl.max_size` is `Some(e)`: evaluate `e` with the same evaluator; require `Value::Int(n)` with `n >= 0` (else the two errors from the tests); if `buf_len > n`, error:
+- [x] **Step 5: Enforcement (in the `eval_data_with_root` path, layout.rs):** after the checked `DataBuf` is produced and its byte length known, when `decl.max_size` is `Some(e)`: evaluate `e` with the same evaluator; require `Value::Int(n)` with `n >= 0` (else the two errors from the tests); if `buf_len > n`, error:
 
 ```rust
 format!("data `{}` is {} bytes — exceeds max_size {} (over by {} bytes)", decl.name, buf_len, n, buf_len as i128 - n)
@@ -415,9 +415,9 @@ format!("data `{}` is {} bytes — exceeds max_size {} (over by {} bytes)", decl
 
 NOTE: `eval_data_with_root` currently takes a `name: &str` and looks the decl up — thread the decl (or its `max_size`) through whichever way is the smallest diff. Keep the check HERE (not in `lower/mod.rs`) so both top-level and section-nested items are covered by one code path.
 
-- [ ] **Step 6: Run tests** — all five PASS; package green.
+- [x] **Step 6: Run tests** — all five PASS; package green.
 
-- [ ] **Step 7: Green gate + commit**
+- [x] **Step 7: Green gate + commit**
 
 ```bash
 cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings

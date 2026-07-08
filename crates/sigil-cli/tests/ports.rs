@@ -439,3 +439,59 @@ fn example_offset_table_compiles() {
         vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x00, 0x01, 0x02, 0x00, 0x03]
     );
 }
+
+// ---- Plan 7 #5: item-position guards + (max_size:) end-to-end ------------
+
+/// Guards and a passing `(max_size:)` emit ZERO bytes — the linked image is
+/// byte-identical to the same program with them removed (D5.2/D5.4).
+#[test]
+fn guards_are_byte_neutral_end_to_end() {
+    let with_guards = "module m\n\
+        const N = 4\n\
+        ensure(N == 4, \"objs {N}\")\n\
+        data A (max_size: 2): [u8;2] = [1,2]\n\
+        ensure(2 > 1, \"still ok\")\n\
+        data B: [u8;2] = [3,4]\n";
+    let without = "module m\n\
+        data A: [u8;2] = [1,2]\n\
+        data B: [u8;2] = [3,4]\n";
+    assert_eq!(
+        emp_candidate(with_guards),
+        emp_candidate(without),
+        "guards + passing max_size must be byte-neutral"
+    );
+    // And the shared payload is exactly what we wrote.
+    assert_eq!(emp_candidate(without), vec![1, 2, 3, 4]);
+}
+
+/// Two real aeon guard SHAPES ported to item position: a divisibility `ensure`
+/// (the `if cond / error` class) and an `ensure_fatal(here() <= limit, …)` (the
+/// `if * > X / fatal` class) inside a `vma:` section where the position guard
+/// passes. Both compile end-to-end and the section's data lands intact.
+#[test]
+fn aeon_shaped_guard_ports() {
+    let src = "module m\n\
+        const PERIOD = 64\n\
+        ensure(256 % PERIOD == 0, \"256 must be divisible by {PERIOD}\")\n\
+        section blk (vma: $7000) {\n\
+        data pad: [u8; 4] = [$AA, $BB, $CC, $DD]\n\
+        ensure_fatal(here() <= $8000, \"must fit under the $8000 window\")\n\
+        }\n";
+    let bytes = emp_candidate(src);
+    assert_eq!(bytes, vec![0xAA, 0xBB, 0xCC, 0xDD], "section data intact, guards zero-byte");
+}
+
+/// Plan 7 #5 — the documented `examples/guards.emp` (item-position guards +
+/// `(max_size:)`, all passing) compiles end-to-end. Mirrors
+/// `example_offset_table_compiles`; pins the byte layout so a silent regression
+/// (or a guard newly emitting bytes) can't slip through.
+#[test]
+fn example_guards_compiles() {
+    let src = include_str!("../../../examples/guards.emp");
+    let bytes = emp_candidate(src);
+    // 3 offset words (dc.w target-base = 6,7,8) + 3 state bytes + 4 anim frames.
+    assert_eq!(
+        bytes,
+        vec![0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x00, 0x01, 0x02, 0x10, 0x20, 0x30, 0x40]
+    );
+}

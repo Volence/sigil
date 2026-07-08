@@ -1,0 +1,59 @@
+// ===========================================================================
+// GUARDS — item-position `ensure` / `ensure_fatal` + `(max_size:)` capacity
+// ===========================================================================
+// Demonstrates Spec 2, Plan 7 backlog #5: compile-time guards written BETWEEN
+// items (top level and inside `section {}`), evaluated in item order at
+// lowering time with `here()` valid, and the always-on `(max_size:)` capacity
+// bound on a data item. Every guard here PASSES, so this file compiles to bytes
+// and the guards emit nothing — a program with guards is byte-identical to one
+// without (proven in the test suite).
+//
+// The legacy AS idioms these replace:
+//   if MAX_OBJS # 8 <> 0
+//       error "..."          ->  ensure(MAX_OBJS % 8 == 0, "...")
+//   if * > $9000
+//       fatal "..."          ->  ensure_fatal(here() <= $9000, "...")
+//   if (End-Start) > BUF
+//       error "..."          ->  data T (max_size: BUF): ...
+// ===========================================================================
+
+module m
+
+// Game-authoring constants the guards check against (prelude-style).
+const MAX_OBJS = 32
+const PERIOD   = 64
+
+// --- Top-level divisibility guards (the `if cond / error` class) -----------
+// Evaluated in item order at lowering time; a failure is a compile error with
+// the interpolated message. `{MAX_OBJS}` interpolates the offending value.
+ensure(MAX_OBJS % 8 == 0, "MAX_OBJS ({MAX_OBJS}) must be a multiple of 8")
+ensure(256 % PERIOD == 0, "PERIOD ({PERIOD}) must divide 256 evenly")
+
+section obj (cpu: m68000, vma: $8000) {
+    // A dispatch table + a guard on its reserved `.count` pseudo-member: the
+    // engine expects exactly three states, and the guard pins that so a member
+    // added or removed without updating the engine is caught at compile time.
+    offsets StateTable {
+        Idle:   State_Idle,
+        Walk:   State_Walk,
+        Attack: State_Attack
+    }
+    ensure(StateTable.count == 3, "StateTable must have 3 states, has {StateTable.count}")
+
+    // The three state stand-ins the table folds against.
+    data State_Idle:   [u8; 1] = [$00]
+    data State_Walk:   [u8; 1] = [$01]
+    data State_Attack: [u8; 1] = [$02]
+
+    // A fixed table bounded by `(max_size:)`: the checked buffer's byte length
+    // (here 4 bytes) must fit the reserved capacity (8). The bound exists for
+    // the class of items whose size is computed/inferred rather than declared —
+    // overflow is an "over by N bytes" compile error.
+    data AnimFrames (max_size: 8): [u8; 4] = [$10, $20, $30, $40]
+
+    // Position guard (the `if * > X / fatal` class): the whole object section
+    // must fit under the $9000 window boundary. `here()` reads the current VMA
+    // (section base $8000 + the bytes emitted above); `ensure_fatal` STOPS the
+    // module's remaining items on failure.
+    ensure_fatal(here() <= $9000, "object section overran its $9000 budget")
+}
