@@ -392,3 +392,111 @@ banks.rs (a/b/c full compile+link path via resolve_layout+link):
 - `cargo clippy --workspace --all-targets -- -D warnings` → clean.
 - `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (no LinkExpr-cell
   users in the shipped corpus → zero diffs; pitcher_plant + script pins intact).
+
+---
+
+# Task 4 — `bankid()` builtin (+ embed `.len`): implementation notes
+
+`bankid(sym)` yields the Genesis cartridge bank id `(sym & $7F8000) >> 15` as a
+`Value::LinkExpr` residual tree (D7.3/R7m.3), riding the shipped D2.23 machinery
+wholesale: no new fixup kind, emission via Task-3's `Cell::Expr`, `ensure` defer
+via D-H.4 (zero new code), comptime-required refusal via the existing choke point.
+
+## R7m.7 verdict — embed `.len` did NOT work; EXTENDED (two dispatch paths)
+
+RECON: `.len` on a `Value::Data` receiver was UNSUPPORTED before this task, and
+it lives at TWO independent dispatch sites (the recon flag named only one):
+- BARE-PATH `K.len` → `eval/expr.rs::field_or_len` → fell to "`len` is not a
+  field or `.len` of data".
+- CALL form `K.len()` → `eval/builtins.rs::eval_builtin` → fell to "`len` is not
+  defined on data".
+Both were extended to return `DataBuf::size` (the running byte-length sum, kept
+in step by `push`/`concat` — O(1), exact). Smallest honest change; the two arms
+give the same answer so `K.len` and `K.len()` agree. RED evidence: the two
+`embed_*len*` tests failed with each of the two messages above, respectively.
+
+Scoping note (recorded, not a defect): the `data Kick = embed(...)` form does NOT
+expose a readable `.len` — `data_value_readable` gates the value-read to StructLit
+initializers only, so an embed **data item**'s value is not readable as a field
+receiver. The exhibit (T5) therefore binds embedded blobs to **const**s to read
+their comptime length (`const K = embed(...)` → `K.len`). This is a pre-existing
+D-PP.5 receiver-gate scoping detail, orthogonal to bankid/len.
+
+## R7m.3 refusal-code choice — `[bank.provisional]`, by STRUCTURAL provenance
+
+Chose the honest `[bank.provisional]` code (the PREFERRED option), NOT the
+`[here.provisional]`-with-parenthetical fallback. Rationale + how:
+- Threading a provenance tag through the `Value::LinkExpr(Expr)` tuple variant is
+  genuinely invasive (destructured at ~20 sites; `lift_binary` reconstructs the
+  variant, so a tag would need merge semantics through arithmetic composition).
+- Instead the refusal choke point `reject_if_provisional` (eval/expr.rs) now
+  inspects the residual tree: a tree carrying the bank-latch mask literal
+  `$7F8000` is a `bankid()`-derived value. That mask appears in EXACTLY ONE place
+  (`eval_bankid`, per D7.3), so its presence is a reliable, non-invasive
+  provenance marker — a read-only recursive scan (`expr_carries_bank_mask`), no
+  new state on `Value`. A composed value (`bankid(A) == bankid(B)`) still carries
+  the mask in a subtree, so it is recognized too.
+- Message (steers per R7m.3): `[bank.provisional] bankid() is a link-time value;
+  it cannot size or steer comptime evaluation — emit it into a data cell or guard
+  it with ensure`. Every non-bankid link value keeps `[here.provisional]` (its
+  branch-sizing advice, which does not apply to bankid). Test (d) asserts BOTH:
+  the bank message fires AND the here message does not.
+
+## ensure-defer path — ZERO new code (confirmed)
+
+`ensure(bankid(A) == bankid(B), …)` produces a `Value::LinkExpr` condition via the
+existing operator lifting; `eval_guard` already routes any `LinkExpr` condition to
+`defer_guard` → a `LinkAssert` (D-H.4). No change was needed or made to guards.rs.
+Tests (b)/(c) confirm one `LinkAssert` is minted and it fails/passes at link per
+bank membership.
+
+## RED-first evidence (all 11 Task-4 tests failed without the impl)
+
+Captured by stashing ONLY the three src files
+(`eval/call.rs`, `eval/builtins.rs`, `eval/expr.rs`) and re-running `banks.rs`:
+- 9 bankid tests → `unknown function \`bankid\`` (no dispatch entry).
+- `embed_len_is_comptime_byte_length` → `\`len\` is not a field or \`.len\` of data`.
+- `embed_slice_len_is_slice_length` → `\`len\` is not defined on data`.
+All 11 GREEN after `git stash pop`.
+
+Test roster (`crates/sigil-frontend-emp/tests/banks.rs`):
+- `embed_len_is_comptime_byte_length`, `embed_slice_len_is_slice_length` (R7m.7).
+- `bankid_width1_folds_to_bank_id_68k` (a: nonzero bank id, $8000→1),
+  `bankid_bank_zero_folds_to_zero`, `bankid_of_fn_ref_captures_name` (FnRef arm
+  reaches the same builtin — a comptime fn has no address so it does not fold;
+  the Str form's fold tests carry the end-to-end proof).
+- `bankid_width2_z80_folds_little_endian` (f/R7m.5: the T3 carry-forward — first
+  end-to-end Z80 `Cell::Expr` fold, byte-asserted LE `01 00`, discharges the
+  Z80-probe clause that T3 could only cover in two half-unit tests).
+- `ensure_bankid_mismatch_fails_at_link` (b), `ensure_bankid_same_bank_passes_silently` (c).
+- `bankid_as_array_length_refuses_with_bank_message` (d).
+- `bankid_wrong_arity_is_diagnosed`, `bankid_non_symbol_argument_is_diagnosed`
+  (e — mirror winptr's arity + symbol-reference errors).
+
+## Stale-comment fix
+
+`eval/emit.rs` top-of-`lower_to_data` comment still said the arithmetic-then-emit
+path is `[here.provisional]`-refused "for now" (L-H.2) — stale since Task 3
+un-deferred it. Rewritten to point at `lower_link_expr`'s two-path split.
+
+## Files changed (Task 4)
+
+- `crates/sigil-frontend-emp/src/eval/call.rs` — `bankid` dispatch entry beside
+  `winptr` in the non-shadowable special-call list.
+- `crates/sigil-frontend-emp/src/eval/builtins.rs` — `eval_bankid` (beside
+  `eval_winptr`); `Value::Data` arm in `eval_builtin` for the `.len()` call form.
+- `crates/sigil-frontend-emp/src/eval/expr.rs` — `Value::Data` arm in
+  `field_or_len` for the bare `.len` path; `bank_provisional_error` +
+  provenance-steered `reject_if_provisional` + `expr_carries_bank_mask`.
+- `crates/sigil-frontend-emp/src/eval/emit.rs` — stale-comment fix only.
+- `crates/sigil-frontend-emp/tests/banks.rs` — the 11 Task-4 tests.
+
+## Gate (Task 4)
+
+- `cargo test -p sigil-frontend-emp --test banks` → 20/20 green.
+- `cargo test --workspace --no-fail-fast` → EXACTLY the 4 allowlisted harness
+  reds (aeon strlen drift), nothing else; confirmed pre-existing by stashing the
+  emp src changes and re-running (identical failure).
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean.
+- `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (no bankid users in
+  the shipped corpus; pitcher_plant + script pins intact).

@@ -27,14 +27,12 @@ impl<'a> Evaluator<'a> {
         if matches!(value, Value::Poison) || matches!(ty, Ty::Poison) {
             return DataBuf::empty();
         }
-        // A PROVISIONAL `here()` (D-H.3): a link-time value emitted into a data
-        // cell. A PLAIN one — `LinkExpr(Sym(anchor))`, the item's own label —
-        // becomes a `Cell::SymRef` of the field's declared width, resolved through
-        // the existing D-P4.5 fixup selection (width 4 → Abs32Be, width 2 →
-        // Abs16Be; width 1 is an error — no 8-bit absolute kind exists). An
-        // ARITHMETICALLY-combined link value (a non-`Sym` residual tree) is
-        // `[here.provisional]` for now — the general link-expr data cell is
-        // deferred (L-H.2); the guard path (D-H.4) is where arithmetic is served.
+        // A link-time value (a provisional `here()`, a `bankid()`, or any
+        // arithmetic over them) emitted into a data cell. `lower_link_expr` splits
+        // the two paths (R7m.4): a PLAIN `LinkExpr(Sym(anchor))` keeps the
+        // byte-proven D-H.3 `Cell::SymRef` address lowering; a residual arithmetic
+        // tree becomes a general `Cell::Expr` VALUE cell (S2-D13f un-deferred —
+        // this REPLACES the old arithmetic-then-emit refusal).
         if let Value::LinkExpr(expr) = value {
             return self.lower_link_expr(expr, ty, span);
         }

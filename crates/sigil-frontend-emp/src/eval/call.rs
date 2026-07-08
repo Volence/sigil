@@ -66,6 +66,11 @@ impl<'a> Evaluator<'a> {
                 // `winptr(sym)` (§7.2) — a Z80 windowed bank pointer, also a
                 // non-shadowable `Data` constructor.
                 "winptr" => return self.eval_winptr(args, span, env),
+                // `bankid(sym)` (§7.x, D7.3/R7m.3) — the Genesis cartridge bank
+                // id `(sym & $7F8000) >> 15`, a link-time value on the D2.23
+                // LinkExpr machinery. Same argument contract as `winptr`; also
+                // non-shadowable.
+                "bankid" => return self.eval_bankid(args, span, env),
                 // `here()` (§7.1) — the current VMA. A lowering-time query: the
                 // position is threaded in via `here_base` (set per data item by
                 // the lowering pass); it is not user-shadowable.
