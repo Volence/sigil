@@ -67,6 +67,8 @@ pub enum Item {
     Data(DataDecl),
     /// `proc ...` declaration.
     Proc(ProcDecl),
+    /// `script ...` declaration (Plan 7 #9b).
+    Script(ScriptDecl),
     /// `comptime fn ...` declaration.
     ComptimeFn(ComptimeFnDecl),
     /// `section ...` declaration.
@@ -410,6 +412,63 @@ pub struct ProcDecl {
     /// The proc's assembly body.
     pub body: Vec<AsmStmt>,
     /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// A `script name(params) (encoding: E) [shows label] { body }` declaration
+/// (Plan 7 #9b — D9.2/D9.6). A script is a coroutine: `yield` saves a typed
+/// resume point (the object's next-frame state) and exits through the
+/// per-frame epilogue; the compiler emits a HIDDEN dispatch-encoded resume
+/// table at the script's name, followed by the body's resume segments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScriptDecl {
+    /// Whether the script's table label is exported (`pub script`).
+    pub public: bool,
+    /// The script's name — the hidden table's base label (the engine handle).
+    pub name: String,
+    /// Parameters, exactly as [`ProcDecl::params`] (typed register bindings).
+    pub params: Vec<(String, Type, Span)>,
+    /// The hidden table's emission/ordinal-scaling encoding (required — the
+    /// engine dispatcher indexes the table, so this is engine contract).
+    pub encoding: DispatchEncoding,
+    /// The declared per-frame epilogue (`shows <label>`), overridable per
+    /// yield site. A bare `yield` with no epilogue in scope is an error.
+    pub epilogue: Option<ScriptLabel>,
+    /// The script's statements.
+    pub body: Vec<ScriptStmt>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// A statement within a `script` body (R9b.1).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScriptStmt {
+    /// Any ordinary proc-body statement (label / instruction / comptime call).
+    Asm(AsmStmt),
+    /// `loop { … }` — unconditional loop (hidden label + `jbra` back).
+    Loop {
+        /// The loop's statements.
+        body: Vec<ScriptStmt>,
+        /// Span of the whole loop.
+        span: Span,
+    },
+    /// `yield [label]` — save the resume point, exit via the epilogue (D9.6).
+    Yield {
+        /// Per-site epilogue override; `None` uses the `shows` declaration.
+        epilogue: Option<ScriptLabel>,
+        /// Span of the statement.
+        span: Span,
+    },
+}
+
+/// An epilogue label reference: `Draw_Sprite` (global) or `.rearm` (local).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScriptLabel {
+    /// The label name (without the leading dot for locals).
+    pub name: String,
+    /// True for the `.name` (proc-local) form.
+    pub local: bool,
+    /// Span of the reference.
     pub span: Span,
 }
 

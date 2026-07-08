@@ -257,6 +257,8 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     diags.append(&mut d);
                 }
             }
+            // #9b Task 2: `ast::Item::Script(decl)` hooks in here — desugar to
+            // a hidden resume table + flattened proc body (lower/script.rs).
             _ => {}
         }
     }
@@ -380,6 +382,8 @@ fn lower_section_items(
                     diags.append(&mut d);
                 }
             }
+            // #9b Task 2: `ast::Item::Script(decl)` hooks in here (in-section
+            // placement) — same desugar as the top-level arm (lower/script.rs).
             _ => {}
         }
     }

@@ -205,6 +205,7 @@ impl Parser {
         if self.at_kw("vars") { return Some(Item::Vars(self.vars_decl(public))); }
         if self.at_kw("data") { return Some(Item::Data(self.data_decl(public))); }
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
+        if self.at_kw("script") { return Some(Item::Script(self.script_decl(public))); }
         if self.at_kw("newtype") { return Some(Item::Newtype(self.newtype_decl(public))); }
         if self.at_kw("comptime") {
             // `comptime enum Name { ... }` — a payload-carrying enum, distinct
@@ -254,8 +255,8 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 16] = ["use", "const", "enum", "bitfield", "struct",
-                                     "vars", "data", "proc", "comptime", "section", "pub",
+        const OPENERS: [&str; 17] = ["use", "const", "enum", "bitfield", "struct",
+                                     "vars", "data", "proc", "script", "comptime", "section", "pub",
                                      "newtype", "offsets", "dispatch", "ensure", "ensure_fatal"];
         let mut depth = 0i32;
         loop {
@@ -850,6 +851,90 @@ impl Parser {
         ProcDecl { public, name, params, clobbers, falls_into, body, span: start.merge(self.prev_span()) }
     }
 
+    /// Parse a `script name(params) (encoding: E) [shows label] { body }`
+    /// declaration (Plan 7 #9b — R9b.1). Params parse exactly as `proc`
+    /// params; the `(encoding: E)` attribute is REQUIRED (dispatch's rule —
+    /// the hidden table is engine contract); `shows` declares the per-frame
+    /// epilogue (D9.6), overridable per yield site.
+    fn script_decl(&mut self, public: bool) -> ScriptDecl {
+        let start = self.span();
+        self.bump(); // `script`
+        let name = self.expect_ident("script name");
+        self.expect(&Tok::LParen, "`(`");
+        let mut params = Vec::new();
+        if !self.at(&Tok::RParen) {
+            loop {
+                let pspan = self.span();
+                let pname = self.expect_ident("parameter (register) name");
+                self.expect(&Tok::Colon, "`:`");
+                let pty = self.ty();
+                params.push((pname, pty, pspan));
+                if !self.eat(&Tok::Comma) { break; }
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.expect(&Tok::RParen, "`)`");
+        let encoding = self.dispatch_encoding_attr();
+        let epilogue = if self.eat_kw("shows") { Some(self.script_label()) } else { None };
+        self.expect(&Tok::LBrace, "`{`");
+        let body = self.script_body();
+        self.expect(&Tok::RBrace, "`}`");
+        ScriptDecl { public, name, params, encoding, epilogue, body, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse an epilogue label reference: `Draw_Sprite` or `.rearm`.
+    fn script_label(&mut self) -> ScriptLabel {
+        let start = self.span();
+        let local = self.eat(&Tok::Dot);
+        let name = self.expect_ident("epilogue label");
+        ScriptLabel { name, local, span: start.merge(self.prev_span()) }
+    }
+
+    /// Body of a `script` (R9b.1): the `proc` statement grammar plus two
+    /// contextual statement openers — `loop { … }` and `yield [label]`.
+    /// Neither collides with real code: no 68k/Z80 mnemonic is named `loop`
+    /// or `yield`, and a comptime CALL is only recognized with an adjacent
+    /// `(` (so a fn named `yield` is unreachable here anyway — fine).
+    fn script_body(&mut self) -> Vec<ScriptStmt> {
+        let mut out = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
+            if self.at_kw("loop") {
+                let start = self.span();
+                self.bump(); // `loop`
+                self.expect(&Tok::LBrace, "`{`");
+                let body = self.script_body();
+                self.expect(&Tok::RBrace, "`}`");
+                out.push(ScriptStmt::Loop { body, span: start.merge(self.prev_span()) });
+                continue;
+            }
+            if self.at_kw("yield") {
+                let start = self.span();
+                self.bump(); // `yield`
+                // A per-site epilogue is a bare ident or a dot-local on the
+                // SAME line; a bare `yield` is followed by a newline/`}`. No
+                // other legal continuation, so this lookahead is unambiguous.
+                let epilogue = if self.at(&Tok::Dot) || matches!(self.peek(), Tok::Ident(_)) {
+                    Some(self.script_label())
+                } else {
+                    None
+                };
+                self.expect_line_end();
+                out.push(ScriptStmt::Yield { epilogue, span: start.merge(self.prev_span()) });
+                continue;
+            }
+            // Everything else is one ordinary proc-body statement (labels,
+            // instructions, statement-position comptime calls) — the exact
+            // grammar `asm_body` uses, factored into `asm_stmt`. Scripts never
+            // allow `{expr}` splices (procs don't either), so pass `false`.
+            if let Some(stmt) = self.asm_stmt(/* splices_allowed = */ false) {
+                out.push(ScriptStmt::Asm(stmt));
+            }
+        }
+        out
+    }
+
     /// Body of a `proc` or an `asm { }` template. Statements are
     /// newline-separated: labels (`.name:` / `export .name:`), instruction
     /// lines, and statement-position comptime calls.
@@ -863,38 +948,52 @@ impl Parser {
         loop {
             self.skip_newlines();
             if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
-            let start = self.span();
-            // `export .name:` / `.name:`
-            let export = self.at_kw("export") && matches!(self.peek2(), Tok::Dot);
-            if export { self.bump(); }
-            if self.at(&Tok::Dot) && matches!(self.peek2(), Tok::Ident(_)) {
-                self.bump();
-                let name = self.expect_ident("label name");
-                self.expect(&Tok::Colon, "`:` after label");
-                out.push(AsmStmt::Label { name, export, span: start.merge(self.prev_span()) });
-                continue;
+            if let Some(stmt) = self.asm_stmt(splices_allowed) {
+                out.push(stmt);
             }
-            if export {
-                // `export` not followed by a dot-label: diagnose and fall
-                // through to normal statement parsing so we still make
-                // progress (don't consume a closer/newline).
-                let sp = self.span();
-                self.diag_at(sp, "expected `.label` after `export`");
-            }
-            // statement-position comptime call: `ident(` where the `(` is
-            // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
-            // is an instruction with a parenthesized operand, not a call.
-            if matches!(self.peek(), Tok::Ident(_)) && matches!(self.peek2(), Tok::LParen)
-                && self.adjacent_to_next() {
-                let e = self.expr();
-                self.expect_line_end();
-                out.push(AsmStmt::Call(e));
-                continue;
-            }
-            out.push(AsmStmt::Instr(self.instr_line(splices_allowed)));
         }
         self.splice_ctx = saved_splice_ctx;
         out
+    }
+
+    /// Parse ONE proc-body statement: a label (`.name:` / `export .name:`), a
+    /// statement-position comptime call (`ident(...)`), or an instruction line.
+    /// Factored out of [`Parser::asm_body`] so `script` bodies reuse the exact
+    /// same statement grammar (Plan 7 #9b — R9b.1). The caller owns the loop,
+    /// the newline-skipping, and the `RBrace`/`Eof` termination check; this fn
+    /// assumes it is positioned on a real statement start. `splices_allowed`
+    /// threads through to [`Parser::instr_line`] identically to before. Returns
+    /// `None` only when the underlying statement parse elects not to produce a
+    /// statement (it never currently does — the shape mirrors `instr_line`'s
+    /// no-consume-on-error convention so callers stay in step regardless).
+    fn asm_stmt(&mut self, splices_allowed: bool) -> Option<AsmStmt> {
+        let start = self.span();
+        // `export .name:` / `.name:`
+        let export = self.at_kw("export") && matches!(self.peek2(), Tok::Dot);
+        if export { self.bump(); }
+        if self.at(&Tok::Dot) && matches!(self.peek2(), Tok::Ident(_)) {
+            self.bump();
+            let name = self.expect_ident("label name");
+            self.expect(&Tok::Colon, "`:` after label");
+            return Some(AsmStmt::Label { name, export, span: start.merge(self.prev_span()) });
+        }
+        if export {
+            // `export` not followed by a dot-label: diagnose and fall
+            // through to normal statement parsing so we still make
+            // progress (don't consume a closer/newline).
+            let sp = self.span();
+            self.diag_at(sp, "expected `.label` after `export`");
+        }
+        // statement-position comptime call: `ident(` where the `(` is
+        // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
+        // is an instruction with a parenthesized operand, not a call.
+        if matches!(self.peek(), Tok::Ident(_)) && matches!(self.peek2(), Tok::LParen)
+            && self.adjacent_to_next() {
+            let e = self.expr();
+            self.expect_line_end();
+            return Some(AsmStmt::Call(e));
+        }
+        Some(AsmStmt::Instr(self.instr_line(splices_allowed)))
     }
 
     /// Is the token immediately after the current one lexically adjacent to
