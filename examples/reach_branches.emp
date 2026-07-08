@@ -1,0 +1,166 @@
+// ===========================================================================
+// REACH BRANCHES — jbra/jbsr auto-reaching branches + unsized-Bcc relaxation
+// ===========================================================================
+// Demonstrates Spec 2, Plan 7 backlog #8 (docs/superpowers/specs/
+// 2026-07-08-spec2-plan7-item8-jbra-relaxation-design.md), Parts B + C:
+//
+//   Part B — `jbra`/`jbsr`, the emp-only AUTO-REACHING branch/call. Each is
+//   ONE `Fragment::RelaxLadder` the linker width-selects, grow-only, over
+//   candidate encodings ordered smallest-to-largest:
+//     jbra:  bra.s (2B) -> bra.w (4B) -> jmp abs.w (4B) -> jmp abs.l (6B)
+//     jbsr:  bsr.s (2B) -> bsr.w (4B) -> jsr abs.w (4B) -> jsr abs.l (6B)
+//   `jmp`/`jsr` stay reserved for COMPUTED targets (`jmp (a0)`); jbra/jbsr take
+//   a label only. This exhibit only reaches the first two rungs of each ladder
+//   (bra.s/.w, bsr.s/.w) — the jmp abs.w/abs.l fallback rungs need target
+//   addresses tens of KB apart to force, which would blow this file's "small,
+//   readable, hand-derivable" budget. Those far rungs ARE byte-pinned, just
+//   not here: see `jbra_low_far_lands_jmp_abs_w` / `jbra_high_far_lands_jmp_abs_l`
+//   / `jbsr_low_far_lands_jsr_abs_w` in crates/sigil-cli/tests/jbra_relaxation.rs.
+//
+//   Part C — unsized `bne`/`bhi`/`bra`/`bsr` (§5.4): in a NON-`@as_compat`
+//   module (this file has no `@as_compat`), an unpinned conditional or
+//   unconditional branch is sized by the SAME Core relaxation machinery, over
+//   a 2-rung ladder (`.s` -> `.w` — no jmp fallback; a conditional has no
+//   unconditional far form). Pin `.s`/`.w` explicitly and the pin is honored
+//   verbatim, exactly as before this branch.
+//
+// This is the compiles-TODAY, byte-exact counterpart to `examples/pitcher_
+// plant.emp`, which exhibits jbra/jbsr in situ but is still blocked on
+// Step-2 machinery (statement helpers, ObjDef, the game prelude). Every
+// construct below lowers end-to-end RIGHT NOW:
+//   `cargo run -q -p sigil-cli -- emp examples/reach_branches.emp --hex`
+// ===========================================================================
+
+module reach_branches
+
+// --- 1. `jbra` forward, near: lands bra.s -----------------------------------
+// `.fwd` is a PROC-LOCAL dot-label (hygiene-mangled, private to this proc —
+// D-P4.6). Target 4 bytes ahead of the branch site (0): disp = target -
+// (site+2) = 4 - 2 = 2. Fits i8 and isn't 0, so rung 0 (bra.s, 2 bytes) reaches
+// and the ladder never grows. The `nop` filler exists ONLY so `.fwd` isn't the
+// very next byte after the branch — see construct 7 below for what happens
+// when a branch DOES target its own immediate successor.
+proc near_forward () {
+    jbra .fwd       // rung 0: bra.s, disp = 4 - (0+2) = 2  -> 60 02
+    nop             // 4E 71
+.fwd:
+    rts             // 4E 75
+}
+
+// --- 2. `jbra` backward, near: lands bra.s with a NEGATIVE displacement -----
+// `.back` labels the top of this proc; the `jbra` sits 2 bytes after it. disp
+// = target - (site+2) = 6 - (8+2) = -4, which as a signed byte is 0xFC — still
+// rung 0, no different from the forward case except the sign.
+proc near_backward () {
+.back:
+    nop             // 4E 71
+    jbra .back      // rung 0: bra.s, disp = 6 - (8+2) = -4 = 0xFC -> 60 FC
+}
+
+// --- A plain (non-proc-local) landing pad just before the data table below,
+// so a LATER proc can branch back across the table to a stable, named target
+// (construct 6). Proc-local dot-labels can't be referenced outside their own
+// proc, so this is its own tiny one-instruction proc instead — the same
+// "trivial proc as a named landing pad" idiom `examples/dispatch.emp` uses
+// for `Init`/`Wait`/`Shoot`.
+proc TableGuard () {
+    rts             // 4E 75
+}
+
+// --- 3. `jbra` crossing a >127-byte data table: lands bra.w -----------------
+// `AfterTable` sits on the FAR side of a 200-byte data table, well past what a
+// byte displacement can reach. Rung 0 (bra.s, 2B) would put `AfterTable` at
+// site+2+200 = 202 bytes away from site+2 — over the +127 ceiling, so the
+// ladder grows to rung 1 (bra.w, 4 bytes): disp = target - (site+2) =
+// (site+4+200) - (site+2) = 202 = 0x00CA, base opcode 0x6000 + ext 0x00CA.
+proc cross_table () {
+    jbra AfterTable // rung 1: bra.w, disp = 202 = 0x00CA -> 60 00 00 CA
+}
+
+// A stand-in for a real per-frame amplitude curve (e.g. a bob/wobble table):
+// one 8-entry pseudo-sine cycle - round(64*sin(2*pi*i/8)) for i in 0..8,
+// wrapped to an unsigned byte - repeated 25 times for exactly 200 bytes. This
+// is real, derivable data (not arbitrary padding); the cycle:
+//   i:   0    1    2    3    4    5    6    7
+//   v:   0   45   64   45    0 -45  -64  -45   (signed)
+//   u8:  00   2D   40   2D   00   D3   C0   D3  (wrapped, big-endian byte table)
+data DataTable: [u8; 200] = [
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3, $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+    $00, $2D, $40, $2D, $00, $D3, $C0, $D3,
+]
+
+proc AfterTable () {
+    rts             // 4E 75
+}
+
+// --- 4. `jbsr` near: lands bsr.s ---------------------------------------------
+// Same reach rule as `jbra`, call-opcode family (0x61 base instead of 0x60).
+// The `nop` filler is load-bearing here too: without it `Helper` would be the
+// immediate successor of the `jbsr` site, forcing the disp-0 exclusion (see
+// construct 7) and landing bsr.w instead of the bsr.s this construct exists to
+// show.
+proc call_helper () {
+    jbsr Helper     // rung 0: bsr.s, disp = 224 - (218+2) = 4 -> 61 04
+    nop             // 4E 71
+    rts             // 4E 75
+}
+
+proc Helper () {
+    rts             // 4E 75
+}
+
+// --- 5. Unsized conditional branches, near: land `.s` (§5.4 Part C) ---------
+// `bne`/`bhi` carry no `.s`/`.w` suffix here — this file has no `@as_compat`,
+// so Core's relaxation sizes them exactly like `jbra`'s first rung, minus the
+// jmp fallback (a conditional has no unconditional far form). Both targets
+// are 2 bytes ahead of their `nop` filler, same disp-2 shape as construct 1.
+proc unsized_near () {
+    bne .n1         // rung 0: bne.s (cc=6, opcode 0x66), disp = 2 -> 66 02
+    nop             // 4E 71
+.n1:
+    rts             // 4E 75
+}
+
+proc unsized_near_hi () {
+    bhi .n2         // rung 0: bhi.s (cc=2, opcode 0x62), disp = 2 -> 62 02
+    nop             // 4E 71
+.n2:
+    rts             // 4E 75
+}
+
+// --- 6. Unsized conditional crossing the SAME data table: lands `.w` -------
+// `bhi TableGuard` branches BACKWARD across the 200-byte `DataTable` above (no
+// second table needed — the same one construct 3 crossed forward). disp is
+// well outside the i8 range (-128..127), so the ladder grows to rung 1
+// (bhi.w, 4 bytes) — see the byte-exact test for the exact address arithmetic
+// (it depends on every construct's chosen rung ahead of it in the file).
+proc unsized_far () {
+    bhi TableGuard  // rung 1: bhi.w (backward, out of .s range)
+    rts             // 4E 75
+}
+
+// --- 7. The disp-0 subtlety: a branch to its OWN immediate successor -------
+// The 68000 encodes a `Bcc`/`BRA`/`BSR` byte displacement of exactly 0x00 as
+// the WORD-FORM ESCAPE, not "branch to the next instruction" — there is no
+// legal `.s` encoding for disp 0. So when the ladder's rung-0 candidate would
+// need disp 0 (target = site+2, i.e. the label immediately follows the branch
+// with nothing between them), Core EXCLUDES that rung outright — not "picks
+// it and hopes" — and grows straight to rung 1 (bra.w). See the byte-exact
+// test for this file's exact addresses; the shape is always: rung 0
+// hypothetical disp = (site+2) - (site+2) = 0 -> excluded, rung 1 disp = 2.
+proc disp0_escape () {
+    jbra .imm       // rung 0 EXCLUDED (disp would be 0); rung 1: bra.w, disp=2
+.imm:
+    rts             // 4E 75
+}
