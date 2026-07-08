@@ -56,6 +56,14 @@ fn collect_pub_comptime(
     for item in items {
         if pub_comptime_name(item).is_some_and(pred) {
             let mut cloned = item.clone();
+            // TODO(perf): this stamp re-resolves the overlay's window PER CONSUMER
+            // module — each call spins a fresh eval-stack thread and re-indexes the
+            // whole defining file, so M imported overlays across N consumers cost
+            // M×N resolutions. Intended fix: resolve each defining module's
+            // overlays ONCE (a per-module cache keyed by overlay name, built in
+            // `build_program`) and reuse across consumers (deferred — imported
+            // overlay counts are small today, like the own-items clone note in
+            // `build_program`).
             stamp_overlay_window(def_file, &mut cloned);
             out.push(cloned);
         }

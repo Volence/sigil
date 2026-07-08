@@ -1700,3 +1700,59 @@ fn dotted_overlay_window_stays_immune_cross_module() {
         "dotted DotV.timer(a1) stays bound at $2 regardless of consumer structs"
     );
 }
+
+#[test]
+fn definition_site_ambiguous_bare_window_reports_once_at_lib() {
+    // Negative path of the definition-site binding: a bare window that is
+    // genuinely ambiguous IN ITS OWN MODULE (two local structs share the
+    // `sst_custom` field name) is the library author's error, reported
+    // `[overlay.ambiguous-window]` EXACTLY ONCE and anchored in lib.emp — the
+    // injection stamp drops its (duplicate) diagnostics, so importing the overlay
+    // must neither silence the error nor double it. The consumer's access then
+    // fails loudly (the overlay is poisoned — no silent success).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\n\
+         pub struct Sst { id: u16, sst_custom: [u8; 8] }\n\
+         pub struct Alt { hp: u32, sst_custom: [u8; 4] }\n\
+         pub vars PlantV: sst_custom { timer: u8 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{PlantV}\n\
+         proc tick () {\n    tst.b PlantV.timer(a1)\n    rts\n}\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            root.join("out.bin").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "an ambiguous lib window must fail the build, stderr: {stderr}");
+    let ambiguous: Vec<&str> =
+        stderr.lines().filter(|l| l.contains("[overlay.ambiguous-window]")).collect();
+    assert_eq!(
+        ambiguous.len(),
+        1,
+        "[overlay.ambiguous-window] must surface exactly once, stderr: {stderr}"
+    );
+    assert!(
+        ambiguous[0].contains("lib.emp"),
+        "the ambiguity is the lib author's error — anchor in lib.emp, got: {}",
+        ambiguous[0]
+    );
+    assert!(
+        stderr.contains("[operand.unknown-field]") && stderr.contains("main.emp"),
+        "the consumer's access must error loudly, stderr: {stderr}"
+    );
+}

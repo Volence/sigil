@@ -139,14 +139,27 @@ pub struct BitfieldFieldLayout {
 }
 
 /// A resolved overlay window passed to [`Evaluator::overlay_layout_fields`]: the
-/// base struct, its display name for the overflow diagnostic (`Struct.window`
-/// when resolved locally, just `Struct` for an injected clone whose window field
-/// name did not travel), and the window's byte offset/size.
+/// base struct, the window field's name when known (`Some` when resolved locally,
+/// `None` for an injected clone whose window field name did not travel), and the
+/// window's byte offset/size. The overflow diagnostic's `Struct.window` display
+/// name is formatted from these ONLY in the error arm ([`WindowRef::desc`]), so
+/// the success path allocates nothing.
 struct WindowRef<'w> {
     base_struct: &'w str,
-    desc: String,
+    window_field: Option<&'w str>,
     offset: i128,
     size: i128,
+}
+
+impl WindowRef<'_> {
+    /// The window's display name for the `[overlay.window-overflow]` diagnostic:
+    /// `Struct.window` when the field name is known, else just `Struct`.
+    fn desc(&self) -> String {
+        match self.window_field {
+            Some(w) => format!("{}.{w}", self.base_struct),
+            None => self.base_struct.to_string(),
+        }
+    }
 }
 
 /// A resolved SST overlay layout (Spec 2, Plan 7 #6, Part A — D6.A1/A2/A7/A9):
@@ -652,7 +665,7 @@ impl<'a> Evaluator<'a> {
         // struct's direct fields), so its verdict seeds `poisoned`.
         let win = WindowRef {
             base_struct: &base_struct,
-            desc: format!("{base_struct}.{window_field}"),
+            window_field: Some(&window_field),
             offset: window_offset,
             size: window_n,
         };
@@ -674,7 +687,7 @@ impl<'a> Evaluator<'a> {
     ) -> OverlayInfo {
         let win = WindowRef {
             base_struct: &rw.base_struct,
-            desc: rw.base_struct.clone(),
+            window_field: None,
             offset: rw.window_offset,
             size: rw.window_size,
         };
@@ -740,7 +753,7 @@ impl<'a> Evaluator<'a> {
                 decl.span,
                 format!(
                     "[overlay.window-overflow] overlay `{name}` is {total} bytes — exceeds `{}` window of {} bytes (over by {})",
-                    win.desc,
+                    win.desc(),
                     win.size,
                     total - win.size
                 ),
