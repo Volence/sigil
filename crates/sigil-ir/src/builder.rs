@@ -58,6 +58,29 @@ impl IrBuilder {
         self.open.as_ref().map_or(0, |o| o.cursor)
     }
 
+    /// Whether the currently-open section already contains a SIZE-RELAXABLE
+    /// fragment (`JmpJsrSym` | `RelaxAbsSym` | `RelaxLadder`) — one whose final
+    /// byte length `resolve_layout` may still grow (D-H.1). When true, the current
+    /// write position is PROVISIONAL: a `here()` resolved to `current_offset()`
+    /// counts every such fragment at its baseline (smallest) rung, so the physical
+    /// VMA can still shift under relaxation. The lowering pass consults this to
+    /// decide whether a `here()` yields an exact `Value::Int` (byte-identical to
+    /// today) or a link-time `Value::LinkExpr`. Same-section tracking suffices:
+    /// cross-section origin staleness hits labels and `here()` equally (the
+    /// label-equivalence invariant, ledger L-H.1). `false` when no section is open.
+    pub fn section_has_relaxable(&self) -> bool {
+        self.open.as_ref().is_some_and(|o| {
+            o.fragments.iter().any(|f| {
+                matches!(
+                    f,
+                    Fragment::JmpJsrSym { .. }
+                        | Fragment::RelaxAbsSym { .. }
+                        | Fragment::RelaxLadder { .. }
+                )
+            })
+        })
+    }
+
     /// The highest `current_offset()` ever reached in the currently-open
     /// section (0 if none open). This is the "extent" a front-end's `org`
     /// directive compares its target against to decide whether it's an
@@ -252,6 +275,24 @@ mod tests {
         let sec = &module.sections[0];
         assert_eq!(sec.fragments, vec![frag]);
         assert_eq!(sec.labels, vec![crate::Label { name: "After".into(), offset: 4 }]);
+    }
+
+    #[test]
+    fn section_has_relaxable_flips_after_a_relaxable_fragment() {
+        let mut b = IrBuilder::new();
+        assert!(!b.section_has_relaxable()); // no section open
+        b.switch_section("s", Cpu::M68000, None);
+        assert!(!b.section_has_relaxable()); // empty section
+        b.emit_data(&[0x4E, 0x71], vec![], span());
+        assert!(!b.section_has_relaxable()); // plain data does not relax
+        b.emit_fragment(
+            Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("T".into()), span: span() },
+            4,
+        );
+        assert!(b.section_has_relaxable()); // a jmp/jsr can grow → provisional
+        // A fresh section resets the query (per-section tracking).
+        b.switch_section("t", Cpu::M68000, None);
+        assert!(!b.section_has_relaxable());
     }
 
     #[test]

@@ -220,6 +220,22 @@ pub struct Evaluator<'a> {
     /// the item's start VMA, so a `here()` mid-buffer (after some bytes in the
     /// SAME data item) still reads the item start, not the advanced position.
     here_base: Option<u32>,
+    /// The ANCHOR LABEL a PROVISIONAL `here()` resolves to (D-H.1/D-H.2), or
+    /// `None` at an EXACT position (where `here()` returns `Value::Int(here_base)`,
+    /// byte-identical to today). Set by the lowering pass alongside
+    /// [`here_base`](Self::here_base) via [`set_here_provisional`](Self::set_here_provisional)
+    /// when the currently-open section already contains a size-relaxable fragment
+    /// (`IrBuilder::section_has_relaxable`). When `Some(anchor)`, `here()` yields
+    /// `Value::LinkExpr(Sym(anchor))` — a link-time value the linker resolves to
+    /// the anchor's post-relaxation VMA — and sets [`here_used`](Self::here_used)
+    /// so the lowering pass knows to actually define the anchor label (D-H.8: a
+    /// guard-position anchor is minted only when `here()` was used).
+    here_anchor: Option<String>,
+    /// Set true the first time a PROVISIONAL `here()` is evaluated (D-H.8): it
+    /// records that the anchor label named by [`here_anchor`](Self::here_anchor)
+    /// is actually referenced, so the lowering pass defines it (an item guard's
+    /// anonymous anchor is minted only on use, keeping `--map`/symbol tables clean).
+    here_used: bool,
     /// The capability-sandbox root (Spec 2, Plan 5 — Task 1): the directory
     /// `embed`/`import` paths resolve against. `None` outside a rooted
     /// evaluation (e.g. the plain [`eval_const`] entry point), in which case a
@@ -321,6 +337,8 @@ impl<'a> Evaluator<'a> {
             asm_counter: 0,
             module_id: String::new(),
             here_base: None,
+            here_anchor: None,
+            here_used: false,
             include_root: None,
             captures: Vec::new(),
             reg_pointee_struct: HashMap::new(),
@@ -365,9 +383,45 @@ impl<'a> Evaluator<'a> {
     }
 
     /// Set the VMA `here()` resolves to for the item about to be evaluated
-    /// (§7.1). The lowering pass calls this before resolving each data item.
+    /// (§7.1), at an EXACT position — `here()` yields `Value::Int(vma)`
+    /// byte-identically to before this fix. The lowering pass calls this before
+    /// resolving each data item / guard whose section holds no relaxable fragment.
     pub(crate) fn set_here_base(&mut self, vma: u32) {
         self.here_base = Some(vma);
+        self.here_anchor = None;
+    }
+
+    /// Set a PROVISIONAL `here()` position (D-H.1): the fallback baseline `vma`
+    /// (for diagnostics only) plus the `anchor` label whose post-relaxation VMA
+    /// `here()` resolves to. `here()` then yields `Value::LinkExpr(Sym(anchor))`
+    /// and marks the anchor USED. Called by the lowering pass when the open
+    /// section already contains a size-relaxable fragment.
+    pub(crate) fn set_here_provisional(&mut self, vma: u32, anchor: String) {
+        self.here_base = Some(vma);
+        self.here_anchor = Some(anchor);
+    }
+
+    /// Whether a provisional `here()` was actually evaluated (D-H.8) — the signal
+    /// the lowering pass uses to define an item-guard's anonymous anchor label
+    /// only on use. Consumed by the deferred-guard path (D-H.4, T4).
+    #[allow(dead_code)] // wired into the item-guard anchor-minting path in T4
+    pub(crate) fn here_anchor_used(&self) -> bool {
+        self.here_used
+    }
+
+    /// Apply a [`HerePos`](crate::layout::HerePos): an exact position sets a bare
+    /// `here_base` (`here()` → `Value::Int`); a provisional one sets the anchor
+    /// too (`here()` → `Value::LinkExpr`). `None` leaves `here()` an error. The
+    /// single seam every `eval_data*`/guard entry point routes its position
+    /// through, so the exact/provisional split is applied identically everywhere.
+    pub(crate) fn apply_here_pos(&mut self, here: Option<crate::layout::HerePos>) {
+        match here {
+            Some(crate::layout::HerePos { base, anchor: Some(a) }) => {
+                self.set_here_provisional(base, a)
+            }
+            Some(crate::layout::HerePos { base, anchor: None }) => self.set_here_base(base),
+            None => {}
+        }
     }
 
     /// Whether evaluation aborted (a failing `ensure_fatal`, D5.3). The item-guard

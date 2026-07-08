@@ -1297,6 +1297,24 @@ pub fn layout_structs_shared(
     })
 }
 
+/// The position a `here()` (§7.1) resolves to inside a lowered item — the
+/// exact/provisional distinction the fix turns on (D-H.1). `base` is the item's
+/// start VMA at the baseline layout (every relaxable counted at its smallest
+/// rung). `anchor` is `None` at an EXACT position (`here()` → `Value::Int(base)`,
+/// byte-identical to before the fix) or `Some(label)` at a PROVISIONAL one, where
+/// the open section already holds a size-relaxable fragment so the physical VMA
+/// can still shift; `here()` then yields `Value::LinkExpr(Sym(label))`, resolved
+/// against the anchor's post-relaxation VMA at link. For a data item the anchor
+/// is the item's OWN label (D-H.3); for an item guard it is an anonymous label
+/// the lowering pass mints on use (D-H.8).
+#[derive(Clone, Debug)]
+pub struct HerePos {
+    /// The item's start VMA at baseline layout.
+    pub base: u32,
+    /// The provisional anchor label, or `None` at an exact position.
+    pub anchor: Option<String>,
+}
+
 /// Lower the `data` item named `name` in `file` to a checked, CPU-neutral
 /// [`DataBuf`] (T7, D-P3.5), returning it (or `None` if no such data item) plus
 /// any diagnostics — the emission analogue of [`layout_struct`]. Runs on the
@@ -1306,15 +1324,16 @@ pub fn eval_data(file: &ast::File, name: &str) -> (Option<DataBuf>, Vec<Diagnost
     eval_data_at(file, name, None)
 }
 
-/// Like [`eval_data`], but threads a `here_base` VMA so a `here()` (§7.1) inside
-/// the item resolves to the item's start VMA. The lowering pass supplies the
-/// position (`vma_origin + current_offset`); other callers pass `None`.
+/// Like [`eval_data`], but threads a `here` position so a `here()` (§7.1) inside
+/// the item resolves to the item's start VMA (exact) or its link-time anchor
+/// (provisional). The lowering pass supplies the position; other callers pass
+/// `None` (no position — `here()` is an error).
 pub fn eval_data_at(
     file: &ast::File,
     name: &str,
-    here_base: Option<u32>,
+    here: Option<HerePos>,
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
-    eval_data_with_root(file, name, here_base, None)
+    eval_data_with_root(file, name, here, None)
 }
 
 /// Like [`eval_data_at`], but also threads a capability-sandbox
@@ -1346,14 +1365,12 @@ pub struct Capture {
 pub fn eval_data_with_root(
     file: &ast::File,
     name: &str,
-    here_base: Option<u32>,
+    here: Option<HerePos>,
     include_root: Option<&std::path::Path>,
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
-        if let Some(vma) = here_base {
-            ev.set_here_base(vma);
-        }
+        ev.apply_here_pos(here);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
@@ -1423,14 +1440,12 @@ fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
 pub fn eval_data_captures(
     file: &ast::File,
     name: &str,
-    here_base: Option<u32>,
+    here: Option<HerePos>,
     include_root: Option<&std::path::Path>,
 ) -> (Option<DataBuf>, Vec<Capture>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
-        if let Some(vma) = here_base {
-            ev.set_here_base(vma);
-        }
+        ev.apply_here_pos(here);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }

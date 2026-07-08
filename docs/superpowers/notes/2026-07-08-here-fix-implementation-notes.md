@@ -26,3 +26,25 @@ Implementer choices:
 - Refusal choke point = `reject_if_provisional` wired into: if/while cond, for
   iterable, range bounds (rept), array-length/refinement bound (`eval_const_index`),
   `slice` bounds, `math.*/as.*` args. Emit path (width-1 / arithmetic-then-emit) is T3.
+
+## T2 — provisional-position query + exact/provisional split + symbolic eval_here
+
+RED evidence:
+- tests/here_provisional.rs: with T2 stashed (T1 only), `provisional_here_as_array_
+  length_refuses` + `provisional_here_in_if_condition_refuses` FAIL (here() folds to
+  a stale Int, no [here.provisional]); `exact_here_still_folds_and_steers` PASSES.
+  After T2: all 3 green. (verified via `git stash` round-trip)
+- sigil-ir builder: `section_has_relaxable_flips_after_a_relaxable_fragment` —
+  RED = the query didn't exist before this task.
+
+Implementer choices:
+- IrBuilder::section_has_relaxable() = any JmpJsrSym|RelaxAbsSym|RelaxLadder in the
+  OPEN section. here() at current_offset() is provisional iff any relaxable precedes
+  it (all relaxables are emitted before the data/guard item that queries here()).
+- HerePos { base, anchor } threaded through eval_data_at/with_root/captures replacing
+  the bare `here_base: Option<u32>`. anchor=None => exact (Value::Int, byte-identical);
+  anchor=Some => provisional (Value::LinkExpr(Sym(anchor))).
+- For a data item the provisional anchor is the item's OWN label (decl.name), defined
+  at the item's start byte (D-H.3). Item-guard anonymous anchors are T4.
+- eval_here: Some(_)+anchor => LinkExpr(Sym), sets here_used; Some(vma) => Int(vma).
+- here_anchor_used()/#[allow(dead_code)] until T4 wires the guard anchor-minting.

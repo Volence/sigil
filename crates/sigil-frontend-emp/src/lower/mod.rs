@@ -20,7 +20,7 @@ pub(crate) use code::is_recognized_mnemonic;
 use crate::ast;
 use crate::layout::{
     eval_attr_int, eval_data_with_root, eval_dispatch_with_root, eval_offsets_with_root,
-    validate_overlay,
+    validate_overlay, HerePos,
 };
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
@@ -357,6 +357,18 @@ fn lower_section_items(
     true
 }
 
+/// Classify the `here()` position for an item whose provisional anchor (when the
+/// open section already holds a size-relaxable fragment) is `anchor_name` — for a
+/// data item its own label, which `lower_data_item` defines at exactly this byte
+/// (D-H.3). At an EXACT position (no relaxable yet) the anchor is `None` and
+/// `here()` returns the byte-identical `Value::Int(base)`; at a PROVISIONAL one it
+/// is `Some(anchor_name)` and `here()` returns a link-time value (D-H.1).
+fn here_pos(builder: &IrBuilder, origin: u32, anchor_name: &str) -> HerePos {
+    let base = origin + builder.current_offset();
+    let anchor = builder.section_has_relaxable().then(|| anchor_name.to_string());
+    HerePos { base, anchor }
+}
+
 /// Lower one `data` item: evaluate its checked buffer (with `here()` resolving to
 /// the item's start VMA = `origin + current_offset`, and `embed`/`import` paths
 /// resolving against `placement.include_root`), serialize it in `placement.cpu`'s
@@ -375,9 +387,9 @@ fn lower_data_item(
     if decl.type_only {
         return;
     }
-    let here_base = placement.origin + builder.current_offset();
+    let here = here_pos(builder, placement.origin, &decl.name);
     let (buf, mut ds) =
-        eval_data_with_root(file, &decl.name, Some(here_base), placement.include_root);
+        eval_data_with_root(file, &decl.name, Some(here), placement.include_root);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
