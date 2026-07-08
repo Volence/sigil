@@ -367,3 +367,26 @@ compiler defect surfaced; every construct the plan promised (statement-position
 `anim`/`spawn`/`facing_abs` each on their own line, `yield` bare + labels
 across yields, `loop`) worked end-to-end exactly as `tests/script.rs`
 predicted.
+
+## T7 — gate + byte-diff probes vs master (controller-run)
+
+- `cargo test --workspace --no-fail-fast`: exactly the 4 allowlisted sigil-harness reds
+  (aeon sound-driver strlen drift), ZERO new failures. `cargo clippy --workspace
+  --all-targets -- -D warnings`: clean.
+- Byte-diff probes vs master (359d9cd): pitcher_plant.emp (--root examples/game --prelude
+  prelude, 340B) BYTE-IDENTICAL; standalone corpus dispatch/guards/offset_table/
+  sst_overlay/reach_branches ALL BYTE-IDENTICAL. The script exhibit (358B) exists only
+  on-branch; its image head was structurally hand-verified by the controller (table rows
+  0008/001E/006C/0082 at the script base; WAIT_TIME entry store; 317C 0002 0020 yield
+  ordinal store into resume @ $20; 6000 00AA epilogue jbra; 60 EE loop back-edge).
+- Spec §5.6 + D2.24 + §10 inventory drafted in the empyrean WORKING TREE (uncommitted,
+  Volence's cadence).
+
+9b complete on branch plan7-item9. Commits: T1 c9e7a0b (+c867e94 fold-in: loop-depth
+guard [SIGABRT→diagnostic], yield line-end parity, neutral encoding wording, shared
+param_list), T2 c6ba7af (+53b8595 fold-in: Item::Script resolver arms — the --root gap
+the adversarial spec review caught), T3 66c48a8 (10 pins + yield-site spans), T4 3d52eee
+(prelude ScriptPc/resume), T5 f99da8e (exhibit + pin), docs 25c7a21/21d652f. Reviews:
+T1 spec ✅ + quality fix-first→folded; T2 spec ❌→fixed→program-path regression tests +
+quality ✅ approve (2 minors: spans folded into T3; rule-of-three table-emit extraction
+DEFERRED to checkpoint). NEXT: whole-branch adversarial review (9a+9b) → Volence checkpoint.
