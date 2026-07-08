@@ -99,6 +99,13 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     let mut next_lma: u32 = 0;
     let mut default_open = false;
 
+    // The name of the default (top-level items) section. `module x.y in obj_bank`
+    // (§7) places this module's top-level code in the named section `obj_bank`;
+    // absent the `in` clause it is the literal default `text`. VMA/LMA behavior is
+    // unchanged — only the section NAME differs, so a later region-placement pass
+    // (keyed by section name) can route the module's bytes to its map region.
+    let default_name = file.module.in_section.as_deref().unwrap_or("text");
+
     // The instantiation counter for `asm { }` / `proc` label hygiene (D-P4.6),
     // threaded across EVERY proc in the module (top-level AND section-nested) so
     // `k` stays globally monotonic. Lowering builds a fresh evaluator per proc,
@@ -110,7 +117,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     for (index, item) in file.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
                 // Default section: vma_origin == lma == `next_lma` (VMA base
                 // `None`, so origin == lma == its physical start).
                 lower_data_item(
@@ -126,7 +133,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 );
             }
             ast::Item::Proc(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
                 proc::lower_proc(
                     file,
                     decl,
@@ -138,7 +145,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 );
             }
             ast::Item::Offsets(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
                 lower_offsets_item(
                     file,
                     decl,
@@ -179,19 +186,21 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     (module, diags)
 }
 
-/// Ensure the default `text` section is the currently-open one before lowering a
-/// top-level item. If a named section (or nothing) is open, fold its length into
-/// `next_lma` and open `text` at that physical offset (VMA==LMA). A no-op when
-/// the default is already open.
+/// Ensure the default (top-level items) section — named `name`, which is the
+/// module's `in <section>` target or the literal `text` — is the currently-open
+/// one before lowering a top-level item. If a named `section {}` block (or
+/// nothing) is open, fold its length into `next_lma` and open the default at that
+/// physical offset (VMA==LMA). A no-op when the default is already open.
 fn ensure_default(
     builder: &mut IrBuilder,
     next_lma: &mut u32,
     default_open: &mut bool,
     cpu: Cpu,
+    name: &str,
 ) {
     if !*default_open {
         *next_lma += builder.current_offset();
-        builder.switch_section_lma("text", cpu, None, *next_lma);
+        builder.switch_section_lma(name, cpu, None, *next_lma);
         *default_open = true;
     }
 }

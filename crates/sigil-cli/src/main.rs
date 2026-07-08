@@ -179,22 +179,65 @@ fn compile_emp(
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return (None, diags);
     }
-    let resolved =
-        match sigil_link::resolve_layout(&module.sections, &sigil_ir::SymbolTable::new(), true) {
-            Ok(sections) => sections,
-            Err(mut ds) => {
-                diags.append(&mut ds);
-                return (None, diags);
-            }
-        };
-    let linked = match sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()) {
-        Ok(image) => image,
+    match link_sections(&module.sections) {
+        Ok(image) => (Some(image), diags),
         Err(mut ds) => {
             diags.append(&mut ds);
-            return (None, diags);
+            (None, diags)
         }
-    };
-    (Some(sigil_link::flatten(&linked, 0x00)), diags)
+    }
+}
+
+/// The shared emp link prefix: `resolve_layout` (emp defers jmp/jsr width +
+/// layout to link) → `link`, against one flat empty [`SymbolTable`] so
+/// cross-module (and cross-section) references resolve. The two link tails —
+/// `flatten` (no map) and `emit_rom` (map) — reuse this identical prefix, so they
+/// differ only in the final materialization step. Byte-identical whether fed one
+/// module's sections or a whole concatenated program.
+fn link_to_image(
+    sections: &[sigil_ir::Section],
+) -> Result<sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>> {
+    let empty = sigil_ir::SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(sections, &empty, true)?;
+    sigil_link::link(&resolved, &empty)
+}
+
+/// The no-map link seam: [`link_to_image`] then `flatten` (gap-fill 0x00, no
+/// region validation).
+fn link_sections(sections: &[sigil_ir::Section]) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
+    Ok(sigil_link::flatten(&link_to_image(sections)?, 0x00))
+}
+
+/// The shared emp output tail: write `image` to `output` (if given), print it as
+/// `--hex` (if set), and always report `built: N bytes`. Exits non-zero on a
+/// write failure.
+fn emit_image(image: &[u8], output: Option<&str>, hex: bool) {
+    if let Some(out_path) = output {
+        if let Err(err) = std::fs::write(out_path, image) {
+            eprintln!("error: cannot write {out_path}: {err}");
+            process::exit(1);
+        }
+    }
+    if hex {
+        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
+        println!("{}", rendered.join(" "));
+    }
+    println!("built: {} bytes", image.len());
+}
+
+/// Consume the value following a value-taking flag at `args[*i]`, advancing `i`.
+/// A missing value — or one that looks like another flag (`-`-prefixed) — is a
+/// usage error (exit 2), so e.g. `--root -o` cannot silently swallow `-o` as the
+/// root directory.
+fn flag_value(args: &[String], i: &mut usize, flag: &str) -> String {
+    *i += 1;
+    match args.get(*i) {
+        Some(v) if !v.starts_with('-') => v.clone(),
+        _ => {
+            eprintln!("error: {flag} requires a value argument");
+            process::exit(2);
+        }
+    }
 }
 
 /// `sigil emp <input.emp> [-o <output.bin>] [--hex]` — compile a Spec 2 `.emp`
@@ -204,21 +247,18 @@ fn compile_emp(
 fn run_emp(args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
+    let mut root_arg: Option<String> = None;
+    let mut prelude: Option<String> = None;
+    let mut map_arg: Option<String> = None;
     let mut hex = false;
 
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "-o" => {
-                i += 1;
-                match args.get(i) {
-                    Some(path) => output = Some(path.clone()),
-                    None => {
-                        eprintln!("error: -o requires a path argument");
-                        process::exit(2);
-                    }
-                }
-            }
+            "-o" => output = Some(flag_value(args, &mut i, "-o")),
+            "--root" => root_arg = Some(flag_value(args, &mut i, "--root")),
+            "--prelude" => prelude = Some(flag_value(args, &mut i, "--prelude")),
+            "--map" => map_arg = Some(flag_value(args, &mut i, "--map")),
             "--hex" => hex = true,
             other => {
                 if input.is_none() {
@@ -235,10 +275,28 @@ fn run_emp(args: &[String]) {
     let input = match input {
         Some(path) => path,
         None => {
-            eprintln!("usage: sigil emp <input.emp> [-o <output.bin>] [--hex]");
+            eprintln!("usage: sigil emp <input.emp> [--root <dir>] [--prelude <module.id>] [-o <output.bin>] [--hex]");
             process::exit(2);
         }
     };
+
+    // Multi-module path: `--root <dir>` gathers, resolves, and links the whole
+    // reachable program. Single-file path (no `--root`) is unchanged.
+    if let Some(root_dir) = root_arg {
+        run_emp_program(
+            &input,
+            &root_dir,
+            prelude.as_deref(),
+            map_arg.as_deref(),
+            output.as_deref(),
+            hex,
+        );
+        return;
+    }
+    if map_arg.is_some() {
+        eprintln!("error: --map requires --root (region placement is a multi-module concern)");
+        process::exit(2);
+    }
 
     let src = match std::fs::read_to_string(&input) {
         Ok(text) => text,
@@ -270,17 +328,165 @@ fn run_emp(args: &[String]) {
         _ => process::exit(1),
     };
 
-    if let Some(out_path) = output {
-        if let Err(err) = std::fs::write(&out_path, &image) {
-            eprintln!("error: cannot write {out_path}: {err}");
+    emit_image(&image, output.as_deref(), hex);
+}
+
+/// The multi-module `sigil emp <entry> --root <dir>` path: scan the root, derive
+/// the entry module id from the entry path, build the whole reachable program
+/// ([`build_program`](sigil_frontend_emp::resolve::build_program)), and — if no
+/// error diagnostics — run the same `resolve_layout` → `link` → `flatten` seam as
+/// the single-file path. Diagnostics render as `path:line:col: message` using a
+/// [`SourceMap`](sigil_span::SourceMap) rebuilt in the manifest's SourceId order.
+fn run_emp_program(
+    input: &str,
+    root_dir: &str,
+    prelude: Option<&str>,
+    map_path: Option<&str>,
+    output: Option<&str>,
+    hex: bool,
+) {
+    use sigil_frontend_emp::resolve;
+    use std::path::Path;
+
+    let (manifest, mut diags) = resolve::manifest::Manifest::scan(Path::new(root_dir));
+
+    let entry_id = match resolve::entry_id_for_path(&manifest, Path::new(input)) {
+        Some(id) => id,
+        None => {
+            // Surface the manifest's own diagnostics FIRST: a mistyped/nonexistent
+            // `--root` makes `scan` emit `cannot read module root …` AND yields no
+            // modules (so entry-id resolution fails) — rendering only the generic
+            // "not a module under --root" would bury the real cause.
+            render_program_diags(&manifest, &diags);
+            if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+                process::exit(1);
+            }
+            eprintln!("error: entry file {input} is not a module under --root {root_dir}");
             process::exit(1);
         }
+    };
+
+    let include_root = std::fs::canonicalize(root_dir).ok();
+    let opts = sigil_frontend_emp::lower::LowerOptions {
+        initial_cpu: sigil_ir::Cpu::M68000,
+        include_root,
+    };
+
+    let (mut sections, mut pdiags) = resolve::build_program(&manifest, &entry_id, prelude, &opts);
+    diags.append(&mut pdiags);
+
+    render_program_diags(&manifest, &diags);
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        process::exit(1);
     }
-    if hex {
-        let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
-        println!("{}", rendered.join(" "));
+
+    // `--map`: load the region map, place each section into its named region, then
+    // link and emit through `emit_rom` (which validates each section's region
+    // budget, §7.3). Without `--map`, keep today's `flatten` behavior unchanged.
+    let image = match map_path {
+        Some(path) => {
+            let toml = match std::fs::read_to_string(path) {
+                Ok(text) => text,
+                Err(err) => {
+                    eprintln!("error: cannot read {path}: {err}");
+                    process::exit(1);
+                }
+            };
+            let map = match sigil_link::load_map(&toml) {
+                Ok(m) => m,
+                Err(err) => {
+                    eprintln!("error: cannot load map {path}: {err}");
+                    process::exit(1);
+                }
+            };
+            let pdiags = resolve::place_sections(&mut sections, &map);
+            render_program_diags(&manifest, &pdiags);
+            if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+                process::exit(1);
+            }
+            match link_rom(&sections, &map) {
+                Ok(rom) => rom,
+                Err(msg) => {
+                    eprintln!("error: {msg}");
+                    process::exit(1);
+                }
+            }
+        }
+        None => {
+            // No `--map`: nothing would otherwise place these sections, so every
+            // module's section would keep `lma == 0` and overlap at the origin
+            // (BUG I3). Pack them sequentially from 0 so cross-module branches
+            // resolve to distinct, non-overlapping addresses (single reachable
+            // module → one section at 0, unchanged).
+            resolve::place_sequential(&mut sections, 0);
+            match link_sections(&sections) {
+                Ok(image) => image,
+                Err(ds) => {
+                    render_program_diags(&manifest, &ds);
+                    process::exit(1);
+                }
+            }
+        }
+    };
+
+    emit_image(&image, output, hex);
+}
+
+/// Region-placed emp link seam: `resolve_layout` → `link` → `emit_rom` against the
+/// memory map, so each section is validated for region containment/budget (§7.3)
+/// and gaps are filled with the map's default byte. Layout/link diagnostics are
+/// flattened into a single error string (the map-path error channel).
+fn link_rom(
+    sections: &[sigil_ir::Section],
+    map: &sigil_ir::map::MemoryMap,
+) -> Result<Vec<u8>, String> {
+    let linked = link_to_image(sections).map_err(|ds| {
+        ds.iter().map(|d| d.message.clone()).collect::<Vec<_>>().join("; ")
+    })?;
+    sigil_link::emit_rom(&linked, map)
+}
+
+/// Render multi-module diagnostics as `path:line:col: message`. The manifest
+/// parsed each file under a sequential [`SourceId`](sigil_span::SourceId) (sorted
+/// order); we rebuild a [`SourceMap`](sigil_span::SourceMap) in that same order so
+/// `map.location` is correct, and prefix with the file recorded in
+/// `manifest.sources`. Diagnostics with an unmapped source id fall back to the
+/// bare message.
+fn render_program_diags(
+    manifest: &sigil_frontend_emp::resolve::manifest::Manifest,
+    diags: &[sigil_span::Diagnostic],
+) {
+    if diags.is_empty() {
+        return;
     }
-    println!("built: {} bytes", image.len());
+    // Rebuild the SourceMap so its internal index equals the SourceId for EVERY
+    // id in `0..=max_id`, including any gap (a file that failed to read has a
+    // `sources` entry — dense by construction in `Manifest::scan` — but a gap
+    // could still arise defensively; fill it with empty text so `map.location`
+    // never over-indexes). `SourceMap::add` assigns ids sequentially from 0, so
+    // adding one text per k in order aligns index ↔ SourceId.
+    let max_id = manifest.sources.keys().map(|id| id.0).max().unwrap_or(0);
+    let mut map = sigil_span::SourceMap::new();
+    for k in 0..=max_id {
+        let text = manifest
+            .sources
+            .get(&sigil_span::SourceId(k))
+            .map(|p| std::fs::read_to_string(p).unwrap_or_default())
+            .unwrap_or_default();
+        map.add(text);
+    }
+    for d in diags {
+        // Only render a location when the id is both known to `sources` AND within
+        // the rebuilt map's bounds — otherwise fall back to the bare message so a
+        // stray/out-of-range source id can never panic mid-error-report.
+        match manifest.sources.get(&d.primary.source) {
+            Some(path) if d.primary.source.0 <= max_id => {
+                let (line, col) = map.location(d.primary);
+                eprintln!("{}:{line}:{col}: {}", path.display(), d.message);
+            }
+            _ => eprintln!("error: {}", d.message),
+        }
+    }
 }
 
 /// Parse `--aeon <dir>` (required) and, if `allow_output` is set, an optional

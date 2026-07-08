@@ -2,7 +2,8 @@
 //! finished model end-to-end through `lower_module` + link:
 //!
 //! - two procs that each define a non-export `.loop:` get DISTINCT owner-scoped
-//!   symbols (`$foo$loop` / `$bar$loop`) — no collision — and the module links
+//!   symbols (`$m$foo$loop` / `$m$bar$loop`, module-qualified per Plan 7 #4) — no
+//!   collision — and the module links
 //!   (the whole-branch review's CRITICAL: the most common Sonic-asm idiom);
 //! - the same comptime-fn-generated `asm { }` (with a local label) called from
 //!   two different procs links cleanly — the instantiation counter `k` is
@@ -42,8 +43,10 @@ fn two_procs_with_same_local_label_get_distinct_symbols_and_link() {
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
     let labels = all_labels(&module);
-    assert!(labels.contains(&"$foo$loop".to_string()), "expected $foo$loop, got {labels:?}");
-    assert!(labels.contains(&"$bar$loop".to_string()), "expected $bar$loop, got {labels:?}");
+    // Local labels are module-qualified (`module m` → `$m$…`) so identical proc
+    // names in different modules don't collide (Plan 7 #4).
+    assert!(labels.contains(&"$m$foo$loop".to_string()), "expected $m$foo$loop, got {labels:?}");
+    assert!(labels.contains(&"$m$bar$loop".to_string()), "expected $m$bar$loop, got {labels:?}");
 
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");

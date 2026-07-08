@@ -169,6 +169,43 @@ impl Section {
         max_extent
     }
 
+    /// MAXIMUM address-space span this section can occupy, computed WITHOUT
+    /// panicking on the width-variable fragments — for PRE-relaxation placement
+    /// (`place_sections`/`place_sequential` run BEFORE `resolve_layout` lowers
+    /// `JmpJsrSym`/`RelaxAbsSym`, so `vma_len`'s `unreachable!` on those would
+    /// panic here). Mirrors `vma_len`'s cursor replay, but for the length-variable
+    /// fragments it uses their LONG (maximum) width:
+    ///   - `JmpJsrSym` → 6 bytes, the `abs.l` encoding (opcode word + 4-byte
+    ///     operand = `AbsWidth::L.inst_len()`; the `abs.w` form is only 4).
+    ///   - `RelaxAbsSym` → `long.bytes.len()`, the `abs.l` candidate block.
+    ///
+    /// Because `resolve_layout` only ever grows a fragment short→long (never
+    /// beyond `long`), a section's post-relaxation `vma_len` is always ≤ its
+    /// `placement_span`, so packing siblings by `placement_span` GUARANTEES they
+    /// never overlap. Trade-off: a section whose relaxable fragments settle on the
+    /// short width leaves a small (≤2 bytes per such fragment) gap before the next
+    /// sibling — acceptable, as there is no region-granularity external byte
+    /// reference to match. For a section with no width-variable fragment,
+    /// `placement_span == vma_len` exactly (data-only sections place identically).
+    pub fn placement_span(&self) -> u32 {
+        let mut cursor: u32 = 0;
+        let mut max_extent: u32 = 0;
+        for frag in &self.fragments {
+            match frag {
+                Fragment::Data(d) => cursor += d.bytes.len() as u32,
+                Fragment::Fill { count, .. } => cursor += *count,
+                Fragment::Reserve { count, .. } => cursor += *count,
+                Fragment::Org { target, .. } => cursor = *target,
+                Fragment::JmpJsrSym { .. } => cursor += AbsWidth::L.inst_len(),
+                Fragment::RelaxAbsSym { long, .. } => cursor += long.bytes.len() as u32,
+            }
+            if cursor > max_extent {
+                max_extent = cursor;
+            }
+        }
+        max_extent
+    }
+
     /// Replay every image-contributing fragment through a write cursor: `Data`/
     /// `Fill` write at the cursor and advance it; `Reserve` contributes no image
     /// bytes and leaves the cursor untouched; `Org` seeks the cursor to `target`

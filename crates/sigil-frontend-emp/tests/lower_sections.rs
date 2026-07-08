@@ -303,3 +303,31 @@ fn unwindowed_pointer_in_z80_section_is_error() {
         "expected an unwindowed-pointer diagnostic naming `Target`, got: {diags:?}"
     );
 }
+
+// ---- module `in <section>`: default section naming (Plan 7 #4) -------------
+
+#[test]
+fn module_in_section_names_default_section() {
+    // `module m in obj_bank` with a top-level `data` item must lower that item
+    // into a section NAMED `obj_bank` (not the literal default `text`).
+    let src = "module m in obj_bank\ndata Blob: [u8; 2] = [1, 2]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: None,
+        },
+    );
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    // The default section carries the `in_section` name.
+    let s = section(&module, "obj_bank");
+    assert_eq!(s.image_len(), 2);
+    // ...and there is NO literal `text` section.
+    assert!(
+        !module.sections.iter().any(|s| s.name == "text"),
+        "expected no `text` section, got: {:?}",
+        module.sections.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}

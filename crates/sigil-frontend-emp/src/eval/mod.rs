@@ -182,6 +182,15 @@ pub struct Evaluator<'a> {
     /// caller-visible `Owner.name` spelling instead (§5.2) — the owner is the
     /// proc name for a proc body and `k` for a raw `asm { }` (T5).
     asm_counter: u32,
+    /// The enclosing module's dotted id (`a.b.c`, the `module` header path),
+    /// empty in the no-file [`new`](Self::new) mode. Threaded into every label
+    /// hygiene [`Owner`](crate::lower::hygiene::Owner) so a hidden local symbol is
+    /// unique across the whole multi-module program (Plan 7 #4): the proc name /
+    /// instantiation id `k` are only unique WITHIN a module, so two modules with a
+    /// `proc init` (or an `asm {}` whose `k` reset to the same value) would
+    /// otherwise mint colliding `$init$loop` / `$asm{k}$wait` symbols. Set from
+    /// the file in [`with_file`](Self::with_file).
+    module_id: String,
     /// The VMA the `here()` comptime builtin resolves to (§7.1), or `None` when
     /// no position is known (outside lowering). Set per data-item by the lowering
     /// pass to `vma_origin + current_offset` — the VMA at the START of the item
@@ -233,6 +242,7 @@ impl<'a> Evaluator<'a> {
             struct_construct_in_progress: Vec::new(),
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
+            module_id: String::new(),
             here_base: None,
             include_root: None,
             captures: Vec::new(),
@@ -251,6 +261,9 @@ impl<'a> Evaluator<'a> {
     /// this task's job.
     pub fn with_file(file: &'a ast::File) -> Self {
         let mut ev = Evaluator::new();
+        // The module id qualifies hidden label-hygiene locals so they are unique
+        // across the whole multi-module program (Plan 7 #4).
+        ev.module_id = file.module.path.segments.join(".");
         ev.index_items(&file.items);
         ev
     }

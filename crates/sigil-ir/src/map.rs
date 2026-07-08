@@ -45,10 +45,13 @@ impl MemoryMap {
             return Err(format!("section `{name}` LMA {lma:#X} is in no ROM region"));
         };
         let end = lma as u64 + len as u64;
-        if end > (r.lma_base as u64 + r.size as u64) {
+        let region_end = r.lma_base as u64 + r.size as u64;
+        if end > region_end {
+            // §7.3: report the overflow amount ("over by N bytes") so the budget
+            // miss is actionable, naming the region and its end address.
             return Err(format!(
-                "section `{name}` [{lma:#X},{end:#X}) overflows region `{}` end {:#X}",
-                r.name, r.lma_base + r.size
+                "section `{name}` [{lma:#X},{end:#X}) overflows region `{}` (ends {region_end:#X}) — over by {} bytes",
+                r.name, end - region_end
             ));
         }
         Ok(())

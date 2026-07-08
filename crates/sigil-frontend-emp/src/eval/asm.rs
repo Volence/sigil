@@ -53,9 +53,10 @@ impl Evaluator<'_> {
     ) -> Value {
         let k = self.asm_counter;
         self.asm_counter += 1;
+        let module = self.module_id.clone();
         let owner = match owner_name {
-            Some(name) => Owner::Proc(name.to_string()),
-            None => Owner::Asm(k),
+            Some(name) => Owner::Proc { module, name: name.to_string() },
+            None => Owner::Asm { module, k },
         };
 
         // Resolve every source label to its emitted symbol up front (export →
