@@ -235,3 +235,60 @@ Reviews: T4 spec review ✅ (independent parent-diff verification) + quality rev
 none blocking; carry-forward: extract the ir cursor-replay primitive before any fifth copy in 7-main).
 T6 controller-verified (RED-first evidence + corpus + static audit for vma:0 dependents — zero found).
 Whole-branch adversarial review deferred to the end of 7-main per the handoff (covers both halves).
+
+## 7-main Task 2: no-straddle bank placement (R7m.2 / D7.2 / D7.5)
+
+Implemented at the marked seam in `crates/sigil-link/src/relax.rs::place_pass`
+plus a new post-fixpoint `bank_diag`. Two moving parts:
+
+- **Constructive bump (chained only).** After `base` is chosen and the section's
+  final extent `final_sz` is known (HOISTED from `final_size(sec, rungs)` — the
+  T4 carry-forward constraint honored: NO fifth cursor-replay loop; the bump
+  reuses the one value `place_pass` already computes), a CHAINED bank section
+  whose `[base, base+final_sz)` straddles an N-boundary
+  (`base / n != (base + final_sz - 1) / n`, `final_sz > 0`) bumps to
+  `base.next_multiple_of(n)`. Bump-ONLY-when-straddling per D7.2 — a section
+  that fits before the boundary stays put (not aeon's always-align). PINNED
+  sections are NEVER bumped (their address is authoritative).
+- **Always-on post-check (D7.5, discharged STRUCTURALLY).** `bank_diag` runs at
+  convergence in the same diagnostic channel as `overlap_diag` (no synthesized
+  LinkAssert row, no anchor-symbol pollution — the recorded R7m.2 reading). It
+  reports, first-offender-wins: (1) `final_sz > n` → §7.3 "over by K bytes"
+  budget error (K decimal, matching `map.rs::validate_section`); (2) a final
+  `[start,end)` that straddles → error naming the section, its extent, and the
+  crossed boundary. For chained sections the bump makes (2) unreachable; it is
+  the catch for straddling PINS.
+
+Termination unchanged: a bump only ever INCREASES `base` (a deterministic
+function of rungs+pins), and `next_multiple_of` is idempotent once a section is
+boundary-aligned, so it participates in the fixpoint's `moved` tracking without
+oscillating (verified by test (e)).
+
+### Tests (crates/sigil-link/tests/final_placement.rs) — RED first, then GREEN
+
+- (a) `chained_bank_section_bumps_when_it_would_straddle`: chained bank-$100 at
+  cursor $F8 with $10 bytes → `[$F8,$108)` straddles → bumped to $100. RED→GREEN.
+- (b) `chained_bank_section_stays_when_it_fits_before_boundary`: same at $F8 with
+  $8 bytes → `[$F8,$100)`, last byte $FF still bank 0 → NO bump, stays $F8.
+  (Passed from the start — current default is no-bump; pins the no-straddle=no-move.)
+- (c) `bank_section_over_bank_size_is_a_loud_error`: $110 bytes in a $100 bank →
+  "over by" Err naming `dac_bank`. RED→GREEN.
+- (d) `pinned_bank_section_straddling_is_a_loud_error_not_moved`: pin at $F8 with
+  $10 bytes, bank $100 → post-check Err naming section + `0xF8` extent + `0x100`
+  boundary; NOT silently moved. RED→GREEN.
+- (e) `bank_bump_feeds_the_placement_fixpoint`: a chained bump feeds the group
+  cursor so the following section lands at the BUMPED base ($100+$10=$110), not
+  the pre-bump $F8 — proves the bump participates in the joint fixpoint. RED→GREEN.
+
+### Gate (Task 2)
+
+- `cargo test -p sigil-link --test final_placement` → 9/9 ok.
+- `cargo test --workspace --no-fail-fast` → EXACTLY the 4 allowlisted harness
+  reds (`full_build_reproduces_sound_driver_regions`,
+  `vector_table_matches_reference_rom_first_256_bytes`,
+  `full_debug_rom_matches_assembled_reference`,
+  `full_rom_matches_assembled_reference`); nothing else red.
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean.
+- `bash scripts/corpus_bytediff.sh` → `RESULT: all identical` (no `bank:` users
+  in the shipped corpus → zero diffs; the two pre-existing master-only SKIPPED
+  files unchanged).

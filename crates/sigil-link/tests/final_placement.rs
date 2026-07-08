@@ -32,6 +32,31 @@ fn data_section(name: &str, lma: u32, label: &str, bytes: Vec<u8>) -> Section {
     }
 }
 
+/// A single-fragment data section with an explicit `bank`, `placement`, and
+/// `reserved_span` — the T2 bank-placement builder. `reserved_span` defaults to
+/// the byte length so the group cursor advances by the data extent.
+fn bank_section(
+    name: &str,
+    lma: u32,
+    bytes: Vec<u8>,
+    bank: u32,
+    placement: SectionPlacement,
+) -> Section {
+    let span = bytes.len() as u32;
+    Section {
+        name: name.into(),
+        cpu: Cpu::M68000,
+        vma_base: None,
+        lma,
+        labels: vec![],
+        fragments: vec![Fragment::Data(DataFragment { bytes, fixups: vec![], span: sp() })],
+        placement,
+        reserved_span: span,
+        group: None,
+        bank: Some(bank),
+    }
+}
+
 /// (a) A `Chained` section AFTER a `JmpJsrSym` section whose rung GROWS 4→6 →
 /// the successor's placed base is `pred_base + 6`, NOT the baked `+ 4`. This is
 /// the L-H.1 fix at the linker level: the chain cursor advances by FINAL size.
@@ -255,5 +280,108 @@ fn placement_growth_feeds_relaxation_growth_to_a_joint_fixpoint() {
     let linked = sigil_link::link(&out, &stubs).unwrap();
     // s3's jmp T resolves to T's VMA = $8000.
     assert_eq!(&linked.section("s3").unwrap().bytes, &[0x4E, 0xF9, 0x00, 0x00, 0x80, 0x00]);
+}
+
+// ---- #7-main: no-straddle bank placement (R7m.2) ---------------------------
+
+/// A `Pinned` data section of `size` bytes at `lma`, the group anchor that
+/// pushes a following chained section's cursor to `lma + size`.
+fn pin_filler(name: &str, lma: u32, size: usize) -> Section {
+    Section {
+        name: name.into(),
+        cpu: Cpu::M68000,
+        vma_base: None,
+        lma,
+        labels: vec![],
+        fragments: vec![Fragment::Data(DataFragment {
+            bytes: vec![0xAA; size],
+            fixups: vec![],
+            span: sp(),
+        })],
+        placement: SectionPlacement::Pinned,
+        reserved_span: size as u32,
+        group: None,
+        bank: None,
+    }
+}
+
+/// (a) A `Chained` bank-$100 section whose cursor sits at $F8 with $10 bytes of
+/// data → `[$F8, $108)` straddles the $100 boundary ($F8 in bank 0, $107 in bank
+/// 1) → the base is BUMPED to the next multiple of $100 = $100.
+#[test]
+fn chained_bank_section_bumps_when_it_would_straddle() {
+    // Pin a $F8-byte filler at 0 → the chained bank section's cursor is $F8.
+    let filler = pin_filler("filler", 0, 0xF8);
+    let banked =
+        bank_section("dac_bank", 0xF8, vec![0xDE; 0x10], 0x100, SectionPlacement::Chained);
+    let out = sigil_link::resolve_layout(&[filler, banked], &SymbolTable::new(), true).unwrap();
+    assert_eq!(out[0].lma, 0, "filler pinned");
+    assert_eq!(out[1].lma, 0x100, "chained bank section bumped to the $100 boundary");
+}
+
+/// (b) The SAME arrangement but only $8 bytes → `[$F8, $100)` fits entirely
+/// before the boundary ($FF is the last byte, still bank 0) → NO bump. It stays
+/// at $F8 (D7.2: bump ONLY when straddling; not aeon's always-align).
+#[test]
+fn chained_bank_section_stays_when_it_fits_before_boundary() {
+    let filler = pin_filler("filler", 0, 0xF8);
+    let banked =
+        bank_section("dac_bank", 0xF8, vec![0xDE; 0x8], 0x100, SectionPlacement::Chained);
+    let out = sigil_link::resolve_layout(&[filler, banked], &SymbolTable::new(), true).unwrap();
+    assert_eq!(out[0].lma, 0, "filler pinned");
+    assert_eq!(out[1].lma, 0xF8, "bank section that fits before the boundary stays put");
+}
+
+/// (c) A bank-$100 section holding $110 bytes → content larger than the bank →
+/// unsatisfiable, "over by" Err naming the section.
+#[test]
+fn bank_section_over_bank_size_is_a_loud_error() {
+    let banked =
+        bank_section("dac_bank", 0, vec![0xDE; 0x110], 0x100, SectionPlacement::Chained);
+    let err = sigil_link::resolve_layout(&[banked], &SymbolTable::new(), true).unwrap_err();
+    assert!(
+        err.iter().any(|d| d.message.contains("dac_bank") && d.message.contains("over by")),
+        "over-bank error must name the section and say 'over by', got: {err:?}"
+    );
+}
+
+/// (d) A `Pinned` bank-$100 section pinned ASTRIDE a boundary (lma $F8, $10 bytes
+/// → `[$F8, $108)` crosses $100). Pins are NEVER moved (R7m.2) → the always-on
+/// post-check Err names the section, its extent, and the boundary — not silently
+/// bumped.
+#[test]
+fn pinned_bank_section_straddling_is_a_loud_error_not_moved() {
+    let banked =
+        bank_section("dac_bank", 0xF8, vec![0xDE; 0x10], 0x100, SectionPlacement::Pinned);
+    let err = sigil_link::resolve_layout(&[banked], &SymbolTable::new(), true).unwrap_err();
+    assert!(
+        err.iter().any(|d| {
+            d.message.contains("dac_bank")
+                && d.message.contains("0xF8")
+                && d.message.contains("0x100")
+        }),
+        "straddling-pin error must name the section, its extent, and the $100 boundary, got: {err:?}"
+    );
+}
+
+/// (e) FIXPOINT interaction: a bank bump changes a cross-section jmp's reach and
+/// re-relaxes to a joint fixpoint. Layout (one anonymous group):
+///   s0 (Pinned @ 0):   $F8 filler bytes → cursor at $F8.
+///   s1 (Chained, bank $100): $10 bytes defining `T` at its base → BUMPS to
+///                      $100, so T's VMA is $100 (below $8000 → still abs.w).
+/// A jmp is not what shifts here; instead we prove the bump feeds the cursor and
+/// the section AFTER it lands past the bump. s2 (Chained) follows s1 → its base
+/// must be $100 + $10 = $110, proving the bumped base (not the pre-bump $F8)
+/// drove the cursor through the fixpoint.
+#[test]
+fn bank_bump_feeds_the_placement_fixpoint() {
+    let s0 = pin_filler("s0", 0, 0xF8);
+    let s1 =
+        bank_section("s1_bank", 0xF8, vec![0xDE; 0x10], 0x100, SectionPlacement::Chained);
+    let s2 = data_section("s2", 0x108, "T2", vec![0x11, 0x22, 0x33, 0x44]);
+    let out = sigil_link::resolve_layout(&[s0, s1, s2], &SymbolTable::new(), true).unwrap();
+    assert_eq!(out[0].lma, 0, "s0 pinned");
+    assert_eq!(out[1].lma, 0x100, "s1 bumped to the $100 boundary");
+    assert_eq!(out[2].lma, 0x110, "s2 follows the BUMPED s1 base ($100 + $10), not the pre-bump $F8");
 }
 

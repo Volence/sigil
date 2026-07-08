@@ -121,7 +121,7 @@ fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
         std::collections::HashMap::new();
     let mut moved = false;
     for (si, sec) in placed.iter_mut().enumerate() {
-        let base = match sec.placement {
+        let mut base = match sec.placement {
             SectionPlacement::Pinned => {
                 // A pin resets its group cursor to its baked anchor value.
                 sec.lma
@@ -133,8 +133,33 @@ fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
                 *cursors.get(&sec.group).unwrap_or(&sec.lma)
             }
         };
-        // #7-main: bank bump seam (D7.2)
-        let advance = sec.reserved_span.max(final_size(sec, &rungs[si]));
+        // The section's FINAL image extent under the current rungs. Hoisted (not
+        // recomputed) so the bank seam below reuses this one value — do NOT add a
+        // fifth cursor-replay loop (the T4 carry-forward constraint).
+        let final_sz = final_size(sec, &rungs[si]);
+        // #7-main: bank bump seam (D7.2). If this section carries a bank
+        // constraint and its `[base, base+final)` extent would STRADDLE an
+        // N-boundary, bump a CHAINED base to the next multiple of N. Bump ONLY
+        // when straddling — a section that fits before the boundary stays put
+        // (D7.2: aeon's always-`align $8000` wastes up to N bytes; the invariant
+        // is no-straddle, alignment is just one strategy). PINNED sections are
+        // NEVER moved — their address is authoritative — but they are still
+        // checked post-fixpoint (a straddling pin is a loud error, not a bump).
+        // A content-larger-than-N section is unsatisfiable → the §7.3 "over by K
+        // bytes" budget error (the post-fixpoint check reports the extent; here
+        // we surface the over-bank case eagerly so a bump is never attempted on
+        // an impossible section). Over-by is recorded and surfaced by the caller
+        // via `place_bank_error`; a bump here only ever increases `base`, so the
+        // grow-only termination argument is preserved.
+        if let Some(n) = sec.bank {
+            if sec.placement == SectionPlacement::Chained
+                && final_sz > 0
+                && base / n != (base + final_sz - 1) / n
+            {
+                base = base.next_multiple_of(n);
+            }
+        }
+        let advance = sec.reserved_span.max(final_sz);
         if sec.lma != base {
             sec.lma = base;
             moved = true;
@@ -142,6 +167,65 @@ fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
         cursors.insert(sec.group.clone(), base + advance);
     }
     moved
+}
+
+/// The R7m.2 always-on bank checks, run POST-fixpoint against the FINAL converged
+/// placement (D7.5 discharged STRUCTURALLY in the linker — same diagnostic channel
+/// as the overlap check, no synthesized LinkAssert rows). Two failure modes, each
+/// returning the FIRST offender as an `Error` diagnostic:
+///   - content larger than the bank (`final > n`) → the §7.3 "over by K bytes"
+///     budget error naming the section (K decimal, matching map.rs validate_section);
+///   - a section whose final `[first_byte, last_byte]` straddles an N-boundary
+///     (`first / n != last / n`) → an error naming the section, its `[start,end)`
+///     extent, and the boundary it crosses. For CHAINED sections the constructive
+///     bump in `place_pass` makes the straddle case unreachable; this catches
+///     straddling PINS (which are never moved). Empty (final == 0) sections place
+///     no bytes and are skipped.
+fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
+    for (si, sec) in placed.iter().enumerate() {
+        let Some(n) = sec.bank else { continue };
+        let final_sz = final_size(sec, &rungs[si]);
+        if final_sz == 0 {
+            continue;
+        }
+        let span = sec.fragments.first().map(frag_span).unwrap_or(Span {
+            source: sigil_span::SourceId(0),
+            start: 0,
+            end: 0,
+        });
+        // Content larger than the bank is unsatisfiable — §7.3 budget style
+        // ("over by K bytes", K decimal per map.rs validate_section).
+        if final_sz > n {
+            return Some(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "section `{}` ({:#X} bytes) cannot fit a {:#X} bank — over by {} bytes",
+                    sec.name,
+                    final_sz,
+                    n,
+                    final_sz - n
+                ),
+                primary: span,
+            });
+        }
+        let start = sec.lma;
+        let end = sec.lma + final_sz;
+        // Straddle: first and last byte fall in different N-windows. Unreachable
+        // for chained sections (the bump discharges it constructively); this is
+        // the catch for a straddling PIN, which is never moved.
+        if start / n != (end - 1) / n {
+            let boundary = (start / n + 1) * n;
+            return Some(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "section `{}` [{start:#X}, {end:#X}) straddles the {boundary:#X} bank boundary ({n:#X}-byte bank)",
+                    sec.name
+                ),
+                primary: span,
+            });
+        }
+    }
+    None
 }
 
 /// The R7p.4 overlap check: after the joint fixpoint converges, return the first
@@ -644,6 +728,15 @@ pub fn resolve_layout(
             // catches colliding PINS on any path — single-file, multi-module, or
             // harness — since they all funnel through `resolve_layout`.
             if let Some(diag) = overlap_diag(&placed, &rungs) {
+                return Err(vec![diag]);
+            }
+
+            // (c3) Bank no-straddle check (R7m.2 / D7.5): every `bank:` section
+            // (pinned included) must fit within a single N-window at its FINAL
+            // placement. Over-bank content and straddling pins are loud errors
+            // here — same diagnostic channel as the overlap check, discharged
+            // structurally rather than via a synthesized LinkAssert row.
+            if let Some(diag) = bank_diag(&placed, &rungs) {
                 return Err(vec![diag]);
             }
 
