@@ -1589,6 +1589,16 @@ pub fn eval_offsets_with_root(
     })
 }
 
+/// The hygienic label of a dispatch member's inline body (Plan 7 #9a).
+/// `$` is unlexable by both frontends (the `__here$<module>$<n>` precedent,
+/// D-H.8), so it can never collide with a user symbol; module+table+member is
+/// program-unique (duplicate members are a `validate_dispatch` error, and
+/// duplicate table names are whole-program duplicate-label link errors — the
+/// same story as the table's own base label today).
+pub(crate) fn dispatch_body_label(module: &ast::Path, table: &str, member: &str) -> String {
+    format!("__dispatch${}${table}${member}", module.segments.join("."))
+}
+
 /// Lower a `dispatch Name (encoding: E) { Member: target, ... }` block's
 /// FORWARD emission (Spec 2, Plan 7 backlog #6, Part B — D6.B2) to a checked,
 /// CPU-neutral [`DataBuf`]. The sibling of [`eval_offsets_with_root`] for
@@ -1617,16 +1627,6 @@ pub fn eval_offsets_with_root(
 /// left to the linker (v1 does not kind-check cross-module; link fails loudly
 /// on a genuinely-undefined symbol). Dup / reserved-`count` validation lives
 /// once-per-compile in `lower::validate_dispatch`, not here.
-/// The hygienic label of a dispatch member's inline body (Plan 7 #9a).
-/// `$` is unlexable by both frontends (the `__here$<module>$<n>` precedent,
-/// D-H.8), so it can never collide with a user symbol; module+table+member is
-/// program-unique (duplicate members are a `validate_dispatch` error, and
-/// duplicate table names are whole-program duplicate-label link errors — the
-/// same story as the table's own base label today).
-pub(crate) fn dispatch_body_label(module: &ast::Path, table: &str, member: &str) -> String {
-    format!("__dispatch${}${table}${member}", module.segments.join("."))
-}
-
 pub fn eval_dispatch_with_root(
     file: &ast::File,
     decl: &ast::DispatchDecl,
