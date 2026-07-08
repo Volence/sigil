@@ -818,7 +818,9 @@ impl Parser {
         let value = self.expr();
         let span = start.merge(self.prev_span());
         self.expect_line_end();
-        DataDecl { public, name, ty, max_size, value, span }
+        // `type_only` is a resolver-set cross-module injection flag (D-PP.5),
+        // never a source construct — the parser always emits a real data item.
+        DataDecl { public, name, ty, max_size, value, span, type_only: false }
     }
 
     /// Parse a `proc name(params...) [clobbers(...)] [falls_into name] { body }`

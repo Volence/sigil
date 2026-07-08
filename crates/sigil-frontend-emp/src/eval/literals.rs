@@ -33,9 +33,13 @@ impl<'a> Evaluator<'a> {
             return self.eval_checked_struct_lit(&ty_name, fields, span, env);
         }
         // Undeclared type name → value-level only (Plan 2). Poison field values
-        // are preserved as-is (propagate, no new diagnostic).
-        let fields =
-            fields.iter().map(|(name, e)| (name.clone(), self.eval_expr(e, env))).collect();
+        // are preserved as-is (propagate, no new diagnostic). A field initializer
+        // is a comptime VALUE position, so a bareword naming a proc/data item
+        // resolves to a label value (D-PP.3) — `in_label_ctx` enables that
+        // fallback for the field exprs.
+        let fields = self.in_label_ctx(|this| {
+            fields.iter().map(|(name, e)| (name.clone(), this.eval_expr(e, env))).collect()
+        });
         Value::Struct { ty_name, fields }
     }
 
@@ -100,7 +104,11 @@ impl<'a> Evaluator<'a> {
                 // declaration-order rebuild.
                 let mut provided_vals: Vec<(String, Value)> = Vec::with_capacity(provided.len());
                 for (fname, expr) in provided {
-                    let v = this.eval_expr(expr, env);
+                    // A checked-struct field initializer is a comptime VALUE
+                    // position: a bareword naming a proc/data item becomes a
+                    // label value (D-PP.3). `code: init` in `ObjDef{ … }` is the
+                    // motivating case.
+                    let v = this.in_label_ctx(|this| this.eval_expr(expr, env));
                     // A `return` (or abort) inside a field expr propagates
                     // uniformly — mirroring the sibling construction sites (T8
                     // review, Minor 3).
@@ -128,7 +136,9 @@ impl<'a> Evaluator<'a> {
                     if let Some((_, v)) = provided_vals.iter().find(|(n, _)| n == &field.name) {
                         out_fields.push((field.name.clone(), v.clone()));
                     } else if let Some(default) = &field.default {
-                        let dv = this.eval_expr(default, env);
+                        // A `= default` field expr is likewise a value position
+                        // (a default `code: init` would resolve to a label).
+                        let dv = this.in_label_ctx(|this| this.eval_expr(default, env));
                         // Same leaked-return / abort bail as the provided-field loop.
                         if this.aborted || this.pending_return.is_some() {
                             return None;

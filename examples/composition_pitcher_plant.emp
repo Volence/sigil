@@ -14,7 +14,12 @@
 // `in obj_bank` = "my bytes belong to main.emp's obj_bank section." This is the
 // membership half of the old `include`, made explicit and checked (obj_bank has
 // a 64KB budget the linker enforces). One file = one module.
-module badniks.pitcher_plant in obj_bank
+//
+// Retitled to `composition_pitcher_plant` (was `badniks.pitcher_plant`) so this
+// illustrative mock's module id agrees with its own filename and stays
+// collision-free against the real, wired-up exhibit at
+// `examples/game/badniks/pitcher_plant.emp` (module `badniks.pitcher_plant`).
+module composition_pitcher_plant in obj_bank
 
 
 // A `use` names what THIS module needs from others. Only `pub` names are

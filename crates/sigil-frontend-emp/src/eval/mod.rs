@@ -241,6 +241,50 @@ pub struct Evaluator<'a> {
     /// expression — so a field name lowers to its byte offset and a const never
     /// silently shadows it. Empty for a raw `asm { }` (no param types there).
     pub(crate) reg_pointee_struct: HashMap<crate::value::Reg, String>,
+    /// The CPU this evaluation lowers for, when known (D-PP.1). `Some` only when
+    /// evaluating a PROC BODY (threaded in by [`eval_proc_body`] from the
+    /// enclosing section's CPU), where the mnemonic-vs-comptime-fn decision for a
+    /// bare statement call needs the section's mnemonic table. `None` for a raw
+    /// `asm { }` template eval (whose CPU is not fixed until it is spliced into a
+    /// section) — a bare statement call is a proc-body construct, so it is only
+    /// recognized when this is `Some`.
+    cpu: Option<sigil_ir::backend::Cpu>,
+    /// Depth of enclosing LABEL-VALUE contexts (D-PP.3). Non-zero only while
+    /// evaluating a data-item field initializer or a call argument (bumped by
+    /// [`in_label_ctx`](Self::in_label_ctx)); an otherwise-unknown bareword /
+    /// dotted path in [`eval_path`](Self::eval_path) becomes a
+    /// [`Value::Label`](crate::value::Value::Label) only when this is non-zero,
+    /// so a pure comptime expression (`const x = bogus`) keeps its loud
+    /// `unknown name`. A COUNTER (not a bool) so nested value positions restore
+    /// correctly.
+    label_ctx: u32,
+    /// Cross-module type-only records for `pub data` items of struct type
+    /// (D-PP.5): item name → struct type name. A `pub data Player_1: Sst` emits
+    /// bytes, so — unlike a `pub struct`/`const` — it is NOT injected into a
+    /// consumer's item list. Instead the resolver injects a TYPE-ONLY clone
+    /// (`data.type_only = true`, no bytes) and its `(name → struct)` binding is
+    /// stamped HERE at the DEFINING module (mirroring the T0a overlay-window
+    /// stamp), so a consumer's `Player_1.field` field-address operand knows the
+    /// struct type without the item's initializer being visible. Populated by
+    /// [`index_items`](Self::index_items) from every `type_only` data item.
+    /// Empty in single-file mode (a local `data` is in [`datas`] instead).
+    ///
+    /// ADDRESS-half only: the value-read half (`Def.field`) needs the
+    /// initializer, which a type-only import does not carry — so a cross-module
+    /// VALUE read is a loud not-supported diagnostic, per the spec.
+    imported_item_types: HashMap<String, String>,
+    /// Memoized comptime VALUEs of module-local data items (D-PP.5, HALF B), keyed
+    /// by item name — the value analogue of [`const_memo`](Self::const_memo) for
+    /// the `Def.field` value read. A `Poison` entry records an item whose
+    /// initializer already failed (a cycle or error) so it does not re-report.
+    data_value_memo: HashMap<String, Value>,
+    /// The names of data items whose initializer is currently being evaluated for
+    /// a VALUE read (D-PP.5), in reference order — the in-progress stack for the
+    /// `data A = S{x: B.x}` ↔ `data B = S{x: A.x}` cycle. DISTINCT from
+    /// [`in_progress`](Self::in_progress) (consts): a data item and a const can
+    /// share a name space but their value-eval recursions are separate concerns,
+    /// and mixing the stacks would mis-name a cycle chain.
+    data_value_in_progress: Vec<String>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -280,7 +324,44 @@ impl<'a> Evaluator<'a> {
             include_root: None,
             captures: Vec::new(),
             reg_pointee_struct: HashMap::new(),
+            cpu: None,
+            label_ctx: 0,
+            imported_item_types: HashMap::new(),
+            data_value_memo: HashMap::new(),
+            data_value_in_progress: Vec::new(),
         }
+    }
+
+    /// Run `body` with label-value resolution ENABLED (D-PP.3), restoring the
+    /// prior depth on the way out. In this scope an otherwise-unknown bareword /
+    /// dotted path in [`eval_path`](Self::eval_path) becomes a
+    /// [`Value::Label`](crate::value::Value::Label) (a deferred link symbol)
+    /// instead of the `unknown name` error — the fallback is confined to the two
+    /// comptime VALUE positions the spec names (data-item field initializers and
+    /// call arguments), so a pure comptime expression context keeps its loud
+    /// `unknown name`. A DEPTH counter (not a bool) so nesting — a call-arg whose
+    /// value is a struct literal whose field is a bareword — stays enabled
+    /// throughout and restores correctly.
+    ///
+    /// The counter therefore PROPAGATES into every expression nested under a
+    /// wrapped position: an array literal INSIDE a struct field
+    /// (`E{ table: [a, b] }`) resolves its elements as labels, while a TOP-LEVEL
+    /// data-item array initializer (`data D: [*u8; 2] = [a, b]`) is never
+    /// wrapped and keeps the loud `unknown name` — pinned by
+    /// `tests/label_values.rs` (U4 stacks on this exact boundary).
+    pub(super) fn in_label_ctx<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
+        self.label_ctx += 1;
+        let out = body(self);
+        self.label_ctx -= 1;
+        out
+    }
+
+    /// Whether label-value resolution is currently enabled (inside a data-item
+    /// field initializer or a call argument, D-PP.3). The fallback in
+    /// [`eval_path`](Self::eval_path) consults this so a bareword only becomes a
+    /// label where a symbol reference is meaningful.
+    pub(super) fn label_ctx_active(&self) -> bool {
+        self.label_ctx > 0
     }
 
     /// Set the VMA `here()` resolves to for the item about to be evaluated
@@ -335,7 +416,22 @@ impl<'a> Evaluator<'a> {
                     self.newtypes.insert(n.name.as_str(), n);
                 }
                 ast::Item::Data(d) => {
-                    self.datas.insert(d.name.as_str(), d);
+                    if d.type_only {
+                        // A cross-module TYPE-ONLY import (D-PP.5): record only its
+                        // (name → struct) binding for the field-ADDRESS operand; it
+                        // carries no real initializer, so it must NOT enter `datas`
+                        // (which drives value reads and byte emission). The struct
+                        // type it names lives in the `ty` annotation the resolver
+                        // preserved on the clone.
+                        if let Some(ast::Type::Named(p)) = &d.ty {
+                            if p.segments.len() == 1 {
+                                self.imported_item_types
+                                    .insert(d.name.clone(), p.segments[0].clone());
+                            }
+                        }
+                    } else {
+                        self.datas.insert(d.name.as_str(), d);
+                    }
                 }
                 ast::Item::Offsets(o) => {
                     // Index for `Name.Variant` / `Name.count` resolution in
@@ -384,6 +480,158 @@ impl<'a> Evaluator<'a> {
     /// `[dispatch.target-not-code]`.
     pub(crate) fn is_data(&self, name: &str) -> bool {
         self.datas.contains_key(name)
+    }
+
+    /// The STRUCT type name a data item `name` bottoms out at, if it is a known
+    /// data item of struct type (D-PP.5). Peeled through newtype/refined wrappers
+    /// by [`struct_name_for_offsetof`](Self::struct_name_for_offsetof) exactly as
+    /// `offsetof(T, f)` is, so a `data P: Newtype = …` whose underlying is a
+    /// struct still resolves. The type comes from the explicit `ty` annotation, or
+    /// — absent one — from a struct-literal initializer that names its own type
+    /// (§4.5, mirroring `resolve_data`'s inference). `None` for an unknown name, a
+    /// non-struct-typed item, or a type-only import (whose bytes/init are not
+    /// visible — see [`imported_item_types`](Self::imported_item_types) for the
+    /// cross-module ADDRESS path).
+    ///
+    /// Resolution MUST NOT report: a bad type is diagnosed at the item's own decl
+    /// site, so this probes silently and swallows any diagnostics it provokes —
+    /// duplicating them here would double-report. The caller decides what a
+    /// `None` means (fall through to a link symbol, or error) at its own span.
+    pub(crate) fn data_item_struct_name(&mut self, name: &str) -> Option<String> {
+        // The annotation `Type` to resolve. The LOCAL data item wins over a
+        // cross-module type-only import under a name shadow (spec-review
+        // ISSUE-1): the operand's base symbol resolves to the local item's
+        // label, so its OFFSETS must come from the local item's struct too —
+        // consulting the imported stub first would fuse the local base with the
+        // FOREIGN struct's field table, a silently-wrong address (and disagree
+        // with the value half, which already reads the local item). Local-wins
+        // also matches the value ladder's precedence everywhere else; a
+        // shadow-warning lint is ledger material. Only when there is NO local
+        // item does the imported stub's stamped struct name apply. The local
+        // type comes from the explicit `ty` annotation, or from a struct-
+        // literal initializer that names its own type (§4.5, mirroring
+        // `resolve_data`'s inference).
+        let ann: ast::Type = if let Some(decl) = self.datas.get(name).copied() {
+            let decl: &'a ast::DataDecl = decl;
+            match &decl.ty {
+                Some(t) => t.clone(),
+                None => match &decl.value {
+                    ast::Expr::StructLit { ty, .. } => ast::Type::Named(ty.clone()),
+                    _ => return None,
+                },
+            }
+        } else if let Some(sname) = self.imported_item_types.get(name) {
+            ast::Type::Named(ast::Path {
+                segments: vec![sname.clone()],
+                span: Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+            })
+        } else {
+            return None;
+        };
+        // Resolve + peel to a struct through the SAME ladder `offsetof(T, f)`
+        // uses. Resolution MUST NOT report (see doc): snapshot the diag length
+        // and truncate back after probing, so a mis-typed receiver is diagnosed
+        // at ITS OWN decl site (or, for a genuine miss, at the caller's span) —
+        // never doubly here. A non-struct / unresolvable annotation yields
+        // `None`, so the caller falls through rather than panicking on a bad
+        // `layout_of_struct`.
+        let before = self.diags.len();
+        let span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
+        let ty = self.resolve_type(&ann);
+        let out = self.struct_name_for_offsetof(&ty, span);
+        self.diags.truncate(before);
+        out
+    }
+
+    /// Whether `name` names a data item whose comptime VALUE can be read for a
+    /// `Def.field` access (D-PP.5, HALF B): a module-local data item with a
+    /// struct-literal initializer, OR a cross-module type-only import (which
+    /// resolves to the loud not-supported diagnostic in `resolve_data_value`).
+    /// Non-struct-literal local data items (arrays, `bytes(..)`, etc.) are NOT
+    /// field-accessible values, so they yield `false` and the caller falls
+    /// through to the U3 label fallback — a bareword `Table.foo` that is not a
+    /// struct value stays a link reference.
+    ///
+    /// PRECEDENCE (D-PP.5): a name that is ALSO an `enum`/`offsets`/`dispatch`
+    /// keeps that meaning for `Name.member` (`Enum.Variant`, an ordinal, a
+    /// scaled ordinal) — those steps run AFTER this one in `eval_path`, so the
+    /// data-value read must not shadow them. The maps are expected disjoint
+    /// (a same-named data item + enum is a naming error), but gating here
+    /// preserves the pre-D-PP.5 order regardless. It DOES win over the U3 label
+    /// fallback (the whole point).
+    pub(crate) fn data_value_readable(&self, name: &str) -> bool {
+        if self.enums.contains_key(name)
+            || self.offsets.contains_key(name)
+            || self.dispatches.contains_key(name)
+        {
+            return false;
+        }
+        if self.imported_item_types.contains_key(name) {
+            return true;
+        }
+        self.datas
+            .get(name)
+            .is_some_and(|d| matches!(&d.value, ast::Expr::StructLit { .. }))
+    }
+
+    /// Read a module-local data item's comptime VALUE for a field access (D-PP.5,
+    /// HALF B), evaluating its struct-literal initializer lazily and memoizing —
+    /// the data analogue of [`resolve_const`](Self::resolve_const).
+    ///
+    /// - A memoized value (including `Poison`) returns directly.
+    /// - A repeated in-progress name closes a cycle: report `cyclic data value:
+    ///   <chain>` at `ref_span`, memoize `Poison`, return `Poison` (so the
+    ///   `data A = S{x: B.x}` ↔ `B = S{x: A.x}` pair errors, never hangs).
+    /// - A cross-module type-only import has NO initializer here — the VALUE read
+    ///   is out of scope (only the ADDRESS half crosses modules), so it is a loud
+    ///   `[value.cross-module]` not-supported diagnostic.
+    ///
+    /// Callers gate on [`data_value_readable`](Self::data_value_readable) first.
+    fn resolve_data_value(&mut self, name: &str, ref_span: Span) -> Value {
+        if let Some(v) = self.data_value_memo.get(name) {
+            return v.clone();
+        }
+        // A cross-module type-only import: the initializer is not visible here.
+        if !self.datas.contains_key(name) && self.imported_item_types.contains_key(name) {
+            self.error(
+                ref_span,
+                format!(
+                    "[value.cross-module] reading field values from the imported data item `{name}` is not supported (only its field ADDRESS crosses modules)"
+                ),
+            );
+            self.data_value_memo.insert(name.to_string(), Value::Poison);
+            return Value::Poison;
+        }
+        if let Some(start) = self.data_value_in_progress.iter().position(|n| n == name) {
+            let mut chain: Vec<&str> =
+                self.data_value_in_progress[start..].iter().map(|s| s.as_str()).collect();
+            chain.push(name);
+            self.error(ref_span, format!("cyclic data value: {}", chain.join(" -> ")));
+            self.data_value_memo.insert(name.to_string(), Value::Poison);
+            return Value::Poison;
+        }
+        // Borrow the `&'a DataDecl` out of the index (lifetime `'a`, from the
+        // file) so `self` stays free to mutate across the recursive eval below —
+        // the same borrow-decoupling `resolve_const` relies on.
+        let decl: &'a ast::DataDecl =
+            self.datas.get(name).copied().expect("caller ensures a local struct-lit data item");
+        self.data_value_in_progress.push(name.to_string());
+        // A data-item value read is an INDEPENDENT construction root: reading
+        // `Def.art` while a sibling item's `Copy = ArtTile{ … }` construction is
+        // still on the `struct_construct_in_progress` stack would spuriously trip
+        // that stack's same-STRUCT-NAME guard (`ArtTile -> ArtTile`) — a false
+        // cycle, since `Def` and `Copy` are distinct items. The genuine data
+        // cycle (`A.x` ↔ `B.x`) is caught by `data_value_in_progress` above.
+        // Swap in a fresh struct-construct stack for the initializer eval so an
+        // item's OWN default-recursion (`struct A { x: A = A{} }`) is still
+        // guarded within it, then restore the caller's stack.
+        let saved = std::mem::take(&mut self.struct_construct_in_progress);
+        let mut env = Env::new();
+        let v = self.eval_expr(&decl.value, &mut env);
+        self.struct_construct_in_progress = saved;
+        self.data_value_in_progress.pop();
+        self.data_value_memo.insert(name.to_string(), v.clone());
+        v
     }
 
     /// Whether `name` is a file-level `offsets` table (its base label is a
@@ -707,10 +955,15 @@ pub fn eval_proc_body(
     body: &[ast::AsmStmt],
     span: Span,
     asm_counter_start: u32,
+    cpu: sigil_ir::backend::Cpu,
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.asm_counter = asm_counter_start;
+        // The proc's section CPU is known here (unlike a raw `asm {}` template):
+        // record it so a bare statement call in the body can consult the
+        // mnemonic table for the mnemonic-vs-comptime-fn decision (D-PP.1).
+        ev.cpu = Some(cpu);
         // Bind each `(aN: *S)` param whose pointee bottoms out at a struct into
         // the register→struct map (D6.A3). A bare-field displacement `f(aN)` on
         // such a register then resolves in field space. Param NAMES are register

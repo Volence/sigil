@@ -79,7 +79,7 @@ pub(super) fn lower_proc(
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     builder.define_label(&proc.name);
     let (buf, mut ds, next_counter) =
-        eval_proc_body(file, &proc.name, &proc.params, &proc.body, proc.span, *asm_counter);
+        eval_proc_body(file, &proc.name, &proc.params, &proc.body, proc.span, *asm_counter, ctx.cpu);
     *asm_counter = next_counter;
     diags.append(&mut ds);
     let Some(buf) = buf else { return };

@@ -189,6 +189,18 @@ impl<'a> Evaluator<'a> {
                     if self.fns.contains_key(name) {
                         return Value::FnRef(name.to_string());
                     }
+                    // D-PP.3 label-value FALLBACK: in comptime VALUE position
+                    // (a data-item field initializer or a call argument), a name
+                    // the evaluator does not know is a DEFERRED LINK SYMBOL — a
+                    // `proc`/`data` reference resolved at link, exactly as the
+                    // string form `"init"` is. Confined to `label_ctx` so a pure
+                    // comptime expression keeps its loud `unknown name`. Existing
+                    // name resolution (local → const → fn, above) WINS, so a
+                    // same-named const shadows the label interpretation (D-PP.3
+                    // precedence). Registers win earlier still, in `eval_call_arg`.
+                    if self.label_ctx_active() {
+                        return Value::Label(name.to_string());
+                    }
                     self.error(path.span, format!("unknown name `{name}`"));
                     Value::Poison
                 }
@@ -206,11 +218,20 @@ impl<'a> Evaluator<'a> {
             if a == "Data" && b == "empty" {
                 return Value::Data(crate::value::DataBuf::empty());
             }
-            // Step 1: does `a` resolve to a *value* (local binding, then const)?
+            // Step 1: does `a` resolve to a *value* (local binding, then const,
+            // then a module-local DATA ITEM's comptime value)? Local/const win
+            // first (existing precedence, D2.12). The data-item receiver is the
+            // D-PP.5 VALUE half (`Def.art`): a module-local data item with a
+            // struct-literal initializer is evaluated lazily (with cycle
+            // detection) and its field read — this WINS before the U3 label
+            // fallback, so a data item named like a proc resolves to its field
+            // value, not a link symbol.
             let a_val = if let Some(v) = env.lookup(a) {
                 Some(v.clone())
             } else if self.consts.contains_key(a) {
                 Some(self.resolve_const(a, path.span))
+            } else if self.data_value_readable(a) {
+                Some(self.resolve_data_value(a, path.span))
             } else {
                 None
             };
@@ -277,9 +298,17 @@ impl<'a> Evaluator<'a> {
                 return Value::Poison;
             }
         }
-        // Any other multi-segment path (module paths, unknown enums) is an
-        // unknown name for now; later plans resolve `use`d/module paths.
+        // Any other multi-segment path (module paths, unknown enums).
         let full = path.segments.join(".");
+        // D-PP.3: a DOTTED bareword in comptime VALUE position that resolves to
+        // nothing above (not a value field-access, not an Enum/offsets/dispatch
+        // member) is a module-qualified LINK SYMBOL — `pitcher_plant.init`,
+        // `badniks.pitcher_plant.init` — deferred to link exactly as the string
+        // form `"pitcher_plant.init"` is (both resolve through the same
+        // `canonicalize_name` module-suffix rule). Confined to `label_ctx`.
+        if self.label_ctx_active() {
+            return Value::Label(full);
+        }
         self.error(path.span, format!("unknown name `{full}`"));
         Value::Poison
     }

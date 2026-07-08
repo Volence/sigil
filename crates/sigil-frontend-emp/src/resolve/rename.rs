@@ -33,6 +33,30 @@ pub fn canonicalize_name(name: &str, map: &HashMap<String, String>) -> Option<St
             return Some(format!("{owner_canon}.{rest}"));
         }
     }
+    // D-PP.3 — MODULE-QUALIFIED reference (`pitcher_plant.init`,
+    // `badniks.pitcher_plant.init`): the leading segments name (a suffix of) the
+    // DEFINING MODULE'S id and the final segment is an in-scope short name. Split
+    // at the LAST dot into `(mod_path, item)`; if `item` maps to a canonical
+    // `<full.module.id>.item` whose module portion ENDS WITH `mod_path` (segment-
+    // aligned), the qualified spelling refers to that same symbol — resolve to
+    // the canonical. This fixes the string form's qualified spelling
+    // (`"pitcher_plant.init"`, previously `unknown symbol` even when imported) and
+    // gives dotted label-value barewords the same resolution, aligning with
+    // `examples/main.emp`'s documented `code: pitcher_plant.init` intent. Bare
+    // (unqualified) names still take the whole-name hit above, unchanged.
+    if let Some((mod_path, item)) = name.rsplit_once('.') {
+        if let Some(canon) = map.get(item) {
+            // `canon` is `<module.id>.<item>`; strip the trailing `.item` to get
+            // the module id, then require `mod_path` to be a segment-aligned
+            // SUFFIX of it (so `pitcher_plant` matches `badniks.pitcher_plant`,
+            // but `plant` does not match `pitcher_plant`).
+            if let Some(canon_mod) = canon.strip_suffix(&format!(".{item}")) {
+                if canon_mod == mod_path || canon_mod.ends_with(&format!(".{mod_path}")) {
+                    return Some(canon.clone());
+                }
+            }
+        }
+    }
     None
 }
 
