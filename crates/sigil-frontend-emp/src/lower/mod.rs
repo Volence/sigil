@@ -17,7 +17,7 @@ mod proc;
 pub use code::lower_code_buf;
 
 use crate::ast;
-use crate::layout::{eval_attr_int, eval_data_with_root, eval_offsets_with_root};
+use crate::layout::{eval_attr_int, eval_data_with_root, eval_offsets_with_root, validate_overlay};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::{IrBuilder, Module};
 use sigil_span::{Diagnostic, Level, Span};
@@ -193,6 +193,15 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     break; // a fatal guard inside the section stops the module (D5.3).
                 }
             }
+            ast::Item::Vars(decl) => {
+                // Overlay form (`vars Name: window { .. }`): force its layout so
+                // the always-on declaration checks (window/capacity/shadow) fire
+                // (D6.A2); it emits ZERO bytes. Region form (`name: None`) is
+                // inert by design (Plan 7 #6 OUT-list).
+                if let Some(name) = &decl.name {
+                    diags.append(&mut validate_overlay(file, name, decl.span));
+                }
+            }
             _ => {}
         }
     }
@@ -265,6 +274,13 @@ fn lower_section_items(
                 diags.append(&mut d);
                 if !cont {
                     return false; // ensure_fatal in-section: stop the whole module.
+                }
+            }
+            ast::Item::Vars(decl) => {
+                // Same as the top-level arm: overlay form → force layout so its
+                // always-on checks fire, zero bytes; region form → inert.
+                if let Some(name) = &decl.name {
+                    diags.append(&mut validate_overlay(file, name, decl.span));
                 }
             }
             _ => {}

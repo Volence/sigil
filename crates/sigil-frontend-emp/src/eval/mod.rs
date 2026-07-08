@@ -104,10 +104,22 @@ pub struct Evaluator<'a> {
     /// [`enums`](Self::enums) resolves `Enum.Variant`. Forward emission
     /// (`dc.w target - Name`) is a separate, later task.
     pub(crate) offsets: HashMap<&'a str, &'a ast::OffsetsDecl>,
+    /// Named SST overlay decls (`vars Name: window { .. }`), indexed by name
+    /// (Spec 2, Plan 7 #6, Part A). Only the *named* overlay form is indexed;
+    /// the region form (`vars region { .. }`, `name: None`) stays inert.
+    /// [`overlay_layout`](crate::layout::Evaluator::overlay_layout) resolves each
+    /// to an [`OverlayInfo`](crate::layout::OverlayInfo) (window + field layout).
+    pub(crate) overlays: HashMap<&'a str, &'a ast::VarsDecl>,
     /// Memoized struct layouts, keyed by struct name — the layout analogue of
     /// [`const_memo`](Self::const_memo). A zero-size Poisoned layout records a
     /// struct that already failed (cyclic layout) so it does not re-report.
     pub(crate) struct_layout_memo: HashMap<String, crate::layout::Layout>,
+    /// Memoized overlay layouts, keyed by overlay name (Spec 2, Plan 7 #6).
+    /// Mirrors [`struct_layout_memo`](Self::struct_layout_memo): each overlay's
+    /// window resolution + field layout + declaration checks
+    /// (overflow/shadow/unknown/ambiguous window) run and report EXACTLY once,
+    /// then the result (poisoned or not) is reused across every reference.
+    pub(crate) overlay_layout_memo: HashMap<String, crate::layout::OverlayInfo>,
     /// Memoized bitfield layouts, keyed by bitfield name (T4). Mirrors
     /// [`struct_layout_memo`](Self::struct_layout_memo): a malformed bitfield
     /// (overlap/overflow) is validated and diagnosed exactly ONCE, then reused
@@ -230,7 +242,9 @@ impl<'a> Evaluator<'a> {
             newtypes: HashMap::new(),
             datas: HashMap::new(),
             offsets: HashMap::new(),
+            overlays: HashMap::new(),
             struct_layout_memo: HashMap::new(),
+            overlay_layout_memo: HashMap::new(),
             bitfield_layout_memo: HashMap::new(),
             layout_in_progress: Vec::new(),
             aborted: false,
@@ -311,6 +325,14 @@ impl<'a> Evaluator<'a> {
                     // evaluator); that check lives once-per-compile in
                     // `lower::validate_offsets`.
                     self.offsets.insert(o.name.as_str(), o);
+                }
+                ast::Item::Vars(v) => {
+                    // Only the NAMED overlay form (`vars Name: window { .. }`)
+                    // is indexed; the region form (`name: None`) is inert by
+                    // design (Plan 7 #6 OUT-list — no region allocation).
+                    if let Some(name) = &v.name {
+                        self.overlays.insert(name.as_str(), v);
+                    }
                 }
                 ast::Item::Section(s) => self.index_items(&s.items),
                 _ => {}
