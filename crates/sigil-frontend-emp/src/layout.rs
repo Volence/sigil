@@ -1425,10 +1425,14 @@ fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
             }
         }
         None => {
-            ev.error(
-                span,
-                format!("`max_size` must be a comptime integer, got {}", v.type_name()),
-            );
+            // A provisional here() capacity bound gets the SPECIFIC D-H.2
+            // steering message, not the generic "must be a comptime integer".
+            if ev.reject_if_provisional(&v, span).is_none() {
+                ev.error(
+                    span,
+                    format!("`max_size` must be a comptime integer, got {}", v.type_name()),
+                );
+            }
         }
     }
 }
@@ -1465,6 +1469,10 @@ pub fn eval_data_captures(
             .iter()
             .map(|c| Capture { path: c.path.clone(), hash: c.hash, len: c.len })
             .collect();
+        // Any deferred LinkAsserts (D-H.4) are deliberately DROPPED here, like
+        // `eval_data_at`: this seam's callers are non-lowering (capture-ledger
+        // tests, always `here: None`), so there is no linker to decide them. The
+        // lowering pass drains asserts via `eval_data_with_root` instead.
         (Some(buf), captures, ev.diags)
     })
 }
@@ -1735,6 +1743,14 @@ pub fn eval_attr_int(file: &ast::File, expr: &ast::Expr) -> (Option<i128>, Vec<D
         let mut ev = Evaluator::with_file(file);
         let mut env = Env::new();
         let v = ev.eval_expr(expr, &mut env);
+        // Unreachable today — this evaluator carries no here-position, so a
+        // `here()` in an attribute is the "no current position" error before a
+        // LinkExpr could form — but front it anyway (D-H.2's specific message)
+        // so a future position-threaded attribute cannot silently regress to
+        // the generic "not a comptime integer".
+        if ev.reject_if_provisional(&v, crate::parser::expr_span(expr)).is_some() {
+            return (None, ev.diags);
+        }
         (v.as_stored_int(), ev.diags)
     })
 }

@@ -655,6 +655,12 @@ impl<'a> Evaluator<'a> {
                     // A typed discriminant erases to its stored int (§8.3).
                     v if v.as_stored_int().is_some() => v.as_stored_int(),
                     Value::Poison => None,
+                    // A provisional here() discriminant gets the SPECIFIC D-H.2
+                    // steering message, not the generic "must be an integer".
+                    v @ Value::LinkExpr(_) => {
+                        self.reject_if_provisional(&v, crate::parser::expr_span(expr));
+                        None
+                    }
                     other => {
                         self.error(
                             crate::parser::expr_span(expr),
@@ -718,6 +724,10 @@ impl<'a> Evaluator<'a> {
         // `Angle(Frame(5))`-style nesting is accepted transparently.
         if let Some(n) = arg_val.as_stored_int() {
             return Some(n);
+        }
+        // A provisional here() argument gets the SPECIFIC D-H.2 steering message.
+        if self.reject_if_provisional(&arg_val, span).is_some() {
+            return None;
         }
         match arg_val {
             // An already-reported error propagates silently (D-P2.9).

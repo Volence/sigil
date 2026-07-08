@@ -216,6 +216,12 @@ impl<'a> Evaluator<'a> {
                 }
                 continue;
             }
+            // A provisional here() field value gets the SPECIFIC D-H.2 steering
+            // message, not the generic "must be an integer".
+            if self.reject_if_provisional(&v, fspan).is_some() {
+                poisoned = true;
+                continue;
+            }
             match v {
                 Value::Poison => poisoned = true,
                 other => {

@@ -162,3 +162,36 @@ Notes:
   master-vs-branch byte-diff probe proper is the review-time step per the design;
   the standing byte pins (ports.rs, jbra_relaxation.rs, pitcher_plant 340) all
   hold, and no corpus program has a provisional here().
+
+## Review fold-in (post two-stage review, NOTE-1 + NOTE-2)
+
+NOTE-1 — specific [here.provisional] at the remaining int-consumer sites.
+RED evidence (tests written first; exact generic messages captured):
+- byte(here()):        "`byte` expects an integer, got link-expr"
+- bytes([here()]):     "`bytes` element must be an integer, got link-expr"
+- (max_size: here()):  "`max_size` must be a comptime integer, got link-expr"
+- vma: here():         already loud ("no current position" — attr eval carries no
+  here_base, so a LinkExpr cannot form there); pinned as the representative test,
+  and eval_attr_int is fronted anyway so a future position-threaded attribute
+  cannot regress to the generic message.
+Sites fronted with reject_if_provisional: builtins.rs (bytes element + the shared
+single-int-arg helper serving byte()), literals.rs (bitfield field value),
+call.rs (enum discriminant + eval_single_int_arg), sandbox.rs (embed/import
+numeric arg), layout.rs (check_max_size + eval_attr_int), asm.rs (immediate,
+displacement, operand splice via classify_operand_splice).
+
+NOTE-2 — eval_data_captures: contract comment added recording the deliberate
+LinkAssert drop (non-lowering callers, always here: None; the lowering pass
+drains via eval_data_with_root).
+
+NOTE-3 — interpolate/interpolate_parts lexer duplication: NOT refactored per
+reviewer instruction (recorded as a ledger item on their side).
+
+Post-fold-in gate: workspace tests = exactly the 4 allowlisted harness reds;
+clippy -D warnings clean; pitcher_plant 340 bytes exit 0.
+
+Process incident (recorded): the session's cwd reset to the MAIN checkout after a
+reconnect; one heredoc append created a stray tests/here_provisional.rs there
+before the compile error exposed it. Removed immediately (main checkout restored
+to its pre-existing state: only the coordinator's untracked design doc). All
+subsequent commands re-anchored with an explicit cd to the worktree.

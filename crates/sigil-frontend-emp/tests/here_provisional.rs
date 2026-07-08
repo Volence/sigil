@@ -227,3 +227,75 @@ fn exact_item_guard_does_not_defer() {
         "no anchor for an exact-position guard"
     );
 }
+
+// ---- Review fold-in (NOTE-1): the D-H.2-named int-consumer sites must refuse a
+// provisional here() with the SPECIFIC [here.provisional] steering message, not
+// the generic "expected an integer, got link-expr". ----------------------------
+
+/// Shared program shape: a jbra makes every later position provisional; `item`
+/// is the site under test, spliced after the relaxable proc.
+fn provisional_msgs(item: &str) -> Vec<String> {
+    let src = format!(
+        "module m\n\
+         proc p () {{\n\
+           jbra Far\n\
+         }}\n\
+         {item}\n\
+         proc Far () {{\n\
+           rts\n\
+         }}\n"
+    );
+    msgs(&src)
+}
+
+fn assert_provisional(item: &str) {
+    let ds = provisional_msgs(item);
+    assert!(
+        ds.iter().any(|m| m.contains("[here.provisional]")),
+        "expected the specific [here.provisional] message for `{item}`, got: {ds:?}"
+    );
+}
+
+/// `(max_size: here())` — a capacity bound cannot be a link-time value (D-H.2
+/// names max_size explicitly).
+#[test]
+fn provisional_here_as_max_size_refuses_specifically() {
+    assert_provisional("data D (max_size: here()): u8 = 0");
+}
+
+/// `byte(here())` / `bytes([here()])` — the Data constructors (D-H.2-named
+/// builtins) take concrete comptime integers.
+#[test]
+fn provisional_here_in_byte_refuses_specifically() {
+    assert_provisional("data D = byte(here())");
+}
+
+#[test]
+fn provisional_here_in_bytes_element_refuses_specifically() {
+    assert_provisional("data D = bytes([here()])");
+}
+
+/// Representative for the remaining int-consumer sites: a section `vma:`
+/// attribute (eval_attr_int) steering placement from a link-time value.
+#[test]
+fn provisional_here_as_section_vma_refuses_specifically() {
+    let src = "module m\n\
+               proc p () {\n\
+                 jbra Far\n\
+               }\n\
+               proc Far () {\n\
+                 rts\n\
+               }\n\
+               section s (cpu: m68000, vma: here()) {\n\
+                 data D: u8 = 0\n\
+               }\n";
+    let ds = msgs(src);
+    // here() in an attribute expression carries no position today (attr eval has
+    // no here_base) — accept the specific provisional message or the no-position
+    // error; what must NOT happen is a silent fold or the generic "expected an
+    // integer".
+    assert!(
+        ds.iter().any(|m| m.contains("[here.provisional]") || m.contains("no current position")),
+        "vma: here() must refuse loudly, got: {ds:?}"
+    );
+}

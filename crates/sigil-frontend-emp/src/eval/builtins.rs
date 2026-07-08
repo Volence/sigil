@@ -392,6 +392,10 @@ impl<'a> Evaluator<'a> {
                 None => {
                     if matches!(el, Value::Poison) {
                         poisoned = true;
+                    } else if self.reject_if_provisional(el, span).is_some() {
+                        // A provisional here() element gets the SPECIFIC D-H.2
+                        // steering message, not the generic "must be an integer".
+                        poisoned = true;
                     } else {
                         self.error(span, format!("`bytes` element must be an integer, got {}", el.type_name()));
                         poisoned = true;
@@ -470,6 +474,10 @@ impl<'a> Evaluator<'a> {
         }
         if let Some(n) = v.as_stored_int() {
             return Some(n);
+        }
+        // A provisional here() argument gets the SPECIFIC D-H.2 steering message.
+        if self.reject_if_provisional(&v, span).is_some() {
+            return None;
         }
         match v {
             Value::Poison => None,
