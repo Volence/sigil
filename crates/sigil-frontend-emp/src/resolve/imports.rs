@@ -100,7 +100,18 @@ impl<'a> ResolveEnv<'a> {
         let mut map = HashMap::new();
         let mut diags = Vec::new();
 
-        // Lowest precedence: prelude pub names.
+        // Resolve explicit `use` imports into their OWN map first, so the
+        // collision check is scoped to genuine EQUAL-precedence conflicts
+        // (use-vs-use) — not spurious use-shadows-prelude ones.
+        let mut use_map: HashMap<String, String> = HashMap::new();
+        for item in &file.items {
+            if let ast::Item::Use(u) = item {
+                resolve_use(module_id, u, index, &mut use_map, &mut diags);
+            }
+        }
+
+        // Compose the final map in precedence order (later overlays win silently):
+        //   prelude pub names (lowest) < explicit `use` < own definitions (highest).
         if let Some((pid, pfile)) = prelude {
             if pid != module_id {
                 for name in exported_names(pfile) {
@@ -108,13 +119,9 @@ impl<'a> ResolveEnv<'a> {
                 }
             }
         }
-        // Middle: explicit `use`.
-        for item in &file.items {
-            if let ast::Item::Use(u) = item {
-                resolve_use(module_id, u, index, &mut map, &mut diags);
-            }
+        for (name, canon) in use_map {
+            map.insert(name, canon);
         }
-        // Highest: own definitions (overwrite anything imported).
         for name in defined_names(file) {
             map.insert(name.clone(), canonical(module_id, &name));
         }
