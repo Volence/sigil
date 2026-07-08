@@ -364,15 +364,19 @@ fn pinned_bank_section_straddling_is_a_loud_error_not_moved() {
     );
 }
 
-/// (e) FIXPOINT interaction: a bank bump changes a cross-section jmp's reach and
-/// re-relaxes to a joint fixpoint. Layout (one anonymous group):
+/// (e) FIXPOINT interaction — what this test pins: a bank bump propagates
+/// through the placement cursor WITHIN the fixpoint (the section after a bumped
+/// section lands past the bump). Layout (one anonymous group):
 ///   s0 (Pinned @ 0):   $F8 filler bytes → cursor at $F8.
 ///   s1 (Chained, bank $100): $10 bytes defining `T` at its base → BUMPS to
 ///                      $100, so T's VMA is $100 (below $8000 → still abs.w).
-/// A jmp is not what shifts here; instead we prove the bump feeds the cursor and
-/// the section AFTER it lands past the bump. s2 (Chained) follows s1 → its base
-/// must be $100 + $10 = $110, proving the bumped base (not the pre-bump $F8)
-/// drove the cursor through the fixpoint.
+///   s2 (Chained) follows s1 → its base must be $100 + $10 = $110, proving the
+///                      bumped base (not the pre-bump $F8) drove the cursor.
+/// The other half of the feedback loop — a placement move growing a rung, which
+/// re-runs placement — is pinned by
+/// `placement_growth_feeds_relaxation_growth_to_a_joint_fixpoint` above; a bump
+/// enters that loop through the same `moved` flag, so the two tests compose to
+/// cover bump→relaxation feedback.
 #[test]
 fn bank_bump_feeds_the_placement_fixpoint() {
     let s0 = pin_filler("s0", 0, 0xF8);

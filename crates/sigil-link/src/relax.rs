@@ -146,11 +146,10 @@ fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
         // NEVER moved — their address is authoritative — but they are still
         // checked post-fixpoint (a straddling pin is a loud error, not a bump).
         // A content-larger-than-N section is unsatisfiable → the §7.3 "over by K
-        // bytes" budget error (the post-fixpoint check reports the extent; here
-        // we surface the over-bank case eagerly so a bump is never attempted on
-        // an impossible section). Over-by is recorded and surfaced by the caller
-        // via `place_bank_error`; a bump here only ever increases `base`, so the
-        // grow-only termination argument is preserved.
+        // bytes" budget error, reported post-fixpoint by `bank_diag`: it may
+        // bump ONCE here to an aligned base, where `next_multiple_of` becomes a
+        // no-op, so placement stays stable while the error fires. A bump only
+        // ever increases `base`, so grow-only termination is preserved.
         if let Some(n) = sec.bank {
             if sec.placement == SectionPlacement::Chained
                 && final_sz > 0
