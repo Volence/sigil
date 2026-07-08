@@ -95,3 +95,25 @@ Implementer choices:
   canonicalizes each LinkAssert's cond + lazy message Exprs. Test/CLI callers
   updated to the 3-tuple (CLI's _link_asserts consumed in T5).
 - D-H.7: deferred guards never stop lowering; only a comptime-exact fatal aborts.
+
+## T5 — sigil-link assert checker + CLI wiring into BOTH link tails (D-H.6/D-H.7)
+
+RED evidence:
+- sigil-link lib tests link_assert_*: RED by non-existence (check_link_asserts /
+  build_symbol_table / render_assert_message did not exist).
+- End-to-end probe (manual): /tmp/budget_fail.emp (jbra + ensure_fatal(here() <=
+  $8003)) exits 1 with "overran at 32772" ($8004 post-growth); budget_ok ($9000)
+  exits 0. On master, here() folds to $8002 baseline so both would pass silently.
+
+Implementer choices:
+- check_link_asserts(resolved, stubs, asserts) rebuilds the post-relaxation symbol
+  table (build_symbol_table, identical values to link()'s Pass 1 — D-H.6's
+  contract) and folds each cond: nonzero=pass, 0=fail (render message, lazy Expr
+  parts folded to final addresses), Fold::Poison=internal-contract error.
+- link_to_image now runs the checker after link() on the resolved sections, folding
+  failures into its Err. Both tails (link_sections no-map, link_rom map) share it.
+- link_rom's error channel changed String -> Vec<Diagnostic> so deferred-guard
+  failures render with spans (path:line:col) like the no-map tail; emit_rom region
+  errors wrap as a null-span diagnostic.
+- compile_emp (single-file) passes module.link_asserts; run_emp_program passes the
+  concatenated build_program asserts to both tails.

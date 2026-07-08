@@ -7,7 +7,9 @@
 
 use sigil_ir::expr::Fold;
 use sigil_ir::map::MemoryMap;
-use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable, SymbolValue};
+use sigil_ir::{
+    Expr, Fixup, FixupKind, Fragment, LinkAssert, MsgPart, Section, SymbolTable, SymbolValue,
+};
 use sigil_span::{Diagnostic, Level, Span};
 
 mod relax;
@@ -141,6 +143,96 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
 
 fn diag(message: String, span: Span) -> Diagnostic {
     Diagnostic { level: Level::Error, message, primary: span }
+}
+
+/// Build the post-relaxation symbol table (D-H.6): `stubs` plus every section's
+/// labels at their phased VMA (`vma_origin + offset`) — IDENTICAL to `link()`'s
+/// Pass-1 table. `sections` must already be `resolve_layout`-resolved (label
+/// offsets shifted to their final layout), so the values the deferred link
+/// assertions fold against are the SAME addresses `link()` resolved fixups
+/// against. (`link()` rebuilds this internally rather than exporting it, keeping
+/// its signature stable; the contract D-H.6 fixes is identical VALUES, which this
+/// shared computation guarantees.)
+fn build_symbol_table(sections: &[Section], stubs: &SymbolTable) -> SymbolTable {
+    let mut syms = stubs.clone();
+    for sec in sections {
+        let origin = sec.vma_origin();
+        for label in &sec.labels {
+            syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
+        }
+    }
+    syms
+}
+
+/// Evaluate a program's deferred link-time assertions (D-H.4/D-H.6) against the
+/// post-`resolve_layout` symbol table, returning ONE `Error` diagnostic per
+/// FAILING assert (ALL failures collected, never first-failure). `resolved` is
+/// the `resolve_layout` output (final label offsets); `stubs` seeds the same
+/// external symbols `link()` saw.
+///
+/// Per assert: its `cond` folds against the table. `0` → the build FAILS with the
+/// rendered message (a lazy `{expr}` message part is folded here to its final
+/// value — so `"overran at {here()}"` reports the REAL post-relaxation address).
+/// Nonzero → the assert passes (no diagnostic). [`Fold::Poison`](Fold::Poison) in
+/// the CONDITION — an unresolved symbol, which cannot happen if the anchor was
+/// defined — is an internal-contract error naming the assert's span (never a
+/// silent pass). `ensure` and `ensure_fatal` are identical in effect at link
+/// (D-H.7): both are an `Error` that fails the build; `fatal` only colors wording.
+pub fn check_link_asserts(
+    resolved: &[Section],
+    stubs: &SymbolTable,
+    asserts: &[LinkAssert],
+) -> Vec<Diagnostic> {
+    if asserts.is_empty() {
+        return Vec::new();
+    }
+    let syms = build_symbol_table(resolved, stubs);
+    let lookup = |name: &str| syms.resolve(name, None);
+    let mut out = Vec::new();
+    for a in asserts {
+        match a.cond.fold(&lookup) {
+            // Nonzero → the guard holds; silent.
+            Fold::Value(v) if v != 0 => {}
+            // Zero → the build fails with the rendered message.
+            Fold::Value(_) => {
+                out.push(Diagnostic {
+                    level: Level::Error,
+                    message: render_assert_message(&a.message, &lookup),
+                    primary: a.span,
+                });
+            }
+            // An unresolved symbol in the CONDITION cannot happen once the anchor
+            // is defined — but if it does, name it loudly rather than pass silently.
+            Fold::Poison => {
+                out.push(Diagnostic {
+                    level: Level::Error,
+                    message: "internal: deferred link assertion has an unresolvable condition \
+                              (an anchor label was never defined) — this is a compiler bug in the \
+                              `here()`-relaxation fix, not a source error"
+                        .to_string(),
+                    primary: a.span,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Render a deferred guard message (D-H.5) at link: `Text` parts verbatim, `Expr`
+/// parts folded to their final integer (a `Poison` fold — an unresolved symbol in
+/// a message subexpression — renders `<?>` rather than aborting the message).
+fn render_assert_message(parts: &[MsgPart], lookup: &dyn Fn(&str) -> Option<i64>) -> String {
+    let mut out = String::new();
+    for p in parts {
+        match p {
+            MsgPart::Text(t) => out.push_str(t),
+            MsgPart::Expr(e) => match e.fold(lookup) {
+                Fold::Value(v) => out.push_str(&v.to_string()),
+                Fold::Poison => out.push_str("<?>"),
+            },
+        }
+    }
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -399,6 +491,92 @@ mod tests {
     use super::*;
     use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Section, SymbolTable, SymbolValue};
     use sigil_span::{SourceId, Span};
+
+    // ---- deferred link-time assertions (D-H.4/D-H.6) --------------------------
+
+    /// A section defining an anchor label `A` at offset `off` in a vma:$8000 section.
+    fn anchor_section(off: u32) -> Section {
+        Section {
+            name: "s".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0x8000),
+            lma: 0,
+            labels: vec![Label { name: "A".into(), offset: off }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0; (off + 2) as usize],
+                fixups: vec![],
+                span: span(),
+            })],
+        }
+    }
+
+    #[test]
+    fn link_assert_passes_when_cond_nonzero() {
+        // A at $8004. `A <= $9000` → $8004 <= $9000 → 1 (pass): no diagnostic.
+        let secs = [anchor_section(4)];
+        let cond = Expr::Binary {
+            op: sigil_ir::expr::BinOp::Le,
+            lhs: Box::new(Expr::Sym("A".into())),
+            rhs: Box::new(Expr::Int(0x9000)),
+        };
+        let a = LinkAssert { cond, message: vec![MsgPart::Text("over".into())], fatal: true, span: span() };
+        assert!(check_link_asserts(&secs, &SymbolTable::new(), &[a]).is_empty());
+    }
+
+    #[test]
+    fn link_assert_fails_when_cond_zero_and_renders_message() {
+        // A at $8004. `A <= $8000` → false → 0 (fail). The message folds `{A}`.
+        let secs = [anchor_section(4)];
+        let cond = Expr::Binary {
+            op: sigil_ir::expr::BinOp::Le,
+            lhs: Box::new(Expr::Sym("A".into())),
+            rhs: Box::new(Expr::Int(0x8000)),
+        };
+        let msg = vec![
+            MsgPart::Text("overran at ".into()),
+            MsgPart::Expr(Expr::Sym("A".into())),
+        ];
+        let a = LinkAssert { cond, message: msg, fatal: true, span: span() };
+        let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
+        assert_eq!(ds.len(), 1);
+        assert_eq!(ds[0].level, Level::Error);
+        // $8004 = 32772 decimal — the REAL post-relaxation address.
+        assert!(ds[0].message.contains("overran at 32772"), "got: {}", ds[0].message);
+    }
+
+    #[test]
+    fn link_assert_collects_all_failures() {
+        let secs = [anchor_section(4)];
+        let fail = |rhs: i64| LinkAssert {
+            cond: Expr::Binary {
+                op: sigil_ir::expr::BinOp::Le,
+                lhs: Box::new(Expr::Sym("A".into())),
+                rhs: Box::new(Expr::Int(rhs)),
+            },
+            message: vec![MsgPart::Text("x".into())],
+            fatal: false,
+            span: span(),
+        };
+        // Two failing asserts ($8004 <= $10 and <= $20 both false) → both reported.
+        let ds = check_link_asserts(&secs, &SymbolTable::new(), &[fail(0x10), fail(0x20)]);
+        assert_eq!(ds.len(), 2);
+    }
+
+    #[test]
+    fn link_assert_unresolved_cond_is_internal_contract_error() {
+        // A cond naming an undefined symbol → Fold::Poison → internal error, not a
+        // silent pass.
+        let secs = [anchor_section(4)];
+        let a = LinkAssert {
+            cond: Expr::Sym("Nope".into()),
+            message: vec![MsgPart::Text("x".into())],
+            fatal: false,
+            span: span(),
+        };
+        let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
+        assert_eq!(ds.len(), 1);
+        assert!(ds[0].message.contains("internal"), "got: {}", ds[0].message);
+    }
 
     fn span() -> Span {
         Span { source: SourceId(0), start: 0, end: 0 }
