@@ -249,8 +249,28 @@ proc p (a0: *u8) {
     let (_module, diags) = lower(src);
     let errs = errors(&diags);
     assert!(
-        errs.iter().any(|e| e.contains("const") && e.contains("comptime fn")),
-        "const in statement position must name the type, got: {errs:?}"
+        errs.iter().any(|e| e.contains("`speed` names a const, not a comptime fn")),
+        "const in statement position must name the kind, got: {errs:?}"
+    );
+}
+
+/// Same for an enum type name — and the article must agree ("an enum", never
+/// "a enum").
+#[test]
+fn bareword_naming_enum_is_specific_error_with_correct_article() {
+    let src = "\
+module m
+enum Ani: u8 { Idle = 0, Shoot = 1 }
+proc p (a0: *u8) {
+    Ani
+    rts
+}
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(
+        errs.iter().any(|e| e.contains("`Ani` names an enum, not a comptime fn")),
+        "enum in statement position must name the kind with a grammatical article, got: {errs:?}"
     );
 }
 
