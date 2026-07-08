@@ -4,15 +4,17 @@
 //! [`CodeItem`] becomes a label / backend instruction / inline data and is
 //! streamed into an [`IrBuilder`]. Single-pass, defer-to-link placement
 //! (D-P4.2): a branch/jmp/jsr target stays a symbolic [`Fixup`] the linker
-//! resolves — no relaxation, no `phys_base` bookkeeping.
+//! resolves; a SIZED branch pins its width, an UNSIZED one defers width to
+//! Core's relaxation ladder (§5.4). No `phys_base` bookkeeping.
 //!
 //! The operand + dispatch construction MIRRORS the AS front-end
 //! (`sigil-frontend-as/src/eval.rs`): mnemonic-string → backend `Mnemonic`,
 //! [`CodeOperand`] → backend `Operand`, then the same routing —
 //! `bra`/`bsr`/`Bcc` → [`M68kBackend::lower_branch`], bare `jmp`/`jsr` to a
 //! symbol → [`M68kBackend::lower_jmp_jsr_sym`] (deferred), everything else →
-//! [`M68kBackend::lower_inst`]. A bare (size-less) branch is the
-//! `[branch.missing-size]` error (D-P4.2 — Aeon pins branch width).
+//! [`M68kBackend::lower_inst`]. An UNSIZED branch relaxes its `.s`/`.w` via Core
+//! (§5.4); under `@as_compat` it stays the `[branch.missing-size]` error (a
+//! faithful AS port pins every branch width).
 //!
 //! 68k is complete; Z80 is wired STRUCTURALLY (dispatch routes to
 //! [`Z80Backend::lower`] / [`Z80Backend::lower_rel`]) but thin — the emp
@@ -37,9 +39,16 @@ use sigil_span::{Diagnostic, Level, Span};
 /// unsupported operand form, encoder error) are appended to `diags`; a failing
 /// item is skipped so one bad line does not abort the fragment. A standalone fn
 /// so a `lower_code` test AND T4's proc lowering can both drive it.
+///
+/// `as_compat` is the enclosing module's `@as_compat` flag (D-P6.3): under it an
+/// UNSIZED `bra`/`bsr`/`Bcc` keeps the `[branch.missing-size]` error (a faithful
+/// AS port pins every branch width); without it an unsized branch relaxes its
+/// `.s`/`.w` via Core (§5.4). It is the ONLY branch-lowering decision this flag
+/// steers — explicit `.s`/`.w` pins and `jbra`/`jbsr` behave identically either way.
 pub fn lower_code_buf(
     code: &CodeBuf,
     cpu: Cpu,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -68,7 +77,9 @@ pub fn lower_code_buf(
                     continue;
                 }
                 match cpu {
-                    Cpu::M68000 => lower_m68k_instr(mnemonic, *size, ops, *span, builder, diags),
+                    Cpu::M68000 => {
+                        lower_m68k_instr(mnemonic, *size, ops, *span, as_compat, builder, diags)
+                    }
                     Cpu::Z80 => lower_z80_instr(mnemonic, *size, ops, *span, builder, diags),
                 }
             }
@@ -85,6 +96,7 @@ fn lower_m68k_instr(
     size: Option<Width>,
     ops: &[CodeOperand],
     span: Span,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -95,7 +107,7 @@ fn lower_m68k_instr(
 
     // Control transfer whose target is resolved by the linker (D-P4.2).
     if matches!(m, M68kMnemonic::Bra | M68kMnemonic::Bsr | M68kMnemonic::Bcc(_)) {
-        lower_m68k_branch(m, size, ops, span, builder, diags);
+        lower_m68k_branch(m, size, ops, span, as_compat, builder, diags);
         return;
     }
     if let M68kMnemonic::Dbcc(cond) = m {
@@ -166,17 +178,33 @@ fn lower_m68k_instr(
     }
 }
 
-/// `bra`/`bsr`/`Bcc <target>`: Aeon pins branch width (`.s`/`.w`, no relaxation),
-/// so a missing size is the `[branch.missing-size]` error (D-P4.2). The single
-/// symbolic target becomes a PC-relative fixup via [`M68kBackend::lower_branch`].
+/// `bra`/`bsr`/`Bcc <target>` (§5.4). Three cases, by size + `@as_compat`:
+///
+/// - **Explicit `.s`/`.w`** — a PIN, everywhere and unchanged: the single
+///   symbolic target becomes a PC-relative fixup via [`M68kBackend::lower_branch`]
+///   (byte-identical to before this task, `@as_compat` or not).
+/// - **UNSIZED, non-`@as_compat`** — relax over the two-rung `.s`→`.w` ladder Core
+///   width-selects ([`M68kBackend::lower_unsized_branch_candidates`]). There is no
+///   far form: out of ±32K reach is Core's convergence error naming the distance
+///   (an unsized `bra`/`bsr` that overshoots is steered toward `jbra`/`jbsr`).
+/// - **UNSIZED, `@as_compat`** — the `[branch.missing-size]` error, VERBATIM: a
+///   faithful AS port pins every branch width, so an unsized branch is a defect,
+///   not a relaxation request.
+///
+/// The single label target is a hygiene-renamed [`CodeOperand::Sym`] — same
+/// contract as the sized forms and `jbra`/`jbsr`.
 fn lower_m68k_branch(
     m: M68kMnemonic,
     size: Option<Width>,
     ops: &[CodeOperand],
     span: Span,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
+    // Resolve the size FIRST so a bad width suffix / missing-size decision is made
+    // before we touch operands (an unsized branch under `@as_compat` must error
+    // with `[branch.missing-size]` regardless of the operand shape).
     let size = match size {
         Some(Width::S) => M68kSize::S,
         Some(Width::W) => M68kSize::W,
@@ -184,13 +212,22 @@ fn lower_m68k_branch(
             push_err(diags, span, "branch size suffix must be `.s` or `.w`");
             return;
         }
-        None => {
+        None if as_compat => {
+            // A faithful AS port pins branch widths (D-P6.3) — keep the pre-§5.4
+            // error VERBATIM (same tag, same message) so ports stay unchanged.
             push_err(
                 diags,
                 span,
                 "[branch.missing-size] branch needs an explicit size suffix (.s or .w) — \
                  Aeon pins branch width, no relaxation",
             );
+            return;
+        }
+        None => {
+            // §5.4: an unpinned branch is sized by Core's relaxation. Build the
+            // `.s`→`.w` ladder and let `resolve_layout` pick the reaching rung
+            // (out-of-reach becomes Core's convergence error, not a wider form).
+            lower_unsized_branch(m, ops, span, builder, diags);
             return;
         }
     };
@@ -205,6 +242,39 @@ fn lower_m68k_branch(
         Ok(df) => emit_data_frag(builder, df),
         Err(e) => push_err(diags, span, e.message),
     }
+}
+
+/// An unsized `bra`/`bsr`/`Bcc` in a non-`@as_compat` module (§5.4): emit ONE
+/// [`Fragment::RelaxLadder`] of two candidates (`.s`→`.w`) the linker
+/// width-selects. Mirrors [`lower_jbra_jbsr`]'s ladder-emit shape — build the
+/// candidates in the BACKEND, advance by the smallest (baseline `.s` = 2 bytes),
+/// and let `resolve_layout` grow the fragment as the resolved target demands.
+fn lower_unsized_branch(
+    m: M68kMnemonic,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let target = match ops {
+        [CodeOperand::Sym(name)] => Expr::Sym(name.clone()),
+        _ => {
+            push_err(diags, span, "branch needs a single label target");
+            return;
+        }
+    };
+    let candidates = match M68kBackend.lower_unsized_branch_candidates(m, target.clone(), span) {
+        Ok(c) => c,
+        Err(e) => {
+            push_err(diags, span, e.message);
+            return;
+        }
+    };
+    // Baseline advance = the smallest (first) candidate's length (`.s` = 2),
+    // mirroring `jbra`/`RelaxAbsSym`; resolve_layout grows the fragment on demand.
+    let advance = candidates[0].bytes.len() as u32;
+    let frag = Fragment::RelaxLadder { candidates, target, span };
+    builder.emit_fragment(frag, advance);
 }
 
 /// `jbra L` / `jbsr L`: emp-only auto-reaching branches (D2.18). Unlike sized

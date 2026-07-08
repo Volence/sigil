@@ -180,6 +180,52 @@ impl M68kBackend {
         ]
     }
 
+    /// Build the TWO ordered candidate encodings for an UNSIZED `bra`/`bsr`/`Bcc`
+    /// (§5.4) — the `.s`→`.w` relaxation ladder Core width-selects. Unlike
+    /// `jbra`/`jbsr`, an unsized conditional has NO far form (a `jmp`/`jsr`
+    /// fallback is unconditional-only), so the ladder stops at `.w`: out of ±32K
+    /// reach is Core's convergence error, not a wider rung.
+    ///
+    /// | rung | form   | bytes                | fixup                   |
+    /// |------|--------|----------------------|-------------------------|
+    /// | 0    | `.s`   | `<op> 00`            | `PcRel8` @ 1 (2 bytes)  |
+    /// | 1    | `.w`   | `<op> 00 00 00`      | `PcRelDisp16` @ 2 (4 b) |
+    ///
+    /// The opcode is DERIVED from [`lower_branch`](Self::lower_branch) at each size
+    /// — the SAME encoder path the sized `.s`/`.w` pins take — so the `cc` table is
+    /// not duplicated here and the two rungs are byte-identical to the pinned forms
+    /// the linker would emit for `<mnemonic>.s` / `<mnemonic>.w`. `mnemonic` is the
+    /// already-classified `Bra`/`Bsr`/`Bcc(cond)`; a non-branch mnemonic is a
+    /// caller bug and surfaces as the `lower_branch` size-illegal error.
+    pub fn lower_unsized_branch_candidates(
+        &self,
+        mnemonic: Mnemonic,
+        target: Expr,
+        span: Span,
+    ) -> Result<Vec<RelaxCandidate>, LowerError> {
+        // Reuse the sized encoders so the ladder's bytes equal the `.s`/`.w` pins
+        // exactly (opcode word derived once, in one place — no cc-table copy).
+        let short = self.lower_branch(mnemonic, Size::S, target.clone(), span)?;
+        let word = self.lower_branch(mnemonic, Size::W, target, span)?;
+        // `lower_branch` emits EXACTLY one PC-relative fixup for `.s`/`.w`, so
+        // `next()` is total; a missing fixup would be a `lower_branch` bug, not a
+        // caller error — surface it as an internal LowerError rather than panic.
+        let short_fx = short
+            .fixups
+            .into_iter()
+            .next()
+            .ok_or_else(|| LowerError { message: "internal: bra.s emitted no fixup".into() })?;
+        let word_fx = word
+            .fixups
+            .into_iter()
+            .next()
+            .ok_or_else(|| LowerError { message: "internal: bra.w emitted no fixup".into() })?;
+        Ok(vec![
+            RelaxCandidate { bytes: short.bytes, fixup: short_fx },
+            RelaxCandidate { bytes: word.bytes, fixup: word_fx },
+        ])
+    }
+
     /// Lower a symbolic `dbcc`/`dbra` (`DBcc Dn,disp`) to the opcode word +
     /// placeholder displacement + a PC-relative fixup. `dbcc` is always word-sized
     /// (no size suffix — unlike `bra`/`Bcc` there is no `.s` form).
@@ -400,6 +446,40 @@ mod tests {
         assert_eq!(c[1].bytes, vec![0x61, 0x00, 0x00, 0x00]);
         assert_eq!(c[2].bytes, vec![0x4E, 0xB8, 0x00, 0x00]);
         assert_eq!(c[3].bytes, vec![0x4E, 0xB9, 0x00, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn unsized_branch_candidates_are_two_pcrel_rungs() {
+        // An unsized `bra` relaxes over exactly two rungs: bra.s (PcRel8 @1, 2B)
+        // then bra.w (PcRelDisp16 @2, 4B). No far form (conditional/uniform §5.4).
+        let c = M68kBackend
+            .lower_unsized_branch_candidates(Mnemonic::Bra, Expr::Sym("L".into()), span())
+            .unwrap();
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].bytes, vec![0x60, 0x00]);
+        assert_eq!(c[0].fixup.kind, FixupKind::PcRel8);
+        assert_eq!(c[0].fixup.offset, 1);
+        assert_eq!(c[1].bytes, vec![0x60, 0x00, 0x00, 0x00]);
+        assert_eq!(c[1].fixup.kind, FixupKind::PcRelDisp16);
+        assert_eq!(c[1].fixup.offset, 2);
+        // Non-decreasing lengths (the RelaxLadder construction contract).
+        assert!(c[0].bytes.len() <= c[1].bytes.len());
+    }
+
+    #[test]
+    fn unsized_branch_candidates_use_condition_opcode() {
+        // `bne` (cc=6) → opcode high byte 0x66, derived from the SAME cc table the
+        // sized `bne.s`/`bne.w` pins use (via lower_branch) — not duplicated.
+        let c = M68kBackend
+            .lower_unsized_branch_candidates(Mnemonic::Bcc(Cond::Ne), Expr::Sym("L".into()), span())
+            .unwrap();
+        assert_eq!(&c[0].bytes[..1], &[0x66]);
+        assert_eq!(&c[1].bytes[..1], &[0x66]);
+        // `bhi` (cc=2) → 0x62.
+        let h = M68kBackend
+            .lower_unsized_branch_candidates(Mnemonic::Bcc(Cond::Hi), Expr::Sym("L".into()), span())
+            .unwrap();
+        assert_eq!(&h[0].bytes[..1], &[0x62]);
     }
 
     #[test]

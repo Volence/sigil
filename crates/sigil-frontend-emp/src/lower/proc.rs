@@ -83,7 +83,7 @@ pub(super) fn lower_proc(
     *asm_counter = next_counter;
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
-    super::lower_code_buf(&buf, ctx.cpu, builder, diags);
+    super::lower_code_buf(&buf, ctx.cpu, ctx.as_compat, builder, diags);
 
     // 2/3. Fallthrough contract. A declared `falls_into` demands adjacency (a
     // hard ERROR when broken — never silenced); an undeclared but reachable
