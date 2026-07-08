@@ -1,0 +1,302 @@
+// ===========================================================================
+// game/prelude.emp — the game prelude (S2-D3), one module carries everything
+// ===========================================================================
+// Spec 2 §3.4: a `--prelude <module.id>` module's `pub` names auto-import into
+// every module of the build — no `use` lines needed for the engine's shared
+// vocabulary. This file IS that vocabulary for the pitcher_plant tranche
+// (D-PP.6): the per-object record shape, the object-definition struct, the
+// small newtype family objects compose from, the two enums badniks reach for
+// constantly (hit response, sprite facing), a couple of honest engine-stub
+// procs/data so cross-module references have something real to point at, and
+// the comptime helpers that turn "set this SST field" / "spawn this def" into
+// one word instead of hand-rolled displacement arithmetic.
+//
+// Everything here is REAL — it lowers and links — but the CONTENT (exact
+// offsets, mock art/mapping bytes, stub proc bodies) is illustrative. Where an
+// engine convention had to be invented for the exhibit, the comment says so.
+// ===========================================================================
+
+module prelude
+
+
+// ===========================================================================
+// Sst — the Sprite Status Table, one per live object, $50 bytes
+// ===========================================================================
+// DENSE layout per sst_overlay.emp's teaching pattern: `@ offset` ASSERTS the
+// packed position of a field, and every byte of the record between fields we
+// care about is spelled out as an explicit `_pad` filler — there are no
+// implicit gaps. The offsets below are the engine's CANONICAL SST shape
+// (id/x_pos/y_pos/x_vel/y_vel land where sonic_hack's real object RAM puts
+// them); `anim` and `routine` are placed in the remaining header space at
+// offsets this exhibit picks (documented at each field) since the legacy
+// engine's exact names for those two bytes aren't load-bearing here — only
+// that badniks have somewhere real to keep "current animation id" and
+// "current state routine" outside of `sst_custom`.
+pub struct Sst (size: $50) {
+    id: u16,                     // object type id                — offset 0
+    _pad0: [u8; 14] @ $2,        // unused header fields, elided from this exhibit
+
+    x_pos: u16 @ $10,            // world X position               — offset $10
+    _pad1: [u8; 2] @ $12,        // (low word / subpixel, elided)
+
+    y_pos: u16 @ $14,            // world Y position               — offset $14
+    _pad2: [u8; 2] @ $16,        // (low word / subpixel, elided)
+
+    x_vel: i16 @ $18,            // X velocity, 8.8 fixed point     — offset $18
+    y_vel: i16 @ $1A,            // Y velocity, 8.8 fixed point     — offset $1A
+
+    anim: u8 @ $1C,              // current animation id (this exhibit's choice
+                                  // of home for it — offset $1C)
+    _pad3: [u8; 3] @ $1D,        // (animation-script cursor/timer, elided)
+
+    routine: u16 @ $20,          // current state-routine id/slot (this
+                                  // exhibit's choice of home — offset $20)
+    _pad4: [u8; 12] @ $22,       // (remaining header fields, elided)
+
+    sst_custom: [u8; 34] @ $2E,  // per-object scratch window       — offset $2E
+}
+
+
+// ===========================================================================
+// The small newtype family objects compose from
+// ===========================================================================
+// i16 pairs per the newtype-candidates taste (no refinement types tonight —
+// that's ledger material, not this tranche).
+
+pub struct ArtTile {
+    tile: u16,   // VRAM tile index (see `vram_art`-style packing in sonic_hack)
+    pal:  u8,    // palette line 0-3
+    pri:  u8,    // priority bit (0 = low, 1 = high)
+}
+
+pub struct Size {
+    w: u8,       // hitbox width, pixels
+    h: u8,       // hitbox height, pixels
+}
+
+pub struct Vel {
+    x: i16,      // X velocity, 8.8 fixed point
+    y: i16,      // Y velocity, 8.8 fixed point
+}
+
+pub struct Vec {
+    x: i16,      // generic X component (spawn offsets, etc.)
+    y: i16,      // generic Y component
+}
+
+
+// ===========================================================================
+// ObjDef — what a level's object list (or a `spawn`) instantiates
+// ===========================================================================
+// EVERY field below is required at every struct-literal use site — struct
+// literals have no defaults (Plan 7 ledger item), so callers must always give
+// vel/frame explicit values even for objects that don't animate or move at
+// spawn (the pitcher_plant exhibit's `Def` does exactly this).
+// Field order is chosen (not just "declaration order") to keep the 4-byte
+// `vel` field EVEN-offset in this dense/packed layout: `code`(4)+`map`(4)+
+// `art`(4)+`col`(1)+`zpri`(1)+`size`(2) = 16 bytes before `vel`, so `vel`
+// lands at offset 16 (even) instead of forcing a `[layout.odd-field]`
+// warning the way `anim`/`frame` (both single bytes) would if placed before
+// a 2-or-4-byte field. `anim`/`frame` go last, where their oddness costs
+// nothing (nothing wider follows them).
+pub struct ObjDef {
+    code: *u8,          // entry proc — where a spawned instance starts running
+    map:  *u8,          // sprite mapping table for this object
+    art:  ArtTile,      // VRAM destination + palette/priority
+    col:  Collision,    // hit-response class
+    zpri: u8,           // Z-order priority within the object layer
+    size: Size,         // hitbox dimensions
+    vel:  Vel,          // starting velocity
+    anim: u8,           // starting animation id
+    frame: u8,          // starting animation frame
+}
+
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/// Hit-response class: what happens to the player (or another object) on
+/// contact. `Hurt` and `Projectile` are the two the pitcher_plant tranche
+/// exercises; the others round out the family so the enum reads as a real
+/// engine vocabulary rather than a two-member stub.
+pub enum Collision: u8 {
+    None       = 0,   // no collision response at all
+    Solid      = 1,   // pushes the player out (platforms, walls)
+    Hurt       = 2,   // damages the player on touch (badniks' bodies)
+    Item       = 3,   // collected on touch (rings, monitors)
+    Projectile = 4,   // damages on touch, despawns itself (seeds, spines)
+}
+
+/// Sprite facing / mirroring. `inherit` means "use the object's own
+/// direction," the common case for a spawned sub-object that should face the
+/// same way as its spawner (a pitcher_plant's seed inherits the plant's
+/// facing rather than always firing one direction).
+pub enum Flip: u8 {
+    inherit = $FF,
+    right   = 0,
+    left    = 1,
+}
+
+pub const inherit: Flip = Flip.inherit
+
+
+// ===========================================================================
+// Art / mapping stubs
+// ===========================================================================
+
+/// VRAM tile index for the pitcher_plant's art (mock — a plausible slot in
+/// Zone Pool B's badnik range; not derived from a real VRAM_Layout.asm).
+pub const VRAM_PITCHER_PLANT: u16 = $500
+
+/// Sprite mapping table (mock bytes — a tiny plausible placeholder, not a
+/// real decompressed mappings table). Just needs to be a real, addressable
+/// data item for `ObjDef.map` to point at.
+pub data Map_PitcherPlant: [u8; 4] = [1, 0, 0, 0]
+
+
+// ===========================================================================
+// Engine stub procs — minimal, real, distinctively-first-byte bodies
+// ===========================================================================
+// Each stub's first instruction is chosen to be unlike the others so a byte
+// dump unambiguously shows which stub a call landed in.
+
+/// Draws the current object's sprite from its SST state. Stub body: a real
+/// `tst.b` probe (stands in for "is this object visible") then `rts`.
+pub proc Draw_Sprite () {
+    tst.b   d0
+    rts
+}
+
+/// Applies velocity to position for the current object. Stub body opens with
+/// `clr.w d1` (stands in for "clear the fractional-carry scratch").
+pub proc ObjectMove () {
+    clr.w   d1
+    rts
+}
+
+/// Allocates and initializes a new object from an ObjDef. Stub body opens
+/// with `moveq #0, d2` (stands in for "start scanning the free-slot list").
+pub proc SpawnObject () {
+    moveq   #0, d2
+    rts
+}
+
+/// Deletes the current object if it has fallen below the level's kill plane.
+/// Stub body opens with `tst.w d3` (stands in for "compare Y against the kill
+/// plane").
+pub proc Despawn_Check () {
+    tst.w   d3
+    rts
+}
+
+/// The mock player record — gives `Item.field` (D-PP.5) a typed link symbol
+/// to read (`Player_1.x_pos`) without needing #7's region/`vars` allocation
+/// for a real player object. Every field zeroed except `id`; pads spelled out
+/// as zero arrays per the dense-layout convention. The explicit `: Sst`
+/// annotation (not just struct-literal inference) is required for the
+/// cross-module type-only stub the resolver injects into consumer modules —
+/// `pub_struct_data_name` only recognizes an explicit single-segment `Named`
+/// type annotation, which is what lets `Player_1.x_pos` field-address
+/// operands resolve from OTHER modules (pitcher_plant.emp's `wait` proc).
+pub data Player_1: Sst = Sst{
+    id:         1,
+    _pad0:      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    x_pos:      0,
+    _pad1:      [0, 0],
+    y_pos:      0,
+    _pad2:      [0, 0],
+    x_vel:      0,
+    y_vel:      0,
+    anim:       0,
+    _pad3:      [0, 0, 0],
+    routine:    0,
+    _pad4:      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    sst_custom: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+}
+
+
+// ===========================================================================
+// Comptime helpers — the AS-macro muscle-memory directives badniks reach for
+// ===========================================================================
+
+/// Sets the current object's animation id. Qualified `Sst.anim(a0)` form —
+/// legal on any address register per sst_overlay.emp regardless of whether
+/// the register carries a `*Sst` param type.
+pub comptime fn anim(id: u8) -> Code {
+    return asm {
+        move.b #{id}, Sst.anim(a0)
+    }
+}
+
+/// Sets the current object's state routine. `Sst.routine` (see above) is a
+/// 16-bit field this mock engine treats as "the low word of the routine's
+/// address" — enough to be a real, derivable store without needing a real
+/// dispatch table. `pea {p}` pushes the routine's address (the `Label` param
+/// splice) onto the stack, and the low word is popped straight into the
+/// field — a register-free way to move a label's address into memory, so
+/// this helper is safe to call from procs with a narrow `clobbers(...)` set
+/// (only `a7`/the stack pointer moves, which the clobber lint doesn't track).
+pub comptime fn routine(p: Label) -> Code {
+    return asm {
+        pea     {p}
+        move.w  (a7)+, Sst.routine(a0)
+    }
+}
+
+/// Absolute-value-toward-facing: the classic idiom for turning a signed
+/// distance into an unsigned one. Hygienic local label — every instantiation
+/// gets its own fresh `.done`.
+pub comptime fn facing_abs(r: Reg) -> Code {
+    return asm {
+        tst.w   {r}
+        bpl.s   .done
+        neg.w   {r}
+    .done:
+    }
+}
+
+/// Deletes the current object once it falls below the level's kill plane —
+/// zero-arg bare directive over the engine stub.
+pub comptime fn despawn_below_level() -> Code {
+    return asm {
+        jbsr Despawn_Check
+    }
+}
+
+/// Spawns `def` at an offset from the current object, with the given facing.
+/// `flip` is an ENUM value, and `#{flip}` would splice into an immediate
+/// position — which the immediate-operand evaluator rejects ("immediate must
+/// be an integer, got enum"): enums are not folded to bare ints at splice
+/// time. So the flip byte is chosen COMPTIME instead of spliced: branch on
+/// `flip == Flip.inherit` and select between two template variants. The
+/// `inherit` path (the exhibit's only call shape: `flip: inherit`) reads the
+/// sign of the spawner's own `x_vel` as its facing stand-in (`Sst` doesn't
+/// carry a dedicated facing field in this cut-down shape) — a plausible,
+/// honest engine idiom. The non-inherit path writes a literal facing byte;
+/// picking `Flip.right`/`Flip.left` apart further would need the same
+/// enum-vs-immediate workaround one level deeper; that's left as a "the real
+/// engine would keep branching here" comment rather than built out, since no
+/// exhibit call site exercises it.
+pub comptime fn spawn(def: Label, offset: Vec, flip: Flip) -> Code {
+    if flip == Flip.inherit {
+        return asm {
+            lea     {def}, a1
+            move.w  #{offset.x}, d1
+            move.w  #{offset.y}, d2
+            move.w  x_vel(a0), d3       // inherit: facing follows our own x_vel sign
+            jbsr    SpawnObject
+        }
+    } else {
+        // Not exercised by this exhibit's call sites (all pass `flip: inherit`).
+        // A real engine would branch further on `flip == Flip.right` /
+        // `Flip.left` here, each arm using its own literal `moveq` immediate.
+        return asm {
+            lea     {def}, a1
+            move.w  #{offset.x}, d1
+            move.w  #{offset.y}, d2
+            moveq   #0, d3              // literal facing placeholder
+            jbsr    SpawnObject
+        }
+    }
+}

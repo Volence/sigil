@@ -46,6 +46,8 @@ pub data Def = ObjDef{
     zpri:  3,
     size:  Size{ w: 16, h: 28 },        // hitbox: plant body, not the stem
     anim:  Ani.Idle,
+    vel:   Vel{ x: 0, y: 0 },           // stationary at spawn (struct literals need every field)
+    frame: 0,                           // starting frame; Ani.Idle's script drives it from here
 }
 
 /// The projectile — spawned by `shoot`, never by a level.
