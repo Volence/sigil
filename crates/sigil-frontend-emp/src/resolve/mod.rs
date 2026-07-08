@@ -198,6 +198,29 @@ pub fn build_program(
         .and_then(|pid| manifest.by_id.get(pid))
         .map(|&i| &manifest.modules[i]);
 
+    // Struct-declaration diagnostics (size/@offset mismatch, odd-field warning —
+    // whatever `layout_of_struct`'s always-on checks produce) already dedup
+    // WITHIN one `lower_module` call (`dedup_overlay_pass_diags`, keyed off the
+    // module's own overlay-forced pass), but that memo is per-call: a `pub vars`
+    // overlay forces its base struct's layout in the DEFINING module, and a
+    // separate CONSUMER module forces the SAME struct's layout again (field
+    // access / sizeof) via its own, independent `lower_module` call — a second
+    // `Evaluator` the defining module's dedup never sees. Both copies carry the
+    // struct's home-file span (declaration checks always anchor there, never at
+    // the forcing site), so they are EXACT duplicates once concatenated here.
+    // `seen_across_modules` tracks every `(level, message, primary span)` triple
+    // already contributed by an EARLIER module in this loop; a later module's
+    // `ldiags` that repeats one is dropped before it ever reaches `diags`. This
+    // must not touch duplicates that arise WITHIN a single module (two procs in
+    // the same file each forcing the same unrelated-to-any-overlay struct) —
+    // that pre-existing intra-module duplication is pinned by overlay.rs tests
+    // and stays exactly as-is, because `ldiags` is filtered only against PRIOR
+    // modules' contributions, never against itself. A `Vec` + linear `contains`
+    // (not a `HashSet`) — `Diagnostic` derives `Eq` but not `Hash`, and these
+    // lists are per-compile diagnostic counts (tiny); mirrors
+    // `dedup_overlay_pass_diags`'s own O(n·m) shape in `lower/mod.rs`.
+    let mut seen_across_modules: Vec<Diagnostic> = Vec::new();
+
     // 4. Per-module: resolve names, lower, report unresolved, rename, concat.
     for &i in &reachable {
         let pm = &manifest.modules[i];
@@ -230,6 +253,17 @@ pub fn build_program(
             };
             lower_module(&synthetic, opts)
         };
+        // Drop only what an EARLIER module already contributed (`seen_across_modules`
+        // is empty on this module's first appearance in the loop, so a module's
+        // OWN first-time diagnostics — including intra-module duplicates among
+        // themselves — always survive this filter untouched); then record this
+        // module's (post-filter) diagnostics so a LATER module's repeat of them
+        // collapses too. Keeps the first occurrence's position (this module's, or
+        // whichever earlier module first produced it) per the diagnostics-order
+        // contract.
+        let ldiags: Vec<Diagnostic> =
+            ldiags.into_iter().filter(|d| !seen_across_modules.contains(d)).collect();
+        seen_across_modules.extend(ldiags.iter().cloned());
         diags.extend(ldiags);
 
         report_unresolved(pm, &module, &env, &mut diags);

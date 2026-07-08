@@ -1756,3 +1756,112 @@ fn definition_site_ambiguous_bare_window_reports_once_at_lib() {
         "the consumer's access must error loudly, stderr: {stderr}"
     );
 }
+
+/// Cross-module counterpart of the overlay-pass dedup above: `dedup_overlay_pass_diags`
+/// (crates/sigil-frontend-emp/src/lower/mod.rs) only drops duplicates arising
+/// WITHIN one `lower_module` call. A `pub vars` overlay forces its base struct's
+/// declaration checks (size/offset/odd-field) in the DEFINING module (always-on
+/// overlay validation), and a separate CONSUMER module forces the same struct's
+/// layout again via ordinary field access — `build_program` (crates/sigil-cli's
+/// `sigil_frontend_emp::resolve::build_program`) lowers each reachable module in
+/// its own `lower_module` call, so the per-module dedup never sees the second
+/// copy. The size-mismatch block (headline + per-field diff) must surface
+/// EXACTLY ONCE across the whole compile, anchored in the struct's home module.
+#[test]
+fn struct_size_mismatch_reports_once_across_modules() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib/types.emp",
+        "module lib.types\n\
+         pub struct Sst (size: 99) { id: u16, x_pos: u16, sst_custom: [u8; 8] }\n\
+         pub vars PlantV: sst_custom { timer: u8 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.types.{Sst}\n\
+         proc tick (a0: *Sst) {\n    move.w x_pos(a0), d0\n    rts\n}\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            root.join("out.bin").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a declared-size mismatch must fail the build, stderr: {stderr}");
+    let headline_count = stderr.matches("declared size 99 but fields total").count();
+    assert_eq!(
+        headline_count,
+        1,
+        "the struct-size-mismatch block must surface exactly once across the whole \
+         compile (defining module + consumer both force the layout), stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("types.emp"),
+        "the mismatch is the struct's own declaration — anchor in lib/types.emp, got: {stderr}"
+    );
+}
+
+/// Same family, different diagnostic: the `[layout.odd-field]` WARNING an
+/// overlay's own field layout produces. A clean-resolving overlay's consumer
+/// hits the "injected-overlay fast path" (`overlay_layout_from_window` in
+/// layout.rs), which re-runs ONLY the per-field layout (capacity + odd-field) —
+/// not window resolution — on every consumer that forces it, each in its own
+/// `lower_module` call. The warning's span is the overlay field's OWN span in the
+/// defining file (`ast::Item::Vars` clones preserve the original `Span`s — the
+/// injection is a plain clone, never a re-parse), so it is byte-for-byte the same
+/// diagnostic in the defining module's always-on pass and in every consumer that
+/// re-forces it — exactly the shape `struct_size_mismatch_reports_once_across_modules`
+/// pins for declarations, so the SAME cross-module keying in `build_program`
+/// collapses this one too, with no dedicated code.
+#[test]
+fn overlay_odd_field_warning_reports_once_across_modules() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\n\
+         pub struct Sst { id: u8, sst_custom: [u8; 8] }\n\
+         pub vars PlantV: sst_custom { timer: u16 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{PlantV}\n\
+         proc tick (a0: *u8) {\n    tst.w PlantV.timer(a0)\n    rts\n}\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            root.join("out.bin").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "an odd-field WARNING must not fail the build, stderr: {stderr}");
+    let warning_count = stderr.matches("[layout.odd-field]").count();
+    assert_eq!(
+        warning_count,
+        1,
+        "the odd-field warning must surface exactly once across the whole compile \
+         (defining module's always-on pass + consumer's injected-overlay fast path \
+         both force it), stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("lib.emp"),
+        "the warning is the overlay's own field declaration — anchor in lib.emp, got: {stderr}"
+    );
+}
