@@ -312,6 +312,13 @@ impl<'a> Evaluator<'a> {
     /// `unknown name`. A DEPTH counter (not a bool) so nesting — a call-arg whose
     /// value is a struct literal whose field is a bareword — stays enabled
     /// throughout and restores correctly.
+    ///
+    /// The counter therefore PROPAGATES into every expression nested under a
+    /// wrapped position: an array literal INSIDE a struct field
+    /// (`E{ table: [a, b] }`) resolves its elements as labels, while a TOP-LEVEL
+    /// data-item array initializer (`data D: [*u8; 2] = [a, b]`) is never
+    /// wrapped and keeps the loud `unknown name` — pinned by
+    /// `tests/label_values.rs` (U4 stacks on this exact boundary).
     pub(super) fn in_label_ctx<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
         self.label_ctx += 1;
         let out = body(self);

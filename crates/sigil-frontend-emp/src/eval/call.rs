@@ -364,7 +364,7 @@ impl<'a> Evaluator<'a> {
     /// value/param pairings stay loosely typed at bind time (as before); this
     /// narrowly guards the two comptime-only classes the new arg paths
     /// introduced. An already-poisoned argument is skipped (its error is reported).
-    fn check_reg_arg_type(&mut self, v: &Value, pty: &ast::Type, span: Span) {
+    fn check_arg_class(&mut self, v: &Value, pty: &ast::Type, span: Span) {
         if matches!(v, Value::Poison) {
             return;
         }
@@ -440,8 +440,8 @@ impl<'a> Evaluator<'a> {
             // machine register becomes a `Value::Reg` (D-PP.2: registers win over
             // ordinary names in call-argument position, mirroring operand
             // position) in BOTH the paren and bare spellings — they share this
-            // binder. The register-vs-param type check runs once the slot index
-            // is known.
+            // binder. The comptime-class check (`check_arg_class`: Reg/Label vs
+            // param type) runs once the slot index is known.
             let v = self.eval_call_arg(&arg.value, env);
             match &arg.name {
                 None => {
@@ -461,7 +461,7 @@ impl<'a> Evaluator<'a> {
                         );
                         pos += 1;
                     } else {
-                        self.check_reg_arg_type(&v, &decl.params[pos].1, arg.span);
+                        self.check_arg_class(&v, &decl.params[pos].1, arg.span);
                         slots[pos] = Some(v);
                         pos += 1;
                     }
@@ -479,7 +479,7 @@ impl<'a> Evaluator<'a> {
                                     format!("parameter `{pname}` given more than once"),
                                 );
                             } else {
-                                self.check_reg_arg_type(&v, &decl.params[idx].1, arg.span);
+                                self.check_arg_class(&v, &decl.params[idx].1, arg.span);
                                 slots[idx] = Some(v);
                             }
                         }

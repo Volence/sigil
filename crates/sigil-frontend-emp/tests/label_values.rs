@@ -164,6 +164,52 @@ fn const_shadows_label_value() {
 }
 
 // =============================================================================
+// The `label_ctx` propagation boundary (U4 stacks on this exact line)
+// =============================================================================
+
+/// The label context PROPAGATES into expressions nested under a wrapped
+/// position: an array literal INSIDE a struct field resolves its elements as
+/// labels — `E{ table: [a, b] }` == `E{ table: ["a", "b"] }` byte-for-byte.
+const NESTED_ARRAY_IN_FIELD: &str = "\
+module m
+struct E { table: [*u8; 2] }
+data Bare = E{ table: [x, y] }
+data Str  = E{ table: [\"x\", \"y\"] }
+proc x (a0: *u8) { rts }
+proc y (a0: *u8) { rts }
+";
+
+#[test]
+fn nested_array_elements_in_struct_field_resolve_as_labels() {
+    let (module, diags) = lower(NESTED_ARRAY_IN_FIELD);
+    assert!(errors(&diags).is_empty(), "unexpected errors: {:?}", errors(&diags));
+    // Two 4-byte absolute pointers per item; bareword and string elements agree.
+    let bare = label_bytes(&module, "text", "Bare", 8);
+    let strf = label_bytes(&module, "text", "Str", 8);
+    assert_eq!(bare, strf, "nested array elements must resolve as labels, matching the string form");
+}
+
+/// The boundary's other side: a TOP-LEVEL data-item array initializer is never
+/// wrapped in the label context, so its bare elements keep the loud
+/// `unknown name` error (they do NOT silently become labels).
+#[test]
+fn top_level_data_array_bare_elements_keep_unknown_name() {
+    let src = "\
+module m
+data D: [*u8; 2] = [x, y]
+proc x (a0: *u8) { rts }
+proc y (a0: *u8) { rts }
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(
+        errs.iter().any(|e| e.contains("unknown name `x`"))
+            && errs.iter().any(|e| e.contains("unknown name `y`")),
+        "top-level data array bare elements must keep the loud unknown-name error, got: {errs:?}"
+    );
+}
+
+// =============================================================================
 // Errors — the scope guard (what label values are NOT)
 // =============================================================================
 
