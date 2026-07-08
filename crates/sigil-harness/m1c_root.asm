@@ -6,19 +6,27 @@
 ;
 ; External CODE labels referenced by the vector table (EntryPoint, BusError, …)
 ; are seeded as `-D` defines / link stubs from s4.lst — see m1c_vector_table.rs.
-; SYSTEM_STACK is NOT stubbed: it is a real equate defined in constants.asm.
+; SYSTEM_STACK is NOT stubbed: it is a real equate defined in engine/constants.asm.
+; Include paths track the engine/game split (E1-E7): the front-matter now lives
+; under engine/ + games/sonic4/config/; the vector table itself matches
+; engine/system/vectors.asm verbatim.
     cpu 68000
     padding off
     supmode on
 
 PAD_TO_POWER_OF_TWO     = 1
 
-    include "constants.asm"
-    include "sound_constants.asm"
-    include "structs.asm"
-    include "macros.asm"
+    include "engine/constants.asm"
+    include "engine/sound_constants.asm"
+    include "engine/structs.asm"
+    include "engine/macros.asm"
     include "engine/parallax_macros.inc"
-    include "ram.asm"
+    include "engine/sound/sound_bank.inc"
+    include "games/sonic4/config/constants.asm"
+    include "games/sonic4/config/sound_ids.asm"
+    include "games/sonic4/config/game.asm"
+    include "engine/ram.asm"
+    include "games/sonic4/config/ram.asm"
     include "engine/debug/debugger.asm"
 
     org 0

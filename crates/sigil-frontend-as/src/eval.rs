@@ -1903,11 +1903,23 @@ impl Asm {
     }
 
     fn directive_equate(&mut self, name: &str, rest: &[Token], span: Span) {
+        // An equate is not a label: qualify a local `.foo` against the current
+        // scope (so `ld a,.foo` resolves) but do NOT open a scope. `qualify`
+        // leaves non-dotted global names unchanged.
+        let q = qualify(name, self.scope.as_deref());
+        // asl: `equ` may bind a STRING just as `set` does (`GAME_CONSOLE equ
+        // "SEGA GENESIS    "`, then read back via `strlen(GAME_CONSOLE)` in the
+        // engine's gameHeader width asserts). Detect the string shape via
+        // `eval_str` (literal / substr / lowstring / string-symbol copy) BEFORE
+        // the numeric fold and store it front-end-only (§7.4) — mirrors
+        // `directive_set`. Without this a string `equ` was silently dropped
+        // (neither map written), so `strlen()`/`substr()` on it could not
+        // resolve. The int XOR string invariant per pass still holds.
+        if let Some(s) = self.eval_str(rest) {
+            self.str_env.insert(q, s);
+            return;
+        }
         if let Some(v) = self.eval_all(rest, span) {
-            // An equate is not a label: qualify a local `.foo` against the
-            // current scope (so `ld a,.foo` resolves) but do NOT open a scope.
-            // `qualify` leaves non-dotted global names unchanged.
-            let q = qualify(name, self.scope.as_deref());
             self.env.define(&q, SymbolValue::Int(v));
         }
     }
@@ -2133,20 +2145,42 @@ impl Asm {
         }
     }
 
-    /// `align <n>` — pad with zero bytes up to the next multiple of `n`
-    /// (verified against asl: fill byte is `0x00`; a no-op when already
-    /// aligned). Unlike `ds`, real Aeon usage always aligns something that
-    /// follows in the same section, so this pads via a real `Fill` (visible
-    /// zero bytes), matching asl's observed behavior when writes follow.
+    /// `align <n>` — advance the location counter to a multiple of `n`. TWO
+    /// asl-verified regimes (asl 1.42 Bld 212, live-probed 2026-07-08):
+    ///
+    /// - **Outside a phase** (`disp == 0`, every ROM `align 2` / `align $8000`):
+    ///   standard round-up — `round_up(pos, n)`, a no-op when already aligned —
+    ///   padded with a real `Fill` of `0x00` (Aeon always aligns something that
+    ///   follows in the same section, so the zeros are emitted; byte-exact ROM).
+    ///
+    /// - **Inside a phase** (`disp != 0`, Aeon's `$FFFF….` RAM `align 256`):
+    ///   asl advances by `round_up(pos + n, n)` — i.e. ALWAYS at least one full
+    ///   `n` beyond `pos`, THEN rounds to the boundary (so an already-aligned
+    ///   `pos` still jumps a whole `n`). Live-probe table (phase base, content →
+    ///   result), all matching `round_up(pos + n, n)`: `$B000→$B100`,
+    ///   `$B005→$B200`, `$B026→$B200`, `$B100→$B200`, independent of whether
+    ///   `disp` itself is a multiple of `n`. This is what places Aeon's
+    ///   `Player_Pos_Ring` at `$B100`/`$B200` (non-debug/debug) rather than one
+    ///   `n` low. Aeon's phased regions are RAM under `padding off`, so the pad
+    ///   is a `Reserve` (address-only, no image bytes) — it neither emits ROM
+    ///   nor, being reserve-only, participates in the LMA image.
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
             Some(n) if n > 0 => {
                 let n = n as u32;
                 let pos = self.here();
-                let pad = (n - (pos % n)) % n;
-                if pad > 0 {
-                    self.builder.emit_fill(pad, 0, span);
+                if self.state.disp != 0 {
+                    // In-phase: round_up(pos + n, n). `pos + n` is strictly
+                    // greater than `pos`, so this always advances by [1, n]+n.
+                    let target = (pos + n).next_multiple_of(n);
+                    let pad = target - pos;
+                    self.builder.reserve(pad, span);
+                } else {
+                    let pad = (n - (pos % n)) % n;
+                    if pad > 0 {
+                        self.builder.emit_fill(pad, 0, span);
+                    }
                 }
             }
             Some(_) => self.err(span, "align needs a positive constant"),
@@ -5182,6 +5216,45 @@ C:\n";
     fn strlen_of_a_plain_string_literal() {
         let src = "        cpu 68000\n        padding off\n        phase 0\n        dc.b strlen(\"hello\")\n";
         assert_eq!(image(src), vec![5]);
+    }
+
+    #[test]
+    fn strlen_resolves_a_string_equ_symbol() {
+        // A string bound with `equ` (not just `set`) must be readable by the
+        // string builtins — Aeon's engine/system/header.inc does
+        // `GAME_CONSOLE equ "SEGA GENESIS    "` then `strlen(GAME_CONSOLE)`.
+        // Regression: `equ` used to drop the string value (neither env nor
+        // str_env written), so this reported "could not evaluate string builtin".
+        let src = "        cpu 68000\n        padding off\n        phase 0\nS       equ \"SEGA GENESIS    \"\n        dc.b strlen(S)\n";
+        assert_eq!(image(src), vec![16]);
+    }
+
+    #[test]
+    fn align_inside_a_phase_advances_a_full_extra_block() {
+        // asl 1.42 Bld 212 (live-probed 2026-07-08): ALIGN inside a `phase`
+        // (padding off) advances by `round_up(pos + n, n)` — ALWAYS at least a
+        // full `n` beyond `pos`. Here pos = $B005 (after 5 reserved bytes),
+        // n=256 → target $B200 (NOT the naive $B100). The trailing `dc.w L`
+        // observes L's low word. This is what places Aeon's `Player_Pos_Ring`
+        // one 256-block higher than a naive align would.
+        let src = "        cpu 68000\n        padding off\n        phase $B000\n        ds.b 5\n        align 256\nL:      dc.w L\n        dephase\n";
+        // The 5 `ds.b` bytes are reserve (no image); the align pad is reserve
+        // too; only the trailing `dc.w L` is image, carrying L's low word $B200.
+        assert_eq!(image(src), vec![0xB2, 0x00]);
+    }
+
+    #[test]
+    fn align_outside_a_phase_is_a_standard_roundup() {
+        // No phase (disp == 0): the ordinary round-up. `dc.b`×5 makes the pre-
+        // align bytes image (offset 5, here() 5); align 256 → $100 via a real
+        // Fill of 251 zeros; then `dc.w L` emits L's value $0100 at image
+        // offset $100. Contrast the in-phase test: the SAME pos $B005 would
+        // land the label a full extra block higher.
+        let src = "        cpu 68000\n        padding off\n        org 0\n        dc.b 1,2,3,4,5\n        align 256\nL:      dc.w L\n";
+        let img = image(src);
+        assert_eq!(img.len(), 0x102);
+        assert_eq!(&img[..5], &[1, 2, 3, 4, 5]);
+        assert_eq!(&img[0x100..], &[0x01, 0x00]);
     }
 
     #[test]

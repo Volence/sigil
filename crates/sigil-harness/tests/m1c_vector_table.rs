@@ -34,9 +34,11 @@ fn strict_gate() -> bool {
 /// seeded BOTH as front-end `-D` defines and as link-time symbols (mirroring the
 /// M0 harness's dual stub seeding). SYSTEM_STACK is intentionally absent: it is a
 /// genuine equate in constants.asm, so stubbing it would double-define it.
-// Addresses re-derived from the M1.D T0.0 clean-tree `s4.lst` (aeon 9bacc93,
-// clean working tree, s4.bin 450878 B). The prior values came from a dirty-tree
-// build ~8KB larger, which moved every exception-vector target.
+// Addresses re-derived from the current-source `s4.lst` (aeon f828406, clean
+// working tree, s4.bin 451198 B — the engine/game split baseline). Only the two
+// resident interrupt handlers moved vs the prior 9bacc93 pin: the +0x114 boot/
+// engine growth shifted HBlank_Dispatch (0x216A→0x227E) and VBlank_Handler
+// (0x2042→0x2156); every $64xxx exception target in the object-code bank held.
 const STUBS: &[(&str, i64)] = &[
     ("EntryPoint", 0x200),
     ("BusError", 0x64804),
@@ -51,8 +53,8 @@ const STUBS: &[(&str, i64)] = &[
     ("Line1111Emu", 0x64908),
     ("ErrorExcept", 0x64928),
     ("NullInterrupt", 0x64802),
-    ("HBlank_Dispatch", 0x216A),
-    ("VBlank_Handler", 0x2042),
+    ("HBlank_Dispatch", 0x227E),
+    ("VBlank_Handler", 0x2156),
     ("ErrorTrap", 0x64946),
 ];
 

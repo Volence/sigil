@@ -46,9 +46,14 @@ fn strict_gate() -> bool {
 }
 
 /// The only offsets at which Sigil's assembled debug ROM legitimately differs
-/// from `s4.debug.bin`: the checksum and the low half of the ROM-end pointer,
-/// both rewritten by the out-of-scope `convsym`/`fixheader` post-steps.
-const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
+/// from `s4.debug.bin`: the checksum (`$18E/$18F`) and the ROM-end pointer at
+/// `$1A4`, both rewritten by the out-of-scope `convsym -a`/`fixheader` post-
+/// steps. `convsym -a` appends the (larger, under `__DEBUG__`) deb2 symbol table
+/// and rewrites `EndOfRom-1` to the POST-append size ($0700E5 in the reference
+/// vs Sigil's assembled $0673A1); at the current debug build that pointer now
+/// differs in THREE bytes ($1A5/$1A6/$1A7 — the append pushed it over a byte
+/// boundary), where the earlier smaller pin differed in only $1A6/$1A7.
+const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
 
 #[test]
 fn full_debug_rom_matches_assembled_reference() {

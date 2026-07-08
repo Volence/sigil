@@ -54,17 +54,27 @@ captured with a DIRTY aeon working tree** (BG/editor WIP carried in, per the M0
 snapshot note). A *clean* `9bacc93` produces a different, smaller ROM — the
 build is non-hermetic (`build.sh` runs python generators that consume the editor
 JSON), so the reference depends on the working-tree state, not just the commit.
-This pin is the reproducible clean-tree reference every M1.D gate measures
-against:
+The gates self-track Aeon drift (they diff against the LIVE `aeon/s4.bin`, no
+committed golden blob), so this pin records only the last DELIBERATE re-baseline.
 
-- Aeon repo commit: **`9bacc939ae7c7c5300fc7e50548d851373128a23`**, working tree
-  **clean** (uncommitted forest_bg_gen/editor experiments stashed at pin time).
-- `aeon/s4.bin` length: **450878 bytes**
-- sha256: **`605631da01e2fb889d0babfebf8f1341f86a0fba0e63286cbc0671f068ad5117`**
-- Stored header checksum at `0x18E`: **`0xcfc3`**
+- Aeon repo commit: **`f828406`** (the engine/game split, E1-E7 merged), working
+  tree **clean**. Re-baselined 2026-07-08 from the prior `9bacc93` pin.
+- `aeon/s4.bin` length: **451198 bytes** (`0x6E23E`; assembled `EndOfRom` =
+  `0x658B4`, unchanged from `9bacc93` — the +320 B is the larger post-`convsym`
+  symbol-table append, not body growth).
+- sha256: **`71a7e24560425d6f00e8885995f1b3d484de8d9ef4b01addc7dd97c58392cae2`**
 
 To reproduce the non-debug reference: stash any aeon WIP → `./build.sh sonic4`.
 (The `regen` bin that formerly re-derived the M0 goldens was retired in T6.)
+
+Split-baseline notes (what the drift from `9bacc93` required in Sigil, not just
+a re-pin): the engine/game split moved the ROM header fields into `equ` string
+symbols read via `strlen()`/`substr()` (front-end had to resolve a STRING `equ`,
+not just `set`), and it re-expressed game RAM as a phased `align 256` block
+(front-end had to reproduce asl's in-phase ALIGN = `round_up(pos + n, n)`, a full
+extra `n`). The `m1c_root.asm` bounded fixture's include paths were retargeted to
+`engine/` + `games/sonic4/config/`, and the two resident interrupt vectors
+(HBlank/VBlank) shifted `+0x114`.
 
 ## M1.D T5 — the `__DEBUG__` reference (A2, 2026-07-05)
 
@@ -74,7 +84,7 @@ the shipped `s4.bin`. It is a separate on-disk artifact (`aeon/s4.debug.bin`, a
 gitignored build output), captured so the non-debug reference `s4.bin` (which the
 other gates depend on) can be restored alongside it.
 
-Exact capture procedure (from a **clean** aeon at the `9bacc93` pin):
+Exact capture procedure (from a **clean** aeon at the current `f828406` pin):
 
 ```
 cd aeon
@@ -83,14 +93,17 @@ cp s4.bin s4.debug.bin && cp s4.lst s4.debug.lst   # capture the debug outputs
 ./build.sh sonic4                                  # rebuild + restore the non-debug s4.bin/s4.lst
 ```
 
-- Debug `s4.debug.bin` length: **458666 bytes** (post-`convsym -a` append; the
+- Debug `s4.debug.bin` length: **458982 bytes** (post-`convsym -a` append; the
   deb2 symbol table is larger under `__DEBUG__`), sha256
-  `f51588ba72359569415e2506d3fbae660b4c9742fafc8473a67eac2a76c06b8c`.
+  `a904b3c9d2e0fe1aec5c0c479b8f6a119b74563b9428d99d73125753101bb4d1`.
 - Sigil's **assembled** debug ROM (pre-convsym, what the gate emits): **`0x673A2`
   bytes** (`EndOfRom`), byte-identical to `s4.debug.bin` over `[0, 0x673A2)`
-  EXCEPT the four `convsym`/`fixheader` header bytes `{0x18E,0x18F,0x1A6,0x1A7}` —
-  the same A1/A2 scope decision as `m1d_rom`.
+  EXCEPT the `convsym`/`fixheader` header bytes. At this baseline the append
+  grew the `EndOfRom-1` pointer past a byte boundary, so it differs in FIVE
+  bytes: the checksum `{0x18E,0x18F}` and the 3-byte ROM-end pointer tail
+  `{0x1A5,0x1A6,0x1A7}` (the earlier smaller pin differed in `{0x1A6,0x1A7}`
+  only) — the same A1/A2 out-of-scope decision as `m1d_rom`.
 
 ⚠️ Building debug **clobbers** `aeon/s4.bin`/`s4.lst` (the non-debug pin). Always
 restore them afterwards (the final `./build.sh sonic4` above), and confirm
-`sha256(s4.bin) == 605631da…` before relying on the non-debug gates.
+`sha256(s4.bin) == 71a7e245…` before relying on the non-debug gates.

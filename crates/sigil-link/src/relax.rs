@@ -107,6 +107,33 @@ fn final_size(sec: &Section, rungs: &[usize]) -> u32 {
     max_extent
 }
 
+/// The section's final IMAGE extent under the current rungs — the byte count
+/// `link()`/`flatten` actually place at the LMA, which is `final_size` MINUS the
+/// address-only `Reserve` (`ds`) span. Mirrors the `link` cursor replay
+/// (lib.rs): `Data`/`Fill` advance the image cursor, `Org` seeks it, and
+/// `Reserve` is a no-op (RAM `ds` reserves VMA/PC space but emits no image
+/// bytes). A section that is ALL `Reserve` (Aeon's phased `$FFFF0000+` RAM
+/// blocks, whose VMA base is disp'd into RAM while their LMA anchors at the
+/// physical counter) has an image extent of 0 here even though `final_size`
+/// (VMA span) is large — so the overlap check must key on THIS, not
+/// `final_size`, to match what `flatten` places (a reserve-only section
+/// contributes no bytes and can neither clobber nor be clobbered).
+fn image_final_size(sec: &Section, rungs: &[usize]) -> u32 {
+    let mut cursor: u32 = 0;
+    let mut max_extent: u32 = 0;
+    for (fi, frag) in sec.fragments.iter().enumerate() {
+        match frag {
+            Fragment::Org { target, .. } => cursor = *target,
+            Fragment::Reserve { .. } => {} // address-only: no image bytes
+            other => cursor += frag_len(other, rungs[fi]),
+        }
+        if cursor > max_extent {
+            max_extent = cursor;
+        }
+    }
+    max_extent
+}
+
 /// The link-time placement pass (R7p.2). Walk sections in vec order with a cursor
 /// PER `group`: a `Pinned` section resets its group cursor to its baked anchor
 /// (`sec.lma`); a `Chained` section lands at its group cursor. The cursor then
@@ -228,10 +255,15 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
 }
 
 /// The R7p.4 overlap check: after the joint fixpoint converges, return the first
-/// pair of NON-EMPTY placed sections whose `[lma, lma + final_size)` ranges
+/// pair of NON-EMPTY placed sections whose `[lma, lma + image_final_size)` ranges
 /// intersect, as an `Error` diagnostic naming BOTH sections and both hex extents.
-/// Empty (zero-final-size) sections place no bytes, so they can neither clobber
-/// nor be clobbered and are skipped (mirroring `flatten`/`flatten_checked`).
+/// Emptiness and the range width key on the IMAGE extent (`image_final_size`,
+/// which drops the address-only `ds`/`Reserve` span), NOT the VMA `final_size`:
+/// `flatten`/`flatten_checked` place only image bytes, so a reserve-only section
+/// (Aeon's phased `$FFFF0000+` RAM blocks — VMA in RAM, LMA at the physical
+/// counter, zero image bytes) places nothing and can neither clobber nor be
+/// clobbered. Using `final_size` here spuriously collided such a RAM block's
+/// LMA-0 anchor with the ROM reset section.
 fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
     // Collect (start, end, name, span) for every non-empty section, then scan
     // every pair. O(n²), but n is the section count (small), and this runs once
@@ -240,7 +272,7 @@ fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> 
         .iter()
         .enumerate()
         .filter_map(|(si, sec)| {
-            let size = final_size(sec, &rungs[si]);
+            let size = image_final_size(sec, &rungs[si]);
             if size == 0 {
                 return None;
             }
@@ -1849,6 +1881,48 @@ mod tests {
             "expected a negative distance, got: {:?}",
             err
         );
+    }
+
+    #[test]
+    fn reserve_only_section_does_not_collide_at_shared_lma() {
+        // Aeon's phased `$FFFF….` RAM: a section whose VMA is in RAM but whose
+        // LMA anchors at the physical counter (here 0, colliding with the ROM
+        // reset). It is ALL `Reserve` (`ds`), so it places zero image bytes and
+        // must NOT trip the overlap check against a real ROM section at LMA 0.
+        // Regression: the overlap check used `final_size` (VMA span, reserve-
+        // inclusive) and spuriously flagged this as a colliding pin.
+        let ram = Section {
+            name: "ram".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0xFFFF_0000),
+            lma: 0,
+            labels: vec![],
+            fragments: vec![Fragment::Reserve { count: 0x1000, span: sp() }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0x1000,
+            group: None,
+            bank: None,
+        };
+        let rom = Section {
+            name: "reset".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0xDE, 0xAD, 0xBE, 0xEF],
+                fixups: vec![],
+                span: sp(),
+            })],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 4,
+            group: None,
+            bank: None,
+        };
+        // Must resolve cleanly — no "colliding pins" error.
+        let out = resolve_layout(&[ram, rom], &SymbolTable::new(), true)
+            .expect("reserve-only RAM section must not collide with the ROM at LMA 0");
+        assert_eq!(out.len(), 2);
     }
 
     #[test]
