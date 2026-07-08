@@ -279,3 +279,12 @@ Task-2 T2-fold-in already touched `lower/mod.rs` resolver arms once this
 session) — a clean extraction deserves its own reviewed diff rather than
 riding along inside a coverage-tests-plus-span-fix commit. Flagged here per
 the quality review (2026-07-08) for the controller to schedule.
+
+## T4 — game prelude: ScriptPc + the resume slot (controller-run)
+
+- `pub newtype ScriptPc = u16` added above Sst; `routine: u16 @ $20` → `resume: ScriptPc @ $20`
+  (same offset, same width); Player_1 literal field renamed; `routine` HELPER keeps its name
+  (D9.5 — the manual spelling) and now stores to `Sst.resume(a0)`, doc updated.
+- Byte-neutrality verified: pitcher_plant_acceptance passes UNCHANGED (2 tests, 340-byte pin
+  intact) and the CLI build reports 340 bytes. The proc exhibit's `routine shoot`/`routine wait`
+  call sites are untouched.
