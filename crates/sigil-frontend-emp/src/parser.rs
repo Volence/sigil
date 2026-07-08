@@ -215,6 +215,23 @@ impl Parser {
             }
             return Some(Item::ComptimeFn(self.comptime_fn_decl(public)));
         }
+        // Item-position guard: `ensure(...)` / `ensure_fatal(...)`. Contextual
+        // opener (§10 policy) — only fires when the keyword is immediately
+        // followed by `(`, so `ensure` stays usable as an ordinary name (D5.1).
+        if (self.at_kw("ensure") || self.at_kw("ensure_fatal"))
+            && matches!(self.peek2(), Tok::LParen)
+        {
+            if public {
+                let sp = self.prev_span();
+                self.diag_at(sp, "`pub` is not valid on this declaration");
+            }
+            let start = self.span();
+            let fatal = self.at_kw("ensure_fatal");
+            let call = self.expr(); // parses the whole `ensure(...)` call
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(Item::Ensure(EnsureDecl { fatal, call, span }));
+        }
         if self.at_kw("section") { return Some(Item::Section(self.section_decl())); }
         let span = self.span();
         self.diag_at(span, format!("expected a declaration, found {:?}", self.peek()));
@@ -236,9 +253,9 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 12] = ["use", "const", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 15] = ["use", "const", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "comptime", "section", "pub",
-                                     "newtype"];
+                                     "newtype", "offsets", "ensure", "ensure_fatal"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -246,7 +263,19 @@ impl Parser {
                 Tok::RBrace if in_block && depth == 0 => return,
                 Tok::LBrace => { depth += 1; self.bump(); }
                 Tok::RBrace => { depth -= 1; self.bump(); }
-                Tok::Ident(s) if depth <= 0 && OPENERS.contains(&s.as_str()) => return,
+                Tok::Ident(s) if depth <= 0 && OPENERS.contains(&s.as_str()) => {
+                    // `ensure`/`ensure_fatal` are CONTEXTUAL openers — only a real
+                    // item when followed by `(`. A bare occurrence is not an item
+                    // (`item()` won't consume it), so stopping here would spin the
+                    // recovery loop (recovery returns without consuming, `item()`
+                    // re-fails on the same token). Skip past a non-guard occurrence.
+                    let guard_kw = s == "ensure" || s == "ensure_fatal";
+                    if guard_kw && !matches!(self.peek_at(1), Tok::LParen) {
+                        self.bump();
+                    } else {
+                        return;
+                    }
+                }
                 _ => { self.bump(); }
             }
         }
