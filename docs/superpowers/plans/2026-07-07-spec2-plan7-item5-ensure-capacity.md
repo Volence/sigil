@@ -432,7 +432,7 @@ git add -A && git commit -m "feat(emp): (max_size:) capacity attribute on data i
 - Modify: `crates/sigil-cli/tests/ports.rs` (follow its existing helpers for compiling multi-file programs — grep `build_program` / `--root` usage)
 - Create: `examples/guards.emp`
 
-- [ ] **Step 1: Write the failing end-to-end tests:**
+- [x] **Step 1: Write the failing end-to-end tests:**
 
 ```rust
 #[test]
@@ -457,11 +457,11 @@ fn aeon_shaped_guard_ports() {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure**, then make them pass (they should pass immediately if Tasks 1–3 are correct — if so, verify they FAIL when a guard is deliberately flipped, to prove the tests bite).
+- [x] **Step 2: Run to verify failure**, then make them pass (they should pass immediately if Tasks 1–3 are correct — if so, verify they FAIL when a guard is deliberately flipped, to prove the tests bite).
 
-- [ ] **Step 3: Write `examples/guards.emp`** — a small real file: a prelude-style const, a divisibility `ensure`, a `data ... (max_size: ...)` around a folded table, an `offsets` block guarded by `.count`, one `ensure_fatal(here() <= ...)` in a `vma:` section. Confirm `cargo run -p sigil-cli -- emp examples/guards.emp --hex` succeeds.
+- [x] **Step 3: Write `examples/guards.emp`** — a small real file: a prelude-style const, a divisibility `ensure`, a `data ... (max_size: ...)` around a folded table, an `offsets` block guarded by `.count`, one `ensure_fatal(here() <= ...)` in a `vma:` section. Confirm `cargo run -p sigil-cli -- emp examples/guards.emp --hex` succeeds.
 
-- [ ] **Step 4: Green gate + commit**
+- [x] **Step 4: Green gate + commit**
 
 ```bash
 cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings
