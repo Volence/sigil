@@ -1,8 +1,9 @@
-# Design DRAFT — Spec 2 · Plan 7 backlog #9: scripted states / coroutines on the `dispatch` seam
+# Design — Spec 2 · Plan 7 backlog #9: scripted states / coroutines on the `dispatch` seam
 
 Date: 2026-07-08 (Fable, overnight session, Step 3 — DESIGN ONLY per the locked scope; NO
-implementation tonight). Status: **DRAFT for Volence** — #9 is the largest remaining feature
-and the design wants his eyes before any code. Inputs: research Part II/R2 + T1-c (the
+implementation tonight). Status: **RATIFIED by Volence, 2026-07-08 (day checkpoint)** —
+D9.1–D9.5 approved as proposed; the six open questions resolved (rulings recorded inline
+below); Q6 promoted to **D9.6**. 9a and 9b are cleared for implementation. Inputs: research Part II/R2 + T1-c (the
 scripted-coroutine merge), #6's reserved `Member: { … }` seam (erroring specifically today),
 Batman & Robin's threaded-code object model (the `$0820` yield-PC-as-state pattern), the
 shipped `offsets`/`dispatch`/overlay/jbra machinery, and tonight's pitcher_plant corpus
@@ -70,29 +71,37 @@ raw procs per object, and mixing is legal.
   automates; the design should name this equivalence and let both coexist (manual procs
   keep using `routine`; scripts own their slot).
 
-## Open questions for Volence (blocking 9b, not 9a)
+## Open questions — RESOLVED (Volence, 2026-07-08 day checkpoint)
 
-1. Surface name: `script` vs extending `proc` with a `yields` attribute (`proc brain (…) yields`)?
-   My lean: `script` — a distinct thing deserves a distinct opener (contextual, per the
-   §10 headroom rule).
-2. Should yield carry a value in the MVP (`yield frames(N)` — the overwhelmingly common
-   "wait N frames" case folds the timer into the construct) or stay bare + helper-managed
-   timers (as pitcher_plant does today)? My lean: bare in 9b, value protocol in 9c.
-3. Where does the resume slot live — a required named field on the object's Sst
-   (`resume: ScriptPc @ …`, engine picks the offset) or construct-allocated in sst_custom?
-   My lean: declared field, engine-owned offset (aeon's SST is engine territory).
-4. Z80 story: out of scope for 9b (68k first), but the SMPS end-state wants it — note only.
-5. Encoding set for the hidden table: word_offsets + long_ptrs (shipped) now; pre-shifted
-   index (Ristar/Treasure ×4) as the first new encoding when a port demands it?
-6. **(Volence, 2026-07-08 checkpoint) The per-frame epilogue.** Yield does NOT freeze the
-   object — the engine visits it every frame, and today's procs end with
-   `jbra Draw_Sprite` (or a mark-offscreen variant, or nothing for invisible controllers),
-   never a bare return. So `yield` must lower to "store resume point, then `jbra <epilogue>`"
-   — the same exit every proc hand-writes. Design: an epilogue declared once per script
-   (`script brain (a0: *Sst) shows Draw_Sprite { … }`-shaped) with per-site override
-   (`yield Draw_Sprite`), and a bare-`yield`-with-no-epilogue-declared error rather than a
-   silent rts (an object that never draws is the footgun). `wait_frames N` is per-frame
-   sugar (tick timer, yield through the epilogue until elapsed), not a blocking wait.
+1. **Surface name: `script` — RATIFIED.** A distinct construct gets a distinct contextual
+   opener (§10 headroom rule); a script compiles to resume-segments, not one linear
+   routine, so overloading `proc` would hide the model change.
+2. **Bare `yield` in 9b — RATIFIED** (Volence delegated; Fable's call): timers stay
+   helper-managed (`wait_frames` sugar) in the MVP; the value-carrying protocol
+   (`yield frames(N)` + the dispatcher-side contract) is 9c, designed against a real
+   consumer.
+3. **Typed Sst field — RATIFIED.** The resume slot IS the engine's existing next-frame
+   pointer (the storage today's `routine` helper writes), declared as a normal Sst field
+   with the construct's newtype (`resume: ScriptPc`); the engine keeps choosing the
+   offset. The compiler's contribution is the type: only real resume points / proc
+   entries are writable — stale/garbage jump targets become compile errors. (Clarified
+   at the checkpoint: this is not new storage, it is the `0(a0)`-era routine pointer,
+   typed; D9.5's equivalence is the load-bearing fact.)
+4. **Z80: out of scope for 9b (68k first) — noted**, SMPS end-state revisits (gates on #7
+   anyway per D9.3).
+5. **Shipped encodings only in 9b — RATIFIED**: word_offsets + long_ptrs (both
+   byte-proven by #6). Pre-shifted index (Ristar/Treasure ×4) waits for a demanding
+   port — the jbcc demonstrated-need logic.
+6. **→ promoted to D9.6, ratified as written — the per-frame epilogue.** Yield does NOT
+   freeze the object — the engine visits it every frame, and today's procs end with
+   `jbra Draw_Sprite` (or a mark-offscreen variant, or nothing for invisible
+   controllers), never a bare return. `yield` lowers to "store resume point, then
+   `jbra <epilogue>`" — the same exit every proc hand-writes. An epilogue is declared
+   once per script (`script brain (a0: *Sst) shows Draw_Sprite { … }`-shaped) with
+   per-site override (`yield Draw_Sprite`); a bare `yield` with NO epilogue declared is
+   a compile error rather than a silent rts (an object that never draws is the footgun).
+   `wait_frames N` is per-frame sugar (tick timer, yield through the epilogue until
+   elapsed), not a blocking wait.
 
 ## What this is NOT (scope guards)
 
