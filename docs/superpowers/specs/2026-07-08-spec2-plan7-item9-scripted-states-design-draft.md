@@ -84,6 +84,15 @@ raw procs per object, and mixing is legal.
 4. Z80 story: out of scope for 9b (68k first), but the SMPS end-state wants it — note only.
 5. Encoding set for the hidden table: word_offsets + long_ptrs (shipped) now; pre-shifted
    index (Ristar/Treasure ×4) as the first new encoding when a port demands it?
+6. **(Volence, 2026-07-08 checkpoint) The per-frame epilogue.** Yield does NOT freeze the
+   object — the engine visits it every frame, and today's procs end with
+   `jbra Draw_Sprite` (or a mark-offscreen variant, or nothing for invisible controllers),
+   never a bare return. So `yield` must lower to "store resume point, then `jbra <epilogue>`"
+   — the same exit every proc hand-writes. Design: an epilogue declared once per script
+   (`script brain (a0: *Sst) shows Draw_Sprite { … }`-shaped) with per-site override
+   (`yield Draw_Sprite`), and a bare-`yield`-with-no-epilogue-declared error rather than a
+   silent rts (an object that never draws is the footgun). `wait_frames N` is per-frame
+   sugar (tick timer, yield through the epilogue until elapsed), not a blocking wait.
 
 ## What this is NOT (scope guards)
 
