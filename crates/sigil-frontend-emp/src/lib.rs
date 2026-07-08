@@ -8,6 +8,7 @@ pub mod layout;
 pub mod lexer;
 pub mod lower;
 pub mod parser;
+pub mod resolve;
 pub mod value;
 
 use sigil_span::{Diagnostic, SourceId};

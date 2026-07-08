@@ -160,9 +160,17 @@ fn no_hidden_external_world_edges_outside_sandbox_rs() {
         "use std::process",
         "use std::time",
     ];
-    // The ONE file allowed to reference any of the above — the declared
-    // capability-sandbox edge itself.
-    let allowlisted_path = "eval/sandbox.rs";
+    // The files allowed to reference any of the above.
+    //   - `eval/sandbox.rs`: the declared capability-sandbox edge itself, the
+    //     one route `embed`/`import` byte reads take through the evaluator.
+    //   - `resolve/manifest.rs`: the module-manifest scanner (Spec 2 §3.1). It
+    //     is a build-driver concern OUTSIDE the pure evaluator: scanning a root
+    //     directory for `.emp` files and reading each is inherently filesystem
+    //     work (`read_dir` + `read_to_string`), and cannot be expressed as a
+    //     pure function of a single `.emp` source. It never participates in
+    //     `data` evaluation, so it does not widen the evaluator's hermeticity
+    //     boundary.
+    let allowlisted_paths = ["eval/sandbox.rs", "resolve/manifest.rs"];
 
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut offenders: Vec<String> = Vec::new();
@@ -172,7 +180,7 @@ fn no_hidden_external_world_edges_outside_sandbox_rs() {
             .expect("path under src_root")
             .to_string_lossy()
             .replace('\\', "/");
-        if rel == allowlisted_path {
+        if allowlisted_paths.contains(&rel.as_str()) {
             return;
         }
         let text = std::fs::read_to_string(path).expect("read source file");
