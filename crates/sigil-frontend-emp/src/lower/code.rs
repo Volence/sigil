@@ -87,6 +87,26 @@ pub fn lower_code_buf(
     }
 }
 
+/// Whether `base` is a recognized MNEMONIC-position word for `cpu` (D-PP.1) —
+/// i.e. a real CPU mnemonic OR the emp-only auto-reaching branches `jbra`/`jbsr`
+/// (which the eval-side dispatch keeps out of the shared isa table, T2/D2.18).
+/// This is the discriminator a bare statement call consults: mnemonics WIN
+/// unconditionally (tenet 3), so a leading bareword that IS a recognized
+/// mnemonic is an instruction, never a comptime-fn call — a comptime fn named
+/// like a mnemonic (`move`, `jbra`) is simply unreachable at statement position.
+/// `base` is the RAW leading word (no size suffix); the per-CPU recognizers
+/// (`m68k_mnemonic`/`z80_mnemonic`) already fold the conditional-branch /
+/// `dbcc`/`scc` families, so this stays a thin membership query over them.
+pub(crate) fn is_recognized_mnemonic(base: &str, cpu: Cpu) -> bool {
+    if matches!(base, "jbra" | "jbsr") {
+        return true;
+    }
+    match cpu {
+        Cpu::M68000 => m68k_mnemonic(base).is_some(),
+        Cpu::Z80 => z80_mnemonic(base).is_some(),
+    }
+}
+
 // ---- 68000 -------------------------------------------------------------
 
 /// Lower one 68k instruction, routing branches / bare jmp-jsr / generic exactly

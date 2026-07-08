@@ -241,6 +241,14 @@ pub struct Evaluator<'a> {
     /// expression — so a field name lowers to its byte offset and a const never
     /// silently shadows it. Empty for a raw `asm { }` (no param types there).
     pub(crate) reg_pointee_struct: HashMap<crate::value::Reg, String>,
+    /// The CPU this evaluation lowers for, when known (D-PP.1). `Some` only when
+    /// evaluating a PROC BODY (threaded in by [`eval_proc_body`] from the
+    /// enclosing section's CPU), where the mnemonic-vs-comptime-fn decision for a
+    /// bare statement call needs the section's mnemonic table. `None` for a raw
+    /// `asm { }` template eval (whose CPU is not fixed until it is spliced into a
+    /// section) — a bare statement call is a proc-body construct, so it is only
+    /// recognized when this is `Some`.
+    cpu: Option<sigil_ir::backend::Cpu>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -280,6 +288,7 @@ impl<'a> Evaluator<'a> {
             include_root: None,
             captures: Vec::new(),
             reg_pointee_struct: HashMap::new(),
+            cpu: None,
         }
     }
 
@@ -707,10 +716,15 @@ pub fn eval_proc_body(
     body: &[ast::AsmStmt],
     span: Span,
     asm_counter_start: u32,
+    cpu: sigil_ir::backend::Cpu,
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.asm_counter = asm_counter_start;
+        // The proc's section CPU is known here (unlike a raw `asm {}` template):
+        // record it so a bare statement call in the body can consult the
+        // mnemonic table for the mnemonic-vs-comptime-fn decision (D-PP.1).
+        ev.cpu = Some(cpu);
         // Bind each `(aN: *S)` param whose pointee bottoms out at a struct into
         // the register→struct map (D6.A3). A bare-field displacement `f(aN)` on
         // such a register then resolves in field space. Param NAMES are register

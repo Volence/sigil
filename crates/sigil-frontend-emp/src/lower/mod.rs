@@ -15,6 +15,7 @@ pub mod patch;
 mod proc;
 
 pub use code::lower_code_buf;
+pub(crate) use code::is_recognized_mnemonic;
 
 use crate::ast;
 use crate::layout::{

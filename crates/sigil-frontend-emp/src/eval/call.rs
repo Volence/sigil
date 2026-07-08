@@ -4,7 +4,7 @@
 use super::builtins::is_builtin;
 use super::{Env, Evaluator, Flow, MAX_CALL_DEPTH};
 use crate::ast;
-use crate::value::Value;
+use crate::value::{Reg, Value};
 use sigil_span::Span;
 
 impl<'a> Evaluator<'a> {
@@ -320,9 +320,63 @@ impl<'a> Evaluator<'a> {
                 if a.name.is_some() {
                     self.error(a.span, "a call to a lambda or fn value takes positional arguments only");
                 }
-                self.eval_expr(&a.value, env)
+                self.eval_call_arg(&a.value, env)
             })
             .collect()
+    }
+
+    /// Evaluate one call argument (D-PP.2). Differs from a plain
+    /// [`eval_expr`](Self::eval_expr) in exactly one way: a bareword that names a
+    /// machine register of the current CPU (`d0`..`d7`/`a0`..`a7` on 68k) is a
+    /// REGISTER LITERAL ([`Value::Reg`]), not an ordinary name lookup. Registers
+    /// win over ordinary names in call-argument position — the same rule operand
+    /// position already follows (`map_plain`) — so a `facing_abs(d0)` / bare
+    /// `facing_abs d0` binds `d0` as a register. This is the SINGLE arg-eval seam
+    /// both call spellings route through (paren via `bind_args`, bare via the
+    /// statement-call path in `eval/asm.rs`), so the rule holds identically for
+    /// both. A register spelling only wins as a WHOLE single-segment path; any
+    /// larger expression (`d0 + 1`, `foo.d0`) falls through to `eval_expr` and a
+    /// register name there is an ordinary (unknown) name — there is no register
+    /// arithmetic (D-PP.2).
+    pub(super) fn eval_call_arg(&mut self, expr: &ast::Expr, env: &mut Env) -> Value {
+        if let ast::Expr::Path(p) = expr {
+            if p.segments.len() == 1 {
+                if let Some(r) = Reg::from_name(&p.segments[0]) {
+                    return Value::Reg(r);
+                }
+            }
+        }
+        self.eval_expr(expr, env)
+    }
+
+    /// The register-vs-param-type check (D-PP.2): a `Value::Reg` argument is legal
+    /// ONLY where the parameter's declared type is `Reg`, and a `Reg` parameter
+    /// accepts ONLY a register. Any other pairing is a type error naming the
+    /// expected type — so `set_timer(d3)` (register into a `u8` param) and a
+    /// non-register into a `Reg` param both diagnose cleanly rather than silently
+    /// misrouting into a downstream splice-kind error. Non-`Reg` value/param
+    /// pairings are NOT checked here (comptime fns are otherwise loosely typed at
+    /// bind time today); this narrowly guards the register class the new arg path
+    /// introduced. An already-poisoned argument is skipped (its error is reported).
+    fn check_reg_arg_type(&mut self, v: &Value, pty: &ast::Type, span: Span) {
+        if matches!(v, Value::Poison) {
+            return;
+        }
+        let param_is_reg = param_type_is_reg(pty);
+        match (matches!(v, Value::Reg(_)), param_is_reg) {
+            (true, false) => self.error(
+                span,
+                format!(
+                    "a register is not a valid `{}` argument — only a `Reg` parameter accepts a register",
+                    type_display(pty)
+                ),
+            ),
+            (false, true) => self.error(
+                span,
+                format!("expected a register (a `Reg` argument), got {}", v.type_name()),
+            ),
+            _ => {}
+        }
     }
 
     /// Bind call `args` to `decl`'s parameters, returning a value per parameter
@@ -353,7 +407,13 @@ impl<'a> Evaluator<'a> {
             if self.aborted || self.pending_return.is_some() {
                 break;
             }
-            let v = self.eval_expr(&arg.value, env);
+            // Evaluate through the shared call-arg path so a bareword naming a
+            // machine register becomes a `Value::Reg` (D-PP.2: registers win over
+            // ordinary names in call-argument position, mirroring operand
+            // position) in BOTH the paren and bare spellings — they share this
+            // binder. The register-vs-param type check runs once the slot index
+            // is known.
+            let v = self.eval_call_arg(&arg.value, env);
             match &arg.name {
                 None => {
                     if pos >= n {
@@ -366,6 +426,7 @@ impl<'a> Evaluator<'a> {
                         );
                         pos += 1;
                     } else {
+                        self.check_reg_arg_type(&v, &decl.params[pos].1, arg.span);
                         slots[pos] = Some(v);
                         pos += 1;
                     }
@@ -381,6 +442,7 @@ impl<'a> Evaluator<'a> {
                                 format!("parameter `{pname}` given more than once"),
                             );
                         } else {
+                            self.check_reg_arg_type(&v, &decl.params[idx].1, arg.span);
                             slots[idx] = Some(v);
                         }
                     }
@@ -618,5 +680,24 @@ impl<'a> Evaluator<'a> {
                 None
             }
         }
+    }
+}
+
+/// Whether a parameter's declared type is the comptime-only `Reg` type (D-PP.2):
+/// a single-segment `Named` path spelled exactly `Reg`. `Reg` is not a data
+/// layout type (`resolve_type` never sees it — it never reaches data emission),
+/// so it is recognized structurally here at the one place that needs it.
+fn param_type_is_reg(ty: &ast::Type) -> bool {
+    matches!(ty, ast::Type::Named(p) if p.segments.len() == 1 && p.segments[0] == "Reg")
+}
+
+/// A human-readable rendering of a parameter type for a diagnostic's "expected"
+/// side. Only the shapes a comptime fn param realistically takes are spelled
+/// out; anything else falls back to a generic `type`.
+fn type_display(ty: &ast::Type) -> String {
+    match ty {
+        ast::Type::Named(p) => p.segments.join("."),
+        ast::Type::Ptr(inner) => format!("*{}", type_display(inner)),
+        _ => "type".to_string(),
     }
 }
