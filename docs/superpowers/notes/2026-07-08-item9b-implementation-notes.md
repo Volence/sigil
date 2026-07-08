@@ -390,3 +390,26 @@ the adversarial spec review caught), T3 66c48a8 (10 pins + yield-site spans), T4
 T1 spec ✅ + quality fix-first→folded; T2 spec ❌→fixed→program-path regression tests +
 quality ✅ approve (2 minors: spans folded into T3; rule-of-three table-emit extraction
 DEFERRED to checkpoint). NEXT: whole-branch adversarial review (9a+9b) → Volence checkpoint.
+
+## Whole-branch adversarial review (9a+9b, 359d9cd..3c5e57a) — verdict + fold-in
+
+16 hands-on probes across cross-feature composition, hygiene unreachability (lexer rejects
+`$` in idents — the `__resume$k` namespace is genuinely unspellable), same-name loud-failure
+paths, resume-slot discovery edges (shadowing cannot mis-offset; width guard holds), D2.23
+interaction ([here.provisional] after a script's relaxable jbra ladders — correctly poisoned,
+guards defer to LinkAssert), prelude-rename blast radius (zero field references left), and
+the exhibit's hidden-table derivation. NO compiler defects. One LOW documentation defect:
+
+- **D1 (fixed this commit):** the exhibit's windup is ONE FRAME shorter than the proc
+  version ($28 vs $29 trigger→re-arm) — the proc transition frame sets the timer without
+  decrementing; the script's `.check` falls straight into `.windup_tick`. Both brains are
+  valid; the equivalence claim needed the caveat. Documented at the transition site in the
+  exhibit and here.
+- **DX-1 (fixed this commit):** four stale `Sst.routine(a0)` COMMENTS in
+  pitcher_plant_acceptance.rs updated to `Sst.resume(a0)` (comment-only; the derivation and
+  bytes were already correct).
+- **DX-2 (pre-existing, ledger):** duplicate top-level symbol collisions report the link
+  error at span 0 rather than a decl site — shared with proc/dispatch collisions, candidate
+  for a spanned frontend pre-check whenever duplicate-name diagnostics are tightened.
+
+Verdict: **CHECKPOINT-READY** (compiler-correctness axis clean; D1/DX-1 folded in).

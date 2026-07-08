@@ -343,7 +343,7 @@ fn expected_image() -> Vec<u8> {
     w(&mut d, 0x117C);
     w(&mut d, 0x0002);
     w(&mut d, 0x001C);
-    // `routine shoot` splices to `pea {p}; move.w (a7)+, Sst.routine(a0)`
+    // `routine shoot` splices to `pea {p}; move.w (a7)+, Sst.resume(a0)`
     // with `p`=`shoot` (a proc label — an absolute address, same RelaxAbsSym
     // seam as `Item.field`). `shoot`'s own link address is derived below at
     // 0x7E — within abs.w range, so `pea` resolves to abs.w:
@@ -351,8 +351,8 @@ fn expected_image() -> Vec<u8> {
     //   Word = 0x4840 | 0b111<<3 | 0 = 0x4878, ext = $007E.
     w(&mut d, 0x4878);
     w(&mut d, 0x007E);
-    //   `move.w (a7)+, Sst.routine(a0)`: MOVE.W, src=PostInc(7) (mode 011,
-    //   reg 7), dst=Disp16An($20,a0) (`Sst.routine` direct field offset
+    //   `move.w (a7)+, Sst.resume(a0)`: MOVE.W, src=PostInc(7) (mode 011,
+    //   reg 7), dst=Disp16An($20,a0) (`Sst.resume` direct field offset
     //   $20, prelude.emp: `routine: u16 @ $20`).
     //   Word = `11<<12 | 0<<9 | 0b101<<6 | 0b011<<3 | 7` = 0x315F, ext=$0020.
     w(&mut d, 0x315F);
@@ -447,7 +447,7 @@ fn expected_image() -> Vec<u8> {
     w(&mut d, 0x117C);
     w(&mut d, 0x0000);
     w(&mut d, 0x001C);
-    // `routine wait` -> `pea {p}; move.w (a7)+, Sst.routine(a0)` with
+    // `routine wait` -> `pea {p}; move.w (a7)+, Sst.resume(a0)` with
     // `p`=`wait`. `wait`'s own address is 0x46 (derived above) — abs.w:
     w(&mut d, 0x4878);
     w(&mut d, 0x0046);

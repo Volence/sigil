@@ -104,6 +104,13 @@ script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
         bhi     .rearm                  // out of range → re-arm, back to waiting
 
         // --- shoot windup: play the anim, fire on FIRE_FRAME, count down ---
+        // KNOWN one-frame divergence from the proc version (documented in the
+        // 9b notes): the proc version's transition frame sets the timer and
+        // draws WITHOUT decrementing (the countdown starts next frame in
+        // `shoot`); here `.check` falls straight into `.windup_tick`, so the
+        // first decrement happens on the transition frame — the windup holds
+        // $28 frames, not $29. Both are valid brains; the seed still fires at
+        // timer == FIRE_FRAME.
         move.b  #SHOOT_WINDUP, timer(a0)
         anim    Ani.Shoot
     .windup_tick:
