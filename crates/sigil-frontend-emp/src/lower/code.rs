@@ -56,10 +56,22 @@ pub fn lower_code_buf(
                 diags.append(&mut ds);
                 builder.emit_data(&bytes, fixups, span);
             }
-            CodeItem::Instr { mnemonic, size, ops, span } => match cpu {
-                Cpu::M68000 => lower_m68k_instr(mnemonic, *size, ops, *span, builder, diags),
-                Cpu::Z80 => lower_z80_instr(mnemonic, *size, ops, *span, builder, diags),
-            },
+            CodeItem::Instr { mnemonic, size, ops, span } => {
+                // `jbra`/`jbsr` are emp-ONLY mnemonic-position words (D2.18): they
+                // must NOT enter sigil-isa's shared mnemonic table (the AS
+                // front-end keeps rejecting them). Recognize them HERE, before the
+                // per-CPU isa dispatch, so the 68k-only guard reads uniformly for
+                // both CPUs. A Z80 auto-reaching branch (`jr`→`jp` ladder) is
+                // deferred, so on Z80 they are `[branch.non-68k]`.
+                if matches!(mnemonic.as_str(), "jbra" | "jbsr") {
+                    lower_jbra_jbsr(mnemonic, *size, ops, *span, cpu, builder, diags);
+                    continue;
+                }
+                match cpu {
+                    Cpu::M68000 => lower_m68k_instr(mnemonic, *size, ops, *span, builder, diags),
+                    Cpu::Z80 => lower_z80_instr(mnemonic, *size, ops, *span, builder, diags),
+                }
+            }
         }
     }
 }
@@ -193,6 +205,84 @@ fn lower_m68k_branch(
         Ok(df) => emit_data_frag(builder, df),
         Err(e) => push_err(diags, span, e.message),
     }
+}
+
+/// `jbra L` / `jbsr L`: emp-only auto-reaching branches (D2.18). Unlike sized
+/// `bra`/`bsr` (which pin `.s`/`.w` and never relax), `jbra`/`jbsr` size THEMSELVES
+/// — one [`Fragment::RelaxLadder`] with four ordered candidates the linker
+/// width-selects: `bra.s → bra.w → jmp abs.w → jmp abs.l` (`jbsr`: `bsr`/`jsr`).
+/// The baseline cursor advance is 2 (the smallest, `bra.s`, rung — mirroring how
+/// `JmpJsrSym` advances by its abs.w baseline); the ladder grows the fragment
+/// only as the resolved target demands. The candidate byte-blocks are built by
+/// the m68k BACKEND ([`M68kBackend::lower_jbra_jbsr_candidates`]) so instruction
+/// encodings stay out of this front-end file (the `RelaxAbsSym` precedent).
+///
+/// Diagnostics (all D2.18): a size suffix (`jbra.s`/`.w`/…) is `[jbra.sized]`
+/// (jbra sizes itself); a non-label operand (`(a0)`, `#5`, two operands) is
+/// `[jbra.label-only]` (naming `jmp`/`jsr` for computed targets); on a non-68k
+/// (Z80) section it is `[branch.non-68k]` (the Z80 `jr → jp` ladder is deferred).
+/// The single label target is a hygiene-renamed [`CodeOperand::Sym`] — the SAME
+/// contract as sized branches and `jmp`/`jsr`, so a proc-local `.draw` target
+/// (already qualified upstream by the hygiene pass) works identically.
+fn lower_jbra_jbsr(
+    mnemonic: &str,
+    size: Option<Width>,
+    ops: &[CodeOperand],
+    span: Span,
+    cpu: Cpu,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // 68k-only: the Z80 auto-reaching-branch ladder is deferred (D2.18). Mirror
+    // `[dispatch.non-68k]`'s guard shape with a branch-specific code.
+    if cpu != Cpu::M68000 {
+        push_err(
+            diags,
+            span,
+            format!(
+                "[branch.non-68k] `{mnemonic}` is a 68k auto-reaching branch; \
+                 Z80 has no `jbra`/`jbsr` (a `jr`→`jp` ladder is not yet supported)"
+            ),
+        );
+        return;
+    }
+    // `jbra` sizes ITSELF — a size suffix is a contradiction, not a pin. Steer to
+    // the sized forms (`bra.s`/`bra.w`) or `jmp` for a computed target.
+    if size.is_some() {
+        push_err(
+            diags,
+            span,
+            format!(
+                "[jbra.sized] `{mnemonic}` sizes itself — drop the suffix \
+                 (pin with bra.s/bra.w, or use jmp for computed targets)"
+            ),
+        );
+        return;
+    }
+    // A single LABEL target only. A register-indirect / immediate / multi-operand
+    // form is a computed transfer, which is `jmp`/`jsr`'s job, not `jbra`/`jbsr`'s.
+    let target = match ops {
+        [CodeOperand::Sym(name)] => Expr::Sym(name.clone()),
+        _ => {
+            push_err(
+                diags,
+                span,
+                format!(
+                    "[jbra.label-only] `{mnemonic}` needs a single label target; \
+                     for a computed/register target use `jmp (a0)` / `jsr (a0)`"
+                ),
+            );
+            return;
+        }
+    };
+    let is_jsr = mnemonic == "jbsr";
+    let candidates = M68kBackend.lower_jbra_jbsr_candidates(is_jsr, target.clone(), span);
+    // Baseline advance = the smallest (first) candidate's length (bra.s = 2),
+    // mirroring how JmpJsrSym advances by its abs.w baseline; resolve_layout grows
+    // the fragment as the resolved target demands.
+    let advance = candidates[0].bytes.len() as u32;
+    let frag = Fragment::RelaxLadder { candidates, target, span };
+    builder.emit_fragment(frag, advance);
 }
 
 /// `dbcc`/`dbra Dn, <target>`: always word-sized (no size suffix — unlike

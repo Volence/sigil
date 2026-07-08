@@ -14,7 +14,7 @@
 //!   physical fallthrough and is the `[proc.fallthrough-separated]` error.
 //! - **Undeclared fallthrough** (default-on warning): a proc with no
 //!   `falls_into` whose body can reach its closing `}` without an unconditional
-//!   terminator (`rts`/`rte`/`bra`/`jmp` on 68k; `ret`/`jp`/`jr` on Z80) warns
+//!   terminator (`rts`/`rte`/`bra`/`jmp`/`jbra` on 68k; `ret`/`jp`/`jr` on Z80) warns
 //!   `[proc.undeclared-fallthrough]`. T4's analysis is deliberately minimal — it
 //!   inspects only the LAST instruction's mnemonic; the full control-flow
 //!   reachability version is deferred (S2-D6/D7).
@@ -168,7 +168,10 @@ fn check_undeclared_fallthrough(
 /// deliberately excluded — they may fall through.
 fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
     match cpu {
-        Cpu::M68000 => matches!(mnemonic, "rts" | "rte" | "bra" | "jmp"),
+        // `jbra` (emp auto-reaching branch, D2.18) is an unconditional transfer,
+        // so it terminates like `bra`/`jmp`; `jbsr` (a call) is deliberately NOT
+        // a terminator — control returns, mirroring `bsr`/`jsr`.
+        Cpu::M68000 => matches!(mnemonic, "rts" | "rte" | "bra" | "jmp" | "jbra"),
         Cpu::Z80 => matches!(mnemonic, "ret" | "jp" | "jr"),
     }
 }

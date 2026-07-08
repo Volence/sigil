@@ -9,7 +9,7 @@
 //! selects.
 
 use sigil_ir::backend::{Backend, Cpu, LowerError};
-use sigil_ir::{AbsWidth, DataFragment, Expr, Fixup, FixupKind, Fragment};
+use sigil_ir::{AbsWidth, DataFragment, Expr, Fixup, FixupKind, Fragment, RelaxCandidate};
 use sigil_isa::m68k::{Instruction, Mnemonic, Operand, Size};
 use sigil_span::Span;
 
@@ -129,6 +129,55 @@ impl M68kBackend {
             }
             _ => unreachable!(),
         }
+    }
+
+    /// Build the four ordered candidate encodings for an emp `jbra`/`jbsr`
+    /// auto-reaching branch (D2.18), smallest → largest, for a
+    /// [`Fragment::RelaxLadder`] the linker width-selects:
+    ///
+    /// | rung | form          | bytes                     | fixup                    |
+    /// |------|---------------|---------------------------|--------------------------|
+    /// | 0    | `bra.s`/`bsr.s` | `60/61 00`              | `PcRel8` @ 1 (2 bytes)   |
+    /// | 1    | `bra.w`/`bsr.w` | `60/61 00 00 00`        | `PcRelDisp16` @ 2 (4 b)  |
+    /// | 2    | `jmp`/`jsr` abs.w | `4EF8/4EB8 00 00`     | `Abs16Be` @ 2 (4 bytes)  |
+    /// | 3    | `jmp`/`jsr` abs.l | `4EF9/4EB9 00 00 00 00` | `Abs32Be` @ 2 (6 b)  |
+    ///
+    /// `is_jsr` selects the call opcodes (`bsr`/`jsr`) over the jump ones. The
+    /// displacement/address bytes are zeroed placeholders the linker patches via
+    /// each candidate's fixup. Rung 1 (`bra.w`, PC-relative) is ordered BEFORE
+    /// rung 2 (`jmp abs.w`) though both are 4 bytes: same length, but the
+    /// PC-relative form is relocatable and is the D2.18 ladder's preference. This
+    /// mirrors the [`lower_jmp_jsr_abs`](Self::lower_jmp_jsr_abs)/`lower_branch`
+    /// precedent — the m68k instruction encodings live in this backend, not in the
+    /// emp front-end, which merely supplies the assembled candidates to the ladder.
+    pub fn lower_jbra_jbsr_candidates(&self, is_jsr: bool, target: Expr, _span: Span) -> Vec<RelaxCandidate> {
+        // bra/bsr opcode high byte: 0x60 (bra, cc=0) or 0x61 (bsr, cc=1).
+        let br: u8 = if is_jsr { 0x61 } else { 0x60 };
+        // jmp/jsr abs.w opcode word: 0x4EF8 (jmp) or 0x4EB8 (jsr); abs.l = `| 1`.
+        let jmp_w: u16 = if is_jsr { 0x4EB8 } else { 0x4EF8 };
+        let jmp_l: u16 = jmp_w | 0x0001;
+        vec![
+            // Rung 0 — bra.s/bsr.s: opcode byte + disp byte (offset 1), 2 bytes.
+            RelaxCandidate {
+                bytes: vec![br, 0x00],
+                fixup: Fixup { kind: FixupKind::PcRel8, offset: 1, target: target.clone() },
+            },
+            // Rung 1 — bra.w/bsr.w: opcode word + disp word (offset 2), 4 bytes.
+            RelaxCandidate {
+                bytes: vec![br, 0x00, 0x00, 0x00],
+                fixup: Fixup { kind: FixupKind::PcRelDisp16, offset: 2, target: target.clone() },
+            },
+            // Rung 2 — jmp/jsr abs.w: opcode word + abs.w address (offset 2), 4 bytes.
+            RelaxCandidate {
+                bytes: vec![(jmp_w >> 8) as u8, (jmp_w & 0xFF) as u8, 0x00, 0x00],
+                fixup: Fixup { kind: FixupKind::Abs16Be, offset: 2, target: target.clone() },
+            },
+            // Rung 3 — jmp/jsr abs.l: opcode word + abs.l address (offset 2), 6 bytes.
+            RelaxCandidate {
+                bytes: vec![(jmp_l >> 8) as u8, (jmp_l & 0xFF) as u8, 0x00, 0x00, 0x00, 0x00],
+                fixup: Fixup { kind: FixupKind::Abs32Be, offset: 2, target },
+            },
+        ]
     }
 
     /// Lower a symbolic `dbcc`/`dbra` (`DBcc Dn,disp`) to the opcode word +
@@ -315,6 +364,42 @@ mod tests {
         assert_eq!(frag.fixups[0].kind, FixupKind::PcRelDisp16);
         assert_eq!(frag.fixups[0].offset, 2);
         assert_eq!(frag.fixups[0].target, Expr::Sym("loop".into()));
+    }
+
+    #[test]
+    fn jbra_candidates_are_the_four_ordered_rungs() {
+        // jbra: bra.s → bra.w → jmp abs.w → jmp abs.l, non-decreasing lengths.
+        let c = M68kBackend.lower_jbra_jbsr_candidates(false, Expr::Sym("L".into()), span());
+        assert_eq!(c.len(), 4);
+        // Rung 0: bra.s = 60 00, PcRel8 @ 1 (2 bytes).
+        assert_eq!(c[0].bytes, vec![0x60, 0x00]);
+        assert_eq!(c[0].fixup.kind, FixupKind::PcRel8);
+        assert_eq!(c[0].fixup.offset, 1);
+        // Rung 1: bra.w = 60 00 00 00, PcRelDisp16 @ 2 (4 bytes).
+        assert_eq!(c[1].bytes, vec![0x60, 0x00, 0x00, 0x00]);
+        assert_eq!(c[1].fixup.kind, FixupKind::PcRelDisp16);
+        assert_eq!(c[1].fixup.offset, 2);
+        // Rung 2: jmp abs.w = 4E F8 00 00, Abs16Be @ 2 (4 bytes) — ranked AFTER
+        // bra.w though same length (PC-relative preferred, D2.18).
+        assert_eq!(c[2].bytes, vec![0x4E, 0xF8, 0x00, 0x00]);
+        assert_eq!(c[2].fixup.kind, FixupKind::Abs16Be);
+        assert_eq!(c[2].fixup.offset, 2);
+        // Rung 3: jmp abs.l = 4E F9 00 00 00 00, Abs32Be @ 2 (6 bytes).
+        assert_eq!(c[3].bytes, vec![0x4E, 0xF9, 0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(c[3].fixup.kind, FixupKind::Abs32Be);
+        assert_eq!(c[3].fixup.offset, 2);
+        // Lengths non-decreasing (the RelaxLadder construction contract).
+        assert!(c.windows(2).all(|w| w[0].bytes.len() <= w[1].bytes.len()));
+    }
+
+    #[test]
+    fn jbsr_candidates_use_bsr_and_jsr_opcodes() {
+        // jbsr: bsr.s (61) → bsr.w (61) → jsr abs.w (4EB8) → jsr abs.l (4EB9).
+        let c = M68kBackend.lower_jbra_jbsr_candidates(true, Expr::Sym("L".into()), span());
+        assert_eq!(c[0].bytes, vec![0x61, 0x00]);
+        assert_eq!(c[1].bytes, vec![0x61, 0x00, 0x00, 0x00]);
+        assert_eq!(c[2].bytes, vec![0x4E, 0xB8, 0x00, 0x00]);
+        assert_eq!(c[3].bytes, vec![0x4E, 0xB9, 0x00, 0x00, 0x00, 0x00]);
     }
 
     #[test]

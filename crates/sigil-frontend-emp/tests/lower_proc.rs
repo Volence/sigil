@@ -239,3 +239,99 @@ fn param_register_write_is_not_an_undeclared_clobber() {
         "writing a param register must not warn: {diags:?}"
     );
 }
+
+// ---- Plan 7 #8: jbra/jbsr fallthrough-terminator recognition (D2.18) --------
+
+#[test]
+fn jbra_terminates_proc_no_fallthrough_warning() {
+    // `jbra <label>` is an UNCONDITIONAL control transfer, so a proc ending in it
+    // terminates straight-line flow — no `[proc.undeclared-fallthrough]` warning
+    // (the pitcher_plant `jbra Draw_Sprite` tail case). Also proves `jbra` is a
+    // recognized proc-body mnemonic (the b1 gap: it used to error "not a
+    // recognized 68000 mnemonic").
+    let (_module, diags) =
+        lower("module m\nproc p() {\n    moveq #0, d0\n    jbra Draw_Sprite\n}\ndata Draw_Sprite: [u8;2] = [$00, $00]\n");
+    assert!(
+        diags.iter().all(|d| d.level != Level::Error),
+        "jbra must lower without error: {diags:?}"
+    );
+    assert!(
+        !has_tag(&diags, "[proc.undeclared-fallthrough]"),
+        "a proc ending in jbra must not warn about fallthrough: {diags:?}"
+    );
+}
+
+#[test]
+fn jbsr_does_not_terminate_proc() {
+    // `jbsr <label>` is a CALL — control returns, so a proc whose last instruction
+    // is `jbsr` still falls through → the undeclared-fallthrough warning fires
+    // (jbsr is deliberately NOT a terminator, mirroring bsr/jsr).
+    let (_module, diags) =
+        lower("module m\nproc p() {\n    moveq #0, d0\n    jbsr ObjectMove\n}\ndata ObjectMove: [u8;2] = [$00, $00]\n");
+    assert!(
+        diags.iter().all(|d| d.level != Level::Error),
+        "jbsr must lower without error: {diags:?}"
+    );
+    assert!(
+        has_tag(&diags, "[proc.undeclared-fallthrough]"),
+        "a proc ending in jbsr (a call) must still warn about fallthrough: {diags:?}"
+    );
+}
+
+#[test]
+fn jbra_with_size_suffix_is_jbra_sized_error() {
+    // `jbra` sizes itself — a `.s`/`.w` suffix is a contradiction, not a pin.
+    for src in [
+        "module m\nproc p() {\n    jbra.s Target\n}\ndata Target: [u8;2] = [$00,$00]\n",
+        "module m\nproc p() {\n    jbra.w Target\n}\ndata Target: [u8;2] = [$00,$00]\n",
+    ] {
+        let (_module, diags) = lower(src);
+        assert!(
+            has_tag(&diags, "[jbra.sized]"),
+            "a sized jbra must be [jbra.sized]: {diags:?}"
+        );
+    }
+}
+
+#[test]
+fn jbsr_with_size_suffix_is_jbra_sized_error() {
+    // Same self-sizing contract for the call form.
+    let (_module, diags) =
+        lower("module m\nproc p() {\n    jbsr.w Target\n}\ndata Target: [u8;2] = [$00,$00]\n");
+    assert!(has_tag(&diags, "[jbra.sized]"), "a sized jbsr must be [jbra.sized]: {diags:?}");
+}
+
+#[test]
+fn jbra_non_label_operand_is_label_only_error() {
+    // A register-indirect target is a COMPUTED transfer (jmp's job), not jbra's.
+    let (_module, diags) = lower("module m\nproc p(a0: *u8) {\n    jbra (a0)\n}\n");
+    assert!(
+        has_tag(&diags, "[jbra.label-only]"),
+        "a register-indirect jbra target must be [jbra.label-only]: {diags:?}"
+    );
+}
+
+#[test]
+fn jbra_immediate_operand_is_label_only_error() {
+    // An immediate is not a label either.
+    let (_module, diags) = lower("module m\nproc p() {\n    jbra #5\n}\n");
+    assert!(
+        has_tag(&diags, "[jbra.label-only]"),
+        "an immediate jbra target must be [jbra.label-only]: {diags:?}"
+    );
+}
+
+#[test]
+fn jbra_in_z80_section_is_branch_non_68k() {
+    // `jbra`/`jbsr` are 68k auto-reaching branches; in a `cpu: z80` section they
+    // are `[branch.non-68k]` (the Z80 `jr`→`jp` ladder is deferred), mirroring
+    // `[dispatch.non-68k]`'s guard shape.
+    let src = "module m\nsection s (cpu: z80, vma: $8000) {\n\
+               proc p() {\n    jbra Target\n}\n\
+               data Target: [u8;2] = [$00,$00]\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[branch.non-68k]"),
+        "jbra in a z80 section must be [branch.non-68k]: {diags:?}"
+    );
+}
