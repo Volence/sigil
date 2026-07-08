@@ -126,6 +126,23 @@ pub enum Value {
     /// binds ONLY a `Label`-typed comptime fn param — none of which a raw string
     /// should do. It NEVER folds to a comptime integer (emission stays link-time).
     Label(String),
+    /// A LINK-TIME integer value (D-H.2): an integer known only AFTER
+    /// `resolve_layout` picks every relaxable fragment's final width. Produced by
+    /// a PROVISIONAL `here()` — one whose position sits after a size-relaxable
+    /// instruction (`jbra`/`jbsr`, an unsized branch, a bare `jmp`/`jsr`) in the
+    /// currently-open section — which yields `LinkExpr(Sym(<anchor label>))`. The
+    /// wrapped [`Expr`](sigil_ir::expr::Expr) is a RESIDUAL expression tree: the
+    /// comptime operators IR `Expr` can represent lift onto it (an `Int` lifts via
+    /// `Expr::Int`, range-checked i128→i64), so `here() + 4` builds
+    /// `Add(Sym, Int(4))` instead of folding. Everything a `LinkExpr` reaches that
+    /// is NOT one of those operators is the loud `[here.provisional]` error (it
+    /// cannot size or steer comptime evaluation). A provisional `here()` is
+    /// EMITTABLE (a plain `Sym` tree lowers via the item label, D-H.3) and
+    /// GUARDABLE (`ensure`/`ensure_fatal` defer it to a `LinkAssert`, D-H.4);
+    /// every other use refuses. Distinct from [`Value::Label`]: a label is a bare
+    /// symbol reference with no arithmetic; a `LinkExpr` is a foldable integer
+    /// expression that simply cannot be folded until link.
+    LinkExpr(sigil_ir::expr::Expr),
     /// An "error already reported here" sentinel (D-P2.9). Operations on
     /// `Poison` yield `Poison` silently so one bad subexpression does not fan
     /// out into a cascade of diagnostics.
@@ -535,6 +552,7 @@ impl Value {
             Value::Cc(_) => "cc",
             Value::Reg(_) => "reg",
             Value::Label(_) => "label",
+            Value::LinkExpr(_) => "link-expr",
             Value::Poison => "poison",
         }
     }
@@ -630,6 +648,10 @@ impl fmt::Display for Value {
             // A label renders as its bare symbol name (no quotes — it is not a
             // string): `<label init>` distinguishes it in diagnostics.
             Value::Label(n) => write!(f, "<label {n}>"),
+            // A link-time value has no comptime integer to render — a deferred
+            // guard message folds it at link (D-H.5); this `Display` is only a
+            // diagnostic fallback for a `LinkExpr` that reaches an unexpected site.
+            Value::LinkExpr(_) => f.write_str("<link-time value>"),
             Value::Poison => f.write_str("<poison>"),
         }
     }

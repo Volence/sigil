@@ -252,6 +252,13 @@ impl<'a> Evaluator<'a> {
                 if !self.check_arity(method, &args, 2, span) {
                     return Value::Poison;
                 }
+                // A provisional `here()` bound cannot slice at comptime (D-H.2).
+                if let Some(v) = self.reject_if_provisional(&args[0], span) {
+                    return v;
+                }
+                if let Some(v) = self.reject_if_provisional(&args[1], span) {
+                    return v;
+                }
                 // Slice bounds erase a `Value::Typed` to its stored int (§8.3).
                 let (start, end) = match (args[0].as_stored_int(), args[1].as_stored_int()) {
                     (Some(a), Some(b)) => (a, b),

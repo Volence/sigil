@@ -309,6 +309,12 @@ impl<'a> Evaluator<'a> {
     fn eval_const_index(&mut self, expr: &ast::Expr) -> Option<i128> {
         let mut env = Env::new();
         let v = self.eval_expr(expr, &mut env);
+        // A provisional `here()` (a `LinkExpr`) cannot size an array or bound a
+        // refinement (D-H.2) — refuse with the specific `[here.provisional]`
+        // message rather than the generic "expected an integer" below.
+        if self.reject_if_provisional(&v, crate::parser::expr_span(expr)).is_some() {
+            return None;
+        }
         // A `Value::Typed` (a newtype/fixed value) erases to its stored int
         // (§8.3), so a nominally-typed comptime value is still a usable array
         // length / refinement bound.

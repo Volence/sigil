@@ -354,6 +354,22 @@ impl<'a> Evaluator<'a> {
         if matches!(v, Value::Poison) {
             return Value::Poison;
         }
+        // D-H.2: a provisional operand lifts. `-x` → IR `Neg`; `~x` → IR `Not`
+        // (bitwise complement); logical `!x` on a link value has no direct IR
+        // node, so it becomes `x == 0` (its neutral 0/1 truth value at link).
+        if let Value::LinkExpr(e) = v {
+            use sigil_ir::expr::{BinOp as IrBin, Expr as IrExpr, UnOp as IrUn};
+            let lifted = match op {
+                UnOp::Neg => IrExpr::Unary { op: IrUn::Neg, operand: Box::new(e) },
+                UnOp::BitNot => IrExpr::Unary { op: IrUn::Not, operand: Box::new(e) },
+                UnOp::Not => IrExpr::Binary {
+                    op: IrBin::Eq,
+                    lhs: Box::new(e),
+                    rhs: Box::new(IrExpr::Int(0)),
+                },
+            };
+            return Value::LinkExpr(lifted);
+        }
         match op {
             UnOp::Neg => match v {
                 // Checked negation: `i128::MIN` has no positive counterpart, so
@@ -387,14 +403,35 @@ impl<'a> Evaluator<'a> {
         span: Span,
         env: &mut Env,
     ) -> Value {
+        // Short-circuit `&&`/`||` cannot short-circuit on a link-time operand
+        // (its truth value is unknown until link), so a `LinkExpr` on either side
+        // must build a residual `LogAnd`/`LogOr` tree instead — route them through
+        // the same non-short-circuit lift path as every other operator by falling
+        // through when a provisional operand is present. `eval_logical` still owns
+        // the fully-comptime case.
         if matches!(op, BinOp::And | BinOp::Or) {
-            return self.eval_logical(op, lhs_e, rhs_e, span, env);
+            let lhs = self.eval_expr(lhs_e, env);
+            if matches!(lhs, Value::LinkExpr(_)) {
+                let rhs = self.eval_expr(rhs_e, env);
+                return self.lift_binary(op, lhs, rhs, span);
+            }
+            // Not a provisional LHS: replay the standard short-circuit path with
+            // the already-evaluated LHS, so a `LinkExpr` RHS after a comptime LHS
+            // still lifts (via `lift_binary` from inside `eval_logical_with_lhs`).
+            return self.eval_logical_with_lhs(op, lhs, rhs_e, span, env);
         }
         let lhs = self.eval_expr(lhs_e, env);
         let rhs = self.eval_expr(rhs_e, env);
         // D-P2.9: poison in either operand yields poison with no new diagnostic.
         if matches!(lhs, Value::Poison) || matches!(rhs, Value::Poison) {
             return Value::Poison;
+        }
+        // D-H.2: a PROVISIONAL `here()` operand (a `LinkExpr`) makes the whole op
+        // a residual link-time expression — build the `Expr` tree instead of
+        // folding. Any operand mix where at least one side is `LinkExpr` lifts;
+        // an `Int` lifts via `Expr::Int` (range-checked i128→i64).
+        if matches!(lhs, Value::LinkExpr(_)) || matches!(rhs, Value::LinkExpr(_)) {
+            return self.lift_binary(op, lhs, rhs, span);
         }
         // T5 (D-P3.3): if EITHER operand carries a sized nominal type, the whole
         // op is type-aware — it wraps at the underlying's width/scale and stays
@@ -550,15 +587,14 @@ impl<'a> Evaluator<'a> {
     /// Short-circuiting `&&`/`||`. The LHS must be `Bool`; the RHS is evaluated
     /// only when the result is not already determined (so a guarding/erroring
     /// RHS is skipped). A `Poison` operand propagates silently.
-    fn eval_logical(
+    fn eval_logical_with_lhs(
         &mut self,
         op: BinOp,
-        lhs_e: &ast::Expr,
+        lhs: Value,
         rhs_e: &ast::Expr,
         span: Span,
         env: &mut Env,
     ) -> Value {
-        let lhs = self.eval_expr(lhs_e, env);
         if matches!(lhs, Value::Poison) {
             return Value::Poison;
         }
@@ -575,10 +611,50 @@ impl<'a> Evaluator<'a> {
         if matches!(rhs, Value::Poison) {
             return Value::Poison;
         }
+        // A provisional RHS (`true && here() < N`, the LHS did not short-circuit)
+        // builds a residual tree — the comptime LHS is a known `Bool` here, so the
+        // whole op reduces to the RHS's link-time truth value (D-H.2).
+        if matches!(rhs, Value::LinkExpr(_)) {
+            return self.lift_binary(op, Value::Bool(lb), rhs, span);
+        }
         match rhs {
             Value::Bool(b) => Value::Bool(b),
             other => self.operand_type_error(span, binop_symbol(op), &other),
         }
+    }
+
+    /// Build a residual link-time expression for `lhs op rhs` where at least one
+    /// operand is a [`Value::LinkExpr`] (D-H.2). Lifts each operand to an IR
+    /// [`Expr`](sigil_ir::expr::Expr) (an `Int`/`Bool` via a literal, a `LinkExpr`
+    /// verbatim), maps the operator, and wraps the tree back in a `LinkExpr`. A
+    /// non-liftable operand (a non-integer mixed with a link value, an i64
+    /// overflow, or the `++` operator IR cannot carry) is a loud error.
+    fn lift_binary(&mut self, op: BinOp, lhs: Value, rhs: Value, span: Span) -> Value {
+        if matches!(lhs, Value::Poison) || matches!(rhs, Value::Poison) {
+            return Value::Poison;
+        }
+        let Some(ir_op) = ast_binop_to_ir(op) else {
+            return self.binop_type_error(span, binop_symbol(op), &lhs, &rhs);
+        };
+        let l = match lift_to_link_expr(&lhs) {
+            Ok(e) => e,
+            Err(reason) => {
+                self.error(span, format!("[here.provisional] {reason}"));
+                return Value::Poison;
+            }
+        };
+        let r = match lift_to_link_expr(&rhs) {
+            Ok(e) => e,
+            Err(reason) => {
+                self.error(span, format!("[here.provisional] {reason}"));
+                return Value::Poison;
+            }
+        };
+        Value::LinkExpr(sigil_ir::expr::Expr::Binary {
+            op: ir_op,
+            lhs: Box::new(l),
+            rhs: Box::new(r),
+        })
     }
 
     /// Concatenation `++` (D-P2.4): `Str ++ Str` or `Array ++ Array` only.
@@ -606,6 +682,14 @@ impl<'a> Evaluator<'a> {
         let hi_v = self.eval_expr(hi, env);
         if matches!(lo_v, Value::Poison) || matches!(hi_v, Value::Poison) {
             return Value::Poison;
+        }
+        // A provisional `here()` bound cannot size a comptime range (D-H.2) —
+        // e.g. the §7.1 `rept $38 - here()` gap-fill idiom after a relaxable.
+        if let Some(v) = self.reject_if_provisional(&lo_v, span) {
+            return v;
+        }
+        if let Some(v) = self.reject_if_provisional(&hi_v, span) {
+            return v;
         }
         // Range bounds erase a `Value::Typed` to its stored int (§8.3). An
         // empty/negative range (`lo >= hi`) is allowed here; whether it iterates
@@ -649,6 +733,91 @@ impl<'a> Evaluator<'a> {
         );
         Value::Poison
     }
+
+    /// Emit the `[here.provisional]` error (D-H.2) and return `Poison`. A
+    /// PROVISIONAL `here()` — one after a size-relaxable instruction — is a
+    /// [`Value::LinkExpr`], an integer known only after `resolve_layout`. It may
+    /// only be LIFTED through the comptime operators IR `Expr` represents, EMITTED
+    /// plainly (D-H.3), or GUARDED (D-H.4); every other site that consumes it as a
+    /// concrete comptime integer (array length, `rept`/`if`/`while`, index, slice,
+    /// `.map`, `max_size`, charmap, float ops, an arithmetic-then-emit) refuses
+    /// loudly here rather than silently checking or sizing against a stale value.
+    pub(crate) fn here_provisional_error(&mut self, span: Span) -> Value {
+        self.error(
+            span,
+            "[here.provisional] `here()` after a size-relaxable instruction (jbra/jbsr, an \
+             unsized branch, or a bare jmp/jsr) is a link-time value; it cannot size or steer \
+             comptime evaluation — pin branch sizes (bra.s/bra.w, jmp) before this point, or \
+             restructure so the value is only emitted or guarded"
+                .to_string(),
+        );
+        Value::Poison
+    }
+
+    /// If `v` is a [`Value::LinkExpr`], emit `[here.provisional]` and return
+    /// `Some(Poison)` — the caller (a site that needs a concrete comptime value)
+    /// short-circuits on it. `None` means `v` is not a provisional link value, so
+    /// the caller proceeds unchanged. The single choke point every comptime
+    /// consumer routes a possibly-provisional value through.
+    pub(crate) fn reject_if_provisional(&mut self, v: &Value, span: Span) -> Option<Value> {
+        if matches!(v, Value::LinkExpr(_)) {
+            Some(self.here_provisional_error(span))
+        } else {
+            None
+        }
+    }
+}
+
+/// Lift a comptime [`Value`] into an IR [`Expr`](sigil_ir::expr::Expr) operand of
+/// a residual link-time expression (D-H.2). A [`Value::LinkExpr`] contributes its
+/// residual tree; a bare integer (`Int`, or a `Typed` erasing to one) lifts via
+/// [`Expr::Int`] after a checked i128 → i64 narrowing. `Err` carries a human
+/// reason: a value that is neither (a non-integer mixed with a `LinkExpr`), or an
+/// integer that does not fit i64 — the caller turns it into a diagnostic.
+pub(super) fn lift_to_link_expr(v: &Value) -> Result<sigil_ir::expr::Expr, String> {
+    if let Value::LinkExpr(e) = v {
+        return Ok(e.clone());
+    }
+    match v.as_stored_int() {
+        Some(n) => match i64::try_from(n) {
+            Ok(i) => Ok(sigil_ir::expr::Expr::Int(i)),
+            Err(_) => Err(format!(
+                "value {n} does not fit a 64-bit link-time expression operand"
+            )),
+        },
+        None => Err(format!(
+            "a {} value cannot combine with a link-time `here()` value",
+            v.type_name()
+        )),
+    }
+}
+
+/// Map an AST [`BinOp`] to its IR [`BinOp`](sigil_ir::expr::BinOp) counterpart for
+/// building a residual link expression (D-H.2). Returns `None` for the operators
+/// IR `Expr` cannot carry (`++` concat) — those never combine with a `LinkExpr`.
+pub(super) fn ast_binop_to_ir(op: BinOp) -> Option<sigil_ir::expr::BinOp> {
+    use sigil_ir::expr::BinOp as Ir;
+    Some(match op {
+        BinOp::Add => Ir::Add,
+        BinOp::Sub => Ir::Sub,
+        BinOp::Mul => Ir::Mul,
+        BinOp::Div => Ir::Div,
+        BinOp::Mod => Ir::Mod,
+        BinOp::Shl => Ir::Shl,
+        BinOp::Shr => Ir::Shr,
+        BinOp::BitAnd => Ir::And,
+        BinOp::BitOr => Ir::Or,
+        BinOp::BitXor => Ir::Xor,
+        BinOp::Eq => Ir::Eq,
+        BinOp::Ne => Ir::Ne,
+        BinOp::Lt => Ir::Lt,
+        BinOp::Le => Ir::Le,
+        BinOp::Gt => Ir::Gt,
+        BinOp::Ge => Ir::Ge,
+        BinOp::And => Ir::LogAnd,
+        BinOp::Or => Ir::LogOr,
+        BinOp::Concat => return None,
+    })
 }
 
 /// Coerce a numeric value to `f64` for mixed Int/Float promotion; `None` for
@@ -705,5 +874,39 @@ fn overlay_name(ty: &ast::Type) -> Option<String> {
     match ty {
         ast::Type::Named(path) if path.segments.len() == 1 => Some(path.segments[0].clone()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod link_expr_tests {
+    use super::{ast_binop_to_ir, lift_to_link_expr};
+    use crate::ast::BinOp;
+    use crate::value::Value;
+    use sigil_ir::expr::{BinOp as IrBin, Expr as IrExpr};
+
+    #[test]
+    fn lift_int_narrows_and_link_expr_passes_through() {
+        // A bare int lifts via Expr::Int.
+        assert_eq!(lift_to_link_expr(&Value::Int(4)).unwrap(), IrExpr::Int(4));
+        // A LinkExpr contributes its residual tree verbatim.
+        let sym = IrExpr::Sym("__here$m$0".into());
+        assert_eq!(
+            lift_to_link_expr(&Value::LinkExpr(sym.clone())).unwrap(),
+            sym
+        );
+    }
+
+    #[test]
+    fn lift_rejects_out_of_i64_range_and_non_int() {
+        assert!(lift_to_link_expr(&Value::Int(i128::from(i64::MAX) + 1)).is_err());
+        assert!(lift_to_link_expr(&Value::Str("x".into())).is_err());
+    }
+
+    #[test]
+    fn ast_binop_maps_all_arith_logic_ops_and_refuses_concat() {
+        assert_eq!(ast_binop_to_ir(BinOp::Add), Some(IrBin::Add));
+        assert_eq!(ast_binop_to_ir(BinOp::Le), Some(IrBin::Le));
+        assert_eq!(ast_binop_to_ir(BinOp::And), Some(IrBin::LogAnd));
+        assert_eq!(ast_binop_to_ir(BinOp::Concat), None);
     }
 }

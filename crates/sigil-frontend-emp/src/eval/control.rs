@@ -219,6 +219,12 @@ impl<'a> Evaluator<'a> {
             Ok(v) => v,
             Err(f) => return f,
         };
+        // A PROVISIONAL `here()` cannot steer comptime control flow (D-H.2): its
+        // truth value is unknown until link. Refuse loudly rather than fold a
+        // stale baseline value.
+        if let Some(v) = self.reject_if_provisional(&c, crate::parser::expr_span(cond)) {
+            return Flow::Normal(v);
+        }
         match c {
             Value::Poison => Flow::Normal(Value::Poison),
             Value::Bool(true) => self.exec_scoped(then, env),
@@ -259,6 +265,10 @@ impl<'a> Evaluator<'a> {
         let iter_v = self.eval_expr(iter, env);
         if self.aborted || self.pending_return.is_some() {
             return Value::Poison;
+        }
+        // A provisional `here()` cannot bound a comptime iteration (D-H.2).
+        if let Some(v) = self.reject_if_provisional(&iter_v, crate::parser::expr_span(iter)) {
+            return v;
         }
         // One element stream for both iterables. `Range` stays lazy — it is
         // never materialized into a `Vec` — so a huge range costs no memory and
@@ -344,6 +354,10 @@ impl<'a> Evaluator<'a> {
                 Ok(v) => v,
                 Err(f) => return f,
             };
+            // A provisional `here()` cannot steer a comptime loop (D-H.2).
+            if let Some(v) = self.reject_if_provisional(&c, crate::parser::expr_span(cond)) {
+                return Flow::Normal(v);
+            }
             match c {
                 Value::Bool(true) => {
                     if let Flow::Return(v) = self.exec_scoped(body, env) {
