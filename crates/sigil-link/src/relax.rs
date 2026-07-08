@@ -21,7 +21,7 @@
 use sigil_ir::expr::Fold;
 pub use sigil_ir::{
     asl_width_rule, AbsWidth, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, RelaxCandidate,
-    Section, SymbolTable, SymbolValue,
+    Section, SectionPlacement, SymbolTable, SymbolValue,
 };
 use sigil_span::{Diagnostic, Level, Span};
 
@@ -79,6 +79,113 @@ fn frag_len(frag: &Fragment, rung: usize) -> u32 {
             candidates.get(rung).map(|c| c.bytes.len() as u32).unwrap_or(0)
         }
     }
+}
+
+/// The section's FINAL image extent under the CURRENT rungs (R7p.2): the same
+/// cursor-replay shape as `Section::placement_span` (ir lib.rs), but counting
+/// each relaxable fragment at its CURRENT rung width (via `frag_len`) instead of
+/// its MAX width, and honoring `Org` extent identically. This is what the
+/// link-time placement pass advances the group cursor by — a chained successor's
+/// base derives from its predecessors' FINAL sizes, not their baked baselines.
+///
+/// `Org` seeks the cursor (`frag_len` returns 0 for it, so the cursor is set to
+/// `target` here); `Reserve` advances the cursor but contributes no image bytes —
+/// both mirror `placement_span`/`vma_len` so the max-extent is the address-space
+/// span, matching what the placer reserved.
+fn final_size(sec: &Section, rungs: &[usize]) -> u32 {
+    let mut cursor: u32 = 0;
+    let mut max_extent: u32 = 0;
+    for (fi, frag) in sec.fragments.iter().enumerate() {
+        match frag {
+            Fragment::Org { target, .. } => cursor = *target,
+            other => cursor += frag_len(other, rungs[fi]),
+        }
+        if cursor > max_extent {
+            max_extent = cursor;
+        }
+    }
+    max_extent
+}
+
+/// The link-time placement pass (R7p.2). Walk sections in vec order with a cursor
+/// PER `group`: a `Pinned` section resets its group cursor to its baked anchor
+/// (`sec.lma`); a `Chained` section lands at its group cursor. The cursor then
+/// advances by `max(reserved_span, final_size(sec, rungs))` — the reserved-span
+/// arm preserves the multi-module max-span gaps (byte-identity, R7p.6), the
+/// final-size arm corrects the growth-past-baseline understatement (the L-H.1
+/// fix). REWRITES `sec.lma` in place. Returns whether any lma moved this pass (so
+/// the joint fixpoint knows placement is not yet stable).
+fn place_pass(placed: &mut [Section], rungs: &[Vec<usize>]) -> bool {
+    // Per-group write cursor. `None` group shares one anonymous cursor.
+    let mut cursors: std::collections::HashMap<Option<String>, u32> =
+        std::collections::HashMap::new();
+    let mut moved = false;
+    for (si, sec) in placed.iter_mut().enumerate() {
+        let base = match sec.placement {
+            SectionPlacement::Pinned => {
+                // A pin resets its group cursor to its baked anchor value.
+                sec.lma
+            }
+            SectionPlacement::Chained => {
+                // A chained section lands at its group cursor (or its baked lma if
+                // it is the first section seen in its group — defensive: the
+                // front-ends always stamp the first-per-group `Pinned`).
+                *cursors.get(&sec.group).unwrap_or(&sec.lma)
+            }
+        };
+        // #7-main: bank bump seam (D7.2)
+        let advance = sec.reserved_span.max(final_size(sec, &rungs[si]));
+        if sec.lma != base {
+            sec.lma = base;
+            moved = true;
+        }
+        cursors.insert(sec.group.clone(), base + advance);
+    }
+    moved
+}
+
+/// The R7p.4 overlap check: after the joint fixpoint converges, return the first
+/// pair of NON-EMPTY placed sections whose `[lma, lma + final_size)` ranges
+/// intersect, as an `Error` diagnostic naming BOTH sections and both hex extents.
+/// Empty (zero-final-size) sections place no bytes, so they can neither clobber
+/// nor be clobbered and are skipped (mirroring `flatten`/`flatten_checked`).
+fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
+    // Collect (start, end, name, span) for every non-empty section, then scan
+    // every pair. O(n²), but n is the section count (small), and this runs once
+    // at convergence — not per pass.
+    let ranges: Vec<(u32, u32, &str, Span)> = placed
+        .iter()
+        .enumerate()
+        .filter_map(|(si, sec)| {
+            let size = final_size(sec, &rungs[si]);
+            if size == 0 {
+                return None;
+            }
+            let span = sec.fragments.first().map(frag_span).unwrap_or(Span {
+                source: sigil_span::SourceId(0),
+                start: 0,
+                end: 0,
+            });
+            Some((sec.lma, sec.lma + size, sec.name.as_str(), span))
+        })
+        .collect();
+    for i in 0..ranges.len() {
+        for j in (i + 1)..ranges.len() {
+            let (a_lo, a_hi, a_name, a_span) = ranges[i];
+            let (b_lo, b_hi, b_name, _) = ranges[j];
+            // Half-open ranges intersect iff each starts before the other ends.
+            if a_lo < b_hi && b_lo < a_hi {
+                return Some(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "sections `{a_name}` [{a_lo:#X}, {a_hi:#X}) and `{b_name}` [{b_lo:#X}, {b_hi:#X}) overlap in the image (colliding pins)"
+                    ),
+                    primary: a_span,
+                });
+            }
+        }
+    }
+    None
 }
 
 /// Breakpoints mapping an all-rung-0 (baseline) offset to the growth delta at
@@ -348,27 +455,43 @@ pub fn resolve_layout(
     let mut rungs: Vec<Vec<usize>> =
         sections.iter().map(|s| vec![0usize; s.fragments.len()]).collect();
 
+    // The joint placement⇄relaxation fixpoint (R7p.3) operates on a MUTABLE copy:
+    // each outer pass re-derives every chained section's lma from the current
+    // rungs (the placement pass, R7p.2), so `placed`'s lmas are truth-telling
+    // final addresses. `rungs` persists across passes and is grow-only (the
+    // existing ladder invariant); placement is a deterministic function of
+    // rungs + pins, so once rungs stabilize one final placement is fixed.
+    let mut placed: Vec<Section> = sections.to_vec();
+
     // Provably-sufficient pass cap: each pass that reports `grew` advances at
     // least one relaxable fragment's rung by ≥1 (a length change), and each
     // fragment can advance at most `rung_count − 1` times (grow-only). So at most
-    // `Σ(rung_count − 1)` passes can grow — one more pass observes no growth and
-    // converges. (JmpJsrSym/RelaxAbsSym contribute 1 each = the old total-flips
-    // bound; a 4-rung ladder contributes 3.) The non-convergence Err below is an
-    // unreachable-in-practice backstop.
+    // `Σ(rung_count − 1)` passes can grow — after that, one placement pass settles
+    // the chained lmas from the stable rungs and the next pass observes neither a
+    // rung growth nor an lma move → convergence. (JmpJsrSym/RelaxAbsSym contribute
+    // 1 each = the old total-flips bound; a 4-rung ladder contributes 3.) The
+    // `.max(64)` is the honesty backstop the ruling asks for; the non-convergence
+    // Err below is unreachable-in-practice by the grow-only/deterministic argument.
     let total_flips: usize = sections
         .iter()
         .flat_map(|s| s.fragments.iter())
         .map(|f| rung_count(f) - 1)
         .sum();
-    let cap = total_flips + 1;
+    let cap = (total_flips + 2).max(64);
 
     // Span of a fragment that grew on the most recent pass, for the backstop diag.
     let mut last_grown_span: Option<Span> = None;
 
     for _ in 0..cap {
+        // (0) Placement pass (R7p.2): re-derive every chained section's lma from
+        // the current rungs. A moved lma moves that section's labels (its
+        // `vma_origin` shifts when `vma_base` is None), which the symbol-table
+        // rebuild in (a) picks up — the intended truth-telling per D7.4.
+        let moved = place_pass(&mut placed, &rungs);
+
         // (a) Build the symbol table with label VMAs shifted under current rungs.
         let mut syms = stubs.clone();
-        for (si, sec) in sections.iter().enumerate() {
+        for (si, sec) in placed.iter().enumerate() {
             let origin = sec.vma_origin();
             let bps = shift_breakpoints(sec, &rungs[si]);
             for label in &sec.labels {
@@ -381,7 +504,7 @@ pub fn resolve_layout(
         // fragment's byte LENGTH — a same-length rung move (e.g. bra.w → jmp
         // abs.w, both 4 bytes) is recorded but needs no relayout.
         let mut grew = false;
-        for (si, sec) in sections.iter().enumerate() {
+        for (si, sec) in placed.iter().enumerate() {
             let origin = sec.vma_origin();
             let bps = shift_breakpoints(sec, &rungs[si]);
             for fi in 0..sec.fragments.len() {
@@ -478,14 +601,17 @@ pub fn resolve_layout(
             }
         }
 
-        if !grew {
+        // Converged only when NEITHER a rung grew NOR an lma moved this pass
+        // (R7p.3): a placement move can change a cross-section branch distance, so
+        // we must re-run selection at the new addresses before lowering.
+        if !grew && !moved {
             // (c) Convergence sweep: every RelaxLadder's chosen candidate must
             // actually reach the target. A ladder that maxed at its last rung and
             // still cannot reach (tonight: a conditional/unsized branch whose last
             // rung is PcRelDisp16 — the only ladder shape that can exhaust) is a
             // hard error naming the signed distance. Collect ALL such errors.
             let mut errs: Vec<Diagnostic> = Vec::new();
-            for (si, sec) in sections.iter().enumerate() {
+            for (si, sec) in placed.iter().enumerate() {
                 let origin = sec.vma_origin();
                 let bps = shift_breakpoints(sec, &rungs[si]);
                 for fi in 0..sec.fragments.len() {
@@ -510,8 +636,19 @@ pub fn resolve_layout(
                 return Err(errs);
             }
 
+            // (c2) Overlap check (R7p.4): the joint fixpoint has converged, so
+            // every section's placed `[lma, lma + final_size)` range is final.
+            // Any two NON-EMPTY ranges that intersect are a loud link error naming
+            // BOTH sections and both extents (hex). Chained sections cannot overlap
+            // by construction (their cursor advances past each predecessor); this
+            // catches colliding PINS on any path — single-file, multi-module, or
+            // harness — since they all funnel through `resolve_layout`.
+            if let Some(diag) = overlap_diag(&placed, &rungs) {
+                return Err(vec![diag]);
+            }
+
             // (d) Converged & every ladder reaches: lower fragments + shift labels.
-            let out = sections
+            let out = placed
                 .iter()
                 .enumerate()
                 .map(|(si, sec)| {

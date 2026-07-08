@@ -40,6 +40,13 @@ pub struct IrBuilder {
     /// onto the finished [`Module`]. Empty for any program without a provisional
     /// `here()` guard.
     link_asserts: Vec<LinkAssert>,
+    /// R7p.1: force the NEXT `switch_section_lma` to stamp `Pinned` regardless of
+    /// whether a section has already opened. Set by the AS front-end after an
+    /// `org` that JUMPS the physical counter (an explicit placement authority, not
+    /// a natural chain advance) — so a forward-org gap survives the link-time
+    /// placement pass instead of being compacted (`org_forward_new_section`).
+    /// Cleared once consumed.
+    force_next_pinned: bool,
 }
 
 impl IrBuilder {
@@ -115,7 +122,8 @@ impl IrBuilder {
         self.close();
         // First section of this builder run → Pinned (base = baked lma); every
         // subsequent one → Chained (R7p.1). `close()` ran above, so an empty
-        // `done` means nothing has been opened yet in this run.
+        // `done` means nothing has been opened yet in this run. An `org`-jump
+        // override (`force_next_pinned`) forces `Pinned` regardless.
         let placement = self.placement_for_next();
         self.open = Some(OpenSection {
             name: name.to_string(),
@@ -131,14 +139,23 @@ impl IrBuilder {
     }
 
     /// The R7p.1 placement for the section about to open: `Pinned` if none has
-    /// yet been opened in this builder run, else `Chained`. Call AFTER `close()`
-    /// so `done` reflects all sections already opened.
-    fn placement_for_next(&self) -> SectionPlacement {
-        if self.done.is_empty() {
+    /// yet been opened in this builder run OR an `org`-jump override is pending
+    /// (`force_next_pinned`), else `Chained`. Call AFTER `close()` so `done`
+    /// reflects all sections already opened; CONSUMES the override.
+    fn placement_for_next(&mut self) -> SectionPlacement {
+        let forced = std::mem::replace(&mut self.force_next_pinned, false);
+        if forced || self.done.is_empty() {
             SectionPlacement::Pinned
         } else {
             SectionPlacement::Chained
         }
+    }
+
+    /// R7p.1: mark the NEXT opened section `Pinned` (an explicit-placement
+    /// authority — the AS `org`-jump). Idempotent until consumed by the next
+    /// `switch_section_lma`/`switch_section`.
+    pub fn pin_next_section(&mut self) {
+        self.force_next_pinned = true;
     }
 
     /// Seek the open section's write cursor to `target` (backward or forward)
