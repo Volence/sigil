@@ -138,6 +138,30 @@ pub struct BitfieldFieldLayout {
     pub lsb: u32,
 }
 
+/// A resolved overlay window passed to [`Evaluator::overlay_layout_fields`]: the
+/// base struct, the window field's name when known (`Some` when resolved locally,
+/// `None` for an injected clone whose window field name did not travel), and the
+/// window's byte offset/size. The overflow diagnostic's `Struct.window` display
+/// name is formatted from these ONLY in the error arm ([`WindowRef::desc`]), so
+/// the success path allocates nothing.
+struct WindowRef<'w> {
+    base_struct: &'w str,
+    window_field: Option<&'w str>,
+    offset: i128,
+    size: i128,
+}
+
+impl WindowRef<'_> {
+    /// The window's display name for the `[overlay.window-overflow]` diagnostic:
+    /// `Struct.window` when the field name is known, else just `Struct`.
+    fn desc(&self) -> String {
+        match self.window_field {
+            Some(w) => format!("{}.{w}", self.base_struct),
+            None => self.base_struct.to_string(),
+        }
+    }
+}
+
 /// A resolved SST overlay layout (Spec 2, Plan 7 #6, Part A — D6.A1/A2/A7/A9):
 /// a typed view over a `[u8; N]` window field of a base struct. The overlay's
 /// fields lay out by struct rules (declaration order, no padding), and their
@@ -552,6 +576,18 @@ impl<'a> Evaluator<'a> {
                 return poison(self, String::new());
             }
         };
+        // Injected-overlay fast path (Plan 7 #8): a consumer's clone carries the
+        // window binding resolved at the DEFINITION site. Use it verbatim — never
+        // re-scan the window in the consumer's namespace (which could rebind it to
+        // an unrelated same-named field, or a colliding consumer struct could poison
+        // it with a spurious ambiguity). The window resolution, base-struct
+        // existence, `[u8; N]` shape, and shadow checks all already ran and reported
+        // at the defining module, so they are skipped here; only the pure per-field
+        // layout (capacity + odd-field, both keyed solely on the stamped window
+        // offset/size) is re-run — it needs nothing from the consumer's structs.
+        if let Some(rw) = &decl.resolved_window {
+            return self.overlay_layout_from_window(name, decl, rw);
+        }
         // (1) Window resolution (D6.A1). The region path is either dotted
         // `[Struct, window]` or bare `[window]`; >2 segments name the dotted form.
         let (base_struct, window_field) = match decl.region.as_slice() {
@@ -624,7 +660,68 @@ impl<'a> Evaluator<'a> {
                 shadowed = true;
             }
         }
-        // (2) Field layout by struct rules: declaration order, no padding.
+        // (2)+(4) Field layout and capacity, shared with the injected-overlay
+        // fast path. The shadow check above already ran (it needs the base
+        // struct's direct fields), so its verdict seeds `poisoned`.
+        let win = WindowRef {
+            base_struct: &base_struct,
+            window_field: Some(&window_field),
+            offset: window_offset,
+            size: window_n,
+        };
+        self.overlay_layout_fields(name, decl, &win, shadowed)
+    }
+
+    /// The injected-overlay (Plan 7 #8) entry into overlay layout: a consumer
+    /// clone whose window was resolved at the DEFINING module. The window
+    /// (`base_struct` + offset + size) is taken verbatim — no window resolution,
+    /// base-struct lookup, or shadow check runs in the consumer (all did at the
+    /// definition site). Only the per-field layout (D6.A2) is re-run here; it
+    /// touches nothing in the consumer's structs, so the result is identical to
+    /// the defining module's, and the overlay stays bound where it was defined.
+    fn overlay_layout_from_window(
+        &mut self,
+        name: &str,
+        decl: &'a ast::VarsDecl,
+        rw: &ast::ResolvedWindow,
+    ) -> OverlayInfo {
+        let win = WindowRef {
+            base_struct: &rw.base_struct,
+            window_field: None,
+            offset: rw.window_offset,
+            size: rw.window_size,
+        };
+        self.overlay_layout_fields(name, decl, &win, false)
+    }
+
+    /// Lay out an overlay's fields over an already-resolved `win`dow (D6.A2):
+    /// shared tail of the window-resolving path and the injected-overlay fast path.
+    /// Fields pack by struct rules (declaration order, no padding); the odd-field
+    /// lint keys on the RUNTIME parity `window.offset + rel`, and total >
+    /// `window.size` is `[overlay.window-overflow]`. `shadowed` seeds the poisoned
+    /// flag (the shadow check runs only in the window-resolving path, which owns
+    /// the base layout).
+    fn overlay_layout_fields(
+        &mut self,
+        name: &str,
+        decl: &'a ast::VarsDecl,
+        win: &WindowRef,
+        shadowed: bool,
+    ) -> OverlayInfo {
+        let base_struct = win.base_struct;
+        let window_offset = win.offset;
+        let poison = |this: &mut Self| {
+            let o = OverlayInfo {
+                base_struct: base_struct.to_string(),
+                window_offset: 0,
+                window_size: 0,
+                fields: Vec::new(),
+                size: 0,
+                poisoned: true,
+            };
+            this.overlay_layout_memo.insert(name.to_string(), o.clone());
+            o
+        };
         let mut offset: i128 = 0;
         let mut fields: Vec<(String, i128, i128)> = Vec::with_capacity(decl.fields.len());
         for f in &decl.fields {
@@ -651,20 +748,22 @@ impl<'a> Evaluator<'a> {
         }
         let total = offset;
         // (4) Capacity (D6.A2): total > window N is an error at the overlay decl.
-        if total > window_n {
+        if total > win.size {
             self.error(
                 decl.span,
                 format!(
-                    "[overlay.window-overflow] overlay `{name}` is {total} bytes — exceeds `{base_struct}.{window_field}` window of {window_n} bytes (over by {})",
-                    total - window_n
+                    "[overlay.window-overflow] overlay `{name}` is {total} bytes — exceeds `{}` window of {} bytes (over by {})",
+                    win.desc(),
+                    win.size,
+                    total - win.size
                 ),
             );
-            return poison(self, base_struct);
+            return poison(self);
         }
         let info = OverlayInfo {
-            base_struct,
+            base_struct: base_struct.to_string(),
             window_offset,
-            window_size: window_n,
+            window_size: win.size,
             fields,
             size: total,
             poisoned: shadowed,
@@ -1573,6 +1672,31 @@ pub fn validate_overlay(file: &ast::File, name: &str, span: Span) -> Vec<Diagnos
         let mut ev = Evaluator::with_file(file);
         ev.overlay_layout(name, span);
         ev.diags
+    })
+}
+
+/// Resolve the SST overlay `name`'s WINDOW against `file`'s own namespace (its
+/// DEFINING module), returning the binding (base struct + window offset/size) if
+/// it resolves cleanly (Plan 7 #8). Used by the resolve pass to STAMP the binding
+/// onto the overlay clone injected into a consumer, so the window travels with the
+/// overlay instead of being re-derived from the consumer's structs. Diagnostics
+/// are dropped here — the defining module's own `validate_overlay` pass reports
+/// them once; a re-report at injection would duplicate. Returns `None` for a
+/// poisoned or region-form overlay (the consumer then falls back to today's
+/// re-resolution, which for a poisoned overlay is already silent).
+pub fn resolve_overlay_window(file: &ast::File, name: &str) -> Option<ast::ResolvedWindow> {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        let span = file.module.span;
+        let info = ev.overlay_layout(name, span);
+        if info.poisoned {
+            return None;
+        }
+        Some(ast::ResolvedWindow {
+            base_struct: info.base_struct,
+            window_offset: info.window_offset,
+            window_size: info.window_size,
+        })
     })
 }
 

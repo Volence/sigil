@@ -52,7 +52,7 @@ fn lower_link_68k(code: &Value) -> Vec<u8> {
     let mut builder = IrBuilder::new();
     builder.switch_section("text", Cpu::M68000, None);
     let mut diags = Vec::new();
-    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    lower_code_buf(buf, Cpu::M68000, false, &mut builder, &mut diags);
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     let (module, bdiags) = builder.finish();
     assert!(bdiags.is_empty(), "unexpected builder diagnostics: {bdiags:?}");
@@ -97,9 +97,10 @@ fn wrong_kind_size_splice_is_splice_kind_error() {
 }
 
 #[test]
-fn bare_branch_without_size_is_missing_size_error() {
-    // A `bra` with no `.s`/`.w` is `[branch.missing-size]` (D-P4.2) — surfaced by
-    // the lowering half, not eval (the Code value is well-formed).
+fn bare_branch_without_size_is_missing_size_under_as_compat() {
+    // §5.4: an unsized `bra` is `[branch.missing-size]` ONLY under `@as_compat`
+    // (a faithful AS port pins branch widths). Without `@as_compat` it relaxes —
+    // see `bare_branch_without_size_relaxes_without_as_compat` below.
     let src = "module m\ncomptime fn f() -> Code {\n    return asm {\n    .loop:\n        bra .loop\n    }\n}\n";
     let (code, ediags) = eval_asm_with(src, &[]);
     assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
@@ -107,10 +108,29 @@ fn bare_branch_without_size_is_missing_size_error() {
     let mut builder = IrBuilder::new();
     builder.switch_section("text", Cpu::M68000, None);
     let mut diags = Vec::new();
-    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    lower_code_buf(buf, Cpu::M68000, true, &mut builder, &mut diags);
     assert!(
         diags.iter().any(|d| d.message.contains("[branch.missing-size]")),
-        "expected a [branch.missing-size] diagnostic, got: {diags:?}"
+        "expected a [branch.missing-size] diagnostic under @as_compat, got: {diags:?}"
+    );
+}
+
+#[test]
+fn bare_branch_without_size_relaxes_without_as_compat() {
+    // The §5.4 flip side: WITHOUT `@as_compat` an unsized `bra` lowers cleanly
+    // (Core relaxes it), so there is NO `[branch.missing-size]` error. `bra .loop`
+    // targets its own label (disp = 0 - 2 = -2 → bra.s FE), a legal reaching form.
+    let src = "module m\ncomptime fn f() -> Code {\n    return asm {\n    .loop:\n        bra .loop\n    }\n}\n";
+    let (code, ediags) = eval_asm_with(src, &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let Value::Code(buf) = &code else { panic!("expected Value::Code") };
+    let mut builder = IrBuilder::new();
+    builder.switch_section("text", Cpu::M68000, None);
+    let mut diags = Vec::new();
+    lower_code_buf(buf, Cpu::M68000, false, &mut builder, &mut diags);
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[branch.missing-size]")),
+        "an unsized branch must NOT error without @as_compat (it relaxes), got: {diags:?}"
     );
 }
 
@@ -136,7 +156,7 @@ fn disp_ind_out_of_range_diagnoses_not_truncates() {
     let mut builder = IrBuilder::new();
     builder.switch_section("text", Cpu::M68000, None);
     let mut diags = Vec::new();
-    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    lower_code_buf(buf, Cpu::M68000, false, &mut builder, &mut diags);
     assert!(
         diags.iter().any(|d| d.message.contains("out of range")),
         "expected a displacement-out-of-range diagnostic, got: {diags:?}"
@@ -176,7 +196,7 @@ fn lower_module_68k(code: &Value) -> (sigil_ir::Module, Vec<sigil_span::Diagnost
     let mut builder = IrBuilder::new();
     builder.switch_section("text", Cpu::M68000, None);
     let mut diags = Vec::new();
-    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    lower_code_buf(buf, Cpu::M68000, false, &mut builder, &mut diags);
     let (module, _bdiags) = builder.finish();
     (module, diags)
 }
@@ -253,7 +273,7 @@ fn abs_sym_selects_width_and_links() {
     let mut builder = IrBuilder::new();
     builder.switch_section("text", Cpu::M68000, None);
     let mut diags = Vec::new();
-    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    lower_code_buf(buf, Cpu::M68000, false, &mut builder, &mut diags);
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     let (module, _b) = builder.finish();
     let mut syms = SymbolTable::new();
@@ -273,7 +293,7 @@ fn abs_sym_high_target_selects_long() {
     let mut builder = IrBuilder::new();
     builder.switch_section("text", Cpu::M68000, None);
     let mut diags = Vec::new();
-    lower_code_buf(buf, Cpu::M68000, &mut builder, &mut diags);
+    lower_code_buf(buf, Cpu::M68000, false, &mut builder, &mut diags);
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     let (module, _b) = builder.finish();
     let mut syms = SymbolTable::new();

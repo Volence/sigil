@@ -785,7 +785,14 @@ impl Parser {
         }
         self.skip_newlines();
         self.expect(&Tok::RBrace, "`}`");
-        VarsDecl { public, name, region, fields, span: start.merge(self.prev_span()) }
+        VarsDecl {
+            public,
+            name,
+            region,
+            fields,
+            resolved_window: None,
+            span: start.merge(self.prev_span()),
+        }
     }
 
     /// Parse a `data NAME[: Ty] = value` declaration.

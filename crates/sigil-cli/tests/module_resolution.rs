@@ -1519,3 +1519,349 @@ fn cross_module_pub_overlay_qualified_field_access() {
         "tst.b V.timer(a1) with a cross-module pub overlay"
     );
 }
+
+/// A minimal SST lib whose window `sst_custom` sits at offset $2 (right after a
+/// `u16` id). Reused by the bare-window-binding-site tests below, where the point
+/// is that the overlay's window offset is fixed by the DEFINING struct — $2 —
+/// regardless of any same-named window field a consumer might declare.
+const SST_LIB_SMALL: &str =
+    "pub struct Sst { id: u16, sst_custom: [u8; 8] }\npub vars PlantV: sst_custom { timer: u8 }\n";
+
+#[test]
+fn bare_overlay_window_binds_at_definition_site_not_consumer() {
+    // Failure mode (1): the consumer imports ONLY the overlay (not the base
+    // struct) and declares an UNRELATED struct that happens to have a same-named
+    // `sst_custom` window field at a DIFFERENT offset. A bare window must bind at
+    // the overlay's DEFINITION site — lib.Sst, window offset $2 — never re-resolve
+    // against the consumer's `Other` (window $8). Expected: tst.b (d16,a0)=4A28,
+    // ext $0002, rts=4E75. (Pre-fix: $0008, bound to the consumer's struct.)
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib.emp", &format!("module lib\n{SST_LIB_SMALL}"));
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{PlantV}\n\
+         struct Other { hp: u16, filler: [u8; 6], sst_custom: [u8; 4] }\n\
+         proc tick (a0: *Other) {\n    tst.b PlantV.timer(a0)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module overlay build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x28, 0x00, 0x02, 0x4E, 0x75],
+        "PlantV.timer(a0) must bind at the overlay's definition site (window $2), not the consumer's Other.sst_custom ($8)"
+    );
+}
+
+#[test]
+fn imported_overlay_not_broken_by_colliding_consumer_struct() {
+    // Failure mode (2): the consumer imports BOTH the base struct and the overlay,
+    // AND declares an unrelated struct with a same-named `sst_custom` window field.
+    // A consumer must not be able to break a library overlay by re-triggering
+    // bare-window ambiguity in ITS namespace — the binding is already fixed at the
+    // definition site. Expected: qualified `PlantV.timer(a1)` still lowers cleanly
+    // to tst.b (d16,a1)=4A29, ext $0002, rts. (Pre-fix: `[overlay.ambiguous-window]`
+    // + `[operand.unknown-field]`.)
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib.emp", &format!("module lib\n{SST_LIB_SMALL}"));
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{Sst, PlantV}\n\
+         struct Other { hp: u16, filler: [u8; 6], sst_custom: [u8; 4] }\n\
+         proc tick () {\n    tst.b PlantV.timer(a1)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "a colliding consumer struct must not break an imported overlay, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75],
+        "PlantV.timer(a1) stays bound at the definition site (window $2)"
+    );
+}
+
+#[test]
+fn bare_overlay_bare_field_access_binds_at_definition_site() {
+    // Control: bare field access `timer(a0)` on a `*Sst`-typed register in a
+    // consumer that imports BOTH the base struct and the overlay. The overlay's
+    // window binding (lib.Sst, offset $2) travels with the injected overlay, so
+    // the bare-on-typed-register path resolves it against the register's pointee.
+    // subq.b #1,(d16,a0)=5328, ext $0002, rts.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "lib.emp", &format!("module lib\n{SST_LIB_SMALL}"));
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{Sst, PlantV}\n\
+         proc tick (a0: *Sst) {\n    subq.b #1, timer(a0)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module bare-field build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x53, 0x28, 0x00, 0x02, 0x4E, 0x75],
+        "bare timer(a0) on *Sst binds at the definition site (window $2)"
+    );
+}
+
+#[test]
+fn dotted_overlay_window_stays_immune_cross_module() {
+    // Control: the DOTTED window form (`vars X: Sst.sst_custom { .. }`) is already
+    // immune to consumer re-resolution and must stay byte-identical. Consumer
+    // imports only the overlay and declares an unrelated same-named window field;
+    // qualified access still binds at $2. tst.b (d16,a1)=4A29, ext $0002, rts.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\npub struct Sst { id: u16, sst_custom: [u8; 8] }\n\
+         pub vars DotV: Sst.sst_custom { timer: u8 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{DotV}\n\
+         struct Other { hp: u16, filler: [u8; 6], sst_custom: [u8; 4] }\n\
+         proc tick () {\n    tst.b DotV.timer(a1)\n    rts\n}\n",
+    );
+    let outbin = root.join("out.bin");
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            outbin.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected cross-module dotted-window build success, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let bytes = std::fs::read(&outbin).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x4A, 0x29, 0x00, 0x02, 0x4E, 0x75],
+        "dotted DotV.timer(a1) stays bound at $2 regardless of consumer structs"
+    );
+}
+
+#[test]
+fn definition_site_ambiguous_bare_window_reports_once_at_lib() {
+    // Negative path of the definition-site binding: a bare window that is
+    // genuinely ambiguous IN ITS OWN MODULE (two local structs share the
+    // `sst_custom` field name) is the library author's error, reported
+    // `[overlay.ambiguous-window]` EXACTLY ONCE and anchored in lib.emp — the
+    // injection stamp drops its (duplicate) diagnostics, so importing the overlay
+    // must neither silence the error nor double it. The consumer's access then
+    // fails loudly (the overlay is poisoned — no silent success).
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\n\
+         pub struct Sst { id: u16, sst_custom: [u8; 8] }\n\
+         pub struct Alt { hp: u32, sst_custom: [u8; 4] }\n\
+         pub vars PlantV: sst_custom { timer: u8 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{PlantV}\n\
+         proc tick () {\n    tst.b PlantV.timer(a1)\n    rts\n}\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            root.join("out.bin").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "an ambiguous lib window must fail the build, stderr: {stderr}");
+    let ambiguous: Vec<&str> =
+        stderr.lines().filter(|l| l.contains("[overlay.ambiguous-window]")).collect();
+    assert_eq!(
+        ambiguous.len(),
+        1,
+        "[overlay.ambiguous-window] must surface exactly once, stderr: {stderr}"
+    );
+    assert!(
+        ambiguous[0].contains("lib.emp"),
+        "the ambiguity is the lib author's error — anchor in lib.emp, got: {}",
+        ambiguous[0]
+    );
+    assert!(
+        stderr.contains("[operand.unknown-field]") && stderr.contains("main.emp"),
+        "the consumer's access must error loudly, stderr: {stderr}"
+    );
+}
+
+/// Cross-module counterpart of the overlay-pass dedup above: `dedup_overlay_pass_diags`
+/// (crates/sigil-frontend-emp/src/lower/mod.rs) only drops duplicates arising
+/// WITHIN one `lower_module` call. A `pub vars` overlay forces its base struct's
+/// declaration checks (size/offset/odd-field) in the DEFINING module (always-on
+/// overlay validation), and a separate CONSUMER module forces the same struct's
+/// layout again via ordinary field access — `build_program` (crates/sigil-cli's
+/// `sigil_frontend_emp::resolve::build_program`) lowers each reachable module in
+/// its own `lower_module` call, so the per-module dedup never sees the second
+/// copy. The size-mismatch block (headline + per-field diff) must surface
+/// EXACTLY ONCE across the whole compile, anchored in the struct's home module.
+#[test]
+fn struct_size_mismatch_reports_once_across_modules() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib/types.emp",
+        "module lib.types\n\
+         pub struct Sst (size: 99) { id: u16, x_pos: u16, sst_custom: [u8; 8] }\n\
+         pub vars PlantV: sst_custom { timer: u8 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.types.{Sst}\n\
+         proc tick (a0: *Sst) {\n    move.w x_pos(a0), d0\n    rts\n}\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            root.join("out.bin").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a declared-size mismatch must fail the build, stderr: {stderr}");
+    let headline_count = stderr.matches("declared size 99 but fields total").count();
+    assert_eq!(
+        headline_count,
+        1,
+        "the struct-size-mismatch block must surface exactly once across the whole \
+         compile (defining module + consumer both force the layout), stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("types.emp"),
+        "the mismatch is the struct's own declaration — anchor in lib/types.emp, got: {stderr}"
+    );
+}
+
+/// Same family, different diagnostic: the `[layout.odd-field]` WARNING an
+/// overlay's own field layout produces. A clean-resolving overlay's consumer
+/// hits the "injected-overlay fast path" (`overlay_layout_from_window` in
+/// layout.rs), which re-runs ONLY the per-field layout (capacity + odd-field) —
+/// not window resolution — on every consumer that forces it, each in its own
+/// `lower_module` call. The warning's span is the overlay field's OWN span in the
+/// defining file (`ast::Item::Vars` clones preserve the original `Span`s — the
+/// injection is a plain clone, never a re-parse), so it is byte-for-byte the same
+/// diagnostic in the defining module's always-on pass and in every consumer that
+/// re-forces it — exactly the shape `struct_size_mismatch_reports_once_across_modules`
+/// pins for declarations, so the SAME cross-module keying in `build_program`
+/// collapses this one too, with no dedicated code.
+#[test]
+fn overlay_odd_field_warning_reports_once_across_modules() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "lib.emp",
+        "module lib\n\
+         pub struct Sst { id: u8, sst_custom: [u8; 8] }\n\
+         pub vars PlantV: sst_custom { timer: u16 }\n",
+    );
+    write(
+        root,
+        "main.emp",
+        "module main\nuse lib.{PlantV}\n\
+         proc tick (a0: *u8) {\n    tst.w PlantV.timer(a0)\n    rts\n}\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("main.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            root.join("out.bin").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "an odd-field WARNING must not fail the build, stderr: {stderr}");
+    let warning_count = stderr.matches("[layout.odd-field]").count();
+    assert_eq!(
+        warning_count,
+        1,
+        "the odd-field warning must surface exactly once across the whole compile \
+         (defining module's always-on pass + consumer's injected-overlay fast path \
+         both force it), stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("lib.emp"),
+        "the warning is the overlay's own field declaration — anchor in lib.emp, got: {stderr}"
+    );
+}

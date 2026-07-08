@@ -123,6 +123,9 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                 Fragment::RelaxAbsSym { .. } => {
                     unreachable!("RelaxAbsSym must be lowered by resolve_layout before link")
                 }
+                Fragment::RelaxLadder { .. } => {
+                    unreachable!("RelaxLadder must be lowered by resolve_layout before link")
+                }
             }
         }
 
@@ -243,6 +246,20 @@ fn apply_fixup(
         FixupKind::PcRel8 => {
             // disp measured from op+2; the disp byte sits at op+1 = site_vma.
             let disp = value - (site_vma as i64 + 1);
+            // A 0x00 byte displacement is NOT a displacement on the 68000 — it is
+            // the escape to the word form, so a `.s` branch to op+2 is unencodable.
+            // Reject it loudly rather than silently writing the 0x00 word-form
+            // escape (a desynced instruction). Reachable via an explicit `bra.s`
+            // to the next instruction in .emp source; AS ports never take this
+            // path (they resolve displacements before encoding, emitting no
+            // PcRel8 fixups), so AS-port byte-exactness is untouched.
+            if disp == 0 {
+                diags.push(diag(
+                    format!("bra.s/Bcc.s displacement is 0 in section {section} — a 0x00 byte displacement is the 68000 word-form escape, not a branch to the next instruction (use .w, or pick a real target)"),
+                    span,
+                ));
+                return;
+            }
             if !(-128..=127).contains(&disp) {
                 diags.push(diag(format!("bra.s/Bcc.s displacement out of range ({disp}) in section {section}"), span));
                 return;
@@ -559,6 +576,29 @@ mod tests {
             })],
         };
         assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
+    }
+
+    #[test]
+    fn pcrel8_disp_zero_is_rejected() {
+        // An explicit `bra.s` to the NEXT instruction: op at VMA 0x2000, disp byte
+        // at offset 1 (VMA 0x2001), target = op+2 = 0x2002 → disp = 0x2002 -
+        // (0x2001 + 1) = 0. The 0x00 byte is the 68000 word-form escape, so this
+        // must be a loud link error, NOT a silently-written 0x00.
+        let sec = Section {
+            name: "c".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x2000,
+            labels: vec![Label { name: "next".into(), offset: 2 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0x60, 0x00],
+                fixups: vec![Fixup { kind: FixupKind::PcRel8, offset: 1, target: Expr::Sym("next".into()) }],
+                span: span(),
+            })],
+        };
+        let err = link(&[sec], &SymbolTable::new()).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("displacement is 0") && d.message.contains("word-form escape")),
+            "got: {:?}",
+            err
+        );
     }
 
     #[test]

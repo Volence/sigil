@@ -65,6 +65,12 @@ fn rename_fragment(frag: &mut Fragment, map: &HashMap<String, String>) {
             rewrite_expr(&mut short.fixup.target, map);
             rewrite_expr(&mut long.fixup.target, map);
         }
+        Fragment::RelaxLadder { target, candidates, .. } => {
+            rewrite_expr(target, map);
+            for c in candidates {
+                rewrite_expr(&mut c.fixup.target, map);
+            }
+        }
         Fragment::Fill { .. } | Fragment::Reserve { .. } | Fragment::Org { .. } => {}
     }
 }
@@ -98,6 +104,12 @@ pub fn collect_target_syms(frag: &Fragment, out: &mut Vec<String>) {
             collect_expr(target, out);
             collect_expr(&short.fixup.target, out);
             collect_expr(&long.fixup.target, out);
+        }
+        Fragment::RelaxLadder { target, candidates, .. } => {
+            collect_expr(target, out);
+            for c in candidates {
+                collect_expr(&c.fixup.target, out);
+            }
         }
         Fragment::Fill { .. } | Fragment::Reserve { .. } | Fragment::Org { .. } => {}
     }

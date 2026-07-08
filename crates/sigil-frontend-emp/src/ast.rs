@@ -315,8 +315,32 @@ pub struct VarsDecl {
     pub region: Vec<String>,
     /// The block's fields, in declaration order.
     pub fields: Vec<VarsField>,
+    /// The window binding resolved at the overlay's DEFINITION site, present ONLY
+    /// on the clone injected into a CONSUMER module by `use`/prelude (Plan 7 #8).
+    /// A bare `region: [w]` window is otherwise re-scanned in whatever namespace
+    /// the overlay is queried in — so a consumer could rebind it to an unrelated
+    /// same-named window field, or a colliding consumer struct could poison the
+    /// binding with a spurious ambiguity. Stamping the resolved window here makes
+    /// the overlay self-contained: the consumer uses this binding verbatim and
+    /// never re-runs window resolution. `None` on every author-written decl (the
+    /// defining module resolves against its own namespace, as before).
+    pub resolved_window: Option<ResolvedWindow>,
     /// Span of the whole declaration.
     pub span: Span,
+}
+
+/// A window binding resolved at an overlay's definition site (Plan 7 #8), stamped
+/// onto the overlay clone injected into a consumer module so the window offset /
+/// size travel with the overlay instead of being re-derived from the consumer's
+/// (possibly different, or absent) structs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedWindow {
+    /// The base struct the window belongs to (in the DEFINING module).
+    pub base_struct: String,
+    /// The window field's byte offset within the base struct.
+    pub window_offset: i128,
+    /// The window field's byte size (its `N` in `[u8; N]`).
+    pub window_size: i128,
 }
 
 /// A single field within a [`VarsDecl`].

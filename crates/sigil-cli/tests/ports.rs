@@ -608,6 +608,105 @@ fn example_dispatch_compiles() {
     );
 }
 
+/// `examples/reach_branches.emp` — Spec 2, Plan 7 backlog #8 worked exhibit:
+/// every PC-relative relaxation-ladder rung this branch ships, byte-exact.
+/// Compiles with ZERO diagnostics (no `@as_compat`, so Part C's unsized-Bcc
+/// relaxation is live; every proc terminates cleanly, so no
+/// `[proc.undeclared-fallthrough]` noise either) — `emp_candidate` already
+/// asserts no Error-level parse/lower diagnostics, and this test additionally
+/// re-parses to assert there are no diagnostics AT ALL.
+///
+/// Every byte below is hand-derived from the file's own structure, independent
+/// of the compiler (the uniform 68000 rule used throughout: for BOTH `.s` and
+/// `.w` encodings, `disp = target - (site + 2)`, where `site` is the
+/// branch/call instruction's own start address — the 68000 PC used for the
+/// displacement add is always op+2 regardless of the final instruction
+/// length). Addresses accumulate strictly in file order (no reordering, no
+/// alignment padding — every item here is already even-sized).
+///
+/// ```text
+/// addr  bytes                  item
+/// 0x00  60 02                  proc near_forward: jbra .fwd -> bra.s
+///                                 disp = 4 - (0+2) = 2
+/// 0x02  4E 71                  nop (filler; keeps .fwd off disp-0)
+/// 0x04  4E 75                  .fwd: rts
+/// 0x06  4E 71                  proc near_backward: .back: nop
+/// 0x08  60 FC                  jbra .back -> bra.s, disp = 6 - (8+2) = -4 = 0xFC
+/// 0x0A  4E 75                  proc TableGuard: rts (named landing pad)
+/// 0x0C  60 00 00 CA            proc cross_table: jbra AfterTable -> bra.w
+///                                 (rung 0 hypothetical disp = 200, > 127, excluded)
+///                                 disp = 216 - (0x0C+2) = 202 = 0x00CA
+/// 0x10  <200 bytes>            DataTable: 8-entry pseudo-sine cycle x25
+/// 0xD8  4E 75                  proc AfterTable: rts
+/// 0xDA  61 04                  proc call_helper: jbsr Helper -> bsr.s
+///                                 disp = 224 - (0xDA+2) = 4
+/// 0xDC  4E 71                  nop (filler; keeps Helper off disp-0)
+/// 0xDE  4E 75                  call_helper's own rts
+/// 0xE0  4E 75                  proc Helper: rts
+/// 0xE2  66 02                  proc unsized_near: bne .n1 -> bne.s (cc=6)
+///                                 disp = 0xE6 - (0xE2+2) = 2
+/// 0xE4  4E 71                  nop
+/// 0xE6  4E 75                  .n1: rts
+/// 0xE8  62 02                  proc unsized_near_hi: bhi .n2 -> bhi.s (cc=2)
+///                                 disp = 0xEC - (0xE8+2) = 2
+/// 0xEA  4E 71                  nop
+/// 0xEC  4E 75                  .n2: rts
+/// 0xEE  62 00 FF 1A            proc unsized_far: bhi TableGuard -> bhi.w
+///                                 (backward across DataTable, out of i8 range)
+///                                 disp = 0x0A - (0xEE+2) = -230 = 0xFF1A
+/// 0xF2  4E 75                  unsized_far's own rts
+/// 0xF4  60 00 00 02            proc disp0_escape: jbra .imm
+///                                 rung 0 hypothetical: target = 0xF4+2 = 0xF6,
+///                                 disp = 0xF6-(0xF4+2) = 0 -> EXCLUDED (0x00 byte
+///                                 is the word-form escape, unencodable)
+///                                 rung 1: disp = 0xF8 - (0xF4+2) = 2 -> bra.w
+/// 0xF8  4E 75                  .imm: rts
+/// total: 0xFA (250) bytes
+/// ```
+#[test]
+fn example_reach_branches_compiles_byte_exact() {
+    let src = include_str!("../../../examples/reach_branches.emp");
+
+    // Zero diagnostics at all (not just zero errors) — a clean teaching exhibit.
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "reach_branches parse diagnostics: {pdiags:?}");
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
+    let (_module, ldiags) = lower_module(&file, &opts);
+    assert!(ldiags.is_empty(), "reach_branches lower diagnostics: {ldiags:?}");
+
+    let bytes = emp_candidate(src);
+
+    let mut want = Vec::new();
+    want.extend_from_slice(&[0x60, 0x02]); // jbra .fwd -> bra.s disp 2
+    want.extend_from_slice(&[0x4E, 0x71]); // nop
+    want.extend_from_slice(&[0x4E, 0x75]); // .fwd: rts
+    want.extend_from_slice(&[0x4E, 0x71]); // .back: nop
+    want.extend_from_slice(&[0x60, 0xFC]); // jbra .back -> bra.s disp -4
+    want.extend_from_slice(&[0x4E, 0x75]); // TableGuard: rts
+    want.extend_from_slice(&[0x60, 0x00, 0x00, 0xCA]); // jbra AfterTable -> bra.w disp 202
+    for _ in 0..25 {
+        want.extend_from_slice(&[0x00, 0x2D, 0x40, 0x2D, 0x00, 0xD3, 0xC0, 0xD3]); // DataTable cycle
+    }
+    want.extend_from_slice(&[0x4E, 0x75]); // AfterTable: rts
+    want.extend_from_slice(&[0x61, 0x04]); // jbsr Helper -> bsr.s disp 4
+    want.extend_from_slice(&[0x4E, 0x71]); // nop
+    want.extend_from_slice(&[0x4E, 0x75]); // call_helper's own rts
+    want.extend_from_slice(&[0x4E, 0x75]); // Helper: rts
+    want.extend_from_slice(&[0x66, 0x02]); // bne .n1 -> bne.s disp 2
+    want.extend_from_slice(&[0x4E, 0x71]); // nop
+    want.extend_from_slice(&[0x4E, 0x75]); // .n1: rts
+    want.extend_from_slice(&[0x62, 0x02]); // bhi .n2 -> bhi.s disp 2
+    want.extend_from_slice(&[0x4E, 0x71]); // nop
+    want.extend_from_slice(&[0x4E, 0x75]); // .n2: rts
+    want.extend_from_slice(&[0x62, 0x00, 0xFF, 0x1A]); // bhi TableGuard -> bhi.w disp -230
+    want.extend_from_slice(&[0x4E, 0x75]); // unsized_far's own rts
+    want.extend_from_slice(&[0x60, 0x00, 0x00, 0x02]); // jbra .imm -> bra.w disp 2 (disp-0 excluded at rung 0)
+    want.extend_from_slice(&[0x4E, 0x75]); // .imm: rts
+
+    assert_eq!(want.len(), 250, "hand-derived expectation totals 250 bytes");
+    assert_byte_identical(&want, &bytes, "reach_branches exhibit");
+}
+
 // ---- Plan 7 #6 audit fix: nested `section {}` is rejected loudly ---------
 
 /// A `section {}` nested inside another `section {}` used to be silently

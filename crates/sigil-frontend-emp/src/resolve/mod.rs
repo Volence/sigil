@@ -42,17 +42,46 @@ fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
 /// any `section {}` body (sections do not nest further — Task 1 rejects that at
 /// parse time — so a single level of recursion is exhaustive), matching `pred`.
 /// Mirrors `imports::collect_exported`/`collect_defined`'s recursion shape.
+///
+/// `def_file` is the DEFINING module's file — the namespace an injected overlay's
+/// window must resolve against (Plan 7 #8). Each collected `pub vars` overlay clone
+/// has its window resolved here and STAMPED (`resolved_window`), so the consumer
+/// binds it at the definition site verbatim rather than re-scanning its own structs.
 fn collect_pub_comptime(
+    def_file: &ast::File,
     items: &[ast::Item],
     pred: &impl Fn(&str) -> bool,
     out: &mut Vec<ast::Item>,
 ) {
     for item in items {
         if pub_comptime_name(item).is_some_and(pred) {
-            out.push(item.clone());
+            let mut cloned = item.clone();
+            // TODO(perf): this stamp re-resolves the overlay's window PER CONSUMER
+            // module — each call spins a fresh eval-stack thread and re-indexes the
+            // whole defining file, so M imported overlays across N consumers cost
+            // M×N resolutions. Intended fix: resolve each defining module's
+            // overlays ONCE (a per-module cache keyed by overlay name, built in
+            // `build_program`) and reuse across consumers (deferred — imported
+            // overlay counts are small today, like the own-items clone note in
+            // `build_program`).
+            stamp_overlay_window(def_file, &mut cloned);
+            out.push(cloned);
         }
         if let ast::Item::Section(sec) = item {
-            collect_pub_comptime(&sec.items, pred, out);
+            collect_pub_comptime(def_file, &sec.items, pred, out);
+        }
+    }
+}
+
+/// Stamp an injected `pub vars` overlay's window binding, resolved against its
+/// DEFINING file (Plan 7 #8). No-op for any non-overlay item (or a region-form
+/// `vars`, or an overlay whose window fails to resolve — a poisoned overlay stays
+/// silent in the consumer as before). This is what makes a bare-window overlay
+/// bind where it was defined instead of re-resolving in the consumer's namespace.
+fn stamp_overlay_window(def_file: &ast::File, item: &mut ast::Item) {
+    if let ast::Item::Vars(v) = item {
+        if let Some(name) = v.name.clone() {
+            v.resolved_window = crate::layout::resolve_overlay_window(def_file, &name);
         }
     }
 }
@@ -73,7 +102,7 @@ fn ambient_items(
     // Prelude first (own items, added in Part B, shadow these via last-wins).
     if let Some(p) = prelude {
         if p.id != module.id {
-            collect_pub_comptime(&p.file.items, &|_| true, &mut out);
+            collect_pub_comptime(&p.file, &p.file.items, &|_| true, &mut out);
         }
     }
 
@@ -106,9 +135,10 @@ fn ambient_from_uses(
                 match &u.names {
                     ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
                     ast::UseNames::Glob => {
-                        collect_pub_comptime(&base_mod.file.items, &|_| true, out)
+                        collect_pub_comptime(&base_mod.file, &base_mod.file.items, &|_| true, out)
                     }
                     ast::UseNames::List(names) => collect_pub_comptime(
+                        &base_mod.file,
                         &base_mod.file.items,
                         &|n| names.iter().any(|w| w == n),
                         out,
@@ -168,6 +198,29 @@ pub fn build_program(
         .and_then(|pid| manifest.by_id.get(pid))
         .map(|&i| &manifest.modules[i]);
 
+    // Struct-declaration diagnostics (size/@offset mismatch, odd-field warning —
+    // whatever `layout_of_struct`'s always-on checks produce) already dedup
+    // WITHIN one `lower_module` call (`dedup_overlay_pass_diags`, keyed off the
+    // module's own overlay-forced pass), but that memo is per-call: a `pub vars`
+    // overlay forces its base struct's layout in the DEFINING module, and a
+    // separate CONSUMER module forces the SAME struct's layout again (field
+    // access / sizeof) via its own, independent `lower_module` call — a second
+    // `Evaluator` the defining module's dedup never sees. Both copies carry the
+    // struct's home-file span (declaration checks always anchor there, never at
+    // the forcing site), so they are EXACT duplicates once concatenated here.
+    // `seen_across_modules` tracks every `(level, message, primary span)` triple
+    // already contributed by an EARLIER module in this loop; a later module's
+    // `ldiags` that repeats one is dropped before it ever reaches `diags`. This
+    // must not touch duplicates that arise WITHIN a single module (two procs in
+    // the same file each forcing the same unrelated-to-any-overlay struct) —
+    // that pre-existing intra-module duplication is pinned by overlay.rs tests
+    // and stays exactly as-is, because `ldiags` is filtered only against PRIOR
+    // modules' contributions, never against itself. A `Vec` + linear `contains`
+    // (not a `HashSet`) — `Diagnostic` derives `Eq` but not `Hash`, and these
+    // lists are per-compile diagnostic counts (tiny); mirrors
+    // `dedup_overlay_pass_diags`'s own O(n·m) shape in `lower/mod.rs`.
+    let mut seen_across_modules: Vec<Diagnostic> = Vec::new();
+
     // 4. Per-module: resolve names, lower, report unresolved, rename, concat.
     for &i in &reachable {
         let pm = &manifest.modules[i];
@@ -200,6 +253,17 @@ pub fn build_program(
             };
             lower_module(&synthetic, opts)
         };
+        // Drop only what an EARLIER module already contributed (`seen_across_modules`
+        // is empty on this module's first appearance in the loop, so a module's
+        // OWN first-time diagnostics — including intra-module duplicates among
+        // themselves — always survive this filter untouched); then record this
+        // module's (post-filter) diagnostics so a LATER module's repeat of them
+        // collapses too. Keeps the first occurrence's position (this module's, or
+        // whichever earlier module first produced it) per the diagnostics-order
+        // contract.
+        let ldiags: Vec<Diagnostic> =
+            ldiags.into_iter().filter(|d| !seen_across_modules.contains(d)).collect();
+        seen_across_modules.extend(ldiags.iter().cloned());
         diags.extend(ldiags);
 
         report_unresolved(pm, &module, &env, &mut diags);
