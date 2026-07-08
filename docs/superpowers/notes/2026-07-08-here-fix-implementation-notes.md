@@ -143,3 +143,22 @@ Notes:
   lowering (D-H.7).
 - Process gotcha recorded: os.replace restores an OLD mtime; cargo reused the
   patched rlib until a `touch`. Future probes: touch after restore.
+
+## Final gate (post-T6, 2026-07-08)
+
+- cargo test --workspace --no-fail-fast: 1295 passed across 94 green suites;
+  EXACTLY the 4 allowlisted sigil-harness reds (full_build_reproduces_sound_
+  driver_regions, vector_table_matches_reference_rom_first_256_bytes,
+  full_debug_rom_matches_assembled_reference, full_rom_matches_assembled_reference).
+- cargo clippy --workspace --all-targets -- -D warnings: clean.
+- pitcher_plant acceptance invocation: exit 0, zero diagnostics, "built: 340
+  bytes"; -o output verified 340 bytes on disk.
+- examples/guards.emp single-file: exit 0, zero diagnostics, 13 bytes (ports.rs
+  byte pin unchanged).
+- examples/ corpus sweep: dispatch/guards/offset_table/reach_branches/sst_overlay
+  compile with unchanged results; composition_pitcher_plant.emp + main.emp fail
+  single-file with PRE-EXISTING diagnostics (examples/ is git-identical to master
+  d95c94b; the error classes involved are untouched by this branch). The
+  master-vs-branch byte-diff probe proper is the review-time step per the design;
+  the standing byte pins (ports.rs, jbra_relaxation.rs, pitcher_plant 340) all
+  hold, and no corpus program has a provisional here().
