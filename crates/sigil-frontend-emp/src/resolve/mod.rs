@@ -334,6 +334,9 @@ fn report_unresolved(
                 // exported label `Owner.local`) via its OWNER segment. The same
                 // dotted-owner rule the rename pass uses (`canonicalize_name`), so
                 // an accepted reference is exactly one the rename pass rewrites.
+                // NOTE: acceptance guarantees REWRITABILITY, not existence — a
+                // dotted name with a known owner but a typo'd local (`foo.typo`)
+                // passes here and surfaces at link time as an undefined symbol.
                 if rename::canonicalize_name(&s, env.rename_map()).is_some() {
                     continue;
                 }

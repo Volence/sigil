@@ -472,8 +472,8 @@ git add -A && git commit -m "test(emp): item-guard corpus — multi-module prelu
 
 ## Task 5: Whole-branch review + handoff
 
-- [ ] **Step 1: Two-stage review** (the established process): dispatch `superpowers:code-reviewer` for (a) design-doc compliance (D5.1–D5.6 — especially that NOTHING from D5.5 was built), then (b) code quality. Fix findings; green gate + commit per fix.
-- [ ] **Step 2: Adversarial pass:** construct and run programs probing: guard as the FIRST item (before any section — `here()` in the default section), guard as the LAST item, `ensure_fatal` inside a section block stopping later top-level items, a guard whose message itself fails to interpolate (must diagnose, not crash — eval_guards.rs:104 already covers fn-body; verify item-level), `data` named `ensure` (contextual-opener non-regression), and `max_size` combined with a guard on the same item.
-- [ ] **Step 3: Verify the s4.bin harness is untouched:** `cargo test -p sigil-cli` (the `m1d_rom`/`m1d_debug_rom` tests) — green.
-- [ ] **Step 4: Write the completion handoff note** `docs/superpowers/notes/2026-07-07-spec2-plan7-item5-complete-handoff.md` (mirror item 3's completion note: what shipped, decisions taken, spec-delta text for Fable to lift, what #6 walks in with).
-- [ ] **Step 5: STOP — do NOT merge to master.** Report back for the Volence/Fable checkpoint (established cadence).
+- [x] **Step 1: Two-stage review** (the established process): dispatch `superpowers:code-reviewer` for (a) design-doc compliance (D5.1–D5.6 — especially that NOTHING from D5.5 was built), then (b) code quality. Fix findings; green gate + commit per fix.
+- [x] **Step 2: Adversarial pass:** construct and run programs probing: guard as the FIRST item (before any section — `here()` in the default section), guard as the LAST item, `ensure_fatal` inside a section block stopping later top-level items, a guard whose message itself fails to interpolate (must diagnose, not crash — eval_guards.rs:104 already covers fn-body; verify item-level), `data` named `ensure` (contextual-opener non-regression), and `max_size` combined with a guard on the same item.
+- [x] **Step 3: Verify the s4.bin harness is untouched:** `cargo test -p sigil-cli` (the `m1d_rom`/`m1d_debug_rom` tests) — green.
+- [x] **Step 4: Write the completion handoff note** `docs/superpowers/notes/2026-07-07-spec2-plan7-item5-complete-handoff.md` (mirror item 3's completion note: what shipped, decisions taken, spec-delta text for Fable to lift, what #6 walks in with).
+- [x] **Step 5: STOP — do NOT merge to master.** Report back for the Volence/Fable checkpoint (established cadence).

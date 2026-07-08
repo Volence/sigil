@@ -223,3 +223,14 @@ fn max_size_non_int_is_an_error() {
         "got {d:?}"
     );
 }
+
+#[test]
+fn max_size_accepts_newtype_wrapped_int() {
+    // §8.3: `Typed` erases to its stored int. A `max_size` bound expressed with a
+    // domain newtype (e.g. a prelude size type) must work like a plain int.
+    let d = data_diags(
+        "module m\nnewtype Cap = u8\nconst BUF = Cap(8)\ndata T (max_size: BUF): [u16; 4] = [1,2,3,4]\n",
+        "T",
+    );
+    assert!(d.is_empty(), "a newtype-wrapped fitting bound must be silent, got {d:?}");
+}

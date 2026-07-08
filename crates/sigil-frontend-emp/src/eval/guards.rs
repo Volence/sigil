@@ -19,6 +19,16 @@ pub(crate) fn eval_item_guard(
     here_base: u32,
     include_root: Option<&std::path::Path>,
 ) -> (bool, Vec<Diagnostic>) {
+    // `decl.fatal` records which keyword the parser saw; dispatch itself keys
+    // off the stored call's CALLEE name (`eval/call.rs`). Assert the two agree
+    // so any future parser divergence between the keyword and the captured call
+    // is caught in debug builds instead of silently mis-dispatching.
+    debug_assert!(
+        matches!(&decl.call, ast::Expr::Call { callee, .. }
+            if callee.segments.len() == 1
+                && callee.segments[0] == if decl.fatal { "ensure_fatal" } else { "ensure" }),
+        "EnsureDecl.fatal disagrees with the stored call's callee"
+    );
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.set_here_base(here_base);

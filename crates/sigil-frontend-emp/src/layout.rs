@@ -1028,13 +1028,21 @@ fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
     let Some(max_expr) = ev.datas.get(name).and_then(|d| d.max_size.clone()) else {
         return;
     };
-    match ev.eval_expr(&max_expr, &mut Env::new()) {
-        // An already-reported error in the expression stays silent (D-P2.9).
-        Value::Poison => {}
-        Value::Int(n) if n < 0 => {
+    let v = ev.eval_expr(&max_expr, &mut Env::new());
+    // An already-reported error in the expression stays silent (D-P2.9). Checked
+    // BEFORE `as_stored_int` so a poisoned bound can't cascade into a spurious
+    // "must be a comptime integer" error.
+    if matches!(v, Value::Poison) {
+        return;
+    }
+    // `as_stored_int`: a `Typed`-wrapped int (a domain-newtype bound, e.g. a
+    // prelude size type) erases to its stored int per §8.3 — the same rule array
+    // lengths and bitfield field values follow.
+    match v.as_stored_int() {
+        Some(n) if n < 0 => {
             ev.error(span, format!("`max_size` must be >= 0, got {n}"));
         }
-        Value::Int(n) => {
+        Some(n) => {
             if buf_len as i128 > n {
                 ev.error(
                     span,
@@ -1045,10 +1053,10 @@ fn check_max_size(ev: &mut Evaluator, name: &str, buf_len: usize, span: Span) {
                 );
             }
         }
-        other => {
+        None => {
             ev.error(
                 span,
-                format!("`max_size` must be a comptime integer, got {}", other.type_name()),
+                format!("`max_size` must be a comptime integer, got {}", v.type_name()),
             );
         }
     }

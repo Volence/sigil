@@ -19,6 +19,11 @@ use std::collections::HashMap;
 ///
 /// Returns `None` when neither applies (name passes through unchanged) — e.g.
 /// `$`-hygiene locals, which never appear in `map`.
+///
+/// INVARIANT the first-dot split rests on: an owner is always a SINGLE-segment
+/// item name (proc/data names contain no dots), so everything after the first
+/// dot is the exported-local part. A future multi-dot label scheme would need
+/// this split revisited.
 pub fn canonicalize_name(name: &str, map: &HashMap<String, String>) -> Option<String> {
     if let Some(canon) = map.get(name) {
         return Some(canon.clone());

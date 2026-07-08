@@ -347,3 +347,13 @@ fn ensure_ident_not_followed_by_paren_still_errors_as_declaration() {
         "diags: {diags:?}"
     );
 }
+
+#[test]
+fn ensure_usable_as_ordinary_data_name() {
+    // Contextual-opener non-regression (D5.1): `ensure` is only a guard when the
+    // NEXT token is `(`. As a plain item name (`data ensure`) it is an ordinary
+    // identifier, so `data ensure: ... = ...` parses as a normal data item.
+    let f = ok("module m\ndata ensure: [u8; 2] = [1, 2]\n");
+    let Item::Data(d) = &f.items[0] else { panic!("expected a data item named `ensure`") };
+    assert_eq!(d.name, "ensure");
+}
