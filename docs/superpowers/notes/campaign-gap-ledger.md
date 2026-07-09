@@ -247,3 +247,30 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   Latent — aeon's backward-org idiom (parallax_section_end `dc.b` back-patch) never seeks into
   a fixup site. Fix shape: fixup application should respect overwrite order (or refuse the
   overlap loudly). — OPEN (standalone linker hazard; distinct from the shipped org work).
+- [port #2 tranche, step 2 (modernize pass), 2026-07-09] **`resolve::build_program`'s
+  whole-program `report_unresolved` is incompatible with a cross-seam `.emp` module that
+  has BOTH a `use` edge to another `.emp` module AND genuinely AS-side-only bare symbol
+  references.** Discovered wiring `engine/system/controllers.emp`'s new `use
+  engine.constants.{...}` (the constants-twin port) into `controllers_port.rs`: switching
+  from plain `lower_module` to `Manifest::scan` + `build_program` (needed so the `use` edge
+  resolves) makes `report_unresolved` (`resolve/mod.rs:500`) hard-error on `Ctrl_1_Held` &
+  co — real RAM labels that live ONLY in `engine/ram.asm`, never in any `.emp` file, and are
+  legitimately supplied to the test as a synthetic AS-side section appended AFTER
+  `build_program` returns (the established cross-seam-port pattern since port #1). No prior
+  port needed this: `controllers.emp` is the FIRST `.emp`-to-`.emp` `use` edge in a
+  cross-seam file (`mixed_dac_rom.rs`'s `placed_module_sections` lowers six modules but only
+  `controllers.emp` has a `use`). — WORKED AROUND (not fixed) per-callsite: each of the three
+  affected test files (`controllers_port.rs`, `tranche2_negative_probes.rs`,
+  `mixed_dac_rom.rs`) parses `constants.emp` once and manually prepends its items to
+  `controllers.emp`'s own AST items before calling plain `lower_module` — mirroring
+  `build_program`'s own internal `ambient_items`/synthetic-`File`-prepend technique
+  (`resolve/mod.rs:132`, `:279-300`) minus the too-strict whole-program closure check. Two
+  independent investigation passes (a background research agent + direct code reading)
+  converged on the same diagnosis and the same workaround shape. The PRINCIPLED fix — either
+  a `build_program` variant/parameter that tolerates a caller-declared set of "known
+  external, resolved elsewhere" symbol names, or a way to compose a bounded ambient-const
+  set without the BFS+report_unresolved machinery at all — is a source change to
+  `sigil-frontend-emp`'s resolver, deliberately deferred rather than bundled into this
+  byte-neutral pass (house rule: 2a-tier only). Re-open when a THIRD cross-seam `use` edge
+  needs the same treatment (rule of three), or sooner if the per-callsite duplication (now
+  three copies of the same ~15-line prepend pattern) starts drifting.
