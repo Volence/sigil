@@ -86,6 +86,42 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   applies so a reader doesn't mistake a cycle for a plain missing symbol.
   `hblank_negative_probes.rs`'s standalone-compile probe updated to pin the new wording.
 
+## vars / RAM regions (ram.asm pre-port audit, 2026-07-09)
+
+Volence asked whether the language has a good answer to `ram.asm`'s shape (bare `Name: ds.b N`
+runs, hand pads, invisible addresses). Audit verdict: the frozen §4.6 `vars` surface already
+covers the core — map-file regions with budgets (kills the three overflow `if`s + bit-15
+check), `@align(N)` on fields (kills the 256-align guard and the ~20 hand `ds.b 1` evenness
+pads, spelled as intent on the following field), typed/struct fields (kills the
+`Parallax_State_End`-style label runs and the `Player_Phys` "must match PHYS_* order" sync
+comment), `[layout.odd-field]`, item-position `ensure`, and `pub equ` export for `.asm`
+consumers. NOTE for the eventual port tranche: RAM emits no bytes, so its byte-exact gate is
+**address-exact, on BOTH build shapes** (ROM operands pin every RAM address transitively);
+symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
+
+- [ram.asm audit, 2026-07-09] **Conditional fields inside `vars`** — engine `ram.asm` has a
+  mid-region `ifdef __DEBUG__` block (Prof_* / DMA debug counters), so DEBUG and release have
+  different downstream addresses; two-shape address-exactness needs comptime-`if`-over-fields
+  in `vars`, driven by the existing `-D` defines (D2.27). Non-breaking growth internal to the
+  block, but needs a recorded decision. The port BLOCKS on this (or on first moving the debug
+  block to the region tail as a deliberate pre-port .asm change). — OPEN (build with the ram
+  tranche).
+- [ram.asm audit, 2026-07-09] **Checked buffer-reuse overlay** — `Art_Staging_Buffer =
+  Tile_Cache_Nametable` + hand size `if` + lifetime comment ("INIT-ONLY"). Expressible today
+  as `pub equ` alias + `ensure(size fits)`, so NOT a port blocker; the nicety is a declared
+  region-level overlap (SST overlays exist, D2.21, but only over struct `[u8;N]` windows) that
+  checks size at the declaration and states the lifetime. — OPEN (jotted).
+- [ram.asm audit, 2026-07-09] **Debug-layout-stability lint** — the `Sound_Dbg_Mirror`
+  precedent (declared unconditionally, comment explains why) shows the hazard class:
+  conditional fields silently shifting the other shape's addresses. Once conditional `vars`
+  fields exist, a lint ("conditional field not at region tail" or "shapes diverge here") makes
+  the hazard visible. — OPEN (jotted; design with the conditional-fields decision).
+- [ram.asm audit, 2026-07-09] **RAM map report** — "never know what their real number is":
+  nothing on the page shows where a field lands. A `sigil`-emitted per-region address map
+  (name, address, size, padding, headroom vs budget) is pure tooling, no language surface;
+  Spec-3 inlay hints are the eventual in-editor answer. Cheap; could ride any tranche. —
+  OPEN (jotted).
+
 ## Tooling / build / process
 
 - [port #1 hblank, 2026-07-09] **Aeon clean-tree build is not reproducible**: a fresh
