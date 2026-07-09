@@ -356,6 +356,13 @@ pub enum CodeOperand {
         /// The base register.
         reg: Reg,
     },
+    /// A `movem` register-list operand (`d0-d1/a0`), already folded to the
+    /// CANONICAL 16-bit mask (bit0=D0..bit7=D7, bit8=A0..bit15=A7) — the same
+    /// convention as `sigil_isa::m68k::Operand::RegList`. Reglist parsing is
+    /// MNEMONIC-DIRECTED (D-P1H.2, port #1 hblank recon): this variant is only
+    /// ever produced while lowering a `movem` instruction's operands, never a
+    /// general operand-grammar form, so it cannot leak into other mnemonics.
+    RegList(u16),
 }
 
 /// A comptime operand-size class (§6.2), emp-side (no ISA import). Modeled on
@@ -449,9 +456,18 @@ pub enum Reg {
 }
 
 impl Reg {
-    /// Parse a register name (`d0`..`d7`, `a0`..`a7`) to its [`Reg`], else
-    /// `None`. The canonical spelling→register map, shared by the operand mapper
-    /// and the proc-param binding (D6.A3); it is the inverse of [`Display`].
+    /// Parse a register name (`d0`..`d7`, `a0`..`a7`, plus the `sp` alias for
+    /// `a7`) to its [`Reg`], else `None`. The canonical spelling→register map,
+    /// shared by the operand mapper and the proc-param binding (D6.A3); it is
+    /// the inverse of [`Display`].
+    ///
+    /// `sp` is a general operand-layer alias for `a7` (port #1 hblank recon,
+    /// D-P1H.1), not a distinct register kind: it is byte-identical to `a7`
+    /// everywhere a register name is recognized (plain operand, `(sp)`,
+    /// `(sp)+`, `-(sp)`, `d16(sp)` displacement, and inside `movem` register
+    /// lists). The whole aeon codebase spells the stack pointer `sp`, so every
+    /// code port needs this. [`Display`](fmt::Display) still renders `Reg::A7`
+    /// as `"a7"` — `sp` is parse-only sugar, not a new stored spelling.
     pub fn from_name(name: &str) -> Option<Reg> {
         Some(match name {
             "d0" => Reg::D0,
@@ -469,7 +485,7 @@ impl Reg {
             "a4" => Reg::A4,
             "a5" => Reg::A5,
             "a6" => Reg::A6,
-            "a7" => Reg::A7,
+            "a7" | "sp" => Reg::A7,
             _ => return None,
         })
     }

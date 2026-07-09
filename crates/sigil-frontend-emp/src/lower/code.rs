@@ -151,6 +151,10 @@ fn lower_m68k_instr(
             return;
         }
     }
+    if matches!(m, M68kMnemonic::Movem) {
+        lower_m68k_movem(size, ops, span, builder, diags);
+        return;
+    }
 
     // Generic fold-and-encode path.
     let size = match size {
@@ -418,6 +422,65 @@ fn lower_m68k_dbcc(
     }
 }
 
+/// `movem.<w|l> <reglist>,<ea>` (STORE) / `movem.<w|l> <ea>,<reglist>` (LOAD).
+/// The register-list operand already arrived as a resolved
+/// [`CodeOperand::RegList`] (built by the eval-side `movem_reg_list`
+/// recognizer, D-P1H.2) carrying the CANONICAL mask; this only validates size
+/// and operand shape, maps the OTHER (memory-EA) operand through the ordinary
+/// mapper, and hands both straight to the ISA encoder — direction (store vs
+/// load) and the `-(An)` predecrement mask reversal are entirely the encoder's
+/// job (mirrors the AS front-end's `lower_m68k_movem` doc comment). Unlike the
+/// AS front-end, this does NOT apply a zero-displacement `(0,An)` → `(An)`
+/// collapse — that optimization exists there to fold a forward-reference
+/// displacement that resolved to 0; `.emp` operands are fully resolved at eval
+/// time (no lazy/forward-ref displacement pass), and no port #1 test exercises
+/// this shape, so it stays out of scope here.
+fn lower_m68k_movem(
+    size: Option<Width>,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let size = match size {
+        Some(w @ (Width::W | Width::L)) => width_to_size(w),
+        Some(_) => {
+            push_err(diags, span, "movem is word (.w) or long (.l) only");
+            return;
+        }
+        None => {
+            push_err(diags, span, "movem needs an explicit size suffix (.w or .l)");
+            return;
+        }
+    };
+    let (mask, mem_op, list_first) = match ops {
+        [CodeOperand::RegList(mask), mem] => (*mask, mem, true),
+        [mem, CodeOperand::RegList(mask)] => (*mask, mem, false),
+        _ => {
+            push_err(
+                diags,
+                span,
+                "movem needs two operands: a register list and a memory EA",
+            );
+            return;
+        }
+    };
+    let mem_op = match m68k_operand(mem_op) {
+        Ok(o) => o,
+        Err(msg) => {
+            push_err(diags, span, msg);
+            return;
+        }
+    };
+    let list_op = M68kOperand::RegList(mask);
+    let ops = if list_first { vec![list_op, mem_op] } else { vec![mem_op, list_op] };
+    let inst = M68kInst { mnemonic: M68kMnemonic::Movem, size, ops };
+    match M68kBackend.lower_inst(&inst, span) {
+        Ok(df) => emit_data_frag(builder, df),
+        Err(e) => push_err(diags, span, e.message),
+    }
+}
+
 /// Lower a straight-line instruction carrying exactly ONE symbolic
 /// absolute-address operand to a length-variable [`Fragment::RelaxAbsSym`]: the
 /// front-end encodes BOTH the `abs.w` and `abs.l` candidates (with a zeroed
@@ -620,6 +683,13 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
             "field-address operand `{sym} + {off}` in a straight-line instruction is not yet \
              supported (routed via the abs-sym relaxation seam)"
         )),
+        // A `RegList` is produced ONLY by the `movem` reglist recognizer
+        // (D-P1H.2, eval/asm.rs `movem_reg_list`) and consumed directly by
+        // `lower_m68k_movem` below — it never reaches this generic per-operand
+        // mapper. Defense-in-depth, not a reachable path.
+        CodeOperand::RegList(_) => {
+            Err("internal: a movem register list reached the generic operand mapper".to_string())
+        }
     }
 }
 
