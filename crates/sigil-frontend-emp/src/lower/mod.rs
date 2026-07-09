@@ -955,12 +955,25 @@ fn lower_offsets_item(
 
     // §4.7 inline bodies: emitted AFTER the table, in declaration order, each
     // under its hidden hygienic label (the table's RelOffset words target
-    // them). Same serializer as any data item.
-    for (label, body) in bodies {
-        let (bytes, fixups, mut stream_diags) = data::stream_data(&body, placement.cpu, decl.span);
+    // them). Same serializer as any data item — and the same D2.29
+    // [layout.odd-item] check: body k's parity depends on every previous
+    // body's size, so a word-bearing payload can land odd (Item-6 review M1).
+    for (label, body, mspan) in bodies {
+        let (bytes, fixups, mut stream_diags) = data::stream_data(&body, placement.cpu, mspan);
         diags.append(&mut stream_diags);
         builder.define_label(&label);
-        builder.emit_data(&bytes, fixups, decl.span);
+        if buf_carries_words(&body) {
+            record_odd_item_assert(
+                file,
+                builder,
+                placement.cpu,
+                as_compat,
+                OddItemKind::WordData,
+                &label,
+                mspan,
+            );
+        }
+        builder.emit_data(&bytes, fixups, mspan);
     }
 }
 

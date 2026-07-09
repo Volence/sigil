@@ -143,3 +143,80 @@ section z (cpu: z80, vma: $0000) {
         "the 68k-only rule covers the inline form: {msgs:?}"
     );
 }
+
+// ---- stage-2 pins (Item-6 review) ---------------------------------------------
+
+#[test]
+fn odd_inline_body_with_words_warns_layout_odd_item() {
+    // Body parity depends on the previous bodies' sizes (review M1): B's u16
+    // payload lands at offset 5 — the D2.29 warning must fire on it.
+    let src = "\
+module m
+offsets M {
+    A: [u8; 1] = [1],
+    B: [u16; 1] = [$1234],
+}
+";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, diags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let resolved =
+        sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true).expect("resolve");
+    let mut all: Vec<_> = diags;
+    all.extend(sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts));
+    assert!(
+        all.iter().any(|d| d.message.contains("[layout.odd-item]")),
+        "the odd word-bearing inline body warns: {all:?}"
+    );
+}
+
+#[test]
+fn builtin_type_without_initializer_names_the_fix() {
+    let src = "\
+module m
+offsets M {
+    A: u8,
+}
+";
+    let (_, msgs) = lower(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("is a type, not a label") && m.contains("= <value>")),
+        "the forgot-the-initializer typo teaches the §4.7 spelling: {msgs:?}"
+    );
+}
+
+#[test]
+fn struct_typed_inline_body_works() {
+    let src = "\
+module m
+struct S { a: u8, b: u16 }
+offsets M {
+    A: S = S{ a: 1, b: $0203 },
+}
+";
+    let (m, msgs) = lower(src);
+    // (S's u16 at offset 1 also trips the pre-existing [layout.odd-field]
+    // struct-layout warning — filter to this test's concern.)
+    let hard: Vec<_> = msgs.iter().filter(|x| !x.contains("[layout.odd-field]")).collect();
+    assert!(hard.is_empty(), "clean lower: {msgs:?}");
+    assert_eq!(linked_bytes(&m), vec![0x00, 0x02, 1, 0x02, 0x03]);
+}
+
+#[test]
+fn inline_body_reads_another_tables_ordinal() {
+    let src = "\
+module m
+offsets Other {
+    X: [u8; 1] = [7],
+    Y: [u8; 1] = [8],
+}
+offsets M {
+    A: [u8; 1] = [Other.Y],
+}
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    let bytes = linked_bytes(&m);
+    assert_eq!(*bytes.last().unwrap(), 1, "Other.Y folds to ordinal 1");
+}

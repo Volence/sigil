@@ -1545,16 +1545,16 @@ pub fn eval_offsets_with_root(
     decl: &ast::OffsetsDecl,
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
-) -> (Option<DataBuf>, Vec<(String, DataBuf)>, Vec<Diagnostic>) {
+) -> (Option<DataBuf>, Vec<(String, DataBuf, Span)>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
-        // §4.7 inline bodies: `(hidden label, payload)` in declaration order,
-        // emitted by the caller AFTER the table.
-        let mut bodies: Vec<(String, DataBuf)> = Vec::new();
+        // §4.7 inline bodies: `(hidden label, payload, member span)` in
+        // declaration order, emitted by the caller AFTER the table.
+        let mut bodies: Vec<(String, DataBuf, Span)> = Vec::new();
         let mut buf = DataBuf::empty();
         for member in &decl.members {
             // Fresh env per member (parity with `resolve_data`'s per-item
@@ -1581,7 +1581,7 @@ pub fn eval_offsets_with_root(
                     } else {
                         ev.lower_to_data(&v, &rty, member.span)
                     };
-                    bodies.push((label, body));
+                    bodies.push((label, body, member.span));
                     continue;
                 }
                 ast::OffsetsTarget::Ref(e) => e,
@@ -1596,7 +1596,25 @@ pub fn eval_offsets_with_root(
                     // const is rejected: a bare name absent from every registry
                     // may still be a valid data/proc/offsets label, so it is
                     // accepted and the linker catches a genuinely-undefined one.
-                    if p.segments.len() == 1 && ev.is_const(&p.segments[0]) {
+                    // "Forgot the `= [...]`": a builtin scalar name in target
+                    // position is the natural mixed-form typo (§4.7) — name
+                    // the fix instead of a generic link error.
+                    if p.segments.len() == 1
+                        && matches!(
+                            p.segments[0].as_str(),
+                            "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u16le"
+                        )
+                    {
+                        ev.error(
+                            member.span,
+                            format!(
+                                "offset entry `{}`: `{}` is a type, not a label — an inline \
+                                 body is spelled `{}: {} = <value>` (§4.7)",
+                                member.name, p.segments[0], member.name, p.segments[0]
+                            ),
+                        );
+                        "<unresolved>".to_string()
+                    } else if p.segments.len() == 1 && ev.is_const(&p.segments[0]) {
                         ev.error(
                             member.span,
                             format!(
