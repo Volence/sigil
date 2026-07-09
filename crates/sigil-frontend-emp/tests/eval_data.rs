@@ -247,7 +247,8 @@ fn struct_unknown_field_is_diagnosed() {
 
 #[test]
 fn struct_default_fills_omitted_field() {
-    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1 }\n";
+    // S2-D13(h): elision is an EXPLICIT act — `..` opts into default fill.
+    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1, .. }\n";
     let (buf, diags) = data(src, "D");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
@@ -258,6 +259,53 @@ fn struct_default_fills_omitted_field() {
             Cell::Scalar { value: 1, width: 1, signed: false, le: false },
             Cell::Scalar { value: 9, width: 1, signed: false, le: false },
         ]
+    );
+}
+
+
+#[test]
+fn omitted_defaulted_field_without_rest_is_error() {
+    // Without `..`, a defaulted field may not be silently elided — the page
+    // must show the elision (S2-D13(h) tightening, recorded in the tranche-0
+    // notes for the checkpoint).
+    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1 }\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[struct.missing-field]")
+            && d.message.contains("b")
+            && d.message.contains("..")),
+        "the error names the field AND offers the `..` spelling: {diags:?}"
+    );
+}
+
+#[test]
+fn rest_does_not_cover_defaultless_fields() {
+    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ .. }\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[struct.missing-field]") && d.message.contains("a")),
+        "`..` fills defaults only — `a` has none and stays required: {diags:?}"
+    );
+}
+
+#[test]
+fn rest_with_nothing_to_fill_is_harmless() {
+    // All fields given + `..` — legal (refactor-friendly: deleting the last
+    // defaulted field from a literal shouldn't force deleting the marker).
+    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1, b: 2, .. }\n";
+    let (buf, diags) = data(src, "D");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(buf.expect("buf").size, 2);
+}
+
+#[test]
+fn rest_not_last_is_a_parse_error() {
+    let (_, perrs) = sigil_frontend_emp::parse_str(
+        "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ .., a: 1 }\n",
+    );
+    assert!(
+        perrs.iter().any(|d| d.message.contains("`..`")),
+        "`..` must be the literal's last member: {perrs:?}"
     );
 }
 
@@ -428,7 +476,9 @@ fn missing_data_item_is_diagnosed() {
 fn self_referential_struct_default_does_not_crash() {
     // A field default that constructs its own struct would recurse forever
     // (pre-fix: stack overflow → SIGABRT). It must instead diagnose and stop.
-    let src = "module m\nstruct A { x: A = A{} }\ndata D: A = A{}\n";
+    // (`..` on both literals: under S2-D13(h) a default only evaluates via
+    // the explicit rest marker, and the recursion lives in the default.)
+    let src = "module m\nstruct A { x: A = A{ .. } }\ndata D: A = A{ .. }\n";
     let (_buf, diags) = data(src, "D");
     assert!(
         diags.iter().any(|d| d.message.contains("cyclic struct construction")),

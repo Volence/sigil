@@ -2034,9 +2034,27 @@ impl Parser {
                         let saved_nsl = self.no_struct_lit;
                         self.no_struct_lit = false;
                         let mut fields = Vec::new();
+                        let mut rest = false;
                         self.skip_newlines();
                         if !self.at(&Tok::RBrace) {
                             loop {
+                                // `..` rest-fill (S2-D13(h)) — must be LAST:
+                                // an optional trailing comma, then `}`.
+                                if self.eat(&Tok::DotDot) {
+                                    rest = true;
+                                    self.skip_newlines();
+                                    if self.eat(&Tok::Comma) {
+                                        self.skip_newlines();
+                                    }
+                                    if !self.at(&Tok::RBrace) {
+                                        let sp = self.span();
+                                        self.diag_at(
+                                            sp,
+                                            "`..` must be the struct literal's last member",
+                                        );
+                                    }
+                                    break;
+                                }
                                 let name = self.expect_ident("field name");
                                 self.expect(&Tok::Colon, "`:`");
                                 fields.push((name, self.expr()));
@@ -2048,7 +2066,7 @@ impl Parser {
                         }
                         self.expect(&Tok::RBrace, "`}`");
                         self.no_struct_lit = saved_nsl;
-                        Expr::StructLit { ty: path, fields, span: start.merge(self.prev_span()) }
+                        Expr::StructLit { ty: path, fields, rest, span: start.merge(self.prev_span()) }
                     }
                     _ => Expr::Path(path),
                 }

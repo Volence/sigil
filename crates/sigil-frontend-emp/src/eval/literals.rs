@@ -22,6 +22,7 @@ impl<'a> Evaluator<'a> {
         &mut self,
         ty: &ast::Path,
         fields: &[(String, ast::Expr)],
+        rest: bool,
         span: Span,
         env: &mut Env,
     ) -> Value {
@@ -30,7 +31,7 @@ impl<'a> Evaluator<'a> {
             return self.eval_bitfield_lit(&ty_name, fields, span, env);
         }
         if self.structs.contains_key(ty_name.as_str()) {
-            return self.eval_checked_struct_lit(&ty_name, fields, span, env);
+            return self.eval_checked_struct_lit(&ty_name, fields, rest, span, env);
         }
         // Undeclared type name → value-level only (Plan 2). Poison field values
         // are preserved as-is (propagate, no new diagnostic). A field initializer
@@ -63,6 +64,7 @@ impl<'a> Evaluator<'a> {
         &mut self,
         ty_name: &str,
         provided: &[(String, ast::Expr)],
+        rest: bool,
         span: Span,
         env: &mut Env,
     ) -> Value {
@@ -135,7 +137,7 @@ impl<'a> Evaluator<'a> {
                 for field in &decl.fields {
                     if let Some((_, v)) = provided_vals.iter().find(|(n, _)| n == &field.name) {
                         out_fields.push((field.name.clone(), v.clone()));
-                    } else if let Some(default) = &field.default {
+                    } else if let (Some(default), true) = (&field.default, rest) {
                         // A `= default` field expr is likewise a value position
                         // (a default `code: init` would resolve to a label).
                         let dv = this.in_label_ctx(|this| this.eval_expr(default, env));
@@ -145,13 +147,24 @@ impl<'a> Evaluator<'a> {
                         }
                         out_fields.push((field.name.clone(), dv));
                     } else {
-                        this.error(
-                            span,
+                        // Elision is an EXPLICIT act (S2-D13(h)): a defaulted
+                        // field may only be omitted under the `..` marker, so
+                        // the message offers the spelling when it applies.
+                        let msg = if field.default.is_some() {
                             format!(
-                                "[struct.missing-field] struct {ty_name}: field `{}` has no default and was not provided",
+                                "[struct.missing-field] struct {ty_name}: field `{}` was not \
+                                 provided — add it, or elide it explicitly with `..` (it has \
+                                 a default)",
                                 field.name
-                            ),
-                        );
+                            )
+                        } else {
+                            format!(
+                                "[struct.missing-field] struct {ty_name}: field `{}` has no \
+                                 default and was not provided",
+                                field.name
+                            )
+                        };
+                        this.error(span, msg);
                         out_fields.push((field.name.clone(), Value::Poison));
                     }
                 }

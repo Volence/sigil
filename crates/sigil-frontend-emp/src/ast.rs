@@ -667,12 +667,17 @@ pub enum Expr {
         /// Span of the whole expression.
         span: Span,
     },
-    /// A struct literal: `Ty { field: value, ... }`.
+    /// A struct literal: `Ty { field: value, ... }`, optionally closed by a
+    /// `..` rest-fill marker (S2-D13(h)): with `..`, omitted DEFAULTED fields
+    /// fill from their declared defaults — elision is always this explicit,
+    /// one-token act (omitting a defaulted field without `..` is an error).
     StructLit {
         /// The struct's type path.
         ty: Path,
         /// Field initializers as `(name, value)`.
         fields: Vec<(String, Expr)>,
+        /// Whether the literal ends in the `..` rest-fill marker.
+        rest: bool,
         /// Span of the whole expression.
         span: Span,
     },

@@ -49,7 +49,9 @@ impl<'a> Evaluator<'a> {
                 Value::Tuple(elems.iter().map(|e| self.eval_expr(e, env)).collect())
             }
             ast::Expr::Call { callee, args, span } => self.eval_call(callee, args, *span, env),
-            ast::Expr::StructLit { ty, fields, span } => self.eval_struct_lit(ty, fields, *span, env),
+            ast::Expr::StructLit { ty, fields, rest, span } => {
+                self.eval_struct_lit(ty, fields, *rest, *span, env)
+            }
             ast::Expr::If { cond, then, els, .. } => {
                 // As an expression, an `if` yields its chosen branch's value. If
                 // that branch hit `return`, stash it in `pending_return` so the
