@@ -1779,6 +1779,16 @@ mod tests {
         let out = resolve_layout(&[sec], &stubs, true).unwrap();
         // The jsr stayed abs.w (4 bytes), Post is pinned to the org target 0x10.
         assert_eq!(out[0].labels.iter().find(|l| l.name == "Post").unwrap().offset, 0x11);
+        // T4-review (Item-B): pin the emitted encoding, not just the label offset.
+        // `4E B8 12 00` = `jsr $1200.w` (abs.w, confirming the width choice the
+        // comment claims), then the `dc.b 0` fragment, zero-fill up to the `Org`
+        // target $10 (the section's fill byte, default 0x00), and the `dc.b 1`
+        // fragment immediately after — 0x11 bytes total.
+        let linked = crate::link(&out, &stubs).unwrap();
+        assert_eq!(
+            linked.section("objbank").unwrap().bytes,
+            vec![0x4E, 0xB8, 0x12, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]
+        );
     }
 
     #[test]
@@ -1809,6 +1819,15 @@ mod tests {
         };
         let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
         assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 0x11);
+        // T4-review (Item-B): pin the emitted encoding, not just the label offset.
+        // `60 FF` = `bra.s L` (disp = L(1) - (0+2) = -1), then the `dc.b 0`
+        // fragment, zero-fill up to the `Org` target $10, then `dc.b 1` — 0x11
+        // bytes total, confirming the ladder picked the short (2-byte) rung.
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(
+            linked.section("code").unwrap().bytes,
+            vec![0x60, 0xFF, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]
+        );
     }
 
     #[test]
