@@ -2475,8 +2475,15 @@ impl Asm {
     /// Returns `None` when this isn't a deferrable shape (resolved value, not
     /// `Movea`/`Move`, not size `L`, or a destination outside the two above)
     /// so the caller falls through to the existing eager path unchanged.
+    ///
+    /// Encoding goes through the REAL encoder with a placeholder-0 immediate
+    /// (`Imm(0)` at `.l` emits two zero extension words — the hole — right
+    /// after the opcode word), then the fixup is attached at offset 2: the
+    /// same pattern as the backend's `lower_branch`/`lower_dbcc`/
+    /// `lower_pcrel_ea`, keeping the m68k opcode bit-layout in `sigil-isa`
+    /// rather than duplicated here.
     fn try_defer_long_imm(
-        &mut self,
+        &self,
         mnemonic: M68kMnemonic,
         size: M68kSize,
         atoms: &[OperandAtom],
@@ -2486,27 +2493,18 @@ impl Asm {
             return None;
         }
         // A bare register destination classifies as `RegOrCond` (the Z80
-        // register/cond word list) OR falls through to `Value(Expr::Sym(_))`
-        // (68k `aN`/`dN` aren't Z80 words) — `convert_one_atom_m68k`'s
-        // `OperandAtom::Value(e @ Expr::Sym(name))` arm handles the same dual
-        // shape for register operands generally.
+        // register/cond word list — `sp`, the a7 alias, lands here) OR falls
+        // through to `Value(Expr::Sym(_))` (68k `aN`/`dN` aren't Z80 words) —
+        // `convert_one_atom_m68k`'s `OperandAtom::Value(e @ Expr::Sym(name))`
+        // arm handles the same dual shape for register operands generally.
         let (imm_expr, dst_reg) = match atoms {
             [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] => (e, w.as_str()),
             [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] => (e, w.as_str()),
             _ => return None,
         };
-        // opcode word: size_bits<<12 | reg_field<<9 | mode_field<<6 | src_mode<<3 | src_reg
-        // (src EA = immediate, mode 0b111 reg 0b100); reg_field/mode_field per mnemonic.
-        const SRC_IMM: u16 = (0b111 << 3) | 0b100;
-        let opcode: u16 = match mnemonic {
-            M68kMnemonic::Movea => {
-                let an = m68k_addr_reg(dst_reg)?;
-                (0b10u16 << 12) | ((an as u16) << 9) | (0b001 << 6) | SRC_IMM
-            }
-            M68kMnemonic::Move => {
-                let dn = m68k_data_reg(dst_reg)?;
-                (0b10u16 << 12) | ((dn as u16) << 9) | SRC_IMM
-            }
+        let dst = match mnemonic {
+            M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(dst_reg)?),
+            M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(dst_reg)?),
             _ => return None,
         };
         let qualified = self.qualify_expr(imm_expr);
@@ -2515,16 +2513,27 @@ impl Asm {
         if !matches!(self.fold(&qualified), Fold::Poison) {
             return None;
         }
-        let op_bytes = opcode.to_be_bytes();
-        Some(DataFragment {
-            bytes: vec![op_bytes[0], op_bytes[1], 0, 0, 0, 0],
-            fixups: vec![Fixup {
-                kind: FixupKind::Value32Be,
-                offset: 2,
-                target: qualified,
-            }],
-            span,
-        })
+        let inst = M68kInstruction {
+            mnemonic,
+            size,
+            ops: vec![M68kOperand::Imm(0), dst],
+        };
+        // These shapes always encode (Imm source + register direct dest is
+        // legal for both mnemonics); an Err here would be an isa bug, and
+        // falling through to the eager path still fails loud (poison ref +
+        // the same encode error), never silent.
+        let mut frag = self.m68k.lower_inst(&inst, span).ok()?;
+        debug_assert_eq!(
+            frag.bytes.len(),
+            6,
+            "movea.l/move.l #imm,reg must encode to opcode word + 4-byte immediate"
+        );
+        frag.fixups.push(Fixup {
+            kind: FixupKind::Value32Be,
+            offset: 2,
+            target: qualified,
+        });
+        Some(frag)
     }
 
     /// `bra`/`bsr`/`Bcc <target>`: Aeon pins the branch width by an explicit

@@ -110,6 +110,24 @@ fn movea_l_unresolved_symbol_defers_as_value32be() {
     );
 }
 
+#[test]
+fn movea_l_to_sp_alias_unresolved_symbol_defers() {
+    // `sp` is the a7 alias AND a Z80 register word, so it classifies as
+    // `OperandAtom::RegOrCond("sp")` — the match arm bare `a0`..`a7`/`d0`..`d7`
+    // destinations (which classify as `Value(Sym(_))`) never exercise.
+    let src = "        cpu 68000\n        phase 0\n        movea.l #ExternalSym, sp\n";
+    let module = assemble(src, &Options::default())
+        .expect("movea.l to sp of undefined symbol defers, no error");
+
+    let frag = first_fixup_frag(&module);
+    // movea.l #imm,a7: 0b0010 111 001 111 100 = 0x2E7C.
+    assert_eq!(frag.bytes, vec![0x2E, 0x7C, 0x00, 0x00, 0x00, 0x00]);
+    assert_eq!(frag.fixups.len(), 1);
+    assert_eq!(frag.fixups[0].kind, FixupKind::Value32Be);
+    assert_eq!(frag.fixups[0].offset, 2);
+    assert_eq!(frag.fixups[0].target, Expr::Sym("ExternalSym".into()));
+}
+
 // ---------------------------------------------------------------------------
 // move.l #Sym, dN — defers
 // ---------------------------------------------------------------------------
