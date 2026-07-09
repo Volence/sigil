@@ -296,6 +296,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-clownlzss-sys"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "sigil-clownnemesis-sys"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "sigil-frontend-as"
 version = "0.1.0"
 dependencies = [

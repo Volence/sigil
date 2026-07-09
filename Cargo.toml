@@ -13,4 +13,6 @@ members = [
     "crates/sigil-harness",
     "crates/sigil-salvador-sys",
     "crates/sigil-s4lz",
+    "crates/sigil-clownlzss-sys",
+    "crates/sigil-clownnemesis-sys",
 ]
