@@ -240,10 +240,10 @@ fn emp_bank_map_with_mt(debug: bool) -> String {
 /// shape-invariant CONTENT, shape-dependent BASE, exactly like `sfx_bank`).
 /// The DAC/MT/SFX/`text` regions are byte-for-byte `emp_bank_map_with_mt`'s.
 ///
-/// `hblank.emp` opens its own zero-byte `text` carrier too (Task 2's P5 proof
-/// generalizes: any number of same-named `text` carriers chain cleanly
-/// through one region), so the single shared `text` region still covers all
-/// four modules.
+/// `hblank.emp` itself emits exactly ONE section (`hblank`, pinned) and NO
+/// `text` carrier — the braceless `module … in hblank` form routes every item
+/// into the named section — so the shared `text` region is spare capacity for
+/// this module, kept for map parity with the sound modules.
 fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
     let (sfx_base, sfx_size) = if debug {
         ("0x6553A", "0x2AC6")

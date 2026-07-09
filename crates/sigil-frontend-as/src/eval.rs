@@ -2584,6 +2584,10 @@ impl Asm {
             [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] => {
                 let dst = match mnemonic {
                     M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
+                    // `move.l #imm, sp` lands here and MUST stay None:
+                    // `m68k_data_reg("sp")` is None, so it falls to the eager
+                    // path, which encodes the movea form. Accepting `sp` here
+                    // would mis-encode it as a Dn destination.
                     M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
                     _ => return None,
                 };

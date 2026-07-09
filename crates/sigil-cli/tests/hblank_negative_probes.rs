@@ -217,9 +217,11 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
 }
 
 // ===========================================================================
-// Probe (c) — PLACEMENT GENUINENESS: a wrong-base map moves the bytes, so a
-// byte-diff against the FIXED reference window fails — proving the diff is
-// not an echo of the placed section back at itself.
+// Probe (c) — PLACEMENT GENUINENESS: a wrong-base map moves the section (the
+// assertions below check the PLACED ADDRESS moves while content stays
+// self-consistent — the actual byte-diff-at-a-fixed-window failure that a
+// moved section causes is carried by the port/mixed gates themselves).
+// Proves placement is real, not an echo of the expected value.
 // ===========================================================================
 
 /// Place the real `hblank.emp` at a WRONG base (`$2280` instead of the real

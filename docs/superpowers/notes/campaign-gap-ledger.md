@@ -90,3 +90,9 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   restyle byte-neutrality proven by re-running the port gates. Convention-only until
   `sigil fmt` (S2-D11(c)) — every new gap-ledger retrospect should eyeball formatting until
   then. — SHIPPED (convention; fmt tooling stays SPEC-LEDGERED S2-D11(c)).
+- [port #1 hblank T4 review, 2026-07-09] **`initial_cpu: Cpu::M68000` is caller convention,
+  not module fact** — hardcoded at four call sites (CLI + test paths); a braceless `.emp`
+  module carries no cpu attribute and silently depends on every caller passing M68000. A
+  future Z80 module (or a forgetful caller) mis-lowers with no module-level signal. Candidate:
+  modules self-declare target CPU (`module x in y (cpu: z80)`?) or the pipeline
+  defaults-and-warns. — OPEN.
