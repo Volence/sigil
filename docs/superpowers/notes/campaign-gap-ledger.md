@@ -315,3 +315,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   byte-neutral pass (house rule: 2a-tier only). Re-open when a THIRD cross-seam `use` edge
   needs the same treatment (rule of three), or sooner if the per-callsite duplication (now
   three copies of the same ~15-line prepend pattern) starts drifting.
+- [tranche-2 retrospect follow-up (Volence), 2026-07-09] **`clobbers(...)` annotations MISSED
+  in step 2** — controllers.asm's "Clobbers: d0-d1, a0" and math.asm's clobber notes were
+  carried as comments, not as the existing `clobbers(...)` proc attribute. Byte-neutral;
+  land in tranche 3's step 2 (incl. hblank's dispatch proc alongside its @as_compat removal).
+  — OPEN (tranche 3 step 2).
+- [tranche-2 retrospect follow-up (Volence), 2026-07-09] **Pull the SYNTACTIC slice of
+  S2-D6(b) `preserves(...)` forward** — declared `preserves(d0-d1/a0)` verified against the
+  literal `movem` push/pop pair (HBlank_Dispatch is the poster child). The full S2-D6
+  register-contract batch stays gated on the dataflow pass, but the movem-pair check is
+  simple pattern matching, the campaign keeps producing exactly this shape, and Volence asked
+  for it by name. Candidate for tranche 3 step 4 (a recorded decision per A-Spec2.3 — it adds
+  a proc-attribute surface). — OPEN (recommend IN, tranche 3).
