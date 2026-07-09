@@ -482,6 +482,17 @@ impl Evaluator<'_> {
                 Some(CodeOperand::PostInc(r))
             }
             Operand::DispInd { disp, inner, span } => {
+                // PC-relative EAs: `Sym(pc)` / `Sym(pc,Xn.size)` — 68k `(d16,PC)` /
+                // `(d8,PC,Xn)`. Keyed on the inner base being the LITERAL `pc`
+                // token (never a valid address register, so this can't collide
+                // with the field-space or `(aN)` paths below). Must run BEFORE
+                // the field-space checks and the eager `eval_expr(disp, ..)` — a
+                // pc-relative target is a link symbol, not a comptime-evaluable
+                // displacement (that eager eval is exactly what makes
+                // `Sym(pc,d0.w)` fail as "unknown name" today).
+                if let Some(shape) = pc_rel_shape(inner) {
+                    return self.map_pcrel_operand(disp, shape, scope, env, *span);
+                }
                 // D6.A3: a BARE single-segment displacement `f(aN)` on a register
                 // whose declared param type bottoms out at `*S` resolves ONLY in
                 // FIELD SPACE (S's direct fields ∪ in-scope overlays over S) — a
@@ -543,6 +554,78 @@ impl Evaluator<'_> {
             Operand::Splice(e) => {
                 let v = self.eval_expr(e, env);
                 self.classify_operand_splice(v, expr_span(e))
+            }
+        }
+    }
+
+    /// Resolve a `Sym(pc)` / `Sym(pc,Xn[.size])` operand (a [`PcRelShape`]
+    /// already peeled off `inner`) to a [`CodeOperand::PcRel`] /
+    /// [`CodeOperand::PcRelIdx`]. `disp` is the TARGET — a link symbol, exactly
+    /// like a branch target or [`Self::map_plain`]'s bare `Sym`, NOT a
+    /// comptime-evaluable displacement (the actual byte displacement is a
+    /// link-time fixup: `FixupKind::PcRelDisp16`/`PcRelDisp8`, resolved by
+    /// `sigil-link` from the same VMA-distance arithmetic `bra`/`bsr` already
+    /// use — see the module-level doc on cross-section behavior).
+    ///
+    /// The target resolution mirrors `map_plain`'s `Sym` arm exactly (single
+    /// segment → hygiene-scoped local/label lookup; multi-segment →
+    /// `Owner.label` cross-body reference) rather than calling it directly,
+    /// because `map_plain` returns a full `CodeOperand` (register/`Sym`/...)
+    /// and we specifically need just the resolved symbol STRING here.
+    fn map_pcrel_operand(
+        &mut self,
+        disp: &ast::Expr,
+        shape: PcRelShape<'_>,
+        scope: &LabelScope,
+        env: &mut Env,
+        span: Span,
+    ) -> Option<CodeOperand> {
+        let ast::Expr::Path(p) = disp else {
+            self.error(
+                expr_span(disp),
+                "a PC-relative target must be a label or symbol path".to_string(),
+            );
+            return None;
+        };
+        let target = scope.resolve_ref(&p.segments.join("."));
+        match shape {
+            PcRelShape::Plain => Some(CodeOperand::PcRel { target }),
+            PcRelShape::Indexed { xn_expr, xn_size } => {
+                let xn = match xn_expr {
+                    ast::Expr::Path(xp) if xp.segments.len() == 1 => {
+                        reg_from_name(&xp.segments[0])
+                    }
+                    _ => None,
+                };
+                let Some(xn) = xn else {
+                    self.error(
+                        expr_span(xn_expr),
+                        "`pc`-relative indexed addressing needs a valid index register \
+                         (d0-d7/a0-a7)"
+                            .to_string(),
+                    );
+                    return None;
+                };
+                let xlong = match self.resolve_size(xn_size, span, env) {
+                    Some(Some(Width::L)) => true,
+                    Some(Some(Width::W)) | Some(None) => false,
+                    Some(Some(other)) => {
+                        let suffix = match other {
+                            Width::B => "b",
+                            Width::S => "s",
+                            Width::W | Width::L => unreachable!("handled above"),
+                        };
+                        self.error(
+                            span,
+                            format!(
+                                "`pc`-relative index size must be `.w` or `.l`, got `.{suffix}`"
+                            ),
+                        );
+                        return None;
+                    }
+                    None => return None,
+                };
+                Some(CodeOperand::PcRelIdx { target, xn, xlong })
             }
         }
     }
@@ -1028,6 +1111,39 @@ fn flatten_reglist_expr(expr: &ast::Expr, out: &mut Vec<(Reg, ReglistSep)>) -> O
                 entry.1 = ReglistSep::Union;
             }
             Some(())
+        }
+        _ => None,
+    }
+}
+
+/// The PC-relative shape of a `Sym(...)` inner operand, if its FIRST part is
+/// the literal bareword `pc` (never a valid address register, so this can't
+/// misfire on a real `(aN)`/`(aN,Xn)` operand). `Plain` is `Sym(pc)` (one
+/// part); `Indexed` is `Sym(pc,Xn[.size])` (two parts), carrying the index
+/// part's raw expr + optional size suffix for the caller to resolve. Any other
+/// shape (wrong part count, first part not literally `pc`) yields `None` and
+/// the caller falls through to ordinary `(An[,Xn])` handling.
+enum PcRelShape<'a> {
+    /// `Sym(pc)` — plain PC-relative, `(d16,PC)`.
+    Plain,
+    /// `Sym(pc,Xn[.size])` — PC-indexed, `(d8,PC,Xn)`.
+    Indexed {
+        /// The index operand's raw expression (a register bareword, or
+        /// something else entirely if the source got it wrong).
+        xn_expr: &'a ast::Expr,
+        /// The index's size suffix, if any (`.w`/`.l`; `None` defaults to
+        /// `.w`, matching AS).
+        xn_size: Option<&'a TextOrSplice>,
+    },
+}
+
+fn pc_rel_shape(inner: &Operand) -> Option<PcRelShape<'_>> {
+    let Operand::Ind { parts, .. } = inner else { return None };
+    let is_pc = |e: &ast::Expr| matches!(e, ast::Expr::Path(p) if p.segments == ["pc"]);
+    match parts.as_slice() {
+        [(disp, None)] if is_pc(disp) => Some(PcRelShape::Plain),
+        [(disp, None), (xn_expr, xn_size)] if is_pc(disp) => {
+            Some(PcRelShape::Indexed { xn_expr, xn_size: xn_size.as_ref() })
         }
         _ => None,
     }

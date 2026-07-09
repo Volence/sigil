@@ -25,7 +25,7 @@
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg, Width};
 use sigil_backend_m68k::m68k::{
     Cond as M68kCond, Instruction as M68kInst, Mnemonic as M68kMnemonic, Operand as M68kOperand,
-    Size as M68kSize,
+    Size as M68kSize, Xn as M68kXn,
 };
 use sigil_backend_m68k::M68kBackend;
 use sigil_backend_z80::z80::{Mnemonic as Z80Mnemonic, Operand as Z80Operand};
@@ -153,6 +153,15 @@ fn lower_m68k_instr(
     }
     if matches!(m, M68kMnemonic::Movem) {
         lower_m68k_movem(size, ops, span, builder, diags);
+        return;
+    }
+    // A PC-relative operand (`Sym(pc)` / `Sym(pc,Xn.size)`) is an EXACT
+    // (fixed-size) EA — no relaxation, unlike the RelaxAbsSym seam below. At
+    // most one is legal per instruction (the 68k has one EA-operand slot that
+    // can carry it; a second would be a malformed instruction the encoder
+    // itself would reject), so route on presence, not count.
+    if ops.iter().any(|o| matches!(o, CodeOperand::PcRel { .. } | CodeOperand::PcRelIdx { .. })) {
+        lower_m68k_pcrel(m, size, ops, span, builder, diags);
         return;
     }
 
@@ -389,6 +398,98 @@ fn lower_jbra_jbsr(
     let advance = candidates[0].bytes.len() as u32;
     let frag = Fragment::RelaxLadder { candidates, target, span };
     builder.emit_fragment(frag, advance);
+}
+
+/// An instruction carrying ONE `Sym(pc)` / `Sym(pc,Xn.size)` operand — a
+/// PC-relative EA (68k `(d16,PC)` / `(d8,PC,Xn)`). Unlike the RelaxAbsSym
+/// abs.w/abs.l seam, this is an EXACT (fixed-size) EA: `(d16,PC)` is always a
+/// 2-byte extension word, `(d8,PC,Xn)` always a 2-byte brief extension word —
+/// no relaxation, so ONE encoding via [`M68kBackend::lower_pcrel_ea`] /
+/// [`M68kBackend::lower_pcrel_idx_ea`] with a placeholder-0 displacement and a
+/// `PcRelDisp16`/`PcRelDisp8` fixup the linker resolves (same VMA-distance
+/// arithmetic `bra`/`bsr`/`jbra` already use — cross-section-safe by
+/// construction, see the `pcrel_port.rs` test module doc).
+///
+/// # Fixup offset
+/// The 68k `encode_ea` rejects `Pcd16`/`Pcd8Xn` as a DESTINATION (PC-relative
+/// only reads), so wherever it legally appears it is the SOURCE of a 2-operand
+/// form or the single EA of a 1-operand form — both `encode_move`/
+/// `encode_alu_ea`/etc. emit the source's extension words immediately after
+/// the 2-byte opcode word (mirrors the AS front-end's `lower_m68k_pcrel`/
+/// `lower_m68k_pcrel_idx` doc, which this offset convention is copied from).
+/// So the plain form's d16 ext word always starts at byte offset 2; the
+/// indexed form's brief ext word also starts at offset 2, and its disp8 is
+/// that word's LOW byte, i.e. offset 3.
+fn lower_m68k_pcrel(
+    m: M68kMnemonic,
+    size: Option<Width>,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let size = match size {
+        Some(w) => width_to_size(w),
+        None => match m68k_default_size(m) {
+            Some(s) => s,
+            None => {
+                push_err(diags, span, "instruction needs an explicit size suffix (.b/.w/.l)");
+                return;
+            }
+        },
+    };
+    // Exactly one PC-relative operand is supported (the ISA has one EA slot
+    // that can legally carry it); a second is a malformed instruction.
+    let pcrel_count = ops
+        .iter()
+        .filter(|o| matches!(o, CodeOperand::PcRel { .. } | CodeOperand::PcRelIdx { .. }))
+        .count();
+    if pcrel_count > 1 {
+        push_err(
+            diags,
+            span,
+            "[lower.pcrel-operand] two PC-relative operands in one instruction is not \
+             supported",
+        );
+        return;
+    }
+    let mut mops = Vec::with_capacity(ops.len());
+    let mut target: Option<Expr> = None;
+    let mut is_indexed = false;
+    for op in ops {
+        match op {
+            CodeOperand::PcRel { target: t } => {
+                target = Some(Expr::Sym(t.clone()));
+                mops.push(M68kOperand::Pcd16(0));
+            }
+            CodeOperand::PcRelIdx { target: t, xn, xlong } => {
+                target = Some(Expr::Sym(t.clone()));
+                is_indexed = true;
+                let (is_a, n) = reg_kind(*xn);
+                let xn = if is_a { M68kXn::A(n) } else { M68kXn::D(n) };
+                mops.push(M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong });
+            }
+            other => match m68k_operand(other) {
+                Ok(o) => mops.push(o),
+                Err(msg) => {
+                    push_err(diags, span, msg);
+                    return;
+                }
+            },
+        }
+    }
+    let target = target.expect("caller guarantees exactly one PC-relative operand");
+    let refined = refine_m68k_mnemonic(m, &mops);
+    let inst = M68kInst { mnemonic: refined, size, ops: mops };
+    let result = if is_indexed {
+        M68kBackend.lower_pcrel_idx_ea(&inst, 3, target, span)
+    } else {
+        M68kBackend.lower_pcrel_ea(&inst, 2, target, span)
+    };
+    match result {
+        Ok(df) => emit_data_frag(builder, df),
+        Err(e) => push_err(diags, span, e.message),
+    }
 }
 
 /// `dbcc`/`dbra Dn, <target>`: always word-sized (no size suffix — unlike
@@ -690,6 +791,13 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         CodeOperand::RegList(_) => {
             Err("internal: a movem register list reached the generic operand mapper".to_string())
         }
+        // A PC-relative operand is always routed through `lower_m68k_pcrel` by
+        // the mnemonic dispatch (it's detected before this generic mapper
+        // runs), so it never reaches here. Defense-in-depth, not a reachable
+        // path — mirrors the `RegList` arm above.
+        CodeOperand::PcRel { .. } | CodeOperand::PcRelIdx { .. } => Err(
+            "internal: a PC-relative operand reached the generic operand mapper".to_string(),
+        ),
     }
 }
 
