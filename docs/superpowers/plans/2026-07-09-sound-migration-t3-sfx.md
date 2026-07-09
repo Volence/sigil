@@ -492,3 +492,31 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   p2/p3 probes — consider `t3_`-prefixing; (2) `lower_ptr`'s function-level doc doesn't
   mention the new Int-arm behavior; (3) the Int arm's guard + re-destructure is redundant
   (`matches!` then `if let`).
+
+### Task 2 (aeon prep) — DONE (aeon commit `5a01237` on branch `sigil-emp-sfx`, off master `b0e5a66`)
+
+- The bg-restore was COMMITTED to aeon master before this task started (`b0e5a66`,
+  boot-checked by Volence 2026-07-09; stash dropped) — the plan's ⚠ carry-along caution
+  became obsolete; the branch started from a clean tree.
+- **Sequencing call (the Step-2/3 ordering the plan left open):** all edits landed FIRST
+  (R2 equ moves + R1 generator change + header rewrite), THEN the builds — so prebuild's
+  per-build `generate` never got a chance to clobber the hand-owned table edits.
+- R2 as specified: three ints → `sound_ids.asm` after the SFXID_* ladder; `SFX_BLOB_BANK =
+  SND_ENGINE_TABLE_BANK` in main.asm with the plan's comment; four equs deleted from
+  sfx_table.asm (its `/4 <> SFX_TABLE_LEN` self-check intact, now reading sound_ids.asm);
+  game.asm contract comment updated.
+- R1: `generate_all(emit_table=False)` default skips `emit_sfx_table_asm()` (prints a
+  hand-owned pointer); explicit `generate --emit-table` opt-in kept. sfx_table.asm header
+  rewritten (hand-owned banner + four-place add-an-SFX checklist). Regen-drop PROVEN:
+  mtime + content hash unchanged across a full build.
+- R8: `verify_emit_bin.py` 24/24 (18 SFX pairs incl. both zero-byte PSG patch banks + 6
+  fixed targets); 18 narrow gitignore exceptions; 18 `.bin`s committed (two as empty blobs).
+- R6: third gate wrapped verbatim (19 includes + both fatals inside `ifndef`), else-arm
+  org `$65C82` debug / `$64230` plain with PROVENANCE comment; nesting balance verified.
+- Byte-verification: plain `8ce6dd7e…` ✓, debug `13c7b063…` ✓, plain-restore rebuild ✓ —
+  every step byte-neutral, tree left in plain state. 24 files, +103/−26.
+- **Flag for the whole-branch review (prong 2):** if `generate --emit-table` is ever run,
+  it emits the OLD-style table (GENERATED header + the four equs) over the hand-owned file
+  — legal for asl (`=` reassignment, equal values) but it clobbers the hand-owned header.
+  Acceptable as a bootstrap escape hatch or worth a warning banner in the emitter? Review
+  should rule.
