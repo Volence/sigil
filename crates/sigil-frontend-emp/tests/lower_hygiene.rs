@@ -22,7 +22,7 @@ use sigil_ir::{Module, SymbolTable};
 fn lower(src: &str) -> (Module, Vec<sigil_span::Diagnostic>) {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None })
+    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] })
 }
 
 /// The label names defined across every section of a lowered module.

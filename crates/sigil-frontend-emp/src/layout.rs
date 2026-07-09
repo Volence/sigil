@@ -1357,7 +1357,7 @@ pub fn eval_data_at(
     // Non-lowering callers (tests, `eval_data`) do not link, so a deferred
     // `LinkAssert` from a data-item guard has no consumer here — drop it. The
     // lowering pass calls `eval_data_with_root` directly and drains the asserts.
-    let (buf, _asserts, diags) = eval_data_with_root(file, name, here, None);
+    let (buf, _asserts, diags) = eval_data_with_root(file, name, here, None, &[]);
     (buf, diags)
 }
 
@@ -1392,9 +1392,11 @@ pub fn eval_data_with_root(
     name: &str,
     here: Option<HerePos>,
     include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         ev.apply_here_pos(here);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
@@ -1542,9 +1544,11 @@ pub fn eval_offsets_with_root(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
     include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
@@ -1652,9 +1656,11 @@ pub fn eval_dispatch_with_root(
     file: &ast::File,
     decl: &ast::DispatchDecl,
     include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
@@ -1739,10 +1745,18 @@ pub fn eval_dispatch_with_root(
 /// the overlay (Spec 2, Plan 7 #6 — D6.A2 "always-on"). Returns the diagnostics;
 /// the overlay itself emits ZERO bytes, so there is no buffer to return. The
 /// region form (`vars region { .. }`, `name: None`) is inert — the caller must
-/// not invoke this for it.
-pub fn validate_overlay(file: &ast::File, name: &str, span: Span) -> Vec<Diagnostic> {
+/// not invoke this for it. `defines` (sound-migration T2 Task 1, R1) are
+/// seeded first so an overlay field's size expression can reference a `-D`
+/// define like any other item's can.
+pub fn validate_overlay(
+    file: &ast::File,
+    name: &str,
+    span: Span,
+    defines: &[(String, i128)],
+) -> Vec<Diagnostic> {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         ev.overlay_layout(name, span);
         ev.diags
     })
@@ -1776,10 +1790,16 @@ pub fn resolve_overlay_window(file: &ast::File, name: &str) -> Option<ast::Resol
 /// Evaluate an arbitrary comptime `expr` against `file`'s tables to an integer
 /// (§7.1) — used by the lowering pass to resolve a section's `vma:` attribute.
 /// Returns `None` (with any diagnostics) if the expression is not a comptime
-/// integer.
-pub fn eval_attr_int(file: &ast::File, expr: &ast::Expr) -> (Option<i128>, Vec<Diagnostic>) {
+/// integer. `defines` (sound-migration T2 Task 1, R1) are seeded first so a
+/// `vma:`/`bank:` attribute expression can reference a `-D` define.
+pub fn eval_attr_int(
+    file: &ast::File,
+    expr: &ast::Expr,
+    defines: &[(String, i128)],
+) -> (Option<i128>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         let mut env = Env::new();
         let v = ev.eval_expr(expr, &mut env);
         // Unreachable today — this evaluator carries no here-position, so a

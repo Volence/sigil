@@ -118,7 +118,7 @@ pub(super) fn lower_script_item(
         members,
         span: decl.span,
     };
-    let (buf, mut ds) = eval_dispatch_with_root(file, &table, placement.include_root);
+    let (buf, mut ds) = eval_dispatch_with_root(file, &table, placement.include_root, placement.defines);
     diags.append(&mut ds);
     if let Some(buf) = buf {
         let (bytes, fixups, mut stream_diags) =
@@ -145,6 +145,7 @@ pub(super) fn lower_script_item(
         decl.span,
         *asm_counter,
         placement.cpu,
+        placement.defines,
     );
     *asm_counter = next_counter;
     diags.append(&mut ds);

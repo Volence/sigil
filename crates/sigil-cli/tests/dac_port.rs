@@ -107,6 +107,7 @@ fn compile_real_file() -> (Vec<Section>, sigil_link::LinkedImage) {
         // The module's OWN directory — so `embed("dac/kick.pcm")` /
         // `embed("temp_blip.bin")` resolve within the capability sandbox.
         include_root: Some(dir.clone()),
+        defines: vec![],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

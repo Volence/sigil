@@ -25,7 +25,7 @@ use sigil_span::{Diagnostic, Level};
 fn lower(src: &str) -> (sigil_ir::Module, Vec<Diagnostic>) {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None })
+    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] })
 }
 
 fn section<'a>(module: &'a sigil_ir::Module, name: &str) -> &'a Section {

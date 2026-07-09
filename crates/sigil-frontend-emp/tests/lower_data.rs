@@ -6,7 +6,8 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::expr::BinOp;
-use sigil_ir::{Expr, Fixup, FixupKind, Fragment, SymbolTable};
+use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable};
+use std::path::{Path, PathBuf};
 
 /// The masked fixup target a `winptr(sym)` lowers to: `(sym & 0x7FFF) | 0x8000`
 /// (AS `sfx_winptr`). Used by the windowed-pointer fixup-shape assertions below.
@@ -27,7 +28,7 @@ fn roundtrip_bytes() {
     let (file, perrs) = parse_str("module m\ndata X: [u8; 3] = [1, 2, 3]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
@@ -44,7 +45,7 @@ fn multibyte_scalar_is_big_endian() {
     let (file, perrs) = parse_str("module m\ndata W: u16 = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
@@ -63,7 +64,7 @@ fn symref_makes_abs32_fixup() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, _diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, _diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
 
     // The point is the fixup SHAPE, not its resolution: an Abs32Be fixup at
     // offset 0 of the data fragment, targeting the symbol `init`.
@@ -140,11 +141,11 @@ fn scalar_byte_order_per_cpu() {
     let (file, perrs) = parse_str("module m\ndata W: u16 = 258\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (be_mod, be_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (be_mod, be_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(be_diags.is_empty(), "unexpected 68k diagnostics: {be_diags:?}");
     assert_eq!(linked_bytes(&be_mod), vec![0x01, 0x02]);
 
-    let (le_mod, le_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    let (le_mod, le_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
     assert!(le_diags.is_empty(), "unexpected Z80 diagnostics: {le_diags:?}");
     assert_eq!(linked_bytes(&le_mod), vec![0x02, 0x01]);
 }
@@ -159,7 +160,7 @@ fn symref_width4_68k_is_abs32be() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -180,7 +181,7 @@ fn winptr_in_z80_is_value16le() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -211,7 +212,7 @@ fn winptr_in_68k_is_value16be() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -232,7 +233,7 @@ fn unwindowed_pointer_in_z80_is_error() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[cross-cpu.unwindowed-pointer]")
             && d.message.contains("init")),
@@ -253,7 +254,7 @@ fn mixed_table_byte_diff_68k() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     // tag=0x1234 (BE) | code=0x00000000 (Abs32 hole) | flag=0x7F. The pointer
     // targets an external `init`, so byte-diff the raw pre-link image.
@@ -303,7 +304,7 @@ fn i16_neg1_lowers_to_ffff_signed_sentinel_bytes() {
     // `multibyte_scalar_is_big_endian` above.
     let (file, perrs) = parse_str("module m\ndata T: [i16; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0xFF, 0xFF]);
 }
@@ -313,7 +314,7 @@ fn i8_neg1_lowers_to_ff_signed_sentinel_byte() {
     // `dc.b -1` ($FF) via `i8`.
     let (file, perrs) = parse_str("module m\ndata T: [i8; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0xFF]);
 }
@@ -325,7 +326,7 @@ fn i16_array_shows_the_sentinel_in_terminator_position() {
     // big-endian, then the `$FFFF` sentinel.
     let (file, perrs) = parse_str("module m\ndata T: [i16; 3] = [10, 20, -1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x00, 0x0A, 0x00, 0x14, 0xFF, 0xFF]);
 }
@@ -342,7 +343,7 @@ fn i16_array_shows_the_sentinel_in_terminator_position() {
 fn string_against_matching_byte_array_type_emits_ascii_bytes() {
     let (file, perrs) = parse_str("module m\ndata Msg: [u8;5] = \"HELLO\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F]);
 }
@@ -353,7 +354,7 @@ fn string_shorter_than_declared_byte_array_is_length_mismatch_error() {
     // plain length mismatch, not a silent truncation.
     let (file, perrs) = parse_str("module m\ndata Msg: [u8;4] = \"HELLO\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("length mismatch")
             && d.message.contains('4')
@@ -367,7 +368,7 @@ fn string_with_null_escape_sized_to_include_terminator_emits_it() {
     // The author sizes the array to include the `\0` terminator explicitly.
     let (file, perrs) = parse_str("module m\ndata Msg: [u8;6] = \"HELLO\\0\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x00]);
 }
@@ -378,7 +379,7 @@ fn string_against_non_byte_element_array_type_stays_an_error() {
     // stays the ordinary "expected an array" mismatch.
     let (file, perrs) = parse_str("module m\ndata Msg: [u16;3] = \"HELLO\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("expected an array") && d.message.contains("string")),
         "expected an 'expected an array ... got string' diagnostic, got {diags:?}"
@@ -390,7 +391,7 @@ fn string_against_byte_array_rejects_non_ascii() {
     let src = "module m\ndata Msg: [u8;1] = \"\u{e9}\"\n"; // "é"
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.to_lowercase().contains("ascii")),
         "expected an ASCII-only diagnostic, got {diags:?}"
@@ -412,7 +413,7 @@ fn string_in_pointer_field_is_still_a_symbol_ref_not_bytes() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -431,7 +432,7 @@ fn u16_neg1_is_rejected_not_wrapped() {
     // "loosen `u16`/`u8`".
     let (file, perrs) = parse_str("module m\ndata T: [u16; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
         "expected an [emit.out-of-range] refusing -1 for u16, got {diags:?}"
@@ -451,7 +452,7 @@ fn u16le_scalar_in_68k_section_emits_little_endian() {
     // opposite order from `multibyte_scalar_is_big_endian`'s plain `u16`).
     let (file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x34, 0x12]);
 }
@@ -462,12 +463,12 @@ fn u16le_equals_u16_on_z80() {
     // plain `u16` emits there — no double byte-swap.
     let (le_file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (le_mod, le_diags) = lower_module(&le_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    let (le_mod, le_diags) = lower_module(&le_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
     assert!(le_diags.is_empty(), "unexpected lowering diagnostics: {le_diags:?}");
 
     let (be_file, perrs) = parse_str("module m\ndata X: u16 = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (be_mod, be_diags) = lower_module(&be_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    let (be_mod, be_diags) = lower_module(&be_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
     assert!(be_diags.is_empty(), "unexpected lowering diagnostics: {be_diags:?}");
 
     assert_eq!(linked_bytes(&le_mod), linked_bytes(&be_mod));
@@ -486,7 +487,7 @@ fn u16le_linkexpr_cell_uses_value16le_on_68k() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -516,9 +517,334 @@ fn u16le_range_rules_are_identical_to_u16() {
     // `u16_neg1_is_rejected_not_wrapped` above): `-1` is refused, not wrapped.
     let (file, perrs) = parse_str("module m\ndata T: [u16le; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
         "expected an [emit.out-of-range] refusing -1 for u16le, got {diags:?}"
+    );
+}
+
+// ---- sound-migration T2 Task 1: comptime `defines` (-D) ------------------
+//
+// A `.emp` module can be lowered under different comptime `defines` — the
+// analogue of AS's `-D __DEBUG__` — so ONE module source produces different
+// build shapes. Frozen ruling R1: each `(name, value)` pair is injected as a
+// resolved comptime int const into the module's global scope BEFORE any item
+// evaluates; a module-declared item sharing a define's name is a hard
+// `[defines.collision]` error, never a silent shadow either direction.
+
+#[test]
+fn defines_are_visible_as_comptime_consts() {
+    let src = "module t\n\
+               const N = if DEBUG == 1 { 3 } else { 1 }\n\
+               data Tbl: [u8; N] = if DEBUG == 1 { [1, 2, 3] } else { [7] }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("DEBUG".into(), 1)] },
+    );
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![1, 2, 3]);
+
+    let (module0, diags0) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("DEBUG".into(), 0)] },
+    );
+    assert!(diags0.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags0:?}");
+    assert_eq!(linked_bytes(&module0), vec![7]);
+}
+
+#[test]
+fn define_colliding_with_module_decl_errors() {
+    let src = "module t\nconst DEBUG = 0\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+
+    let (_module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("DEBUG".into(), 1)] },
+    );
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.contains("[defines.collision]")),
+        "expected a [defines.collision] error, got {diags:?}"
+    );
+}
+
+#[test]
+fn define_colliding_with_proc_name_errors() {
+    // R1 says a module-declared ITEM of the define's name is a hard error —
+    // and a proc is an item too (spec-review catch: without the Proc arm in
+    // `validate_defines`, `-D Foo=5` + `proc Foo` compiled silently and a
+    // `data P: u32 = Foo` initializer read the DEFINE's int instead of the
+    // proc's label, the exact silent-shadow R1 forbids).
+    let src = "module t\nproc Foo() {\n    rts\n}\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+
+    let (_module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("Foo".into(), 5)] },
+    );
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.contains("[defines.collision]")),
+        "expected a [defines.collision] error for a proc-name collision, got {diags:?}"
+    );
+}
+
+// ---- sound-migration T2 Task 2: MT-shape capability probes (P1-P4) ------
+//
+// `mt_bank.emp` (Task 5) needs five constructs no existing test exercises
+// end-to-end together: a conditional `embed(...) / Data.empty` data item, a
+// `[*u8; N]` pointer-array of string elements, an `if`-expression driving
+// both a `const` array LENGTH and the array VALUE, a length-mismatch on that
+// shape, and an `ensure` mixing a comptime `.len` with a pinned int const.
+// Each probe is written to PIN bytes/offsets/addresses, not merely "no error".
+
+/// The fixture directory `embed` resolves paths against for these probes:
+/// the SAME `tests/vectors/` fixture `sandbox_embed.rs`/`sandbox_hermeticity.rs`
+/// use, containing the deterministic `embed_fixture.bin` (12 bytes, `0x00..=0x0B`).
+/// This IS the established "include_root tempdir-adjacent fixture" pattern for
+/// `embed` in this crate — a real ad-hoc `tempfile::tempdir()` would just
+/// reconstruct this same fixture at test time for no added coverage.
+fn vectors_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("vectors")
+}
+
+const EMBED_FIXTURE_BYTES: [u8; 12] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+fn section<'a>(module: &'a sigil_ir::Module, name: &str) -> &'a Section {
+    module
+        .sections
+        .iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no section `{name}`"))
+}
+
+fn label_offset(sec: &Section, name: &str) -> u32 {
+    sec.labels.iter().find(|l| l.name == name).unwrap_or_else(|| panic!("no label `{name}`")).offset
+}
+
+/// Lower `src` with the given `defines`, resolving `embed(...)` against
+/// [`vectors_dir`]. Asserts a clean parse; returns `(module, diagnostics)`.
+fn lower_with_defines_and_root(
+    src: &str,
+    defines: Vec<(String, i128)>,
+) -> (sigil_ir::Module, Vec<sigil_span::Diagnostic>) {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), defines },
+    )
+}
+
+// ---- P1: `if C { embed(...) } else { Data.empty }` -----------------------
+
+#[test]
+fn p1_conditional_embed_true_arm_emits_real_bytes() {
+    let src = "module m\n\
+               section s (vma: $8000) {\n\
+               data X = if C == 1 { embed(\"embed_fixture.bin\") } else { Data.empty }\n\
+               data Next: u8 = $AA\n\
+               }\n";
+    let (module, diags) = lower_with_defines_and_root(src, vec![("C".into(), 1)]);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    let sec = section(&module, "s");
+    let x_off = label_offset(sec, "X");
+    let next_off = label_offset(sec, "Next");
+    assert_eq!(x_off, 0, "X is the section's first item");
+    assert_eq!(
+        next_off, 12,
+        "Next must land right after X's 12 embedded bytes (no padding, no gap)"
+    );
+
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..12], &EMBED_FIXTURE_BYTES, "the true arm embeds the real file bytes");
+    assert_eq!(bytes[12], 0xAA, "Next's byte follows immediately");
+    assert_eq!(bytes.len(), 13, "no extra padding bytes anywhere");
+}
+
+#[test]
+fn p1_conditional_embed_false_arm_is_zero_length_but_labeled() {
+    // The else arm (`Data.empty`) must produce a ZERO-length data item: the
+    // label `X` is still defined, it emits zero bytes, and `Next` — the NEXT
+    // data item in the SAME section — lands at the SAME offset X would have
+    // occupied had X emitted nothing (i.e. offset 0, since X is first).
+    let src = "module m\n\
+               section s (vma: $8000) {\n\
+               data X = if C == 1 { embed(\"embed_fixture.bin\") } else { Data.empty }\n\
+               data Next: u8 = $AA\n\
+               }\n";
+    let (module, diags) = lower_with_defines_and_root(src, vec![("C".into(), 0)]);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    let sec = section(&module, "s");
+    let x_off = label_offset(sec, "X");
+    let next_off = label_offset(sec, "Next");
+    assert_eq!(x_off, 0, "X's label is still defined");
+    assert_eq!(next_off, 0, "Next lands at X's offset — X emitted zero bytes");
+    assert_eq!(x_off, next_off, "the following item lands at the SAME offset as the empty item");
+
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes, vec![0xAA], "only Next's single byte — X contributed nothing");
+}
+
+// ---- P2: `[*u8; N]` pointer array with string elements -------------------
+
+#[test]
+fn p2_pointer_array_of_three_strings_emits_three_abs32_symrefs() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               data C: [u8;1] = [3]\n\
+               data T: [*u8; 3] = [\"A\", \"B\", \"C\"]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    // Three 4-byte Abs32Be fixups at offsets 0, 4, 8, targeting A/B/C.
+    assert_eq!(
+        section_fixups(&module),
+        vec![
+            Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 4, target: Expr::Sym("B".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 8, target: Expr::Sym("C".into()) },
+        ]
+    );
+
+    // Resolve to the labels' actual linked addresses (A=0, B=1, C=2 in the
+    // default `text` section: A/B/C are each 1 byte, then T's 12-byte table).
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes.len(), 3 + 12, "3 one-byte blobs + a 12-byte pointer table");
+    assert_eq!(&bytes[3..7], &[0x00, 0x00, 0x00, 0x00], "T[0] -> A @ address 0");
+    assert_eq!(&bytes[7..11], &[0x00, 0x00, 0x00, 0x01], "T[1] -> B @ address 1");
+    assert_eq!(&bytes[11..15], &[0x00, 0x00, 0x00, 0x02], "T[2] -> C @ address 2");
+}
+
+#[test]
+fn p2_pointer_array_of_one_string_emits_one_abs32_symref() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 1] = [\"A\"]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) }]
+    );
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes.len(), 1 + 4, "the one-byte blob + a 4-byte pointer cell");
+    assert_eq!(&bytes[1..5], &[0x00, 0x00, 0x00, 0x00], "T[0] -> A @ address 0");
+}
+
+// ---- P3: `if`-expression driving BOTH a const array length and the value -
+
+#[test]
+fn p3_if_expression_const_length_drives_matching_array_shape_debug_1() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               data C: [u8;1] = [3]\n\
+               const N = if D == 1 { 3 } else { 1 }\n\
+               data T: [*u8; N] = if D == 1 { [\"A\", \"B\", \"C\"] } else { [\"A\"] }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 1)] },
+    );
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![
+            Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 4, target: Expr::Sym("B".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 8, target: Expr::Sym("C".into()) },
+        ],
+        "D=1 selects the 3-element shape, N=3"
+    );
+}
+
+#[test]
+fn p3_if_expression_const_length_drives_matching_array_shape_debug_0() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               data C: [u8;1] = [3]\n\
+               const N = if D == 1 { 3 } else { 1 }\n\
+               data T: [*u8; N] = if D == 1 { [\"A\", \"B\", \"C\"] } else { [\"A\"] }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 0)] },
+    );
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) }],
+        "D=0 selects the 1-element shape, N=1"
+    );
+}
+
+#[test]
+fn p3_mismatched_array_length_against_const_n_is_clean_error_not_panic() {
+    // N=3 (D==1) but the value arm supplies only 2 elements — a clean
+    // diagnostic naming the mismatch, never a panic.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               const N = if D == 1 { 3 } else { 1 }\n\
+               data T: [*u8; N] = [\"A\", \"B\"]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 1)] },
+    );
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("length mismatch")
+            && d.message.contains('3')
+            && d.message.contains('2')),
+        "expected a clean length-mismatch error naming 3 and 2, got {diags:?}"
+    );
+}
+
+// ---- P4: `ensure` mixing a comptime embed `.len` and a pinned int const -
+
+#[test]
+fn p4_ensure_len_against_pinned_const_passes_when_equal() {
+    let src = "module m\n\
+               const Blob = embed(\"embed_fixture.bin\")\n\
+               const PINNED = 12\n\
+               ensure(Blob.len == PINNED, \"blob length drifted: want {PINNED}, got {Blob.len}\")\n\
+               data D: [u8;1] = [1]\n";
+    let (_module, diags) = lower_with_defines_and_root(src, vec![]);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "matching len must pass silently, got: {diags:?}"
+    );
+}
+
+#[test]
+fn p4_ensure_len_against_pinned_const_fires_loud_message_when_unequal() {
+    let src = "module m\n\
+               const Blob = embed(\"embed_fixture.bin\")\n\
+               const PINNED = 999\n\
+               ensure(Blob.len == PINNED, \"blob length drifted: want {PINNED}, got {Blob.len}\")\n\
+               data D: [u8;1] = [1]\n";
+    let (_module, diags) = lower_with_defines_and_root(src, vec![]);
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("blob length drifted: want 999, got 12")),
+        "expected the ensure's interpolated message naming 999 and 12, got: {diags:?}"
     );
 }

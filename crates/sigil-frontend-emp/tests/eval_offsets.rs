@@ -86,7 +86,7 @@ fn duplicate_member_name_is_an_error() {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
     assert!(diags[0].message.contains("duplicate"), "diagnostic was {:?}", diags[0].message);
 }
@@ -108,7 +108,7 @@ data D3: [u8; 1] = [3]
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     let dups: Vec<_> = diags.iter().filter(|d| d.message.contains("duplicate")).collect();
     assert_eq!(dups.len(), 1, "expected exactly one duplicate diagnostic, got {diags:?}");
 }
@@ -122,7 +122,7 @@ fn member_named_count_is_reserved() {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
     assert!(diags[0].message.contains("reserved"), "diagnostic was {:?}", diags[0].message);
 }
@@ -149,7 +149,7 @@ fn const_alias_target_is_diagnosed_as_const() {
     let src = "module m\nconst F0 = 7\noffsets M { A: F0, B: t1 }\n";
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
-    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None);
+    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None, &[]);
     // Both entries still emit their 2-byte slot (placeholder for the const).
     assert_eq!(buf.expect("buf").size, 4, "the 2-byte slot lands for every member");
     assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
@@ -167,7 +167,7 @@ fn non_label_target_is_diagnosed() {
     let src = "module m\noffsets M { A: 1 + 1 }\n";
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
-    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None);
+    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None, &[]);
     assert_eq!(buf.expect("buf").size, 2, "the 2-byte slot still lands");
     assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
     assert!(

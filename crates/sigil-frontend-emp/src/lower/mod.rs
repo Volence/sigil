@@ -41,6 +41,17 @@ pub struct LowerOptions {
     /// every pre-existing `LowerOptions { initial_cpu, .. }` construction is
     /// therefore unaffected by adding this field.
     pub include_root: Option<PathBuf>,
+    /// Comptime `-D NAME=INT` defines (sound-migration T2 Task 1, R1): the
+    /// `.emp` analogue of AS's `-D __DEBUG__`, so one module source produces
+    /// different build shapes. Each `(name, value)` is injected as a resolved
+    /// `Value::Int` comptime const into the module's global scope BEFORE any
+    /// item evaluates — a plain name reference (`if DEBUG == 1 { .. }`)
+    /// resolves it exactly like a `const`. A module-declared item sharing a
+    /// define's name is a hard `[defines.collision]` error (never a silent
+    /// shadow either direction). Empty by default, so every pre-existing
+    /// `LowerOptions { initial_cpu, include_root, .. }` construction that
+    /// predates this field is unaffected in behavior once updated to list it.
+    pub defines: Vec<(String, i128)>,
 }
 
 /// The CPU, physical origin (`here()` base), and sandbox root a `data` item
@@ -52,6 +63,7 @@ struct Placement<'a> {
     cpu: Cpu,
     origin: u32,
     include_root: Option<&'a Path>,
+    defines: &'a [(String, i128)],
 }
 
 /// Lower a `.emp` module into Core IR, returning the finished [`Module`] plus any
@@ -87,6 +99,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // diagnostic; this driver runs once.
     validate_offsets(&file.items, &mut diags);
     validate_dispatch(&file.items, &mut diags);
+    validate_defines(&file.items, &opts.defines, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -161,6 +174,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         cpu: opts.initial_cpu,
                         origin: next_lma,
                         include_root: opts.include_root.as_deref(),
+                        defines: &opts.defines,
                     },
                     &mut builder,
                     &mut diags,
@@ -172,7 +186,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: opts.initial_cpu, as_compat },
+                    proc::ProcCtx { cpu: opts.initial_cpu, as_compat, defines: &opts.defines },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -187,6 +201,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         cpu: opts.initial_cpu,
                         origin: next_lma,
                         include_root: opts.include_root.as_deref(),
+                        defines: &opts.defines,
                     },
                     &mut builder,
                     &mut diags,
@@ -201,6 +216,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         cpu: opts.initial_cpu,
                         origin: next_lma,
                         include_root: opts.include_root.as_deref(),
+                        defines: &opts.defines,
                     },
                     as_compat,
                     &mut builder,
@@ -220,6 +236,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &module_id,
                     &mut here_anchor_counter,
                     opts.include_root.as_deref(),
+                    &opts.defines,
                     &mut builder,
                     &mut diags,
                 );
@@ -232,7 +249,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // section), folding its length into the counter.
                 next_lma += builder.current_offset();
                 default_open = false;
-                let (cpu, vma, bank) = section_attrs(file, sec, &mut diags);
+                let (cpu, vma, bank) = section_attrs(file, sec, &opts.defines, &mut diags);
                 builder.switch_section_lma(&sec.name, cpu, vma, next_lma);
                 builder.set_section_bank(bank);
                 // R7p.5: an explicit `vma:` is a pin (labels resolve from that
@@ -245,7 +262,12 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 let cont = lower_section_items(
                     file,
                     sec,
-                    &Placement { cpu, origin, include_root: opts.include_root.as_deref() },
+                    &Placement {
+                        cpu,
+                        origin,
+                        include_root: opts.include_root.as_deref(),
+                        defines: &opts.defines,
+                    },
                     as_compat,
                     &module_id,
                     &mut here_anchor_counter,
@@ -266,7 +288,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // (D6.A2); it emits ZERO bytes. Region form (`name: None`) is
                 // inert by design (Plan 7 #6 OUT-list).
                 if let Some(name) = &decl.name {
-                    let mut d = validate_overlay(file, name, decl.span);
+                    let mut d = validate_overlay(file, name, decl.span, &opts.defines);
                     overlay_pass_diags.extend(d.iter().cloned());
                     diags.append(&mut d);
                 }
@@ -283,6 +305,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         cpu: opts.initial_cpu,
                         origin: next_lma,
                         include_root: opts.include_root.as_deref(),
+                        defines: &opts.defines,
                     },
                     as_compat,
                     &mut builder,
@@ -297,7 +320,14 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
             // so `add_equ_sym` has an open section to target.
             ast::Item::Equ(decl) => {
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
-                lower_equ_item(file, decl, opts.include_root.as_deref(), &mut builder, &mut diags);
+                lower_equ_item(
+                    file,
+                    decl,
+                    opts.include_root.as_deref(),
+                    &opts.defines,
+                    &mut builder,
+                    &mut diags,
+                );
             }
             // `Item::Const` is a name-resolution-only item (no bytes, no label,
             // no deferred symbol) — the evaluator's `consts` index is where its
@@ -395,7 +425,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    proc::ProcCtx { cpu: placement.cpu, as_compat },
+                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines },
                     builder,
                     diags,
                     asm_counter,
@@ -409,6 +439,7 @@ fn lower_section_items(
                     module_id,
                     here_anchor_counter,
                     placement.include_root,
+                    placement.defines,
                     builder,
                     diags,
                 );
@@ -420,7 +451,7 @@ fn lower_section_items(
                 // Same as the top-level arm: overlay form → force layout so its
                 // always-on checks fire, zero bytes; region form → inert.
                 if let Some(name) = &decl.name {
-                    let mut d = validate_overlay(file, name, decl.span);
+                    let mut d = validate_overlay(file, name, decl.span, placement.defines);
                     overlay_pass_diags.extend(d.iter().cloned());
                     diags.append(&mut d);
                 }
@@ -435,7 +466,7 @@ fn lower_section_items(
             // section is already open (we are inside it), so `add_equ_sym`
             // targets it directly.
             ast::Item::Equ(decl) => {
-                lower_equ_item(file, decl, placement.include_root, builder, diags);
+                lower_equ_item(file, decl, placement.include_root, placement.defines, builder, diags);
             }
             // `Item::Const` is name-resolution-only — nothing to lower.
             _ => {}
@@ -460,6 +491,7 @@ fn lower_equ_item(
     file: &ast::File,
     decl: &ast::EquDecl,
     include_root: Option<&Path>,
+    defines: &[(String, i128)],
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -467,7 +499,7 @@ fn lower_equ_item(
     // Evaluate the equate's value through the shared const/equ path (its `equs`
     // index is private, so we go through the public `eval_const_with_root` entry
     // point, which resolves consts OR equs identically).
-    let (value, mut ds) = crate::eval::eval_const_with_root(file, &decl.name, include_root);
+    let (value, mut ds) = crate::eval::eval_const_with_root(file, &decl.name, include_root, defines);
     diags.append(&mut ds);
     let Some(value) = value else { return };
     let expr = match value {
@@ -528,6 +560,7 @@ fn lower_item_guard(
     module_id: &str,
     here_anchor_counter: &mut u32,
     include_root: Option<&Path>,
+    defines: &[(String, i128)],
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) -> bool {
@@ -540,7 +573,7 @@ fn lower_item_guard(
         base,
         anchor: provisional.then(|| anchor_name.clone()),
     };
-    let mut outcome = crate::eval::guards::eval_item_guard(file, decl, here, include_root);
+    let mut outcome = crate::eval::guards::eval_item_guard(file, decl, here, include_root, defines);
     diags.append(&mut outcome.diags);
     if provisional && outcome.anchor_used {
         // Define the anchor at the guard's cursor (its `here()` VMA), advance the
@@ -575,7 +608,7 @@ fn lower_data_item(
     }
     let here = here_pos(builder, placement.origin, &decl.name);
     let (buf, asserts, mut ds) =
-        eval_data_with_root(file, &decl.name, Some(here), placement.include_root);
+        eval_data_with_root(file, &decl.name, Some(here), placement.include_root, placement.defines);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -607,7 +640,7 @@ fn lower_offsets_item(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root);
+    let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root, placement.defines);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -652,7 +685,7 @@ fn lower_dispatch_item(
         return;
     }
 
-    let (buf, mut ds) = eval_dispatch_with_root(file, decl, placement.include_root);
+    let (buf, mut ds) = eval_dispatch_with_root(file, decl, placement.include_root, placement.defines);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -670,8 +703,16 @@ fn lower_dispatch_item(
         let ast::DispatchTarget::Body(body) = &member.target else { continue };
         let label = crate::layout::dispatch_body_label(&file.module.path, &decl.name, &member.name);
         builder.define_label(&label);
-        let (buf, mut ds, next_counter) =
-            eval_proc_body(file, &label, &[], body, member.span, *asm_counter, placement.cpu);
+        let (buf, mut ds, next_counter) = eval_proc_body(
+            file,
+            &label,
+            &[],
+            body,
+            member.span,
+            *asm_counter,
+            placement.cpu,
+            placement.defines,
+        );
         *asm_counter = next_counter;
         diags.append(&mut ds);
         // `None` = the body failed to EVALUATE (already diagnosed) — skip it.
@@ -717,6 +758,7 @@ fn lower_dispatch_item(
 fn section_attrs(
     file: &ast::File,
     sec: &ast::SectionDecl,
+    defines: &[(String, i128)],
     diags: &mut Vec<Diagnostic>,
 ) -> (Cpu, Option<u32>, Option<u32>) {
     let mut cpu = Cpu::M68000;
@@ -726,7 +768,7 @@ fn section_attrs(
         match name.as_str() {
             "cpu" => cpu = attr_cpu(expr),
             "vma" => {
-                let (n, mut ds) = eval_attr_int(file, expr);
+                let (n, mut ds) = eval_attr_int(file, expr, defines);
                 diags.append(&mut ds);
                 match n {
                     Some(v) => vma = Some(v as u32),
@@ -740,7 +782,7 @@ fn section_attrs(
                 }
             }
             "bank" => {
-                let (n, mut ds) = eval_attr_int(file, expr);
+                let (n, mut ds) = eval_attr_int(file, expr, defines);
                 diags.append(&mut ds);
                 // Power-of-two check per R7m.1: n > 0 && n & (n-1) == 0.
                 match n {
@@ -867,6 +909,61 @@ fn validate_dispatch(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
             }
             ast::Item::Section(sec) => validate_dispatch(&sec.items, diags),
             _ => {}
+        }
+    }
+}
+
+/// Once-per-compile validation of `-D NAME=INT` comptime defines (R1, guarding
+/// against a define silently shadowing — or being silently shadowed by — a
+/// module declaration of the SAME name): for each `defines` entry, scan
+/// `items` (recursing into `section {}` blocks, mirroring `validate_offsets`)
+/// for ANY named item declaring that name — `const`, `equ`, `enum`,
+/// `comptime fn`, `struct`, `bitfield`, `newtype`, `data`, `offsets`,
+/// `dispatch`, `proc`, `script`, or a NAMED `vars` overlay. A match is the
+/// `[defines.collision]` error, at the COLLIDING ITEM's own span (more precise
+/// than the module header) — reported HERE, once, rather than in
+/// [`Evaluator::seed_defines`](crate::eval::Evaluator::seed_defines) itself,
+/// because a fresh evaluator is built per item/proc and would otherwise emit
+/// the diagnostic once per evaluator (the same duplication
+/// `validate_offsets`/`validate_dispatch` already avoid for their own checks).
+///
+/// NOTE this check covers a strict SUPERSET of `seed_defines`'s skip list:
+/// proc/script names live in no evaluator index (`index_items` has no
+/// proc/script table), so `seed_defines` cannot detect them and seeds the
+/// define anyway — harmless, because the hard Error emitted here fails the
+/// compile, making the evaluator-side seeding unobservable.
+fn validate_defines(items: &[ast::Item], defines: &[(String, i128)], diags: &mut Vec<Diagnostic>) {
+    if defines.is_empty() {
+        return;
+    }
+    for item in items {
+        let collision = match item {
+            ast::Item::Const(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Equ(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Enum(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::ComptimeFn(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Struct(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Bitfield(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Newtype(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Data(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Offsets(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Dispatch(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Proc(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Script(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Vars(d) => d.name.as_deref().map(|n| (n, d.span)),
+            ast::Item::Section(sec) => {
+                validate_defines(&sec.items, defines, diags);
+                None
+            }
+            _ => None,
+        };
+        let Some((name, span)) = collision else { continue };
+        if let Some((define_name, _)) = defines.iter().find(|(n, _)| n == name) {
+            err(
+                diags,
+                span,
+                format!("[defines.collision] '{define_name}' is provided by -D and declared by the module"),
+            );
         }
     }
 }

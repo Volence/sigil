@@ -12,7 +12,7 @@ fn msgs(src: &str) -> Vec<String> {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     diags.into_iter().map(|d| d.message).collect()
 }
 
@@ -85,7 +85,7 @@ fn lower_ok(src: &str) -> Module {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     let errs: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     assert!(errs.is_empty(), "lower errors: {errs:?}");
     m
@@ -205,7 +205,7 @@ fn provisional_item_guard_defers_and_mints_anchor() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     let errs: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     assert!(errs.is_empty(), "provisional guard must defer (no comptime error): {errs:?}");
     assert_eq!(m.link_asserts.len(), 1, "expected exactly one deferred LinkAssert");
@@ -240,7 +240,7 @@ fn exact_item_guard_does_not_defer() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "exact guard should pass silently: {diags:?}");
     assert!(m.link_asserts.is_empty(), "exact guard must not defer");
     assert!(

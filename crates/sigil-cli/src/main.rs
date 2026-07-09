@@ -165,6 +165,7 @@ fn run_parse() {
 fn compile_emp(
     src: &str,
     include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
 ) -> (Option<Vec<u8>>, Vec<sigil_span::Diagnostic>) {
     let (file, mut diags) = sigil_frontend_emp::parse_str(src);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -173,6 +174,7 @@ fn compile_emp(
     let opts = sigil_frontend_emp::lower::LowerOptions {
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root: include_root.map(std::path::Path::to_path_buf),
+        defines: defines.to_vec(),
     };
     let (module, lower_diags) = sigil_frontend_emp::lower::lower_module(&file, &opts);
     diags.extend(lower_diags);
@@ -254,6 +256,44 @@ fn flag_value(args: &[String], i: &mut usize, flag: &str) -> String {
     }
 }
 
+/// Parse one `-D NAME=INT` argument (sound-migration T2 Task 1, R1) into a
+/// `(name, value)` define pair. `INT` accepts the same int-literal shapes as
+/// the rest of the CLI's ROM tooling: plain decimal (optionally `-`-signed),
+/// `$hex`, and `0x`hex — a strict superset of the `.emp` lexer's own int forms
+/// (which has `$hex` but no `0x`), since a CLI flag is not source text a
+/// diagnostic ever points back into. A malformed `NAME=INT` (no `=`, an empty
+/// NAME, or a non-integer value) is a usage error (exit 2), reported
+/// immediately rather than deferred to a confusing downstream
+/// `[defines.collision]`-shaped message.
+fn parse_define(arg: &str) -> (String, i128) {
+    let Some((name, value)) = arg.split_once('=') else {
+        eprintln!("error: -D expects NAME=INT, got '{arg}'");
+        process::exit(2);
+    };
+    if name.is_empty() {
+        eprintln!("error: -D expects NAME=INT, got '{arg}' (empty name)");
+        process::exit(2);
+    }
+    let Some(parsed) = parse_define_int(value) else {
+        eprintln!("error: -D {name}=... value '{value}' is not an integer (decimal, $hex, or 0x hex)");
+        process::exit(2);
+    };
+    (name.to_string(), parsed)
+}
+
+/// Parse a single `-D` int literal: `$hex`, `0x`/`0X` hex, or decimal (with an
+/// optional leading `-`). Returns `None` for anything else, including empty
+/// input or a hex/decimal run with invalid digits.
+fn parse_define_int(s: &str) -> Option<i128> {
+    if let Some(digits) = s.strip_prefix('$') {
+        return i128::from_str_radix(digits, 16).ok();
+    }
+    if let Some(digits) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        return i128::from_str_radix(digits, 16).ok();
+    }
+    s.parse::<i128>().ok()
+}
+
 /// `sigil emp <input.emp> [-o <output.bin>] [--hex]` — compile a Spec 2 `.emp`
 /// module to a flat binary image. `embed`/`import` paths resolve against the
 /// source file's own directory (the capability-sandbox include-root, §6.7),
@@ -265,6 +305,7 @@ fn run_emp(args: &[String]) {
     let mut prelude: Option<String> = None;
     let mut map_arg: Option<String> = None;
     let mut hex = false;
+    let mut defines: Vec<(String, i128)> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -274,6 +315,7 @@ fn run_emp(args: &[String]) {
             "--prelude" => prelude = Some(flag_value(args, &mut i, "--prelude")),
             "--map" => map_arg = Some(flag_value(args, &mut i, "--map")),
             "--hex" => hex = true,
+            "-D" => defines.push(parse_define(&flag_value(args, &mut i, "-D"))),
             other => {
                 if input.is_none() {
                     input = Some(other.to_string());
@@ -289,7 +331,10 @@ fn run_emp(args: &[String]) {
     let input = match input {
         Some(path) => path,
         None => {
-            eprintln!("usage: sigil emp <input.emp> [--root <dir>] [--prelude <module.id>] [-o <output.bin>] [--hex]");
+            eprintln!(
+                "usage: sigil emp <input.emp> [--root <dir>] [--prelude <module.id>] \
+                 [-o <output.bin>] [--hex] [-D NAME=INT]..."
+            );
             process::exit(2);
         }
     };
@@ -304,6 +349,7 @@ fn run_emp(args: &[String]) {
             map_arg.as_deref(),
             output.as_deref(),
             hex,
+            &defines,
         );
         return;
     }
@@ -325,7 +371,7 @@ fn run_emp(args: &[String]) {
     let parent = std::path::Path::new(&input).parent().unwrap_or(std::path::Path::new(""));
     let root_dir = if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
     let root = std::fs::canonicalize(root_dir).ok();
-    let (image, diags) = compile_emp(&src, root.as_deref());
+    let (image, diags) = compile_emp(&src, root.as_deref(), &defines);
 
     if !diags.is_empty() {
         let mut map = sigil_span::SourceMap::new();
@@ -351,6 +397,7 @@ fn run_emp(args: &[String]) {
 /// error diagnostics — run the same `resolve_layout` → `link` → `flatten` seam as
 /// the single-file path. Diagnostics render as `path:line:col: message` using a
 /// [`SourceMap`](sigil_span::SourceMap) rebuilt in the manifest's SourceId order.
+#[allow(clippy::too_many_arguments)] // internal driver; mirrors run_emp's flag set
 fn run_emp_program(
     input: &str,
     root_dir: &str,
@@ -358,6 +405,7 @@ fn run_emp_program(
     map_path: Option<&str>,
     output: Option<&str>,
     hex: bool,
+    defines: &[(String, i128)],
 ) {
     use sigil_frontend_emp::resolve;
     use std::path::Path;
@@ -384,6 +432,7 @@ fn run_emp_program(
     let opts = sigil_frontend_emp::lower::LowerOptions {
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root,
+        defines: defines.to_vec(),
     };
 
     // `link_asserts`: deferred link-time guards (D-H.4), decided by the link tails
@@ -691,12 +740,41 @@ mod tests {
     fn compile_emp_resolves_embed_against_source_dir() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors");
         let src = std::fs::read_to_string(dir.join("prog.emp")).expect("read prog.emp");
-        let (image, diags) = crate::compile_emp(&src, Some(&dir));
+        let (image, diags) = crate::compile_emp(&src, Some(&dir), &[]);
         assert!(
             diags.iter().all(|d| d.level != sigil_span::Level::Error),
             "unexpected error diagnostics: {diags:?}"
         );
         let blob = std::fs::read(dir.join("blob.bin")).expect("read blob.bin");
         assert_eq!(image.expect("image bytes"), blob);
+    }
+
+    /// The `-D` value parser's accepted forms (decimal incl. negative, `$hex`,
+    /// `0x`/`0X` hex) and its refusals (overflow, garbage, empty, bare
+    /// prefixes). `parse_define` itself `process::exit(2)`s on a `None`, so the
+    /// pure int parser is the unit-testable seam.
+    #[test]
+    fn parse_define_int_accepts_all_documented_forms() {
+        assert_eq!(crate::parse_define_int("42"), Some(42));
+        assert_eq!(crate::parse_define_int("-7"), Some(-7));
+        assert_eq!(crate::parse_define_int("$FF"), Some(0xFF));
+        assert_eq!(crate::parse_define_int("$deadBEEF"), Some(0xDEAD_BEEF));
+        assert_eq!(crate::parse_define_int("0x10"), Some(0x10));
+        assert_eq!(crate::parse_define_int("0X10"), Some(0x10));
+        assert_eq!(crate::parse_define_int("0"), Some(0));
+    }
+
+    #[test]
+    fn parse_define_int_rejects_malformed_input() {
+        // Overflow: one past i128::MAX.
+        assert_eq!(crate::parse_define_int("170141183460469231731687303715884105728"), None);
+        assert_eq!(crate::parse_define_int("$100000000000000000000000000000000"), None);
+        // Garbage, wrong-radix digits, empty, bare prefixes.
+        assert_eq!(crate::parse_define_int("banana"), None);
+        assert_eq!(crate::parse_define_int("$XYZ"), None);
+        assert_eq!(crate::parse_define_int("0xZZ"), None);
+        assert_eq!(crate::parse_define_int(""), None);
+        assert_eq!(crate::parse_define_int("$"), None);
+        assert_eq!(crate::parse_define_int("0x"), None);
     }
 }
