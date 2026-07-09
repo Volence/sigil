@@ -347,10 +347,18 @@ impl Parser {
         if self.at_kw("comptime") {
             // `comptime enum Name { ... }` — a payload-carrying enum, distinct
             // from `comptime fn`. Peek past `comptime` before committing to
-            // either reading.
+            // either reading. `comptime test "name" { … }` (S2-D11(a)) is the
+            // third form.
             if matches!(self.peek2(), Tok::Ident(s) if s == "enum") {
                 self.bump(); // `comptime`
                 return Some(Item::Enum(self.enum_decl(public, true)));
+            }
+            if matches!(self.peek2(), Tok::Ident(s) if s == "test") {
+                if public {
+                    let sp = self.span();
+                    self.diag_at(sp, "`pub` is not valid on this declaration");
+                }
+                return Some(Item::ComptimeTest(self.comptime_test_decl()));
             }
             return Some(Item::ComptimeFn(self.comptime_fn_decl(public)));
         }
@@ -1488,6 +1496,43 @@ impl Parser {
     }
 
     /// Parse a `comptime fn name(params...) [-> ret] { body... }` declaration.
+    /// `comptime test "name" [(expect_error: "[diag.id]")] { … }` (S2-D11(a)).
+    fn comptime_test_decl(&mut self) -> ComptimeTestDecl {
+        let start = self.span();
+        self.bump(); // `comptime`
+        self.bump(); // `test`
+        let name = if let Tok::Str(s) = self.peek().clone() {
+            self.bump();
+            s
+        } else {
+            let sp = self.span();
+            self.diag_at(sp, "a `comptime test` takes a string name: `comptime test \"name\" { ... }`");
+            String::from("<unnamed>")
+        };
+        let expect_error = if self.eat(&Tok::LParen) {
+            let kw = self.expect_ident("attribute name");
+            if kw != "expect_error" {
+                let sp = self.prev_span();
+                self.diag_at(sp, "the only `comptime test` attribute is `expect_error`");
+            }
+            self.expect(&Tok::Colon, "`:`");
+            let id = if let Tok::Str(s) = self.peek().clone() {
+                self.bump();
+                Some(s)
+            } else {
+                let sp = self.span();
+                self.diag_at(sp, "`expect_error` takes a diagnostic-id string, e.g. \"[struct.missing-field]\"");
+                None
+            };
+            self.expect(&Tok::RParen, "`)`");
+            id
+        } else {
+            None
+        };
+        let body = self.stmt_block();
+        ComptimeTestDecl { name, expect_error, body, span: start.merge(self.prev_span()) }
+    }
+
     fn comptime_fn_decl(&mut self, public: bool) -> ComptimeFnDecl {
         let start = self.span();
         self.bump(); // `comptime`

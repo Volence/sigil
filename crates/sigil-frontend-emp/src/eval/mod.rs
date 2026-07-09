@@ -1016,6 +1016,75 @@ impl Default for Evaluator<'_> {
 /// diagnostic naming the cycle). A successful evaluation returns
 /// `(Some(value), diags)` — `diags` may still be non-empty if the value
 /// contains a reported error (its `Poison` is surfaced as `Some(Poison)`).
+/// One `comptime test` outcome (S2-D11(a)).
+#[derive(Debug)]
+pub struct TestOutcome {
+    /// The test's declared display name.
+    pub name: String,
+    /// Whether the test passed.
+    pub passed: bool,
+    /// Diagnostics to SHOW for a failure. Empty on a pass — a passing
+    /// `expect_error` test SWALLOWS its captured (expected) diagnostics.
+    pub diags: Vec<Diagnostic>,
+}
+
+/// Run every `comptime test` block in `file` (S2-D11(a)) — the `sigil test`
+/// engine. Each test evaluates its body as a comptime block on a FRESH
+/// evaluator (module scope; v1 is module-local — the colocated case).
+///
+/// - normal test: PASS iff the body produced no Error-level diagnostic and
+///   did not abort (a failing `ensure` is the canonical failure; its
+///   interpolated message is the report);
+/// - `expect_error: "[id]"`: PASS iff some body diagnostic contains the id
+///   substring (the captured diagnostics are then swallowed — they were the
+///   point); FAIL otherwise, with a synthesized explanation plus whatever
+///   the body actually said.
+pub fn run_module_tests(
+    file: &crate::ast::File,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+) -> Vec<TestOutcome> {
+    let mut out = Vec::new();
+    for item in &file.items {
+        let crate::ast::Item::ComptimeTest(t) = item else { continue };
+        let (aborted, diags) = run_on_eval_stack(|| {
+            let mut ev = Evaluator::with_file(file);
+            ev.seed_defines(defines);
+            if let Some(root) = include_root {
+                ev.set_include_root(root.to_path_buf());
+            }
+            let mut env = Env::new();
+            let _ = ev.exec_stmts(&t.body, &mut env);
+            (ev.was_aborted(), ev.diags)
+        });
+        let errored = aborted || diags.iter().any(|d| d.level == Level::Error);
+        match &t.expect_error {
+            None => out.push(TestOutcome {
+                name: t.name.clone(),
+                passed: !errored,
+                diags: if errored { diags } else { Vec::new() },
+            }),
+            Some(id) => {
+                if diags.iter().any(|d| d.message.contains(id.as_str())) {
+                    out.push(TestOutcome { name: t.name.clone(), passed: true, diags: Vec::new() });
+                } else {
+                    let mut shown = vec![Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "expected the body to diagnose `{id}`, but it {}",
+                            if diags.is_empty() { "compiled cleanly" } else { "said instead:" }
+                        ),
+                        primary: t.span,
+                    }];
+                    shown.extend(diags);
+                    out.push(TestOutcome { name: t.name.clone(), passed: false, diags: shown });
+                }
+            }
+        }
+    }
+    out
+}
+
 pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
     eval_const_with_root(file, name, None, &[])
 }

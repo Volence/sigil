@@ -93,6 +93,29 @@ pub enum Item {
     Ensure(EnsureDecl),
     /// An `align N` item (D2.29, §4.8): pad to the next multiple of `N`.
     Align(AlignDecl),
+    /// A `comptime test "name" { … }` block (S2-D11(a)): colocated comptime
+    /// tests, stripped from emission, run by `sigil test`.
+    ComptimeTest(ComptimeTestDecl),
+}
+
+/// A `comptime test "name" [(expect_error: "[diag.id]")] { … }` block
+/// (S2-D11(a), Zig-style): the comptime-fn feedback loop — today's only
+/// alternative is a full ROM build + byte-diff. Stripped from emission
+/// ALWAYS (zero bytes, zero cost in normal builds); `sigil test` evaluates
+/// the body as a comptime block. The `expect_error` variant asserts the body
+/// DIAGNOSES (a "this must not compile" test, absorbing research T3-g
+/// `EXPECT`): pass iff some body diagnostic contains the id substring, and
+/// the captured diagnostics are then swallowed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComptimeTestDecl {
+    /// The test's display name (a string literal — tests aren't symbols).
+    pub name: String,
+    /// `(expect_error: "[diag.id]")` — the body must diagnose this id.
+    pub expect_error: Option<String>,
+    /// The comptime statement body (the comptime-fn body grammar).
+    pub body: Vec<Stmt>,
+    /// Span of the whole declaration.
+    pub span: Span,
 }
 
 /// An `align N` item (D2.29, §4.8): pads the current position to the next
@@ -127,6 +150,7 @@ pub fn item_span(item: &Item) -> Span {
         Item::Newtype(d) => d.span,
         Item::Ensure(d) => d.span,
         Item::Align(d) => d.span,
+        Item::ComptimeTest(d) => d.span,
     }
 }
 

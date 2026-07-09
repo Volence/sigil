@@ -29,6 +29,7 @@ fn main() {
     match args.get(1).map(String::as_str) {
         Some("parse") => return run_parse(),
         Some("emp") => return run_emp(&args[2..]),
+        Some("test") => return run_test(&args[2..]),
         Some("build") => return run_build(&args[2..]),
         Some("diff") => return run_diff(&args[2..]),
         _ => {}
@@ -298,6 +299,117 @@ fn parse_define_int(s: &str) -> Option<i128> {
         return i128::from_str_radix(digits, 16).ok();
     }
     s.parse::<i128>().ok()
+}
+
+/// `sigil test <input.emp> [--root <dir>] [-D NAME=INT]...` — run the file's
+/// `comptime test` blocks (S2-D11(a)). With `--root`, every module in the
+/// manifest is swept (each module's tests run MODULE-LOCAL — the colocated
+/// case; cross-module imports in test bodies are the recorded next
+/// increment). Output: one `test <module>::<name> ... ok|FAILED` line per
+/// test, failure diagnostics indented beneath, then a cargo-style summary.
+/// Exit 0 iff every test passed (and no module failed to parse).
+fn run_test(args: &[String]) {
+    let mut input: Option<String> = None;
+    let mut root_arg: Option<String> = None;
+    let mut defines: Vec<(String, i128)> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--root" => root_arg = Some(flag_value(args, &mut i, "--root")),
+            "-D" => defines.push(parse_define(&flag_value(args, &mut i, "-D"))),
+            other => {
+                if input.is_none() {
+                    input = Some(other.to_string());
+                } else {
+                    eprintln!("error: unexpected argument '{other}'");
+                    process::exit(2);
+                }
+            }
+        }
+        i += 1;
+    }
+
+    // Gather (path, source) pairs: the single file, or every module file
+    // under --root (the manifest's own discovery, so `sigil test --root` and
+    // `sigil emp --root` agree about what a module is).
+    let files: Vec<(String, String)> = match (&input, &root_arg) {
+        (Some(path), None) => match std::fs::read_to_string(path) {
+            Ok(src) => vec![(path.clone(), src)],
+            Err(err) => {
+                eprintln!("error: cannot read {path}: {err}");
+                process::exit(1);
+            }
+        },
+        (None, Some(root)) | (Some(_), Some(root)) => {
+            let (manifest, mdiags) =
+                sigil_frontend_emp::resolve::manifest::Manifest::scan(std::path::Path::new(root));
+            if mdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+                render_program_diags(&manifest, &mdiags);
+                process::exit(1);
+            }
+            manifest
+                .modules
+                .iter()
+                .filter_map(|m| {
+                    std::fs::read_to_string(&m.path)
+                        .ok()
+                        .map(|src| (m.path.display().to_string(), src))
+                })
+                .collect()
+        }
+        (None, None) => {
+            eprintln!("usage: sigil test <input.emp> [--root <dir>] [-D NAME=INT]...");
+            process::exit(2);
+        }
+    };
+
+    let mut total = 0usize;
+    let mut failed = 0usize;
+    let mut broken_modules = 0usize;
+    for (path, src) in files {
+        let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
+        if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+            let mut map = sigil_span::SourceMap::new();
+            map.add(src.clone());
+            for d in &pdiags {
+                let (line, col) = map.location(d.primary);
+                eprintln!("{path}:{line}:{col}: {}", d.message);
+            }
+            broken_modules += 1;
+            continue;
+        }
+        let module_id = file.module.path.segments.join(".");
+        let parent = std::path::Path::new(&path).parent().unwrap_or(std::path::Path::new(""));
+        let root_dir =
+            if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
+        let include_root = std::fs::canonicalize(root_dir).ok();
+        let results =
+            sigil_frontend_emp::eval::run_module_tests(&file, include_root.as_deref(), &defines);
+        let mut map = sigil_span::SourceMap::new();
+        map.add(src.clone());
+        for r in results {
+            total += 1;
+            if r.passed {
+                println!("test {module_id}::{} ... ok", r.name);
+            } else {
+                failed += 1;
+                println!("test {module_id}::{} ... FAILED", r.name);
+                for d in &r.diags {
+                    let (line, col) = map.location(d.primary);
+                    println!("    {path}:{line}:{col}: {}", d.message);
+                }
+            }
+        }
+    }
+    println!(
+        "test result: {}. {} passed; {} failed",
+        if failed == 0 && broken_modules == 0 { "ok" } else { "FAILED" },
+        total - failed,
+        failed
+    );
+    if failed > 0 || broken_modules > 0 {
+        process::exit(1);
+    }
 }
 
 /// `--deny-todo` (S2-D11(e)): promote every `[todo.present]` hole to an error

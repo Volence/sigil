@@ -101,6 +101,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     validate_dispatch(&file.items, &mut diags);
     validate_defines(&file.items, &opts.defines, &mut diags);
     validate_allow_attrs(file, &mut diags);
+    validate_comptime_tests(&file.items, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -765,6 +766,23 @@ pub(super) fn record_odd_item_assert(
         level,
         span,
     });
+}
+
+/// Once-per-compile check for `comptime test` blocks (S2-D11(a)): duplicate
+/// display names within a module are refused — `sigil test`'s report keys on
+/// them, and two same-named tests would be indistinguishable.
+fn validate_comptime_tests(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    let mut seen: std::collections::HashMap<&str, ()> = std::collections::HashMap::new();
+    for item in items {
+        let ast::Item::ComptimeTest(t) = item else { continue };
+        if seen.insert(t.name.as_str(), ()).is_some() {
+            err(
+                diags,
+                t.span,
+                format!("comptime test `{}` is declared twice in this module", t.name),
+            );
+        }
+    }
 }
 
 /// Once-per-compile check that every `@allow` argument is the STRING form
