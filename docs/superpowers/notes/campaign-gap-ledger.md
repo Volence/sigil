@@ -239,3 +239,11 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   run-growth-past-barrier loud error; backward-org overwrite byte-identity with an earlier
   relaxable; three-run run-local shifting), plus the two old categorical-refusal guard tests
   repurposed as allow-tests.
+- [tranche 2 T4 review, 2026-07-09] **Backward `org` into a FIXUP's byte range diverges
+  `image_bytes` from `link()`** (pre-existing, NOT introduced by the org-aware relaxation —
+  reproduces with zero relaxables): `link()` replays the source-order overwrite then applies
+  ALL fixups afterward, so a backward-org byte that lands inside an earlier fragment's fixup
+  site gets re-clobbered by the fixup (probe: image_bytes `EE` vs link `12 34 56`-class).
+  Latent — aeon's backward-org idiom (parallax_section_end `dc.b` back-patch) never seeks into
+  a fixup site. Fix shape: fixup application should respect overwrite order (or refuse the
+  overlap loudly). — OPEN (standalone linker hazard; distinct from the shipped org work).
