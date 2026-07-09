@@ -1,0 +1,36 @@
+{
+  "name": "emp-language",
+  "displayName": "Emp Language (.emp)",
+  "description": "Syntax highlighting for the Sigil .emp language (Empyrean suite).",
+  "version": "0.1.0",
+  "publisher": "empyrean-local",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "emp",
+        "aliases": [
+          "Emp",
+          "emp"
+        ],
+        "extensions": [
+          ".emp"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "emp",
+        "scopeName": "source.emp",
+        "path": "./syntaxes/emp.tmLanguage.json"
+      }
+    ]
+  }
+}
