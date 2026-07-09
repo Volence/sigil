@@ -729,6 +729,7 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "rts" => Rts,
         "rte" => Rte,
         "trap" => Trap,
+        "illegal" => Illegal,
         "bra" => Bra,
         "bsr" => Bsr,
         "jmp" => Jmp,
@@ -790,7 +791,7 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
     match m {
         Moveq => Some(M68kSize::L),
         Lea | Pea => Some(M68kSize::L),
-        Swap | Nop | Rts | Rte | Tas | Trap => Some(M68kSize::W),
+        Swap | Nop | Rts | Rte | Tas | Trap | Illegal => Some(M68kSize::W),
         Jmp | Jsr => Some(M68kSize::W),
         Btst | Bset | Bclr => Some(M68kSize::B),
         Dbcc(_) => Some(M68kSize::W),

@@ -1029,6 +1029,43 @@ impl Parser {
             let sp = self.span();
             self.diag_at(sp, "expected `.label` after `export`");
         }
+        // `todo!` / `unreachable!` statement traps (S2-D11(e)). The `!` must
+        // be DIRECTLY adjacent (mirroring the call-adjacency rule below), so
+        // an expression-position `!x` operand can never be shadowed. No 68k/
+        // Z80 mnemonic is named `todo`/`unreachable`, so mnemonics stay
+        // unshadowed too (tenet 3).
+        if let Tok::Ident(w) = self.peek().clone() {
+            if matches!(w.as_str(), "todo" | "unreachable")
+                && matches!(self.peek2(), Tok::Bang)
+                && self.adjacent_to_next()
+            {
+                let kind =
+                    if w == "todo" { TrapKind::Todo } else { TrapKind::Unreachable };
+                self.bump(); // ident
+                self.bump(); // `!`
+                let message = if self.at(&Tok::LParen) {
+                    self.bump();
+                    let m = if let Tok::Str(s) = self.peek().clone() {
+                        self.bump();
+                        Some(s)
+                    } else {
+                        let sp = self.span();
+                        self.diag_at(
+                            sp,
+                            format!("expected a string literal message in `{w}!(...)`"),
+                        );
+                        None
+                    };
+                    self.expect(&Tok::RParen, "`)`");
+                    m
+                } else {
+                    None
+                };
+                let span = start.merge(self.prev_span());
+                self.expect_line_end_or_rbrace();
+                return Some(AsmStmt::Trap { kind, message, span });
+            }
+        }
         // statement-position comptime call: `ident(` where the `(` is
         // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
         // is an instruction with a parenthesized operand, not a call.

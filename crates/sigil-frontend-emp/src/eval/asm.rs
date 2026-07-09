@@ -133,6 +133,36 @@ impl Evaluator<'_> {
                         ),
                     }
                 }
+                AsmStmt::Trap { kind, message, span } => {
+                    // S2-D11(e): both spellings assemble to the 68k ILLEGAL
+                    // word — the file builds and RUNS to the hole. 68k-only
+                    // in v1 (the script/offsets precedent): Z80 has no
+                    // ratified trap word.
+                    if self.cpu == Some(sigil_ir::backend::Cpu::Z80) {
+                        self.error(
+                            *span,
+                            "[todo.non-68k] `todo!`/`unreachable!` are 68k-only in v1 \
+                             (they assemble to the 68k ILLEGAL word; no Z80 trap \
+                             encoding is ratified)",
+                        );
+                        continue;
+                    }
+                    if matches!(kind, crate::ast::TrapKind::Todo) {
+                        // One [todo.present] per site — together they ARE the
+                        // "list of all todos"; `--deny-todo` promotes them.
+                        let msg = match message {
+                            Some(m) => format!("[todo.present] todo!: {m}"),
+                            None => "[todo.present] todo! left in the build".to_string(),
+                        };
+                        self.warn(*span, msg);
+                    }
+                    buf.push(CodeItem::Instr {
+                        mnemonic: "illegal".to_string(),
+                        size: None,
+                        ops: vec![],
+                        span: *span,
+                    });
+                }
             }
         }
         Value::Code(buf)

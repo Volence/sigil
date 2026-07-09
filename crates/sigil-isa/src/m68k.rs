@@ -37,7 +37,7 @@ pub enum Mnemonic {
     Btst, Bset, Bclr,
     Clr, Neg, Not, Tst, Tas,
     Scc(Cond),
-    Jmp, Jsr, Lea, Pea, Nop, Rts, Rte, Trap, Swap, Ext,
+    Jmp, Jsr, Lea, Pea, Nop, Rts, Rte, Trap, Swap, Ext, Illegal,
     Bra, Bsr, Bcc(Cond), Dbcc(Cond),
     Movem, Movep, Addx, Cmpm,
     MoveToSr, MoveFromSr, // move.w <ea>,sr / move.w sr,<ea>
@@ -150,7 +150,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
         Mnemonic::Jmp | Mnemonic::Jsr | Mnemonic::Lea | Mnemonic::Pea
         | Mnemonic::Nop | Mnemonic::Rts | Mnemonic::Rte | Mnemonic::Trap
-        | Mnemonic::Swap | Mnemonic::Ext => encode_control(inst),
+        | Mnemonic::Swap | Mnemonic::Ext | Mnemonic::Illegal => encode_control(inst),
         Mnemonic::Bra | Mnemonic::Bsr | Mnemonic::Bcc(_) => encode_branch(inst),
         Mnemonic::Dbcc(_) => encode_dbcc(inst),
         Mnemonic::Movem => encode_movem(inst),
@@ -688,7 +688,8 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 /// - EA-only forms: `jmp`=`0x4EC0 | ea`, `jsr`=`0x4E80 | ea`, `pea`=`0x4840 | ea`,
 ///   each followed by the operand's extension words.
 /// - `lea <ea>,An`=`0x41C0 | (an<<9) | ea` (+ ea ext words); dest must be `An`.
-/// - Fixed no-operand words: `nop`=`0x4E71`, `rts`=`0x4E75`, `rte`=`0x4E73`.
+/// - Fixed no-operand words: `nop`=`0x4E71`, `rts`=`0x4E75`, `rte`=`0x4E73`,
+///   `illegal`=`0x4AFC` (the architecturally-reserved illegal-instruction word).
 /// - `trap #n`=`0x4E40 | (n & 0xF)`; `n` must be an `Imm` in `0..=15`.
 /// - `swap Dn`=`0x4840 | dn` (shares its base word with `pea`; dispatched by mnemonic).
 /// - `ext.w Dn`=`0x4880 | dn`, `ext.l Dn`=`0x48C0 | dn`.
@@ -698,6 +699,7 @@ fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Nop => Some(0x4E71),
         Mnemonic::Rts => Some(0x4E75),
         Mnemonic::Rte => Some(0x4E73),
+        Mnemonic::Illegal => Some(0x4AFC),
         _ => None,
     };
     if let Some(word) = fixed {

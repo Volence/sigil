@@ -914,6 +914,26 @@ pub enum AsmStmt {
     Instr(InstrLine),
     /// A comptime-fn call at statement position, e.g. `spawn(SeedDef, offset: ...)`.
     Call(Expr),
+    /// A `todo!`/`unreachable!` statement trap (S2-D11(e)): assembles to the
+    /// 68k ILLEGAL word so a WIP file builds and RUNS to the hole; `todo!`
+    /// additionally names itself at build time (`[todo.present]`).
+    Trap {
+        /// Which spelling this is (`todo!` reports, `unreachable!` is silent).
+        kind: TrapKind,
+        /// The optional site message: `todo!("wire the seed spawn")`.
+        message: Option<String>,
+        /// Span of the whole statement.
+        span: Span,
+    },
+}
+
+/// The two statement-trap spellings (S2-D11(e)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrapKind {
+    /// `todo!` — a hole to fill; every site is reported via `[todo.present]`.
+    Todo,
+    /// `unreachable!` — a permanent, intentional trap; no diagnostic.
+    Unreachable,
 }
 
 /// A single machine-instruction line: mnemonic, optional size, operands.

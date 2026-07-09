@@ -298,6 +298,22 @@ fn parse_define_int(s: &str) -> Option<i128> {
 /// module to a flat binary image. `embed`/`import` paths resolve against the
 /// source file's own directory (the capability-sandbox include-root, §6.7),
 /// canonicalized so a comptime capture path is stable regardless of cwd.
+/// `--deny-todo` (S2-D11(e)): promote every `[todo.present]` hole to an error
+/// so a release build cannot ship one. A post-filter at the CLI layer — the
+/// frontend stays flag-free, and `unreachable!` (which never reports) is
+/// untouched by construction. `build` gains the flag when the mixed Aeon build
+/// first carries a `todo!` (no consumer today).
+fn promote_todo_holes(diags: &mut [sigil_span::Diagnostic], deny_todo: bool) {
+    if !deny_todo {
+        return;
+    }
+    for d in diags.iter_mut() {
+        if d.message.starts_with("[todo.present]") {
+            d.level = sigil_span::Level::Error;
+        }
+    }
+}
+
 fn run_emp(args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
@@ -305,6 +321,7 @@ fn run_emp(args: &[String]) {
     let mut prelude: Option<String> = None;
     let mut map_arg: Option<String> = None;
     let mut hex = false;
+    let mut deny_todo = false;
     let mut defines: Vec<(String, i128)> = Vec::new();
 
     let mut i = 0;
@@ -315,6 +332,7 @@ fn run_emp(args: &[String]) {
             "--prelude" => prelude = Some(flag_value(args, &mut i, "--prelude")),
             "--map" => map_arg = Some(flag_value(args, &mut i, "--map")),
             "--hex" => hex = true,
+            "--deny-todo" => deny_todo = true,
             "-D" => defines.push(parse_define(&flag_value(args, &mut i, "-D"))),
             other => {
                 if input.is_none() {
@@ -349,6 +367,7 @@ fn run_emp(args: &[String]) {
             map_arg.as_deref(),
             output.as_deref(),
             hex,
+            deny_todo,
             &defines,
         );
         return;
@@ -371,7 +390,8 @@ fn run_emp(args: &[String]) {
     let parent = std::path::Path::new(&input).parent().unwrap_or(std::path::Path::new(""));
     let root_dir = if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
     let root = std::fs::canonicalize(root_dir).ok();
-    let (image, diags) = compile_emp(&src, root.as_deref(), &defines);
+    let (image, mut diags) = compile_emp(&src, root.as_deref(), &defines);
+    promote_todo_holes(&mut diags, deny_todo);
 
     if !diags.is_empty() {
         let mut map = sigil_span::SourceMap::new();
@@ -405,6 +425,7 @@ fn run_emp_program(
     map_path: Option<&str>,
     output: Option<&str>,
     hex: bool,
+    deny_todo: bool,
     defines: &[(String, i128)],
 ) {
     use sigil_frontend_emp::resolve;
@@ -440,6 +461,7 @@ fn run_emp_program(
     let (mut sections, link_asserts, mut pdiags) =
         resolve::build_program(&manifest, &entry_id, prelude, &opts);
     diags.append(&mut pdiags);
+    promote_todo_holes(&mut diags, deny_todo);
 
     render_program_diags(&manifest, &diags);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
