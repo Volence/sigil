@@ -16,7 +16,6 @@
     { "include": "#immediates" },
     { "include": "#registers" },
     { "include": "#labels" },
-    { "include": "#calls" },
     { "include": "#macro-lines" },
     { "include": "#operators" }
   ],
@@ -58,13 +57,13 @@
         {
           "match": "^\\s*((?:movea|movem|movep|moveq|move|adda|addi|addq|addx|add|suba|subi|subq|subx|sub|muls|mulu|divs|divu|andi|and|ori|or|eori|eor|not|negx|neg|clr|cmpa|cmpi|cmpm|cmp|tst|btst|bset|bclr|bchg|asl|asr|lsl|lsr|roxl|roxr|rol|ror|swap|ext|exg|lea|pea|link|unlk|jmp|jsr|jbra|jbsr|bra|bsr|bhi|bls|bcc|bcs|bne|beq|bvc|bvs|bpl|bmi|bge|blt|bgt|ble|dbra|dbf|dbt|dbhi|dbls|dbcc|dbcs|dbne|dbeq|dbvc|dbvs|dbpl|dbmi|dbge|dblt|dbgt|dble|shi|sls|scc|scs|sne|seq|svc|svs|spl|smi|sge|slt|sgt|sle|sf|st|rts|rte|rtr|trapv|trap|stop|reset|nop|illegal|tas|chk|abcd|sbcd|nbcd)(?:\\.[bwls])?)(?=\\s|$)",
           "captures": {
-            "1": { "name": "support.function.mnemonic.m68k.emp" }
+            "1": { "name": "keyword.mnemonic.m68k.emp" }
           }
         },
         {
           "match": "^\\s*((?:ldir|lddr|cpir|cpdr|inir|indr|otir|otdr|ldi|ldd|cpi|cpd|ini|ind|outi|outd|ld|push|pop|exx|ex|inc|dec|adc|sbc|cpl|ccf|scf|rlca|rrca|rla|rra|rlc|rrc|rl|rr|sla|sra|srl|sll|bit|set|res|jp|jr|djnz|call|ret|reti|retn|rst|out|di|ei|halt|daa|im|nop))(?=\\s|$)",
           "captures": {
-            "1": { "name": "support.function.mnemonic.z80.emp" }
+            "1": { "name": "keyword.mnemonic.z80.emp" }
           }
         }
       ]
@@ -122,8 +121,12 @@
           "match": "\\b[A-Z][A-Z0-9_]+\\b(?![a-z])"
         },
         {
-          "name": "entity.name.type.emp",
-          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+          "name": "entity.name.type.pointer.emp",
+          "match": "\\*[A-Z][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "entity.name.type.constructor.emp",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b(?=\\s*\\{)"
         }
       ]
     },
@@ -166,10 +169,6 @@
     "labels": {
       "name": "entity.name.label.emp",
       "match": "(?<![\\w)])\\.[A-Za-z_]\\w*"
-    },
-    "calls": {
-      "name": "entity.name.function.emp",
-      "match": "\\b[a-z_]\\w*(?=\\()"
     },
     "macro-lines": {
       "match": "^\\s*(?!(?:module|proc|script|const|data|vars|var|offsets|section|struct|enum|newtype|bitfield|fn|let|use|pub|export|dispatch|patch|test|comptime|bind|equ|label|block|asm|fixed|register|mnemonic|name|yield|wait_frames|return|if|else|match|loop|while|for|expect_error|in|clobbers|shows|falls_into|encoding|max_size|align|where|size|long_ptrs|word_offsets|rescale|ensure_fatal|ensure|here|sizeof|offsetof|default|unreachable|todo)\\b)([a-z_][a-z0-9_]*)\\b(?!\\s*[:(=,.\\[])",
