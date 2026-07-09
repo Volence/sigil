@@ -12,6 +12,8 @@
 mod asm;
 mod builtins;
 mod call;
+mod classic_compress;
+mod compress_common;
 mod control;
 mod emit;
 mod env;
@@ -20,6 +22,7 @@ mod float_ns;
 pub(crate) mod guards;
 mod literals;
 mod pattern;
+mod s4lz;
 mod sandbox;
 mod typed;
 

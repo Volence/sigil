@@ -97,6 +97,35 @@ impl<'a> Evaluator<'a> {
                 // `Data` constructor. Reads no file itself (its input already
                 // carries its own capture edge), so it needs no sandbox root.
                 "zx0" => return self.eval_zx0(args, span, env),
+                // `s4lz(data, dict: d, tile_delta: b)` (Plan-7 #10, Tier 1,
+                // CR-S4LZ): S4LZ-v3-compresses a `Value::Data` at comptime
+                // via the pure-Rust byte-exact port in `sigil_s4lz` — also a
+                // non-shadowable `Data` constructor. Reads no file itself
+                // (same as `zx0`), so it needs no sandbox root.
+                "s4lz" => return self.eval_s4lz(args, span, env),
+                // `kosinski(data)` / `kosinski_m(data, module_size: N)`
+                // (Plan-7 #10, T2b, MUST-HAVE): classic Kosinski/
+                // Kosinski-Moduled compression via the vendored `clownlzss`
+                // safe wrapper (`sigil-clownlzss-sys`, T2a) — raw format
+                // stream, no aeon wrapper (CR4).
+                "kosinski" => return self.eval_kosinski(args, span, env),
+                "kosinski_m" => return self.eval_kosinski_m(args, span, env),
+                // `kosplus(data)` / `kosplus_m(data, module_size: N)`
+                // (Plan-7 #10, T2b): Kosinski+ / Kosinski+-Moduled.
+                "kosplus" => return self.eval_kosplus(args, span, env),
+                "kosplus_m" => return self.eval_kosplus_m(args, span, env),
+                // `saxman(data)` / `saxman(data, header: bool)` (Plan-7
+                // #10, T2b): Saxman, `header:` default true.
+                "saxman" => return self.eval_saxman(args, span, env),
+                // `enigma(data)` (Plan-7 #10, T2b): Enigma, word-even input.
+                "enigma" => return self.eval_enigma(args, span, env),
+                // `nemesis(data)` (Plan-7 #10, T2b): Nemesis, tile-granular
+                // input ($20-byte multiple, <=32767 tiles).
+                "nemesis" => return self.eval_nemesis(args, span, env),
+                // `comper(data)` / `rocket(data)` (Plan-7 #10, T2b): the
+                // remaining clownlzss-backed formats, same template shape.
+                "comper" => return self.eval_comper(args, span, env),
+                "rocket" => return self.eval_rocket(args, span, env),
                 _ => {}
             }
         }

@@ -296,6 +296,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigil-clownlzss-sys"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "sigil-clownnemesis-sys"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "sigil-frontend-as"
 version = "0.1.0"
 dependencies = [
@@ -314,8 +328,11 @@ dependencies = [
  "sha2",
  "sigil-backend-m68k",
  "sigil-backend-z80",
+ "sigil-clownlzss-sys",
+ "sigil-clownnemesis-sys",
  "sigil-ir",
  "sigil-link",
+ "sigil-s4lz",
  "sigil-salvador-sys",
  "sigil-span",
  "tempfile",
@@ -355,6 +372,10 @@ dependencies = [
  "sigil-span",
  "toml",
 ]
+
+[[package]]
+name = "sigil-s4lz"
+version = "0.1.0"
 
 [[package]]
 name = "sigil-salvador-sys"
