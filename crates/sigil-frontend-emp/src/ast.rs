@@ -91,6 +91,19 @@ pub enum Item {
     Newtype(NewtypeDecl),
     /// An item-position `ensure(...)` / `ensure_fatal(...)` guard (§6.5, D5.1).
     Ensure(EnsureDecl),
+    /// An `align N` item (D2.29, §4.8): pad to the next multiple of `N`.
+    Align(AlignDecl),
+}
+
+/// An `align N` item (D2.29, §4.8): pads the current position to the next
+/// multiple of `N` with `$00` fill — always the author's explicit,
+/// byte-visible act (the compiler never inserts implicit alignment).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlignDecl {
+    /// The alignment (must comptime-evaluate to a positive int).
+    pub n: Expr,
+    /// Span of the whole item.
+    pub span: Span,
 }
 
 /// The span of an item's own declaration (the decl struct's `span` field) —
@@ -113,6 +126,7 @@ pub fn item_span(item: &Item) -> Span {
         Item::Section(d) => d.span,
         Item::Newtype(d) => d.span,
         Item::Ensure(d) => d.span,
+        Item::Align(d) => d.span,
     }
 }
 

@@ -328,6 +328,22 @@ impl Parser {
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
         if self.at_kw("script") { return Some(Item::Script(self.script_decl(public))); }
         if self.at_kw("newtype") { return Some(Item::Newtype(self.newtype_decl(public))); }
+        // `align N` (D2.29, §4.8) — contextual item opener per the `equ`
+        // precedent. The `= `guard keeps a hypothetical assignment-shaped line
+        // out (mirroring patch/bind's rule); `align` stays an ordinary
+        // identifier in every expression position (item() only runs here).
+        if self.at_kw("align") && !matches!(self.peek2(), Tok::Eq) {
+            if public {
+                let sp = self.prev_span();
+                self.diag_at(sp, "`pub` is not valid on this declaration");
+            }
+            let start = self.span();
+            self.bump(); // `align`
+            let n = self.expr();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(Item::Align(AlignDecl { n, span }));
+        }
         if self.at_kw("comptime") {
             // `comptime enum Name { ... }` — a payload-carrying enum, distinct
             // from `comptime fn`. Peek past `comptime` before committing to
@@ -376,9 +392,10 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 18] = ["use", "const", "equ", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 19] = ["use", "const", "equ", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "script", "comptime", "section", "pub",
-                                     "newtype", "offsets", "dispatch", "ensure", "ensure_fatal"];
+                                     "newtype", "offsets", "dispatch", "ensure", "ensure_fatal",
+                                     "align"];
         let mut depth = 0i32;
         loop {
             match self.peek() {

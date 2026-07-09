@@ -329,6 +329,21 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut diags,
                 );
             }
+            // `align N` (D2.29): pad the default section's current position.
+            ast::Item::Align(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                lower_align_item(
+                    file,
+                    decl,
+                    next_lma,
+                    &module_id,
+                    &mut here_anchor_counter,
+                    opts.include_root.as_deref(),
+                    &opts.defines,
+                    &mut builder,
+                    &mut diags,
+                );
+            }
             // `Item::Const` is a name-resolution-only item (no bytes, no label,
             // no deferred symbol) — the evaluator's `consts` index is where its
             // value lives; nothing to lower.
@@ -468,6 +483,22 @@ fn lower_section_items(
             ast::Item::Equ(decl) => {
                 lower_equ_item(file, decl, placement.include_root, placement.defines, builder, diags);
             }
+            // `align N` (D2.29): pad THIS section's current position, aligned
+            // against the section's own origin (a `vma:` pin or its
+            // provisional physical start — the same base `here()` sees).
+            ast::Item::Align(decl) => {
+                lower_align_item(
+                    file,
+                    decl,
+                    placement.origin,
+                    module_id,
+                    here_anchor_counter,
+                    placement.include_root,
+                    placement.defines,
+                    builder,
+                    diags,
+                );
+            }
             // `Item::Const` is name-resolution-only — nothing to lower.
             _ => {}
         }
@@ -541,6 +572,119 @@ fn here_pos(builder: &IrBuilder, origin: u32, anchor_name: &str) -> HerePos {
     let base = origin + builder.current_offset();
     let anchor = builder.section_has_relaxable().then(|| anchor_name.to_string());
     HerePos { base, anchor }
+}
+
+/// Lower one `align N` item (D2.29, §4.8): evaluate `N` (a positive comptime
+/// int), refuse a provisional position (`[align.provisional]` — v1 steers
+/// toward pinned branch sizes; ported data files contain no relaxables), then
+/// pad the LOWERING-BASELINE position to the next multiple of `N` with `$00`
+/// fill — the exact AS `align` arithmetic (`pad = (n - pos % n) % n`, zero
+/// fill).
+///
+/// Soundness refinement (recorded in the tranche-0 notes): the baseline
+/// position can differ from the FINAL address (D2.25 — chained section bases
+/// and map regions place at link), so every `align` also defines a hidden
+/// anchor label at its post-pad position and records a link-time congruence
+/// assertion (`anchor % N == 0`). If final placement breaks the alignment the
+/// build fails loudly, naming the final address — never a silently misaligned
+/// item.
+#[allow(clippy::too_many_arguments)] // mirrors lower_item_guard's threading
+fn lower_align_item(
+    file: &ast::File,
+    decl: &ast::AlignDecl,
+    origin: u32,
+    module_id: &str,
+    anchor_counter: &mut u32,
+    include_root: Option<&Path>,
+    defines: &[(String, i128)],
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::value::Value;
+    use sigil_ir::assert::{LinkAssert, MsgPart};
+    use sigil_ir::expr::{BinOp, Expr};
+
+    // Evaluate `N` — a plain comptime expression (no `here()` position is
+    // supplied: an alignment that depends on its own address is circular).
+    let value = crate::eval::run_on_eval_stack(|| {
+        let mut ev = crate::eval::Evaluator::with_file(file);
+        ev.seed_defines(defines);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let mut env = crate::eval::Env::new();
+        let v = ev.eval_expr(&decl.n, &mut env);
+        diags.append(&mut ev.diags);
+        v
+    });
+    let n: u32 = match value {
+        Value::Poison => return, // already reported upstream (D-P2.9)
+        v => match v.as_stored_int() {
+            Some(n) if n > 0 && n <= u32::MAX as i128 => n as u32,
+            Some(_) => {
+                err(diags, decl.span, "`align` needs a positive comptime int".to_string());
+                return;
+            }
+            None => {
+                err(
+                    diags,
+                    decl.span,
+                    format!("`align` needs a positive comptime int (got {})", v.type_name()),
+                );
+                return;
+            }
+        },
+    };
+
+    // A size-relaxable fragment earlier in the section makes this position
+    // provisional — v1 refuses (D2.29; the link-time gap-fill fragment is the
+    // recorded S2-D16(c) extension if code ports demand it).
+    if builder.section_has_relaxable() {
+        err(
+            diags,
+            decl.span,
+            "[align.provisional] `align` at a provisional position (a size-relaxable \
+             instruction sits earlier in this section) — pin the earlier branch sizes \
+             (`bra.w`/`bra.s`) or move the `align`"
+                .to_string(),
+        );
+        return;
+    }
+
+    let pos = origin.wrapping_add(builder.current_offset());
+    let pad = (n - (pos % n)) % n;
+    if pad > 0 {
+        builder.emit_fill(pad, 0, decl.span);
+    }
+
+    // The congruence anchor: byte-free, name-collision-free (`$` is unlexable
+    // in both frontends), unique per module via the shared anchor counter.
+    let anchor = format!("__align${module_id}${}", *anchor_counter);
+    *anchor_counter += 1;
+    builder.define_label(&anchor);
+    builder.push_link_assert(LinkAssert {
+        cond: Expr::Binary {
+            op: BinOp::Eq,
+            lhs: Box::new(Expr::Binary {
+                op: BinOp::Mod,
+                lhs: Box::new(Expr::Sym(anchor.clone())),
+                rhs: Box::new(Expr::Int(n as i64)),
+            }),
+            rhs: Box::new(Expr::Int(0)),
+        },
+        message: vec![
+            MsgPart::Text(format!(
+                "align {n}: final placement broke this alignment (padding was computed \
+                 against the lowering-baseline address ${pos:X}, but the final address is "
+            )),
+            MsgPart::Expr(Expr::Sym(anchor)),
+            MsgPart::Text(
+                ") — pin the section base (`vma:`) or align the map region".to_string(),
+            ),
+        ],
+        fatal: false,
+        span: decl.span,
+    });
 }
 
 /// Lower one item-position guard (D5.2 / D-H.4). At an EXACT position it evaluates
