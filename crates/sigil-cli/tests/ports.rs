@@ -990,11 +990,13 @@ fn probe_extern_reads_as_equ_value_ensure_fires_with_its_own_message() {
 
 /// (B3.3) Typo probe: `extern("NOPE_MISSING")` names a symbol that genuinely
 /// does not exist anywhere in the joint link (no AS equ, no label, nothing).
-/// Must surface a `Level::Error` diagnostic — asserting only level+presence,
-/// NOT the current wording (`sigil-link`'s "internal: equ ... unfolded"-style
-/// message here is a placeholder; a follow-up task owns rewording it to a
-/// user-facing "unresolved symbol" diagnostic — pinning today's exact text
-/// would make this test churn on that unrelated follow-up).
+/// Must surface a `Level::Error` diagnostic from whichever pass touches it
+/// first (`link()` or `check_link_asserts`) — asserting level+presence loosely
+/// on that account. Item C (seam re-eval) rewrote `check_link_asserts`'
+/// Poison-condition wording from a blanket "internal: ... compiler bug" claim
+/// to one that names the missing symbol(s) and points at the standalone-
+/// compile cause; this probe additionally pins THAT (the message names
+/// `NOPE_MISSING`, no compiler-bug claim) now that the wording is settled.
 #[test]
 fn probe_extern_of_missing_symbol_is_a_loud_link_error() {
     let asm = "cpu 68000\nAnchor:\n\tdc.w 0\n";
@@ -1030,6 +1032,15 @@ fn probe_extern_of_missing_symbol_is_a_loud_link_error() {
         all_diags.iter().any(|d| d.level == Level::Error),
         "extern(\"NOPE_MISSING\") over an undefined symbol must produce a Level::Error diagnostic, got: {all_diags:?}"
     );
+    // Item C (seam re-eval): the wording follow-up this comment used to await is
+    // now done — assert the message names the missing symbol and does not
+    // accuse the module of a compiler bug.
+    let err = all_diags
+        .iter()
+        .find(|d| d.level == Level::Error)
+        .expect("an Error diagnostic exists (checked above)");
+    assert!(err.message.contains("NOPE_MISSING"), "must name the missing symbol, got: {}", err.message);
+    assert!(!err.message.contains("compiler bug"), "must not claim a compiler bug, got: {}", err.message);
 }
 
 /// (B3.4) A data cell (`u16` — mirrors `equ_link.rs`/`lower_data.rs`'s

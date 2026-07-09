@@ -268,6 +268,40 @@ fn deferred_ensure_and_ensure_fatal_both_fail_and_all_collect() {
     assert!(msgs.iter().any(|m| m.contains("fatal ensure failed")), "got: {msgs:?}");
 }
 
+// ---------------------------------------------------------------------------
+// Item C (seam re-eval) — the mt_bank.emp/sfx_bank.emp standalone-compile
+// shape, hit three times across T2/T3: a module whose only guard is a
+// cross-seam `ensure` naming TWO external symbols via `bankid(...)` (a
+// residual `(Sym & MASK) >> 15` tree — see `eval_bankid`), compiled with NO
+// map/harness composition, so BOTH names are genuinely absent from this link.
+// `Fold::Poison` reaches `check_link_asserts` legitimately here — the fix
+// must name both missing symbols with standalone-compile guidance, not
+// accuse the module of a compiler bug.
+// ---------------------------------------------------------------------------
+
+const CROSS_SEAM_STANDALONE: &str = "module sfx_bank\n\
+    section s (cpu: m68000, vma: $8000) {\n\
+      ensure(bankid(\"SfxBlob\") == bankid(\"EngineTableBankStart\"), \"co-residency\")\n\
+      data Anchor: u8 = 0\n\
+    }\n";
+
+#[test]
+fn cross_seam_ensure_compiled_standalone_names_both_missing_symbols() {
+    let (image, msgs) = compile_full(CROSS_SEAM_STANDALONE);
+    assert!(image.is_none(), "a cross-seam ensure over two undefined externals must fail the build");
+    // Exactly the expected number of diagnostics: one Poison-condition error
+    // from this single ensure (no other diagnostic source fires here).
+    assert_eq!(msgs.len(), 1, "expected exactly one diagnostic, got: {msgs:?}");
+    let msg = &msgs[0];
+    assert!(msg.contains("SfxBlob"), "must name the first missing symbol, got: {msg}");
+    assert!(msg.contains("EngineTableBankStart"), "must name the second missing symbol, got: {msg}");
+    assert!(
+        msg.contains("standalone"),
+        "must explain the standalone-compile cause, got: {msg}"
+    );
+    assert!(!msg.contains("compiler bug"), "must not accuse the module of a compiler bug, got: {msg}");
+}
+
 #[test]
 fn deferred_fatal_does_not_suppress_later_items() {
     // A deferred (provisional) ensure_fatal that will FAIL at link, followed by
