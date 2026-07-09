@@ -6,7 +6,8 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::expr::BinOp;
-use sigil_ir::{Expr, Fixup, FixupKind, Fragment, SymbolTable};
+use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Section, SymbolTable};
+use std::path::{Path, PathBuf};
 
 /// The masked fixup target a `winptr(sym)` lowers to: `(sym & 0x7FFF) | 0x8000`
 /// (AS `sfx_winptr`). Used by the windowed-pointer fixup-shape assertions below.
@@ -589,5 +590,261 @@ fn define_colliding_with_proc_name_errors() {
     assert!(
         diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.contains("[defines.collision]")),
         "expected a [defines.collision] error for a proc-name collision, got {diags:?}"
+    );
+}
+
+// ---- sound-migration T2 Task 2: MT-shape capability probes (P1-P4) ------
+//
+// `mt_bank.emp` (Task 5) needs five constructs no existing test exercises
+// end-to-end together: a conditional `embed(...) / Data.empty` data item, a
+// `[*u8; N]` pointer-array of string elements, an `if`-expression driving
+// both a `const` array LENGTH and the array VALUE, a length-mismatch on that
+// shape, and an `ensure` mixing a comptime `.len` with a pinned int const.
+// Each probe is written to PIN bytes/offsets/addresses, not merely "no error".
+
+/// The fixture directory `embed` resolves paths against for these probes:
+/// the SAME `tests/vectors/` fixture `sandbox_embed.rs`/`sandbox_hermeticity.rs`
+/// use, containing the deterministic `embed_fixture.bin` (12 bytes, `0x00..=0x0B`).
+/// This IS the established "include_root tempdir-adjacent fixture" pattern for
+/// `embed` in this crate — a real ad-hoc `tempfile::tempdir()` would just
+/// reconstruct this same fixture at test time for no added coverage.
+fn vectors_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("vectors")
+}
+
+const EMBED_FIXTURE_BYTES: [u8; 12] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+fn section<'a>(module: &'a sigil_ir::Module, name: &str) -> &'a Section {
+    module
+        .sections
+        .iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no section `{name}`"))
+}
+
+fn label_offset(sec: &Section, name: &str) -> u32 {
+    sec.labels.iter().find(|l| l.name == name).unwrap_or_else(|| panic!("no label `{name}`")).offset
+}
+
+/// Lower `src` with the given `defines`, resolving `embed(...)` against
+/// [`vectors_dir`]. Asserts a clean parse; returns `(module, diagnostics)`.
+fn lower_with_defines_and_root(
+    src: &str,
+    defines: Vec<(String, i128)>,
+) -> (sigil_ir::Module, Vec<sigil_span::Diagnostic>) {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), defines },
+    )
+}
+
+// ---- P1: `if C { embed(...) } else { Data.empty }` -----------------------
+
+#[test]
+fn p1_conditional_embed_true_arm_emits_real_bytes() {
+    let src = "module m\n\
+               section s (vma: $8000) {\n\
+               data X = if C == 1 { embed(\"embed_fixture.bin\") } else { Data.empty }\n\
+               data Next: u8 = $AA\n\
+               }\n";
+    let (module, diags) = lower_with_defines_and_root(src, vec![("C".into(), 1)]);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    let sec = section(&module, "s");
+    let x_off = label_offset(sec, "X");
+    let next_off = label_offset(sec, "Next");
+    assert_eq!(x_off, 0, "X is the section's first item");
+    assert_eq!(
+        next_off, 12,
+        "Next must land right after X's 12 embedded bytes (no padding, no gap)"
+    );
+
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..12], &EMBED_FIXTURE_BYTES, "the true arm embeds the real file bytes");
+    assert_eq!(bytes[12], 0xAA, "Next's byte follows immediately");
+    assert_eq!(bytes.len(), 13, "no extra padding bytes anywhere");
+}
+
+#[test]
+fn p1_conditional_embed_false_arm_is_zero_length_but_labeled() {
+    // The else arm (`Data.empty`) must produce a ZERO-length data item: the
+    // label `X` is still defined, it emits zero bytes, and `Next` — the NEXT
+    // data item in the SAME section — lands at the SAME offset X would have
+    // occupied had X emitted nothing (i.e. offset 0, since X is first).
+    let src = "module m\n\
+               section s (vma: $8000) {\n\
+               data X = if C == 1 { embed(\"embed_fixture.bin\") } else { Data.empty }\n\
+               data Next: u8 = $AA\n\
+               }\n";
+    let (module, diags) = lower_with_defines_and_root(src, vec![("C".into(), 0)]);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    let sec = section(&module, "s");
+    let x_off = label_offset(sec, "X");
+    let next_off = label_offset(sec, "Next");
+    assert_eq!(x_off, 0, "X's label is still defined");
+    assert_eq!(next_off, 0, "Next lands at X's offset — X emitted zero bytes");
+    assert_eq!(x_off, next_off, "the following item lands at the SAME offset as the empty item");
+
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes, vec![0xAA], "only Next's single byte — X contributed nothing");
+}
+
+// ---- P2: `[*u8; N]` pointer array with string elements -------------------
+
+#[test]
+fn p2_pointer_array_of_three_strings_emits_three_abs32_symrefs() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               data C: [u8;1] = [3]\n\
+               data T: [*u8; 3] = [\"A\", \"B\", \"C\"]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    // Three 4-byte Abs32Be fixups at offsets 0, 4, 8, targeting A/B/C.
+    assert_eq!(
+        section_fixups(&module),
+        vec![
+            Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 4, target: Expr::Sym("B".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 8, target: Expr::Sym("C".into()) },
+        ]
+    );
+
+    // Resolve to the labels' actual linked addresses (A=0, B=1, C=2 in the
+    // default `text` section: A/B/C are each 1 byte, then T's 12-byte table).
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes.len(), 3 + 12, "3 one-byte blobs + a 12-byte pointer table");
+    assert_eq!(&bytes[3..7], &[0x00, 0x00, 0x00, 0x00], "T[0] -> A @ address 0");
+    assert_eq!(&bytes[7..11], &[0x00, 0x00, 0x00, 0x01], "T[1] -> B @ address 1");
+    assert_eq!(&bytes[11..15], &[0x00, 0x00, 0x00, 0x02], "T[2] -> C @ address 2");
+}
+
+#[test]
+fn p2_pointer_array_of_one_string_emits_one_abs32_symref() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 1] = [\"A\"]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) }]
+    );
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes.len(), 1 + 4, "the one-byte blob + a 4-byte pointer cell");
+    assert_eq!(&bytes[1..5], &[0x00, 0x00, 0x00, 0x00], "T[0] -> A @ address 0");
+}
+
+// ---- P3: `if`-expression driving BOTH a const array length and the value -
+
+#[test]
+fn p3_if_expression_const_length_drives_matching_array_shape_debug_1() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               data C: [u8;1] = [3]\n\
+               const N = if D == 1 { 3 } else { 1 }\n\
+               data T: [*u8; N] = if D == 1 { [\"A\", \"B\", \"C\"] } else { [\"A\"] }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 1)] },
+    );
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![
+            Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 4, target: Expr::Sym("B".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 8, target: Expr::Sym("C".into()) },
+        ],
+        "D=1 selects the 3-element shape, N=3"
+    );
+}
+
+#[test]
+fn p3_if_expression_const_length_drives_matching_array_shape_debug_0() {
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               data C: [u8;1] = [3]\n\
+               const N = if D == 1 { 3 } else { 1 }\n\
+               data T: [*u8; N] = if D == 1 { [\"A\", \"B\", \"C\"] } else { [\"A\"] }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 0)] },
+    );
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) }],
+        "D=0 selects the 1-element shape, N=1"
+    );
+}
+
+#[test]
+fn p3_mismatched_array_length_against_const_n_is_clean_error_not_panic() {
+    // N=3 (D==1) but the value arm supplies only 2 elements — a clean
+    // diagnostic naming the mismatch, never a panic.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               const N = if D == 1 { 3 } else { 1 }\n\
+               data T: [*u8; N] = [\"A\", \"B\"]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 1)] },
+    );
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("length mismatch")
+            && d.message.contains('3')
+            && d.message.contains('2')),
+        "expected a clean length-mismatch error naming 3 and 2, got {diags:?}"
+    );
+}
+
+// ---- P4: `ensure` mixing a comptime embed `.len` and a pinned int const -
+
+#[test]
+fn p4_ensure_len_against_pinned_const_passes_when_equal() {
+    let src = "module m\n\
+               const Blob = embed(\"embed_fixture.bin\")\n\
+               const PINNED = 12\n\
+               ensure(Blob.len == PINNED, \"blob length drifted: want {PINNED}, got {Blob.len}\")\n\
+               data D: [u8;1] = [1]\n";
+    let (_module, diags) = lower_with_defines_and_root(src, vec![]);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "matching len must pass silently, got: {diags:?}"
+    );
+}
+
+#[test]
+fn p4_ensure_len_against_pinned_const_fires_loud_message_when_unequal() {
+    let src = "module m\n\
+               const Blob = embed(\"embed_fixture.bin\")\n\
+               const PINNED = 999\n\
+               ensure(Blob.len == PINNED, \"blob length drifted: want {PINNED}, got {Blob.len}\")\n\
+               data D: [u8;1] = [1]\n";
+    let (_module, diags) = lower_with_defines_and_root(src, vec![]);
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("blob length drifted: want 999, got 12")),
+        "expected the ensure's interpolated message naming 999 and 12, got: {diags:?}"
     );
 }
