@@ -314,6 +314,94 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
+
+    // -----------------------------------------------------------------
+    // Saxman
+    // -----------------------------------------------------------------
+
+    /// `saxman(data)` / `saxman(data, header: bool)` (Plan-7 #10, T2b):
+    /// Saxman compression. `header` defaults to `true` (the with-header
+    /// variant, which prefixes a 2-byte LE compressed-size field), matching
+    /// the plan's "with-header default" ruling. Follows `s4lz`'s named-arg
+    /// collection pattern (`eval_s4lz`): unknown named arguments and
+    /// argument-given-twice are diagnostics, not panics.
+    pub(super) fn eval_saxman(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let mut data_arg: Option<&ast::Arg> = None;
+        let mut header_arg: Option<&ast::Arg> = None;
+        for arg in args {
+            match arg.name.as_deref() {
+                None => {
+                    if data_arg.is_some() {
+                        self.error(arg.span, "`saxman` takes exactly one positional data argument");
+                    } else {
+                        data_arg = Some(arg);
+                    }
+                }
+                Some("header") => {
+                    if header_arg.is_some() {
+                        self.error(arg.span, "`header` given more than once");
+                    }
+                    header_arg = Some(arg);
+                }
+                Some(other) => {
+                    self.error(arg.span, format!("unknown named argument `{other}` to `saxman`"));
+                }
+            }
+        }
+        let Some(data_arg) = data_arg else {
+            self.error(span, "`saxman` requires a data argument");
+            return Value::Poison;
+        };
+        let data_val = self.eval_expr(&data_arg.value, env);
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let buf = match data_val {
+            Value::Data(buf) => buf,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(span, format!("[saxman.arg] saxman expects a Data value, got {}", other.type_name()));
+                return Value::Poison;
+            }
+        };
+
+        let header = match header_arg {
+            None => true,
+            Some(arg) => {
+                let v = self.eval_expr(&arg.value, env);
+                if self.aborted || self.pending_return.is_some() {
+                    return Value::Poison;
+                }
+                match v {
+                    Value::Bool(b) => b,
+                    Value::Poison => return Value::Poison,
+                    other => {
+                        self.error(arg.span, format!("`header` must be a bool, got {}", other.type_name()));
+                        return Value::Poison;
+                    }
+                }
+            }
+        };
+
+        self.saxman_from_data(buf, header, span)
+    }
+
+    pub(crate) fn saxman_from_data(&mut self, buf: DataBuf, header: bool, span: Span) -> Value {
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "saxman") else {
+            return Value::Poison;
+        };
+        match sigil_clownlzss_sys::compress_saxman(&input, header) {
+            Ok(out) => {
+                let mut result = DataBuf::empty();
+                result.push(Cell::Bytes(out));
+                Value::Data(result)
+            }
+            Err(e) => {
+                self.report_clownlzss_error("saxman", span, e);
+                Value::Poison
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -360,6 +448,53 @@ mod tests {
         buf.push(Cell::Bytes(input.clone()));
         let result = ev.kosinski_m_from_data(buf, 0x100, span());
         let expected = sigil_clownlzss_sys::compress_kosinski_moduled(&input, 0x100).unwrap();
+        match result {
+            Value::Data(out) => match &out.cells[0] {
+                Cell::Bytes(b) => assert_eq!(b, &expected),
+                other => panic!("expected Cell::Bytes, got {other:?}"),
+            },
+            other => panic!("expected Value::Data, got {other:?}"),
+        }
+    }
+
+    /// `saxman(data, header: true)`'s compressed-size-exceeds-u16 case
+    /// (CR5): mirrors `sigil_clownlzss_sys`'s own
+    /// `saxman_with_header_rejects_compressed_size_over_u16` gate test —
+    /// ~70KB of incompressible pseudo-random data pushes the WITH-HEADER
+    /// compressed size past `u16::MAX`. Exercised via `saxman_from_data`
+    /// directly (not the `.emp` integration suite) since constructing a
+    /// 70KB `.emp` source literal would be impractical — same rationale as
+    /// `s4lz_from_data_too_large_input_errors` in `s4lz.rs`.
+    #[test]
+    fn saxman_from_data_with_header_compressed_size_exceeds_u16_errors() {
+        let mut plain = Vec::with_capacity(70_000);
+        let mut state: u32 = 0x2463_5910;
+        for _ in 0..70_000 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            plain.push((state & 0xFF) as u8);
+        }
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::Bytes(plain));
+        let result = ev.saxman_from_data(buf, true, span());
+        assert_eq!(result, Value::Poison);
+        assert!(
+            ev.diags.iter().any(|d| d.message.contains("[saxman.too-large]")),
+            "expected a [saxman.too-large] diagnostic, got {:?}",
+            ev.diags
+        );
+    }
+
+    #[test]
+    fn saxman_from_data_header_false_matches_sys_wrapper() {
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        let input: Vec<u8> = (0..64u8).collect();
+        buf.push(Cell::Bytes(input.clone()));
+        let result = ev.saxman_from_data(buf, false, span());
+        let expected = sigil_clownlzss_sys::compress_saxman(&input, false).unwrap();
         match result {
             Value::Data(out) => match &out.cells[0] {
                 Cell::Bytes(b) => assert_eq!(b, &expected),

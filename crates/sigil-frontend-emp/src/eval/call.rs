@@ -107,6 +107,9 @@ impl<'a> Evaluator<'a> {
                 // (Plan-7 #10, T2b): Kosinski+ / Kosinski+-Moduled.
                 "kosplus" => return self.eval_kosplus(args, span, env),
                 "kosplus_m" => return self.eval_kosplus_m(args, span, env),
+                // `saxman(data)` / `saxman(data, header: bool)` (Plan-7
+                // #10, T2b): Saxman, `header:` default true.
+                "saxman" => return self.eval_saxman(args, span, env),
                 _ => {}
             }
         }

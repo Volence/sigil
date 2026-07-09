@@ -266,3 +266,100 @@ fn kosplus_m_unknown_named_arg_errors() {
     );
     assert!(buf.expect("data buf").size > 0, "expected the call to still produce a real result");
 }
+
+// ---------------------------------------------------------------------------
+// saxman
+// ---------------------------------------------------------------------------
+
+#[test]
+fn saxman_default_has_header_matches_t2a_golden() {
+    let expected = read_vec("golden_saxman_header.bin");
+    let src = "module m\ndata X = saxman(embed(\"level_select_2p.raw\"))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn saxman_header_false_matches_t2a_golden() {
+    let expected = read_vec("golden_saxman_noheader.bin");
+    let src = "module m\ndata X = saxman(embed(\"level_select_2p.raw\"), header: false)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn saxman_header_true_explicit_matches_t2a_golden() {
+    let expected = read_vec("golden_saxman_header.bin");
+    let src = "module m\ndata X = saxman(embed(\"level_select_2p.raw\"), header: true)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn saxman_non_data_arg_errors() {
+    let src = "module m\ndata X = saxman(42)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[saxman.arg]")),
+        "expected a [saxman.arg] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn saxman_no_args_errors() {
+    let src = "module m\ndata X = saxman()\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("requires a data argument")),
+        "expected a missing-data-argument diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn saxman_header_wrong_type_errors() {
+    let src = "module m\ndata X = saxman(embed(\"level_select_2p.raw\"), header: 1)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("`header` must be a bool")),
+        "expected a header-type diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn saxman_unknown_named_arg_errors() {
+    let src = "module m\ndata X = saxman(embed(\"level_select_2p.raw\"), bogus: 1)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("unknown named argument `bogus`")),
+        "expected an unknown-named-argument diagnostic, got {diags:?}"
+    );
+    assert!(buf.expect("data buf").size > 0, "expected the call to still produce a real result");
+}
+
+#[test]
+fn saxman_header_given_twice_errors() {
+    let src = "module m\ndata X = saxman(embed(\"level_select_2p.raw\"), header: true, header: false)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("`header` given more than once")),
+        "expected a header-given-twice diagnostic, got {diags:?}"
+    );
+    assert!(buf.expect("data buf").size > 0, "expected the call to still produce a real result");
+}
+
+#[test]
+fn saxman_two_positional_args_errors() {
+    let src = "module m\ndata X = saxman(embed(\"level_select_2p.raw\"), embed(\"sand_particles.raw\"))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("exactly one positional data argument")),
+        "expected a too-many-positional-args diagnostic, got {diags:?}"
+    );
+    assert!(buf.expect("data buf").size > 0, "expected the first positional arg's result to still be used");
+}
