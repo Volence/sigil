@@ -2,14 +2,15 @@
 
 The 68k engine-port campaign's opening act. Both branches UNMERGED.
 
-- **sigil `port-hblank`** (worktree `.worktrees/port-hblank`, off master `aafdc95`, 5 commits):
+- **sigil `port-hblank`** (worktree `.worktrees/port-hblank`, off master `aafdc95`, 8 commits):
   `d1106cd` sp alias + movem reglists → `ced3cce` byte gates (+ the `move.l #imm,(abs)` deferral
-  fix) → `1b1e37f`/`4-th` docs → T4 review minors.
+  fix) → docs/review-minor commits → `6a5d047`+`6bc0069` the equ-relaxation fix (T5 — pulled
+  into this port at Volence's ruling, see the retrospect).
 - **aeon `sigil-emp-hblank`** (checked out in the MAIN aeon tree, off `a103e46`, 1 commit
   `43e252d`): `engine/system/hblank.emp` + the `SIGIL_EMP_HBLANK` gate in `engine/engine.inc`
   + `CODING_CONVENTIONS.md` §10 (the `.emp` formatting convention, Volence-driven).
 
-**Final validation:** workspace 143/143 test binaries green (~1795 tests), clippy
+**Final validation:** workspace **1804/0** tests, strict gates 175/0 zero skips, clippy
 `--workspace --all-targets -D warnings` clean, strict gates
 (`SIGIL_STRICT_GATE=1 AEON_DIR=…`) zero skips — port gates 2/2, negative probes 3/3,
 mixed-ROM 8/8 (the FULL mixed ROM with all four gates — DAC+MT+SFX+HBLANK — byte-identical to
@@ -31,10 +32,21 @@ fixed on-branch).
    only the source imm32 defers; verified against the reference encoding `21FC 0000228E 8022`).
    Deliberate narrowness preserved and probe-proven: imm8/imm16, other mnemonics, other
    destination modes all still hard-error.
-4. **The `.emp` formatting convention** (Volence's catch — "start off strong"): code files use
+4. **Equ-visible width relaxation + symbol-naming diagnostic** (T5 — Volence's mid-session
+   ruling: fix it in-port so later files are written the correct way the first time, no
+   revisit pass). `equ` values (`.emp` or exported AS-side) now resolve as `RelaxAbsSym` and
+   `jmp`/`jsr` targets inside the placement⇄relaxation fixpoint (bounded partial fold per
+   pass; same grow-only gate labels use); the unresolved-operand diagnostic names the missing
+   symbol with the Item-C cross-seam-standalone framing (the hblank standalone probe now pins
+   the improved wording). **Review ruling folded in:** `jbra`/`jbsr` (the pc-relative ladder)
+   deliberately stays labels-only — a near-integer equ as a branch target silently mis-encoded
+   as pc-relative (reviewer-probed `60 1E`), so the ladder refuses equs with a steering
+   diagnostic ("branch targets must be labels; use jmp/jsr for an absolute target"), pinned by
+   RED-first regression tests.
+5. **The `.emp` formatting convention** (Volence's catch — "start off strong"): code files use
    the braceless `module X in <section>` form; braced sections indent 4; instruction lines
    keep the .asm column style. aeon `CODING_CONVENTIONS.md` §10; restyle proven byte-neutral.
-5. **The campaign gap ledger + per-conversion retrospect cadence** (Volence, this session):
+6. **The campaign gap ledger + per-conversion retrospect cadence** (Volence, this session):
    `docs/superpowers/notes/campaign-gap-ledger.md` — every port sweeps observations in; the
    checkpoint retrospect rules on them while fresh.
 
@@ -93,7 +105,7 @@ New ledger entries this port, each with a recommendation (full context in
 |---|---|
 | `sp` alias; movem reglists; `move.l #imm,(abs)` deferral | SHIPPED in-port (blocked the port) — ratify with merge |
 | Formatting convention (braceless code files / indent-4 sections) | SHIPPED as convention (CODING_CONVENTIONS §10) — ratify; `sigil fmt` stays S2-D11(c) |
-| Symbolic absolute operand targeting an **equ** fails; and the `RelaxAbsSym` diagnostic names only the section, not the symbol | **Implement next tranche as ONE fix** (both live in the same relax path): equ values visible to width relaxation + the diagnostic names the missing symbol. Blocker-in-waiting for any code file addressing through an AS equate |
+| Symbolic absolute operand targeting an **equ** fails; and the `RelaxAbsSym` diagnostic names only the section, not the symbol | **SHIPPED in-port (Volence's ruling, 2026-07-09: fix before the files that need it, not after)** — one fix, T5 (`6a5d047`+`6bc0069`), two-stage reviewed; ratify with merge. Review-ruled scope: equs resolve for abs operands + `jmp`/`jsr`; `jbra` ladder stays labels-only with a steering refusal |
 | `initial_cpu` is caller convention, not module fact (4 hardcoded call sites) | Jot for now; revisit at the first Z80-adjacent port (module-declared CPU or default-and-warn) |
 | movem `(0,An)` collapse not ported | Leave jotted (believed unreachable from `.emp`'s resolved model; breadcrumbed in code) |
 | **Aeon clean-build reproducibility** (fresh worktree build ≠ pinned ROMs, ~131KB generator drift; port branches must run IN the main tree; never rebuild there without re-pinning) | **Own session** — tooling, pre-existing, but it makes the pinned baseline unreproducible from a clean clone. Decide: track/pin generator outputs vs deterministic generators + re-baseline |
