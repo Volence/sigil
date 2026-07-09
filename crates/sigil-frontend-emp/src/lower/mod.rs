@@ -571,7 +571,7 @@ fn lower_equ_item(
 /// `here()` returns the byte-identical `Value::Int(base)`; at a PROVISIONAL one it
 /// is `Some(anchor_name)` and `here()` returns a link-time value (D-H.1).
 fn here_pos(builder: &IrBuilder, origin: u32, anchor_name: &str) -> HerePos {
-    let base = origin + builder.current_offset();
+    let base = origin.wrapping_add(builder.current_offset());
     let anchor = builder.section_has_relaxable().then(|| anchor_name.to_string());
     HerePos { base, anchor }
 }
@@ -677,7 +677,7 @@ fn lower_align_item(
         message: vec![
             MsgPart::Text(format!(
                 "align {n}: final placement broke this alignment (padding was computed \
-                 against the lowering-baseline address ${pos:X}, but the final address is "
+                 against the lowering-baseline address {pos}, but the final address is "
             )),
             MsgPart::Expr(Expr::Sym(anchor)),
             MsgPart::Text(
@@ -813,7 +813,7 @@ fn lower_item_guard(
     // `here()` (D-H.8); the label is only DEFINED below if the guard used it.
     let provisional = builder.section_has_relaxable();
     let anchor_name = format!("__here${module_id}${}", *here_anchor_counter);
-    let base = origin + builder.current_offset();
+    let base = origin.wrapping_add(builder.current_offset());
     let here = HerePos {
         base,
         anchor: provisional.then(|| anchor_name.clone()),

@@ -177,6 +177,108 @@ data D2: [u8; 1] = [9]
     assert!(ds.is_empty(), "aligned layout passes its own assert: {ds:?}");
 }
 
+#[test]
+fn placement_drift_fails_the_congruence_assert() {
+    // THE refinement's point: padding computed at the lowering baseline, but
+    // the section later PLACED at an incongruent base (simulating a map
+    // region / chained-growth move) — the build must fail loudly, naming the
+    // final address.
+    let src = "\
+module m
+data D1: [u8; 1] = [1]
+align 2
+data D2: [u8; 1] = [9]
+";
+    let (mut m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    // Move the whole section to an ODD base — a fair stand-in for
+    // place_sections routing it to an odd map region.
+    for s in &mut m.sections {
+        s.lma = 0x101;
+    }
+    let resolved =
+        sigil_link::resolve_layout(&m.sections, &SymbolTable::new(), true).expect("resolve_layout");
+    let ds = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &m.link_asserts);
+    let fail = ds
+        .iter()
+        .find(|d| d.message.contains("align 2") && d.message.contains("final placement broke"))
+        .unwrap_or_else(|| panic!("expected the congruence assert to fire: {ds:?}"));
+    assert!(matches!(fail.level, sigil_span::Level::Error), "drift fails the build");
+}
+
+#[test]
+fn align_eq_at_item_position_is_a_finite_error() {
+    // Review C1 regression: `align = 5` is NOT an item (the `=` guard skips
+    // the arm) — recovery must CONSUME it, not spin forever. This test's
+    // existence is the proof of termination; the assertions pin the shape.
+    let (f, perrs) = sigil_frontend_emp::parse_str("module m\nalign = 5\nconst A = 1\n");
+    assert!(!perrs.is_empty(), "the stray line still errors");
+    assert!(
+        perrs.len() < 10,
+        "a FINITE diagnostic list (the spin produced unbounded errors): {}",
+        perrs.len()
+    );
+    assert_eq!(f.items.len(), 1, "the following const still parses");
+}
+
+#[test]
+fn align_eq_inside_a_section_body_is_finite_too() {
+    let (_, perrs) =
+        sigil_frontend_emp::parse_str("module m\nsection s (vma: $100) {\nalign = 5\n}\n");
+    assert!(!perrs.is_empty() && perrs.len() < 10, "finite: {}", perrs.len());
+}
+
+#[test]
+fn align_works_in_z80_sections() {
+    let src = "\
+module m
+section z (cpu: z80, vma: $0000) {
+    data D1: [u8; 1] = [1]
+    align 4
+    data D2: [u8; 1] = [9]
+}
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    assert_eq!(linked_bytes(&m), vec![1, 0, 0, 0, 9]);
+}
+
+#[test]
+fn consecutive_aligns_compose() {
+    let src = "\
+module m
+data D1: [u8; 1] = [1]
+align 2
+align 4
+data D2: [u8; 1] = [9]
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    assert_eq!(linked_bytes(&m), vec![1, 0, 0, 0, 9]);
+    assert_eq!(m.link_asserts.len(), 2, "each align records its own congruence assert");
+}
+
+#[test]
+fn align_as_first_item_is_fine() {
+    let src = "\
+module m
+align 4
+data D: [u8; 1] = [9]
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    assert_eq!(linked_bytes(&m), vec![9], "position 0 is already aligned");
+}
+
+#[test]
+fn pub_align_is_rejected() {
+    let (_, perrs) = sigil_frontend_emp::parse_str("module m\npub align 2\n");
+    assert!(
+        perrs.iter().any(|d| d.message.contains("`pub` is not valid")),
+        "pub align must be rejected: {perrs:?}"
+    );
+}
+
 // ---- 5. AS parity ------------------------------------------------------------
 // The AS-vs-emp byte-parity vector lives in `crates/sigil-cli/tests/
 // align_as_parity.rs` — the crate-graph contamination safeguard (crate_graph.rs

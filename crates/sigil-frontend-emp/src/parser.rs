@@ -415,7 +415,14 @@ impl Parser {
                     // recovery loop (recovery returns without consuming, `item()`
                     // re-fails on the same token). Skip past a non-guard occurrence.
                     let guard_kw = s == "ensure" || s == "ensure_fatal";
-                    if guard_kw && !matches!(self.peek_at(1), Tok::LParen) {
+                    // `align` is likewise contextual: `align = 5` is NOT an
+                    // item (item() skips it when `=` follows), so recovery
+                    // must not stop there either — same spin hazard as the
+                    // guards (Item-3 review C1: stopping without consuming
+                    // made `align = 5` an infinite parse loop).
+                    let align_non_item =
+                        s == "align" && matches!(self.peek_at(1), Tok::Eq);
+                    if (guard_kw && !matches!(self.peek_at(1), Tok::LParen)) || align_non_item {
                         self.bump();
                     } else {
                         return;
