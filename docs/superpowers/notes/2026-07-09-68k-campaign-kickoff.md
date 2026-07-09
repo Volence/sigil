@@ -5,26 +5,29 @@ own notes); with them merged, **Plan 7 is COMPLETE (#1–#10 all landed)** and S
 to FREEZE. This note proposes the freeze checklist, the first migration targets, and the
 morning checkpoint list.
 
-## Morning checkpoint list (the asks, in order)
+## Morning checkpoint list — ITEMS 1–3 EXECUTED 2026-07-09 (Volence approved; Fable ran the sweep)
 
-1. **Merge sigil `seam-reeval` → master** (`--no-ff`; 6 commits, HEAD `ffab698`; 1510/0 +
-   strict gates + clippy; packet: `notes/2026-07-09-seam-reeval-complete.md`). Ratify the
-   Item-B ruling (`extern("NAME")` + AS equ export) and Item-A dispositions
-   (`specs/2026-07-09-seam-reeval-decisions.md`).
-2. **Merge sigil `compression-builtins` → master** (`--no-ff`; packet:
-   `notes/2026-07-09-compression-builtins-complete.md`). Plan-7 #10 done: `s4lz()`
-   byte-exact vs aeon's real generator + 9 classic-format builtins on ISC-vendored
-   clownlzss/clownnemesis.
-3. **Commit the empyrean spec working tree** whenever you do your spec sweep — it now holds
-   THREE stacked passes (#7/D2.25, D2.26, and tonight's D2.27 + ledger dispositions).
+1. ~~Merge sigil `seam-reeval` → master~~ **DONE — merge `bf247da`** (`--no-ff`). Item-B
+   ruling (`extern("NAME")` + AS equ export) + Item-A dispositions ratified with the merge
+   (`specs/2026-07-09-seam-reeval-decisions.md`; packet:
+   `notes/2026-07-09-seam-reeval-complete.md`).
+2. ~~Merge sigil `compression-builtins` → master~~ **DONE — merge `2576d91`** (`--no-ff`;
+   packet: `notes/2026-07-09-compression-builtins-complete.md`).
+   **Post-merge master validation: 1654/0 workspace, strict gates 15/0, clippy clean;
+   pushed. Worktrees removed, branches deleted. Plan 7 #1–#10 COMPLETE ON MASTER.**
+3. ~~Commit the empyrean spec working tree~~ **DONE — empyrean `070a118`, pushed** (the
+   three stacked passes D2.25/D2.26/D2.27 + ledger dispositions + the Plan 4/5/6 plan
+   docs; the docs-cadence backlog is clear).
 4. **Ratify this kickoff** (freeze checklist + first targets below) → campaign starts.
+   Volence indicated go (2026-07-09 morning); the freeze ceremony below is the campaign
+   session's first act.
 
 ## Spec-FREEZE checklist (proposed)
 
 Plan 7's contract was: research → implement → FROZEN spec. With #10 merged:
 
-- [ ] Volence commits the empyrean working tree (ask 3 above) — the spec text then matches
-      shipped reality through D2.27.
+- [x] ~~Volence commits the empyrean working tree~~ DONE (`070a118`) — the spec text now
+      matches shipped reality through D2.27.
 - [ ] Declare §10's concept inventory CLOSED for v1 (the A-Spec2.3 gate stays for
       amendments; the headroom rule already makes future additions non-breaking).
 - [ ] The deferred ledger is the freeze's "explicitly NOT in v1" list — every row has an
