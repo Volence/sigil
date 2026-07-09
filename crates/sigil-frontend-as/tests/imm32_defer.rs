@@ -17,9 +17,11 @@
 //! deferral). Since R3 explicitly wants compounds to defer too (mirroring
 //! `db`/`dw`'s "ANY unresolved expression" rule), the correct reused kind is
 //! the general `Value32Be` (added in a8b0f63 alongside `Value8`/`Value16*`,
-//! unused by any emitter until now) — NOT `Abs32Be`. `Value32Be` writes the
-//! folded value verbatim big-endian after an unsigned-window range check
-//! (`0 <= v < 2^32`), exactly the `db`/`dw` Value-kind semantics at width 4.
+//! and already production-exercised by the .emp frontend for 68k 4-byte
+//! value cells — `sigil-frontend-emp/src/lower/data.rs`'s `value_fixup_kind`)
+//! — NOT `Abs32Be`. `Value32Be` writes the folded value verbatim big-endian
+//! after an unsigned-window range check (`0 <= v < 2^32`), exactly the
+//! `db`/`dw` Value-kind semantics at width 4.
 
 use sigil_frontend_as::{assemble, Options};
 use sigil_ir::{
@@ -200,6 +202,31 @@ fn move_w_unresolved_symbol_still_errors() {
     // 16-bit immediate — R3 scopes deferral to LONG immediates only.
     let src = "        cpu 68000\n        phase 0\n        move.w #ExternalSym, d0\n";
     let err = assemble(src, &Options::default()).expect_err("move.w of undefined symbol errors");
+    assert!(
+        err.iter().any(|d| d.message.contains("unresolved symbol") && d.message.contains("ExternalSym")),
+        "expected an unresolved-symbol error, got: {err:?}"
+    );
+}
+
+#[test]
+fn add_l_unresolved_symbol_still_errors() {
+    // A NON-move mnemonic with a long immediate — R3 scopes deferral to the
+    // `movea.l`/`move.l` class only; `add.l #Sym, d0` stays loud.
+    let src = "        cpu 68000\n        phase 0\n        add.l #ExternalSym, d0\n";
+    let err = assemble(src, &Options::default()).expect_err("add.l of undefined symbol errors");
+    assert!(
+        err.iter().any(|d| d.message.contains("unresolved symbol") && d.message.contains("ExternalSym")),
+        "expected an unresolved-symbol error, got: {err:?}"
+    );
+}
+
+#[test]
+fn move_l_to_memory_dest_unresolved_symbol_still_errors() {
+    // A MEMORY destination (`(a0)`) — outside the bare-`dN`/`aN` destination
+    // shapes the deferral is scoped to; still loud.
+    let src = "        cpu 68000\n        phase 0\n        move.l #ExternalSym, (a0)\n";
+    let err = assemble(src, &Options::default())
+        .expect_err("move.l to memory dest of undefined symbol errors");
     assert!(
         err.iter().any(|d| d.message.contains("unresolved symbol") && d.message.contains("ExternalSym")),
         "expected an unresolved-symbol error, got: {err:?}"
