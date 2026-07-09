@@ -23,7 +23,7 @@ fn lower_ok(src: &str) -> Module {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     let errs: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     assert!(errs.is_empty(), "lower errors: {errs:?}");
     m
@@ -33,7 +33,7 @@ fn lower_diags(src: &str) -> Vec<sigil_span::Diagnostic> {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     diags
 }
 

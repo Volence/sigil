@@ -20,7 +20,7 @@ use sigil_span::{Diagnostic, Level};
 fn lower(src: &str) -> (Module, Vec<Diagnostic>) {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] })
+    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] })
 }
 
 fn linked_bytes(m: &Module) -> Vec<u8> {

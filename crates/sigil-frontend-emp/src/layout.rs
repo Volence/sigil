@@ -1394,12 +1394,31 @@ pub fn eval_data_with_root(
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
 ) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+    eval_data_with_root_and_base(file, name, here, include_root, None, defines)
+}
+
+/// Like [`eval_data_with_root`], but also threads an `embed_base` (port #2,
+/// `math.emp`'s `embed("../data/sine.bin")`) distinct from `include_root` —
+/// see [`crate::lower::LowerOptions::embed_base`]. `eval_data_with_root`
+/// delegates here with `embed_base: None` (identical to its pre-existing
+/// behavior), so every one of its callers is unaffected.
+pub fn eval_data_with_root_and_base(
+    file: &ast::File,
+    name: &str,
+    here: Option<HerePos>,
+    include_root: Option<&std::path::Path>,
+    embed_base: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+) -> (Option<DataBuf>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         ev.apply_here_pos(here);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
+        }
+        if let Some(base) = embed_base {
+            ev.set_embed_base(base.to_path_buf());
         }
         if !ev.datas.contains_key(name) {
             ev.error(file.module.span, format!("no data item named `{name}`"));

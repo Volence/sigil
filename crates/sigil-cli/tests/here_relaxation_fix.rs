@@ -33,7 +33,7 @@ use std::process::Command;
 fn compile_full(emp: &str) -> (Option<Vec<u8>>, Vec<String>) {
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     let mut msgs: Vec<String> = ldiags.iter().map(|d| d.message.clone()).collect();
     if ldiags.iter().any(|d| d.level == Level::Error) {
@@ -320,7 +320,7 @@ fn deferred_fatal_does_not_suppress_later_items() {
         }\n";
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower: {ldiags:?}");
     // The later items lowered: Tail's label exists and one deferred assert rides

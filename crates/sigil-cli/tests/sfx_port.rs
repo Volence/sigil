@@ -129,6 +129,7 @@ fn compile_real_file(
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
+        embed_base: None,
         defines: vec![],
     };
     let (module, ldiags) = lower_module(&file, &opts);

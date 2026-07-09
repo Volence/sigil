@@ -30,6 +30,11 @@ below where they differ; ~4 steps per tranche/batch):**
 4. **Implement** — build ratified items in Sigil, apply back to the current tranche's files
    if relevant, final gate pass. Then the next tranche.
 
+**Step 2 is the campaign's quality apex (Volence, 2026-07-09): nothing holds it back.** The
+other steps exist to feed it — if the best version of a file wants a missing construct,
+shared module, or assert form, BUILD it (the equ-fix precedent) rather than settle. The
+output of step 2 is the codebase the community lives in; "best of the best" is the bar.
+
 **Cadence (Volence, 2026-07-09, clarified same day): a retrospect PER CONVERSION, not one
 review at campaign end.** Each port's checkpoint packet carries a short retrospect section:
 the port's new ledger entries, each with a recommendation — implement in the next tranche /

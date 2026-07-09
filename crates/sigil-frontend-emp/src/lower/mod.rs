@@ -21,7 +21,7 @@ pub(crate) use code::is_recognized_mnemonic;
 use crate::ast;
 use crate::eval::eval_proc_body;
 use crate::layout::{
-    eval_attr_int, eval_data_with_root, eval_dispatch_with_root, eval_offsets_with_root,
+    eval_attr_int, eval_data_with_root_and_base, eval_dispatch_with_root, eval_offsets_with_root,
     validate_overlay, HerePos,
 };
 use sigil_ir::backend::{Cpu, IrStreamer};
@@ -41,6 +41,17 @@ pub struct LowerOptions {
     /// every pre-existing `LowerOptions { initial_cpu, .. }` construction is
     /// therefore unaffected by adding this field.
     pub include_root: Option<PathBuf>,
+    /// The join BASE relative `embed`/`import` paths resolve against (port
+    /// #2, `math.emp`'s `embed("../data/sine.bin")`, which climbs one level
+    /// above its own module directory to a sibling `data/` dir) — distinct
+    /// from `include_root`, which stays the sandbox's hard containment
+    /// boundary. `None` (the default) means "same as `include_root`", the
+    /// behavior every pre-existing caller had before this field existed. Set
+    /// this to the MODULE's own directory when `include_root` is a broader
+    /// ancestor (e.g. the whole source tree) and the module's `embed` paths
+    /// need to climb back out to a sibling directory still inside that
+    /// ancestor.
+    pub embed_base: Option<PathBuf>,
     /// Comptime `-D NAME=INT` defines (sound-migration T2 Task 1, R1): the
     /// `.emp` analogue of AS's `-D __DEBUG__`, so one module source produces
     /// different build shapes. Each `(name, value)` is injected as a resolved
@@ -67,6 +78,9 @@ struct Placement<'a> {
     /// check does not apply to its DATA items.
     byte_access: bool,
     include_root: Option<&'a Path>,
+    /// See [`LowerOptions::embed_base`] — the join base for relative
+    /// `embed`/`import` paths, distinct from the `include_root` boundary.
+    embed_base: Option<&'a Path>,
     defines: &'a [(String, i128)],
 }
 
@@ -181,6 +195,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
+                        embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
                     as_compat,
@@ -210,6 +225,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
+                        embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
                     as_compat,
@@ -227,6 +243,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
+                        embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
                     as_compat,
@@ -279,6 +296,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         origin,
                         byte_access,
                         include_root: opts.include_root.as_deref(),
+                        embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
                     as_compat,
@@ -319,6 +337,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
+                        embed_base: opts.embed_base.as_deref(),
                         defines: &opts.defines,
                     },
                     as_compat,
@@ -911,8 +930,14 @@ fn lower_data_item(
         return;
     }
     let here = here_pos(builder, placement.origin, &decl.name);
-    let (buf, asserts, mut ds) =
-        eval_data_with_root(file, &decl.name, Some(here), placement.include_root, placement.defines);
+    let (buf, asserts, mut ds) = eval_data_with_root_and_base(
+        file,
+        &decl.name,
+        Some(here),
+        placement.include_root,
+        placement.embed_base,
+        placement.defines,
+    );
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 

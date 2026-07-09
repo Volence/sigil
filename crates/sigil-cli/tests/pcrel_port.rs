@@ -53,7 +53,7 @@ fn compile_full(emp: &str) -> (Option<Vec<u8>>, Vec<String>) {
     if pdiags.iter().any(|d| d.level == Level::Error) {
         return (None, msgs);
     }
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     msgs.extend(ldiags.iter().map(|d| d.message.clone()));
     if ldiags.iter().any(|d| d.level == Level::Error) {

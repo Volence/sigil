@@ -175,6 +175,7 @@ fn compile_emp(
     let opts = sigil_frontend_emp::lower::LowerOptions {
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root: include_root.map(std::path::Path::to_path_buf),
+        embed_base: None,
         defines: defines.to_vec(),
     };
     let (module, lower_diags) = sigil_frontend_emp::lower::lower_module(&file, &opts);
@@ -600,6 +601,7 @@ fn run_emp_program(
     let opts = sigil_frontend_emp::lower::LowerOptions {
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root,
+        embed_base: None,
         defines: defines.to_vec(),
     };
 

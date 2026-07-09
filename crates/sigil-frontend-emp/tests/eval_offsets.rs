@@ -86,7 +86,7 @@ fn duplicate_member_name_is_an_error() {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
     assert!(diags[0].message.contains("duplicate"), "diagnostic was {:?}", diags[0].message);
 }
@@ -108,7 +108,7 @@ data D3: [u8; 1] = [3]
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     let dups: Vec<_> = diags.iter().filter(|d| d.message.contains("duplicate")).collect();
     assert_eq!(dups.len(), 1, "expected exactly one duplicate diagnostic, got {diags:?}");
 }
@@ -122,7 +122,7 @@ fn member_named_count_is_reserved() {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
     assert!(diags[0].message.contains("reserved"), "diagnostic was {:?}", diags[0].message);
 }

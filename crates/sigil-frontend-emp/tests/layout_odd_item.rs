@@ -19,7 +19,7 @@ fn full(src: &str) -> Vec<Diagnostic> {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, mut diags): (Module, Vec<Diagnostic>) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     let resolved =
         sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true).expect("resolve_layout");
     diags.extend(sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts));

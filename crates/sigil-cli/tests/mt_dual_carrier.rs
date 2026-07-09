@@ -40,7 +40,7 @@ fn emp_sections(src: &str) -> Vec<Section> {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != sigil_span::Level::Error), "parse: {pdiags:?}");
     let (module, ldiags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(ldiags.iter().all(|d| d.level != sigil_span::Level::Error), "lower: {ldiags:?}");
     module.sections
 }
