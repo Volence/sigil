@@ -206,7 +206,10 @@ fn find_best_matches(
             }
             // Good enough heuristic: stop if we found a long match. All
             // nearer (short-offset) candidates were already seen
-            // (s4lz.py:151-154).
+            // (s4lz.py:151-154). DO NOT remove, reorder, or "tune" this
+            // early-exit: it changes WHICH candidates the DP sees, silently
+            // breaking byte-exactness vs s4lz.py even though the output
+            // stays a valid stream.
             if best.length >= 32 {
                 break;
             }
@@ -353,7 +356,11 @@ pub fn try_compress(data: &[u8], opts: &Options) -> Result<Vec<u8>, CompressErro
     }
 
     // Phase 2: forward DP — arrival[i] = min compressed bytes for
-    // words[0..i) (s4lz.py:251-276).
+    // words[0..i) (s4lz.py:251-276). DO NOT reorder the option enumeration
+    // (literal first, then matches; ascending sublengths) or relax the
+    // strict `<` tie-break: equal-cost parses are broken by FIRST-FOUND, so
+    // enumeration order IS the tie-break — any change silently diverges
+    // from s4lz.py while still emitting valid streams.
     let mut arrival = vec![INF; num_words + 1];
     arrival[0] = 2; // first sequence always costs a token word
     let mut prev: Vec<Option<Prev>> = vec![None; num_words + 1];

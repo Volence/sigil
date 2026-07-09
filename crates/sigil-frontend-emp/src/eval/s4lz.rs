@@ -231,10 +231,11 @@ impl<'a> Evaluator<'a> {
             return Value::Poison;
         };
 
-        // s4lz.py's header packs data_len into a u16 BE field — same
-        // 65535-byte ceiling as zx0's wrapper, checked ahead of the
-        // dict+data window check below so a plain (dict-less) oversized
-        // input gets the SAME diagnostic code as zx0's, not a window error.
+        // Defense-in-depth, currently UNREACHABLE: s4lz.py (and our port)
+        // reject dict+data > MAX_WINDOW (32766) first, so no input can reach
+        // this u16-header-field ceiling today. It stays because the header
+        // packs data_len as u16 BE — if MAX_WINDOW were ever raised past
+        // 65535, this check (not silent truncation) must be what fires.
         if input.len() > 0xFFFF {
             self.error(
                 span,
@@ -246,7 +247,7 @@ impl<'a> Evaluator<'a> {
             return Value::Poison;
         }
 
-        let opts = sigil_s4lz::Options { tile_delta, dictionary: dict.clone().unwrap_or_default() };
+        let opts = sigil_s4lz::Options { tile_delta, dictionary: dict.unwrap_or_default() };
         match sigil_s4lz::try_compress(&input, &opts) {
             Ok(out) => {
                 let mut result = DataBuf::empty();
