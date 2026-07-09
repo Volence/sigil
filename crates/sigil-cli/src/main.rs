@@ -182,7 +182,10 @@ fn compile_emp(
         return (None, diags);
     }
     match link_sections(&module.sections, &module.link_asserts) {
-        Ok(image) => (Some(image), diags),
+        Ok((image, mut warns)) => {
+            diags.append(&mut warns);
+            (Some(image), diags)
+        }
         Err(mut ds) => {
             diags.append(&mut ds);
             (None, diags)
@@ -202,17 +205,19 @@ fn compile_emp(
 fn link_to_image(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
-) -> Result<sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>> {
+) -> Result<(sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
     let empty = sigil_ir::SymbolTable::new();
     let resolved = sigil_link::resolve_layout(sections, &empty, true)?;
     let image = sigil_link::link(&resolved, &empty)?;
     // The link succeeded and labels are at their final post-relaxation VMAs — now
     // decide the deferred guards against exactly those addresses (D-H.6/D-H.7).
+    // Warning-tier assert failures ([layout.odd-item] on data, D2.29) ride the
+    // Ok path so they surface without failing the build.
     let assert_diags = sigil_link::check_link_asserts(&resolved, &empty, asserts);
     if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(assert_diags);
     }
-    Ok(image)
+    Ok((image, assert_diags))
 }
 
 /// The no-map link seam: [`link_to_image`] then `flatten` (gap-fill 0x00, no
@@ -220,8 +225,9 @@ fn link_to_image(
 fn link_sections(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
-) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
-    Ok(sigil_link::flatten(&link_to_image(sections, asserts)?, 0x00))
+) -> Result<(Vec<u8>, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
+    let (image, warns) = link_to_image(sections, asserts)?;
+    Ok((sigil_link::flatten(&image, 0x00), warns))
 }
 
 /// The shared emp output tail: write `image` to `output` (if given), print it as
@@ -493,7 +499,10 @@ fn run_emp_program(
                 process::exit(1);
             }
             match link_rom(&sections, &link_asserts, &map) {
-                Ok(rom) => rom,
+                Ok((rom, warns)) => {
+                    render_program_diags(&manifest, &warns);
+                    rom
+                }
                 Err(ds) => {
                     render_program_diags(&manifest, &ds);
                     process::exit(1);
@@ -508,7 +517,10 @@ fn run_emp_program(
             // module → one section at 0, unchanged).
             resolve::place_sequential(&mut sections, 0);
             match link_sections(&sections, &link_asserts) {
-                Ok(image) => image,
+                Ok((image, warns)) => {
+                    render_program_diags(&manifest, &warns);
+                    image
+                }
                 Err(ds) => {
                     render_program_diags(&manifest, &ds);
                     process::exit(1);
@@ -530,9 +542,9 @@ fn link_rom(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
     map: &sigil_ir::map::MemoryMap,
-) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
-    let linked = link_to_image(sections, asserts)?;
-    sigil_link::emit_rom(&linked, map).map_err(|msg| {
+) -> Result<(Vec<u8>, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
+    let (linked, warns) = link_to_image(sections, asserts)?;
+    sigil_link::emit_rom(&linked, map).map(|rom| (rom, warns)).map_err(|msg| {
         vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
             message: msg,

@@ -125,6 +125,18 @@ pub(super) fn lower_script_item(
             super::data::stream_data(&buf, placement.cpu, decl.span);
         diags.append(&mut stream_diags);
         builder.define_label(&decl.name);
+        // D2.29 amendment: a script is CODE by construction (the word table
+        // shifts every resume segment odd with it), so an odd final address
+        // is the error-tier [layout.odd-item], same as a proc.
+        super::record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            super::OddItemKind::Code,
+            &decl.name,
+            decl.span,
+        );
         builder.emit_data(&bytes, fixups, decl.span);
     }
 

@@ -82,6 +82,17 @@ pub(super) fn lower_proc(
 ) {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     builder.define_label(&proc.name);
+    // D2.29 amendment: a 68k proc at an odd final address is an address-error
+    // crash — error-tier [layout.odd-item] parity check on the proc's label.
+    super::record_odd_item_assert(
+        file,
+        builder,
+        ctx.cpu,
+        ctx.as_compat,
+        super::OddItemKind::Code,
+        &proc.name,
+        proc.span,
+    );
     let (buf, mut ds, next_counter) = eval_proc_body(
         file,
         &proc.name,

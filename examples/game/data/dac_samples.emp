@@ -40,6 +40,12 @@
 // ===========================================================================
 
 module data.dac_samples
+// The snd_table descriptors below pack `u8 bank / u16 ptr / u16 len` at a
+// 5-byte stride — aeon's exact shape, read BYTE-wise by the driver loader —
+// so the ptr/len words legitimately sit at odd addresses. Opt out of the
+// D2.29 [layout.odd-item] warning visibly rather than restructure
+// byte-exact data.
+@allow("layout.odd-item")
 
 
 // --- the three synthetic sample blobs, bound to consts so their `.len` is a

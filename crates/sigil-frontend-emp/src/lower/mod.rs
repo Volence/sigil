@@ -176,6 +176,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
+                    as_compat,
                     &mut builder,
                     &mut diags,
                 );
@@ -203,6 +204,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
+                    as_compat,
                     &mut builder,
                     &mut diags,
                 );
@@ -426,10 +428,10 @@ fn lower_section_items(
     for (index, item) in sec.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
-                lower_data_item(file, decl, placement, builder, diags);
+                lower_data_item(file, decl, placement, as_compat, builder, diags);
             }
             ast::Item::Offsets(decl) => {
-                lower_offsets_item(file, decl, placement, builder, diags);
+                lower_offsets_item(file, decl, placement, as_compat, builder, diags);
             }
             ast::Item::Dispatch(decl) => {
                 lower_dispatch_item(file, decl, placement, as_compat, builder, diags, asm_counter);
@@ -683,8 +685,107 @@ fn lower_align_item(
             ),
         ],
         fatal: false,
+        level: Level::Error,
         span: decl.span,
     });
+}
+
+/// What kind of item an odd-address check covers (D2.29 amendment).
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum OddItemKind {
+    /// A 68k `proc` or `script` — code: an odd instruction address is a
+    /// guaranteed address-error crash, so the check is ERROR-tier.
+    Code,
+    /// A data item whose type carries word/long cells (incl. `offsets` /
+    /// `dispatch` tables — word rows by construction): an odd base makes
+    /// every word read an address error at USE time, so WARNING-tier.
+    WordData,
+}
+
+/// Record the `[layout.odd-item]` companion check (D2.29 audit amendment,
+/// §4.8): alignment is never *inserted* automatically, but a 68k item that
+/// needs it and lands at an odd FINAL address is diagnosed with the
+/// machine-applicable "insert `align 2`" fix-it. Final addresses exist only
+/// after the D2.25 placement fixpoint, so the check is a link-time parity
+/// assertion on the item's own label (`name % 2 == 0`) riding the same
+/// [`LinkAssert`] channel deferred guards use — always recorded (byte-free;
+/// a passing assert is free), never CPU-blind: Z80 sections have no
+/// alignment requirement and `@as_compat` modules pin the reference's
+/// placement as truth, so both are exempt.
+pub(super) fn record_odd_item_assert(
+    file: &ast::File,
+    builder: &mut IrBuilder,
+    cpu: Cpu,
+    as_compat: bool,
+    kind: OddItemKind,
+    name: &str,
+    span: Span,
+) {
+    use sigil_ir::assert::{LinkAssert, MsgPart};
+    use sigil_ir::expr::{BinOp, Expr};
+    if cpu != Cpu::M68000 || as_compat || allows_lint(file, "layout.odd-item") {
+        return;
+    }
+    let (level, why) = match kind {
+        OddItemKind::Code => (
+            Level::Error,
+            "an odd instruction address is a guaranteed address-error crash on 68k",
+        ),
+        OddItemKind::WordData => (
+            Level::Warning,
+            "its word/long cells become address errors when read",
+        ),
+    };
+    builder.push_link_assert(LinkAssert {
+        cond: Expr::Binary {
+            op: BinOp::Eq,
+            lhs: Box::new(Expr::Binary {
+                op: BinOp::Mod,
+                lhs: Box::new(Expr::Sym(name.to_string())),
+                rhs: Box::new(Expr::Int(2)),
+            }),
+            rhs: Box::new(Expr::Int(0)),
+        },
+        message: vec![
+            MsgPart::Text(format!("[layout.odd-item] `{name}` lands at odd address ")),
+            MsgPart::Expr(Expr::Sym(name.to_string())),
+            MsgPart::Text(format!(" — {why}; insert `align 2` before it")),
+        ],
+        fatal: false,
+        level,
+        span,
+    });
+}
+
+/// True when the module opts out of a named lint via `@allow("<id>")` —
+/// the first real consumer of the parsed-but-previously-inert `@allow`
+/// module attribute. String-literal form only: lint ids carry hyphens
+/// (`layout.odd-item`), which the bare path form cannot spell. A module
+/// whose data shape legitimately packs odd word cells (aeon's dac
+/// descriptor table — byte-wise-read by the driver loader) opts out
+/// visibly at the top of the file instead of restructuring byte-exact
+/// data. (Flagged for ratification in the tranche-0 notes.)
+fn allows_lint(file: &ast::File, id: &str) -> bool {
+    file.attrs.iter().any(|a| {
+        a.name == "allow"
+            && a.args.iter().any(|arg| matches!(arg, ast::Expr::Str(s, _) if s == id))
+    })
+}
+
+/// True when `buf` carries any 68k-word-read cell — the `[layout.odd-item]`
+/// data-item trigger. Pure byte runs have no alignment need, and neither do
+/// LITTLE-ENDIAN cells (`u16le` scalars/exprs, `winptr` windowed pointers):
+/// in a 68k section those are by definition data for the Z80 side (D2.26 —
+/// the dac_samples shape stores them byte-exactly at odd addresses), read
+/// byte-wise, never through a 68k word access.
+fn buf_carries_words(buf: &crate::value::DataBuf) -> bool {
+    use crate::value::Cell;
+    buf.cells.iter().any(|c| match c {
+        Cell::Scalar { width, le, .. } | Cell::Expr { width, le, .. } => *width >= 2 && !le,
+        Cell::SymRef { width, windowed, .. } => *width >= 2 && !windowed,
+        Cell::RelOffset { .. } => true,
+        Cell::Bytes(_) => false,
+    })
 }
 
 /// Lower one item-position guard (D5.2 / D-H.4). At an EXACT position it evaluates
@@ -740,6 +841,7 @@ fn lower_data_item(
     file: &ast::File,
     decl: &ast::DataDecl,
     placement: &Placement,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -759,6 +861,19 @@ fn lower_data_item(
     let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
+    // D2.29 amendment: a word/long-bearing data item at an odd final address
+    // warns [layout.odd-item] (pure byte runs have no alignment need).
+    if buf_carries_words(&buf) {
+        record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            OddItemKind::WordData,
+            &decl.name,
+            decl.span,
+        );
+    }
     builder.emit_data(&bytes, fixups, decl.span);
     // Drain any deferred guards from inside the item's initializer (D-H.4): their
     // anchor is the item's own label, defined just above.
@@ -781,6 +896,7 @@ fn lower_offsets_item(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
     placement: &Placement,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -791,6 +907,19 @@ fn lower_offsets_item(
     let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
+    // D2.29 amendment: an offsets table is dc.w words by construction, so an
+    // odd base warns [layout.odd-item] like any word-bearing data item.
+    if buf_carries_words(&buf) {
+        record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            OddItemKind::WordData,
+            &decl.name,
+            decl.span,
+        );
+    }
     builder.emit_data(&bytes, fixups, decl.span);
 }
 
@@ -836,6 +965,17 @@ fn lower_dispatch_item(
     let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
+    // D2.29 amendment: a dispatch table's rows are word/long cells by
+    // construction — an odd base warns [layout.odd-item].
+    record_odd_item_assert(
+        file,
+        builder,
+        placement.cpu,
+        as_compat,
+        OddItemKind::WordData,
+        &decl.name,
+        decl.span,
+    );
     builder.emit_data(&bytes, fixups, decl.span);
 
     // 9a (D9.1, R9a.1): inline bodies lower immediately after the table, in
