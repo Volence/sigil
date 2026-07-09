@@ -180,6 +180,11 @@ script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
         // into timer(a0), then a hidden resume point decrements it once per
         // frame until it hits zero. The store-frame also ticks, so #64
         // draws 63 parked frames and falls through on the 64th tick.
+        // `.park` names the STATE, at the loop top — a branch that wants
+        // "go wait again" jumps straight here (one transfer), instead of
+        // aiming at an empty label before the `}` and riding the loop's
+        // hidden back-edge (two).
+    .park:
         wait_frames #WAIT_TIME, timer(a0)
 
         // --- proximity check: runs ON the frame the park expires ---
@@ -191,7 +196,7 @@ script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
                                         //   (prelude helper: negates d0 if I face the
                                         //    other way, so "small positive = in front of me")
         cmp.w   #ATTACK_RANGE, d0       // within $60 px of my mouth?
-        bhi     .rearm                  // out of range → around the loop, park again
+        bhi     .park                   // out of range → go park again
 
         // --- shoot windup: a park WITH per-frame work ---
         // Every parked frame must tick the countdown AND watch for the
@@ -212,11 +217,10 @@ script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
         beq     .windup_done            // yes → back to idle (same frame)
         yield   .windup_tick            // frame over — next frame: another tick
 
-        // --- re-arm: back to idle, around the loop to the park ---
+        // --- re-arm: back to idle, out through the loop's back-edge ---
     .windup_done:
         anim    Ani.Idle                // back to the idle animation
-    .rearm:                             // (the out-of-range check re-enters here)
-    }                                   // loop bottom → top → park again
+    }                                   // loop bottom → top → .park again
 }
 
 /// The projectile's per-frame brain — verbatim from the proc version (a seed is

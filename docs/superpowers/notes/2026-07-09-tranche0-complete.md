@@ -97,6 +97,17 @@ CRITICAL/MAJOR fixed and pinned, choices recorded below).
 
 ## Deferred with rationale (all recorded, none blocking)
 
+- **`continue`/"loop end" for script loops — considered and NOT added**
+  (Volence raised it at the checkpoint, reading the exhibit's empty `.rearm:`
+  end-label). The case dissolves into an existing idiom: put the USER label
+  at the loop TOP and branch there directly (`bhi .park`) — one transfer
+  instead of label-then-back-edge, and the label names the STATE, which a
+  builtin `continue` target never could. A `continue` STATEMENT can't serve
+  the real case anyway (asm branches are conditional — you need a target,
+  not a statement). Counts as evidence FOR the S2-D15/9c gate on `for`/
+  `break`; if ports keep growing dummy end-labels regardless, that's the
+  demand signal to revisit.
+
 - Even-rounding of chained 68k section bases in `place_sequential`/
   `place_sections` (Item-4 review M1's structural half): an odd chained base
   makes the odd-item ERROR unactionable at module level (the fix-it now also
