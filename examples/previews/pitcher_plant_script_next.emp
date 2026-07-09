@@ -39,9 +39,11 @@
 // Note how each state's nature picks its construct: watching is a
 // park-with-work (`yield .watch`), cooling down is a pure park
 // (`wait_frames`), and this brain has NO pure sequence point left — so not
-// a single bare yield appears. Compare the manual-spelling exhibit
-// (pitcher_plant_script.emp): three bare yields,
-// two back-edge jbras, an entry segment, and two hand-managed timer stores.
+// a single bare yield appears. The pinned exhibit
+// (pitcher_plant_script.emp) uses the same spellings on the OLD brain: its
+// wait state is the pure park and its windup the park-with-work — the
+// difference between the two files is the brain and the encoding, not the
+// language.
 
 module badniks.pitcher_plant_script_next in obj_bank
 

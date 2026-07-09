@@ -8,15 +8,17 @@
 // Byte-pinned acceptance exhibit ALONGSIDE the proc version
 // (pitcher_plant_script_acceptance.rs pins its hidden resume table).
 //
-// DELIBERATELY THE MANUAL SPELLING: this file parks with the raw two-line
-// idiom (`yield` + `jbra .back`) and bare yields throughout, because its job
-// is to show what the construct DOES — each yield's store/exit/resume is
-// narrated at the site, so the desugaring is visible on the page. New brains
-// should be written in the declarative style instead (`yield .label` for a
-// park with per-frame work, `wait_frames` for a pure park — see
-// examples/previews/pitcher_plant_script_next.emp, the same badnik in that
-// style). The equivalence (state-per-state) is argued in
-// docs/superpowers/notes/2026-07-08-item9b-implementation-notes.md (T5).
+// Written in the DECLARATIVE style — each state's nature picks its construct:
+//   pure park                 → `wait_frames`   (one line: park N frames, drawing each)
+//   park with per-frame WORK  → `yield .label`  (the resume point named on the line)
+//   genuine sequence          → bare `yield`    (pause exactly ONE frame and continue
+//                                at the next line — this brain never needs one, but
+//                                that is all a bare yield is)
+// The same badnik with a sharper brain (instant reaction + post-shot
+// cooldown) and the real `code_word` encoding is
+// examples/previews/pitcher_plant_script_next.emp. The equivalence with the
+// proc version (state-per-state; one-frame divergences at two transitions)
+// is argued in docs/superpowers/notes/2026-07-08-item9b-implementation-notes.md.
 //
 // ────────────────────────────────────────────────────────────────────────────
 // HOW TO READ A `script` — the coroutine model in one minute (Aeon terms)
@@ -57,30 +59,29 @@
 // slot's offset differ.)
 //
 // Frame-by-frame trace of a freshly spawned plant (WAIT_TIME = 64):
-//   frame 0:  spawn copied ObjDef.code into (a0), so the engine enters at the
-//             entry segment. timer := 64, fall into the loop, .wait_tick
-//             decrements to 63, not zero → `yield`
-//             (draw; resume point = the `jbra .wait_tick` after the yield)
-//   frame 1:  engine resumes AFTER that yield → `jbra .wait_tick` →
-//             timer := 62 → yield again
-//   … one timer tick per frame …
-//   frame 63: timer hits 0 → `beq .check` → the proximity test runs and the
-//             plant either starts the shoot windup or re-arms — all WITHIN
-//             this same frame. A frame only ends where a `yield` is; straight-
-//             line code between yields is "free" (costs cycles, not frames).
+//   frame 0:  spawn copied ObjDef.code into (a0); the engine enters at the
+//             loop top. `wait_frames` stores 64 into timer(a0), ticks it to
+//             63 (not zero yet), and parks — draw, frame over.
+//   frames 1..62: the park's hidden resume point re-runs the tick, one
+//             frame at a time — 62, 61, … 1 — drawing each frame.
+//   frame 63: the tick hits 0 → fall out of the park → the proximity test
+//             runs and the plant either starts the shoot windup or goes
+//             around the loop to park again — all WITHIN this same frame.
+//             A frame only ends at a park or a yield; straight-line code
+//             between them is "free" (costs cycles, not frames).
 //
 // What the `script` buys over the three procs:
-//   - `yield` IS the state store — no `routine`/`falls_into` bookkeeping
+//   - the parks ARE the state store — no `routine`/`falls_into` bookkeeping
 //     anywhere in this file, and the state machine reads top-to-bottom as one
-//     story. The proc version's three states are three SEGMENTS of this body:
-//         init  → the entry segment (before `loop`)
-//         wait  → the `.wait_tick` frame-loop
-//         shoot → the `.windup_tick` frame-loop
-//   - user labels work ACROSS yield boundaries: the body is one flattened
-//     proc-shaped scope, so `jbra .wait_tick` in a resume segment resolves to
-//     the label from the previous segment for free.
+//     story. The proc version's three states map onto this body as:
+//         init + wait → the `wait_frames` park (one line)
+//         shoot       → the `.windup_tick` frame-loop
+//   - user labels work ACROSS frame boundaries: the body is one flattened
+//     proc-shaped scope, so `yield .windup_tick` resumes at a label defined
+//     in an earlier segment for free.
 //   - a stale/garbage routine value is unconstructible from the language: the
-//     yields form a closed set, and only they (and spawn) write the slot.
+//     resume points form a closed set, and only they (and spawn) write the
+//     slot.
 // ────────────────────────────────────────────────────────────────────────────
 
 module badniks.pitcher_plant_script in obj_bank
@@ -167,46 +168,35 @@ data SeedDef = ObjDef{
 ///                              table — S2-D12(b)); `word_offsets` is the mock
 ///                              prelude's table contract this exhibit pins
 ///                              against today.
-///   shows Draw_Sprite        — the per-frame epilogue: EVERY bare `yield`
+///   shows Draw_Sprite        — the per-frame epilogue: every park and yield
 ///                              exits through Draw_Sprite. An object that
-///                              yields cannot forget to draw (D9.6 — a bare
+///                              parks cannot forget to draw (D9.6 — a bare
 ///                              rts exit is unrepresentable).
 script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
-    // ENTRY SEGMENT — runs on the object's first frame alive: spawn copied
-    // Def.code (this segment) into the routine word at (a0).
-    move.b  #WAIT_TIME, timer(a0)       // init (entry segment): arm the timer
     loop {                              // unconditional loop — the closing `}` jumps back here
-        // --- wait: count down one frame at a time until the timer elapses ---
-        // One trip around this three-line loop = ONE FRAME of game time.
-    .wait_tick:
-        subq.b  #1, timer(a0)           // one frame off the idle countdown
-        beq     .check                  // elapsed → run the proximity check (same frame)
-        yield                           // still waiting: draw + resume next frame…
-        jbra    .wait_tick              // …then keep counting down
-                                        //   (this jbra is frame N+1's first instruction:
-                                        //    execution resumes AFTER the yield, not at it)
+        // --- wait: a PURE park, one declarative line ---
+        // Park WAIT_TIME frames (drawing via the epilogue each frame), then
+        // fall through. Expands to exactly the tick idiom: store WAIT_TIME
+        // into timer(a0), then a hidden resume point decrements it once per
+        // frame until it hits zero. The store-frame also ticks, so #64
+        // draws 63 parked frames and falls through on the 64th tick.
+        wait_frames #WAIT_TIME, timer(a0)
 
-        // --- proximity check: is the player within range on our facing side? ---
-        // Reached only on the frame the timer expired; no yield until the
-        // plant has decided what to do, so the decision costs zero frames.
-    .check:
+        // --- proximity check: runs ON the frame the park expires ---
+        // No park until the plant has decided what to do, so the decision
+        // costs zero frames.
         move.w  Player_1.x_pos, d0      // d0 := player's world X
         sub.w   x_pos(a0), d0           // d0 := player X − my X (signed distance)
         facing_abs d0                   // signed distance, normalized to facing
                                         //   (prelude helper: negates d0 if I face the
                                         //    other way, so "small positive = in front of me")
         cmp.w   #ATTACK_RANGE, d0       // within $60 px of my mouth?
-        bhi     .rearm                  // out of range → re-arm, back to waiting
+        bhi     .rearm                  // out of range → around the loop, park again
 
-        // --- shoot windup: play the anim, fire on FIRE_FRAME, count down ---
-        // KNOWN one-frame divergence from the proc version (documented in the
-        // 9b notes): the proc version's transition frame sets the timer and
-        // draws WITHOUT decrementing (the countdown starts next frame in
-        // `shoot`); here `.check` falls straight into `.windup_tick`, so the
-        // first decrement happens on the transition frame — the windup holds
-        // $28 frames, not $29. Both are valid brains; the seed still fires at
-        // timer == FIRE_FRAME. (One extra `yield` + `jbra .windup_tick` right
-        // here would restore exact frame parity — deliberately not taken.)
+        // --- shoot windup: a park WITH per-frame work ---
+        // Every parked frame must tick the countdown AND watch for the
+        // mouth-open frame, so this state keeps its explicit frame-loop —
+        // and the yield NAMES where the next frame starts, on the line.
         move.b  #SHOOT_WINDUP, timer(a0)    // windup countdown: timer := $28
         anim    Ani.Shoot               // prelude helper: switch to the shoot animation
     .windup_tick:
@@ -219,24 +209,14 @@ script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
                                         //   seed flies out of the mouth, whichever way I face
     .no_fire:
         tst.b   timer(a0)               // windup finished?
-        beq     .rearmed                // yes → switch back to idle anim (same frame)
-        yield                           // still winding up: draw + resume next frame…
-        jbra    .windup_tick            // …then keep counting down
+        beq     .windup_done            // yes → back to idle (same frame)
+        yield   .windup_tick            // frame over — next frame: another tick
 
-        // --- re-arm: back to the idle animation, reset the wait timer ---
-        // Two entry points, one exit:
-        //   .rearmed — the windup just finished → also reset the animation
-        //   .rearm   — the player was out of range → anim never left Idle, skip it
-    .rearmed:
+        // --- re-arm: back to idle, around the loop to the park ---
+    .windup_done:
         anim    Ani.Idle                // back to the idle animation
-    .rearm:
-        move.b  #WAIT_TIME, timer(a0)   // re-arm the idle countdown
-        yield                           // draw this frame; resume at the loop top
-                                        //   (next frame: the instruction after this
-                                        //    yield is the loop's closing `}`, whose
-                                        //    hidden back-branch lands on `loop {` —
-                                        //    which falls straight into .wait_tick)
-    }
+    .rearm:                             // (the out-of-range check re-enters here)
+    }                                   // loop bottom → top → park again
 }
 
 /// The projectile's per-frame brain — verbatim from the proc version (a seed is
