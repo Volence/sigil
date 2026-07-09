@@ -95,6 +95,38 @@ pub fn assemble_mixed_dac_as_side(aeon: &Path, debug: bool) -> Result<Module, St
         .map_err(|d| format!("assemble (mixed AS side): {} diagnostics; first: {:?}", d.len(), d.first()))
 }
 
+/// Assemble the AS side of the T2 MIXED `.asm`+`.emp` build: everything
+/// `assemble_mixed_dac_as_side` does, PLUS `SIGIL_EMP_MT` defined so
+/// `main.asm`'s Moving-Trucks block (lines 150-208: the six streaming-bank
+/// includes + the pitch-contiguity fatal) is REPLACED by an `org` resume — per
+/// shape, `$6553A` (`__DEBUG__`) or `$63AE8` (plain) — leaving the whole
+/// `$60607..end` window for the `.emp` side's `mt_bank` section to supply.
+/// Both `SIGIL_EMP_DAC` and `SIGIL_EMP_MT` are independent gates (R6); T2's
+/// mixed build exercises both ON together, DAC-only stays covered by the
+/// unchanged `assemble_mixed_dac_as_side` T1 tests.
+///
+/// Returns the UNLINKED [`Module`], exactly like `assemble_mixed_dac_as_side`:
+/// the T2 mixed harness concatenates these sections with BOTH `.emp` modules'
+/// placed sections (`dac_samples.emp` + `mt_bank.emp`) and runs ONE
+/// `resolve_layout` + `link` over the union, so every cross-seam symbol
+/// (including `movea.l #SongTable`/`#SongPatchTable` in `sound_api.asm`,
+/// deferred by Task 3's imm32 fixup) resolves through a single shared table.
+pub fn assemble_mixed_mt_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed MT AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable
