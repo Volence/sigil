@@ -98,16 +98,14 @@ pub struct Vec {
 // ===========================================================================
 // ObjDef — what a level's object list (or a `spawn`) instantiates
 // ===========================================================================
-// `vel`/`frame` carry DEFAULTS (S2-D13(h), checkpoint ruling 2026-07-09):
-// most objects neither move nor start mid-animation at spawn, so a literal
-// writes `vel: default` / `frame: default` — NAMED elision: the field is on
-// the page, the value comes from this declaration. Omitting a field is
-// always a compile error (the message teaches the `name: default` spelling
-// when one exists); `anim` deliberately has no default — which animation an
-// object starts in is a real per-object choice. (The bulk `..` marker was
-// built and retired at the checkpoint: it couldn't say WHICH fields it
-// covered; re-ledgered for a struct with enough defaults that per-field
-// `default` reads as noise.)
+// `vel`/`frame` carry DEFAULTS: most objects neither move nor start
+// mid-animation at spawn, so a literal writes `vel: default` /
+// `frame: default` — the field name stays on the page, the value comes from
+// this declaration. Every declared field must be named at every literal
+// (omitting one is a compile error), so what an object spawns with is
+// always fully visible at its definition site. `anim` deliberately has no
+// default — which animation an object starts in is a real per-object
+// choice.
 // Field order is chosen (not just "declaration order") to keep the 4-byte
 // `vel` field EVEN-offset in this dense/packed layout: `code`(4)+`map`(4)+
 // `art`(4)+`col`(1)+`zpri`(1)+`size`(2) = 16 bytes before `vel`, so `vel`
