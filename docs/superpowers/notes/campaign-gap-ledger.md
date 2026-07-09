@@ -40,10 +40,15 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   say WHY — equ vs label — and point at the workaround). — SHIPPED with port #1 (Task 5
   follow-up, `relax.rs`): each relaxation pass now overlays a best-effort `equ` fold
   (`equ_lookup_overlay`) on top of that pass's label table before selecting a
-  `RelaxAbsSym`/`JmpJsrSym`/`RelaxLadder` rung, so a target naming an equ, an equ-on-equ
+  `RelaxAbsSym`/`JmpJsrSym` rung, so a target naming an equ, an equ-on-equ
   chain, or an equ derived from a label all resolve — grow-only width protection is
   automatic (same `v`/gate as label targets, no new policy). The FINAL, loud `fold_equ_syms`
   pass at convergence is unchanged (still the authoritative cycle/unresolved-equ error).
+  Review narrowing (same day): the equ overlay applies to the ABS-ONLY fragments above ONLY —
+  the jbra/ladder-to-equ shape is REFUSED by review ruling (a ladder's pc-relative rungs
+  would silently branch pc-relative to a NEAR absolute equ value, e.g. `equ R = $420` near
+  the section → `60 1E`; branch targets are labels, use jmp/jsr for absolutes — the ladder's
+  unresolved-target diagnostic says exactly that when the target is an equ).
 - [port #1 hblank, 2026-07-09] **movem `(0,An)` → `(An)` collapse not ported** from the AS
   front-end — exists there to fold forward-reference displacements that resolve to 0
   post-pass, which `.emp`'s resolved eval model doesn't produce. Believed unreachable in

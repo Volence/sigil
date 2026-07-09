@@ -605,11 +605,14 @@ pub fn resolve_layout(
         }
 
         // (a2) Task 5 (R-T0.6): overlay a best-effort `equ` fold on top of this
-        // pass's label table, so a relaxable fragment's `target` may name an
-        // `equ` (directly, or an equ-on-equ chain, or an equ derived from a
-        // label) — not just a bare layout label. `equ_lookup` is used ONLY by
-        // rung selection below; the FINAL, authoritative equ fold (with its
-        // loud unresolved/cycle diagnostic) still runs once at convergence (c4).
+        // pass's label table, so an ABS-ONLY relaxable fragment's `target`
+        // (`RelaxAbsSym`/`JmpJsrSym` — NOT `RelaxLadder`, whose pc-relative
+        // rungs must never treat an absolute equ value as a branch destination;
+        // see the ladder arm) may name an `equ` (directly, an equ-on-equ chain,
+        // or an equ derived from a label) — not just a bare layout label.
+        // `equ_lookup` is used ONLY by rung selection below; the FINAL,
+        // authoritative equ fold (with its loud unresolved/cycle diagnostic)
+        // still runs once at convergence (c4).
         let equ_overlay = equ_lookup_overlay(&placed, &syms);
         let equ_lookup = |n: &str| equ_overlay.get(n).copied().or_else(|| syms.resolve(n, None));
 
@@ -660,17 +663,20 @@ pub fn resolve_layout(
                         }
                     }
                     Fragment::RelaxLadder { candidates, target, span } => {
-                        let v = match target.fold(&equ_lookup) {
+                        // LABELS ONLY — deliberately NOT `equ_lookup` (review
+                        // ruling on the Task 5 commit): a ladder's pc-relative
+                        // rungs (bra.s/bra.w) would treat an equ's ABSOLUTE
+                        // value as a branch destination and, when near, silently
+                        // encode a pc-relative displacement to it (`jbra R` with
+                        // `equ R = $420` near the section → `60 1E`). Branch
+                        // targets must be spelled as labels; jmp/jsr (abs-only
+                        // rungs, safe by construction) keep the equ overlay.
+                        let v = match target.fold(&|n| syms.resolve(n, None)) {
                             Fold::Value(v) => v,
                             Fold::Poison => {
-                                return Err(vec![Diagnostic {
-                                    level: Level::Error,
-                                    message: format!(
-                                        "unresolved branch/ladder target in section {}",
-                                        sec.name
-                                    ),
-                                    primary: *span,
-                                }]);
+                                return Err(vec![unresolved_ladder_target_diag(
+                                    target, &placed, &sec.name, &syms, *span,
+                                )]);
                             }
                         };
                         let frag_start = frag_start_vma(sec, &bps, origin, fi);
@@ -725,7 +731,11 @@ pub fn resolve_layout(
                 let bps = shift_breakpoints(sec, &rungs[si]);
                 for fi in 0..sec.fragments.len() {
                     if let Fragment::RelaxLadder { candidates, target, span } = &sec.fragments[fi] {
-                        let v = match target.fold(&equ_lookup) {
+                        // LABELS ONLY, matching the selection arm in (b): ladder
+                        // targets never resolve through the equ overlay (review
+                        // ruling — see the (b) arm's comment). An unresolvable
+                        // target already errored loudly in (b) this same pass.
+                        let v = match target.fold(&|n| syms.resolve(n, None)) {
                             Fold::Value(v) => v,
                             Fold::Poison => continue, // reported in pass (b) already
                         };
@@ -875,8 +885,11 @@ const MAX_EQU_PASSES: usize = 8;
 
 /// Best-effort `equ` fold (Task 5 / R-T0.6) against the CURRENT pass's label
 /// table `syms` — used by the relaxation fixpoint's rung-selection step (b) so
-/// a [`Fragment::RelaxAbsSym`]/`JmpJsrSym`/`RelaxLadder` `target` naming an
-/// `equ` (not just a layout label) can resolve there too. Unlike
+/// a [`Fragment::RelaxAbsSym`]/`JmpJsrSym` `target` naming an `equ` (not just
+/// a layout label) can resolve there too. Deliberately NOT `RelaxLadder`
+/// (review ruling — see the ladder selection arm): those two are abs-only, so
+/// any equ value is a clean absolute; a ladder's pc-relative rungs would
+/// silently branch pc-relative to a near absolute equ value. Unlike
 /// [`fold_equ_syms`] (the FINAL post-convergence fold, which errors loudly on
 /// an unresolved equ), this is silently partial: an equ that can't fold YET —
 /// because it depends on another equ not yet resolved this pass, or on a
@@ -1092,6 +1105,33 @@ fn unresolved_relax_abs_sym_diag(
              `{name}` not defined in this link — expected when compiling a cross-seam module \
              standalone; supply the map/harness composition that defines it"
         )
+    };
+    Diagnostic { level: Level::Error, message, primary: span }
+}
+
+/// The `unresolved branch/ladder target` diagnostic. Ladder targets resolve
+/// against LABELS only (review ruling on the Task 5 commit — see the
+/// `RelaxLadder` selection arm), so when the unresolved name IS an `equ`
+/// defined in this link, the refusal is deliberate and the message says so
+/// with the steer; otherwise it's a plain missing symbol.
+fn unresolved_ladder_target_diag(
+    target: &Expr,
+    placed: &[Section],
+    section: &str,
+    syms: &SymbolTable,
+    span: Span,
+) -> Diagnostic {
+    // Labels-only view (empty equ overlay) — the same view the ladder folds.
+    let name = first_unresolved_sym(target, syms, &std::collections::HashMap::new())
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let is_equ = placed.iter().any(|s| s.equ_syms.iter().any(|e| e.name == name));
+    let message = if is_equ {
+        format!(
+            "unresolved branch/ladder target in section {section}: `{name}` is an equ — \
+             branch targets must be labels; use jmp/jsr for an absolute target"
+        )
+    } else {
+        format!("unresolved branch/ladder target in section {section} (symbol `{name}`)")
     };
     Diagnostic { level: Level::Error, message, primary: span }
 }
@@ -2588,6 +2628,97 @@ mod tests {
         // SomeLabel = 0x120000 → abs.l (long candidate, 6 bytes): sanity that
         // this test actually exercises a non-trivial width, not both-zero.
         assert_eq!(linked_label.section("c").unwrap().bytes.len(), 4 + 6);
+    }
+
+    #[test]
+    fn jbra_targeting_a_near_integer_equ_is_a_loud_error_not_a_pcrel_branch() {
+        // Review finding on the Task 5 commit (reviewer-probed, real bytes):
+        // `jbra R` with `equ R = $420` and the section at lma $400 would, if the
+        // equ overlay fed the ladder, compute bra.s disp $1E and silently emit
+        // `60 1E` — a PC-RELATIVE branch to what the author meant as an ABSOLUTE
+        // address. Ratified narrowing: ladder targets resolve against LABELS
+        // only; an equ target is the parent commit's loud refusal. This test is
+        // the regression pin: LOUD error, never `60 1E`.
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0x400,
+            labels: vec![],
+            fragments: vec![jbra("R")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![equ("R", Expr::Int(0x420))],
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.level == Level::Error
+                && d.message.contains("unresolved branch/ladder target")),
+            "expected the loud unresolved-ladder-target error, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn jmp_jsr_sym_targeting_an_equ_selects_abs_w() {
+        // The KEPT half of the review narrowing: `JmpJsrSym` (jmp/jsr) is
+        // abs-only by construction, so an equ target is a clean absolute.
+        // `jmp R` with `equ R = $FFFF8022` → asl_width_rule masks to 24-bit →
+        // abs.w: `4EF8 8022`.
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![Fragment::JmpJsrSym {
+                is_jsr: false,
+                target: Expr::Sym("R".into()),
+                span: sp(),
+            }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![equ("R", Expr::Int(0xFFFF_8022u32 as i64))],
+        };
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x4E, 0xF8, 0x80, 0x22]);
+    }
+
+    #[test]
+    fn jbra_targeting_an_equ_alias_of_a_label_is_refused_by_review_ruling() {
+        // Deliberate narrowing (reviewed out on the Task 5 commit): even an equ
+        // that merely ALIASES a code label (`equ P = TheLabel`) is refused as a
+        // jbra/ladder target — branch targets must be spelled as their label
+        // (`jbra TheLabel`); use jmp/jsr for an absolute target. A ladder's
+        // pc-relative rungs cannot distinguish an equ-of-label from an
+        // arbitrary absolute int, and nothing needs the alias spelling.
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0x400,
+            labels: vec![Label { name: "TheLabel".into(), offset: 0 }],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
+                jbra("P"),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![equ("P", Expr::Sym("TheLabel".into()))],
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.level == Level::Error
+                && d.message.contains("unresolved branch/ladder target")),
+            "expected the loud unresolved-ladder-target error (equ targets refused for \
+             ladders), got: {err:?}"
+        );
     }
 
     #[test]
