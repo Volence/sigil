@@ -755,9 +755,14 @@ script brain (a0: *S) (encoding: word_offsets) shows done {{
 proc done () {{ rts }}
 "
     );
+    // (Both scripts end in the park, so the sugar's PRECISE trailing-
+    // wait_frames fallthrough warning fires — filter it; the bytes are the
+    // concern here, and the warning itself is pinned by its own test.)
     let (m1, e1) = lower(&sugar);
+    let e1: Vec<_> = e1.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
     assert!(e1.is_empty(), "sugar lowers clean: {e1:?}");
     let (m2, e2) = lower(&hand);
+    let e2: Vec<_> = e2.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
     assert!(e2.is_empty(), "hand spelling lowers clean: {e2:?}");
     assert_eq!(linked_bytes(&m1), linked_bytes(&m2), "byte-identical expansion");
 }
@@ -795,8 +800,10 @@ proc done () {{ rts }}
 "
     );
     let (m1, e1) = lower(&sugar);
+    let e1: Vec<_> = e1.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
     assert!(e1.is_empty(), "u16 slot lowers clean: {e1:?}");
     let (m2, e2) = lower(&hand);
+    let e2: Vec<_> = e2.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
     assert!(e2.is_empty(), "{e2:?}");
     assert_eq!(linked_bytes(&m1), linked_bytes(&m2));
 }
@@ -894,5 +901,137 @@ proc done () { rts }
 "
     .to_string();
     let (_, errs) = lower(&src);
+    let errs: Vec<_> = errs.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
     assert!(errs.is_empty(), "overlay slot resolves: {errs:?}");
+}
+
+// ---- trio-review stage-2 pins ---------------------------------------------------
+
+#[test]
+fn trailing_wait_frames_warns_fallthrough_precisely() {
+    // The expansion's own `beq` reaches the trailing `__wfdone$k` label, so
+    // a body ENDING in wait_frames falls through EVERY time the park
+    // completes — the compiler synthesized that path and must say so
+    // (trio review M3), even though the last INSTRUCTION is the epilogue jbra.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #8, timer(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.fallthrough]")),
+        "a trailing park is a known fallthrough: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_out_of_range_literals_are_refused() {
+    for bad in ["#256", "#300", "#-1"] {
+        let src = format!(
+            "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames {bad}, timer(a0)
+    rts
+}}
+proc done () {{ rts }}
+"
+        );
+        let msgs = msgs(&src);
+        assert!(
+            msgs.iter().any(|m| m.contains("outside") && m.contains("range")),
+            "{bad} on a u8 slot must be refused: {msgs:?}"
+        );
+    }
+}
+
+#[test]
+fn duplicate_script_labels_error_early_with_a_span() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .x:
+    nop
+    .x:
+    yield .x
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("defined twice")),
+        "duplicate labels are a spanned frontend error, not a spanless link error: {msgs:?}"
+    );
+}
+
+#[test]
+fn interleaved_yield_kinds_keep_ordinals_and_rows_aligned() {
+    // The batch's central invariant: bare yields, named yields, and
+    // wait_frames interleave in ONE first-need member order. 4 rows:
+    // entry(0), bare site(1), __wf(2), .top(3) — first table word = 8.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .top:
+    nop
+    yield
+    wait_frames #4, timer(a0)
+    yield .top
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "clean: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x08], "4 rows × 2 bytes: {bytes:02X?}");
+}
+
+#[test]
+fn forward_defined_named_resume_target_works() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    yield .later
+    nop
+    .later:
+    yield .later
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "forward targets resolve: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x04], "2 rows: entry + the shared .later member");
+}
+
+#[test]
+fn bad_then_good_wait_frames_keeps_the_queue_aligned() {
+    // The first wait_frames fails width resolution; the second is fine — the
+    // queue must stay aligned (one pop per site) and the whole script is
+    // refused with exactly the one field diagnostic.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #4, nosuch(a0)
+    wait_frames #4, timer(a0)
+    rts
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("nosuch")),
+        "the bad slot is named: {msgs:?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("internal:")),
+        "no queue-drift internal error: {msgs:?}"
+    );
 }

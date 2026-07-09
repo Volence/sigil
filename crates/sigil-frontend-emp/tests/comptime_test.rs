@@ -161,3 +161,52 @@ fn pub_comptime_test_is_rejected() {
         "tests are not exportable: {perrs:?}"
     );
 }
+
+// ---- stage-2 pins (Item-10 review) ----------------------------------------------
+
+#[test]
+fn section_nested_test_is_rejected_loudly() {
+    // A section-nested test would parse, strip, and silently never run —
+    // the worst failure mode a test feature can have (review M1).
+    let (_, perrs) = parse_str(
+        "module m\nsection s (vma: $100) {\n    comptime test \"hidden\" {\n        ensure(false, \"never runs\")\n    }\n}\n",
+    );
+    assert!(
+        perrs.iter().any(|d| d.message.contains("[test.in-section]")),
+        "expected [test.in-section]: {perrs:?}"
+    );
+}
+
+#[test]
+fn expect_error_does_not_pass_on_a_warning() {
+    // "Must not compile" means an ERROR — a warning containing the id
+    // compiles fine (review M4). `..` on an undeclared type warns.
+    let src = "\
+module m
+comptime test \"warning is not an error\" (expect_error: \"no effect\") {
+    let v = Foo{ a: 1, .. }
+}
+";
+    let results = run(src);
+    assert_eq!(results.len(), 1);
+    assert!(!results[0].passed, "a warning must not satisfy expect_error");
+}
+
+#[test]
+fn duplicate_names_fail_under_the_runner_too() {
+    // The build path's validate pass never runs under `sigil test` (M3).
+    let src = "\
+module m
+comptime test \"same\" {
+    ensure(true, \"a\")
+}
+comptime test \"same\" {
+    ensure(true, \"b\")
+}
+";
+    let results = run(src);
+    assert!(
+        results.iter().any(|r| !r.passed && r.diags.iter().any(|d| d.message.contains("twice"))),
+        "the runner refuses the duplicate: {results:?}"
+    );
+}

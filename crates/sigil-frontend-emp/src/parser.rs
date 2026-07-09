@@ -1140,7 +1140,7 @@ impl Parser {
                     let sp = self.span();
                     self.diag_at(
                         sp,
-                        "`yield <label>` was retired (D2.30) — write `yield shows <label>`                          to override the per-frame epilogue, or `yield .label` to name                          where the next frame resumes",
+                        "`yield <label>` was retired (D2.30) — write `yield shows <label>` to override the per-frame epilogue, or `yield .label` to name where the next frame resumes",
                     );
                     self.bump(); // consume the label so the line recovers
                 }
@@ -1804,6 +1804,19 @@ impl Parser {
                     self.warn_dangling_doc(*sp);
                 }
                 match parsed {
+                    // A comptime test has no placement meaning, and the
+                    // runner sweeps MODULE items only — a section-nested test
+                    // would parse, strip, and silently NEVER RUN (Item-10
+                    // review M1): reject it loudly, like nested sections.
+                    Some(Item::ComptimeTest(t)) => {
+                        self.diag_at(
+                            t.span,
+                            format!(
+                                "[test.in-section] comptime test `{}` is inside a section                                  body — tests have no placement; declare it at module level",
+                                t.name
+                            ),
+                        );
+                    }
                     Some(Item::Section(inner)) => {
                         // Sections do not nest (locked decision): placement-within-
                         // placement has no ratified meaning, and `lower_section_items`

@@ -91,3 +91,37 @@ fn root_sweeps_every_module() {
     assert!(stdout.contains("test b::in b ... ok"), "{stdout}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_broken_module_does_not_abort_the_sweep() {
+    // One unparseable module must not stop the other modules' tests
+    // (review M2) — and the summary names the breakage.
+    let dir = unique_temp_dir();
+    std::fs::write(dir.join("good.emp"), "module good\ncomptime test \"runs\" {\n    ensure(true, \"x\")\n}\n")
+        .unwrap();
+    std::fs::write(dir.join("bad.emp"), "module bad\nthis is not a declaration\n").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .arg("test")
+        .arg("--root")
+        .arg(&dir)
+        .output()
+        .expect("spawn sigil");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "a broken module still fails the run: {stdout}");
+    assert!(stdout.contains("test good::runs ... ok"), "good's tests still ran: {stdout}");
+    assert!(stdout.contains("failed to parse"), "the summary names the breakage: {stdout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn file_plus_root_is_refused() {
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .arg("test")
+        .arg("x.emp")
+        .arg("--root")
+        .arg(".")
+        .output()
+        .expect("spawn sigil");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not both"));
+}

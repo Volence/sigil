@@ -332,6 +332,7 @@ fn run_test(args: &[String]) {
     // Gather (path, source) pairs: the single file, or every module file
     // under --root (the manifest's own discovery, so `sigil test --root` and
     // `sigil emp --root` agree about what a module is).
+    let mut broken_modules = 0usize;
     let files: Vec<(String, String)> = match (&input, &root_arg) {
         (Some(path), None) => match std::fs::read_to_string(path) {
             Ok(src) => vec![(path.clone(), src)],
@@ -340,10 +341,19 @@ fn run_test(args: &[String]) {
                 process::exit(1);
             }
         },
-        (None, Some(root)) | (Some(_), Some(root)) => {
+        (Some(_), Some(_)) => {
+            // Ambiguous: sweep the root, or just the file? Refuse rather
+            // than silently pick (Item-10 review m2).
+            eprintln!("error: pass EITHER <input.emp> OR --root <dir>, not both");
+            process::exit(2);
+        }
+        (None, Some(root)) => {
             let (manifest, mdiags) =
                 sigil_frontend_emp::resolve::manifest::Manifest::scan(std::path::Path::new(root));
-            if mdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+            // Only STRUCTURAL scan failures abort the sweep; a module that
+            // fails to PARSE is counted broken below and the other modules'
+            // tests still run (Item-10 review M2).
+            if mdiags.iter().any(|d| d.message.contains("cannot read module root")) {
                 render_program_diags(&manifest, &mdiags);
                 process::exit(1);
             }
@@ -351,9 +361,12 @@ fn run_test(args: &[String]) {
                 .modules
                 .iter()
                 .filter_map(|m| {
-                    std::fs::read_to_string(&m.path)
-                        .ok()
-                        .map(|src| (m.path.display().to_string(), src))
+                    let src = std::fs::read_to_string(&m.path).ok();
+                    if src.is_none() {
+                        eprintln!("error: cannot read {}", m.path.display());
+                        broken_modules += 1;
+                    }
+                    src.map(|src| (m.path.display().to_string(), src))
                 })
                 .collect()
         }
@@ -363,9 +376,11 @@ fn run_test(args: &[String]) {
         }
     };
 
+    let root_include = root_arg
+        .as_deref()
+        .and_then(|r| std::fs::canonicalize(r).ok());
     let mut total = 0usize;
     let mut failed = 0usize;
-    let mut broken_modules = 0usize;
     for (path, src) in files {
         let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
         if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -379,10 +394,19 @@ fn run_test(args: &[String]) {
             continue;
         }
         let module_id = file.module.path.segments.join(".");
-        let parent = std::path::Path::new(&path).parent().unwrap_or(std::path::Path::new(""));
-        let root_dir =
-            if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
-        let include_root = std::fs::canonicalize(root_dir).ok();
+        // `--root` mode: embed/import resolve against the ROOT (matching
+        // `sigil emp --root`, Item-10 review m1); single-file mode keeps the
+        // file's own directory (matching `sigil emp <file>`).
+        let include_root = match &root_include {
+            Some(r) => Some(r.clone()),
+            None => {
+                let parent =
+                    std::path::Path::new(&path).parent().unwrap_or(std::path::Path::new(""));
+                let root_dir =
+                    if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
+                std::fs::canonicalize(root_dir).ok()
+            }
+        };
         let results =
             sigil_frontend_emp::eval::run_module_tests(&file, include_root.as_deref(), &defines);
         let mut map = sigil_span::SourceMap::new();
@@ -402,10 +426,15 @@ fn run_test(args: &[String]) {
         }
     }
     println!(
-        "test result: {}. {} passed; {} failed",
+        "test result: {}. {} passed; {} failed{}",
         if failed == 0 && broken_modules == 0 { "ok" } else { "FAILED" },
         total - failed,
-        failed
+        failed,
+        if broken_modules > 0 {
+            format!("; {broken_modules} module(s) failed to parse")
+        } else {
+            String::new()
+        }
     );
     if failed > 0 || broken_modules > 0 {
         process::exit(1);
