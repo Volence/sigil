@@ -99,6 +99,34 @@ fn const_decls() {
 }
 
 #[test]
+fn equ_decls() {
+    // `equ` (R-T0.2): an assembler equate item — mirrors `const`'s grammar
+    // shape (name = expr, `pub` toggles module visibility) but is a distinct
+    // AST node from Item::Const (its whole purpose is link-symbol emission,
+    // Task 3 — not overloading `pub const`).
+    let f = ok("module m\nequ FOO = 42\npub equ BAR = 7\n");
+    let Item::Equ(e) = &f.items[0] else { panic!("expected Item::Equ, got {:?}", f.items[0]) };
+    assert_eq!(e.name, "FOO");
+    assert!(!e.is_pub);
+    assert!(matches!(e.value, Expr::Int(42, _)));
+    let Item::Equ(e) = &f.items[1] else { panic!("expected Item::Equ, got {:?}", f.items[1]) };
+    assert_eq!(e.name, "BAR");
+    assert!(e.is_pub);
+}
+
+#[test]
+fn equ_is_reserved_as_a_declaration_name() {
+    // `equ` used as an item's NAME (e.g. a const named `equ`) is now a parse
+    // error — the new keyword must not silently shadow as an identifier.
+    let (_, diags) = parse_str("module m\nconst equ = 1\n");
+    assert!(!diags.is_empty(), "expected a diagnostic for `equ` as a const name");
+    assert!(
+        diags.iter().any(|d| d.message.contains("equ") && d.message.contains("reserved")),
+        "diagnostic should name `equ` as reserved, got: {diags:?}"
+    );
+}
+
+#[test]
 fn enum_decl() {
     let f = ok("module m\nenum Anim: u8 { Idle = 0, Seed = 1, Shoot = 2 }\n");
     let Item::Enum(e) = &f.items[0] else { panic!() };

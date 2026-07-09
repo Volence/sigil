@@ -584,6 +584,7 @@ mod placement_provenance_tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         }
     }
 

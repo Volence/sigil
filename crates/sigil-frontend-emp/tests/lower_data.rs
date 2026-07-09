@@ -168,13 +168,15 @@ fn symref_width4_68k_is_abs32be() {
 }
 
 #[test]
-fn winptr_in_z80_is_bankptr16le() {
-    // `winptr(sym)` in a Z80 section → 2 zero bytes + a BankPtr16Le fixup at
-    // offset 0 targeting the WINDOW-MASKED symbol `(sfx & 0x7FFF) | 0x8000`
-    // (D-P4.5 row 3, matching AS `sfx_winptr`).
+fn winptr_in_z80_is_value16le() {
+    // `winptr(sym): u16` in a Z80 section (R-T0.5): now a general link-expr VALUE
+    // cell → a `Value16Le` fixup at offset 0 targeting the WINDOW-MASKED tree
+    // `(sfx & 0x7FFF) | 0x8000` (the SAME target the old `BankPtr16Le` carried).
+    // The folded value stays in [$8000,$FFFF], so its bytes are IDENTICAL to the
+    // pre-R-T0.5 BankPtr16Le path (proven in lower_sections.rs).
     let src = "module m\n\
                comptime fn sfx() -> u8 { 0 }\n\
-               data P = winptr(sfx)\n";
+               data P: u16 = winptr(sfx)\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
@@ -182,7 +184,7 @@ fn winptr_in_z80_is_bankptr16le() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
-        vec![Fixup { kind: FixupKind::BankPtr16Le, offset: 0, target: winptr_target("sfx") }]
+        vec![Fixup { kind: FixupKind::Value16Le, offset: 0, target: winptr_target("sfx") }]
     );
     // The 2-byte hole is present in the image (zero-filled before linking).
     let section = module.sections.first().expect("one section");
@@ -198,14 +200,14 @@ fn winptr_in_z80_is_bankptr16le() {
 }
 
 #[test]
-fn winptr_in_68k_is_bankptr16be() {
-    // A `winptr(sym)` in a 68000 section hits `(M68000, 2, true)` — a 68k
-    // reference to a Z80 bank pointer, which T6 now represents with the new Core
-    // `BankPtr16Be` kind (§7.2 / D-P4.7), the big-endian counterpart of
-    // `BankPtr16Le`. (Was the T2 tripwire `winptr_in_68k_is_unsupported_...`.)
+fn winptr_in_68k_is_value16be() {
+    // A `winptr(sym): u16` in a 68000 section (R-T0.5): a general link-expr VALUE
+    // cell → `Value16Be`, targeting the same masked tree. The big-endian
+    // counterpart of `winptr_in_z80_is_value16le`; bytes unchanged from the old
+    // `BankPtr16Be` path.
     let src = "module m\n\
                comptime fn sfx() -> u8 { 0 }\n\
-               data P = winptr(sfx)\n";
+               data P: u16 = winptr(sfx)\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
@@ -213,7 +215,7 @@ fn winptr_in_68k_is_bankptr16be() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
-        vec![Fixup { kind: FixupKind::BankPtr16Be, offset: 0, target: winptr_target("sfx") }]
+        vec![Fixup { kind: FixupKind::Value16Be, offset: 0, target: winptr_target("sfx") }]
     );
     // The 2-byte hole is present in the image (zero-filled before linking).
     assert_eq!(raw_data_bytes(&module), vec![0x00, 0x00]);
@@ -433,5 +435,90 @@ fn u16_neg1_is_rejected_not_wrapped() {
     assert!(
         diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
         "expected an [emit.out-of-range] refusing -1 for u16, got {diags:?}"
+    );
+}
+
+// ---- Task 1 (sound-migration T0): `u16le` data cells (R-T0.1, DSM.7) ----
+//
+// An explicit little-endian 16-bit type keyword, usable from ANY section
+// (the point: a 68k-side section emitting Z80-consumed bytes). NOT CPU
+// inference — the `le` flag always wins over the section's CPU. No `u32le`,
+// no other endian variant (YAGNI until a customer exists).
+
+#[test]
+fn u16le_scalar_in_68k_section_emits_little_endian() {
+    // `data X: u16le = $1234` in a (cpu: m68000) section → bytes 34 12 (the
+    // opposite order from `multibyte_scalar_is_big_endian`'s plain `u16`).
+    let (file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(linked_bytes(&module), vec![0x34, 0x12]);
+}
+
+#[test]
+fn u16le_equals_u16_on_z80() {
+    // Z80 sections are already little-endian: `u16le` must emit EXACTLY what
+    // plain `u16` emits there — no double byte-swap.
+    let (le_file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (le_mod, le_diags) = lower_module(&le_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    assert!(le_diags.is_empty(), "unexpected lowering diagnostics: {le_diags:?}");
+
+    let (be_file, perrs) = parse_str("module m\ndata X: u16 = $1234\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (be_mod, be_diags) = lower_module(&be_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None });
+    assert!(be_diags.is_empty(), "unexpected lowering diagnostics: {be_diags:?}");
+
+    assert_eq!(linked_bytes(&le_mod), linked_bytes(&be_mod));
+    assert_eq!(linked_bytes(&le_mod), vec![0x34, 0x12]);
+}
+
+#[test]
+fn u16le_linkexpr_cell_uses_value16le_on_68k() {
+    // A link-expr value (`bankid("L")`) landing in a `u16le` cell must select
+    // `FixupKind::Value16Le` even in a 68k (normally big-endian) section — the
+    // `le` flag overrides the section CPU for fixup-kind selection too, not
+    // just the plain-scalar path.
+    let src = "module m\n\
+               section s (cpu: m68000, vma: $8000) {\n\
+                 data L: u16le = bankid(\"L\")\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup {
+            kind: FixupKind::Value16Le,
+            offset: 0,
+            target: Expr::Binary {
+                op: BinOp::Shr,
+                lhs: Box::new(Expr::Binary {
+                    op: BinOp::And,
+                    lhs: Box::new(Expr::Sym("L".into())),
+                    rhs: Box::new(Expr::Int(0x7F8000)),
+                }),
+                rhs: Box::new(Expr::Int(15)),
+            },
+        }]
+    );
+    // `L` is placed at vma $8000 (bank 1): the fold value is 1. Value16Le
+    // writes it little-endian: [01, 00].
+    assert_eq!(linked_bytes(&module), vec![0x01, 0x00]);
+}
+
+#[test]
+fn u16le_range_rules_are_identical_to_u16() {
+    // The `le` flag never affects the accepted range — still 0..=$FFFF, so an
+    // out-of-range value errors exactly like plain `u16` (see
+    // `u16_neg1_is_rejected_not_wrapped` above): `-1` is refused, not wrapped.
+    let (file, perrs) = parse_str("module m\ndata T: [u16le; 1] = [-1]\n");
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
+        "expected an [emit.out-of-range] refusing -1 for u16le, got {diags:?}"
     );
 }

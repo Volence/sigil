@@ -290,6 +290,18 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut asm_counter,
                 );
             }
+            // `Item::Equ` (R-T0.3): evaluate the equate's value and attach an
+            // `EquSym` to the module's carrier (the default) section — a
+            // link-level symbol folded post-placement. It emits NO bytes and NO
+            // label; only a deferred symbol. `ensure_default` opens the carrier
+            // so `add_equ_sym` has an open section to target.
+            ast::Item::Equ(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                lower_equ_item(file, decl, opts.include_root.as_deref(), &mut builder, &mut diags);
+            }
+            // `Item::Const` is a name-resolution-only item (no bytes, no label,
+            // no deferred symbol) — the evaluator's `consts` index is where its
+            // value lives; nothing to lower.
             _ => {}
         }
     }
@@ -418,10 +430,73 @@ fn lower_section_items(
             ast::Item::Script(decl) => {
                 script::lower_script_item(file, decl, placement, as_compat, builder, diags, asm_counter);
             }
+            // `Item::Equ` (R-T0.3): same as the top-level arm — evaluate the
+            // value and attach an `EquSym` to THIS section (its carrier). The
+            // section is already open (we are inside it), so `add_equ_sym`
+            // targets it directly.
+            ast::Item::Equ(decl) => {
+                lower_equ_item(file, decl, placement.include_root, builder, diags);
+            }
+            // `Item::Const` is name-resolution-only — nothing to lower.
             _ => {}
         }
     }
     true
+}
+
+/// Lower one `equ NAME = expr` item (R-T0.3): evaluate its value through the
+/// shared const/equ evaluator (which resolves an equ lazily exactly like a
+/// const), then attach an [`EquSym`](sigil_ir::EquSym) to the currently-open
+/// carrier section for the linker to fold post-placement.
+///
+/// The value must be an integer or a link-time expression:
+/// - [`Value::Int`](crate::value::Value::Int) → `Expr::Int(n)`;
+/// - [`Value::LinkExpr`](crate::value::Value::LinkExpr) → the residual tree
+///   verbatim (e.g. `bankid("L")` / `winptr("L")` over a label);
+/// - anything else (a string, a struct, a `Data` blob, …) is the `[equ.value]`
+///   diagnostic — an equ becomes a single link-level integer symbol, so a
+///   multi-byte or non-numeric value has no representation.
+fn lower_equ_item(
+    file: &ast::File,
+    decl: &ast::EquDecl,
+    include_root: Option<&Path>,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::value::Value;
+    // Evaluate the equate's value through the shared const/equ path (its `equs`
+    // index is private, so we go through the public `eval_const_with_root` entry
+    // point, which resolves consts OR equs identically).
+    let (value, mut ds) = crate::eval::eval_const_with_root(file, &decl.name, include_root);
+    diags.append(&mut ds);
+    let Some(value) = value else { return };
+    let expr = match value {
+        Value::Int(n) => sigil_ir::expr::Expr::Int(n as i64),
+        Value::LinkExpr(e) => e,
+        // A comptime-int-erasing newtype/refined value still becomes an integer
+        // symbol (it is numerically an int); anything genuinely non-numeric is
+        // the `[equ.value]` error.
+        other => {
+            if let Some(n) = other.as_stored_int() {
+                sigil_ir::expr::Expr::Int(n as i64)
+            } else if matches!(other, Value::Poison) {
+                // Already-reported upstream (D-P2.9): stay silent.
+                return;
+            } else {
+                diags.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "[equ.value] an equ's value must be an integer or a link-time expression \
+                         (got {})",
+                        other.type_name()
+                    ),
+                    primary: decl.span,
+                });
+                return;
+            }
+        }
+    };
+    builder.add_equ_sym(sigil_ir::EquSym { name: decl.name.clone(), expr, span: decl.span });
 }
 
 /// Classify the `here()` position for an item whose provisional anchor (when the
@@ -627,6 +702,18 @@ fn lower_dispatch_item(
 /// (non-integer, zero, or not a power of two) is the single R7m.1 diagnostic
 /// naming the section, and `bank` falls back to `None`. Unknown attribute
 /// names are diagnosed but otherwise ignored.
+///
+/// `bank:` + an explicit `vma:` together is a hard error, `[section.bank-vma]`
+/// (DSM.2, resolves L7.5), regardless of which attribute is written first: the
+/// `bank:` no-straddle check (Task 2) runs in LMA space, while `bankid()`/
+/// `winptr()` fold LABEL (VMA) addresses. A `vma:` pin can decouple the two —
+/// the section's bytes land at one address (LMA) while its labels resolve at
+/// another (the pinned VMA) — so the bank id / window pointer folded from the
+/// label would silently describe the WRONG physical bank on hardware. A bank
+/// section's labels must therefore follow its placed LMA; `vma:` is rejected
+/// outright rather than risk that decoupling. Poison-tolerant like the other
+/// attribute diagnostics here: `bank` still returns `Some`, so the section
+/// still lowers (Task 2's placement seam does the rest with a real value).
 fn section_attrs(
     file: &ast::File,
     sec: &ast::SectionDecl,
@@ -674,6 +761,19 @@ fn section_attrs(
                 format!("section `{}` has unknown attribute `{other}`", sec.name),
             ),
         }
+    }
+    if bank.is_some() && vma.is_some() {
+        err(
+            diags,
+            sec.span,
+            format!(
+                "[section.bank-vma] section `{}`: a bank: section's labels must follow its \
+                 placed LMA — an explicit vma: can decouple bankid()/winptr() (VMA) from the \
+                 no-straddle check (LMA), yielding a wrong latch value on hardware. Drop vma: \
+                 (labels follow placement) or drop bank:.",
+                sec.name
+            ),
+        );
     }
     (cpu, vma, bank)
 }

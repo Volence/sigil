@@ -178,6 +178,11 @@ pub enum Cell {
         width: u8,
         /// Whether the source type was signed.
         signed: bool,
+        /// Explicit little-endian override (`u16le`, R-T0.1 / DSM.7): when
+        /// `true`, Plan 4 ALWAYS serializes this cell little-endian regardless
+        /// of the section's CPU. `false` for every ordinary `u8`/`i8`/`u16`/
+        /// `i16`/`u32`/`i32` cell — the default, CPU-driven byte order.
+        le: bool,
     },
     /// A run of width-1 bytes (from `byte`/`bytes`/`++`). Single bytes have no
     /// byte order, so this stays CPU-neutral as raw bytes.
@@ -229,6 +234,11 @@ pub enum Cell {
         expr: sigil_ir::expr::Expr,
         /// Byte width: 1, 2, or 4.
         width: u8,
+        /// Explicit little-endian override (`u16le`, R-T0.1 / DSM.7): when
+        /// `true`, the linker's VALUE fixup-kind selection ALWAYS picks the
+        /// little-endian kind (`Value16Le`) regardless of the section's CPU.
+        /// `false` for every ordinary width/CPU-driven `Cell::Expr`.
+        le: bool,
     },
 }
 
@@ -821,7 +831,7 @@ mod tests {
     #[test]
     fn databuf_monoid_and_display() {
         let mut a = DataBuf::empty();
-        a.push(Cell::Scalar { value: 5, width: 1, signed: false });
+        a.push(Cell::Scalar { value: 5, width: 1, signed: false, le: false });
         assert_eq!(a.size, 1);
         let mut b = DataBuf::empty();
         b.push(Cell::Bytes(vec![1, 2, 3]));

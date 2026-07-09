@@ -152,7 +152,9 @@ impl PatchTable {
         let (offset, width) = (slot.offset, slot.width);
         match value {
             BindValue::Int(n) => {
-                let encoded = encode_scalar(n, width, self.cpu);
+                // No `u16le` customer in `bind`/`patch` yet (R-T0.1 is data-cell
+                // scoped) — always the CPU-driven byte order.
+                let encoded = encode_scalar(n, width, self.cpu, false);
                 self.bytes[offset..offset + width as usize].copy_from_slice(&encoded);
             }
             BindValue::Sym(target) => match fixup_kind(self.cpu, width) {

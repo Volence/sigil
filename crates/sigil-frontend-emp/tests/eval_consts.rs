@@ -104,6 +104,46 @@ fn requesting_nonexistent_const_errors() {
     );
 }
 
+// ---- equ (R-T0.2): lazy resolution exactly like const -------------------
+
+#[test]
+fn equ_value_resolves_lazily_like_const() {
+    let (v, diags) = eval("module m\nequ LEN = 5 + 1\n", "LEN");
+    assert_eq!(v, Some(int(6)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn const_can_read_an_equ_value_comptime() {
+    // Another item (a const) can read the equ's value comptime — same
+    // visibility rules as const-reads-const within a module.
+    let (v, diags) = eval("module m\nequ LEN = 5 + 1\nconst X = LEN * 2\n", "X");
+    assert_eq!(v, Some(int(12)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn equ_can_read_a_const_value_comptime() {
+    let (v, diags) = eval("module m\nconst BASE = 10\nequ DERIVED = BASE + 1\n", "DERIVED");
+    assert_eq!(v, Some(int(11)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn equ_referencing_another_equ_resolves_lazily() {
+    let (v, diags) = eval("module m\nequ A = B + 1\nequ B = 2\n", "A");
+    assert_eq!(v, Some(int(3)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn equ_direct_cycle_is_poison() {
+    let (v, diags) = eval("module m\nequ A = A\n", "A");
+    assert_eq!(v, Some(Value::Poison));
+    assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
+    assert!(diags[0].message.contains("cyclic"), "diagnostic was {:?}", diags[0].message);
+}
+
 // ---- struct literal value ----------------------------------------------
 
 #[test]

@@ -73,6 +73,41 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
             syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
         }
     }
+
+    // Pass 1b (R-T0.3): define each section's `equ_syms` — already folded to
+    // `Expr::Int` by `resolve_layout` post-placement — as concrete
+    // `SymbolValue::Int`, BEFORE any fixup is applied (Pass 2), so a cross-section
+    // fixup can target an equ symbol. `resolve_layout` guarantees these exprs are
+    // constant, so the fold below is trivial; the `Fold::Poison` arm is a
+    // defensive internal error (an un-folded equ reaching link is a compiler bug,
+    // not a source error). Duplicate names — equ-vs-equ and equ-vs-label — funnel
+    // through the SAME `defined_here` dup-symbol channel as labels.
+    for sec in sections {
+        for eq in &sec.equ_syms {
+            if let Some(prev) = defined_here.insert(eq.name.clone(), sec.name.clone()) {
+                diags.push(diag(
+                    format!(
+                        "symbol `{}` redefined by section `{}` (already defined by section `{}`)",
+                        eq.name, sec.name, prev
+                    ),
+                    eq.span,
+                ));
+                continue;
+            }
+            match eq.expr.fold(&|name| syms.resolve(name, None)) {
+                Fold::Value(v) => syms.define(&eq.name, SymbolValue::Int(v)),
+                Fold::Poison => diags.push(diag(
+                    format!(
+                        "internal: equ `{}` reached link() unfolded (resolve_layout must fold \
+                         every equ to a constant before link)",
+                        eq.name
+                    ),
+                    eq.span,
+                )),
+            }
+        }
+    }
+
     if diags.iter().any(|d| d.level == Level::Error) {
         return Err(diags);
     }
@@ -570,6 +605,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         }
     }
 
@@ -664,6 +700,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         }
     }
 
@@ -688,6 +725,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         }
     }
 
@@ -730,6 +768,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("tab").unwrap().bytes, vec![0x9A, 0xD6]);
@@ -754,6 +793,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         // site VMA of the disp byte's instruction = 0x8000; target = 0x8002; disp = 0x8002 - (0x8000 + 2) = 0.
@@ -778,6 +818,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
@@ -815,6 +856,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         }
     }
 
@@ -903,6 +945,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[mk("a"), mk("b")], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -929,6 +972,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x60, 0x00, 0x00, 0x7E]);
@@ -950,6 +994,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         assert_eq!(link(&[sec], &SymbolTable::new()).unwrap().section("c").unwrap().bytes, vec![0x60, 0x0E]);
     }
@@ -972,6 +1017,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(
@@ -995,6 +1041,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
@@ -1026,6 +1073,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0x00, 0x06]);
@@ -1057,6 +1105,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("c").unwrap().bytes, vec![0xFF, 0xFC]);
@@ -1088,6 +1137,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("signed-word range")), "got: {:?}", err);
@@ -1125,6 +1175,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -1160,6 +1211,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[sec], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("exceeds fragment length")), "got: {:?}", err);
@@ -1182,6 +1234,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let linked = link(&[sec], &stubs).unwrap();
         assert_eq!(linked.section("s").unwrap().bytes, vec![0x00, 0x12, 0x34, 0x56]);
@@ -1203,6 +1256,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         assert_eq!(link(&[ok], &stubs).unwrap().section("ok").unwrap().bytes, vec![0x12, 0x34]);
 
@@ -1217,6 +1271,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let err = link(&[bad], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
@@ -1242,6 +1297,7 @@ mod tests {
             reserved_span: 0,
             group: None,
             bank: None,
+            equ_syms: Vec::new(),
         };
         let linked = link(&[a], &SymbolTable::new()).unwrap();
         // Bytes at LMA 2..4; positions 0,1 gap-filled with 0x00.

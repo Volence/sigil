@@ -31,6 +31,14 @@ pub enum Ty {
         width: u8,
         /// Whether the primitive is signed (`i*`) or unsigned (`u*`).
         signed: bool,
+        /// Explicit little-endian override (`u16le`, R-T0.1 / DSM.7). When
+        /// `true`, emission ALWAYS uses little-endian byte order regardless of
+        /// the section's CPU — the whole point of the keyword is a 68k-side
+        /// section emitting bytes a Z80 consumer reads. Never affects the
+        /// accepted value range (`check_value_fits_ty`/`prim_bounds` ignore it
+        /// entirely). `false` for every other primitive keyword; YAGNI on a
+        /// `u32le`/`u16be`-on-Z80 pair until a customer exists.
+        le: bool,
     },
     /// A pointer type `*T`. Always 4 bytes (D-P3.7, the 68k Abs32 default) and,
     /// crucially, sizing it does NOT recurse into the pointee's layout — so a
@@ -76,8 +84,13 @@ impl Ty {
     /// went wrong.
     pub(crate) fn describe(&self) -> String {
         match self {
-            Ty::Prim { width, signed } => {
-                format!("{}{}", if *signed { "i" } else { "u" }, u32::from(*width) * 8)
+            Ty::Prim { width, signed, le } => {
+                format!(
+                    "{}{}{}",
+                    if *signed { "i" } else { "u" },
+                    u32::from(*width) * 8,
+                    if *le { "le" } else { "" }
+                )
             }
             Ty::Ptr(inner) => format!("*{}", inner.describe()),
             Ty::Array(inner, n) => format!("[{}; {n}]", inner.describe()),
@@ -211,12 +224,17 @@ impl<'a> Evaluator<'a> {
                 }
                 let name = path.segments[0].as_str();
                 match name {
-                    "u8" => Ty::Prim { width: 1, signed: false },
-                    "i8" => Ty::Prim { width: 1, signed: true },
-                    "u16" => Ty::Prim { width: 2, signed: false },
-                    "i16" => Ty::Prim { width: 2, signed: true },
-                    "u32" => Ty::Prim { width: 4, signed: false },
-                    "i32" => Ty::Prim { width: 4, signed: true },
+                    "u8" => Ty::Prim { width: 1, signed: false, le: false },
+                    "i8" => Ty::Prim { width: 1, signed: true, le: false },
+                    "u16" => Ty::Prim { width: 2, signed: false, le: false },
+                    "i16" => Ty::Prim { width: 2, signed: true, le: false },
+                    "u32" => Ty::Prim { width: 4, signed: false, le: false },
+                    "i32" => Ty::Prim { width: 4, signed: true, le: false },
+                    // Explicit little-endian override (R-T0.1 / DSM.7): usable
+                    // from ANY section, not just Z80 — the point is a 68k-side
+                    // section emitting bytes a Z80 consumer reads. No `u32le`,
+                    // no `u16be`-on-Z80: YAGNI until a customer exists.
+                    "u16le" => Ty::Prim { width: 2, signed: false, le: true },
                     _ if self.structs.contains_key(name) => Ty::Struct(name.to_string()),
                     _ if self.bitfields.contains_key(name) => Ty::Bitfield(name.to_string()),
                     _ if self.enums.contains_key(name) => Ty::Enum(name.to_string()),
@@ -636,7 +654,7 @@ impl<'a> Evaluator<'a> {
         // The window must be a `[u8; N]` byte array (D6.A1 v1 restriction) —
         // UNSIGNED bytes exactly, so `[i8; N]` is rejected too.
         let window_n = match &window.ty {
-            Ty::Array(elem, n) if matches!(**elem, Ty::Prim { width: 1, signed: false }) => {
+            Ty::Array(elem, n) if matches!(**elem, Ty::Prim { width: 1, signed: false, .. }) => {
                 *n as i128
             }
             _ => {
@@ -980,7 +998,7 @@ impl<'a> Evaluator<'a> {
         };
         let repr_ty = self.resolve_type(&decl.repr);
         let repr_bits: u32 = match &repr_ty {
-            Ty::Prim { width, signed: false } => u32::from(*width) * 8,
+            Ty::Prim { width, signed: false, .. } => u32::from(*width) * 8,
             Ty::Poison => {
                 // A poisoned repr already reported (via `resolve_type`); memoize
                 // the empty layout so a re-query doesn't re-resolve/re-report.
@@ -1138,7 +1156,10 @@ impl<'a> Evaluator<'a> {
                 });
                 result.unwrap_or(false)
             }
-            Ty::Prim { width, signed } => {
+            // `le` never affects the accepted range (R-T0.1): the byte-order
+            // flag is emission-only, so this range check is identical for
+            // `u16` and `u16le`.
+            Ty::Prim { width, signed, .. } => {
                 let (lo, hi) = prim_bounds(*width, *signed);
                 self.check_in_range(val, lo, hi, span, &format!("{label} value"))
             }

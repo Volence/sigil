@@ -1,7 +1,7 @@
 //! `IrBuilder`: the concrete `IrStreamer` that materialises a `Module`.
 
 use crate::backend::{Cpu, IrStreamer};
-use crate::{DataFragment, Fixup, Fragment, Label, LinkAssert, Module, Section, SectionPlacement};
+use crate::{DataFragment, EquSym, Fixup, Fragment, Label, LinkAssert, Module, Section, SectionPlacement};
 use sigil_span::{Diagnostic, Span};
 
 /// One section under construction: metadata + a running byte cursor.
@@ -12,6 +12,9 @@ struct OpenSection {
     lma: u32, // physical load address of this section's start
     labels: Vec<Label>,
     fragments: Vec<Fragment>,
+    // R-T0.3: `equ NAME = expr` link-level symbols accumulated for this section.
+    // Attached at close(); folded post-placement by the linker.
+    equ_syms: Vec<EquSym>,
     cursor: u32,     // VMA/PC offset from section start (counts Data+Fill+Reserve)
     max_offset: u32, // highest `cursor` ever reached (the org back-patch "extent")
     // R7p.1 provenance: the first section a builder opens is Pinned (base = baked
@@ -76,6 +79,7 @@ impl IrBuilder {
                 reserved_span: o.max_offset,
                 group: None,
                 bank: o.bank,
+                equ_syms: o.equ_syms,
             });
         }
     }
@@ -138,6 +142,7 @@ impl IrBuilder {
             lma,
             labels: Vec::new(),
             fragments: Vec::new(),
+            equ_syms: Vec::new(),
             cursor: 0,
             max_offset: 0,
             placement,
@@ -152,6 +157,15 @@ impl IrBuilder {
     /// `section_mut`).
     pub fn set_section_bank(&mut self, bank: Option<u32>) {
         self.section_mut().bank = bank;
+    }
+
+    /// R-T0.3: attach an `equ NAME = expr` link-level symbol to the currently-open
+    /// section (its carrier). Folded to `SymbolValue::Int` post-placement by the
+    /// linker. Panics if no section is open (front-end bug, mirroring
+    /// `section_mut`); the emp front-end always ensures the default section is
+    /// open before lowering an `equ`.
+    pub fn add_equ_sym(&mut self, sym: EquSym) {
+        self.section_mut().equ_syms.push(sym);
     }
 
     /// The R7p.1 placement for the section about to open: `Pinned` if none has
@@ -218,6 +232,7 @@ impl IrStreamer for IrBuilder {
             lma: vma_base.unwrap_or(0),
             labels: Vec::new(),
             fragments: Vec::new(),
+            equ_syms: Vec::new(),
             cursor: 0,
             max_offset: 0,
             placement,

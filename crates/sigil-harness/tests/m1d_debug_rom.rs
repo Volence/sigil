@@ -34,7 +34,7 @@
 
 use std::path::PathBuf;
 
-use sigil_harness::assemble_full_rom_debug;
+use sigil_harness::{assemble_full_rom_debug, assert_rom_matches, CONVSYM_REWRITTEN_DEBUG};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -45,15 +45,15 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// The only offsets at which Sigil's assembled debug ROM legitimately differs
-/// from `s4.debug.bin`: the checksum (`$18E/$18F`) and the ROM-end pointer at
-/// `$1A4`, both rewritten by the out-of-scope `convsym -a`/`fixheader` post-
-/// steps. `convsym -a` appends the (larger, under `__DEBUG__`) deb2 symbol table
-/// and rewrites `EndOfRom-1` to the POST-append size ($0700E5 in the reference
-/// vs Sigil's assembled $0673A1); at the current debug build that pointer now
-/// differs in THREE bytes ($1A5/$1A6/$1A7 — the append pushed it over a byte
-/// boundary), where the earlier smaller pin differed in only $1A6/$1A7.
-const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
+// `CONVSYM_REWRITTEN_DEBUG` (imported from `sigil_harness`): the only offsets at
+// which Sigil's assembled debug ROM legitimately differs from `s4.debug.bin` —
+// the checksum (`$18E/$18F`) and the ROM-end pointer at `$1A4`, both rewritten by
+// the out-of-scope `convsym -a`/`fixheader` post-steps. `convsym -a` appends the
+// (larger, under `__DEBUG__`) deb2 symbol table and rewrites `EndOfRom-1` to the
+// POST-append size ($0700E5 in the reference vs Sigil's assembled $0673A1); at
+// the current debug build that pointer now differs in THREE bytes
+// ($1A5/$1A6/$1A7 — the append pushed it over a byte boundary), where the
+// earlier smaller pin differed in only $1A6/$1A7.
 
 #[test]
 fn full_debug_rom_matches_assembled_reference() {
@@ -82,27 +82,5 @@ fn full_debug_rom_matches_assembled_reference() {
     // so a regression that drops a trailing section can't silently pass the diff
     // check. Larger than the non-debug `0x658B4` — the debugger code adds bytes.
     const DEBUG_ASSEMBLED_LEN: usize = 0x673A2;
-    assert_eq!(
-        rom.len(),
-        DEBUG_ASSEMBLED_LEN,
-        "sigil debug ROM length changed (dropped/added section?); expected {DEBUG_ASSEMBLED_LEN:#x}"
-    );
-    assert!(rom.len() <= refrom.len(), "sigil debug ROM {} longer than ref {}", rom.len(), refrom.len());
-
-    let unexpected: Vec<String> = (0..rom.len())
-        .filter(|&i| rom[i] != refrom[i] && !CONVSYM_REWRITTEN.contains(&i))
-        .map(|i| format!("{i:#x} (sigil {:#04x} != ref {:#04x})", rom[i], refrom[i]))
-        .collect();
-    assert!(
-        unexpected.is_empty(),
-        "sigil debug ROM diverges from the assembled reference at {} unexpected offset(s): {}",
-        unexpected.len(),
-        unexpected.join(", ")
-    );
-    for &i in CONVSYM_REWRITTEN {
-        assert!(
-            i < rom.len() && rom[i] != refrom[i],
-            "expected convsym-rewritten byte at {i:#x} to differ, but it matched"
-        );
-    }
+    assert_rom_matches(&rom, &refrom, DEBUG_ASSEMBLED_LEN, CONVSYM_REWRITTEN_DEBUG, "sigil debug");
 }
