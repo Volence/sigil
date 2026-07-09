@@ -390,19 +390,20 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   `resolve_layout`+`link` over AS + all THREE `.emp` modules' sections;
   `check_link_asserts` for BOTH mt (5 asserts) and sfx (1 assert) modules — pin both counts.
 
-- [ ] **Step 1:** `mixed_sfx_rom_matches_assembled_reference` +
+- [x] **Step 1:** `mixed_sfx_rom_matches_assembled_reference` +
   `mixed_sfx_debug_rom_matches_assembled_reference` — `assert_rom_matches` vs the same
   `ASSEMBLED_LEN`/allowlists (content identical ⇒ same pins). T1's 2 and T2's 2 existing
   tests stay untouched.
-- [ ] **Step 2:** This is where the win-tab dw deferral proves out end-to-end: the `.asm`
+- [x] **Step 2:** This is where the win-tab dw deferral proves out end-to-end: the `.asm`
   side's `SfxBlobWinTab` entries assemble with `Sfx_NN` unresolved (P1's deferral) and
   resolve through the joint link. Byte-inspect at least the first entry against the
   reference (T2's movea-imm32 xxd evidence pattern): find `SfxBlobWinTab` in `s4.lst`,
   compute `sfx_winptr($63AE8)` = `($63AE8 & $7FFF) | $8000` = `$BAE8` → LE bytes `E8 BA`,
   and confirm both the reference and the assertion window cover it. Record in notes.
-- [ ] **Step 3:** Full nets: `SIGIL_STRICT_GATE=1 AEON_DIR=… cargo test -p sigil-harness`
+  (Needed the `partial_fold` fix first — see the execution note.)
+- [x] **Step 3:** Full nets: `SIGIL_STRICT_GATE=1 AEON_DIR=… cargo test -p sigil-harness`
   (ALL prior gates + the new pair) + `cargo test --workspace` + clippy `-D warnings`.
-- [ ] **Step 4: Commit** — `test(harness): mixed DAC+MT+SFX full-ROM byte-identical, both shapes (sound-migration T3 acceptance)`
+- [x] **Step 4: Commit** — `test(harness): mixed DAC+MT+SFX full-ROM byte-identical, both shapes (sound-migration T3 acceptance)`
 
 ### Task 6: negative probes
 
@@ -462,4 +463,261 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
 
 ## Execution notes
 
-(fill as tasks land)
+### Task 1 (capability probes) — DONE (commits `c168a61` + `747f515`)
+
+- **P1 — INSTANT-GREEN, the tranche's go/no-go cleared:** T0's dw deferral generalizes to
+  the Z80 `phase 08000h` vma≠lma context unchanged. New `phase_dw_winptr_defer.rs` (4
+  tests): compound-tree `Value16Le` fixup + 2-byte hole pinned; REAL `resolve_layout`+`link`
+  resolution pinned for both the synthetic mask (`$7F00` → `$BA00` → LE `00 BA`) and the
+  exact production shape (`(Sfx_33 & 32767) | 32768` @ `$63AE8` → `$BAE8` → LE `E8 BA` =
+  SfxBlobWinTab[0]); negative control pins the loud unresolved-fixup link error. All four
+  falsified (corrupt-expected → real computed value in the failure → revert). NOTE for
+  Task 5: the loud error for an unresolvable COMPOUND fixup names the fixup SITE
+  ("unresolved target expression for fixup in section … at offset …"), not the symbol —
+  same class as T2 carry-forward #5.
+- **P2 — instant-green:** zero-byte `embed()` emits nothing, label defined, next item at
+  same offset (`tests/vectors/empty.bin`, 0 bytes, tracked). Falsified via corrupted
+  next-offset expectation.
+- **P3 — REAL RED, gap closed minimally:** int elements in `[*u8; N]` arrays were rejected
+  (`"pointer field needs a symbol reference, got int"`). Fix: new Int arm in `lower_ptr`
+  (`eval/emit.rs`) folds to a width-4 BE absolute `Cell::Scalar`, no fixup. **Spec review
+  caught silent truncation** (`$100000000` emitted `00 00 00 00` = indistinguishable from a
+  null, zero diagnostics — totality violation); fixed in `747f515`: `emit_range_check(n, 0,
+  u32::MAX, …)` mirroring `lower_prim`'s convention (best-effort cell emission + loud
+  `[emit.out-of-range]`, build still fails on Level::Error). Pinned: accept `$1234` +
+  `$FFFFFFFF` boundary (bytes `FF FF FF FF`), reject `2^32` and `-1` (messages name the
+  value).
+- Workspace 1476/0, clippy clean. Two-stage review done: spec ✅ (after the truncation
+  fix), quality ✅ approve. **Deferred cosmetic minors for the whole-branch polish pass:**
+  (1) `p2_`/`p3_` test-name prefixes in lower_data.rs now collide with T2's unrelated
+  p2/p3 probes — consider `t3_`-prefixing; (2) `lower_ptr`'s function-level doc doesn't
+  mention the new Int-arm behavior; (3) the Int arm's guard + re-destructure is redundant
+  (`matches!` then `if let`).
+
+### Task 2 (aeon prep) — DONE (aeon commit `5a01237` on branch `sigil-emp-sfx`, off master `b0e5a66`)
+
+- The bg-restore was COMMITTED to aeon master before this task started (`b0e5a66`,
+  boot-checked by Volence 2026-07-09; stash dropped) — the plan's ⚠ carry-along caution
+  became obsolete; the branch started from a clean tree.
+- **Sequencing call (the Step-2/3 ordering the plan left open):** all edits landed FIRST
+  (R2 equ moves + R1 generator change + header rewrite), THEN the builds — so prebuild's
+  per-build `generate` never got a chance to clobber the hand-owned table edits.
+- R2 as specified: three ints → `sound_ids.asm` after the SFXID_* ladder; `SFX_BLOB_BANK =
+  SND_ENGINE_TABLE_BANK` in main.asm with the plan's comment; four equs deleted from
+  sfx_table.asm (its `/4 <> SFX_TABLE_LEN` self-check intact, now reading sound_ids.asm);
+  game.asm contract comment updated.
+- R1: `generate_all(emit_table=False)` default skips `emit_sfx_table_asm()` (prints a
+  hand-owned pointer); explicit `generate --emit-table` opt-in kept. sfx_table.asm header
+  rewritten (hand-owned banner + four-place add-an-SFX checklist). Regen-drop PROVEN:
+  mtime + content hash unchanged across a full build.
+- R8: `verify_emit_bin.py` 24/24 (18 SFX pairs incl. both zero-byte PSG patch banks + 6
+  fixed targets); 18 narrow gitignore exceptions; 18 `.bin`s committed (two as empty blobs).
+- R6: third gate wrapped verbatim (19 includes + both fatals inside `ifndef`), else-arm
+  org `$65C82` debug / `$64230` plain with PROVENANCE comment; nesting balance verified.
+- Byte-verification: plain `8ce6dd7e…` ✓, debug `13c7b063…` ✓, plain-restore rebuild ✓ —
+  every step byte-neutral, tree left in plain state. 24 files, +103/−26.
+- **Flag for the whole-branch review (prong 2):** if `generate --emit-table` is ever run,
+  it emits the OLD-style table (GENERATED header + the four equs) over the hand-owned file
+  — legal for asl (`=` reassignment, equal values) but it clobbers the hand-owned header.
+  Acceptable as a bootstrap escape hatch or worth a warning banner in the emitter? Review
+  should rule.
+
+### Task 3 (`sfx_bank.emp`) — DONE (aeon commit `e3c3102` on `sigil-emp-sfx`)
+
+- 191 lines, module `data.sfx_bank`, 23 items, exactly per the sketch — no substantive
+  deviations. Pad naming `_pNN` (blob pad) / `_qNN` (patch pad) kept from the sketch
+  (mt_bank's descriptive `_*_align` style would be noise ×18; quality review concurred).
+- Standalone: `sigil parse` clean; `sigil emp` fails with EXACTLY the one expected
+  diagnostic (T2 carry-forward #5's misleading "internal: … anchor label" at the cross-seam
+  ensure — both operands external standalone). Stripped-ensure scratch build:
+  **1864 bytes = `$748` exact**, pads `$00` at offsets 811 (post-Sfx_3C) and 1161
+  (post-Sfx_B6).
+- **Spec review ✅ (independent re-derivation):** table sequence extracted independently
+  from both files and diff'd position-for-position — identical 135 (syms @ 0/1/2/3/9/47/
+  120/131/134, zero-runs 5/37/72/10/2); all 18 pad conditionals keyed on the correct
+  consts (all checked, not just the two firing); ensure message = main.asm fatal minus the
+  interpolation clause, verbatim; NO length ensure (type-enforced, R5) and no extras;
+  byte arithmetic recomputed from on-disk .bin sizes. Bonus: standalone bytes diffed
+  against `s4.bin[0x63AE8..0x64230]` — blob+patch region [0..1324) ALREADY byte-identical;
+  only the 27 pointer-cell bytes differ (unresolved standalone, as expected — Task 4's
+  linked gate covers them).
+- **Quality review ✅ approve** ("meets the mt_bank.emp bar; table scannability arguably
+  exceeds it"). One optional minor deferred to the polish pass: a one-line `_pNN`/`_qNN`
+  legend at the section top.
+- Note: the fatal line numbers moved to main.asm:258 (straddle) / :266 (co-residency)
+  after Task 2's gate insertion (were :252/:260 pre-gate).
+
+### Task 4 (`sfx_port.rs`) — DONE (commit `701bcf5`)
+
+- **ZERO DIVERGENCES, both shapes** — `sfx_bank` linked bytes == `s4.bin[0x63AE8..0x64230]`
+  and `s4.debug.bin[0x6553A..0x65C82]` (1864 B each), pointer cells resolved (the 27 bytes
+  standalone couldn't prove). Instant-green; **falsification recorded (per DSM.9, satisfies
+  the quality review's M3):** XOR'd `0xFF` into the plain expected window at region offset
+  `0x600` (SfxTable area) — failed loud with `first diff at offset 0x600 …
+  candidate[0x5f8..0x610]: [… 00 …] expected[…]: [… ff …]`, the [i-8,i+16) context on both
+  sides; reverted, re-ran clean. Spec reviewer additionally proved the strict-gate idiom
+  both ways (skip-clean without the gate + hard-fail 2/2 with gate + missing reference).
+- Faithful mt_port.rs mirror; only the five specified deltas (per-shape `map_toml(debug)`
+  — bases/sizes to the $68000 bank top, sfx module path/include_root, `defines: vec![]`,
+  `link_asserts.len() == 1` pin, new windows). Spec review ✅ (line-by-line diff vs
+  template + all numbers + tests re-run); quality review ✅ approve.
+- **Duplication ruling (quality review, keep for the record):** copies STAY — the
+  per-file-self-contained gate convention is explicit house style (mt_negative_probes.rs
+  :52-54 documents it); the truly-triplicated surface is ~7 lines; hoisting would trade
+  the gates' read-in-one-file credibility for indirection. Reconsider only if a fourth
+  sibling needs a parameterized shape the others don't.
+- Deferred to polish: M1 — the `AEON_DIR` default path string appears 4× in the file
+  (inherited verbatim from mt_port.rs; fold a shared `aeon_dir()` helper across both files
+  if touching them anyway).
+
+### Task 5 (mixed DAC+MT+SFX full-ROM gate) — DONE
+
+- **REAL RED → GREEN — a genuine deferral gap P1 missed, fixed minimally in the AS
+  front-end.** The AS side assembled cleanly (the win-tab `dw sfx_winptr(Sfx_NN)` deferral
+  ENGAGED — the fixup is present, no unresolved-symbol AS error, so the T0/P1 mechanism held
+  for the compound Z80-phase `dw`). But the JOINT LINK failed with 9× "unresolved target
+  expression for fixup in section sec32768 …" — one per win-tab entry. Root cause (dumped
+  the fixup target): the deferred tree was `(Sfx_33 & SFX_WIN_MASK) | SFX_WIN_BASE` — and
+  while `Sfx_33` resolved fine from `sfx_bank.emp`, the `sfx_winptr` FUNCTION's constants
+  `SFX_WIN_MASK`/`SFX_WIN_BASE` are AS-side `=` equs (`engine/sound/sound_sfx.asm:56-57`)
+  that the linker's section-label table never sees. P1 was instant-green because it used
+  LITERAL masks (`& $7FFF | $8000`); the real `sfx_winptr()` carries equ SUBTERMS — the gap.
+- **Fix (scope beyond the plan's harness-only Task 5, but the plan's investigate-first rule
+  covers it):** new `Assembler::partial_fold` in `frontend-as/src/eval.rs` — on the deferral
+  paths it rewrites every env-resolvable SUBTERM to `Expr::Int`, leaving only the genuinely-
+  external leaf as `Sym`. So the linker fold sees `(Sfx_33 & 32767) | 32768` — only `Sfx_33`
+  deferred. This is the deferred-expr analogue of `fixup_target`'s bake-what-you-can
+  rationale (its env-only `set`/`equ` note). Applied to all three deferral arms for
+  consistency (`dw` Value16Le — the live one; `db` Value8; imm32 Value32Be — the latter two
+  latent but same class). 147 frontend-as tests green (T0 db_dw_defer + P1 phase-dw
+  unchanged); DAC/MT mixed + m1d gates byte-identical (no drift on already-resolving paths).
+- **Win-tab byte evidence (end-to-end proof):** `s4.lst:40373` `SfxBlobWinTab: dw
+  sfx_winptr(Sfx_33)` → `E8 BA` at Z80 vma `$845F` → ROM `$60000+($845F-$8000) = $6045F`.
+  `sfx_winptr($63AE8) = ($63AE8 & $7FFF) | $8000 = $BAE8` → LE `E8 BA`. Reference `xxd -s
+  0x6045F -l 8 s4.bin` = `e8ba 42bb 9cbb dabc` (first 4 entries). Pinned explicitly in the
+  plain test (`rom[0x6045F..0x60461] == [0xE8,0xBA]`) AND re-proven by the full-ROM assert.
+- **ZERO DIVERGENCES, both shapes** — `mixed_sfx_rom_matches_assembled_reference` +
+  `mixed_sfx_debug_rom_matches_assembled_reference` both byte-identical to the reference
+  (modulo the same 4/5 convsym header bytes as T1/T2), same `ASSEMBLED_LEN`
+  (`0x658B4`/`0x673A2`) / allowlist pins. T1's 2 + T2's 2 mixed tests UNTOUCHED (6/6 green).
+- Both modules' `check_link_asserts` pinned: mt == 5, sfx == 1; both diag sets asserted
+  all-non-Error (the I1 non-vacuous discipline).
+- **Falsifications (3):** (1) XOR `rom[0x6045F]` → the win-tab pin fires (`left [23,186] !=
+  right [232,186]`); (2) XOR `rom[0x63AE8]` (Sfx_33 block, off-pin) → `assert_rom_matches`
+  DSM.9 STOP fires with first-diff `0x63ae8 (0xef != ref 0x10)` + [i,i+16) context both
+  sides; (3) push a synthetic always-Error onto `sfx_diags` → the must-all-pass assertion
+  trips (`"…must PASS…: [Diagnostic { level: Error, message: "synthetic" …}]"`). All
+  reverted; re-ran clean.
+- Harness composition: `assemble_mixed_sfx_as_side` sibling (all 4 defines); `placed_emp_
+  sections_with_mt_sfx` (three modules, one lower pass each — M2); `emp_bank_map_with_mt`
+  became `fn of debug` with the per-shape `sfx_bank` region (R7); `placed_module_sections`
+  generalized to take the module DIR (`sound/sfx` for sfx_bank's bare embeds vs `sound` for
+  dac/mt). DAC/MT regions byte-verbatim.
+- Nets: `SIGIL_STRICT_GATE=1` harness (all prior gates + new pair) green; `cargo test
+  --workspace` 115 result-lines all ok; clippy `-D warnings` clean.
+- **Carry-forward for whole-branch review (prong 1):** `partial_fold` is a new resolved-path
+  code path on the AS deferral seam — review should confirm it can't perturb bytes on the
+  all-`.asm` (fully-folding) path. It can't structurally (a fully-folding expr collapses to
+  one `Expr::Int`, identical to the eager path's value), and the m1d/DAC/MT byte gates prove
+  it empirically, but it's the diff's one load-bearing engine change.
+
+**Task 5 review outcomes (two-stage, both ✅):**
+
+- **Spec review (3 lanes, all PASS):** (L1) `partial_fold` verified shape-only (all three
+  call sites inside the `Fold::Poison` branch; unreachable on the eager path BY CODE, not
+  just empirically), value-at-use-time-safe under the converged-pass contract (folds via
+  the same `self.fold`/env; forward refs present in the converged env bake correctly;
+  `.emp` leaves never in the AS env stay `Sym`). (L2) all five harness elements verified;
+  DAC/MT/text map regions diffed byte-for-byte vs T2; T1/T2 tests untouched; win-tab pin
+  independently xxd-verified. (L3) **section-level LMA overlap IS detected loud** —
+  `overlap_diag` (relax.rs:257-294, R7p.4) scans placed-section extents post-fixpoint; an
+  mt_bank regen growing past the sfx base fails with a two-section error, verified via the
+  existing T2 negative probe.
+- **Spec-review gap CLOSED (`83bdba7`):** `partial_fold`'s distinctive baking was only
+  covered indirectly (P1's tests use literal masks — a NO-OP partial_fold would still pass
+  them). New `partial_fold_defer.rs` (6 tests): env-equ subterm + external leaf on all
+  three arms, target trees pinned exactly (`(Sym(ExtSym) & Int(32767)) | Int(32768)` etc.)
+  + link-resolved bytes. Falsified by temporarily neutering the fold — all 6 RED with the
+  equs leaking as `Sym`; restored, green.
+- **Quality review ✅ approve:** `partial_fold` is TOTAL over the `Expr` IR (4 variants;
+  calls are expanded away by `expand_calls` before fixup targets exist; the fallthrough
+  ships `Sym` → loud link failure at worst, never wrong bytes); `$` folds correctly at
+  every recursion level. Harness generalization clean. Deferred cosmetic minors to polish:
+  (i) one doc clause on partial_fold noting baked subterms are AS-env-only; (ii) the
+  map_path/load_map block now appears 3× across the build_mixed_* helpers (fold only if
+  touched together, per the keep-copies convention).
+- **Orchestrator ruling on the map-overlap recommendation:** the spec reviewer suggested
+  shrinking the `mt_bank` region to end at the sfx base. RULED: map stays as-is — the
+  region-level overlap is benign by construction (`place_sections` is name-keyed,
+  per-region cursors), section-level overlap is PROVEN loud (L3), and shrinking would
+  make T2's proven region per-shape for no byte-level gain. Instead Task 6 gains probe
+  (e): a grown-mt-section-past-the-sfx-base trips `overlap_diag` at THIS seam.
+
+### Task 6 (negative probes) — DONE (commit `1f9f647`)
+
+- `sfx_negative_probes.rs` (519 lines, 5 tests, mt_negative_probes.rs organization incl.
+  the parameterized `as_bank_start_label_at` helper + the keep-copies convention note):
+  (a) straddle @ doctored base `0x67C00` → loud diag naming `sfx_bank`+"straddle" (region
+  sized $800 so it's the SECTION's straddle, not region overflow); (b) wrong-bank synthetic
+  label @ `$58000` → the ONE ensure fires, `len()==1` + message substring pinned; (c)
+  134-vs-135 inline table → clean "array length mismatch: expected 135, got 134"; (d)
+  JUDGED: WRITTEN (not skipped) — wrong-sym-where-null-belongs lowers CLEAN and emits
+  different bytes, pinning that Task 4's byte gate is the SOLE guard for the
+  legal-lowering-wrong-bytes transcription class (complements Task 4's
+  expectation-corrupting falsification by corrupting the INPUT); (e) grown-mt overlap —
+  real mt_bank (DEBUG=0 @ $60607) + real sfx_bank (@ $63AE8) in one resolve_layout, mt's
+  section grown +$200 via appended Fill → `overlap_diag` (R7p.4) fires naming BOTH
+  sections + extents. Approach chosen over a synthetic section because mt's real content
+  ends EXACTLY at the sfx base (contiguous seam) — appended growth faithfully models a
+  regen that outgrew its budget.
+- Falsifications: (a) real base → Ok, expect_err panics; (b) real bank → 0 diagnostics,
+  the len()==1 pin fails; (e) growth 0 (pure abutment) → Ok — proving abutment is benign
+  and GROWTH is what fires. All reverted (file byte-identical to pre-falsification backup).
+- Workspace 117 result-lines green, clippy clean.
+
+### Task 7 — polish pass + whole-branch adversarial review — DONE
+
+**Polish (`69b2c40` sigil / `6bf67d0` aeon):** t3_ prefixes on the T3 lower_data probes;
+lower_ptr doc + single-match Int-arm restructure; partial_fold no-drift doc clause;
+sfx_bank.emp pad-naming legend (parse: 23 items unchanged). Workspace 1491/0.
+
+**Whole-branch review, two prongs, both checkpoint-ready. Zero Critical.**
+
+- **Prong 1 (sigil, `29bcef5..69b2c40`):** `partial_fold` survived 8 differential
+  adversarial scratch tests (deferred-then-linked vs eager byte-identity: nested unary
+  minus, div+mod, shift-by-symbol, complement, XOR, `$` in/out of phase, dual external
+  leaves with env subterms between) — ALL byte-identical; env-resolvable div-by-zero
+  subterm bakes the 0 and fails loud at link, no panic. P3 int-arm: every non-Int
+  non-name Value variant still gets the identical pre-branch error; `Value::LinkExpr`
+  intercepted upstream. All five new test files proven non-vacuous (strict-gate panics on
+  missing reference; win-tab pin is an independent literal; partial_fold_defer's env-equ
+  masks make a no-op fold distinguishable). Cross-branch consistency: all shas/counts
+  match (two trivial line-count drifts in earlier notes: sfx_bank.emp is 195 lines
+  post-legend, sfx_negative_probes.rs 528 post-fix — recorded here, notes above left
+  as-written). **F1 [Important, disposition recorded below]** — ONE non-reproducible
+  full-workspace failure of the PRE-EXISTING T1 `mixed_dac_rom_matches_assembled_reference`
+  (216399-offset wholesale divergence, first at vector-table 0xa) in ~40 runs, under heavy
+  parallel load coincident with concurrent worktree-add + clippy builds; passes on every
+  commit individually; pipeline audited deterministic (no global mutable state, vec-order
+  iteration throughout, tests read-only); base-commit runs never failed (fewer test
+  binaries). **F2 fixed** (`960b6ff`): straddle-probe comment $500→$800.
+- **Prong 2 (aeon, `b0e5a66..6f5efb5`):** byte-neutrality REBUILT from scratch — both
+  shapes match the pins exactly. Table fidelity re-verified by a third independent method
+  (ordered id→label sequence diff, 135/135, sym-position vector exact). Both fatals
+  byte-preserved in the ifndef arm; gate wraps exactly the includes + fatals (comment
+  correctly outside). verify_emit_bin 24/24; both zero-byte bins genuinely 0 in git;
+  gitignore exactly 18 narrow exceptions. **Ruling on `--emit-table`** (the Task-2 flag):
+  it DOES clobber the hand-owned header with the legacy pre-R2 shape (confirmed by
+  scratch-run) — byte-inert for asl but a maintenance foot-gun; FIXED (`6f5efb5`) with a
+  loud boxed stderr warning naming the file/the R2 homes/the checklist + a legacy-shape
+  note in the emitter. Refuse-if-exists judged over-strict (defeats the bootstrap
+  purpose); emitting the post-R2 shape recorded as the option-2 upgrade if bootstrap ever
+  sees real use. Stale pre-R2 emitter comment re-tensed (prong-2 F1).
+
+**F1 flake disposition:** five sequential `SIGIL_STRICT_GATE=1 cargo test --workspace`
+runs post-review — ALL clean (1491/0 each; the T1 test present in every run). Evidence
+points environmental (transient build-cache/FS inconsistency under parallel load), not
+branch-caused: the branch's tests are read-only, the pipeline deterministic, and the
+failing run coincided with concurrent worktree creation. RECORDED as a watch item, not a
+blocker: if it recurs, dump the resolved section LMAs of the failing run to pin whether
+the assembler or the environment moved. The checkpoint packet states this explicitly.

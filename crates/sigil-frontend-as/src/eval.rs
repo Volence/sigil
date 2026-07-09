@@ -2032,7 +2032,9 @@ impl Asm {
                         vec![Fixup {
                             kind: FixupKind::Value8,
                             offset: 0,
-                            target: qe,
+                            // Bake env-resolvable subterms; defer only the true
+                            // cross-seam leaf (mirrors `directive_dw`).
+                            target: self.partial_fold(&qe),
                         }],
                         span,
                     );
@@ -2081,7 +2083,10 @@ impl Asm {
                         vec![Fixup {
                             kind: FixupKind::Value16Le,
                             offset: 0,
-                            target: qe,
+                            // Bake env-resolvable subterms (e.g. `sfx_winptr`'s
+                            // `SFX_WIN_MASK`/`SFX_WIN_BASE` equs) HERE — the
+                            // linker only sees the true cross-seam leaf.
+                            target: self.partial_fold(&qe),
                         }],
                         span,
                     );
@@ -2531,7 +2536,10 @@ impl Asm {
         frag.fixups.push(Fixup {
             kind: FixupKind::Value32Be,
             offset: 2,
-            target: qualified,
+            // Bake env-resolvable subterms; defer only the true cross-seam leaf
+            // (mirrors the `db`/`dw` deferral — a compound imm32 with an
+            // env-only equ subterm must not ship that equ as a `Sym`).
+            target: self.partial_fold(&qualified),
         });
         Some(frag)
     }
@@ -3175,6 +3183,49 @@ impl Asm {
                 op: *op,
                 operand: Box::new(self.qualify_expr(operand)),
             },
+            other => other.clone(),
+        }
+    }
+
+    /// PARTIALLY fold a fixup target expression: rewrite every subterm that
+    /// resolves in the CURRENT AS env to its `Expr::Int`, leaving only the
+    /// genuinely-unresolved symbols (typically the sole `.emp`-side cross-seam
+    /// label) as `Sym`. Used on the deferral paths (`db`/`dw`/imm32) so a
+    /// compound target like `sfx_winptr(Sfx_33)` = `(Sfx_33 & SFX_WIN_MASK) |
+    /// SFX_WIN_BASE` bakes the env-only constants `SFX_WIN_MASK`/`SFX_WIN_BASE`
+    /// (asl `=` equs the linker's section-label table cannot see) HERE, so the
+    /// linker fold sees `(Sfx_33 & 32767) | 32768` — only `Sfx_33` deferred.
+    ///
+    /// This is the deferred-expr analogue of `fixup_target`'s bake-what-you-can
+    /// rationale (the env-only `set`/`equ` note there): whole-expr folding is not
+    /// enough when ONE leaf is external — the resolvable leaves must still be
+    /// captured at this site, not shipped as `Sym`s the linker can't resolve.
+    /// A whole expr that folds is returned as a single `Expr::Int`; a fully
+    /// external leaf is returned unchanged.
+    ///
+    /// No-drift argument, stated directly: the subterms we bake here are BY
+    /// CONSTRUCTION AS-env-resolvable — local `=`/`equ`/label values that live
+    /// only in this evaluator's env and the linker's section-label table never
+    /// sees. So baking one can never shadow a linker-visible section label:
+    /// the two namespaces are disjoint, and only the still-external leaves (the
+    /// ones this fold leaves untouched) reach the linker at all.
+    fn partial_fold(&self, e: &Expr) -> Expr {
+        // If the WHOLE subtree folds, collapse it to a literal.
+        if let Fold::Value(v) = self.fold(e) {
+            return Expr::Int(v);
+        }
+        // Otherwise recurse, folding the resolvable branches.
+        match e {
+            Expr::Binary { op, lhs, rhs } => Expr::Binary {
+                op: *op,
+                lhs: Box::new(self.partial_fold(lhs)),
+                rhs: Box::new(self.partial_fold(rhs)),
+            },
+            Expr::Unary { op, operand } => Expr::Unary {
+                op: *op,
+                operand: Box::new(self.partial_fold(operand)),
+            },
+            // A leaf that didn't fold above is genuinely external — keep it.
             other => other.clone(),
         }
     }

@@ -848,3 +848,156 @@ fn p4_ensure_len_against_pinned_const_fires_loud_message_when_unequal() {
         "expected the ensure's interpolated message naming 999 and 12, got: {diags:?}"
     );
 }
+
+// ---- sound-migration T3 Task 1: SFX-shape capability probes (P2, P3) ----
+//
+// `sfx_bank.emp` (T3 Task 3) needs two constructs no existing test exercises:
+// an `embed(...)` of a ZERO-BYTE file (the two PSG-only patch banks
+// `sfx_36_patches.bin`/`sfx_62_patches.bin` are empty), and a `[*u8; N]`
+// pointer array carrying NULL (`0`) entries alongside SymRef strings (the
+// sparse `SfxTable`: 9 syms + 126 `0` cells for the unused ids). T2's P1
+// proved `Data.empty` (an emp-side zero-length item); T2's P2 proved a
+// `[*u8; N]` of ONLY string elements. These close the remaining two gaps.
+
+// ---- P2: `embed(...)` of a ZERO-BYTE file -------------------------------
+
+#[test]
+fn t3_p2_zero_byte_embed_is_labeled_zero_length_next_item_same_offset() {
+    // `data X = embed("empty.bin")` where empty.bin is a 0-byte file: X's label
+    // is defined, X emits ZERO bytes, and the FOLLOWING item lands at the SAME
+    // offset X occupies (the embed-of-empty-FILE path, distinct from T2 P1's
+    // `Data.empty` builtin). Mirrors `p1_conditional_embed_false_arm_...`.
+    let src = "module m\n\
+               section s (vma: $8000) {\n\
+               data X = embed(\"empty.bin\")\n\
+               data Next: u8 = $AA\n\
+               }\n";
+    let (module, diags) = lower_with_defines_and_root(src, vec![]);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    let sec = section(&module, "s");
+    let x_off = label_offset(sec, "X");
+    let next_off = label_offset(sec, "Next");
+    assert_eq!(x_off, 0, "X's label is still defined at the section start");
+    assert_eq!(next_off, 0, "Next lands at X's offset — the zero-byte embed emitted nothing");
+    assert_eq!(x_off, next_off, "the following item lands at the SAME offset as the empty embed");
+
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes, vec![0xAA], "only Next's single byte — the empty embed contributed nothing");
+}
+
+// ---- P3: NULL (`0`) entries in a `[*u8; N]` pointer array ----------------
+
+#[test]
+fn t3_p3_null_entries_in_pointer_array_lower_as_zero_cells_no_fixup() {
+    // `data T: [*u8; 5] = ["A", 0, 0, "B", 0]` — the sparse SfxTable shape. The
+    // string elements lower as Abs32Be SymRef fixups (at offsets 0 and 12); the
+    // `0` elements lower as PLAIN zero cells with NO fixup. Linked bytes:
+    // A's addr, 0, 0, B's addr, 0.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data B: [u8;1] = [2]\n\
+               data T: [*u8; 5] = [\"A\", 0, 0, \"B\", 0]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    // Exactly TWO fixups — the string elements only; the `0` cells carry none.
+    assert_eq!(
+        section_fixups(&module),
+        vec![
+            Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) },
+            Fixup { kind: FixupKind::Abs32Be, offset: 12, target: Expr::Sym("B".into()) },
+        ],
+        "only the sym entries (offsets 0, 12) get Abs32Be fixups; the `0` cells get none"
+    );
+
+    // A=0, B=1 (each 1 byte) then T's 5*4=20-byte table.
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes.len(), 2 + 20, "2 one-byte blobs + a 20-byte pointer table");
+    assert_eq!(&bytes[2..6], &[0x00, 0x00, 0x00, 0x00], "T[0] -> A @ address 0");
+    assert_eq!(&bytes[6..10], &[0x00, 0x00, 0x00, 0x00], "T[1] = null (0)");
+    assert_eq!(&bytes[10..14], &[0x00, 0x00, 0x00, 0x00], "T[2] = null (0)");
+    assert_eq!(&bytes[14..18], &[0x00, 0x00, 0x00, 0x01], "T[3] -> B @ address 1");
+    assert_eq!(&bytes[18..22], &[0x00, 0x00, 0x00, 0x00], "T[4] = null (0)");
+}
+
+#[test]
+fn t3_p3_nonzero_int_entry_in_pointer_array_folds_to_absolute_cell() {
+    // A non-zero int element in a `*u8` array folds to an absolute (Abs32Be
+    // width-4) VALUE cell — pin whatever behavior the `0`-null path implements
+    // so a stray nonzero int can't silently do something different. `$1234`
+    // (the only int besides `0`) lands big-endian in its 4-byte cell.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 2] = [\"A\", $1234]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+
+    // Only the sym entry gets a fixup; the int is a folded absolute cell.
+    assert_eq!(
+        section_fixups(&module),
+        vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: Expr::Sym("A".into()) }],
+        "only the sym entry gets a fixup; the int is a folded absolute cell"
+    );
+    let bytes = linked_bytes(&module);
+    assert_eq!(bytes.len(), 1 + 8, "the one-byte blob + a 2-entry (8-byte) pointer table");
+    assert_eq!(&bytes[1..5], &[0x00, 0x00, 0x00, 0x00], "T[0] -> A @ address 0");
+    assert_eq!(&bytes[5..9], &[0x00, 0x00, 0x12, 0x34], "T[1] = $1234 as a big-endian absolute cell");
+}
+
+#[test]
+fn t3_p3_oversized_int_entry_in_pointer_array_errors_out_of_range() {
+    // The folded int cell is a 4-byte ABSOLUTE address (`Abs32Be`), so an int
+    // that does not fit an unsigned 32-bit address (`$100000000` = 2^32) MUST
+    // NOT silently truncate to its low 4 bytes (`00 00 00 00`, byte-identical to
+    // a `0` null) — it is refused at emission time with `[emit.out-of-range]`,
+    // the same discipline the scalar path (`lower_prim`) enforces. Mirrors the
+    // `u16` out-of-range refusals above.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 2] = [\"A\", $100000000]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("4294967296")),
+        "expected an [emit.out-of-range] refusing 2^32 for a *u8 pointer cell, got {diags:?}"
+    );
+}
+
+#[test]
+fn t3_p3_negative_int_entry_in_pointer_array_errors_out_of_range() {
+    // A NEGATIVE int in a pointer slot is likewise out of the unsigned-32-bit
+    // address range (0..=u32::MAX) — refused loud rather than wrapping to a
+    // large positive address.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 2] = [\"A\", -1]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
+        "expected an [emit.out-of-range] refusing -1 for a *u8 pointer cell, got {diags:?}"
+    );
+}
+
+#[test]
+fn t3_p3_u32_max_int_entry_in_pointer_array_is_accepted() {
+    // The BOUNDARY: `$FFFFFFFF` (u32::MAX) is a representable absolute address —
+    // it stays ACCEPTED (no diagnostic) and folds big-endian into its 4-byte
+    // cell, exactly like the `$1234` case above.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 2] = [\"A\", $FFFFFFFF]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[5..9], &[0xFF, 0xFF, 0xFF, 0xFF], "T[1] = $FFFFFFFF as a big-endian absolute cell");
+}

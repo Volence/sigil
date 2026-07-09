@@ -344,9 +344,11 @@ impl<'a> Evaluator<'a> {
     /// Lower a pointer field (the Plan-4 SEAM): extract a symbol NAME from the
     /// value — a [`Value::FnRef`] (a bare `comptime fn` name) or a
     /// [`Value::Str`] naming a symbol — and emit a [`Cell::SymRef`] of width 4
-    /// (D-P3.7). The address is NOT resolved (Plan 4). If no name can be
-    /// extracted, diagnose and emit a placeholder `SymRef` so the 4-byte slot is
-    /// still accounted for.
+    /// (D-P3.7). The address is NOT resolved (Plan 4). An integer literal instead
+    /// folds to a width-4 absolute VALUE cell (no fixup), range-checked against
+    /// `0..=u32::MAX` — the sparse-table null idiom (`0`) and bare absolute
+    /// addresses. If no name can be extracted, diagnose and emit a placeholder
+    /// `SymRef` so the 4-byte slot is still accounted for.
     fn lower_ptr(&mut self, value: &Value, span: Span) -> DataBuf {
         let name = match value {
             Value::FnRef(n) => Some(n.clone()),
@@ -359,10 +361,27 @@ impl<'a> Evaluator<'a> {
             _ => None,
         };
         let mut buf = DataBuf::empty();
-        match name {
+        match (name, value) {
             // A plain absolute pointer (NOT windowed — that is `winptr(sym)`).
-            Some(name) => buf.push(Cell::SymRef { name, width: 4, windowed: false }),
-            None => {
+            (Some(name), _) => buf.push(Cell::SymRef { name, width: 4, windowed: false }),
+            // An INT literal in a pointer slot folds to a plain width-4 absolute
+            // VALUE cell — no fixup (T3 P3). This is the sparse-table null idiom:
+            // a `0` is an unused/empty pointer slot (`SfxTable`'s 126 gap cells),
+            // written directly rather than through a symbol. A non-zero int folds
+            // the same way (a literal absolute address), so a stray nonzero can't
+            // silently do something other than what `0` does. Big-endian, matching
+            // the `Abs32Be` byte layout a `SymRef` in this slot would resolve to.
+            (None, Value::Int(n)) => {
+                // The folded cell is a 4-byte UNSIGNED absolute address, so
+                // range-check against `0..=u32::MAX` before pushing — an
+                // out-of-range int must NOT silently truncate to its low 4
+                // bytes (byte-identical to a `0` null). Mirrors the scalar
+                // path (`lower_prim`)'s `emit_range_check`; the cell is still
+                // emitted (best-effort) so the table's size lines up.
+                self.emit_range_check(*n, 0, u32::MAX as i128, "*u8 (absolute pointer cell)", span);
+                buf.push(Cell::Scalar { value: *n, width: 4, signed: false, le: false });
+            }
+            (None, _) => {
                 self.error(
                     span,
                     format!("pointer field needs a symbol reference, got {}", value.type_name()),
