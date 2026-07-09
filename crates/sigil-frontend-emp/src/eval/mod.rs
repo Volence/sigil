@@ -20,6 +20,7 @@ mod float_ns;
 pub(crate) mod guards;
 mod literals;
 mod pattern;
+mod s4lz;
 mod sandbox;
 mod typed;
 

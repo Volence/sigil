@@ -90,6 +90,12 @@ impl<'a> Evaluator<'a> {
                 // `Data` constructor. Reads no file itself (its input already
                 // carries its own capture edge), so it needs no sandbox root.
                 "zx0" => return self.eval_zx0(args, span, env),
+                // `s4lz(data, dict: d, tile_delta: b)` (Plan-7 #10, Tier 1,
+                // CR-S4LZ): S4LZ-v3-compresses a `Value::Data` at comptime
+                // via the pure-Rust byte-exact port in `sigil_s4lz` — also a
+                // non-shadowable `Data` constructor. Reads no file itself
+                // (same as `zx0`), so it needs no sandbox root.
+                "s4lz" => return self.eval_s4lz(args, span, env),
                 _ => {}
             }
         }

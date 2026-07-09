@@ -316,6 +316,7 @@ dependencies = [
  "sigil-backend-z80",
  "sigil-ir",
  "sigil-link",
+ "sigil-s4lz",
  "sigil-salvador-sys",
  "sigil-span",
  "tempfile",
