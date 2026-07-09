@@ -931,36 +931,23 @@ fn build_mixed_tranche2_rom(
 /// `controllers_port.rs`/`math_port.rs`'s region-level twins) before the
 /// whole-ROM assertion re-proves them in context.
 ///
-/// BLOCKED (port #2, task 3 — recorded in the campaign gap ledger): the real
-/// object-code-bank section (`org $10000`, `engine.inc:174`) is never closed
-/// before `gameDataIncludes` (`engine.inc:189`) chains the parallax data
-/// tables into the SAME section — `engine/parallax_macros.inc`'s
+/// This is the acceptance gate for the Org-aware relaxation work (port #2,
+/// task 4): the real object-code-bank section (`org $10000`, `engine.inc:174`)
+/// is never closed before `gameDataIncludes` chains the parallax data tables
+/// into the SAME section — `engine/parallax_macros.inc`'s
 /// `parallax_section_end` macro emits a genuine mid-section back-patch
 /// (`org pscStart` / `org pscEndPos`, a real `Fragment::Org`), and
 /// `test_parent.asm`'s/`player_ground.asm`'s six `jsr GetSineCosine` sites
-/// (deferred to `Fragment::JmpJsrSym` by the port #2 follow-up fix, since
-/// `GetSineCosine` is genuinely external to the AS compile when
-/// `SIGIL_EMP_MATH` is on) land EARLIER in that same section. `resolve_layout`
-/// (`sigil-link/src/relax.rs:495-536`, a deliberate M1.C T6b scoping decision)
-/// refuses this combination categorically: its `shift_breakpoints` prefix-sum
-/// layout math treats every `Org` as zero-length and never reads `Org.target`,
-/// which is only sound when no relaxable fragment before an `Org` in the same
-/// section can ever grow — a static check that cannot know `GetSineCosine`'s
-/// address will always fit `abs.w` (so the growth this guards against could
-/// never actually fire here), because that requires running the relaxation
-/// fixpoint FIRST. Making the guard fixpoint-aware (or `shift_breakpoints`
-/// genuinely `Org`-target-aware) is a real linker algorithm change — assessed
-/// as NOT small during this task (two independent research passes agreed);
-/// per the task's explicit STOP rule, this is reported BLOCKED rather than
-/// patched under time pressure. The `controllers`/`math` REGION-level gates
-/// (`controllers_port.rs`, `math_port.rs`) are unaffected and fully green —
-/// they compose fresh, minimal synthetic sections with no `Org` in play, so
-/// they never hit this guard. `#[ignore]`d so `cargo test --workspace` stays
-/// green while this stays visibly unresolved (run explicitly to reproduce:
-/// `cargo test -p sigil-harness --test mixed_dac_rom -- --ignored
-/// mixed_tranche2`).
+/// (deferred to `Fragment::JmpJsrSym`, since `GetSineCosine` is external to the
+/// AS compile when `SIGIL_EMP_MATH` is on) land EARLIER in that same section.
+/// The M1.C T6b categorical `Org`+relaxable refusal was REPLACED by
+/// `resolve_layout`'s run/barrier layout math (`shift_breakpoints` /
+/// `frag_start_vma` / `run_overrun_diag` now treat every `Org` as a position
+/// barrier that resets the per-run growth delta and pins post-org content to
+/// the org target), so this full six-module composition links byte-identically
+/// to `aeon/s4.bin` — proving the change is byte-neutral for every layout that
+/// worked before AND correct for the real `Org`+`JmpJsrSym` co-residency.
 #[test]
-#[ignore = "BLOCKED: resolve_layout refuses Org+JmpJsrSym co-residency in the real object-bank+parallax-data section (M1.C T6b guard) — see doc comment and campaign gap ledger; needs a linker algorithm change, not a port-task-sized fix"]
 fn mixed_tranche2_rom_matches_assembled_reference() {
     let aeon = aeon_dir();
     let rom_path = aeon.join("s4.bin");
@@ -1009,10 +996,11 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
 /// all shape-invariant (identical content in both shapes — only their map
 /// bases move, R7, exactly like `sfx_bank.emp`).
 ///
-/// BLOCKED — see `mixed_tranche2_rom_matches_assembled_reference`'s doc
-/// comment (the plain variant); identical root cause, both shapes.
+/// The debug twin of the Org-aware acceptance gate — see
+/// `mixed_tranche2_rom_matches_assembled_reference`'s doc comment (the plain
+/// variant); same six-module composition, same run/barrier layout math, both
+/// shapes byte-identical to their references.
 #[test]
-#[ignore = "BLOCKED: resolve_layout refuses Org+JmpJsrSym co-residency in the real object-bank+parallax-data section (M1.C T6b guard) — see doc comment and campaign gap ledger; needs a linker algorithm change, not a port-task-sized fix"]
 fn mixed_tranche2_debug_rom_matches_assembled_reference() {
     let aeon = aeon_dir();
     let rom_path = aeon.join("s4.debug.bin");
