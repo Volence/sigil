@@ -103,6 +103,10 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                 while i < b.len() && b[i] != b'\n' { i += 1; }
                 if doc {
                     let mut t = &src[text_start.min(i)..i];
+                    // CRLF: the scan stops at `\n` only, so strip the `\r`
+                    // FIRST (then the one optional leading space) — doc text
+                    // must never be the one place `\r` survives lexing.
+                    t = t.strip_suffix('\r').unwrap_or(t);
                     t = t.strip_prefix(' ').unwrap_or(t);
                     push!(Tok::DocLine(t.to_string()), s, i);
                 }

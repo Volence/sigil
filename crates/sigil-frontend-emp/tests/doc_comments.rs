@@ -140,6 +140,113 @@ const A: u8 = 1
 }
 
 #[test]
+fn crlf_doc_text_has_no_carriage_return() {
+    let src = "module m\r\n/// docs here\r\n/// second line\r\nconst A: u8 = 1\r\n";
+    let (f, msgs) = parse(src);
+    assert!(msgs.is_empty(), "clean parse: {msgs:?}");
+    assert_eq!(f.docs_for(item_span(&f.items[0])), Some("docs here\nsecond line"));
+}
+
+#[test]
+fn doc_above_module_attr_attaches_to_first_item() {
+    // Docs above (or between) module attrs carry forward to the first item —
+    // the attr itself must survive too (review M2: it was silently dropped).
+    let src = "\
+module m
+/// Documented despite the attr between.
+@as_compat
+const A: u8 = 1
+";
+    let (f, msgs) = parse(src);
+    assert!(msgs.is_empty(), "clean parse: {msgs:?}");
+    assert_eq!(f.attrs.len(), 1, "@as_compat survives");
+    assert_eq!(f.docs_for(item_span(&f.items[0])), Some("Documented despite the attr between."));
+}
+
+#[test]
+fn doc_above_struct_field_warns_dangling() {
+    // Field docs are a future extension (ledger) — today the deliberate
+    // behavior is the dangling warning, parse intact.
+    let src = "\
+module m
+struct S {
+    /// hit points
+    hp: u16,
+}
+";
+    let (f, msgs) = parse(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[doc.dangling]")),
+        "expected [doc.dangling] above a struct field: {msgs:?}"
+    );
+    assert!(matches!(&f.items[0], Item::Struct(_)), "struct still parses");
+}
+
+#[test]
+fn doc_as_final_bytes_without_newline_warns() {
+    let src = "module m\nconst A: u8 = 1\n/// eof doc";
+    let (_, msgs) = parse(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[doc.dangling]")),
+        "expected [doc.dangling] for the EOF run: {msgs:?}"
+    );
+}
+
+#[test]
+fn consecutive_documented_items_attach_separately() {
+    let src = "\
+module m
+/// First.
+const A: u8 = 1
+/// Second.
+const B: u8 = 2
+";
+    let (f, msgs) = parse(src);
+    assert!(msgs.is_empty(), "clean parse: {msgs:?}");
+    assert_eq!(f.docs_for(item_span(&f.items[0])), Some("First."));
+    assert_eq!(f.docs_for(item_span(&f.items[1])), Some("Second."));
+}
+
+#[test]
+fn trailing_same_line_doc_warns_dangling() {
+    let src = "\
+module m
+const A: u8 = 1 /// trailing doc
+const B: u8 = 2
+";
+    let (f, msgs) = parse(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[doc.dangling]")),
+        "expected [doc.dangling] for a trailing same-line doc: {msgs:?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("expected end of line")),
+        "no doc-blind hard error: {msgs:?}"
+    );
+    assert_eq!(f.items.len(), 2, "both consts parse");
+}
+
+#[test]
+fn recovery_preserves_the_next_items_docs() {
+    // Garbage before a documented item: recovery stops AT the doc run so the
+    // docs still attach to the recovered-to item (review m2).
+    let src = "\
+module m
+whatnot garbage line
+/// Doc for B.
+const B: u8 = 2
+";
+    let (f, msgs) = parse(src);
+    assert!(!msgs.is_empty(), "the garbage line still errors");
+    let b = f
+        .items
+        .iter()
+        .find(|i| matches!(i, Item::Const(c) if c.name == "B"))
+        .expect("B parses");
+    assert_eq!(f.docs_for(item_span(b)), Some("Doc for B."));
+}
+
+#[test]
 fn preview_style_script_doc_attaches() {
     let src = "\
 module m

@@ -163,6 +163,14 @@ impl Parser {
         span.map(|s| (text, s))
     }
     fn expect_line_end(&mut self) {
+        // A trailing same-line `///` (`const A = 1 /// doc`) gets the same
+        // friendly [doc.dangling] every other misplaced doc position gets,
+        // not a doc-blind "expected end of line" (S2-D11(d) review m1).
+        if let Tok::DocLine(_) = self.peek() {
+            let sp = self.span();
+            self.warn_dangling_doc(sp);
+            self.bump();
+        }
         if !self.at(&Tok::Eof) && !self.eat(&Tok::Newline) {
             let span = self.span();
             self.diag_at(span, "expected end of line".to_string());
@@ -193,12 +201,23 @@ impl Parser {
         self.skip_newlines();
         let module = self.module_decl();
         // module-level attributes: `@as_compat`, `@allow(naming.pascal)`.
-        // Newlines only here — a `///` run after the attrs belongs to the
-        // FIRST ITEM, so it must survive to the item loop's collector below
-        // (the warning-variant skip would eat it as dangling).
+        // Doc runs here — above an attr, between attrs, or after the last
+        // attr — are COLLECTED and carried forward to the first item (the
+        // least surprising rule: attrs are metadata, docs describe the item
+        // that follows them, mirroring Rust's docs-relative-to-attrs order).
         let mut attrs = Vec::new();
+        let mut carried_docs: Option<(String, Span)> = None;
         loop {
-            while self.eat(&Tok::Newline) {}
+            if let Some((t, sp)) = self.skip_newlines_collecting_docs() {
+                carried_docs = Some(match carried_docs.take() {
+                    Some((mut ct, csp)) => {
+                        ct.push('\n');
+                        ct.push_str(&t);
+                        (ct, csp.merge(sp))
+                    }
+                    None => (t, sp),
+                });
+            }
             if !self.at(&Tok::At) { break; }
             let aspan = self.span();
             self.bump();
@@ -221,7 +240,15 @@ impl Parser {
         }
         let mut items = Vec::new();
         loop {
-            let docs = self.skip_newlines_collecting_docs();
+            let mut docs = self.skip_newlines_collecting_docs();
+            // Docs carried over the attrs region (above/between/after attrs)
+            // prepend to the first item's own run.
+            if let Some((ct, csp)) = carried_docs.take() {
+                docs = Some(match docs {
+                    Some((t, sp)) => (format!("{ct}\n{t}"), csp.merge(sp)),
+                    None => (ct, csp),
+                });
+            }
             if self.at(&Tok::Eof) {
                 if let Some((_, sp)) = docs {
                     self.warn_dangling_doc(sp);
@@ -359,6 +386,11 @@ impl Parser {
                 Tok::RBrace if in_block && depth == 0 => return,
                 Tok::LBrace => { depth += 1; self.bump(); }
                 Tok::RBrace => { depth -= 1; self.bump(); }
+                // A `///` line is a safe sync point (it only occurs at line
+                // starts): stop so the caller's next collecting-skip attaches
+                // it to the recovered-to item instead of silently eating it
+                // (S2-D11(d) review m2).
+                Tok::DocLine(_) if depth <= 0 => return,
                 Tok::Ident(s) if depth <= 0 && OPENERS.contains(&s.as_str()) => {
                     // `ensure`/`ensure_fatal` are CONTEXTUAL openers — only a real
                     // item when followed by `(`. A bare occurrence is not an item
@@ -1652,7 +1684,12 @@ impl Parser {
                 }
                 let parsed = self.item();
                 if let (Some(item), Some((text, _))) = (&parsed, &docs) {
-                    self.docs.push(DocEntry { item_span: item_span(item), text: text.clone() });
+                    // A doc on the REJECTED nested-section item below would be
+                    // a phantom entry (its item never survives) — skip the
+                    // attach there; the [section.nested] error is the story.
+                    if !matches!(parsed, Some(Item::Section(_))) {
+                        self.docs.push(DocEntry { item_span: item_span(item), text: text.clone() });
+                    }
                 } else if let (None, Some((_, sp))) = (&parsed, &docs) {
                     self.warn_dangling_doc(*sp);
                 }
