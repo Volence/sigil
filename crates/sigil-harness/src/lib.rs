@@ -164,6 +164,53 @@ pub fn assemble_mixed_sfx_as_side(aeon: &Path, debug: bool) -> Result<Module, St
     })
 }
 
+/// Assemble the AS side of the port #1 MIXED `.asm`+`.emp` build: everything
+/// `assemble_mixed_sfx_as_side` does, PLUS `SIGIL_EMP_HBLANK` defined so
+/// `engine/engine.inc:92`'s `ifndef SIGIL_EMP_HBLANK` block (which normally
+/// includes `engine/system/hblank.asm`) is REPLACED by an `org` resume — per
+/// shape, `$2290` (plain) or `$231E` (`__DEBUG__`) — leaving the 18-byte
+/// `$227E..$2290` / `$230C..$231E` window for the `.emp` side's `hblank`
+/// section to supply. All FOUR gates (`SIGIL_EMP_DAC`, `SIGIL_EMP_MT`,
+/// `SIGIL_EMP_SFX`, `SIGIL_EMP_HBLANK`) are independent; this is the
+/// cumulative shape exercising all four together — the campaign's first CODE
+/// port riding on top of the three sound-migration data ports.
+///
+/// `HBlank_Handler_Ptr` (referenced by `hblank.emp`'s `HBlank_Dispatch`) is a
+/// real `.asm` RAM label defined UNCONDITIONALLY in `engine/ram.asm` (outside
+/// the gate) — so, like `MovingTrucks_Bank_Start`, no synthetic cross-seam
+/// symbol injection is needed here: the real AS module supplies it through
+/// the same shared symbol table. `vectors.asm`'s `dc.l HBlank_Dispatch` and
+/// `boot.asm`'s `move.l #HBlank_Null, (HBlank_Handler_Ptr).w` are likewise
+/// unconditional AS-side consumers of the `.emp` module's two `pub proc`
+/// names — the latter is only assemblable at all because of the
+/// `try_defer_long_imm` extension (port #1 T3) that lets a `move.l #imm,
+/// (abs).w` with an unresolved source immediate defer to a `Value32Be` link
+/// fixup, mirroring the register-destination deferral R3 already proved for
+/// `movea.l #SongTable, a0`.
+///
+/// Returns the UNLINKED [`Module`], exactly like the three sibling helpers:
+/// the port #1 mixed harness concatenates these sections with all FOUR
+/// `.emp` modules' placed sections (`dac_samples.emp` + `mt_bank.emp` +
+/// `sfx_bank.emp` + `hblank.emp`) and runs ONE `resolve_layout` + `link` over
+/// the union.
+pub fn assemble_mixed_hblank_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+        ("SIGIL_EMP_HBLANK".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed HBLANK AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable

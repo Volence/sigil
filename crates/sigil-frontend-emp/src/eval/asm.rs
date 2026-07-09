@@ -21,7 +21,7 @@
 //! (the hygiene module).
 
 use super::{Env, Evaluator};
-use crate::ast::{self, AsmStmt, InstrLine, Operand, TextOrSplice};
+use crate::ast::{self, AsmStmt, BinOp, InstrLine, Operand, TextOrSplice};
 use crate::lower::hygiene::{LabelScope, Owner};
 use crate::parser::expr_span;
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg, Value, Width};
@@ -302,6 +302,13 @@ impl Evaluator<'_> {
     /// Lower one [`InstrLine`] to a [`CodeItem::Instr`]: resolve the mnemonic and
     /// size (splices typed against [`Width`]/[`Cc`]) and map every operand. Any
     /// failure emits a diagnostic and yields `None` (the line is dropped).
+    ///
+    /// `movem` is special-cased (D-P1H.2): reglist parsing is MNEMONIC-DIRECTED,
+    /// not a general operand-grammar form, so only here — once the resolved
+    /// mnemonic string is in hand — do we try each operand as a register list
+    /// before falling back to the ordinary operand mapper. This mirrors the AS
+    /// front-end's `lower_m68k_movem` shape (parse both operands as reglists,
+    /// exactly one must succeed) without leaking `d0-d1/a0` grammar anywhere else.
     fn lower_instr_to_item(
         &mut self,
         instr: &InstrLine,
@@ -310,11 +317,63 @@ impl Evaluator<'_> {
     ) -> Option<CodeItem> {
         let mnemonic = self.resolve_mnemonic(&instr.mnemonic, env)?;
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
+        if mnemonic == "movem" {
+            let ops = self.map_movem_operands(instr, scope, env, size)?;
+            return Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span });
+        }
         let mut ops = Vec::with_capacity(instr.operands.len());
         for op in &instr.operands {
             ops.push(self.map_operand(op, scope, env, size)?);
         }
         Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span })
+    }
+
+    /// Map a `movem`'s two operands (D-P1H.2): exactly one must be a register
+    /// list (`d0-d7/a0-a6`, a single reg, a `d`→`a`-crossing range, `sp` as an
+    /// `a7` alias); the other is the ordinary memory-EA operand mapper. Operand
+    /// ORDER is preserved (it selects STORE vs LOAD direction downstream in
+    /// `lower/code.rs`'s `lower_m68k_movem`). Mirrors the AS front-end's
+    /// `lower_m68k_movem`: try both as reglists, exactly one hit is legal.
+    fn map_movem_operands(
+        &mut self,
+        instr: &InstrLine,
+        scope: &LabelScope,
+        env: &mut Env,
+        size: Option<Width>,
+    ) -> Option<Vec<CodeOperand>> {
+        let [op0, op1] = instr.operands.as_slice() else {
+            self.error(
+                instr.span,
+                "movem needs two operands: a register list and a memory EA",
+            );
+            return None;
+        };
+        let list0 = movem_reg_list(op0);
+        let list1 = movem_reg_list(op1);
+        match (list0, list1) {
+            (Some(mask), None) => {
+                let mem = self.map_operand(op1, scope, env, size)?;
+                Some(vec![CodeOperand::RegList(mask), mem])
+            }
+            (None, Some(mask)) => {
+                let mem = self.map_operand(op0, scope, env, size)?;
+                Some(vec![mem, CodeOperand::RegList(mask)])
+            }
+            (Some(_), Some(_)) => {
+                self.error(
+                    instr.span,
+                    "movem needs a memory EA operand, got two register lists",
+                );
+                None
+            }
+            (None, None) => {
+                self.error(
+                    instr.span,
+                    "movem needs a register-list operand (e.g. `d0-d7/a0-a6`)",
+                );
+                None
+            }
+        }
     }
 
     /// Resolve a possibly-spliced mnemonic to its final string. A `{splice}` in
@@ -850,6 +909,128 @@ fn width_from_text(t: &str) -> Option<Width> {
 /// call sites' brevity.
 fn reg_from_name(name: &str) -> Option<Reg> {
     Reg::from_name(name)
+}
+
+/// The register-list bit index of a single [`Reg`] in the CANONICAL `movem`
+/// mask (bit0=D0..bit7=D7, bit8=A0..bit15=A7) — mirrors the AS front-end's
+/// `reg_list_index`. `sp` is already folded to `Reg::A7` by [`reg_from_name`]
+/// before this runs, so it lands at bit 15 like any other `a7` spelling.
+fn reg_list_bit(r: Reg) -> u8 {
+    match r {
+        Reg::D0 => 0,
+        Reg::D1 => 1,
+        Reg::D2 => 2,
+        Reg::D3 => 3,
+        Reg::D4 => 4,
+        Reg::D5 => 5,
+        Reg::D6 => 6,
+        Reg::D7 => 7,
+        Reg::A0 => 8,
+        Reg::A1 => 9,
+        Reg::A2 => 10,
+        Reg::A3 => 11,
+        Reg::A4 => 12,
+        Reg::A5 => 13,
+        Reg::A6 => 14,
+        Reg::A7 => 15,
+    }
+}
+
+/// If `op` is a `movem` register-list operand (`d0-d7/a0-a6`, `a2/d2`, `d0`,
+/// `sp`, a `d`→`a`-crossing range), return its CANONICAL 16-bit mask; else
+/// `None` (so the caller can try the OTHER operand / fall back to the memory-EA
+/// mapper — this is a total, side-effect-free recognizer, matching the AS
+/// front-end's `parse_reg_list` contract).
+///
+/// A `movem` operand is always parsed as an [`Operand::Plain`] expression (no
+/// EA parens) — `(sp)+`/`-(sp)` are the memory side, never the list side — so
+/// only that shape is tried. The expression tree groups by ARITHMETIC
+/// precedence (`/` binds tighter than `-`), which does NOT match reglist
+/// grammar's flat `item (- item)? (/ item (- item)?)*` shape — `d0-d7/a0-a6`
+/// parses as `Sub(Sub(d0, Div(d7,a0)), a6)`, not `Div(Sub(d0,d7), Sub(a0,a6))`.
+/// [`flatten_reglist_expr`] walks the tree and re-linearizes it into the
+/// original left-to-right token sequence before applying the range/union
+/// grammar, sidestepping the precedence mismatch entirely.
+fn movem_reg_list(op: &Operand) -> Option<u16> {
+    let Operand::Plain { expr, size: None, .. } = op else { return None };
+    let mut items = Vec::new();
+    flatten_reglist_expr(expr, &mut items)?;
+    // `items[i].1` says how item `i` is joined to item `i-1`: `Range` means
+    // items `i-1..=i` form a `lo-hi` pair (item `i-1` was already added as a
+    // plain single register above by the previous iteration — a range OVERWRITES
+    // it into the full span, which is a harmless re-set of already-set bits).
+    let mut mask: u16 = 0;
+    for (idx, (reg, sep)) in items.iter().enumerate() {
+        match sep {
+            ReglistSep::Range => {
+                let (prev_reg, _) = items[idx - 1];
+                let lo = reg_list_bit(prev_reg);
+                let hi = reg_list_bit(*reg);
+                if lo > hi {
+                    return None;
+                }
+                for b in lo..=hi {
+                    mask |= 1u16 << b;
+                }
+            }
+            ReglistSep::Union => {
+                mask |= 1u16 << reg_list_bit(*reg);
+            }
+        }
+    }
+    Some(mask)
+}
+
+/// How a reglist item is joined to the PREVIOUS item: `Union` (`/`, the first
+/// item's own separator is always `Union` — a leading sentinel, never
+/// consumed) or `Range` (`-`, forms a `lo-hi` pair with its predecessor).
+#[derive(Clone, Copy, PartialEq)]
+enum ReglistSep {
+    Union,
+    Range,
+}
+
+/// Re-linearize a `movem` reglist expression tree back into the FLAT
+/// left-to-right `(register, separator-before-it)` token sequence the source
+/// text actually wrote, undoing the arithmetic-precedence grouping (`/` binds
+/// tighter than `-`) that the general expression parser imposed. Returns
+/// `None` if any leaf is not a bare single-segment register-name path (a
+/// non-register identifier, a call, a literal, ...) — the caller then knows
+/// `op` is not a register list at all (e.g. a `move` operand's real arithmetic
+/// expression correctly falls through here).
+///
+/// The tree is always LEFT-DEEP (the parser's precedence climb is
+/// left-associative at each tier): a `Sub`/`Div` node's `lhs` may itself be
+/// `Sub`/`Div` (recurse), but `rhs` is a single leaf OR a `Div` chain (from a
+/// `/`-group immediately following a name) — never a `Sub`. Walking `lhs`
+/// first and `rhs` last, in that order, reproduces the original token order.
+fn flatten_reglist_expr(expr: &ast::Expr, out: &mut Vec<(Reg, ReglistSep)>) -> Option<()> {
+    match expr {
+        ast::Expr::Path(p) if p.segments.len() == 1 => {
+            let r = reg_from_name(&p.segments[0])?;
+            let sep = if out.is_empty() { ReglistSep::Union } else { ReglistSep::Range };
+            out.push((r, sep));
+            Some(())
+        }
+        ast::Expr::Binary { op: BinOp::Sub, lhs, rhs, .. } => {
+            flatten_reglist_expr(lhs, out)?;
+            flatten_reglist_expr(rhs, out)
+        }
+        ast::Expr::Binary { op: BinOp::Div, lhs, rhs, .. } => {
+            flatten_reglist_expr(lhs, out)?;
+            // A name right after `/` starts a fresh union item, not a range
+            // continuation, even though it is the `rhs` of a binary node —
+            // override the "not-first → Range" default `flatten_reglist_expr`
+            // would otherwise assign by re-marking it here.
+            let before = out.len();
+            flatten_reglist_expr(rhs, out)?;
+            if let Some(entry) = out.get_mut(before) {
+                entry.1 = ReglistSep::Union;
+            }
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 /// The single bare identifier of a displacement expression, if it is exactly a

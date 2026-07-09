@@ -339,3 +339,204 @@ fn abs_sym_with_displacement_operand_diagnoses() {
         "expected an extension-word-combination diagnostic, got: {diags:?}"
     );
 }
+
+// ---- `sp` alias (GAP 1) + `movem` register lists (GAP 2) ------------------
+//
+// Port #1 (hblank) recon found two operand-grammar gaps in the `.emp`
+// front-end (the ISA layer is complete): `sp` is not accepted as the `a7`
+// spelling anywhere an address register parses, and `movem`'s register-list
+// operand (`d0-d1/a0`) has no grammar at all (it parses as arithmetic over
+// unknown names). Reference bytes are the real hblank dispatcher (both
+// shapes) plus AS-front-end-verified parity vectors (`eval.rs`
+// `parse_reg_list_builds_canonical_masks` / `m68k_movem_*` tests).
+
+#[test]
+fn movem_store_predec_sp_matches_hblank_reference() {
+    // `movem.l d0-d1/a0, -(sp)` — the hblank dispatcher's register-save line.
+    // Canonical mask d0|d1|a0 = 0x0103; STORE to -(An) reverses it to 0xC080.
+    let (code, diags) = eval_asm_with(&asm_1("movem.l d0-d1/a0, -(sp)"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x48, 0xE7, 0xC0, 0x80]);
+}
+
+#[test]
+fn movem_load_postinc_sp_matches_hblank_reference() {
+    // `movem.l (sp)+, d0-d1/a0` — the hblank dispatcher's register-restore line.
+    // LOAD from (An)+ emits the canonical mask as-is (no reversal): 0x0103.
+    let (code, diags) = eval_asm_with(&asm_1("movem.l (sp)+, d0-d1/a0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x4C, 0xDF, 0x01, 0x03]);
+}
+
+#[test]
+fn movem_word_size_form() {
+    // `movem.w d0-d3, (a1)` — word size, plain (An) indirect (no reversal).
+    // Canonical mask d0-d3 = 0x000F. movem.w opcode = 0x4890 | reg(a1)=1 = 0x4891.
+    let (code, diags) = eval_asm_with(&asm_1("movem.w d0-d3, (a1)"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x48, 0x91, 0x00, 0x0F]);
+}
+
+#[test]
+fn movem_single_register_predec_sp() {
+    // `movem.l d0, -(sp)` — single-register list. Canonical mask d0 = 0x0001;
+    // STORE to -(An) reverses to 0x8000.
+    let (code, diags) = eval_asm_with(&asm_1("movem.l d0, -(sp)"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x48, 0xE7, 0x80, 0x00]);
+}
+
+#[test]
+fn movem_wide_mixed_range_list_predec_sp() {
+    // `movem.l d0-d7/a0-a6, -(sp)` — wide mixed list. Canonical mask = 0x7FFF
+    // (all of d0-d7 and a0-a6, not a7); STORE to -(An) reverses to 0xFFFE.
+    let (code, diags) = eval_asm_with(&asm_1("movem.l d0-d7/a0-a6, -(sp)"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x48, 0xE7, 0xFF, 0xFE]);
+}
+
+#[test]
+fn sp_alias_predec_matches_a7_spelling() {
+    // `move.l d0, -(sp)` must be byte-identical to `move.l d0, -(a7)`.
+    let (sp_code, sp_diags) = eval_asm_with(&asm_1("move.l d0, -(sp)"), &[]);
+    assert!(sp_diags.is_empty(), "unexpected eval diagnostics: {sp_diags:?}");
+    let (a7_code, a7_diags) = eval_asm_with(&asm_1("move.l d0, -(a7)"), &[]);
+    assert!(a7_diags.is_empty(), "unexpected eval diagnostics: {a7_diags:?}");
+    assert_eq!(lower_link_68k(&sp_code), lower_link_68k(&a7_code));
+}
+
+#[test]
+fn sp_alias_postinc_matches_a7_spelling() {
+    // `move.l (sp)+, d0` must be byte-identical to `move.l (a7)+, d0`.
+    let (sp_code, sp_diags) = eval_asm_with(&asm_1("move.l (sp)+, d0"), &[]);
+    assert!(sp_diags.is_empty(), "unexpected eval diagnostics: {sp_diags:?}");
+    let (a7_code, a7_diags) = eval_asm_with(&asm_1("move.l (a7)+, d0"), &[]);
+    assert!(a7_diags.is_empty(), "unexpected eval diagnostics: {a7_diags:?}");
+    assert_eq!(lower_link_68k(&sp_code), lower_link_68k(&a7_code));
+}
+
+#[test]
+fn sp_alias_plain_register_matches_a7_spelling() {
+    // `movea.l sp, a1` (plain register operand) must be byte-identical to
+    // `movea.l a7, a1`.
+    let (sp_code, sp_diags) = eval_asm_with(&asm_1("movea.l sp, a1"), &[]);
+    assert!(sp_diags.is_empty(), "unexpected eval diagnostics: {sp_diags:?}");
+    let (a7_code, a7_diags) = eval_asm_with(&asm_1("movea.l a7, a1"), &[]);
+    assert!(a7_diags.is_empty(), "unexpected eval diagnostics: {a7_diags:?}");
+    assert_eq!(lower_link_68k(&sp_code), lower_link_68k(&a7_code));
+}
+
+#[test]
+fn sp_alias_ind_matches_a7_spelling() {
+    // `move.l (sp), d0` (plain register-indirect) must be byte-identical to
+    // `move.l (a7), d0`.
+    let (sp_code, sp_diags) = eval_asm_with(&asm_1("move.l (sp), d0"), &[]);
+    assert!(sp_diags.is_empty(), "unexpected eval diagnostics: {sp_diags:?}");
+    let (a7_code, a7_diags) = eval_asm_with(&asm_1("move.l (a7), d0"), &[]);
+    assert!(a7_diags.is_empty(), "unexpected eval diagnostics: {a7_diags:?}");
+    assert_eq!(lower_link_68k(&sp_code), lower_link_68k(&a7_code));
+}
+
+#[test]
+fn sp_alias_displacement_matches_a7_spelling() {
+    // `move.w 4(sp), d0` (d16,An) displacement form must be byte-identical to
+    // `move.w 4(a7), d0`.
+    let (sp_code, sp_diags) = eval_asm_with(&asm_1("move.w 4(sp), d0"), &[]);
+    assert!(sp_diags.is_empty(), "unexpected eval diagnostics: {sp_diags:?}");
+    let (a7_code, a7_diags) = eval_asm_with(&asm_1("move.w 4(a7), d0"), &[]);
+    assert!(a7_diags.is_empty(), "unexpected eval diagnostics: {a7_diags:?}");
+    assert_eq!(lower_link_68k(&sp_code), lower_link_68k(&a7_code));
+}
+
+#[test]
+fn sp_alias_in_movem_reglist_matches_a7_spelling() {
+    // `sp` inside a movem register list must be byte-identical to `a7`.
+    let (sp_code, sp_diags) = eval_asm_with(&asm_1("movem.l d0-d1/sp, -(a6)"), &[]);
+    assert!(sp_diags.is_empty(), "unexpected eval diagnostics: {sp_diags:?}");
+    let (a7_code, a7_diags) = eval_asm_with(&asm_1("movem.l d0-d1/a7, -(a6)"), &[]);
+    assert!(a7_diags.is_empty(), "unexpected eval diagnostics: {a7_diags:?}");
+    assert_eq!(lower_link_68k(&sp_code), lower_link_68k(&a7_code));
+}
+
+#[test]
+fn movem_byte_size_diagnoses() {
+    // `movem.b` — movem is word/long only (matches the AS front-end's
+    // `lower_m68k_movem`, which rejects any size but W/L).
+    let (code, ediags) = eval_asm_with(&asm_1("movem.b d0, -(sp)"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("word") && d.message.contains("long")),
+        "expected a movem word/long-only diagnostic, got: {diags:?}"
+    );
+}
+
+#[test]
+fn movem_empty_reglist_diagnoses_not_panics() {
+    // `movem.l , -(sp)` — an empty register-list operand. Must diagnose
+    // cleanly (at whichever stage — parse, eval, or lowering), never panic.
+    let (_file, pdiags) = parse_str(&asm_1("movem.l , -(sp)"));
+    assert!(!pdiags.is_empty(), "expected a parse diagnostic for an empty movem operand");
+}
+
+#[test]
+fn movem_malformed_reglist_diagnoses_not_panics() {
+    // `movem.l d0-, -(sp)` — a dangling range. Must diagnose cleanly (at
+    // whichever stage), never panic.
+    let (_file, pdiags) = parse_str(&asm_1("movem.l d0-, -(sp)"));
+    assert!(!pdiags.is_empty(), "expected a parse diagnostic for a malformed movem reglist");
+}
+
+#[test]
+fn movem_descending_range_diagnoses() {
+    // `movem.l d3-d0, -(sp)` — a descending range. The AS front-end's
+    // `parse_reg_list` rejects `lo > hi` outright (`d7-d0` → `None`, pinned by
+    // `parse_reg_list_builds_canonical_masks`), so the `.emp` front-end matches:
+    // refuse, don't silently normalize. `d3-d0` fails the reglist recognizer
+    // entirely (neither operand parses as a list), so this diagnoses at EVAL
+    // time (a clean "needs a register-list operand" error), not lowering time.
+    let (_code, ediags) = eval_asm_with(&asm_1("movem.l d3-d0, -(sp)"), &[]);
+    assert!(!ediags.is_empty(), "expected a diagnostic for a descending movem range, got none");
+}
+
+#[test]
+fn movem_reglist_in_register_operand_position_diagnoses() {
+    // `movem.l d0-d1, d0` — the non-list operand must be a memory EA per the
+    // ISA; a bare register there is illegal. `d0` alone also parses as a
+    // (single-register) reglist, so BOTH operands recognize as lists here —
+    // a clean "two register lists" diagnostic at EVAL time, never a panic.
+    let (_code, ediags) = eval_asm_with(&asm_1("movem.l d0-d1, d0"), &[]);
+    assert!(
+        !ediags.is_empty(),
+        "expected a diagnostic for a movem reglist-as-register-operand, got none"
+    );
+}
+
+#[test]
+fn bare_reglist_shape_outside_movem_stays_unknown_names() {
+    // `d0-d1` in a NON-movem context (e.g. as a `move` operand) must NOT leak
+    // reglist parsing into the general operand grammar — it stays an arithmetic
+    // expression over unknown names (D-P1H.2: mnemonic-directed, not general).
+    // The failed operand's item is dropped (not the whole `asm{}`, per
+    // `eval_asm_owned`'s per-statement error recovery), so the diagnostic lands
+    // at EVAL time, not lowering time.
+    let (_code, ediags) = eval_asm_with(&asm_1("move.w d0-d1, d2"), &[]);
+    assert!(
+        ediags.iter().any(|d| d.message.contains("unknown name")),
+        "expected `d0-d1` outside movem to fail as unknown names at eval time, got: {ediags:?}"
+    );
+}
+
+#[test]
+fn const_named_sp_still_resolves_like_any_other_identifier() {
+    // `sp` becoming a general address-register alias must not steal the
+    // identifier from comptime/expression position — a `const sp = 5` keeps
+    // working exactly like `const a7 = 5` does today (registers are recognized
+    // only in operand-syntax positions, not general `eval_expr` path lookup).
+    let src = "module m\nconst sp = 5\n";
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "unexpected parse diagnostics: {pdiags:?}");
+    let (v, diags) = sigil_frontend_emp::eval::eval_const(&file, "sp");
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(v, Some(Value::Int(5)));
+}
