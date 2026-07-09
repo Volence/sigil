@@ -257,6 +257,63 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
+
+    // -----------------------------------------------------------------
+    // Kosinski+ / Kosinski+-Moduled
+    // -----------------------------------------------------------------
+
+    /// `kosplus(data)` (Plan-7 #10, T2b): plain Kosinski+ compression,
+    /// emitting the raw stream (CR4).
+    pub(super) fn eval_kosplus(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let Some(buf) = self.eval_sole_data_arg("kosplus", args, span, env) else {
+            return Value::Poison;
+        };
+        self.kosplus_from_data(buf, span)
+    }
+
+    pub(crate) fn kosplus_from_data(&mut self, buf: DataBuf, span: Span) -> Value {
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "kosplus") else {
+            return Value::Poison;
+        };
+        match sigil_clownlzss_sys::compress_kosplus(&input) {
+            Ok(out) => {
+                let mut result = DataBuf::empty();
+                result.push(Cell::Bytes(out));
+                Value::Data(result)
+            }
+            Err(e) => {
+                self.report_clownlzss_error("kosplus", span, e);
+                Value::Poison
+            }
+        }
+    }
+
+    /// `kosplus_m(data)` / `kosplus_m(data, module_size: N)` (Plan-7 #10,
+    /// T2b): Kosinski+-Moduled compression, same `module_size` contract as
+    /// `kosinski_m`.
+    pub(super) fn eval_kosplus_m(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let Some((buf, module_size)) = self.eval_moduled_args("kosplus_m", args, span, env) else {
+            return Value::Poison;
+        };
+        self.kosplus_m_from_data(buf, module_size, span)
+    }
+
+    pub(crate) fn kosplus_m_from_data(&mut self, buf: DataBuf, module_size: u16, span: Span) -> Value {
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "kosplus_m") else {
+            return Value::Poison;
+        };
+        match sigil_clownlzss_sys::compress_kosplus_moduled(&input, module_size) {
+            Ok(out) => {
+                let mut result = DataBuf::empty();
+                result.push(Cell::Bytes(out));
+                Value::Data(result)
+            }
+            Err(e) => {
+                self.report_clownlzss_error("kosplus_m", span, e);
+                Value::Poison
+            }
+        }
+    }
 }
 
 #[cfg(test)]

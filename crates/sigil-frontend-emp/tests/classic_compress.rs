@@ -189,3 +189,80 @@ fn kosinski_m_two_positional_args_errors() {
     );
     assert!(buf.expect("data buf").size > 0, "expected the first positional arg's result to still be used");
 }
+
+// ---------------------------------------------------------------------------
+// kosplus / kosplus_m
+// ---------------------------------------------------------------------------
+
+#[test]
+fn kosplus_matches_t2a_golden() {
+    let expected = read_vec("golden_kosplus.bin");
+    let src = "module m\ndata X = kosplus(embed(\"level_select_2p.raw\"))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn kosplus_non_data_arg_errors() {
+    let src = "module m\ndata X = kosplus(42)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[kosplus.arg]")),
+        "expected a [kosplus.arg] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn kosplus_m_default_module_size_matches_sys_wrapper() {
+    let plain = read_vec("sand_particles.raw");
+    let expected = sigil_clownlzss_sys::compress_kosplus_moduled(&plain, 0x1000).unwrap();
+    let src = "module m\ndata X = kosplus_m(embed(\"sand_particles.raw\"))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn kosplus_m_explicit_module_size_matches_sys_wrapper() {
+    let plain = read_vec("sand_particles.raw");
+    let expected = sigil_clownlzss_sys::compress_kosplus_moduled(&plain, 0x100).unwrap();
+    let src = "module m\ndata X = kosplus_m(embed(\"sand_particles.raw\"), module_size: $100)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn kosplus_m_module_size_over_0x1000_errors() {
+    let src = "module m\ndata X = kosplus_m(embed(\"sand_particles.raw\"), module_size: $1001)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[kosplus_m.module-size]")),
+        "expected a [kosplus_m.module-size] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn kosplus_m_module_size_zero_errors() {
+    let src = "module m\ndata X = kosplus_m(embed(\"sand_particles.raw\"), module_size: 0)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[kosplus_m.module-size]")),
+        "expected a [kosplus_m.module-size] diagnostic for module_size 0, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn kosplus_m_unknown_named_arg_errors() {
+    let src = "module m\ndata X = kosplus_m(embed(\"sand_particles.raw\"), bogus: 1)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("unknown named argument `bogus`")),
+        "expected an unknown-named-argument diagnostic, got {diags:?}"
+    );
+    assert!(buf.expect("data buf").size > 0, "expected the call to still produce a real result");
+}

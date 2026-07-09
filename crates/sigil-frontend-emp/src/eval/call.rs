@@ -103,6 +103,10 @@ impl<'a> Evaluator<'a> {
                 // stream, no aeon wrapper (CR4).
                 "kosinski" => return self.eval_kosinski(args, span, env),
                 "kosinski_m" => return self.eval_kosinski_m(args, span, env),
+                // `kosplus(data)` / `kosplus_m(data, module_size: N)`
+                // (Plan-7 #10, T2b): Kosinski+ / Kosinski+-Moduled.
+                "kosplus" => return self.eval_kosplus(args, span, env),
+                "kosplus_m" => return self.eval_kosplus_m(args, span, env),
                 _ => {}
             }
         }
