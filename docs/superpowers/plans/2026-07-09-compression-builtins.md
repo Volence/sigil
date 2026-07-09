@@ -92,4 +92,27 @@ with its own byte-gate).
 
 ## Execution notes
 
-(appended as tasks complete)
+All four tasks executed same night; branch `compression-builtins`, 14 commits
+`ad7608e..f8bd84f`, UNMERGED. Full narrative + checkpoint asks:
+`notes/2026-07-09-compression-builtins-complete.md`.
+
+- **T1** (`ad7608e`,`874d611`,`fb57259`+polish `a3598e4`): new `sigil-s4lz` crate (not
+  inline in the frontend — salvador-precedent deviation, accepted). Review verdict: ready;
+  polish = prescriptive byte-exactness comments at the two heuristic hot spots, honest
+  unreachable-branch comment (the u16 ceiling is unreachable behind MAX_WINDOW=32766 —
+  kept as defense-in-depth), dropped a clone. Implementer's "120-trial fuzz" claim was a
+  session one-off, not committed — corrected in the record; the committed 13+21 tests +
+  two independent python regenerations are the evidence.
+- **T2a** (`38f5cf7`,`bd06efc`,`be0a1b9`): spec review fully clean (verbatim vendor diff,
+  ISC labeling, CR5 complete). Quality review found the **moduled-compress heap overflow
+  CRITICAL** (live repro) → fixed `f8bd84f` (shim capacity protocol + module-scaled bound
+  + exact-size retry) + two adjacent typed-error bugs (`ModuleSizeZero` div-by-zero UB;
+  `DataTooLargeForModuled` — 4-bit header quotient silently truncates upstream) + all
+  minors (SAFETY comments, moduled-saxman u16 check, callback infallibility contract,
+  warnings scoped to vendored files).
+- **T2b** (`fea5f04`,`c57fbd3`,`fda109a`,`45e9854`,`b7ba8aa`,`61ae2f4`): all 9 builtins,
+  1:1 typed-error→diagnostic mapping (no catch-alls), shared plumbing extracted
+  (`flatten_data_buf_tagged` now also backs zx0/s4lz). Fable spot-check in lieu of a full
+  agent review (template-following wiring; recorded deviation).
+- **T3**: design note in the completion note; no code, as planned.
+- Final nets on HEAD: workspace 1635/0, strict gates 15/0 unchanged, clippy clean.
