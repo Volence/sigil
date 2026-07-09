@@ -1540,21 +1540,33 @@ pub fn eval_data_captures(
 /// NOTE: [`eval_dispatch_with_root`] mirrors this function's shape (fresh env
 /// per member, `Path`/`Str`/eval target extraction, `<unresolved>` placeholder)
 /// — consider both when editing the target-extraction logic.
+/// One §4.7 inline `offsets` body: its hidden hygienic label, its evaluated
+/// payload, and the MEMBER's span (diagnostics must point at the member, not
+/// the whole block).
+pub struct InlineBody {
+    /// The hidden `__offsets$…` label the table word targets.
+    pub label: String,
+    /// The evaluated payload (the exact data-item path's DataBuf).
+    pub buf: DataBuf,
+    /// The member's own span.
+    pub span: Span,
+}
+
 pub fn eval_offsets_with_root(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
-) -> (Option<DataBuf>, Vec<(String, DataBuf, Span)>, Vec<Diagnostic>) {
+) -> (Option<DataBuf>, Vec<InlineBody>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
-        // §4.7 inline bodies: `(hidden label, payload, member span)` in
-        // declaration order, emitted by the caller AFTER the table.
-        let mut bodies: Vec<(String, DataBuf, Span)> = Vec::new();
+        // §4.7 inline bodies in declaration order, emitted by the caller
+        // AFTER the table.
+        let mut bodies: Vec<InlineBody> = Vec::new();
         let mut buf = DataBuf::empty();
         for member in &decl.members {
             // Fresh env per member (parity with `resolve_data`'s per-item
@@ -1581,7 +1593,7 @@ pub fn eval_offsets_with_root(
                     } else {
                         ev.lower_to_data(&v, &rty, member.span)
                     };
-                    bodies.push((label, body, member.span));
+                    bodies.push(InlineBody { label, buf: body, span: member.span });
                     continue;
                 }
                 ast::OffsetsTarget::Ref(e) => e,

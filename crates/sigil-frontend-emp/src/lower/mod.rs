@@ -958,22 +958,23 @@ fn lower_offsets_item(
     // them). Same serializer as any data item — and the same D2.29
     // [layout.odd-item] check: body k's parity depends on every previous
     // body's size, so a word-bearing payload can land odd (Item-6 review M1).
-    for (label, body, mspan) in bodies {
-        let (bytes, fixups, mut stream_diags) = data::stream_data(&body, placement.cpu, mspan);
+    for body in bodies {
+        let (bytes, fixups, mut stream_diags) =
+            data::stream_data(&body.buf, placement.cpu, body.span);
         diags.append(&mut stream_diags);
-        builder.define_label(&label);
-        if buf_carries_words(&body) {
+        builder.define_label(&body.label);
+        if buf_carries_words(&body.buf) {
             record_odd_item_assert(
                 file,
                 builder,
                 placement.cpu,
                 as_compat,
                 OddItemKind::WordData,
-                &label,
-                mspan,
+                &body.label,
+                body.span,
             );
         }
-        builder.emit_data(&bytes, fixups, mspan);
+        builder.emit_data(&bytes, fixups, body.span);
     }
 }
 
