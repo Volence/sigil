@@ -509,8 +509,16 @@ fn report_unresolved(
             let mut targets = Vec::new();
             rename::collect_target_syms(frag, &mut targets);
             for s in targets {
-                if s.starts_with('$') {
-                    continue; // proc-local hygiene symbol — resolved intra-module.
+                if s.contains('$') {
+                    // A compiler-minted symbol — `$` is unlexable in BOTH
+                    // frontends, so ANY `$`-bearing name is internal and
+                    // resolved intra-module by construction: proc-local
+                    // hygiene (`$m$…`), dispatch/offsets inline-body labels
+                    // (`__dispatch$…` / `__offsets$…`), here()/align anchors.
+                    // (Previously only a LEADING `$` was accepted, which
+                    // wrongly rejected the mid-name-`$` hidden-label family
+                    // under the program path — tranche-0 acceptance catch.)
+                    continue;
                 }
                 // Resolvable to a canonical symbol — directly, or (for a dotted
                 // exported label `Owner.local`) via its OWNER segment. The same

@@ -868,3 +868,31 @@ proc p () {
         "loud outside scripts: {msgs:?}"
     );
 }
+
+#[test]
+fn wait_frames_slot_can_live_in_an_overlay() {
+    // The acceptance shape: the park timer is a `vars …: sst_custom` OVERLAY
+    // field, not a direct Sst field — width resolution uses the same field
+    // space ordinary operands do (D6.A3).
+    // (An overlay needs its window field on the base struct — the prelude's
+    // `Sst.sst_custom` shape, reproduced locally.)
+    let src = "\
+module m
+newtype ScriptPc = u16
+struct S (size: $24) {
+    sst_custom: [u8; $20],
+    resume: ScriptPc @ $20,
+    _pad1: [u8; 2] @ $22,
+}
+vars V: sst_custom {
+    timer: u8,
+}
+script brain (a0: *S) (encoding: word_offsets) shows done {
+    wait_frames #8, timer(a0)
+}
+proc done () { rts }
+"
+    .to_string();
+    let (_, errs) = lower(&src);
+    assert!(errs.is_empty(), "overlay slot resolves: {errs:?}");
+}

@@ -516,7 +516,7 @@ impl Evaluator<'_> {
     /// overlay-relative offset`. Zero hits → `[operand.unknown-field]` (NO const
     /// fallback on a typed register); ≥2 hits across distinct overlays →
     /// `[operand.ambiguous-field]` listing the qualified candidates.
-    fn resolve_field_disp(
+    pub(crate) fn resolve_field_disp(
         &mut self,
         base: &str,
         field: &str,

@@ -573,6 +573,9 @@ fn resolve_wait_widths(
         for (slot, span) in sites {
             out.push_back(wait_slot_width(&mut probe, decl, &slot, span, diags));
         }
+        // Field-space resolution errors ([operand.unknown-field] /
+        // [operand.ambiguous-field]) land on the probe — surface them.
+        diags.append(&mut probe.diags);
         out
     })
 }
@@ -616,18 +619,14 @@ fn wait_slot_width(
         let ast::Type::Ptr(inner) = pty else { continue };
         let inner_ty = probe.resolve_type(inner);
         let Some(sname) = probe.struct_name_for_offsetof(&inner_ty, *pspan) else { continue };
-        let layout = probe.layout_of_struct(&sname, *pspan);
-        let Some(f) = layout.fields.iter().find(|f| f.name == field) else {
-            err(
-                diags,
-                span,
-                format!(
-                    "`wait_frames` slot `{field}({reg})`: struct `{sname}` has no field                      named `{field}`"
-                ),
-            );
-            return None;
-        };
-        return match f.size {
+        // The SAME field space ordinary operands use (D6.A3): direct fields
+        // plus in-scope overlays over this struct — a park timer usually
+        // lives in the object's `vars …: sst_custom` overlay, not in Sst
+        // itself. A miss/ambiguity is diagnosed by the probe
+        // ([operand.unknown-field] / [operand.ambiguous-field]) and surfaced
+        // by the caller.
+        let (_disp, size) = probe.resolve_field_disp(&sname, &field, span)?;
+        return match size {
             1 => Some(1),
             2 => Some(2),
             other => {
@@ -635,7 +634,8 @@ fn wait_slot_width(
                     diags,
                     span,
                     format!(
-                        "`wait_frames` slot `{field}` is {other} bytes — a park timer                          must be a u8 or u16 field"
+                        "`wait_frames` slot `{field}` is {other} bytes — a park timer \
+                         must be a u8 or u16 field"
                     ),
                 );
                 None
