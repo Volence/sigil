@@ -620,3 +620,35 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   all-`.asm` (fully-folding) path. It can't structurally (a fully-folding expr collapses to
   one `Expr::Int`, identical to the eager path's value), and the m1d/DAC/MT byte gates prove
   it empirically, but it's the diff's one load-bearing engine change.
+
+**Task 5 review outcomes (two-stage, both ✅):**
+
+- **Spec review (3 lanes, all PASS):** (L1) `partial_fold` verified shape-only (all three
+  call sites inside the `Fold::Poison` branch; unreachable on the eager path BY CODE, not
+  just empirically), value-at-use-time-safe under the converged-pass contract (folds via
+  the same `self.fold`/env; forward refs present in the converged env bake correctly;
+  `.emp` leaves never in the AS env stay `Sym`). (L2) all five harness elements verified;
+  DAC/MT/text map regions diffed byte-for-byte vs T2; T1/T2 tests untouched; win-tab pin
+  independently xxd-verified. (L3) **section-level LMA overlap IS detected loud** —
+  `overlap_diag` (relax.rs:257-294, R7p.4) scans placed-section extents post-fixpoint; an
+  mt_bank regen growing past the sfx base fails with a two-section error, verified via the
+  existing T2 negative probe.
+- **Spec-review gap CLOSED (`83bdba7`):** `partial_fold`'s distinctive baking was only
+  covered indirectly (P1's tests use literal masks — a NO-OP partial_fold would still pass
+  them). New `partial_fold_defer.rs` (6 tests): env-equ subterm + external leaf on all
+  three arms, target trees pinned exactly (`(Sym(ExtSym) & Int(32767)) | Int(32768)` etc.)
+  + link-resolved bytes. Falsified by temporarily neutering the fold — all 6 RED with the
+  equs leaking as `Sym`; restored, green.
+- **Quality review ✅ approve:** `partial_fold` is TOTAL over the `Expr` IR (4 variants;
+  calls are expanded away by `expand_calls` before fixup targets exist; the fallthrough
+  ships `Sym` → loud link failure at worst, never wrong bytes); `$` folds correctly at
+  every recursion level. Harness generalization clean. Deferred cosmetic minors to polish:
+  (i) one doc clause on partial_fold noting baked subterms are AS-env-only; (ii) the
+  map_path/load_map block now appears 3× across the build_mixed_* helpers (fold only if
+  touched together, per the keep-copies convention).
+- **Orchestrator ruling on the map-overlap recommendation:** the spec reviewer suggested
+  shrinking the `mt_bank` region to end at the sfx base. RULED: map stays as-is — the
+  region-level overlap is benign by construction (`place_sections` is name-keyed,
+  per-region cursors), section-level overlap is PROVEN loud (L3), and shrinking would
+  make T2's proven region per-shape for no byte-level gain. Instead Task 6 gains probe
+  (e): a grown-mt-section-past-the-sfx-base trips `overlap_diag` at THIS seam.
