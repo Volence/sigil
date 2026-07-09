@@ -798,7 +798,21 @@ impl Parser {
             let mspan = self.span();
             let mname = self.expect_ident("offset entry name");
             self.expect(&Tok::Colon, "`:`");
-            let target = self.expr();
+            // §4.7 mixed form: speculatively parse a TYPE — if `=` follows,
+            // this is an INLINE member (`Name: [u8; 4] = [...]`, the exact
+            // `data`-item shape); otherwise rewind (dropping any speculative
+            // diagnostics) and parse the by-reference target expression.
+            let save_pos = self.pos;
+            let save_diags = self.diags.len();
+            let speculative = self.ty();
+            let target = if self.at(&Tok::Eq) {
+                self.bump(); // `=`
+                OffsetsTarget::Inline(speculative, self.expr())
+            } else {
+                self.pos = save_pos;
+                self.diags.truncate(save_diags);
+                OffsetsTarget::Ref(self.expr())
+            };
             members.push(OffsetsMember { name: mname, target, span: mspan });
             self.skip_newlines();
             if !self.eat(&Tok::Comma) { break; }

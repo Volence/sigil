@@ -149,7 +149,7 @@ fn const_alias_target_is_diagnosed_as_const() {
     let src = "module m\nconst F0 = 7\noffsets M { A: F0, B: t1 }\n";
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
-    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None, &[]);
+    let (buf, _bodies, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None, &[]);
     // Both entries still emit their 2-byte slot (placeholder for the const).
     assert_eq!(buf.expect("buf").size, 4, "the 2-byte slot lands for every member");
     assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
@@ -167,7 +167,7 @@ fn non_label_target_is_diagnosed() {
     let src = "module m\noffsets M { A: 1 + 1 }\n";
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got {pdiags:?}");
-    let (buf, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None, &[]);
+    let (buf, _bodies, diags) = eval_offsets_with_root(&file, offsets_decl(&file, "M"), None, &[]);
     assert_eq!(buf.expect("buf").size, 2, "the 2-byte slot still lands");
     assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
     assert!(

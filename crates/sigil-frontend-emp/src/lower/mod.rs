@@ -900,7 +900,8 @@ fn lower_offsets_item(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root, placement.defines);
+    let (buf, bodies, mut ds) =
+        eval_offsets_with_root(file, decl, placement.include_root, placement.defines);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
@@ -921,6 +922,16 @@ fn lower_offsets_item(
         );
     }
     builder.emit_data(&bytes, fixups, decl.span);
+
+    // §4.7 inline bodies: emitted AFTER the table, in declaration order, each
+    // under its hidden hygienic label (the table's RelOffset words target
+    // them). Same serializer as any data item.
+    for (label, body) in bodies {
+        let (bytes, fixups, mut stream_diags) = data::stream_data(&body, placement.cpu, decl.span);
+        diags.append(&mut stream_diags);
+        builder.define_label(&label);
+        builder.emit_data(&bytes, fixups, decl.span);
+    }
 }
 
 /// Lower one `dispatch` block's FORWARD emission (Spec 2, Plan 7 backlog #6,

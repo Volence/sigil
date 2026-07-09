@@ -322,10 +322,24 @@ pub struct OffsetsDecl {
 pub struct OffsetsMember {
     /// The ordinal's name (`Name.Variant`).
     pub name: String,
-    /// The target label reference (a path expression).
-    pub target: Expr,
+    /// Where this entry's word points (§4.7): a by-reference label, or an
+    /// inline body co-located in the block (the [`DispatchTarget`] precedent).
+    pub target: OffsetsTarget,
     /// Span of the whole member.
     pub span: Span,
+}
+
+/// An `offsets` member's target (§4.7 mixed form).
+#[derive(Debug, Clone, PartialEq)]
+pub enum OffsetsTarget {
+    /// `Name: label` — a reference to a label defined elsewhere (the shipped
+    /// form; keeps shared/cross-module targets).
+    Ref(Expr),
+    /// `Name: Type = value` — an INLINE body, the exact `data`-item shape
+    /// (the declared length stays the terminator guard). Emitted after the
+    /// table in declaration order under a hidden hygienic label; the table
+    /// word targets it.
+    Inline(Type, Expr),
 }
 
 /// A `dispatch Name (encoding: E) { Member: target, ... }` block: an
