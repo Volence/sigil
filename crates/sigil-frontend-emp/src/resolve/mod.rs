@@ -290,6 +290,12 @@ pub fn build_program(
                     .into_iter()
                     .chain(pm.file.items.iter().cloned())
                     .collect(),
+                // Docs are keyed by item span and cloned items keep their
+                // spans, so the module's own entries stay valid (ambient
+                // prelude docs live in the prelude's own File; no consumer
+                // reads docs during lowering yet — S2-D11(d) is parse-and-
+                // attach only).
+                docs: pm.file.docs.clone(),
             };
             lower_module(&synthetic, opts)
         };

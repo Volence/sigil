@@ -11,6 +11,15 @@ pub struct File {
     pub attrs: Vec<Attr>,
     /// Top-level declarations following the header.
     pub items: Vec<Item>,
+    /// `///` doc runs attached to items (S2-D11(d)), keyed by [`item_span`].
+    pub docs: Vec<DocEntry>,
+}
+
+impl File {
+    /// The doc text attached to the item whose [`item_span`] is `span`, if any.
+    pub fn docs_for(&self, span: Span) -> Option<&str> {
+        self.docs.iter().find(|d| d.item_span == span).map(|d| d.text.as_str())
+    }
 }
 
 /// An `@name(args...)` attribute attached to a module, item, or field.
@@ -82,6 +91,40 @@ pub enum Item {
     Newtype(NewtypeDecl),
     /// An item-position `ensure(...)` / `ensure_fatal(...)` guard (§6.5, D5.1).
     Ensure(EnsureDecl),
+}
+
+/// The span of an item's own declaration (the decl struct's `span` field) —
+/// the key `File::docs_for` looks docs up by (S2-D11(d)).
+pub fn item_span(item: &Item) -> Span {
+    match item {
+        Item::Use(d) => d.span,
+        Item::Const(d) => d.span,
+        Item::Equ(d) => d.span,
+        Item::Enum(d) => d.span,
+        Item::Bitfield(d) => d.span,
+        Item::Struct(d) => d.span,
+        Item::Offsets(d) => d.span,
+        Item::Dispatch(d) => d.span,
+        Item::Vars(d) => d.span,
+        Item::Data(d) => d.span,
+        Item::Proc(d) => d.span,
+        Item::Script(d) => d.span,
+        Item::ComptimeFn(d) => d.span,
+        Item::Section(d) => d.span,
+        Item::Newtype(d) => d.span,
+        Item::Ensure(d) => d.span,
+    }
+}
+
+/// A `///` doc-comment run attached to one item (S2-D11(d)): parse-and-attach
+/// only — surfacing (hover, rendered docs) is the Spec-3 seam.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocEntry {
+    /// The documented item's own span ([`item_span`]) — the lookup key.
+    pub item_span: Span,
+    /// The joined doc text (one line per `///`, `\n`-separated, one optional
+    /// leading space per line already stripped by the lexer).
+    pub text: String,
 }
 
 /// An item-position guard: `ensure(cond, "msg")` / `ensure_fatal(cond, "msg")`

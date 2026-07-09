@@ -1239,6 +1239,7 @@ mod tests {
             },
             attrs: vec![],
             items: vec![],
+            docs: vec![],
         }
     }
 }

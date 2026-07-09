@@ -35,6 +35,9 @@ pub struct Parser {
     /// would let the condition's guard pre-fire (consuming nothing) right
     /// before `stmt_block`'s guard, desyncing its brace recovery.
     block_depth: u32,
+    /// `///` doc runs attached to items so far (S2-D11(d)); moved into
+    /// [`File::docs`] when the file finishes parsing.
+    docs: Vec<DocEntry>,
 }
 
 impl Parser {
@@ -48,6 +51,7 @@ impl Parser {
             no_struct_lit: false,
             splice_ctx: false,
             block_depth: 0,
+            docs: Vec::new(),
         }
     }
     /// Consume the parser, returning every diagnostic collected so far.
@@ -115,7 +119,49 @@ impl Parser {
         }
         self.expect_ident(what)
     }
-    fn skip_newlines(&mut self) { while self.eat(&Tok::Newline) {} }
+    fn skip_newlines(&mut self) {
+        loop {
+            if self.eat(&Tok::Newline) {
+                continue;
+            }
+            // A `///` reaching THIS skip is not at an item position (the item
+            // loops use `skip_newlines_collecting_docs` instead): warn
+            // `[doc.dangling]` and keep parsing (S2-D11(d) — loud, not fatal).
+            if matches!(self.peek(), Tok::DocLine(_)) {
+                let sp = self.span();
+                self.warn_dangling_doc(sp);
+                self.bump();
+                continue;
+            }
+            break;
+        }
+    }
+
+    /// Item-position trivia skip (S2-D11(d)): newlines are skipped freely; a
+    /// `///` run is COLLECTED and returned (joined with `\n`) for the caller
+    /// to attach to the item that follows. Blank lines and ordinary comments
+    /// between the run and the item do not detach it (they are trivia).
+    fn skip_newlines_collecting_docs(&mut self) -> Option<(String, Span)> {
+        let mut text = String::new();
+        let mut span: Option<Span> = None;
+        loop {
+            if self.eat(&Tok::Newline) {
+                continue;
+            }
+            if let Tok::DocLine(line) = self.peek().clone() {
+                let sp = self.span();
+                self.bump();
+                if span.is_some() {
+                    text.push('\n');
+                }
+                text.push_str(&line);
+                span = Some(span.map_or(sp, |s: Span| s.merge(sp)));
+                continue;
+            }
+            break;
+        }
+        span.map(|s| (text, s))
+    }
     fn expect_line_end(&mut self) {
         if !self.at(&Tok::Eof) && !self.eat(&Tok::Newline) {
             let span = self.span();
@@ -128,16 +174,31 @@ impl Parser {
     pub fn diag_at(&mut self, span: Span, message: impl Into<String>) {
         self.diags.push(Diagnostic { level: Level::Error, message: message.into(), primary: span });
     }
+    /// Record a warning diagnostic at `span`.
+    fn warn_at(&mut self, span: Span, message: impl Into<String>) {
+        self.diags.push(Diagnostic { level: Level::Warning, message: message.into(), primary: span });
+    }
+    /// Warn `[doc.dangling]` for a `///` run that attaches to nothing.
+    fn warn_dangling_doc(&mut self, span: Span) {
+        self.warn_at(
+            span,
+            "[doc.dangling] this `///` doc comment attaches to nothing — docs go on \
+             the line(s) directly above an item (use `//` for an ordinary comment)",
+        );
+    }
 
     // ---- file ----
     /// Parse a whole file: module header, module-level attributes, then items.
     pub fn file(&mut self) -> File {
         self.skip_newlines();
         let module = self.module_decl();
-        // module-level attributes: `@as_compat`, `@allow(naming.pascal)`
+        // module-level attributes: `@as_compat`, `@allow(naming.pascal)`.
+        // Newlines only here — a `///` run after the attrs belongs to the
+        // FIRST ITEM, so it must survive to the item loop's collector below
+        // (the warning-variant skip would eat it as dangling).
         let mut attrs = Vec::new();
         loop {
-            self.skip_newlines();
+            while self.eat(&Tok::Newline) {}
             if !self.at(&Tok::At) { break; }
             let aspan = self.span();
             self.bump();
@@ -160,14 +221,29 @@ impl Parser {
         }
         let mut items = Vec::new();
         loop {
-            self.skip_newlines();
-            if self.at(&Tok::Eof) { break; }
+            let docs = self.skip_newlines_collecting_docs();
+            if self.at(&Tok::Eof) {
+                if let Some((_, sp)) = docs {
+                    self.warn_dangling_doc(sp);
+                }
+                break;
+            }
             match self.item() {
-                Some(item) => items.push(item),
-                None => self.recover_to_next_decl(false),
+                Some(item) => {
+                    if let Some((text, _)) = docs {
+                        self.docs.push(DocEntry { item_span: item_span(&item), text });
+                    }
+                    items.push(item);
+                }
+                None => {
+                    if let Some((_, sp)) = docs {
+                        self.warn_dangling_doc(sp);
+                    }
+                    self.recover_to_next_decl(false);
+                }
             }
         }
-        File { module, attrs, items }
+        File { module, attrs, items, docs: std::mem::take(&mut self.docs) }
     }
 
     fn module_decl(&mut self) -> ModuleDecl {
@@ -1563,9 +1639,20 @@ impl Parser {
         let mut items = Vec::new();
         if self.eat(&Tok::LBrace) {
             loop {
-                self.skip_newlines();
-                if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
-                match self.item() {
+                let docs = self.skip_newlines_collecting_docs();
+                if self.at(&Tok::RBrace) || self.at(&Tok::Eof) {
+                    if let Some((_, sp)) = docs {
+                        self.warn_dangling_doc(sp);
+                    }
+                    break;
+                }
+                let parsed = self.item();
+                if let (Some(item), Some((text, _))) = (&parsed, &docs) {
+                    self.docs.push(DocEntry { item_span: item_span(item), text: text.clone() });
+                } else if let (None, Some((_, sp))) = (&parsed, &docs) {
+                    self.warn_dangling_doc(*sp);
+                }
+                match parsed {
                     Some(Item::Section(inner)) => {
                         // Sections do not nest (locked decision): placement-within-
                         // placement has no ratified meaning, and `lower_section_items`

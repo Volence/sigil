@@ -20,6 +20,11 @@ pub enum Tok {
     Str(String),
     /// One or more consecutive line breaks, collapsed into a single token.
     Newline,
+    /// A `///` doc-comment line (S2-D11(d)): the text after `///` with one
+    /// optional leading space stripped. `//` and `////`+ stay ordinary
+    /// (discarded) comments — exactly three slashes is the doc form, the
+    /// Rust precedent.
+    DocLine(String),
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,
     Comma, Colon, Semi, Dot, At, Hash, Star, Plus, Minus, Slash, Percent,
     Amp, Pipe, Caret, Bang, Lt, Gt, Eq, Tilde,
@@ -88,7 +93,19 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                 }
             }
             b'/' if i + 1 < b.len() && b[i + 1] == b'/' => {
+                // `///` (exactly three slashes) is a DOC line (S2-D11(d)),
+                // tokenized so the parser can attach it to the next item;
+                // `//` and `////`+ remain trivia, discarded here.
+                let doc = i + 2 < b.len()
+                    && b[i + 2] == b'/'
+                    && !(i + 3 < b.len() && b[i + 3] == b'/');
+                let text_start = i + 3;
                 while i < b.len() && b[i] != b'\n' { i += 1; }
+                if doc {
+                    let mut t = &src[text_start.min(i)..i];
+                    t = t.strip_prefix(' ').unwrap_or(t);
+                    push!(Tok::DocLine(t.to_string()), s, i);
+                }
             }
             b'/' if i + 1 < b.len() && b[i + 1] == b'*' => {
                 i += 2;
