@@ -531,44 +531,12 @@ impl<'a> Evaluator<'a> {
     /// compresses via [`sigil_salvador_sys::compress`], and prepends the
     /// 4-byte header ahead of the compressed stream.
     pub(crate) fn zx0_from_data(&mut self, buf: DataBuf, span: Span) -> Value {
-        let mut input = Vec::with_capacity(buf.size);
-        for cell in &buf.cells {
-            match cell {
-                Cell::Bytes(b) => input.extend_from_slice(b),
-                Cell::Scalar { value, width: 1, .. } => {
-                    // Mirrors `byte`/`bytes`'s accepted range: a signed or
-                    // unsigned reading of one byte. Reuse the SAME constants so
-                    // the two byte-domain sites cannot silently drift apart.
-                    if !(super::builtins::BYTE_LO..=super::builtins::BYTE_HI).contains(value) {
-                        self.error(
-                            span,
-                            format!("[zx0.byte-range] zx0 input byte {value} does not fit 8 bits"),
-                        );
-                        return Value::Poison;
-                    }
-                    input.push((*value & 0xFF) as u8);
-                }
-                Cell::Scalar { .. } => {
-                    self.error(
-                        span,
-                        "[zx0.byte-order] zx0 input has a multi-byte scalar with no committed byte order — build it from raw bytes (embed/bytes)",
-                    );
-                    return Value::Poison;
-                }
-                Cell::SymRef { .. } => {
-                    self.error(span, "[zx0.symbolic] zx0 input has an unresolved symbol reference");
-                    return Value::Poison;
-                }
-                Cell::RelOffset { .. } => {
-                    self.error(span, "[zx0.symbolic] zx0 input has an unresolved offset-table entry");
-                    return Value::Poison;
-                }
-                Cell::Expr { .. } => {
-                    self.error(span, "[zx0.symbolic] zx0 input has an unresolved link-expr value");
-                    return Value::Poison;
-                }
-            }
-        }
+        // Shared cell-walk (`compress_common.rs`, extracted from what used
+        // to be this function's own copy, shared with `s4lz` and now every
+        // classic builtin too).
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "zx0") else {
+            return Value::Poison;
+        };
         if input.len() > 0xFFFF {
             self.error(
                 span,

@@ -12,6 +12,8 @@
 mod asm;
 mod builtins;
 mod call;
+mod classic_compress;
+mod compress_common;
 mod control;
 mod emit;
 mod env;

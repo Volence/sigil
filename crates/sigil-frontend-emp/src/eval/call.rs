@@ -96,6 +96,13 @@ impl<'a> Evaluator<'a> {
                 // non-shadowable `Data` constructor. Reads no file itself
                 // (same as `zx0`), so it needs no sandbox root.
                 "s4lz" => return self.eval_s4lz(args, span, env),
+                // `kosinski(data)` / `kosinski_m(data, module_size: N)`
+                // (Plan-7 #10, T2b, MUST-HAVE): classic Kosinski/
+                // Kosinski-Moduled compression via the vendored `clownlzss`
+                // safe wrapper (`sigil-clownlzss-sys`, T2a) — raw format
+                // stream, no aeon wrapper (CR4).
+                "kosinski" => return self.eval_kosinski(args, span, env),
+                "kosinski_m" => return self.eval_kosinski_m(args, span, env),
                 _ => {}
             }
         }

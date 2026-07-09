@@ -157,57 +157,17 @@ impl<'a> Evaluator<'a> {
         self.s4lz_from_data(buf, dict_bytes, tile_delta, span)
     }
 
-    /// Flatten a [`DataBuf`]'s cells to raw bytes, mirroring `zx0_from_data`'s
-    /// cell-walk (`sandbox.rs`) exactly: `Cell::Bytes` extends directly; a
-    /// width-1 `Cell::Scalar` contributes its one (range-checked) byte; a
-    /// WIDER `Cell::Scalar` has no committed byte order yet (Plan 4's
-    /// concern) and a `Cell::SymRef`/`RelOffset`/`Expr` names something not
-    /// yet resolved (also Plan 4) — all three are diagnostics here, never a
-    /// panic, since `s4lz` can only compress concrete bytes.
+    /// Flatten a [`DataBuf`]'s cells to raw bytes for `s4lz`. Thin wrapper
+    /// over the shared [`flatten_data_buf_tagged`](Self::flatten_data_buf_tagged)
+    /// (`compress_common.rs`, extracted from what used to be this function's
+    /// own copy of the cell-walk, shared with `zx0` and now every classic
+    /// builtin too).
     ///
     /// `tag` names the call site in the diagnostic code (`s4lz` for the main
     /// `data` argument, `s4lz.dict` for `dict:`) so a dict-side failure is
     /// distinguishable from a data-side one.
     fn flatten_data_buf(&mut self, buf: &DataBuf, span: Span, tag: &str) -> Option<Vec<u8>> {
-        let mut input = Vec::with_capacity(buf.size);
-        for cell in &buf.cells {
-            match cell {
-                Cell::Bytes(b) => input.extend_from_slice(b),
-                Cell::Scalar { value, width: 1, .. } => {
-                    if !(super::builtins::BYTE_LO..=super::builtins::BYTE_HI).contains(value) {
-                        self.error(
-                            span,
-                            format!("[{tag}.byte-range] s4lz input byte {value} does not fit 8 bits"),
-                        );
-                        return None;
-                    }
-                    input.push((*value & 0xFF) as u8);
-                }
-                Cell::Scalar { .. } => {
-                    self.error(
-                        span,
-                        format!(
-                            "[{tag}.byte-order] s4lz input has a multi-byte scalar with no committed \
-                             byte order — build it from raw bytes (embed/bytes)"
-                        ),
-                    );
-                    return None;
-                }
-                Cell::SymRef { .. } => {
-                    self.error(span, format!("[{tag}.symbolic] s4lz input has an unresolved symbol reference"));
-                    return None;
-                }
-                Cell::RelOffset { .. } => {
-                    self.error(span, format!("[{tag}.symbolic] s4lz input has an unresolved offset-table entry"));
-                    return None;
-                }
-                Cell::Expr { .. } => {
-                    self.error(span, format!("[{tag}.symbolic] s4lz input has an unresolved link-expr value"));
-                    return None;
-                }
-            }
-        }
-        Some(input)
+        self.flatten_data_buf_tagged(buf, span, tag)
     }
 
     /// The flatten-compress-wrap core of `s4lz` (Plan-7 #10, Tier 1). See

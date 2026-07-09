@@ -328,6 +328,8 @@ dependencies = [
  "sha2",
  "sigil-backend-m68k",
  "sigil-backend-z80",
+ "sigil-clownlzss-sys",
+ "sigil-clownnemesis-sys",
  "sigil-ir",
  "sigil-link",
  "sigil-s4lz",
