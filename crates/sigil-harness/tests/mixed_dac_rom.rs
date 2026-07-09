@@ -1,4 +1,4 @@
-//! Sound-migration T1+T2 acceptance — the MIXED `.asm`+`.emp` full-ROM harness.
+//! Sound-migration T1+T2+T3 acceptance — the MIXED `.asm`+`.emp` full-ROM harness.
 //!
 //! This is each tranche's acceptance bar (DSM.9): assemble aeon's REAL
 //! `games/sonic4/main.asm` with one or both sound gates ON (so `main.asm`'s
@@ -74,6 +74,20 @@
 //! no synthetic cross-seam symbol injection is needed here: the real AS module
 //! supplies it for real, through the same shared symbol table.
 //!
+//! ## Cross-seam resolution (T3 — the win-tab `dw` deferral proving out)
+//!
+//! With `SIGIL_EMP_SFX` on, `sfx_blob_win_tab.asm`'s nine
+//! `dw sfx_winptr(Sfx_NN)` entries (a compound `(Sfx_NN & SFX_WIN_MASK) |
+//! SFX_WIN_BASE` in the Z80 `phase 08000h` blob) reference `.emp`-side `Sfx_NN`
+//! labels, unresolved at AS-time — T0's `dw` deferral (P1) is what lets the AS
+//! side assemble. Because ONE leaf (`Sfx_NN`) is external, the whole expr
+//! deferred; the front-end's `partial_fold` bakes the env-only equs
+//! (`SFX_WIN_MASK`/`SFX_WIN_BASE`, invisible to the linker's section-label
+//! table) at that site, so the linker fold sees `(Sfx_NN & 32767) | 32768` and
+//! resolves the sole cross-seam leaf through the joint link. `SfxBlobWinTab[0] =
+//! sfx_winptr($63AE8) = $BAE8` → LE `E8 BA` at ROM `$6045F`, pinned explicitly
+//! in the plain test and re-proven by the full-ROM byte assertion.
+//!
 //! ## STOP RULE (DSM.9)
 //!
 //! Expected divergences from the reference: NONE beyond the
@@ -97,8 +111,8 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::{
-    assemble_mixed_dac_as_side, assemble_mixed_mt_as_side, assert_rom_matches, CONVSYM_REWRITTEN,
-    CONVSYM_REWRITTEN_DEBUG,
+    assemble_mixed_dac_as_side, assemble_mixed_mt_as_side, assemble_mixed_sfx_as_side,
+    assert_rom_matches, CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -160,38 +174,64 @@ fn emp_bank_map() -> &'static str {
      kind = \"rom\"\n"
 }
 
-/// T2's map: `emp_bank_map`'s three regions PLUS `mt_bank` @ `0x60607` size
-/// `0x79F9` (mt_port.rs's R7 region, to the bank top `$68000`). Both
-/// `dac_samples.emp` and `mt_bank.emp` each open their own zero-byte `text`
-/// carrier — Task 2's P5 probe proved a same-named `text` pair chains fine
-/// through one region (cumulative per-region cursor) — so a single `text`
-/// region still covers both modules' carriers here.
-fn emp_bank_map_with_mt() -> &'static str {
-    "fill = 0x00\n\
-     \n\
-     [[region]]\n\
-     name = \"text\"\n\
-     lma_base = 0x0000\n\
-     size = 0x10\n\
-     kind = \"rom\"\n\
-     \n\
-     [[region]]\n\
-     name = \"dac_blip_bank\"\n\
-     lma_base = 0x50000\n\
-     size = 0x8000\n\
-     kind = \"rom\"\n\
-     \n\
-     [[region]]\n\
-     name = \"dac_shared_bank\"\n\
-     lma_base = 0x58000\n\
-     size = 0x8000\n\
-     kind = \"rom\"\n\
-     \n\
-     [[region]]\n\
-     name = \"mt_bank\"\n\
-     lma_base = 0x60607\n\
-     size = 0x79F9\n\
-     kind = \"rom\"\n"
+/// T2/T3's map: `emp_bank_map`'s three regions PLUS `mt_bank` @ `0x60607` size
+/// `0x79F9` (mt_port.rs's R7 region, to the `$68000` bank top) PLUS the T3
+/// `sfx_bank` region — the FIRST shape-dependent region base (R7), so this map
+/// is a `fn of debug` where it was a const: plain `$63AE8`/`$4518`, debug
+/// `$6553A`/`$2AC6` (both to the same `$68000` bank top). The MT/DAC/`text`
+/// regions are byte-for-byte T2's.
+///
+/// `dac_samples.emp`, `mt_bank.emp`, and `sfx_bank.emp` each open their own
+/// zero-byte `text` carrier — Task 2's P5 probe proved a same-named `text`
+/// chain resolves fine through one region (cumulative per-region cursor) — so a
+/// single `text` region still covers all three modules' carriers here.
+///
+/// The `mt_bank` region ends at `$60607+$79F9 = $68000` and the `sfx_bank`
+/// region opens at `$63AE8`/`$6553A` — the two OVERLAP in LMA space, but this
+/// is benign exactly as in T2: `place_sections` matches BY NAME, and each `.emp`
+/// module's real section lands only in its OWN named region (`mt_bank`'s section
+/// is `$63AE8`-sized within its window, `sfx_bank`'s is 1864 bytes at its base),
+/// so no two placed sections collide. `resolve_layout`'s overlap check runs on
+/// the placed sections, not the map regions.
+fn emp_bank_map_with_mt(debug: bool) -> String {
+    let (sfx_base, sfx_size) = if debug {
+        ("0x6553A", "0x2AC6")
+    } else {
+        ("0x63AE8", "0x4518")
+    };
+    format!(
+        "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_blip_bank\"\n\
+         lma_base = 0x50000\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_shared_bank\"\n\
+         lma_base = 0x58000\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"mt_bank\"\n\
+         lma_base = 0x60607\n\
+         size = 0x79F9\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"sfx_bank\"\n\
+         lma_base = {sfx_base}\n\
+         size = {sfx_size}\n\
+         kind = \"rom\"\n"
+    )
 }
 
 /// Compile the REAL `dac_samples.emp` and PLACE its sections into the two-bank
@@ -202,7 +242,7 @@ fn emp_bank_map_with_mt() -> &'static str {
 /// fed through it; only the emp sections are placed here, then the union is
 /// resolved+linked once.
 fn placed_emp_sections(aeon: &Path) -> Vec<Section> {
-    placed_module_sections(aeon, "dac_samples.emp", &[], emp_bank_map()).0
+    placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], emp_bank_map()).0
 }
 
 /// Compile the REAL `dac_samples.emp` (no defines) and `mt_bank.emp` (`DEBUG`
@@ -218,31 +258,65 @@ fn placed_emp_sections_with_mt(
     aeon: &Path,
     debug_val: i128,
 ) -> (Vec<Section>, Vec<LinkAssert>) {
+    let map = emp_bank_map_with_mt(debug_val != 0);
     let (mut sections, _dac_asserts) =
-        placed_module_sections(aeon, "dac_samples.emp", &[], emp_bank_map_with_mt());
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
     let (mt_sections, mt_asserts) = placed_module_sections(
-        aeon,
+        &sound_dir(aeon),
         "mt_bank.emp",
         &[("DEBUG".to_string(), debug_val)],
-        emp_bank_map_with_mt(),
+        &map,
     );
     sections.extend(mt_sections);
     (sections, mt_asserts)
 }
 
-/// Shared body of `placed_emp_sections`/`placed_emp_sections_with_mt`: parse +
-/// lower the named `.emp` file (from `sound_dir`, with the given comptime
-/// `defines`), place its sections into `map_src` by name, and return the
-/// placed sections ALONGSIDE the module's link_asserts (captured before
-/// `place_sections` consumes `module.sections`) — the single lowering pass
-/// both callers above rely on (M2).
-fn placed_module_sections(
+/// T3: `placed_emp_sections_with_mt`'s three-module successor — DAC + MT +
+/// SFX, all placed into the per-shape `emp_bank_map_with_mt` (DAC/MT defines-
+/// less except MT's `DEBUG`, SFX defines-less in BOTH shapes — R4). Returns all
+/// THREE modules' placed sections concatenated (dac, mt, sfx — declaration
+/// order only) AND BOTH the MT and SFX modules' link_asserts, so the caller can
+/// `check_link_asserts` and pin BOTH counts (mt == 5, sfx == 1) after the joint
+/// link — the ONE lower pass per module (M2), no second lowering to recover the
+/// asserts.
+fn placed_emp_sections_with_mt_sfx(
     aeon: &Path,
+    debug_val: i128,
+) -> (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>) {
+    let map = emp_bank_map_with_mt(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    // `sfx_bank.emp` lives in `sound/sfx/` and its eighteen `embed("sfx_*.bin")`
+    // resolve bare against that dir — so its module directory (and include_root)
+    // is `sound/sfx`, not `sound`. NO defines: the block is shape-invariant (R4).
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    (sections, mt_asserts, sfx_asserts)
+}
+
+/// Shared body of `placed_emp_sections`/`placed_emp_sections_with_mt`/
+/// `placed_emp_sections_with_mt_sfx`: parse + lower the named `.emp` file (from
+/// `dir`, which is ALSO its `include_root` — `sound` for dac/mt, `sound/sfx`
+/// for sfx_bank, whose eighteen `embed`s resolve bare against its own dir — with
+/// the given comptime `defines`), place its sections into `map_src` by name, and
+/// return the placed sections ALONGSIDE the module's link_asserts (captured
+/// before `place_sections` consumes `module.sections`) — the single lowering
+/// pass all callers above rely on (M2).
+fn placed_module_sections(
+    dir: &Path,
     module_file: &str,
     defines: &[(String, i128)],
     map_src: &str,
 ) -> (Vec<Section>, Vec<LinkAssert>) {
-    let dir = sound_dir(aeon);
+    let dir = dir.to_path_buf();
     let emp_path = dir.join(module_file);
     let src = std::fs::read_to_string(&emp_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", emp_path.display()));
@@ -348,6 +422,69 @@ fn build_mixed_mt_rom(aeon: &Path, debug: bool) -> (Vec<u8>, Vec<sigil_span::Dia
     (rom, assert_diags)
 }
 
+/// T3's shared body — the tranche's final byte-identity proof: assemble the AS
+/// side with ALL THREE sound gates on (`SIGIL_EMP_DAC` + `SIGIL_EMP_MT` +
+/// `SIGIL_EMP_SFX`), compose with ALL THREE `.emp` modules' placed sections
+/// (dac + mt + sfx), and run ONE joint `resolve_layout` + `link`.
+///
+/// This is where the win-tab `dw` deferral proves out END-TO-END: with
+/// `SIGIL_EMP_SFX` on, the `soundBankHead` win-tab's nine
+/// `dw sfx_winptr(Sfx_NN)` entries assemble on the AS side with `Sfx_NN`
+/// UNRESOLVED (P1's deferral — a compound `(Sfx_NN & $7FFF) | $8000` lowered to
+/// a `Value16Le` fixup in the Z80 `phase 08000h` blob) and are satisfied by
+/// `sfx_bank.emp`'s labels through this ONE shared symbol table. The first
+/// entry resolves to `sfx_winptr($63AE8) = ($63AE8 & $7FFF) | $8000 = $BAE8` →
+/// LE bytes `E8 BA` at ROM `$6045F` (`SfxBlobWinTab` @ Z80 vma `$845F`,
+/// phase-based at `$60000+$45F`) — covered by the full-ROM byte assertion below.
+///
+/// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags)` — the caller pins
+/// BOTH modules' `check_link_asserts` (mt == 5, sfx == 1) and asserts every
+/// diagnostic is non-Error (the I1 non-vacuous lesson: a positive gate that
+/// never ran would silently pass).
+fn build_mixed_sfx_rom(
+    aeon: &Path,
+    debug: bool,
+) -> (Vec<u8>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>) {
+    let as_module = assemble_mixed_sfx_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    // ONE lower pass per module (M2): both the placed sections AND both modules'
+    // link_asserts come from the same lowering, so the byte composition and the
+    // asserts-check can never drift.
+    let (emp_sections, mt_asserts, sfx_asserts) =
+        placed_emp_sections_with_mt_sfx(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed SFX): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed SFX): {d:?}"));
+
+    // The mixed path does NOT run the asserts as part of `link()` — check both
+    // modules' ensures explicitly and pin both counts.
+    let mt_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &mt_asserts);
+    let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
+    assert_eq!(
+        mt_asserts.len(),
+        5,
+        "mt_bank.emp's five co-residency ensures must be captured"
+    );
+    assert_eq!(
+        sfx_asserts.len(),
+        1,
+        "sfx_bank.emp's single co-residency ensure must be captured"
+    );
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    let rom =
+        sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed SFX): {e}"));
+    (rom, mt_diags, sfx_diags)
+}
+
 /// Plain (non-debug) mixed build == `aeon/s4.bin`, modulo the four convsym bytes.
 #[test]
 fn mixed_dac_rom_matches_assembled_reference() {
@@ -441,5 +578,87 @@ fn mixed_mt_debug_rom_matches_assembled_reference() {
         DEBUG_ASSEMBLED_LEN,
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed MT debug",
+    );
+}
+
+/// T3 acceptance — plain (non-debug) DAC+MT+SFX mixed build == `aeon/s4.bin`,
+/// modulo the four convsym bytes. All three sound gates are ON; all three
+/// `.emp` modules are lowered and composed; BOTH the five `mt_bank.emp` and the
+/// one `sfx_bank.emp` cross-seam ensures must genuinely run (via
+/// `check_link_asserts`) and pass. The composed ROM content is byte-identical to
+/// the all-`.asm` build, so the SAME `ASSEMBLED_LEN`/`CONVSYM_REWRITTEN` pins as
+/// the T1/T2 gates apply. This test also proves the win-tab `dw sfx_winptr`
+/// deferral resolves end-to-end (see `build_mixed_sfx_rom`).
+#[test]
+fn mixed_sfx_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags) = build_mixed_sfx_rom(&aeon, false);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+
+    // The win-tab deferral, PINNED end-to-end: `SfxBlobWinTab[0]` lives at Z80
+    // vma `$845F` in the `phase 08000h` blob → ROM `$60000 + ($845F - $8000) =
+    // $6045F`. `sfx_winptr(Sfx_33)` = `($63AE8 & $7FFF) | $8000 = $BAE8` → LE
+    // bytes `E8 BA`. This resolved through the joint link from `Sfx_33`
+    // (`.emp`-side) with `SFX_WIN_MASK`/`SFX_WIN_BASE` baked at AS-time
+    // (`partial_fold`). The full-ROM assert below re-proves it against the
+    // reference; this pin makes the seam's payload explicit.
+    assert_eq!(
+        &rom[0x6045F..0x60461],
+        &[0xE8, 0xBA],
+        "SfxBlobWinTab[0] = sfx_winptr(Sfx_33) must resolve to $BAE8 (LE `E8 BA`) via the joint link"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed SFX");
+}
+
+/// T3 acceptance — `__DEBUG__` DAC+MT+SFX mixed build == `aeon/s4.debug.bin`,
+/// modulo the five convsym bytes. Same three-module composition as the plain
+/// variant, with `DEBUG=1` driving `mt_bank.emp`'s if-expressions and
+/// `__DEBUG__` on the AS side; `sfx_bank.emp` is shape-invariant (its content is
+/// identical in both shapes — only its map base moves, R7).
+#[test]
+fn mixed_sfx_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags) = build_mixed_sfx_rom(&aeon, true);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed SFX debug",
     );
 }

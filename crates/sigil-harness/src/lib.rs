@@ -127,6 +127,43 @@ pub fn assemble_mixed_mt_as_side(aeon: &Path, debug: bool) -> Result<Module, Str
     })
 }
 
+/// Assemble the AS side of the T3 MIXED `.asm`+`.emp` build: everything
+/// `assemble_mixed_mt_as_side` does, PLUS `SIGIL_EMP_SFX` defined so
+/// `main.asm`'s SFX block (the 19 blob/patch/table includes + the two SFX
+/// fatals, R6) is REPLACED by an `org` resume — per shape, `$65C82`
+/// (`__DEBUG__`) or `$64230` (plain), i.e. `SfxTable_End` — leaving the whole
+/// `$63AE8..SfxTable_End` window for the `.emp` side's `sfx_bank` section to
+/// supply. All three gates (`SIGIL_EMP_DAC`, `SIGIL_EMP_MT`, `SIGIL_EMP_SFX`)
+/// are independent (R6); T3's mixed build exercises all three ON together.
+///
+/// Returns the UNLINKED [`Module`], exactly like the two sibling helpers: the
+/// T3 mixed harness concatenates these sections with all THREE `.emp` modules'
+/// placed sections (`dac_samples.emp` + `mt_bank.emp` + `sfx_bank.emp`) and
+/// runs ONE `resolve_layout` + `link` over the union. The cross-seam reads
+/// unique to this tranche are the `soundBankHead` win-tab's nine
+/// `dw sfx_winptr(Sfx_NN)` entries (a compound `(Sfx_NN & $7FFF) | $8000` in a
+/// Z80 `phase 08000h` LE `dw`): with `SIGIL_EMP_SFX` on the `Sfx_NN` labels are
+/// `.emp`-side, so those entries assemble here with the target UNRESOLVED (T0's
+/// dw deferral, P1-proven) and are satisfied by the joint link against
+/// `sfx_bank.emp`'s labels through the same shared symbol table everything else
+/// uses.
+pub fn assemble_mixed_sfx_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed SFX AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable

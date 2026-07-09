@@ -390,19 +390,20 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   `resolve_layout`+`link` over AS + all THREE `.emp` modules' sections;
   `check_link_asserts` for BOTH mt (5 asserts) and sfx (1 assert) modules — pin both counts.
 
-- [ ] **Step 1:** `mixed_sfx_rom_matches_assembled_reference` +
+- [x] **Step 1:** `mixed_sfx_rom_matches_assembled_reference` +
   `mixed_sfx_debug_rom_matches_assembled_reference` — `assert_rom_matches` vs the same
   `ASSEMBLED_LEN`/allowlists (content identical ⇒ same pins). T1's 2 and T2's 2 existing
   tests stay untouched.
-- [ ] **Step 2:** This is where the win-tab dw deferral proves out end-to-end: the `.asm`
+- [x] **Step 2:** This is where the win-tab dw deferral proves out end-to-end: the `.asm`
   side's `SfxBlobWinTab` entries assemble with `Sfx_NN` unresolved (P1's deferral) and
   resolve through the joint link. Byte-inspect at least the first entry against the
   reference (T2's movea-imm32 xxd evidence pattern): find `SfxBlobWinTab` in `s4.lst`,
   compute `sfx_winptr($63AE8)` = `($63AE8 & $7FFF) | $8000` = `$BAE8` → LE bytes `E8 BA`,
   and confirm both the reference and the assertion window cover it. Record in notes.
-- [ ] **Step 3:** Full nets: `SIGIL_STRICT_GATE=1 AEON_DIR=… cargo test -p sigil-harness`
+  (Needed the `partial_fold` fix first — see the execution note.)
+- [x] **Step 3:** Full nets: `SIGIL_STRICT_GATE=1 AEON_DIR=… cargo test -p sigil-harness`
   (ALL prior gates + the new pair) + `cargo test --workspace` + clippy `-D warnings`.
-- [ ] **Step 4: Commit** — `test(harness): mixed DAC+MT+SFX full-ROM byte-identical, both shapes (sound-migration T3 acceptance)`
+- [x] **Step 4: Commit** — `test(harness): mixed DAC+MT+SFX full-ROM byte-identical, both shapes (sound-migration T3 acceptance)`
 
 ### Task 6: negative probes
 
@@ -568,3 +569,54 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
 - Deferred to polish: M1 — the `AEON_DIR` default path string appears 4× in the file
   (inherited verbatim from mt_port.rs; fold a shared `aeon_dir()` helper across both files
   if touching them anyway).
+
+### Task 5 (mixed DAC+MT+SFX full-ROM gate) — DONE
+
+- **REAL RED → GREEN — a genuine deferral gap P1 missed, fixed minimally in the AS
+  front-end.** The AS side assembled cleanly (the win-tab `dw sfx_winptr(Sfx_NN)` deferral
+  ENGAGED — the fixup is present, no unresolved-symbol AS error, so the T0/P1 mechanism held
+  for the compound Z80-phase `dw`). But the JOINT LINK failed with 9× "unresolved target
+  expression for fixup in section sec32768 …" — one per win-tab entry. Root cause (dumped
+  the fixup target): the deferred tree was `(Sfx_33 & SFX_WIN_MASK) | SFX_WIN_BASE` — and
+  while `Sfx_33` resolved fine from `sfx_bank.emp`, the `sfx_winptr` FUNCTION's constants
+  `SFX_WIN_MASK`/`SFX_WIN_BASE` are AS-side `=` equs (`engine/sound/sound_sfx.asm:56-57`)
+  that the linker's section-label table never sees. P1 was instant-green because it used
+  LITERAL masks (`& $7FFF | $8000`); the real `sfx_winptr()` carries equ SUBTERMS — the gap.
+- **Fix (scope beyond the plan's harness-only Task 5, but the plan's investigate-first rule
+  covers it):** new `Assembler::partial_fold` in `frontend-as/src/eval.rs` — on the deferral
+  paths it rewrites every env-resolvable SUBTERM to `Expr::Int`, leaving only the genuinely-
+  external leaf as `Sym`. So the linker fold sees `(Sfx_33 & 32767) | 32768` — only `Sfx_33`
+  deferred. This is the deferred-expr analogue of `fixup_target`'s bake-what-you-can
+  rationale (its env-only `set`/`equ` note). Applied to all three deferral arms for
+  consistency (`dw` Value16Le — the live one; `db` Value8; imm32 Value32Be — the latter two
+  latent but same class). 147 frontend-as tests green (T0 db_dw_defer + P1 phase-dw
+  unchanged); DAC/MT mixed + m1d gates byte-identical (no drift on already-resolving paths).
+- **Win-tab byte evidence (end-to-end proof):** `s4.lst:40373` `SfxBlobWinTab: dw
+  sfx_winptr(Sfx_33)` → `E8 BA` at Z80 vma `$845F` → ROM `$60000+($845F-$8000) = $6045F`.
+  `sfx_winptr($63AE8) = ($63AE8 & $7FFF) | $8000 = $BAE8` → LE `E8 BA`. Reference `xxd -s
+  0x6045F -l 8 s4.bin` = `e8ba 42bb 9cbb dabc` (first 4 entries). Pinned explicitly in the
+  plain test (`rom[0x6045F..0x60461] == [0xE8,0xBA]`) AND re-proven by the full-ROM assert.
+- **ZERO DIVERGENCES, both shapes** — `mixed_sfx_rom_matches_assembled_reference` +
+  `mixed_sfx_debug_rom_matches_assembled_reference` both byte-identical to the reference
+  (modulo the same 4/5 convsym header bytes as T1/T2), same `ASSEMBLED_LEN`
+  (`0x658B4`/`0x673A2`) / allowlist pins. T1's 2 + T2's 2 mixed tests UNTOUCHED (6/6 green).
+- Both modules' `check_link_asserts` pinned: mt == 5, sfx == 1; both diag sets asserted
+  all-non-Error (the I1 non-vacuous discipline).
+- **Falsifications (3):** (1) XOR `rom[0x6045F]` → the win-tab pin fires (`left [23,186] !=
+  right [232,186]`); (2) XOR `rom[0x63AE8]` (Sfx_33 block, off-pin) → `assert_rom_matches`
+  DSM.9 STOP fires with first-diff `0x63ae8 (0xef != ref 0x10)` + [i,i+16) context both
+  sides; (3) push a synthetic always-Error onto `sfx_diags` → the must-all-pass assertion
+  trips (`"…must PASS…: [Diagnostic { level: Error, message: "synthetic" …}]"`). All
+  reverted; re-ran clean.
+- Harness composition: `assemble_mixed_sfx_as_side` sibling (all 4 defines); `placed_emp_
+  sections_with_mt_sfx` (three modules, one lower pass each — M2); `emp_bank_map_with_mt`
+  became `fn of debug` with the per-shape `sfx_bank` region (R7); `placed_module_sections`
+  generalized to take the module DIR (`sound/sfx` for sfx_bank's bare embeds vs `sound` for
+  dac/mt). DAC/MT regions byte-verbatim.
+- Nets: `SIGIL_STRICT_GATE=1` harness (all prior gates + new pair) green; `cargo test
+  --workspace` 115 result-lines all ok; clippy `-D warnings` clean.
+- **Carry-forward for whole-branch review (prong 1):** `partial_fold` is a new resolved-path
+  code path on the AS deferral seam — review should confirm it can't perturb bytes on the
+  all-`.asm` (fully-folding) path. It can't structurally (a fully-folding expr collapses to
+  one `Expr::Int`, identical to the eager path's value), and the m1d/DAC/MT byte gates prove
+  it empirically, but it's the diff's one load-bearing engine change.
