@@ -218,12 +218,24 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   actually GROWS past its baseline rung — `GetSineCosine`'s real address is low enough to
   always fold to abs.w, so the growth this guards against could never fire here) requires
   `shift_breakpoints`/`frag_start_vma` to become genuinely `Org`-target-aware, not a
-  guard-condition tweak — a real linker algorithm change. — OPEN, BLOCKED for this task (per
-  the task's explicit STOP-and-report rule: not small). `controllers_port.rs`/`math_port.rs`'s
-  REGION-level gates are unaffected (fresh synthetic sections, no `Org` in play) and fully
-  green; only the SIX-module full mixed-ROM composition
-  (`mixed_tranche2_rom_matches_assembled_reference`/`_debug_`) is blocked, `#[ignore]`d with a
-  full explanation in its doc comment. Wants: a dedicated session teaching
-  `shift_breakpoints`/`frag_start_vma` to replay `Org.target` for real instead of treating it
-  as a zero-length no-op, so the guard can narrow from "refuse categorically" to "refuse only
-  when a provable hazard exists."
+  guard-condition tweak — a real linker algorithm change. — SHIPPED (port #2 task 4, dedicated
+  session): `Org` is now a POSITION BARRIER in `resolve_layout`'s width-shift math.
+  `shift_breakpoints` seeks BOTH the current and baseline cursors to the org target at each
+  barrier (resetting the per-run growth delta to 0), `frag_start_vma` does the same for its
+  baseline cursor, and `shift_offset` scans last-wins (org resets make authored offsets
+  non-monotonic; last-wins mirrors `image_bytes`' overwrite order and is identical to the old
+  break-on-first for the monotonic no-org case). Growth of a relaxable shifts only fragments
+  after it in its OWN run (up to the next org); post-org content stays pinned to the org
+  target. The M1.C T6b categorical refusal is REPLACED by `run_overrun_diag`, a precise
+  post-fixpoint check: a FORWARD org (judged at baseline) that a grown run overruns is a loud
+  error naming the section/target/extent/overrun (AS/asl's spirit — never silently overlap); a
+  backward org (the overwrite idiom) is never an overrun and `image_bytes`' overwrite semantics
+  are unchanged. The Org+Reserve refusal survives (a distinct, still-latent hazard). The two
+  six-module full mixed-ROM gates (`mixed_tranche2_rom_matches_assembled_reference`/`_debug_`)
+  are UN-IGNORED and byte-identical to `aeon/s4.bin`/`aeon/s4.debug.bin`; every pre-existing
+  byte gate (hblank 2/2, mixed 10/10, m1d plain+debug full-ROM, all port suites) stayed green,
+  proving the algorithm change is byte-neutral for every previously-working layout. TDD: four
+  new `relax.rs` unit tests (forward-org run-local shifting + pinned post-org content;
+  run-growth-past-barrier loud error; backward-org overwrite byte-identity with an earlier
+  relaxable; three-run run-local shifting), plus the two old categorical-refusal guard tests
+  repurposed as allow-tests.
