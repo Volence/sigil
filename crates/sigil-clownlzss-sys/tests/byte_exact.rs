@@ -232,8 +232,11 @@ fn golden_rocket() {
 #[test]
 fn compressed_size_stays_within_bound() {
     // Every real test input's compressed size must stay comfortably under
-    // the shim's max_compressed_size bound (input + input/8 + 64), which
-    // backs every compress_* function's internal buffer allocation.
+    // the non-moduled max_compressed_size bound (input + input/8 + 64),
+    // which sizes every non-moduled compress_* function's initial buffer.
+    // (Moduled compression uses a module-count-scaled bound, and both are
+    // backed by the shim's capacity check + exact-size retry — see
+    // tests/moduled_capacity.rs and the src/lib.rs module doc.)
     for name in ["oozprimary.raw", "specstag.raw", "sand_particles.raw", "ship_propeller.raw", "level_select_2p.raw"] {
         let plain = read_vector(name);
         let bound = plain.len() + plain.len() / 8 + 64;

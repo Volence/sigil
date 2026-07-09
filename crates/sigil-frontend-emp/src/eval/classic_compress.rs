@@ -178,6 +178,26 @@ impl<'a> Evaluator<'a> {
                     ),
                 );
             }
+            // Defensive: the module_size argument parser above already
+            // rejects 0 with its own [<name>.module-size] diagnostic, so
+            // this arm is unreachable from `.emp` today — kept exhaustive
+            // (no catch-all) so a future call path cannot slip through
+            // silently.
+            Error::ModuleSizeZero => {
+                self.error(
+                    span,
+                    format!("[{name}.module-size] {name} module_size 0 is not a valid module size"),
+                );
+            }
+            Error::DataTooLargeForModuled { len, max } => {
+                self.error(
+                    span,
+                    format!(
+                        "[{name}.data-too-large] {name} input is {len} bytes — the 16-bit moduled \
+                         header cannot represent more than {max} bytes at this module_size"
+                    ),
+                );
+            }
             Error::CompressedSizeExceedsU16 { actual } => {
                 self.error(
                     span,

@@ -94,7 +94,31 @@ struct ReadContext<'a> {
     pos: usize,
 }
 
+// ---------------------------------------------------------------------
+// Callback infallibility contract (LOAD-BEARING — read before editing)
+// ---------------------------------------------------------------------
+// These two callbacks are called from C frames. Unwinding a Rust panic
+// across an `extern "C"` boundary is immediate UB-adjacent territory (the
+// callback ABI aborts the process on unwind since Rust 1.81, which is
+// "safe" but still torpedoes the assembler mid-build with no diagnostic).
+// They are therefore written to be infallible BY CONSTRUCTION, and must
+// stay that way:
+//   - `read_cb` performs no allocation and no arithmetic that can
+//     overflow (`pos + 1` is bounded by `data.len() <= isize::MAX`); the
+//     slice index is guarded by the explicit `pos >= len` check above it.
+//   - `write_cb`'s only fallible operation is `Vec::push`: allocation
+//     *failure* calls `handle_alloc_error` (abort, not unwind), and the
+//     capacity-overflow panic requires a Vec beyond `isize::MAX` bytes —
+//     unreachable for any compressed stream of a `<= 32767`-tile input.
+// If you add ANY other operation that can panic (indexing, arithmetic,
+// I/O, ...), wrap the callback body in `std::panic::catch_unwind` and
+// translate the panic into a failure return code instead.
+
 extern "C" fn read_cb(user_data: *mut c_void) -> c_int {
+    // SAFETY: `user_data` is always the `&mut ReadContext` passed by
+    // `compress`/`decompress` below, which outlives the whole
+    // `ClownNemesis_*` call; the C library is single-threaded and never
+    // calls the callbacks re-entrantly, so this is the only live reference.
     let ctx = unsafe { &mut *(user_data as *mut ReadContext) };
     if ctx.pos >= ctx.data.len() {
         // Rewind for the next pass (see the ReadContext doc comment and
@@ -113,6 +137,9 @@ struct WriteContext {
 }
 
 extern "C" fn write_cb(user_data: *mut c_void, byte: u8) -> c_int {
+    // SAFETY: `user_data` is always the `&mut WriteContext` passed by
+    // `compress`/`decompress` below; same liveness/aliasing argument as
+    // `read_cb`.
     let ctx = unsafe { &mut *(user_data as *mut WriteContext) };
     ctx.out.push(byte);
     0
@@ -144,6 +171,12 @@ pub fn compress(data: &[u8]) -> Result<Vec<u8>, Error> {
     let mut read_ctx = ReadContext { data, pos: 0 };
     let mut write_ctx = WriteContext { out: Vec::new() };
 
+    // SAFETY: the two context pointers stay live and exclusively owned for
+    // the duration of this call (they are locals borrowed mutably right
+    // here, and the C library neither retains them past the call nor calls
+    // the callbacks from another thread); the callbacks cast them back to
+    // exactly the types passed in and are infallible by construction (see
+    // the contract note above `read_cb`).
     let ok = unsafe {
         ClownNemesis_Compress(
             0,
@@ -165,6 +198,9 @@ pub fn decompress(data: &[u8]) -> Result<Vec<u8>, Error> {
     let mut read_ctx = ReadContext { data, pos: 0 };
     let mut write_ctx = WriteContext { out: Vec::new() };
 
+    // SAFETY: same argument as in `compress` — context pointers are live,
+    // exclusively-owned locals for the whole call; callbacks are
+    // infallible by construction.
     let ok = unsafe {
         ClownNemesis_Decompress(
             read_cb,

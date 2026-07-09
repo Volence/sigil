@@ -2,45 +2,59 @@
 //
 // clownlzss's optimal-parse core (vendor/compressors/clownlzss.c) is C89,
 // but every per-format compressor/decompressor is a template header with no
-// C linkage entry point. This file instantiates each template directly
-// (via the `Internal::<Format>::Compress`/`Decompress` functions, not the
-// top-level convenience wrappers — see the "Tell(), not the caller's
-// pointer" note below for why) and exposes one `extern "C"` function per
-// format, so `src/lib.rs`'s safe wrapper can call into it without depending
-// on the C++ ABI beyond `extern "C"`.
+// C linkage entry point. This file drives the upstream top-level
+// convenience wrappers (`ClownLZSS::KosinskiCompress`, ...) with an
+// `std::ostringstream` sink — the same instantiation the upstream CLI uses
+// with `std::ofstream` — and exposes one `extern "C"` function per format,
+// so `src/lib.rs`'s safe wrapper can call into it without depending on the
+// C++ ABI beyond `extern "C"`.
 //
-// ---------------------------------------------------------------------
-// "Tell(), not the caller's pointer": why every function below constructs
-// its own CompressorOutput/DecompressorOutput and reads back .Tell()
-// ---------------------------------------------------------------------
+// Historical caution (recon-verified, kept so nobody reintroduces it): the
+// top-level convenience wrappers take their iterator argument by forwarding
+// reference and construct their OWN `CompressorOutput`/`DecompressorOutput`
+// wrapper around a *copy* of it internally. Passing a raw pointer lvalue
+// (e.g. `unsigned char* cursor = out; KosinskiCompress(data, size,
+// cursor);`) advances only the wrapper's internal copy — `cursor - out`
+// afterwards silently reports 0 bytes written every time, even though
+// compression succeeded. Stream sinks (`std::ostream&`) do not have this
+// problem: the wrapper holds a reference to the stream, not a copy of a
+// cursor — and this shim now uses stream sinks exclusively, for both
+// compression and decompression.
 //
-// The top-level convenience wrappers (`ClownLZSS::KosinskiCompress(data,
-// size, output)`, `ClownLZSS::KosinskiDecompress(input, output)`, etc.) take
-// their iterator argument by forwarding reference and construct their OWN
-// `CompressorOutput`/`DecompressorOutput` wrapper around a *copy* of it
-// internally. If you pass a raw pointer lvalue (e.g. `unsigned char* cursor
-// = out; KosinskiCompress(data, size, cursor);`), the wrapper's internal
-// copy of `cursor` advances as bytes are written, but YOUR `cursor`
-// variable is never touched — reading `cursor - out` afterwards silently
-// reports 0 bytes written every time, even though compression succeeded
-// (recon-verified: this is exactly what a naive first draft of this shim
-// did, and every compress function returned `out_len = 0` for real input).
-// The fix used throughout this file: construct the `CompressorOutput`/
-// `DecompressorOutput` wrapper explicitly, pass it BY REFERENCE to the
-// `Internal::<Format>::Compress`/`Decompress` function, and read the true
-// written length back via the wrapper's own `.Tell() - start` after the
-// call returns — the wrapper object itself (not the raw pointer) is what
-// actually advances.
+// Compression output contract: the caller allocates a buffer (sized by the
+// Rust wrapper's worst-case bound), passes it in with its capacity, and
+// gets the actual written length back via an out-parameter. Internally,
+// however, compression does NOT write into the caller's buffer directly:
+// it compresses into an `std::ostringstream` (exactly like the decompress
+// path below) and only copies into the caller's buffer after an explicit
+// capacity check. Two reasons:
 //
-// Compression output contract (mirrors sigil-salvador-sys): the caller
-// allocates a buffer sized by the matching `*_max_size` helper below,
-// passes it in, and gets the actual written length back via an
-// out-parameter. This is NOT a convenience choice: Saxman's and Rocket's
-// compressors seek backward to patch a header field (compressed size)
-// after the fact (`Saxman::CompressWithHeader`, `Rocket::Compress` in the
-// vendored headers), which requires a random-access *output* iterator — a
-// `back_inserter` cannot support `Seek`/`Tell`. Using a raw pointer for
-// every format (not just the two that need it) keeps one uniform contract.
+//   1. SAFETY (the load-bearing one): the vendored compressor templates are
+//      unchecked — with a raw-pointer output they write however many bytes
+//      the stream needs, trusting the caller's buffer. A first version of
+//      this shim did exactly that, and the Rust-side moduled bound was ~50
+//      bytes short for worst-case (incompressible) multi-module input:
+//      a live heap overflow (reviewer-reproduced; see
+//      `tests/moduled_capacity.rs` for the RED evidence). With the
+//      ostringstream intermediary the shim CANNOT write past the caller's
+//      buffer regardless of what capacity Rust passes — a too-small buffer
+//      is reported (return -1, required size in *out_len), never overrun.
+//   2. It still satisfies the formats' random-access needs: Saxman's and
+//      Rocket's compressors seek backward to patch a header field after
+//      the fact (`Saxman::CompressWithHeader`, `Rocket::Compress`), which
+//      a `back_inserter` cannot support — but the vendored ostream-hosted
+//      `CompressorOutput` specialization (`vendor/common.h`,
+//      `OutputCommon<std::ostream&>`) implements `Seek`/`Tell`/`Distance`
+//      via `seekp`/`tellp`. This is upstream's own primary output path:
+//      the clownlzss CLI (`main.cpp` upstream) compresses every format,
+//      moduled included, straight into an `std::ofstream`.
+//
+// Return-code protocol shared by every compress function below:
+//    1  success; *out_len = bytes written into `out`.
+//    0  the vendored compressor itself reported failure.
+//   -1  the compressed stream does not fit in `out_capacity`; *out_len is
+//       set to the required size so the caller can retry with an
+//       exactly-sized buffer. Nothing is written into `out`.
 //
 // ---------------------------------------------------------------------
 // DECOMPRESSION: why this shim uses std::ostringstream, not a raw pointer
@@ -111,20 +125,27 @@
 
 namespace {
 
-// Shared helper for compression: run a callable that writes into a
-// ClownLZSS::CompressorOutput<unsigned char*> wrapping `out`, then read the
-// true written length back via the wrapper's own .Tell() (see the
-// "Tell(), not the caller's pointer" note above for why this indirection
-// is required). Returns false (without touching *out_len) if the vendored
-// compressor itself reports failure.
+// Shared helper for compression: run a callable that writes into an
+// std::ostringstream, then copy its bytes into the caller's C buffer,
+// bounds-checked against out_capacity. The intermediary stream is what
+// makes the shim incapable of overrunning the caller's buffer no matter
+// what capacity the caller passes (see the "Compression output contract"
+// note above, including the return-code protocol: 1 ok / 0 compressor
+// failure / -1 capacity exceeded with the required size in *out_len).
 template <typename F>
-int RunCompress(const unsigned char* out_buf_start, std::size_t* out_len, F&& compress_fn)
+int RunCompress(unsigned char* out, std::size_t out_capacity, std::size_t* out_len, F&& compress_fn)
 {
-	unsigned char* out_start = const_cast<unsigned char*>(out_buf_start);
-	ClownLZSS::CompressorOutput<unsigned char*> output(out_start);
-	if (!compress_fn(output))
+	std::ostringstream oss(std::ios::binary | std::ios::out);
+	if (!compress_fn(oss))
 		return 0;
-	*out_len = static_cast<std::size_t>(output.Tell() - out_start);
+	const std::string result = oss.str();
+	if (result.size() > out_capacity)
+	{
+		*out_len = result.size();
+		return -1;
+	}
+	std::memcpy(out, result.data(), result.size());
+	*out_len = result.size();
 	return 1;
 }
 
@@ -172,17 +193,17 @@ std::size_t clownlzss_max_compressed_size(std::size_t input_size)
 // Kosinski
 // ---------------------------------------------------------------------
 
-int clownlzss_kosinski_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len)
+int clownlzss_kosinski_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::Kosinski::Compress(data, data_size, output);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::KosinskiCompress(data, data_size, oss);
 	});
 }
 
-int clownlzss_kosinski_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len, std::size_t module_size)
+int clownlzss_kosinski_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len, std::size_t module_size)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::ModuledCompressionWrapper<2, ClownLZSS::Internal::Endian::Big>(data, data_size, output, ClownLZSS::Internal::Kosinski::Compress, module_size, 0x10);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::ModuledKosinskiCompress(data, data_size, oss, module_size);
 	});
 }
 
@@ -206,17 +227,17 @@ int clownlzss_kosinski_decompress_moduled(const unsigned char* data, std::size_t
 // Kosinski+
 // ---------------------------------------------------------------------
 
-int clownlzss_kosinskiplus_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len)
+int clownlzss_kosinskiplus_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::KosinskiPlus::Compress(data, data_size, output);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::KosinskiPlusCompress(data, data_size, oss);
 	});
 }
 
-int clownlzss_kosinskiplus_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len, std::size_t module_size)
+int clownlzss_kosinskiplus_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len, std::size_t module_size)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::ModuledCompressionWrapper<2, ClownLZSS::Internal::Endian::Big>(data, data_size, output, ClownLZSS::Internal::KosinskiPlus::Compress, module_size, 1);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::ModuledKosinskiPlusCompress(data, data_size, oss, module_size);
 	});
 }
 
@@ -240,24 +261,24 @@ int clownlzss_kosinskiplus_decompress_moduled(const unsigned char* data, std::si
 // Saxman
 // ---------------------------------------------------------------------
 
-int clownlzss_saxman_compress_with_header(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len)
+int clownlzss_saxman_compress_with_header(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::Saxman::CompressWithHeader(data, data_size, output);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::SaxmanCompressWithHeader(data, data_size, oss);
 	});
 }
 
-int clownlzss_saxman_compress_without_header(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len)
+int clownlzss_saxman_compress_without_header(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::Saxman::CompressWithoutHeader(data, data_size, output);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::SaxmanCompressWithoutHeader(data, data_size, oss);
 	});
 }
 
-int clownlzss_saxman_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len, std::size_t module_size)
+int clownlzss_saxman_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len, std::size_t module_size)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::ModuledCompressionWrapper<2, ClownLZSS::Internal::Endian::Big>(data, data_size, output, ClownLZSS::Internal::Saxman::CompressWithHeader, module_size, 2);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::ModuledSaxmanCompress(data, data_size, oss, module_size);
 	});
 }
 
@@ -282,21 +303,21 @@ int clownlzss_saxman_decompress_with_header(const unsigned char* data, std::size
 // Enigma
 // ---------------------------------------------------------------------
 
-int clownlzss_enigma_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len)
+// Note: upstream's top-level EnigmaCompress itself appends the odd-length
+// pad byte (word-align the stream) — the padding an earlier version of this
+// shim replicated by hand when it called Internal::Enigma::Compress
+// directly. Byte-identical output either way (golden-gated).
+int clownlzss_enigma_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		const auto start = output.Tell();
-		const bool success = ClownLZSS::Internal::Enigma::Compress(data, data_size, output);
-		if (output.Distance(start) % 2 != 0)
-			output.Write(0);
-		return success;
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::EnigmaCompress(data, data_size, oss);
 	});
 }
 
-int clownlzss_enigma_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len, std::size_t module_size)
+int clownlzss_enigma_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len, std::size_t module_size)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::ModuledCompressionWrapper<2, ClownLZSS::Internal::Endian::Big>(data, data_size, output, ClownLZSS::Internal::Enigma::Compress, module_size, 2);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::ModuledEnigmaCompress(data, data_size, oss, module_size);
 	});
 }
 
@@ -312,17 +333,17 @@ int clownlzss_enigma_decompress(const unsigned char* data, std::size_t data_size
 // Comper
 // ---------------------------------------------------------------------
 
-int clownlzss_comper_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len)
+int clownlzss_comper_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::Comper::Compress(data, data_size, output);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::ComperCompress(data, data_size, oss);
 	});
 }
 
-int clownlzss_comper_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len, std::size_t module_size)
+int clownlzss_comper_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len, std::size_t module_size)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::ModuledCompressionWrapper<2, ClownLZSS::Internal::Endian::Big>(data, data_size, output, ClownLZSS::Internal::Comper::Compress, module_size, 2);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::ModuledComperCompress(data, data_size, oss, module_size);
 	});
 }
 
@@ -338,17 +359,17 @@ int clownlzss_comper_decompress(const unsigned char* data, std::size_t data_size
 // Rocket
 // ---------------------------------------------------------------------
 
-int clownlzss_rocket_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len)
+int clownlzss_rocket_compress(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::Rocket::Compress(data, data_size, output);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::RocketCompress(data, data_size, oss);
 	});
 }
 
-int clownlzss_rocket_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t* out_len, std::size_t module_size)
+int clownlzss_rocket_compress_moduled(const unsigned char* data, std::size_t data_size, unsigned char* out, std::size_t out_capacity, std::size_t* out_len, std::size_t module_size)
 {
-	return RunCompress(out, out_len, [&](ClownLZSS::CompressorOutput<unsigned char*>& output) {
-		return ClownLZSS::Internal::ModuledCompressionWrapper<2, ClownLZSS::Internal::Endian::Big>(data, data_size, output, ClownLZSS::Internal::Rocket::Compress, module_size, 2);
+	return RunCompress(out, out_capacity, out_len, [&](std::ostream& oss) {
+		return ClownLZSS::ModuledRocketCompress(data, data_size, oss, module_size);
 	});
 }
 
