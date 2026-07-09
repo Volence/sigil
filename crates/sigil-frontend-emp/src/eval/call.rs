@@ -71,6 +71,13 @@ impl<'a> Evaluator<'a> {
                 // LinkExpr machinery. Same argument contract as `winptr`; also
                 // non-shadowable.
                 "bankid" => return self.eval_bankid(args, span, env),
+                // `extern(name)` (Task B2, seam re-eval): RAW passthrough of a
+                // link-symbol reference — `Value::LinkExpr(Expr::Sym(name))`,
+                // no mask/shift (unlike `bankid`/`winptr`). Reads an AS-side
+                // `equ`/`=` (Task B1 exports those as `EquSym`s) or any other
+                // link symbol from `.emp`. Same argument contract as
+                // `bankid`/`winptr`; also non-shadowable.
+                "extern" => return self.eval_extern(args, span, env),
                 // `here()` (§7.1) — the current VMA. A lowering-time query: the
                 // position is threaded in via `here_base` (set per data item by
                 // the lowering pass); it is not user-shadowable.

@@ -910,3 +910,170 @@ mod probe_b {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Task B seam re-eval (B3.2-B3.4) — `extern(name)` cross-seam probes: an AS
+// `equ` (Task B1's new export) read back by `.emp`'s `extern()` builtin
+// (Task B2), through the SAME real-pipeline joint-link harness `probe_a`/
+// `probe_b` already established. Mirrors those two probes' shape.
+// ---------------------------------------------------------------------------
+
+/// (B3.2) AS defines `SND_PROBE_EQ equ $0B`; an `.emp` module reads it back
+/// via `ensure(extern("SND_PROBE_EQ") == $B, ...)`, a deferred link-time
+/// assert (D-H.4) exactly like `probe_b`'s `bankid(...)` ensure. The equ's
+/// value threads AS env -> Task B1's `EquSym` export -> the joint link's
+/// shared symbol table -> `extern()`'s raw `Expr::Sym` fold -> the ensure's
+/// comparison. A clean joint link (zero assert diagnostics) proves the VALUE
+/// itself was read correctly, not just that SOME symbol resolved.
+#[test]
+fn probe_extern_reads_as_equ_value_ensure_holds() {
+    let asm = "cpu 68000\nSND_PROBE_EQ equ $0B\nAnchor:\n\tdc.w 0\n";
+    let emp = "module probe.extern_eq\n\
+               ensure(extern(\"SND_PROBE_EQ\") == $B, \"extern-equ probe mismatch\")\n\
+               data EmpAnchor: u8 = 0\n";
+
+    let (file, pdiags) = parse_str(emp);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
+    let (module, ldiags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
+
+    let mut sections = module.sections;
+    sections.extend(as_sections(asm));
+    sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let _linked =
+        sigil_link::link(&resolved, &SymbolTable::new()).unwrap_or_else(|d| panic!("link: {d:?}"));
+    let assert_diags =
+        sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts);
+    assert!(
+        assert_diags.is_empty(),
+        "extern(\"SND_PROBE_EQ\") == $B must hold (AS defines it as $0B), got: {assert_diags:?}"
+    );
+}
+
+/// (B3.2 variant) Same AS equ ($0B), but the `.emp` side compares against
+/// `$C` — a genuinely wrong expectation. The joint link must FAIL with the
+/// ensure's OWN message (the `Fold::Value(0)` deferred-assert-fires path,
+/// same mechanism `probe_b`'s wrong-bank variant exercises), proving this
+/// isn't a vacuously-passing probe.
+#[test]
+fn probe_extern_reads_as_equ_value_ensure_fires_with_its_own_message() {
+    let asm = "cpu 68000\nSND_PROBE_EQ equ $0B\nAnchor:\n\tdc.w 0\n";
+    let emp = "module probe.extern_eq_wrong\n\
+               ensure(extern(\"SND_PROBE_EQ\") == $C, \"extern-equ probe mismatch\")\n\
+               data EmpAnchor: u8 = 0\n";
+
+    let (file, pdiags) = parse_str(emp);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
+    let (module, ldiags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
+
+    let mut sections = module.sections;
+    sections.extend(as_sections(asm));
+    sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let _linked =
+        sigil_link::link(&resolved, &SymbolTable::new()).unwrap_or_else(|d| panic!("link: {d:?}"));
+    let assert_diags =
+        sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts);
+    assert!(
+        assert_diags.iter().any(|d| d.message.contains("extern-equ probe mismatch")),
+        "extern(\"SND_PROBE_EQ\") == $C must FAIL with the ensure's own message, got: {assert_diags:?}"
+    );
+}
+
+/// (B3.3) Typo probe: `extern("NOPE_MISSING")` names a symbol that genuinely
+/// does not exist anywhere in the joint link (no AS equ, no label, nothing).
+/// Must surface a `Level::Error` diagnostic from whichever pass touches it
+/// first (`link()` or `check_link_asserts`) — asserting level+presence loosely
+/// on that account. Item C (seam re-eval) rewrote `check_link_asserts`'
+/// Poison-condition wording from a blanket "internal: ... compiler bug" claim
+/// to one that names the missing symbol(s) and points at the standalone-
+/// compile cause; this probe additionally pins THAT (the message names
+/// `NOPE_MISSING`, no compiler-bug claim) now that the wording is settled.
+#[test]
+fn probe_extern_of_missing_symbol_is_a_loud_link_error() {
+    let asm = "cpu 68000\nAnchor:\n\tdc.w 0\n";
+    let emp = "module probe.extern_missing\n\
+               ensure(extern(\"NOPE_MISSING\") == 1, \"should never evaluate\")\n\
+               data EmpAnchor: u8 = 0\n";
+
+    let (file, pdiags) = parse_str(emp);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
+    let (module, ldiags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
+
+    let mut sections = module.sections;
+    sections.extend(as_sections(asm));
+    sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+
+    // The missing symbol may surface either at `link()` (Pass 1b/2 symbol
+    // resolution) or at `check_link_asserts` (the deferred ensure's own
+    // fold) depending on which one touches `NOPE_MISSING` first — assert
+    // an Error diagnostic exists from AT LEAST ONE of the two, whichever
+    // it is; both are "the joint build fails loudly", the acceptance bar.
+    let mut all_diags: Vec<sigil_span::Diagnostic> = Vec::new();
+    match sigil_link::link(&resolved, &SymbolTable::new()) {
+        Ok(_) => {}
+        Err(d) => all_diags.extend(d),
+    }
+    all_diags.extend(sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts));
+    assert!(
+        all_diags.iter().any(|d| d.level == Level::Error),
+        "extern(\"NOPE_MISSING\") over an undefined symbol must produce a Level::Error diagnostic, got: {all_diags:?}"
+    );
+    // Item C (seam re-eval): the wording follow-up this comment used to await is
+    // now done — assert the message names the missing symbol and does not
+    // accuse the module of a compiler bug.
+    let err = all_diags
+        .iter()
+        .find(|d| d.level == Level::Error)
+        .expect("an Error diagnostic exists (checked above)");
+    assert!(err.message.contains("NOPE_MISSING"), "must name the missing symbol, got: {}", err.message);
+    assert!(!err.message.contains("compiler bug"), "must not claim a compiler bug, got: {}", err.message);
+}
+
+/// (B3.4) A data cell (`u16` — mirrors `equ_link.rs`/`lower_data.rs`'s
+/// existing link-expr data-cell shapes) whose value IS `extern("SND_PROBE_EQ")`
+/// emits the equ's own value bytes after the joint link — proving `extern()`
+/// composes with ordinary data emission, not just `ensure`.
+#[test]
+fn probe_extern_data_cell_emits_the_as_equ_value_bytes() {
+    let asm = "cpu 68000\nSND_PROBE_EQ equ $0B\nAnchor:\n\tdc.w 0\n";
+    let emp = "module probe.extern_data\n\
+               section blob (cpu: m68000, vma: $9000) {\n\
+                 data ExternProbe: u16 = extern(\"SND_PROBE_EQ\")\n\
+               }\n";
+
+    let (file, pdiags) = parse_str(emp);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
+    let (module, ldiags) =
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
+
+    let mut sections = module.sections;
+    sections.extend(as_sections(asm));
+    sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link across the extern()->as-equ seam failed: {d:?}"));
+
+    let blob = linked.section("blob").expect("emp `blob` section");
+    assert_eq!(
+        blob.bytes,
+        vec![0x00, 0x0B],
+        "extern(\"SND_PROBE_EQ\") must emit AS's equ value ($0B) big-endian in a u16 68k cell"
+    );
+}

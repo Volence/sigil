@@ -30,16 +30,42 @@ fn sp() -> Span {
     Span { source: SourceId(0), start: 0, end: 0 }
 }
 
-/// The first fixup-bearing Data fragment of a module's first section.
+/// The first fixup-bearing Data fragment across a module's sections (NOT
+/// hardcoded to `sections[0]`: Task B1 (seam re-eval) made AS-side `equ`/`=`
+/// export a link-level `EquSym`, which — like `define_label` already did —
+/// opens a carrier section on demand. A source with an equate BEFORE its
+/// first `phase`/`org`/instruction (as every test below has: `WIN_MASK =`/
+/// `MASK7 =`/`OFFS =` precede `phase`) now opens an empty leading `sec0`
+/// equ-only section ahead of the real one, so the real fragment can land in
+/// `sections[1]`. Empty sections carry no fragments and are dropped before
+/// link/emission (see eval.rs's `dedup_section_names` doc) — searching ALL
+/// sections is the correct, convention-matching fix, not a workaround.
 fn first_fixup_frag(module: &sigil_ir::Module) -> &DataFragment {
-    module.sections[0]
-        .fragments
+    module
+        .sections
         .iter()
+        .flat_map(|s| s.fragments.iter())
         .find_map(|f| match f {
             Fragment::Data(d) if !d.fixups.is_empty() => Some(d),
             _ => None,
         })
         .expect("a data fragment with a fixup")
+}
+
+/// The linked section that actually carries emitted bytes — i.e. skip a
+/// leading empty equ-only auto-section (see `first_fixup_frag`'s doc). NOT a
+/// name lookup (`LinkedImage::section` returns the FIRST name match, and an
+/// equ-only `sec0` and a same-LMA real `sec0` — both auto-named from LMA —
+/// can share the bare name post-dedup, since `dedup_section_names` only
+/// disambiguates among NON-EMPTY sections; the empty one keeps the bare name
+/// too and sorts first). Find by content instead.
+fn real_section_bytes(linked: &sigil_link::LinkedImage) -> &[u8] {
+    linked
+        .sections
+        .iter()
+        .find(|s| !s.bytes.is_empty())
+        .map(|s| s.bytes.as_slice())
+        .expect("a linked section with emitted bytes")
 }
 
 /// A 68k section PINNED at `lma` carrying `label` at offset 0 — gives a
@@ -151,7 +177,7 @@ fn dw_env_equ_masked_target_links_to_windowed_le_bytes() {
         sigil_link::resolve_layout(&all, &SymbolTable::new(), true).expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
     assert_eq!(
-        linked.section(&module.sections[0].name).unwrap().bytes,
+        real_section_bytes(&linked),
         vec![0xE8, 0xBA],
         "($63AE8 & $7FFF) | $8000 = $BAE8 → LE E8 BA",
     );
@@ -204,7 +230,7 @@ fn db_env_equ_masked_target_links_to_byte() {
         sigil_link::resolve_layout(&all, &SymbolTable::new(), true).expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
     assert_eq!(
-        linked.section(&module.sections[0].name).unwrap().bytes,
+        real_section_bytes(&linked),
         vec![0x68],
         "($63AE8 & $7F) = $68",
     );
@@ -258,7 +284,7 @@ fn imm32_env_equ_offset_target_links_big_endian() {
         sigil_link::resolve_layout(&all, &SymbolTable::new(), true).expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
     assert_eq!(
-        linked.section(&module.sections[0].name).unwrap().bytes,
+        real_section_bytes(&linked),
         vec![0x20, 0x7C, 0x00, 0x06, 0x3A, 0xF0],
         "ExtSym=$63AE0 + $10 = $63AF0 folded verbatim big-endian",
     );

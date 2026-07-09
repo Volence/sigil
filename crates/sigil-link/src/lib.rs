@@ -196,6 +196,38 @@ fn build_symbol_table(sections: &[Section], stubs: &SymbolTable) -> SymbolTable 
             syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
         }
     }
+    // Task B3 (seam re-eval): also seed `equ_syms` — mirrors `link()`'s own
+    // Pass 1b (R-T0.3). Without this, a `check_link_asserts` caller (the
+    // deferred `ensure`/`ensure_fatal` path, D-H.4) could not resolve a
+    // condition naming a symbol defined ONLY by an `equ` (no label) —
+    // e.g. `ensure(extern("SOME_EQ") == N, ...)` — even though `link()`
+    // resolves the identical symbol fine via its own separate table build.
+    // `sections` here is ALWAYS `resolve_layout`'s output (every caller's
+    // contract — see this fn's doc + every call site), so every `equ_syms`
+    // entry's `expr` is already folded to `Expr::Int`; `.fold` with a
+    // by-then-partially-seeded lookup still handles an equ that references
+    // an EARLIER equ (equ-referencing-equ chains), exactly like `link()`.
+    //
+    // DELIBERATE DIVERGENCE from Pass 1b's error handling: Pass 1b raises a
+    // loud "internal: equ ... reached link() unfolded" diagnostic on a Poison
+    // fold; this function has no diagnostics channel, so the same broken
+    // invariant is a `debug_assert!` here and a silent skip in release (the
+    // symbol then stays undefined, and the assert's own Poison-condition arm
+    // reports it — never a silent wrong value).
+    for sec in sections {
+        for eq in &sec.equ_syms {
+            let fold = eq.expr.fold(&|name| syms.resolve(name, None));
+            debug_assert!(
+                matches!(fold, Fold::Value(_)),
+                "internal: equ `{}` reached build_symbol_table() unfolded (resolve_layout must \
+                 fold every equ to a constant before link)",
+                eq.name
+            );
+            if let Fold::Value(v) = fold {
+                syms.define(&eq.name, SymbolValue::Int(v));
+            }
+        }
+    }
     syms
 }
 
@@ -236,21 +268,70 @@ pub fn check_link_asserts(
                     primary: a.span,
                 });
             }
-            // An unresolved symbol in the CONDITION cannot happen once the anchor
-            // is defined — but if it does, name it loudly rather than pass silently.
+            // A Poison fold has two very different legitimate causes, so name
+            // which one before diagnosing (Item C, seam re-eval): most of the
+            // time this is a cross-seam `ensure`/`extern`/`bankid` condition
+            // compiled STANDALONE (mt_bank.emp, sfx_bank.emp — no map/harness,
+            // so the external symbol simply isn't in this link) or a plain
+            // `extern()` typo — a SOURCE-level miss, not a compiler bug. Only an
+            // unresolved `__here$...` anchor leaf (D-H.8's anonymous here()
+            // anchor) is structurally unreachable today and stays an
+            // internal-contract error.
             Fold::Poison => {
-                out.push(Diagnostic {
-                    level: Level::Error,
-                    message: "internal: deferred link assertion has an unresolvable condition \
-                              (an anchor label was never defined) — this is a compiler bug in the \
-                              `here()`-relaxation fix, not a source error"
-                        .to_string(),
-                    primary: a.span,
-                });
+                let missing = unresolved_sym_leaves(&a.cond, &lookup);
+                let message = if missing.iter().any(|n| n.starts_with("__here$")) {
+                    "internal: deferred link assertion has an unresolvable condition \
+                     (an anchor label was never defined) — this is a compiler bug in the \
+                     `here()`-relaxation fix, not a source error"
+                        .to_string()
+                } else if missing.is_empty() {
+                    // Poison from a non-symbol source (e.g. division/modulo by
+                    // zero) reaching this far is still never a silent pass.
+                    "link assertion condition is unresolvable at link time".to_string()
+                } else {
+                    let names: Vec<String> = missing.iter().map(|n| format!("`{n}`")).collect();
+                    format!(
+                        "link assertion condition references symbol(s) {} not defined in this \
+                         link — expected when compiling a cross-seam module standalone; supply \
+                         the map/harness composition that defines them",
+                        names.join(", ")
+                    )
+                };
+                out.push(Diagnostic { level: Level::Error, message, primary: a.span });
             }
         }
     }
     out
+}
+
+/// Walk `expr`'s `Sym` leaves against `lookup`, collecting the names that do
+/// NOT resolve — deduplicated, in first-seen (stable, left-to-right) order.
+/// Local to `sigil-link` rather than a general `sigil-ir::expr` utility: it is
+/// tied to the diagnostic-reporting concern of "which names caused this
+/// Poison", not a general property of `Expr` (the folder itself only needs
+/// yes/no per-leaf — see `Expr::fold`); `sigil-link` already has one sibling
+/// of this exact shape (`relax.rs::first_unresolved_sym`, first-only), so this
+/// stays next to that convention rather than promoting either into `sigil-ir`.
+fn unresolved_sym_leaves(expr: &Expr, lookup: &dyn Fn(&str) -> Option<i64>) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_unresolved_sym_leaves(expr, lookup, &mut out);
+    out
+}
+
+fn collect_unresolved_sym_leaves(expr: &Expr, lookup: &dyn Fn(&str) -> Option<i64>, out: &mut Vec<String>) {
+    match expr {
+        Expr::Int(_) => {}
+        Expr::Sym(name) => {
+            if lookup(name).is_none() && !out.iter().any(|n| n == name) {
+                out.push(name.clone());
+            }
+        }
+        Expr::Unary { operand, .. } => collect_unresolved_sym_leaves(operand, lookup, out),
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_unresolved_sym_leaves(lhs, lookup, out);
+            collect_unresolved_sym_leaves(rhs, lookup, out);
+        }
+    }
 }
 
 /// Render a deferred guard message (D-H.5) at link: `Text` parts verbatim, `Expr`
@@ -661,10 +742,13 @@ mod tests {
         assert_eq!(ds.len(), 2);
     }
 
+    /// Item C (seam re-eval): a cond naming an ordinary undefined symbol is the
+    /// LEGITIMATE cross-seam-standalone-compile case (mt_bank.emp/sfx_bank.emp
+    /// compiled alone, or an `extern()`/`bankid()` typo) — NOT a compiler bug.
+    /// The message must name the missing symbol, explain the standalone-compile
+    /// cause, and must NOT claim "compiler bug"/"internal".
     #[test]
-    fn link_assert_unresolved_cond_is_internal_contract_error() {
-        // A cond naming an undefined symbol → Fold::Poison → internal error, not a
-        // silent pass.
+    fn link_assert_unresolved_cond_names_missing_symbol_with_standalone_guidance() {
         let secs = [anchor_section(4)];
         let a = LinkAssert {
             cond: Expr::Sym("Nope".into()),
@@ -674,7 +758,107 @@ mod tests {
         };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
+        assert!(ds[0].message.contains("Nope"), "got: {}", ds[0].message);
+        assert!(
+            ds[0].message.contains("standalone"),
+            "expected standalone-compile guidance, got: {}",
+            ds[0].message
+        );
+        assert!(
+            !ds[0].message.contains("compiler bug"),
+            "must not accuse the user's source of a compiler bug, got: {}",
+            ds[0].message
+        );
+        assert!(
+            !ds[0].message.to_lowercase().contains("internal"),
+            "must not use internal-contract wording for a legitimate standalone-compile miss, got: {}",
+            ds[0].message
+        );
+    }
+
+    /// Item C companion: an unresolved `__here$<module>$<n>`-style anchor leaf
+    /// IS structurally unreachable today (the anchor is always defined by the
+    /// lowerer before a deferred assert can reference it) — reaching it means a
+    /// genuine compiler bug, so the internal-contract wording must still fire.
+    #[test]
+    fn link_assert_unresolved_here_anchor_leaf_is_still_internal_contract_error() {
+        let secs = [anchor_section(4)];
+        let a = LinkAssert {
+            cond: Expr::Sym("__here$test$0".into()),
+            message: vec![MsgPart::Text("x".into())],
+            fatal: false,
+            span: span(),
+        };
+        let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
+        assert_eq!(ds.len(), 1);
         assert!(ds[0].message.contains("internal"), "got: {}", ds[0].message);
+        assert!(ds[0].message.contains("compiler bug"), "got: {}", ds[0].message);
+    }
+
+    /// Item C: a mixed condition (one resolvable symbol + one missing) must name
+    /// ONLY the missing symbol — not the resolvable one.
+    #[test]
+    fn link_assert_unresolved_cond_names_only_the_missing_symbol_in_a_mix() {
+        let secs = [anchor_section(4)];
+        let cond = Expr::Binary {
+            op: sigil_ir::expr::BinOp::Eq,
+            lhs: Box::new(Expr::Sym("A".into())), // resolvable (anchor_section defines it)
+            rhs: Box::new(Expr::Sym("StillMissing".into())),
+        };
+        let a = LinkAssert { cond, message: vec![MsgPart::Text("x".into())], fatal: false, span: span() };
+        let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
+        assert_eq!(ds.len(), 1);
+        assert!(ds[0].message.contains("StillMissing"), "got: {}", ds[0].message);
+        assert!(!ds[0].message.contains("`A`"), "must not name the resolvable symbol, got: {}", ds[0].message);
+    }
+
+    /// A section carrying an `equ` (already folded to `Expr::Int` by
+    /// `resolve_layout`, as `check_link_asserts`' caller always supplies —
+    /// see `equ_link.rs`) at the given value, no labels.
+    fn equ_only_section(name: &str, eq_name: &str, value: i64) -> Section {
+        Section {
+            name: name.into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![sigil_ir::EquSym {
+                name: eq_name.into(),
+                expr: Expr::Int(value),
+                span: span(),
+            }],
+        }
+    }
+
+    /// Task B3 (seam re-eval, extern() e2e probe): a deferred `LinkAssert`
+    /// condition naming a symbol defined ONLY by an `equ` (no label) must
+    /// resolve through `check_link_asserts`, exactly like `link()`'s own
+    /// Pass 1b already resolves equ-vs-label symbols uniformly. Before this
+    /// fix, `build_symbol_table` (used ONLY by `check_link_asserts`) seeded
+    /// labels but not `equ_syms`, so an `extern("EQ")`-style deferred
+    /// condition hit `Fold::Poison` and the SAME "anchor label was never
+    /// defined" internal-contract error `link_assert_unresolved_cond_is_
+    /// internal_contract_error` pins for a genuinely undefined symbol —
+    /// wrongly, for a symbol that IS defined, just via `equ` not a label.
+    #[test]
+    fn link_assert_cond_resolves_an_equ_defined_symbol_not_just_labels() {
+        let secs = [equ_only_section("defs", "SND_PROBE_EQ", 0x0B)];
+        let cond = Expr::Binary {
+            op: sigil_ir::expr::BinOp::Eq,
+            lhs: Box::new(Expr::Sym("SND_PROBE_EQ".into())),
+            rhs: Box::new(Expr::Int(0x0B)),
+        };
+        let a = LinkAssert { cond, message: vec![MsgPart::Text("mismatch".into())], fatal: false, span: span() };
+        assert_eq!(
+            check_link_asserts(&secs, &SymbolTable::new(), &[a]),
+            Vec::<Diagnostic>::new(),
+            "an equ-defined symbol in a LinkAssert condition must resolve, not Poison"
+        );
     }
 
     fn span() -> Span {

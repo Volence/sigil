@@ -16,8 +16,8 @@ use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
 use sigil_ir::expr::{BinOp, Fold};
 use sigil_ir::{
-    asl_width_rule, AbsWidth, DataFragment, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable,
-    SymbolValue,
+    asl_width_rule, AbsWidth, DataFragment, EquSym, Expr, Fixup, FixupKind, IrBuilder, Module,
+    SymbolTable, SymbolValue,
 };
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
@@ -124,6 +124,12 @@ fn one_pass(
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
     asm.process(src);
+    // Task B1 (seam re-eval): a source consisting ONLY of `equ`s (no section
+    // ever opens) would otherwise strand `pending_equ_syms` — force a carrier
+    // section open so `finish()` never silently drops them.
+    if !asm.pending_equ_syms.is_empty() {
+        asm.open_section_if_needed();
+    }
     let (mut module, mut diags) = asm.builder.finish();
     dedup_section_names(&mut module.sections);
     diags.append(&mut asm.diags);
@@ -144,10 +150,14 @@ fn one_pass(
 /// duplicate-symbol diagnostic (M1.D T3) doesn't misfire on a genuine
 /// second bank.
 ///
-/// EMPTY (zero-fragment) sections are skipped: they carry no labels and place no
-/// bytes, so `link()` / `emit_rom` drop them (M1.D T4), and so they must NOT
-/// consume the bare name — otherwise a stray empty `sec0` would steal `sec0`
-/// from the real region-A driver, which is then linked/looked-up by that name.
+/// EMPTY (zero-fragment) sections are skipped FOR NAMING ONLY: they place no
+/// bytes, so `flatten`/`flatten_checked` exclude them from byte emission, and
+/// so they must NOT consume the bare name — otherwise a stray empty `sec0`
+/// would steal `sec0` from the real region-A driver, which is then
+/// linked/looked-up by that name. The section itself is NOT dropped:
+/// `IrBuilder::finish` keeps it, and it — with any `equ_syms` it carries —
+/// survives into the link, which is load-bearing for the Task B1 equ export
+/// (a pending-equ carrier section is exactly such an empty section).
 fn dedup_section_names(sections: &mut [sigil_ir::Section]) {
     let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for sec in sections.iter_mut() {
@@ -216,6 +226,14 @@ struct Asm {
     /// the TOTAL across all (possibly nested) loops so a pathological input
     /// diagnoses in bounded time. Generous vs. any real table-fill loop.
     while_budget: usize,
+    /// Task B1 (seam re-eval): int `equ`s seen while NO section is open yet,
+    /// held here rather than forcing one open (see `directive_equate`'s doc —
+    /// eagerly opening a section there perturbs `directive_org`'s no-section
+    /// fast path on real Aeon source). Flushed onto the builder's newly
+    /// opened section by `open_section_if_needed` the next time one actually
+    /// opens; drained (never left stranded) as long as the module contains at
+    /// least one section, which every real program does.
+    pending_equ_syms: Vec<EquSym>,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -252,6 +270,7 @@ impl Asm {
             aborted: false,
             poison_refs: Vec::new(),
             while_budget: GLOBAL_WHILE_CAP,
+            pending_equ_syms: Vec::new(),
         }
     }
 
@@ -1734,13 +1753,21 @@ impl Asm {
             // stay `sec0`/`sec32768` (the harness/M0 gate keys on those names).
             // Collisions between two auto-opened sections at the same VMA base
             // are disambiguated later, over NON-EMPTY sections only, by
-            // `dedup_section_names` (an empty stray section — dropped before link
-            // — must not steal the bare name from a real region).
+            // `dedup_section_names` (an empty stray section — excluded from byte
+            // emission by `flatten` and from naming disambiguation, but NOT
+            // dropped: it and any `equ_syms` it carries survive into the link —
+            // must not steal the bare name from a real region).
             let vma_base = (self.phys_base as i64 + self.state.disp) as u32;
             let name = format!("sec{vma_base}");
             self.builder
                 .switch_section_lma(&name, self.state.cpu, Some(vma_base), self.phys_base);
             self.in_section = true;
+            // Task B1 (seam re-eval): flush any int `equ`s recorded while no
+            // section was open onto this newly opened one (see
+            // `directive_equate`'s doc for why they couldn't attach eagerly).
+            for eq in self.pending_equ_syms.drain(..) {
+                self.builder.add_equ_sym(eq);
+            }
         }
     }
 
@@ -1921,6 +1948,41 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.env.define(&q, SymbolValue::Int(v));
+            // Task B1 (seam re-eval): export the int equate to the module's
+            // link-level `equ_syms` so `.emp` code can read it via `extern()`.
+            // AS equates today live ONLY in `self.env` (front-end-private), so
+            // they never reach the linker's symbol table — this closes that
+            // seam. `run`'s pass loop builds a FRESH `IrBuilder` every pass
+            // (`one_pass` → `Asm::new`) and returns only the CONVERGED final
+            // pass's module, so an unconditional call here already yields
+            // exactly one `EquSym` per name carrying the fully-folded final
+            // value — no separate once-only/final-pass gating needed.
+            //
+            // `add_equ_sym` panics with no open section, and an equate CAN occur
+            // before any section has opened. Naively calling
+            // `open_section_if_needed()` here (mirroring `directive_binclude`)
+            // was tried and REJECTED: unlike those directives, `equ` runs at
+            // points `directive_org`/`directive_phase` rely on being possibly
+            // section-FREE. `directive_org`'s `!self.in_section` branch
+            // unconditionally jumps `phys_base` to the target with no
+            // backward-move check (real Aeon `org 0` after a RAM `phase` block
+            // whose `dephase` folded the RAM reservation size into `phys_base`
+            // relies on exactly this reset). Eagerly opening a section here
+            // would leave a stray section open across that boundary, flipping
+            // `org` onto its OTHER branch (`target_abs < base` validated) and
+            // spuriously erroring "org target precedes the current phase base"
+            // — reproduced against the real `aeon` corpus (`engine.inc`'s
+            // `org 0`, preceded by `engine/debug/debugger.asm`'s leading
+            // `DEBUGGER__EXTENSIONS__ENABLE: equ 1`). So: attach the EquSym to
+            // the builder's CURRENTLY open section if one exists; otherwise
+            // stash it in a pending list `close_section`/`switch_section_lma`
+            // flush into the next section that actually opens, WITHOUT
+            // side-effecting `in_section`/`phys_base` here.
+            if self.in_section {
+                self.builder.add_equ_sym(EquSym { name: q, expr: Expr::Int(v), span });
+            } else {
+                self.pending_equ_syms.push(EquSym { name: q, expr: Expr::Int(v), span });
+            }
         }
     }
 
@@ -4307,6 +4369,67 @@ mod tests {
             .first()
             .map(|s| s.image_bytes())
             .unwrap_or_default()
+    }
+
+    /// Every `EquSym` named `name` across all sections of an assembled module
+    /// (Task B1) — a `Vec` so a test can assert exactly-one-ness itself rather
+    /// than this helper silently picking the first/last.
+    fn equ_syms_named<'a>(m: &'a Module, name: &str) -> Vec<&'a sigil_ir::EquSym> {
+        m.sections
+            .iter()
+            .flat_map(|s| s.equ_syms.iter())
+            .filter(|e| e.name == name)
+            .collect()
+    }
+
+    #[test]
+    fn int_equ_is_exported_exactly_once_with_final_value() {
+        // Task B1: `FOO equ $B` must export exactly one `EquSym("FOO", Int(0xB))`
+        // to the module — the AS-side `equ` now reaches the linker's symbol
+        // table, not just the front-end's private fold env.
+        let m = run("\tcpu 68000\nFOO equ $B\n\tdc.b 0\n", &Options::default()).expect("assemble");
+        let syms = equ_syms_named(&m, "FOO");
+        assert_eq!(syms.len(), 1, "expected exactly one EquSym(FOO), got {syms:?}");
+        assert_eq!(syms[0].expr, sigil_ir::Expr::Int(0xB));
+    }
+
+    #[test]
+    fn string_equ_is_not_exported() {
+        // The string-equ shape (`GAME_CONSOLE equ "SEGA GENESIS    "`) stays
+        // front-end-only (§7.4) — it must NOT reach the module's equ_syms.
+        let m = run(
+            "\tcpu 68000\nGAME_CONSOLE equ \"SEGA GENESIS    \"\n\tdc.b 0\n",
+            &Options::default(),
+        )
+        .expect("assemble");
+        assert!(
+            equ_syms_named(&m, "GAME_CONSOLE").is_empty(),
+            "a string equ must not be exported"
+        );
+    }
+
+    #[test]
+    fn set_directive_is_not_exported() {
+        // `set`/`:=` is a separate, reassignable-symbol directive (T8) — it
+        // must never export an EquSym, only `equ` does.
+        let m = run("\tcpu 68000\nbar set 1\n\tdc.b 0\n", &Options::default()).expect("assemble");
+        assert!(
+            equ_syms_named(&m, "bar").is_empty(),
+            "a `set` symbol must not be exported as an equ"
+        );
+    }
+
+    #[test]
+    fn label_referencing_equ_exports_the_final_folded_value_exactly_once() {
+        // `Foo_len equ Foo_End-Foo` can only fold to a concrete int once every
+        // label's address is known — which happens only on the CONVERGED pass.
+        // Exactly one EquSym must survive (the one from the converged builder),
+        // carrying the fully-folded final value, not an intermediate guess.
+        let src = "\tcpu 68000\nFoo:\n\tdc.b 1,2,3,4,5\nFoo_End:\nFoo_len equ Foo_End-Foo\n\tdc.b 0\n";
+        let m = run(src, &Options::default()).expect("assemble");
+        let syms = equ_syms_named(&m, "Foo_len");
+        assert_eq!(syms.len(), 1, "expected exactly one EquSym(Foo_len), got {syms:?}");
+        assert_eq!(syms[0].expr, sigil_ir::Expr::Int(5));
     }
 
     #[test]
