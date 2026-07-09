@@ -7,6 +7,8 @@
     { "include": "#strings" },
     { "include": "#chars" },
     { "include": "#mnemonics" },
+    { "include": "#attributes" },
+    { "include": "#definitions" },
     { "include": "#keywords" },
     { "include": "#builtins" },
     { "include": "#types" },
@@ -63,6 +65,28 @@
           "match": "^\\s*((?:ldir|lddr|cpir|cpdr|inir|indr|otir|otdr|ldi|ldd|cpi|cpd|ini|ind|outi|outd|ld|push|pop|exx|ex|inc|dec|adc|sbc|cpl|ccf|scf|rlca|rrca|rla|rra|rlc|rrc|rl|rr|sla|sra|srl|sll|bit|set|res|jp|jr|djnz|call|ret|reti|retn|rst|out|di|ei|halt|daa|im|nop))(?=\\s|$)",
           "captures": {
             "1": { "name": "support.function.mnemonic.z80.emp" }
+          }
+        }
+      ]
+    },
+    "attributes": {
+      "name": "entity.other.attribute-name.emp",
+      "match": "@[A-Za-z_]\\w*"
+    },
+    "definitions": {
+      "patterns": [
+        {
+          "match": "\\b(proc|fn|script|test|data|offsets|vars)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": { "name": "storage.type.emp" },
+            "2": { "name": "entity.name.function.emp" }
+          }
+        },
+        {
+          "match": "\\b(module|section)\\s+([A-Za-z_][\\w.]*)",
+          "captures": {
+            "1": { "name": "storage.type.emp" },
+            "2": { "name": "entity.name.namespace.emp" }
           }
         }
       ]

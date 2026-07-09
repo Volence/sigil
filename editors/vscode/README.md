@@ -18,7 +18,10 @@ VS Code (or run "Developer: Reload Window"):
 
 - emp declaration layer: keywords, builtins (`ensure`, `here`, `sizeof`, ...),
   primitive + PascalCase types, SCREAMING_CASE constants, `$`/`0b`/`%` number
-  literals, `//` + `///` + `/* */` comments.
+  literals, `//` + `///` + `/* */` comments, `@attributes`, and declaration
+  names — `proc`/`data`/`offsets`/`vars` names take the label-gold function
+  scope (they are the emp analog of asm labels), `module`/`section` paths the
+  namespace scope.
 - Embedded instruction lines: 68k and Z80 mnemonics (with size suffixes),
   registers, `#` immediates, `.local` labels.
 

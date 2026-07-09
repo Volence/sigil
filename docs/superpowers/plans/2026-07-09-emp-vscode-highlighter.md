@@ -31,7 +31,7 @@ TextMate matching rule that shapes this grammar: at each position the pattern li
 - Create: `editors/vscode/language-configuration.json`
 - Create: `editors/vscode/README.md`
 
-- [ ] **Step 1: Create `editors/vscode/package.json`**
+- [x] **Step 1: Create `editors/vscode/package.json`**
 
 ```json
 {
@@ -72,7 +72,7 @@ TextMate matching rule that shapes this grammar: at each position the pattern li
 }
 ```
 
-- [ ] **Step 2: Create `editors/vscode/language-configuration.json`**
+- [x] **Step 2: Create `editors/vscode/language-configuration.json`**
 
 ```json
 {
@@ -102,7 +102,7 @@ TextMate matching rule that shapes this grammar: at each position the pattern li
 
 Note: no auto-close for `'` — single quotes are char literals but `'` also has assembly-heritage uses; auto-closing it is more annoying than helpful.
 
-- [ ] **Step 3: Create `editors/vscode/README.md`**
+- [x] **Step 3: Create `editors/vscode/README.md`**
 
 ```markdown
 # Emp Language — VS Code syntax highlighting
@@ -135,7 +135,7 @@ add it to `syntaxes/emp.tmLanguage.json` (both the keyword rules and the
 macro-line negative lookahead).
 ```
 
-- [ ] **Step 4: Validate the JSON files parse**
+- [x] **Step 4: Validate the JSON files parse**
 
 Run:
 ```bash
@@ -143,7 +143,7 @@ python3 -m json.tool editors/vscode/package.json > /dev/null && python3 -m json.
 ```
 Expected: `BOTH-OK`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add editors/vscode/package.json editors/vscode/language-configuration.json editors/vscode/README.md
@@ -157,7 +157,7 @@ git commit -m "feat(editors): VS Code extension scaffold for .emp highlighting"
 **Files:**
 - Create: `editors/vscode/syntaxes/emp.tmLanguage.json`
 
-- [ ] **Step 1: Create `editors/vscode/syntaxes/emp.tmLanguage.json`**
+- [x] **Step 1: Create `editors/vscode/syntaxes/emp.tmLanguage.json`**
 
 Full content (this is the deliverable — copy verbatim):
 
@@ -325,7 +325,7 @@ Full content (this is the deliverable — copy verbatim):
 }
 ```
 
-- [ ] **Step 2: Validate the JSON parses**
+- [x] **Step 2: Validate the JSON parses**
 
 Run:
 ```bash
@@ -333,7 +333,7 @@ python3 -m json.tool editors/vscode/syntaxes/emp.tmLanguage.json > /dev/null && 
 ```
 Expected: `GRAMMAR-OK`
 
-- [ ] **Step 3: Sanity-check the keyword set against the parser**
+- [x] **Step 3: Sanity-check the keyword set against the parser**
 
 Run:
 ```bash
@@ -342,7 +342,7 @@ for kw in $(cat /tmp/claude-1000/-home-volence-sonic-hacks-sigil/a69fcaa9-fdbf-4
 ```
 Expected: `CHECK-DONE` with no `MISSING:` lines. (Every parser keyword string must appear somewhere in the grammar — keyword rule, builtin rule, or mnemonic list.)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add editors/vscode/syntaxes/emp.tmLanguage.json
@@ -355,7 +355,7 @@ git commit -m "feat(editors): TextMate grammar for .emp (emp layer + embedded 68
 
 **Files:** none created in-repo (symlink outside the repo).
 
-- [ ] **Step 1: Symlink into the VS Code extensions folder**
+- [x] **Step 1: Symlink into the VS Code extensions folder**
 
 Run:
 ```bash
@@ -363,7 +363,7 @@ ln -sfn /home/volence/sonic_hacks/sigil/editors/vscode ~/.vscode/extensions/emp-
 ```
 Expected: symlink listing pointing at `/home/volence/sonic_hacks/sigil/editors/vscode`.
 
-- [ ] **Step 2: Manual verification (user checkpoint — requires VS Code)**
+- [x] **Step 2: Manual verification (user checkpoint — requires VS Code)**
 
 Restart VS Code (or "Developer: Reload Window"), then open and eyeball these three exhibits against how the 68k extension renders `.asm`:
 
@@ -373,7 +373,7 @@ Restart VS Code (or "Developer: Reload Window"), then open and eyeball these thr
 
 Known acceptable quirks (do not "fix" without a reason): struct field names that shadow modifier keywords (`size:` in an ObjDef literal) take the modifier color; Z80 single-letter registers are uncolored by design.
 
-- [ ] **Step 3: Fix anything that reads wrong, re-validate, commit**
+- [x] **Step 3: Fix anything that reads wrong, re-validate, commit**
 
 If eyeballing turns up misfires, adjust the offending regex in `emp.tmLanguage.json`, re-run the Step 2 validation command from Task 2, reload VS Code, and re-check. Commit fixes as:
 
