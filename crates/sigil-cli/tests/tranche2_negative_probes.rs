@@ -91,14 +91,34 @@ fn controllers_map_toml(base: &str) -> String {
     )
 }
 
+/// `engine/constants.asm:17-18` (`HW_PORT_*_DATA`) PLUS `:89-92` (`BUTTON_*`)
+/// verbatim — `engine.constants`'s six drift-guard `ensure`s (riding along
+/// via `constants_ambient_items`) read the `BUTTON_*` four back through
+/// `extern(...)`, so they need real equs to check against here too (mirrors
+/// `controllers_port.rs`'s `as_hw_port_equs`).
 fn as_hw_port_equs() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               HW_PORT_1_DATA = $A10003\n\
-               HW_PORT_2_DATA = $A10005\n\
-               Stub:\n\
-               \tdc.w 0\n";
+    as_hw_port_equs_with_button_up("1<<0")
+}
+
+/// Like [`as_hw_port_equs`], but with the `BUTTON_UP` equ's RHS overridable
+/// (`button_up_rhs`) — the drift-guard negative probe doctors this to a wrong
+/// value to prove `engine.constants`'s `ensure(extern("BUTTON_UP") ==
+/// BUTTON_UP, ...)` genuinely fails loud, naming the constant, when the
+/// AS-side source of truth disagrees with the `.emp` twin.
+fn as_hw_port_equs_with_button_up(button_up_rhs: &str) -> Vec<Section> {
+    let asm = format!(
+        "cpu 68000\n\
+         HW_PORT_1_DATA = $A10003\n\
+         HW_PORT_2_DATA = $A10005\n\
+         BUTTON_UP = {button_up_rhs}\n\
+         BUTTON_DOWN = 1<<1\n\
+         BUTTON_LEFT = 1<<2\n\
+         BUTTON_RIGHT = 1<<3\n\
+         Stub:\n\
+         \tdc.w 0\n"
+    );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (hw port equs): {d:?}")).sections
+    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (hw port equs): {d:?}")).sections
 }
 
 fn as_ctrl_ram_labels() -> Vec<Section> {
@@ -118,26 +138,62 @@ fn as_ctrl_ram_labels() -> Vec<Section> {
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
 }
 
-/// Parse -> lower (module-dir include_root, NO defines) -> place `src` at
-/// `base` into the controllers map. Returns the placed sections WITHOUT any
-/// cross-seam section appended, so each probe controls exactly what's added.
-fn place_controllers(src: &str, base: &str) -> Vec<Section> {
+/// `constants.emp`'s items (its six `pub const`s + six drift-guard
+/// `ensure`s), read fresh each call so a doctored `src` never shares mutable
+/// state with another probe. Mirrors `controllers_port.rs`'s
+/// `controllers_with_ambient_constants` — `controllers.emp` now `use`s
+/// `engine.constants`, and plain `lower_module` (used here, not the
+/// whole-program resolver — see `controllers_port.rs`'s doc comment for why)
+/// never resolves cross-module `use`, so the twin's items are prepended by
+/// hand before lowering.
+fn constants_ambient_items() -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_system_dir().join("constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (file, cdiags) = parse_str(&src);
+    assert!(cdiags.iter().all(|d| d.level != Level::Error), "constants.emp parse errors: {cdiags:?}");
+    file.items
+}
+
+/// Parse `src` (a possibly-doctored copy of `controllers.emp`) -> prepend
+/// `engine.constants`'s items so the `use`d `BUTTON_*`/`HW_PORT_*_DATA`
+/// consts resolve -> lower (module-dir include_root, NO defines) -> place at
+/// `base` into the controllers map. Returns the placed sections AND
+/// `engine.constants`'s six drift-guard link asserts (captured before
+/// `place_sections` consumes `module.sections`), so the drift-guard probe
+/// below can `check_link_asserts` against a doctored AS-side equ.
+fn place_controllers_with_asserts(src: &str, base: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let merged = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: constants_ambient_items().into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(engine_system_dir()),
         embed_base: None,
         defines: vec![],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    let (module, ldiags) = lower_module(&merged, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
+    let link_asserts = module.link_asserts;
 
     let map = sigil_link::load_map(&controllers_map_toml(base)).expect("map must load");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place_sections: {pdiags:?}");
-    sections
+    (sections, link_asserts)
+}
+
+/// Parse `src` (a possibly-doctored copy of `controllers.emp`) -> prepend
+/// `engine.constants`'s items so the `use`d `BUTTON_*`/`HW_PORT_*_DATA`
+/// consts resolve -> lower (module-dir include_root, NO defines) -> place at
+/// `base` into the controllers map. Returns the placed sections WITHOUT any
+/// cross-seam section appended, so each probe controls exactly what's added.
+fn place_controllers(src: &str, base: &str) -> Vec<Section> {
+    place_controllers_with_asserts(src, base).0
 }
 
 /// Link `sections` plus BOTH synthetic cross-seam sections (equs + RAM
@@ -326,6 +382,73 @@ fn controllers_standalone_compile_without_cross_seam_sections_is_a_loud_missing_
 // cross-seam symbol" shape to probe here — `math_port.rs`'s doc comment
 // makes the same "No cross-seam INBOUND" observation. Noted explicitly
 // (per this file's header) rather than silently omitted.
+
+// ===========================================================================
+// Probe (d) — CONSTANTS-TWIN DRIFT GUARD
+// ===========================================================================
+
+/// `engine.constants`'s `ensure(extern("BUTTON_UP") == BUTTON_UP, ...)` drift
+/// guard must genuinely fail — loudly, naming `BUTTON_UP` — when the AS-side
+/// source of truth (`engine/constants.asm`) disagrees with the `.emp` twin's
+/// value. Doctors the synthetic AS-side `BUTTON_UP` equ to `1<<4` ($10,
+/// `BUTTON_B`'s real value — a plausible off-by-one-bit slip, not an
+/// arbitrary garbage value) instead of the genuine `1<<0` ($01) and proves
+/// `check_link_asserts` reports an Error naming `BUTTON_UP`, on the REAL
+/// (undoctored) `controllers.emp` + `engine.constants` pair — this is the
+/// twin's drift guard catching a real disagreement, not a probe-doctored
+/// `.emp` source.
+///
+/// FALSIFIED (restore-real-value): re-ran with `as_hw_port_equs()` (the
+/// genuine `1<<0`) — `check_link_asserts` returns no Error diagnostics,
+/// confirmed by temporarily asserting `assert_diags.is_empty()` on the
+/// undoctored pair and observing it hold, then reverting to the doctored
+/// comparison below.
+#[test]
+fn constants_twin_drift_guard_fires_loudly_when_as_side_button_up_disagrees() {
+    let Some(src) = real_src("controllers.emp") else { return };
+    let (sections, link_asserts) = place_controllers_with_asserts(&src, "0x2290");
+
+    let mut all_sections = sections;
+    // Doctor ONLY `BUTTON_UP` — a wrong AS-side equate, exactly the drift
+    // scenario the guard exists to catch (constants.asm changed without its
+    // .emp twin following).
+    let mut hw_equs = as_hw_port_equs_with_button_up("1<<4");
+    for sec in &mut hw_equs {
+        sec.lma = 0x0100_0000;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    all_sections.extend(hw_equs);
+    let mut ram_labels = as_ctrl_ram_labels();
+    for sec in &mut ram_labels {
+        sec.lma = 0x0200_0000;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    all_sections.extend(ram_labels);
+
+    let resolved = sigil_link::resolve_layout(&all_sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    assert!(
+        assert_diags.iter().any(|d| {
+            d.level == Level::Error
+                && d.message.contains("BUTTON_UP")
+                && d.message.contains("engine/constants.asm")
+                && d.message.contains("engine/constants.emp")
+        }),
+        "expected the BUTTON_UP drift guard to fail loudly, naming both files, got: {assert_diags:?}"
+    );
+    // Every OTHER drift guard (HW_PORT_*_DATA, BUTTON_DOWN/LEFT/RIGHT) must
+    // still PASS — this probe doctors exactly one constant, so exactly one
+    // guard should fire, not all six (which would suggest the guards aren't
+    // independently checking their own named constant).
+    let error_count = assert_diags.iter().filter(|d| d.level == Level::Error).count();
+    assert_eq!(
+        error_count, 1,
+        "doctoring only BUTTON_UP must fire exactly ONE drift guard, got: {assert_diags:?}"
+    );
+}
 
 // ===========================================================================
 // Probe (c) — PLACEMENT GENUINENESS

@@ -405,13 +405,15 @@ fn placed_emp_sections_with_mt_sfx_hblank(
 /// DAC + MT + SFX + HBLANK + CONTROLLERS + MATH, all placed into the
 /// per-shape `emp_bank_map_with_mt_hblank_tranche2` (DAC/SFX/HBLANK/
 /// CONTROLLERS/MATH defines-less, MT's `DEBUG` — R4). Returns all SIX
-/// modules' placed sections concatenated (declaration order only) AND both
-/// asserts-bearing modules' link_asserts (mt == 5, sfx == 1; hblank/
-/// controllers/math carry none) — the ONE lower pass per module (M2).
+/// modules' placed sections concatenated (declaration order only) AND all
+/// THREE asserts-bearing modules' link_asserts (mt == 5, sfx == 1,
+/// controllers == 6 — `engine.constants`'s drift guards, tranche 2's step-2
+/// modernize pass; hblank/math carry none) — the ONE lower pass per module
+/// (M2).
 fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
     aeon: &Path,
     debug_val: i128,
-) -> (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>) {
+) -> (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>, Vec<LinkAssert>) {
     let map = emp_bank_map_with_mt_hblank_tranche2(debug_val != 0);
     let (mut sections, _dac_asserts) =
         placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
@@ -430,8 +432,11 @@ fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
     let (hblank_sections, _hblank_asserts) =
         placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
     // `controllers.emp` lives in `engine/system/` too — same include_root
-    // convention as hblank; NO defines: shape-invariant (like hblank).
-    let (controllers_sections, _controllers_asserts) =
+    // convention as hblank; NO defines: shape-invariant (like hblank). Its
+    // `use engine.constants.{...}` edge means `constants_ambient_items`
+    // (inside `placed_module_sections_with_roots`) prepends the twin's items,
+    // whose six drift-guard `ensure`s ride along as `controllers_asserts`.
+    let (controllers_sections, controllers_asserts) =
         placed_module_sections(&aeon.join("engine/system"), "controllers.emp", &[], &map);
     // `math.emp` lives in `engine/system/`, but its `embed("../data/sine.bin")`
     // climbs ONE level above its own directory — `include_root` must be the
@@ -450,7 +455,7 @@ fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
     sections.extend(hblank_sections);
     sections.extend(controllers_sections);
     sections.extend(math_sections);
-    (sections, mt_asserts, sfx_asserts)
+    (sections, mt_asserts, sfx_asserts, controllers_asserts)
 }
 
 /// Compile the REAL `dac_samples.emp` and PLACE its sections into the two-bank
@@ -538,6 +543,26 @@ fn placed_module_sections(
     placed_module_sections_with_roots(dir, dir, module_file, defines, map_src)
 }
 
+/// `engine.constants`'s items (its six `pub const`s + six drift-guard
+/// `ensure`s), read from `controllers.emp`'s own directory (`engine/system/`
+/// — where `constants.emp` also lives). `controllers.emp` `use`s this twin;
+/// plain `lower_module` (used throughout this file, not the whole-program
+/// resolver — see `controllers_port.rs`'s doc comment for why: the resolver's
+/// `report_unresolved` wrongly rejects this module's genuinely AS-side-only
+/// symbols like `Ctrl_1_Held`) never resolves cross-module `use`, so the
+/// twin's items are prepended by hand before lowering, mirroring
+/// `controllers_port.rs`'s `controllers_with_ambient_constants`.
+fn constants_ambient_items(controllers_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(controllers_dir.join("constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (file, cdiags) = parse_str(&src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "constants.emp parse errors: {cdiags:?}"
+    );
+    file.items
+}
+
 /// Like [`placed_module_sections`], but with `include_root` and `embed_base`
 /// supplied independently (port #2, `math.emp`'s `embed("../data/sine.bin")`
 /// — see `math_port.rs`'s doc for why this module needs a BROADER
@@ -545,6 +570,11 @@ fn placed_module_sections(
 /// through `placed_module_sections`, which passes the same `dir` for both
 /// (unaffected — the front-end's `embed_base: None` fallback already made
 /// this identical to the pre-`embed_base` behavior).
+///
+/// `module_file == "controllers.emp"` gets `engine.constants`'s items
+/// prepended (its `use engine.constants.{...}` edge) — see
+/// `constants_ambient_items`'s doc. Every other module has no cross-module
+/// `use`, so this is a no-op for them.
 fn placed_module_sections_with_roots(
     include_root: &Path,
     embed_base: &Path,
@@ -562,6 +592,16 @@ fn placed_module_sections_with_roots(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{module_file} parse errors: {pdiags:?}"
     );
+    let file = if module_file == "controllers.emp" {
+        sigil_frontend_emp::ast::File {
+            module: file.module.clone(),
+            attrs: file.attrs.clone(),
+            items: constants_ambient_items(&dir).into_iter().chain(file.items).collect(),
+            docs: file.docs.clone(),
+        }
+    } else {
+        file
+    };
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root.to_path_buf()),
@@ -879,19 +919,20 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
 /// exercised end-to-end here (a real, unconditionally-included AS-side
 /// caller of a gated `.emp` proc), not by any prior port.
 ///
-/// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags)` — the caller pins
-/// both asserts-bearing modules' `check_link_asserts` (mt == 5, sfx == 1) and
-/// asserts every diagnostic is non-Error. `hblank.emp`/`controllers.emp`/
-/// `math.emp` carry no link asserts of their own (no `ensure`/`extern`), so
-/// they contribute none here.
+/// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags,
+/// controllers_assert_diags)` — the caller pins all THREE asserts-bearing
+/// modules' `check_link_asserts` (mt == 5, sfx == 1, controllers == 6 —
+/// `engine.constants`'s drift guards) and asserts every diagnostic is
+/// non-Error. `hblank.emp`/`math.emp` carry no link asserts of their own (no
+/// `ensure`/`extern`), so they contribute none here.
 fn build_mixed_tranche2_rom(
     aeon: &Path,
     debug: bool,
-) -> (Vec<u8>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>) {
+) -> (Vec<u8>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>) {
     let as_module = assemble_mixed_tranche2_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
     let debug_val: i128 = if debug { 1 } else { 0 };
 
-    let (emp_sections, mt_asserts, sfx_asserts) =
+    let (emp_sections, mt_asserts, sfx_asserts, controllers_asserts) =
         placed_emp_sections_with_mt_sfx_hblank_tranche2(aeon, debug_val);
     let mut sections = as_module.sections;
     sections.extend(emp_sections);
@@ -903,6 +944,8 @@ fn build_mixed_tranche2_rom(
 
     let mt_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &mt_asserts);
     let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
+    let controllers_diags =
+        sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &controllers_asserts);
     assert_eq!(
         guard_assert_count(&mt_asserts),
         5,
@@ -913,6 +956,11 @@ fn build_mixed_tranche2_rom(
         1,
         "sfx_bank.emp's cross-seam co-residency ensure must be captured"
     );
+    assert_eq!(
+        guard_assert_count(&controllers_asserts),
+        6,
+        "engine.constants's six drift-guard ensures must be captured"
+    );
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map_src = std::fs::read_to_string(&map_path)
@@ -920,7 +968,7 @@ fn build_mixed_tranche2_rom(
     let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
     let rom = sigil_link::emit_rom(&linked, &map)
         .unwrap_or_else(|e| panic!("emit_rom (mixed tranche2): {e}"));
-    (rom, mt_diags, sfx_diags)
+    (rom, mt_diags, sfx_diags, controllers_diags)
 }
 
 /// Port #2 acceptance — plain (non-debug) DAC+MT+SFX+HBLANK+CONTROLLERS+MATH
@@ -958,7 +1006,7 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
         eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
         return;
     };
-    let (rom, mt_diags, sfx_diags) = build_mixed_tranche2_rom(&aeon, false);
+    let (rom, mt_diags, sfx_diags, controllers_diags) = build_mixed_tranche2_rom(&aeon, false);
     assert!(
         mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
@@ -966,6 +1014,10 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
     assert!(
         sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+    assert!(
+        controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
     // The controllers block itself, pinned explicitly (the port's own
@@ -1014,7 +1066,7 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
         eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
         return;
     };
-    let (rom, mt_diags, sfx_diags) = build_mixed_tranche2_rom(&aeon, true);
+    let (rom, mt_diags, sfx_diags, controllers_diags) = build_mixed_tranche2_rom(&aeon, true);
     assert!(
         mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
@@ -1022,6 +1074,10 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
     assert!(
         sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+    assert!(
+        controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
     assert_eq!(
