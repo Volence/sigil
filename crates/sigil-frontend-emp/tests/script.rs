@@ -595,3 +595,123 @@ proc other () {{ rts }}
         "the retired form names both replacements: {perrs:?}"
     );
 }
+
+// ---- D2.30(b): `yield .label` — the named resume -------------------------------
+
+#[test]
+fn yield_dot_label_stores_target_ordinal() {
+    // `yield .watch`: frame over, next frame continues at `.watch` — the
+    // stored word is `.watch`'s member ordinal (×2), NOT a fresh site resume.
+    //   table:  00 04  00 06            (entry=+4, watch=+6)
+    //   +4  nop:                4E 71
+    //   +6  .watch: nop:        4E 71
+    //   +8  move.w #2,$20(a0):  31 7C 00 02 00 20   (ordinal 1×2)
+    //   +14 jbra done:          60 00 00 02          (bra.s disp would be 0 —
+    //                            the documented rung-skip → bra.w; done=+18)
+    //   +18 done: rts:          4E 75
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    nop
+    .watch:
+    nop
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x04, 0x00, 0x06, // table: entry, .watch
+            0x4E, 0x71, // nop
+            0x4E, 0x71, // .watch: nop
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20, // move.w #2,$20(a0)
+            0x60, 0x00, 0x00, 0x02, // jbra done (bra.w — disp-0 rung skip)
+            0x4E, 0x75, // done: rts
+        ]
+    );
+}
+
+#[test]
+fn repeated_yield_dot_same_label_shares_a_member() {
+    // Two `yield .watch` join ONE table member ("becomes or joins") — the
+    // table stays 2 rows (first word 00 04 = entry right after 4 table bytes).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .watch:
+    nop
+    yield .watch
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x04], "table is 4 bytes = 2 rows (entry + watch)");
+}
+
+#[test]
+fn yield_dot_creates_no_site_resume_point() {
+    // A bare yield mints its own member; a named yield does NOT — mixing one
+    // of each with a shared target gives exactly 3 rows (entry, site, watch):
+    // first table word = 6 (the body starts after 3 rows × 2 bytes).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .watch:
+    nop
+    yield
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x06], "3 rows: entry + the bare yield's site + watch");
+}
+
+#[test]
+fn yield_dot_undefined_label_is_an_error() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    yield .nowhere
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("nowhere")),
+        "the missing resume target is named: {msgs:?}"
+    );
+}
+
+#[test]
+fn yield_dot_scales_by_encoding() {
+    // long_ptrs: the stored word is the ×4 ordinal (still one word — D9.3).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: long_ptrs) shows done {{
+    .watch:
+    nop
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    // long_ptrs table = 2 rows × 4 bytes = 8; store imm = 1×4 = #4.
+    // store at +10: 31 7C 00 04 00 20.
+    assert_eq!(&bytes[10..16], &[0x31, 0x7C, 0x00, 0x04, 0x00, 0x20]);
+}

@@ -72,14 +72,16 @@ pub(super) fn lower_script_item(
         slot: &slot,
         encoding: decl.encoding,
         script_epilogue: decl.epilogue.as_ref(),
-        yield_count: 0,
+        resume_targets: Vec::new(),
+        named_resumes: std::collections::HashMap::new(),
+        body_labels: collect_body_labels(&decl.body),
         loop_count: 0,
         had_no_epilogue: false,
         diags,
     };
     let mut flat = Vec::new();
     ctx.walk(&decl.body, &mut flat);
-    let yield_count = ctx.yield_count;
+    let resume_targets = std::mem::take(&mut ctx.resume_targets);
     let had_no_epilogue = ctx.had_no_epilogue;
     if had_no_epilogue {
         return; // at least one bare yield had no epilogue — refuse the whole script.
@@ -104,10 +106,12 @@ pub(super) fn lower_script_item(
     //    `eval_dispatch_with_root` passes it through unchanged. Lower it EXACTLY
     //    as `lower_dispatch_item`'s table half (eval → stream → define base
     //    label → emit).
-    let members = (0..=yield_count)
-        .map(|k| DispatchMember {
+    let members = std::iter::once(resume_name(0))
+        .chain(resume_targets)
+        .enumerate()
+        .map(|(k, raw)| DispatchMember {
             name: format!("R{k}"),
-            target: DispatchTarget::Label(Expr::Str(owner.local_symbol(&resume_name(k)), decl.span)),
+            target: DispatchTarget::Label(Expr::Str(owner.local_symbol(&raw), decl.span)),
             span: decl.span,
         })
         .collect();
@@ -313,7 +317,17 @@ struct Desugar<'a> {
     slot: &'a ResumeSlot,
     encoding: ast::DispatchEncoding,
     script_epilogue: Option<&'a ScriptLabel>,
-    yield_count: usize,
+    /// Raw LOCAL names of resume-table members 1.. in first-need order
+    /// (D2.30(b)): a bare yield appends its own `__resume$k`; a named
+    /// `yield .x` appends (or joins) the USER label `x`. Member 0 (the
+    /// entry) is prepended by the caller.
+    resume_targets: Vec<String>,
+    /// `yield .x` targets already in the table → their member index
+    /// ("becomes OR JOINS a member").
+    named_resumes: std::collections::HashMap<String, usize>,
+    /// Every user label defined anywhere in the script body (pre-pass) —
+    /// the domain a `yield .x` target must come from.
+    body_labels: std::collections::HashSet<String>,
     loop_count: usize,
     had_no_epilogue: bool,
     diags: &'a mut Vec<Diagnostic>,
@@ -354,18 +368,49 @@ impl Desugar<'_> {
         out.push(jbra(&format!(".{label}"), span));
     }
 
-    /// `yield .label` (D2.30(b)) — lands in the next commit; refuse loudly
-    /// so this intermediate state can never ship silently wrong bytes.
-    fn desugar_named_resume_yield(&mut self, _r: &ScriptLabel, span: Span, out: &mut Vec<AsmStmt>) {
-        err(
-            self.diags,
-            span,
-            "[script.named-resume] `yield .label` is not built yet (D2.30(b) — next commit)"
-                .to_string(),
-        );
-        self.had_no_epilogue = true; // reuse the refuse-whole-script path
-        out.push(AsmStmt::Label { name: resume_name(self.yield_count + 1), export: false, span });
-        self.yield_count += 1;
+    /// `yield .label` (D2.30(b)) — "frame over; next frame, continue at
+    /// `.label`": store the TARGET's member ordinal (pre-scaled), exit via
+    /// the epilogue. The target becomes (or joins) a resume-table member; NO
+    /// resume point is minted at this site (code after it is reached only by
+    /// branching to a label) — the zero-cost park (the old `yield` + `jbra`
+    /// pair paid a wasted jump on resume).
+    fn desugar_named_resume_yield(&mut self, r: &ScriptLabel, span: Span, out: &mut Vec<AsmStmt>) {
+        if !self.body_labels.contains(&r.name) {
+            err(
+                self.diags,
+                span,
+                format!(
+                    "`yield .{}` names a resume label that is not defined in this script's                      body — the next frame must land on a label of THIS script",
+                    r.name
+                ),
+            );
+            self.had_no_epilogue = true; // refuse the whole script (no emission)
+            return;
+        }
+        let idx = match self.named_resumes.get(&r.name) {
+            Some(&idx) => idx,
+            None => {
+                let idx = self.resume_targets.len() + 1;
+                self.resume_targets.push(r.name.clone());
+                self.named_resumes.insert(r.name.clone(), idx);
+                idx
+            }
+        };
+        let Some(epilogue) = self.script_epilogue else {
+            err(
+                self.diags,
+                span,
+                "[script.no-epilogue] `yield .label` needs an epilogue in scope — declare                  one with `shows <label>` on the script (D9.6)"
+                    .to_string(),
+            );
+            self.had_no_epilogue = true;
+            return;
+        };
+        let ordinal = (idx as i128) * self.encoding.scale();
+        out.push(yield_store(ordinal as i64, self.slot.offset, &self.slot.reg, span));
+        let target =
+            if epilogue.local { format!(".{}", epilogue.name) } else { epilogue.name.clone() };
+        out.push(jbra(&target, span));
     }
 
     /// `yield [label]` → store the scaled ordinal into the resume slot, `jbra`
@@ -373,8 +418,8 @@ impl Desugar<'_> {
     /// epilogue is the per-site override, else the `shows` declaration, else a
     /// `[script.no-epilogue]` error at the yield's span.
     fn desugar_yield(&mut self, site: &Option<ScriptLabel>, span: Span, out: &mut Vec<AsmStmt>) {
-        let k = self.yield_count + 1; // member 0 is the entry; yields are 1-based.
-        self.yield_count = k;
+        let k = self.resume_targets.len() + 1; // member 0 is the entry.
+        self.resume_targets.push(resume_name(k));
         let epilogue = site.as_ref().or(self.script_epilogue);
         let Some(epilogue) = epilogue else {
             err(
@@ -412,6 +457,26 @@ impl Desugar<'_> {
         // The resume point: the engine's saved PC lands here next frame.
         out.push(AsmStmt::Label { name: resume_name(k), export: false, span });
     }
+}
+
+/// Pre-pass for D2.30(b): every user label defined anywhere in the script
+/// body (loops included) — the domain a `yield .x` resume target must come
+/// from ("the next frame must land on a label of THIS script").
+fn collect_body_labels(stmts: &[ScriptStmt]) -> std::collections::HashSet<String> {
+    fn walk(stmts: &[ScriptStmt], out: &mut std::collections::HashSet<String>) {
+        for st in stmts {
+            match st {
+                ScriptStmt::Asm(AsmStmt::Label { name, .. }) => {
+                    out.insert(name.clone());
+                }
+                ScriptStmt::Loop { body, .. } => walk(body, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = std::collections::HashSet::new();
+    walk(stmts, &mut out);
+    out
 }
 
 /// The `__resume$<k>` hidden proc-local label name for resume member `k`
