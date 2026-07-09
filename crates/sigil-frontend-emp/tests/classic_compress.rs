@@ -411,3 +411,51 @@ fn enigma_no_args_errors() {
     );
     assert_eq!(buf.expect("data buf").size, 0);
 }
+
+// ---------------------------------------------------------------------------
+// nemesis
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nemesis_matches_t2a_golden() {
+    let expected = read_vec("golden_nemesis.bin");
+    let src = "module m\ndata X = nemesis(embed(\"numbers.raw\"))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn nemesis_non_data_arg_errors() {
+    let src = "module m\ndata X = nemesis(42)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[nemesis.arg]")),
+        "expected a [nemesis.arg] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn nemesis_not_tile_aligned_errors() {
+    // numbers.raw is 576 bytes (18 tiles, multiple of $20); slice to 575 to
+    // break tile alignment.
+    let src = "module m\ndata X = nemesis(embed(\"numbers.raw\", len: 575))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[nemesis.tile-granularity]")),
+        "expected a [nemesis.tile-granularity] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn nemesis_no_args_errors() {
+    let src = "module m\ndata X = nemesis()\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("expects exactly 1 argument")),
+        "expected an arity diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}

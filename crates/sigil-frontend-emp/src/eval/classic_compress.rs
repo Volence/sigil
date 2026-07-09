@@ -434,6 +434,70 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
+
+    // -----------------------------------------------------------------
+    // Nemesis
+    // -----------------------------------------------------------------
+
+    /// Map a [`sigil_clownnemesis_sys::Error`] to a `[nemesis.*]` diagnostic
+    /// and report it (CR5) — the clownnemesis-backed sibling of
+    /// [`report_clownlzss_error`](Self::report_clownlzss_error), kept
+    /// separate since the two `-sys` crates expose distinct `Error` enums.
+    fn report_clownnemesis_error(&mut self, span: Span, err: sigil_clownnemesis_sys::Error) {
+        use sigil_clownnemesis_sys::Error;
+        match err {
+            Error::NotTileAligned { len } => {
+                self.error(
+                    span,
+                    format!(
+                        "[nemesis.tile-granularity] nemesis input is {len} bytes — must be a multiple of \
+                         $20 (one 8x8 4bpp tile)"
+                    ),
+                );
+            }
+            Error::TooManyTiles { tiles, max_tiles } => {
+                self.error(
+                    span,
+                    format!(
+                        "[nemesis.too-many-tiles] nemesis input has {tiles} tiles, exceeds the maximum \
+                         {max_tiles} representable by the 15-bit header field"
+                    ),
+                );
+            }
+            Error::Overflow => {
+                self.error(span, "[nemesis.overflow] nemesis compression failed");
+            }
+        }
+    }
+
+    /// `nemesis(data)` (Plan-7 #10, T2b): Nemesis compression, emitting the
+    /// raw stream (CR4). `data` must be a multiple of `$20` bytes (one
+    /// 8x8 4bpp Genesis tile) and at most 32767 tiles (the 15-bit header
+    /// field's ceiling) — both enforced by
+    /// [`sigil_clownnemesis_sys::compress`] and surfaced here.
+    pub(super) fn eval_nemesis(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let Some(buf) = self.eval_sole_data_arg("nemesis", args, span, env) else {
+            return Value::Poison;
+        };
+        self.nemesis_from_data(buf, span)
+    }
+
+    pub(crate) fn nemesis_from_data(&mut self, buf: DataBuf, span: Span) -> Value {
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "nemesis") else {
+            return Value::Poison;
+        };
+        match sigil_clownnemesis_sys::compress(&input) {
+            Ok(out) => {
+                let mut result = DataBuf::empty();
+                result.push(Cell::Bytes(out));
+                Value::Data(result)
+            }
+            Err(e) => {
+                self.report_clownnemesis_error(span, e);
+                Value::Poison
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -534,5 +598,25 @@ mod tests {
             },
             other => panic!("expected Value::Data, got {other:?}"),
         }
+    }
+
+    /// `nemesis(data)`'s too-many-tiles case (CR5): a real `.emp` fixture
+    /// spanning 32768 tiles would be a ~1MB file for no diagnostic value
+    /// (same rationale `sigil-clownnemesis-sys`'s own
+    /// `tile_count_boundary_check_logic` test documents) — exercised via
+    /// `nemesis_from_data` directly instead.
+    #[test]
+    fn nemesis_from_data_too_many_tiles_errors() {
+        let mut ev = Evaluator::new();
+        let mut buf = DataBuf::empty();
+        let one_too_many = vec![0u8; (sigil_clownnemesis_sys::MAX_TILES + 1) * sigil_clownnemesis_sys::TILE_SIZE];
+        buf.push(Cell::Bytes(one_too_many));
+        let result = ev.nemesis_from_data(buf, span());
+        assert_eq!(result, Value::Poison);
+        assert!(
+            ev.diags.iter().any(|d| d.message.contains("[nemesis.too-many-tiles]")),
+            "expected a [nemesis.too-many-tiles] diagnostic, got {:?}",
+            ev.diags
+        );
     }
 }

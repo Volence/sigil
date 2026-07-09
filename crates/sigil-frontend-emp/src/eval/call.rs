@@ -112,6 +112,9 @@ impl<'a> Evaluator<'a> {
                 "saxman" => return self.eval_saxman(args, span, env),
                 // `enigma(data)` (Plan-7 #10, T2b): Enigma, word-even input.
                 "enigma" => return self.eval_enigma(args, span, env),
+                // `nemesis(data)` (Plan-7 #10, T2b): Nemesis, tile-granular
+                // input ($20-byte multiple, <=32767 tiles).
+                "nemesis" => return self.eval_nemesis(args, span, env),
                 _ => {}
             }
         }
