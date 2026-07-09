@@ -362,6 +362,18 @@ impl<'a> Evaluator<'a> {
         match name {
             // A plain absolute pointer (NOT windowed — that is `winptr(sym)`).
             Some(name) => buf.push(Cell::SymRef { name, width: 4, windowed: false }),
+            // An INT literal in a pointer slot folds to a plain width-4 absolute
+            // VALUE cell — no fixup (T3 P3). This is the sparse-table null idiom:
+            // a `0` is an unused/empty pointer slot (`SfxTable`'s 126 gap cells),
+            // written directly rather than through a symbol. A non-zero int folds
+            // the same way (a literal absolute address), so a stray nonzero can't
+            // silently do something other than what `0` does. Big-endian, matching
+            // the `Abs32Be` byte layout a `SymRef` in this slot would resolve to.
+            None if matches!(value, Value::Int(_)) => {
+                if let Value::Int(n) = value {
+                    buf.push(Cell::Scalar { value: *n, width: 4, signed: false, le: false });
+                }
+            }
             None => {
                 self.error(
                     span,
