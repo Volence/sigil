@@ -196,6 +196,24 @@ fn build_symbol_table(sections: &[Section], stubs: &SymbolTable) -> SymbolTable 
             syms.define(&label.name, SymbolValue::Int((origin + label.offset) as i64));
         }
     }
+    // Task B3 (seam re-eval): also seed `equ_syms` — mirrors `link()`'s own
+    // Pass 1b (R-T0.3). Without this, a `check_link_asserts` caller (the
+    // deferred `ensure`/`ensure_fatal` path, D-H.4) could not resolve a
+    // condition naming a symbol defined ONLY by an `equ` (no label) —
+    // e.g. `ensure(extern("SOME_EQ") == N, ...)` — even though `link()`
+    // resolves the identical symbol fine via its own separate table build.
+    // `sections` here is ALWAYS `resolve_layout`'s output (every caller's
+    // contract — see this fn's doc + every call site), so every `equ_syms`
+    // entry's `expr` is already folded to `Expr::Int`; `.fold` with a
+    // by-then-partially-seeded lookup still handles an equ that references
+    // an EARLIER equ (equ-referencing-equ chains), exactly like `link()`.
+    for sec in sections {
+        for eq in &sec.equ_syms {
+            if let Fold::Value(v) = eq.expr.fold(&|name| syms.resolve(name, None)) {
+                syms.define(&eq.name, SymbolValue::Int(v));
+            }
+        }
+    }
     syms
 }
 
@@ -675,6 +693,55 @@ mod tests {
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
         assert!(ds[0].message.contains("internal"), "got: {}", ds[0].message);
+    }
+
+    /// A section carrying an `equ` (already folded to `Expr::Int` by
+    /// `resolve_layout`, as `check_link_asserts`' caller always supplies —
+    /// see `equ_link.rs`) at the given value, no labels.
+    fn equ_only_section(name: &str, eq_name: &str, value: i64) -> Section {
+        Section {
+            name: name.into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![sigil_ir::EquSym {
+                name: eq_name.into(),
+                expr: Expr::Int(value),
+                span: span(),
+            }],
+        }
+    }
+
+    /// Task B3 (seam re-eval, extern() e2e probe): a deferred `LinkAssert`
+    /// condition naming a symbol defined ONLY by an `equ` (no label) must
+    /// resolve through `check_link_asserts`, exactly like `link()`'s own
+    /// Pass 1b already resolves equ-vs-label symbols uniformly. Before this
+    /// fix, `build_symbol_table` (used ONLY by `check_link_asserts`) seeded
+    /// labels but not `equ_syms`, so an `extern("EQ")`-style deferred
+    /// condition hit `Fold::Poison` and the SAME "anchor label was never
+    /// defined" internal-contract error `link_assert_unresolved_cond_is_
+    /// internal_contract_error` pins for a genuinely undefined symbol —
+    /// wrongly, for a symbol that IS defined, just via `equ` not a label.
+    #[test]
+    fn link_assert_cond_resolves_an_equ_defined_symbol_not_just_labels() {
+        let secs = [equ_only_section("defs", "SND_PROBE_EQ", 0x0B)];
+        let cond = Expr::Binary {
+            op: sigil_ir::expr::BinOp::Eq,
+            lhs: Box::new(Expr::Sym("SND_PROBE_EQ".into())),
+            rhs: Box::new(Expr::Int(0x0B)),
+        };
+        let a = LinkAssert { cond, message: vec![MsgPart::Text("mismatch".into())], fatal: false, span: span() };
+        assert_eq!(
+            check_link_asserts(&secs, &SymbolTable::new(), &[a]),
+            Vec::<Diagnostic>::new(),
+            "an equ-defined symbol in a LinkAssert condition must resolve, not Poison"
+        );
     }
 
     fn span() -> Span {
