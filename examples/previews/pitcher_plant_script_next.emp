@@ -1,30 +1,30 @@
-// Pitcher Plant — D2.30 PREVIEW (does NOT compile yet).
+// Pitcher Plant — the scripted-object target (compiles, except one line).
 //
-// ⚠ This file is a DESIGN PREVIEW, not a pinned exhibit: it uses the D2.30
-// readability batch (`wait_frames`, `yield .label`, `yield shows`), the
-// S2-D12(b) `code_word` encoding, and §4.7's inline `offsets` bodies — all
-// RATIFIED (2026-07-06/09), all UNIMPLEMENTED until their campaign ride-along
-// tranches build them (inline bodies: first anims port; the rest: first
-// scripted-object port).
-// The compiling, byte-pinned v1 exhibit is examples/game/badniks/
-// pitcher_plant_script.emp; this file exists so the target can be SEEN.
-// It lives in examples/previews/ (NOT under the examples/game scan root)
-// because `--map` module discovery parses every .emp under the root, and
-// this file stays non-compiling until `code_word` lands with the first
-// scripted-object port. The Tranche-0 acceptance test builds a
-// code_word-patched copy of it instead.
+// ⚠ This file is a PREVIEW, not a pinned exhibit. Everything in it is live
+// language — the D2.30 batch (`wait_frames`, `yield .label`, `yield shows`),
+// §4.7 inline `offsets` bodies, named elision (`vel: default`) — EXCEPT the
+// script header's `code_word` encoding (S2-D12(b)), which is consumer-coupled
+// (base:, ObjDef.code emission, the real spawn seam) and lands with the first
+// scripted-object port, where reality can push back.
+// The byte-pinned exhibit is examples/game/badniks/pitcher_plant_script.emp.
+// This file lives in examples/previews/ (NOT under the examples/game scan
+// root) because `--map` module discovery parses every .emp under the root,
+// and the `code_word` line keeps this file from building as-is. The
+// tranche0_acceptance test builds a copy with that one line patched to
+// `word_offsets` and requires ZERO diagnostics — proving everything else here
+// is real.
 //
-// This preview carries TWO ratified changes at once (Volence, 2026-07-09):
+// Two things this file demonstrates:
 //
-// 1. THE D2.30 SPELLINGS. The reading rule they establish:
+// 1. THE D2.30 SPELLINGS. The reading rule:
 //      park with per-frame WORK  →  `yield .label`   (resume named on the line)
 //      PURE park                 →  `wait_frames`    (one declarative line)
 //      genuine sequence          →  bare `yield`     (continue below tomorrow)
 //    Nothing about "next frame starts below the yield" is left implicit —
 //    it's written on the line or absorbed into a construct that says it.
 //
-// 2. THE BETTER BRAIN (the code-sense review finding — apply to aeon's real
-//    plant badnik as its own post-port behavior commit). The v1 exhibit's
+// 2. THE BETTER BRAIN (a code-sense finding — lands on aeon's real plant
+//    badnik as its own post-port behavior commit). The pinned exhibit's
 //    brain is blind between checks: it parks 64 frames, glances for the
 //    player ONCE, and re-parks — worst case ~1.07s standing at its mouth
 //    before it reacts, and whether it fires "instantly" or "eventually"
@@ -39,8 +39,11 @@
 // Note how each state's nature picks its construct: watching is a
 // park-with-work (`yield .watch`), cooling down is a pure park
 // (`wait_frames`), and this brain has NO pure sequence point left — so not
-// a single bare yield appears. Compare the v1 exhibit: three bare yields,
-// two back-edge jbras, an entry segment, and two hand-managed timer stores.
+// a single bare yield appears. The pinned exhibit
+// (pitcher_plant_script.emp) uses the same spellings on the OLD brain: its
+// wait state is the pure park and its windup the park-with-work — the
+// difference between the two files is the brain and the encoding, not the
+// language.
 
 module badniks.pitcher_plant_script_next in obj_bank
 
@@ -57,19 +60,18 @@ const SEED_VEL_X: i16 = -$200
 const SEED_VEL_Y: i16 = -$200
 const SEED_GRAVITY: i16 = $20
 
-// Animation table, ids, AND payloads — one declaration (§4.7 INLINE BODIES,
-// the ratified next-offsets increment; unimplemented, rides the first anims
-// port). Deliberately still spelled `offsets`, not a new `dataset` keyword —
-// "one emission grammar, no new concept" (tenet 1): inline members reuse the
-// exact `data`-item shape, so the declared [u8; N] length stays the
-// terminator guard (drop a $FF and the initializer no longer fills the type
-// → compile error, not a runtime hang). Emission: the dc.w table first, then
-// each body in declaration order. By-reference members (`Name: some_label`)
-// still mix in freely for shared/cross-module targets.
+// Animation table, ids, AND payloads — one declaration (§4.7 inline bodies).
+// Deliberately spelled `offsets`, not a new `dataset` keyword — "one emission
+// grammar, no new concept" (tenet 1): inline members reuse the exact
+// `data`-item shape, so the declared [u8; N] length stays the terminator
+// guard (drop a $FF and the initializer no longer fills the type → compile
+// error, not a runtime hang). Emission: the dc.w table first, then each body
+// in declaration order under a hidden label its table word targets.
+// By-reference members (`Name: some_label`) mix in freely for
+// shared/cross-module targets.
 // NOTE Shoot's payload reads `Ani.Idle` (== 0) from its OWN block — the
-// "$FD: switch to idle" command byte; in-block ordinal self-reference is a
-// required test of the increment (ordinals come from declaration position,
-// so it's well-founded).
+// "$FD: switch to idle" command byte. Ordinals come from declaration
+// position, so in-block self-reference is well-founded.
 offsets Ani {
     Idle:  [u8; 4] = [7, 0, 1, $FF],
     Seed:  [u8; 4] = [3, 5, 6, $FF],
@@ -84,8 +86,8 @@ pub data Def = ObjDef{
     zpri:  3,
     size:  Size{ w: 16, h: 28 },
     anim:  Ani.Idle,
-    vel:   Vel{ x: 0, y: 0 },
-    frame: 0,
+    vel:   default,     // stationary at spawn — ObjDef's declared default
+    frame: default,     // first frame — likewise
 }
 
 data SeedDef = ObjDef{

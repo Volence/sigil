@@ -72,16 +72,19 @@ pub(super) fn lower_script_item(
         slot: &slot,
         encoding: decl.encoding,
         script_epilogue: decl.epilogue.as_ref(),
-        yield_count: 0,
+        resume_targets: Vec::new(),
+        named_resumes: std::collections::HashMap::new(),
+        body_labels: collect_body_labels(&decl.body, diags),
         loop_count: 0,
-        had_no_epilogue: false,
+        refuse_script: false,
+        wait_widths: resolve_wait_widths(file, decl, diags),
         diags,
     };
     let mut flat = Vec::new();
     ctx.walk(&decl.body, &mut flat);
-    let yield_count = ctx.yield_count;
-    let had_no_epilogue = ctx.had_no_epilogue;
-    if had_no_epilogue {
+    let resume_targets = std::mem::take(&mut ctx.resume_targets);
+    let refuse_script = ctx.refuse_script;
+    if refuse_script {
         return; // at least one bare yield had no epilogue — refuse the whole script.
     }
 
@@ -104,10 +107,12 @@ pub(super) fn lower_script_item(
     //    `eval_dispatch_with_root` passes it through unchanged. Lower it EXACTLY
     //    as `lower_dispatch_item`'s table half (eval → stream → define base
     //    label → emit).
-    let members = (0..=yield_count)
-        .map(|k| DispatchMember {
+    let members = std::iter::once(resume_name(0))
+        .chain(resume_targets)
+        .enumerate()
+        .map(|(k, raw)| DispatchMember {
             name: format!("R{k}"),
-            target: DispatchTarget::Label(Expr::Str(owner.local_symbol(&resume_name(k)), decl.span)),
+            target: DispatchTarget::Label(Expr::Str(owner.local_symbol(&raw), decl.span)),
             span: decl.span,
         })
         .collect();
@@ -125,6 +130,18 @@ pub(super) fn lower_script_item(
             super::data::stream_data(&buf, placement.cpu, decl.span);
         diags.append(&mut stream_diags);
         builder.define_label(&decl.name);
+        // D2.29 amendment: a script is CODE by construction (the word table
+        // shifts every resume segment odd with it), so an odd final address
+        // is the error-tier [layout.odd-item], same as a proc.
+        super::record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            super::OddItemKind::Code,
+            &decl.name,
+            decl.span,
+        );
         builder.emit_data(&bytes, fixups, decl.span);
     }
 
@@ -157,7 +174,13 @@ pub(super) fn lower_script_item(
     //    proc-flavored `[proc.undeclared-fallthrough]`'s script mirror. Silenced
     //    under `@as_compat` (parity, not expectation), like every modernization
     //    lint. Uses the SHARED `ends_in_terminator` (last-mnemonic heuristic).
-    if !as_compat && !super::proc::ends_in_terminator(&buf, placement.cpu) {
+    // A body ENDING in `wait_frames` is a fallthrough the compiler KNOWS
+    // about (trio review M3): the expansion's own `beq` targets its trailing
+    // `__wfdone$k` label, so control reaches the `}` every time the park
+    // completes — the last-mnemonic heuristic can't see it (the last
+    // instruction is the epilogue jbra), so check the statement shape.
+    let ends_in_wait = matches!(decl.body.last(), Some(ScriptStmt::WaitFrames { .. }));
+    if !as_compat && (ends_in_wait || !super::proc::ends_in_terminator(&buf, placement.cpu)) {
         diags.push(Diagnostic {
             level: Level::Warning,
             message: format!(
@@ -295,15 +318,33 @@ fn discover_resume_slot(
 
 /// The mutable state threaded through the desugar walk (R9b.5 / R9b.6): the
 /// resume slot + encoding drive each yield's store; the two counters mint the
-/// distinct `__resume$k` / `__loop$d` hygienic labels; `had_no_epilogue`
+/// distinct `__resume$k` / `__loop$d` hygienic labels; `refuse_script`
 /// records whether ANY bare yield lacked an effective epilogue (D9.6).
 struct Desugar<'a> {
     slot: &'a ResumeSlot,
     encoding: ast::DispatchEncoding,
     script_epilogue: Option<&'a ScriptLabel>,
-    yield_count: usize,
+    /// Raw LOCAL names of resume-table members 1.. in first-need order
+    /// (D2.30(b)): a bare yield appends its own `__resume$k`; a named
+    /// `yield .x` appends (or joins) the USER label `x`. Member 0 (the
+    /// entry) is prepended by the caller.
+    resume_targets: Vec<String>,
+    /// `yield .x` targets already in the table → their member index
+    /// ("becomes OR JOINS a member").
+    named_resumes: std::collections::HashMap<String, usize>,
+    /// Every user label defined anywhere in the script body (pre-pass) —
+    /// the domain a `yield .x` target must come from.
+    body_labels: std::collections::HashSet<String>,
     loop_count: usize,
-    had_no_epilogue: bool,
+    /// Refuse the whole script (no emission): a bare yield without an
+    /// epilogue (D9.6), a named-resume domain error, a wait_frames width or
+    /// range failure — any already-diagnosed condition where partial
+    /// emission could expose a skewed resume table.
+    refuse_script: bool,
+    /// Pre-resolved slot widths for the body's `wait_frames` statements, in
+    /// walk order (width resolution needs the evaluator's struct layouts, so
+    /// it runs BEFORE the walk — `None` = already-diagnosed failure).
+    wait_widths: std::collections::VecDeque<Option<u8>>,
     diags: &'a mut Vec<Diagnostic>,
 }
 
@@ -314,7 +355,16 @@ impl Desugar<'_> {
             match stmt {
                 ScriptStmt::Asm(a) => out.push(a.clone()),
                 ScriptStmt::Loop { body, span } => self.desugar_loop(body, *span, out),
-                ScriptStmt::Yield { epilogue, span } => self.desugar_yield(epilogue, *span, out),
+                ScriptStmt::Yield { epilogue, resume, span } => {
+                    if let Some(r) = resume {
+                        self.desugar_named_resume_yield(r, *span, out);
+                    } else {
+                        self.desugar_yield(epilogue, *span, out);
+                    }
+                }
+                ScriptStmt::WaitFrames { n, slot, span } => {
+                    self.desugar_wait_frames(n, slot, *span, out);
+                }
             }
         }
     }
@@ -336,13 +386,163 @@ impl Desugar<'_> {
         out.push(jbra(&format!(".{label}"), span));
     }
 
+    /// `yield .label` (D2.30(b)) — "frame over; next frame, continue at
+    /// `.label`": store the TARGET's member ordinal (pre-scaled), exit via
+    /// the epilogue. The target becomes (or joins) a resume-table member; NO
+    /// resume point is minted at this site (code after it is reached only by
+    /// branching to a label) — the zero-cost park (the old `yield` + `jbra`
+    /// pair paid a wasted jump on resume).
+    fn desugar_named_resume_yield(&mut self, r: &ScriptLabel, span: Span, out: &mut Vec<AsmStmt>) {
+        if !self.body_labels.contains(&r.name) {
+            err(
+                self.diags,
+                span,
+                format!(
+                    "`yield .{}` names a resume label that is not defined in this script's body — the next frame must land on a label of THIS script",
+                    r.name
+                ),
+            );
+            self.refuse_script = true; // refuse the whole script (no emission)
+            return;
+        }
+        // Check-then-allocate (trio review m5): "members exist ⇔ emission
+        // happened" shouldn't lean on the whole-script refusal backstop.
+        let Some(epilogue) = self.script_epilogue else {
+            err(
+                self.diags,
+                span,
+                "[script.no-epilogue] `yield .label` needs an epilogue in scope — declare one with `shows <label>` on the script (D9.6)"
+                    .to_string(),
+            );
+            self.refuse_script = true;
+            return;
+        };
+        let idx = match self.named_resumes.get(&r.name) {
+            Some(&idx) => idx,
+            None => {
+                let idx = self.resume_targets.len() + 1;
+                self.resume_targets.push(r.name.clone());
+                self.named_resumes.insert(r.name.clone(), idx);
+                idx
+            }
+        };
+        let ordinal = (idx as i128) * self.encoding.scale();
+        out.push(yield_store(ordinal as i64, self.slot.offset, &self.slot.reg, span));
+        let target =
+            if epilogue.local { format!(".{}", epilogue.name) } else { epilogue.name.clone() };
+        out.push(jbra(&target, span));
+    }
+
+    /// `wait_frames #N, <slot>` (D2.30(c)) — EXACTLY the documented tick
+    /// idiom, machine-expanded (byte-identical to the hand-written spelling;
+    /// same frame accounting — #64 parks 63 drawn frames, proceeds on the
+    /// 64th tick):
+    ///
+    /// ```text
+    ///         move.<w> #N, <slot>
+    /// __wf$k: subq.<w> #1, <slot>       ; the hidden resume member
+    ///         beq      .__wfdone$k
+    ///         <yield .__wf$k> ; self-resuming park (D2.30(b))
+    /// __wfdone$k:
+    /// ```
+    fn desugar_wait_frames(&mut self, n: &Expr, slot: &Operand, span: Span, out: &mut Vec<AsmStmt>) {
+        let Some(entry) = self.wait_widths.pop_front() else {
+            // The pre-pass and the walk visit the same statements in the same
+            // order — an empty queue here is walker drift, a compiler bug,
+            // never a source error (trio review m1: it must not silently
+            // vanish the script).
+            err(
+                self.diags,
+                span,
+                "internal: wait_frames width queue exhausted — the pre-pass and the \
+                 desugar walk disagree about statement order (compiler bug)"
+                    .to_string(),
+            );
+            self.refuse_script = true;
+            return;
+        };
+        let Some(width) = entry else {
+            // Width resolution already diagnosed (unknown field / bad reg /
+            // unsupported width) — refuse the script without emission.
+            self.refuse_script = true;
+            return;
+        };
+        // Comptime-VISIBLE out-of-range literals are catchable HERE, width in
+        // hand (trio review M1): 0 underflows into a full ~2^width-frame
+        // wrap, a value past the width truncates silently (`#300` on a u8
+        // slot parks 44 frames), and a negative literal is a wrap spelled
+        // differently. (A bad value behind a const still arrives unevaluated
+        // — that half stays recorded in the tranche notes.)
+        let literal = match n {
+            Expr::Int(v, _) => Some(*v),
+            Expr::Unary { op: ast::UnOp::Neg, expr, .. } => match expr.as_ref() {
+                Expr::Int(v, _) => Some(-v),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(v) = literal {
+            let max = (1i64 << (8 * width)) - 1;
+            if v < 1 || v > max {
+                err(
+                    self.diags,
+                    span,
+                    format!(
+                        "`wait_frames #{v}` is outside this {}-bit timer slot's range \
+                         (1..={max}) — 0/negative wraps into a ~{}-frame park, and an \
+                         over-wide value truncates silently",
+                        8 * width,
+                        max + 1
+                    ),
+                );
+                self.refuse_script = true;
+                return;
+            }
+        }
+        let Some(epilogue) = self.script_epilogue else {
+            err(
+                self.diags,
+                span,
+                "[script.no-epilogue] `wait_frames` draws the object every parked frame — declare an epilogue with `shows <label>` on the script (D9.6)"
+                    .to_string(),
+            );
+            self.refuse_script = true;
+            return;
+        };
+        let k = self.resume_targets.len() + 1;
+        let wf = format!("__wf${k}");
+        self.resume_targets.push(wf.clone());
+        let done = format!("__wfdone${k}");
+        let sz = if width == 1 { "b" } else { "w" };
+        out.push(sized_instr("move", sz, Operand::Imm(n.clone()), slot.clone(), span));
+        out.push(AsmStmt::Label { name: wf.clone(), export: false, span });
+        out.push(sized_instr("subq", sz, Operand::Imm(Expr::Int(1, span)), slot.clone(), span));
+        out.push(AsmStmt::Instr(InstrLine {
+            mnemonic: vec![TextOrSplice::Text("beq".into())],
+            size: None,
+            operands: vec![Operand::Plain {
+                expr: path_expr(&format!(".{done}"), span),
+                size: None,
+                span,
+            }],
+            span,
+        }));
+        // The self-resuming yield: store __wf$k's ordinal, exit via epilogue.
+        let ordinal = (k as i128) * self.encoding.scale();
+        out.push(yield_store(ordinal as i64, self.slot.offset, &self.slot.reg, span));
+        let target =
+            if epilogue.local { format!(".{}", epilogue.name) } else { epilogue.name.clone() };
+        out.push(jbra(&target, span));
+        out.push(AsmStmt::Label { name: done, export: false, span });
+    }
+
     /// `yield [label]` → store the scaled ordinal into the resume slot, `jbra`
     /// the epilogue, then define `__resume$k` (R9b.5 / D9.6). The effective
     /// epilogue is the per-site override, else the `shows` declaration, else a
     /// `[script.no-epilogue]` error at the yield's span.
     fn desugar_yield(&mut self, site: &Option<ScriptLabel>, span: Span, out: &mut Vec<AsmStmt>) {
-        let k = self.yield_count + 1; // member 0 is the entry; yields are 1-based.
-        self.yield_count = k;
+        let k = self.resume_targets.len() + 1; // member 0 is the entry.
+        self.resume_targets.push(resume_name(k));
         let epilogue = site.as_ref().or(self.script_epilogue);
         let Some(epilogue) = epilogue else {
             err(
@@ -353,7 +553,7 @@ impl Desugar<'_> {
                  that never draws is the footgun (D9.6)"
                     .to_string(),
             );
-            self.had_no_epilogue = true;
+            self.refuse_script = true;
             // Still emit the resume label so counters/table rows stay aligned;
             // the whole script is refused before emission anyway.
             out.push(AsmStmt::Label { name: resume_name(k), export: false, span });
@@ -380,6 +580,167 @@ impl Desugar<'_> {
         // The resume point: the engine's saved PC lands here next frame.
         out.push(AsmStmt::Label { name: resume_name(k), export: false, span });
     }
+}
+
+/// Pre-pass for D2.30(c): resolve each `wait_frames` slot's field WIDTH, in
+/// walk order. The slot operand is `field(aN)` — `aN` must be one of the
+/// script's `*Struct` params and `field` a 1- or 2-byte field of that struct
+/// (the width drives the expansion's `.b`/`.w` suffixes). Resolution needs
+/// the evaluator's struct layouts, so it runs here (mirroring
+/// `discover_resume_slot`) rather than inside the type-free desugar walk.
+/// A failed resolution is diagnosed here and queued as `None` (the walk then
+/// refuses the script without emission).
+fn resolve_wait_widths(
+    file: &ast::File,
+    decl: &ast::ScriptDecl,
+    diags: &mut Vec<Diagnostic>,
+) -> std::collections::VecDeque<Option<u8>> {
+    fn visit(
+        stmts: &[ScriptStmt],
+        f: &mut impl FnMut(&Expr, &Operand, Span),
+    ) {
+        for st in stmts {
+            // Explicit variant list (trio review m3): this MUST visit in the
+            // same order `Desugar::walk` does — a new nested-body variant has
+            // to be handled here consciously, not skipped by a wildcard.
+            match st {
+                ScriptStmt::WaitFrames { n, slot, span } => f(n, slot, *span),
+                ScriptStmt::Loop { body, .. } => visit(body, f),
+                ScriptStmt::Asm(_) | ScriptStmt::Yield { .. } => {}
+            }
+        }
+    }
+    let mut sites: Vec<(Operand, Span)> = Vec::new();
+    visit(&decl.body, &mut |_n, slot, span| sites.push((slot.clone(), span)));
+    if sites.is_empty() {
+        return std::collections::VecDeque::new();
+    }
+    crate::eval::run_on_eval_stack(|| {
+        let mut probe = crate::eval::Evaluator::with_file(file);
+        let mut out = std::collections::VecDeque::new();
+        for (slot, span) in sites {
+            out.push_back(wait_slot_width(&mut probe, decl, &slot, span, diags));
+        }
+        // Field-space resolution errors ([operand.unknown-field] /
+        // [operand.ambiguous-field]) land on the probe — surface them.
+        diags.append(&mut probe.diags);
+        out
+    })
+}
+
+/// One `wait_frames` slot: `field(aN)` → the field's byte width (1 or 2).
+fn wait_slot_width(
+    probe: &mut crate::eval::Evaluator,
+    decl: &ast::ScriptDecl,
+    slot: &Operand,
+    span: Span,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<u8> {
+    // Shape: DispInd { disp: Path(field), inner: Ind[(Path(aN))] }.
+    let (field, reg) = match slot {
+        Operand::DispInd { disp: Expr::Path(fp), inner, .. } if fp.segments.len() == 1 => {
+            match inner.as_ref() {
+                Operand::Ind { parts, .. } if parts.len() == 1 => match &parts[0].0 {
+                    Expr::Path(rp) if rp.segments.len() == 1 => {
+                        (fp.segments[0].clone(), rp.segments[0].clone())
+                    }
+                    _ => (fp.segments[0].clone(), String::new()),
+                },
+                _ => (fp.segments[0].clone(), String::new()),
+            }
+        }
+        _ => {
+            err(
+                diags,
+                span,
+                "`wait_frames` parks on a NAMED struct field: the slot must be spelled `field(aN)` (e.g. `timer(a0)`)"
+                    .to_string(),
+            );
+            return None;
+        }
+    };
+    // The register must be one of the script's `*Struct` params.
+    for (pname, pty, pspan) in &decl.params {
+        if *pname != reg {
+            continue;
+        }
+        let ast::Type::Ptr(inner) = pty else { continue };
+        let inner_ty = probe.resolve_type(inner);
+        let Some(sname) = probe.struct_name_for_offsetof(&inner_ty, *pspan) else { continue };
+        // The SAME field space ordinary operands use (D6.A3): direct fields
+        // plus in-scope overlays over this struct — a park timer usually
+        // lives in the object's `vars …: sst_custom` overlay, not in Sst
+        // itself. A miss/ambiguity is diagnosed by the probe
+        // ([operand.unknown-field] / [operand.ambiguous-field]) and surfaced
+        // by the caller.
+        let (_disp, size) = probe.resolve_field_disp(&sname, &field, span)?;
+        return match size {
+            1 => Some(1),
+            2 => Some(2),
+            other => {
+                err(
+                    diags,
+                    span,
+                    format!(
+                        "`wait_frames` slot `{field}` is {other} bytes — a park timer \
+                         must be a u8 or u16 field"
+                    ),
+                );
+                None
+            }
+        };
+    }
+    err(
+        diags,
+        span,
+        format!(
+            "`wait_frames` slot register `{reg}` is not one of this script's `*Struct` params — the timer must live in the object's own state"
+        ),
+    );
+    None
+}
+
+/// Pre-pass for D2.30(b): every user label defined anywhere in the script
+/// body (loops included) — the domain a `yield .x` resume target must come
+/// from ("the next frame must land on a label of THIS script").
+fn collect_body_labels(
+    stmts: &[ScriptStmt],
+    diags: &mut Vec<Diagnostic>,
+) -> std::collections::HashSet<String> {
+    // Explicit variant list (trio review m3): a future ScriptStmt with a
+    // nested body must be a compile error here, not a silent walk desync.
+    fn walk(
+        stmts: &[ScriptStmt],
+        out: &mut std::collections::HashSet<String>,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        for st in stmts {
+            match st {
+                ScriptStmt::Asm(AsmStmt::Label { name, export, span }) => {
+                    let _ = export;
+                    if !out.insert(name.clone()) {
+                        // Early, spanned duplicate detection (trio review m4)
+                        // — the alternative is a spanless link-time
+                        // "symbol redefined".
+                        err(
+                            diags,
+                            *span,
+                            format!(
+                                "label `.{name}` is defined twice in this script body — \
+                                 resume targets and branches need one definition"
+                            ),
+                        );
+                    }
+                }
+                ScriptStmt::Asm(_) => {}
+                ScriptStmt::Loop { body, .. } => walk(body, out, diags),
+                ScriptStmt::Yield { .. } | ScriptStmt::WaitFrames { .. } => {}
+            }
+        }
+    }
+    let mut out = std::collections::HashSet::new();
+    walk(stmts, &mut out, diags);
+    out
 }
 
 /// The `__resume$<k>` hidden proc-local label name for resume member `k`
@@ -412,6 +773,17 @@ fn yield_store(ordinal: i64, offset: i64, reg: &str, span: Span) -> AsmStmt {
                 span,
             },
         ],
+        span,
+    })
+}
+
+/// Synthesize a two-operand sized instruction (`move.b #N, slot` /
+/// `subq.w #1, slot`) — the `wait_frames` expansion's building block.
+fn sized_instr(mnemonic: &str, sz: &str, src: Operand, dst: Operand, span: Span) -> AsmStmt {
+    AsmStmt::Instr(InstrLine {
+        mnemonic: vec![TextOrSplice::Text(mnemonic.into())],
+        size: Some(TextOrSplice::Text(sz.into())),
+        operands: vec![src, dst],
         span,
     })
 }

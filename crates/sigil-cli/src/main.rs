@@ -29,6 +29,7 @@ fn main() {
     match args.get(1).map(String::as_str) {
         Some("parse") => return run_parse(),
         Some("emp") => return run_emp(&args[2..]),
+        Some("test") => return run_test(&args[2..]),
         Some("build") => return run_build(&args[2..]),
         Some("diff") => return run_diff(&args[2..]),
         _ => {}
@@ -182,7 +183,10 @@ fn compile_emp(
         return (None, diags);
     }
     match link_sections(&module.sections, &module.link_asserts) {
-        Ok(image) => (Some(image), diags),
+        Ok((image, mut warns)) => {
+            diags.append(&mut warns);
+            (Some(image), diags)
+        }
         Err(mut ds) => {
             diags.append(&mut ds);
             (None, diags)
@@ -202,17 +206,19 @@ fn compile_emp(
 fn link_to_image(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
-) -> Result<sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>> {
+) -> Result<(sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
     let empty = sigil_ir::SymbolTable::new();
     let resolved = sigil_link::resolve_layout(sections, &empty, true)?;
     let image = sigil_link::link(&resolved, &empty)?;
     // The link succeeded and labels are at their final post-relaxation VMAs — now
     // decide the deferred guards against exactly those addresses (D-H.6/D-H.7).
+    // Warning-tier assert failures ([layout.odd-item] on data, D2.29) ride the
+    // Ok path so they surface without failing the build.
     let assert_diags = sigil_link::check_link_asserts(&resolved, &empty, asserts);
     if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(assert_diags);
     }
-    Ok(image)
+    Ok((image, assert_diags))
 }
 
 /// The no-map link seam: [`link_to_image`] then `flatten` (gap-fill 0x00, no
@@ -220,8 +226,9 @@ fn link_to_image(
 fn link_sections(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
-) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
-    Ok(sigil_link::flatten(&link_to_image(sections, asserts)?, 0x00))
+) -> Result<(Vec<u8>, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
+    let (image, warns) = link_to_image(sections, asserts)?;
+    Ok((sigil_link::flatten(&image, 0x00), warns))
 }
 
 /// The shared emp output tail: write `image` to `output` (if given), print it as
@@ -294,6 +301,162 @@ fn parse_define_int(s: &str) -> Option<i128> {
     s.parse::<i128>().ok()
 }
 
+/// `sigil test <input.emp> [--root <dir>] [-D NAME=INT]...` — run the file's
+/// `comptime test` blocks (S2-D11(a)). With `--root`, every module in the
+/// manifest is swept (each module's tests run MODULE-LOCAL — the colocated
+/// case; cross-module imports in test bodies are the recorded next
+/// increment). Output: one `test <module>::<name> ... ok|FAILED` line per
+/// test, failure diagnostics indented beneath, then a cargo-style summary.
+/// Exit 0 iff every test passed (and no module failed to parse).
+fn run_test(args: &[String]) {
+    let mut input: Option<String> = None;
+    let mut root_arg: Option<String> = None;
+    let mut defines: Vec<(String, i128)> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--root" => root_arg = Some(flag_value(args, &mut i, "--root")),
+            "-D" => defines.push(parse_define(&flag_value(args, &mut i, "-D"))),
+            other => {
+                if input.is_none() {
+                    input = Some(other.to_string());
+                } else {
+                    eprintln!("error: unexpected argument '{other}'");
+                    process::exit(2);
+                }
+            }
+        }
+        i += 1;
+    }
+
+    // Gather (path, source) pairs: the single file, or every module file
+    // under --root (the manifest's own discovery, so `sigil test --root` and
+    // `sigil emp --root` agree about what a module is).
+    let mut broken_modules = 0usize;
+    let files: Vec<(String, String)> = match (&input, &root_arg) {
+        (Some(path), None) => match std::fs::read_to_string(path) {
+            Ok(src) => vec![(path.clone(), src)],
+            Err(err) => {
+                eprintln!("error: cannot read {path}: {err}");
+                process::exit(1);
+            }
+        },
+        (Some(_), Some(_)) => {
+            // Ambiguous: sweep the root, or just the file? Refuse rather
+            // than silently pick (Item-10 review m2).
+            eprintln!("error: pass EITHER <input.emp> OR --root <dir>, not both");
+            process::exit(2);
+        }
+        (None, Some(root)) => {
+            let (manifest, mdiags) =
+                sigil_frontend_emp::resolve::manifest::Manifest::scan(std::path::Path::new(root));
+            // Only STRUCTURAL scan failures abort the sweep; a module that
+            // fails to PARSE is counted broken below and the other modules'
+            // tests still run (Item-10 review M2).
+            if mdiags.iter().any(|d| d.message.contains("cannot read module root")) {
+                render_program_diags(&manifest, &mdiags);
+                process::exit(1);
+            }
+            manifest
+                .modules
+                .iter()
+                .filter_map(|m| {
+                    let src = std::fs::read_to_string(&m.path).ok();
+                    if src.is_none() {
+                        eprintln!("error: cannot read {}", m.path.display());
+                        broken_modules += 1;
+                    }
+                    src.map(|src| (m.path.display().to_string(), src))
+                })
+                .collect()
+        }
+        (None, None) => {
+            eprintln!("usage: sigil test <input.emp> [--root <dir>] [-D NAME=INT]...");
+            process::exit(2);
+        }
+    };
+
+    let root_include = root_arg
+        .as_deref()
+        .and_then(|r| std::fs::canonicalize(r).ok());
+    let mut total = 0usize;
+    let mut failed = 0usize;
+    for (path, src) in files {
+        let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
+        if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+            let mut map = sigil_span::SourceMap::new();
+            map.add(src.clone());
+            for d in &pdiags {
+                let (line, col) = map.location(d.primary);
+                eprintln!("{path}:{line}:{col}: {}", d.message);
+            }
+            broken_modules += 1;
+            continue;
+        }
+        let module_id = file.module.path.segments.join(".");
+        // `--root` mode: embed/import resolve against the ROOT (matching
+        // `sigil emp --root`, Item-10 review m1); single-file mode keeps the
+        // file's own directory (matching `sigil emp <file>`).
+        let include_root = match &root_include {
+            Some(r) => Some(r.clone()),
+            None => {
+                let parent =
+                    std::path::Path::new(&path).parent().unwrap_or(std::path::Path::new(""));
+                let root_dir =
+                    if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
+                std::fs::canonicalize(root_dir).ok()
+            }
+        };
+        let results =
+            sigil_frontend_emp::eval::run_module_tests(&file, include_root.as_deref(), &defines);
+        let mut map = sigil_span::SourceMap::new();
+        map.add(src.clone());
+        for r in results {
+            total += 1;
+            if r.passed {
+                println!("test {module_id}::{} ... ok", r.name);
+            } else {
+                failed += 1;
+                println!("test {module_id}::{} ... FAILED", r.name);
+                for d in &r.diags {
+                    let (line, col) = map.location(d.primary);
+                    println!("    {path}:{line}:{col}: {}", d.message);
+                }
+            }
+        }
+    }
+    println!(
+        "test result: {}. {} passed; {} failed{}",
+        if failed == 0 && broken_modules == 0 { "ok" } else { "FAILED" },
+        total - failed,
+        failed,
+        if broken_modules > 0 {
+            format!("; {broken_modules} module(s) failed to parse")
+        } else {
+            String::new()
+        }
+    );
+    if failed > 0 || broken_modules > 0 {
+        process::exit(1);
+    }
+}
+
+/// `--deny-todo` (S2-D11(e)): promote every `[todo.present]` hole to an error
+/// so a release build cannot ship one. A post-filter at the CLI layer — the
+/// frontend stays flag-free, and `unreachable!` (which never reports) is
+/// untouched by construction. `build` gains the flag when the mixed Aeon build
+/// first carries a `todo!` (no consumer today).
+fn promote_todo_holes(diags: &mut [sigil_span::Diagnostic], deny_todo: bool) {
+    if !deny_todo {
+        return;
+    }
+    for d in diags.iter_mut() {
+        if d.message.starts_with("[todo.present]") {
+            d.level = sigil_span::Level::Error;
+        }
+    }
+}
+
 /// `sigil emp <input.emp> [-o <output.bin>] [--hex]` — compile a Spec 2 `.emp`
 /// module to a flat binary image. `embed`/`import` paths resolve against the
 /// source file's own directory (the capability-sandbox include-root, §6.7),
@@ -305,6 +468,7 @@ fn run_emp(args: &[String]) {
     let mut prelude: Option<String> = None;
     let mut map_arg: Option<String> = None;
     let mut hex = false;
+    let mut deny_todo = false;
     let mut defines: Vec<(String, i128)> = Vec::new();
 
     let mut i = 0;
@@ -315,6 +479,7 @@ fn run_emp(args: &[String]) {
             "--prelude" => prelude = Some(flag_value(args, &mut i, "--prelude")),
             "--map" => map_arg = Some(flag_value(args, &mut i, "--map")),
             "--hex" => hex = true,
+            "--deny-todo" => deny_todo = true,
             "-D" => defines.push(parse_define(&flag_value(args, &mut i, "-D"))),
             other => {
                 if input.is_none() {
@@ -349,6 +514,7 @@ fn run_emp(args: &[String]) {
             map_arg.as_deref(),
             output.as_deref(),
             hex,
+            deny_todo,
             &defines,
         );
         return;
@@ -371,7 +537,8 @@ fn run_emp(args: &[String]) {
     let parent = std::path::Path::new(&input).parent().unwrap_or(std::path::Path::new(""));
     let root_dir = if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent };
     let root = std::fs::canonicalize(root_dir).ok();
-    let (image, diags) = compile_emp(&src, root.as_deref(), &defines);
+    let (image, mut diags) = compile_emp(&src, root.as_deref(), &defines);
+    promote_todo_holes(&mut diags, deny_todo);
 
     if !diags.is_empty() {
         let mut map = sigil_span::SourceMap::new();
@@ -405,6 +572,7 @@ fn run_emp_program(
     map_path: Option<&str>,
     output: Option<&str>,
     hex: bool,
+    deny_todo: bool,
     defines: &[(String, i128)],
 ) {
     use sigil_frontend_emp::resolve;
@@ -440,6 +608,7 @@ fn run_emp_program(
     let (mut sections, link_asserts, mut pdiags) =
         resolve::build_program(&manifest, &entry_id, prelude, &opts);
     diags.append(&mut pdiags);
+    promote_todo_holes(&mut diags, deny_todo);
 
     render_program_diags(&manifest, &diags);
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -471,7 +640,10 @@ fn run_emp_program(
                 process::exit(1);
             }
             match link_rom(&sections, &link_asserts, &map) {
-                Ok(rom) => rom,
+                Ok((rom, warns)) => {
+                    render_program_diags(&manifest, &warns);
+                    rom
+                }
                 Err(ds) => {
                     render_program_diags(&manifest, &ds);
                     process::exit(1);
@@ -486,7 +658,10 @@ fn run_emp_program(
             // module → one section at 0, unchanged).
             resolve::place_sequential(&mut sections, 0);
             match link_sections(&sections, &link_asserts) {
-                Ok(image) => image,
+                Ok((image, warns)) => {
+                    render_program_diags(&manifest, &warns);
+                    image
+                }
                 Err(ds) => {
                     render_program_diags(&manifest, &ds);
                     process::exit(1);
@@ -508,9 +683,9 @@ fn link_rom(
     sections: &[sigil_ir::Section],
     asserts: &[sigil_ir::LinkAssert],
     map: &sigil_ir::map::MemoryMap,
-) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
-    let linked = link_to_image(sections, asserts)?;
-    sigil_link::emit_rom(&linked, map).map_err(|msg| {
+) -> Result<(Vec<u8>, Vec<sigil_span::Diagnostic>), Vec<sigil_span::Diagnostic>> {
+    let (linked, warns) = link_to_image(sections, asserts)?;
+    sigil_link::emit_rom(&linked, map).map(|rom| (rom, warns)).map_err(|msg| {
         vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
             message: msg,

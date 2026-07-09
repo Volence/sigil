@@ -1540,25 +1540,65 @@ pub fn eval_data_captures(
 /// NOTE: [`eval_dispatch_with_root`] mirrors this function's shape (fresh env
 /// per member, `Path`/`Str`/eval target extraction, `<unresolved>` placeholder)
 /// — consider both when editing the target-extraction logic.
+/// One §4.7 inline `offsets` body: its hidden hygienic label, its evaluated
+/// payload, and the MEMBER's span (diagnostics must point at the member, not
+/// the whole block).
+pub struct InlineBody {
+    /// The hidden `__offsets$…` label the table word targets.
+    pub label: String,
+    /// The evaluated payload (the exact data-item path's DataBuf).
+    pub buf: DataBuf,
+    /// The member's own span.
+    pub span: Span,
+}
+
 pub fn eval_offsets_with_root(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
-) -> (Option<DataBuf>, Vec<Diagnostic>) {
+) -> (Option<DataBuf>, Vec<InlineBody>, Vec<Diagnostic>) {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
+        // §4.7 inline bodies in declaration order, emitted by the caller
+        // AFTER the table.
+        let mut bodies: Vec<InlineBody> = Vec::new();
         let mut buf = DataBuf::empty();
         for member in &decl.members {
             // Fresh env per member (parity with `resolve_data`'s per-item
             // `Env::new()`): a fallback `eval_expr` below must not see bindings
             // leaked from an earlier member's evaluation.
             let mut env = Env::new();
-            let name = match &member.target {
+            // §4.7: an INLINE member's word targets its hidden body label —
+            // the body itself is evaluated/emitted by `lower_offsets_item`
+            // (table first, bodies in declaration order).
+            let target_expr = match &member.target {
+                ast::OffsetsTarget::Inline(ty, init) => {
+                    let label =
+                        offsets_body_label(&file.module.path, &decl.name, &member.name);
+                    buf.push(Cell::RelOffset { base: decl.name.clone(), target: label.clone() });
+                    // The exact `data`-item evaluation path: eval the
+                    // initializer, resolve the declared type, lower against
+                    // it — so the declared length stays the terminator guard
+                    // (a short initializer is the same size-mismatch error a
+                    // `data` item gives).
+                    let v = ev.eval_expr(init, &mut env);
+                    let rty = ev.resolve_type(ty);
+                    let body = if matches!(v, Value::Poison) || matches!(rty, crate::layout::Ty::Poison) {
+                        DataBuf::empty()
+                    } else {
+                        ev.lower_to_data(&v, &rty, member.span)
+                    };
+                    bodies.push(InlineBody { label, buf: body, span: member.span });
+                    continue;
+                }
+                ast::OffsetsTarget::Ref(e) => e,
+            };
+            let name = match target_expr {
                 ast::Expr::Path(p) => {
                     // A single-segment path that is a KNOWN const is almost
                     // certainly a mistake — a const is not a link label, so the
@@ -1568,7 +1608,25 @@ pub fn eval_offsets_with_root(
                     // const is rejected: a bare name absent from every registry
                     // may still be a valid data/proc/offsets label, so it is
                     // accepted and the linker catches a genuinely-undefined one.
-                    if p.segments.len() == 1 && ev.is_const(&p.segments[0]) {
+                    // "Forgot the `= [...]`": a builtin scalar name in target
+                    // position is the natural mixed-form typo (§4.7) — name
+                    // the fix instead of a generic link error.
+                    if p.segments.len() == 1
+                        && matches!(
+                            p.segments[0].as_str(),
+                            "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u16le"
+                        )
+                    {
+                        ev.error(
+                            member.span,
+                            format!(
+                                "offset entry `{}`: `{}` is a type, not a label — an inline \
+                                 body is spelled `{}: {} = <value>` (§4.7)",
+                                member.name, p.segments[0], member.name, p.segments[0]
+                            ),
+                        );
+                        "<unresolved>".to_string()
+                    } else if p.segments.len() == 1 && ev.is_const(&p.segments[0]) {
                         ev.error(
                             member.span,
                             format!(
@@ -1610,7 +1668,7 @@ pub fn eval_offsets_with_root(
             };
             buf.push(Cell::RelOffset { base: decl.name.clone(), target: name });
         }
-        (Some(buf), ev.diags)
+        (Some(buf), bodies, ev.diags)
     })
 }
 
@@ -1622,6 +1680,14 @@ pub fn eval_offsets_with_root(
 /// same story as the table's own base label today).
 pub(crate) fn dispatch_body_label(module: &ast::Path, table: &str, member: &str) -> String {
     format!("__dispatch${}${table}${member}", module.segments.join("."))
+}
+
+/// The hygienic label of an inline `offsets` body (§4.7 mixed form) — the
+/// `dispatch_body_label` shape: `$` is unlexable by both frontends, so it can
+/// never collide with a user symbol; module+table+member is program-unique
+/// (duplicate members are a `validate_offsets` error).
+pub(crate) fn offsets_body_label(module: &ast::Path, table: &str, member: &str) -> String {
+    format!("__offsets${}${table}${member}", module.segments.join("."))
 }
 
 /// Lower a `dispatch Name (encoding: E) { Member: target, ... }` block's

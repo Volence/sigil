@@ -260,10 +260,11 @@ pub fn check_link_asserts(
         match a.cond.fold(&lookup) {
             // Nonzero → the guard holds; silent.
             Fold::Value(v) if v != 0 => {}
-            // Zero → the build fails with the rendered message.
+            // Zero → report at the assert's own severity (Error fails the
+            // build; the [layout.odd-item] data check is Warning-tier).
             Fold::Value(_) => {
                 out.push(Diagnostic {
-                    level: Level::Error,
+                    level: a.level,
                     message: render_assert_message(&a.message, &lookup),
                     primary: a.span,
                 });
@@ -699,7 +700,8 @@ mod tests {
             lhs: Box::new(Expr::Sym("A".into())),
             rhs: Box::new(Expr::Int(0x9000)),
         };
-        let a = LinkAssert { cond, message: vec![MsgPart::Text("over".into())], fatal: true, span: span() };
+        let a = LinkAssert { cond, message: vec![MsgPart::Text("over".into())], fatal: true,
+            level: sigil_span::Level::Error, span: span() };
         assert!(check_link_asserts(&secs, &SymbolTable::new(), &[a]).is_empty());
     }
 
@@ -716,7 +718,8 @@ mod tests {
             MsgPart::Text("overran at ".into()),
             MsgPart::Expr(Expr::Sym("A".into())),
         ];
-        let a = LinkAssert { cond, message: msg, fatal: true, span: span() };
+        let a = LinkAssert { cond, message: msg, fatal: true,
+            level: sigil_span::Level::Error, span: span() };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
         assert_eq!(ds[0].level, Level::Error);
@@ -735,6 +738,7 @@ mod tests {
             },
             message: vec![MsgPart::Text("x".into())],
             fatal: false,
+            level: sigil_span::Level::Error,
             span: span(),
         };
         // Two failing asserts ($8004 <= $10 and <= $20 both false) → both reported.
@@ -754,6 +758,7 @@ mod tests {
             cond: Expr::Sym("Nope".into()),
             message: vec![MsgPart::Text("x".into())],
             fatal: false,
+            level: sigil_span::Level::Error,
             span: span(),
         };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
@@ -787,6 +792,7 @@ mod tests {
             cond: Expr::Sym("__here$test$0".into()),
             message: vec![MsgPart::Text("x".into())],
             fatal: false,
+            level: sigil_span::Level::Error,
             span: span(),
         };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
@@ -805,7 +811,8 @@ mod tests {
             lhs: Box::new(Expr::Sym("A".into())), // resolvable (anchor_section defines it)
             rhs: Box::new(Expr::Sym("StillMissing".into())),
         };
-        let a = LinkAssert { cond, message: vec![MsgPart::Text("x".into())], fatal: false, span: span() };
+        let a = LinkAssert { cond, message: vec![MsgPart::Text("x".into())], fatal: false,
+            level: sigil_span::Level::Error, span: span() };
         let ds = check_link_asserts(&secs, &SymbolTable::new(), &[a]);
         assert_eq!(ds.len(), 1);
         assert!(ds[0].message.contains("StillMissing"), "got: {}", ds[0].message);
@@ -853,7 +860,8 @@ mod tests {
             lhs: Box::new(Expr::Sym("SND_PROBE_EQ".into())),
             rhs: Box::new(Expr::Int(0x0B)),
         };
-        let a = LinkAssert { cond, message: vec![MsgPart::Text("mismatch".into())], fatal: false, span: span() };
+        let a = LinkAssert { cond, message: vec![MsgPart::Text("mismatch".into())], fatal: false,
+            level: sigil_span::Level::Error, span: span() };
         assert_eq!(
             check_link_asserts(&secs, &SymbolTable::new(), &[a]),
             Vec::<Diagnostic>::new(),

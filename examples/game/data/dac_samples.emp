@@ -78,7 +78,14 @@ section dac_bank (cpu: m68000, bank: $8000) {
 // `0 < len < $8000` invariant as a first-class guard (comptime, since the
 // lengths are comptime ints).
 // ===========================================================================
-section snd_table (cpu: m68000) {
+// `access: byte`: the descriptors below pack `u8 bank / u16 ptr / u16 len`
+// at a 5-byte stride — aeon's exact shape, read BYTE-wise by the driver
+// loader — so the ptr/len words legitimately sit at odd addresses. The
+// attribute declares that access discipline; word cells in this section are
+// therefore exempt from the odd-address check (they are never word-read),
+// and the declared fact remains available to future checks (e.g. flagging a
+// 68k word READ against a byte-access section).
+section snd_table (cpu: m68000, access: byte) {
     // kick descriptor
     ensure(0 < KickBlob.len && KickBlob.len < $8000, "kick length out of window range")
     data SND_KICK_BANK: u8  = bankid("Dac_Kick")

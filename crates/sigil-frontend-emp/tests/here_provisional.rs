@@ -208,8 +208,9 @@ fn provisional_item_guard_defers_and_mints_anchor() {
         lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     let errs: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     assert!(errs.is_empty(), "provisional guard must defer (no comptime error): {errs:?}");
-    assert_eq!(m.link_asserts.len(), 1, "expected exactly one deferred LinkAssert");
-    let a = &m.link_asserts[0];
+    let guards = guard_asserts(&m);
+    assert_eq!(guards.len(), 1, "expected exactly one deferred LinkAssert");
+    let a = guards[0];
     assert!(a.fatal, "ensure_fatal should carry fatal=true");
     // The message keeps its comptime text and a lazy Expr part for `{here()}`.
     assert!(
@@ -242,7 +243,7 @@ fn exact_item_guard_does_not_defer() {
     let (m, diags) =
         lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "exact guard should pass silently: {diags:?}");
-    assert!(m.link_asserts.is_empty(), "exact guard must not defer");
+    assert!(guard_asserts(&m).is_empty(), "exact guard must not defer");
     assert!(
         !m.sections.iter().flat_map(|s| &s.labels).any(|l| l.name.starts_with("__here$")),
         "no anchor for an exact-position guard"
@@ -319,4 +320,17 @@ fn provisional_here_as_section_vma_refuses_specifically() {
         ds.iter().any(|m| m.contains("[here.provisional]") || m.contains("no current position")),
         "vma: here() must refuse loudly, got: {ds:?}"
     );
+}
+
+/// The deferred GUARD asserts only — the D2.29 [layout.odd-item] parity
+/// asserts also ride Module.link_asserts now; this suite is about guards.
+fn guard_asserts(m: &sigil_ir::Module) -> Vec<&sigil_ir::LinkAssert> {
+    m.link_asserts
+        .iter()
+        .filter(|a| {
+            !a.message.iter().any(|p| {
+                matches!(p, sigil_ir::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
+            })
+        })
+        .collect()
 }

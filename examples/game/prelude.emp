@@ -98,10 +98,14 @@ pub struct Vec {
 // ===========================================================================
 // ObjDef — what a level's object list (or a `spawn`) instantiates
 // ===========================================================================
-// EVERY field below is required at every struct-literal use site — struct
-// literals have no defaults (Plan 7 ledger item), so callers must always give
-// vel/frame explicit values even for objects that don't animate or move at
-// spawn (the pitcher_plant exhibit's `Def` does exactly this).
+// `vel`/`frame` carry DEFAULTS: most objects neither move nor start
+// mid-animation at spawn, so a literal writes `vel: default` /
+// `frame: default` — the field name stays on the page, the value comes from
+// this declaration. Every declared field must be named at every literal
+// (omitting one is a compile error), so what an object spawns with is
+// always fully visible at its definition site. `anim` deliberately has no
+// default — which animation an object starts in is a real per-object
+// choice.
 // Field order is chosen (not just "declaration order") to keep the 4-byte
 // `vel` field EVEN-offset in this dense/packed layout: `code`(4)+`map`(4)+
 // `art`(4)+`col`(1)+`zpri`(1)+`size`(2) = 16 bytes before `vel`, so `vel`
@@ -116,9 +120,9 @@ pub struct ObjDef {
     col:  Collision,    // hit-response class
     zpri: u8,           // Z-order priority within the object layer
     size: Size,         // hitbox dimensions
-    vel:  Vel,          // starting velocity
+    vel:  Vel = Vel{ x: 0, y: 0 },  // starting velocity (default: at rest)
     anim: u8,           // starting animation id
-    frame: u8,          // starting animation frame
+    frame: u8 = 0,      // starting animation frame (default: the first)
 }
 
 

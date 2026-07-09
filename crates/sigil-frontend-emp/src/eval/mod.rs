@@ -1065,6 +1065,114 @@ pub fn eval_const_with_root(
     })
 }
 
+/// One `comptime test` outcome (S2-D11(a)).
+#[derive(Debug)]
+pub struct TestOutcome {
+    /// The test's declared display name.
+    pub name: String,
+    /// Whether the test passed.
+    pub passed: bool,
+    /// Diagnostics to SHOW for a failure. Empty on a pass — a passing
+    /// `expect_error` test SWALLOWS its captured (expected) diagnostics.
+    pub diags: Vec<Diagnostic>,
+}
+
+/// Run every `comptime test` block in `file` (S2-D11(a)) — the `sigil test`
+/// engine. Each test evaluates its body as a comptime block on a FRESH
+/// evaluator (module scope; v1 is module-local — the colocated case).
+///
+/// - normal test: PASS iff the body produced no Error-level diagnostic and
+///   did not abort (a failing `ensure` is the canonical failure; its
+///   interpolated message is the report);
+/// - `expect_error: "[id]"`: PASS iff some body diagnostic contains the id
+///   substring (the captured diagnostics are then swallowed — they were the
+///   point); FAIL otherwise, with a synthesized explanation plus whatever
+///   the body actually said.
+pub fn run_module_tests(
+    file: &crate::ast::File,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+) -> Vec<TestOutcome> {
+    let mut out = Vec::new();
+    // Duplicate names are refused HERE too (Item-10 review M3): the build
+    // path's validate pass never runs under `sigil test`, and the report
+    // keys on names.
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for item in &file.items {
+        let crate::ast::Item::ComptimeTest(t) = item else { continue };
+        if !seen.insert(t.name.as_str()) {
+            out.push(TestOutcome {
+                name: t.name.clone(),
+                passed: false,
+                diags: vec![Diagnostic {
+                    level: Level::Error,
+                    message: format!("comptime test `{}` is declared twice in this module", t.name),
+                    primary: t.span,
+                }],
+            });
+            continue;
+        }
+        let (aborted, diags) = run_on_eval_stack(|| {
+            let mut ev = Evaluator::with_file(file);
+            ev.seed_defines(defines);
+            if let Some(root) = include_root {
+                ev.set_include_root(root.to_path_buf());
+            }
+            let mut env = Env::new();
+            let _ = ev.exec_stmts(&t.body, &mut env);
+            // Belt (Item-10 review): a deferred link-time condition inside a
+            // test body would otherwise pass VACUOUSLY (the linker never runs
+            // here) — fail it loudly instead.
+            let leaked = !ev.take_link_asserts().is_empty();
+            (ev.was_aborted() || leaked, {
+                let mut d = ev.diags;
+                if leaked {
+                    d.push(Diagnostic {
+                        level: Level::Error,
+                        message: "a test body deferred a link-time condition — `sigil test` \
+                                  never links, so it can never be decided; test against \
+                                  comptime-exact values"
+                            .to_string(),
+                        primary: t.span,
+                    });
+                }
+                d
+            })
+        });
+        let errored = aborted || diags.iter().any(|d| d.level == Level::Error);
+        match &t.expect_error {
+            None => out.push(TestOutcome {
+                name: t.name.clone(),
+                passed: !errored,
+                diags: if errored { diags } else { Vec::new() },
+            }),
+            Some(id) => {
+                // "Must NOT compile" means an ERROR — a warning that happens
+                // to contain the id compiles fine (Item-10 review M4).
+                if diags
+                    .iter()
+                    .any(|d| d.level == Level::Error && d.message.contains(id.as_str()))
+                {
+                    out.push(TestOutcome { name: t.name.clone(), passed: true, diags: Vec::new() });
+                } else {
+                    let mut shown = vec![Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "expected the body to diagnose `{id}`, but it {}",
+                            if diags.is_empty() { "compiled cleanly" } else { "said instead:" }
+                        ),
+                        primary: t.span,
+                    }];
+                    shown.extend(diags);
+                    out.push(TestOutcome { name: t.name.clone(), passed: false, diags: shown });
+                }
+            }
+        }
+    }
+    out
+}
+
+
 /// Stack size for the comptime-evaluation thread (see [`eval_const`]). Sized to
 /// comfortably hold [`MAX_CALL_DEPTH`] comptime frames even in unoptimized
 /// debug builds, where per-frame stack usage is large.
@@ -1239,6 +1347,7 @@ mod tests {
             },
             attrs: vec![],
             items: vec![],
+            docs: vec![],
         }
     }
 }

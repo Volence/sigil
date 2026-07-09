@@ -82,6 +82,17 @@ pub(super) fn lower_proc(
 ) {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     builder.define_label(&proc.name);
+    // D2.29 amendment: a 68k proc at an odd final address is an address-error
+    // crash — error-tier [layout.odd-item] parity check on the proc's label.
+    super::record_odd_item_assert(
+        file,
+        builder,
+        ctx.cpu,
+        ctx.as_compat,
+        super::OddItemKind::Code,
+        &proc.name,
+        proc.span,
+    );
     let (buf, mut ds, next_counter) = eval_proc_body(
         file,
         &proc.name,
@@ -222,8 +233,11 @@ fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
     match cpu {
         // `jbra` (emp auto-reaching branch, D2.18) is an unconditional transfer,
         // so it terminates like `bra`/`jmp`; `jbsr` (a call) is deliberately NOT
-        // a terminator — control returns, mirroring `bsr`/`jsr`.
-        Cpu::M68000 => matches!(mnemonic, "rts" | "rte" | "bra" | "jmp" | "jbra"),
+        // a terminator — control returns, mirroring `bsr`/`jsr`. `illegal`
+        // terminates too: it is the S2-D11(e) `todo!`/`unreachable!` trap —
+        // straight-line flow never continues past it (the error vector takes
+        // over), so a proc ending in a hole must not ALSO warn fallthrough.
+        Cpu::M68000 => matches!(mnemonic, "rts" | "rte" | "bra" | "jmp" | "jbra" | "illegal"),
         Cpu::Z80 => matches!(mnemonic, "ret" | "jp" | "jr"),
     }
 }

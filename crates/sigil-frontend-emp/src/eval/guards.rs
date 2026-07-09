@@ -184,7 +184,13 @@ impl<'a> Evaluator<'a> {
             }
         };
         let message = self.interpolate_parts(&template, env, span);
-        self.link_asserts.push(sigil_ir::LinkAssert { cond, message, fatal, span });
+        self.link_asserts.push(sigil_ir::LinkAssert {
+            cond,
+            message,
+            fatal,
+            level: sigil_span::Level::Error,
+            span,
+        });
         Value::Unit
     }
 

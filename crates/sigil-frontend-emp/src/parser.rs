@@ -35,6 +35,9 @@ pub struct Parser {
     /// would let the condition's guard pre-fire (consuming nothing) right
     /// before `stmt_block`'s guard, desyncing its brace recovery.
     block_depth: u32,
+    /// `///` doc runs attached to items so far (S2-D11(d)); moved into
+    /// [`File::docs`] when the file finishes parsing.
+    docs: Vec<DocEntry>,
 }
 
 impl Parser {
@@ -48,6 +51,7 @@ impl Parser {
             no_struct_lit: false,
             splice_ctx: false,
             block_depth: 0,
+            docs: Vec::new(),
         }
     }
     /// Consume the parser, returning every diagnostic collected so far.
@@ -115,8 +119,58 @@ impl Parser {
         }
         self.expect_ident(what)
     }
-    fn skip_newlines(&mut self) { while self.eat(&Tok::Newline) {} }
+    fn skip_newlines(&mut self) {
+        loop {
+            if self.eat(&Tok::Newline) {
+                continue;
+            }
+            // A `///` reaching THIS skip is not at an item position (the item
+            // loops use `skip_newlines_collecting_docs` instead): warn
+            // `[doc.dangling]` and keep parsing (S2-D11(d) — loud, not fatal).
+            if matches!(self.peek(), Tok::DocLine(_)) {
+                let sp = self.span();
+                self.warn_dangling_doc(sp);
+                self.bump();
+                continue;
+            }
+            break;
+        }
+    }
+
+    /// Item-position trivia skip (S2-D11(d)): newlines are skipped freely; a
+    /// `///` run is COLLECTED and returned (joined with `\n`) for the caller
+    /// to attach to the item that follows. Blank lines and ordinary comments
+    /// between the run and the item do not detach it (they are trivia).
+    fn skip_newlines_collecting_docs(&mut self) -> Option<(String, Span)> {
+        let mut text = String::new();
+        let mut span: Option<Span> = None;
+        loop {
+            if self.eat(&Tok::Newline) {
+                continue;
+            }
+            if let Tok::DocLine(line) = self.peek().clone() {
+                let sp = self.span();
+                self.bump();
+                if span.is_some() {
+                    text.push('\n');
+                }
+                text.push_str(&line);
+                span = Some(span.map_or(sp, |s: Span| s.merge(sp)));
+                continue;
+            }
+            break;
+        }
+        span.map(|s| (text, s))
+    }
     fn expect_line_end(&mut self) {
+        // A trailing same-line `///` (`const A = 1 /// doc`) gets the same
+        // friendly [doc.dangling] every other misplaced doc position gets,
+        // not a doc-blind "expected end of line" (S2-D11(d) review m1).
+        if let Tok::DocLine(_) = self.peek() {
+            let sp = self.span();
+            self.warn_dangling_doc(sp);
+            self.bump();
+        }
         if !self.at(&Tok::Eof) && !self.eat(&Tok::Newline) {
             let span = self.span();
             self.diag_at(span, "expected end of line".to_string());
@@ -128,16 +182,42 @@ impl Parser {
     pub fn diag_at(&mut self, span: Span, message: impl Into<String>) {
         self.diags.push(Diagnostic { level: Level::Error, message: message.into(), primary: span });
     }
+    /// Record a warning diagnostic at `span`.
+    fn warn_at(&mut self, span: Span, message: impl Into<String>) {
+        self.diags.push(Diagnostic { level: Level::Warning, message: message.into(), primary: span });
+    }
+    /// Warn `[doc.dangling]` for a `///` run that attaches to nothing.
+    fn warn_dangling_doc(&mut self, span: Span) {
+        self.warn_at(
+            span,
+            "[doc.dangling] this `///` doc comment attaches to nothing — docs go on \
+             the line(s) directly above an item (use `//` for an ordinary comment)",
+        );
+    }
 
     // ---- file ----
     /// Parse a whole file: module header, module-level attributes, then items.
     pub fn file(&mut self) -> File {
         self.skip_newlines();
         let module = self.module_decl();
-        // module-level attributes: `@as_compat`, `@allow(naming.pascal)`
+        // module-level attributes: `@as_compat`, `@allow(naming.pascal)`.
+        // Doc runs here — above an attr, between attrs, or after the last
+        // attr — are COLLECTED and carried forward to the first item (the
+        // least surprising rule: attrs are metadata, docs describe the item
+        // that follows them, mirroring Rust's docs-relative-to-attrs order).
         let mut attrs = Vec::new();
+        let mut carried_docs: Option<(String, Span)> = None;
         loop {
-            self.skip_newlines();
+            if let Some((t, sp)) = self.skip_newlines_collecting_docs() {
+                carried_docs = Some(match carried_docs.take() {
+                    Some((mut ct, csp)) => {
+                        ct.push('\n');
+                        ct.push_str(&t);
+                        (ct, csp.merge(sp))
+                    }
+                    None => (t, sp),
+                });
+            }
             if !self.at(&Tok::At) { break; }
             let aspan = self.span();
             self.bump();
@@ -160,14 +240,37 @@ impl Parser {
         }
         let mut items = Vec::new();
         loop {
-            self.skip_newlines();
-            if self.at(&Tok::Eof) { break; }
+            let mut docs = self.skip_newlines_collecting_docs();
+            // Docs carried over the attrs region (above/between/after attrs)
+            // prepend to the first item's own run.
+            if let Some((ct, csp)) = carried_docs.take() {
+                docs = Some(match docs {
+                    Some((t, sp)) => (format!("{ct}\n{t}"), csp.merge(sp)),
+                    None => (ct, csp),
+                });
+            }
+            if self.at(&Tok::Eof) {
+                if let Some((_, sp)) = docs {
+                    self.warn_dangling_doc(sp);
+                }
+                break;
+            }
             match self.item() {
-                Some(item) => items.push(item),
-                None => self.recover_to_next_decl(false),
+                Some(item) => {
+                    if let Some((text, _)) = docs {
+                        self.docs.push(DocEntry { item_span: item_span(&item), text });
+                    }
+                    items.push(item);
+                }
+                None => {
+                    if let Some((_, sp)) = docs {
+                        self.warn_dangling_doc(sp);
+                    }
+                    self.recover_to_next_decl(false);
+                }
             }
         }
-        File { module, attrs, items }
+        File { module, attrs, items, docs: std::mem::take(&mut self.docs) }
     }
 
     fn module_decl(&mut self) -> ModuleDecl {
@@ -225,13 +328,37 @@ impl Parser {
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
         if self.at_kw("script") { return Some(Item::Script(self.script_decl(public))); }
         if self.at_kw("newtype") { return Some(Item::Newtype(self.newtype_decl(public))); }
+        // `align N` (D2.29, §4.8) — contextual item opener per the `equ`
+        // precedent. The `= `guard keeps a hypothetical assignment-shaped line
+        // out (mirroring patch/bind's rule); `align` stays an ordinary
+        // identifier in every expression position (item() only runs here).
+        if self.at_kw("align") && !matches!(self.peek2(), Tok::Eq) {
+            if public {
+                let sp = self.prev_span();
+                self.diag_at(sp, "`pub` is not valid on this declaration");
+            }
+            let start = self.span();
+            self.bump(); // `align`
+            let n = self.expr();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(Item::Align(AlignDecl { n, span }));
+        }
         if self.at_kw("comptime") {
             // `comptime enum Name { ... }` — a payload-carrying enum, distinct
             // from `comptime fn`. Peek past `comptime` before committing to
-            // either reading.
+            // either reading. `comptime test "name" { … }` (S2-D11(a)) is the
+            // third form.
             if matches!(self.peek2(), Tok::Ident(s) if s == "enum") {
                 self.bump(); // `comptime`
                 return Some(Item::Enum(self.enum_decl(public, true)));
+            }
+            if matches!(self.peek2(), Tok::Ident(s) if s == "test") {
+                if public {
+                    let sp = self.span();
+                    self.diag_at(sp, "`pub` is not valid on this declaration");
+                }
+                return Some(Item::ComptimeTest(self.comptime_test_decl()));
             }
             return Some(Item::ComptimeFn(self.comptime_fn_decl(public)));
         }
@@ -273,9 +400,10 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 18] = ["use", "const", "equ", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 19] = ["use", "const", "equ", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "script", "comptime", "section", "pub",
-                                     "newtype", "offsets", "dispatch", "ensure", "ensure_fatal"];
+                                     "newtype", "offsets", "dispatch", "ensure", "ensure_fatal",
+                                     "align"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -283,6 +411,11 @@ impl Parser {
                 Tok::RBrace if in_block && depth == 0 => return,
                 Tok::LBrace => { depth += 1; self.bump(); }
                 Tok::RBrace => { depth -= 1; self.bump(); }
+                // A `///` line is a safe sync point (it only occurs at line
+                // starts): stop so the caller's next collecting-skip attaches
+                // it to the recovered-to item instead of silently eating it
+                // (S2-D11(d) review m2).
+                Tok::DocLine(_) if depth <= 0 => return,
                 Tok::Ident(s) if depth <= 0 && OPENERS.contains(&s.as_str()) => {
                     // `ensure`/`ensure_fatal` are CONTEXTUAL openers — only a real
                     // item when followed by `(`. A bare occurrence is not an item
@@ -290,7 +423,14 @@ impl Parser {
                     // recovery loop (recovery returns without consuming, `item()`
                     // re-fails on the same token). Skip past a non-guard occurrence.
                     let guard_kw = s == "ensure" || s == "ensure_fatal";
-                    if guard_kw && !matches!(self.peek_at(1), Tok::LParen) {
+                    // `align` is likewise contextual: `align = 5` is NOT an
+                    // item (item() skips it when `=` follows), so recovery
+                    // must not stop there either — same spin hazard as the
+                    // guards (Item-3 review C1: stopping without consuming
+                    // made `align = 5` an infinite parse loop).
+                    let align_non_item =
+                        s == "align" && matches!(self.peek_at(1), Tok::Eq);
+                    if (guard_kw && !matches!(self.peek_at(1), Tok::LParen)) || align_non_item {
                         self.bump();
                     } else {
                         return;
@@ -666,7 +806,21 @@ impl Parser {
             let mspan = self.span();
             let mname = self.expect_ident("offset entry name");
             self.expect(&Tok::Colon, "`:`");
-            let target = self.expr();
+            // §4.7 mixed form: speculatively parse a TYPE — if `=` follows,
+            // this is an INLINE member (`Name: [u8; 4] = [...]`, the exact
+            // `data`-item shape); otherwise rewind (dropping any speculative
+            // diagnostics) and parse the by-reference target expression.
+            let save_pos = self.pos;
+            let save_diags = self.diags.len();
+            let speculative = self.ty();
+            let target = if self.at(&Tok::Eq) {
+                self.bump(); // `=`
+                OffsetsTarget::Inline(speculative, self.expr())
+            } else {
+                self.pos = save_pos;
+                self.diags.truncate(save_diags);
+                OffsetsTarget::Ref(self.expr())
+            };
             members.push(OffsetsMember { name: mname, target, span: mspan });
             self.skip_newlines();
             if !self.eat(&Tok::Comma) { break; }
@@ -952,21 +1106,48 @@ impl Parser {
                 out.push(ScriptStmt::Loop { body, span: start.merge(self.prev_span()) });
                 continue;
             }
+            if self.at_kw("wait_frames") {
+                // D2.30(c): `wait_frames #N, <slot>` — script-body-only
+                // contextual statement, beside `loop`/`yield`.
+                let start = self.span();
+                self.bump(); // `wait_frames`
+                if !self.eat(&Tok::Hash) {
+                    let sp = self.span();
+                    self.diag_at(sp, "`wait_frames` takes an immediate: `wait_frames #N, <slot>`");
+                }
+                let n = self.expr();
+                self.expect(&Tok::Comma, "`,`");
+                let slot = self.operand(false);
+                let span = start.merge(self.prev_span());
+                self.expect_line_end_or_rbrace();
+                out.push(ScriptStmt::WaitFrames { n, slot, span });
+                continue;
+            }
             if self.at_kw("yield") {
                 let start = self.span();
                 self.bump(); // `yield`
-                // A per-site epilogue is a bare ident or a dot-local on the
-                // SAME line; a bare `yield` is followed by a newline/`}`. No
-                // other legal continuation, so this lookahead is unambiguous.
-                let epilogue = if self.at(&Tok::Dot) || matches!(self.peek(), Tok::Ident(_)) {
-                    Some(self.script_label())
-                } else {
-                    None
-                };
+                // D2.30: `yield shows <label>` overrides the per-frame
+                // epilogue; `yield .label` names the RESUME point; the old
+                // bare-label epilogue spelling is retired (it misread as a
+                // resume target — the audit's finding) with a teaching error.
+                let mut epilogue = None;
+                let mut resume = None;
+                if self.eat_kw("shows") {
+                    epilogue = Some(self.script_label());
+                } else if self.at(&Tok::Dot) {
+                    resume = Some(self.script_label());
+                } else if matches!(self.peek(), Tok::Ident(_)) {
+                    let sp = self.span();
+                    self.diag_at(
+                        sp,
+                        "`yield <label>` was retired (D2.30) — write `yield shows <label>` to override the per-frame epilogue, or `yield .label` to name where the next frame resumes",
+                    );
+                    self.bump(); // consume the label so the line recovers
+                }
                 // Same line-end rule as instruction lines: a `}` may close
                 // the body on the same line (`{ yield }` parses like `{ nop }`).
                 self.expect_line_end_or_rbrace();
-                out.push(ScriptStmt::Yield { epilogue, span: start.merge(self.prev_span()) });
+                out.push(ScriptStmt::Yield { epilogue, resume, span: start.merge(self.prev_span()) });
                 continue;
             }
             // Everything else is one ordinary proc-body statement (labels,
@@ -1028,6 +1209,47 @@ impl Parser {
             // progress (don't consume a closer/newline).
             let sp = self.span();
             self.diag_at(sp, "expected `.label` after `export`");
+        }
+        // `todo!` / `unreachable!` statement traps (S2-D11(e)). The `!` must
+        // be DIRECTLY adjacent (mirroring the call-adjacency rule below), so
+        // an expression-position `!x` operand can never be shadowed. No 68k/
+        // Z80 mnemonic is named `todo`/`unreachable`, so mnemonics stay
+        // unshadowed too (tenet 3).
+        if let Tok::Ident(w) = self.peek().clone() {
+            if matches!(w.as_str(), "todo" | "unreachable")
+                && matches!(self.peek2(), Tok::Bang)
+                && self.adjacent_to_next()
+            {
+                let kind =
+                    if w == "todo" { TrapKind::Todo } else { TrapKind::Unreachable };
+                self.bump(); // ident
+                self.bump(); // `!`
+                let message = if self.at(&Tok::LParen) {
+                    self.bump();
+                    // `todo!()` (empty parens, the Rust-muscle-memory
+                    // spelling) is the same as bare `todo!`.
+                    let m = if self.at(&Tok::RParen) {
+                        None
+                    } else if let Tok::Str(s) = self.peek().clone() {
+                        self.bump();
+                        Some(s)
+                    } else {
+                        let sp = self.span();
+                        self.diag_at(
+                            sp,
+                            format!("expected a string literal message in `{w}!(...)`"),
+                        );
+                        None
+                    };
+                    self.expect(&Tok::RParen, "`)`");
+                    m
+                } else {
+                    None
+                };
+                let span = start.merge(self.prev_span());
+                self.expect_line_end_or_rbrace();
+                return Some(AsmStmt::Trap { kind, message, span });
+            }
         }
         // statement-position comptime call: `ident(` where the `(` is
         // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
@@ -1274,6 +1496,43 @@ impl Parser {
     }
 
     /// Parse a `comptime fn name(params...) [-> ret] { body... }` declaration.
+    /// `comptime test "name" [(expect_error: "[diag.id]")] { … }` (S2-D11(a)).
+    fn comptime_test_decl(&mut self) -> ComptimeTestDecl {
+        let start = self.span();
+        self.bump(); // `comptime`
+        self.bump(); // `test`
+        let name = if let Tok::Str(s) = self.peek().clone() {
+            self.bump();
+            s
+        } else {
+            let sp = self.span();
+            self.diag_at(sp, "a `comptime test` takes a string name: `comptime test \"name\" { ... }`");
+            String::from("<unnamed>")
+        };
+        let expect_error = if self.eat(&Tok::LParen) {
+            let kw = self.expect_ident("attribute name");
+            if kw != "expect_error" {
+                let sp = self.prev_span();
+                self.diag_at(sp, "the only `comptime test` attribute is `expect_error`");
+            }
+            self.expect(&Tok::Colon, "`:`");
+            let id = if let Tok::Str(s) = self.peek().clone() {
+                self.bump();
+                Some(s)
+            } else {
+                let sp = self.span();
+                self.diag_at(sp, "`expect_error` takes a diagnostic-id string, e.g. \"[struct.missing-field]\"");
+                None
+            };
+            self.expect(&Tok::RParen, "`)`");
+            id
+        } else {
+            None
+        };
+        let body = self.stmt_block();
+        ComptimeTestDecl { name, expect_error, body, span: start.merge(self.prev_span()) }
+    }
+
     fn comptime_fn_decl(&mut self, public: bool) -> ComptimeFnDecl {
         let start = self.span();
         self.bump(); // `comptime`
@@ -1526,9 +1785,38 @@ impl Parser {
         let mut items = Vec::new();
         if self.eat(&Tok::LBrace) {
             loop {
-                self.skip_newlines();
-                if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
-                match self.item() {
+                let docs = self.skip_newlines_collecting_docs();
+                if self.at(&Tok::RBrace) || self.at(&Tok::Eof) {
+                    if let Some((_, sp)) = docs {
+                        self.warn_dangling_doc(sp);
+                    }
+                    break;
+                }
+                let parsed = self.item();
+                if let (Some(item), Some((text, _))) = (&parsed, &docs) {
+                    // A doc on the REJECTED nested-section item below would be
+                    // a phantom entry (its item never survives) — skip the
+                    // attach there; the [section.nested] error is the story.
+                    if !matches!(parsed, Some(Item::Section(_))) {
+                        self.docs.push(DocEntry { item_span: item_span(item), text: text.clone() });
+                    }
+                } else if let (None, Some((_, sp))) = (&parsed, &docs) {
+                    self.warn_dangling_doc(*sp);
+                }
+                match parsed {
+                    // A comptime test has no placement meaning, and the
+                    // runner sweeps MODULE items only — a section-nested test
+                    // would parse, strip, and silently NEVER RUN (Item-10
+                    // review M1): reject it loudly, like nested sections.
+                    Some(Item::ComptimeTest(t)) => {
+                        self.diag_at(
+                            t.span,
+                            format!(
+                                "[test.in-section] comptime test `{}` is inside a section                                  body — tests have no placement; declare it at module level",
+                                t.name
+                            ),
+                        );
+                    }
                     Some(Item::Section(inner)) => {
                         // Sections do not nest (locked decision): placement-within-
                         // placement has no ratified meaning, and `lower_section_items`
@@ -1848,9 +2136,44 @@ impl Parser {
                         self.skip_newlines();
                         if !self.at(&Tok::RBrace) {
                             loop {
+                                // `..` was built and RETIRED at the tranche-0
+                                // checkpoint (it couldn't say WHICH fields it
+                                // covered) — teach the named spelling.
+                                if self.eat(&Tok::DotDot) {
+                                    let sp = self.prev_span();
+                                    self.diag_at(
+                                        sp,
+                                        "`..` rest-fill was retired — name each elided field \
+                                         instead: `field: default` (S2-D13(h), checkpoint \
+                                         ruling)",
+                                    );
+                                    self.skip_newlines();
+                                    if self.eat(&Tok::Comma) {
+                                        self.skip_newlines();
+                                    }
+                                    if self.at(&Tok::RBrace) { break; }
+                                    continue;
+                                }
                                 let name = self.expect_ident("field name");
                                 self.expect(&Tok::Colon, "`:`");
-                                fields.push((name, self.expr()));
+                                // `field: default` — the contextual named-
+                                // elision marker (S2-D13(h)): exact bareword
+                                // `default` ending the field (comma / `}` /
+                                // newline). Any other continuation parses as
+                                // an ordinary expression, so a const named
+                                // `default` stays usable in arithmetic.
+                                let value = if self.at_kw("default")
+                                    && matches!(
+                                        self.peek2(),
+                                        Tok::Comma | Tok::RBrace | Tok::Newline | Tok::Eof
+                                    ) {
+                                    let dspan = self.span();
+                                    self.bump(); // `default`
+                                    Expr::Default(dspan)
+                                } else {
+                                    self.expr()
+                                };
+                                fields.push((name, value));
                                 self.skip_newlines();
                                 if !self.eat(&Tok::Comma) { break; }
                                 self.skip_newlines();
@@ -2040,7 +2363,7 @@ impl Parser {
 /// Span of any expression node (helper for span merging).
 pub(crate) fn expr_span(e: &Expr) -> Span {
     match e {
-        Expr::Int(_, s) | Expr::Float(_, s) | Expr::Str(_, s) => *s,
+        Expr::Int(_, s) | Expr::Float(_, s) | Expr::Str(_, s) | Expr::Default(s) => *s,
         Expr::Path(p) => p.span,
         Expr::Unary { span, .. } | Expr::Binary { span, .. } | Expr::Call { span, .. }
         | Expr::StructLit { span, .. } | Expr::ArrayLit { span, .. }

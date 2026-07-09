@@ -27,10 +27,41 @@ impl<'a> Evaluator<'a> {
     ) -> Value {
         let ty_name = ty.segments.last().cloned().unwrap_or_default();
         if self.bitfields.contains_key(ty_name.as_str()) {
+            // Bitfields keep their long-standing semantics: omitted fields
+            // are 0, deliberately (checkpoint ruling 2026-07-09 — flag words
+            // are the idiom; requiring per-bit ceremony would be noise). A
+            // `field: default` marker has no declared default to point at.
+            for (fname, v) in fields {
+                if let ast::Expr::Default(dspan) = v {
+                    self.error(
+                        *dspan,
+                        format!(
+                            "bitfield `{ty_name}` field `{fname}`: bitfields have no \
+                             declared defaults — omitted bitfield fields are always 0 \
+                             (just omit it)"
+                        ),
+                    );
+                    return Value::Poison;
+                }
+            }
             return self.eval_bitfield_lit(&ty_name, fields, span, env);
         }
         if self.structs.contains_key(ty_name.as_str()) {
             return self.eval_checked_struct_lit(&ty_name, fields, span, env);
+        }
+        // Undeclared type: the unchecked value-level path has no field list,
+        // so a `field: default` has nothing to point at.
+        for (fname, v) in fields {
+            if let ast::Expr::Default(dspan) = v {
+                self.error(
+                    *dspan,
+                    format!(
+                        "`{ty_name}` is not a declared struct — `{fname}: default` has no \
+                         declared default to take"
+                    ),
+                );
+                return Value::Poison;
+            }
         }
         // Undeclared type name → value-level only (Plan 2). Poison field values
         // are preserved as-is (propagate, no new diagnostic). A field initializer
@@ -47,18 +78,19 @@ impl<'a> Evaluator<'a> {
     ///
     /// - Each PROVIDED field must be a declared field (else `[struct.unknown-field]`)
     ///   and must not be given twice (else a duplicate diagnostic).
-    /// - Each DECLARED field NOT provided uses its `= default` if it has one; a
-    ///   field with NO default is `[struct.missing-field]` — there is NO silent
-    ///   zero-fill (the only "zero" is a field that literally declares `= 0`,
-    ///   which the default path already covers).
+    /// - Each DECLARED field NOT provided uses its `= default` ONLY under the
+    ///   literal's `..` rest marker (S2-D13(h): elision is a visible act);
+    ///   otherwise — no default, or defaulted-but-no-`..` — it is
+    ///   `[struct.missing-field]`. There is NO silent fill of any kind (the
+    ///   only "zero" is a field that literally declares `= 0`, filled via `..`).
     /// - The struct's layout is computed ([`layout_of_struct`](Self::layout_of_struct))
     ///   so a bad `(size:)`/`@offset` still surfaces at the literal site.
     ///
     /// Field VALUE range-checking is NOT done here — that happens later at
     /// emission ([`lower_to_data`](Self::lower_to_data)). Returns a
-    /// [`Value::Struct`] whose fields are in DECLARATION order (defaults filled,
-    /// a missing field filled with [`Poison`](Value::Poison) so downstream
-    /// lowering stays silent) so it lines up with the byte layout.
+    /// [`Value::Struct`] whose fields are in DECLARATION order (defaults filled
+    /// under `..`, a missing field filled with [`Poison`](Value::Poison) so
+    /// downstream lowering stays silent) so it lines up with the byte layout.
     fn eval_checked_struct_lit(
         &mut self,
         ty_name: &str,
@@ -107,8 +139,38 @@ impl<'a> Evaluator<'a> {
                     // A checked-struct field initializer is a comptime VALUE
                     // position: a bareword naming a proc/data item becomes a
                     // label value (D-PP.3). `code: init` in `ObjDef{ … }` is the
-                    // motivating case.
-                    let v = this.in_label_ctx(|this| this.eval_expr(expr, env));
+                    // motivating case. `field: default` (S2-D13(h), checkpoint
+                    // ruling) is NAMED elision: evaluate the field's DECLARED
+                    // default in the same value position.
+                    let v = if let ast::Expr::Default(dspan) = expr {
+                        match decl
+                            .fields
+                            .iter()
+                            .find(|f| &f.name == fname)
+                            .and_then(|f| f.default.as_ref())
+                        {
+                            Some(default) => {
+                                this.in_label_ctx(|this| this.eval_expr(default, env))
+                            }
+                            None => {
+                                // A known field without a default gets the
+                                // targeted message; an UNKNOWN field falls
+                                // through to the unknown-field check below.
+                                if decl.fields.iter().any(|f| &f.name == fname) {
+                                    this.error(
+                                        *dspan,
+                                        format!(
+                                            "[struct.no-default] struct {ty_name}: field \
+                                             `{fname}` declares no default — give it a value"
+                                        ),
+                                    );
+                                }
+                                Value::Poison
+                            }
+                        }
+                    } else {
+                        this.in_label_ctx(|this| this.eval_expr(expr, env))
+                    };
                     // A `return` (or abort) inside a field expr propagates
                     // uniformly — mirroring the sibling construction sites (T8
                     // review, Minor 3).
@@ -129,29 +191,29 @@ impl<'a> Evaluator<'a> {
                     }
                     provided_vals.push((fname.clone(), v));
                 }
-                // Rebuild in declaration order: provided value, else default,
-                // else a missing-field diagnostic (no silent zero-fill).
+                // Rebuild in declaration order: every declared field must be
+                // NAMED by the literal (a value, or `field: default` — the
+                // named elision). No silent fill of any kind.
                 let mut out_fields = Vec::with_capacity(decl.fields.len());
                 for field in &decl.fields {
                     if let Some((_, v)) = provided_vals.iter().find(|(n, _)| n == &field.name) {
                         out_fields.push((field.name.clone(), v.clone()));
-                    } else if let Some(default) = &field.default {
-                        // A `= default` field expr is likewise a value position
-                        // (a default `code: init` would resolve to a label).
-                        let dv = this.in_label_ctx(|this| this.eval_expr(default, env));
-                        // Same leaked-return / abort bail as the provided-field loop.
-                        if this.aborted || this.pending_return.is_some() {
-                            return None;
-                        }
-                        out_fields.push((field.name.clone(), dv));
                     } else {
-                        this.error(
-                            span,
+                        let msg = if field.default.is_some() {
                             format!(
-                                "[struct.missing-field] struct {ty_name}: field `{}` has no default and was not provided",
+                                "[struct.missing-field] struct {ty_name}: field `{}` was not \
+                                 provided — give it a value, or write `{}: default` to take \
+                                 its declared default",
+                                field.name, field.name
+                            )
+                        } else {
+                            format!(
+                                "[struct.missing-field] struct {ty_name}: field `{}` has no \
+                                 default and was not provided",
                                 field.name
-                            ),
-                        );
+                            )
+                        };
+                        this.error(span, msg);
                         out_fields.push((field.name.clone(), Value::Poison));
                     }
                 }

@@ -62,6 +62,10 @@ pub struct LowerOptions {
 struct Placement<'a> {
     cpu: Cpu,
     origin: u32,
+    /// `access: byte` on the enclosing section (checkpoint ruling): the
+    /// section's data cells are read byte-wise, so the D2.29 word-parity
+    /// check does not apply to its DATA items.
+    byte_access: bool,
     include_root: Option<&'a Path>,
     defines: &'a [(String, i128)],
 }
@@ -100,6 +104,8 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     validate_offsets(&file.items, &mut diags);
     validate_dispatch(&file.items, &mut diags);
     validate_defines(&file.items, &opts.defines, &mut diags);
+    validate_allow_attrs(file, &mut diags);
+    validate_comptime_tests(&file.items, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -173,9 +179,11 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
+                    as_compat,
                     &mut builder,
                     &mut diags,
                 );
@@ -200,9 +208,11 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
+                    as_compat,
                     &mut builder,
                     &mut diags,
                 );
@@ -215,6 +225,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -249,7 +260,8 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // section), folding its length into the counter.
                 next_lma += builder.current_offset();
                 default_open = false;
-                let (cpu, vma, bank) = section_attrs(file, sec, &opts.defines, &mut diags);
+                let (cpu, vma, bank, byte_access) =
+                    section_attrs(file, sec, &opts.defines, &mut diags);
                 builder.switch_section_lma(&sec.name, cpu, vma, next_lma);
                 builder.set_section_bank(bank);
                 // R7p.5: an explicit `vma:` is a pin (labels resolve from that
@@ -265,6 +277,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu,
                         origin,
+                        byte_access,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -304,6 +317,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -323,6 +337,21 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 lower_equ_item(
                     file,
                     decl,
+                    opts.include_root.as_deref(),
+                    &opts.defines,
+                    &mut builder,
+                    &mut diags,
+                );
+            }
+            // `align N` (D2.29): pad the default section's current position.
+            ast::Item::Align(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                lower_align_item(
+                    file,
+                    decl,
+                    next_lma,
+                    &module_id,
+                    &mut here_anchor_counter,
                     opts.include_root.as_deref(),
                     &opts.defines,
                     &mut builder,
@@ -411,10 +440,10 @@ fn lower_section_items(
     for (index, item) in sec.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
-                lower_data_item(file, decl, placement, builder, diags);
+                lower_data_item(file, decl, placement, as_compat, builder, diags);
             }
             ast::Item::Offsets(decl) => {
-                lower_offsets_item(file, decl, placement, builder, diags);
+                lower_offsets_item(file, decl, placement, as_compat, builder, diags);
             }
             ast::Item::Dispatch(decl) => {
                 lower_dispatch_item(file, decl, placement, as_compat, builder, diags, asm_counter);
@@ -467,6 +496,22 @@ fn lower_section_items(
             // targets it directly.
             ast::Item::Equ(decl) => {
                 lower_equ_item(file, decl, placement.include_root, placement.defines, builder, diags);
+            }
+            // `align N` (D2.29): pad THIS section's current position, aligned
+            // against the section's own origin (a `vma:` pin or its
+            // provisional physical start — the same base `here()` sees).
+            ast::Item::Align(decl) => {
+                lower_align_item(
+                    file,
+                    decl,
+                    placement.origin,
+                    module_id,
+                    here_anchor_counter,
+                    placement.include_root,
+                    placement.defines,
+                    builder,
+                    diags,
+                );
             }
             // `Item::Const` is name-resolution-only — nothing to lower.
             _ => {}
@@ -538,9 +583,267 @@ fn lower_equ_item(
 /// `here()` returns the byte-identical `Value::Int(base)`; at a PROVISIONAL one it
 /// is `Some(anchor_name)` and `here()` returns a link-time value (D-H.1).
 fn here_pos(builder: &IrBuilder, origin: u32, anchor_name: &str) -> HerePos {
-    let base = origin + builder.current_offset();
+    let base = origin.wrapping_add(builder.current_offset());
     let anchor = builder.section_has_relaxable().then(|| anchor_name.to_string());
     HerePos { base, anchor }
+}
+
+/// Lower one `align N` item (D2.29, §4.8): evaluate `N` (a positive comptime
+/// int), refuse a provisional position (`[align.provisional]` — v1 steers
+/// toward pinned branch sizes; ported data files contain no relaxables), then
+/// pad the LOWERING-BASELINE position to the next multiple of `N` with `$00`
+/// fill — the exact AS `align` arithmetic (`pad = (n - pos % n) % n`, zero
+/// fill).
+///
+/// Soundness refinement (recorded in the tranche-0 notes): the baseline
+/// position can differ from the FINAL address (D2.25 — chained section bases
+/// and map regions place at link), so every `align` also defines a hidden
+/// anchor label at its post-pad position and records a link-time congruence
+/// assertion (`anchor % N == 0`). If final placement breaks the alignment the
+/// build fails loudly, naming the final address — never a silently misaligned
+/// item.
+#[allow(clippy::too_many_arguments)] // mirrors lower_item_guard's threading
+fn lower_align_item(
+    file: &ast::File,
+    decl: &ast::AlignDecl,
+    origin: u32,
+    module_id: &str,
+    anchor_counter: &mut u32,
+    include_root: Option<&Path>,
+    defines: &[(String, i128)],
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::value::Value;
+    use sigil_ir::assert::{LinkAssert, MsgPart};
+    use sigil_ir::expr::{BinOp, Expr};
+
+    // Evaluate `N` — a plain comptime expression (no `here()` position is
+    // supplied: an alignment that depends on its own address is circular).
+    let value = crate::eval::run_on_eval_stack(|| {
+        let mut ev = crate::eval::Evaluator::with_file(file);
+        ev.seed_defines(defines);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let mut env = crate::eval::Env::new();
+        let v = ev.eval_expr(&decl.n, &mut env);
+        diags.append(&mut ev.diags);
+        v
+    });
+    let n: u32 = match value {
+        Value::Poison => return, // already reported upstream (D-P2.9)
+        v => match v.as_stored_int() {
+            Some(n) if n > 0 && n <= u32::MAX as i128 => n as u32,
+            Some(_) => {
+                err(diags, decl.span, "`align` needs a positive comptime int".to_string());
+                return;
+            }
+            None => {
+                err(
+                    diags,
+                    decl.span,
+                    format!("`align` needs a positive comptime int (got {})", v.type_name()),
+                );
+                return;
+            }
+        },
+    };
+
+    // A size-relaxable fragment earlier in the section makes this position
+    // provisional — v1 refuses (D2.29; the link-time gap-fill fragment is the
+    // recorded S2-D16(c) extension if code ports demand it).
+    if builder.section_has_relaxable() {
+        err(
+            diags,
+            decl.span,
+            "[align.provisional] `align` at a provisional position (a size-relaxable \
+             instruction sits earlier in this section) — pin the earlier branch sizes \
+             (`bra.w`/`bra.s`) or move the `align`"
+                .to_string(),
+        );
+        return;
+    }
+
+    let pos = origin.wrapping_add(builder.current_offset());
+    let pad = (n - (pos % n)) % n;
+    if pad > 0 {
+        builder.emit_fill(pad, 0, decl.span);
+    }
+
+    // The congruence anchor: byte-free, name-collision-free (`$` is unlexable
+    // in both frontends), unique per module via the shared anchor counter.
+    let anchor = format!("__align${module_id}${}", *anchor_counter);
+    *anchor_counter += 1;
+    builder.define_label(&anchor);
+    builder.push_link_assert(LinkAssert {
+        cond: Expr::Binary {
+            op: BinOp::Eq,
+            lhs: Box::new(Expr::Binary {
+                op: BinOp::Mod,
+                lhs: Box::new(Expr::Sym(anchor.clone())),
+                rhs: Box::new(Expr::Int(n as i64)),
+            }),
+            rhs: Box::new(Expr::Int(0)),
+        },
+        message: vec![
+            MsgPart::Text(format!(
+                "align {n}: final placement broke this alignment (padding was computed \
+                 against the lowering-baseline address {pos}, but the final address is "
+            )),
+            MsgPart::Expr(Expr::Sym(anchor)),
+            MsgPart::Text(
+                ") — pin the section base (`vma:`) or align the map region".to_string(),
+            ),
+        ],
+        fatal: false,
+        level: Level::Error,
+        span: decl.span,
+    });
+}
+
+/// What kind of item an odd-address check covers (D2.29 amendment).
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum OddItemKind {
+    /// A 68k `proc` or `script` — code: an odd instruction address is a
+    /// guaranteed address-error crash, so the check is ERROR-tier.
+    Code,
+    /// A data item whose type carries word/long cells (incl. `offsets` /
+    /// `dispatch` tables — word rows by construction): an odd base makes
+    /// every word read an address error at USE time, so WARNING-tier.
+    WordData,
+}
+
+/// Record the `[layout.odd-item]` companion check (D2.29 audit amendment,
+/// §4.8): alignment is never *inserted* automatically, but a 68k item that
+/// needs it and lands at an odd FINAL address is diagnosed with the
+/// machine-applicable "insert `align 2`" fix-it. Final addresses exist only
+/// after the D2.25 placement fixpoint, so the check is a link-time parity
+/// assertion on the item's own label (`name % 2 == 0`) riding the same
+/// [`LinkAssert`] channel deferred guards use — always recorded (byte-free;
+/// a passing assert is free), never CPU-blind: Z80 sections have no
+/// alignment requirement and `@as_compat` modules pin the reference's
+/// placement as truth, so both are exempt.
+pub(super) fn record_odd_item_assert(
+    file: &ast::File,
+    builder: &mut IrBuilder,
+    cpu: Cpu,
+    as_compat: bool,
+    kind: OddItemKind,
+    name: &str,
+    span: Span,
+) {
+    use sigil_ir::assert::{LinkAssert, MsgPart};
+    use sigil_ir::expr::{BinOp, Expr};
+    if cpu != Cpu::M68000 || as_compat {
+        return;
+    }
+    // `@allow` opts out of the WARNING tier only: the Code-kind check names a
+    // guaranteed address-error crash, which no lint-allow should silence
+    // (Item-4 review m1 — the dac descriptor use case needs the data tier).
+    if matches!(kind, OddItemKind::WordData) && allows_lint(file, "layout.odd-item") {
+        return;
+    }
+    let (level, why) = match kind {
+        OddItemKind::Code => (
+            Level::Error,
+            "an odd instruction address is a guaranteed address-error crash on 68k",
+        ),
+        OddItemKind::WordData => (
+            Level::Warning,
+            "its word/long cells become address errors when read",
+        ),
+    };
+    builder.push_link_assert(LinkAssert {
+        cond: Expr::Binary {
+            op: BinOp::Eq,
+            lhs: Box::new(Expr::Binary {
+                op: BinOp::Mod,
+                lhs: Box::new(Expr::Sym(name.to_string())),
+                rhs: Box::new(Expr::Int(2)),
+            }),
+            rhs: Box::new(Expr::Int(0)),
+        },
+        message: vec![
+            MsgPart::Text(format!("[layout.odd-item] `{name}` lands at odd address ")),
+            MsgPart::Expr(Expr::Sym(name.to_string())),
+            MsgPart::Text(format!(
+                " — {why}; insert `align 2` before it (or, if the pad lands \
+                 wrong, pin the section base with `vma:` / align the map region)"
+            )),
+        ],
+        fatal: false,
+        level,
+        span,
+    });
+}
+
+/// Once-per-compile check for `comptime test` blocks (S2-D11(a)): duplicate
+/// display names within a module are refused — `sigil test`'s report keys on
+/// them, and two same-named tests would be indistinguishable.
+fn validate_comptime_tests(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    let mut seen: std::collections::HashMap<&str, ()> = std::collections::HashMap::new();
+    for item in items {
+        let ast::Item::ComptimeTest(t) = item else { continue };
+        if seen.insert(t.name.as_str(), ()).is_some() {
+            err(
+                diags,
+                t.span,
+                format!("comptime test `{}` is declared twice in this module", t.name),
+            );
+        }
+    }
+}
+
+/// Once-per-compile check that every `@allow` argument is the STRING form
+/// (Item-4 review M2): lint ids carry hyphens (`layout.odd-item`), so the
+/// unquoted spelling parses as arithmetic (`layout.odd - item`) and silently
+/// matches nothing — the most natural typo must be loud, not inert.
+fn validate_allow_attrs(file: &ast::File, diags: &mut Vec<Diagnostic>) {
+    for a in file.attrs.iter().filter(|a| a.name == "allow") {
+        for arg in &a.args {
+            if !matches!(arg, ast::Expr::Str(..)) {
+                diags.push(Diagnostic {
+                    level: Level::Warning,
+                    message: "[attr.allow-form] `@allow` takes string lint ids \
+                              (e.g. `@allow(\"layout.odd-item\")`) — this argument is ignored"
+                        .to_string(),
+                    primary: a.span,
+                });
+            }
+        }
+    }
+}
+
+/// True when the module opts out of a named lint via `@allow("<id>")` —
+/// the first real consumer of the parsed-but-previously-inert `@allow`
+/// module attribute. String-literal form only: lint ids carry hyphens
+/// (`layout.odd-item`), which the bare path form cannot spell. A module
+/// whose data shape legitimately packs odd word cells (aeon's dac
+/// descriptor table — byte-wise-read by the driver loader) opts out
+/// visibly at the top of the file instead of restructuring byte-exact
+/// data. (Flagged for ratification in the tranche-0 notes.)
+fn allows_lint(file: &ast::File, id: &str) -> bool {
+    file.attrs.iter().any(|a| {
+        a.name == "allow"
+            && a.args.iter().any(|arg| matches!(arg, ast::Expr::Str(s, _) if s == id))
+    })
+}
+
+/// True when `buf` carries any 68k-word-read cell — the `[layout.odd-item]`
+/// data-item trigger. Pure byte runs have no alignment need, and neither do
+/// LITTLE-ENDIAN cells (`u16le` scalars/exprs, `winptr` windowed pointers):
+/// in a 68k section those are by definition data for the Z80 side (D2.26 —
+/// the dac_samples shape stores them byte-exactly at odd addresses), read
+/// byte-wise, never through a 68k word access.
+fn buf_carries_words(buf: &crate::value::DataBuf) -> bool {
+    use crate::value::Cell;
+    buf.cells.iter().any(|c| match c {
+        Cell::Scalar { width, le, .. } | Cell::Expr { width, le, .. } => *width >= 2 && !le,
+        Cell::SymRef { width, windowed, .. } => *width >= 2 && !windowed,
+        Cell::RelOffset { .. } => true,
+        Cell::Bytes(_) => false,
+    })
 }
 
 /// Lower one item-position guard (D5.2 / D-H.4). At an EXACT position it evaluates
@@ -568,7 +871,7 @@ fn lower_item_guard(
     // `here()` (D-H.8); the label is only DEFINED below if the guard used it.
     let provisional = builder.section_has_relaxable();
     let anchor_name = format!("__here${module_id}${}", *here_anchor_counter);
-    let base = origin + builder.current_offset();
+    let base = origin.wrapping_add(builder.current_offset());
     let here = HerePos {
         base,
         anchor: provisional.then(|| anchor_name.clone()),
@@ -596,6 +899,7 @@ fn lower_data_item(
     file: &ast::File,
     decl: &ast::DataDecl,
     placement: &Placement,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -615,6 +919,19 @@ fn lower_data_item(
     let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
+    // D2.29 amendment: a word/long-bearing data item at an odd final address
+    // warns [layout.odd-item] (pure byte runs have no alignment need).
+    if buf_carries_words(&buf) && !placement.byte_access {
+        record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            OddItemKind::WordData,
+            &decl.name,
+            decl.span,
+        );
+    }
     builder.emit_data(&bytes, fixups, decl.span);
     // Drain any deferred guards from inside the item's initializer (D-H.4): their
     // anchor is the item's own label, defined just above.
@@ -637,17 +954,56 @@ fn lower_offsets_item(
     file: &ast::File,
     decl: &ast::OffsetsDecl,
     placement: &Placement,
+    as_compat: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let (buf, mut ds) = eval_offsets_with_root(file, decl, placement.include_root, placement.defines);
+    let (buf, bodies, mut ds) =
+        eval_offsets_with_root(file, decl, placement.include_root, placement.defines);
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
 
     let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
+    // D2.29 amendment: an offsets table is dc.w words by construction, so an
+    // odd base warns [layout.odd-item] like any word-bearing data item.
+    if buf_carries_words(&buf) && !placement.byte_access {
+        record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            OddItemKind::WordData,
+            &decl.name,
+            decl.span,
+        );
+    }
     builder.emit_data(&bytes, fixups, decl.span);
+
+    // §4.7 inline bodies: emitted AFTER the table, in declaration order, each
+    // under its hidden hygienic label (the table's RelOffset words target
+    // them). Same serializer as any data item — and the same D2.29
+    // [layout.odd-item] check: body k's parity depends on every previous
+    // body's size, so a word-bearing payload can land odd (Item-6 review M1).
+    for body in bodies {
+        let (bytes, fixups, mut stream_diags) =
+            data::stream_data(&body.buf, placement.cpu, body.span);
+        diags.append(&mut stream_diags);
+        builder.define_label(&body.label);
+        if buf_carries_words(&body.buf) && !placement.byte_access {
+            record_odd_item_assert(
+                file,
+                builder,
+                placement.cpu,
+                as_compat,
+                OddItemKind::WordData,
+                &body.label,
+                body.span,
+            );
+        }
+        builder.emit_data(&bytes, fixups, body.span);
+    }
 }
 
 /// Lower one `dispatch` block's FORWARD emission (Spec 2, Plan 7 backlog #6,
@@ -692,6 +1048,25 @@ fn lower_dispatch_item(
     let (bytes, fixups, mut stream_diags) = data::stream_data(&buf, placement.cpu, decl.span);
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
+    // D2.29 amendment: a dispatch table's rows are word/long cells by
+    // construction — an odd base warns [layout.odd-item]. With INLINE bodies
+    // the table's parity is also the executed code's parity (bodies follow a
+    // 2n-byte table), so the check promotes to the Code/error tier.
+    let has_bodies =
+        decl.members.iter().any(|m| matches!(m.target, ast::DispatchTarget::Body(_)));
+    // `access: byte` covers the DATA tier only — a dispatch WITH bodies is
+    // executed code and keeps its error-tier check regardless.
+    if has_bodies || !placement.byte_access {
+        record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            if has_bodies { OddItemKind::Code } else { OddItemKind::WordData },
+            &decl.name,
+            decl.span,
+        );
+    }
     builder.emit_data(&bytes, fixups, decl.span);
 
     // 9a (D9.1, R9a.1): inline bodies lower immediately after the table, in
@@ -760,13 +1135,37 @@ fn section_attrs(
     sec: &ast::SectionDecl,
     defines: &[(String, i128)],
     diags: &mut Vec<Diagnostic>,
-) -> (Cpu, Option<u32>, Option<u32>) {
+) -> (Cpu, Option<u32>, Option<u32>, bool) {
     let mut cpu = Cpu::M68000;
     let mut vma: Option<u32> = None;
     let mut bank: Option<u32> = None;
+    let mut byte_access = false;
     for (name, expr) in &sec.attrs {
         match name.as_str() {
             "cpu" => cpu = attr_cpu(expr),
+            // `access: byte` (checkpoint ruling, 2026-07-09): a POSITIVE
+            // declaration that this section's cells are read byte-wise (the
+            // packed-record discipline — aeon's 5-byte dac descriptor
+            // stride). The D2.29 word-parity check on DATA items is exempted
+            // as a CONSEQUENCE of the declared fact, not by lint-suppression
+            // — and the fact is reusable (a future lint can flag a 68k word
+            // READ against a byte-access section). Procs/scripts are NOT
+            // covered: instruction fetch is never byte-wise.
+            "access" => match expr {
+                ast::Expr::Path(p)
+                    if p.segments.len() == 1 && p.segments[0].eq_ignore_ascii_case("byte") =>
+                {
+                    byte_access = true;
+                }
+                _ => err(
+                    diags,
+                    crate::parser::expr_span(expr),
+                    format!(
+                        "section `{}` `access:` takes `byte` (the only declared access                          discipline; word access is the default and needs no attribute)",
+                        sec.name
+                    ),
+                ),
+            },
             "vma" => {
                 let (n, mut ds) = eval_attr_int(file, expr, defines);
                 diags.append(&mut ds);
@@ -817,7 +1216,7 @@ fn section_attrs(
             ),
         );
     }
-    (cpu, vma, bank)
+    (cpu, vma, bank, byte_access)
 }
 
 /// Resolve a `cpu:` attribute expression to a [`Cpu`]: `z80` (case-insensitive)

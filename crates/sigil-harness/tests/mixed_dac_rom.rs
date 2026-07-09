@@ -409,7 +409,7 @@ fn build_mixed_mt_rom(aeon: &Path, debug: bool) -> (Vec<u8>, Vec<sigil_span::Dia
         .unwrap_or_else(|d| panic!("link (mixed MT): {d:?}"));
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     assert_eq!(
-        link_asserts.len(),
+        guard_assert_count(&link_asserts),
         5,
         "mt_bank.emp's five co-residency ensures must be captured"
     );
@@ -466,12 +466,12 @@ fn build_mixed_sfx_rom(
     let mt_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &mt_asserts);
     let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
     assert_eq!(
-        mt_asserts.len(),
+        guard_assert_count(&mt_asserts),
         5,
         "mt_bank.emp's five co-residency ensures must be captured"
     );
     assert_eq!(
-        sfx_asserts.len(),
+        guard_assert_count(&sfx_asserts),
         1,
         "sfx_bank.emp's single co-residency ensure must be captured"
     );
@@ -661,4 +661,17 @@ fn mixed_sfx_debug_rom_matches_assembled_reference() {
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed SFX debug",
     );
+}
+
+/// Count the deferred GUARD asserts, excluding the D2.29 [layout.odd-item]
+/// parity asserts that now also ride module.link_asserts.
+fn guard_assert_count(asserts: &[sigil_ir::LinkAssert]) -> usize {
+    asserts
+        .iter()
+        .filter(|a| {
+            !a.message.iter().any(|p| {
+                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
+            })
+        })
+        .count()
 }

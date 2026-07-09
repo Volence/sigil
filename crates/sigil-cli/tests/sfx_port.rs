@@ -204,7 +204,7 @@ fn sfx_bank_region_matches_reference() {
 
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(false);
     assert_eq!(
-        link_asserts.len(),
+        guard_assert_count(&link_asserts),
         1,
         "sfx_bank.emp's single co-residency ensure must be captured"
     );
@@ -234,7 +234,7 @@ fn sfx_bank_debug_region_matches_reference() {
 
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(true);
     assert_eq!(
-        link_asserts.len(),
+        guard_assert_count(&link_asserts),
         1,
         "sfx_bank.emp's single co-residency ensure must be captured"
     );
@@ -246,4 +246,17 @@ fn sfx_bank_debug_region_matches_reference() {
     let expected = &refrom[0x6553A..0x65C82];
     let section = linked.section("sfx_bank").expect("linked image must carry sfx_bank");
     assert_region_matches(&section.bytes, expected, "sfx_bank (debug) vs s4.debug.bin[0x6553A..0x65C82]");
+}
+
+/// Count the deferred GUARD asserts, excluding the D2.29 [layout.odd-item]
+/// parity asserts that now also ride module.link_asserts.
+fn guard_assert_count(asserts: &[sigil_ir::LinkAssert]) -> usize {
+    asserts
+        .iter()
+        .filter(|a| {
+            !a.message.iter().any(|p| {
+                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
+            })
+        })
+        .count()
 }

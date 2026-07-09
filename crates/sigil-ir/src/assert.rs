@@ -6,7 +6,7 @@
 //! on any that folds to `0`.
 
 use crate::expr::Expr;
-use sigil_span::Span;
+use sigil_span::{Level, Span};
 
 /// One piece of a deferred guard's message (D-H.5). The comptime parts are frozen
 /// to [`Text`](MsgPart::Text) at DEFER time (the comptime env is about to
@@ -39,6 +39,11 @@ pub struct LinkAssert {
     pub message: Vec<MsgPart>,
     /// Whether the source keyword was `ensure_fatal` (diagnostic wording only).
     pub fatal: bool,
+    /// The failure diagnostic's severity. Guards and alignment-congruence
+    /// asserts are [`Level::Error`] (they fail the build); the
+    /// `[layout.odd-item]` data-item check (D2.29 amendment) is
+    /// [`Level::Warning`] — reported, never build-failing.
+    pub level: Level,
     /// The guard's source span, for the failure diagnostic.
     pub span: Span,
 }

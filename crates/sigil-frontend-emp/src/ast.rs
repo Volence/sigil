@@ -11,6 +11,15 @@ pub struct File {
     pub attrs: Vec<Attr>,
     /// Top-level declarations following the header.
     pub items: Vec<Item>,
+    /// `///` doc runs attached to items (S2-D11(d)), keyed by [`item_span`].
+    pub docs: Vec<DocEntry>,
+}
+
+impl File {
+    /// The doc text attached to the item whose [`item_span`] is `span`, if any.
+    pub fn docs_for(&self, span: Span) -> Option<&str> {
+        self.docs.iter().find(|d| d.item_span == span).map(|d| d.text.as_str())
+    }
 }
 
 /// An `@name(args...)` attribute attached to a module, item, or field.
@@ -82,6 +91,78 @@ pub enum Item {
     Newtype(NewtypeDecl),
     /// An item-position `ensure(...)` / `ensure_fatal(...)` guard (§6.5, D5.1).
     Ensure(EnsureDecl),
+    /// An `align N` item (D2.29, §4.8): pad to the next multiple of `N`.
+    Align(AlignDecl),
+    /// A `comptime test "name" { … }` block (S2-D11(a)): colocated comptime
+    /// tests, stripped from emission, run by `sigil test`.
+    ComptimeTest(ComptimeTestDecl),
+}
+
+/// A `comptime test "name" [(expect_error: "[diag.id]")] { … }` block
+/// (S2-D11(a), Zig-style): the comptime-fn feedback loop — today's only
+/// alternative is a full ROM build + byte-diff. Stripped from emission
+/// ALWAYS (zero bytes, zero cost in normal builds); `sigil test` evaluates
+/// the body as a comptime block. The `expect_error` variant asserts the body
+/// DIAGNOSES (a "this must not compile" test, absorbing research T3-g
+/// `EXPECT`): pass iff some body diagnostic contains the id substring, and
+/// the captured diagnostics are then swallowed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComptimeTestDecl {
+    /// The test's display name (a string literal — tests aren't symbols).
+    pub name: String,
+    /// `(expect_error: "[diag.id]")` — the body must diagnose this id.
+    pub expect_error: Option<String>,
+    /// The comptime statement body (the comptime-fn body grammar).
+    pub body: Vec<Stmt>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// An `align N` item (D2.29, §4.8): pads the current position to the next
+/// multiple of `N` with `$00` fill — always the author's explicit,
+/// byte-visible act (the compiler never inserts implicit alignment).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlignDecl {
+    /// The alignment (must comptime-evaluate to a positive int).
+    pub n: Expr,
+    /// Span of the whole item.
+    pub span: Span,
+}
+
+/// The span of an item's own declaration (the decl struct's `span` field) —
+/// the key `File::docs_for` looks docs up by (S2-D11(d)).
+pub fn item_span(item: &Item) -> Span {
+    match item {
+        Item::Use(d) => d.span,
+        Item::Const(d) => d.span,
+        Item::Equ(d) => d.span,
+        Item::Enum(d) => d.span,
+        Item::Bitfield(d) => d.span,
+        Item::Struct(d) => d.span,
+        Item::Offsets(d) => d.span,
+        Item::Dispatch(d) => d.span,
+        Item::Vars(d) => d.span,
+        Item::Data(d) => d.span,
+        Item::Proc(d) => d.span,
+        Item::Script(d) => d.span,
+        Item::ComptimeFn(d) => d.span,
+        Item::Section(d) => d.span,
+        Item::Newtype(d) => d.span,
+        Item::Ensure(d) => d.span,
+        Item::Align(d) => d.span,
+        Item::ComptimeTest(d) => d.span,
+    }
+}
+
+/// A `///` doc-comment run attached to one item (S2-D11(d)): parse-and-attach
+/// only — surfacing (hover, rendered docs) is the Spec-3 seam.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocEntry {
+    /// The documented item's own span ([`item_span`]) — the lookup key.
+    pub item_span: Span,
+    /// The joined doc text (one line per `///`, `\n`-separated, one optional
+    /// leading space per line already stripped by the lexer).
+    pub text: String,
 }
 
 /// An item-position guard: `ensure(cond, "msg")` / `ensure_fatal(cond, "msg")`
@@ -265,10 +346,24 @@ pub struct OffsetsDecl {
 pub struct OffsetsMember {
     /// The ordinal's name (`Name.Variant`).
     pub name: String,
-    /// The target label reference (a path expression).
-    pub target: Expr,
+    /// Where this entry's word points (§4.7): a by-reference label, or an
+    /// inline body co-located in the block (the [`DispatchTarget`] precedent).
+    pub target: OffsetsTarget,
     /// Span of the whole member.
     pub span: Span,
+}
+
+/// An `offsets` member's target (§4.7 mixed form).
+#[derive(Debug, Clone, PartialEq)]
+pub enum OffsetsTarget {
+    /// `Name: label` — a reference to a label defined elsewhere (the shipped
+    /// form; keeps shared/cross-module targets).
+    Ref(Expr),
+    /// `Name: Type = value` — an INLINE body, the exact `data`-item shape
+    /// (the declared length stays the terminator guard). Emitted after the
+    /// table in declaration order under a hidden hygienic label; the table
+    /// word targets it.
+    Inline(Type, Expr),
 }
 
 /// A `dispatch Name (encoding: E) { Member: target, ... }` block: an
@@ -475,10 +570,30 @@ pub enum ScriptStmt {
         /// Span of the whole loop.
         span: Span,
     },
-    /// `yield [label]` — save the resume point, exit via the epilogue (D9.6).
+    /// `yield` / `yield shows <label>` / `yield .label` — save a resume
+    /// point, exit via the per-frame epilogue (D9.6 + the D2.30 batch).
     Yield {
-        /// Per-site epilogue override; `None` uses the `shows` declaration.
+        /// `yield shows <label>` — per-site epilogue override (D2.30(a));
+        /// `None` uses the script's `shows` declaration.
         epilogue: Option<ScriptLabel>,
+        /// `yield .label` — the NAMED RESUME (D2.30(b)): "frame over; next
+        /// frame, continue at `.label`". Stores the target segment's ordinal
+        /// instead of minting a resume point at this site.
+        resume: Option<ScriptLabel>,
+        /// Span of the statement.
+        span: Span,
+    },
+    /// `wait_frames #N, <slot>` (D2.30(c)) — the declarative PURE park:
+    /// store N into the named timer slot, then a hidden per-frame decrement
+    /// plus self-resuming yield. Pure compiler expansion of the documented
+    /// tick idiom — no dispatcher protocol (value-carrying yields stay
+    /// 9c-gated).
+    WaitFrames {
+        /// The park length (an immediate; a comptime-visible 0 is refused).
+        n: Expr,
+        /// The timer slot operand — named explicitly at the site (tenet 5:
+        /// no hidden state; different objects park on different fields).
+        slot: Operand,
         /// Span of the statement.
         span: Span,
     },
@@ -610,15 +725,26 @@ pub enum Expr {
         /// Span of the whole expression.
         span: Span,
     },
-    /// A struct literal: `Ty { field: value, ... }`.
+    /// A struct literal: `Ty { field: value, ... }`. Every declared field
+    /// must be NAMED (S2-D13(h), checkpoint ruling 2026-07-09): a field whose
+    /// declared default should apply is written `field: default` — elision
+    /// is per-field and self-documenting (`Expr::Default`); there is no bulk
+    /// marker (the `..` form was built and retired at the checkpoint — the
+    /// page couldn't say WHICH fields it covered; re-ledgered for a struct
+    /// with enough defaults that per-field `default` reads as noise).
     StructLit {
         /// The struct's type path.
         ty: Path,
-        /// Field initializers as `(name, value)`.
+        /// Field initializers as `(name, value)`; a value may be
+        /// [`Expr::Default`].
         fields: Vec<(String, Expr)>,
         /// Span of the whole expression.
         span: Span,
     },
+    /// The contextual `default` marker in struct-literal field-value position
+    /// (`vel: default`): "this field takes its DECLARED default". An error
+    /// anywhere else, and an error on a field with no declared default.
+    Default(Span),
     /// An array literal: `[e1, e2, ...]`.
     ArrayLit {
         /// The array's elements.
@@ -914,6 +1040,26 @@ pub enum AsmStmt {
     Instr(InstrLine),
     /// A comptime-fn call at statement position, e.g. `spawn(SeedDef, offset: ...)`.
     Call(Expr),
+    /// A `todo!`/`unreachable!` statement trap (S2-D11(e)): assembles to the
+    /// 68k ILLEGAL word so a WIP file builds and RUNS to the hole; `todo!`
+    /// additionally names itself at build time (`[todo.present]`).
+    Trap {
+        /// Which spelling this is (`todo!` reports, `unreachable!` is silent).
+        kind: TrapKind,
+        /// The optional site message: `todo!("wire the seed spawn")`.
+        message: Option<String>,
+        /// Span of the whole statement.
+        span: Span,
+    },
+}
+
+/// The two statement-trap spellings (S2-D11(e)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrapKind {
+    /// `todo!` — a hole to fill; every site is reported via `[todo.present]`.
+    Todo,
+    /// `unreachable!` — a permanent, intentional trap; no diagnostic.
+    Unreachable,
 }
 
 /// A single machine-instruction line: mnemonic, optional size, operands.

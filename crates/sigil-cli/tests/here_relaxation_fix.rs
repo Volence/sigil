@@ -329,7 +329,18 @@ fn deferred_fatal_does_not_suppress_later_items() {
         module.sections.iter().flat_map(|s| &s.labels).any(|l| l.name == "Tail"),
         "the item AFTER the deferred fatal guard must still lower"
     );
-    assert_eq!(module.link_asserts.len(), 1);
+    // Exactly one deferred GUARD assert (the D2.29 [layout.odd-item] parity
+    // asserts also ride module.link_asserts now — filter them out).
+    let guard_asserts = module
+        .link_asserts
+        .iter()
+        .filter(|a| {
+            !a.message.iter().any(|p| {
+                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
+            })
+        })
+        .count();
+    assert_eq!(guard_asserts, 1);
     // Link the image (pre-check): Tail's bytes are physically present…
     let empty = SymbolTable::new();
     let resolved = sigil_link::resolve_layout(&module.sections, &empty, true).expect("resolve");

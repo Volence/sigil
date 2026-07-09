@@ -55,7 +55,7 @@ script brain (a0: *S) (encoding: word_offsets) shows Draw_Sprite {
         .tick:
         subq.b  #1, d0
         yield
-        yield .tick
+        yield shows .tick
     }
 }
 ";
@@ -69,7 +69,8 @@ script brain (a0: *S) (encoding: word_offsets) shows Draw_Sprite {
     assert!(matches!(s.encoding, sigil_frontend_emp::ast::DispatchEncoding::WordOffsets));
     let ep = s.epilogue.as_ref().expect("shows clause");
     assert_eq!((ep.name.as_str(), ep.local), ("Draw_Sprite", false));
-    // body: nop, then a loop containing [.tick label, subq, bare yield, yield .tick]
+    // body: nop, then a loop containing [.tick label, subq, bare yield,
+    // yield shows .tick] — the D2.30(a) per-site epilogue spelling
     assert_eq!(s.body.len(), 2);
     let sigil_frontend_emp::ast::ScriptStmt::Loop { body, .. } = &s.body[1] else {
         panic!("expected loop, got {:?}", s.body[1])
@@ -78,7 +79,7 @@ script brain (a0: *S) (encoding: word_offsets) shows Draw_Sprite {
     assert!(matches!(&body[2],
         sigil_frontend_emp::ast::ScriptStmt::Yield { epilogue: None, .. }));
     let sigil_frontend_emp::ast::ScriptStmt::Yield { epilogue: Some(l), .. } = &body[3] else {
-        panic!("expected yield .tick, got {:?}", body[3])
+        panic!("expected yield shows .tick, got {:?}", body[3])
     };
     assert_eq!((l.name.as_str(), l.local), ("tick", true));
 }
@@ -264,7 +265,7 @@ fn script_without_scriptpc_field_errors() {
 module m
 struct S (size: 2) { x: u16 }
 script brain (a0: *S) (encoding: word_offsets) shows done {
-    yield done
+    yield shows done
 }
 proc done () { rts }
 ";
@@ -302,7 +303,9 @@ proc done () {{ rts }}
 
 #[test]
 fn yield_per_site_epilogue_overrides_shows() {
-    // `shows done` + a per-site `yield other` override: the jbra must target
+    // `shows done` + a per-site `yield shows other` override (D2.30(a) — the
+    // retired bare-label spelling produced the SAME bytes; this test is the
+    // equivalence proof): the jbra must target
     // `other`, not `done`. Layout is identical to Probe A (nop / yield / rts)
     // up through the resume label, but with TWO procs after the script body
     // (`done` first, then `other`) so the override is observable:
@@ -318,7 +321,7 @@ fn yield_per_site_epilogue_overrides_shows() {
         "module m\n{SCRIPT_TYPES}\
 script brain (a0: *S) (encoding: word_offsets) shows done {{
     nop
-    yield other
+    yield shows other
     rts
 }}
 proc done () {{ rts }}
@@ -343,7 +346,7 @@ proc other () {{ rts }}
 
 #[test]
 fn yield_local_epilogue_resolves() {
-    // `yield .fin` — a dot-local per-site epilogue defined LATER in the SAME
+    // `yield shows .fin` — a dot-local per-site epilogue defined LATER in the SAME
     // script (at its end). Single-hygiene-scope flattening means the label is
     // visible to the yield above it, same as any proc-local forward reference.
     //
@@ -363,7 +366,7 @@ fn yield_local_epilogue_resolves() {
         "module m\n{SCRIPT_TYPES}\
 script brain (a0: *S) (encoding: word_offsets) {{
     nop
-    yield .fin
+    yield shows .fin
     .fin:
     rts
 }}
@@ -569,4 +572,466 @@ script brain (a0: *S) (encoding: word_offsets) {
     let (module, errs) = lower(src);
     assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
     assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
+}
+
+// ---- D2.30(a): the per-site epilogue is `yield shows <label>` -----------------
+
+#[test]
+fn retired_bare_label_yield_is_a_targeted_error() {
+    // `yield <label>` was retired at the pre-freeze audit (it misread as a
+    // resume target) — the error must TEACH both replacement spellings.
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    yield other
+}}
+proc done () {{ rts }}
+proc other () {{ rts }}
+"
+    );
+    let (_, perrs) = parse_str(&src);
+    assert!(
+        perrs.iter().any(|d| d.message.contains("yield shows") && d.message.contains("yield .")),
+        "the retired form names both replacements: {perrs:?}"
+    );
+}
+
+// ---- D2.30(b): `yield .label` — the named resume -------------------------------
+
+#[test]
+fn yield_dot_label_stores_target_ordinal() {
+    // `yield .watch`: frame over, next frame continues at `.watch` — the
+    // stored word is `.watch`'s member ordinal (×2), NOT a fresh site resume.
+    //   table:  00 04  00 06            (entry=+4, watch=+6)
+    //   +4  nop:                4E 71
+    //   +6  .watch: nop:        4E 71
+    //   +8  move.w #2,$20(a0):  31 7C 00 02 00 20   (ordinal 1×2)
+    //   +14 jbra done:          60 00 00 02          (bra.s disp would be 0 —
+    //                            the documented rung-skip → bra.w; done=+18)
+    //   +18 done: rts:          4E 75
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    nop
+    .watch:
+    nop
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    assert_eq!(
+        linked_bytes(&module),
+        vec![
+            0x00, 0x04, 0x00, 0x06, // table: entry, .watch
+            0x4E, 0x71, // nop
+            0x4E, 0x71, // .watch: nop
+            0x31, 0x7C, 0x00, 0x02, 0x00, 0x20, // move.w #2,$20(a0)
+            0x60, 0x00, 0x00, 0x02, // jbra done (bra.w — disp-0 rung skip)
+            0x4E, 0x75, // done: rts
+        ]
+    );
+}
+
+#[test]
+fn repeated_yield_dot_same_label_shares_a_member() {
+    // Two `yield .watch` join ONE table member ("becomes or joins") — the
+    // table stays 2 rows (first word 00 04 = entry right after 4 table bytes).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .watch:
+    nop
+    yield .watch
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x04], "table is 4 bytes = 2 rows (entry + watch)");
+}
+
+#[test]
+fn yield_dot_creates_no_site_resume_point() {
+    // A bare yield mints its own member; a named yield does NOT — mixing one
+    // of each with a shared target gives exactly 3 rows (entry, site, watch):
+    // first table word = 6 (the body starts after 3 rows × 2 bytes).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .watch:
+    nop
+    yield
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x06], "3 rows: entry + the bare yield's site + watch");
+}
+
+#[test]
+fn yield_dot_undefined_label_is_an_error() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    yield .nowhere
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("nowhere")),
+        "the missing resume target is named: {msgs:?}"
+    );
+}
+
+#[test]
+fn yield_dot_scales_by_encoding() {
+    // long_ptrs: the stored word is the ×4 ordinal (still one word — D9.3).
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: long_ptrs) shows done {{
+    .watch:
+    nop
+    yield .watch
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
+    let bytes = linked_bytes(&module);
+    // long_ptrs table = 2 rows × 4 bytes = 8; store imm = 1×4 = #4.
+    // store at +10: 31 7C 00 04 00 20.
+    assert_eq!(&bytes[10..16], &[0x31, 0x7C, 0x00, 0x04, 0x00, 0x20]);
+}
+
+// ---- D2.30(c): `wait_frames #N, <slot>` — the declarative pure park ------------
+
+const WAIT_TYPES: &str = "\
+newtype ScriptPc = u16
+struct S (size: $24) {
+    timer: u8,
+    _pad0: [u8; $1F] @ 1,
+    resume: ScriptPc @ $20,
+    _pad1: [u8; 2] @ $22,
+}
+";
+
+#[test]
+fn wait_frames_expands_to_exactly_the_tick_idiom() {
+    // The MUST of D2.30(c): `wait_frames` is a pure compiler expansion of the
+    // documented tick idiom — the declarative line and the hand-written
+    // spelling produce IDENTICAL bytes (same frame accounting: #64 parks 63
+    // drawn frames and proceeds on the 64th tick).
+    let sugar = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #64, timer(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let hand = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    move.b  #64, timer(a0)
+    .tick:
+    subq.b  #1, timer(a0)
+    beq     .park_done
+    yield   .tick
+    .park_done:
+}}
+proc done () {{ rts }}
+"
+    );
+    // (Both scripts end in the park, so the sugar's PRECISE trailing-
+    // wait_frames fallthrough warning fires — filter it; the bytes are the
+    // concern here, and the warning itself is pinned by its own test.)
+    let (m1, e1) = lower(&sugar);
+    let e1: Vec<_> = e1.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
+    assert!(e1.is_empty(), "sugar lowers clean: {e1:?}");
+    let (m2, e2) = lower(&hand);
+    let e2: Vec<_> = e2.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
+    assert!(e2.is_empty(), "hand spelling lowers clean: {e2:?}");
+    assert_eq!(linked_bytes(&m1), linked_bytes(&m2), "byte-identical expansion");
+}
+
+#[test]
+fn wait_frames_u16_slot_uses_word_width() {
+    let types = "\
+newtype ScriptPc = u16
+struct S (size: $24) {
+    timer16: u16,
+    _pad0: [u8; $1E] @ 2,
+    resume: ScriptPc @ $20,
+    _pad1: [u8; 2] @ $22,
+}
+";
+    let sugar = format!(
+        "module m\n{types}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #300, timer16(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let hand = format!(
+        "module m\n{types}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    move.w  #300, timer16(a0)
+    .tick:
+    subq.w  #1, timer16(a0)
+    beq     .park_done
+    yield   .tick
+    .park_done:
+}}
+proc done () {{ rts }}
+"
+    );
+    let (m1, e1) = lower(&sugar);
+    let e1: Vec<_> = e1.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
+    assert!(e1.is_empty(), "u16 slot lowers clean: {e1:?}");
+    let (m2, e2) = lower(&hand);
+    let e2: Vec<_> = e2.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
+    assert!(e2.is_empty(), "{e2:?}");
+    assert_eq!(linked_bytes(&m1), linked_bytes(&m2));
+}
+
+#[test]
+fn wait_frames_literal_zero_is_an_error() {
+    // #0 would underflow-park ~2^width frames — refuse when comptime-visible.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #0, timer(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("wait_frames") && m.contains("0")),
+        "the zero park is refused: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_unknown_slot_field_is_an_error() {
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #4, nosuch(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("nosuch")),
+        "the missing slot field is named: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_needs_an_epilogue() {
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) {{
+    wait_frames #4, timer(a0)
+}}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.no-epilogue]")),
+        "a park draws every frame — it needs the epilogue: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_outside_a_script_stays_loud() {
+    // In a proc body `wait_frames` is not a statement (scripts only) — the
+    // ordinary not-a-mnemonic path refuses it.
+    let src = "\
+module m
+proc p () {
+    wait_frames #4, d0
+}
+";
+    let msgs = msgs(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("wait_frames")),
+        "loud outside scripts: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_slot_can_live_in_an_overlay() {
+    // The acceptance shape: the park timer is a `vars …: sst_custom` OVERLAY
+    // field, not a direct Sst field — width resolution uses the same field
+    // space ordinary operands do (D6.A3).
+    // (An overlay needs its window field on the base struct — the prelude's
+    // `Sst.sst_custom` shape, reproduced locally.)
+    let src = "\
+module m
+newtype ScriptPc = u16
+struct S (size: $24) {
+    sst_custom: [u8; $20],
+    resume: ScriptPc @ $20,
+    _pad1: [u8; 2] @ $22,
+}
+vars V: sst_custom {
+    timer: u8,
+}
+script brain (a0: *S) (encoding: word_offsets) shows done {
+    wait_frames #8, timer(a0)
+}
+proc done () { rts }
+"
+    .to_string();
+    let (_, errs) = lower(&src);
+    let errs: Vec<_> = errs.iter().filter(|m| !m.contains("[script.fallthrough]")).collect();
+    assert!(errs.is_empty(), "overlay slot resolves: {errs:?}");
+}
+
+// ---- trio-review stage-2 pins ---------------------------------------------------
+
+#[test]
+fn trailing_wait_frames_warns_fallthrough_precisely() {
+    // The expansion's own `beq` reaches the trailing `__wfdone$k` label, so
+    // a body ENDING in wait_frames falls through EVERY time the park
+    // completes — the compiler synthesized that path and must say so
+    // (trio review M3), even though the last INSTRUCTION is the epilogue jbra.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #8, timer(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.fallthrough]")),
+        "a trailing park is a known fallthrough: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_out_of_range_literals_are_refused() {
+    for bad in ["#256", "#300", "#-1"] {
+        let src = format!(
+            "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames {bad}, timer(a0)
+    rts
+}}
+proc done () {{ rts }}
+"
+        );
+        let msgs = msgs(&src);
+        assert!(
+            msgs.iter().any(|m| m.contains("outside") && m.contains("range")),
+            "{bad} on a u8 slot must be refused: {msgs:?}"
+        );
+    }
+}
+
+#[test]
+fn duplicate_script_labels_error_early_with_a_span() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .x:
+    nop
+    .x:
+    yield .x
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("defined twice")),
+        "duplicate labels are a spanned frontend error, not a spanless link error: {msgs:?}"
+    );
+}
+
+#[test]
+fn interleaved_yield_kinds_keep_ordinals_and_rows_aligned() {
+    // The batch's central invariant: bare yields, named yields, and
+    // wait_frames interleave in ONE first-need member order. 4 rows:
+    // entry(0), bare site(1), __wf(2), .top(3) — first table word = 8.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    .top:
+    nop
+    yield
+    wait_frames #4, timer(a0)
+    yield .top
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "clean: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x08], "4 rows × 2 bytes: {bytes:02X?}");
+}
+
+#[test]
+fn forward_defined_named_resume_target_works() {
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    yield .later
+    nop
+    .later:
+    yield .later
+}}
+proc done () {{ rts }}
+"
+    );
+    let (module, errs) = lower(&src);
+    assert!(errs.is_empty(), "forward targets resolve: {errs:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[0..2], &[0x00, 0x04], "2 rows: entry + the shared .later member");
+}
+
+#[test]
+fn bad_then_good_wait_frames_keeps_the_queue_aligned() {
+    // The first wait_frames fails width resolution; the second is fine — the
+    // queue must stay aligned (one pop per site) and the whole script is
+    // refused with exactly the one field diagnostic.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #4, nosuch(a0)
+    wait_frames #4, timer(a0)
+    rts
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("nosuch")),
+        "the bad slot is named: {msgs:?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("internal:")),
+        "no queue-drift internal error: {msgs:?}"
+    );
 }

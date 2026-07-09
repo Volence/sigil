@@ -87,13 +87,16 @@ fn long(image: &[u8], off: usize) -> u32 {
     ])
 }
 
-/// The number of bare `yield`s in `brain` — three (`.wait_tick`,
-/// `.windup_tick`, and the `.rearm` tail). Drives the table's row count.
-const YIELD_COUNT: usize = 3;
+/// The number of resume points `brain` mints beyond the entry — two: the
+/// `wait_frames` park's hidden member (its per-frame tick) and the
+/// `.windup_tick` named-resume member (`yield .windup_tick` joins it; no
+/// resume point is minted at a named yield's own site). Drives the table's
+/// row count.
+const RESUME_POINTS: usize = 2;
 
 /// The verified output length (recorded from the clean `--root`/`--prelude`
 /// build; a change here means the exhibit's emitted image changed).
-const IMAGE_LEN: usize = 358;
+const IMAGE_LEN: usize = 326;
 
 #[test]
 fn script_exhibit_builds_clean_and_pins_hidden_table() {
@@ -151,22 +154,22 @@ fn script_exhibit_builds_clean_and_pins_hidden_table() {
     // --- pin the table rows (R9b.2) ---------------------------------------
     // word_offsets: each row is a 2-byte BE offset from the table base. There
     // are YIELD_COUNT + 1 rows (member 0 = entry, then one per yield).
-    let rows: Vec<u16> = (0..=YIELD_COUNT)
+    let rows: Vec<u16> = (0..=RESUME_POINTS)
         .map(|k| word(&image, table_base + k * 2))
         .collect();
 
-    // Row 0 = the entry offset = the table's own width = 2 * (1 + yield_count).
+    // Row 0 = the entry offset = the table's own width = 2 * (1 + members).
     // The entry segment begins immediately after the row array.
-    let entry_off = 2 * (1 + YIELD_COUNT) as u16; // 2 * 4 = 8
+    let entry_off = 2 * (1 + RESUME_POINTS) as u16; // 2 * 3 = 6
     assert_eq!(
         rows[0], entry_off,
-        "row 0 (entry) must equal the table width = 2*(1+{YIELD_COUNT}) = {entry_off}"
+        "row 0 (entry) must equal the table width = 2*(1+{RESUME_POINTS}) = {entry_off}"
     );
 
-    // The remaining rows are the three `__resume$k` label offsets, read from
-    // the verified build. They must be STRICTLY INCREASING: in a straight-line
-    // flattened body the entry precedes resume 1 precedes resume 2 precedes
-    // resume 3 (each resume point sits strictly later in the body).
+    // The remaining rows are the resume-member offsets, read from the
+    // verified build. They must be STRICTLY INCREASING: in a straight-line
+    // flattened body the entry precedes the park's tick precedes the windup
+    // tick (each resume point sits strictly later in the body).
     for pair in rows.windows(2) {
         assert!(
             pair[0] < pair[1],
@@ -174,15 +177,16 @@ fn script_exhibit_builds_clean_and_pins_hidden_table() {
         );
     }
 
-    // Verbatim pin of all four rows (derivation above; values read from the
+    // Verbatim pin of all three rows (derivation above; values read from the
     // verified clean build):
-    //   row 0 = 0x0008  entry segment (= table width, derived)
-    //   row 1 = 0x001E  __resume$1 (the `.wait_tick` yield's resume point)
-    //   row 2 = 0x006C  __resume$2 (the `.windup_tick` yield's resume point)
-    //   row 3 = 0x0082  __resume$3 (the `.rearm` tail yield's resume point)
+    //   row 0 = 0x0006  entry segment (= table width, derived)
+    //   row 1 = 0x000C  the wait_frames park's hidden tick (its subq —
+    //                   entry 0x06 + the 6-byte `move.b #WAIT_TIME, d8(a0)`)
+    //   row 2 = 0x003C  `.windup_tick` (the named resume both the park exit
+    //                   and `yield .windup_tick` flow through)
     assert_eq!(
         rows,
-        vec![0x0008, 0x001E, 0x006C, 0x0082],
+        vec![0x0006, 0x000C, 0x003C],
         "hidden resume table rows changed"
     );
 

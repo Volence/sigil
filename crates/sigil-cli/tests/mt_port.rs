@@ -155,6 +155,20 @@ fn compile_real_file(
     (resolved, linked, assert_diags, module.link_asserts)
 }
 
+/// Count the deferred GUARD asserts, excluding the D2.29 [layout.odd-item]
+/// parity asserts that now also ride module.link_asserts.
+fn guard_assert_count(asserts: &[sigil_ir::LinkAssert]) -> usize {
+    asserts
+        .iter()
+        .filter(|a| {
+            !a.message.iter().any(|p| {
+                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
+            })
+        })
+        .count()
+}
+
+
 /// On mismatch, report the first differing offset plus 8 bytes of context on
 /// each side (`dac_port.rs`/`ports.rs` style byte-diff reporting). M3: the
 /// window starts 8 bytes BEFORE the first-diff offset (not at it) so the
@@ -193,7 +207,7 @@ fn mt_bank_region_matches_reference() {
 
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(0);
     assert_eq!(
-        link_asserts.len(),
+        guard_assert_count(&link_asserts),
         5,
         "mt_bank.emp's five co-residency ensures must be captured"
     );
@@ -223,7 +237,7 @@ fn mt_bank_debug_region_matches_reference() {
 
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(1);
     assert_eq!(
-        link_asserts.len(),
+        guard_assert_count(&link_asserts),
         5,
         "mt_bank.emp's five co-residency ensures must be captured"
     );
