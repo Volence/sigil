@@ -674,3 +674,50 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   the len()==1 pin fails; (e) growth 0 (pure abutment) → Ok — proving abutment is benign
   and GROWTH is what fires. All reverted (file byte-identical to pre-falsification backup).
 - Workspace 117 result-lines green, clippy clean.
+
+### Task 7 — polish pass + whole-branch adversarial review — DONE
+
+**Polish (`69b2c40` sigil / `6bf67d0` aeon):** t3_ prefixes on the T3 lower_data probes;
+lower_ptr doc + single-match Int-arm restructure; partial_fold no-drift doc clause;
+sfx_bank.emp pad-naming legend (parse: 23 items unchanged). Workspace 1491/0.
+
+**Whole-branch review, two prongs, both checkpoint-ready. Zero Critical.**
+
+- **Prong 1 (sigil, `29bcef5..69b2c40`):** `partial_fold` survived 8 differential
+  adversarial scratch tests (deferred-then-linked vs eager byte-identity: nested unary
+  minus, div+mod, shift-by-symbol, complement, XOR, `$` in/out of phase, dual external
+  leaves with env subterms between) — ALL byte-identical; env-resolvable div-by-zero
+  subterm bakes the 0 and fails loud at link, no panic. P3 int-arm: every non-Int
+  non-name Value variant still gets the identical pre-branch error; `Value::LinkExpr`
+  intercepted upstream. All five new test files proven non-vacuous (strict-gate panics on
+  missing reference; win-tab pin is an independent literal; partial_fold_defer's env-equ
+  masks make a no-op fold distinguishable). Cross-branch consistency: all shas/counts
+  match (two trivial line-count drifts in earlier notes: sfx_bank.emp is 195 lines
+  post-legend, sfx_negative_probes.rs 528 post-fix — recorded here, notes above left
+  as-written). **F1 [Important, disposition recorded below]** — ONE non-reproducible
+  full-workspace failure of the PRE-EXISTING T1 `mixed_dac_rom_matches_assembled_reference`
+  (216399-offset wholesale divergence, first at vector-table 0xa) in ~40 runs, under heavy
+  parallel load coincident with concurrent worktree-add + clippy builds; passes on every
+  commit individually; pipeline audited deterministic (no global mutable state, vec-order
+  iteration throughout, tests read-only); base-commit runs never failed (fewer test
+  binaries). **F2 fixed** (`960b6ff`): straddle-probe comment $500→$800.
+- **Prong 2 (aeon, `b0e5a66..6f5efb5`):** byte-neutrality REBUILT from scratch — both
+  shapes match the pins exactly. Table fidelity re-verified by a third independent method
+  (ordered id→label sequence diff, 135/135, sym-position vector exact). Both fatals
+  byte-preserved in the ifndef arm; gate wraps exactly the includes + fatals (comment
+  correctly outside). verify_emit_bin 24/24; both zero-byte bins genuinely 0 in git;
+  gitignore exactly 18 narrow exceptions. **Ruling on `--emit-table`** (the Task-2 flag):
+  it DOES clobber the hand-owned header with the legacy pre-R2 shape (confirmed by
+  scratch-run) — byte-inert for asl but a maintenance foot-gun; FIXED (`6f5efb5`) with a
+  loud boxed stderr warning naming the file/the R2 homes/the checklist + a legacy-shape
+  note in the emitter. Refuse-if-exists judged over-strict (defeats the bootstrap
+  purpose); emitting the post-R2 shape recorded as the option-2 upgrade if bootstrap ever
+  sees real use. Stale pre-R2 emitter comment re-tensed (prong-2 F1).
+
+**F1 flake disposition:** five sequential `SIGIL_STRICT_GATE=1 cargo test --workspace`
+runs post-review — ALL clean (1491/0 each; the T1 test present in every run). Evidence
+points environmental (transient build-cache/FS inconsistency under parallel load), not
+branch-caused: the branch's tests are read-only, the pipeline deterministic, and the
+failing run coincided with concurrent worktree creation. RECORDED as a watch item, not a
+blocker: if it recurs, dump the resolved section LMAs of the failing run to pin whether
+the assembler or the environment moved. The checkpoint packet states this explicitly.
