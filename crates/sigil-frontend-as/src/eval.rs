@@ -16,8 +16,8 @@ use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer, LowerError};
 use sigil_ir::expr::{BinOp, Fold};
 use sigil_ir::{
-    asl_width_rule, AbsWidth, DataFragment, EquSym, Expr, Fixup, FixupKind, IrBuilder, Module, SymbolTable,
-    SymbolValue,
+    asl_width_rule, AbsWidth, DataFragment, EquSym, Expr, Fixup, FixupKind, IrBuilder, Module,
+    SymbolTable, SymbolValue,
 };
 use sigil_span::{Diagnostic, Level, SourceId, Span};
 
@@ -150,10 +150,14 @@ fn one_pass(
 /// duplicate-symbol diagnostic (M1.D T3) doesn't misfire on a genuine
 /// second bank.
 ///
-/// EMPTY (zero-fragment) sections are skipped: they carry no labels and place no
-/// bytes, so `link()` / `emit_rom` drop them (M1.D T4), and so they must NOT
-/// consume the bare name — otherwise a stray empty `sec0` would steal `sec0`
-/// from the real region-A driver, which is then linked/looked-up by that name.
+/// EMPTY (zero-fragment) sections are skipped FOR NAMING ONLY: they place no
+/// bytes, so `flatten`/`flatten_checked` exclude them from byte emission, and
+/// so they must NOT consume the bare name — otherwise a stray empty `sec0`
+/// would steal `sec0` from the real region-A driver, which is then
+/// linked/looked-up by that name. The section itself is NOT dropped:
+/// `IrBuilder::finish` keeps it, and it — with any `equ_syms` it carries —
+/// survives into the link, which is load-bearing for the Task B1 equ export
+/// (a pending-equ carrier section is exactly such an empty section).
 fn dedup_section_names(sections: &mut [sigil_ir::Section]) {
     let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for sec in sections.iter_mut() {
@@ -1749,8 +1753,10 @@ impl Asm {
             // stay `sec0`/`sec32768` (the harness/M0 gate keys on those names).
             // Collisions between two auto-opened sections at the same VMA base
             // are disambiguated later, over NON-EMPTY sections only, by
-            // `dedup_section_names` (an empty stray section — dropped before link
-            // — must not steal the bare name from a real region).
+            // `dedup_section_names` (an empty stray section — excluded from byte
+            // emission by `flatten` and from naming disambiguation, but NOT
+            // dropped: it and any `equ_syms` it carries survive into the link —
+            // must not steal the bare name from a real region).
             let vma_base = (self.phys_base as i64 + self.state.disp) as u32;
             let name = format!("sec{vma_base}");
             self.builder

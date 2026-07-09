@@ -447,29 +447,9 @@ impl<'a> Evaluator<'a> {
     /// [`Value::Str`] naming a symbol). A non-reference argument is a diagnostic
     /// and [`Poison`](Value::Poison). No address is resolved here (that is link).
     pub(super) fn eval_winptr(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
-        if args.len() != 1 {
-            self.error(span, format!("`winptr` expects exactly 1 argument, got {}", args.len()));
-            return Value::Poison;
-        }
-        if args[0].name.is_some() {
-            self.error(args[0].span, "`winptr` takes a positional argument");
-        }
-        let arg = self.eval_expr(&args[0].value, env);
-        // A leaked return / abort from the argument belongs to the caller.
-        if self.aborted || self.pending_return.is_some() {
-            return Value::Poison;
-        }
-        let name = match arg {
-            Value::FnRef(n) => n,
-            Value::Str(s) => s,
-            Value::Poison => return Value::Poison,
-            other => {
-                self.error(
-                    span,
-                    format!("`winptr` needs a symbol reference, got {}", other.type_name()),
-                );
-                return Value::Poison;
-            }
+        let name = match self.eval_symbol_ref_arg("winptr", args, span, env) {
+            Ok(n) => n,
+            Err(poison) => return poison,
         };
         // Build the residual tree `(Sym & $7FFF) | $8000` — the SFX bank-window
         // mask/base (AS `sfx_winptr`, `SFX_WIN_MASK`/`SFX_WIN_BASE`), matching the
@@ -508,29 +488,9 @@ impl<'a> Evaluator<'a> {
     /// [`Value::Str`] naming a symbol). A non-reference argument is a diagnostic
     /// and [`Poison`](Value::Poison). No address is resolved here (that is link).
     pub(super) fn eval_bankid(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
-        if args.len() != 1 {
-            self.error(span, format!("`bankid` expects exactly 1 argument, got {}", args.len()));
-            return Value::Poison;
-        }
-        if args[0].name.is_some() {
-            self.error(args[0].span, "`bankid` takes a positional argument");
-        }
-        let arg = self.eval_expr(&args[0].value, env);
-        // A leaked return / abort from the argument belongs to the caller.
-        if self.aborted || self.pending_return.is_some() {
-            return Value::Poison;
-        }
-        let name = match arg {
-            Value::FnRef(n) => n,
-            Value::Str(s) => s,
-            Value::Poison => return Value::Poison,
-            other => {
-                self.error(
-                    span,
-                    format!("`bankid` needs a symbol reference, got {}", other.type_name()),
-                );
-                return Value::Poison;
-            }
+        let name = match self.eval_symbol_ref_arg("bankid", args, span, env) {
+            Ok(n) => n,
+            Err(poison) => return poison,
         };
         // Build the residual tree `(Sym & BANK_MASK) >> 15`. The mask isolates
         // the bank-select bits of the 24-bit ROM address; the shift moves them to
@@ -568,32 +528,54 @@ impl<'a> Evaluator<'a> {
     /// Pass 1b symbol table both already fold a bare `Expr::Sym`, so this
     /// needs no new linker support.
     pub(super) fn eval_extern(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let name = match self.eval_symbol_ref_arg("extern", args, span, env) {
+            Ok(n) => n,
+            Err(poison) => return poison,
+        };
+        use sigil_ir::expr::Expr;
+        Value::LinkExpr(Expr::Sym(name))
+    }
+
+    /// Evaluate the single positional SYMBOL-REFERENCE argument shared by
+    /// `winptr`/`bankid`/`extern` (Task B quality review — the rule-of-three
+    /// extraction; sibling of [`eval_single_positional_int`]): a bare
+    /// label/`comptime fn` name → [`Value::FnRef`], or a [`Value::Str`] naming
+    /// a symbol. Returns the extracted name, or `Err(Value::Poison)` for the
+    /// caller to propagate — wrong arity and a non-reference argument are
+    /// diagnostics (worded exactly as each builtin always worded them, keyed
+    /// by `builtin`); a `Poison` argument or a leaked return/abort propagates
+    /// silently (it belongs to the caller).
+    fn eval_symbol_ref_arg(
+        &mut self,
+        builtin: &str,
+        args: &[ast::Arg],
+        span: Span,
+        env: &mut Env,
+    ) -> Result<String, Value> {
         if args.len() != 1 {
-            self.error(span, format!("`extern` expects exactly 1 argument, got {}", args.len()));
-            return Value::Poison;
+            self.error(span, format!("`{builtin}` expects exactly 1 argument, got {}", args.len()));
+            return Err(Value::Poison);
         }
         if args[0].name.is_some() {
-            self.error(args[0].span, "`extern` takes a positional argument");
+            self.error(args[0].span, format!("`{builtin}` takes a positional argument"));
         }
         let arg = self.eval_expr(&args[0].value, env);
         // A leaked return / abort from the argument belongs to the caller.
         if self.aborted || self.pending_return.is_some() {
-            return Value::Poison;
+            return Err(Value::Poison);
         }
-        let name = match arg {
-            Value::FnRef(n) => n,
-            Value::Str(s) => s,
-            Value::Poison => return Value::Poison,
+        match arg {
+            Value::FnRef(n) => Ok(n),
+            Value::Str(s) => Ok(s),
+            Value::Poison => Err(Value::Poison),
             other => {
                 self.error(
                     span,
-                    format!("`extern` needs a symbol reference, got {}", other.type_name()),
+                    format!("`{builtin}` needs a symbol reference, got {}", other.type_name()),
                 );
-                return Value::Poison;
+                Err(Value::Poison)
             }
-        };
-        use sigil_ir::expr::Expr;
-        Value::LinkExpr(Expr::Sym(name))
+        }
     }
 
     /// Evaluate the single positional integer argument shared by `byte` (and

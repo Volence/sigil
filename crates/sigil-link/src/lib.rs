@@ -207,9 +207,23 @@ fn build_symbol_table(sections: &[Section], stubs: &SymbolTable) -> SymbolTable 
     // entry's `expr` is already folded to `Expr::Int`; `.fold` with a
     // by-then-partially-seeded lookup still handles an equ that references
     // an EARLIER equ (equ-referencing-equ chains), exactly like `link()`.
+    //
+    // DELIBERATE DIVERGENCE from Pass 1b's error handling: Pass 1b raises a
+    // loud "internal: equ ... reached link() unfolded" diagnostic on a Poison
+    // fold; this function has no diagnostics channel, so the same broken
+    // invariant is a `debug_assert!` here and a silent skip in release (the
+    // symbol then stays undefined, and the assert's own Poison-condition arm
+    // reports it — never a silent wrong value).
     for sec in sections {
         for eq in &sec.equ_syms {
-            if let Fold::Value(v) = eq.expr.fold(&|name| syms.resolve(name, None)) {
+            let fold = eq.expr.fold(&|name| syms.resolve(name, None));
+            debug_assert!(
+                matches!(fold, Fold::Value(_)),
+                "internal: equ `{}` reached build_symbol_table() unfolded (resolve_layout must \
+                 fold every equ to a constant before link)",
+                eq.name
+            );
+            if let Fold::Value(v) = fold {
                 syms.define(&eq.name, SymbolValue::Int(v));
             }
         }
