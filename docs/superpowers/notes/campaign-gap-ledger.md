@@ -128,3 +128,16 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   future Z80 module (or a forgetful caller) mis-lowers with no module-level signal. Candidate:
   modules self-declare target CPU (`module x in y (cpu: z80)`?) or the pipeline
   defaults-and-warns. — OPEN.
+- [tranche 2 T1 review, 2026-07-09] **`pc` is a reserved EA token in inner-base position** — a
+  user symbol literally named `pc` can't be the sole inner base of `Sym(pc)` (the pc-rel
+  carve-out wins, matching AS); `pc` as a displacement over a real register still works. One
+  doc line owed in the .emp EA docs. — OPEN (docs-only).
+- [tranche 2 T1 review, 2026-07-09] **PcRel range-check errors name distance+section but not
+  the target SYMBOL** (sigil-link lib.rs ~482/498) — house style shared with bra/bsr messages;
+  a cross-section disp8 target is almost always out of range, so the symbol name would pay.
+  Repo-wide message-quality item. — OPEN.
+- [tranche 2 T1 review, 2026-07-09] **abs.l as an .emp DESTINATION is unsupported**
+  (`move.w x, ($abs).l` → "indirect base must be a register") — pre-existing, surfaced by an
+  adversarial probe; will matter for some future port (VDP register writes spell this). — OPEN.
+- [tranche 2 T1 review, 2026-07-09] **`Owner.label(pc)` multi-segment pc-rel target untested**
+  — path shared verbatim with tested branch resolution; one-line test owed. — OPEN (low risk).
