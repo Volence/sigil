@@ -14,36 +14,20 @@
 // `word_offsets` and requires ZERO diagnostics — proving everything else here
 // is real.
 //
-// Two things this file demonstrates:
-//
-// 1. THE D2.30 SPELLINGS. The reading rule:
+// The pinned exhibit carries this SAME brain and these SAME spellings — the
+// one thing left for this file to show is the ENCODING. The reading rule
+// both share:
 //      park with per-frame WORK  →  `yield .label`   (resume named on the line)
 //      PURE park                 →  `wait_frames`    (one declarative line)
 //      genuine sequence          →  bare `yield`     (continue below tomorrow)
-//    Nothing about "next frame starts below the yield" is left implicit —
-//    it's written on the line or absorbed into a construct that says it.
+// Not a single bare yield appears — this brain has no pure sequence point.
 //
-// 2. THE BETTER BRAIN (a code-sense finding — lands on aeon's real plant
-//    badnik as its own post-port behavior commit). The pinned exhibit's
-//    brain is blind between checks: it parks 64 frames, glances for the
-//    player ONCE, and re-parks — worst case ~1.07s standing at its mouth
-//    before it reacts, and whether it fires "instantly" or "eventually"
-//    is countdown luck. The insight: WAIT_TIME was never an idle timer, it
-//    was a fire-rate COOLDOWN welded onto the idle state. Split them:
-//      idle     → check EVERY frame (a ~50-cycle check; reaction is instant)
-//      cooldown → WAIT_TIME frames, but only AFTER a shot (prevents the
-//                 machine-gun plant when the player camps in range)
-//    The windup still COMMITS once started (no mid-windup abort) — badniks
-//    that commit feel mechanical and fair; badniks that track feel unfair.
-//
-// Note how each state's nature picks its construct: watching is a
-// park-with-work (`yield .watch`), cooling down is a pure park
-// (`wait_frames`), and this brain has NO pure sequence point left — so not
-// a single bare yield appears. The pinned exhibit
-// (pitcher_plant_script.emp) uses the same spellings on the OLD brain: its
-// wait state is the pure park and its windup the park-with-work — the
-// difference between the two files is the brain and the encoding, not the
-// language.
+// Under `code_word` each resume point stores the target segment's
+// objroutine-style word straight into the routine slot at (a0) — no hidden
+// table; `base:` names the engine's 64KB object-code bank. Under the mock
+// prelude's `word_offsets` the same resume points store table ordinals
+// instead. Every line of the body is identical either way — only the stored
+// value's wire format differs.
 
 module badniks.pitcher_plant_script_next in obj_bank
 

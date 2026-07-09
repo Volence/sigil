@@ -4,7 +4,7 @@
 //! acceptance exhibit for the whole Plan-7 tranche: a real badnik, built
 //! through the REAL multi-module pipeline (`sigil emp <entry> --root
 //! examples/game --prelude prelude`), compiling end-to-end with ZERO
-//! diagnostics to a 340-byte image. This file hand-derives that image BYTE BY
+//! diagnostics to a 338-byte image. This file hand-derives that image BYTE BY
 //! BYTE from the sources — `examples/game/prelude.emp` and
 //! `examples/game/badniks/pitcher_plant.emp` — independent of the compiler,
 //! then asserts the real build matches, byte for byte, with a first-diff
@@ -42,7 +42,7 @@
 //! reserved MAX width still governs where the NEXT section starts. So
 //! pitcher_plant's real content is 196 bytes (0x00..0xC4), but its section's
 //! `placement_span` reserved 240 bytes (0x00..0xF0) — leaving a 44-byte
-//! (0xC4..0xF0) zero-filled gap before prelude's section begins at LMA 240
+//! (0xC2..0xEE) zero-filled gap before prelude's section begins at LMA 238
 //! (0xF0). `flatten` fills any such gap with `0x00` (the default fill byte).
 //!
 //! The 44-byte gap reconciles exactly against the relaxable-fragment count:
@@ -145,7 +145,7 @@ fn b(buf: &mut Vec<u8>, v: u8) {
     buf.push(v);
 }
 
-/// The full 340-byte expected image, hand-derived module by module,
+/// The full 338-byte expected image, hand-derived module by module,
 /// instruction by instruction, from `examples/game/prelude.emp` +
 /// `examples/game/badniks/pitcher_plant.emp`. See the file-level doc comment
 /// for the section-order argument; each block below cites the source
@@ -192,14 +192,14 @@ fn expected_image() -> Vec<u8> {
     // col=1 (Collision:u8), zpri=1 (u8), size=2 (Size: u8+u8), vel=4
     // (Vel: i16+i16), anim=1 (u8), frame=1 (u8) — 22 bytes total.
     //
-    // `code: init` — a `*u8` pointer field lowers to a 4-byte absolute
-    // fixup resolved to `init`'s link address. `init` is the FIRST proc,
+    // `code: watch` — a `*u8` pointer field lowers to a 4-byte absolute
+    // fixup resolved to `watch`'s link address. `watch` is the FIRST proc,
     // immediately after `SeedDef` (see below) — its address is 0x40 (64),
     // confirmed by the proc-by-proc trace below.
     d.extend_from_slice(&0x0000_0040u32.to_be_bytes());
     // `map: Map_PitcherPlant` — a prelude `pub data`, laid out in prelude's
-    // OWN section at 0xF0 (see the prelude section below).
-    d.extend_from_slice(&0x0000_00F0u32.to_be_bytes());
+    // OWN section at 0xEE (see the prelude section below).
+    d.extend_from_slice(&0x0000_00EEu32.to_be_bytes());
     // `art: ArtTile{ tile: VRAM_PITCHER_PLANT($500), pal: 0, pri: 0 }`
     w(&mut d, 0x0500);
     b(&mut d, 0);
@@ -212,20 +212,20 @@ fn expected_image() -> Vec<u8> {
     // `size: Size{ w: 16, h: 28 }`
     b(&mut d, 16);
     b(&mut d, 28);
-    // `vel: Vel{ x: 0, y: 0 }` (stationary at spawn)
+    // `vel: default` = the declared `Vel{ x: 0, y: 0 }` (stationary at spawn)
     w(&mut d, 0);
     w(&mut d, 0);
     // `anim: Ani.Idle` = ordinal 0
     b(&mut d, 0);
-    // `frame: 0`
+    // `frame: default` = the declared 0
     b(&mut d, 0);
     assert_eq!(d.len(), 0x2A);
 
     // --- `data SeedDef = ObjDef{...}` @ 0x2A ---
-    // `code: seed` — `seed` is the LAST proc, its address derived below (0xB8).
-    d.extend_from_slice(&0x0000_00B8u32.to_be_bytes());
-    // `map: Map_PitcherPlant` (shares the plant's art) — same address, 0xF0.
-    d.extend_from_slice(&0x0000_00F0u32.to_be_bytes());
+    // `code: seed` — `seed` is the LAST proc, its address derived below (0xB6).
+    d.extend_from_slice(&0x0000_00B6u32.to_be_bytes());
+    // `map: Map_PitcherPlant` (shares the plant's art) — same address, 0xEE.
+    d.extend_from_slice(&0x0000_00EEu32.to_be_bytes());
     // `art: Def.art` — a COMPTIME struct-field VALUE read (not a pointer):
     // copies `Def`'s already-evaluated `art` field value verbatim
     // (`ArtTile{tile:$500,pal:0,pri:0}`), so these 4 bytes are byte-identical
@@ -250,269 +250,186 @@ fn expected_image() -> Vec<u8> {
     b(&mut d, 5);
     assert_eq!(d.len(), 0x40);
 
-    // --- `proc init (a0: *Sst) falls_into wait { move.b #WAIT_TIME, timer(a0) }` @ 0x40 ---
-    // `timer(a0)`: `timer` is `PitcherPlantV`'s (the `vars ...: sst_custom`
-    // overlay) first field, at overlay-relative offset 0; the overlay's
-    // WINDOW is `Sst.sst_custom` at direct-field offset $2E (see
-    // prelude.emp's `Sst` struct: `sst_custom: [u8;34] @ $2E`). So `timer`'s
-    // absolute displacement into `*Sst` is $2E + 0 = $2E. The `vars` decl
-    // itself emits ZERO bytes (`lower/mod.rs`'s `Item::Vars` arm only runs
-    // always-on layout checks, never touches the section builder).
+    // --- `proc watch (a0: *Sst) clobbers(d0) { ... }` @ 0x40 ---
+    // The idle state and the spawn entry (`Def.code: watch`): check the
+    // player's distance EVERY frame; commit to the windup when in range.
     //
-    // `move.b #imm,(d16,a0)`: MOVE, size bits `.b`=01, dst=Disp16An($2E,a0)
-    // (mode 101, reg 0), src=`#imm` (mode 111, reg 100). Word =
-    // `01<<12 | 0<<9 | 0b101<<6 | 0b111<<3 | 0b100` = 0x117C. WAIT_TIME=64=
-    // $40 is a byte immediate, so its extension word is the value
-    // zero-extended into a full word ($0040) — then the dest's own
-    // displacement extension word ($002E).
-    w(&mut d, 0x117C);
-    w(&mut d, 0x0040);
-    w(&mut d, 0x002E);
-    // `falls_into wait` is a pure fallthrough-ADJACENCY check
-    // (`lower/proc.rs::check_fallthrough_adjacent`) — zero bytes.
-    assert_eq!(d.len(), 0x46);
-
-    // --- `proc wait (a0: *Sst) clobbers(d0) { ... }` @ 0x46 ---
-    // `subq.b #1, timer(a0)`: SUBQ, ddd=1, op_bit=1(subq), sz=0(.b),
-    // dst=Disp16An($2E,a0). Word = `0101<<12 | 1<<9 | 1<<8 | 0<<6 | 0b101<<3`
-    // = 0x5328, ext = $002E (no separate immediate word — quick data is
-    // opcode-encoded).
-    w(&mut d, 0x5328);
-    w(&mut d, 0x002E);
-    // `bne .draw` — unsized Bcc (Ne=0x6), 2-rung `.s`->`.w` ladder. `.draw`
-    // is the proc's tail label (derived below at 0x7C). site=0x4A,
-    // disp = 0x7C - (0x4A+2) = 0x30 (48), fits i8 -> `.s` wins.
-    // Word = 0x6000 | (0x6<<8) | disp = 0x6600 | 0x30.
-    w(&mut d, 0x6600 | 0x30);
     // `move.w Player_1.x_pos, d0` — `Item.field` BARE form (no parens):
     // an ABSOLUTE address operand (`Player_1`'s link address + field offset
-    // $10), NOT a displacement-off-a0 (`map_plain` ->
-    // `CodeOperand::SymOff{sym:"Player_1", off:0x10}` -> `lower_m68k_abs_sym`,
-    // a RelaxAbsSym choosing abs.w/abs.l). `Player_1` lives in prelude's
-    // section at LMA 0xF0+0x14=0x104 (see the prelude layout below), so the
-    // operand's resolved address is 0x104+0x10=0x114 — within abs.w range
-    // (<= 0x7FFF) — so it resolves to abs.w (mode 111, reg 000, one ext
-    // word = the address). MOVE.W, dst=Dn(0): word = `11<<12 | 0<<9 | 0<<6
-    // | 0b111<<3 | 0b000` = 0x3038.
+    // $10), NOT a displacement-off-a0. `Player_1` lives in prelude's section
+    // at LMA 0xEE+0x14=0x102 (see the prelude layout below), so the operand's
+    // resolved address is 0x102+0x10=0x112 — within abs.w range, so abs.w
+    // (mode 111, reg 000, one ext word). MOVE.W, dst=Dn(0):
+    // word = `11<<12 | 0<<9 | 0<<6 | 0b111<<3 | 0b000` = 0x3038.
     w(&mut d, 0x3038);
-    w(&mut d, 0x0114);
-    // `sub.w x_pos(a0), d0` — `x_pos` is a DIRECT Sst field at offset $10
-    // (Sst's own declared offset, unrelated to the overlay). ALU-EA `Sub`:
-    // base=0b1001, reg=Dn(0)=0, opmode=sz(.w)=1, ea=Disp16An($10,a0).
-    // Word = `1001<<12 | 0<<9 | 1<<6 | 0b101<<3 | 0` = 0x9068.
+    w(&mut d, 0x0112);
+    // `sub.w x_pos(a0), d0` — `x_pos` is a DIRECT Sst field at offset $10.
+    // ALU-EA `Sub`: word = `1001<<12 | 0<<9 | 1<<6 | 0b101<<3 | 0` = 0x9068.
     w(&mut d, 0x9068);
     w(&mut d, 0x0010);
     // `facing_abs d0` splices (prelude.emp): `tst.w {r}; bpl.s .done;
-    // neg.w {r}; .done:` with `r`=d0. This is its own fresh hygiene
-    // instantiation (`Owner::Asm`), but the mangled `.done` label never
-    // escapes the template — no byte-level consequence from the counter
-    // value itself, only from the RESOLVED intra-template displacement.
-    //   `tst.w d0`: Tst, size W, ea=Dn(0). base=0x4A00, sz<<6=0x40, ea=0.
-    //   Word = 0x4A40.
+    // neg.w {r}; .done:` with `r`=d0.
+    //   `tst.w d0`: word = 0x4A40.
     w(&mut d, 0x4A40);
-    //   `bpl.s .done`: EXPLICIT `.s` size (a pin, not relaxed). cond=Pl=0xA.
-    //   `.done` is 2 bytes after this instruction's own end (past the
-    //   2-byte `neg.w d0`): site=0x56, target=0x5A,
-    //   disp = 0x5A - (0x56+2) = 2. Word = 0x6000|(0xA<<8)|2 = 0x6A02.
+    //   `bpl.s .done`: EXPLICIT `.s` (a pin). cond=Pl=0xA. site=0x4A,
+    //   target=0x4E (past the 2-byte neg), disp = 0x4E-(0x4A+2) = 2.
     w(&mut d, 0x6A00 | 2);
-    //   `neg.w d0`: Neg, size W, ea=Dn(0). base=0x4400, sz<<6=0x40, ea=0.
-    //   Word = 0x4440.
+    //   `neg.w d0`: word = 0x4440.
     w(&mut d, 0x4440);
     //   `.done:` — 0 bytes, label only.
-    // `cmp.w #ATTACK_RANGE, d0` — ATTACK_RANGE=$60=96. `Cmp` ALU-EA (dest
-    // is Dn, so `refine_m68k_mnemonic` does NOT retarget to `Cmpi` — that
-    // retarget only fires for a MEMORY dest): base=0b1011, reg=Dn(0)=0,
-    // opmode=sz(.w)=1, ea=Imm(96) (mode 111, reg 100).
-    // Word = `1011<<12 | 0<<9 | 1<<6 | 0b111<<3 | 0b100` = 0xB07C, ext=$0060.
+    // `cmp.w #ATTACK_RANGE, d0` — ATTACK_RANGE=$60. Dn dest, no Cmpi
+    // retarget: word = 0xB07C, ext = $0060.
     w(&mut d, 0xB07C);
     w(&mut d, 0x0060);
-    // `bhi .rearm` — unsized Bcc (Hi=0x2). `.rearm` is derived below at
-    // 0x76. site=0x5E, disp = 0x76-(0x5E+2) = 0x16 (22), fits i8 -> `.s`.
-    // Word = 0x6000|(0x2<<8)|0x16 = 0x6216.
-    w(&mut d, 0x6200 | 0x16);
-    // `move.b #SHOOT_WINDUP, timer(a0)` — SHOOT_WINDUP=$28=40. Same MOVE.B
-    // shape as `init`'s: word=0x117C, imm ext=$0028, disp ext=$002E.
+    // `bhi .draw` — unsized Bcc (Hi=0x2). `.draw` derived below at 0x68.
+    // site=0x52, disp = 0x68-(0x52+2) = 0x14 (20) -> `.s`.
+    w(&mut d, 0x6200 | 0x14);
+    // `move.b #SHOOT_WINDUP, timer(a0)` — `timer` = the PitcherPlantV
+    // overlay's first field: window $2E + 0 = $2E. MOVE.B #imm,(d16,a0):
+    // word = 0x117C, imm ext = $0028 (SHOOT_WINDUP=40), disp ext = $002E.
     w(&mut d, 0x117C);
     w(&mut d, 0x0028);
     w(&mut d, 0x002E);
-    // `anim Ani.Shoot` splices to `move.b #{Ani.Shoot}, Sst.anim(a0)`
-    // (prelude.emp). `Ani.Shoot` ordinal = 2 (declared 3rd, 0-based).
-    // `Sst.anim` is a DIRECT struct field at offset $1C (prelude.emp:
-    // `anim: u8 @ $1C`). Same MOVE.B shape: word=0x117C, imm=$0002,
-    // disp=$001C.
+    // `anim Ani.Shoot` -> `move.b #{Ani.Shoot}, Sst.anim(a0)`. Ordinal 2,
+    // `Sst.anim` direct field @ $1C.
     w(&mut d, 0x117C);
     w(&mut d, 0x0002);
     w(&mut d, 0x001C);
-    // `routine shoot` splices to `pea {p}; move.w (a7)+, Sst.resume(a0)`
-    // with `p`=`shoot` (a proc label — an absolute address, same RelaxAbsSym
-    // seam as `Item.field`). `shoot`'s own link address is derived below at
-    // 0x7E — within abs.w range, so `pea` resolves to abs.w:
-    //   `pea <ea>`: base=0x4840, ea=AbsW (mode 111, reg 000).
-    //   Word = 0x4840 | 0b111<<3 | 0 = 0x4878, ext = $007E.
+    // `routine shoot` -> `pea {p}; move.w (a7)+, Sst.resume(a0)`. `shoot`'s
+    // own link address is derived below at 0x6C — abs.w:
     w(&mut d, 0x4878);
-    w(&mut d, 0x007E);
-    //   `move.w (a7)+, Sst.resume(a0)`: MOVE.W, src=PostInc(7) (mode 011,
-    //   reg 7), dst=Disp16An($20,a0) (`Sst.resume` direct field offset
-    //   $20, prelude.emp: `routine: u16 @ $20`).
-    //   Word = `11<<12 | 0<<9 | 0b101<<6 | 0b011<<3 | 7` = 0x315F, ext=$0020.
+    w(&mut d, 0x006C);
     w(&mut d, 0x315F);
     w(&mut d, 0x0020);
-    // `jbra .draw` — a `RelaxLadder` (bra.s/bra.w/jmp.w/jmp.l). `.draw` is
-    // the very next label, right after `.rearm`'s own 6-byte `move.b`
-    // (below): site=0x74, target=0x76+6=0x7C,
-    // disp = 0x7C - (0x74+2) = 6 -> fits i8, nonzero -> `bra.s` (rung 0).
-    // Word = 0x6000|6 = 0x6006.
-    w(&mut d, 0x6000 | 6);
-    assert_eq!(d.len(), 0x76, "`.rearm:` begins here");
+    assert_eq!(d.len(), 0x68, "`.draw:` begins here (watch's tail)");
+    // `.draw: jbra Draw_Sprite` — `Draw_Sprite`@0xF2 (prelude, below).
+    // site=0x68: bra.s disp would be 0xF2-(0x68+2) = 0x88 (136) — EXCEEDS
+    // i8, so the ladder settles rung 1, `bra.w` (4 bytes): word 0x6000 +
+    // disp ext 0x0088. (The ONLY long branch in the image — watch sits
+    // earliest, farthest from the prelude stubs.)
+    w(&mut d, 0x6000);
+    w(&mut d, 0x0088);
+    assert_eq!(d.len(), 0x6C, "`watch` proc ends, `shoot` proc begins");
 
-    // `.rearm: move.b #WAIT_TIME, timer(a0)` — same MOVE.B shape as `init`'s.
-    w(&mut d, 0x117C);
-    w(&mut d, 0x0040);
-    w(&mut d, 0x002E);
-    assert_eq!(d.len(), 0x7C, "`.draw:` begins here");
-
-    // `.draw: jbra Draw_Sprite` — `Draw_Sprite` is a prelude proc, derived
-    // below at 0xF4. site=0x7C, disp = 0xF4 - (0x7C+2) = 0x76 (118), fits
-    // i8 -> `bra.s`. Word = 0x6000|0x76 = 0x6076.
-    w(&mut d, 0x6000 | 0x76);
-    assert_eq!(d.len(), 0x7E, "`wait` proc ends, `shoot` proc begins");
-
-    // --- `proc shoot (a0: *Sst) { ... }` @ 0x7E ---
-    // `subq.b #1, timer(a0)` — identical shape to `wait`'s own.
+    // --- `proc shoot (a0: *Sst) { ... }` @ 0x6C ---
+    // `subq.b #1, timer(a0)`: word = 0x5328, ext = $002E.
     w(&mut d, 0x5328);
     w(&mut d, 0x002E);
-    // `cmpi.b #FIRE_FRAME, timer(a0)` — FIRE_FRAME=16=$10. Dest is a MEMORY
-    // ea (`timer(a0)`), so `Cmp` DOES retarget to `Cmpi` here
-    // (`refine_m68k_mnemonic`'s `is_mem_dest` guard). ALU-immediate family:
-    // op=Cmpi=0b1100, sz=0(.b), ea=Disp16An($2E,a0).
-    // Word = `1100<<8 | 0<<6 | 0b101<<3 | 0` = 0x0C28, imm ext=$0010 (byte
-    // immediate, zero-extended to a full word), disp ext=$002E.
+    // `cmpi.b #FIRE_FRAME, timer(a0)` — memory dest, `Cmp` retargets to
+    // `Cmpi`: word = 0x0C28, imm ext = $0010, disp ext = $002E.
     w(&mut d, 0x0C28);
     w(&mut d, 0x0010);
     w(&mut d, 0x002E);
-    // `bne .no_fire` — unsized Bcc. `.no_fire` derived below at 0x9C.
-    // site=0x88, disp = 0x9C - (0x88+2) = 0x12 (18) -> `.s`.
+    // `bne .no_fire` — `.no_fire` derived below at 0x8A. site=0x76,
+    // disp = 0x8A-(0x76+2) = 0x12 (18) -> `.s`.
     w(&mut d, 0x6600 | 0x12);
-    // `spawn(SeedDef, offset: Vec{x:-16,y:-4}, flip: inherit)` — `inherit`
-    // (an alias for `Flip.inherit`) makes the comptime `if` take its TRUE
-    // branch (prelude.emp), splicing exactly:
-    //   lea {def}, a1              -> lea SeedDef, a1
-    //   move.w #{offset.x}, d1     -> move.w #-16, d1
-    //   move.w #{offset.y}, d2     -> move.w #-4, d2
-    //   move.w x_vel(a0), d3
-    //   jbsr SpawnObject
-    // `{def}` splices a `Label` value into a BARE (non-`#imm`) operand slot
-    // -> `CodeOperand::Sym` (`classify_operand_splice`), routed through the
-    // SAME RelaxAbsSym abs.w/abs.l seam `lea` needs a memory EA anyway.
-    // `SeedDef`'s own address is 0x2A (this section, derived above) — abs.w:
-    //   `lea <ea>,An`: base=0x41C0, an=1, ea=AbsW (mode 111, reg 000).
-    //   Word = 0x41C0 | 1<<9 | 0b111<<3 = 0x43F8, ext=$002A.
+    // `spawn(SeedDef, offset: Vec{x:-16,y:-4}, flip: inherit)` splices:
+    //   `lea SeedDef, a1` — SeedDef@0x2A (this section), abs.w:
+    //   word = 0x43F8, ext = $002A.
     w(&mut d, 0x43F8);
     w(&mut d, 0x002A);
-    //   `move.w #-16, d1`: MOVE.W, src=Imm(-16) (mode 111, reg 100),
-    //   dst=Dn(1). Word = `11<<12 | 1<<9 | 0<<6 | 0b111<<3 | 0b100` = 0x323C,
-    //   ext = -16 as u16 = 0xFFF0.
+    //   `move.w #-16, d1`: word = 0x323C, ext = 0xFFF0.
     w(&mut d, 0x323C);
     w(&mut d, -16i32 as u16);
-    //   `move.w #-4, d2`: same shape, dst=Dn(2).
-    //   Word = `11<<12 | 2<<9 | 0<<6 | 0b111<<3 | 0b100` = 0x343C,
-    //   ext = -4 as u16 = 0xFFFC.
+    //   `move.w #-4, d2`: word = 0x343C, ext = 0xFFFC.
     w(&mut d, 0x343C);
     w(&mut d, -4i32 as u16);
-    //   `move.w x_vel(a0), d3`: ea=Disp16An($18,a0) (`x_vel` direct Sst
-    //   field, prelude.emp: `x_vel: i16 @ $18`), dst=Dn(3).
-    //   Word = `11<<12 | 3<<9 | 0<<6 | 0b101<<3 | 0` = 0x3628, ext=$0018.
+    //   `move.w x_vel(a0), d3`: word = 0x3628, ext = $0018.
     w(&mut d, 0x3628);
     w(&mut d, 0x0018);
-    //   `jbsr SpawnObject`: RelaxLadder. `SpawnObject` is a prelude proc,
-    //   derived below at 0xFC. site=0x9A, disp = 0xFC-(0x9A+2) = 0x60 (96)
-    //   -> fits i8 -> `bsr.s`. Word = 0x6100|0x60 = 0x6160.
-    w(&mut d, 0x6100 | 0x60);
-    assert_eq!(d.len(), 0x9C, "`.no_fire:` begins here");
-
-    // `.no_fire: tst.b timer(a0)` — Tst, size B, ea=Disp16An($2E,a0).
-    // base=0x4A00, sz<<6=0, ea=Disp16An -> mode101,reg0.
-    // Word = 0x4A00 | 0b101<<3 = 0x4A28, ext=$002E.
+    //   `jbsr SpawnObject` — `SpawnObject`@0xFA (prelude, below).
+    //   site=0x88, disp = 0xFA-(0x88+2) = 0x70 (112) -> `bsr.s`.
+    w(&mut d, 0x6100 | 0x70);
+    assert_eq!(d.len(), 0x8A, "`.no_fire:` begins here");
+    // `.no_fire: tst.b timer(a0)`: word = 0x4A28, ext = $002E.
     w(&mut d, 0x4A28);
     w(&mut d, 0x002E);
-    // `bne .draw` — unsized Bcc. `.draw` derived below at 0xB6.
-    // site=0xA0, disp = 0xB6-(0xA0+2) = 0x14 (20) -> `.s`.
+    // `bne .draw` — `.draw` derived below at 0xA4. site=0x8E,
+    // disp = 0xA4-(0x8E+2) = 0x14 (20) -> `.s`.
     w(&mut d, 0x6600 | 0x14);
-    // `move.b #WAIT_TIME, timer(a0)` — same shape as before.
+    // `move.b #WAIT_TIME, timer(a0)` — arm the post-shot cooldown (the ONE
+    // WAIT_TIME splice site in this brain).
     w(&mut d, 0x117C);
     w(&mut d, 0x0040);
     w(&mut d, 0x002E);
-    // `anim Ani.Idle` -> `move.b #{Ani.Idle}, Sst.anim(a0)`. Ani.Idle
-    // ordinal = 0. Same MOVE.B shape as `wait`'s `anim Ani.Shoot`.
+    // `anim Ani.Idle` -> ordinal 0 into Sst.anim.
     w(&mut d, 0x117C);
     w(&mut d, 0x0000);
     w(&mut d, 0x001C);
-    // `routine wait` -> `pea {p}; move.w (a7)+, Sst.resume(a0)` with
-    // `p`=`wait`. `wait`'s own address is 0x46 (derived above) — abs.w:
+    // `routine cooldown` — `cooldown`'s own address derived below at 0xA6:
     w(&mut d, 0x4878);
-    w(&mut d, 0x0046);
+    w(&mut d, 0x00A6);
     w(&mut d, 0x315F);
     w(&mut d, 0x0020);
-    assert_eq!(d.len(), 0xB6, "`.draw:` begins here (shoot's tail)");
+    assert_eq!(d.len(), 0xA4, "`.draw:` begins here (shoot's tail)");
+    // `.draw: jbra Draw_Sprite` — site=0xA4, disp = 0xF2-(0xA4+2) = 0x4C
+    // (76) -> `bra.s`.
+    w(&mut d, 0x6000 | 0x4C);
+    assert_eq!(d.len(), 0xA6, "`shoot` proc ends, `cooldown` proc begins");
 
-    // `.draw: jbra Draw_Sprite` — `Draw_Sprite`@0xF4 (derived below).
-    // site=0xB6, disp = 0xF4-(0xB6+2) = 0x3C (60) -> `bra.s`.
+    // --- `proc cooldown (a0: *Sst) { ... }` @ 0xA6 ---
+    // The only waiting state: tick the post-shot timer; back to `watch`
+    // when it expires.
+    // `subq.b #1, timer(a0)`:
+    w(&mut d, 0x5328);
+    w(&mut d, 0x002E);
+    // `bne .draw` — `.draw`@0xB4. site=0xAA, disp = 0xB4-(0xAA+2) = 8 -> `.s`.
+    w(&mut d, 0x6600 | 8);
+    // `routine watch` — `watch`@0x40:
+    w(&mut d, 0x4878);
+    w(&mut d, 0x0040);
+    w(&mut d, 0x315F);
+    w(&mut d, 0x0020);
+    assert_eq!(d.len(), 0xB4, "`.draw:` begins here (cooldown's tail)");
+    // `.draw: jbra Draw_Sprite` — site=0xB4, disp = 0xF2-(0xB4+2) = 0x3C
+    // (60) -> `bra.s`.
     w(&mut d, 0x6000 | 0x3C);
-    assert_eq!(d.len(), 0xB8, "`shoot` proc ends, `seed` proc begins");
+    assert_eq!(d.len(), 0xB6, "`cooldown` proc ends, `seed` proc begins");
 
-    // --- `proc seed (a0: *Sst) { ... }` @ 0xB8 ---
-    // `despawn_below_level` -> `jbsr Despawn_Check` (prelude.emp, bare
-    // zero-arg directive). `Despawn_Check`'s own address is 0x100 (derived
-    // below). site=0xB8, disp = 0x100-(0xB8+2) = 0x46 (70) -> `bsr.s`.
+    // --- `proc seed (a0: *Sst) { ... }` @ 0xB6 ---
+    // `despawn_below_level` -> `jbsr Despawn_Check` — `Despawn_Check`@0xFE
+    // (prelude, below). site=0xB6, disp = 0xFE-(0xB6+2) = 0x46 (70) -> `bsr.s`.
     w(&mut d, 0x6100 | 0x46);
-    // `add.w #SEED_GRAVITY, y_vel(a0)` — SEED_GRAVITY=$20=32. Dest is a
-    // MEMORY ea, so `Add` retargets to `Addi` (ALU-immediate family):
-    // op=Addi=0b0110, sz=1(.w), ea=Disp16An($1A,a0) (`y_vel` direct Sst
-    // field, prelude.emp: `y_vel: i16 @ $1A`).
-    // Word = `0110<<8 | 1<<6 | 0b101<<3 | 0` = 0x0668, imm ext=$0020,
-    // disp ext=$001A.
+    // `add.w #SEED_GRAVITY, y_vel(a0)` — memory dest, `Add` retargets to
+    // `Addi`: word = 0x0668, imm ext = $0020, disp ext = $001A.
     w(&mut d, 0x0668);
     w(&mut d, 0x0020);
     w(&mut d, 0x001A);
-    // `jbsr ObjectMove` — `ObjectMove`'s own address is 0xF8 (derived
-    // below). site=0xC0, disp = 0xF8-(0xC0+2) = 0x36 (54) -> `bsr.s`.
+    // `jbsr ObjectMove` — `ObjectMove`@0xF6. site=0xBE,
+    // disp = 0xF6-(0xBE+2) = 0x36 (54) -> `bsr.s`.
     w(&mut d, 0x6100 | 0x36);
-    // `jbra Draw_Sprite` — site=0xC2, disp = 0xF4-(0xC2+2) = 0x30 (48)
+    // `jbra Draw_Sprite` — site=0xC0, disp = 0xF2-(0xC0+2) = 0x30 (48)
     // -> `bra.s`.
     w(&mut d, 0x6000 | 0x30);
     assert_eq!(
         d.len(),
-        0xC4,
+        0xC2,
         "`seed` proc ends — pitcher_plant's real content ends here"
     );
 
-    // --- 44-byte zero-filled gap (0xC4..0xF0) ---
+    // --- 44-byte zero-filled gap (0xC2..0xEE) ---
     // `place_sequential` packs the NEXT section (prelude's) at
     // `pitcher_plant_section.lma + pitcher_plant_section.placement_span()`.
     // `placement_span()` reserves every relaxable fragment at its LONGEST
-    // candidate width (`RelaxLadder`'s last rung, `RelaxAbsSym`'s `.l` form)
-    // — the pre-relaxation upper bound placement must use so it never
-    // panics on an unresolved width-variable fragment. Every relaxable site
-    // above in fact settled SHORT once real addresses were known, so the
-    // section's actual content (196 bytes, ending at 0xC4) is shorter than
-    // its reserved span (240 bytes) by exactly the sum of each site's
-    // (reserved - actual) width:
-    //   7 jbra/jbsr sites  x (6 - 2) = 28  (`.draw`x2(wait init not counted:
-    //     wait has 2, shoot has 2, seed has 3 = 7 total: wait's `jbra .draw`
-    //     + wait's `jbra Draw_Sprite` + shoot's `jbsr SpawnObject` + shoot's
-    //     `jbra Draw_Sprite` + seed's `jbsr Despawn_Check` + seed's `jbsr
-    //     ObjectMove` + seed's `jbra Draw_Sprite`)
-    //   4 unsized Bcc sites x (4 - 2) =  8  (wait's `bne`+`bhi`, shoot's
-    //     `bne`x2)
-    //   4 RelaxAbsSym sites x (6 - 4) =  8  (`Player_1.x_pos`, `lea
-    //     SeedDef,a1`, `pea shoot`, `pea wait`)
-    //   total = 28 + 8 + 8 = 44 bytes, exactly the 0xC4..0xF0 gap.
+    // candidate width — the pre-relaxation upper bound. The section's actual
+    // content (194 bytes, ending at 0xC2) is shorter than its reserved span
+    // (238 bytes = 0xEE) by the sum of each site's (reserved - actual):
+    //   7 jbra/jbsr ladder sites: 6 settle short (6-2=4 each) and watch's
+    //     `jbra Draw_Sprite` settles bra.w (6-4=2)  -> 6*4 + 2 = 26
+    //     (watch's tail jbra + shoot's jbsr SpawnObject + shoot's tail jbra
+    //      + cooldown's tail jbra + seed's jbsr Despawn_Check + seed's jbsr
+    //      ObjectMove + seed's tail jbra)
+    //   4 unsized Bcc sites x (4 - 2) =  8  (watch's `bhi`, shoot's `bne`x2,
+    //     cooldown's `bne`)
+    //   5 RelaxAbsSym sites x (6 - 4) = 10  (`Player_1.x_pos`, `lea
+    //     SeedDef,a1`, `pea shoot`, `pea cooldown`, `pea watch`)
+    //   total = 26 + 8 + 10 = 44 bytes, exactly the 0xC2..0xEE gap.
     // `flatten`'s default fill byte is 0x00.
     d.extend_from_slice(&[0u8; 0x2C]);
     assert_eq!(
         d.len(),
-        0xF0,
-        "prelude's `text` section begins here (LMA 240)"
+        0xEE,
+        "prelude's `text` section begins here (LMA 238)"
     );
 
     // =======================================================================
@@ -520,45 +437,45 @@ fn expected_image() -> Vec<u8> {
     // pitcher_plant's reserved span
     // =======================================================================
 
-    // `pub data Map_PitcherPlant: [u8;4] = [1, 0, 0, 0]` @ 0xF0
+    // `pub data Map_PitcherPlant: [u8;4] = [1, 0, 0, 0]` @ 0xEE
     d.extend_from_slice(&[1, 0, 0, 0]);
-    assert_eq!(d.len(), 0xF4, "`Draw_Sprite` begins here");
+    assert_eq!(d.len(), 0xF2, "`Draw_Sprite` begins here");
 
-    // `pub proc Draw_Sprite () { tst.b d0 ; rts }` @ 0xF4
+    // `pub proc Draw_Sprite () { tst.b d0 ; rts }` @ 0xF2
     // `tst.b d0`: Tst, size B, ea=Dn(0). base=0x4A00, sz<<6=0, ea=0.
     // Word = 0x4A00.
     w(&mut d, 0x4A00);
     // `rts` = 0x4E75 (fixed).
     w(&mut d, 0x4E75);
-    assert_eq!(d.len(), 0xF8, "`ObjectMove` begins here");
+    assert_eq!(d.len(), 0xF6, "`ObjectMove` begins here");
 
-    // `pub proc ObjectMove () { clr.w d1 ; rts }` @ 0xF8
+    // `pub proc ObjectMove () { clr.w d1 ; rts }` @ 0xF6
     // `clr.w d1`: Clr, size W, ea=Dn(1). base=0x4200, sz<<6=0x40, ea=1.
     // Word = 0x4200 | 0x40 | 1 = 0x4241.
     w(&mut d, 0x4241);
     w(&mut d, 0x4E75);
-    assert_eq!(d.len(), 0xFC, "`SpawnObject` begins here");
+    assert_eq!(d.len(), 0xFA, "`SpawnObject` begins here");
 
-    // `pub proc SpawnObject () { moveq #0, d2 ; rts }` @ 0xFC
+    // `pub proc SpawnObject () { moveq #0, d2 ; rts }` @ 0xFA
     // `moveq #0,Dn(2)`: word = 0x7000 | (2<<9) | (0 as i8 as u8 as u16)
     // = 0x7400.
     w(&mut d, 0x7400);
     w(&mut d, 0x4E75);
-    assert_eq!(d.len(), 0x100, "`Despawn_Check` begins here");
+    assert_eq!(d.len(), 0xFE, "`Despawn_Check` begins here");
 
-    // `pub proc Despawn_Check () { tst.w d3 ; rts }` @ 0x100
+    // `pub proc Despawn_Check () { tst.w d3 ; rts }` @ 0xFE
     // `tst.w d3`: Tst, size W, ea=Dn(3). base=0x4A00, sz<<6=0x40, ea=3.
     // Word = 0x4A00 | 0x40 | 3 = 0x4A43.
     w(&mut d, 0x4A43);
     w(&mut d, 0x4E75);
-    assert_eq!(d.len(), 0x104, "`Player_1` begins here");
+    assert_eq!(d.len(), 0x102, "`Player_1` begins here");
 
-    // `pub data Player_1: Sst = Sst{ id: 1, ...all-else-zero }` @ 0x104
+    // `pub data Player_1: Sst = Sst{ id: 1, ...all-else-zero }` @ 0x102
     // `Sst` is `$50` (80) bytes; every field is 0 except `id` (the first
     // field, a `u16`) = 1.
     w(&mut d, 1);
     d.extend_from_slice(&[0u8; 0x50 - 2]);
-    assert_eq!(d.len(), 0x154, "end of image");
+    assert_eq!(d.len(), 0x152, "end of image");
 
     d
 }
@@ -591,22 +508,22 @@ fn pitcher_plant_full_image_is_byte_exact() {
         "expected ZERO diagnostics of any severity (warnings included); stderr was:\n{stderr}"
     );
     assert!(
-        stdout.contains("built: 340 bytes"),
-        "expected the CLI to report `built: 340 bytes`, stdout was: {stdout}"
+        stdout.contains("built: 338 bytes"),
+        "expected the CLI to report `built: 338 bytes`, stdout was: {stdout}"
     );
 
     let image = image.expect("output .bin was not written");
     assert_eq!(
         image.len(),
-        340,
-        "the pitcher_plant image must be exactly 340 bytes"
+        338,
+        "the pitcher_plant image must be exactly 338 bytes"
     );
 
     let expected = expected_image();
     assert_eq!(
         expected.len(),
-        340,
-        "hand-derived expectation must itself total 340 bytes"
+        338,
+        "hand-derived expectation must itself total 338 bytes"
     );
     assert_byte_identical(&expected, &image, "pitcher_plant acceptance exhibit");
 
@@ -630,9 +547,8 @@ fn corrupting_prelude_wait_time_changes_the_image() {
     // Corrupt exactly one byte's worth of meaning: `const WAIT_TIME: u8 = 64`
     // -> `65`. `WAIT_TIME` is declared in pitcher_plant.emp (not prelude.emp
     // — it is the badnik's own tuning constant) and spliced as an immediate
-    // at THREE call sites (`init`'s body, `wait`'s `.rearm:` arm, and
-    // `shoot`'s `.no_fire:` re-arm — see `expected_image`'s derivation
-    // above) — each of those immediate-extension words must change from
+    // at ONE site (`shoot`'s cooldown arm — see `expected_image`'s
+    // derivation above): that immediate-extension word must change from
     // `$0040` to `$0041`.
     let pp_path = root.join("badniks/pitcher_plant.emp");
     let pp_src = std::fs::read_to_string(&pp_path).unwrap();

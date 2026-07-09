@@ -1,8 +1,15 @@
-// Pitcher Plant badnik (sonic_hack Object 0B) — new-style Aeon code, the
-// PROC spelling: three hand-threaded state procs (init/wait/shoot) whose
-// transitions write the routine slot via the `routine` helper. A stationary
-// plant: idles until the player comes within 96px of its facing side, plays
-// a shoot animation, spits a seed on the mouth-open frame, re-arms.
+// Pitcher Plant badnik (after sonic_hack Object 0B) — new-style Aeon code,
+// the PROC spelling: three hand-threaded state procs (watch/shoot/cooldown)
+// whose transitions write the routine slot via the `routine` helper.
+//
+// The brain: WATCH for the player every frame (reaction is instant — a
+// ~50-cycle check, never countdown luck); when the player is within 96px of
+// the facing side, COMMIT to the shoot windup (no mid-windup abort — badniks
+// that commit feel mechanical and fair); spit a seed on the mouth-open
+// frame; then COOL DOWN for WAIT_TIME frames. The cooldown is the only
+// waiting state: WAIT_TIME is a fire-rate limit, not an idle timer, so the
+// plant is blind only AFTER it has fired — never while Sonic walks up to it.
+//
 // Byte-pinned acceptance exhibit (pitcher_plant_acceptance.rs); its sibling
 // pitcher_plant_script.emp writes the same brain as one `script` coroutine.
 
@@ -11,10 +18,10 @@ module badniks.pitcher_plant in obj_bank
 /// Per-object state, overlaid on the SST's 34-byte custom window.
 /// Overflowing the window is a compile error at this declaration.
 vars PitcherPlantV: sst_custom {
-    timer: u8,                          // frames until the next state change
+    timer: u8,                          // windup countdown / cooldown timer
 }
 
-const WAIT_TIME: u8 = 64                // frames between attacks
+const WAIT_TIME: u8 = 64                // post-shot cooldown, in frames
 const ATTACK_RANGE: u16 = $60           // proximity that triggers a shot
 const SHOOT_WINDUP: u8 = $28            // length of the shoot animation
 const FIRE_FRAME: u8 = 16               // seed launches when timer hits this
@@ -41,7 +48,7 @@ offsets Ani {
 
 /// What the level's object list spawns.
 pub data Def = ObjDef{
-    code:  init,
+    code:  watch,
     map:   Map_PitcherPlant,
     art:   ArtTile{ tile: VRAM_PITCHER_PLANT, pal: 0, pri: 0 },
     col:   Collision.Hurt,
@@ -65,31 +72,24 @@ data SeedDef = ObjDef{
     frame: 5,
 }
 
-proc init (a0: *Sst) falls_into wait {
-    move.b  #WAIT_TIME, timer(a0)
-}
-
-proc wait (a0: *Sst) clobbers(d0) {
-    subq.b  #1, timer(a0)
-    bne     .draw
-
+/// The idle state — and the spawn entry (`Def.code: watch`): look for the
+/// player EVERY frame; nothing to initialize, no timer while idle.
+proc watch (a0: *Sst) clobbers(d0) {
     move.w  Player_1.x_pos, d0
     sub.w   x_pos(a0), d0
     facing_abs d0                       // signed distance, normalized to facing
     cmp.w   #ATTACK_RANGE, d0
-    bhi     .rearm
+    bhi     .draw                       // out of range → just draw, look again next frame
 
-    move.b  #SHOOT_WINDUP, timer(a0)
+    move.b  #SHOOT_WINDUP, timer(a0)    // in range → commit to the windup
     anim    Ani.Shoot
     routine shoot
-    jbra    .draw
-
-.rearm:
-    move.b  #WAIT_TIME, timer(a0)
 .draw:
     jbra    Draw_Sprite
 }
 
+/// The windup — committed once started. Fires the seed when the countdown
+/// passes the mouth-open frame, then arms the post-shot cooldown.
 proc shoot (a0: *Sst) {
     subq.b  #1, timer(a0)
     cmpi.b  #FIRE_FRAME, timer(a0)
@@ -101,9 +101,19 @@ proc shoot (a0: *Sst) {
     tst.b   timer(a0)
     bne     .draw
 
-    move.b  #WAIT_TIME, timer(a0)
+    move.b  #WAIT_TIME, timer(a0)       // arm the post-shot cooldown
     anim    Ani.Idle
-    routine wait
+    routine cooldown
+.draw:
+    jbra    Draw_Sprite
+}
+
+/// The post-shot cooldown — the only waiting state (the fire-rate limit:
+/// no machine-gun plant when the player camps in range).
+proc cooldown (a0: *Sst) {
+    subq.b  #1, timer(a0)
+    bne     .draw
+    routine watch
 .draw:
     jbra    Draw_Sprite
 }

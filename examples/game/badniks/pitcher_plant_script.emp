@@ -1,9 +1,11 @@
 // Pitcher Plant badnik — the `script` exhibit (Plan 7 #9b — D9.2/D9.6).
 // This is the SAME badnik as pitcher_plant.emp, but its brain is written as
 // ONE `script` coroutine instead of the three hand-threaded procs
-// (init/wait/shoot) the proc version uses. A stationary plant: idles until the
-// player comes within 96px of its facing side, plays a shoot animation, spits
-// a seed on the mouth-open frame, re-arms.
+// (watch/shoot/cooldown) the proc version uses. The brain: WATCH for the
+// player every frame (reaction is instant); within 96px of the facing side,
+// COMMIT to the shoot windup; spit a seed on the mouth-open frame; then COOL
+// DOWN for WAIT_TIME frames — the only waiting state (a fire-rate limit, not
+// an idle timer: the plant is blind only AFTER it has fired).
 //
 // Byte-pinned acceptance exhibit ALONGSIDE the proc version
 // (pitcher_plant_script_acceptance.rs pins its hidden resume table).
@@ -58,27 +60,29 @@
 // are identical either way; only the stored value's wire format and the
 // slot's offset differ.)
 //
-// Frame-by-frame trace of a freshly spawned plant (WAIT_TIME = 64):
-//   frame 0:  spawn copied ObjDef.code into (a0); the engine enters at the
-//             loop top. `wait_frames` stores 64 into timer(a0), ticks it to
-//             63 (not zero yet), and parks — draw, frame over.
-//   frames 1..62: the park's hidden resume point re-runs the tick, one
-//             frame at a time — 62, 61, … 1 — drawing each frame.
-//   frame 63: the tick hits 0 → fall out of the park → the proximity test
-//             runs and the plant either starts the shoot windup or goes
-//             around the loop to park again — all WITHIN this same frame.
-//             A frame only ends at a park or a yield; straight-line code
-//             between them is "free" (costs cycles, not frames).
+// Frame-by-frame trace of a freshly spawned plant:
+//   every idle frame: the engine resumes at `.watch` — the proximity test
+//             runs (≈50 cycles), and if nothing is in range, `yield .watch`
+//             ends the frame with "tomorrow: look again". Reaction to the
+//             player entering range is INSTANT, never countdown luck.
+//   in range: fall into `.attack` on the SAME frame — straight-line code
+//             between yields is "free" (costs cycles, not frames). The
+//             windup ticks once per frame via `yield .windup_tick`, firing
+//             the seed as the countdown passes FIRE_FRAME.
+//   after the shot: `wait_frames #WAIT_TIME` parks 63 drawn frames (the
+//             store-frame also ticks), then the loop closes back to
+//             `.watch` — the cooldown is the only blind stretch.
 //
 // What the `script` buys over the three procs:
 //   - the parks ARE the state store — no `routine`/`falls_into` bookkeeping
 //     anywhere in this file, and the state machine reads top-to-bottom as one
 //     story. The proc version's three states map onto this body as:
-//         init + wait → the `wait_frames` park (one line)
-//         shoot       → the `.windup_tick` frame-loop
+//         watch    → the `.watch` park-with-work (check, then `yield .watch`)
+//         shoot    → the `.windup_tick` frame-loop
+//         cooldown → the `wait_frames` park (one line)
 //   - user labels work ACROSS frame boundaries: the body is one flattened
-//     proc-shaped scope, so `yield .windup_tick` resumes at a label defined
-//     in an earlier segment for free.
+//     proc-shaped scope, so `yield .watch` / `yield .windup_tick` resume at
+//     labels defined in earlier segments for free.
 //   - a stale/garbage routine value is unconstructible from the language: the
 //     resume points form a closed set, and only they (and spawn) write the
 //     slot.
@@ -91,10 +95,10 @@ module badniks.pitcher_plant_script in obj_bank
 /// displacement (window base $2E + field offset 0), byte-identical to the old
 /// `objoff_2E` idiom; the name and the type check are free (§4.6).
 vars PitcherPlantV: sst_custom {
-    timer: u8,                          // frames until the next state change
+    timer: u8,                          // windup countdown / cooldown timer
 }
 
-const WAIT_TIME: u8 = 64                // frames between attacks
+const WAIT_TIME: u8 = 64                // post-shot cooldown, in frames
 const ATTACK_RANGE: u16 = $60           // proximity that triggers a shot (96px)
 const SHOOT_WINDUP: u8 = $28            // length of the shoot animation, in frames
 const FIRE_FRAME: u8 = 16               // seed launches when timer counts DOWN to this
@@ -174,34 +178,21 @@ data SeedDef = ObjDef{
 ///                              rts exit is unrepresentable).
 script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
     loop {                              // unconditional loop — the closing `}` jumps back here
-        // --- wait: a PURE park, one declarative line ---
-        // Park WAIT_TIME frames (drawing via the epilogue each frame), then
-        // fall through. Expands to exactly the tick idiom: store WAIT_TIME
-        // into timer(a0), then a hidden resume point decrements it once per
-        // frame until it hits zero. The store-frame also ticks, so #64
-        // draws 63 parked frames and falls through on the 64th tick.
-        // `.park` names the STATE, at the loop top — a branch that wants
-        // "go wait again" jumps straight here (one transfer), instead of
-        // aiming at an empty label before the `}` and riding the loop's
-        // hidden back-edge (two).
-    .park:
-        wait_frames #WAIT_TIME, timer(a0)
-
-        // --- proximity check: runs ON the frame the park expires ---
-        // No park until the plant has decided what to do, so the decision
-        // costs zero frames.
+        // --- watch: look for the player EVERY frame ---
+        // A park WITH per-frame work (the proximity check), so it keeps a
+        // loop — and the yield NAMES where tomorrow starts, on the line.
+    .watch:
         move.w  Player_1.x_pos, d0      // d0 := player's world X
         sub.w   x_pos(a0), d0           // d0 := player X − my X (signed distance)
         facing_abs d0                   // signed distance, normalized to facing
                                         //   (prelude helper: negates d0 if I face the
                                         //    other way, so "small positive = in front of me")
         cmp.w   #ATTACK_RANGE, d0       // within $60 px of my mouth?
-        bhi     .park                   // out of range → go park again
+        bls     .attack                 // yes → commit to the windup (same frame)
+        yield   .watch                  // no: draw, look again tomorrow
 
-        // --- shoot windup: a park WITH per-frame work ---
-        // Every parked frame must tick the countdown AND watch for the
-        // mouth-open frame, so this state keeps its explicit frame-loop —
-        // and the yield NAMES where the next frame starts, on the line.
+        // --- shoot windup: committed once started; fires on FIRE_FRAME ---
+    .attack:
         move.b  #SHOOT_WINDUP, timer(a0)    // windup countdown: timer := $28
         anim    Ani.Shoot               // prelude helper: switch to the shoot animation
     .windup_tick:
@@ -214,13 +205,16 @@ script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
                                         //   seed flies out of the mouth, whichever way I face
     .no_fire:
         tst.b   timer(a0)               // windup finished?
-        beq     .windup_done            // yes → back to idle (same frame)
+        beq     .cooldown               // yes → cool down (same frame)
         yield   .windup_tick            // frame over — next frame: another tick
 
-        // --- re-arm: back to idle, out through the loop's back-edge ---
-    .windup_done:
+        // --- cooldown: a PURE park, the ONLY place WAIT_TIME appears ---
+        // One declarative line: park WAIT_TIME frames (drawing each), then
+        // the loop's end brings us straight back to .watch.
+    .cooldown:
         anim    Ani.Idle                // back to the idle animation
-    }                                   // loop bottom → top → .park again
+        wait_frames #WAIT_TIME, timer(a0)
+    }                                   // loop bottom → top → .watch again
 }
 
 /// The projectile's per-frame brain — verbatim from the proc version (a seed is
