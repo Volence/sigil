@@ -326,7 +326,13 @@ impl Desugar<'_> {
             match stmt {
                 ScriptStmt::Asm(a) => out.push(a.clone()),
                 ScriptStmt::Loop { body, span } => self.desugar_loop(body, *span, out),
-                ScriptStmt::Yield { epilogue, span } => self.desugar_yield(epilogue, *span, out),
+                ScriptStmt::Yield { epilogue, resume, span } => {
+                    if let Some(r) = resume {
+                        self.desugar_named_resume_yield(r, *span, out);
+                    } else {
+                        self.desugar_yield(epilogue, *span, out);
+                    }
+                }
             }
         }
     }
@@ -346,6 +352,20 @@ impl Desugar<'_> {
         // `jbra .__loop$d` — a dot-local reference (the probe showed a dot-local
         // operand keeps the leading dot inside the single path segment).
         out.push(jbra(&format!(".{label}"), span));
+    }
+
+    /// `yield .label` (D2.30(b)) — lands in the next commit; refuse loudly
+    /// so this intermediate state can never ship silently wrong bytes.
+    fn desugar_named_resume_yield(&mut self, _r: &ScriptLabel, span: Span, out: &mut Vec<AsmStmt>) {
+        err(
+            self.diags,
+            span,
+            "[script.named-resume] `yield .label` is not built yet (D2.30(b) — next commit)"
+                .to_string(),
+        );
+        self.had_no_epilogue = true; // reuse the refuse-whole-script path
+        out.push(AsmStmt::Label { name: resume_name(self.yield_count + 1), export: false, span });
+        self.yield_count += 1;
     }
 
     /// `yield [label]` → store the scaled ordinal into the resume slot, `jbra`

@@ -55,7 +55,7 @@ script brain (a0: *S) (encoding: word_offsets) shows Draw_Sprite {
         .tick:
         subq.b  #1, d0
         yield
-        yield .tick
+        yield shows .tick
     }
 }
 ";
@@ -69,7 +69,8 @@ script brain (a0: *S) (encoding: word_offsets) shows Draw_Sprite {
     assert!(matches!(s.encoding, sigil_frontend_emp::ast::DispatchEncoding::WordOffsets));
     let ep = s.epilogue.as_ref().expect("shows clause");
     assert_eq!((ep.name.as_str(), ep.local), ("Draw_Sprite", false));
-    // body: nop, then a loop containing [.tick label, subq, bare yield, yield .tick]
+    // body: nop, then a loop containing [.tick label, subq, bare yield,
+    // yield shows .tick] — the D2.30(a) per-site epilogue spelling
     assert_eq!(s.body.len(), 2);
     let sigil_frontend_emp::ast::ScriptStmt::Loop { body, .. } = &s.body[1] else {
         panic!("expected loop, got {:?}", s.body[1])
@@ -78,7 +79,7 @@ script brain (a0: *S) (encoding: word_offsets) shows Draw_Sprite {
     assert!(matches!(&body[2],
         sigil_frontend_emp::ast::ScriptStmt::Yield { epilogue: None, .. }));
     let sigil_frontend_emp::ast::ScriptStmt::Yield { epilogue: Some(l), .. } = &body[3] else {
-        panic!("expected yield .tick, got {:?}", body[3])
+        panic!("expected yield shows .tick, got {:?}", body[3])
     };
     assert_eq!((l.name.as_str(), l.local), ("tick", true));
 }
@@ -264,7 +265,7 @@ fn script_without_scriptpc_field_errors() {
 module m
 struct S (size: 2) { x: u16 }
 script brain (a0: *S) (encoding: word_offsets) shows done {
-    yield done
+    yield shows done
 }
 proc done () { rts }
 ";
@@ -302,7 +303,9 @@ proc done () {{ rts }}
 
 #[test]
 fn yield_per_site_epilogue_overrides_shows() {
-    // `shows done` + a per-site `yield other` override: the jbra must target
+    // `shows done` + a per-site `yield shows other` override (D2.30(a) — the
+    // retired bare-label spelling produced the SAME bytes; this test is the
+    // equivalence proof): the jbra must target
     // `other`, not `done`. Layout is identical to Probe A (nop / yield / rts)
     // up through the resume label, but with TWO procs after the script body
     // (`done` first, then `other`) so the override is observable:
@@ -318,7 +321,7 @@ fn yield_per_site_epilogue_overrides_shows() {
         "module m\n{SCRIPT_TYPES}\
 script brain (a0: *S) (encoding: word_offsets) shows done {{
     nop
-    yield other
+    yield shows other
     rts
 }}
 proc done () {{ rts }}
@@ -343,7 +346,7 @@ proc other () {{ rts }}
 
 #[test]
 fn yield_local_epilogue_resolves() {
-    // `yield .fin` — a dot-local per-site epilogue defined LATER in the SAME
+    // `yield shows .fin` — a dot-local per-site epilogue defined LATER in the SAME
     // script (at its end). Single-hygiene-scope flattening means the label is
     // visible to the yield above it, same as any proc-local forward reference.
     //
@@ -363,7 +366,7 @@ fn yield_local_epilogue_resolves() {
         "module m\n{SCRIPT_TYPES}\
 script brain (a0: *S) (encoding: word_offsets) {{
     nop
-    yield .fin
+    yield shows .fin
     .fin:
     rts
 }}
@@ -569,4 +572,26 @@ script brain (a0: *S) (encoding: word_offsets) {
     let (module, errs) = lower(src);
     assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
     assert_eq!(linked_bytes(&module), vec![0x00, 0x02, 0x4E, 0x75]);
+}
+
+// ---- D2.30(a): the per-site epilogue is `yield shows <label>` -----------------
+
+#[test]
+fn retired_bare_label_yield_is_a_targeted_error() {
+    // `yield <label>` was retired at the pre-freeze audit (it misread as a
+    // resume target) — the error must TEACH both replacement spellings.
+    let src = format!(
+        "module m\n{SCRIPT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    yield other
+}}
+proc done () {{ rts }}
+proc other () {{ rts }}
+"
+    );
+    let (_, perrs) = parse_str(&src);
+    assert!(
+        perrs.iter().any(|d| d.message.contains("yield shows") && d.message.contains("yield .")),
+        "the retired form names both replacements: {perrs:?}"
+    );
 }

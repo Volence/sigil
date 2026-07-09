@@ -1101,18 +1101,28 @@ impl Parser {
             if self.at_kw("yield") {
                 let start = self.span();
                 self.bump(); // `yield`
-                // A per-site epilogue is a bare ident or a dot-local on the
-                // SAME line; a bare `yield` is followed by a newline/`}`. No
-                // other legal continuation, so this lookahead is unambiguous.
-                let epilogue = if self.at(&Tok::Dot) || matches!(self.peek(), Tok::Ident(_)) {
-                    Some(self.script_label())
-                } else {
-                    None
-                };
+                // D2.30: `yield shows <label>` overrides the per-frame
+                // epilogue; `yield .label` names the RESUME point; the old
+                // bare-label epilogue spelling is retired (it misread as a
+                // resume target — the audit's finding) with a teaching error.
+                let mut epilogue = None;
+                let mut resume = None;
+                if self.eat_kw("shows") {
+                    epilogue = Some(self.script_label());
+                } else if self.at(&Tok::Dot) {
+                    resume = Some(self.script_label());
+                } else if matches!(self.peek(), Tok::Ident(_)) {
+                    let sp = self.span();
+                    self.diag_at(
+                        sp,
+                        "`yield <label>` was retired (D2.30) — write `yield shows <label>`                          to override the per-frame epilogue, or `yield .label` to name                          where the next frame resumes",
+                    );
+                    self.bump(); // consume the label so the line recovers
+                }
                 // Same line-end rule as instruction lines: a `}` may close
                 // the body on the same line (`{ yield }` parses like `{ nop }`).
                 self.expect_line_end_or_rbrace();
-                out.push(ScriptStmt::Yield { epilogue, span: start.merge(self.prev_span()) });
+                out.push(ScriptStmt::Yield { epilogue, resume, span: start.merge(self.prev_span()) });
                 continue;
             }
             // Everything else is one ordinary proc-body statement (labels,

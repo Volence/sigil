@@ -546,10 +546,16 @@ pub enum ScriptStmt {
         /// Span of the whole loop.
         span: Span,
     },
-    /// `yield [label]` — save the resume point, exit via the epilogue (D9.6).
+    /// `yield` / `yield shows <label>` / `yield .label` — save a resume
+    /// point, exit via the per-frame epilogue (D9.6 + the D2.30 batch).
     Yield {
-        /// Per-site epilogue override; `None` uses the `shows` declaration.
+        /// `yield shows <label>` — per-site epilogue override (D2.30(a));
+        /// `None` uses the script's `shows` declaration.
         epilogue: Option<ScriptLabel>,
+        /// `yield .label` — the NAMED RESUME (D2.30(b)): "frame over; next
+        /// frame, continue at `.label`". Stores the target segment's ordinal
+        /// instead of minting a resume point at this site.
+        resume: Option<ScriptLabel>,
         /// Span of the statement.
         span: Span,
     },
