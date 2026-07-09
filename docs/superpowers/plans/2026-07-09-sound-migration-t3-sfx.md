@@ -520,3 +520,28 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   — legal for asl (`=` reassignment, equal values) but it clobbers the hand-owned header.
   Acceptable as a bootstrap escape hatch or worth a warning banner in the emitter? Review
   should rule.
+
+### Task 3 (`sfx_bank.emp`) — DONE (aeon commit `e3c3102` on `sigil-emp-sfx`)
+
+- 191 lines, module `data.sfx_bank`, 23 items, exactly per the sketch — no substantive
+  deviations. Pad naming `_pNN` (blob pad) / `_qNN` (patch pad) kept from the sketch
+  (mt_bank's descriptive `_*_align` style would be noise ×18; quality review concurred).
+- Standalone: `sigil parse` clean; `sigil emp` fails with EXACTLY the one expected
+  diagnostic (T2 carry-forward #5's misleading "internal: … anchor label" at the cross-seam
+  ensure — both operands external standalone). Stripped-ensure scratch build:
+  **1864 bytes = `$748` exact**, pads `$00` at offsets 811 (post-Sfx_3C) and 1161
+  (post-Sfx_B6).
+- **Spec review ✅ (independent re-derivation):** table sequence extracted independently
+  from both files and diff'd position-for-position — identical 135 (syms @ 0/1/2/3/9/47/
+  120/131/134, zero-runs 5/37/72/10/2); all 18 pad conditionals keyed on the correct
+  consts (all checked, not just the two firing); ensure message = main.asm fatal minus the
+  interpolation clause, verbatim; NO length ensure (type-enforced, R5) and no extras;
+  byte arithmetic recomputed from on-disk .bin sizes. Bonus: standalone bytes diffed
+  against `s4.bin[0x63AE8..0x64230]` — blob+patch region [0..1324) ALREADY byte-identical;
+  only the 27 pointer-cell bytes differ (unresolved standalone, as expected — Task 4's
+  linked gate covers them).
+- **Quality review ✅ approve** ("meets the mt_bank.emp bar; table scannability arguably
+  exceeds it"). One optional minor deferred to the polish pass: a one-line `_pNN`/`_qNN`
+  legend at the section top.
+- Note: the fatal line numbers moved to main.asm:258 (straddle) / :266 (co-residency)
+  after Task 2's gate insertion (were :252/:260 pre-gate).
