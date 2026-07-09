@@ -1,0 +1,161 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Emp",
+  "scopeName": "source.emp",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#chars" },
+    { "include": "#mnemonics" },
+    { "include": "#keywords" },
+    { "include": "#builtins" },
+    { "include": "#types" },
+    { "include": "#numbers" },
+    { "include": "#immediates" },
+    { "include": "#registers" },
+    { "include": "#labels" },
+    { "include": "#calls" },
+    { "include": "#macro-lines" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.documentation.emp",
+          "match": "///(?!/).*$"
+        },
+        {
+          "name": "comment.line.double-slash.emp",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.emp",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.emp",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.emp",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "chars": {
+      "name": "string.quoted.single.emp",
+      "match": "'(\\\\.|[^'\\\\])'"
+    },
+    "mnemonics": {
+      "patterns": [
+        {
+          "match": "^\\s*((?:movea|movem|movep|moveq|move|adda|addi|addq|addx|add|suba|subi|subq|subx|sub|muls|mulu|divs|divu|andi|and|ori|or|eori|eor|not|negx|neg|clr|cmpa|cmpi|cmpm|cmp|tst|btst|bset|bclr|bchg|asl|asr|lsl|lsr|roxl|roxr|rol|ror|swap|ext|exg|lea|pea|link|unlk|jmp|jsr|jbra|jbsr|bra|bsr|bhi|bls|bcc|bcs|bne|beq|bvc|bvs|bpl|bmi|bge|blt|bgt|ble|dbra|dbf|dbt|dbhi|dbls|dbcc|dbcs|dbne|dbeq|dbvc|dbvs|dbpl|dbmi|dbge|dblt|dbgt|dble|shi|sls|scc|scs|sne|seq|svc|svs|spl|smi|sge|slt|sgt|sle|sf|st|rts|rte|rtr|trapv|trap|stop|reset|nop|illegal|tas|chk|abcd|sbcd|nbcd)(?:\\.[bwls])?)(?=\\s|$)",
+          "captures": {
+            "1": { "name": "support.function.mnemonic.m68k.emp" }
+          }
+        },
+        {
+          "match": "^\\s*((?:ldir|lddr|cpir|cpdr|inir|indr|otir|otdr|ldi|ldd|cpi|cpd|ini|ind|outi|outd|ld|push|pop|exx|ex|inc|dec|adc|sbc|cpl|ccf|scf|rlca|rrca|rla|rra|rlc|rrc|rl|rr|sla|sra|srl|sll|bit|set|res|jp|jr|djnz|call|ret|reti|retn|rst|out|di|ei|halt|daa|im|nop))(?=\\s|$)",
+          "captures": {
+            "1": { "name": "support.function.mnemonic.z80.emp" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.emp",
+          "match": "\\b(yield|wait_frames|return|if|else|match|loop|while|for|expect_error)\\b"
+        },
+        {
+          "name": "storage.type.emp",
+          "match": "\\b(module|proc|script|const|data|vars|var|offsets|section|struct|enum|newtype|bitfield|fn|let|use|pub|export|dispatch|patch|test|comptime|bind|equ|label|block|asm|fixed|register|mnemonic|name)\\b"
+        },
+        {
+          "name": "storage.modifier.emp",
+          "match": "\\b(in|clobbers|shows|falls_into|encoding|max_size|align|where|size|long_ptrs|word_offsets|rescale)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "name": "support.function.builtin.emp",
+      "match": "\\b(ensure_fatal|ensure|here|sizeof|offsetof|default|unreachable|todo)\\b"
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.emp",
+          "match": "\\b[ui](8|16|32)\\b"
+        },
+        {
+          "name": "constant.other.caps.emp",
+          "match": "\\b[A-Z][A-Z0-9_]+\\b(?![a-z])"
+        },
+        {
+          "name": "entity.name.type.emp",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.emp",
+          "match": "\\$[0-9A-Fa-f][0-9A-Fa-f_]*"
+        },
+        {
+          "name": "constant.numeric.binary.emp",
+          "match": "\\b0b[01][01_]*\\b"
+        },
+        {
+          "name": "constant.numeric.binary.emp",
+          "match": "%[01]+\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.emp",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "immediates": {
+      "name": "keyword.operator.immediate.emp",
+      "match": "#(?=[$%0-9A-Za-z_-])"
+    },
+    "registers": {
+      "patterns": [
+        {
+          "name": "variable.language.register.m68k.emp",
+          "match": "\\b(d[0-7]|a[0-7]|usp|sp|pc|sr|ccr)\\b"
+        },
+        {
+          "name": "variable.language.register.z80.emp",
+          "match": "\\b(af|bc|de|hl|ix|iy)\\b'?"
+        }
+      ]
+    },
+    "labels": {
+      "name": "entity.name.label.emp",
+      "match": "(?<![\\w)])\\.[A-Za-z_]\\w*"
+    },
+    "calls": {
+      "name": "entity.name.function.emp",
+      "match": "\\b[a-z_]\\w*(?=\\()"
+    },
+    "macro-lines": {
+      "match": "^\\s*(?!(?:module|proc|script|const|data|vars|var|offsets|section|struct|enum|newtype|bitfield|fn|let|use|pub|export|dispatch|patch|test|comptime|bind|equ|label|block|asm|fixed|register|mnemonic|name|yield|wait_frames|return|if|else|match|loop|while|for|expect_error|in|clobbers|shows|falls_into|encoding|max_size|align|where|size|long_ptrs|word_offsets|rescale|ensure_fatal|ensure|here|sizeof|offsetof|default|unreachable|todo)\\b)([a-z_][a-z0-9_]*)\\b(?!\\s*[:(=,.\\[])",
+      "captures": {
+        "1": { "name": "entity.name.function.macro.emp" }
+      }
+    },
+    "operators": {
+      "name": "keyword.operator.emp",
+      "match": "->|==|!=|<=|>=|<<|>>|&&|\\|\\||\\.\\.|[-+*/%&|^!<>=]"
+    }
+  }
+}
