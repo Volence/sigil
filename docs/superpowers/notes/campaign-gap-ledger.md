@@ -14,6 +14,22 @@ this file is raw observations, not ratified decisions.
 
 Format: `- [port/date] OBSERVATION — status (SHIPPED / OPEN / SPEC-LEDGERED S2-Dxx)`
 
+**THE TRANCHE LOOP (Volence, ratified 2026-07-09 at tranche 2 — supersedes the paragraph
+below where they differ; ~4 steps per tranche/batch):**
+1. **Transcribe** — byte-exact `.emp` under `@as_compat`, verbatim instruction lines, byte
+   gates green (the reviewable 1:1 port commit).
+2. **Modernize** — a separate commit taking the file to the best Sigil form. Two tiers:
+   (2a) DEFAULT, byte-neutral — jbra/jbsr spellings, erasing types (newtypes/fixed/refinements
+   §8.3), named args, doc comments; gates re-run green as the proof. (2b) RARE, byte-changing
+   rewrites ("re-write pieces completely" is sanctioned) — a knowing, recorded, per-file R7
+   re-baseline: reference re-pins to the Sigil-built ROM, correctness proof shifts to
+   behavior (boot-check/emulator); spend sparingly while asl-identity remains the cheap
+   safety net for the rest of the tree.
+3. **Retrospect** — walk this ledger's new entries with Volence: missed idioms, Sigil
+   improvements, anything that could be nicer.
+4. **Implement** — build ratified items in Sigil, apply back to the current tranche's files
+   if relevant, final gate pass. Then the next tranche.
+
 **Cadence (Volence, 2026-07-09, clarified same day): a retrospect PER CONVERSION, not one
 review at campaign end.** Each port's checkpoint packet carries a short retrospect section:
 the port's new ledger entries, each with a recommendation — implement in the next tranche /
