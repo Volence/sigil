@@ -545,3 +545,26 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   legend at the section top.
 - Note: the fatal line numbers moved to main.asm:258 (straddle) / :266 (co-residency)
   after Task 2's gate insertion (were :252/:260 pre-gate).
+
+### Task 4 (`sfx_port.rs`) — DONE (commit `701bcf5`)
+
+- **ZERO DIVERGENCES, both shapes** — `sfx_bank` linked bytes == `s4.bin[0x63AE8..0x64230]`
+  and `s4.debug.bin[0x6553A..0x65C82]` (1864 B each), pointer cells resolved (the 27 bytes
+  standalone couldn't prove). Instant-green; **falsification recorded (per DSM.9, satisfies
+  the quality review's M3):** XOR'd `0xFF` into the plain expected window at region offset
+  `0x600` (SfxTable area) — failed loud with `first diff at offset 0x600 …
+  candidate[0x5f8..0x610]: [… 00 …] expected[…]: [… ff …]`, the [i-8,i+16) context on both
+  sides; reverted, re-ran clean. Spec reviewer additionally proved the strict-gate idiom
+  both ways (skip-clean without the gate + hard-fail 2/2 with gate + missing reference).
+- Faithful mt_port.rs mirror; only the five specified deltas (per-shape `map_toml(debug)`
+  — bases/sizes to the $68000 bank top, sfx module path/include_root, `defines: vec![]`,
+  `link_asserts.len() == 1` pin, new windows). Spec review ✅ (line-by-line diff vs
+  template + all numbers + tests re-run); quality review ✅ approve.
+- **Duplication ruling (quality review, keep for the record):** copies STAY — the
+  per-file-self-contained gate convention is explicit house style (mt_negative_probes.rs
+  :52-54 documents it); the truly-triplicated surface is ~7 lines; hoisting would trade
+  the gates' read-in-one-file credibility for indirection. Reconsider only if a fourth
+  sibling needs a parameterized shape the others don't.
+- Deferred to polish: M1 — the `AEON_DIR` default path string appears 4× in the file
+  (inherited verbatim from mt_port.rs; fold a shared `aeon_dir()` helper across both files
+  if touching them anyway).
