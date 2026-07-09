@@ -1745,10 +1745,18 @@ pub fn eval_dispatch_with_root(
 /// the overlay (Spec 2, Plan 7 #6 — D6.A2 "always-on"). Returns the diagnostics;
 /// the overlay itself emits ZERO bytes, so there is no buffer to return. The
 /// region form (`vars region { .. }`, `name: None`) is inert — the caller must
-/// not invoke this for it.
-pub fn validate_overlay(file: &ast::File, name: &str, span: Span) -> Vec<Diagnostic> {
+/// not invoke this for it. `defines` (sound-migration T2 Task 1, R1) are
+/// seeded first so an overlay field's size expression can reference a `-D`
+/// define like any other item's can.
+pub fn validate_overlay(
+    file: &ast::File,
+    name: &str,
+    span: Span,
+    defines: &[(String, i128)],
+) -> Vec<Diagnostic> {
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         ev.overlay_layout(name, span);
         ev.diags
     })

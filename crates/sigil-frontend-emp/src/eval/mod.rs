@@ -174,10 +174,11 @@ pub struct Evaluator<'a> {
     /// Comptime `-D NAME=INT` defines currently in scope (sound-migration T2
     /// Task 1, R1), keyed by name. Populated once, up front, by
     /// [`seed_defines`](Self::seed_defines) — NOT incrementally like
-    /// [`const_memo`](Self::const_memo) — so [`eval_path`](expr::Evaluator::eval_path)'s
-    /// bare-name lookup can treat a define exactly like a `const` even though
-    /// it has no backing `ast::ConstDecl` to index into [`consts`](Self::consts).
-    /// A name present here always has a matching pre-seeded `const_memo` entry.
+    /// [`const_memo`](Self::const_memo). This map IS the resolution mechanism:
+    /// `eval_path`'s bare-name lookup falls back to it (after locals and
+    /// consts/equs) and returns the `Value::Int` directly — a define has no
+    /// backing `ast::ConstDecl` to index into [`consts`](Self::consts), so it
+    /// never routes through `resolve_const`/`const_memo` at all.
     defines: HashMap<String, i128>,
     /// The names of consts whose value expressions are currently being
     /// evaluated, in reference order — the in-progress stack used to detect and
@@ -880,11 +881,12 @@ impl<'a> Evaluator<'a> {
     /// (sound-migration T2 Task 1, R1). Called once per evaluator, right after
     /// [`with_file`](Self::with_file) — BEFORE any item evaluates — so a bare
     /// reference to a define (`if DEBUG == 1 { .. }`) resolves exactly like a
-    /// `const` reference: [`eval_path`](expr::Evaluator::eval_path) checks
-    /// [`defines`](Self::defines) alongside `consts`/`equs`, and the value is
-    /// pre-seeded into [`const_memo`](Self::const_memo) so [`resolve_const`]
-    /// is never actually invoked for a define (there is no `ast::ConstDecl` to
-    /// evaluate — the whole point of "resolved entry" in R1).
+    /// `const` reference: [`eval_path`](expr::Evaluator::eval_path) falls back
+    /// to [`defines`](Self::defines) after `consts`/`equs` and returns the
+    /// `Value::Int` directly. That map lookup is the WHOLE mechanism — a
+    /// define has no `ast::ConstDecl` to evaluate, so `resolve_const` and its
+    /// `const_memo`/cycle machinery are never involved (an already-resolved
+    /// int can't cycle; this is R1's "pre-seeded resolved entry").
     ///
     /// A `name` already declared by the module as an INDEXED named item
     /// (const, equ, enum, fn, struct, bitfield, newtype, data, offsets,
@@ -920,7 +922,6 @@ impl<'a> Evaluator<'a> {
                 continue;
             }
             self.defines.insert(name.clone(), *value);
-            self.const_memo.insert(name.clone(), Value::Int(*value));
         }
     }
 

@@ -261,15 +261,19 @@ fn flag_value(args: &[String], i: &mut usize, flag: &str) -> String {
 /// the rest of the CLI's ROM tooling: plain decimal (optionally `-`-signed),
 /// `$hex`, and `0x`hex — a strict superset of the `.emp` lexer's own int forms
 /// (which has `$hex` but no `0x`), since a CLI flag is not source text a
-/// diagnostic ever points back into. A malformed `NAME=INT` (no `=`, or a
-/// non-integer value) is a usage error (exit 2), reported immediately rather
-/// than deferred to a confusing downstream `[defines.collision]`-shaped
-/// message.
+/// diagnostic ever points back into. A malformed `NAME=INT` (no `=`, an empty
+/// NAME, or a non-integer value) is a usage error (exit 2), reported
+/// immediately rather than deferred to a confusing downstream
+/// `[defines.collision]`-shaped message.
 fn parse_define(arg: &str) -> (String, i128) {
     let Some((name, value)) = arg.split_once('=') else {
         eprintln!("error: -D expects NAME=INT, got '{arg}'");
         process::exit(2);
     };
+    if name.is_empty() {
+        eprintln!("error: -D expects NAME=INT, got '{arg}' (empty name)");
+        process::exit(2);
+    }
     let Some(parsed) = parse_define_int(value) else {
         eprintln!("error: -D {name}=... value '{value}' is not an integer (decimal, $hex, or 0x hex)");
         process::exit(2);
@@ -743,5 +747,34 @@ mod tests {
         );
         let blob = std::fs::read(dir.join("blob.bin")).expect("read blob.bin");
         assert_eq!(image.expect("image bytes"), blob);
+    }
+
+    /// The `-D` value parser's accepted forms (decimal incl. negative, `$hex`,
+    /// `0x`/`0X` hex) and its refusals (overflow, garbage, empty, bare
+    /// prefixes). `parse_define` itself `process::exit(2)`s on a `None`, so the
+    /// pure int parser is the unit-testable seam.
+    #[test]
+    fn parse_define_int_accepts_all_documented_forms() {
+        assert_eq!(crate::parse_define_int("42"), Some(42));
+        assert_eq!(crate::parse_define_int("-7"), Some(-7));
+        assert_eq!(crate::parse_define_int("$FF"), Some(0xFF));
+        assert_eq!(crate::parse_define_int("$deadBEEF"), Some(0xDEAD_BEEF));
+        assert_eq!(crate::parse_define_int("0x10"), Some(0x10));
+        assert_eq!(crate::parse_define_int("0X10"), Some(0x10));
+        assert_eq!(crate::parse_define_int("0"), Some(0));
+    }
+
+    #[test]
+    fn parse_define_int_rejects_malformed_input() {
+        // Overflow: one past i128::MAX.
+        assert_eq!(crate::parse_define_int("170141183460469231731687303715884105728"), None);
+        assert_eq!(crate::parse_define_int("$100000000000000000000000000000000"), None);
+        // Garbage, wrong-radix digits, empty, bare prefixes.
+        assert_eq!(crate::parse_define_int("banana"), None);
+        assert_eq!(crate::parse_define_int("$XYZ"), None);
+        assert_eq!(crate::parse_define_int("0xZZ"), None);
+        assert_eq!(crate::parse_define_int(""), None);
+        assert_eq!(crate::parse_define_int("$"), None);
+        assert_eq!(crate::parse_define_int("0x"), None);
     }
 }

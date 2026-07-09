@@ -288,7 +288,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // (D6.A2); it emits ZERO bytes. Region form (`name: None`) is
                 // inert by design (Plan 7 #6 OUT-list).
                 if let Some(name) = &decl.name {
-                    let mut d = validate_overlay(file, name, decl.span);
+                    let mut d = validate_overlay(file, name, decl.span, &opts.defines);
                     overlay_pass_diags.extend(d.iter().cloned());
                     diags.append(&mut d);
                 }
@@ -451,7 +451,7 @@ fn lower_section_items(
                 // Same as the top-level arm: overlay form → force layout so its
                 // always-on checks fire, zero bytes; region form → inert.
                 if let Some(name) = &decl.name {
-                    let mut d = validate_overlay(file, name, decl.span);
+                    let mut d = validate_overlay(file, name, decl.span, placement.defines);
                     overlay_pass_diags.extend(d.iter().cloned());
                     diags.append(&mut d);
                 }

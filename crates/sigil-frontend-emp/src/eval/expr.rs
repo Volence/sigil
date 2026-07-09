@@ -187,10 +187,10 @@ impl<'a> Evaluator<'a> {
                         return self.resolve_const(name, path.span);
                     }
                     // A `-D NAME=INT` comptime define (sound-migration T2
-                    // Task 1): seeded into `const_memo` by `seed_defines`, so a
-                    // plain memo lookup resolves it exactly like a const —
-                    // there is no backing `ast::ConstDecl` to route through
-                    // `resolve_const`'s cycle machinery (a define can't cycle).
+                    // Task 1): an already-resolved int seeded by
+                    // `seed_defines`, returned directly — there is no backing
+                    // `ast::ConstDecl` to route through `resolve_const`'s
+                    // memo/cycle machinery (a resolved int can't cycle).
                     if let Some(v) = self.defines.get(name) {
                         return Value::Int(*v);
                     }
