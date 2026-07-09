@@ -498,6 +498,69 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
+
+    // -----------------------------------------------------------------
+    // Comper
+    // -----------------------------------------------------------------
+
+    /// `comper(data)` (Plan-7 #10, T2b): Comper compression, emitting the
+    /// raw stream (CR4). `data` must be word-even, same constraint as
+    /// `enigma` — surfaced via `report_clownlzss_error`'s existing
+    /// `NotWordEven` arm as `[comper.word-even]`.
+    pub(super) fn eval_comper(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let Some(buf) = self.eval_sole_data_arg("comper", args, span, env) else {
+            return Value::Poison;
+        };
+        self.comper_from_data(buf, span)
+    }
+
+    pub(crate) fn comper_from_data(&mut self, buf: DataBuf, span: Span) -> Value {
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "comper") else {
+            return Value::Poison;
+        };
+        match sigil_clownlzss_sys::compress_comper(&input) {
+            Ok(out) => {
+                let mut result = DataBuf::empty();
+                result.push(Cell::Bytes(out));
+                Value::Data(result)
+            }
+            Err(e) => {
+                self.report_clownlzss_error("comper", span, e);
+                Value::Poison
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Rocket
+    // -----------------------------------------------------------------
+
+    /// `rocket(data)` (Plan-7 #10, T2b): Rocket compression, emitting the
+    /// raw stream (CR4). Upstream has no header-less Rocket compressor, so
+    /// (unlike Saxman) there is no `header:` argument.
+    pub(super) fn eval_rocket(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let Some(buf) = self.eval_sole_data_arg("rocket", args, span, env) else {
+            return Value::Poison;
+        };
+        self.rocket_from_data(buf, span)
+    }
+
+    pub(crate) fn rocket_from_data(&mut self, buf: DataBuf, span: Span) -> Value {
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "rocket") else {
+            return Value::Poison;
+        };
+        match sigil_clownlzss_sys::compress_rocket(&input) {
+            Ok(out) => {
+                let mut result = DataBuf::empty();
+                result.push(Cell::Bytes(out));
+                Value::Data(result)
+            }
+            Err(e) => {
+                self.report_clownlzss_error("rocket", span, e);
+                Value::Poison
+            }
+        }
+    }
 }
 
 #[cfg(test)]

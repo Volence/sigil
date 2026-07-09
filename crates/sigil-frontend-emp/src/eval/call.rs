@@ -115,6 +115,10 @@ impl<'a> Evaluator<'a> {
                 // `nemesis(data)` (Plan-7 #10, T2b): Nemesis, tile-granular
                 // input ($20-byte multiple, <=32767 tiles).
                 "nemesis" => return self.eval_nemesis(args, span, env),
+                // `comper(data)` / `rocket(data)` (Plan-7 #10, T2b): the
+                // remaining clownlzss-backed formats, same template shape.
+                "comper" => return self.eval_comper(args, span, env),
+                "rocket" => return self.eval_rocket(args, span, env),
                 _ => {}
             }
         }

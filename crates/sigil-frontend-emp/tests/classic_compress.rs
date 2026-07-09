@@ -459,3 +459,69 @@ fn nemesis_no_args_errors() {
     );
     assert_eq!(buf.expect("data buf").size, 0);
 }
+
+// ---------------------------------------------------------------------------
+// comper / rocket
+// ---------------------------------------------------------------------------
+
+#[test]
+fn comper_matches_t2a_golden() {
+    let expected = read_vec("golden_comper.bin");
+    let src = "module m\ndata X = comper(embed(\"level_select_2p.raw\"))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn comper_non_data_arg_errors() {
+    let src = "module m\ndata X = comper(42)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[comper.arg]")),
+        "expected a [comper.arg] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn comper_odd_length_input_errors() {
+    let src = "module m\ndata X = comper(embed(\"level_select_2p.raw\", len: 407))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[comper.word-even]")),
+        "expected a [comper.word-even] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn rocket_matches_t2a_golden() {
+    let expected = read_vec("golden_rocket.bin");
+    let src = "module m\ndata X = rocket(embed(\"level_select_2p.raw\"))\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(flatten(&buf.expect("data buf")), expected);
+}
+
+#[test]
+fn rocket_non_data_arg_errors() {
+    let src = "module m\ndata X = rocket(42)\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[rocket.arg]")),
+        "expected a [rocket.arg] diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
+
+#[test]
+fn rocket_no_args_errors() {
+    let src = "module m\ndata X = rocket()\n";
+    let (buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("expects exactly 1 argument")),
+        "expected an arity diagnostic, got {diags:?}"
+    );
+    assert_eq!(buf.expect("data buf").size, 0);
+}
