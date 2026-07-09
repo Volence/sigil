@@ -1,5 +1,15 @@
 # Next-session handoff — sound-migration T3 (the SFX tranche)
 
+> **STATUS 2026-07-09: design-check HELD & RESOLVED — option (b), the table is HAND-OWNED**
+> (Volence ratified; generator drops the per-build table regen, blobs keep it). The
+> implementation plan is WRITTEN with frozen rulings R1–R8 and a re-verified fact base:
+> `plans/2026-07-09-sound-migration-t3-sfx.md` — that plan supersedes this note's scope
+> sketch (notably: the org resumes are `SfxTable_End` = `$64230` plain / `$65C82` debug, NOT
+> the blobs-only end addresses below; the Z80 imm8 equ consumers force an R2-style equ move
+> this note didn't list). Execute the plan next session. The forest-bg boot-check is STILL
+> pending (load `aeon/s4.bin`, check the forest act's dual-tree colonnade bg + section-1
+> tweaks, then commit aeon's working tree and drop stash@{0}).
+
 Written 2026-07-08 (Fable, end of the T2 session) for the next session. **T2 is MERGED &
 PUSHED** (sigil master `736e7f8`, aeon master `4710ef3`); T3 is the LAST sound-data tranche.
 Unlike T2, T3 needs a **SHORT design-check with Volence BEFORE the plan** (one real open
