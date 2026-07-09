@@ -15,6 +15,20 @@ both next steps; no design conversation needed for step 1, a SHORT design-check 
 
 ## Step 1 (do first, small & independent): restore the newer forest background
 
+> **STATUS 2026-07-08 (executed): DONE pending Volence boot-check.** Stash APPLIED clean
+> (stash@{0} kept until the aeon commit lands — drop it then). One fix needed: the generator's
+> OUT path predated the engine/game split (`data/` → `games/sonic4/data/`); regenerated JSON is
+> hash-identical to the stashed copy (deterministic). Both ROMs rebuilt per PROVENANCE.
+> Lengths UNCHANGED (451198 / 458982; EndOfRom 0x658B4 / 0x673A2 — the +64 tiles fit in align
+> padding), content changed (new sha256s in PROVENANCE.md re-baseline section). DAC $50000 /
+> MT $60000 UNSHIFTED → no dac_port golden churn; T2 can pin now. Collision bins verified
+> byte-identical. Harness + full workspace green (1429 tests). Oracle screenshots show the
+> dual-tree colonnade rendering (varied trunk widths). Stash also carried untracked extras:
+> `docs/research/s3k_art_style_demo.html` + `games/sonic4/data/sprites/plantbadmaps/` (inert
+> for the build) — Volence should decide their fate at commit time. Note the entity_data diff
+> adds two Path Swap objects in section 1 and moves rings/a solid block — gameplay tweaks
+> beyond the bg, part of the parked work; flagged for the boot-check.
+
 Volence noticed the game shows an OLDER bg. Root cause (investigated, confirmed): aeon
 `stash@{0}` — "park forest_bg_gen + editor experiments during byte-exact pin" — holds the NEWER
 dual-tree colonnade generator (PAT_W 128→256, two distinct trees/module, hash-based wall,

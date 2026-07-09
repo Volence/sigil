@@ -106,4 +106,27 @@ cp s4.bin s4.debug.bin && cp s4.lst s4.debug.lst   # capture the debug outputs
 
 ⚠️ Building debug **clobbers** `aeon/s4.bin`/`s4.lst` (the non-debug pin). Always
 restore them afterwards (the final `./build.sh sonic4` above), and confirm
-`sha256(s4.bin) == 71a7e245…` before relying on the non-debug gates.
+`sha256(s4.bin)` matches the current pin before relying on the non-debug gates.
+
+## Re-baseline: forest-bg restore (2026-07-08) — the current pin
+
+The parked forest-bg work (aeon stash `sigil-m1d: park forest_bg_gen + editor
+experiments during byte-exact pin`) was restored: the dual-tree colonnade
+generator (`tools/forest_bg_gen.py`, 340 tiles vs 276) plus editor-export tweaks
+(`entity_data.asm`, `vram_bases.asm`, section objects/rings JSONs). Both ROMs
+were rebuilt per the T5 capture procedure above and all gates re-run green
+(harness + full workspace, 1429 tests).
+
+- Aeon repo state: **`e5b256c` + the bg-restore working tree** (dirty at capture
+  time — the aeon commit lands after Volence's boot-check).
+- Non-debug `s4.bin`: **451198 bytes** (unchanged; assembled `EndOfRom` =
+  `0x658B4`, also unchanged — the +64 bg tiles fit inside existing `align`
+  padding), sha256
+  **`8ce6dd7e30553b8525ddda19ebe3365cc5d24cc62dccfb9c0e6a227d70bc25ef`**.
+- Debug `s4.debug.bin`: **458982 bytes** (unchanged; assembled `EndOfRom` =
+  `0x673A2`, unchanged), sha256
+  **`13c7b06355b658ee299756840a80b566005cdbbd5192755e8eae506a5f4fd22f`**.
+- Sound-block layout UNCHANGED: DAC banks at `$50000`–`$60000`, MT bank at
+  `$60000` — no dac/MT pin shift; `dac_port.rs` goldens untouched.
+- Collision `.bin` files verified byte-identical across the rebuild (still the
+  pinned S&K-import tables; OJZ collision switch remains deferred).
