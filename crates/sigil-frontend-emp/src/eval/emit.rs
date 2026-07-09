@@ -371,6 +371,13 @@ impl<'a> Evaluator<'a> {
             // the `Abs32Be` byte layout a `SymRef` in this slot would resolve to.
             None if matches!(value, Value::Int(_)) => {
                 if let Value::Int(n) = value {
+                    // The folded cell is a 4-byte UNSIGNED absolute address, so
+                    // range-check against `0..=u32::MAX` before pushing — an
+                    // out-of-range int must NOT silently truncate to its low 4
+                    // bytes (byte-identical to a `0` null). Mirrors the scalar
+                    // path (`lower_prim`)'s `emit_range_check`; the cell is still
+                    // emitted (best-effort) so the table's size lines up.
+                    self.emit_range_check(*n, 0, u32::MAX as i128, "*u8 (absolute pointer cell)", span);
                     buf.push(Cell::Scalar { value: *n, width: 4, signed: false, le: false });
                 }
             }

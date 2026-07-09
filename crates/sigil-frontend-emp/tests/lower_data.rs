@@ -948,3 +948,56 @@ fn p3_nonzero_int_entry_in_pointer_array_folds_to_absolute_cell() {
     assert_eq!(&bytes[1..5], &[0x00, 0x00, 0x00, 0x00], "T[0] -> A @ address 0");
     assert_eq!(&bytes[5..9], &[0x00, 0x00, 0x12, 0x34], "T[1] = $1234 as a big-endian absolute cell");
 }
+
+#[test]
+fn p3_oversized_int_entry_in_pointer_array_errors_out_of_range() {
+    // The folded int cell is a 4-byte ABSOLUTE address (`Abs32Be`), so an int
+    // that does not fit an unsigned 32-bit address (`$100000000` = 2^32) MUST
+    // NOT silently truncate to its low 4 bytes (`00 00 00 00`, byte-identical to
+    // a `0` null) — it is refused at emission time with `[emit.out-of-range]`,
+    // the same discipline the scalar path (`lower_prim`) enforces. Mirrors the
+    // `u16` out-of-range refusals above.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 2] = [\"A\", $100000000]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("4294967296")),
+        "expected an [emit.out-of-range] refusing 2^32 for a *u8 pointer cell, got {diags:?}"
+    );
+}
+
+#[test]
+fn p3_negative_int_entry_in_pointer_array_errors_out_of_range() {
+    // A NEGATIVE int in a pointer slot is likewise out of the unsigned-32-bit
+    // address range (0..=u32::MAX) — refused loud rather than wrapping to a
+    // large positive address.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 2] = [\"A\", -1]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(
+        diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
+        "expected an [emit.out-of-range] refusing -1 for a *u8 pointer cell, got {diags:?}"
+    );
+}
+
+#[test]
+fn p3_u32_max_int_entry_in_pointer_array_is_accepted() {
+    // The BOUNDARY: `$FFFFFFFF` (u32::MAX) is a representable absolute address —
+    // it stays ACCEPTED (no diagnostic) and folds big-endian into its 4-byte
+    // cell, exactly like the `$1234` case above.
+    let src = "module m\n\
+               data A: [u8;1] = [1]\n\
+               data T: [*u8; 2] = [\"A\", $FFFFFFFF]\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    let bytes = linked_bytes(&module);
+    assert_eq!(&bytes[5..9], &[0xFF, 0xFF, 0xFF, 0xFF], "T[1] = $FFFFFFFF as a big-endian absolute cell");
+}
