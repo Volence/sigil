@@ -119,6 +119,7 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(sound_dir()),
+        embed_base: None,
         defines: vec![("DEBUG".to_string(), 0)],
     };
     let (module, ldiags) = lower_module(&file, &opts);
@@ -190,6 +191,7 @@ fn wrong_bank_cross_seam_label_fires_all_five_co_residency_ensures() {
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(sound_dir()),
+        embed_base: None,
         defines: vec![("DEBUG".to_string(), 0)],
     };
     let (module, ldiags) = lower_module(&file, &opts);
@@ -296,6 +298,7 @@ fn table_length_mismatch_in_mt_style_dual_table_composition_is_clean_error() {
         &LowerOptions {
             initial_cpu: Cpu::M68000,
             include_root: None,
+            embed_base: None,
             defines: vec![("DEBUG".to_string(), 1)],
         },
     );
@@ -335,6 +338,7 @@ fn missing_debug_define_is_a_clean_unknown_name_error_not_a_panic() {
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(sound_dir()),
+        embed_base: None,
         defines: vec![], // no -D DEBUG= at all
     };
     let (_module, ldiags) = lower_module(&file, &opts);

@@ -260,13 +260,25 @@ pub struct Evaluator<'a> {
     /// is actually referenced, so the lowering pass defines it (an item guard's
     /// anonymous anchor is minted only on use, keeping `--map`/symbol tables clean).
     here_used: bool,
-    /// The capability-sandbox root (Spec 2, Plan 5 — Task 1): the directory
-    /// `embed`/`import` paths resolve against. `None` outside a rooted
-    /// evaluation (e.g. the plain [`eval_const`] entry point), in which case a
-    /// comptime file read is `[sandbox.no-root]`. Set via
+    /// The capability-sandbox root (Spec 2, Plan 5 — Task 1): the HARD
+    /// containment boundary a resolved `embed`/`import` path must stay
+    /// inside. `None` outside a rooted evaluation (e.g. the plain
+    /// [`eval_const`] entry point), in which case a comptime file read is
+    /// `[sandbox.no-root]`. Set via
     /// [`set_include_root`](Self::set_include_root) by the
     /// [`layout::eval_data_with_root`](crate::layout::eval_data_with_root) seam.
     include_root: Option<PathBuf>,
+    /// The join BASE a relative `embed`/`import` path resolves against
+    /// (port #2, `math.emp`'s `embed("../data/sine.bin")`): distinct from
+    /// `include_root`, which stays the boundary. `None` means "same as
+    /// `include_root`" (every pre-existing caller's behavior, unchanged) —
+    /// `resolve_sandbox_path` falls back to `include_root` when this is
+    /// unset. Lets a module whose `embed` path climbs ABOVE its own
+    /// directory (to a sibling directory still inside the broader
+    /// `include_root` tree) resolve, without weakening the containment
+    /// check itself, which always runs against `include_root` alone. Set via
+    /// [`set_embed_base`](Self::set_embed_base).
+    embed_base: Option<PathBuf>,
     /// The capture ledger (Task 1): one [`sandbox::CaptureEdge`] per comptime
     /// file read (`embed`, and later `import`/`zx0`), recording the resolved
     /// path, its SHA-256 digest, and its byte length — the provenance record a
@@ -367,6 +379,7 @@ impl<'a> Evaluator<'a> {
             here_used: false,
             link_asserts: Vec::new(),
             include_root: None,
+            embed_base: None,
             captures: Vec::new(),
             reg_pointee_struct: HashMap::new(),
             cpu: None,

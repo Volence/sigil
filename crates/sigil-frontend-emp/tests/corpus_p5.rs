@@ -28,7 +28,7 @@ fn lower_and_flatten(src: &str) -> (Vec<u8>, Vec<sigil_span::Diagnostic>) {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), defines: vec![] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), embed_base: None, defines: vec![] },
     );
     if diags.is_empty() {
         let resolved =
@@ -119,7 +119,7 @@ fn sandbox_and_features_in_a_placed_section() {
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), defines: vec![] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), embed_base: None, defines: vec![] },
     );
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 

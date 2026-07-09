@@ -38,7 +38,7 @@ use sigil_span::{Diagnostic, Level};
 fn emp_link(emp: &str) -> LinkedImage {
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse errors: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower errors: {ldiags:?}");
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
@@ -68,7 +68,7 @@ fn as_flat(asm: &str) -> Vec<u8> {
 fn emp_lower_diags(emp: &str) -> Vec<Diagnostic> {
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse errors: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     lower_module(&file, &opts).1
 }
 
@@ -77,7 +77,7 @@ fn emp_lower_diags(emp: &str) -> Vec<Diagnostic> {
 fn emp_pipeline_err(emp: &str) -> Vec<Diagnostic> {
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse errors: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     if ldiags.iter().any(|d| d.level == Level::Error) {
         return ldiags;
@@ -373,7 +373,7 @@ fn unsized_bra_terminates_proc_no_fallthrough_warning() {
                }\n";
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse errors: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (_module, diags) = lower_module(&file, &opts);
     assert!(
         !has_tag(&diags, "[proc.undeclared-fallthrough]"),

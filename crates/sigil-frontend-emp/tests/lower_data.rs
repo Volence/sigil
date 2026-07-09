@@ -28,7 +28,7 @@ fn roundtrip_bytes() {
     let (file, perrs) = parse_str("module m\ndata X: [u8; 3] = [1, 2, 3]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
@@ -45,7 +45,7 @@ fn multibyte_scalar_is_big_endian() {
     let (file, perrs) = parse_str("module m\ndata W: u16 = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
@@ -64,7 +64,7 @@ fn symref_makes_abs32_fixup() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, _diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, _diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
 
     // The point is the fixup SHAPE, not its resolution: an Abs32Be fixup at
     // offset 0 of the data fragment, targeting the symbol `init`.
@@ -141,11 +141,11 @@ fn scalar_byte_order_per_cpu() {
     let (file, perrs) = parse_str("module m\ndata W: u16 = 258\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (be_mod, be_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (be_mod, be_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(be_diags.is_empty(), "unexpected 68k diagnostics: {be_diags:?}");
     assert_eq!(linked_bytes(&be_mod), vec![0x01, 0x02]);
 
-    let (le_mod, le_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
+    let (le_mod, le_diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, embed_base: None, defines: vec![] });
     assert!(le_diags.is_empty(), "unexpected Z80 diagnostics: {le_diags:?}");
     assert_eq!(linked_bytes(&le_mod), vec![0x02, 0x01]);
 }
@@ -160,7 +160,7 @@ fn symref_width4_68k_is_abs32be() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -181,7 +181,7 @@ fn winptr_in_z80_is_value16le() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -212,7 +212,7 @@ fn winptr_in_68k_is_value16be() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -233,7 +233,7 @@ fn unwindowed_pointer_in_z80_is_error() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[cross-cpu.unwindowed-pointer]")
             && d.message.contains("init")),
@@ -254,7 +254,7 @@ fn mixed_table_byte_diff_68k() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     // tag=0x1234 (BE) | code=0x00000000 (Abs32 hole) | flag=0x7F. The pointer
     // targets an external `init`, so byte-diff the raw pre-link image.
@@ -304,7 +304,7 @@ fn i16_neg1_lowers_to_ffff_signed_sentinel_bytes() {
     // `multibyte_scalar_is_big_endian` above.
     let (file, perrs) = parse_str("module m\ndata T: [i16; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0xFF, 0xFF]);
 }
@@ -314,7 +314,7 @@ fn i8_neg1_lowers_to_ff_signed_sentinel_byte() {
     // `dc.b -1` ($FF) via `i8`.
     let (file, perrs) = parse_str("module m\ndata T: [i8; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0xFF]);
 }
@@ -326,7 +326,7 @@ fn i16_array_shows_the_sentinel_in_terminator_position() {
     // big-endian, then the `$FFFF` sentinel.
     let (file, perrs) = parse_str("module m\ndata T: [i16; 3] = [10, 20, -1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x00, 0x0A, 0x00, 0x14, 0xFF, 0xFF]);
 }
@@ -343,7 +343,7 @@ fn i16_array_shows_the_sentinel_in_terminator_position() {
 fn string_against_matching_byte_array_type_emits_ascii_bytes() {
     let (file, perrs) = parse_str("module m\ndata Msg: [u8;5] = \"HELLO\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F]);
 }
@@ -354,7 +354,7 @@ fn string_shorter_than_declared_byte_array_is_length_mismatch_error() {
     // plain length mismatch, not a silent truncation.
     let (file, perrs) = parse_str("module m\ndata Msg: [u8;4] = \"HELLO\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("length mismatch")
             && d.message.contains('4')
@@ -368,7 +368,7 @@ fn string_with_null_escape_sized_to_include_terminator_emits_it() {
     // The author sizes the array to include the `\0` terminator explicitly.
     let (file, perrs) = parse_str("module m\ndata Msg: [u8;6] = \"HELLO\\0\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x48, 0x45, 0x4C, 0x4C, 0x4F, 0x00]);
 }
@@ -379,7 +379,7 @@ fn string_against_non_byte_element_array_type_stays_an_error() {
     // stays the ordinary "expected an array" mismatch.
     let (file, perrs) = parse_str("module m\ndata Msg: [u16;3] = \"HELLO\"\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("expected an array") && d.message.contains("string")),
         "expected an 'expected an array ... got string' diagnostic, got {diags:?}"
@@ -391,7 +391,7 @@ fn string_against_byte_array_rejects_non_ascii() {
     let src = "module m\ndata Msg: [u8;1] = \"\u{e9}\"\n"; // "é"
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.to_lowercase().contains("ascii")),
         "expected an ASCII-only diagnostic, got {diags:?}"
@@ -413,7 +413,7 @@ fn string_in_pointer_field_is_still_a_symbol_ref_not_bytes() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -432,7 +432,7 @@ fn u16_neg1_is_rejected_not_wrapped() {
     // "loosen `u16`/`u8`".
     let (file, perrs) = parse_str("module m\ndata T: [u16; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
         "expected an [emit.out-of-range] refusing -1 for u16, got {diags:?}"
@@ -452,7 +452,7 @@ fn u16le_scalar_in_68k_section_emits_little_endian() {
     // opposite order from `multibyte_scalar_is_big_endian`'s plain `u16`).
     let (file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![0x34, 0x12]);
 }
@@ -463,12 +463,12 @@ fn u16le_equals_u16_on_z80() {
     // plain `u16` emits there — no double byte-swap.
     let (le_file, perrs) = parse_str("module m\ndata X: u16le = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (le_mod, le_diags) = lower_module(&le_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
+    let (le_mod, le_diags) = lower_module(&le_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, embed_base: None, defines: vec![] });
     assert!(le_diags.is_empty(), "unexpected lowering diagnostics: {le_diags:?}");
 
     let (be_file, perrs) = parse_str("module m\ndata X: u16 = $1234\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (be_mod, be_diags) = lower_module(&be_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, defines: vec![] });
+    let (be_mod, be_diags) = lower_module(&be_file, &LowerOptions { initial_cpu: Cpu::Z80, include_root: None, embed_base: None, defines: vec![] });
     assert!(be_diags.is_empty(), "unexpected lowering diagnostics: {be_diags:?}");
 
     assert_eq!(linked_bytes(&le_mod), linked_bytes(&be_mod));
@@ -487,7 +487,7 @@ fn u16le_linkexpr_cell_uses_value16le_on_68k() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
     assert_eq!(
         section_fixups(&module),
@@ -517,7 +517,7 @@ fn u16le_range_rules_are_identical_to_u16() {
     // `u16_neg1_is_rejected_not_wrapped` above): `-1` is refused, not wrapped.
     let (file, perrs) = parse_str("module m\ndata T: [u16le; 1] = [-1]\n");
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
         "expected an [emit.out-of-range] refusing -1 for u16le, got {diags:?}"
@@ -543,14 +543,14 @@ fn defines_are_visible_as_comptime_consts() {
 
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("DEBUG".into(), 1)] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![("DEBUG".into(), 1)] },
     );
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
     assert_eq!(linked_bytes(&module), vec![1, 2, 3]);
 
     let (module0, diags0) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("DEBUG".into(), 0)] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![("DEBUG".into(), 0)] },
     );
     assert!(diags0.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags0:?}");
     assert_eq!(linked_bytes(&module0), vec![7]);
@@ -564,7 +564,7 @@ fn define_colliding_with_module_decl_errors() {
 
     let (_module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("DEBUG".into(), 1)] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![("DEBUG".into(), 1)] },
     );
     assert!(
         diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.contains("[defines.collision]")),
@@ -585,7 +585,7 @@ fn define_colliding_with_proc_name_errors() {
 
     let (_module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("Foo".into(), 5)] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![("Foo".into(), 5)] },
     );
     assert!(
         diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.contains("[defines.collision]")),
@@ -636,7 +636,12 @@ fn lower_with_defines_and_root(
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
     lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), defines },
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: Some(vectors_dir()),
+            embed_base: None,
+            defines,
+        },
     )
 }
 
@@ -703,7 +708,7 @@ fn p2_pointer_array_of_three_strings_emits_three_abs32_symrefs() {
                data T: [*u8; 3] = [\"A\", \"B\", \"C\"]\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
 
     // Three 4-byte Abs32Be fixups at offsets 0, 4, 8, targeting A/B/C.
@@ -732,7 +737,7 @@ fn p2_pointer_array_of_one_string_emits_one_abs32_symref() {
                data T: [*u8; 1] = [\"A\"]\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
 
     assert_eq!(
@@ -758,7 +763,7 @@ fn p3_if_expression_const_length_drives_matching_array_shape_debug_1() {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 1)] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![("D".into(), 1)] },
     );
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
     assert_eq!(
@@ -784,7 +789,7 @@ fn p3_if_expression_const_length_drives_matching_array_shape_debug_0() {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 0)] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![("D".into(), 0)] },
     );
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
     assert_eq!(
@@ -807,7 +812,7 @@ fn p3_mismatched_array_length_against_const_n_is_clean_error_not_panic() {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
     let (_module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("D".into(), 1)] },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![("D".into(), 1)] },
     );
     assert!(
         diags.iter().any(|d| d.level == sigil_span::Level::Error
@@ -900,7 +905,7 @@ fn t3_p3_null_entries_in_pointer_array_lower_as_zero_cells_no_fixup() {
                data T: [*u8; 5] = [\"A\", 0, 0, \"B\", 0]\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
 
     // Exactly TWO fixups — the string elements only; the `0` cells carry none.
@@ -934,7 +939,7 @@ fn t3_p3_nonzero_int_entry_in_pointer_array_folds_to_absolute_cell() {
                data T: [*u8; 2] = [\"A\", $1234]\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
 
     // Only the sym entry gets a fixup; the int is a folded absolute cell.
@@ -962,7 +967,7 @@ fn t3_p3_oversized_int_entry_in_pointer_array_errors_out_of_range() {
                data T: [*u8; 2] = [\"A\", $100000000]\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("4294967296")),
         "expected an [emit.out-of-range] refusing 2^32 for a *u8 pointer cell, got {diags:?}"
@@ -979,7 +984,7 @@ fn t3_p3_negative_int_entry_in_pointer_array_errors_out_of_range() {
                data T: [*u8; 2] = [\"A\", -1]\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[emit.out-of-range]") && d.message.contains("-1")),
         "expected an [emit.out-of-range] refusing -1 for a *u8 pointer cell, got {diags:?}"
@@ -996,7 +1001,7 @@ fn t3_p3_u32_max_int_entry_in_pointer_array_is_accepted() {
                data T: [*u8; 2] = [\"A\", $FFFFFFFF]\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
     let bytes = linked_bytes(&module);
     assert_eq!(&bytes[5..9], &[0xFF, 0xFF, 0xFF, 0xFF], "T[1] = $FFFFFFFF as a big-endian absolute cell");

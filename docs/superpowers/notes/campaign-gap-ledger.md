@@ -14,6 +14,27 @@ this file is raw observations, not ratified decisions.
 
 Format: `- [port/date] OBSERVATION — status (SHIPPED / OPEN / SPEC-LEDGERED S2-Dxx)`
 
+**THE TRANCHE LOOP (Volence, ratified 2026-07-09 at tranche 2 — supersedes the paragraph
+below where they differ; ~4 steps per tranche/batch):**
+1. **Transcribe** — byte-exact `.emp` under `@as_compat`, verbatim instruction lines, byte
+   gates green (the reviewable 1:1 port commit).
+2. **Modernize** — a separate commit taking the file to the best Sigil form. Two tiers:
+   (2a) DEFAULT, byte-neutral — jbra/jbsr spellings, erasing types (newtypes/fixed/refinements
+   §8.3), named args, doc comments; gates re-run green as the proof. (2b) RARE, byte-changing
+   rewrites ("re-write pieces completely" is sanctioned) — a knowing, recorded, per-file R7
+   re-baseline: reference re-pins to the Sigil-built ROM, correctness proof shifts to
+   behavior (boot-check/emulator); spend sparingly while asl-identity remains the cheap
+   safety net for the rest of the tree.
+3. **Retrospect** — walk this ledger's new entries with Volence: missed idioms, Sigil
+   improvements, anything that could be nicer.
+4. **Implement** — build ratified items in Sigil, apply back to the current tranche's files
+   if relevant, final gate pass. Then the next tranche.
+
+**Step 2 is the campaign's quality apex (Volence, 2026-07-09): nothing holds it back.** The
+other steps exist to feed it — if the best version of a file wants a missing construct,
+shared module, or assert form, BUILD it (the equ-fix precedent) rather than settle. The
+output of step 2 is the codebase the community lives in; "best of the best" is the bar.
+
 **Cadence (Volence, 2026-07-09, clarified same day): a retrospect PER CONVERSION, not one
 review at campaign end.** Each port's checkpoint packet carries a short retrospect section:
 the port's new ledger entries, each with a recommendation — implement in the next tranche /
@@ -148,3 +169,149 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   future Z80 module (or a forgetful caller) mis-lowers with no module-level signal. Candidate:
   modules self-declare target CPU (`module x in y (cpu: z80)`?) or the pipeline
   defaults-and-warns. — OPEN.
+- [tranche 2 T1 review, 2026-07-09] **`pc` is a reserved EA token in inner-base position** — a
+  user symbol literally named `pc` can't be the sole inner base of `Sym(pc)` (the pc-rel
+  carve-out wins, matching AS); `pc` as a displacement over a real register still works. One
+  doc line owed in the .emp EA docs. — OPEN (docs-only).
+- [tranche 2 T1 review, 2026-07-09] **PcRel range-check errors name distance+section but not
+  the target SYMBOL** (sigil-link lib.rs ~482/498) — house style shared with bra/bsr messages;
+  a cross-section disp8 target is almost always out of range, so the symbol name would pay.
+  Repo-wide message-quality item. — OPEN.
+- [tranche 2 T1 review, 2026-07-09] **abs.l as an .emp DESTINATION is unsupported**
+  (`move.w x, ($abs).l` → "indirect base must be a register") — pre-existing, surfaced by an
+  adversarial probe; will matter for some future port (VDP register writes spell this). — OPEN.
+- [tranche 2 T1 review, 2026-07-09] **`Owner.label(pc)` multi-segment pc-rel target untested**
+  — path shared verbatim with tested branch resolution; one-line test owed. — OPEN (low risk).
+- [tranche 2 T3, port #2 (controllers.emp + math.emp), 2026-07-09] **`embed()` paths resolve
+  relative to `include_root` directly — there is no separate "module's own directory" concept**
+  — `math.emp`'s `embed("../data/sine.bin")` (the module lives in `engine/system/`, the embed
+  target in `engine/data/`) could not resolve under ANY `include_root` value: the sandbox
+  (`sigil-frontend-emp/src/eval/sandbox.rs::resolve_sandbox_path`) joins relative paths onto
+  `include_root` and checks containment against that SAME root at every `..` pop — a single
+  root can never both be narrow enough to serve as a sane "current directory" AND broad enough
+  to contain a sibling directory one level up; the hazard is structural, not a wrong root
+  choice (every prior port's `embed`s were bare same-directory filenames, so this never
+  surfaced). Genuinely load-bearing: the real production CLI path
+  (`sigil-cli/src/main.rs::run_build`) already sets `include_root` to the whole manifest
+  `--root`, not a per-module directory, so this would have bitten a real build the first time
+  any module's embed climbed a directory. — SHIPPED (port #2, per Volence's "step 2 is the
+  quality apex" ruling above — build the missing construct rather than settle): a second,
+  independent field, `embed_base` (`LowerOptions`/`Placement`/`Evaluator`), is the join BASE
+  relative paths resolve against; `include_root` stays the sole containment boundary
+  (`resolve_sandbox_path`'s final `starts_with` check is unchanged). `None` (the default)
+  means "same as `include_root`" — every pre-existing caller is behavior-identical
+  (`eval_data_with_root` still exists with its original signature, delegating to the new
+  `eval_data_with_root_and_base` with `embed_base: None`). `~45` call sites needed a
+  mechanical `embed_base: None,` addition to their `LowerOptions { .. }` literals (Rust's
+  exhaustive-struct-literal rule, no `Default` on `LowerOptions`) — wide but shallow, each a
+  single trivial line, zero behavior change. TDD: `sandbox.rs` gained two new unit tests
+  (`resolve_sandbox_path_embed_base_allows_climbing_within_include_root`,
+  `resolve_sandbox_path_embed_base_cannot_escape_include_root` — the latter proving
+  `embed_base` grants NO extra reach past `include_root`).
+- [tranche 2 T3, port #2 (math.emp), 2026-07-09] **`jsr`/`jmp` to a bare symbol genuinely
+  undefined within the SAME AS compile unit hard-errors at the front-end's pass-convergence
+  check — it never reaches the linker.** Unlike `movea.l #imm,aN`/`move.l #imm,dN`/
+  `move.l #imm,(abs).w` (port #1 T3's `try_defer_long_imm`, which defers a genuinely-external
+  immediate SOURCE to a `Value32Be` link fixup) and unlike `bra.w`/`bsr.w` (always PC-relative,
+  always deferred via `PcRelDisp16`), `jsr`/`jmp`'s bare-symbol ABSOLUTE-target width
+  (abs.w vs abs.l) is selected inside the AS front-end's OWN multi-pass fixpoint
+  (`sigil-frontend-as/src/eval.rs::lower_m68k`, M1.D T3) — `Fragment::JmpJsrSym` (the
+  length-variable deferred form, already fully supported end-to-end by
+  `sigil-link/src/relax.rs`'s relaxation ladder AND already used unconditionally by the
+  `.emp` front-end's `jbra`/`jbsr`) was NEVER constructed by the AS front-end; a target still
+  Poison at convergence was unconditionally promoted to a hard `"unresolved symbol"` error.
+  This is exactly the real shape aeon's `games/sonic4/objects/test_parent.asm:96` /
+  `games/sonic4/player/player_ground.asm` (six sites) take — unconditional AS-side `jsr
+  GetSineCosine` calls into a proc that is EITHER AS-side (`math.asm`, gate off) OR `.emp`-side
+  (`math.emp`, gate on, resolved only at joint link) — so this would have broken the real
+  `SIGIL_EMP_MATH`-gated mixed build, not just this port's synthetic test. — SHIPPED (port #2,
+  TDD): `run()` now performs ONE bonus final pass (seeded from the SAME converged env) ONLY
+  when ordinary convergence still leaves `poison` non-empty; that bonus pass's `jsr`/`jmp`
+  sites still-Poison at that point emit `Fragment::JmpJsrSym` (via the backend's existing
+  `lower_jmp_jsr_sym`, already used by `.emp`) instead of erroring — every OTHER operand kind
+  is byte-identical to the ordinary pass, so the bonus pass's own leftover `poison` still names
+  only genuinely-undefined symbols of any kind. Zero cost/behavior change for the overwhelming
+  common case (empty `poison` at convergence — skips the bonus pass entirely). Proven inert:
+  the FULL existing `m1d_rom`/`m1d_debug_rom`/all four prior mixed-ROM gates stayed
+  byte-identical with this change in place — the deferral never fires unless something was
+  ALREADY going to hard-error. Honest caveat (I1, whole-branch review): the TYPO case DID
+  change — a pure-AS `jsr Nonexistent` now errors at LINK (resolve_layout's JmpJsrSym arm)
+  instead of at assemble-time, and that arm's message initially named only the section, not
+  the symbol; fixed same tranche by routing the arm through the shared
+  `unresolved_abs_target_diag` (the `RelaxAbsSym` diagnostic machinery generalized), so the
+  link-time error names the symbol with the cross-seam steer and the equ-cycle discrimination.
+- [tranche 2 T3, port #2 (math.emp), 2026-07-09] **`resolve_layout` refuses ANY section
+  mixing an `Org` back-patch with a relaxable fragment (`JmpJsrSym`/`RelaxAbsSym`/
+  `RelaxLadder`), and this collision is REAL, not a false positive, for aeon's actual ROM
+  layout** — `engine/engine.inc`'s `org $10000` opens the object-code-bank section and NEVER
+  closes it before `gameDataIncludes` chains straight into the parallax data tables in the
+  SAME section; `engine/parallax_macros.inc`'s `parallax_section_end` macro emits a genuine
+  mid-section back-patch (`org pscStart` / `org pscEndPos`, a real `Fragment::Org`), and (once
+  the jsr/jmp deferral above ships) `test_parent.asm`'s/`player_ground.asm`'s six `jsr
+  GetSineCosine` sites land EARLIER in that same section as `Fragment::JmpJsrSym`. The M1.C
+  T6b guard (`sigil-link/src/relax.rs:495-536`) fires exactly as designed: its
+  `shift_breakpoints` prefix-sum layout math treats every `Org` as contributing zero length
+  and never reads `Org.target`, which is sound ONLY when nothing before an `Org` in the same
+  section can ever grow — true in every case examined before this port (M1.C T6b: "today's
+  real Aeon sections either mix pure back-patched data with no relaxable... or relaxable-
+  bearing code with no Org"), false now. Confirmed via two independent research passes: making
+  the guard fixpoint-aware (only reject if a relaxable BEFORE an Org in the same section
+  actually GROWS past its baseline rung — `GetSineCosine`'s real address is low enough to
+  always fold to abs.w, so the growth this guards against could never fire here) requires
+  `shift_breakpoints`/`frag_start_vma` to become genuinely `Org`-target-aware, not a
+  guard-condition tweak — a real linker algorithm change. — SHIPPED (port #2 task 4, dedicated
+  session): `Org` is now a POSITION BARRIER in `resolve_layout`'s width-shift math.
+  `shift_breakpoints` seeks BOTH the current and baseline cursors to the org target at each
+  barrier (resetting the per-run growth delta to 0), `frag_start_vma` does the same for its
+  baseline cursor, and `shift_offset` scans last-wins (org resets make authored offsets
+  non-monotonic; last-wins mirrors `image_bytes`' overwrite order and is identical to the old
+  break-on-first for the monotonic no-org case). Growth of a relaxable shifts only fragments
+  after it in its OWN run (up to the next org); post-org content stays pinned to the org
+  target. The M1.C T6b categorical refusal is REPLACED by `run_overrun_diag`, a precise
+  post-fixpoint check: a FORWARD org (judged at baseline) that a grown run overruns is a loud
+  error naming the section/target/extent/overrun (AS/asl's spirit — never silently overlap); a
+  backward org (the overwrite idiom) is never an overrun and `image_bytes`' overwrite semantics
+  are unchanged. The Org+Reserve refusal survives (a distinct, still-latent hazard). The two
+  six-module full mixed-ROM gates (`mixed_tranche2_rom_matches_assembled_reference`/`_debug_`)
+  are UN-IGNORED and byte-identical to `aeon/s4.bin`/`aeon/s4.debug.bin`; every pre-existing
+  byte gate (hblank 2/2, mixed 10/10, m1d plain+debug full-ROM, all port suites) stayed green,
+  proving the algorithm change is byte-neutral for every previously-working layout. TDD: four
+  new `relax.rs` unit tests (forward-org run-local shifting + pinned post-org content;
+  run-growth-past-barrier loud error; backward-org overwrite byte-identity with an earlier
+  relaxable; three-run run-local shifting), plus the two old categorical-refusal guard tests
+  repurposed as allow-tests.
+- [tranche 2 T4 review, 2026-07-09] **Backward `org` into a FIXUP's byte range diverges
+  `image_bytes` from `link()`** (pre-existing, NOT introduced by the org-aware relaxation —
+  reproduces with zero relaxables): `link()` replays the source-order overwrite then applies
+  ALL fixups afterward, so a backward-org byte that lands inside an earlier fragment's fixup
+  site gets re-clobbered by the fixup (probe: image_bytes `EE` vs link `12 34 56`-class).
+  Latent — aeon's backward-org idiom (parallax_section_end `dc.b` back-patch) never seeks into
+  a fixup site. Fix shape: fixup application should respect overwrite order (or refuse the
+  overlap loudly). — OPEN (standalone linker hazard; distinct from the shipped org work).
+- [port #2 tranche, step 2 (modernize pass), 2026-07-09] **`resolve::build_program`'s
+  whole-program `report_unresolved` is incompatible with a cross-seam `.emp` module that
+  has BOTH a `use` edge to another `.emp` module AND genuinely AS-side-only bare symbol
+  references.** Discovered wiring `engine/system/controllers.emp`'s new `use
+  engine.constants.{...}` (the constants-twin port) into `controllers_port.rs`: switching
+  from plain `lower_module` to `Manifest::scan` + `build_program` (needed so the `use` edge
+  resolves) makes `report_unresolved` (`resolve/mod.rs:500`) hard-error on `Ctrl_1_Held` &
+  co — real RAM labels that live ONLY in `engine/ram.asm`, never in any `.emp` file, and are
+  legitimately supplied to the test as a synthetic AS-side section appended AFTER
+  `build_program` returns (the established cross-seam-port pattern since port #1). No prior
+  port needed this: `controllers.emp` is the FIRST `.emp`-to-`.emp` `use` edge in a
+  cross-seam file (`mixed_dac_rom.rs`'s `placed_module_sections` lowers six modules but only
+  `controllers.emp` has a `use`). — WORKED AROUND (not fixed) per-callsite: each of the three
+  affected test files (`controllers_port.rs`, `tranche2_negative_probes.rs`,
+  `mixed_dac_rom.rs`) parses `constants.emp` once and manually prepends its items to
+  `controllers.emp`'s own AST items before calling plain `lower_module` — mirroring
+  `build_program`'s own internal `ambient_items`/synthetic-`File`-prepend technique
+  (`resolve/mod.rs:132`, `:279-300`) minus the too-strict whole-program closure check. Two
+  independent investigation passes (a background research agent + direct code reading)
+  converged on the same diagnosis and the same workaround shape. The PRINCIPLED fix — either
+  a `build_program` variant/parameter that tolerates a caller-declared set of "known
+  external, resolved elsewhere" symbol names, or a way to compose a bounded ambient-const
+  set without the BFS+report_unresolved machinery at all — is a source change to
+  `sigil-frontend-emp`'s resolver, deliberately deferred rather than bundled into this
+  byte-neutral pass (house rule: 2a-tier only). Re-open when a THIRD cross-seam `use` edge
+  needs the same treatment (rule of three), or sooner if the per-callsite duplication (now
+  three copies of the same ~15-line prepend pattern) starts drifting.

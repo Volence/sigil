@@ -363,6 +363,28 @@ pub enum CodeOperand {
     /// ever produced while lowering a `movem` instruction's operands, never a
     /// general operand-grammar form, so it cannot leak into other mnemonics.
     RegList(u16),
+    /// Plain PC-relative: `Sym(pc)` — 68k `(d16,PC)`. `target` is the
+    /// hygiene-resolved link symbol (mirrors [`Sym`](CodeOperand::Sym)); the
+    /// displacement is a link-time fixup (`FixupKind::PcRelDisp16`), not
+    /// resolved here — same "target stays symbolic" contract as a branch.
+    PcRel {
+        /// The target's resolved link symbol.
+        target: String,
+    },
+    /// PC-indexed: `Sym(pc,Xn.size)` — 68k `(d8,PC,Xn)`, brief extension word.
+    /// `target` is the hygiene-resolved link symbol; `xn`/`xlong` are the
+    /// index register and its width (`.w` sign-extended / `.l`), resolved
+    /// eagerly (a register, not a link-time fact). The displacement is a
+    /// link-time `FixupKind::PcRelDisp8` fixup.
+    PcRelIdx {
+        /// The target's resolved link symbol.
+        target: String,
+        /// The index register.
+        xn: Reg,
+        /// `true` for `.l` (long index), `false` for `.w` (sign-extended,
+        /// the AS-matching default when unsuffixed).
+        xlong: bool,
+    },
 }
 
 /// A comptime operand-size class (§6.2), emp-side (no ISA import). Modeled on

@@ -112,7 +112,8 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::{
     assemble_mixed_dac_as_side, assemble_mixed_hblank_as_side, assemble_mixed_mt_as_side,
-    assemble_mixed_sfx_as_side, assert_rom_matches, CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
+    assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assert_rom_matches,
+    CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -292,6 +293,79 @@ fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
     )
 }
 
+/// Port #2's map: `emp_bank_map_with_mt_hblank`'s FIVE regions PLUS
+/// `controllers` and `math` — the THIRD and FOURTH shape-dependent region
+/// bases (after `sfx_bank`/`hblank`, R7): controllers plain `$2290` / debug
+/// `$231E` (size `$72`), math plain `$2468` / debug `$25FA` (size `$298`).
+/// The DAC/MT/SFX/HBLANK/`text` regions are byte-for-byte
+/// `emp_bank_map_with_mt_hblank`'s.
+///
+/// Neither `controllers.emp` nor `math.emp` opens a `text` carrier (both use
+/// the braceless `module … in <section>` form, routing every item into
+/// their own named section) — the shared `text` region is spare capacity
+/// for both, kept for map parity with the sound/hblank modules.
+fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
+    let (sfx_base, sfx_size) = if debug {
+        ("0x6553A", "0x2AC6")
+    } else {
+        ("0x63AE8", "0x4518")
+    };
+    let hblank_base = if debug { "0x230C" } else { "0x227E" };
+    let controllers_base = if debug { "0x231E" } else { "0x2290" };
+    let math_base = if debug { "0x25FA" } else { "0x2468" };
+    format!(
+        "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"hblank\"\n\
+         lma_base = {hblank_base}\n\
+         size = 0x12\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"controllers\"\n\
+         lma_base = {controllers_base}\n\
+         size = 0x72\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"math\"\n\
+         lma_base = {math_base}\n\
+         size = 0x298\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_blip_bank\"\n\
+         lma_base = 0x50000\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_shared_bank\"\n\
+         lma_base = 0x58000\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"mt_bank\"\n\
+         lma_base = 0x60607\n\
+         size = 0x79F9\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"sfx_bank\"\n\
+         lma_base = {sfx_base}\n\
+         size = {sfx_size}\n\
+         kind = \"rom\"\n"
+    )
+}
+
 /// Port #1: `placed_emp_sections_with_mt_sfx`'s four-module successor — DAC +
 /// MT + SFX + HBLANK, all placed into the per-shape `emp_bank_map_with_mt_hblank`
 /// (DAC/SFX/HBLANK defines-less, MT's `DEBUG` — R4). Returns all FOUR modules'
@@ -325,6 +399,63 @@ fn placed_emp_sections_with_mt_sfx_hblank(
     sections.extend(sfx_sections);
     sections.extend(hblank_sections);
     (sections, mt_asserts, sfx_asserts)
+}
+
+/// Port #2: `placed_emp_sections_with_mt_sfx_hblank`'s six-module successor —
+/// DAC + MT + SFX + HBLANK + CONTROLLERS + MATH, all placed into the
+/// per-shape `emp_bank_map_with_mt_hblank_tranche2` (DAC/SFX/HBLANK/
+/// CONTROLLERS/MATH defines-less, MT's `DEBUG` — R4). Returns all SIX
+/// modules' placed sections concatenated (declaration order only) AND all
+/// THREE asserts-bearing modules' link_asserts (mt == 5, sfx == 1,
+/// controllers == 6 — `engine.constants`'s drift guards, tranche 2's step-2
+/// modernize pass; hblank/math carry none) — the ONE lower pass per module
+/// (M2).
+fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
+    aeon: &Path,
+    debug_val: i128,
+) -> (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>, Vec<LinkAssert>) {
+    let map = emp_bank_map_with_mt_hblank_tranche2(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    // `sfx_bank.emp` lives in `sound/sfx/` (own include_root for its 18
+    // `embed`s); NO defines: shape-invariant (R4).
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    // `hblank.emp` lives in `engine/system/`; NO defines: shape-invariant
+    // content, shape-dependent map base only (like sfx_bank).
+    let (hblank_sections, _hblank_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
+    // `controllers.emp` lives in `engine/system/` too — same include_root
+    // convention as hblank; NO defines: shape-invariant (like hblank). Its
+    // `use engine.constants.{...}` edge means `constants_ambient_items`
+    // (inside `placed_module_sections_with_roots`) prepends the twin's items,
+    // whose six drift-guard `ensure`s ride along as `controllers_asserts`.
+    let (controllers_sections, controllers_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "controllers.emp", &[], &map);
+    // `math.emp` lives in `engine/system/`, but its `embed("../data/sine.bin")`
+    // climbs ONE level above its own directory — `include_root` must be the
+    // BROADER `engine/` (the sandbox boundary), `embed_base` the module's OWN
+    // dir `engine/system/` (the join point) — see `math_port.rs`'s doc and
+    // the campaign gap ledger. NO defines: shape-invariant.
+    let (math_sections, _math_asserts) = placed_module_sections_with_roots(
+        &aeon.join("engine"),
+        &aeon.join("engine/system"),
+        "math.emp",
+        &[],
+        &map,
+    );
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    sections.extend(hblank_sections);
+    sections.extend(controllers_sections);
+    sections.extend(math_sections);
+    (sections, mt_asserts, sfx_asserts, controllers_asserts)
 }
 
 /// Compile the REAL `dac_samples.emp` and PLACE its sections into the two-bank
@@ -409,7 +540,49 @@ fn placed_module_sections(
     defines: &[(String, i128)],
     map_src: &str,
 ) -> (Vec<Section>, Vec<LinkAssert>) {
-    let dir = dir.to_path_buf();
+    placed_module_sections_with_roots(dir, dir, module_file, defines, map_src)
+}
+
+/// `engine.constants`'s items (its six `pub const`s + six drift-guard
+/// `ensure`s), read from `controllers.emp`'s own directory (`engine/system/`
+/// — where `constants.emp` also lives). `controllers.emp` `use`s this twin;
+/// plain `lower_module` (used throughout this file, not the whole-program
+/// resolver — see `controllers_port.rs`'s doc comment for why: the resolver's
+/// `report_unresolved` wrongly rejects this module's genuinely AS-side-only
+/// symbols like `Ctrl_1_Held`) never resolves cross-module `use`, so the
+/// twin's items are prepended by hand before lowering, mirroring
+/// `controllers_port.rs`'s `controllers_with_ambient_constants`.
+fn constants_ambient_items(controllers_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(controllers_dir.join("constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (file, cdiags) = parse_str(&src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "constants.emp parse errors: {cdiags:?}"
+    );
+    file.items
+}
+
+/// Like [`placed_module_sections`], but with `include_root` and `embed_base`
+/// supplied independently (port #2, `math.emp`'s `embed("../data/sine.bin")`
+/// — see `math_port.rs`'s doc for why this module needs a BROADER
+/// `include_root` than its own directory). Every other module's call goes
+/// through `placed_module_sections`, which passes the same `dir` for both
+/// (unaffected — the front-end's `embed_base: None` fallback already made
+/// this identical to the pre-`embed_base` behavior).
+///
+/// `module_file == "controllers.emp"` gets `engine.constants`'s items
+/// prepended (its `use engine.constants.{...}` edge) — see
+/// `constants_ambient_items`'s doc. Every other module has no cross-module
+/// `use`, so this is a no-op for them.
+fn placed_module_sections_with_roots(
+    include_root: &Path,
+    embed_base: &Path,
+    module_file: &str,
+    defines: &[(String, i128)],
+    map_src: &str,
+) -> (Vec<Section>, Vec<LinkAssert>) {
+    let dir = embed_base.to_path_buf();
     let emp_path = dir.join(module_file);
     let src = std::fs::read_to_string(&emp_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", emp_path.display()));
@@ -419,9 +592,20 @@ fn placed_module_sections(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{module_file} parse errors: {pdiags:?}"
     );
+    let file = if module_file == "controllers.emp" {
+        sigil_frontend_emp::ast::File {
+            module: file.module.clone(),
+            attrs: file.attrs.clone(),
+            items: constants_ambient_items(&dir).into_iter().chain(file.items).collect(),
+            docs: file.docs.clone(),
+        }
+    } else {
+        file
+    };
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(dir.clone()),
+        include_root: Some(include_root.to_path_buf()),
+        embed_base: Some(embed_base.to_path_buf()),
         defines: defines.to_vec(),
     };
     let (module, ldiags) = lower_module(&file, &opts);
@@ -716,6 +900,207 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
         DEBUG_ASSEMBLED_LEN,
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed HBLANK debug",
+    );
+}
+
+/// Port #2's shared body — the campaign's cumulative six-module acceptance:
+/// assemble the AS side with ALL SIX gates on (`SIGIL_EMP_DAC` +
+/// `SIGIL_EMP_MT` + `SIGIL_EMP_SFX` + `SIGIL_EMP_HBLANK` +
+/// `SIGIL_EMP_CONTROLLERS` + `SIGIL_EMP_MATH`), compose with ALL SIX
+/// `.emp` modules' placed sections, and run ONE joint `resolve_layout` +
+/// `link`.
+///
+/// This is where port #2's cross-seam reads prove out END-TO-END:
+/// `vblank.asm`'s two `bsr.w Read_Controllers` sites (a `PcRelDisp16`
+/// deferral, already supported) and `test_parent.asm`/`player_ground.asm`'s
+/// six `jsr GetSineCosine` sites (the NEW `Fragment::JmpJsrSym` deferral,
+/// port #2 follow-up) both resolve against the `.emp` modules' BARE `pub
+/// proc` symbols through this shared table — the jsr deferral is only
+/// exercised end-to-end here (a real, unconditionally-included AS-side
+/// caller of a gated `.emp` proc), not by any prior port.
+///
+/// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags,
+/// controllers_assert_diags)` — the caller pins all THREE asserts-bearing
+/// modules' `check_link_asserts` (mt == 5, sfx == 1, controllers == 6 —
+/// `engine.constants`'s drift guards) and asserts every diagnostic is
+/// non-Error. `hblank.emp`/`math.emp` carry no link asserts of their own (no
+/// `ensure`/`extern`), so they contribute none here.
+fn build_mixed_tranche2_rom(
+    aeon: &Path,
+    debug: bool,
+) -> (Vec<u8>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>) {
+    let as_module = assemble_mixed_tranche2_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    let (emp_sections, mt_asserts, sfx_asserts, controllers_asserts) =
+        placed_emp_sections_with_mt_sfx_hblank_tranche2(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed tranche2): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed tranche2): {d:?}"));
+
+    let mt_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &mt_asserts);
+    let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
+    let controllers_diags =
+        sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &controllers_asserts);
+    assert_eq!(
+        guard_assert_count(&mt_asserts),
+        5,
+        "mt_bank.emp's five co-residency ensures must be captured"
+    );
+    assert_eq!(
+        guard_assert_count(&sfx_asserts),
+        1,
+        "sfx_bank.emp's cross-seam co-residency ensure must be captured"
+    );
+    assert_eq!(
+        guard_assert_count(&controllers_asserts),
+        6,
+        "engine.constants's six drift-guard ensures must be captured"
+    );
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    let rom = sigil_link::emit_rom(&linked, &map)
+        .unwrap_or_else(|e| panic!("emit_rom (mixed tranche2): {e}"));
+    (rom, mt_diags, sfx_diags, controllers_diags)
+}
+
+/// Port #2 acceptance — plain (non-debug) DAC+MT+SFX+HBLANK+CONTROLLERS+MATH
+/// mixed build == `aeon/s4.bin`, modulo the four convsym bytes. All six gates
+/// are ON; all six `.emp` modules are lowered and composed; the mt/sfx
+/// cross-seam ensures must genuinely run and pass; the `controllers`/`math`
+/// sections themselves are pinned explicitly (each port's own byte gate —
+/// `controllers_port.rs`/`math_port.rs`'s region-level twins) before the
+/// whole-ROM assertion re-proves them in context.
+///
+/// This is the acceptance gate for the Org-aware relaxation work (port #2,
+/// task 4): the real object-code-bank section (`org $10000`, `engine.inc:174`)
+/// is never closed before `gameDataIncludes` chains the parallax data tables
+/// into the SAME section — `engine/parallax_macros.inc`'s
+/// `parallax_section_end` macro emits a genuine mid-section back-patch
+/// (`org pscStart` / `org pscEndPos`, a real `Fragment::Org`), and
+/// `test_parent.asm`'s/`player_ground.asm`'s six `jsr GetSineCosine` sites
+/// (deferred to `Fragment::JmpJsrSym`, since `GetSineCosine` is external to the
+/// AS compile when `SIGIL_EMP_MATH` is on) land EARLIER in that same section.
+/// The M1.C T6b categorical `Org`+relaxable refusal was REPLACED by
+/// `resolve_layout`'s run/barrier layout math (`shift_breakpoints` /
+/// `frag_start_vma` / `run_overrun_diag` now treat every `Org` as a position
+/// barrier that resets the per-run growth delta and pins post-org content to
+/// the org target), so this full six-module composition links byte-identically
+/// to `aeon/s4.bin` — proving the change is byte-neutral for every layout that
+/// worked before AND correct for the real `Org`+`JmpJsrSym` co-residency.
+#[test]
+fn mixed_tranche2_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags, controllers_diags) = build_mixed_tranche2_rom(&aeon, false);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+    assert!(
+        controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+    );
+
+    // The controllers block itself, pinned explicitly (the port's own
+    // 0x72-byte window) before the whole-ROM assertion below re-proves it.
+    assert_eq!(
+        &rom[0x2290..0x2302],
+        &[
+            0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
+            0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
+            0x12, 0x38, 0x80, 0x2E, 0x11, 0xC0, 0x80, 0x2E, 0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x31,
+            0x4E, 0x75, 0x10, 0xBC, 0x00, 0x40, 0x4E, 0x71, 0x10, 0x10, 0x10, 0xBC, 0x00, 0x00, 0x4E, 0x71,
+            0x12, 0x10, 0x02, 0x00, 0x00, 0x3F, 0x02, 0x01, 0x00, 0x30, 0xE5, 0x09, 0x80, 0x01, 0x46, 0x00,
+            0x12, 0x00, 0x02, 0x01, 0x00, 0x0C, 0x0C, 0x01, 0x00, 0x0C, 0x66, 0x04, 0x02, 0x00, 0x00, 0xF3,
+            0x12, 0x00, 0x02, 0x01, 0x00, 0x03, 0x0C, 0x01, 0x00, 0x03, 0x66, 0x04, 0x02, 0x00, 0x00, 0xFC,
+            0x4E, 0x75,
+        ][..],
+        "controllers block must match the reference bytes exactly (plain)"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche2");
+}
+
+/// Port #2 acceptance — `__DEBUG__`
+/// DAC+MT+SFX+HBLANK+CONTROLLERS+MATH mixed build == `aeon/s4.debug.bin`,
+/// modulo the five convsym bytes. Same six-module composition as the plain
+/// variant, with `DEBUG=1` driving `mt_bank.emp`'s if-expressions and
+/// `__DEBUG__` on the AS side; `hblank.emp`/`controllers.emp`/`math.emp` are
+/// all shape-invariant (identical content in both shapes — only their map
+/// bases move, R7, exactly like `sfx_bank.emp`).
+///
+/// The debug twin of the Org-aware acceptance gate — see
+/// `mixed_tranche2_rom_matches_assembled_reference`'s doc comment (the plain
+/// variant); same six-module composition, same run/barrier layout math, both
+/// shapes byte-identical to their references.
+#[test]
+fn mixed_tranche2_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags, controllers_diags) = build_mixed_tranche2_rom(&aeon, true);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+    assert!(
+        controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+    );
+
+    assert_eq!(
+        &rom[0x231E..0x2390],
+        &[
+            0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
+            0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
+            0x12, 0x38, 0x80, 0x2E, 0x11, 0xC0, 0x80, 0x2E, 0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x31,
+            0x4E, 0x75, 0x10, 0xBC, 0x00, 0x40, 0x4E, 0x71, 0x10, 0x10, 0x10, 0xBC, 0x00, 0x00, 0x4E, 0x71,
+            0x12, 0x10, 0x02, 0x00, 0x00, 0x3F, 0x02, 0x01, 0x00, 0x30, 0xE5, 0x09, 0x80, 0x01, 0x46, 0x00,
+            0x12, 0x00, 0x02, 0x01, 0x00, 0x0C, 0x0C, 0x01, 0x00, 0x0C, 0x66, 0x04, 0x02, 0x00, 0x00, 0xF3,
+            0x12, 0x00, 0x02, 0x01, 0x00, 0x03, 0x0C, 0x01, 0x00, 0x03, 0x66, 0x04, 0x02, 0x00, 0x00, 0xFC,
+            0x4E, 0x75,
+        ][..],
+        "controllers block must match the reference bytes exactly (debug)"
+    );
+
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed tranche2 debug",
     );
 }
 

@@ -33,12 +33,21 @@ pub(crate) struct CaptureEdge {
 }
 
 impl<'a> Evaluator<'a> {
-    /// Set the directory `embed`/`import` paths resolve against (Task 1). The
+    /// Set the sandbox's hard containment BOUNDARY (Task 1). The
     /// [`layout::eval_data_with_root`](crate::layout::eval_data_with_root) seam
     /// calls this before resolving a data item, mirroring
     /// [`set_here_base`](Self::set_here_base)'s per-evaluation setter pattern.
     pub(crate) fn set_include_root(&mut self, root: PathBuf) {
         self.include_root = Some(root);
+    }
+
+    /// Set the join BASE relative `embed`/`import` paths resolve against
+    /// (port #2, `math.emp`'s `embed("../data/sine.bin")`) — distinct from
+    /// [`set_include_root`](Self::set_include_root), which stays the hard
+    /// boundary. Unset (the default) means "same as `include_root`", the
+    /// behavior every caller had before this existed.
+    pub(crate) fn set_embed_base(&mut self, base: PathBuf) {
+        self.embed_base = Some(base);
     }
 
     /// Resolve a comptime file-read `path` (from `embed`/`import`) against the
@@ -77,15 +86,30 @@ impl<'a> Evaluator<'a> {
         // cannot be canonicalized (e.g. does not exist), which just means the
         // subsequent file read will fail with its own diagnostic instead.
         let root = std::fs::canonicalize(&root).unwrap_or(root);
-        // Join `candidate` onto `root`, resolving `.`/`..` components LEXICALLY
-        // (no filesystem access — `embed`'s "missing file" case must still hit
-        // this path cleanly). A `..` that would pop above `root` is rejected as
-        // an escape; `Component::Normal` segments are pushed as-is.
-        let mut resolved = root.clone();
+        // The join BASE (port #2): `embed_base`, when set, lets a relative path
+        // start somewhere NARROWER than `root` (e.g. the module's own
+        // directory, a subdirectory of `root`) — `math.emp`'s
+        // `embed("../data/sine.bin")` needs this to climb back OUT of its own
+        // directory to a sibling still inside `root`. Falls back to `root`
+        // itself (every pre-existing caller's behavior, unchanged) when unset.
+        // Canonicalized the same way `root` is, for the same starts_with parity
+        // reason; falls back to the given base if it cannot be canonicalized.
+        let base = match &self.embed_base {
+            Some(b) => std::fs::canonicalize(b).unwrap_or_else(|_| b.clone()),
+            None => root.clone(),
+        };
+        // Join `candidate` onto `base` LEXICALLY (no filesystem access —
+        // `embed`'s "missing file" case must still hit this path cleanly).
+        // Unlike `root`, `base` is NOT the escape boundary — a `..` may pop
+        // ABOVE `base` (that's the whole point when `base` is narrower than
+        // `root`); the loop below only refuses popping past the filesystem
+        // root entirely (`resolved.pop()` returning `false`). The BOUNDARY
+        // check against `root` happens once, after the full join, below.
+        let mut resolved = base;
         for comp in candidate.components() {
             match comp {
                 Component::ParentDir => {
-                    if !resolved.pop() || !resolved.starts_with(&root) {
+                    if !resolved.pop() {
                         self.error(
                             span,
                             "[sandbox.path-escape] embed/import path must stay within the source directory",
@@ -611,6 +635,64 @@ mod tests {
         let got = ev.resolve_sandbox_path("../etc/passwd", span());
         assert!(got.is_none());
         assert!(ev.diags.iter().any(|d| d.message.contains("[sandbox.path-escape]")));
+    }
+
+    /// Port #2 (`math.emp`'s `embed("../data/sine.bin")`, climbing one level
+    /// above its own module directory to a sibling `data/` dir): a `..` that
+    /// pops past `include_root` is STILL rejected by design
+    /// (`resolve_sandbox_path_rejects_dotdot_escape` above) — the fix is
+    /// `embed_base`, a distinct, NARROWER starting point relative paths join
+    /// onto, while `include_root` remains the hard containment boundary. With
+    /// `include_root` = a scratch dir's `engine/` subdir and `embed_base` =
+    /// that same scratch dir's `engine/system/` subdir (the module's own
+    /// directory, one level deeper), `"../data/sine.bin"` must resolve to
+    /// `engine/data/sine.bin` — inside `include_root`, so it passes.
+    #[test]
+    fn resolve_sandbox_path_embed_base_allows_climbing_within_include_root() {
+        let scratch = scratch_dir("embed-base-climb");
+        let engine_dir = scratch.join("engine");
+        let system_dir = engine_dir.join("system");
+        let data_dir = engine_dir.join("data");
+        std::fs::create_dir_all(&system_dir).expect("create system dir");
+        std::fs::create_dir_all(&data_dir).expect("create data dir");
+        std::fs::write(data_dir.join("sine.bin"), b"sine-bytes").expect("write sine.bin");
+
+        let mut ev = Evaluator::new();
+        ev.set_include_root(engine_dir.clone());
+        ev.set_embed_base(system_dir.clone());
+        let got = ev.resolve_sandbox_path("../data/sine.bin", span());
+        let resolved = got.expect("must resolve: embed_base's `..` stays within include_root");
+        assert_eq!(
+            std::fs::canonicalize(&resolved).unwrap(),
+            std::fs::canonicalize(data_dir.join("sine.bin")).unwrap()
+        );
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The containment boundary is still `include_root`, NOT `embed_base`: an
+    /// `embed_base` that is itself OUTSIDE `include_root` does not grant any
+    /// extra reach — a `..` climbing past `include_root` from `embed_base`
+    /// must still be rejected.
+    #[test]
+    fn resolve_sandbox_path_embed_base_cannot_escape_include_root() {
+        let scratch = scratch_dir("embed-base-no-escape");
+        let engine_dir = scratch.join("engine");
+        let system_dir = engine_dir.join("system");
+        std::fs::create_dir_all(&system_dir).expect("create system dir");
+
+        let mut ev = Evaluator::new();
+        // include_root is the MODULE's own dir here (system_dir) — deeper
+        // than embed_base — so a `..` from embed_base (system_dir, same as
+        // include_root) climbing twice must still fail: it would land at
+        // `engine_dir`'s parent, outside include_root.
+        ev.set_include_root(system_dir.clone());
+        ev.set_embed_base(system_dir.clone());
+        let got = ev.resolve_sandbox_path("../../etc/passwd", span());
+        assert!(got.is_none(), "embed_base must not grant reach beyond include_root");
+        assert!(ev.diags.iter().any(|d| d.message.contains("[sandbox.path-escape]")));
+
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     /// A scratch directory (named by `tag`, so distinct tests never collide)

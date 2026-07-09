@@ -58,15 +58,36 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
             env,
             macros: m,
             functions: f,
-            mut diags,
+            diags,
             poison,
         } = one_pass(src, opts, &seed, &macros, &functions);
         if pass > 0 && env == prev {
             // Converged: this pass's result is authoritative. The env is now final,
             // so any operand that still folded to Poison references a genuinely
-            // undefined symbol — promote each to a hard error (a missing stub /
-            // typo that would otherwise have silently emitted a 0x00 byte).
-            for (name, span) in poison {
+            // undefined symbol — UNLESS it's a `jsr`/`jmp` bare-symbol target,
+            // which (port #2, math.emp follow-up) may be a genuine cross-seam
+            // reference (a sibling `.emp` module's `pub proc`, joined only at
+            // LINK time) rather than a typo. Re-run ONE bonus pass, seeded
+            // from this SAME converged env, with `defer_unresolved_jsr_jmp`
+            // set — its `jsr`/`jmp`-Poison sites emit a deferred
+            // `Fragment::JmpJsrSym` instead of erroring; every OTHER operand
+            // kind is UNCHANGED (byte-identical to this pass), so the bonus
+            // pass's own `poison` list names only genuinely-undefined
+            // symbols of ANY kind still left over — promoted to the same
+            // hard error as before. Skipped entirely when `poison` is
+            // already empty (the overwhelmingly common case, and every
+            // pre-existing passing compile): zero extra work, byte-identical
+            // output.
+            if poison.is_empty() {
+                return if diags.iter().any(|d| d.level == Level::Error) {
+                    Err(diags)
+                } else {
+                    Ok(module)
+                };
+            }
+            let bonus = one_pass_with_defer(src, opts, &seed, &macros, &functions, true);
+            let mut diags = bonus.diags;
+            for (name, span) in bonus.poison {
                 diags.push(Diagnostic {
                     level: Level::Error,
                     message: format!("unresolved symbol `{name}` in operand"),
@@ -76,7 +97,7 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(diags)
             } else {
-                Ok(module)
+                Ok(bonus.module)
             };
         }
         prev = env.clone();
@@ -119,7 +140,21 @@ fn one_pass(
     seed_macros: &MacroTable,
     seed_functions: &FunctionTable,
 ) -> PassOutput {
-    let mut asm = Asm::new(opts);
+    one_pass_with_defer(src, opts, seed_env, seed_macros, seed_functions, false)
+}
+
+/// Like [`one_pass`], but also threads [`Asm::defer_unresolved_jsr_jmp`] —
+/// `run`'s bonus final pass sets this `true` so a still-Poison `jsr`/`jmp`
+/// bare-symbol target defers instead of joining `poison_refs`.
+fn one_pass_with_defer(
+    src: &str,
+    opts: &Options,
+    seed_env: &SymbolTable,
+    seed_macros: &MacroTable,
+    seed_functions: &FunctionTable,
+    defer_unresolved_jsr_jmp: bool,
+) -> PassOutput {
+    let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
     asm.env = seed_env.clone();
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
@@ -234,6 +269,18 @@ struct Asm {
     /// opens; drained (never left stranded) as long as the module contains at
     /// least one section, which every real program does.
     pending_equ_syms: Vec<EquSym>,
+    /// Port #2 (math.emp follow-up): set only on the ONE extra bonus pass
+    /// `run` performs when normal convergence still leaves `jsr`/`jmp`
+    /// bare-symbol targets Poison. `false` on every ordinary pass (every
+    /// pre-existing compile is byte-identical — this field is additive-only).
+    /// When `true`, a `jsr`/`jmp` bare-symbol target that folds to `Poison`
+    /// emits a length-variable `Fragment::JmpJsrSym` (deferred to the
+    /// linker's relaxation fixpoint, mirroring the `.emp` front-end's
+    /// `jbra`/`jbsr`) instead of `poison_refs`-then-error: a genuinely
+    /// cross-compilation-unit target (a sibling `.emp` module's `pub proc`,
+    /// joined only at LINK time) is not an error here — it becomes one only
+    /// if `resolve_layout`/`link` can't find it either.
+    defer_unresolved_jsr_jmp: bool,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -248,7 +295,9 @@ enum Lowered {
 }
 
 impl Asm {
-    fn new(opts: &Options) -> Self {
+    /// Sets [`Asm::defer_unresolved_jsr_jmp`] — `false` for every ordinary
+    /// pass; `true` only for `run`'s bonus final pass (see that field's doc).
+    fn new_with_defer(opts: &Options, defer_unresolved_jsr_jmp: bool) -> Self {
         Asm {
             builder: IrBuilder::new(),
             z80: Z80Backend,
@@ -271,6 +320,7 @@ impl Asm {
             poison_refs: Vec::new(),
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
+            defer_unresolved_jsr_jmp,
         }
     }
 
@@ -2436,8 +2486,25 @@ impl Asm {
                 // vma_origin+offset on convergence — a real forward label folds
                 // to Value on the converged pass and is baked too). The
                 // symbolic form is kept only for the unresolved-this-pass
-                // (Poison) case; on the converged pass a still-Poison target is
-                // a genuinely-undefined symbol and errors via `poison_refs`.
+                // (Poison) case; on an ordinary converged pass a still-Poison
+                // target is a genuinely-undefined symbol and errors via
+                // `poison_refs`.
+                //
+                // Port #2 (math.emp follow-up): on `run`'s BONUS final pass
+                // (`defer_unresolved_jsr_jmp`, set only when ordinary
+                // convergence still left `jsr`/`jmp` targets Poison), a
+                // still-Poison target instead defers as a length-variable
+                // `Fragment::JmpJsrSym` — the SAME deferral the `.emp`
+                // front-end's `jbra`/`jbsr` already uses, fully supported by
+                // `resolve_layout`'s relaxation ladder. This lets `jsr
+                // SomeSiblingModuleProc` (a real cross-seam call, e.g. aeon's
+                // `jsr GetSineCosine` when `SIGIL_EMP_MATH` is on) resolve at
+                // LINK time instead of hard-erroring at ASSEMBLE time.
+                if self.defer_unresolved_jsr_jmp && matches!(self.fold(&target), Fold::Poison) {
+                    let frag = self.m68k.lower_jmp_jsr_sym(is_jsr, target, span);
+                    self.builder.emit_fragment(frag, 4);
+                    return;
+                }
                 let (width, fixup_target) = match self.fold(&target) {
                     Fold::Value(v) => (asl_width_rule(v, false), Expr::Int(v)),
                     Fold::Poison => {
@@ -6021,5 +6088,107 @@ C:\n";
         assert_eq!(&bytes_deferred[6..8], &bytes_resolved[6..8], "abs.w dest ext word must match");
         assert_eq!(&bytes_deferred[2..6], &[0, 0, 0, 0], "deferred imm32 hole is the zero placeholder");
         assert_eq!(&bytes_resolved[2..6], &[0x00, 0x00, 0x12, 0x34], "resolved control's imm32");
+    }
+
+    // -----------------------------------------------------------------------
+    // Port #2 (math.emp): `jsr`/`jmp` to a symbol genuinely undefined within
+    // this AS compile unit (a cross-seam `.emp` proc, joined only at LINK
+    // time) must DEFER as a `Fragment::JmpJsrSym` — not hard-error. Mirrors
+    // aeon's real `games/sonic4/objects/test_parent.asm:96` shape (`jsr
+    // GetSineCosine`), where `GetSineCosine` is defined in a sibling
+    // `.emp` module when `SIGIL_EMP_MATH` is on.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn m68k_jsr_to_genuinely_external_symbol_defers_instead_of_erroring() {
+        // No `GetSineCosine` anywhere in this source — exactly the shape a
+        // real cross-seam `.emp` proc call takes from the AS side.
+        let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).unwrap_or_else(|d| {
+            panic!("expected a deferred compile, not a hard error: {d:?}")
+        });
+        // The jsr fragment must be a length-variable JmpJsrSym (deferred to
+        // the linker's relaxation fixpoint), not a finished Data fragment.
+        let frag = &m.sections[0].fragments[0];
+        assert!(
+            matches!(frag, sigil_ir::Fragment::JmpJsrSym { .. }),
+            "expected Fragment::JmpJsrSym, got {frag:?}"
+        );
+    }
+
+    #[test]
+    fn m68k_jsr_to_genuinely_external_symbol_resolves_end_to_end_via_joint_link() {
+        // The deferred JmpJsrSym must actually resolve once joined with a
+        // section that DOES define the target — the end-to-end proof (mirrors
+        // `math_port.rs`'s outbound-consumer harness pattern).
+        let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).expect("deferred compile must succeed");
+
+        let target_src = "    cpu 68000\n    phase $2468\nGetSineCosine:\n    rts\n";
+        let target_m = run(target_src, &opts).expect("target assemble");
+        let mut target_sections = target_m.sections;
+        for sec in &mut target_sections {
+            sec.lma = 0x2468;
+            sec.placement = sigil_ir::SectionPlacement::Pinned;
+        }
+
+        let mut sections = m.sections;
+        sections.extend(target_sections);
+        let resolved = sigil_link::resolve_layout(&sections, &sigil_ir::SymbolTable::new(), true)
+            .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())
+            .unwrap_or_else(|d| panic!("link: {d:?}"));
+        let consumer = linked.sections.iter().find(|s| s.lma == 0).expect("consumer section");
+        // jsr abs.w GetSineCosine ($2468, low address -> abs.w rung):
+        // opcode 4EB8, address $2468.
+        assert_eq!(&consumer.bytes[0..4], &[0x4E, 0xB8, 0x24, 0x68]);
+    }
+
+    #[test]
+    fn m68k_jsr_to_locally_resolved_symbol_is_unaffected_by_the_deferral() {
+        // A `jsr` target that DOES resolve within the same compile must stay
+        // on the existing eager path, byte-identical to before this change —
+        // the inertness proof for every currently-passing jsr/jmp compile.
+        // Same source/expectation as
+        // `m68k_jmp_jsr_bare_symbol_selects_width_in_front_end`, but for jsr.
+        let src = "    cpu 68000\n    phase 0\nLbl:\n    jsr Lbl\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).expect("assemble");
+        assert!(
+            matches!(m.sections[0].fragments[0], sigil_ir::Fragment::Data(_)),
+            "a locally-resolved jsr target must stay a finished Data fragment, not defer"
+        );
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        assert_eq!(bytes, vec![0x4E, 0xB8, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn m68k_jsr_to_truly_undefined_symbol_still_errors_after_joint_link() {
+        // A deferred JmpJsrSym whose target is NEVER supplied by anything
+        // (not even a sibling module) must still fail LOUD at resolve_layout
+        // — deferral must not turn a genuine typo into a silent zero. And the
+        // error must NAME the symbol with the cross-seam steer (I1 review
+        // finding): the deferral moved a pure-AS typo'd jsr from assemble-time
+        // (which named the symbol) to this link-time arm, so the link-time
+        // wording must be at least as good.
+        let src = "    cpu 68000\nConsumer:\n    jsr TotallyUndefined\n    rts\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).expect("deferred compile must succeed (front-end no longer errors)");
+        let err = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect_err("a target defined nowhere must still fail at resolve_layout");
+        assert!(
+            err.iter().any(|d| d.level == sigil_span::Level::Error
+                && d.message.contains("jmp/jsr target")
+                && d.message.contains("`TotallyUndefined`")
+                && d.message.contains("not defined in this link")
+                && d.message.contains("cross-seam")),
+            "expected a loud resolve_layout error naming `TotallyUndefined` with the \
+             cross-seam steer, got: {err:?}"
+        );
     }
 }

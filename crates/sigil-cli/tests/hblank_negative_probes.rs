@@ -107,6 +107,7 @@ fn place_hblank(src: &str, base: &str) -> Vec<Section> {
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(hblank_dir()),
+        embed_base: None,
         defines: vec![],
     };
     let (module, ldiags) = lower_module(&file, &opts);

@@ -60,7 +60,7 @@ fn emp_link(emp: &str) -> LinkedImage {
         pdiags.iter().all(|d| d.level != Level::Error),
         "emp parse errors: {pdiags:?}"
     );
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != Level::Error),
@@ -345,7 +345,7 @@ fn as_side_int_equ_resolves_an_emp_relax_abs_sym_operand_in_a_mixed_link() {
                    }\n";
     let (file, pdiags) = parse_str(emp_src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse errors: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower errors: {ldiags:?}");
 

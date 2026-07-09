@@ -28,7 +28,7 @@ fn bank_attr_threads_to_section_bank() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "lower: {diags:?}");
     let s = section(&module, "s");
     assert_eq!(s.bank, Some(0x8000));
@@ -48,7 +48,7 @@ fn bank_attr_composes_with_cpu_in_any_order() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "lower: {diags:?}");
     let s = section(&module, "s");
     assert_eq!(s.bank, Some(0x4000));
@@ -64,7 +64,7 @@ fn section_without_bank_attr_has_none() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "lower: {diags:?}");
     let s = section(&module, "s");
     assert_eq!(s.bank, None);
@@ -78,7 +78,7 @@ fn bank_attr_non_power_of_two_is_diagnosed() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message
             == "section `s` `bank:` must be a positive power-of-two comptime integer"),
@@ -94,7 +94,7 @@ fn bank_attr_zero_is_diagnosed() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message
             == "section `s` `bank:` must be a positive power-of-two comptime integer"),
@@ -115,7 +115,7 @@ fn lower_ok(src: &str) -> Module {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     let errs: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     assert!(errs.is_empty(), "lower errors: {errs:?}");
     m
@@ -431,7 +431,7 @@ fn bankid_as_array_length_refuses_with_bank_message() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[bank.provisional]")
             && d.message.contains("emit it into a data cell or guard it with ensure")),
@@ -463,7 +463,7 @@ fn equ_bound_to_bankid_refuses_on_comptime_array_size_read() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[bank.provisional]")
             && d.message.contains("emit it into a data cell or guard it with ensure")),
@@ -484,7 +484,7 @@ fn bankid_wrong_arity_is_diagnosed() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message == "`bankid` expects exactly 1 argument, got 2"),
         "expected the arity diagnostic, got: {diags:?}"
@@ -499,7 +499,7 @@ fn bankid_non_symbol_argument_is_diagnosed() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_m, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("`bankid` needs a symbol reference")),
         "expected the symbol-reference diagnostic, got: {diags:?}"
@@ -523,7 +523,7 @@ fn bank_with_explicit_vma_is_diagnosed() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[section.bank-vma]")
             && d.message.contains("bank")
@@ -541,7 +541,7 @@ fn bank_with_explicit_vma_is_diagnosed_regardless_of_attribute_order() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[section.bank-vma]")),
         "expected the [section.bank-vma] diagnostic regardless of attr order, got: {diags:?}"
@@ -560,7 +560,7 @@ fn bank_with_explicit_vma_still_lowers_the_section_poison_tolerant() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[section.bank-vma]")),
         "expected the [section.bank-vma] diagnostic, got: {diags:?}"
@@ -584,7 +584,7 @@ fn bank_without_vma_still_works() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(diags.is_empty(), "lower: {diags:?}");
     let s = section(&module, "s");
     assert_eq!(s.bank, Some(0x8000));
@@ -601,7 +601,7 @@ fn unknown_attr_diagnostics_unchanged_alongside_bank() {
                }\n";
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
-    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
+    let (_module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("unknown attribute `bogus`")),
         "expected an unknown-attribute diagnostic, got: {diags:?}"
