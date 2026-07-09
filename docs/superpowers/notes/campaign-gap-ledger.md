@@ -82,3 +82,11 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   in the main tree without re-pinning. Wants a real fix: either track/pin the generated
   outputs, or make the generators deterministic from tracked inputs and re-baseline. — OPEN
   (raise at a checkpoint; owns a session of its own).
+- [port #1 hblank, 2026-07-09] **Source formatting convention set** (Volence's catch: the
+  first draft of hblank.emp was flat-left inside its section braces — "start off strong"):
+  code files use the braceless `module X in <section>` form (procs at col 0, classic asm
+  indent inside); explicit `section { }` blocks indent members 4 (the sfx_bank precedent);
+  instruction lines keep the .asm column style. Recorded in aeon CODING_CONVENTIONS.md §10;
+  restyle byte-neutrality proven by re-running the port gates. Convention-only until
+  `sigil fmt` (S2-D11(c)) — every new gap-ledger retrospect should eyeball formatting until
+  then. — SHIPPED (convention; fmt tooling stays SPEC-LEDGERED S2-D11(c)).
