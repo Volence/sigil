@@ -261,24 +261,26 @@ fn math_region_matches_reference() {
     let section = linked.section("math").expect("linked image must carry math");
     assert_region_matches(&section.bytes, expected, "math (plain) vs s4.bin[0x2468..0x2700]");
 
-    // The bare-name proof: `jsr GetSineCosine` = opcode `4EB9` + an abs32
-    // target at bytes [2..6); GetSineCosine is the FIRST proc in the
-    // section, so it resolves to the section base, $2468 (plain). `dc.l
-    // Sine_Table` follows at [6..10) — Sine_Table starts right after the
-    // 24-byte code body, at $2468+24 = $2480.
+    // The bare-name proof: `jsr GetSineCosine`'s target ($2468) fits the
+    // abs.w range, so the deferred `JmpJsrSym`'s relaxation ladder picks the
+    // SHORT form — opcode `4EB8` + a 2-byte abs.w address at bytes [2..4).
+    // GetSineCosine is the FIRST proc in the section, so it resolves to the
+    // section base, $2468 (plain). `dc.l Sine_Table` follows at [4..8) —
+    // Sine_Table starts right after the 24-byte code body, at $2468+24 =
+    // $2480.
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
         &consumer.bytes[0..2],
-        &[0x4E, 0xB9],
-        "sanity: `jsr` opcode must be absolute-long form (4EB9)"
+        &[0x4E, 0xB8],
+        "sanity: `jsr` opcode must be absolute-word form (4EB8) — $2468 fits abs.w"
     );
     assert_eq!(
-        &consumer.bytes[2..6],
-        &[0x00, 0x00, 0x24, 0x68],
-        "bare-name proof: `jsr GetSineCosine` must resolve to $00002468 (plain)"
+        &consumer.bytes[2..4],
+        &[0x24, 0x68],
+        "bare-name proof: `jsr GetSineCosine` must resolve to $2468 (plain)"
     );
     assert_eq!(
-        &consumer.bytes[6..10],
+        &consumer.bytes[4..8],
         &[0x00, 0x00, 0x24, 0x80],
         "bare-name proof: `dc.l Sine_Table` must resolve to $00002480 (plain)"
     );
@@ -305,14 +307,22 @@ fn math_debug_region_matches_reference() {
     let section = linked.section("math").expect("linked image must carry math");
     assert_region_matches(&section.bytes, expected, "math (debug) vs s4.debug.bin[0x25FA..0x2892]");
 
+    // $25FA also fits abs.w — see the plain variant's comment for the byte
+    // layout (opcode `4EB8` + 2-byte abs.w address at [2..4), then `dc.l
+    // Sine_Table` at [4..8)).
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
-        &consumer.bytes[2..6],
-        &[0x00, 0x00, 0x25, 0xFA],
-        "bare-name proof: `jsr GetSineCosine` must resolve to $000025FA (debug)"
+        &consumer.bytes[0..2],
+        &[0x4E, 0xB8],
+        "sanity: `jsr` opcode must be absolute-word form (4EB8) — $25FA fits abs.w"
     );
     assert_eq!(
-        &consumer.bytes[6..10],
+        &consumer.bytes[2..4],
+        &[0x25, 0xFA],
+        "bare-name proof: `jsr GetSineCosine` must resolve to $25FA (debug)"
+    );
+    assert_eq!(
+        &consumer.bytes[4..8],
         &[0x00, 0x00, 0x26, 0x12],
         "bare-name proof: `dc.l Sine_Table` must resolve to $00002612 (debug)"
     );

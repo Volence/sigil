@@ -211,6 +211,59 @@ pub fn assemble_mixed_hblank_as_side(aeon: &Path, debug: bool) -> Result<Module,
     })
 }
 
+/// Assemble the AS side of the port #2 MIXED `.asm`+`.emp` build: everything
+/// `assemble_mixed_hblank_as_side` does, PLUS `SIGIL_EMP_CONTROLLERS` and
+/// `SIGIL_EMP_MATH` defined so `engine/engine.inc`'s two `ifndef` blocks
+/// (which normally include `engine/system/controllers.asm` /
+/// `engine/system/math.asm`) are each REPLACED by an `org` resume — per
+/// shape, controllers `$2302` (plain) / `$2390` (`__DEBUG__`), math `$2700`
+/// (plain) / `$2892` (`__DEBUG__`) — leaving the two windows for the `.emp`
+/// side's `controllers`/`math` sections to supply. All SIX gates
+/// (`SIGIL_EMP_DAC`, `SIGIL_EMP_MT`, `SIGIL_EMP_SFX`, `SIGIL_EMP_HBLANK`,
+/// `SIGIL_EMP_CONTROLLERS`, `SIGIL_EMP_MATH`) are independent; this is the
+/// cumulative shape exercising all six together — port #2 riding on top of
+/// port #1 and the three sound-migration data ports.
+///
+/// `HW_PORT_1_DATA`/`HW_PORT_2_DATA` (equs, `engine/constants.asm`) and
+/// `Ctrl_1_Held`/`Ctrl_2_Held`/`Ctrl_1_Press_Accum`/`Ctrl_2_Press_Accum` (RAM
+/// labels, `engine/ram.asm`) — read by `controllers.emp`'s
+/// `Read_Controllers` — are real `.asm` symbols defined UNCONDITIONALLY
+/// (outside every gate), so no synthetic cross-seam symbol injection is
+/// needed here: the real AS module supplies them through the same shared
+/// symbol table. `vblank.asm`'s two `bsr.w Read_Controllers` sites and
+/// `test_parent.asm`/`player_ground.asm`'s six `jsr GetSineCosine` sites are
+/// likewise unconditional AS-side consumers of the two `.emp` modules' `pub
+/// proc` names — the `jsr` sites are only assemblable at all because of the
+/// `Fragment::JmpJsrSym` deferral (port #2 follow-up) that lets a bare `jsr
+/// Sym`/`jmp Sym` whose target is genuinely unresolved within the AS compile
+/// defer to a linker-resolved fixup, mirroring the `.emp` front-end's
+/// `jbra`/`jbsr` ladder.
+///
+/// Returns the UNLINKED [`Module`], exactly like the four sibling helpers:
+/// the port #2 mixed harness concatenates these sections with all SIX
+/// `.emp` modules' placed sections (`dac_samples.emp` + `mt_bank.emp` +
+/// `sfx_bank.emp` + `hblank.emp` + `controllers.emp` + `math.emp`) and runs
+/// ONE `resolve_layout` + `link` over the union.
+pub fn assemble_mixed_tranche2_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+        ("SIGIL_EMP_HBLANK".to_string(), 1),
+        ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
+        ("SIGIL_EMP_MATH".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche2 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable

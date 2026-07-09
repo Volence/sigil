@@ -146,3 +146,84 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   adversarial probe; will matter for some future port (VDP register writes spell this). — OPEN.
 - [tranche 2 T1 review, 2026-07-09] **`Owner.label(pc)` multi-segment pc-rel target untested**
   — path shared verbatim with tested branch resolution; one-line test owed. — OPEN (low risk).
+- [tranche 2 T3, port #2 (controllers.emp + math.emp), 2026-07-09] **`embed()` paths resolve
+  relative to `include_root` directly — there is no separate "module's own directory" concept**
+  — `math.emp`'s `embed("../data/sine.bin")` (the module lives in `engine/system/`, the embed
+  target in `engine/data/`) could not resolve under ANY `include_root` value: the sandbox
+  (`sigil-frontend-emp/src/eval/sandbox.rs::resolve_sandbox_path`) joins relative paths onto
+  `include_root` and checks containment against that SAME root at every `..` pop — a single
+  root can never both be narrow enough to serve as a sane "current directory" AND broad enough
+  to contain a sibling directory one level up; the hazard is structural, not a wrong root
+  choice (every prior port's `embed`s were bare same-directory filenames, so this never
+  surfaced). Genuinely load-bearing: the real production CLI path
+  (`sigil-cli/src/main.rs::run_build`) already sets `include_root` to the whole manifest
+  `--root`, not a per-module directory, so this would have bitten a real build the first time
+  any module's embed climbed a directory. — SHIPPED (port #2, per Volence's "step 2 is the
+  quality apex" ruling above — build the missing construct rather than settle): a second,
+  independent field, `embed_base` (`LowerOptions`/`Placement`/`Evaluator`), is the join BASE
+  relative paths resolve against; `include_root` stays the sole containment boundary
+  (`resolve_sandbox_path`'s final `starts_with` check is unchanged). `None` (the default)
+  means "same as `include_root`" — every pre-existing caller is behavior-identical
+  (`eval_data_with_root` still exists with its original signature, delegating to the new
+  `eval_data_with_root_and_base` with `embed_base: None`). `~45` call sites needed a
+  mechanical `embed_base: None,` addition to their `LowerOptions { .. }` literals (Rust's
+  exhaustive-struct-literal rule, no `Default` on `LowerOptions`) — wide but shallow, each a
+  single trivial line, zero behavior change. TDD: `sandbox.rs` gained two new unit tests
+  (`resolve_sandbox_path_embed_base_allows_climbing_within_include_root`,
+  `resolve_sandbox_path_embed_base_cannot_escape_include_root` — the latter proving
+  `embed_base` grants NO extra reach past `include_root`).
+- [tranche 2 T3, port #2 (math.emp), 2026-07-09] **`jsr`/`jmp` to a bare symbol genuinely
+  undefined within the SAME AS compile unit hard-errors at the front-end's pass-convergence
+  check — it never reaches the linker.** Unlike `movea.l #imm,aN`/`move.l #imm,dN`/
+  `move.l #imm,(abs).w` (port #1 T3's `try_defer_long_imm`, which defers a genuinely-external
+  immediate SOURCE to a `Value32Be` link fixup) and unlike `bra.w`/`bsr.w` (always PC-relative,
+  always deferred via `PcRelDisp16`), `jsr`/`jmp`'s bare-symbol ABSOLUTE-target width
+  (abs.w vs abs.l) is selected inside the AS front-end's OWN multi-pass fixpoint
+  (`sigil-frontend-as/src/eval.rs::lower_m68k`, M1.D T3) — `Fragment::JmpJsrSym` (the
+  length-variable deferred form, already fully supported end-to-end by
+  `sigil-link/src/relax.rs`'s relaxation ladder AND already used unconditionally by the
+  `.emp` front-end's `jbra`/`jbsr`) was NEVER constructed by the AS front-end; a target still
+  Poison at convergence was unconditionally promoted to a hard `"unresolved symbol"` error.
+  This is exactly the real shape aeon's `games/sonic4/objects/test_parent.asm:96` /
+  `games/sonic4/player/player_ground.asm` (six sites) take — unconditional AS-side `jsr
+  GetSineCosine` calls into a proc that is EITHER AS-side (`math.asm`, gate off) OR `.emp`-side
+  (`math.emp`, gate on, resolved only at joint link) — so this would have broken the real
+  `SIGIL_EMP_MATH`-gated mixed build, not just this port's synthetic test. — SHIPPED (port #2,
+  TDD): `run()` now performs ONE bonus final pass (seeded from the SAME converged env) ONLY
+  when ordinary convergence still leaves `poison` non-empty; that bonus pass's `jsr`/`jmp`
+  sites still-Poison at that point emit `Fragment::JmpJsrSym` (via the backend's existing
+  `lower_jmp_jsr_sym`, already used by `.emp`) instead of erroring — every OTHER operand kind
+  is byte-identical to the ordinary pass, so the bonus pass's own leftover `poison` still names
+  only genuinely-undefined symbols of any kind. Zero cost/behavior change for the overwhelming
+  common case (empty `poison` at convergence — skips the bonus pass entirely). Proven inert:
+  the FULL existing `m1d_rom`/`m1d_debug_rom`/all four prior mixed-ROM gates stayed
+  byte-identical with this change in place — the deferral never fires unless something was
+  ALREADY going to hard-error.
+- [tranche 2 T3, port #2 (math.emp), 2026-07-09] **`resolve_layout` refuses ANY section
+  mixing an `Org` back-patch with a relaxable fragment (`JmpJsrSym`/`RelaxAbsSym`/
+  `RelaxLadder`), and this collision is REAL, not a false positive, for aeon's actual ROM
+  layout** — `engine/engine.inc`'s `org $10000` opens the object-code-bank section and NEVER
+  closes it before `gameDataIncludes` chains straight into the parallax data tables in the
+  SAME section; `engine/parallax_macros.inc`'s `parallax_section_end` macro emits a genuine
+  mid-section back-patch (`org pscStart` / `org pscEndPos`, a real `Fragment::Org`), and (once
+  the jsr/jmp deferral above ships) `test_parent.asm`'s/`player_ground.asm`'s six `jsr
+  GetSineCosine` sites land EARLIER in that same section as `Fragment::JmpJsrSym`. The M1.C
+  T6b guard (`sigil-link/src/relax.rs:495-536`) fires exactly as designed: its
+  `shift_breakpoints` prefix-sum layout math treats every `Org` as contributing zero length
+  and never reads `Org.target`, which is sound ONLY when nothing before an `Org` in the same
+  section can ever grow — true in every case examined before this port (M1.C T6b: "today's
+  real Aeon sections either mix pure back-patched data with no relaxable... or relaxable-
+  bearing code with no Org"), false now. Confirmed via two independent research passes: making
+  the guard fixpoint-aware (only reject if a relaxable BEFORE an Org in the same section
+  actually GROWS past its baseline rung — `GetSineCosine`'s real address is low enough to
+  always fold to abs.w, so the growth this guards against could never fire here) requires
+  `shift_breakpoints`/`frag_start_vma` to become genuinely `Org`-target-aware, not a
+  guard-condition tweak — a real linker algorithm change. — OPEN, BLOCKED for this task (per
+  the task's explicit STOP-and-report rule: not small). `controllers_port.rs`/`math_port.rs`'s
+  REGION-level gates are unaffected (fresh synthetic sections, no `Org` in play) and fully
+  green; only the SIX-module full mixed-ROM composition
+  (`mixed_tranche2_rom_matches_assembled_reference`/`_debug_`) is blocked, `#[ignore]`d with a
+  full explanation in its doc comment. Wants: a dedicated session teaching
+  `shift_breakpoints`/`frag_start_vma` to replay `Org.target` for real instead of treating it
+  as a zero-length no-op, so the guard can narrow from "refuse categorically" to "refuse only
+  when a provable hazard exists."
