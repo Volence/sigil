@@ -10,54 +10,125 @@
 // (D2.18). The equivalence (state-per-state) is argued in
 // docs/superpowers/notes/2026-07-08-item9b-implementation-notes.md (T5).
 //
-// What a `script` buys over the three procs:
-//   - `yield` IS the state store — it writes the next-frame resume point into
-//     the SAME `Sst.resume @ $20` slot the proc version's `routine` helper
-//     writes by hand (D9.5: the script PC IS the routine pointer storage), and
-//     exits through the ONE declared per-frame epilogue (`shows Draw_Sprite`).
-//     So there are no `routine`/`falls_into` calls anywhere here.
-//   - user labels (`.wait_tick`, `.windup_tick`) work ACROSS yield boundaries:
-//     the body is a single flattened proc-shaped scope, so a `jbra .wait_tick`
-//     in a resume segment resolves to the label before the yield for free.
+// ────────────────────────────────────────────────────────────────────────────
+// HOW TO READ A `script` — the coroutine model in one minute (Aeon terms)
+//
+// Aeon's object engine runs every live object once per frame
+// (engine/objects/core.asm): load the object's SST into a0, then jump
+// straight through the ROUTINE WORD stored at (a0) — SST offset 0,
+// `code_addr` = routine − ObjCodeBase:
+//
+//     moveq   #OBJ_CODE_BANK, d0     ; the 64KB obj bank's high word
+//     swap    d0
+//     move.w  (a0), d0               ; this object's routine word
+//     movea.l d0, a1
+//     jsr     (a1)                   ; run today's code
+//
+// There is no dispatch table and no object id — the word at (a0) IS the
+// object's state. A hand-written proc brain changes state with
+//     move.w  #objroutine(NewState), (a0)
+// and a `script` is that same machine written as one body: the body is CUT
+// INTO SEGMENTS at each `yield`, and `yield` compiles to exactly two things:
+//
+//   1. store "continue at the instruction AFTER me" into the routine slot
+//      at (a0) — i.e. the NEXT segment's objroutine-style code word
+//   2. jbra Draw_Sprite — the `shows` epilogue: draw, return to the engine
+//
+// So read `yield` as: "my frame is over — draw me, and tomorrow the engine's
+// `jsr (a1)` lands at the NEXT LINE." Code after a `yield` is not dead: it is
+// where the object resumes on the following frame. The `routine` helper and
+// `yield` write the SAME slot (D9.5) — manual procs and scripts coexist.
+//
+// (EXHIBIT SCAFFOLDING NOTE: storing segment code words is the `code_word`
+// encoding, ledgered S2-D12(b), which rides the first scripted-object port.
+// Until it lands, this standing exhibit compiles against the MOCK prelude —
+// a classic-Sonic-style layout where the resume slot is `Sst.resume @ $20`
+// and `encoding: word_offsets` stores a table ordinal instead of a code
+// word. The coroutine model, the trace below, and every line of the body
+// are identical either way; only the stored value's wire format and the
+// slot's offset differ.)
+//
+// Frame-by-frame trace of a freshly spawned plant (WAIT_TIME = 64):
+//   frame 0:  spawn copied ObjDef.code into (a0), so the engine enters at the
+//             entry segment. timer := 64, fall into the loop, .wait_tick
+//             decrements to 63, not zero → `yield`
+//             (draw; resume point = the `jbra .wait_tick` after the yield)
+//   frame 1:  engine resumes AFTER that yield → `jbra .wait_tick` →
+//             timer := 62 → yield again
+//   … one timer tick per frame …
+//   frame 63: timer hits 0 → `beq .check` → the proximity test runs and the
+//             plant either starts the shoot windup or re-arms — all WITHIN
+//             this same frame. A frame only ends where a `yield` is; straight-
+//             line code between yields is "free" (costs cycles, not frames).
+//
+// What the `script` buys over the three procs:
+//   - `yield` IS the state store — no `routine`/`falls_into` bookkeeping
+//     anywhere in this file, and the state machine reads top-to-bottom as one
+//     story. The proc version's three states are three SEGMENTS of this body:
+//         init  → the entry segment (before `loop`)
+//         wait  → the `.wait_tick` frame-loop
+//         shoot → the `.windup_tick` frame-loop
+//   - user labels work ACROSS yield boundaries: the body is one flattened
+//     proc-shaped scope, so `jbra .wait_tick` in a resume segment resolves to
+//     the label from the previous segment for free.
+//   - a stale/garbage routine value is unconstructible from the language: the
+//     yields form a closed set, and only they (and spawn) write the slot.
+// ────────────────────────────────────────────────────────────────────────────
 
 module badniks.pitcher_plant_script in obj_bank
 
 /// Per-object state, overlaid on the SST's 34-byte custom window — same shape
-/// as the proc version.
+/// as the proc version. `timer(a0)` below lowers to a plain integer
+/// displacement (window base $2E + field offset 0), byte-identical to the old
+/// `objoff_2E` idiom; the name and the type check are free (§4.6).
 vars PitcherPlantV: sst_custom {
     timer: u8,                          // frames until the next state change
 }
 
 const WAIT_TIME: u8 = 64                // frames between attacks
-const ATTACK_RANGE: u16 = $60           // proximity that triggers a shot
-const SHOOT_WINDUP: u8 = $28            // length of the shoot animation
-const FIRE_FRAME: u8 = 16               // seed launches when timer hits this
+const ATTACK_RANGE: u16 = $60           // proximity that triggers a shot (96px)
+const SHOOT_WINDUP: u8 = $28            // length of the shoot animation, in frames
+const FIRE_FRAME: u8 = 16               // seed launches when timer counts DOWN to this
 
-// Seed ballistics, 8.8 fixed-point. spawn() negates X when the plant is
-// x-flipped, so negative X always means "toward my facing".
-const SEED_VEL_X: i16 = -$200
-const SEED_VEL_Y: i16 = -$200
-const SEED_GRAVITY: i16 = $20
+// Seed ballistics, 8.8 fixed-point ($100 = 1 px/frame). spawn() negates X when
+// the plant is x-flipped, so negative X always means "toward my facing".
+const SEED_VEL_X: i16 = -$200           // 2 px/frame toward the player
+const SEED_VEL_Y: i16 = -$200           // 2 px/frame upward (an arc; gravity pulls it back)
+const SEED_GRAVITY: i16 = $20           // per-frame y_vel increment for the seed proc
 
-/// Animation table + animation ids, one declaration (as in the proc version).
+/// Animation table + animation ids — ONE declaration doing two jobs (§4.7):
+///   forward: emits the offset table `dc.w ani_idle-Ani, ani_seed-Ani, ani_shoot-Ani`
+///            (the anim engine indexes this table by anim id to find the script)
+///   reverse: defines the comptime ints Ani.Idle == 0, Ani.Seed == 1,
+///            Ani.Shoot == 2 — the anim ids themselves. Insert a row and
+///            nothing downstream silently renumbers (everything refers by name).
 offsets Ani {
     Idle:  ani_idle,
     Seed:  ani_seed,
     Shoot: ani_shoot,
 }
 
-// Scripts: [speed, frame..., $FF] loops; $FD, id switches animation.
+// The anim byte scripts, in the engine's format: [speed, frame ids…, command].
+//   $FF        = loop this animation from the start
+//   $FD, id    = switch to animation `id` when this one finishes
+// The declared [u8; N] length IS the terminator guard: drop the $FF and the
+// initializer no longer fills the type → compile error, not a runtime hang.
+// NOTE ani_shoot's last byte is `Ani.Idle` (== 0) used as DATA — the
+// "$FD: now switch to idle" argument. That's the reverse-ordinal half of
+// `offsets` doing real work inside a sibling table's payload.
 data ani_idle:  [u8; 4] = [7, 0, 1, $FF]
 data ani_seed:  [u8; 4] = [3, 5, 6, $FF]
 data ani_shoot: [u8; 6] = [4, 2, 3, 4, $FD, Ani.Idle]
 
-/// What the level's object list spawns. `code: brain` — the entry point is the
-/// script's hidden table (member 0 = the entry segment), not a proc.
+/// What the level's object list spawns. `code: brain` — the script's entry
+/// segment; spawn copies this code word into (a0), so the object's first
+/// frame runs from the top of the script. To the engine a script and a
+/// proc-brain object are indistinguishable — both are just a routine word.
 pub data Def = ObjDef{
     code:  brain,
     map:   Map_PitcherPlant,
     art:   ArtTile{ tile: VRAM_PITCHER_PLANT, pal: 0, pri: 0 },
-    col:   Collision.Hurt,
+    col:   Collision.Hurt,              // touching the plant hurts the player
     zpri:  3,
     size:  Size{ w: 16, h: 28 },        // hitbox: plant body, not the stem
     anim:  Ani.Idle,
@@ -69,7 +140,7 @@ pub data Def = ObjDef{
 data SeedDef = ObjDef{
     code:  seed,
     map:   Map_PitcherPlant,            // shares the plant's art
-    art:   Def.art,
+    art:   Def.art,                     // …and its ArtTile word, read straight off Def
     col:   Collision.Projectile,
     zpri:  2,
     size:  Size{ w: 3, h: 3 },
@@ -78,29 +149,45 @@ data SeedDef = ObjDef{
     frame: 5,
 }
 
-/// The whole brain as ONE coroutine. `shows Draw_Sprite` is the per-frame
-/// epilogue: every bare `yield` stores its resume ordinal into `Sst.resume`
-/// and exits through `Draw_Sprite`. The three proc-version states map to three
-/// segments of this one body:
-///   init  → the entry segment (before `loop`)
-///   wait  → the `.wait_tick` resume loop (yield once per frame while counting)
-///   shoot → the `.windup_tick` resume loop (yield once per frame while firing)
+/// The whole brain as ONE coroutine.
+///   (a0: *Sst)               — the engine's calling convention: my SST in a0.
+///                              This types a0, so `timer(a0)` resolves via the
+///                              PitcherPlantV overlay (§4.6).
+///   (encoding: word_offsets) — the resume value's wire format. On real Aeon
+///                              this will be `code_word` (yield stores the next
+///                              segment's objroutine-style word at (a0); no
+///                              table — S2-D12(b)); `word_offsets` is the mock
+///                              prelude's table contract this exhibit pins
+///                              against today.
+///   shows Draw_Sprite        — the per-frame epilogue: EVERY bare `yield`
+///                              exits through Draw_Sprite. An object that
+///                              yields cannot forget to draw (D9.6 — a bare
+///                              rts exit is unrepresentable).
 script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
+    // ENTRY SEGMENT — runs on the object's first frame alive: spawn copied
+    // Def.code (this segment) into the routine word at (a0).
     move.b  #WAIT_TIME, timer(a0)       // init (entry segment): arm the timer
-    loop {
+    loop {                              // unconditional loop — the closing `}` jumps back here
         // --- wait: count down one frame at a time until the timer elapses ---
+        // One trip around this three-line loop = ONE FRAME of game time.
     .wait_tick:
-        subq.b  #1, timer(a0)
-        beq     .check                  // elapsed → run the proximity check
+        subq.b  #1, timer(a0)           // one frame off the idle countdown
+        beq     .check                  // elapsed → run the proximity check (same frame)
         yield                           // still waiting: draw + resume next frame…
         jbra    .wait_tick              // …then keep counting down
+                                        //   (this jbra is frame N+1's first instruction:
+                                        //    execution resumes AFTER the yield, not at it)
 
         // --- proximity check: is the player within range on our facing side? ---
+        // Reached only on the frame the timer expired; no yield until the
+        // plant has decided what to do, so the decision costs zero frames.
     .check:
-        move.w  Player_1.x_pos, d0
-        sub.w   x_pos(a0), d0
+        move.w  Player_1.x_pos, d0      // d0 := player's world X
+        sub.w   x_pos(a0), d0           // d0 := player X − my X (signed distance)
         facing_abs d0                   // signed distance, normalized to facing
-        cmp.w   #ATTACK_RANGE, d0
+                                        //   (prelude helper: negates d0 if I face the
+                                        //    other way, so "small positive = in front of me")
+        cmp.w   #ATTACK_RANGE, d0       // within $60 px of my mouth?
         bhi     .rearm                  // out of range → re-arm, back to waiting
 
         // --- shoot windup: play the anim, fire on FIRE_FRAME, count down ---
@@ -110,34 +197,46 @@ script brain (a0: *Sst) (encoding: word_offsets) shows Draw_Sprite {
         // `shoot`); here `.check` falls straight into `.windup_tick`, so the
         // first decrement happens on the transition frame — the windup holds
         // $28 frames, not $29. Both are valid brains; the seed still fires at
-        // timer == FIRE_FRAME.
-        move.b  #SHOOT_WINDUP, timer(a0)
-        anim    Ani.Shoot
+        // timer == FIRE_FRAME. (One extra `yield` + `jbra .windup_tick` right
+        // here would restore exact frame parity — deliberately not taken.)
+        move.b  #SHOOT_WINDUP, timer(a0)    // windup countdown: timer := $28
+        anim    Ani.Shoot               // prelude helper: switch to the shoot animation
     .windup_tick:
-        subq.b  #1, timer(a0)
-        cmpi.b  #FIRE_FRAME, timer(a0)
-        bne     .no_fire
+        subq.b  #1, timer(a0)           // one frame off the windup
+        cmpi.b  #FIRE_FRAME, timer(a0)  // is THIS the mouth-open frame (timer == 16)?
+        bne     .no_fire                // not yet / already past → just keep animating
         spawn(SeedDef, offset: Vec{ x: -16, y: -4 }, flip: inherit)
+                                        // fire! seed spawns 16px toward my facing, 4px
+                                        //   up; `flip: inherit` copies my x-flip so the
+                                        //   seed flies out of the mouth, whichever way I face
     .no_fire:
-        tst.b   timer(a0)
-        beq     .rearmed                // windup done → switch back to idle anim
+        tst.b   timer(a0)               // windup finished?
+        beq     .rearmed                // yes → switch back to idle anim (same frame)
         yield                           // still winding up: draw + resume next frame…
         jbra    .windup_tick            // …then keep counting down
 
         // --- re-arm: back to the idle animation, reset the wait timer ---
+        // Two entry points, one exit:
+        //   .rearmed — the windup just finished → also reset the animation
+        //   .rearm   — the player was out of range → anim never left Idle, skip it
     .rearmed:
-        anim    Ani.Idle
+        anim    Ani.Idle                // back to the idle animation
     .rearm:
-        move.b  #WAIT_TIME, timer(a0)
+        move.b  #WAIT_TIME, timer(a0)   // re-arm the idle countdown
         yield                           // draw this frame; resume at the loop top
+                                        //   (next frame: the instruction after this
+                                        //    yield is the loop's closing `}`, whose
+                                        //    hidden back-branch lands on `loop {` —
+                                        //    which falls straight into .wait_tick)
     }
 }
 
 /// The projectile's per-frame brain — verbatim from the proc version (a seed is
-/// a separate object, not a state of the plant, so it stays a proc).
+/// a separate OBJECT, not a state of the plant, so it stays a plain proc: its
+/// routine word at (a0) never changes; the engine calls it fresh every frame).
 proc seed (a0: *Sst) {
     despawn_below_level                 // delete self below the kill plane
-    add.w   #SEED_GRAVITY, y_vel(a0)
-    jbsr    ObjectMove
-    jbra    Draw_Sprite
+    add.w   #SEED_GRAVITY, y_vel(a0)    // gravity: arc the seed downward
+    jbsr    ObjectMove                  // engine helper: apply x_vel/y_vel to position
+    jbra    Draw_Sprite                 // draw; jbra (not bsr+rts) = tail call
 }

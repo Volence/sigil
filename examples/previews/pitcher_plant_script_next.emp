@@ -1,0 +1,150 @@
+// Pitcher Plant — D2.30 PREVIEW (does NOT compile yet).
+//
+// ⚠ This file is a DESIGN PREVIEW, not a pinned exhibit: it uses the D2.30
+// readability batch (`wait_frames`, `yield .label`, `yield shows`), the
+// S2-D12(b) `code_word` encoding, and §4.7's inline `offsets` bodies — all
+// RATIFIED (2026-07-06/09), all UNIMPLEMENTED until their campaign ride-along
+// tranches build them (inline bodies: first anims port; the rest: first
+// scripted-object port).
+// The compiling, byte-pinned v1 exhibit is examples/game/badniks/
+// pitcher_plant_script.emp; this file exists so the target can be SEEN.
+// It lives in examples/previews/ (NOT under the examples/game scan root)
+// because `--map` module discovery parses every .emp under the root, and
+// this file stays non-compiling until `code_word` lands with the first
+// scripted-object port. The Tranche-0 acceptance test builds a
+// code_word-patched copy of it instead.
+//
+// This preview carries TWO ratified changes at once (Volence, 2026-07-09):
+//
+// 1. THE D2.30 SPELLINGS. The reading rule they establish:
+//      park with per-frame WORK  →  `yield .label`   (resume named on the line)
+//      PURE park                 →  `wait_frames`    (one declarative line)
+//      genuine sequence          →  bare `yield`     (continue below tomorrow)
+//    Nothing about "next frame starts below the yield" is left implicit —
+//    it's written on the line or absorbed into a construct that says it.
+//
+// 2. THE BETTER BRAIN (the code-sense review finding — apply to aeon's real
+//    plant badnik as its own post-port behavior commit). The v1 exhibit's
+//    brain is blind between checks: it parks 64 frames, glances for the
+//    player ONCE, and re-parks — worst case ~1.07s standing at its mouth
+//    before it reacts, and whether it fires "instantly" or "eventually"
+//    is countdown luck. The insight: WAIT_TIME was never an idle timer, it
+//    was a fire-rate COOLDOWN welded onto the idle state. Split them:
+//      idle     → check EVERY frame (a ~50-cycle check; reaction is instant)
+//      cooldown → WAIT_TIME frames, but only AFTER a shot (prevents the
+//                 machine-gun plant when the player camps in range)
+//    The windup still COMMITS once started (no mid-windup abort) — badniks
+//    that commit feel mechanical and fair; badniks that track feel unfair.
+//
+// Note how each state's nature picks its construct: watching is a
+// park-with-work (`yield .watch`), cooling down is a pure park
+// (`wait_frames`), and this brain has NO pure sequence point left — so not
+// a single bare yield appears. Compare the v1 exhibit: three bare yields,
+// two back-edge jbras, an entry segment, and two hand-managed timer stores.
+
+module badniks.pitcher_plant_script_next in obj_bank
+
+vars PitcherPlantV: sst_custom {
+    timer: u8,                          // windup countdown / cooldown park slot
+}
+
+const WAIT_TIME: u8 = 64                // post-shot cooldown, in frames
+const ATTACK_RANGE: u16 = $60           // proximity that triggers a shot (96px)
+const SHOOT_WINDUP: u8 = $28            // length of the shoot animation, in frames
+const FIRE_FRAME: u8 = 16               // seed launches when timer counts DOWN to this
+
+const SEED_VEL_X: i16 = -$200
+const SEED_VEL_Y: i16 = -$200
+const SEED_GRAVITY: i16 = $20
+
+// Animation table, ids, AND payloads — one declaration (§4.7 INLINE BODIES,
+// the ratified next-offsets increment; unimplemented, rides the first anims
+// port). Deliberately still spelled `offsets`, not a new `dataset` keyword —
+// "one emission grammar, no new concept" (tenet 1): inline members reuse the
+// exact `data`-item shape, so the declared [u8; N] length stays the
+// terminator guard (drop a $FF and the initializer no longer fills the type
+// → compile error, not a runtime hang). Emission: the dc.w table first, then
+// each body in declaration order. By-reference members (`Name: some_label`)
+// still mix in freely for shared/cross-module targets.
+// NOTE Shoot's payload reads `Ani.Idle` (== 0) from its OWN block — the
+// "$FD: switch to idle" command byte; in-block ordinal self-reference is a
+// required test of the increment (ordinals come from declaration position,
+// so it's well-founded).
+offsets Ani {
+    Idle:  [u8; 4] = [7, 0, 1, $FF],
+    Seed:  [u8; 4] = [3, 5, 6, $FF],
+    Shoot: [u8; 6] = [4, 2, 3, 4, $FD, Ani.Idle],
+}
+
+pub data Def = ObjDef{
+    code:  brain,
+    map:   Map_PitcherPlant,
+    art:   ArtTile{ tile: VRAM_PITCHER_PLANT, pal: 0, pri: 0 },
+    col:   Collision.Hurt,
+    zpri:  3,
+    size:  Size{ w: 16, h: 28 },
+    anim:  Ani.Idle,
+    vel:   Vel{ x: 0, y: 0 },
+    frame: 0,
+}
+
+data SeedDef = ObjDef{
+    code:  seed,
+    map:   Map_PitcherPlant,
+    art:   Def.art,
+    col:   Collision.Projectile,
+    zpri:  2,
+    size:  Size{ w: 3, h: 3 },
+    vel:   Vel{ x: SEED_VEL_X, y: SEED_VEL_Y },
+    anim:  Ani.Seed,
+    frame: 5,
+}
+
+/// The brain, D2.30 style. `code_word` is Aeon's real encoding: every yield
+/// stores the resume segment's `objroutine`-style word straight into the
+/// routine slot at (a0) — no hidden table (S2-D12(b); `base:` names the
+/// engine's 64KB object-code bank).
+script brain (a0: *Sst) (encoding: code_word, base: ObjCodeBase) shows Draw_Sprite {
+    loop {
+        // --- idle: watch for the player EVERY frame ---
+        // A park with per-frame work, so it keeps a loop — but the yield
+        // NAMES where tomorrow starts, right on the line. Reaction to the
+        // player entering range is now instant, not countdown luck.
+    .watch:
+        move.w  Player_1.x_pos, d0      // d0 := player's world X
+        sub.w   x_pos(a0), d0           // d0 := player X − my X
+        facing_abs d0                   // normalize sign to my facing
+        cmp.w   #ATTACK_RANGE, d0       // within $60 px of my mouth?
+        bls     .attack                 // yes → start the windup (same frame)
+        yield   .watch                  // no: draw, look again tomorrow
+
+        // --- shoot windup: committed once started; fires on FIRE_FRAME ---
+    .attack:
+        move.b  #SHOOT_WINDUP, timer(a0)
+        anim    Ani.Shoot               // prelude helper: switch animation
+    .windup_tick:
+        subq.b  #1, timer(a0)           // one frame off the windup
+        cmpi.b  #FIRE_FRAME, timer(a0)  // the mouth-open frame?
+        bne     .no_fire
+        spawn(SeedDef, offset: Vec{ x: -16, y: -4 }, flip: inherit)
+    .no_fire:
+        tst.b   timer(a0)               // windup finished?
+        beq     .cooldown
+        yield   .windup_tick            // frame over — next frame: another tick
+
+        // --- cooldown: a PURE park, and the ONLY place WAIT_TIME survives ---
+        // One declarative line: park 64 frames (drawing each), then the
+        // loop's end brings us straight back to .watch. No re-arm store,
+        // no tick label, no self-managed loop.
+    .cooldown:
+        anim    Ani.Idle                // back to the idle animation
+        wait_frames #WAIT_TIME, timer(a0)
+    }
+}
+
+proc seed (a0: *Sst) {
+    despawn_below_level
+    add.w   #SEED_GRAVITY, y_vel(a0)
+    jbsr    ObjectMove
+    jbra    Draw_Sprite
+}
