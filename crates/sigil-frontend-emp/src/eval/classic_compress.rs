@@ -402,6 +402,38 @@ impl<'a> Evaluator<'a> {
             }
         }
     }
+
+    // -----------------------------------------------------------------
+    // Enigma
+    // -----------------------------------------------------------------
+
+    /// `enigma(data)` (Plan-7 #10, T2b): Enigma compression, emitting the
+    /// raw stream (CR4). `data` must be word-even (a multiple of 2 bytes) —
+    /// checked here via [`sigil_clownlzss_sys::Error::NotWordEven`] surfaced
+    /// as `[enigma.word-even]`.
+    pub(super) fn eval_enigma(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        let Some(buf) = self.eval_sole_data_arg("enigma", args, span, env) else {
+            return Value::Poison;
+        };
+        self.enigma_from_data(buf, span)
+    }
+
+    pub(crate) fn enigma_from_data(&mut self, buf: DataBuf, span: Span) -> Value {
+        let Some(input) = self.flatten_data_buf_tagged(&buf, span, "enigma") else {
+            return Value::Poison;
+        };
+        match sigil_clownlzss_sys::compress_enigma(&input) {
+            Ok(out) => {
+                let mut result = DataBuf::empty();
+                result.push(Cell::Bytes(out));
+                Value::Data(result)
+            }
+            Err(e) => {
+                self.report_clownlzss_error("enigma", span, e);
+                Value::Poison
+            }
+        }
+    }
 }
 
 #[cfg(test)]

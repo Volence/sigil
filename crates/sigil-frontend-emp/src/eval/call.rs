@@ -110,6 +110,8 @@ impl<'a> Evaluator<'a> {
                 // `saxman(data)` / `saxman(data, header: bool)` (Plan-7
                 // #10, T2b): Saxman, `header:` default true.
                 "saxman" => return self.eval_saxman(args, span, env),
+                // `enigma(data)` (Plan-7 #10, T2b): Enigma, word-even input.
+                "enigma" => return self.eval_enigma(args, span, env),
                 _ => {}
             }
         }
