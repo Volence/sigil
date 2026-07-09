@@ -294,10 +294,6 @@ fn parse_define_int(s: &str) -> Option<i128> {
     s.parse::<i128>().ok()
 }
 
-/// `sigil emp <input.emp> [-o <output.bin>] [--hex]` — compile a Spec 2 `.emp`
-/// module to a flat binary image. `embed`/`import` paths resolve against the
-/// source file's own directory (the capability-sandbox include-root, §6.7),
-/// canonicalized so a comptime capture path is stable regardless of cwd.
 /// `--deny-todo` (S2-D11(e)): promote every `[todo.present]` hole to an error
 /// so a release build cannot ship one. A post-filter at the CLI layer — the
 /// frontend stays flag-free, and `unreachable!` (which never reports) is
@@ -314,6 +310,10 @@ fn promote_todo_holes(diags: &mut [sigil_span::Diagnostic], deny_todo: bool) {
     }
 }
 
+/// `sigil emp <input.emp> [-o <output.bin>] [--hex]` — compile a Spec 2 `.emp`
+/// module to a flat binary image. `embed`/`import` paths resolve against the
+/// source file's own directory (the capability-sandbox include-root, §6.7),
+/// canonicalized so a comptime capture path is stable regardless of cwd.
 fn run_emp(args: &[String]) {
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;

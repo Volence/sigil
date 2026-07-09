@@ -124,6 +124,38 @@ proc p () {
     assert_eq!(count, 2, "one [todo.present] per site: {diags:?}");
 }
 
+#[test]
+fn empty_paren_todo_is_the_bare_form() {
+    // `todo!()` — the Rust-muscle-memory spelling — parses like bare `todo!`.
+    let src = "\
+module m
+proc p () {
+    todo!()
+}
+";
+    let (m, diags) = lower(src);
+    assert_eq!(linked_bytes(&m), vec![0x4A, 0xFC]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[todo.present]")),
+        "still reports the hole: {diags:?}"
+    );
+}
+
+#[test]
+fn todo_before_closing_brace_on_same_line() {
+    // The last-statement-before-`}` shape parses like `{ nop }` does.
+    let src = "\
+module m
+proc p () { todo! }
+";
+    let (m, diags) = lower(src);
+    assert_eq!(linked_bytes(&m), vec![0x4A, 0xFC]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[todo.present]")),
+        "still reports the hole: {diags:?}"
+    );
+}
+
 // ---- 3. 68k-only (v1) -------------------------------------------------------
 
 #[test]

@@ -1121,7 +1121,11 @@ impl Parser {
                 self.bump(); // `!`
                 let message = if self.at(&Tok::LParen) {
                     self.bump();
-                    let m = if let Tok::Str(s) = self.peek().clone() {
+                    // `todo!()` (empty parens, the Rust-muscle-memory
+                    // spelling) is the same as bare `todo!`.
+                    let m = if self.at(&Tok::RParen) {
+                        None
+                    } else if let Tok::Str(s) = self.peek().clone() {
                         self.bump();
                         Some(s)
                     } else {
