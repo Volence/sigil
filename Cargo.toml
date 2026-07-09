@@ -12,4 +12,5 @@ members = [
     "crates/sigil-cli",
     "crates/sigil-harness",
     "crates/sigil-salvador-sys",
+    "crates/sigil-s4lz",
 ]
