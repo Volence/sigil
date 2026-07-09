@@ -421,3 +421,83 @@ Exact `ensure`-with-link-expr spelling and whether `SND_ENGINE_TABLE_BANK` needs
   All four reverts confirmed via re-running the full 4-test file green afterward; `git diff` against the landed file shows no trace of any falsification.
 - **Nets:** `SIGIL_STRICT_GATE=1 AEON_DIR=/home/volence/sonic_hacks/aeon cargo test -p sigil-cli` — all green (mt_negative_probes: 4 passed, plus every other sigil-cli test file unaffected). `cargo test --workspace` — all green. `cargo clippy --workspace --all-targets -- -D warnings` — clean, zero warnings.
 - No BLOCKED conditions; no panics anywhere (every probe's "no panic" bar is satisfied by the test process completing and asserting on returned diagnostics/Results, never unwrapping into a crash); no aeon files, `mt_bank.emp`, or production sigil code touched — only the new test file.
+
+### Whole-branch review outcomes — DONE (sigil commit + aeon commit, both branches)
+
+Both prongs (Tasks 1-9 on `sound-migration-t2`, and the aeon `sigil-emp-mt` port) are
+checkpoint-ready. A whole-branch review of the completed T2 arc surfaced three small
+gaps in the test harness (fixed here) and four items recorded but deliberately NOT
+fixed (arc-level or future-tranche scope, not T2 defects).
+
+**Fixes applied:**
+
+- **I1 — vacuous-on-empty positive gates:** `check_link_asserts` returns an EMPTY
+  `Vec<Diagnostic>` both when all five `mt_bank.emp` ensures genuinely pass AND when
+  `link_asserts` itself is empty (e.g. a future refactor accidentally drops the
+  `ensure`s from the lowered module) — the positive gates' `assert!(assert_diags...
+  .all(...))` couldn't tell those two cases apart on its own. Added
+  `assert_eq!(link_asserts.len(), 5, "mt_bank.emp's five co-residency ensures must be
+  captured")` (mirroring `mt_negative_probes.rs`'s existing sibling pin) directly in
+  both `crates/sigil-harness/tests/mixed_dac_rom.rs::build_mixed_mt_rom` and
+  `crates/sigil-cli/tests/mt_port.rs`'s two call sites (via `compile_real_file` now
+  also returning `Vec<LinkAssert>`). Each gate is now self-sufficient instead of
+  leaning on `mt_negative_probes.rs`'s count pin as its only real check.
+- **M2 — double-lowering of `mt_bank.emp`:** `build_mixed_mt_rom` lowered
+  `mt_bank.emp` twice — once standalone to recover `link_asserts` (since
+  `place_sections` consumes `module.sections` and the asserts live on `module`, not
+  on a `Section`), and again inside `placed_emp_sections_with_mt` for the actual
+  byte composition. Two independent lowering passes of the same file could in
+  principle drift (e.g. a future comptime-define change applied to only one call
+  site). Refactored `placed_module_sections` (and its two callers,
+  `placed_emp_sections`/`placed_emp_sections_with_mt`) to return
+  `(Vec<Section>, Vec<LinkAssert>)` from ONE lower pass; `build_mixed_mt_rom` now
+  gets both the placed sections and the link_asserts from that single call. The T1
+  code path (`placed_emp_sections`, `build_mixed_rom`) is meaning-identical —
+  `placed_emp_sections` just discards the `.0`/asserts half it never used.
+- **M3 — dead diff-context slice in `mt_port.rs`:** `assert_region_matches`'s
+  `let lo = i.saturating_sub(0);` was a no-op — the panic window always started
+  exactly AT the first-diff offset, showing 16 bytes strictly after it and nothing
+  before. Changed to `saturating_sub(8)` (context window now `[i-8, i+16)`, clamped
+  at 0) and added the `[lo..hi]` bounds to the panic message labels so the printed
+  ranges are unambiguous. Purely a diagnostic-quality fix — does not change what the
+  test asserts or its pass/fail outcome.
+
+**Verification (all green):**
+
+- `SIGIL_STRICT_GATE=1 AEON_DIR=/home/volence/sonic_hacks/aeon cargo test -p
+  sigil-harness --test mixed_dac_rom` — 4/4 passed.
+- `SIGIL_STRICT_GATE=1 AEON_DIR=/home/volence/sonic_hacks/aeon cargo test -p
+  sigil-cli --test mt_port --test mt_negative_probes` — 2/2 + 4/4 passed.
+- `cargo test --workspace` — all green, 0 failed.
+- `cargo clippy --workspace --all-targets -- -D warnings` — clean, zero warnings.
+- aeon side: `cargo run -p sigil-cli -- parse` on the annotated `mt_bank.emp` —
+  clean (comment-only change, no lowering-behavior effect).
+
+**RECORDED, not fixed (out of T2 scope):**
+
+1. **Regen-tripwire gap:** `tools/verify_emit_bin.py` is manual-run only.
+   Regenerating a song's `.asm` without regenerating its `.bin` twin lets the `asl`
+   ROM silently drift from that pair while sigil's gates stay green against a now-
+   stale reference, until someone notices via a full `PROVENANCE.md` rebuild.
+   Arc-level (T1 shares this exposure, not a T2-only gap). Candidate fix: wire
+   `verify_emit_bin` into the harness (a test that fails if `.asm`/`.bin` pairs
+   disagree) or a pre-commit hook, plus add an explicit "regenerate both halves
+   together" requirement to the generated-file header comments.
+2. **Defines are program-wide reserved names under `--root`:** correct scope for
+   T2 (mirrors AS's `-D`), but a footgun at public-release scale once multiple
+   independently-authored modules share a build root and can collide on a define
+   name none of them chose deliberately. Carry to the empyrean spec-integration
+   pass (§7.x/D2.25); long-term shape is likely per-module define scoping rather
+   than global.
+3. **`imm32` deferral scope is deliberately narrow:** Task 3's `Value32Be`
+   deferral only covers `movea.l`/`move.l` to a bare register operand — it is NOT
+   a general "any 32-bit immediate defers" rule. Future tranches must not assume
+   the whole addressing-mode class defers just because this one shape does;
+   each new instruction/operand combination needs its own check (or its own
+   deferral work) before being relied on.
+4. **Mixed-build window-top guard:** not an explicit standalone check in the T2
+   harness, but subsumed INDIRECTLY by three things already in place together —
+   the reference-length pin (`ASSEMBLED_LEN`/`DEBUG_ASSEMBLED_LEN`), the
+   `mt_bank:` region's fixed `size = 0x79F9` (bank-top pinned), and the five
+   `bankid(...)` co-residency `ensure`s — per ruling R5. No separate guard is
+   needed; noted here so a future reader doesn't go looking for one.

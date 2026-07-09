@@ -44,7 +44,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Section, SectionPlacement, SymbolTable};
+use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
 /// The module's own directory in aeon's tree — the `include_root` under which
@@ -100,7 +100,9 @@ fn as_bank_start_label() -> Vec<Section> {
 /// resolved `.emp` sections (for locating `mt_bank`'s bytes), the linked
 /// image, and the link-assert diagnostics (expected empty — all five ensures
 /// pass).
-fn compile_real_file(debug: i128) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>) {
+fn compile_real_file(
+    debug: i128,
+) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>, Vec<LinkAssert>) {
     let dir = sound_dir();
     let emp_path = dir.join("mt_bank.emp");
     let src = std::fs::read_to_string(&emp_path)
@@ -150,11 +152,13 @@ fn compile_real_file(debug: i128) -> (Vec<Section>, sigil_link::LinkedImage, Vec
         .unwrap_or_else(|d| panic!("link failed: {d:?}"));
     let assert_diags =
         sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts);
-    (resolved, linked, assert_diags)
+    (resolved, linked, assert_diags, module.link_asserts)
 }
 
-/// On mismatch, report the first differing offset plus 16 bytes of context on
-/// each side (`dac_port.rs`/`ports.rs` style byte-diff reporting).
+/// On mismatch, report the first differing offset plus 8 bytes of context on
+/// each side (`dac_port.rs`/`ports.rs` style byte-diff reporting). M3: the
+/// window starts 8 bytes BEFORE the first-diff offset (not at it) so the
+/// panic message shows bytes on both sides of the diff, not just after it.
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     assert_eq!(
         candidate.len(),
@@ -164,10 +168,10 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
         expected.len()
     );
     if let Some(i) = (0..candidate.len()).find(|&i| candidate[i] != expected[i]) {
-        let lo = i.saturating_sub(0);
+        let lo = i.saturating_sub(8);
         let hi = (i + 16).min(candidate.len());
         panic!(
-            "{what}: first diff at offset {i:#x} (region-relative)\n  candidate: {:02x?}\n  expected:  {:02x?}",
+            "{what}: first diff at offset {i:#x} (region-relative)\n  candidate[{lo:#x}..{hi:#x}]: {:02x?}\n  expected[{lo:#x}..{hi:#x}]:  {:02x?}",
             &candidate[lo..hi],
             &expected[lo..hi]
         );
@@ -187,7 +191,12 @@ fn mt_bank_region_matches_reference() {
         return;
     };
 
-    let (_resolved, linked, assert_diags) = compile_real_file(0);
+    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(0);
+    assert_eq!(
+        link_asserts.len(),
+        5,
+        "mt_bank.emp's five co-residency ensures must be captured"
+    );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
@@ -212,7 +221,12 @@ fn mt_bank_debug_region_matches_reference() {
         return;
     };
 
-    let (_resolved, linked, assert_diags) = compile_real_file(1);
+    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(1);
+    assert_eq!(
+        link_asserts.len(),
+        5,
+        "mt_bank.emp's five co-residency ensures must be captured"
+    );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"

@@ -202,33 +202,46 @@ fn emp_bank_map_with_mt() -> &'static str {
 /// fed through it; only the emp sections are placed here, then the union is
 /// resolved+linked once.
 fn placed_emp_sections(aeon: &Path) -> Vec<Section> {
-    placed_module_sections(aeon, "dac_samples.emp", &[], emp_bank_map())
+    placed_module_sections(aeon, "dac_samples.emp", &[], emp_bank_map()).0
 }
 
 /// Compile the REAL `dac_samples.emp` (no defines) and `mt_bank.emp` (`DEBUG`
 /// matching the shape), each PLACED into `emp_bank_map_with_mt`'s regions by
 /// name, returning BOTH modules' placed sections concatenated (dac first, mt
-/// second — declaration order only, `resolve_layout` doesn't care).
-fn placed_emp_sections_with_mt(aeon: &Path, debug_val: i128) -> Vec<Section> {
-    let mut sections = placed_module_sections(aeon, "dac_samples.emp", &[], emp_bank_map_with_mt());
-    sections.extend(placed_module_sections(
+/// second — declaration order only, `resolve_layout` doesn't care) AND
+/// `mt_bank.emp`'s link_asserts (M2: this is the ONE lower pass over
+/// `mt_bank.emp` — `build_mixed_mt_rom` used to lower it a second time just to
+/// recover the link_asserts list, which risked the two passes drifting; now
+/// there is exactly one source of truth for both the asserts-check and the
+/// byte composition).
+fn placed_emp_sections_with_mt(
+    aeon: &Path,
+    debug_val: i128,
+) -> (Vec<Section>, Vec<LinkAssert>) {
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(aeon, "dac_samples.emp", &[], emp_bank_map_with_mt());
+    let (mt_sections, mt_asserts) = placed_module_sections(
         aeon,
         "mt_bank.emp",
         &[("DEBUG".to_string(), debug_val)],
         emp_bank_map_with_mt(),
-    ));
-    sections
+    );
+    sections.extend(mt_sections);
+    (sections, mt_asserts)
 }
 
 /// Shared body of `placed_emp_sections`/`placed_emp_sections_with_mt`: parse +
 /// lower the named `.emp` file (from `sound_dir`, with the given comptime
-/// `defines`) and place its sections into `map_src` by name.
+/// `defines`), place its sections into `map_src` by name, and return the
+/// placed sections ALONGSIDE the module's link_asserts (captured before
+/// `place_sections` consumes `module.sections`) — the single lowering pass
+/// both callers above rely on (M2).
 fn placed_module_sections(
     aeon: &Path,
     module_file: &str,
     defines: &[(String, i128)],
     map_src: &str,
-) -> Vec<Section> {
+) -> (Vec<Section>, Vec<LinkAssert>) {
     let dir = sound_dir(aeon);
     let emp_path = dir.join(module_file);
     let src = std::fs::read_to_string(&emp_path)
@@ -252,6 +265,7 @@ fn placed_module_sections(
 
     let map = sigil_link::load_map(map_src).expect("emp bank map must load");
     let mut sections = module.sections;
+    let link_asserts = module.link_asserts;
     let pdiags = place_sections(&mut sections, &map);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -265,7 +279,7 @@ fn placed_module_sections(
         "{module_file} `text` carrier gained image bytes — the zero-byte-carrier invariant is broken"
     );
 
-    sections
+    (sections, link_asserts)
 }
 
 /// Shared body: assemble the AS side (gate ON, `debug` toggling `__DEBUG__`),
@@ -306,36 +320,25 @@ fn build_mixed_mt_rom(aeon: &Path, debug: bool) -> (Vec<u8>, Vec<sigil_span::Dia
     let as_module = assemble_mixed_mt_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
     let debug_val: i128 = if debug { 1 } else { 0 };
 
-    // The MT `.emp` module's link_asserts (the five `bankid(...)` co-residency
-    // ensures) — captured from a fresh lower pass mirroring
-    // `placed_module_sections`'s own parse+lower, since `place_sections`
-    // consumes `module.sections` but the LinkAssert list lives on `module`
-    // itself, not on any `Section`. mt_port.rs's `compile_real_file` captures
-    // this the same way (before place_sections).
-    let dir = sound_dir(aeon);
-    let mt_src = std::fs::read_to_string(dir.join("mt_bank.emp"))
-        .unwrap_or_else(|e| panic!("cannot read mt_bank.emp: {e}"));
-    let (mt_file, pdiags) = parse_str(&mt_src);
-    assert!(pdiags.iter().all(|d| d.level != sigil_span::Level::Error), "mt_bank.emp parse: {pdiags:?}");
-    let mt_opts = LowerOptions {
-        initial_cpu: Cpu::M68000,
-        include_root: Some(dir.clone()),
-        defines: vec![("DEBUG".to_string(), debug_val)],
-    };
-    let (mt_module, ldiags) = lower_module(&mt_file, &mt_opts);
-    assert!(ldiags.iter().all(|d| d.level != sigil_span::Level::Error), "mt_bank.emp lower: {ldiags:?}");
-    let link_asserts: Vec<LinkAssert> = mt_module.link_asserts;
-
-    // Concat: AS sections + BOTH placed emp modules' sections. ONE joint
-    // resolve_layout + link over the union.
+    // M2: ONE lower pass over `mt_bank.emp`, via `placed_emp_sections_with_mt`
+    // -> `placed_module_sections`, produces BOTH the placed sections (for the
+    // byte composition below) and the link_asserts (for the check right
+    // after) — so the two can never drift apart the way two independent
+    // lowerings could.
+    let (emp_sections, link_asserts) = placed_emp_sections_with_mt(aeon, debug_val);
     let mut sections = as_module.sections;
-    sections.extend(placed_emp_sections_with_mt(aeon, debug_val));
+    sections.extend(emp_sections);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout (mixed MT): {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link (mixed MT): {d:?}"));
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    assert_eq!(
+        link_asserts.len(),
+        5,
+        "mt_bank.emp's five co-residency ensures must be captured"
+    );
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map_src = std::fs::read_to_string(&map_path)
