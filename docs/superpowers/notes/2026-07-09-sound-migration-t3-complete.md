@@ -96,8 +96,21 @@ recurs, dump the resolved section LMAs to pin assembler-vs-environment. The T2-e
 
 ## Next after merge (from the plan + DSM.8)
 
-Re-evaluate **S2-D14(a)(d)(e) + 9d** against what the whole arc actually demanded (the
-recurring hits: bare cross-seam equ reads, the anchor-label diagnostic, partial-fold
-semantics), then the remaining **Plan-7 #10 (compression builtins)** → **spec FREEZE** →
-the wider 68k migration campaign. Fable also owes the accumulated empyrean spec-integration
-pass (carry-forward #4).
+**The re-evaluation session** (Volence ratified adding items 2-3, 2026-07-09 — "we're kind
+of debugging there"), one sitting, three agenda items:
+
+1. **S2-D14(a)(d)(e) + 9d** — re-evaluate against what the whole sound arc actually
+   demanded (partial-fold semantics now part of the evidence base).
+2. **Bare cross-seam equ reads in `.emp` exprs** — promote from recorded workaround to a
+   language-surface decision. The `bankid("Label")` idiom carried three tranches, but the
+   natural spelling `ensure(x == SOME_ASM_EQU)` remains a hole every future port will trip;
+   decide: close the gap (a link-symbol fallback in plain expr operands / an explicit
+   `extern()` builtin) or ratify the idiom as THE spelling and spec it.
+3. **The "internal: … anchor label" diagnostic** — hit three times as the standalone-compile
+   failure shape for legitimate cross-seam ensures; the message claims compiler bug. Fix the
+   wording to name the real cause (external operands, no map) — a diagnostics change in the
+   same seam as item 2, natural to land together.
+
+Then the remaining **Plan-7 #10 (compression builtins)** → **spec FREEZE** → the wider 68k
+migration campaign. Fable also owes the accumulated empyrean spec-integration pass
+(carry-forward #4), which items 2-3's outcomes feed directly.
