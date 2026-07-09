@@ -77,6 +77,7 @@ pub(super) fn lower_script_item(
         body_labels: collect_body_labels(&decl.body),
         loop_count: 0,
         had_no_epilogue: false,
+        wait_widths: resolve_wait_widths(file, decl, diags),
         diags,
     };
     let mut flat = Vec::new();
@@ -330,6 +331,10 @@ struct Desugar<'a> {
     body_labels: std::collections::HashSet<String>,
     loop_count: usize,
     had_no_epilogue: bool,
+    /// Pre-resolved slot widths for the body's `wait_frames` statements, in
+    /// walk order (width resolution needs the evaluator's struct layouts, so
+    /// it runs BEFORE the walk — `None` = already-diagnosed failure).
+    wait_widths: std::collections::VecDeque<Option<u8>>,
     diags: &'a mut Vec<Diagnostic>,
 }
 
@@ -346,6 +351,9 @@ impl Desugar<'_> {
                     } else {
                         self.desugar_yield(epilogue, *span, out);
                     }
+                }
+                ScriptStmt::WaitFrames { n, slot, span } => {
+                    self.desugar_wait_frames(n, slot, *span, out);
                 }
             }
         }
@@ -413,6 +421,76 @@ impl Desugar<'_> {
         out.push(jbra(&target, span));
     }
 
+    /// `wait_frames #N, <slot>` (D2.30(c)) — EXACTLY the documented tick
+    /// idiom, machine-expanded (byte-identical to the hand-written spelling;
+    /// same frame accounting — #64 parks 63 drawn frames, proceeds on the
+    /// 64th tick):
+    ///
+    /// ```text
+    ///         move.<w> #N, <slot>
+    /// __wf$k: subq.<w> #1, <slot>       ; the hidden resume member
+    ///         beq      .__wfdone$k
+    ///         <yield .__wf$k>           ; self-resuming park (D2.30(b))
+    /// __wfdone$k:
+    /// ```
+    fn desugar_wait_frames(&mut self, n: &Expr, slot: &Operand, span: Span, out: &mut Vec<AsmStmt>) {
+        let Some(width) = self.wait_widths.pop_front().flatten() else {
+            // Width resolution already diagnosed (unknown field / bad reg /
+            // unsupported width) — refuse the script without emission.
+            self.had_no_epilogue = true;
+            return;
+        };
+        // A comptime-VISIBLE zero would underflow-park ~2^width frames.
+        // (A zero behind a const arrives here already folded? No — `n` is
+        // unevaluated; only the literal spelling is catchable at this layer.
+        // Recorded in the tranche notes.)
+        if matches!(n, Expr::Int(0, _)) {
+            err(
+                self.diags,
+                span,
+                "`wait_frames #0` would underflow the timer and park for a full                  wrap (~2^width frames) — park for at least 1 frame"
+                    .to_string(),
+            );
+            self.had_no_epilogue = true;
+            return;
+        }
+        let Some(epilogue) = self.script_epilogue else {
+            err(
+                self.diags,
+                span,
+                "[script.no-epilogue] `wait_frames` draws the object every parked                  frame — declare an epilogue with `shows <label>` on the script (D9.6)"
+                    .to_string(),
+            );
+            self.had_no_epilogue = true;
+            return;
+        };
+        let k = self.resume_targets.len() + 1;
+        let wf = format!("__wf${k}");
+        self.resume_targets.push(wf.clone());
+        let done = format!("__wfdone${k}");
+        let sz = if width == 1 { "b" } else { "w" };
+        out.push(sized_instr("move", sz, Operand::Imm(n.clone()), slot.clone(), span));
+        out.push(AsmStmt::Label { name: wf.clone(), export: false, span });
+        out.push(sized_instr("subq", sz, Operand::Imm(Expr::Int(1, span)), slot.clone(), span));
+        out.push(AsmStmt::Instr(InstrLine {
+            mnemonic: vec![TextOrSplice::Text("beq".into())],
+            size: None,
+            operands: vec![Operand::Plain {
+                expr: path_expr(&format!(".{done}"), span),
+                size: None,
+                span,
+            }],
+            span,
+        }));
+        // The self-resuming yield: store __wf$k's ordinal, exit via epilogue.
+        let ordinal = (k as i128) * self.encoding.scale();
+        out.push(yield_store(ordinal as i64, self.slot.offset, &self.slot.reg, span));
+        let target =
+            if epilogue.local { format!(".{}", epilogue.name) } else { epilogue.name.clone() };
+        out.push(jbra(&target, span));
+        out.push(AsmStmt::Label { name: done, export: false, span });
+    }
+
     /// `yield [label]` → store the scaled ordinal into the resume slot, `jbra`
     /// the epilogue, then define `__resume$k` (R9b.5 / D9.6). The effective
     /// epilogue is the per-site override, else the `shows` declaration, else a
@@ -457,6 +535,121 @@ impl Desugar<'_> {
         // The resume point: the engine's saved PC lands here next frame.
         out.push(AsmStmt::Label { name: resume_name(k), export: false, span });
     }
+}
+
+/// Pre-pass for D2.30(c): resolve each `wait_frames` slot's field WIDTH, in
+/// walk order. The slot operand is `field(aN)` — `aN` must be one of the
+/// script's `*Struct` params and `field` a 1- or 2-byte field of that struct
+/// (the width drives the expansion's `.b`/`.w` suffixes). Resolution needs
+/// the evaluator's struct layouts, so it runs here (mirroring
+/// `discover_resume_slot`) rather than inside the type-free desugar walk.
+/// A failed resolution is diagnosed here and queued as `None` (the walk then
+/// refuses the script without emission).
+fn resolve_wait_widths(
+    file: &ast::File,
+    decl: &ast::ScriptDecl,
+    diags: &mut Vec<Diagnostic>,
+) -> std::collections::VecDeque<Option<u8>> {
+    fn visit(
+        stmts: &[ScriptStmt],
+        f: &mut impl FnMut(&Expr, &Operand, Span),
+    ) {
+        for st in stmts {
+            match st {
+                ScriptStmt::WaitFrames { n, slot, span } => f(n, slot, *span),
+                ScriptStmt::Loop { body, .. } => visit(body, f),
+                _ => {}
+            }
+        }
+    }
+    let mut sites: Vec<(Operand, Span)> = Vec::new();
+    visit(&decl.body, &mut |_n, slot, span| sites.push((slot.clone(), span)));
+    if sites.is_empty() {
+        return std::collections::VecDeque::new();
+    }
+    crate::eval::run_on_eval_stack(|| {
+        let mut probe = crate::eval::Evaluator::with_file(file);
+        let mut out = std::collections::VecDeque::new();
+        for (slot, span) in sites {
+            out.push_back(wait_slot_width(&mut probe, decl, &slot, span, diags));
+        }
+        out
+    })
+}
+
+/// One `wait_frames` slot: `field(aN)` → the field's byte width (1 or 2).
+fn wait_slot_width(
+    probe: &mut crate::eval::Evaluator,
+    decl: &ast::ScriptDecl,
+    slot: &Operand,
+    span: Span,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<u8> {
+    // Shape: DispInd { disp: Path(field), inner: Ind[(Path(aN))] }.
+    let (field, reg) = match slot {
+        Operand::DispInd { disp: Expr::Path(fp), inner, .. } if fp.segments.len() == 1 => {
+            match inner.as_ref() {
+                Operand::Ind { parts, .. } if parts.len() == 1 => match &parts[0].0 {
+                    Expr::Path(rp) if rp.segments.len() == 1 => {
+                        (fp.segments[0].clone(), rp.segments[0].clone())
+                    }
+                    _ => (fp.segments[0].clone(), String::new()),
+                },
+                _ => (fp.segments[0].clone(), String::new()),
+            }
+        }
+        _ => {
+            err(
+                diags,
+                span,
+                "`wait_frames` parks on a NAMED struct field: the slot must be                  spelled `field(aN)` (e.g. `timer(a0)`)"
+                    .to_string(),
+            );
+            return None;
+        }
+    };
+    // The register must be one of the script's `*Struct` params.
+    for (pname, pty, pspan) in &decl.params {
+        if *pname != reg {
+            continue;
+        }
+        let ast::Type::Ptr(inner) = pty else { continue };
+        let inner_ty = probe.resolve_type(inner);
+        let Some(sname) = probe.struct_name_for_offsetof(&inner_ty, *pspan) else { continue };
+        let layout = probe.layout_of_struct(&sname, *pspan);
+        let Some(f) = layout.fields.iter().find(|f| f.name == field) else {
+            err(
+                diags,
+                span,
+                format!(
+                    "`wait_frames` slot `{field}({reg})`: struct `{sname}` has no field                      named `{field}`"
+                ),
+            );
+            return None;
+        };
+        return match f.size {
+            1 => Some(1),
+            2 => Some(2),
+            other => {
+                err(
+                    diags,
+                    span,
+                    format!(
+                        "`wait_frames` slot `{field}` is {other} bytes — a park timer                          must be a u8 or u16 field"
+                    ),
+                );
+                None
+            }
+        };
+    }
+    err(
+        diags,
+        span,
+        format!(
+            "`wait_frames` slot register `{reg}` is not one of this script's `*Struct`              params — the timer must live in the object's own state"
+        ),
+    );
+    None
 }
 
 /// Pre-pass for D2.30(b): every user label defined anywhere in the script
@@ -509,6 +702,17 @@ fn yield_store(ordinal: i64, offset: i64, reg: &str, span: Span) -> AsmStmt {
                 span,
             },
         ],
+        span,
+    })
+}
+
+/// Synthesize a two-operand sized instruction (`move.b #N, slot` /
+/// `subq.w #1, slot`) — the `wait_frames` expansion's building block.
+fn sized_instr(mnemonic: &str, sz: &str, src: Operand, dst: Operand, span: Span) -> AsmStmt {
+    AsmStmt::Instr(InstrLine {
+        mnemonic: vec![TextOrSplice::Text(mnemonic.into())],
+        size: Some(TextOrSplice::Text(sz.into())),
+        operands: vec![src, dst],
         span,
     })
 }

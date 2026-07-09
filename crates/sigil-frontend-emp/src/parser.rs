@@ -1098,6 +1098,23 @@ impl Parser {
                 out.push(ScriptStmt::Loop { body, span: start.merge(self.prev_span()) });
                 continue;
             }
+            if self.at_kw("wait_frames") {
+                // D2.30(c): `wait_frames #N, <slot>` — script-body-only
+                // contextual statement, beside `loop`/`yield`.
+                let start = self.span();
+                self.bump(); // `wait_frames`
+                if !self.eat(&Tok::Hash) {
+                    let sp = self.span();
+                    self.diag_at(sp, "`wait_frames` takes an immediate: `wait_frames #N, <slot>`");
+                }
+                let n = self.expr();
+                self.expect(&Tok::Comma, "`,`");
+                let slot = self.operand(false);
+                let span = start.merge(self.prev_span());
+                self.expect_line_end_or_rbrace();
+                out.push(ScriptStmt::WaitFrames { n, slot, span });
+                continue;
+            }
             if self.at_kw("yield") {
                 let start = self.span();
                 self.bump(); // `yield`

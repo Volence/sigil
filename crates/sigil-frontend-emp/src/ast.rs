@@ -559,6 +559,20 @@ pub enum ScriptStmt {
         /// Span of the statement.
         span: Span,
     },
+    /// `wait_frames #N, <slot>` (D2.30(c)) — the declarative PURE park:
+    /// store N into the named timer slot, then a hidden per-frame decrement
+    /// plus self-resuming yield. Pure compiler expansion of the documented
+    /// tick idiom — no dispatcher protocol (value-carrying yields stay
+    /// 9c-gated).
+    WaitFrames {
+        /// The park length (an immediate; a comptime-visible 0 is refused).
+        n: Expr,
+        /// The timer slot operand — named explicitly at the site (tenet 5:
+        /// no hidden state; different objects park on different fields).
+        slot: Operand,
+        /// Span of the statement.
+        span: Span,
+    },
 }
 
 /// An epilogue label reference: `Draw_Sprite` (global) or `.rearm` (local).

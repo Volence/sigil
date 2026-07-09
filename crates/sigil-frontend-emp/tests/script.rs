@@ -715,3 +715,156 @@ proc done () {{ rts }}
     // store at +10: 31 7C 00 04 00 20.
     assert_eq!(&bytes[10..16], &[0x31, 0x7C, 0x00, 0x04, 0x00, 0x20]);
 }
+
+// ---- D2.30(c): `wait_frames #N, <slot>` — the declarative pure park ------------
+
+const WAIT_TYPES: &str = "\
+newtype ScriptPc = u16
+struct S (size: $24) {
+    timer: u8,
+    _pad0: [u8; $1F] @ 1,
+    resume: ScriptPc @ $20,
+    _pad1: [u8; 2] @ $22,
+}
+";
+
+#[test]
+fn wait_frames_expands_to_exactly_the_tick_idiom() {
+    // The MUST of D2.30(c): `wait_frames` is a pure compiler expansion of the
+    // documented tick idiom — the declarative line and the hand-written
+    // spelling produce IDENTICAL bytes (same frame accounting: #64 parks 63
+    // drawn frames and proceeds on the 64th tick).
+    let sugar = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #64, timer(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let hand = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    move.b  #64, timer(a0)
+    .tick:
+    subq.b  #1, timer(a0)
+    beq     .park_done
+    yield   .tick
+    .park_done:
+}}
+proc done () {{ rts }}
+"
+    );
+    let (m1, e1) = lower(&sugar);
+    assert!(e1.is_empty(), "sugar lowers clean: {e1:?}");
+    let (m2, e2) = lower(&hand);
+    assert!(e2.is_empty(), "hand spelling lowers clean: {e2:?}");
+    assert_eq!(linked_bytes(&m1), linked_bytes(&m2), "byte-identical expansion");
+}
+
+#[test]
+fn wait_frames_u16_slot_uses_word_width() {
+    let types = "\
+newtype ScriptPc = u16
+struct S (size: $24) {
+    timer16: u16,
+    _pad0: [u8; $1E] @ 2,
+    resume: ScriptPc @ $20,
+    _pad1: [u8; 2] @ $22,
+}
+";
+    let sugar = format!(
+        "module m\n{types}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #300, timer16(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let hand = format!(
+        "module m\n{types}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    move.w  #300, timer16(a0)
+    .tick:
+    subq.w  #1, timer16(a0)
+    beq     .park_done
+    yield   .tick
+    .park_done:
+}}
+proc done () {{ rts }}
+"
+    );
+    let (m1, e1) = lower(&sugar);
+    assert!(e1.is_empty(), "u16 slot lowers clean: {e1:?}");
+    let (m2, e2) = lower(&hand);
+    assert!(e2.is_empty(), "{e2:?}");
+    assert_eq!(linked_bytes(&m1), linked_bytes(&m2));
+}
+
+#[test]
+fn wait_frames_literal_zero_is_an_error() {
+    // #0 would underflow-park ~2^width frames — refuse when comptime-visible.
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #0, timer(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("wait_frames") && m.contains("0")),
+        "the zero park is refused: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_unknown_slot_field_is_an_error() {
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) shows done {{
+    wait_frames #4, nosuch(a0)
+}}
+proc done () {{ rts }}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("nosuch")),
+        "the missing slot field is named: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_needs_an_epilogue() {
+    let src = format!(
+        "module m\n{WAIT_TYPES}\
+script brain (a0: *S) (encoding: word_offsets) {{
+    wait_frames #4, timer(a0)
+}}
+"
+    );
+    let msgs = msgs(&src);
+    assert!(
+        msgs.iter().any(|m| m.contains("[script.no-epilogue]")),
+        "a park draws every frame — it needs the epilogue: {msgs:?}"
+    );
+}
+
+#[test]
+fn wait_frames_outside_a_script_stays_loud() {
+    // In a proc body `wait_frames` is not a statement (scripts only) — the
+    // ordinary not-a-mnemonic path refuses it.
+    let src = "\
+module m
+proc p () {
+    wait_frames #4, d0
+}
+";
+    let msgs = msgs(src);
+    assert!(
+        msgs.iter().any(|m| m.contains("wait_frames")),
+        "loud outside scripts: {msgs:?}"
+    );
+}
