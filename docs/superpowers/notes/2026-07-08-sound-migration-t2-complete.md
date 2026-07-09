@@ -1,5 +1,11 @@
 # Sound-migration T2 (MT streaming bank) — COMPLETE, awaiting Volence checkpoint
 
+> **STATUS: CHECKPOINTED & MERGED same day** (Volence approved; sigil master `736e7f8`, aeon
+> master `4710ef3`, both pushed; branches/worktree removed). The twin-drift guard (carry-forward
+> item 1) was ADOPTED: verify_emit_bin now gates aeon build.sh (guard-fires verified, output
+> unchanged). Next arc: T3 — see `notes/2026-07-08-next-session-handoff-t3-sfx.md`. The bg
+> boot-check is STILL pending.
+
 Written 2026-07-08 at the end of the T2 implementation session. **Both branches are UNMERGED
 — NO merge without Volence's checkpoint.** This note is the checkpoint packet + next-session
 orientation.
