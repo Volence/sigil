@@ -652,3 +652,25 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
   per-region cursors), section-level overlap is PROVEN loud (L3), and shrinking would
   make T2's proven region per-shape for no byte-level gain. Instead Task 6 gains probe
   (e): a grown-mt-section-past-the-sfx-base trips `overlap_diag` at THIS seam.
+
+### Task 6 (negative probes) — DONE (commit `1f9f647`)
+
+- `sfx_negative_probes.rs` (519 lines, 5 tests, mt_negative_probes.rs organization incl.
+  the parameterized `as_bank_start_label_at` helper + the keep-copies convention note):
+  (a) straddle @ doctored base `0x67C00` → loud diag naming `sfx_bank`+"straddle" (region
+  sized $800 so it's the SECTION's straddle, not region overflow); (b) wrong-bank synthetic
+  label @ `$58000` → the ONE ensure fires, `len()==1` + message substring pinned; (c)
+  134-vs-135 inline table → clean "array length mismatch: expected 135, got 134"; (d)
+  JUDGED: WRITTEN (not skipped) — wrong-sym-where-null-belongs lowers CLEAN and emits
+  different bytes, pinning that Task 4's byte gate is the SOLE guard for the
+  legal-lowering-wrong-bytes transcription class (complements Task 4's
+  expectation-corrupting falsification by corrupting the INPUT); (e) grown-mt overlap —
+  real mt_bank (DEBUG=0 @ $60607) + real sfx_bank (@ $63AE8) in one resolve_layout, mt's
+  section grown +$200 via appended Fill → `overlap_diag` (R7p.4) fires naming BOTH
+  sections + extents. Approach chosen over a synthetic section because mt's real content
+  ends EXACTLY at the sfx base (contiguous seam) — appended growth faithfully models a
+  regen that outgrew its budget.
+- Falsifications: (a) real base → Ok, expect_err panics; (b) real bank → 0 diagnostics,
+  the len()==1 pin fails; (e) growth 0 (pure abutment) → Ok — proving abutment is benign
+  and GROWTH is what fires. All reverted (file byte-identical to pre-falsification backup).
+- Workspace 117 result-lines green, clippy clean.
