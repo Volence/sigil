@@ -37,7 +37,13 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   not equ symbols, so `movea.l SOME_EQU, a0` can't lower even though the linker knows the
   value. Port #1 dodged it (its target is a RAM label); any port referencing an AS-side
   equated ADDRESS as an operand will hit it. Also wants a better diagnostic (name the symbol,
-  say WHY — equ vs label — and point at the workaround). — OPEN.
+  say WHY — equ vs label — and point at the workaround). — SHIPPED with port #1 (Task 5
+  follow-up, `relax.rs`): each relaxation pass now overlays a best-effort `equ` fold
+  (`equ_lookup_overlay`) on top of that pass's label table before selecting a
+  `RelaxAbsSym`/`JmpJsrSym`/`RelaxLadder` rung, so a target naming an equ, an equ-on-equ
+  chain, or an equ derived from a label all resolve — grow-only width protection is
+  automatic (same `v`/gate as label targets, no new policy). The FINAL, loud `fold_equ_syms`
+  pass at convergence is unchanged (still the authoritative cycle/unresolved-equ error).
 - [port #1 hblank, 2026-07-09] **movem `(0,An)` → `(An)` collapse not ported** from the AS
   front-end — exists there to fold forward-reference displacements that resolve to 0
   post-pass, which `.emp`'s resolved eval model doesn't produce. Believed unreachable in
@@ -67,8 +73,13 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   message (no `ensure`/`extern` in the module to route through the better-worded path). Same
   root issue as the equ-operand gap above (both live in `relax.rs`'s `RelaxAbsSym` handling) —
   candidate for ONE fix (thread the symbol name through both diagnostics) rather than two. —
-  OPEN (folds into the equ-operand diagnostic gap above; not blocking, but the entries should
-  probably merge into one ticket when triaged).
+  SHIPPED with port #1 (Task 5 follow-up, same fix as the equ-operand entry above): the
+  `RelaxAbsSym` unresolved-target diagnostic now names the symbol and, when it isn't an `equ`
+  anywhere in the link, uses the Item-C cross-seam-standalone wording ("references symbol `X`
+  not defined in this link — expected when compiling a cross-seam module standalone..."); when
+  the name IS an equ that never resolved (cycle / dangling dependency), a distinct wording
+  applies so a reader doesn't mistake a cycle for a plain missing symbol.
+  `hblank_negative_probes.rs`'s standalone-compile probe updated to pin the new wording.
 
 ## Tooling / build / process
 

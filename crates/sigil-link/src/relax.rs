@@ -604,6 +604,15 @@ pub fn resolve_layout(
             }
         }
 
+        // (a2) Task 5 (R-T0.6): overlay a best-effort `equ` fold on top of this
+        // pass's label table, so a relaxable fragment's `target` may name an
+        // `equ` (directly, or an equ-on-equ chain, or an equ derived from a
+        // label) — not just a bare layout label. `equ_lookup` is used ONLY by
+        // rung selection below; the FINAL, authoritative equ fold (with its
+        // loud unresolved/cycle diagnostic) still runs once at convergence (c4).
+        let equ_overlay = equ_lookup_overlay(&placed, &syms);
+        let equ_lookup = |n: &str| equ_overlay.get(n).copied().or_else(|| syms.resolve(n, None));
+
         // (b) Re-select each relaxable fragment's rung from its resolved target
         // (grow-only). `grew` is set ONLY when the selection changes the
         // fragment's byte LENGTH — a same-length rung move (e.g. bra.w → jmp
@@ -619,7 +628,7 @@ pub fn resolve_layout(
                         // GLOBAL scope only (scope None): a bare `jmp .local` to a
                         // dotted local would not resolve here. The front-end must
                         // qualify such targets to fully-dotted names first.
-                        let v = match target.fold(&|n| syms.resolve(n, None)) {
+                        let v = match target.fold(&equ_lookup) {
                             Fold::Value(v) => v,
                             Fold::Poison => {
                                 return Err(vec![Diagnostic {
@@ -636,17 +645,12 @@ pub fn resolve_layout(
                         }
                     }
                     Fragment::RelaxAbsSym { target, span, .. } => {
-                        let v = match target.fold(&|n| syms.resolve(n, None)) {
+                        let v = match target.fold(&equ_lookup) {
                             Fold::Value(v) => v,
                             Fold::Poison => {
-                                return Err(vec![Diagnostic {
-                                    level: Level::Error,
-                                    message: format!(
-                                        "unresolved symbolic absolute operand in section {}",
-                                        sec.name
-                                    ),
-                                    primary: *span,
-                                }]);
+                                return Err(vec![unresolved_relax_abs_sym_diag(
+                                    target, &placed, &sec.name, &syms, &equ_overlay, *span,
+                                )]);
                             }
                         };
                         if asl_width_rule(v, dash_a) == AbsWidth::L && rungs[si][fi] == 0 {
@@ -656,7 +660,7 @@ pub fn resolve_layout(
                         }
                     }
                     Fragment::RelaxLadder { candidates, target, span } => {
-                        let v = match target.fold(&|n| syms.resolve(n, None)) {
+                        let v = match target.fold(&equ_lookup) {
                             Fold::Value(v) => v,
                             Fold::Poison => {
                                 return Err(vec![Diagnostic {
@@ -721,7 +725,7 @@ pub fn resolve_layout(
                 let bps = shift_breakpoints(sec, &rungs[si]);
                 for fi in 0..sec.fragments.len() {
                     if let Fragment::RelaxLadder { candidates, target, span } = &sec.fragments[fi] {
-                        let v = match target.fold(&|n| syms.resolve(n, None)) {
+                        let v = match target.fold(&equ_lookup) {
                             Fold::Value(v) => v,
                             Fold::Poison => continue, // reported in pass (b) already
                         };
@@ -869,6 +873,45 @@ pub fn resolve_layout(
 /// above any realistic hand-authored equ chain depth.
 const MAX_EQU_PASSES: usize = 8;
 
+/// Best-effort `equ` fold (Task 5 / R-T0.6) against the CURRENT pass's label
+/// table `syms` — used by the relaxation fixpoint's rung-selection step (b) so
+/// a [`Fragment::RelaxAbsSym`]/`JmpJsrSym`/`RelaxLadder` `target` naming an
+/// `equ` (not just a layout label) can resolve there too. Unlike
+/// [`fold_equ_syms`] (the FINAL post-convergence fold, which errors loudly on
+/// an unresolved equ), this is silently partial: an equ that can't fold YET —
+/// because it depends on another equ not yet resolved this pass, or on a
+/// symbol that genuinely never resolves — is simply absent from the returned
+/// map, and the CALLER'S existing `Fold::Poison` handling at the target-fold
+/// site reports it (unchanged diagnostic shape, now able to name an equ).
+/// Since every label name is already present in `syms` from pass 1 onward
+/// (only its VALUE shifts as placement iterates), an equ chain resting on
+/// labels+equs fully resolves within one call here — no cross-pass equ state
+/// needs to persist between OUTER relaxation passes.
+fn equ_lookup_overlay(placed: &[Section], syms: &SymbolTable) -> std::collections::HashMap<String, i64> {
+    use std::collections::HashMap;
+    let mut folded_vals: HashMap<String, i64> = HashMap::new();
+    for _ in 0..MAX_EQU_PASSES {
+        let mut progressed = false;
+        for sec in placed {
+            for eq in &sec.equ_syms {
+                if folded_vals.contains_key(&eq.name) {
+                    continue;
+                }
+                let lookup =
+                    |n: &str| folded_vals.get(n).copied().or_else(|| syms.resolve(n, None));
+                if let Fold::Value(v) = eq.expr.fold(&lookup) {
+                    folded_vals.insert(eq.name.clone(), v);
+                    progressed = true;
+                }
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    folded_vals
+}
+
 /// Fold every section's `equ_syms` against the FINAL post-placement symbol table
 /// `syms` (R-T0.3), returning per-section `Vec<EquSym>` whose every `expr` is a
 /// concrete `Expr::Int(v)`. An equ may reference a label (its VMA is final in
@@ -1010,6 +1053,47 @@ fn first_unresolved_sym(
         Expr::Binary { lhs, rhs, .. } => first_unresolved_sym(lhs, syms, folded_vals)
             .or_else(|| first_unresolved_sym(rhs, syms, folded_vals)),
     }
+}
+
+/// The `unresolved symbolic absolute operand` diagnostic (Task 5 / R-T0.6),
+/// naming the actual unresolved SYMBOL rather than just the section. `target`
+/// folded to [`Fold::Poison`] against `equ_lookup` (`equ_overlay` ∪ `syms`,
+/// see `equ_lookup_overlay`), so walk it to find the first leaf name neither
+/// table supplies, then choose wording by WHY it's unresolved:
+///
+/// - The name is not an `equ` anywhere in `placed` (never even attempted a
+///   fold) → the Item-C cross-seam-standalone wording
+///   (`check_link_asserts`'s "references symbol(s) ... not defined in this
+///   link"), the common case of compiling a cross-seam module standalone.
+/// - The name IS an `equ` somewhere but never resolved within
+///   `equ_lookup_overlay`'s bounded passes → a cycle or a dangling
+///   equ-on-equ dependency; phrased distinctly (not duplicating
+///   `unresolved_equ_diag`'s wording, but naming the same shape of cause) so
+///   a reader doesn't mistake a cycle for a plain missing symbol.
+fn unresolved_relax_abs_sym_diag(
+    target: &Expr,
+    placed: &[Section],
+    section: &str,
+    syms: &SymbolTable,
+    equ_overlay: &std::collections::HashMap<String, i64>,
+    span: Span,
+) -> Diagnostic {
+    let name = first_unresolved_sym(target, syms, equ_overlay)
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let is_equ_elsewhere = placed.iter().any(|s| s.equ_syms.iter().any(|e| e.name == name));
+    let message = if is_equ_elsewhere {
+        format!(
+            "unresolved symbolic absolute operand in section {section}: equ `{name}` never \
+             resolved (an equ cycle, or a dependency that never resolves)"
+        )
+    } else {
+        format!(
+            "unresolved symbolic absolute operand in section {section} references symbol \
+             `{name}` not defined in this link — expected when compiling a cross-seam module \
+             standalone; supply the map/harness composition that defines it"
+        )
+    };
+    Diagnostic { level: Level::Error, message, primary: span }
 }
 
 /// The `[branch.out-of-reach]` diagnostic for a ladder that maxed at its last
@@ -2369,6 +2453,169 @@ mod tests {
         let out = resolve_layout(&[a, w], &SymbolTable::new(), true).unwrap();
         let linked = crate::link(&out, &SymbolTable::new()).unwrap();
         assert_eq!(linked.section("w").unwrap().bytes, vec![0x0B]);
+    }
+
+    #[test]
+    fn relax_abs_sym_targeting_an_equ_selects_short() {
+        // Task 5 (port #1 follow-up): a `RelaxAbsSym` operand whose TARGET is an
+        // `equ` (not a label) must resolve through the relaxation fixpoint, not
+        // just through layout labels. `equ R = $FFFF8022` masks (asl_width_rule,
+        // 24-bit) into the abs.w RAM range → short (abs.w) candidate selected,
+        // 4-byte `2078 8022` block (opcode 0x2078 + Abs16Be $8022).
+        let sec = Section {
+            name: "hblank".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("R")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![equ("R", Expr::Int(0xFFFF_8022u32 as i64))],
+        };
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        match &out[0].fragments[0] {
+            Fragment::Data(d) => {
+                assert_eq!(d.bytes, vec![0x31, 0xC0, 0x00, 0x00]);
+                assert_eq!(d.fixups[0].kind, FixupKind::Abs16Be);
+            }
+            other => panic!("expected lowered Data, got {other:?}"),
+        }
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("hblank").unwrap().bytes, vec![0x31, 0xC0, 0x80, 0x22]);
+    }
+
+    #[test]
+    fn relax_abs_sym_targeting_an_equ_selects_long() {
+        // `equ X = $12345` is outside asl_width_rule's abs.w ranges → abs.l: the
+        // 6-byte `long` candidate, Abs32Be operand.
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("X")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![equ("X", Expr::Int(0x1_2345))],
+        };
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        match &out[0].fragments[0] {
+            Fragment::Data(d) => {
+                assert_eq!(d.bytes, vec![0x33, 0xC0, 0x00, 0x00, 0x00, 0x00]);
+                assert_eq!(d.fixups[0].kind, FixupKind::Abs32Be);
+            }
+            other => panic!("expected lowered Data, got {other:?}"),
+        }
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x33, 0xC0, 0x00, 0x01, 0x23, 0x45]);
+    }
+
+    #[test]
+    fn relax_abs_sym_targeting_an_equ_chain_selects_short() {
+        // `equ A = $FFFF8022 ; equ B = A` — B is an equ-on-equ chain; the
+        // RelaxAbsSym target `B` must resolve through BOTH links.
+        let sec = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("B")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![
+                equ("A", Expr::Int(0xFFFF_8022u32 as i64)),
+                equ("B", Expr::Sym("A".into())),
+            ],
+        };
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        match &out[0].fragments[0] {
+            Fragment::Data(d) => {
+                assert_eq!(d.bytes, vec![0x31, 0xC0, 0x00, 0x00]);
+                assert_eq!(d.fixups[0].kind, FixupKind::Abs16Be);
+            }
+            other => panic!("expected lowered Data, got {other:?}"),
+        }
+        let linked = crate::link(&out, &SymbolTable::new()).unwrap();
+        assert_eq!(linked.section("c").unwrap().bytes, vec![0x31, 0xC0, 0x80, 0x22]);
+    }
+
+    #[test]
+    fn relax_abs_sym_targeting_an_equ_derived_from_a_label_matches_direct_label() {
+        // `equ P = SomeLabel` where SomeLabel is a placed section label — must
+        // match width/bytes of targeting the label directly (same section, so
+        // the equ and the RelaxAbsSym see the SAME final VMA).
+        let via_label = Section {
+            name: "c".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0x12_0000,
+            labels: vec![Label { name: "SomeLabel".into(), offset: 0 }],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0, 0, 0, 0], fixups: vec![], span: sp() }),
+                relax_move("SomeLabel"),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let via_equ = Section {
+            equ_syms: vec![equ("P", Expr::Sym("SomeLabel".into()))],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0, 0, 0, 0], fixups: vec![], span: sp() }),
+                relax_move("P"),
+            ],
+            ..via_label.clone()
+        };
+        let out_label = resolve_layout(&[via_label], &SymbolTable::new(), true).unwrap();
+        let out_equ = resolve_layout(&[via_equ], &SymbolTable::new(), true).unwrap();
+        let linked_label = crate::link(&out_label, &SymbolTable::new()).unwrap();
+        let linked_equ = crate::link(&out_equ, &SymbolTable::new()).unwrap();
+        assert_eq!(
+            linked_label.section("c").unwrap().bytes,
+            linked_equ.section("c").unwrap().bytes
+        );
+        // SomeLabel = 0x120000 → abs.l (long candidate, 6 bytes): sanity that
+        // this test actually exercises a non-trivial width, not both-zero.
+        assert_eq!(linked_label.section("c").unwrap().bytes.len(), 4 + 6);
+    }
+
+    #[test]
+    fn relax_abs_sym_targeting_a_never_resolving_equ_names_the_symbol() {
+        // An equ that NEVER resolves (references a genuinely undefined symbol)
+        // used as a RelaxAbsSym target must produce a diagnostic naming the
+        // SYMBOL (not just the section), in the Item-C cross-seam-standalone
+        // style — distinguishing "not defined in this link" from a cycle.
+        let sec = Section {
+            name: "hblank".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![relax_move("HBlank_Handler_Ptr")],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("HBlank_Handler_Ptr")
+                && d.message.contains("not defined in this link")),
+            "expected a diagnostic naming `HBlank_Handler_Ptr` in Item-C cross-seam-standalone \
+             wording, got: {err:?}"
+        );
     }
 
     #[test]

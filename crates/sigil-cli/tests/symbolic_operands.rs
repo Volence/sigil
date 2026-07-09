@@ -296,3 +296,76 @@ fn mixed_program_with_forward_refs_matches_as() {
     assert_eq!(emp_bytes, want, "mixed program resolved image");
     assert_bytes(&as_flat(asm), &emp_bytes, "mixed program: emp vs AS");
 }
+
+// ---------------------------------------------------------------------------
+// 4. Cross-front-end: an AS-side int `equ` consumed by an `.emp` `RelaxAbsSym`
+//    operand in a MIXED link (Task 5, port #1 follow-up). Mirrors the
+//    `sfx_port.rs`/`hblank_port.rs` cross-seam composition pattern: assemble a
+//    tiny AS-side unit that exports an int `equ` (Task B1's seam — AS `equ`
+//    directives export to the module's link-level `equ_syms`), lower a `.emp`
+//    module whose `RelaxAbsSym` operand targets that SAME name by its bare
+//    name (no `extern()` needed — equ_syms fold into the same link symbol
+//    table as labels), append both sections lists, and run ONE
+//    `resolve_layout` + `link`. Before Task 5 this failed with `"unresolved
+//    symbolic absolute operand"` (the fixpoint only consulted layout labels,
+//    not the AS-side equ) even though the linker's post-convergence equ fold
+//    already knew the value for cross-section fixups.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn as_side_int_equ_resolves_an_emp_relax_abs_sym_operand_in_a_mixed_link() {
+    // AS-side unit: a bare `equ` (no section open yet) naming a RAM address —
+    // exercises `directive_equate`'s `pending_equ_syms` flush path, the exact
+    // shape a real cross-seam RAM-address equate (e.g. an aeon `ram.asm`
+    // constant defined as `equ` rather than a label) takes.
+    let as_src = "cpu 68000\nHandlerPtr equ $FFFF8022\nStub:\n\tdc.w 0\n";
+    let as_opts = Options { initial_cpu: Cpu::M68000, ..Options::default() };
+    let mut as_sections = assemble(as_src, &as_opts)
+        .unwrap_or_else(|d| panic!("AS assemble (equ export): {d:?}"))
+        .sections;
+    // Move the AS-side unit clear of the emp module's own LMA 0 — mirrors
+    // `hblank_port.rs`'s harness-private-LMA technique for synthetic cross-seam
+    // sections appended into the SAME resolve_layout/link call.
+    for sec in &mut as_sections {
+        sec.lma = 0x0100_0000;
+    }
+    assert!(
+        as_sections.iter().any(|s| s.equ_syms.iter().any(|e| e.name == "HandlerPtr")),
+        "precondition: AS assemble must export `HandlerPtr` as a link-level equ_sym, got: {:?}",
+        as_sections.iter().map(|s| &s.equ_syms).collect::<Vec<_>>()
+    );
+
+    // .emp side: a `RelaxAbsSym` operand (`movea.l HandlerPtr, a0`) targeting
+    // the AS-side equ's BARE name — no `extern()`, exactly like `hblank.emp`'s
+    // real `HBlank_Handler_Ptr` reference.
+    let emp_src = "module m\n\
+                   proc f() {\n\
+                       movea.l HandlerPtr, a0\n\
+                       rts\n\
+                   }\n";
+    let (file, pdiags) = parse_str(emp_src);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse errors: {pdiags:?}");
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower errors: {ldiags:?}");
+
+    let mut sections = module.sections;
+    sections.extend(as_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("mixed link failed: {d:?}"));
+
+    // $FFFF8022 masks (asl_width_rule, 24-bit) into the abs.w RAM range →
+    // `movea.l (HandlerPtr).w, a0` = `2078 8022`. The emp module's default
+    // top-level carrier section is named `text` (mirrors `emp_link`'s other
+    // whole-image tests, which flatten rather than name it).
+    let f_bytes = linked.section("text").unwrap_or_else(|| {
+        panic!(
+            "expected the emp module's `text` section, got sections: {:?}",
+            linked.sections.iter().map(|s| &s.name).collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(&f_bytes.bytes[..4], &[0x20, 0x78, 0x80, 0x22]);
+}

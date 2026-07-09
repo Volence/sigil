@@ -24,12 +24,13 @@
 //!     the synthetic `HBlank_Handler_Ptr` cross-seam section: `resolve_layout`
 //!     fails LOUD. `hblank.emp` carries no `ensure`/`extern` link-assert (only
 //!     a plain operand reference), so the firing diagnostic is `relax.rs`'s
-//!     `RelaxAbsSym` guard — `"unresolved symbolic absolute operand in section
-//!     hblank"` — NOT the `check_link_asserts` Item-C "references symbol(s)
-//!     ... not defined in this link" wording (that path is for `ensure`
-//!     conditions only, which this module has none of). This probe pins the
-//!     wording that ACTUALLY fires; see the module doc's note on the
-//!     diagnostic-naming gap (campaign gap ledger).
+//!     `RelaxAbsSym` guard, which as of Task 5 both names the symbol AND
+//!     shares the `check_link_asserts` Item-C "references symbol(s) ... not
+//!     defined in this link — expected when compiling a cross-seam module
+//!     standalone" wording (still a distinct code path — this module has no
+//!     `ensure`/`extern` condition to route through `check_link_asserts`
+//!     itself — but the PROSE now matches). This probe pins the improved
+//!     wording; see the campaign gap ledger for the before/after.
 //! (c) placement genuineness — a wrong-base map (base+2) places the section at
 //!     the wrong address, so its bytes no longer match the reference window —
 //!     proving the byte-diff is a real placement check, not an echo of the
@@ -181,15 +182,17 @@ fn link_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImage {
 /// (`movea.l HBlank_Handler_Ptr, a0`, not an `ensure`/`extern` link-assert
 /// condition), so compiling it standalone — no synthetic RAM-label section
 /// supplied — must fail LOUD at `resolve_layout` with `relax.rs`'s
-/// `RelaxAbsSym` diagnostic: `"unresolved symbolic absolute operand in
-/// section hblank"`. This is a DIFFERENT wording than the
-/// `check_link_asserts` Item-C "references symbol(s) ... not defined in this
-/// link — expected when compiling a cross-seam module standalone" message
-/// (that path only fires for `ensure`/`extern` conditions, which this module
-/// has none of) — pinning the wording that ACTUALLY fires here, not the
-/// Item-C prose, is the point of this probe. (Campaign gap ledger: the
-/// message does not NAME `HBlank_Handler_Ptr` — an existing OPEN diagnostic
-/// gap, not something this probe can paper over.)
+/// `RelaxAbsSym` diagnostic. As of Task 5 (the equ-operand / diagnostic-naming
+/// follow-up, port #1) this diagnostic NAMES the missing symbol
+/// (`HBlank_Handler_Ptr`) and uses the same Item-C cross-seam-standalone
+/// framing as `check_link_asserts`'s "references symbol(s) ... not defined in
+/// this link — expected when compiling a cross-seam module standalone"
+/// wording — the two diagnostics are worded consistently now (one fix, per
+/// the campaign gap ledger's merge note) even though they still fire from
+/// different code paths (this one has no `ensure`/`extern` condition to route
+/// through `check_link_asserts`). This probe pins the IMPROVED wording —
+/// previously it only named the SECTION (`"...in section hblank"`), which is
+/// the gap this task closed.
 ///
 /// FALSIFIED (restore-real-value): re-ran WITH the cross-seam label appended
 /// (the `hblank_port.rs` shape) — `resolve_layout` returns `Ok`, so
@@ -210,9 +213,11 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
             d.level == Level::Error
                 && d.message.contains("unresolved symbolic absolute operand")
                 && d.message.contains("hblank")
+                && d.message.contains("HBlank_Handler_Ptr")
+                && d.message.contains("not defined in this link")
         }),
-        "expected the RelaxAbsSym `unresolved symbolic absolute operand in section hblank` \
-         error, got: {err:?}"
+        "expected the RelaxAbsSym diagnostic to name `HBlank_Handler_Ptr` with the Item-C \
+         cross-seam-standalone framing, got: {err:?}"
     );
 }
 
