@@ -919,14 +919,19 @@ fn validate_dispatch(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
 /// `items` (recursing into `section {}` blocks, mirroring `validate_offsets`)
 /// for ANY named item declaring that name — `const`, `equ`, `enum`,
 /// `comptime fn`, `struct`, `bitfield`, `newtype`, `data`, `offsets`,
-/// `dispatch`, or a NAMED `vars` overlay (the same item kinds
-/// [`Evaluator::seed_defines`](crate::eval::Evaluator::seed_defines) checks
-/// before seeding). A match is the `[defines.collision]` error, at the
-/// COLLIDING ITEM's own span (more precise than the module header) — reported
-/// HERE, once, rather than in `seed_defines` itself, because a fresh evaluator
-/// is built per item/proc and would otherwise emit the diagnostic once per
-/// evaluator (the same duplication `validate_offsets`/`validate_dispatch`
-/// already avoid for their own checks).
+/// `dispatch`, `proc`, `script`, or a NAMED `vars` overlay. A match is the
+/// `[defines.collision]` error, at the COLLIDING ITEM's own span (more precise
+/// than the module header) — reported HERE, once, rather than in
+/// [`Evaluator::seed_defines`](crate::eval::Evaluator::seed_defines) itself,
+/// because a fresh evaluator is built per item/proc and would otherwise emit
+/// the diagnostic once per evaluator (the same duplication
+/// `validate_offsets`/`validate_dispatch` already avoid for their own checks).
+///
+/// NOTE this check covers a strict SUPERSET of `seed_defines`'s skip list:
+/// proc/script names live in no evaluator index (`index_items` has no
+/// proc/script table), so `seed_defines` cannot detect them and seeds the
+/// define anyway — harmless, because the hard Error emitted here fails the
+/// compile, making the evaluator-side seeding unobservable.
 fn validate_defines(items: &[ast::Item], defines: &[(String, i128)], diags: &mut Vec<Diagnostic>) {
     if defines.is_empty() {
         return;
@@ -943,6 +948,8 @@ fn validate_defines(items: &[ast::Item], defines: &[(String, i128)], diags: &mut
             ast::Item::Data(d) => Some((d.name.as_str(), d.span)),
             ast::Item::Offsets(d) => Some((d.name.as_str(), d.span)),
             ast::Item::Dispatch(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Proc(d) => Some((d.name.as_str(), d.span)),
+            ast::Item::Script(d) => Some((d.name.as_str(), d.span)),
             ast::Item::Vars(d) => d.name.as_deref().map(|n| (n, d.span)),
             ast::Item::Section(sec) => {
                 validate_defines(&sec.items, defines, diags);

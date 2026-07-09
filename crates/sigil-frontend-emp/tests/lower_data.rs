@@ -570,3 +570,24 @@ fn define_colliding_with_module_decl_errors() {
         "expected a [defines.collision] error, got {diags:?}"
     );
 }
+
+#[test]
+fn define_colliding_with_proc_name_errors() {
+    // R1 says a module-declared ITEM of the define's name is a hard error —
+    // and a proc is an item too (spec-review catch: without the Proc arm in
+    // `validate_defines`, `-D Foo=5` + `proc Foo` compiled silently and a
+    // `data P: u32 = Foo` initializer read the DEFINE's int instead of the
+    // proc's label, the exact silent-shadow R1 forbids).
+    let src = "module t\nproc Foo() {\n    rts\n}\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+
+    let (_module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![("Foo".into(), 5)] },
+    );
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.contains("[defines.collision]")),
+        "expected a [defines.collision] error for a proc-name collision, got {diags:?}"
+    );
+}

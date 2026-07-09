@@ -886,17 +886,23 @@ impl<'a> Evaluator<'a> {
     /// is never actually invoked for a define (there is no `ast::ConstDecl` to
     /// evaluate — the whole point of "resolved entry" in R1).
     ///
-    /// A `name` already declared by the module as ANY named item (const, equ,
-    /// enum, fn, struct, bitfield, newtype, data, offsets, dispatch, or named
-    /// overlay) is a collision the define does NOT win: it is silently left
-    /// unseeded here so the module's own declaration resolves names
-    /// afterward (never a silent shadow). The LOUD `[defines.collision]`
+    /// A `name` already declared by the module as an INDEXED named item
+    /// (const, equ, enum, fn, struct, bitfield, newtype, data, offsets,
+    /// dispatch, or named overlay) is a collision the define does NOT win: it
+    /// is silently left unseeded here so the module's own declaration resolves
+    /// names afterward (never a silent shadow). The LOUD `[defines.collision]`
     /// diagnostic itself is NOT this method's job: every per-item evaluator
     /// calls `seed_defines` once, so reporting here would duplicate the
     /// diagnostic once per item. The lowering pass's `validate_defines` is the
     /// once-per-compile driver that reports it, mirroring how
     /// `validate_offsets`/`validate_dispatch` already keep their own
     /// once-per-compile duplicate/reserved-name checks out of the evaluator.
+    ///
+    /// `proc`/`script` names are ALSO `[defines.collision]` per R1, but only
+    /// `validate_defines` can see them ([`index_items`](Self::index_items) has
+    /// no proc/script table, so there is nothing to skip against here); the
+    /// hard Error it emits fails the compile, so the define this method seeds
+    /// for such a name is never observable.
     pub(crate) fn seed_defines(&mut self, defines: &[(String, i128)]) {
         for (name, value) in defines {
             if self.consts.contains_key(name.as_str())
