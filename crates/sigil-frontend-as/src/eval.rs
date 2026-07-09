@@ -2528,19 +2528,26 @@ impl Asm {
     /// and hard-error any compound (R-T0.4's asymmetry note), whereas R3
     /// explicitly wants compounds to defer too.
     ///
-    /// Scoped to the two destination shapes where the immediate's extension
-    /// words are PROVABLY the only ones in the instruction (so the fixup
+    /// Scoped to destination shapes where the immediate's extension words are
+    /// PROVABLY the only ones BEFORE the destination's own (so the fixup
     /// offset — immediately after the 2-byte opcode — is correct without
     /// relying on the general `encode_move`/`encode_movea` source-before-dest
     /// extension-word ordering): a bare `aN` (`movea.l`) or bare `dN`
-    /// (`move.l`) destination contributes ZERO extension words of its own.
-    /// Any other destination (`(d16,An)`, `(An)+`, `(d8,An,Xn)`, absolute,
-    /// `(d16,PC)`, ...) falls through to the normal eager path unmodified —
-    /// resolved operands there are untouched, and an unresolved one still
-    /// hard-errors on the converged pass exactly as before.
+    /// (`move.l`) destination contributes ZERO extension words of its own; an
+    /// absolute `(abs).w`/`(abs).l` destination (port #1 hblank: the real
+    /// `move.l #HBlank_Null, (HBlank_Handler_Ptr).w` shape) contributes its
+    /// OWN extension word(s) strictly AFTER the immediate's four bytes (m68k
+    /// encodes source extension words before destination extension words),
+    /// so the fixup offset is still exactly 2 — verified against the real
+    /// reference encoding `21FC 0000228E 8022` (s4.lst:5794: opcode, 4-byte
+    /// imm32, then the abs.w dest ext word). Any other destination
+    /// (`(d16,An)`, `(An)+`, `(d8,An,Xn)`, `(d16,PC)`, ...) falls through to
+    /// the normal eager path unmodified — resolved operands there are
+    /// untouched, and an unresolved one still hard-errors on the converged
+    /// pass exactly as before.
     ///
     /// Returns `None` when this isn't a deferrable shape (resolved value, not
-    /// `Movea`/`Move`, not size `L`, or a destination outside the two above)
+    /// `Movea`/`Move`, not size `L`, or a destination outside the three above)
     /// so the caller falls through to the existing eager path unchanged.
     ///
     /// Encoding goes through the REAL encoder with a placeholder-0 immediate
@@ -2548,9 +2555,14 @@ impl Asm {
     /// after the opcode word), then the fixup is attached at offset 2: the
     /// same pattern as the backend's `lower_branch`/`lower_dbcc`/
     /// `lower_pcrel_ea`, keeping the m68k opcode bit-layout in `sigil-isa`
-    /// rather than duplicated here.
+    /// rather than duplicated here. The absolute destination's own address is
+    /// resolved EAGERLY here (`fold_imm`) — only the source immediate defers;
+    /// an absolute destination that is ITSELF unresolved still falls through
+    /// to the eager path (and hard-errors there, unchanged), since `movea`
+    /// only ever takes a register destination and a `move.l` destination
+    /// address is not the cross-seam shape this deferral exists for.
     fn try_defer_long_imm(
-        &self,
+        &mut self,
         mnemonic: M68kMnemonic,
         size: M68kSize,
         atoms: &[OperandAtom],
@@ -2564,14 +2576,40 @@ impl Asm {
         // through to `Value(Expr::Sym(_))` (68k `aN`/`dN` aren't Z80 words) —
         // `convert_one_atom_m68k`'s `OperandAtom::Value(e @ Expr::Sym(name))`
         // arm handles the same dual shape for register operands generally.
-        let (imm_expr, dst_reg) = match atoms {
-            [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] => (e, w.as_str()),
-            [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] => (e, w.as_str()),
-            _ => return None,
-        };
-        let dst = match mnemonic {
-            M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(dst_reg)?),
-            M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(dst_reg)?),
+        // An absolute destination (`(abs).w`/`(abs).l`) is `M68kAbs` —
+        // `move.l` only (an absolute `movea` destination isn't a legal 68k
+        // shape; `m68k_addr_reg`/`m68k_data_reg` below reject non-register
+        // names regardless, so this arm is naturally Move-only in practice).
+        let (imm_expr, dst) = match atoms {
+            [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] => {
+                let dst = match mnemonic {
+                    M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
+                    M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
+                    _ => return None,
+                };
+                (e, dst)
+            }
+            [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] => {
+                let dst = match mnemonic {
+                    M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
+                    M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
+                    _ => return None,
+                };
+                (e, dst)
+            }
+            [OperandAtom::Imm(e), OperandAtom::M68kAbs { addr, long }] if mnemonic == M68kMnemonic::Move => {
+                // The destination address resolves EAGERLY (it's not the
+                // cross-seam leaf this deferral targets) — an unresolved
+                // absolute destination falls through to the eager path.
+                let qualified_addr = self.qualify_expr(addr);
+                let v = self.fold_imm(&qualified_addr, span, i32::MIN as i64, u32::MAX as i64);
+                let dst = if *long {
+                    M68kOperand::AbsL(v as i32)
+                } else {
+                    M68kOperand::AbsW((v & 0xFFFF) as i16)
+                };
+                (e, dst)
+            }
             _ => return None,
         };
         let qualified = self.qualify_expr(imm_expr);
@@ -2585,15 +2623,14 @@ impl Asm {
             size,
             ops: vec![M68kOperand::Imm(0), dst],
         };
-        // These shapes always encode (Imm source + register direct dest is
-        // legal for both mnemonics); an Err here would be an isa bug, and
-        // falling through to the eager path still fails loud (poison ref +
-        // the same encode error), never silent.
+        // These shapes always encode (Imm source + a legal dest for the
+        // mnemonic); an Err here would be an isa bug, and falling through to
+        // the eager path still fails loud (poison ref + the same encode
+        // error), never silent.
         let mut frag = self.m68k.lower_inst(&inst, span).ok()?;
-        debug_assert_eq!(
-            frag.bytes.len(),
-            6,
-            "movea.l/move.l #imm,reg must encode to opcode word + 4-byte immediate"
+        debug_assert!(
+            frag.bytes.len() >= 6,
+            "movea.l/move.l #imm,dest must encode to at least opcode word + 4-byte immediate"
         );
         frag.fixups.push(Fixup {
             kind: FixupKind::Value32Be,
@@ -5876,5 +5913,109 @@ C:\n";
         let names: Vec<&str> = module.sections.iter().map(|s| s.name.as_str()).collect();
         let unique: std::collections::HashSet<&&str> = names.iter().collect();
         assert_eq!(unique.len(), names.len(), "section names collided: {names:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // `try_defer_long_imm` — R3's imm32 deferral, extended to absolute
+    // destinations (port #1 hblank: `boot.asm:185`'s real shape,
+    // `move.l #HBlank_Null, (HBlank_Handler_Ptr).w`). R3 originally covered
+    // only bare `aN`/`dN` register destinations (`movea.l #SongTable, a0`);
+    // this is the same imm32-source deferral with an `(abs).w`/`(abs).l`
+    // destination instead of a register.
+    // -----------------------------------------------------------------------
+
+    /// A resolved `.w`-absolute destination whose source immediate is a
+    /// genuinely cross-seam (never-resolving) symbol must defer to a
+    /// `Value32Be` link fixup, not hard-error. Mirrors the real
+    /// `move.l #HBlank_Null, (HBlank_Handler_Ptr).w` shape: `HBlank_Handler_Ptr`
+    /// resolves locally (a `ds.l 1` label right here), `HBlank_Null` never
+    /// does (it's `.emp`-side only) — so this must NOT hit
+    /// `unresolved symbol` at the converged pass.
+    #[test]
+    fn move_l_imm_unresolved_source_defers_with_abs_w_dest() {
+        let src = "\
+        cpu 68000\n\
+        RamPtr: ds.l 1\n\
+        \tmove.l #CrossSeamOnly, (RamPtr).w\n";
+        let m = run(src, &Options::default()).expect("assemble (must defer, not hard-error)");
+        // opcode word + 4-byte imm32 fixup hole + 2-byte abs.w dest ext word.
+        let bytes = m.sections.iter().find(|s| !s.image_bytes().is_empty()).map(|s| s.image_bytes());
+        assert_eq!(
+            bytes.as_deref().map(|b| b.len()),
+            Some(8),
+            "move.l #imm,(abs).w must encode to 8 bytes (opcode + imm32 + abs.w ext word)"
+        );
+    }
+
+    /// Same shape with an explicit `.l`-absolute destination
+    /// (`(abs).l`, 4-byte extension word) — the sibling width.
+    #[test]
+    fn move_l_imm_unresolved_source_defers_with_abs_l_dest() {
+        let src = "\
+        cpu 68000\n\
+        \tmove.l #CrossSeamOnly, ($FFFF8022).l\n";
+        let m = run(src, &Options::default()).expect("assemble (must defer, not hard-error)");
+        let bytes = m.sections.iter().find(|s| !s.image_bytes().is_empty()).map(|s| s.image_bytes());
+        assert_eq!(
+            bytes.as_deref().map(|b| b.len()),
+            Some(10),
+            "move.l #imm,(abs).l must encode to 10 bytes (opcode + imm32 + abs.l ext word)"
+        );
+    }
+
+    /// `movea.l` sibling: an unresolved source with an absolute destination is
+    /// nonsensical for `movea` (its destination is always `aN`), so this stays
+    /// out of scope — a plain regression guard that `movea.l #imm,aN` (the
+    /// R3-original shape) is untouched by the abs-dest extension.
+    #[test]
+    fn movea_l_imm_unresolved_source_still_defers_with_reg_dest() {
+        let src = "\
+        cpu 68000\n\
+        \tmovea.l #CrossSeamOnly, a0\n";
+        let m = run(src, &Options::default()).expect("assemble (must defer, not hard-error)");
+        let bytes = m.sections.iter().find(|s| !s.image_bytes().is_empty()).map(|s| s.image_bytes());
+        assert_eq!(bytes.as_deref().map(|b| b.len()), Some(6));
+    }
+
+    /// The fixup's TARGET offset must be exactly right: byte-diff the deferred
+    /// encoding against a resolved control case with the same shape (a known
+    /// immediate instead of a cross-seam symbol) — the opcode and the abs.w
+    /// extension word must be byte-identical; only the 4 immediate bytes
+    /// (the fixup hole, here filled by the linker with the resolved value)
+    /// differ. This pins that the abs.w destination's own extension word is
+    /// unperturbed by the deferral (it's encoded by the SAME `lower_inst` call,
+    /// after the immediate, exactly as the real `21FC 0000228E 8022` reference
+    /// bytes show — see s4.lst:5794).
+    #[test]
+    fn move_l_imm_abs_w_dest_fixup_offset_matches_resolved_control() {
+        let deferred_src = "\
+        cpu 68000\n\
+        RamPtr: ds.l 1\n\
+        \tmove.l #CrossSeamOnly, (RamPtr).w\n";
+        let resolved_src = "\
+        cpu 68000\n\
+        RamPtr: ds.l 1\n\
+        \tmove.l #$1234, (RamPtr).w\n";
+        let m_deferred = run(deferred_src, &Options::default()).expect("deferred assemble");
+        let m_resolved = run(resolved_src, &Options::default()).expect("resolved assemble");
+        let bytes_deferred = m_deferred
+            .sections
+            .iter()
+            .find(|s| !s.image_bytes().is_empty())
+            .map(|s| s.image_bytes())
+            .expect("deferred section");
+        let bytes_resolved = m_resolved
+            .sections
+            .iter()
+            .find(|s| !s.image_bytes().is_empty())
+            .map(|s| s.image_bytes())
+            .expect("resolved section");
+        // Opcode word (bytes 0..2) and the abs.w dest ext word (bytes 6..8)
+        // must match byte-for-byte; only the imm32 hole (2..6) legitimately
+        // differs (0 placeholder vs the resolved $1234).
+        assert_eq!(&bytes_deferred[0..2], &bytes_resolved[0..2], "opcode word must match");
+        assert_eq!(&bytes_deferred[6..8], &bytes_resolved[6..8], "abs.w dest ext word must match");
+        assert_eq!(&bytes_deferred[2..6], &[0, 0, 0, 0], "deferred imm32 hole is the zero placeholder");
+        assert_eq!(&bytes_resolved[2..6], &[0x00, 0x00, 0x12, 0x34], "resolved control's imm32");
     }
 }

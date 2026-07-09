@@ -111,8 +111,8 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::{
-    assemble_mixed_dac_as_side, assemble_mixed_mt_as_side, assemble_mixed_sfx_as_side,
-    assert_rom_matches, CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
+    assemble_mixed_dac_as_side, assemble_mixed_hblank_as_side, assemble_mixed_mt_as_side,
+    assemble_mixed_sfx_as_side, assert_rom_matches, CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -232,6 +232,99 @@ fn emp_bank_map_with_mt(debug: bool) -> String {
          size = {sfx_size}\n\
          kind = \"rom\"\n"
     )
+}
+
+/// Port #1's map: `emp_bank_map_with_mt`'s FOUR regions PLUS `hblank` — the
+/// SECOND shape-dependent region base (after `sfx_bank`, R7): plain `$227E`,
+/// debug `$230C`, both size `$12` (18 bytes, the campaign's first CODE port —
+/// shape-invariant CONTENT, shape-dependent BASE, exactly like `sfx_bank`).
+/// The DAC/MT/SFX/`text` regions are byte-for-byte `emp_bank_map_with_mt`'s.
+///
+/// `hblank.emp` opens its own zero-byte `text` carrier too (Task 2's P5 proof
+/// generalizes: any number of same-named `text` carriers chain cleanly
+/// through one region), so the single shared `text` region still covers all
+/// four modules.
+fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
+    let (sfx_base, sfx_size) = if debug {
+        ("0x6553A", "0x2AC6")
+    } else {
+        ("0x63AE8", "0x4518")
+    };
+    let hblank_base = if debug { "0x230C" } else { "0x227E" };
+    format!(
+        "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"hblank\"\n\
+         lma_base = {hblank_base}\n\
+         size = 0x12\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_blip_bank\"\n\
+         lma_base = 0x50000\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_shared_bank\"\n\
+         lma_base = 0x58000\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"mt_bank\"\n\
+         lma_base = 0x60607\n\
+         size = 0x79F9\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"sfx_bank\"\n\
+         lma_base = {sfx_base}\n\
+         size = {sfx_size}\n\
+         kind = \"rom\"\n"
+    )
+}
+
+/// Port #1: `placed_emp_sections_with_mt_sfx`'s four-module successor — DAC +
+/// MT + SFX + HBLANK, all placed into the per-shape `emp_bank_map_with_mt_hblank`
+/// (DAC/SFX/HBLANK defines-less, MT's `DEBUG` — R4). Returns all FOUR modules'
+/// placed sections concatenated (dac, mt, sfx, hblank — declaration order
+/// only) AND all three asserts-bearing modules' link_asserts (mt == 5,
+/// sfx == 1; `hblank.emp` carries none), so the caller can `check_link_asserts`
+/// and pin every count after the joint link — the ONE lower pass per module
+/// (M2), no second lowering to recover the asserts.
+fn placed_emp_sections_with_mt_sfx_hblank(
+    aeon: &Path,
+    debug_val: i128,
+) -> (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>) {
+    let map = emp_bank_map_with_mt_hblank(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    // `sfx_bank.emp` lives in `sound/sfx/` (own include_root for its 18
+    // `embed`s); NO defines: shape-invariant (R4).
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    // `hblank.emp` lives in `engine/system/`; NO defines: shape-invariant
+    // content, shape-dependent map base only (like sfx_bank).
+    let (hblank_sections, _hblank_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    sections.extend(hblank_sections);
+    (sections, mt_asserts, sfx_asserts)
 }
 
 /// Compile the REAL `dac_samples.emp` and PLACE its sections into the two-bank
@@ -483,6 +576,147 @@ fn build_mixed_sfx_rom(
     let rom =
         sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed SFX): {e}"));
     (rom, mt_diags, sfx_diags)
+}
+
+/// Port #1's shared body — the campaign's first CODE-port acceptance: assemble
+/// the AS side with ALL FOUR gates on (`SIGIL_EMP_DAC` + `SIGIL_EMP_MT` +
+/// `SIGIL_EMP_SFX` + `SIGIL_EMP_HBLANK`), compose with ALL FOUR `.emp` modules'
+/// placed sections (dac + mt + sfx + hblank), and run ONE joint
+/// `resolve_layout` + `link`.
+///
+/// This is where the port #1 cross-seam reads prove out END-TO-END:
+/// `vectors.asm`'s `dc.l HBlank_Dispatch` (an Abs32 fixup deferral) and
+/// `boot.asm`'s `move.l #HBlank_Null, (HBlank_Handler_Ptr).w` (the
+/// `try_defer_long_imm` abs-dest extension's Value32Be fixup) both resolve
+/// against `hblank.emp`'s BARE `pub proc` symbols through this shared table —
+/// the same joint-link mechanism as `sound_api.asm`'s `movea.l #SongTable`
+/// (T2) and the win-tab `dw sfx_winptr` deferral (T3), now proven for a
+/// register-absent `move.l #imm, (abs).w` immediate fixup too.
+///
+/// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags)` — the caller pins
+/// both asserts-bearing modules' `check_link_asserts` (mt == 5, sfx == 1) and
+/// asserts every diagnostic is non-Error. `hblank.emp` carries no link
+/// asserts of its own (no `ensure`/`extern`), so it contributes none here.
+fn build_mixed_hblank_rom(
+    aeon: &Path,
+    debug: bool,
+) -> (Vec<u8>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>) {
+    let as_module = assemble_mixed_hblank_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    let (emp_sections, mt_asserts, sfx_asserts) =
+        placed_emp_sections_with_mt_sfx_hblank(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed HBLANK): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed HBLANK): {d:?}"));
+
+    let mt_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &mt_asserts);
+    let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
+    assert_eq!(
+        guard_assert_count(&mt_asserts),
+        5,
+        "mt_bank.emp's five co-residency ensures must be captured"
+    );
+    assert_eq!(
+        guard_assert_count(&sfx_asserts),
+        1,
+        "sfx_bank.emp's cross-seam co-residency ensure must be captured"
+    );
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    let rom = sigil_link::emit_rom(&linked, &map)
+        .unwrap_or_else(|e| panic!("emit_rom (mixed HBLANK): {e}"));
+    (rom, mt_diags, sfx_diags)
+}
+
+/// Port #1 acceptance — plain (non-debug) DAC+MT+SFX+HBLANK mixed build ==
+/// `aeon/s4.bin`, modulo the four convsym bytes. All four gates are ON; all
+/// four `.emp` modules are lowered and composed; the mt/sfx cross-seam
+/// ensures must genuinely run and pass; the `hblank` section itself is pinned
+/// explicitly (the port's own byte gate — `hblank_port.rs`'s region-level
+/// twin) before the whole-ROM assertion re-proves it.
+#[test]
+fn mixed_hblank_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags) = build_mixed_hblank_rom(&aeon, false);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+
+    // The hblank block itself, pinned explicitly (the port's own 18-byte
+    // window) before the whole-ROM assertion below re-proves it in context.
+    assert_eq!(
+        &rom[0x227E..0x2290],
+        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, 0x80, 0x22, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
+        "hblank block must match the reference bytes exactly (plain)"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed HBLANK");
+}
+
+/// Port #1 acceptance — `__DEBUG__` DAC+MT+SFX+HBLANK mixed build ==
+/// `aeon/s4.debug.bin`, modulo the five convsym bytes. Same four-module
+/// composition as the plain variant, with `DEBUG=1` driving `mt_bank.emp`'s
+/// if-expressions and `__DEBUG__` on the AS side; `hblank.emp` is
+/// shape-invariant (its content is identical in both shapes — only its map
+/// base moves, R7, exactly like `sfx_bank.emp`).
+#[test]
+fn mixed_hblank_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags) = build_mixed_hblank_rom(&aeon, true);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+
+    assert_eq!(
+        &rom[0x230C..0x231E],
+        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, 0x80, 0x22, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
+        "hblank block must match the reference bytes exactly (debug)"
+    );
+
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed HBLANK debug",
+    );
 }
 
 /// Plain (non-debug) mixed build == `aeon/s4.bin`, modulo the four convsym bytes.
