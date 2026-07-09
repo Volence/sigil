@@ -140,11 +140,11 @@ section z (cpu: z80, vma: $0000) {
 }
 
 #[test]
-fn allow_attr_opts_a_module_out() {
+fn allow_attr_opts_out_the_warning_tier_only() {
     // `@allow("layout.odd-item")` — the first real consumer of the parsed
-    // `@allow` module attribute: a module whose data shape legitimately packs
-    // odd word cells (aeon's byte-read dac descriptor stride) opts out
-    // visibly at the top of the file.
+    // `@allow` module attribute — silences the DATA warning (aeon's byte-read
+    // dac descriptor stride), but never the Code tier: a guaranteed
+    // address-error crash is not lint-allowable.
     let src = "\
 module m
 @allow(\"layout.odd-item\")
@@ -155,7 +155,31 @@ proc p () {
 }
 ";
     let diags = full(src);
-    assert!(odd_items(&diags).is_empty(), "@allow opts the module out: {diags:?}");
+    let odd = odd_items(&diags);
+    assert!(
+        !odd.iter().any(|d| d.message.contains("`D2`")),
+        "the data warning is allowed away: {diags:?}"
+    );
+    assert!(
+        odd.iter().any(|d| d.message.contains("`p`") && matches!(d.level, Level::Error)),
+        "the crash-tier proc check still fires under @allow: {diags:?}"
+    );
+}
+
+#[test]
+fn unquoted_allow_arg_is_loud() {
+    // `@allow(layout.odd-item)` parses as arithmetic and can never match a
+    // lint id — the natural typo must warn, not silently do nothing.
+    let src = "\
+module m
+@allow(layout.odd-item)
+data D: [u8; 1] = [1]
+";
+    let diags = full(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[attr.allow-form]")),
+        "expected [attr.allow-form]: {diags:?}"
+    );
 }
 
 #[test]

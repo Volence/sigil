@@ -100,6 +100,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     validate_offsets(&file.items, &mut diags);
     validate_dispatch(&file.items, &mut diags);
     validate_defines(&file.items, &opts.defines, &mut diags);
+    validate_allow_attrs(file, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -723,7 +724,13 @@ pub(super) fn record_odd_item_assert(
 ) {
     use sigil_ir::assert::{LinkAssert, MsgPart};
     use sigil_ir::expr::{BinOp, Expr};
-    if cpu != Cpu::M68000 || as_compat || allows_lint(file, "layout.odd-item") {
+    if cpu != Cpu::M68000 || as_compat {
+        return;
+    }
+    // `@allow` opts out of the WARNING tier only: the Code-kind check names a
+    // guaranteed address-error crash, which no lint-allow should silence
+    // (Item-4 review m1 — the dac descriptor use case needs the data tier).
+    if matches!(kind, OddItemKind::WordData) && allows_lint(file, "layout.odd-item") {
         return;
     }
     let (level, why) = match kind {
@@ -749,12 +756,35 @@ pub(super) fn record_odd_item_assert(
         message: vec![
             MsgPart::Text(format!("[layout.odd-item] `{name}` lands at odd address ")),
             MsgPart::Expr(Expr::Sym(name.to_string())),
-            MsgPart::Text(format!(" — {why}; insert `align 2` before it")),
+            MsgPart::Text(format!(
+                " — {why}; insert `align 2` before it (or, if the pad lands \
+                 wrong, pin the section base with `vma:` / align the map region)"
+            )),
         ],
         fatal: false,
         level,
         span,
     });
+}
+
+/// Once-per-compile check that every `@allow` argument is the STRING form
+/// (Item-4 review M2): lint ids carry hyphens (`layout.odd-item`), so the
+/// unquoted spelling parses as arithmetic (`layout.odd - item`) and silently
+/// matches nothing — the most natural typo must be loud, not inert.
+fn validate_allow_attrs(file: &ast::File, diags: &mut Vec<Diagnostic>) {
+    for a in file.attrs.iter().filter(|a| a.name == "allow") {
+        for arg in &a.args {
+            if !matches!(arg, ast::Expr::Str(..)) {
+                diags.push(Diagnostic {
+                    level: Level::Warning,
+                    message: "[attr.allow-form] `@allow` takes string lint ids \
+                              (e.g. `@allow(\"layout.odd-item\")`) — this argument is ignored"
+                        .to_string(),
+                    primary: a.span,
+                });
+            }
+        }
+    }
 }
 
 /// True when the module opts out of a named lint via `@allow("<id>")` —
@@ -977,13 +1007,17 @@ fn lower_dispatch_item(
     diags.append(&mut stream_diags);
     builder.define_label(&decl.name);
     // D2.29 amendment: a dispatch table's rows are word/long cells by
-    // construction — an odd base warns [layout.odd-item].
+    // construction — an odd base warns [layout.odd-item]. With INLINE bodies
+    // the table's parity is also the executed code's parity (bodies follow a
+    // 2n-byte table), so the check promotes to the Code/error tier.
+    let has_bodies =
+        decl.members.iter().any(|m| matches!(m.target, ast::DispatchTarget::Body(_)));
     record_odd_item_assert(
         file,
         builder,
         placement.cpu,
         as_compat,
-        OddItemKind::WordData,
+        if has_bodies { OddItemKind::Code } else { OddItemKind::WordData },
         &decl.name,
         decl.span,
     );

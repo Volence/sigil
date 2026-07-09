@@ -298,6 +298,29 @@ fn rest_with_nothing_to_fill_is_harmless() {
     assert_eq!(buf.expect("buf").size, 2);
 }
 
+
+#[test]
+fn rest_on_a_bitfield_literal_warns() {
+    // Bitfields keep their long-standing omitted-fields-are-0 semantics
+    // (checkpoint question recorded); a `..` there is a no-op and says so.
+    let src = "module m\nbitfield B: u8 { x: 4, y: 4 }\ndata D: u8 = B{ x: 1, .. }\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("no effect") && d.message.contains("bitfield")),
+        "expected the bitfield no-effect warning: {diags:?}"
+    );
+}
+
+#[test]
+fn rest_on_an_undeclared_type_warns() {
+    let src = "module m\ndata D: u8 = Foo{ a: 1, .. }\n";
+    let (_buf, diags) = data(src, "D");
+    assert!(
+        diags.iter().any(|d| d.message.contains("no effect") && d.message.contains("Foo")),
+        "expected the undeclared-type no-effect warning: {diags:?}"
+    );
+}
+
 #[test]
 fn rest_not_last_is_a_parse_error() {
     let (_, perrs) = sigil_frontend_emp::parse_str(

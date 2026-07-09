@@ -28,10 +28,35 @@ impl<'a> Evaluator<'a> {
     ) -> Value {
         let ty_name = ty.segments.last().cloned().unwrap_or_default();
         if self.bitfields.contains_key(ty_name.as_str()) {
+            // `..` has no meaning on a bitfield literal — omitted bitfield
+            // fields are ALWAYS 0 (their long-standing semantics; whether
+            // they should adopt the explicit-elision rule is a recorded
+            // checkpoint question). Diagnose rather than silently swallow.
+            if rest {
+                self.warn(
+                    span,
+                    format!(
+                        "`..` has no effect on the bitfield literal `{ty_name}` — omitted \
+                         bitfield fields are always 0"
+                    ),
+                );
+            }
             return self.eval_bitfield_lit(&ty_name, fields, span, env);
         }
         if self.structs.contains_key(ty_name.as_str()) {
             return self.eval_checked_struct_lit(&ty_name, fields, rest, span, env);
+        }
+        // Undeclared type: the unchecked value-level path has no field list
+        // and therefore no defaults `..` could fill — say so instead of
+        // silently dropping the marker.
+        if rest {
+            self.warn(
+                span,
+                format!(
+                    "`..` has no effect here — `{ty_name}` is not a declared struct, so \
+                     there are no field defaults to fill"
+                ),
+            );
         }
         // Undeclared type name → value-level only (Plan 2). Poison field values
         // are preserved as-is (propagate, no new diagnostic). A field initializer
@@ -48,18 +73,19 @@ impl<'a> Evaluator<'a> {
     ///
     /// - Each PROVIDED field must be a declared field (else `[struct.unknown-field]`)
     ///   and must not be given twice (else a duplicate diagnostic).
-    /// - Each DECLARED field NOT provided uses its `= default` if it has one; a
-    ///   field with NO default is `[struct.missing-field]` — there is NO silent
-    ///   zero-fill (the only "zero" is a field that literally declares `= 0`,
-    ///   which the default path already covers).
+    /// - Each DECLARED field NOT provided uses its `= default` ONLY under the
+    ///   literal's `..` rest marker (S2-D13(h): elision is a visible act);
+    ///   otherwise — no default, or defaulted-but-no-`..` — it is
+    ///   `[struct.missing-field]`. There is NO silent fill of any kind (the
+    ///   only "zero" is a field that literally declares `= 0`, filled via `..`).
     /// - The struct's layout is computed ([`layout_of_struct`](Self::layout_of_struct))
     ///   so a bad `(size:)`/`@offset` still surfaces at the literal site.
     ///
     /// Field VALUE range-checking is NOT done here — that happens later at
     /// emission ([`lower_to_data`](Self::lower_to_data)). Returns a
-    /// [`Value::Struct`] whose fields are in DECLARATION order (defaults filled,
-    /// a missing field filled with [`Poison`](Value::Poison) so downstream
-    /// lowering stays silent) so it lines up with the byte layout.
+    /// [`Value::Struct`] whose fields are in DECLARATION order (defaults filled
+    /// under `..`, a missing field filled with [`Poison`](Value::Poison) so
+    /// downstream lowering stays silent) so it lines up with the byte layout.
     fn eval_checked_struct_lit(
         &mut self,
         ty_name: &str,

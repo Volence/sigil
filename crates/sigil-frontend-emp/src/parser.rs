@@ -2056,6 +2056,18 @@ impl Parser {
                                 // an optional trailing comma, then `}`.
                                 if self.eat(&Tok::DotDot) {
                                     rest = true;
+                                    // Rust muscle memory writes `..base`
+                                    // (functional update) — name that
+                                    // spelling specifically (review m4).
+                                    if matches!(self.peek(), Tok::Ident(_)) {
+                                        let sp = self.span();
+                                        self.diag_at(
+                                            sp,
+                                            "functional update `..expr` is not supported — \
+                                             `..` takes no operand; it fills omitted DEFAULTED \
+                                             fields from their declared defaults",
+                                        );
+                                    }
                                     self.skip_newlines();
                                     if self.eat(&Tok::Comma) {
                                         self.skip_newlines();
