@@ -51,15 +51,11 @@ fn rung_count(frag: &Fragment) -> usize {
 /// Current byte length of a fragment at the given RUNG index.
 ///
 /// `Org` returns 0: it is a cursor *reposition*, not a run of bytes, so it has
-/// no length in the monotonic-prefix-sum sense `shift_breakpoints` relies on.
-/// This is only sound because `resolve_layout` refuses (see the guard below)
-/// any section that mixes `Org` with a real-growth width-variable fragment —
-/// and the guard refuses `JmpJsrSym`, `RelaxAbsSym`, AND `RelaxLadder` (the
-/// `has_relaxable` predicate covers all three). So in any section that also
-/// contains an `Org`, there are zero width-variable fragments, every rung in
-/// `rungs[..]` stays `0`, `frag_len(frag, 0)` is independent of the rung for
-/// every fragment (Org included), and `shift_offset` reduces to the identity
-/// function regardless of what value `Org` contributes here.
+/// no length. Its repositioning is handled by the callers that walk fragments
+/// (`shift_breakpoints`/`frag_start_vma`/`run_overrun_diag` all treat `Org` as
+/// a run barrier that seeks their cursor to `target`, NOT as a length-0 chunk),
+/// so the value here is never summed as content — it exists only so the `match`
+/// is total.
 fn frag_len(frag: &Fragment, rung: usize) -> u32 {
     match frag {
         Fragment::Data(d) => d.bytes.len() as u32,
@@ -293,30 +289,112 @@ fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> 
     None
 }
 
+/// Post-fixpoint run-overrun check (replaces the M1.C T6b categorical
+/// `Org`+relaxable refusal). An `Org` is a position BARRIER: the run of
+/// fragments before it must fit within the barrier's org target. Once the
+/// relaxation fixpoint has converged (rungs final), replay the section's
+/// fragments with a write cursor — every `Org` opens a new run anchored at its
+/// `target`, and the run BEFORE it must not have advanced the cursor PAST that
+/// target. If it did (a relaxable grew the run's content across the barrier),
+/// return a loud error naming the section, the org target, the run's actual
+/// extent, and the overrun in bytes — the precise replacement for the old
+/// blanket refusal. AS/asl reject the same source (an `org` seeking backward
+/// into content that has grown to overrun it) rather than silently overlap;
+/// this matches that spirit.
+///
+/// Only a FORWARD org can be overrun by preceding growth. "Forward" is judged
+/// at the BASELINE (rung-0) layout: an org whose target sits at-or-ahead of the
+/// run's baseline extent is a forward barrier the run must fit inside, so if
+/// growth pushes the current extent past it that is an overrun. An org whose
+/// target sits BEHIND the baseline extent is the backward overwrite idiom
+/// (`org Hdr / dc.b n / org End`) — it deliberately seeks into already-written
+/// content, never an overrun (its overwrite semantics are `image_bytes`'
+/// concern, unchanged). Tracking both cursors keeps the two apart.
+fn run_overrun_diag(sec: &Section, rungs: &[usize]) -> Option<Diagnostic> {
+    let mut cursor: u32 = 0;
+    let mut baseline: u32 = 0;
+    for (fi, frag) in sec.fragments.iter().enumerate() {
+        match frag {
+            Fragment::Org { target, span, .. } => {
+                // Forward barrier (target at/ahead of baseline extent) that the
+                // grown run overran: current content extends past the org target.
+                if baseline <= *target && cursor > *target {
+                    return Some(Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "section `{}`: content before `org {:#X}` grew to {:#X} — it overruns the org target by {} bytes (a relaxable instruction widened past the org barrier)",
+                            sec.name,
+                            target,
+                            cursor,
+                            cursor - target
+                        ),
+                        primary: *span,
+                    });
+                }
+                cursor = *target;
+                baseline = *target;
+            }
+            other => {
+                cursor += frag_len(other, rungs[fi]);
+                baseline += frag_len(other, 0);
+            }
+        }
+    }
+    None
+}
+
 /// Breakpoints mapping an all-rung-0 (baseline) offset to the growth delta at
 /// that fragment boundary under the current rungs. `rungs[fi]` is the chosen
 /// rung of fragment `fi` (meaningful for the relaxables; ignored otherwise —
 /// fixed fragments have identical length at every rung).
+///
+/// # Org-awareness: runs and barriers
+///
+/// An `Org` fragment is a POSITION BARRIER, not a run of bytes. Content after
+/// an `Org` is anchored to the org target — its authored (rung-0) offset is
+/// already measured from that target (the front-end resolves org targets and
+/// post-org label offsets against the same VMA cursor the org repositioned),
+/// and its current offset must be too. So at each `Org` BOTH cursors seek to
+/// `target`, which RESETS the running delta to `target − target = 0` at the
+/// barrier: growth of a relaxable WITHIN a run shifts only the fragments after
+/// it in that SAME run (up to the next `Org`), never content past the barrier.
+///
+/// This is why a section can freely mix an `Org` back-patch with a relaxable:
+/// the delta is a per-run step function, reset to the org-anchored baseline at
+/// every barrier, so a growing relaxable before an `Org` never mis-shifts the
+/// org-pinned content after it. `shift_offset` reads the delta for the run
+/// containing an offset (last matching breakpoint wins — which, for a BACKWARD
+/// org that revisits an authored-offset range, mirrors `image_bytes`'
+/// later-write-wins overwrite semantics).
 fn shift_breakpoints(sec: &Section, rungs: &[usize]) -> Vec<(u32, i64)> {
     let mut cur: u32 = 0;
     let mut orig: u32 = 0;
     let mut bps = vec![(0u32, 0i64)];
     for (fi, frag) in sec.fragments.iter().enumerate() {
-        cur += frag_len(frag, rungs[fi]);
-        orig += frag_len(frag, 0); // baseline: every width-variable fragment at rung 0
+        if let Fragment::Org { target, .. } = frag {
+            // Barrier: both cursors seek to the org target. The current and
+            // baseline anchors coincide there, so the delta resets to 0 — the
+            // run after this org is pinned to `target` in both layouts.
+            cur = *target;
+            orig = *target;
+        } else {
+            cur += frag_len(frag, rungs[fi]);
+            orig += frag_len(frag, 0); // baseline: every width-variable fragment at rung 0
+        }
         bps.push((orig, cur as i64 - orig as i64));
     }
     bps
 }
 
-/// Map an all-rung-0 label offset to its current-layout offset.
+/// Map an all-rung-0 label offset to its current-layout offset. The last
+/// breakpoint at-or-before `orig_off` supplies the run's delta (for a backward
+/// `Org` that revisits an authored range, the later run wins — mirroring
+/// `image_bytes`' overwrite order).
 fn shift_offset(bps: &[(u32, i64)], orig_off: u32) -> u32 {
     let mut d = 0i64;
     for &(bo, bd) in bps {
         if bo <= orig_off {
             d = bd;
-        } else {
-            break;
         }
     }
     (orig_off as i64 + d) as u32
@@ -328,12 +406,21 @@ fn shift_offset(bps: &[(u32, i64)], orig_off: u32) -> u32 {
 /// `shift_breakpoints`/`shift_offset` are built on), shifted into the current
 /// layout, plus the section origin. This is the reach-test site VMA a ladder
 /// candidate measures its displacement from.
+///
+/// Org-aware like `shift_breakpoints`: a preceding `Org` SEEKS the baseline
+/// cursor to its target (a barrier, not a run of bytes), so `fi`'s baseline
+/// offset is measured from the last org anchor at or before it — the same
+/// per-run anchoring `shift_offset` then maps into the current layout.
 // TODO(perf): O(fi) prefix walk per ladder per pass; once ladders get dense, thread a
 // running accumulator through the selection loop + convergence sweep instead.
 fn frag_start_vma(sec: &Section, bps: &[(u32, i64)], origin: u32, fi: usize) -> u32 {
     let mut baseline_off: u32 = 0;
     for prev in &sec.fragments[..fi] {
-        baseline_off += frag_len(prev, 0);
+        if let Fragment::Org { target, .. } = prev {
+            baseline_off = *target;
+        } else {
+            baseline_off += frag_len(prev, 0);
+        }
     }
     origin + shift_offset(bps, baseline_off)
 }
@@ -492,15 +579,23 @@ pub fn resolve_layout(
         return Err(construction_errs);
     }
 
-    // Guard: a section mixing `Org` (the back-patch/absolute-org marker) with a
-    // relaxable fragment is architecturally unverified — the
-    // `shift_breakpoints`/`shift_offset` label-shift math assumes every
-    // fragment's length sums to a monotonic prefix (see `frag_len`'s doc
-    // comment), which `Org`'s cursor reposition breaks the instant a REAL width
-    // grows in the same section. Rather than silently compute a wrong offset,
-    // fail loudly here; today's real Aeon sections either mix pure back-patched
-    // `dc.b`/`dc.w`/`dc.l` data with no relaxable (parallax sections, safe) or
-    // relaxable-bearing code with no `Org` (engine code, safe) — see M1.C T6b.
+    // Guard: `Org` is a POSITION BARRIER, and relaxation is now Org-aware — a
+    // relaxable BEFORE an `Org` shifts only the fragments after it in its OWN
+    // run (up to the barrier), never the org-pinned content past it (see
+    // `shift_breakpoints`'s run/barrier doc). So a section may freely mix an
+    // `Org` back-patch with `JmpJsrSym`/`RelaxAbsSym`/`RelaxLadder`; the M1.C
+    // T6b categorical refusal is REPLACED by a precise post-fixpoint overrun
+    // check (`run_overrun_diag`), which fires only when a run actually grows
+    // past its barrier's org target (a real, named overlap).
+    //
+    // ONE hazard survives: an `Org` mixed with a `Reserve` (`ds`). `IrBuilder`
+    // counts `Reserve` toward the cursor/extent the front-end resolves an `org`
+    // target against (VMA space), but `Section::image_bytes` and `link()`'s
+    // fixup walk treat `Reserve` as zero image bytes and apply `Org.target` as
+    // an IMAGE-byte offset — so a `Reserve` before an `org` back-patch diverges
+    // the resolved VMA offset from the physical image offset and the patch lands
+    // on the wrong byte. Latent today (parallax sections are pure `dc.b`, no
+    // `ds`), but fail loudly rather than mislink silently.
     for sec in sections {
         let has_org = sec.fragments.iter().any(|f| matches!(f, Fragment::Org { .. }));
         if !has_org {
@@ -514,26 +609,6 @@ pub fn resolve_layout(
             .find(|f| matches!(f, Fragment::Org { .. }))
             .map(frag_span)
             .expect("has_org implies an Org fragment");
-        // A length-variable fragment (`JmpJsrSym`, `RelaxAbsSym`, OR
-        // `RelaxLadder`) alongside an `Org` is the same hazard: the
-        // `shift_breakpoints` prefix-sum math is not Org-aware once a real width
-        // grows in the section.
-        let has_relaxable = sec.fragments.iter().any(|f| {
-            matches!(
-                f,
-                Fragment::JmpJsrSym { .. } | Fragment::RelaxAbsSym { .. } | Fragment::RelaxLadder { .. }
-            )
-        });
-        if has_relaxable {
-            return Err(vec![Diagnostic {
-                level: Level::Error,
-                message: format!(
-                    "section `{}` mixes an `org` back-patch with a relaxable instruction (jmp/jsr, a width-deferred operand, or a relaxation ladder) — unsupported (resolve_layout's width-shift math is not Org-aware)",
-                    sec.name
-                ),
-                primary: org_span,
-            }]);
-        }
         // A `Reserve` in the same section is the analogous hazard: `IrBuilder`
         // counts `Reserve` toward the cursor/extent the front-end resolves an
         // `org` target against (VMA space), but `Section::image_bytes` and
@@ -753,6 +828,18 @@ pub fn resolve_layout(
             }
             if !errs.is_empty() {
                 return Err(errs);
+            }
+
+            // (c1b) Run-overrun check: `Org` is a position barrier, and a
+            // relaxable before an `Org` may only grow WITHIN its run (up to the
+            // barrier). If a run's content grew past its org target, that is a
+            // loud error naming the section + overrun — the precise replacement
+            // for the M1.C T6b categorical `Org`+relaxable refusal. Runs FIRST
+            // (a run overrun makes the section's byte positions meaningless).
+            for (si, sec) in placed.iter().enumerate() {
+                if let Some(diag) = run_overrun_diag(sec, &rungs[si]) {
+                    return Err(vec![diag]);
+                }
             }
 
             // (c2) Overlap check (R7p.4): the joint fixpoint has converged, so
@@ -1661,25 +1748,26 @@ mod tests {
     }
 
     #[test]
-    fn resolve_layout_refuses_org_and_jmpjsr_in_the_same_section() {
-        // The real Aeon collision this guard exists for: main.asm's object-bank
-        // section (opened by `org $10000`) contains BOTH bare `jmp`/`jsr` calls
-        // (player/object code) AND the parallax `parallax_section_end` back-patch
-        // (`org pscStart / dc.b n / org pscEndPos`) later in the SAME still-open
-        // section. `shift_breakpoints`'s label-shift math assumes a monotonic
-        // fragment-length prefix sum, which a real-growth `JmpJsrSym` alongside
-        // an `Org` reposition would violate — so `resolve_layout` must fail
-        // loudly here instead of silently computing a wrong offset.
+    fn resolve_layout_allows_org_and_jmpjsr_in_the_same_section() {
+        // The real Aeon shape: the object-bank section (opened by `org $10000`)
+        // contains BOTH a bare `jsr` (player/object code) AND the parallax
+        // `parallax_section_end` back-patch (`org` / dc.b / `org`) later in the
+        // SAME still-open section. This was categorically refused by the M1.C
+        // T6b guard; now `Org` is a barrier and relaxation is run-aware, so a
+        // NON-overrunning mix resolves. `Sub` is low → the jsr stays abs.w, no
+        // growth, and the org target (0x10) is well ahead of the tiny run.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Sub", SymbolValue::Int(0x1200));
         let sec = Section {
             name: "objbank".into(),
             cpu: Cpu::M68000,
             vma_base: Some(0x10000),
             lma: 0x10000,
-            labels: vec![],
+            labels: vec![Label { name: "Post".into(), offset: 0x11 }],
             fragments: vec![
                 Fragment::JmpJsrSym { is_jsr: true, target: Expr::Sym("Sub".into()), span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![0], fixups: vec![], span: sp() }),
-                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Org { target: 0x10, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![1], fixups: vec![], span: sp() }),
             ],
             placement: sigil_ir::SectionPlacement::Pinned,
@@ -1688,27 +1776,29 @@ mod tests {
             bank: None,
             equ_syms: Vec::new(),
         };
-        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
-        assert!(
-            err.iter().any(|d| d.message.contains("org") && d.message.contains("jmp/jsr")),
-            "got: {:?}",
-            err
-        );
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        // The jsr stayed abs.w (4 bytes), Post is pinned to the org target 0x10.
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "Post").unwrap().offset, 0x11);
     }
 
     #[test]
-    fn resolve_layout_refuses_org_and_ladder_in_the_same_section() {
-        // The generalized guard must ALSO refuse a RelaxLadder alongside an Org —
-        // same prefix-sum hazard as JmpJsrSym. The message now names the ladder.
+    fn resolve_layout_allows_org_and_ladder_in_the_same_section() {
+        // A RelaxLadder alongside an Org is likewise no longer refused — a
+        // near, non-overrunning `jbra` before a forward org resolves. `L` is a
+        // label in the SAME run (offset 1), so the ladder picks bra.s (2 bytes)
+        // and the run never reaches the org barrier at 0x10.
         let sec = Section {
             name: "code".into(),
             cpu: Cpu::M68000,
             vma_base: Some(0x1000),
             lma: 0x1000,
-            labels: vec![Label { name: "L".into(), offset: 4 }],
+            labels: vec![
+                Label { name: "L".into(), offset: 1 },
+                Label { name: "After".into(), offset: 0x11 },
+            ],
             fragments: vec![
                 jbra("L"),
-                Fragment::Org { target: 8, fill: 0x00, span: sp() },
+                Fragment::Org { target: 0x10, fill: 0x00, span: sp() },
                 Fragment::Data(DataFragment { bytes: vec![1], fixups: vec![], span: sp() }),
             ],
             placement: sigil_ir::SectionPlacement::Pinned,
@@ -1717,12 +1807,8 @@ mod tests {
             bank: None,
             equ_syms: Vec::new(),
         };
-        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
-        assert!(
-            err.iter().any(|d| d.message.contains("org") && d.message.contains("ladder")),
-            "got: {:?}",
-            err
-        );
+        let out = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap();
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "After").unwrap().offset, 0x11);
     }
 
     #[test]
@@ -2763,5 +2849,163 @@ mod tests {
                 && d.message.to_lowercase().contains("redefin")),
             "expected a dup-symbol diagnostic for `Dup`, got: {err:?}"
         );
+    }
+
+    // ================= Org-aware relaxation (runs / barriers) =================
+
+    #[test]
+    fn org_forward_relaxable_grows_within_run_and_post_org_content_is_pinned() {
+        // Section: [ jmp Hi (grows abs.w→abs.l), nop(2), <Pre @6>, org 0x20,
+        //            data(2) @0x20, <Post @0x22> ]. `Hi` is high → the jmp grows
+        //   +2. RUN 1 (before the org) shifts: `Pre` 6 → 8. RUN 2 (after the org)
+        //   is ANCHORED to the org target 0x20 — the +2 growth before the barrier
+        //   must NOT move it, so `Post` STAYS at 0x22. Within-budget growth
+        //   (run-1 extent 8 ≤ org target 0x20), so it resolves, both sides right.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "objbank".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0x1000),
+            lma: 0x1000,
+            labels: vec![
+                Label { name: "Pre".into(), offset: 6 },
+                Label { name: "Post".into(), offset: 0x22 },
+            ],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x4E, 0x71], fixups: vec![], span: sp() }),
+                Fragment::Org { target: 0x20, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xAA, 0xBB], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        // Pre shifts with run-1 growth; Post is pinned to the org target.
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "Pre").unwrap().offset, 8);
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "Post").unwrap().offset, 0x22);
+        // The jmp lowered to abs.l (6 bytes), so link places 6 + 2 bytes then the
+        // org gap-fills to 0x20 and the trailing 2 bytes land at 0x20..0x22.
+        let linked = crate::link(&out, &stubs).unwrap();
+        let bytes = &linked.section("objbank").unwrap().bytes;
+        assert_eq!(&bytes[0..8], &[0x4E, 0xF9, 0x00, 0x12, 0x34, 0x56, 0x4E, 0x71]);
+        assert_eq!(&bytes[0x20..0x22], &[0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn org_forward_run_growth_past_barrier_errors_loudly() {
+        // The org barrier is only 4 bytes ahead, but the jmp grows to 6 bytes:
+        // run-1 content (6) OVERRUNS the org target (4). That is a loud error
+        // naming the section and the overrun — never a silent overlap.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "objbank".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0x1000),
+            lma: 0x1000,
+            labels: vec![],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xAA], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let err = resolve_layout(&[sec], &stubs, true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("objbank")
+                && d.message.contains("org")
+                && (d.message.contains("overrun") || d.message.contains("past"))),
+            "expected a loud run-overrun error naming the section + org, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn org_backward_overwrite_with_earlier_relaxable_is_byte_identical() {
+        // Backward-org (overwrite) case with a relaxable earlier in the section,
+        // NON-growing (`Lo` is low → jmp stays abs.w = 4 bytes). The image bytes
+        // must be byte-identical to the pre-change `image_bytes` overwrite
+        // semantics: [jmp Lo (4)] then data 0xAA,0xBB (offset 4..6), then
+        // `org 4` seeks back and data 0xCC overwrites offset 4. Final image:
+        // 4EF8 xxxx  CC  BB.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Lo", SymbolValue::Int(0x1000));
+        let sec = Section {
+            name: "back".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![Label { name: "Tail".into(), offset: 5 }],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Lo".into()), span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xAA, 0xBB], fixups: vec![], span: sp() }),
+                Fragment::Org { target: 4, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0xCC], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        // No growth (abs.w), so labels keep their authored offsets.
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "Tail").unwrap().offset, 5);
+        let linked = crate::link(&out, &stubs).unwrap();
+        assert_eq!(
+            linked.section("back").unwrap().bytes,
+            vec![0x4E, 0xF8, 0x10, 0x00, 0xCC, 0xBB]
+        );
+    }
+
+    #[test]
+    fn multiple_orgs_three_runs_shift_run_locally() {
+        // Three runs separated by two forward orgs, with a growing relaxable in
+        // run 1 AND run 3. Each run's growth stays LOCAL to that run:
+        //   run 1: [jmp Hi @0, <A @4>]         org→ 0x10
+        //   run 2: [data(2) @0x10, <B @0x12>]  org→ 0x20
+        //   run 3: [jmp Hi @0x20, <C @0x24>]
+        // Both jmps grow +2. A (run 1) shifts 4 → 6. B (run 2) is pinned to org
+        // 0x10, so 0x12 stays 0x12 — run-1 growth does NOT reach it. C (run 3)
+        // shifts within run 3 from the org-0x20 anchor: 0x24 → 0x26.
+        let mut stubs = SymbolTable::new();
+        stubs.define("Hi", SymbolValue::Int(0x12_3456));
+        let sec = Section {
+            name: "runs".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0x2000),
+            lma: 0x2000,
+            labels: vec![
+                Label { name: "A".into(), offset: 4 },
+                Label { name: "B".into(), offset: 0x12 },
+                Label { name: "C".into(), offset: 0x24 },
+            ],
+            fragments: vec![
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Org { target: 0x10, fill: 0x00, span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x01, 0x02], fixups: vec![], span: sp() }),
+                Fragment::Org { target: 0x20, fill: 0x00, span: sp() },
+                Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("Hi".into()), span: sp() },
+                Fragment::Data(DataFragment { bytes: vec![0x03, 0x04], fixups: vec![], span: sp() }),
+            ],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let out = resolve_layout(&[sec], &stubs, true).unwrap();
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "A").unwrap().offset, 6);
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "B").unwrap().offset, 0x12);
+        assert_eq!(out[0].labels.iter().find(|l| l.name == "C").unwrap().offset, 0x26);
     }
 }
