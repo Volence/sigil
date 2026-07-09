@@ -462,4 +462,33 @@ ensure(bankid("Sfx_33") == bankid("MovingTrucks_Bank_Start"),
 
 ## Execution notes
 
-(fill as tasks land)
+### Task 1 (capability probes) — DONE (commits `c168a61` + `747f515`)
+
+- **P1 — INSTANT-GREEN, the tranche's go/no-go cleared:** T0's dw deferral generalizes to
+  the Z80 `phase 08000h` vma≠lma context unchanged. New `phase_dw_winptr_defer.rs` (4
+  tests): compound-tree `Value16Le` fixup + 2-byte hole pinned; REAL `resolve_layout`+`link`
+  resolution pinned for both the synthetic mask (`$7F00` → `$BA00` → LE `00 BA`) and the
+  exact production shape (`(Sfx_33 & 32767) | 32768` @ `$63AE8` → `$BAE8` → LE `E8 BA` =
+  SfxBlobWinTab[0]); negative control pins the loud unresolved-fixup link error. All four
+  falsified (corrupt-expected → real computed value in the failure → revert). NOTE for
+  Task 5: the loud error for an unresolvable COMPOUND fixup names the fixup SITE
+  ("unresolved target expression for fixup in section … at offset …"), not the symbol —
+  same class as T2 carry-forward #5.
+- **P2 — instant-green:** zero-byte `embed()` emits nothing, label defined, next item at
+  same offset (`tests/vectors/empty.bin`, 0 bytes, tracked). Falsified via corrupted
+  next-offset expectation.
+- **P3 — REAL RED, gap closed minimally:** int elements in `[*u8; N]` arrays were rejected
+  (`"pointer field needs a symbol reference, got int"`). Fix: new Int arm in `lower_ptr`
+  (`eval/emit.rs`) folds to a width-4 BE absolute `Cell::Scalar`, no fixup. **Spec review
+  caught silent truncation** (`$100000000` emitted `00 00 00 00` = indistinguishable from a
+  null, zero diagnostics — totality violation); fixed in `747f515`: `emit_range_check(n, 0,
+  u32::MAX, …)` mirroring `lower_prim`'s convention (best-effort cell emission + loud
+  `[emit.out-of-range]`, build still fails on Level::Error). Pinned: accept `$1234` +
+  `$FFFFFFFF` boundary (bytes `FF FF FF FF`), reject `2^32` and `-1` (messages name the
+  value).
+- Workspace 1476/0, clippy clean. Two-stage review done: spec ✅ (after the truncation
+  fix), quality ✅ approve. **Deferred cosmetic minors for the whole-branch polish pass:**
+  (1) `p2_`/`p3_` test-name prefixes in lower_data.rs now collide with T2's unrelated
+  p2/p3 probes — consider `t3_`-prefixing; (2) `lower_ptr`'s function-level doc doesn't
+  mention the new Int-arm behavior; (3) the Int arm's guard + re-destructure is redundant
+  (`matches!` then `if let`).
