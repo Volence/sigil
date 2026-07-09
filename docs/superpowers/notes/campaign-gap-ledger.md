@@ -30,6 +30,28 @@ below where they differ; ~4 steps per tranche/batch):**
 4. **Implement** — build ratified items in Sigil, apply back to the current tranche's files
    if relevant, final gate pass. Then the next tranche.
 
+**THE STEP-2 CHECKLIST (standing, Volence-ratified 2026-07-09 — apply to EVERY file in every
+tranche's modernize pass; the step-3 retrospect reviews the checklist itself for gaps):**
+- **Contracts:** `clobbers(...)` on every proc (source the .asm header comments AND the actual
+  write set; outputs count as clobbers until an outs-annotation exists); `falls_into` wherever
+  a proc falls through; `preserves(...)` once shipped (S2-D6b syntactic slice) on every
+  movem-save/restore proc.
+- **Types:** every `data` item carries its true type (the length IS the size check); prelude
+  newtypes where a value is domain-typed (Angle, VramTile, …) — erasing, byte-neutral;
+  `bitfield`/`enum` types where a flag/id byte buys real checking; `sizeof`/`offsetof` over
+  magic numbers.
+- **Constants:** no bare magic number where a named constant exists (`use engine.constants`);
+  every mirrored cross-seam value gets its `ensure(extern("X") == X)` drift guard.
+- **Control flow:** `jbra`/`jbsr` for label transfers; bare `jmp`/`jsr` only for computed
+  targets; conditionals keep explicit sizes (no jbcc by decision).
+- **Guards & tests:** every hand-maintained invariant living in a comment becomes an
+  `ensure`/`ensure_fatal` (item or statement position); cross-seam facts via `extern()`;
+  `comptime test` beside every comptime fn.
+- **Compat:** `@as_compat` removal evaluated per file with gate evidence (remove when inert).
+- **Style:** strict bracket nesting; ruled banners; comments describe function; binary
+  `%`-literals for bit masks where clearer (taste, per file); header In/Out/Clobbers comments
+  must not contradict the attributes (attribute is authoritative, comment explains meaning).
+
 **Step 2 is the campaign's quality apex (Volence, 2026-07-09): nothing holds it back.** The
 other steps exist to feed it — if the best version of a file wants a missing construct,
 shared module, or assert form, BUILD it (the equ-fix precedent) rather than settle. The
@@ -327,3 +349,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   simple pattern matching, the campaign keeps producing exactly this shape, and Volence asked
   for it by name. Candidate for tranche 3 step 4 (a recorded decision per A-Spec2.3 — it adds
   a proc-attribute surface). — OPEN (recommend IN, tranche 3).
+- [step-2 checklist audit of hblank/controllers/math, 2026-07-09] Beyond the clobbers miss:
+  (a) **hblank's dispatch proc clobbers NOTHING** (movem-preserved) — its correct annotation
+  is `preserves`, which waits on the S2-D6(b) slice; annotate when it ships. (b) **math's
+  `GetSineCosine` takes an ANGLE in d0** — the Angle prelude newtype ([[emp-sonic-newtype-
+  candidates]]) wants to type that param, but whether proc params support DATA registers
+  (`d0: Angle`) vs only address registers (`a0: *Sst`) needs a check; if unsupported, that's
+  a v1.1 candidate (typed data-register params). (c) controllers' `#$3F`/`#$30` masks are
+  binary-literal candidates (taste; step-2 judgment). (d) idea jotted: comptime CONTENT
+  asserts on embedded blobs (e.g. sine table's sin(0)=0 / +$40 overlap invariants checked
+  against the embed bytes at build time) — needs comptime byte-indexing of Data values;
+  check support, else v1.1 candidate. — OPEN (a: tranche 3 w/ preserves; b/d: check-then-
+  ledger; c: taste).
