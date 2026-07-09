@@ -862,7 +862,7 @@ fn p4_ensure_len_against_pinned_const_fires_loud_message_when_unequal() {
 // ---- P2: `embed(...)` of a ZERO-BYTE file -------------------------------
 
 #[test]
-fn p2_zero_byte_embed_is_labeled_zero_length_next_item_same_offset() {
+fn t3_p2_zero_byte_embed_is_labeled_zero_length_next_item_same_offset() {
     // `data X = embed("empty.bin")` where empty.bin is a 0-byte file: X's label
     // is defined, X emits ZERO bytes, and the FOLLOWING item lands at the SAME
     // offset X occupies (the embed-of-empty-FILE path, distinct from T2 P1's
@@ -889,7 +889,7 @@ fn p2_zero_byte_embed_is_labeled_zero_length_next_item_same_offset() {
 // ---- P3: NULL (`0`) entries in a `[*u8; N]` pointer array ----------------
 
 #[test]
-fn p3_null_entries_in_pointer_array_lower_as_zero_cells_no_fixup() {
+fn t3_p3_null_entries_in_pointer_array_lower_as_zero_cells_no_fixup() {
     // `data T: [*u8; 5] = ["A", 0, 0, "B", 0]` — the sparse SfxTable shape. The
     // string elements lower as Abs32Be SymRef fixups (at offsets 0 and 12); the
     // `0` elements lower as PLAIN zero cells with NO fixup. Linked bytes:
@@ -924,7 +924,7 @@ fn p3_null_entries_in_pointer_array_lower_as_zero_cells_no_fixup() {
 }
 
 #[test]
-fn p3_nonzero_int_entry_in_pointer_array_folds_to_absolute_cell() {
+fn t3_p3_nonzero_int_entry_in_pointer_array_folds_to_absolute_cell() {
     // A non-zero int element in a `*u8` array folds to an absolute (Abs32Be
     // width-4) VALUE cell — pin whatever behavior the `0`-null path implements
     // so a stray nonzero int can't silently do something different. `$1234`
@@ -950,7 +950,7 @@ fn p3_nonzero_int_entry_in_pointer_array_folds_to_absolute_cell() {
 }
 
 #[test]
-fn p3_oversized_int_entry_in_pointer_array_errors_out_of_range() {
+fn t3_p3_oversized_int_entry_in_pointer_array_errors_out_of_range() {
     // The folded int cell is a 4-byte ABSOLUTE address (`Abs32Be`), so an int
     // that does not fit an unsigned 32-bit address (`$100000000` = 2^32) MUST
     // NOT silently truncate to its low 4 bytes (`00 00 00 00`, byte-identical to
@@ -970,7 +970,7 @@ fn p3_oversized_int_entry_in_pointer_array_errors_out_of_range() {
 }
 
 #[test]
-fn p3_negative_int_entry_in_pointer_array_errors_out_of_range() {
+fn t3_p3_negative_int_entry_in_pointer_array_errors_out_of_range() {
     // A NEGATIVE int in a pointer slot is likewise out of the unsigned-32-bit
     // address range (0..=u32::MAX) — refused loud rather than wrapping to a
     // large positive address.
@@ -987,7 +987,7 @@ fn p3_negative_int_entry_in_pointer_array_errors_out_of_range() {
 }
 
 #[test]
-fn p3_u32_max_int_entry_in_pointer_array_is_accepted() {
+fn t3_p3_u32_max_int_entry_in_pointer_array_is_accepted() {
     // The BOUNDARY: `$FFFFFFFF` (u32::MAX) is a representable absolute address —
     // it stays ACCEPTED (no diagnostic) and folds big-endian into its 4-byte
     // cell, exactly like the `$1234` case above.

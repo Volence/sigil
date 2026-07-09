@@ -3202,6 +3202,13 @@ impl Asm {
     /// captured at this site, not shipped as `Sym`s the linker can't resolve.
     /// A whole expr that folds is returned as a single `Expr::Int`; a fully
     /// external leaf is returned unchanged.
+    ///
+    /// No-drift argument, stated directly: the subterms we bake here are BY
+    /// CONSTRUCTION AS-env-resolvable — local `=`/`equ`/label values that live
+    /// only in this evaluator's env and the linker's section-label table never
+    /// sees. So baking one can never shadow a linker-visible section label:
+    /// the two namespaces are disjoint, and only the still-external leaves (the
+    /// ones this fold leaves untouched) reach the linker at all.
     fn partial_fold(&self, e: &Expr) -> Expr {
         // If the WHOLE subtree folds, collapse it to a literal.
         if let Fold::Value(v) = self.fold(e) {
