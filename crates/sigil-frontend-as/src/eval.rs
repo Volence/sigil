@@ -2432,6 +2432,10 @@ impl Asm {
         {
             return self.lower_m68k_pcrel_idx(mnemonic, size, &atoms, pc_idx, span);
         }
+        if let Some(frag) = self.try_defer_long_imm(mnemonic, size, &atoms, span) {
+            self.emit_frag(Ok(frag), span);
+            return;
+        }
         let ops = match self.convert_atoms_m68k(mnemonic, size, &atoms, span) {
             Some(o) => o,
             None => return,
@@ -2444,6 +2448,83 @@ impl Asm {
         };
         let frag = self.m68k.lower_inst(&inst, span);
         self.emit_frag(frag, span);
+    }
+
+    /// R3 (sound-migration T2, Task 3): a 32-bit immediate operand
+    /// (`movea.l #expr,aN` / `move.l #expr,dN`) whose expr is unresolved
+    /// defers to the linker as a `Value32Be` fixup instead of hard-erroring —
+    /// the imm32 counterpart of `directive_dw`'s `db`/`dw` deferral (T0),
+    /// mirroring its "ANY unresolved expression (bare symbol OR compound)
+    /// defers" rule. `#imm` is exactly the width-4 case of that Value-kind
+    /// family; the address kinds (`Abs16Be`/`Abs32Be`, used by `dc.w`/`dc.l`)
+    /// are deliberately NOT reused here — those defer ONLY a bare `Expr::Sym`
+    /// and hard-error any compound (R-T0.4's asymmetry note), whereas R3
+    /// explicitly wants compounds to defer too.
+    ///
+    /// Scoped to the two destination shapes where the immediate's extension
+    /// words are PROVABLY the only ones in the instruction (so the fixup
+    /// offset — immediately after the 2-byte opcode — is correct without
+    /// relying on the general `encode_move`/`encode_movea` source-before-dest
+    /// extension-word ordering): a bare `aN` (`movea.l`) or bare `dN`
+    /// (`move.l`) destination contributes ZERO extension words of its own.
+    /// Any other destination (`(d16,An)`, `(An)+`, `(d8,An,Xn)`, absolute,
+    /// `(d16,PC)`, ...) falls through to the normal eager path unmodified —
+    /// resolved operands there are untouched, and an unresolved one still
+    /// hard-errors on the converged pass exactly as before.
+    ///
+    /// Returns `None` when this isn't a deferrable shape (resolved value, not
+    /// `Movea`/`Move`, not size `L`, or a destination outside the two above)
+    /// so the caller falls through to the existing eager path unchanged.
+    fn try_defer_long_imm(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        size: M68kSize,
+        atoms: &[OperandAtom],
+        span: Span,
+    ) -> Option<DataFragment> {
+        if size != M68kSize::L {
+            return None;
+        }
+        // A bare register destination classifies as `RegOrCond` (the Z80
+        // register/cond word list) OR falls through to `Value(Expr::Sym(_))`
+        // (68k `aN`/`dN` aren't Z80 words) — `convert_one_atom_m68k`'s
+        // `OperandAtom::Value(e @ Expr::Sym(name))` arm handles the same dual
+        // shape for register operands generally.
+        let (imm_expr, dst_reg) = match atoms {
+            [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] => (e, w.as_str()),
+            [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] => (e, w.as_str()),
+            _ => return None,
+        };
+        // opcode word: size_bits<<12 | reg_field<<9 | mode_field<<6 | src_mode<<3 | src_reg
+        // (src EA = immediate, mode 0b111 reg 0b100); reg_field/mode_field per mnemonic.
+        const SRC_IMM: u16 = (0b111 << 3) | 0b100;
+        let opcode: u16 = match mnemonic {
+            M68kMnemonic::Movea => {
+                let an = m68k_addr_reg(dst_reg)?;
+                (0b10u16 << 12) | ((an as u16) << 9) | (0b001 << 6) | SRC_IMM
+            }
+            M68kMnemonic::Move => {
+                let dn = m68k_data_reg(dst_reg)?;
+                (0b10u16 << 12) | ((dn as u16) << 9) | SRC_IMM
+            }
+            _ => return None,
+        };
+        let qualified = self.qualify_expr(imm_expr);
+        // Only unresolved (Poison) exprs defer — a resolved value takes the
+        // existing eager path (fall through to `None`), byte-identical.
+        if !matches!(self.fold(&qualified), Fold::Poison) {
+            return None;
+        }
+        let op_bytes = opcode.to_be_bytes();
+        Some(DataFragment {
+            bytes: vec![op_bytes[0], op_bytes[1], 0, 0, 0, 0],
+            fixups: vec![Fixup {
+                kind: FixupKind::Value32Be,
+                offset: 2,
+                target: qualified,
+            }],
+            span,
+        })
     }
 
     /// `bra`/`bsr`/`Bcc <target>`: Aeon pins the branch width by an explicit
