@@ -39,7 +39,8 @@
 // Note how each state's nature picks its construct: watching is a
 // park-with-work (`yield .watch`), cooling down is a pure park
 // (`wait_frames`), and this brain has NO pure sequence point left — so not
-// a single bare yield appears. Compare the v1 exhibit: three bare yields,
+// a single bare yield appears. Compare the manual-spelling exhibit
+// (pitcher_plant_script.emp): three bare yields,
 // two back-edge jbras, an entry segment, and two hand-managed timer stores.
 
 module badniks.pitcher_plant_script_next in obj_bank

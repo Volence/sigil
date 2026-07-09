@@ -5,9 +5,17 @@
 // player comes within 96px of its facing side, plays a shoot animation, spits
 // a seed on the mouth-open frame, re-arms.
 //
-// Standing acceptance exhibit ALONGSIDE the proc version — both compile
-// end-to-end through the game prelude (S2-D3) and jbra/jbsr relaxation
-// (D2.18). The equivalence (state-per-state) is argued in
+// Byte-pinned acceptance exhibit ALONGSIDE the proc version
+// (pitcher_plant_script_acceptance.rs pins its hidden resume table).
+//
+// DELIBERATELY THE MANUAL SPELLING: this file parks with the raw two-line
+// idiom (`yield` + `jbra .back`) and bare yields throughout, because its job
+// is to show what the construct DOES — each yield's store/exit/resume is
+// narrated at the site, so the desugaring is visible on the page. New brains
+// should be written in the declarative style instead (`yield .label` for a
+// park with per-frame work, `wait_frames` for a pure park — see
+// examples/previews/pitcher_plant_script_next.emp, the same badnik in that
+// style). The equivalence (state-per-state) is argued in
 // docs/superpowers/notes/2026-07-08-item9b-implementation-notes.md (T5).
 //
 // ────────────────────────────────────────────────────────────────────────────
@@ -96,29 +104,29 @@ const SEED_VEL_X: i16 = -$200           // 2 px/frame toward the player
 const SEED_VEL_Y: i16 = -$200           // 2 px/frame upward (an arc; gravity pulls it back)
 const SEED_GRAVITY: i16 = $20           // per-frame y_vel increment for the seed proc
 
-/// Animation table + animation ids — ONE declaration doing two jobs (§4.7):
-///   forward: emits the offset table `dc.w ani_idle-Ani, ani_seed-Ani, ani_shoot-Ani`
-///            (the anim engine indexes this table by anim id to find the script)
+/// Animation table, ids, AND payloads — ONE declaration doing three jobs
+/// (§4.7 inline bodies):
+///   forward: emits the `dc.w body - Ani` offset table (the anim engine
+///            indexes it by anim id to find the script), then each body in
+///            declaration order under a hidden label its table word targets;
 ///   reverse: defines the comptime ints Ani.Idle == 0, Ani.Seed == 1,
 ///            Ani.Shoot == 2 — the anim ids themselves. Insert a row and
-///            nothing downstream silently renumbers (everything refers by name).
+///            nothing downstream silently renumbers (everything refers by
+///            name).
+/// Script format: [speed, frame ids…, command] —
+///   $FF        = loop this animation from the start
+///   $FD, id    = switch to animation `id` when this one finishes
+/// The declared [u8; N] length IS the terminator guard: drop the $FF and the
+/// initializer no longer fills the type → compile error, not a runtime hang.
+/// NOTE Shoot's last byte is `Ani.Idle` (== 0) used as DATA — the
+/// "$FD: now switch to idle" argument, read from its OWN block (ordinals
+/// come from declaration position, so in-block self-reference is
+/// well-founded).
 offsets Ani {
-    Idle:  ani_idle,
-    Seed:  ani_seed,
-    Shoot: ani_shoot,
+    Idle:  [u8; 4] = [7, 0, 1, $FF],
+    Seed:  [u8; 4] = [3, 5, 6, $FF],
+    Shoot: [u8; 6] = [4, 2, 3, 4, $FD, Ani.Idle],
 }
-
-// The anim byte scripts, in the engine's format: [speed, frame ids…, command].
-//   $FF        = loop this animation from the start
-//   $FD, id    = switch to animation `id` when this one finishes
-// The declared [u8; N] length IS the terminator guard: drop the $FF and the
-// initializer no longer fills the type → compile error, not a runtime hang.
-// NOTE ani_shoot's last byte is `Ani.Idle` (== 0) used as DATA — the
-// "$FD: now switch to idle" argument. That's the reverse-ordinal half of
-// `offsets` doing real work inside a sibling table's payload.
-data ani_idle:  [u8; 4] = [7, 0, 1, $FF]
-data ani_seed:  [u8; 4] = [3, 5, 6, $FF]
-data ani_shoot: [u8; 6] = [4, 2, 3, 4, $FD, Ani.Idle]
 
 /// What the level's object list spawns. `code: brain` — the script's entry
 /// segment; spawn copies this code word into (a0), so the object's first

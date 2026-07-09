@@ -1,8 +1,10 @@
-// Pitcher Plant badnik (sonic_hack Object 0B) — new-style Aeon code.
-// A stationary plant: idles until the player comes within 96px of its facing
-// side, plays a shoot animation, spits a seed on the mouth-open frame, re-arms.
-// Standing acceptance exhibit: compiles end-to-end once the game prelude
-// (S2-D3) and jbra/jbsr relaxation (D2.18) land; every construct is ratified.
+// Pitcher Plant badnik (sonic_hack Object 0B) — new-style Aeon code, the
+// PROC spelling: three hand-threaded state procs (init/wait/shoot) whose
+// transitions write the routine slot via the `routine` helper. A stationary
+// plant: idles until the player comes within 96px of its facing side, plays
+// a shoot animation, spits a seed on the mouth-open frame, re-arms.
+// Byte-pinned acceptance exhibit (pitcher_plant_acceptance.rs); its sibling
+// pitcher_plant_script.emp writes the same brain as one `script` coroutine.
 
 module badniks.pitcher_plant in obj_bank
 
@@ -23,19 +25,19 @@ const SEED_VEL_X: i16 = -$200
 const SEED_VEL_Y: i16 = -$200
 const SEED_GRAVITY: i16 = $20
 
-/// Animation table + animation ids, one declaration: emits the
-/// `dc.w script - Ani` offset table, and `Ani.Idle`/`Ani.Seed`/`Ani.Shoot`
-/// are its ordinals — inserting a script can never renumber the others.
+/// Animation table, ids, AND payloads — one declaration (§4.7 inline
+/// bodies): emits the `dc.w body - Ani` offset table, then each body in
+/// declaration order; `Ani.Idle`/`Ani.Seed`/`Ani.Shoot` are its ordinals —
+/// inserting a row can never renumber the others.
+/// Script format: [speed, frame..., $FF] loops; $FD, id switches animation.
+/// The declared [u8; N] length IS the terminator guard (drop the $FF and the
+/// initializer no longer fills the type → compile error, not a runtime hang).
 offsets Ani {
-    Idle:  ani_idle,
-    Seed:  ani_seed,
-    Shoot: ani_shoot,
+    Idle:  [u8; 4] = [7, 0, 1, $FF],
+    Seed:  [u8; 4] = [3, 5, 6, $FF],
+    Shoot: [u8; 6] = [4, 2, 3, 4, $FD, Ani.Idle],  // $FD: switch to idle —
+                                                   // its OWN block's ordinal
 }
-
-// Scripts: [speed, frame..., $FF] loops; $FD, id switches animation.
-data ani_idle:  [u8; 4] = [7, 0, 1, $FF]
-data ani_seed:  [u8; 4] = [3, 5, 6, $FF]
-data ani_shoot: [u8; 6] = [4, 2, 3, 4, $FD, Ani.Idle]
 
 /// What the level's object list spawns.
 pub data Def = ObjDef{
