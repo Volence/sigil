@@ -2133,42 +2133,47 @@ impl Parser {
                         let saved_nsl = self.no_struct_lit;
                         self.no_struct_lit = false;
                         let mut fields = Vec::new();
-                        let mut rest = false;
                         self.skip_newlines();
                         if !self.at(&Tok::RBrace) {
                             loop {
-                                // `..` rest-fill (S2-D13(h)) — must be LAST:
-                                // an optional trailing comma, then `}`.
+                                // `..` was built and RETIRED at the tranche-0
+                                // checkpoint (it couldn't say WHICH fields it
+                                // covered) — teach the named spelling.
                                 if self.eat(&Tok::DotDot) {
-                                    rest = true;
-                                    // Rust muscle memory writes `..base`
-                                    // (functional update) — name that
-                                    // spelling specifically (review m4).
-                                    if matches!(self.peek(), Tok::Ident(_)) {
-                                        let sp = self.span();
-                                        self.diag_at(
-                                            sp,
-                                            "functional update `..expr` is not supported — \
-                                             `..` takes no operand; it fills omitted DEFAULTED \
-                                             fields from their declared defaults",
-                                        );
-                                    }
+                                    let sp = self.prev_span();
+                                    self.diag_at(
+                                        sp,
+                                        "`..` rest-fill was retired — name each elided field \
+                                         instead: `field: default` (S2-D13(h), checkpoint \
+                                         ruling)",
+                                    );
                                     self.skip_newlines();
                                     if self.eat(&Tok::Comma) {
                                         self.skip_newlines();
                                     }
-                                    if !self.at(&Tok::RBrace) {
-                                        let sp = self.span();
-                                        self.diag_at(
-                                            sp,
-                                            "`..` must be the struct literal's last member",
-                                        );
-                                    }
-                                    break;
+                                    if self.at(&Tok::RBrace) { break; }
+                                    continue;
                                 }
                                 let name = self.expect_ident("field name");
                                 self.expect(&Tok::Colon, "`:`");
-                                fields.push((name, self.expr()));
+                                // `field: default` — the contextual named-
+                                // elision marker (S2-D13(h)): exact bareword
+                                // `default` ending the field (comma / `}` /
+                                // newline). Any other continuation parses as
+                                // an ordinary expression, so a const named
+                                // `default` stays usable in arithmetic.
+                                let value = if self.at_kw("default")
+                                    && matches!(
+                                        self.peek2(),
+                                        Tok::Comma | Tok::RBrace | Tok::Newline | Tok::Eof
+                                    ) {
+                                    let dspan = self.span();
+                                    self.bump(); // `default`
+                                    Expr::Default(dspan)
+                                } else {
+                                    self.expr()
+                                };
+                                fields.push((name, value));
                                 self.skip_newlines();
                                 if !self.eat(&Tok::Comma) { break; }
                                 self.skip_newlines();
@@ -2177,7 +2182,7 @@ impl Parser {
                         }
                         self.expect(&Tok::RBrace, "`}`");
                         self.no_struct_lit = saved_nsl;
-                        Expr::StructLit { ty: path, fields, rest, span: start.merge(self.prev_span()) }
+                        Expr::StructLit { ty: path, fields, span: start.merge(self.prev_span()) }
                     }
                     _ => Expr::Path(path),
                 }
@@ -2358,7 +2363,7 @@ impl Parser {
 /// Span of any expression node (helper for span merging).
 pub(crate) fn expr_span(e: &Expr) -> Span {
     match e {
-        Expr::Int(_, s) | Expr::Float(_, s) | Expr::Str(_, s) => *s,
+        Expr::Int(_, s) | Expr::Float(_, s) | Expr::Str(_, s) | Expr::Default(s) => *s,
         Expr::Path(p) => p.span,
         Expr::Unary { span, .. } | Expr::Binary { span, .. } | Expr::Call { span, .. }
         | Expr::StructLit { span, .. } | Expr::ArrayLit { span, .. }

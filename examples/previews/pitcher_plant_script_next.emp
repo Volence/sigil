@@ -84,8 +84,8 @@ pub data Def = ObjDef{
     zpri:  3,
     size:  Size{ w: 16, h: 28 },
     anim:  Ani.Idle,
-    vel:   Vel{ x: 0, y: 0 },
-    frame: 0,
+    vel:   default,     // named elision (S2-D13(h)): at rest — the value
+    frame: default,     // lives on the ObjDef declaration, the NAME on the page
 }
 
 data SeedDef = ObjDef{

@@ -22,41 +22,46 @@ impl<'a> Evaluator<'a> {
         &mut self,
         ty: &ast::Path,
         fields: &[(String, ast::Expr)],
-        rest: bool,
         span: Span,
         env: &mut Env,
     ) -> Value {
         let ty_name = ty.segments.last().cloned().unwrap_or_default();
         if self.bitfields.contains_key(ty_name.as_str()) {
-            // `..` has no meaning on a bitfield literal — omitted bitfield
-            // fields are ALWAYS 0 (their long-standing semantics; whether
-            // they should adopt the explicit-elision rule is a recorded
-            // checkpoint question). Diagnose rather than silently swallow.
-            if rest {
-                self.warn(
-                    span,
-                    format!(
-                        "`..` has no effect on the bitfield literal `{ty_name}` — omitted \
-                         bitfield fields are always 0"
-                    ),
-                );
+            // Bitfields keep their long-standing semantics: omitted fields
+            // are 0, deliberately (checkpoint ruling 2026-07-09 — flag words
+            // are the idiom; requiring per-bit ceremony would be noise). A
+            // `field: default` marker has no declared default to point at.
+            for (fname, v) in fields {
+                if let ast::Expr::Default(dspan) = v {
+                    self.error(
+                        *dspan,
+                        format!(
+                            "bitfield `{ty_name}` field `{fname}`: bitfields have no \
+                             declared defaults — omitted bitfield fields are always 0 \
+                             (just omit it)"
+                        ),
+                    );
+                    return Value::Poison;
+                }
             }
             return self.eval_bitfield_lit(&ty_name, fields, span, env);
         }
         if self.structs.contains_key(ty_name.as_str()) {
-            return self.eval_checked_struct_lit(&ty_name, fields, rest, span, env);
+            return self.eval_checked_struct_lit(&ty_name, fields, span, env);
         }
-        // Undeclared type: the unchecked value-level path has no field list
-        // and therefore no defaults `..` could fill — say so instead of
-        // silently dropping the marker.
-        if rest {
-            self.warn(
-                span,
-                format!(
-                    "`..` has no effect here — `{ty_name}` is not a declared struct, so \
-                     there are no field defaults to fill"
-                ),
-            );
+        // Undeclared type: the unchecked value-level path has no field list,
+        // so a `field: default` has nothing to point at.
+        for (fname, v) in fields {
+            if let ast::Expr::Default(dspan) = v {
+                self.error(
+                    *dspan,
+                    format!(
+                        "`{ty_name}` is not a declared struct — `{fname}: default` has no \
+                         declared default to take"
+                    ),
+                );
+                return Value::Poison;
+            }
         }
         // Undeclared type name → value-level only (Plan 2). Poison field values
         // are preserved as-is (propagate, no new diagnostic). A field initializer
@@ -90,7 +95,6 @@ impl<'a> Evaluator<'a> {
         &mut self,
         ty_name: &str,
         provided: &[(String, ast::Expr)],
-        rest: bool,
         span: Span,
         env: &mut Env,
     ) -> Value {
@@ -135,8 +139,38 @@ impl<'a> Evaluator<'a> {
                     // A checked-struct field initializer is a comptime VALUE
                     // position: a bareword naming a proc/data item becomes a
                     // label value (D-PP.3). `code: init` in `ObjDef{ … }` is the
-                    // motivating case.
-                    let v = this.in_label_ctx(|this| this.eval_expr(expr, env));
+                    // motivating case. `field: default` (S2-D13(h), checkpoint
+                    // ruling) is NAMED elision: evaluate the field's DECLARED
+                    // default in the same value position.
+                    let v = if let ast::Expr::Default(dspan) = expr {
+                        match decl
+                            .fields
+                            .iter()
+                            .find(|f| &f.name == fname)
+                            .and_then(|f| f.default.as_ref())
+                        {
+                            Some(default) => {
+                                this.in_label_ctx(|this| this.eval_expr(default, env))
+                            }
+                            None => {
+                                // A known field without a default gets the
+                                // targeted message; an UNKNOWN field falls
+                                // through to the unknown-field check below.
+                                if decl.fields.iter().any(|f| &f.name == fname) {
+                                    this.error(
+                                        *dspan,
+                                        format!(
+                                            "[struct.no-default] struct {ty_name}: field \
+                                             `{fname}` declares no default — give it a value"
+                                        ),
+                                    );
+                                }
+                                Value::Poison
+                            }
+                        }
+                    } else {
+                        this.in_label_ctx(|this| this.eval_expr(expr, env))
+                    };
                     // A `return` (or abort) inside a field expr propagates
                     // uniformly — mirroring the sibling construction sites (T8
                     // review, Minor 3).
@@ -157,31 +191,20 @@ impl<'a> Evaluator<'a> {
                     }
                     provided_vals.push((fname.clone(), v));
                 }
-                // Rebuild in declaration order: provided value, else default,
-                // else a missing-field diagnostic (no silent zero-fill).
+                // Rebuild in declaration order: every declared field must be
+                // NAMED by the literal (a value, or `field: default` — the
+                // named elision). No silent fill of any kind.
                 let mut out_fields = Vec::with_capacity(decl.fields.len());
                 for field in &decl.fields {
                     if let Some((_, v)) = provided_vals.iter().find(|(n, _)| n == &field.name) {
                         out_fields.push((field.name.clone(), v.clone()));
-                    } else if let (Some(default), true) = (&field.default, rest) {
-                        // A `= default` field expr is likewise a value position
-                        // (a default `code: init` would resolve to a label).
-                        let dv = this.in_label_ctx(|this| this.eval_expr(default, env));
-                        // Same leaked-return / abort bail as the provided-field loop.
-                        if this.aborted || this.pending_return.is_some() {
-                            return None;
-                        }
-                        out_fields.push((field.name.clone(), dv));
                     } else {
-                        // Elision is an EXPLICIT act (S2-D13(h)): a defaulted
-                        // field may only be omitted under the `..` marker, so
-                        // the message offers the spelling when it applies.
                         let msg = if field.default.is_some() {
                             format!(
                                 "[struct.missing-field] struct {ty_name}: field `{}` was not \
-                                 provided — add it, or elide it explicitly with `..` (it has \
-                                 a default)",
-                                field.name
+                                 provided — give it a value, or write `{}: default` to take \
+                                 its declared default",
+                                field.name, field.name
                             )
                         } else {
                             format!(

@@ -62,6 +62,10 @@ pub struct LowerOptions {
 struct Placement<'a> {
     cpu: Cpu,
     origin: u32,
+    /// `access: byte` on the enclosing section (checkpoint ruling): the
+    /// section's data cells are read byte-wise, so the D2.29 word-parity
+    /// check does not apply to its DATA items.
+    byte_access: bool,
     include_root: Option<&'a Path>,
     defines: &'a [(String, i128)],
 }
@@ -175,6 +179,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -203,6 +208,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -219,6 +225,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -253,7 +260,8 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // section), folding its length into the counter.
                 next_lma += builder.current_offset();
                 default_open = false;
-                let (cpu, vma, bank) = section_attrs(file, sec, &opts.defines, &mut diags);
+                let (cpu, vma, bank, byte_access) =
+                    section_attrs(file, sec, &opts.defines, &mut diags);
                 builder.switch_section_lma(&sec.name, cpu, vma, next_lma);
                 builder.set_section_bank(bank);
                 // R7p.5: an explicit `vma:` is a pin (labels resolve from that
@@ -269,6 +277,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu,
                         origin,
+                        byte_access,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -308,6 +317,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &Placement {
                         cpu: opts.initial_cpu,
                         origin: next_lma,
+                        byte_access: false,
                         include_root: opts.include_root.as_deref(),
                         defines: &opts.defines,
                     },
@@ -911,7 +921,7 @@ fn lower_data_item(
     builder.define_label(&decl.name);
     // D2.29 amendment: a word/long-bearing data item at an odd final address
     // warns [layout.odd-item] (pure byte runs have no alignment need).
-    if buf_carries_words(&buf) {
+    if buf_carries_words(&buf) && !placement.byte_access {
         record_odd_item_assert(
             file,
             builder,
@@ -958,7 +968,7 @@ fn lower_offsets_item(
     builder.define_label(&decl.name);
     // D2.29 amendment: an offsets table is dc.w words by construction, so an
     // odd base warns [layout.odd-item] like any word-bearing data item.
-    if buf_carries_words(&buf) {
+    if buf_carries_words(&buf) && !placement.byte_access {
         record_odd_item_assert(
             file,
             builder,
@@ -981,7 +991,7 @@ fn lower_offsets_item(
             data::stream_data(&body.buf, placement.cpu, body.span);
         diags.append(&mut stream_diags);
         builder.define_label(&body.label);
-        if buf_carries_words(&body.buf) {
+        if buf_carries_words(&body.buf) && !placement.byte_access {
             record_odd_item_assert(
                 file,
                 builder,
@@ -1044,15 +1054,19 @@ fn lower_dispatch_item(
     // 2n-byte table), so the check promotes to the Code/error tier.
     let has_bodies =
         decl.members.iter().any(|m| matches!(m.target, ast::DispatchTarget::Body(_)));
-    record_odd_item_assert(
-        file,
-        builder,
-        placement.cpu,
-        as_compat,
-        if has_bodies { OddItemKind::Code } else { OddItemKind::WordData },
-        &decl.name,
-        decl.span,
-    );
+    // `access: byte` covers the DATA tier only — a dispatch WITH bodies is
+    // executed code and keeps its error-tier check regardless.
+    if has_bodies || !placement.byte_access {
+        record_odd_item_assert(
+            file,
+            builder,
+            placement.cpu,
+            as_compat,
+            if has_bodies { OddItemKind::Code } else { OddItemKind::WordData },
+            &decl.name,
+            decl.span,
+        );
+    }
     builder.emit_data(&bytes, fixups, decl.span);
 
     // 9a (D9.1, R9a.1): inline bodies lower immediately after the table, in
@@ -1121,13 +1135,37 @@ fn section_attrs(
     sec: &ast::SectionDecl,
     defines: &[(String, i128)],
     diags: &mut Vec<Diagnostic>,
-) -> (Cpu, Option<u32>, Option<u32>) {
+) -> (Cpu, Option<u32>, Option<u32>, bool) {
     let mut cpu = Cpu::M68000;
     let mut vma: Option<u32> = None;
     let mut bank: Option<u32> = None;
+    let mut byte_access = false;
     for (name, expr) in &sec.attrs {
         match name.as_str() {
             "cpu" => cpu = attr_cpu(expr),
+            // `access: byte` (checkpoint ruling, 2026-07-09): a POSITIVE
+            // declaration that this section's cells are read byte-wise (the
+            // packed-record discipline — aeon's 5-byte dac descriptor
+            // stride). The D2.29 word-parity check on DATA items is exempted
+            // as a CONSEQUENCE of the declared fact, not by lint-suppression
+            // — and the fact is reusable (a future lint can flag a 68k word
+            // READ against a byte-access section). Procs/scripts are NOT
+            // covered: instruction fetch is never byte-wise.
+            "access" => match expr {
+                ast::Expr::Path(p)
+                    if p.segments.len() == 1 && p.segments[0].eq_ignore_ascii_case("byte") =>
+                {
+                    byte_access = true;
+                }
+                _ => err(
+                    diags,
+                    crate::parser::expr_span(expr),
+                    format!(
+                        "section `{}` `access:` takes `byte` (the only declared access                          discipline; word access is the default and needs no attribute)",
+                        sec.name
+                    ),
+                ),
+            },
             "vma" => {
                 let (n, mut ds) = eval_attr_int(file, expr, defines);
                 diags.append(&mut ds);
@@ -1178,7 +1216,7 @@ fn section_attrs(
             ),
         );
     }
-    (cpu, vma, bank)
+    (cpu, vma, bank, byte_access)
 }
 
 /// Resolve a `cpu:` attribute expression to a [`Cpu`]: `z80` (case-insensitive)

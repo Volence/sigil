@@ -247,8 +247,9 @@ fn struct_unknown_field_is_diagnosed() {
 
 #[test]
 fn struct_default_fills_omitted_field() {
-    // S2-D13(h): elision is an EXPLICIT act — `..` opts into default fill.
-    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1, .. }\n";
+    // S2-D13(h), checkpoint ruling: elision is NAMED — `b: default` takes
+    // b's declared default, visibly, per field.
+    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1, b: default }\n";
     let (buf, diags) = data(src, "D");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let buf = buf.expect("data buf");
@@ -264,71 +265,74 @@ fn struct_default_fills_omitted_field() {
 
 
 #[test]
-fn omitted_defaulted_field_without_rest_is_error() {
-    // Without `..`, a defaulted field may not be silently elided — the page
-    // must show the elision (S2-D13(h) tightening, recorded in the tranche-0
-    // notes for the checkpoint).
+fn omitted_defaulted_field_is_still_an_error() {
+    // Every declared field must be NAMED — omission is never elision; the
+    // message teaches the `name: default` spelling when one exists.
     let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1 }\n";
     let (_buf, diags) = data(src, "D");
     assert!(
         diags.iter().any(|d| d.message.contains("[struct.missing-field]")
-            && d.message.contains("b")
-            && d.message.contains("..")),
-        "the error names the field AND offers the `..` spelling: {diags:?}"
+            && d.message.contains("`b`")
+            && d.message.contains("b: default")),
+        "the error names the field AND teaches `b: default`: {diags:?}"
     );
 }
 
 #[test]
-fn rest_does_not_cover_defaultless_fields() {
-    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ .. }\n";
+fn default_on_a_defaultless_field_is_an_error() {
+    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: default, b: default }\n";
     let (_buf, diags) = data(src, "D");
     assert!(
-        diags.iter().any(|d| d.message.contains("[struct.missing-field]") && d.message.contains("a")),
-        "`..` fills defaults only — `a` has none and stays required: {diags:?}"
+        diags.iter().any(|d| d.message.contains("[struct.no-default]") && d.message.contains("`a`")),
+        "`a` declares no default — `a: default` has nothing to take: {diags:?}"
     );
 }
 
 #[test]
-fn rest_with_nothing_to_fill_is_harmless() {
-    // All fields given + `..` — legal (refactor-friendly: deleting the last
-    // defaulted field from a literal shouldn't force deleting the marker).
-    let src = "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1, b: 2, .. }\n";
+fn const_named_default_stays_usable_in_expressions() {
+    // `default` is contextual: only the exact bareword ENDING a field value
+    // is the marker; in arithmetic it's an ordinary name.
+    let src = "module m\nconst default = 4\nstruct S { a: u8 }\ndata D: S = S{ a: default + 1 }\n";
     let (buf, diags) = data(src, "D");
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
-    assert_eq!(buf.expect("buf").size, 2);
+    assert_eq!(
+        buf.expect("buf").cells,
+        vec![Cell::Scalar { value: 5, width: 1, signed: false, le: false }]
+    );
 }
 
 
 #[test]
-fn rest_on_a_bitfield_literal_warns() {
-    // Bitfields keep their long-standing omitted-fields-are-0 semantics
-    // (checkpoint question recorded); a `..` there is a no-op and says so.
-    let src = "module m\nbitfield B: u8 { x: 4, y: 4 }\ndata D: u8 = B{ x: 1, .. }\n";
+fn default_on_a_bitfield_field_is_an_error() {
+    // Bitfields keep their long-standing semantics DELIBERATELY (checkpoint
+    // ruling): omitted fields are 0, the flag-word idiom; there are no
+    // declared defaults for a marker to take.
+    let src = "module m\nbitfield B: u8 { x: 4, y: 4 }\ndata D: u8 = B{ x: default }\n";
     let (_buf, diags) = data(src, "D");
     assert!(
-        diags.iter().any(|d| d.message.contains("no effect") && d.message.contains("bitfield")),
-        "expected the bitfield no-effect warning: {diags:?}"
+        diags.iter().any(|d| d.message.contains("bitfield") && d.message.contains("always 0")),
+        "expected the bitfield no-defaults error: {diags:?}"
     );
 }
 
 #[test]
-fn rest_on_an_undeclared_type_warns() {
-    let src = "module m\ndata D: u8 = Foo{ a: 1, .. }\n";
+fn default_on_an_undeclared_type_is_an_error() {
+    let src = "module m\ndata D: u8 = Foo{ a: default }\n";
     let (_buf, diags) = data(src, "D");
     assert!(
-        diags.iter().any(|d| d.message.contains("no effect") && d.message.contains("Foo")),
-        "expected the undeclared-type no-effect warning: {diags:?}"
+        diags.iter().any(|d| d.message.contains("Foo") && d.message.contains("not a declared struct")),
+        "expected the undeclared-type error: {diags:?}"
     );
 }
 
 #[test]
-fn rest_not_last_is_a_parse_error() {
+fn retired_rest_marker_teaches_the_named_spelling() {
     let (_, perrs) = sigil_frontend_emp::parse_str(
-        "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ .., a: 1 }\n",
+        "module m\nstruct S { a: u8, b: u8 = 9 }\ndata D: S = S{ a: 1, .. }\n",
     );
     assert!(
-        perrs.iter().any(|d| d.message.contains("`..`")),
-        "`..` must be the literal's last member: {perrs:?}"
+        perrs.iter().any(|d| d.message.contains("field: default")),
+        "`..` was retired at the checkpoint — the error teaches the replacement: {perrs:?}"
     );
 }
 
@@ -499,9 +503,9 @@ fn missing_data_item_is_diagnosed() {
 fn self_referential_struct_default_does_not_crash() {
     // A field default that constructs its own struct would recurse forever
     // (pre-fix: stack overflow → SIGABRT). It must instead diagnose and stop.
-    // (`..` on both literals: under S2-D13(h) a default only evaluates via
-    // the explicit rest marker, and the recursion lives in the default.)
-    let src = "module m\nstruct A { x: A = A{ .. } }\ndata D: A = A{ .. }\n";
+    // (named elision on both literals: the default only evaluates via
+    // `x: default`, and the recursion lives in the default itself.)
+    let src = "module m\nstruct A { x: A = A{ x: default } }\ndata D: A = A{ x: default }\n";
     let (_buf, diags) = data(src, "D");
     assert!(
         diags.iter().any(|d| d.message.contains("cyclic struct construction")),

@@ -725,20 +725,26 @@ pub enum Expr {
         /// Span of the whole expression.
         span: Span,
     },
-    /// A struct literal: `Ty { field: value, ... }`, optionally closed by a
-    /// `..` rest-fill marker (S2-D13(h)): with `..`, omitted DEFAULTED fields
-    /// fill from their declared defaults — elision is always this explicit,
-    /// one-token act (omitting a defaulted field without `..` is an error).
+    /// A struct literal: `Ty { field: value, ... }`. Every declared field
+    /// must be NAMED (S2-D13(h), checkpoint ruling 2026-07-09): a field whose
+    /// declared default should apply is written `field: default` — elision
+    /// is per-field and self-documenting (`Expr::Default`); there is no bulk
+    /// marker (the `..` form was built and retired at the checkpoint — the
+    /// page couldn't say WHICH fields it covered; re-ledgered for a struct
+    /// with enough defaults that per-field `default` reads as noise).
     StructLit {
         /// The struct's type path.
         ty: Path,
-        /// Field initializers as `(name, value)`.
+        /// Field initializers as `(name, value)`; a value may be
+        /// [`Expr::Default`].
         fields: Vec<(String, Expr)>,
-        /// Whether the literal ends in the `..` rest-fill marker.
-        rest: bool,
         /// Span of the whole expression.
         span: Span,
     },
+    /// The contextual `default` marker in struct-literal field-value position
+    /// (`vel: default`): "this field takes its DECLARED default". An error
+    /// anywhere else, and an error on a field with no declared default.
+    Default(Span),
     /// An array literal: `[e1, e2, ...]`.
     ArrayLit {
         /// The array's elements.

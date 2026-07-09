@@ -98,13 +98,16 @@ pub struct Vec {
 // ===========================================================================
 // ObjDef — what a level's object list (or a `spawn`) instantiates
 // ===========================================================================
-// `vel`/`frame` carry DEFAULTS (S2-D13(h), tranche 0): most objects neither
-// move nor start mid-animation at spawn, so a literal may elide them under
-// the explicit `..` rest-fill marker (`ObjDef{ code: brain, …, .. }`).
-// Elision is always that visible one-token act — omitting a defaulted field
-// WITHOUT `..` is a compile error, and non-defaulted fields stay required
-// (`anim` deliberately has no default: which animation an object starts in
-// is a real per-object choice).
+// `vel`/`frame` carry DEFAULTS (S2-D13(h), checkpoint ruling 2026-07-09):
+// most objects neither move nor start mid-animation at spawn, so a literal
+// writes `vel: default` / `frame: default` — NAMED elision: the field is on
+// the page, the value comes from this declaration. Omitting a field is
+// always a compile error (the message teaches the `name: default` spelling
+// when one exists); `anim` deliberately has no default — which animation an
+// object starts in is a real per-object choice. (The bulk `..` marker was
+// built and retired at the checkpoint: it couldn't say WHICH fields it
+// covered; re-ledgered for a struct with enough defaults that per-field
+// `default` reads as noise.)
 // Field order is chosen (not just "declaration order") to keep the 4-byte
 // `vel` field EVEN-offset in this dense/packed layout: `code`(4)+`map`(4)+
 // `art`(4)+`col`(1)+`zpri`(1)+`size`(2) = 16 bytes before `vel`, so `vel`

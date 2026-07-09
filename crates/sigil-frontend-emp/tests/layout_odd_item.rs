@@ -222,3 +222,46 @@ proc done () { rts }
         "an odd script is odd code (its table shifts everything odd): {diags:?}"
     );
 }
+
+// ---- checkpoint ruling: `access: byte` — the DECLARATIVE exemption -------------
+
+#[test]
+fn access_byte_section_exempts_data_but_not_code() {
+    // The packed-record discipline (aeon's dac descriptor stride): declaring
+    // byte-wise access exempts DATA word cells as a consequence of the fact;
+    // procs are still instruction-fetched, so the crash-tier check stands.
+    let src = "\
+module m
+section s (cpu: m68000, vma: $101, access: byte) {
+    data D: [u16; 1] = [$1111]
+    proc p () {
+        rts
+    }
+}
+";
+    let diags = full(src);
+    let odd = odd_items(&diags);
+    assert!(
+        !odd.iter().any(|d| d.message.contains("`D`")),
+        "byte-accessed data is exempt by declaration: {diags:?}"
+    );
+    assert!(
+        odd.iter().any(|d| d.message.contains("`p`") && matches!(d.level, Level::Error)),
+        "code keeps its crash-tier check: {diags:?}"
+    );
+}
+
+#[test]
+fn access_attr_rejects_unknown_values() {
+    let src = "\
+module m
+section s (cpu: m68000, access: nibble) {
+    data D: [u8; 1] = [1]
+}
+";
+    let diags = full(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("access") && d.message.contains("byte")),
+        "unknown access values are refused naming the valid one: {diags:?}"
+    );
+}

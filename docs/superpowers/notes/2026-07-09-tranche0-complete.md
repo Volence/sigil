@@ -30,20 +30,38 @@ CRITICAL/MAJOR fixed and pinned, choices recorded below).
 | 10 | `comptime test` + `sigil test` (S2-D11a) | c076be3, 1b177b6 | expect_error = ERROR-level only; stripped always (byte-proven); duplicate names refused in BOTH paths; section-nested tests rejected loudly; --root sweep keeps going past broken modules |
 | — | Acceptance | ddbd0f6 | the gate — plus the real bug it caught (below) |
 
-## Decisions made autonomously (ratify or veto at this checkpoint)
+## Decisions — 1 and 2 RESOLVED AT THE CHECKPOINT (Volence, 2026-07-09); 3-6 ratified as shipped
 
-1. **Struct-literal elision tightening (Item 5).** The shipped-but-unratified
-   silent default fill is retired: omitting a defaulted field now REQUIRES the
-   `..` marker (error offers the spelling). Rationale: elision as a visible
-   one-token act (the spec's byte-visible-acts taste); nothing outside one
-   unit test used the silent fill. **Open half:** bitfields still silently
-   zero-fill omitted fields (long-standing semantics); `..` on a bitfield
-   literal now warns "no effect". Should bitfields adopt explicit elision too?
-2. **`@allow("layout.odd-item")` — the parsed-but-inert `@allow` attr's first
-   consumer** (Item 4). String form (lint ids carry hyphens; the unquoted
-   spelling warns `[attr.allow-form]`); silences the WARNING tier only (a
-   guaranteed-crash proc check is not lint-allowable). Used once:
-   `dac_samples.emp`'s byte-read descriptor stride.
+1. **Struct elision = NAMED, per field: `vel: default` (RATIFIED, reworked
+   from the sprint's `..`).** Volence's review of the sprint's `..` marker:
+   it says THAT something is elided, not WHICH — reading cold you can't tell
+   `..` = vel. Reworked to `field: default` (contextual bareword in
+   field-value position): every declared field appears in every literal, the
+   VALUE collapses to "the declared default". Omission is always
+   `[struct.missing-field]` (message teaches `name: default` when one
+   exists); `default` on a defaultless field = `[struct.no-default]`; a const
+   named `default` stays usable in arithmetic (contextual rule). Refactor
+   property: a struct gaining a defaulted field makes every literal ERROR —
+   a per-object checklist, never silent absorption. The bulk `..` is RETIRED
+   (its spelling now errors teaching the replacement) and RE-LEDGERED with
+   the gate "a struct with enough defaulted fields that per-field `default`
+   reads as noise". **Bitfields keep silent zero-fill DELIBERATELY** (the
+   flag-word idiom); `field: default` on a bitfield is an error. The preview
+   exhibit demonstrates the spelling.
+2. **`access: byte` section attribute (RATIFIED — the declarative shape;
+   `@allow` kept as the generic hatch).** Volence's push: the dac shape isn't
+   a lint violation to ignore, it's a fact the check was missing. A section
+   may declare `(access: byte)` — its DATA cells are read byte-wise (the
+   packed-record discipline), and the D2.29 word-parity check is exempted as
+   a CONSEQUENCE of the declared fact. Positive information, reusable: a
+   future lint can flag a 68k word READ against a byte-access section —
+   suppression never could. Code items are NOT covered (instruction fetch is
+   never byte-wise); a dispatch WITH inline bodies keeps its error-tier
+   check. Unknown `access:` values refused. `dac_samples.emp` switched from
+   `@allow` to `access: byte` — the tree now carries ZERO `@allow` uses; the
+   mechanism stays wired (string-form ids, `[attr.allow-form]` on the
+   unquoted typo, warning-tier only) as the last-resort hatch for future
+   lints without a semantic home.
 3. **`align` congruence link-assert** (Item 3, beyond the spec text): padding
    computes at the lowering baseline, but D2.25 places chained/map sections at
    link — every `align` therefore records `anchor % N == 0`, so placement
@@ -94,10 +112,11 @@ CRITICAL/MAJOR fixed and pinned, choices recorded below).
 
 ## Suggested checkpoint flow
 
-1. Ratify/veto decisions 1–6 (especially the elision tightening and `@allow`).
+1. ~~Ratify/veto the decisions~~ **DONE — 1 and 2 resolved (named elision +
+   `access: byte`), 3–6 ratified as shipped.**
 2. Merge `tranche0-language` → master (`--no-ff`), delete the worktree.
-3. Spec passes for empyrean (docs cadence): §4.5 (rest-fill), §4.8 status →
-   shipped (+ congruence-assert refinement + `[attr.allow-form]`), §5.6
+3. Spec passes for empyrean (docs cadence): §4.5 (named elision `field: default`; `..` retired+re-ledgered), §4.8 status →
+   shipped (+ congruence-assert refinement + `access: byte` section attr + `[attr.allow-form]`), §5.6
    D2.30 status → shipped (+ the "named resume uses the header epilogue"
    sentence + the deferred note-tier lint), §6.5/§10 (`comptime test`,
    `todo!`/`unreachable!`, `///`), D2.29 row (even-not-in-AS discovery).

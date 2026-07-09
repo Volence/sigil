@@ -180,16 +180,18 @@ fn section_nested_test_is_rejected_loudly() {
 #[test]
 fn expect_error_does_not_pass_on_a_warning() {
     // "Must not compile" means an ERROR — a warning containing the id
-    // compiles fine (review M4). `..` on an undeclared type warns.
+    // compiles fine (review M4). A struct with a u16 at an odd offset
+    // produces the WARNING-tier [layout.odd-field] when constructed.
     let src = "\
 module m
-comptime test \"warning is not an error\" (expect_error: \"no effect\") {
-    let v = Foo{ a: 1, .. }
+struct Odd { a: u8, b: u16 }
+comptime test \"warning is not an error\" (expect_error: \"[layout.odd-field]\") {
+    let v = Odd{ a: 1, b: 2 }
 }
 ";
     let results = run(src);
     assert_eq!(results.len(), 1);
-    assert!(!results[0].passed, "a warning must not satisfy expect_error");
+    assert!(!results[0].passed, "a warning must not satisfy expect_error: {results:?}");
 }
 
 #[test]
