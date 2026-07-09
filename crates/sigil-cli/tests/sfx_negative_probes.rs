@@ -155,9 +155,9 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
     // Doctored: base $67C00 — the 1864-byte ($748) section ends at $68348,
     // crossing $68000. `text` region included: the module's top-level `ensure`
     // opens the lazy zero-byte default `text` carrier (R-T0.3), so it needs a
-    // home too (mirrors `sfx_port.rs::map_toml`). Region sized $500 so the
-    // straddling section still fits the region window (the straddle is the
-    // section's, not a region overflow).
+    // home too (mirrors `sfx_port.rs::map_toml`). Region sized $800 so the
+    // $748 section fits inside the region window — the straddle we're probing
+    // is the section crossing the $68000 bank boundary, NOT a region overflow.
     let map = load_map(
         "fill = 0x00\n\
          [[region]]\n\
