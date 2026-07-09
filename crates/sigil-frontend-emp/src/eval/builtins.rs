@@ -551,6 +551,51 @@ impl<'a> Evaluator<'a> {
         Value::LinkExpr(shifted)
     }
 
+    /// `extern(name)` (Task B2, seam re-eval): RAW passthrough of a link
+    /// symbol as a [`Value::LinkExpr`] residual tree — no mask, no shift
+    /// (unlike `bankid`/`winptr`, which both wrap their symbol in Genesis
+    /// bank-window arithmetic). The seam this closes: Task B1 makes the AS
+    /// frontend export int `equ`/`=` constants as link-level `EquSym`s, but
+    /// `.emp` code had no way to READ one back — `extern(name)` is that read,
+    /// generalized to any link symbol (an AS equ, an AS/emp label, or an emp
+    /// `equ`), not just equs.
+    ///
+    /// The argument contract is EXACTLY `bankid`'s/`winptr`'s: one positional
+    /// symbol reference (a bare label/`comptime fn` name → [`Value::FnRef`],
+    /// or a [`Value::Str`] naming a symbol). A non-reference argument is a
+    /// diagnostic and [`Poison`](Value::Poison). No address is resolved here
+    /// (that is link) — `resolve_layout`'s `fold_equ_syms` / `sigil-link`'s
+    /// Pass 1b symbol table both already fold a bare `Expr::Sym`, so this
+    /// needs no new linker support.
+    pub(super) fn eval_extern(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 1 {
+            self.error(span, format!("`extern` expects exactly 1 argument, got {}", args.len()));
+            return Value::Poison;
+        }
+        if args[0].name.is_some() {
+            self.error(args[0].span, "`extern` takes a positional argument");
+        }
+        let arg = self.eval_expr(&args[0].value, env);
+        // A leaked return / abort from the argument belongs to the caller.
+        if self.aborted || self.pending_return.is_some() {
+            return Value::Poison;
+        }
+        let name = match arg {
+            Value::FnRef(n) => n,
+            Value::Str(s) => s,
+            Value::Poison => return Value::Poison,
+            other => {
+                self.error(
+                    span,
+                    format!("`extern` needs a symbol reference, got {}", other.type_name()),
+                );
+                return Value::Poison;
+            }
+        };
+        use sigil_ir::expr::Expr;
+        Value::LinkExpr(Expr::Sym(name))
+    }
+
     /// Evaluate the single positional integer argument shared by `byte` (and
     /// future scalar `Data` constructors). Wrong arity / a named arg is a
     /// diagnostic; a leaked return/abort from the argument belongs to the caller.
