@@ -6171,15 +6171,24 @@ C:\n";
     fn m68k_jsr_to_truly_undefined_symbol_still_errors_after_joint_link() {
         // A deferred JmpJsrSym whose target is NEVER supplied by anything
         // (not even a sibling module) must still fail LOUD at resolve_layout
-        // — deferral must not turn a genuine typo into a silent zero.
+        // — deferral must not turn a genuine typo into a silent zero. And the
+        // error must NAME the symbol with the cross-seam steer (I1 review
+        // finding): the deferral moved a pure-AS typo'd jsr from assemble-time
+        // (which named the symbol) to this link-time arm, so the link-time
+        // wording must be at least as good.
         let src = "    cpu 68000\nConsumer:\n    jsr TotallyUndefined\n    rts\n";
         let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
         let m = run(src, &opts).expect("deferred compile must succeed (front-end no longer errors)");
         let err = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect_err("a target defined nowhere must still fail at resolve_layout");
         assert!(
-            err.iter().any(|d| d.level == sigil_span::Level::Error),
-            "expected a loud resolve_layout error, got: {err:?}"
+            err.iter().any(|d| d.level == sigil_span::Level::Error
+                && d.message.contains("jmp/jsr target")
+                && d.message.contains("`TotallyUndefined`")
+                && d.message.contains("not defined in this link")
+                && d.message.contains("cross-seam")),
+            "expected a loud resolve_layout error naming `TotallyUndefined` with the \
+             cross-seam steer, got: {err:?}"
         );
     }
 }

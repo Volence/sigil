@@ -198,7 +198,12 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
   common case (empty `poison` at convergence — skips the bonus pass entirely). Proven inert:
   the FULL existing `m1d_rom`/`m1d_debug_rom`/all four prior mixed-ROM gates stayed
   byte-identical with this change in place — the deferral never fires unless something was
-  ALREADY going to hard-error.
+  ALREADY going to hard-error. Honest caveat (I1, whole-branch review): the TYPO case DID
+  change — a pure-AS `jsr Nonexistent` now errors at LINK (resolve_layout's JmpJsrSym arm)
+  instead of at assemble-time, and that arm's message initially named only the section, not
+  the symbol; fixed same tranche by routing the arm through the shared
+  `unresolved_abs_target_diag` (the `RelaxAbsSym` diagnostic machinery generalized), so the
+  link-time error names the symbol with the cross-seam steer and the equ-cycle discrimination.
 - [tranche 2 T3, port #2 (math.emp), 2026-07-09] **`resolve_layout` refuses ANY section
   mixing an `Org` back-patch with a relaxable fragment (`JmpJsrSym`/`RelaxAbsSym`/
   `RelaxLadder`), and this collision is REAL, not a false positive, for aeon's actual ROM

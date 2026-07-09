@@ -709,11 +709,10 @@ pub fn resolve_layout(
                         let v = match target.fold(&equ_lookup) {
                             Fold::Value(v) => v,
                             Fold::Poison => {
-                                return Err(vec![Diagnostic {
-                                    level: Level::Error,
-                                    message: format!("unresolved jmp/jsr target in section {}", sec.name),
-                                    primary: *span,
-                                }]);
+                                return Err(vec![unresolved_abs_target_diag(
+                                    "jmp/jsr target", target, &placed, &sec.name, &syms,
+                                    &equ_overlay, *span,
+                                )]);
                             }
                         };
                         if asl_width_rule(v, dash_a) == AbsWidth::L && rungs[si][fi] == 0 {
@@ -726,8 +725,9 @@ pub fn resolve_layout(
                         let v = match target.fold(&equ_lookup) {
                             Fold::Value(v) => v,
                             Fold::Poison => {
-                                return Err(vec![unresolved_relax_abs_sym_diag(
-                                    target, &placed, &sec.name, &syms, &equ_overlay, *span,
+                                return Err(vec![unresolved_abs_target_diag(
+                                    "symbolic absolute operand", target, &placed, &sec.name,
+                                    &syms, &equ_overlay, *span,
                                 )]);
                             }
                         };
@@ -1155,22 +1155,30 @@ fn first_unresolved_sym(
     }
 }
 
-/// The `unresolved symbolic absolute operand` diagnostic (Task 5 / R-T0.6),
-/// naming the actual unresolved SYMBOL rather than just the section. `target`
-/// folded to [`Fold::Poison`] against `equ_lookup` (`equ_overlay` ∪ `syms`,
-/// see `equ_lookup_overlay`), so walk it to find the first leaf name neither
-/// table supplies, then choose wording by WHY it's unresolved:
+/// The unresolved-ABS-target diagnostic (Task 5 / R-T0.6, generalized for the
+/// port #2 I1 review finding), naming the actual unresolved SYMBOL rather than
+/// just the section. Shared by BOTH abs-only relaxable arms — `RelaxAbsSym`
+/// (`what` = "symbolic absolute operand") and `JmpJsrSym` (`what` = "jmp/jsr
+/// target") — which fold their targets against the SAME `equ_lookup`
+/// (`equ_overlay` ∪ `syms`, see `equ_lookup_overlay`), so one discrimination
+/// serves both. `target` folded to [`Fold::Poison`], so walk it to find the
+/// first leaf name neither table supplies, then choose wording by WHY it's
+/// unresolved:
 ///
 /// - The name is not an `equ` anywhere in `placed` (never even attempted a
 ///   fold) → the Item-C cross-seam-standalone wording
 ///   (`check_link_asserts`'s "references symbol(s) ... not defined in this
-///   link"), the common case of compiling a cross-seam module standalone.
+///   link"), the common case of compiling a cross-seam module standalone —
+///   and, since the AS front-end's final-pass jsr/jmp deferral, ALSO the
+///   surface a plain typo'd `jsr` reaches (assemble-time used to name it;
+///   link-time must too).
 /// - The name IS an `equ` somewhere but never resolved within
 ///   `equ_lookup_overlay`'s bounded passes → a cycle or a dangling
 ///   equ-on-equ dependency; phrased distinctly (not duplicating
 ///   `unresolved_equ_diag`'s wording, but naming the same shape of cause) so
 ///   a reader doesn't mistake a cycle for a plain missing symbol.
-fn unresolved_relax_abs_sym_diag(
+fn unresolved_abs_target_diag(
+    what: &str,
     target: &Expr,
     placed: &[Section],
     section: &str,
@@ -1183,12 +1191,12 @@ fn unresolved_relax_abs_sym_diag(
     let is_equ_elsewhere = placed.iter().any(|s| s.equ_syms.iter().any(|e| e.name == name));
     let message = if is_equ_elsewhere {
         format!(
-            "unresolved symbolic absolute operand in section {section}: equ `{name}` never \
+            "unresolved {what} in section {section}: equ `{name}` never \
              resolved (an equ cycle, or a dependency that never resolves)"
         )
     } else {
         format!(
-            "unresolved symbolic absolute operand in section {section} references symbol \
+            "unresolved {what} in section {section} references symbol \
              `{name}` not defined in this link — expected when compiling a cross-seam module \
              standalone; supply the map/harness composition that defines it"
         )
@@ -2867,6 +2875,76 @@ mod tests {
             err.iter().any(|d| d.message.contains("Dup")
                 && d.message.to_lowercase().contains("redefin")),
             "expected a dup-symbol diagnostic for `Dup`, got: {err:?}"
+        );
+    }
+
+    // ============ JmpJsrSym unresolved-target diagnostic quality =============
+
+    #[test]
+    fn jmpjsr_unresolved_target_names_symbol_with_cross_seam_steer() {
+        // A typo'd/undefined `jsr` target must be NAMED in the error, with the
+        // same cross-seam-standalone steer as `RelaxAbsSym`'s diagnostic — not
+        // just "unresolved jmp/jsr target in section X". This matters since the
+        // port #2 jsr/jmp deferral: a pure-AS typo'd jsr now surfaces HERE (at
+        // link) instead of at assemble-time (which used to name the symbol).
+        let sec = Section {
+            name: "sec0".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![Fragment::JmpJsrSym {
+                is_jsr: true,
+                target: Expr::Sym("Read_Controllrs".into()),
+                span: sp(),
+            }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("jmp/jsr target")
+                && d.message.contains("`Read_Controllrs`")
+                && d.message.contains("not defined in this link")
+                && d.message.contains("cross-seam")),
+            "expected the symbol-naming cross-seam wording, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn jmpjsr_unresolved_equ_target_names_the_equ_cycle() {
+        // A `jsr` target naming an equ that never resolves (a cycle) must get
+        // the distinct equ-cycle wording, mirroring `RelaxAbsSym`'s
+        // discrimination — a reader must not mistake a cycle for a plain
+        // missing symbol.
+        let sec = Section {
+            name: "sec0".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![Fragment::JmpJsrSym {
+                is_jsr: true,
+                target: Expr::Sym("CycA".into()),
+                span: sp(),
+            }],
+            placement: sigil_ir::SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![
+                equ("CycA", Expr::Sym("CycB".into())),
+                equ("CycB", Expr::Sym("CycA".into())),
+            ],
+        };
+        let err = resolve_layout(&[sec], &SymbolTable::new(), true).unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("jmp/jsr target")
+                && d.message.contains("equ `CycA` never resolved")),
+            "expected the equ-cycle wording naming CycA, got: {err:?}"
         );
     }
 
