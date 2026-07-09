@@ -36,6 +36,25 @@ fn sigil_emp_derives_include_root_from_relative_source_path() {
     assert!(stdout.contains("DE AD BE EF"), "stdout: {stdout}");
 }
 
+/// `sigil emp -D NAME=INT` (sound-migration T2 Task 1, R1): `defines.emp`'s
+/// single byte is `if DEBUG == 1 { 42 } else { 7 }` — running with `-D
+/// DEBUG=1` must select the `42` branch, proving the CLI flag actually reaches
+/// `LowerOptions.defines` end-to-end (mirrors the include-root subprocess test
+/// above; the unit-level plumbing is covered by `lower_data.rs`'s
+/// `defines_are_visible_as_comptime_consts`).
+#[test]
+fn sigil_emp_dash_d_selects_debug_branch() {
+    let vectors = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/vectors");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args(["emp", "defines.emp", "--hex", "-D", "DEBUG=1"])
+        .current_dir(vectors)
+        .output()
+        .expect("run sigil emp");
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("2A"), "stdout: {stdout}");
+}
+
 /// A comptime error (an `embed` of a missing file) must exit non-zero and print
 /// the diagnostic — no partial/empty binary silently succeeding.
 #[test]

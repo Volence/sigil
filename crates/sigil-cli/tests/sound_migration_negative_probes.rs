@@ -55,7 +55,7 @@ fn emp_sections(emp: &str) -> Vec<Section> {
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
     let (module, ldiags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
     module.sections
 }
@@ -160,7 +160,7 @@ fn length_guard_zero_length_blob_fires_at_comptime() {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got: {pdiags:?}");
     let (_module, ldiags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         ldiags.iter().any(|d| d.level == Level::Error
             && d.message.contains("DAC sample length must be > 0 and < $8000")),
@@ -180,7 +180,7 @@ fn length_guard_nonzero_length_blob_is_silent() {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "expected a clean parse, got: {pdiags:?}");
     let (_module, ldiags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         ldiags.iter().all(|d| d.level != Level::Error),
         "a non-empty blob must pass the length guard silently, got: {ldiags:?}"

@@ -147,7 +147,7 @@ fn placed_emp_sections(aeon: &Path) -> Vec<Section> {
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "emp parse errors: {pdiags:?}"
     );
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(dir.clone()) };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(dir.clone()), defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

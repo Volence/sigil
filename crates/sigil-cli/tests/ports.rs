@@ -44,7 +44,7 @@ fn emp_candidate(emp: &str) -> Vec<u8> {
         pdiags.iter().all(|d| d.level != Level::Error),
         "emp parse errors: {pdiags:?}"
     );
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != Level::Error),
@@ -74,7 +74,7 @@ fn emp_link_diags(emp: &str) -> Vec<Diagnostic> {
         pdiags.iter().all(|d| d.level != Level::Error),
         "emp parse errors: {pdiags:?}"
     );
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != Level::Error),
@@ -196,7 +196,7 @@ fn as_compat_is_byte_neutral_on_data() {
 fn emp_sections(emp: &str) -> Vec<Section> {
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
-    let (module, ldiags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+    let (module, ldiags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
     module.sections
 }
@@ -680,7 +680,7 @@ fn example_reach_branches_compiles_byte_exact() {
     // Zero diagnostics at all (not just zero errors) — a clean teaching exhibit.
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.is_empty(), "reach_branches parse diagnostics: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
     let (_module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.is_empty(), "reach_branches lower diagnostics: {ldiags:?}");
 
@@ -871,7 +871,7 @@ mod probe_b {
         let (file, pdiags) = parse_str(emp);
         assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
         let (module, ldiags) =
-            lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+            lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
         assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower: {ldiags:?}");
 
         let mut sections = module.sections;

@@ -18,7 +18,7 @@ use sigil_span::{Diagnostic, Level};
 fn lower(src: &str) -> (Module, Vec<Diagnostic>) {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None })
+    lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] })
 }
 
 /// Link a lowered `Module` to a flat image (mirrors T0/T2/T3 link helpers).

@@ -10,7 +10,7 @@ fn renames_labels_and_fixup_targets() {
     let (file, d) = parse_str("module m.a\ndata Def: [*u8; 1] = [init]\nproc init (a0: *u8) {}\n");
     assert!(d.iter().all(|x| x.level != sigil_span::Level::Error), "{d:?}");
     let (mut module, _) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
 
     let mut map = HashMap::new();
     map.insert("Def".to_string(), "m.a.Def".to_string());
@@ -38,7 +38,7 @@ fn renames_cross_module_branch_target() {
     let (file, d) = parse_str("module x\nproc a (a0: *u8) { jmp other }\nproc other (a0: *u8) { rts }\n");
     assert!(d.iter().all(|x| x.level != sigil_span::Level::Error), "{d:?}");
     let (mut module, _) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
 
     // Confirm the fragment we rely on is actually a JmpJsrSym (not, say, a
     // relaxed abs) — the invariant this test is meant to pin.
@@ -72,7 +72,7 @@ fn proc_local_symbols_pass_through_unchanged() {
     let (file, d) = parse_str("module x\nproc a (a0: *u8) {\n.loop:\n  bra.w .loop\n}\n");
     assert!(d.iter().all(|x| x.level != sigil_span::Level::Error), "{d:?}");
     let (mut module, _) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
 
     // Map contains ONLY the bare top-level name — never the mangled local.
     let mut map = HashMap::new();

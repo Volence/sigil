@@ -33,7 +33,7 @@ fn vectors_dir() -> PathBuf {
 fn const_value(src: &str, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
-    eval_const_with_root(&file, name, Some(&vectors_dir()))
+    eval_const_with_root(&file, name, Some(&vectors_dir()), &[])
 }
 
 /// Parse `src` (asserting a clean parse) and lower the data item named `name`,
@@ -41,7 +41,7 @@ fn const_value(src: &str, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
 fn data(src: &str, name: &str) -> (Option<DataBuf>, Vec<Diagnostic>) {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
-    let (buf, _asserts, ds) = eval_data_with_root(&file, name, None, Some(&vectors_dir()));
+    let (buf, _asserts, ds) = eval_data_with_root(&file, name, None, Some(&vectors_dir()), &[]);
     (buf, ds)
 }
 

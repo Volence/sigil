@@ -16,7 +16,7 @@ fn lower_ok(src: &str) -> Module {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(diags.is_empty(), "lower: {diags:?}");
     module
 }
@@ -72,7 +72,7 @@ fn equ_string_value_is_equ_value_diagnostic() {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[equ.value]")
             && d.message.contains("integer or a link-time expression")),

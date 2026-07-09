@@ -38,7 +38,7 @@ fn lower_module_with_include_root_resolves_embed() {
 
     let (module, diags) = lower_module(
         &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()) },
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: Some(vectors_dir()), defines: vec![] },
     );
     assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
 
@@ -58,7 +58,7 @@ fn lower_module_without_include_root_reports_no_root() {
     assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
 
     let (_module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     assert!(
         diags.iter().any(|d| d.message.contains("[sandbox.no-root]")),
         "expected [sandbox.no-root], got {diags:?}"

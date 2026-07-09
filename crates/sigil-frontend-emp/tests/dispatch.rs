@@ -23,7 +23,7 @@ fn lower(src: &str) -> (Module, Vec<String>) {
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (module, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     (module, diags.into_iter().map(|d| d.message).collect())
 }
 
@@ -496,7 +496,7 @@ proc wait() { rts }
     let (file, perrs) = parse_str(src);
     assert!(perrs.is_empty(), "parse: {perrs:?}");
     let (_, diags) =
-        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None });
+        lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] });
     let errs: Vec<_> = diags.into_iter().map(|d| d.message).collect();
     assert!(errs.is_empty(), "unexpected diagnostics: {errs:?}");
 }

@@ -36,7 +36,7 @@ use sigil_span::Level;
 fn emp_link(emp: &str) -> LinkedImage {
     let (file, pdiags) = parse_str(emp);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse errors: {pdiags:?}");
-    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None };
+    let opts = LowerOptions { initial_cpu: Cpu::M68000, include_root: None, defines: vec![] };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "emp lower errors: {ldiags:?}");
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)

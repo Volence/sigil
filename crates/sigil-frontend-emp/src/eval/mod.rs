@@ -171,6 +171,14 @@ pub struct Evaluator<'a> {
     /// const that already failed (cycle or error) so the failure does not
     /// re-report on subsequent references.
     const_memo: HashMap<String, Value>,
+    /// Comptime `-D NAME=INT` defines currently in scope (sound-migration T2
+    /// Task 1, R1), keyed by name. Populated once, up front, by
+    /// [`seed_defines`](Self::seed_defines) — NOT incrementally like
+    /// [`const_memo`](Self::const_memo) — so [`eval_path`](expr::Evaluator::eval_path)'s
+    /// bare-name lookup can treat a define exactly like a `const` even though
+    /// it has no backing `ast::ConstDecl` to index into [`consts`](Self::consts).
+    /// A name present here always has a matching pre-seeded `const_memo` entry.
+    defines: HashMap<String, i128>,
     /// The names of consts whose value expressions are currently being
     /// evaluated, in reference order — the in-progress stack used to detect and
     /// name cyclic const definitions.
@@ -343,6 +351,7 @@ impl<'a> Evaluator<'a> {
             pending_return: None,
             comptime_ctx: 0,
             const_memo: HashMap::new(),
+            defines: HashMap::new(),
             in_progress: Vec::new(),
             data_memo: HashMap::new(),
             struct_construct_in_progress: Vec::new(),
@@ -867,6 +876,48 @@ impl<'a> Evaluator<'a> {
         v
     }
 
+    /// Inject `-D NAME=INT` comptime defines into the module's global scope
+    /// (sound-migration T2 Task 1, R1). Called once per evaluator, right after
+    /// [`with_file`](Self::with_file) — BEFORE any item evaluates — so a bare
+    /// reference to a define (`if DEBUG == 1 { .. }`) resolves exactly like a
+    /// `const` reference: [`eval_path`](expr::Evaluator::eval_path) checks
+    /// [`defines`](Self::defines) alongside `consts`/`equs`, and the value is
+    /// pre-seeded into [`const_memo`](Self::const_memo) so [`resolve_const`]
+    /// is never actually invoked for a define (there is no `ast::ConstDecl` to
+    /// evaluate — the whole point of "resolved entry" in R1).
+    ///
+    /// A `name` already declared by the module as ANY named item (const, equ,
+    /// enum, fn, struct, bitfield, newtype, data, offsets, dispatch, or named
+    /// overlay) is a collision the define does NOT win: it is silently left
+    /// unseeded here so the module's own declaration resolves names
+    /// afterward (never a silent shadow). The LOUD `[defines.collision]`
+    /// diagnostic itself is NOT this method's job: every per-item evaluator
+    /// calls `seed_defines` once, so reporting here would duplicate the
+    /// diagnostic once per item. The lowering pass's `validate_defines` is the
+    /// once-per-compile driver that reports it, mirroring how
+    /// `validate_offsets`/`validate_dispatch` already keep their own
+    /// once-per-compile duplicate/reserved-name checks out of the evaluator.
+    pub(crate) fn seed_defines(&mut self, defines: &[(String, i128)]) {
+        for (name, value) in defines {
+            if self.consts.contains_key(name.as_str())
+                || self.equs.contains_key(name.as_str())
+                || self.enums.contains_key(name.as_str())
+                || self.fns.contains_key(name.as_str())
+                || self.structs.contains_key(name.as_str())
+                || self.bitfields.contains_key(name.as_str())
+                || self.newtypes.contains_key(name.as_str())
+                || self.datas.contains_key(name.as_str())
+                || self.offsets.contains_key(name.as_str())
+                || self.dispatches.contains_key(name.as_str())
+                || self.overlays.contains_key(name.as_str())
+            {
+                continue;
+            }
+            self.defines.insert(name.clone(), *value);
+            self.const_memo.insert(name.clone(), Value::Int(*value));
+        }
+    }
+
     /// Select one of the three DISTINCT cycle-guard stacks for
     /// [`with_cycle_guard`](Self::with_cycle_guard). The stacks stay separate
     /// fields for correctness (see their doc comments); this only picks among
@@ -956,7 +1007,7 @@ impl Default for Evaluator<'_> {
 /// `(Some(value), diags)` — `diags` may still be non-empty if the value
 /// contains a reported error (its `Poison` is surfaced as `Some(Poison)`).
 pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Diagnostic>) {
-    eval_const_with_root(file, name, None)
+    eval_const_with_root(file, name, None, &[])
 }
 
 /// Like [`eval_const`], but also threads a capability-sandbox `include_root`
@@ -964,6 +1015,10 @@ pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Di
 /// against, mirroring [`crate::layout::eval_data_with_root`]. `include_root =
 /// None` behaves exactly like [`eval_const`] (a comptime `import(...)` inside
 /// the const then reports `[sandbox.no-root]`).
+///
+/// `defines` (sound-migration T2 Task 1, R1) are seeded into the evaluator's
+/// global scope via [`Evaluator::seed_defines`] before `name` resolves, so a
+/// const's value expression can reference a `-D` define like any other name.
 ///
 /// This is the seam a bare `const V = import(...)` test uses to observe the
 /// imported [`Value`] directly (no `data` item / byte layout needed) — the
@@ -973,14 +1028,19 @@ pub fn eval_const_with_root(
     file: &crate::ast::File,
     name: &str,
     include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
 ) -> (Option<Value>, Vec<Diagnostic>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
     // not a native stack overflow, is what stops runaway recursion.
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
+        }
+        if let Some(v) = ev.defines.get(name).copied() {
+            return (Some(Value::Int(v)), ev.diags);
         }
         if !ev.consts.contains_key(name) && !ev.equs.contains_key(name) {
             // Message unchanged for the pure-const-absent case (existing
@@ -1046,6 +1106,7 @@ where
 /// mint colliding `$asm0…` symbols. The caller threads the counter across every
 /// proc (passing the previous proc's returned value in), keeping `k` globally
 /// monotonic. The advanced counter is returned as the third tuple element.
+#[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
 pub fn eval_proc_body(
     file: &crate::ast::File,
     name: &str,
@@ -1054,9 +1115,11 @@ pub fn eval_proc_body(
     span: Span,
     asm_counter_start: u32,
     cpu: sigil_ir::backend::Cpu,
+    defines: &[(String, i128)],
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
         ev.asm_counter = asm_counter_start;
         // The proc's section CPU is known here (unlike a raw `asm {}` template):
         // record it so a bare statement call in the body can consult the

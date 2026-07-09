@@ -186,6 +186,14 @@ impl<'a> Evaluator<'a> {
                     if self.consts.contains_key(name) || self.equs.contains_key(name) {
                         return self.resolve_const(name, path.span);
                     }
+                    // A `-D NAME=INT` comptime define (sound-migration T2
+                    // Task 1): seeded into `const_memo` by `seed_defines`, so a
+                    // plain memo lookup resolves it exactly like a const —
+                    // there is no backing `ast::ConstDecl` to route through
+                    // `resolve_const`'s cycle machinery (a define can't cycle).
+                    if let Some(v) = self.defines.get(name) {
+                        return Value::Int(*v);
+                    }
                     if self.fns.contains_key(name) {
                         return Value::FnRef(name.to_string());
                     }

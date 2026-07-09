@@ -50,11 +50,15 @@ pub(super) struct Siblings<'a> {
 /// whether the enclosing module is `@as_compat` (which silences the heuristic
 /// modernization WARNINGs). Bundled so `lower_proc` stays under clippy's
 /// argument-count lint (mirroring how [`Siblings`] bundles position).
-pub(super) struct ProcCtx {
+pub(super) struct ProcCtx<'a> {
     /// The CPU this proc's body encodes for.
     pub cpu: Cpu,
     /// Module-level `@as_compat` — silence the faithful-port lints (D-P6.3).
     pub as_compat: bool,
+    /// Comptime `-D NAME=INT` defines (sound-migration T2 Task 1, R1), seeded
+    /// into this proc's evaluator so its body can reference one like any
+    /// other name.
+    pub defines: &'a [(String, i128)],
 }
 
 /// Lower one proc: define its label, evaluate + lower its body, then run the
@@ -78,8 +82,16 @@ pub(super) fn lower_proc(
 ) {
     // 1. Label + body → IR. Params emit no code (declarative register bindings).
     builder.define_label(&proc.name);
-    let (buf, mut ds, next_counter) =
-        eval_proc_body(file, &proc.name, &proc.params, &proc.body, proc.span, *asm_counter, ctx.cpu);
+    let (buf, mut ds, next_counter) = eval_proc_body(
+        file,
+        &proc.name,
+        &proc.params,
+        &proc.body,
+        proc.span,
+        *asm_counter,
+        ctx.cpu,
+        ctx.defines,
+    );
     *asm_counter = next_counter;
     diags.append(&mut ds);
     let Some(buf) = buf else { return };
