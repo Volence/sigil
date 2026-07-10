@@ -838,7 +838,7 @@ fn ind_reg_err(r: Reg) -> String {
 }
 
 /// `(is_address_register, low-3-bit number)` for a [`Reg`].
-fn reg_kind(r: Reg) -> (bool, u8) {
+pub(super) fn reg_kind(r: Reg) -> (bool, u8) {
     match r {
         Reg::D0 => (false, 0),
         Reg::D1 => (false, 1),

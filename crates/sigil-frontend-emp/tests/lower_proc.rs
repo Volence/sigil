@@ -335,3 +335,171 @@ fn jbra_in_z80_section_is_branch_non_68k() {
         "jbra in a z80 section must be [branch.non-68k]: {diags:?}"
     );
 }
+
+// ---- `preserves(...)` — the S2-D6(b) SYNTACTIC slice (tranche 3) ----------
+//
+// A proc may declare `preserves(d0-d1/a0)`: the registers it saves and
+// restores around its body. The syntactic slice verifies the DECLARED set
+// against the literal `movem <list>, -(sp)` / `movem (sp)+, <list>` pair
+// (first save, last restore) — no dataflow; the full register-contract batch
+// stays gated on S2-D6. HBlank_Dispatch is the poster child. This is an
+// opt-in declared CONTRACT (like `falls_into`, unlike the clobber lint), so
+// violations are error-tier and `@as_compat` does not silence them.
+
+#[test]
+fn preserves_matching_movem_pair_ok() {
+    // The HBlank_Dispatch shape: save d0-d1/a0, work, restore, rte.
+    let src = "module m\n\
+               proc h() preserves(d0-d1/a0) {\n\
+               \x20   movem.l d0-d1/a0, -(sp)\n\
+               \x20   nop\n\
+               \x20   movem.l (sp)+, d0-d1/a0\n\
+               \x20   rte\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[proc.preserves")),
+        "a matching movem pair must satisfy the declared preserves set: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_mask_mismatch_errors() {
+    // Declares d0-d1/a0 but the pair saves/restores d0-d2/a0 — the attribute
+    // is stale (or the movem wrong); name both sides.
+    let src = "module m\n\
+               proc h() preserves(d0-d1/a0) {\n\
+               \x20   movem.l d0-d2/a0, -(sp)\n\
+               \x20   movem.l (sp)+, d0-d2/a0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags.iter().find(|d| d.message.contains("[proc.preserves-mismatch]"));
+    let hit = hit.unwrap_or_else(|| panic!("expected [proc.preserves-mismatch], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(
+        hit.message.contains("d0-d1/a0") && hit.message.contains("d0-d2/a0"),
+        "the mismatch must name both the declared and the actual set: {}",
+        hit.message
+    );
+}
+
+#[test]
+fn preserves_pop_mask_must_match_too() {
+    // Push matches the declaration but the restore differs — an asymmetric
+    // save/restore corrupts registers; still a mismatch error.
+    let src = "module m\n\
+               proc h() preserves(d0-d1/a0) {\n\
+               \x20   movem.l d0-d1/a0, -(sp)\n\
+               \x20   movem.l (sp)+, d0-d1/a1\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-mismatch]"),
+        "a restore differing from the declared set must be a mismatch: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_missing_pair_errors() {
+    // Declares preserves but the body never saves to the stack.
+    let src = "module m\n\
+               proc h() preserves(d0-d1/a0) {\n\
+               \x20   nop\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags.iter().find(|d| d.message.contains("[proc.preserves-missing-pair]"));
+    let hit =
+        hit.unwrap_or_else(|| panic!("expected [proc.preserves-missing-pair], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+}
+
+#[test]
+fn preserves_pop_only_is_missing_pair() {
+    // A restore with no save is not a pair (order matters: save, then restore).
+    let src = "module m\n\
+               proc h() preserves(d0) {\n\
+               \x20   movem.l (sp)+, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-missing-pair]"),
+        "a pop-only body must be a missing pair: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_clobbers_overlap_errors() {
+    // A register cannot be both preserved and clobbered.
+    let src = "module m\n\
+               proc h() clobbers(d0) preserves(d0-d1) {\n\
+               \x20   movem.l d0-d1, -(sp)\n\
+               \x20   movem.l (sp)+, d0-d1\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit =
+        diags.iter().find(|d| d.message.contains("[proc.preserves-clobbers-overlap]"));
+    let hit = hit
+        .unwrap_or_else(|| panic!("expected [proc.preserves-clobbers-overlap], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(hit.message.contains("d0"), "must name the overlapping register: {}", hit.message);
+}
+
+#[test]
+fn preserves_invalid_register_errors() {
+    // `d9` is not a register; a declared contract over nonsense is an error.
+    let src = "module m\n\
+               proc h() preserves(d9) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(has_tag(&diags, "[proc.preserves-invalid]"), "expected invalid-register: {diags:?}");
+}
+
+#[test]
+fn preserves_reversed_range_errors() {
+    let src = "module m\n\
+               proc h() preserves(d1-d0) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(has_tag(&diags, "[proc.preserves-invalid]"), "expected reversed-range: {diags:?}");
+}
+
+#[test]
+fn as_compat_does_not_silence_preserves() {
+    // `@as_compat` silences the heuristic modernization lints, NOT declared
+    // contracts (same rule as the falls_into adjacency error).
+    let src = "module m\n@as_compat\n\
+               proc h() preserves(d0-d1/a0) {\n\
+               \x20   nop\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-missing-pair]"),
+        "@as_compat must not silence a declared preserves contract: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_composes_with_clobbers_and_falls_into() {
+    // Attribute order is free; disjoint clobbers+preserves+falls_into all on
+    // one proc must parse and check cleanly.
+    let src = "module m\n\
+               proc a() clobbers(d2) preserves(d0/a0) falls_into b {\n\
+               \x20   movem.l d0/a0, -(sp)\n\
+               \x20   moveq #1, d2\n\
+               \x20   movem.l (sp)+, d0/a0\n\
+               }\n\
+               proc b() {\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !diags.iter().any(|d| d.level == Level::Error),
+        "composed attributes must lower cleanly: {diags:?}"
+    );
+}
