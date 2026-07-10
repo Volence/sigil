@@ -495,7 +495,7 @@ fn placed_emp_sections_with_mt_sfx_hblank(
 /// CONTROLLERS/MATH defines-less, MT's `DEBUG` — R4). Returns all SIX
 /// modules' placed sections concatenated (declaration order only) AND all
 /// THREE asserts-bearing modules' link_asserts (mt == 5, sfx == 1,
-/// controllers == 8 — `engine.constants`'s drift guards, tranche 2's step-2
+/// controllers == 11 — `engine.constants`'s drift guards, tranche 2's step-2
 /// modernize pass; hblank/math carry none) — the ONE lower pass per module
 /// (M2).
 fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
@@ -1270,7 +1270,7 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
 ///
 /// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags,
 /// controllers_assert_diags)` — the caller pins all THREE asserts-bearing
-/// modules' `check_link_asserts` (mt == 5, sfx == 1, controllers == 8 —
+/// modules' `check_link_asserts` (mt == 5, sfx == 1, controllers == 11 —
 /// `engine.constants`'s drift guards) and asserts every diagnostic is
 /// non-Error. `hblank.emp`/`math.emp` carry no link asserts of their own (no
 /// `ensure`/`extern`), so they contribute none here.
@@ -1307,8 +1307,8 @@ fn build_mixed_tranche2_rom(
     );
     assert_eq!(
         guard_assert_count(&controllers_asserts),
-        8,
-        "engine.constants's eight drift-guard ensures must be captured"
+        11,
+        "engine.constants's eleven drift-guard ensures must be captured"
     );
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
@@ -1503,8 +1503,8 @@ fn build_mixed_tranche3_rom(
     );
     assert_eq!(
         guard_assert_count(&controllers_asserts),
-        8,
-        "engine.constants's eight drift-guard ensures must be captured"
+        11,
+        "engine.constants's eleven drift-guard ensures must be captured"
     );
 
     // The two tranche-3 modules each carry the twin's eight drift guards
@@ -1516,8 +1516,8 @@ fn build_mixed_tranche3_rom(
     {
         assert_eq!(
             guard_assert_count(asserts),
-            8,
-            "{name} must carry engine.constants's eight drift guards"
+            11,
+            "{name} must carry engine.constants's eleven drift guards"
         );
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
         assert!(
@@ -1696,10 +1696,10 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
 
     assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
     assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
-    assert_eq!(guard_assert_count(&controllers_asserts), 8, "controllers guards captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 11, "controllers guards captured");
     for (name, asserts, want) in [
-        ("vdp_init.emp", &vdp_init_asserts, 8usize),
-        ("collision_lookup.emp", &collision_asserts, 8),
+        ("vdp_init.emp", &vdp_init_asserts, 11usize),
+        ("collision_lookup.emp", &collision_asserts, 11),
         // particle_anims: the AF_DELETE drift guard + the align 2 congruence
         // assert (guard_assert_count excludes only [layout.odd-item]).
         ("particle_anims.emp", &particle_asserts, 2),
@@ -1846,10 +1846,10 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
 
     assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
     assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
-    assert_eq!(guard_assert_count(&controllers_asserts), 8, "controllers guards captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 11, "controllers guards captured");
     for (name, asserts, want) in [
-        ("vdp_init.emp", &vdp_init_asserts, 8usize),
-        ("collision_lookup.emp", &collision_asserts, 8),
+        ("vdp_init.emp", &vdp_init_asserts, 11usize),
+        ("collision_lookup.emp", &collision_asserts, 11),
         ("particle_anims.emp", &particle_asserts, 2),
         ("sonic_anims.emp", &sonic_asserts, 16),
         ("act_descriptor.emp", &act_asserts, 5),

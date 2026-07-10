@@ -2286,11 +2286,19 @@ impl Asm {
     /// `dc.w <expr>,...` — big-endian 16-bit words (asl: BE, unlike the Z80
     /// `dw`'s little-endian). Mirrors `directive_dw`'s expr-list parsing.
     ///
-    /// DELIBERATE ASYMMETRY (R-T0.4): unlike `db`/`dw`, the 68k `dc.w`/`dc.l`
-    /// unresolved arm is NOT migrated to the general `Value*` deferral — it keeps
-    /// its bare-`Sym`→`Abs16Be`/`Abs32Be` (address) behavior. No cross-seam
-    /// customer consumes a deferred 68k `dc.w` VALUE yet, so touching it would be
-    /// scope creep; the Z80 `db`/`dw` are the .emp→.asm seam.
+    /// Unresolved arm, two cases (R-T0.4's planned migration, taken up in
+    /// tranche 6 when its first cross-seam customer arrived):
+    /// - a bare `Sym` keeps its `Abs16Be` (ADDRESS) behavior — existing
+    ///   consumers store pointer words, and the address kind's signed range
+    ///   check is the right one for them;
+    /// - a COMPOUND expression defers as a general link-expr VALUE — two
+    ///   placeholder bytes + a `Value16Be` fixup carrying the parsed+qualified
+    ///   tree (the `dw`/`Value16Le` precedent, BE for 68k sections). The
+    ///   demand shape is `dc.w objroutine(TestSolid_Init)` — a
+    ///   `sym - ObjCodeBase` bank-offset word whose sym is `.emp`-owned in
+    ///   the mixed build. `Value16Be` range-checks the folded value to the
+    ///   unsigned 16-bit window, so an out-of-range difference is loud, not
+    ///   silently truncated.
     fn directive_dc_w(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         self.pad_word_align(span);
@@ -2321,8 +2329,18 @@ impl Asm {
                             span,
                         );
                     } else {
-                        self.err(span, "unresolved word expression");
-                        self.emit(&[0x00, 0x00], vec![], span);
+                        self.emit(
+                            &[0x00, 0x00],
+                            vec![Fixup {
+                                kind: FixupKind::Value16Be,
+                                offset: 0,
+                                // Bake env-resolvable subterms here — the
+                                // linker only sees the true cross-seam leaf
+                                // (the `directive_dw` pattern).
+                                target: self.partial_fold(&qe),
+                            }],
+                            span,
+                        );
                     }
                 }
             }
