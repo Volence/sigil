@@ -20,7 +20,7 @@ fn proc_header_forms() {
     assert_eq!(p.params[0].0, "a0");
     assert!(matches!(p.params[0].1, Type::Ptr(_)));
     let Item::Proc(p) = &f.items[1] else { panic!() };
-    assert_eq!(p.clobbers, vec!["d0", "d1"]);
+    assert_eq!(p.clobbers.as_deref(), Some(&["d0".to_string(), "d1".to_string()][..]));
 }
 
 #[test]

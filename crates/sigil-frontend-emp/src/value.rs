@@ -356,6 +356,42 @@ pub enum CodeOperand {
         /// The base register.
         reg: Reg,
     },
+    /// Explicit-width absolute with a comptime address: `($FFFF8022).w` /
+    /// `($C00004).l` — the AS-parity FORCED-width spelling (the bare-symbol
+    /// idiom, which relaxes via the width rule, stays the new-style
+    /// default). The `.w` window is validated at eval (asl's sign-extension
+    /// rule) and re-checked at lowering.
+    AbsInt {
+        /// The comptime address.
+        addr: i128,
+        /// `true` for `.l`.
+        long: bool,
+    },
+    /// Explicit-width absolute with a symbolic address: `(Sym).w` /
+    /// `(Sym).l` — the WIDTH is pinned by the author; the address defers as
+    /// ONE fixed-width fixup (no RelaxAbsSym candidate pair).
+    AbsSym {
+        /// The hygiene-resolved link symbol.
+        target: String,
+        /// `true` for `.l`.
+        long: bool,
+    },
+    /// An-indexed indirect: `(a0,d2.w)` / `d8(a0,d2.w)` — 68k `(d8,An,Xn)`,
+    /// brief extension word. Unlike the pc-indexed sibling there is no
+    /// link-time fact here: the displacement is comptime-resolved and
+    /// range-checked to the brief extension's signed-8-bit field at eval
+    /// time (defense-in-depth re-check at lowering).
+    IndIdx {
+        /// The base address register.
+        reg: Reg,
+        /// The comptime displacement (i8 range).
+        disp: i128,
+        /// The index register.
+        xn: Reg,
+        /// `true` for `.l` (long index), `false` for `.w` (sign-extended,
+        /// the AS-matching default when unsuffixed).
+        xlong: bool,
+    },
     /// A `movem` register-list operand (`d0-d1/a0`), already folded to the
     /// CANONICAL 16-bit mask (bit0=D0..bit7=D7, bit8=A0..bit15=A7) — the same
     /// convention as `sigil_isa::m68k::Operand::RegList`. Reglist parsing is

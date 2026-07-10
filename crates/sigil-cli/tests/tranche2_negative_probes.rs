@@ -92,7 +92,7 @@ fn controllers_map_toml(base: &str) -> String {
 }
 
 /// `engine/constants.asm:17-18` (`HW_PORT_*_DATA`) PLUS `:89-92` (`BUTTON_*`)
-/// verbatim — `engine.constants`'s six drift-guard `ensure`s (riding along
+/// verbatim — `engine.constants`'s eight drift-guard `ensure`s (riding along
 /// via `constants_ambient_items`) read the `BUTTON_*` four back through
 /// `extern(...)`, so they need real equs to check against here too (mirrors
 /// `controllers_port.rs`'s `as_hw_port_equs`).
@@ -114,6 +114,8 @@ fn as_hw_port_equs_with_button_up(button_up_rhs: &str) -> Vec<Section> {
          BUTTON_DOWN = 1<<1\n\
          BUTTON_LEFT = 1<<2\n\
          BUTTON_RIGHT = 1<<3\n\
+         CTYPE_AIR = 0\n\
+         VDP_Shadow_len = 19\n\
          Stub:\n\
          \tdc.w 0\n"
     );

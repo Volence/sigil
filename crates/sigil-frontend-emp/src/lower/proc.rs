@@ -120,10 +120,20 @@ pub(super) fn lower_proc(
         None => {}
     }
 
-    // 4. Clobbers lint (only when the proc declares a clobber set) — likewise a
-    // modernization warning silenced under `@as_compat`.
-    if !proc.clobbers.is_empty() && !ctx.as_compat {
+    // 4. Clobbers lint (only when the proc declares a clobber set — the
+    // explicit empty `clobbers()` counts: it declares "touches nothing", so
+    // every register write is undeclared) — likewise a modernization warning
+    // silenced under `@as_compat`.
+    if proc.clobbers.is_some() && !ctx.as_compat {
         check_clobbers(proc, &buf, diags);
+    }
+
+    // 5. Preserves contract (S2-D6b SYNTACTIC slice): the declared set must
+    // match the literal movem save/restore pair. An opt-in declared CONTRACT
+    // like `falls_into` — error tier, NOT silenced by `@as_compat` (only the
+    // heuristic modernization lints are).
+    if !proc.preserves.is_empty() {
+        check_preserves(proc, &buf, diags);
     }
 }
 
@@ -255,7 +265,8 @@ fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
 /// (`a0`/`d2`/…), which is today's model (§5.1); if params ever gain symbolic
 /// names bound to registers, a write to that register would false-positive here.
 fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
-    let mut allowed: HashSet<&str> = proc.clobbers.iter().map(String::as_str).collect();
+    let mut allowed: HashSet<&str> =
+        proc.clobbers.as_deref().unwrap_or(&[]).iter().map(String::as_str).collect();
     // Params are declarative register bindings (§5.1): a write to a param
     // register is part of the proc's own contract, not an undeclared clobber.
     allowed.extend(proc.params.iter().map(|(name, _, _)| name.as_str()));
@@ -269,6 +280,15 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
         // clobber (a memory-dest form writes memory, not a register). Reuse
         // `Reg`'s `Display` for the canonical `d0`..`a7` spelling.
         let Some(CodeOperand::Reg(r)) = ops.last() else { continue };
+        // Stack-pointer ARITHMETIC (`addq.l #2, sp` / `lea N(sp), sp`
+        // cleanup) is stack DISCIPLINE, not a register clobber — every
+        // push/pop-balancing proc adjusts sp, and balanced-stack
+        // verification is S2-D7(b)'s dataflow job. Stack REPLACEMENT
+        // (`movea.l x, sp` — switching stacks) stays a genuine a7 clobber
+        // and is NOT exempt (tranche-3 review scoping).
+        if *r == crate::value::Reg::A7 && is_sp_arithmetic(mnemonic, ops) {
+            continue;
+        }
         let name = r.to_string();
         if !allowed.contains(name.as_str()) {
             push(
@@ -374,6 +394,236 @@ fn is_condition_code(cc: &str) -> bool {
             | "gt"
             | "le"
     )
+}
+
+/// Verify the declared `preserves(...)` set against the literal movem
+/// save/restore pair (S2-D6b, the SYNTACTIC slice — no dataflow; the full
+/// register-contract batch stays gated on S2-D6). The rule: the body's FIRST
+/// `movem <list>, -(sp)` and LAST `movem (sp)+, <list>` must both exist (save
+/// before restore) and both lists must equal the declared set exactly.
+/// A proc that preserves registers some other way (individual pushes) cannot
+/// declare `preserves` yet — a missing pair is an error, not a shrug, because
+/// a wrong contract is worse than none.
+///
+/// 68k-only, like the clobber lint (movem/`sp` are 68k concepts); a Z80 proc
+/// declaring `preserves` gets the missing-pair error, which is honest — the
+/// slice cannot verify it.
+fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
+    // Fold the declared segments to the canonical movem mask
+    // (bit0=D0..bit7=D7, bit8=A0..bit15=A7 — the `CodeOperand::RegList`
+    // convention).
+    let mut declared: u16 = 0;
+    let mut bad = false;
+    for (lo, hi) in &proc.preserves {
+        let Some(lo_bit) = preserves_reg_bit(lo) else {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.preserves-invalid] `{}` declares `preserves({lo}{})` — `{lo}` is \
+                     not a register (d0-d7/a0-a7/sp)",
+                    proc.name,
+                    hi.as_deref().map(|h| format!("-{h}")).unwrap_or_default(),
+                ),
+            );
+            bad = true;
+            continue;
+        };
+        let hi_bit = match hi {
+            None => lo_bit,
+            Some(h) => match preserves_reg_bit(h) {
+                Some(b) if b >= lo_bit => b,
+                Some(_) => {
+                    push(
+                        diags,
+                        Level::Error,
+                        proc.span,
+                        format!(
+                            "[proc.preserves-invalid] `{}` declares the reversed range \
+                             `{lo}-{h}` — a reglist range runs low to high",
+                            proc.name
+                        ),
+                    );
+                    bad = true;
+                    continue;
+                }
+                None => {
+                    push(
+                        diags,
+                        Level::Error,
+                        proc.span,
+                        format!(
+                            "[proc.preserves-invalid] `{}` declares `preserves({lo}-{h})` — \
+                             `{h}` is not a register (d0-d7/a0-a7/sp)",
+                            proc.name
+                        ),
+                    );
+                    bad = true;
+                    continue;
+                }
+            },
+        };
+        for bit in lo_bit..=hi_bit {
+            declared |= 1 << bit;
+        }
+    }
+    if bad {
+        return;
+    }
+
+    // A register cannot be both preserved and clobbered — a contradictory
+    // contract is diagnosed, not resolved.
+    for c in proc.clobbers.as_deref().unwrap_or(&[]) {
+        if let Some(bit) = preserves_reg_bit(c) {
+            if declared & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.preserves-clobbers-overlap] `{}` declares `{c}` both preserved \
+                         and clobbered — a register cannot be in both sets",
+                        proc.name
+                    ),
+                );
+                return;
+            }
+        }
+    }
+
+    // Collect every stack movem (push to / pop from sp), with its size. The
+    // rule: every stack movem whose list INTERSECTS the declared set must
+    // EQUAL it (so a wrong-list early-exit restore is caught, while a
+    // DISJOINT nested save around an inner call stays none of our business),
+    // must be `movem.l` (a `.w` restore SIGN-EXTENDS each word — it does not
+    // preserve anything), and at least one matching save must precede the
+    // last matching restore.
+    let mut matching_push: Option<usize> = None;
+    let mut matching_pop: Option<usize> = None;
+    for (i, item) in buf.items.iter().enumerate() {
+        let CodeItem::Instr { mnemonic, size, ops, span } = item else { continue };
+        if mnemonic != "movem" {
+            continue;
+        }
+        let (mask, is_push) = match ops.as_slice() {
+            [CodeOperand::RegList(m), CodeOperand::PreDec(crate::value::Reg::A7)] => (*m, true),
+            [CodeOperand::PostInc(crate::value::Reg::A7), CodeOperand::RegList(m)] => (*m, false),
+            _ => continue,
+        };
+        if mask & declared == 0 {
+            continue; // disjoint nested save — not part of this contract
+        }
+        if *size != Some(crate::value::Width::L) {
+            push(
+                diags,
+                Level::Error,
+                *span,
+                format!(
+                    "[proc.preserves-word-pair] `{}` declares `preserves({})` but this stack \
+                     movem is not `movem.l` — a word-size restore sign-extends each register \
+                     and preserves nothing; use `movem.l`",
+                    proc.name,
+                    mask_reglist(declared),
+                ),
+            );
+            return;
+        }
+        if mask != declared {
+            push(
+                diags,
+                Level::Error,
+                *span,
+                format!(
+                    "[proc.preserves-mismatch] `{}` declares `preserves({})` but this stack \
+                     movem {} `{}` — every save/restore overlapping the declared set must \
+                     cover exactly that set; update the attribute or the movem",
+                    proc.name,
+                    mask_reglist(declared),
+                    if is_push { "saves" } else { "restores" },
+                    mask_reglist(mask),
+                ),
+            );
+            return;
+        }
+        if is_push {
+            if matching_push.is_none() {
+                matching_push = Some(i);
+            }
+        } else {
+            matching_pop = Some(i);
+        }
+    }
+    let paired = matches!((matching_push, matching_pop), (Some(p), Some(q)) if p < q);
+    if !paired {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.preserves-missing-pair] `{}` declares `preserves({})` but its body has \
+                 no `movem.l <list>, -(sp)` … `movem.l (sp)+, <list>` save/restore pair — the \
+                 syntactic slice (S2-D6b) verifies the literal movem pair, so a proc that \
+                 preserves registers another way cannot declare `preserves` yet",
+                proc.name,
+                mask_reglist(declared),
+            ),
+        );
+    }
+}
+
+/// True for an sp-DESTINATION write that is stack arithmetic rather than
+/// stack replacement: the add/sub immediate families (`addq #2, sp`), or a
+/// `lea` whose SOURCE is a displacement over sp itself (`lea N(sp), sp` —
+/// the classic frame cleanup). `move`/`movea`-to-sp (stack switching) and
+/// `lea Table, sp` do not qualify — those genuinely replace the stack.
+fn is_sp_arithmetic(mnemonic: &str, ops: &[CodeOperand]) -> bool {
+    match mnemonic {
+        "add" | "adda" | "addi" | "addq" | "addx" | "sub" | "suba" | "subi" | "subq"
+        | "subx" => true,
+        "lea" => matches!(
+            ops.first(),
+            Some(CodeOperand::DispInd { reg: crate::value::Reg::A7, .. })
+        ),
+        _ => false,
+    }
+}
+
+/// A register spelling to its canonical movem-mask bit (bit0=D0..bit7=D7,
+/// bit8=A0..bit15=A7), via the shared spelling→register map (so `sp` works).
+fn preserves_reg_bit(name: &str) -> Option<u8> {
+    use crate::value::Reg;
+    let r = Reg::from_name(name)?;
+    let (is_a, n) = super::code::reg_kind(r);
+    Some(if is_a { 8 + n } else { n })
+}
+
+/// Format a canonical movem mask back to its reglist spelling (`d0-d1/a0`) —
+/// consecutive runs collapse to ranges, data registers before address
+/// registers, `a7` spelled `a7`. Diagnostic-only (the inverse of the declared
+/// fold, for naming masks in messages).
+fn mask_reglist(mask: u16) -> String {
+    let mut segs: Vec<String> = Vec::new();
+    for (base, prefix) in [(0u8, 'd'), (8u8, 'a')] {
+        let mut bit = 0u8;
+        while bit < 8 {
+            if mask & (1 << (base + bit)) == 0 {
+                bit += 1;
+                continue;
+            }
+            let start = bit;
+            while bit + 1 < 8 && mask & (1 << (base + bit + 1)) != 0 {
+                bit += 1;
+            }
+            segs.push(if start == bit {
+                format!("{prefix}{start}")
+            } else {
+                format!("{prefix}{start}-{prefix}{bit}")
+            });
+            bit += 1;
+        }
+    }
+    segs.join("/")
 }
 
 /// Push a diagnostic at `span`.

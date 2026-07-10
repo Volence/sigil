@@ -540,3 +540,217 @@ fn const_named_sp_still_resolves_like_any_other_identifier() {
     assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
     assert_eq!(v, Some(Value::Int(5)));
 }
+
+// ---- `(An,Xn)` / `d8(An,Xn)` indexed EAs (tranche 3, vdp_init recon) ------
+//
+// Port #3 (vdp_init) recon found the third operand-grammar gap: address-
+// register indirect with index (68k `(d8,An,Xn)`, brief extension word).
+// The ISA layer is complete (`Disp8AnXn`, corpus-pinned); only the `.emp`
+// surface is missing — `ind_single_reg` rejects the two-part form. Reference
+// bytes: the real vdp_init line (s4.lst:13139, `move.b (a0,d2.w), d0` at
+// $1C48 → `10 30 2000`) plus the ISA corpus vectors for the disp/long forms.
+
+#[test]
+fn an_indexed_zero_disp_matches_vdp_init_reference() {
+    // `move.b (a0,d2.w), d0` — the real Flush_VDP_Shadow shadow-value load.
+    // Brief ext: d2.w, d=0 → 0x2000.
+    let (code, diags) = eval_asm_with(&asm_1("move.b (a0,d2.w), d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x10, 0x30, 0x20, 0x00]);
+}
+
+#[test]
+fn an_indexed_unsuffixed_index_defaults_to_word() {
+    // `(a0,d2)` must be byte-identical to `(a0,d2.w)` — AS's unsuffixed
+    // default (same rule the pc-indexed form pinned in tranche 2).
+    let (unsuf, d1) = eval_asm_with(&asm_1("move.b (a0,d2), d0"), &[]);
+    assert!(d1.is_empty(), "unexpected eval diagnostics: {d1:?}");
+    let (suf, d2) = eval_asm_with(&asm_1("move.b (a0,d2.w), d0"), &[]);
+    assert!(d2.is_empty(), "unexpected eval diagnostics: {d2:?}");
+    assert_eq!(lower_link_68k(&unsuf), lower_link_68k(&suf));
+}
+
+#[test]
+fn an_indexed_with_displacement_and_long_index() {
+    // `move.l 2(a3,a4.l), d0` — ISA corpus vector ("move.l (2,a3,a4.l),d0"):
+    // opcode 0x2033, brief ext a4.l d=2 → 0xC802.
+    let (code, diags) = eval_asm_with(&asm_1("move.l 2(a3,a4.l), d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x20, 0x33, 0xC8, 0x02]);
+}
+
+#[test]
+fn an_indexed_negative_displacement() {
+    // `move.w -2(a2,d3.w), d0` — ISA corpus vector ("move.w (-2,a2,d3.w),d0"):
+    // opcode 0x3032, brief ext d3.w d=-2 → 0x30FE.
+    let (code, diags) = eval_asm_with(&asm_1("move.w -2(a2,d3.w), d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x30, 0x32, 0x30, 0xFE]);
+}
+
+#[test]
+fn an_indexed_as_destination() {
+    // `move.b d0, (a0,d2.w)` — indexed EA in the DESTINATION position
+    // (vdp_init only reads through it, but the form is position-agnostic).
+    // move.b src d0, dest mode 110 reg 000 → opcode 0x1180, ext 0x2000.
+    let (code, diags) = eval_asm_with(&asm_1("move.b d0, (a0,d2.w)"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x11, 0x80, 0x20, 0x00]);
+}
+
+#[test]
+fn an_indexed_rejects_byte_index_size() {
+    // Brief-extension index widths are `.w`/`.l` only — same diagnostic
+    // contract as the pc-indexed form.
+    let (_code, diags) = eval_asm_with(&asm_1("move.b (a0,d2.b), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("index size must be `.w` or `.l`")),
+        "expected an index-size diagnostic, got: {diags:?}"
+    );
+}
+
+#[test]
+fn an_indexed_rejects_out_of_range_displacement() {
+    // The brief extension word carries an 8-bit displacement: -128..=127.
+    let (_code, diags) = eval_asm_with(&asm_1("move.b 128(a0,d2.w), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("-128..=127") || d.message.contains("8-bit")),
+        "expected a displacement-range diagnostic, got: {diags:?}"
+    );
+}
+
+#[test]
+fn an_indexed_base_size_suffix_is_rejected() {
+    // Review finding (tranche 3): AS rejects a base size suffix on the
+    // 68000 (`(a0.l,d2.w)` is 68020 syntax with different semantics) —
+    // silently ignoring it is a byte-exactness hazard.
+    let (_code, diags) = eval_asm_with(&asm_1("move.b (a0.l,d2.w), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("base register takes no size suffix")),
+        "a base size suffix must be rejected, got: {diags:?}"
+    );
+}
+
+#[test]
+fn bare_pc_indexed_without_target_gets_a_steering_error() {
+    // Review finding (tranche 3): `(pc,d2.w)` (no displacement) fell into
+    // the An-indexed path and diagnosed `unknown name \`pc\`` — misleading.
+    // Steer to the pc-relative spelling instead.
+    let (_code, diags) = eval_asm_with(&asm_1("move.w (pc,d2.w), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("Sym(pc")),
+        "bare (pc,Xn) must steer to the Sym(pc,Xn) spelling, got: {diags:?}"
+    );
+}
+
+// ---- explicit-width absolute EAs `(expr).w` / `(expr).l` (tranche 3) ------
+//
+// Volence-ratified at the packet review (the former abs.l-destinations open):
+// the AS-parity FORCED-width spelling, complementing the bare-symbol idiom
+// (which relaxes via the width rule and stays the new-style default). Two
+// shapes: a comptime integer address pins its bytes at lower time; a symbol
+// pins the WIDTH and defers the address as a single fixed-width fixup (no
+// RelaxAbsSym pair). Both positions (source and destination).
+
+/// A pinned symbolic abs must emit ONE Fragment::Data with a single
+/// fixed-width fixup — not a RelaxAbsSym candidate pair.
+fn assert_pinned_abs(src: &str, sym: &str, bytes: &[u8], kind: sigil_ir::FixupKind, offset: u32) {
+    use sigil_ir::{Expr, Fixup, Fragment};
+    let (code, ediags) = eval_asm_with(src, &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(module.sections[0].fragments.len(), 1, "expected one fragment");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.bytes, bytes, "pinned abs bytes");
+            assert_eq!(
+                df.fixups,
+                vec![Fixup { kind, offset, target: Expr::Sym(sym.into()) }],
+                "pinned abs fixup"
+            );
+        }
+        other => panic!("expected a pinned Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn pinned_abs_w_int_destination() {
+    // `move.w d0, ($FFFF8022).w` — the RAM-mirror idiom, forced word:
+    // opcode 31C0 (dest abs.w), ext = low word $8022.
+    let (code, diags) = eval_asm_with(&asm_1("move.w d0, ($FFFF8022).w"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x31, 0xC0, 0x80, 0x22]);
+}
+
+#[test]
+fn pinned_abs_l_int_source() {
+    // `move.w ($C00004).l, d0` — reading the VDP control port, forced long:
+    // opcode 3039 (src abs.l), ext = 00C0 0004.
+    let (code, diags) = eval_asm_with(&asm_1("move.w ($C00004).l, d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x30, 0x39, 0x00, 0xC0, 0x00, 0x04]);
+}
+
+#[test]
+fn pinned_abs_l_int_lea() {
+    // `lea.l ($C00004).l, a1` → 43F9 00C0 0004.
+    let (code, diags) = eval_asm_with(&asm_1("lea.l ($C00004).l, a1"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x43, 0xF9, 0x00, 0xC0, 0x00, 0x04]);
+}
+
+#[test]
+fn pinned_abs_l_symbol_destination_defers_one_fixed_fixup() {
+    // `move.w d0, (Foo).l` — width pinned by the author, address deferred:
+    // opcode 33C0 (dest abs.l) + a 4-byte hole with ONE Abs32Be fixup at 2.
+    assert_pinned_abs(
+        &asm_1("move.w d0, (Foo).l"),
+        "Foo",
+        &[0x33, 0xC0, 0x00, 0x00, 0x00, 0x00],
+        sigil_ir::FixupKind::Abs32Be,
+        2,
+    );
+}
+
+#[test]
+fn pinned_abs_w_symbol_source_defers_one_fixed_fixup() {
+    // `move.w (Foo).w, d0` → 3038 + Abs16Be at 2.
+    assert_pinned_abs(
+        &asm_1("move.w (Foo).w, d0"),
+        "Foo",
+        &[0x30, 0x38, 0x00, 0x00],
+        sigil_ir::FixupKind::Abs16Be,
+        2,
+    );
+}
+
+#[test]
+fn pinned_abs_w_out_of_window_int_is_rejected() {
+    // $10000 has no abs.w spelling (outside asl's sign-extension window).
+    let (_code, diags) = eval_asm_with(&asm_1("move.w d0, ($10000).w"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("abs.w")),
+        "an out-of-window .w address must be rejected naming abs.w, got: {diags:?}"
+    );
+}
+
+#[test]
+fn register_indirect_group_size_suffix_is_rejected() {
+    // `(a0).w` is not a 68000 form — silently ignoring the suffix was the
+    // same hazard class as the indexed base suffix.
+    let (_code, diags) = eval_asm_with(&asm_1("move.w (a0).w, d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("register indirect takes no size suffix")),
+        "a sized register indirect must be rejected, got: {diags:?}"
+    );
+}
+
+#[test]
+fn pinned_abs_byte_width_is_rejected() {
+    let (_code, diags) = eval_asm_with(&asm_1("move.w (Foo).b, d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("absolute width must be `.w` or `.l`")),
+        "a .b absolute width must be rejected, got: {diags:?}"
+    );
+}

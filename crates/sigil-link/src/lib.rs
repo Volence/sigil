@@ -380,6 +380,15 @@ fn apply_fixup(
         }
     };
 
+    // The target's user-facing name for range/escape messages: a pc-relative
+    // target that's out of reach is almost always cross-section/cross-seam,
+    // so naming WHAT the code was reaching for pays more than the distance
+    // alone (tranche-2 T1 review follow-up).
+    let target_name = match &fx.target {
+        Expr::Sym(name) => format!(" to `{name}`"),
+        _ => String::new(),
+    };
+
     match fx.kind {
         FixupKind::BankPtr16Le => {
             if (site_abs as usize) + 1 >= bytes.len() {
@@ -464,13 +473,13 @@ fn apply_fixup(
             // PcRel8 fixups), so AS-port byte-exactness is untouched.
             if disp == 0 {
                 diags.push(diag(
-                    format!("bra.s/Bcc.s displacement is 0 in section {section} — a 0x00 byte displacement is the 68000 word-form escape, not a branch to the next instruction (use .w, or pick a real target)"),
+                    format!("bra.s/Bcc.s displacement{target_name} is 0 in section {section} — a 0x00 byte displacement is the 68000 word-form escape, not a branch to the next instruction (use .w, or pick a real target)"),
                     span,
                 ));
                 return;
             }
             if !(-128..=127).contains(&disp) {
-                diags.push(diag(format!("bra.s/Bcc.s displacement out of range ({disp}) in section {section}"), span));
+                diags.push(diag(format!("bra.s/Bcc.s displacement{target_name} out of range ({disp}) in section {section}"), span));
                 return;
             }
             bytes[site_abs as usize] = disp as i8 as u8;
@@ -479,7 +488,7 @@ fn apply_fixup(
             // disp measured from the extension word's own VMA = site_vma.
             let disp = value - site_vma as i64;
             if !(-0x8000..=0x7FFF).contains(&disp) {
-                diags.push(diag(format!("(d16,PC)/bra.w displacement out of range ({disp}) in section {section}"), span));
+                diags.push(diag(format!("(d16,PC)/bra.w displacement{target_name} out of range ({disp}) in section {section}"), span));
                 return;
             }
             let w = disp as i16 as u16;
@@ -495,7 +504,7 @@ fn apply_fixup(
             // points at the disp byte itself.
             let disp = value - (site_vma as i64 - 1);
             if !(-128..=127).contains(&disp) {
-                diags.push(diag(format!("(d8,PC,Xn) displacement out of range ({disp}) in section {section}"), span));
+                diags.push(diag(format!("(d8,PC,Xn) displacement{target_name} out of range ({disp}) in section {section}"), span));
                 return;
             }
             bytes[site_abs as usize] = disp as i8 as u8;
@@ -1213,7 +1222,7 @@ mod tests {
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(
-            err.iter().any(|d| d.message.contains("displacement is 0") && d.message.contains("word-form escape")),
+            err.iter().any(|d| d.message.contains("displacement to `next` is 0") && d.message.contains("word-form escape")),
             "got: {:?}",
             err
         );
@@ -1237,6 +1246,51 @@ mod tests {
         };
         let err = link(&[sec], &SymbolTable::new()).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("out of range")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn pcrel_out_of_range_messages_name_the_target_symbol() {
+        // Tranche-2 T1 review follow-up (small-opens bundle, landed tranche
+        // 3): a cross-section/cross-seam pc-relative target is almost always
+        // the thing that's out of range, so the message must NAME it — the
+        // distance and section alone don't say WHAT the code was reaching
+        // for. Pin all three 68k pc-relative kinds.
+        for (kind, opcode_bytes, offset) in [
+            (FixupKind::PcRel8, vec![0x60u8, 0x00], 1u32),
+            (FixupKind::PcRelDisp16, vec![0x60, 0x00, 0x00, 0x00], 2),
+            (FixupKind::PcRelDisp8, vec![0x30, 0x3B, 0x00, 0x00], 3),
+        ] {
+            let sec = Section {
+                name: "c".to_string(),
+                cpu: Cpu::M68000,
+                vma_base: None,
+                lma: 0x2000,
+                labels: vec![],
+                fragments: vec![Fragment::Data(DataFragment {
+                    bytes: opcode_bytes,
+                    fixups: vec![Fixup {
+                        kind,
+                        offset,
+                        target: Expr::Sym("VeryFarAway".into()),
+                    }],
+                    span: span(),
+                })],
+                placement: SectionPlacement::Pinned,
+                reserved_span: 0,
+                group: None,
+                bank: None,
+                equ_syms: Vec::new(),
+            };
+            let mut stubs = SymbolTable::new();
+            stubs.define("VeryFarAway", sigil_ir::SymbolValue::Int(0x80_0000));
+            let err = link(&[sec], &stubs).unwrap_err();
+            assert!(
+                err.iter().any(|d| {
+                    d.message.contains("out of range") && d.message.contains("VeryFarAway")
+                }),
+                "{kind:?}: the out-of-range message must name the target symbol, got: {err:?}"
+            );
+        }
     }
 
     #[test]

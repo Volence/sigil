@@ -1016,22 +1016,45 @@ impl Parser {
         params
     }
 
-    /// Parse a `proc name(params...) [clobbers(...)] [falls_into name] { body }`
-    /// declaration.
+    /// Parse a `proc name(params...) [clobbers(...)] [preserves(...)]
+    /// [falls_into name] { body }` declaration.
     fn proc_decl(&mut self, public: bool) -> ProcDecl {
         let start = self.span();
         self.bump(); // `proc`
         let name = self.expect_ident("proc name");
         let params = self.param_list();
-        let mut clobbers = Vec::new();
+        let mut clobbers = None;
+        let mut preserves = Vec::new();
         let mut falls_into = None;
         loop {
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
+                // `clobbers()` — the empty form is the explicit "touches
+                // nothing" contract (distinct from no declaration at all).
+                let mut list = Vec::new();
+                if !self.at(&Tok::RParen) {
+                    loop {
+                        list.push(self.expect_ident("register"));
+                        if !self.eat(&Tok::Comma) { break; }
+                        if self.at(&Tok::RParen) { break; } // trailing comma
+                    }
+                }
+                clobbers = Some(list);
+                self.expect(&Tok::RParen, "`)`");
+            } else if self.eat_kw("preserves") {
+                // `preserves(d0-d1/a0)` — a movem-style reglist: `/`-separated
+                // segments, each a register or an inclusive `lo-hi` range
+                // (S2-D6b syntactic slice).
+                self.expect(&Tok::LParen, "`(`");
                 loop {
-                    clobbers.push(self.expect_ident("register"));
-                    if !self.eat(&Tok::Comma) { break; }
-                    if self.at(&Tok::RParen) { break; } // trailing comma
+                    let lo = self.expect_ident("register");
+                    let hi = if self.eat(&Tok::Minus) {
+                        Some(self.expect_ident("range-end register"))
+                    } else {
+                        None
+                    };
+                    preserves.push((lo, hi));
+                    if !self.eat(&Tok::Slash) { break; }
                 }
                 self.expect(&Tok::RParen, "`)`");
             } else if self.eat_kw("falls_into") {
@@ -1043,7 +1066,7 @@ impl Parser {
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(/* splices_allowed = */ false);
         self.expect(&Tok::RBrace, "`}`");
-        ProcDecl { public, name, params, clobbers, falls_into, body, span: start.merge(self.prev_span()) }
+        ProcDecl { public, name, params, clobbers, preserves, falls_into, body, span: start.merge(self.prev_span()) }
     }
 
     /// Parse a `script name(params) (encoding: E) [shows label] { body }`

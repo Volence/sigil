@@ -523,8 +523,17 @@ pub struct ProcDecl {
     pub name: String,
     /// Parameters as `(name, type, span)`, e.g. `(a0, *Sst)`.
     pub params: Vec<(String, Type, Span)>,
-    /// Registers this proc clobbers.
-    pub clobbers: Vec<String>,
+    /// Registers this proc clobbers. `None` = no contract declared (legal —
+    /// half-ported files); `Some(vec![])` = the explicit `clobbers()` form,
+    /// "verified: touches nothing" (Volence ruling, tranche 3) — the lint
+    /// then flags ANY register write.
+    pub clobbers: Option<Vec<String>>,
+    /// Registers this proc preserves (S2-D6b syntactic slice), as declared
+    /// reglist segments: `preserves(d0-d1/a0)` → `[("d0", Some("d1")),
+    /// ("a0", None)]`. Register validity is a lowering-time check
+    /// (`[proc.preserves-invalid]`), not a parse-time one, mirroring
+    /// `clobbers`.
+    pub preserves: Vec<(String, Option<String>)>,
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
     /// The proc's assembly body.

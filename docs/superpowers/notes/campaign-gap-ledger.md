@@ -28,14 +28,21 @@ below where they differ; ~4 steps per tranche/batch):**
 3. **Retrospect** — walk this ledger's new entries with Volence: missed idioms, Sigil
    improvements, anything that could be nicer.
 4. **Implement** — build ratified items in Sigil, apply back to the current tranche's files
-   if relevant, final gate pass. Then the next tranche.
+   if relevant, final gate pass. Then the Volence checkpoint (merge).
+5. **Optimize (Volence-ratified 2026-07-09, tranche-3 packet review)** — POST-MERGE: the
+   tranche's reads-wrong list plus anything later retrospects send back to already-ported
+   files. Byte-CHANGING by definition, so each lands as its own commit re-gated against a
+   REBUILT reference ROM (PROVENANCE pins re-baseline). The loop's guarantee becomes: going
+   through a tranche leaves the touched files at the campaign's latest quality bar, not just
+   its latest byte-copy.
 
 **THE STEP-2 CHECKLIST (standing, Volence-ratified 2026-07-09 — apply to EVERY file in every
 tranche's modernize pass; the step-3 retrospect reviews the checklist itself for gaps):**
-- **Contracts:** `clobbers(...)` on every proc (source the .asm header comments AND the actual
-  write set; outputs count as clobbers until an outs-annotation exists); `falls_into` wherever
-  a proc falls through; `preserves(...)` once shipped (S2-D6b syntactic slice) on every
-  movem-save/restore proc.
+- **Contracts:** every FINISHED proc declares its register contract — `clobbers(...)` (source
+  the .asm header comments AND the actual write set; outputs count as clobbers until an
+  outs-annotation exists), `clobbers()` for a verified no-effect proc (Volence ruling
+  2026-07-09; opt-in — absence stays legal mid-port), or `preserves(...)` (S2-D6b) on every
+  movem-save/restore proc; `falls_into` wherever a proc falls through.
 - **Types:** every `data` item carries its true type (the length IS the size check); prelude
   newtypes where a value is domain-typed (Angle, VramTile, …) — erasing, byte-neutral;
   `bitfield`/`enum` types where a flag/id byte buys real checking; `sizeof`/`offsetof` over
@@ -43,7 +50,8 @@ tranche's modernize pass; the step-3 retrospect reviews the checklist itself for
 - **Constants:** no bare magic number where a named constant exists (`use engine.constants`);
   every mirrored cross-seam value gets its `ensure(extern("X") == X)` drift guard.
 - **Control flow:** `jbra`/`jbsr` for label transfers; bare `jmp`/`jsr` only for computed
-  targets; conditionals keep explicit sizes (no jbcc by decision).
+  targets; conditionals UNSIZED (Volence ruling 2026-07-09 — the assembler relaxes `.s`/`.w`
+  by reach; explicit sizes only under `@as_compat`; `jbcc` still deliberately absent).
 - **Guards & tests:** every hand-maintained invariant living in a comment becomes an
   `ensure`/`ensure_fatal` (item or statement position); cross-seam facts via `extern()`;
   `comptime test` beside every comptime fn.
@@ -194,16 +202,23 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 - [tranche 2 T1 review, 2026-07-09] **`pc` is a reserved EA token in inner-base position** — a
   user symbol literally named `pc` can't be the sole inner base of `Sym(pc)` (the pc-rel
   carve-out wins, matching AS); `pc` as a displacement over a real register still works. One
-  doc line owed in the .emp EA docs. — OPEN (docs-only).
+  doc line owed in the .emp EA docs. — CLOSED tranche 3 (the reserved-token consequence documented on `pc_rel_shape`, eval/asm.rs).
 - [tranche 2 T1 review, 2026-07-09] **PcRel range-check errors name distance+section but not
   the target SYMBOL** (sigil-link lib.rs ~482/498) — house style shared with bra/bsr messages;
   a cross-section disp8 target is almost always out of range, so the symbol name would pay.
-  Repo-wide message-quality item. — OPEN.
+  Repo-wide message-quality item. — CLOSED tranche 3 (all three 68k PcRel kinds + the zero-disp escape message now name the target symbol; pinned by `pcrel_out_of_range_messages_name_the_target_symbol`).
 - [tranche 2 T1 review, 2026-07-09] **abs.l as an .emp DESTINATION is unsupported**
   (`move.w x, ($abs).l` → "indirect base must be a register") — pre-existing, surfaced by an
-  adversarial probe; will matter for some future port (VDP register writes spell this). — OPEN.
+  adversarial probe; will matter for some future port (VDP register writes spell this). —
+  SHIPPED 2026-07-09 (Volence ratified at the packet review): explicit-width `(expr).w`/
+  `(expr).l` absolutes, BOTH positions — comptime-int addresses pin their bytes at lower
+  (with asl's abs.w sign-extension window validated), symbolic addresses pin the WIDTH and
+  defer as ONE fixed-width fixup (no RelaxAbsSym pair). Coexists cleanly with the bare-symbol
+  idiom, which stays the new-style default (relaxes via the width rule to the same-or-smaller
+  encoding). Ride-along hardening: `(a0).w` (sized register indirect — not a 68000 form) now
+  rejects instead of silently dropping the suffix.
 - [tranche 2 T1 review, 2026-07-09] **`Owner.label(pc)` multi-segment pc-rel target untested**
-  — path shared verbatim with tested branch resolution; one-line test owed. — OPEN (low risk).
+  — path shared verbatim with tested branch resolution; one-line test owed. — CLOSED tranche 3 (`owner_label_pcrel_target_resolves`, pcrel_port.rs; passed first run, a pin not a fix).
 - [tranche 2 T3, port #2 (controllers.emp + math.emp), 2026-07-09] **`embed()` paths resolve
   relative to `include_root` directly — there is no separate "module's own directory" concept**
   — `math.emp`'s `embed("../data/sine.bin")` (the module lives in `engine/system/`, the embed
@@ -341,14 +356,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   in step 2** — controllers.asm's "Clobbers: d0-d1, a0" and math.asm's clobber notes were
   carried as comments, not as the existing `clobbers(...)` proc attribute. Byte-neutral;
   land in tranche 3's step 2 (incl. hblank's dispatch proc alongside its @as_compat removal).
-  — OPEN (tranche 3 step 2).
+  — CLOSED tranche 3 step 2 (clobbers on Read_Controllers/GetSineCosine + all three new-port procs; hblank got `preserves`, being movem-preserved).
 - [tranche-2 retrospect follow-up (Volence), 2026-07-09] **Pull the SYNTACTIC slice of
   S2-D6(b) `preserves(...)` forward** — declared `preserves(d0-d1/a0)` verified against the
   literal `movem` push/pop pair (HBlank_Dispatch is the poster child). The full S2-D6
   register-contract batch stays gated on the dataflow pass, but the movem-pair check is
   simple pattern matching, the campaign keeps producing exactly this shape, and Volence asked
   for it by name. Candidate for tranche 3 step 4 (a recorded decision per A-Spec2.3 — it adds
-  a proc-attribute surface). — OPEN (recommend IN, tranche 3).
+  a proc-attribute surface). — SHIPPED tranche 3 (pulled FORWARD to the tranche opening per the step-2-apex rule; D2.32 recorded per A-Spec2.3; HBlank_Dispatch annotated).
 - [step-2 checklist audit of hblank/controllers/math, 2026-07-09] Beyond the clobbers miss:
   (a) **hblank's dispatch proc clobbers NOTHING** (movem-preserved) — its correct annotation
   is `preserves`, which waits on the S2-D6(b) slice; annotate when it ships. (b) **math's
@@ -359,5 +374,94 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   binary-literal candidates (taste; step-2 judgment). (d) idea jotted: comptime CONTENT
   asserts on embedded blobs (e.g. sine table's sin(0)=0 / +$40 overlap invariants checked
   against the embed bytes at build time) — needs comptime byte-indexing of Data values;
-  check support, else v1.1 candidate. — OPEN (a: tranche 3 w/ preserves; b/d: check-then-
+  check support, else v1.1 candidate. — RESOLVED tranche 3 (a: preserves shipped + applied; b/d: checked, see the tranche-3 entries below; c: applied). — (a: tranche 3 w/ preserves; b/d: check-then-
   ledger; c: taste).
+
+- [tranche 3, 2026-07-09] **Typed data-register params ALREADY WORK** (checklist-audit item (b)
+  resolved): `proc GetSC (d0: Angle)` with `newtype Angle = u8` parses, lowers, and emits
+  byte-identically (probed through the real CLI). Deliberately NOT applied to math.emp this
+  tranche: the Angle newtype belongs to the engine-side type surface that construct walk #3
+  (the Sonic newtype set vs player physics — Volence driving) is scheduled to design; typing
+  one param ahead of that walk would front-run the naming/ownership decisions. — RESOLVED
+  (support confirmed); application rides construct walk #3.
+- [tranche 3, 2026-07-09] **Comptime byte-indexing of `Data` values does NOT exist** (checklist-
+  audit item (d) resolved): `ensure(embed("f.bin")[0] == 0, ...)` fails to parse (`expected
+  \`)\`, found LBracket`). Blocks comptime CONTENT asserts on embedded blobs (the sine-table
+  sin(0)=0 / +$40-overlap invariants). v1.1 candidate: index + `.len` on `Data` in comptime
+  exprs — pays at every embed with a checkable invariant. — RATIFIED IN 2026-07-09 (Volence,
+  tranche-3 packet review); builds together with typed Data views (one plumbing item, below)
+  at tranche 4's opening; A-Spec2.3 decision record rides the build.
+- [tranche 3, 2026-07-09] **Clobber lint: `dbcc`'s first-operand write remains the recorded
+  blind spot** (pre-existing TODO(S2-D6) in lower/proc.rs) — vdp_init's two `dbf` loops write
+  d0/d3, which its `clobbers` declares anyway; noting the tranche relied on declaration
+  discipline, not the lint, for those two. — OPEN (S2-D6 territory, unchanged).
+- [tranche 3, 2026-07-09] **Struct-equ export exports EVERY struct's `_len` + field offsets**
+  (the VDP_Shadow_len enabler). Surplus symbols in the link table are harmless today (the
+  convsym allowlists are inclusive), but if link-symbol-table noise ever matters (Spec 4 debug
+  info?), an export filter is the knob. — jotted.
+- [tranche 3 retrospect, 2026-07-09] **Checklist gap for rulings: the no-effect proc.**
+  `HBlank_Null` (bare `rts`) carries neither `clobbers` nor `preserves` — the checklist says
+  "clobbers on every proc" but an EMPTY `clobbers()` is currently unparseable-by-intent and
+  "no contract declared" is indistinguishable from "contract: touches nothing". Options:
+  (i) bare stays legal, absence = no contract (today's shape); (ii) allow explicit empty
+  `clobbers()` meaning "touches nothing" (the lint then flags ANY register write). Recommend
+  (ii) at low priority — it makes the strongest contract expressible — but it needs a Volence
+  ruling + checklist amendment. — RULED 2026-07-09 (Volence, tranche-3 packet review):
+  option (ii) ADOPTED as OPT-IN — absence stays legal (half-ported/@as_compat files), empty
+  `clobbers()` means "touches nothing" (lint flags any write), and the step-2 checklist is
+  amended: every FINISHED proc declares its register contract (clobbers(...) / clobbers() /
+  preserves(...)). — SHIPPED same day (pulled into the tranche at Volence's "let's do" —
+  `clobbers` is now `Option<Vec>`, `Some([])` = the verified touches-nothing contract, the
+  lint flags any write inside; HBlank_Null annotated).
+- [tranche 3 code-sense review, 2026-07-09] **`~mask` byte-width ceremony tax**:
+  `andi.b #~(BUTTON_LEFT|BUTTON_RIGHT)&$FF, d0` (controllers.emp) — the `&$FF` exists only
+  because comptime `~` is untyped-width; a byte-width operand position could plausibly
+  auto-truncate a comptime complement (loudly range-checked otherwise). Jot-don't-implement:
+  needs a decision on silent-vs-explicit truncation semantics (tenet: no silent wrong bytes).
+  — RESOLVED 2026-07-09 (post-ruling probe): NO language change was ever needed —
+  `#~(BUTTON_LEFT|BUTTON_RIGHT)` = -13 already fits the signed imm8 window and emits the
+  identical $F3 (CLI-probed). The `&$FF` was INHERITED AS SPELLING (controllers.asm needs it
+  under asl); dropped from controllers.emp, byte-gates green. The safe-truncation design
+  question is moot for this case; reopen only if a genuinely-out-of-window complement shows up.
+- [tranche 3 code-sense review, 2026-07-09] **Typed word-table embeds**: `Sine_Table:
+  [u8; $280] = embed(...)` describes a WORD table as bytes; `[i16; 320]` with big-endian
+  byte-identity would be the honest type if/when `embed` learns typed element views. Pairs
+  with the comptime-Data-indexing candidate (content asserts want typed reads too). —
+  RATIFIED IN 2026-07-09 (Volence, tranche-3 packet review); one work item with the indexing
+  candidate, tranche 4's opening.
+- [tranche 3 branch review, 2026-07-09] **`ifndef`-guarded equs/structs export NO equ-syms in
+  the converged pass** (pre-existing for Task B1 `equ` export; tranche 3 widened the mechanism
+  to struct symbols): pass 0 defines the guard symbol and exports, the converged pass sees the
+  guard defined and SKIPS the block, and only the converged module is returned — bytes correct,
+  `equ_syms` empty. Any `extern("X")` on such a symbol fails the link with a misleading
+  "unresolved symbol" even though the front-end folds it fine. Harmless today (aeon's
+  constants/structs are unguarded), but a conventional include guard around a constants file
+  would silently break every drift guard reading it. — CLOSED tranche 3 (Volence's call at the
+  packet review): the run loop carries the ever-exported set across passes and re-attaches
+  missing exports from the CONVERGED env (values authoritative — a forward-ref-dependent equ
+  gets its final value); pinned by `ifndef_guarded_equs_and_structs_still_export`.
+
+- [tranche-3 packet review (Volence), 2026-07-09] **STEP 5 RATIFIED** — optimization is now
+  the loop's fifth step (post-merge, re-gated, re-baselined; see the loop description above).
+  Tranche 3's reads-wrong list is its first work queue.
+- [tranche-3 packet review (Volence), 2026-07-09] **Unsized-conditional taste call OPEN** —
+  D2.18's unsized `Bcc` relaxation exists; the checklist currently keeps explicit `.s`/`.w`
+  on conditionals in ported files. Dropping suffixes is byte-neutral (relaxation picks the
+  same minimal size). Volence to rule: keep classic explicit sizes vs assembler-managed
+  unsized. `jbcc` (trampoline-expanding unlimited-reach conditional) stays deferred either
+  way (tenet 3). — RULED 2026-07-09 (Volence): UNSIZED adopted for new-style files — the
+  assembler picks `.s`/`.w` by reach; explicit sizes remain only under `@as_compat`. All six
+  ported files swept (bne/blt/bgt/beq ×8), byte-gates green (relaxation picks the identical
+  sizes). Checklist amended.
+
+- [tranche-4 recon (Volence's naming question), 2026-07-10] **`plantbadmaps` is not in the
+  build** — zero hits in s4.lst; `data/sprites/plantbadmaps/` (art.bin + mappings.bin +
+  anims.asm + sprite.json) is a parked editor export whose object was never wired in. Two
+  consequences: (a) it CANNOT be a port target (no reference window to byte-gate — the
+  kickoff's data-quick-win list was wrong about it; `sonic_anims.asm` takes its tranche-4
+  slot); (b) the entity RENAME is free right now — nothing consumes the name. Naming finding
+  (Volence): the sprite entity is named after ONE of its assets ("plant badnik MAPPINGS", a
+  donor-repo label habit — sonic_hack's MapUnc_PlantBad class), and the bundle dir inherits
+  it. Proposal pending Volence's pick: entity → `pitcher_plant`; per-sprite bundle dirs named
+  for the ENTITY with generic member names. "mappings" stays the term for piece tables
+  themselves (community-standard). — OPEN (naming ruling + free rename window).
