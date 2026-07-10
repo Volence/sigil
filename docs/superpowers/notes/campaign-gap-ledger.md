@@ -506,3 +506,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   unit-tested directly (width-1 scalars read as two's-complement bytes, multi-byte scalars and
   SymRef/RelOffset/Expr cells refuse). Becomes reachable the day a Data-monoid builtin emits
   structured cells in expr position. — SHIPPED (noted for the retrospect)
+
+- [D2.33 review, 2026-07-10] Review findings triage: **C1 huge-index usize wrap FIXED**
+  (bounds compare in i128 + tests), **I2 poisoned-view-element cascade FIXED** (single
+  diagnostic), **M5 no_struct_lit save/restore in index brackets FIXED**, **M3 new
+  diagnostics tagged** ([index.type]/[index.base]). Jotted for rulings/later: **I1** — a
+  NON-array annotation over raw Data (`data X: u16le = embed(...)`) bypasses the view
+  policing (pre-existing acceptance; police scalar/struct annotations too, or bless?);
+  **M6** — asm operands route through expr(), so `move.w Tbl[2], d0` now PARSES as a
+  comptime index (fell out naturally, in-spirit but not in D2.33's ratified text — confirm
+  or fence); **M2** — no steering when postfix hits the b/w/l/s carve-out in comptime
+  context; **M4** — no integration test pins indexing inside an asm splice; **M1** — the
+  method-call steer leaves the call tokens unconsumed (steer + one cascade line). — OPEN

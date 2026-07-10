@@ -203,13 +203,16 @@ impl<'a> Evaluator<'a> {
         let Some(i) = index.as_stored_int() else {
             self.error(
                 span,
-                format!("index must be a comptime integer, got {}", index.type_name()),
+                format!("[index.type] index must be a comptime integer, got {}", index.type_name()),
             );
             return Value::Poison;
         };
+        // Bounds compare in the full i128 domain BEFORE any narrowing — an
+        // index ≥ 2^64 must be out-of-bounds, never a silent usize wrap
+        // (review C1; the same total-bounds discipline as D-P2.1 overflow).
         match base {
             Value::Array(elems) => {
-                if i < 0 || i as usize >= elems.len() {
+                if i < 0 || i >= elems.len() as i128 {
                     self.error(
                         span,
                         format!(
@@ -223,7 +226,7 @@ impl<'a> Evaluator<'a> {
                 elems[i as usize].clone()
             }
             Value::Data(buf) => {
-                if i < 0 || i as usize >= buf.size {
+                if i < 0 || i >= buf.size as i128 {
                     self.error(
                         span,
                         format!(
@@ -254,8 +257,8 @@ impl<'a> Evaluator<'a> {
                 self.error(
                     span,
                     format!(
-                        "{} is not indexable — comptime `[i]` reads array elements and raw \
-                         Data bytes",
+                        "[index.base] {} is not indexable — comptime `[i]` reads array \
+                         elements and raw Data bytes",
                         other.type_name()
                     ),
                 );

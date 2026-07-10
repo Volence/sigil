@@ -113,6 +113,50 @@ fn array_index_out_of_bounds_is_loud() {
 }
 
 #[test]
+fn huge_index_is_out_of_bounds_not_a_wrap() {
+    // Review C1: an index ≥ 2^64 must bounds-fail in the i128 domain — a
+    // usize truncation would silently wrap `1 << 64` to element 0.
+    poison_with("[10, 20][1 << 64]", "[index.out-of-bounds]");
+    poison_with("[10, 20][(1 << 64) + 1]", "[index.out-of-bounds]");
+    poison_with("bytes([9, 8, 7])[1 << 64]", "[index.out-of-bounds]");
+}
+
+#[test]
+fn poison_base_propagates_silently() {
+    // An unknown base name is already-reported — the index adds nothing.
+    let (v, diags) = eval("nosuch[0]");
+    assert_eq!(v, Value::Poison);
+    assert_eq!(diags.len(), 1, "only the unknown-name diagnostic: {diags:?}");
+    assert!(diags[0].message.contains("unknown name"));
+}
+
+#[test]
+fn postfix_field_reads_struct_fields_off_index_results() {
+    // `field_or_len`'s struct arm through the postfix Field node (not just
+    // `.len`): index into an array of structs, then read a field.
+    let src = "module m\n\
+               struct P { x: u8, y: u8 }\n\
+               const PTS = [P{ x: 1, y: 2 }, P{ x: 3, y: 4 }]\n\
+               data X: [u8; 1] = [PTS[1].y]\n";
+    let (buf, diags) = data(src, "X");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        buf.expect("data buf").cells,
+        vec![Cell::Scalar { value: 4, width: 1, signed: false, le: false }]
+    );
+}
+
+#[test]
+fn poisoned_view_element_reports_once() {
+    // Review I2: an unknown element type is already-reported by the resolve;
+    // the view policing and the (bogus 0-byte) size check stay silent.
+    let src = "module m\ndata X: [Bad; 4] = embed(\"embed_fixture.bin\")\n";
+    let (_buf, diags) = data(src, "X");
+    assert_eq!(diags.len(), 1, "exactly the unknown-type diagnostic: {diags:?}");
+    assert!(diags[0].message.contains("Bad"));
+}
+
+#[test]
 fn array_index_negative_is_loud() {
     poison_with("[1, 2][0 - 1]", "[index.out-of-bounds]");
 }

@@ -564,9 +564,16 @@ impl<'a> Evaluator<'a> {
             if let Some(t) = &decl.ty {
                 let ty = self.resolve_type(t);
                 if !matches!(ty, Ty::Poison) {
+                    // A poisoned ELEMENT type is already-reported (the
+                    // resolve diagnosed the unknown name) — suppress both
+                    // the view policing and the size check (whose
+                    // `size_of_ty` would report a bogus 0-byte mismatch),
+                    // per the Poison-stays-silent convention (review I2).
+                    let mut poisoned_elem = false;
                     if let Ty::Array(elem, _) = &ty {
                         match elem.as_ref() {
                             Ty::Prim { le: false, .. } => {}
+                            Ty::Poison => poisoned_elem = true,
                             Ty::Prim { le: true, .. } => {
                                 self.error(
                                     decl.span,
@@ -594,15 +601,17 @@ impl<'a> Evaluator<'a> {
                             }
                         }
                     }
-                    let declared = self.size_of_ty(&ty, decl.span);
-                    if declared != buf.size {
-                        self.error(
-                            decl.span,
-                            format!(
-                                "[emit.size-mismatch] data `{}`: declared type is {declared} byte(s), initializer produced {}",
-                                decl.name, buf.size
-                            ),
-                        );
+                    if !poisoned_elem {
+                        let declared = self.size_of_ty(&ty, decl.span);
+                        if declared != buf.size {
+                            self.error(
+                                decl.span,
+                                format!(
+                                    "[emit.size-mismatch] data `{}`: declared type is {declared} byte(s), initializer produced {}",
+                                    decl.name, buf.size
+                                ),
+                            );
+                        }
                     }
                 }
             }

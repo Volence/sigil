@@ -2006,10 +2006,15 @@ impl Parser {
         loop {
             if self.at(&Tok::LBracket) {
                 self.bump();
+                // Struct literals are unambiguous again inside `[...]` —
+                // same save/restore as the array-literal primary.
+                let saved_nsl = self.no_struct_lit;
+                self.no_struct_lit = false;
                 self.skip_newlines();
                 let index = self.expr();
                 self.skip_newlines();
                 self.expect(&Tok::RBracket, "`]`");
+                self.no_struct_lit = saved_nsl;
                 let span = expr_span(&e).merge(self.prev_span());
                 e = Expr::Index { base: Box::new(e), index: Box::new(index), span };
                 continue;
