@@ -276,6 +276,26 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
         if !writes_dest_register(mnemonic) {
             continue;
         }
+        // An SR destination is a machine-state clobber (tranche 5): undeclared
+        // unless the contract carries `clobbers(sr)` or `preserves(sr)` (the
+        // latter's balance is checked separately).
+        if matches!(ops.last(), Some(CodeOperand::Sr))
+            && !allowed.contains("sr")
+            && !proc.preserves.iter().any(|(lo, hi)| lo == "sr" && hi.is_none())
+        {
+            push(
+                diags,
+                Level::Warning,
+                *span,
+                format!(
+                    "[proc.sr-undeclared] `{}` writes `sr` (interrupt mask / condition \
+                     codes), which is not in its contract — declare `clobbers(sr)`, or \
+                     `preserves(sr)` if the body save/restores it",
+                    proc.name
+                ),
+            );
+            continue;
+        }
         // The destination is the last operand; only a register destination is a
         // clobber (a memory-dest form writes memory, not a register). Reuse
         // `Reg`'s `Display` for the canonical `d0`..`a7` spelling.
@@ -414,7 +434,34 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
     // convention).
     let mut declared: u16 = 0;
     let mut bad = false;
+    let mut preserves_sr = false;
     for (lo, hi) in &proc.preserves {
+        // `sr` is contract vocabulary since tranche 5 (S2-D7's first slice):
+        // not a movem register, so it rides its OWN save/restore-balance
+        // check below instead of the mask fold. Alone only — `sr` in a
+        // range falls through to the invalid-register error.
+        if lo == "sr" && hi.is_none() {
+            preserves_sr = true;
+            continue;
+        }
+        // `ccr` contracts are flag-LIVENESS territory (nearly every
+        // instruction writes CCR) — that is S2-D7's dataflow half, not this
+        // syntactic slice. Steer rather than pretend.
+        if lo == "ccr" && hi.is_none() {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.preserves-invalid] `{}` declares `preserves(ccr)` — CCR contracts \
+                     need flag-liveness dataflow (S2-D7), not the syntactic slice; only `sr` \
+                     is declarable today",
+                    proc.name
+                ),
+            );
+            bad = true;
+            continue;
+        }
         let Some(lo_bit) = preserves_reg_bit(lo) else {
             push(
                 diags,
@@ -473,7 +520,20 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
     }
 
     // A register cannot be both preserved and clobbered — a contradictory
-    // contract is diagnosed, not resolved.
+    // contract is diagnosed, not resolved. (`sr` first: it has no mask bit.)
+    if preserves_sr && proc.clobbers.as_deref().unwrap_or(&[]).iter().any(|c| c == "sr") {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.preserves-clobbers-overlap] `{}` declares `sr` both preserved and \
+                 clobbered — a register cannot be in both sets",
+                proc.name
+            ),
+        );
+        return;
+    }
     for c in proc.clobbers.as_deref().unwrap_or(&[]) {
         if let Some(bit) = preserves_reg_bit(c) {
             if declared & (1 << bit) != 0 {
@@ -490,6 +550,13 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
                 return;
             }
         }
+    }
+
+    if preserves_sr {
+        check_preserves_sr(proc, buf, diags);
+    }
+    if declared == 0 {
+        return; // sr-only contract: no movem pair to demand
     }
 
     // Collect every stack movem (push to / pop from sp), with its size. The
@@ -567,6 +634,56 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
                  preserves registers another way cannot declare `preserves` yet",
                 proc.name,
                 mask_reglist(declared),
+            ),
+        );
+    }
+}
+
+/// The `preserves(sr)` save/restore-balance check (tranche 5 — S2-D7's first
+/// syntactic slice; Sound_PostByte is the exhibit): if the body writes SR at
+/// all, a `move.w sr, -(sp)` save must precede the FIRST SR write and the
+/// LAST SR write must be the `move.w (sp)+, sr` restore. Static order only —
+/// no path analysis (a save/restore split across branches is S2-D7's
+/// dataflow half); a body with NO SR writes preserves vacuously.
+fn check_preserves_sr(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::value::{CodeOperand, Reg};
+    let mut first_save: Option<usize> = None;
+    let mut sr_writes: Vec<(usize, bool)> = Vec::new(); // (index, is_restore)
+    for (i, item) in buf.items.iter().enumerate() {
+        let CodeItem::Instr { ops, .. } = item else { continue };
+        // Save: `move.w sr, -(sp)` (reads SR — not an SR write).
+        if matches!(ops.as_slice(), [CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)]) {
+            first_save.get_or_insert(i);
+            continue;
+        }
+        // Any SR-destination form is an SR write; the restore is the
+        // `move.w (sp)+, sr` spelling specifically.
+        if matches!(ops.last(), Some(CodeOperand::Sr)) {
+            let is_restore =
+                matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Sr]);
+            sr_writes.push((i, is_restore));
+        }
+    }
+    let Some(&(first_write, _)) = sr_writes.first() else {
+        return; // no SR writes — vacuously preserved
+    };
+    let saved_before = first_save.is_some_and(|s| s < first_write);
+    let restored_last = sr_writes.last().is_some_and(|&(_, r)| r);
+    if !(saved_before && restored_last) {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.preserves-sr-unbalanced] `{}` declares `preserves(sr)` but its body's \
+                 SR writes are not bracketed by the `move.w sr, -(sp)` … `move.w (sp)+, sr` \
+                 pair (the syntactic slice checks static order; path-sensitive save/restore \
+                 is S2-D7)",
+                proc.name
             ),
         );
     }

@@ -316,16 +316,27 @@ fn two_symbolic_operands_diagnose() {
 }
 
 #[test]
-fn abs_sym_with_immediate_operand_diagnoses() {
-    // move.w #5, Foo — the immediate carries its own extension word, so the offset
-    // combination is out of scope for this first cut: diagnose, don't guess.
+fn abs_sym_with_preceding_immediate_relaxes() {
+    // move.w #5, Foo — an immediate BEFORE the sym operand is allowed since
+    // tranche 5 (its ext word precedes the abs field, which stays LAST): the
+    // unpinned form emits the RelaxAbsSym pair with the imm word inside both
+    // candidates and the fixup offsets end-anchored past it.
+    use sigil_ir::Fragment;
     let (code, ediags) = eval_asm_with(&asm_1("move.w #5, Foo"), &[]);
     assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
-    let (_module, diags) = lower_module_68k(&code);
-    assert!(
-        diags.iter().any(|d| d.message.contains("extension-word operand")),
-        "expected an extension-word-combination diagnostic, got: {diags:?}"
-    );
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::RelaxAbsSym { short, long, .. } => {
+            // short: 31FC 0005 + abs.w hole (6 B, fixup at 4);
+            // long:  33FC 0005 + abs.l hole (8 B, fixup at 4).
+            assert_eq!(short.bytes.len(), 6, "abs.w candidate length");
+            assert_eq!(long.bytes.len(), 8, "abs.l candidate length");
+            assert_eq!(short.fixup.offset, 4, "abs.w fixup past the imm word");
+            assert_eq!(long.fixup.offset, 4, "abs.l fixup past the imm word");
+        }
+        other => panic!("expected RelaxAbsSym, got {other:?}"),
+    }
 }
 
 #[test]
@@ -752,5 +763,148 @@ fn pinned_abs_byte_width_is_rejected() {
     assert!(
         diags.iter().any(|d| d.message.contains("absolute width must be `.w` or `.l`")),
         "a .b absolute width must be rejected, got: {diags:?}"
+    );
+}
+
+#[test]
+fn pinned_abs_l_with_preceding_immediate_defers() {
+    // Tranche 5 (the stopZ80 shape): `move.w #$0100, (Foo).l` — an
+    // extension-word operand BEFORE the sym operand is fine (the 68k emits
+    // ext words in operand order, so the imm word precedes the abs field,
+    // which stays LAST): opcode 33FC + imm 0100 + a 4-byte hole with ONE
+    // Abs32Be fixup at 4.
+    assert_pinned_abs(
+        &asm_1("move.w #$0100, (Foo).l"),
+        "Foo",
+        &[0x33, 0xFC, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00],
+        sigil_ir::FixupKind::Abs32Be,
+        4,
+    );
+}
+
+#[test]
+fn pinned_abs_l_btst_immediate_defers() {
+    // Tranche 5 (the stopZ80 poll): `btst #0, (Foo).l` → 0839 0000 + hole,
+    // Abs32Be at 4.
+    assert_pinned_abs(
+        &asm_1("btst #0, (Foo).l"),
+        "Foo",
+        &[0x08, 0x39, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        sigil_ir::FixupKind::Abs32Be,
+        4,
+    );
+}
+
+#[test]
+fn abs_sym_followed_by_ext_word_operand_still_deferred() {
+    // The other order stays fenced: `move.w (Foo).l, $10(a0)` would put the
+    // d16 ext word BEHIND the abs field, moving the fixup offset.
+    let (code, ediags) = eval_asm_with(&asm_1("move.w (Foo).l, $10(a0)"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[lower.abs-sym-operand]")),
+        "expected the abs-sym-followed-by-ext fence, got: {diags:?}"
+    );
+}
+
+#[test]
+fn imm_link_movea_defers_value32_fixup() {
+    // Tranche 5 (the SongTable shape): `movea.l #extern("Tbl"), a0` — a
+    // link-time imm32 encodes with a zero placeholder and ONE Value32Be
+    // fixup at 2 (the emp mirror of the AS side's try_defer_long_imm).
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(&asm_1("movea.l #extern(\"Tbl\"), a0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.bytes, vec![0x20, 0x7C, 0x00, 0x00, 0x00, 0x00], "movea.l #0, a0 hole");
+            assert_eq!(df.fixups.len(), 1, "one fixup");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value32Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_word_size_is_refused_with_steering() {
+    // `.b`/`.w` symbolic immediates have no deferral yet (the ledgered
+    // width-extension gap) — steer, don't guess.
+    let (code, ediags) = eval_asm_with(&asm_1("move.w #extern(\"Tbl\"), d0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[lower.imm-link]")
+            && d.message.contains("`.l` size")),
+        "expected the .l-only imm-link steering, got: {diags:?}"
+    );
+}
+
+#[test]
+fn sr_operand_round_trips() {
+    // The interrupt-mask idiom (sound_api): `move.w sr, -(sp)` = 40E7,
+    // `move.w #$2700, sr` = 46FC 2700, `move.w (sp)+, sr` = 46DF.
+    let src = "module m\ncomptime fn f() -> Code {\n    return asm {\n        move.w sr, -(sp)\n        move.w #$2700, sr\n        move.w (sp)+, sr\n    }\n}\n";
+    let (code, ediags) = eval_asm_with(src, &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    assert_eq!(
+        lower_link_68k(&code),
+        vec![0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x46, 0xDF]
+    );
+}
+
+#[test]
+fn move_sr_is_word_only() {
+    // Tranche-5 adversarial F1: `move.l #$2700, sr` used to emit a LONG imm
+    // the CPU reads as `sr := $0000` + `$2700` executing as an opcode —
+    // silent and behavior-corrupting. Word-only is policed at the ISA level
+    // (fixing BOTH frontends); the word form still round-trips.
+    let (code, ediags) = eval_asm_with(&asm_1("move.l #$2700, sr"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("word-only")),
+        "expected the sr word-only refusal, got: {diags:?}"
+    );
+    let (code, ediags) = eval_asm_with(&asm_1("move.b sr, d0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("word-only")),
+        "expected the sr word-only refusal for move-from too, got: {diags:?}"
+    );
+}
+
+#[test]
+fn quick_form_imm_link_steers_without_placeholder_leak() {
+    // Tranche-5 adversarial F2: `addq.l #extern(A), d0` must steer with the
+    // opcode-embedded-imm message, not leak the zero placeholder into the
+    // backend's range error ("Addq data must be 1..=8, got 0").
+    let (code, ediags) = eval_asm_with(&asm_1("addq.l #extern(\"A\"), d0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("embeds its immediate in the opcode word")),
+        "expected the opcode-embedded-imm steering, got: {diags:?}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("got 0")),
+        "the zero placeholder must not leak into a diagnostic: {diags:?}"
+    );
+}
+
+#[test]
+fn pinned_abs_sr_is_steered() {
+    // Tranche-5 adversarial F3: `(sr).w` must steer early, not resolve as a
+    // symbol named `sr` that dangles at link.
+    let src = "module m\ncomptime fn f() -> Code {\n    return asm {\n        move.w (sr).w, d0\n    }\n}\n";
+    let (_code, ediags) = eval_asm_with(src, &[]);
+    assert!(
+        ediags.iter().any(|d| d.message.contains("status-register operand, not an address")),
+        "expected the (sr).w steering, got: {ediags:?}"
     );
 }

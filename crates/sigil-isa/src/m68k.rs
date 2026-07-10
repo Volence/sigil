@@ -380,7 +380,20 @@ fn encode_ccr_imm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 }
 
 /// Encode `move.w <ea>,sr` (`46C0 | ea`) / `move.w sr,<ea>` (`40C0 | ea`) + EA ext words.
+///
+/// The SR forms are WORD-ONLY on the 68000 (asl rejects `.b`/`.l` too), and a
+/// non-word size is worse than illegal here: the old encoder keyed the imm
+/// ext-word width to `inst.size`, so `move.l #$2700, sr` emitted a LONG imm
+/// the CPU reads as `sr := $0000` (interrupts fully UNMASKED — the opposite
+/// of the intent) followed by `$2700` executing as an opcode (tranche-5
+/// adversarial review F1). Police the size before any bytes are built.
 fn encode_move_sr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    if inst.size != Size::W {
+        return Err(IsaError::UnsupportedForm(format!(
+            "move to/from sr is word-only on the 68000, got size {:?}",
+            inst.size
+        )));
+    }
     let (base, ea): (u16, &Operand) = match inst.mnemonic {
         Mnemonic::MoveToSr => match inst.ops.as_slice() {
             [src, Operand::Sr] => (0x46C0, src),

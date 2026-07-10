@@ -586,3 +586,92 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   player shape `move.b #ANIM_WALK, SST_anim(a0)` hard-errors cross-seam (only `.l`
   defers). Blocks kill-list row 4 stage 2; extend try_defer_long_imm's family when the
   flip (or any port) demands it. — OPEN
+
+- [tranche-5 port #1 (game_loop), 2026-07-10] **Statement-position comptime `if` SHIPPED**
+  (H1's carrier: parser `asm_if`, `AsmStmt::If`, recursive label scope, script-body
+  label-under-if refusal; 12 tests). Two edges deliberately NOT built: (a) a `yield`
+  inside a comptime-if branch in a SCRIPT body parses as an unknown mnemonic (a
+  `ScriptStmt` can't nest in an `AsmStmt` branch by type) — the error is loud but
+  unhelpful; teach a steering diagnostic if a script port ever hits it. (b) the
+  AS-`ifdef`-presence vs .emp-value-define convention (AS omits the define, .emp
+  passes 0) is harness-mapped per call site — fine while the harness owns both
+  sides; the sigil CLI's `-D` story should NAME the convention when sound-off
+  builds go end-to-end through the CLI. — OPEN (both jots)
+- [tranche-5 port #1 (game_loop), 2026-07-10] **`extern-macro` / game-contract-hook
+  construct NOT built** (H2 option (c) rejected — no demand): sonic4's gameDebugTick
+  body is a plain `jsr`, mirrored under comptime-if (kill-list row 9). The demand
+  moment is the first game-contract macro with a NON-TRIVIAL body reaching a port. — OPEN
+- [tranche-5 review, 2026-07-10] **sigil-link does not range-check pc-rel16 fixups** — a
+  `bsr.w`/`bra.w` whose resolved displacement exceeds ±32K wraps mod 2^16 and links
+  silently (surfaced by the port tests' far-carrier consumer proofs; game_loop's
+  consumer moved in-range, collision_lookup's inherited far carrier left as-is).
+  Add a loud link error when a PcRelDisp16 fixup overflows i16. — OPEN
+- [tranche-5 port #2 (sound_api), 2026-07-10] **Three demanded features SHIPPED:**
+  (a) abs-sym ext-word fence relaxed to POSITIONAL (imm/d16 BEFORE the sym operand
+  OK — its ext words precede the abs field; AFTER stays fenced); (b) emp-side
+  link-time imm32 (`ImmLink` → Value32Be at 2, `#extern(...)`/equ-alias spelling —
+  the AS `try_defer_long_imm` mirror; `.l` ONLY, so the `.b`/`.w` row above is
+  UNCHANGED and still blocks kill-row-4 stage 2); (c) `sr`/`ccr` operands
+  (register-class words, the interrupt-mask idiom). Also NOTE: a provisional
+  here() in `.l` IMMEDIATE position now defers as an imm-link instead of the
+  blanket [here.provisional] rejection (sound by the D2.23 model — the fixup
+  resolves at final positions; bankid()-derived values KEEP their rejection).
+  Spec addendum wanted at the checkpoint. Message-tier detail for that pass: a
+  provisional here() in a `.b`/`.w` immediate now surfaces the generic
+  `[lower.imm-link] needs .l` steering instead of D-H.2's `[here.provisional]`
+  wording (still loud; fold the case into the addendum). — SHIPPED (jot the spec pass)
+- [tranche-5 port #2 (sound_api), 2026-07-10] **Reads-wrong list (post-merge step-5
+  candidates, byte-DIFFERENT so post-port):** of the EIGHT `bra.w` tail-calls
+  (6→PostByte, 2→PlaySFX), only Sound_Ping/Sound_PlaySample's two are in `.s`
+  reach (disp ≈ −92/−102) — jbra would keep the other six `.w`, so the real
+  saving is −4 B, not the naive −16 (review-corrected). Also `moveq #0,d1` +
+  reload in Sound_PlaySFX's dedup path reads clunky but is cycle-honest —
+  leave it. — OPEN
+- [tranche-5 whole-branch review, 2026-07-10] **F1 FIXED at the ISA level:** move
+  to/from `sr` is now word-only-policed in `encode_move_sr` (both frontends heal at
+  once) — the old encoder keyed the imm ext width to `inst.size`, so
+  `move.l #$2700, sr` silently emitted `sr := $0000` + `$2700`-as-opcode. Pinned by
+  `move_sr_is_word_only`. Remaining legal-68000 SR/CCR forms NOT modeled (all refuse
+  loud): `move <ea>, ccr` (44C0), `andi/ori/eori #imm, sr`, `eori #imm, ccr`
+  (`move.w ccr, d0` refusing is CORRECT — 68010+). Build them when a port demands. — PART-SHIPPED
+- [tranche-5 whole-branch review, 2026-07-10] **emp silently truncates out-of-range
+  word immediates** (`move.w #$12345, d0` → `30 3C 23 45`) where the AS front-end
+  errors — a pre-existing parity divergence in the generic `Imm` path (not
+  tranche-5's; byte-gates can't see it since gated sources are in-range). Add the
+  AS-matching range check. — OPEN
+- [tranche-5 whole-branch review, 2026-07-10] **Minor jots:** a `todo!` in an
+  UNCHOSEN comptime-if arm produces no [todo.present] (consistent with
+  never-lowered, but a define-gated todo vanishes from the list — note-tier
+  candidate); duplicate-label link errors expose the mangled `$m$f$x` name
+  (cosmetic, unmangle in the renderer). — OPEN
+- [tranche-5 step 5 (engine review), 2026-07-10] **No engine changes — recorded why:**
+  game_loop is optimal for its design (RAM-dispatch loop, 18 B). sound_api: (a) the
+  SR-mask is load-bearing in ALL builds (VBlank's DMA stopZ80, not just the DEBUG
+  mirror — comment fixed both twins); (b) Sound_PlayMusic's `>>15` via two lsr.l
+  could be ~34 cycles cheaper (`add.l dN,dN` + `swap`) — REJECTED: once-per-song
+  cold path, clarity wins (recorded so nobody re-derives); (c) the PlaySFX ring
+  dedup was already judged cycle-honest. — CLOSED
+- [tranche-5 step 2 retrospect, 2026-07-10] **stop_z80()/start_z80() comptime-fn
+  templates proven** (the .emp answer to AS macros, hygienic per-site labels) —
+  currently sound_api-local; when a SECOND file wants them (sound_debug port is the
+  likely demand), lift into a shared engine-macros .emp module (`use`-imported
+  Code-returning fns). Demand-gated, don't pre-build. — OPEN
+- [tranche-5 retrospect, Volence reading Sound_PostByte, 2026-07-10] **`preserves(sr)`
+  is unspellable** — the contract vocabulary is d0-a7 only, so the SR save/mask/
+  restore idiom's contract lives in a comment ("Clobbers: SR restored") the compiler
+  can't check. This is S2-D7's first concrete demand site (machine-state contracts:
+  SR/CCR liveness, stack-delta, stopZ80/disableInts PAIRING lints — Sound_PostByte
+  exhibits all three balanced pairs in one proc). Surface ask: accept `sr` (and
+  `ccr`?) in preserves()/clobbers() lists as DECLARED contract, verification riding
+  the S2-D7 dataflow pass; don't ship the spelling without at least the
+  save/restore-balance heuristic, or it's documentation cosplaying as a check.
+  → SHIPPED same-day (Volence's go): `preserves(sr)` + the static-order balance check
+  ([proc.preserves-sr-unbalanced], error-tier — declared contracts are checked),
+  `clobbers(sr)`, the [proc.sr-undeclared] warning (contract'd procs only, @as_compat
+  silenced), ccr steered to S2-D7 proper (flag liveness = dataflow, refused with the
+  pointer). Sound_PostByte/Init/PlayMusic/DrainSfxRing declare it; 8 tests.
+  Path-sensitive save/restore stays S2-D7's dataflow half. — SHIPPED (slice)
+- [preserves(sr) slice, 2026-07-10] **clobbers() entries are never validated** —
+  `clobbers(d9)` or a typo'd name is silently accepted (it just never matches the
+  lint's allowed-set lookup). Cheap fix: validate entries against the register
+  vocabulary (+ `sr`) at the same site preserves validates. — OPEN

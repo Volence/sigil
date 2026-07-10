@@ -113,7 +113,8 @@ use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::{
     assemble_mixed_dac_as_side, assemble_mixed_hblank_as_side, assemble_mixed_mt_as_side,
     assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assemble_mixed_tranche3_as_side,
-    assemble_mixed_tranche4_as_side, assert_rom_matches, CONVSYM_REWRITTEN,
+    assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side, assert_rom_matches,
+    CONVSYM_REWRITTEN,
     CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
@@ -428,6 +429,31 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
     )
 }
 
+/// Tranche 5's map: the tranche-4 regions PLUS `game_loop` — back in the
+/// engine block (plain `$22FE` / debug `$238C`, size 0x12: GameLoop's 16
+/// bytes + GameState_Idle's rts; content shape-invariant in the (1,0) define
+/// combo both pins carry).
+fn emp_bank_map_tranche5(debug: bool) -> String {
+    let game_loop_base = if debug { "0x238C" } else { "0x22FE" };
+    let sound_api_base = if debug { "0x7252" } else { "0x5D94" };
+    format!(
+        "{}\
+         \n\
+         [[region]]\n\
+         name = \"game_loop\"\n\
+         lma_base = {game_loop_base}\n\
+         size = 0x12\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"sound_api\"\n\
+         lma_base = {sound_api_base}\n\
+         size = 0x1E4\n\
+         kind = \"rom\"\n",
+        emp_bank_map_tranche4(debug)
+    )
+}
+
 /// Port #1: `placed_emp_sections_with_mt_sfx`'s four-module successor — DAC +
 /// MT + SFX + HBLANK, all placed into the per-shape `emp_bank_map_with_mt_hblank`
 /// (DAC/SFX/HBLANK defines-less, MT's `DEBUG` — R4). Returns all FOUR modules'
@@ -660,6 +686,113 @@ fn placed_emp_sections_tranche4(aeon: &Path, debug_val: i128) -> Tranche4Section
         particle_asserts,
         sonic_asserts,
         act_asserts,
+    )
+}
+
+/// `placed_emp_sections_tranche5`'s return: tranche 4's tuple plus
+/// `sound_api.emp`'s link asserts (its 7 immediate-mirror drift guards —
+/// kill-list row 10).
+type Tranche5Sections = (
+    Vec<Section>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+);
+
+/// Tranche 5: the THIRTEEN-module successor — tranche 4's composition plus
+/// `game_loop.emp` (`engine/system/`, the H1/H2 port) and `sound_api.emp`
+/// (`engine/sound/`, the extern-equ/imm-link port). game_loop is the FIRST
+/// code module taking build-shape defines: `SOUND_DRIVER_ENABLED=1` (both
+/// pins are sound-on) and `SOUND_DEBUG_HOTKEYS=0` (dev opt-in, neither pin
+/// sets it) — the (1,0) combo; the other three combos are module-gated in
+/// `game_loop_port.rs`'s matrix. sound_api carries 7 drift guards and reads
+/// `SongTable`/`SongPatchTable` — .emp-side under `SIGIL_EMP_MT` — as
+/// link-time imm32s: the .emp-defines/.emp-consumes direction.
+fn placed_emp_sections_tranche5(aeon: &Path, debug_val: i128) -> Tranche5Sections {
+    let map = emp_bank_map_tranche5(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    let (hblank_sections, _hblank_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
+    let (controllers_sections, controllers_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "controllers.emp", &[], &map);
+    let (math_sections, _math_asserts) = placed_module_sections_with_roots(
+        &aeon.join("engine"),
+        &aeon.join("engine/system"),
+        "math.emp",
+        &[],
+        &map,
+    );
+    let (vdp_init_sections, vdp_init_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "vdp_init.emp", &[], &map);
+    let (collision_sections, collision_asserts) =
+        placed_module_sections(&aeon.join("engine/level"), "collision_lookup.emp", &[], &map);
+    let (particle_sections, particle_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "particle_anims.emp",
+        &[],
+        &map,
+    );
+    let (sonic_sections, sonic_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "sonic_anims.emp",
+        &[],
+        &map,
+    );
+    let (act_sections, act_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/levels/ojz/act1"),
+        "act_descriptor.emp",
+        &[],
+        &map,
+    );
+    let (game_loop_sections, _game_loop_asserts) = placed_module_sections(
+        &aeon.join("engine/system"),
+        "game_loop.emp",
+        &[
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("SOUND_DEBUG_HOTKEYS".to_string(), 0),
+        ],
+        &map,
+    );
+    let (sound_api_sections, sound_api_asserts) =
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    sections.extend(hblank_sections);
+    sections.extend(controllers_sections);
+    sections.extend(math_sections);
+    sections.extend(vdp_init_sections);
+    sections.extend(collision_sections);
+    sections.extend(particle_sections);
+    sections.extend(sonic_sections);
+    sections.extend(act_sections);
+    sections.extend(game_loop_sections);
+    sections.extend(sound_api_sections);
+    (
+        sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_asserts,
+        particle_asserts,
+        sonic_asserts,
+        act_asserts,
+        sound_api_asserts,
     )
 }
 
@@ -1677,6 +1810,147 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
         DEBUG_ASSEMBLED_LEN,
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche4 debug",
+    );
+}
+
+/// Tranche 5's TWELVE-module mixed build: tranche 4's composition + the
+/// `SIGIL_EMP_GAME_LOOP` gate (engine.inc:136). game_loop's cross-seam reads
+/// — `VSync_Wait`/`Sound_DrainSfxRing` (pc-relative `bsr.w` targets) and
+/// `Game_State` (engine RAM) — are unconditional AS-side symbols, supplied
+/// through the shared link like tranche 3's; `boot.asm:220`'s
+/// `bra.w GameLoop` is the unconditional AS-side consumer of the new
+/// `pub proc` name (the outbound direction).
+fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche5_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    let (
+        emp_sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_asserts,
+        particle_asserts,
+        sonic_asserts,
+        act_asserts,
+        sound_api_asserts,
+    ) = placed_emp_sections_tranche5(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed tranche5): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed tranche5): {d:?}"));
+
+    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 8, "controllers guards captured");
+    for (name, asserts, want) in [
+        ("vdp_init.emp", &vdp_init_asserts, 8usize),
+        ("collision_lookup.emp", &collision_asserts, 8),
+        ("particle_anims.emp", &particle_asserts, 2),
+        ("sonic_anims.emp", &sonic_asserts, 16),
+        ("act_descriptor.emp", &act_asserts, 5),
+        // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
+        // checked against the REAL sound_constants.asm / config/sound_ids.asm.
+        ("sound_api.emp", &sound_api_asserts, 7),
+    ] {
+        assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
+        let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "{name}'s asserts must PASS against the real AS tree: {diags:?}"
+        );
+    }
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed tranche5): {e}"))
+}
+
+/// Tranche 5 acceptance — plain THIRTEEN-module mixed build == `aeon/s4.bin`,
+/// modulo the convsym bytes; the game_loop + sound_api block heads pinned
+/// explicitly.
+#[test]
+fn mixed_tranche5_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche5_rom(&aeon, false);
+
+    // The game_loop block: bsr.w VSync_Wait ($2262), bsr.w Sound_DrainSfxRing
+    // ($5EDE), movea.l (Game_State).w,a0, jsr (a0), bra.s GameLoop, then
+    // GameState_Idle's rts — the (1,0) combo, gameDebugTick contributing
+    // zero bytes.
+    assert_eq!(
+        &rom[0x22FE..0x2310],
+        &[
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0xD6, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x90, 0x60, 0xF0, 0x4E, 0x75
+        ][..],
+        "game_loop block must match the reference bytes exactly (plain)"
+    );
+
+    // Sound_PostByte's head: move.w sr,-(sp) / move.w #$2700,sr / the stopZ80
+    // expansion's first word — the sr + imm-before-abs shapes this port added.
+    assert_eq!(
+        &rom[0x5D94..0x5D9C],
+        &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
+        "sound_api block head must match the reference bytes exactly (plain)"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche5");
+}
+
+/// Tranche 5 acceptance — `__DEBUG__` THIRTEEN-module mixed build ==
+/// `aeon/s4.debug.bin`, modulo the convsym bytes.
+#[test]
+fn mixed_tranche5_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche5_rom(&aeon, true);
+
+    assert_eq!(
+        &rom[0x238C..0x239E],
+        &[
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x50, 0x06, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x90, 0x60, 0xF0, 0x4E, 0x75
+        ][..],
+        "game_loop block must match the reference bytes exactly (debug)"
+    );
+
+    assert_eq!(
+        &rom[0x7252..0x725A],
+        &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
+        "sound_api block head must match the reference bytes exactly (debug)"
+    );
+
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed tranche5 debug",
     );
 }
 

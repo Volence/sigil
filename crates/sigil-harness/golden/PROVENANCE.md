@@ -271,3 +271,80 @@ through correct frame bytes live in oracle.
   **`907a902966efc0dccf09339a10da3dc949560983fc442c8bd302ed696bd2fbd7`**.
 - Debug `s4.debug.bin`: sha256
   **`7148f938b1d0e4b0f465e8204566ce598c23cac93381fadbc46a67c0452c5d78`**.
+
+## Tranche-5 port #1: game_loop (2026-07-10)
+
+`engine/system/game_loop.asm` → `engine/system/game_loop.emp` under
+`SIGIL_EMP_GAME_LOOP` at `engine/engine.inc:136` (the sixth engine-side
+gate; resume org plain `$2310` / debug `$239E`). Region plain
+`$22FE..$2310` / debug `$238C..$239E` (0x12 bytes: GameLoop +
+GameState_Idle). The FIRST code module taking build-shape defines — the
+.emp requires `-D SOUND_DRIVER_ENABLED` and `-D SOUND_DEBUG_HOTKEYS`
+(0|1); both pinned shapes are the (1,0) combo (build.sh defaults:
+sound on, hotkeys env-opt-in off), where sonic4's `gameDebugTick`
+expansion contributes ZERO bytes. The other three combos are gated
+module-level against the AS twin assembled through sigil's AS front-end
+(`game_loop_port.rs`'s matrix — ALSO the drift guard for the H2
+expansion mirror, kill-list row 9: it re-extracts the macro body from
+the real `games/sonic4/config/game.asm` every run). Cross-seam reads:
+`VSync_Wait` (plain `$2262` / debug `$22EC`) and `Sound_DrainSfxRing`
+(plain `$5EDE` / debug `$739C`) as pc-relative `bsr.w` targets,
+`Game_State` (`$FFFF8004`, engine RAM, shape-invariant); outbound
+consumer `boot.asm:220`'s `bra.w GameLoop`. The TWELVE-module mixed
+gates are the acceptance surface. Gate-off byte-neutrality sha256 ×3 at
+the `907a9029…` pin (+ debug `7148f938…`, + demo.bin builds clean —
+the engine-side gate must never define for other games). Reference pins
+UNCHANGED.
+
+## Tranche-5 port #2: sound_api (2026-07-10)
+
+`engine/sound/sound_api.asm` → `engine/sound/sound_api.emp` under
+`SIGIL_EMP_SOUND_API` INSIDE engine.inc's `ifdef SOUND_DRIVER_ENABLED`
+block (resume org plain `$5F7C` / debug `$743A`). Region plain
+`$5D94..$5F7C` / debug `$7252..$743A` (0x1E8 bytes, twelve Sound_* procs).
+Three language features shipped mid-port: (1) the abs-sym ext-word fence
+RELAXED to positional (`move.w #$0100, (Z80_BUS_REQUEST).l` — the stopZ80
+shape; ext words BEFORE the sym operand precede the abs field, which
+stays last), (2) LINK-TIME imm32 (`ImmLink`, `Value32Be` at offset 2 —
+the emp mirror of the AS side's `try_defer_long_imm`; `.l` only, the
+`.b`/`.w` gap stays ledgered), (3) `sr`/`ccr` operands. Slot ADDRESSES
+stay AS-owned as extern-equ sums (`equ *_SLOT = extern("SND_Z80_BASE") +
+extern("SND_REQ_*")` — the MUSIC_PARAM block derives from a Z80-driver
+RAM label and floats with driver resizes, so no comptime mirror); only
+the 7 immediate-position values are mirrored, drift-guarded (kill-list
+row 10). `SongTable`/`SongPatchTable` read as imm-link equs — .emp-side
+under `SIGIL_EMP_MT`, so the mixed build exercises .emp-defines/
+.emp-consumes. Cross-seam positions (listing symbol tables): RAM
+`Ring_Sfx_Speaker`/`Sfx_Ring_Buf`/`Wr`/`Rd` plain `$FFFFAF30/32/3A/3B`,
+debug `$FFFFAF52/54/5C/5D`; ROM `SongTable` plain `$63AE0` / debug
+`$65522`, `SongPatchTable` plain `$63AE4` / debug `$6552E`; the SND_*
+equ values are shape-invariant (MUSIC_PARAM base `$1CA6`). The
+THIRTEEN-module mixed gates are the acceptance surface. Gate-off
+byte-neutrality sha256 ×3 at the `907a9029…` pin (+ debug + demo).
+Reference pins UNCHANGED.
+
+## Re-baseline: tranche-5 step 2 — the modernize pass (2026-07-10, the current pin
+
+Tranche-5 STEP-2 under the RATIFIED loop (Volence, 2026-07-10 — see
+`notes/campaign-port-loop.md`: the byte gate is a step-1 transcribe
+verifier; step 2 converts to the complete house format and MAY change
+bytes, paying lockstep + re-pin). sound_api.emp: all eight `bra.w`
+tail-calls → `jbra` (only Sound_Ping/Sound_PlaySample relax to `.s` —
+−2 B each, −4 B total), the four inline stopZ80/startZ80 expansions →
+`stop_z80()`/`start_z80()` comptime-fn templates (hygienic per-site
+`.wait_z80`; byte-identical), pinned `(X).w/.l` spellings → bare
+width-rule idiom (byte-identical). AS twin lockstep: the two `bra.s`
+sites only. game_loop.emp was born-modern (no changes).
+
+Region `sound_api` shrinks 0x1E8 → **0x1E4** (plain `$5D94..$5F78`,
+debug `$7252..$7436`; engine.inc resume orgs re-pinned). Everything
+after Sound_PlaySample slid −4: `Sound_PlaySFX` plain `$5E94` / debug
+`$7352` (outbound proofs re-anchored to base+0x100), `Sound_DrainSfxRing`
+plain `$5EDA` / debug `$7398` (game_loop's cross-seam drain position +
+the mixed-gate head-pin displacements re-derived: plain `3BD6`, debug
+`5006`). EndOfRom unchanged (org-anchored); demo unaffected.
+
+- Non-debug `s4.bin`: sha256
+  **`bcd4e3a5f42d63a7994fb989d076435a5242b4cb48203a99edfb01ac34189ee4`**.
+- Debug `s4.debug.bin`: sha256
+  **`634fea687f6ebe44fca4cc50a9e2e9cfaeaa6c4740fcaffbc429f96bc6305184`**.

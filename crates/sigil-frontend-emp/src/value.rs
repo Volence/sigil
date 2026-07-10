@@ -352,8 +352,26 @@ pub enum CodeItem {
 pub enum CodeOperand {
     /// An immediate: `#42`.
     Imm(i128),
+    /// A LINK-TIME immediate: `#extern("SongTable")` / an equ-aliased
+    /// extern sum (tranche 5 — the emp mirror of the AS front-end's
+    /// `try_defer_long_imm`): the value cannot fold until link, so the
+    /// instruction encodes with a 4-byte hole and ONE `Value32Be` fixup.
+    /// `.l`-sized instructions only (a `.b`/`.w` symbolic immediate has no
+    /// deferral yet — the ledgered width-extension gap); policed at lowering
+    /// where the resolved size is known.
+    ImmLink {
+        /// The residual link-time expression (extern Syms + arithmetic).
+        target: sigil_ir::expr::Expr,
+    },
     /// A register: `d0`.
     Reg(Reg),
+    /// The 68k status register operand: `sr` (`move.w sr, -(sp)` /
+    /// `move.w #$2700, sr` — the interrupt-mask idiom). A register-class
+    /// word in operand position (registers win over ordinary names there),
+    /// like `d0`..`a7`.
+    Sr,
+    /// The 68k condition-code register operand: `ccr`.
+    Ccr,
     /// A condition code used as an operand.
     Cc(Cc),
     /// A named symbol / label reference.
