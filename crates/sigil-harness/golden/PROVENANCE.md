@@ -192,3 +192,25 @@ held).
 - vdp_init region bases UNCHANGED (plain `$1C14`, debug `$1C96`);
   `BootData_VDPRegs` UNCHANGED (`$3CE`/`$3D2`); sound-block layout
   UNCHANGED.
+
+## Re-baseline: player fixes — balance-on-solids + spindash anchor (2026-07-10) — the current pin
+
+Volence-reported gameplay fixes (aeon `add02b9` + the TouchResponse
+lifecycle commit): the `ST_ON_OBJECT` per-frame clear moved from
+player_common's mid-tick spot (which blinded the animation classifier's
+ledge probe) to the top of TouchResponse's player loop, and the spindash
+charge reverted to classic STANDING-size physics (the curl happens at
+release — the donor charge frames are drawn for the standing origin).
+The TouchResponse `bclr` is a +6-byte insert in `engine/objects/
+collision.asm`, INSIDE the gated span — `tile_cache`/`collision_lookup`
+slid +6 (`Tile_Cache_GetCollision` plain `$431A`→`$4320` / debug
+`$4A86`→`$4A8C`; collision bases plain `$4C02`→`$4C08` / debug
+`$5426`→`$542C`; resume orgs `$4C2C`/`$5450`); vdp_init/hblank/
+controllers/math and the interrupt vectors verified UNMOVED. Window
+CONTENT is byte-identical (site and target shifted together — disp
+`$F6FA` held).
+
+- Non-debug `s4.bin`: sha256
+  **`fc69fdbf8d0c8f63d30a10410118775be1c1bd6b1ef70d74b558578fbb73af37`**.
+- Debug `s4.debug.bin`: sha256
+  **`5e4cbe974007183c652868def207d20a5b72629e0c832755f8dce9d57f42ea58`**.
