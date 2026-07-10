@@ -28,14 +28,21 @@ below where they differ; ~4 steps per tranche/batch):**
 3. **Retrospect** — walk this ledger's new entries with Volence: missed idioms, Sigil
    improvements, anything that could be nicer.
 4. **Implement** — build ratified items in Sigil, apply back to the current tranche's files
-   if relevant, final gate pass. Then the next tranche.
+   if relevant, final gate pass. Then the Volence checkpoint (merge).
+5. **Optimize (Volence-ratified 2026-07-09, tranche-3 packet review)** — POST-MERGE: the
+   tranche's reads-wrong list plus anything later retrospects send back to already-ported
+   files. Byte-CHANGING by definition, so each lands as its own commit re-gated against a
+   REBUILT reference ROM (PROVENANCE pins re-baseline). The loop's guarantee becomes: going
+   through a tranche leaves the touched files at the campaign's latest quality bar, not just
+   its latest byte-copy.
 
 **THE STEP-2 CHECKLIST (standing, Volence-ratified 2026-07-09 — apply to EVERY file in every
 tranche's modernize pass; the step-3 retrospect reviews the checklist itself for gaps):**
-- **Contracts:** `clobbers(...)` on every proc (source the .asm header comments AND the actual
-  write set; outputs count as clobbers until an outs-annotation exists); `falls_into` wherever
-  a proc falls through; `preserves(...)` once shipped (S2-D6b syntactic slice) on every
-  movem-save/restore proc.
+- **Contracts:** every FINISHED proc declares its register contract — `clobbers(...)` (source
+  the .asm header comments AND the actual write set; outputs count as clobbers until an
+  outs-annotation exists), `clobbers()` for a verified no-effect proc (Volence ruling
+  2026-07-09; opt-in — absence stays legal mid-port), or `preserves(...)` (S2-D6b) on every
+  movem-save/restore proc; `falls_into` wherever a proc falls through.
 - **Types:** every `data` item carries its true type (the length IS the size check); prelude
   newtypes where a value is domain-typed (Angle, VramTile, …) — erasing, byte-neutral;
   `bitfield`/`enum` types where a flag/id byte buys real checking; `sizeof`/`offsetof` over
@@ -379,8 +386,9 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   audit item (d) resolved): `ensure(embed("f.bin")[0] == 0, ...)` fails to parse (`expected
   \`)\`, found LBracket`). Blocks comptime CONTENT asserts on embedded blobs (the sine-table
   sin(0)=0 / +$40-overlap invariants). v1.1 candidate: index + `.len` on `Data` in comptime
-  exprs — pays at every embed with a checkable invariant. — OPEN (v1.1 candidate, recorded
-  decision needed per A-Spec2.3 since it grows the comptime surface).
+  exprs — pays at every embed with a checkable invariant. — RATIFIED IN 2026-07-09 (Volence,
+  tranche-3 packet review); builds together with typed Data views (one plumbing item, below)
+  at tranche 4's opening; A-Spec2.3 decision record rides the build.
 - [tranche 3, 2026-07-09] **Clobber lint: `dbcc`'s first-operand write remains the recorded
   blind spot** (pre-existing TODO(S2-D6) in lower/proc.rs) — vdp_init's two `dbf` loops write
   d0/d3, which its `clobbers` declares anyway; noting the tranche relied on declaration
@@ -396,18 +404,25 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   (i) bare stays legal, absence = no contract (today's shape); (ii) allow explicit empty
   `clobbers()` meaning "touches nothing" (the lint then flags ANY register write). Recommend
   (ii) at low priority — it makes the strongest contract expressible — but it needs a Volence
-  ruling + checklist amendment. — OPEN (ruling requested).
+  ruling + checklist amendment. — RULED 2026-07-09 (Volence, tranche-3 packet review):
+  option (ii) ADOPTED as OPT-IN — absence stays legal (half-ported/@as_compat files), empty
+  `clobbers()` means "touches nothing" (lint flags any write), and the step-2 checklist is
+  amended: every FINISHED proc declares its register contract (clobbers(...) / clobbers() /
+  preserves(...)). Build rides tranche 4's opening.
 - [tranche 3 code-sense review, 2026-07-09] **`~mask` byte-width ceremony tax**:
   `andi.b #~(BUTTON_LEFT|BUTTON_RIGHT)&$FF, d0` (controllers.emp) — the `&$FF` exists only
   because comptime `~` is untyped-width; a byte-width operand position could plausibly
   auto-truncate a comptime complement (loudly range-checked otherwise). Jot-don't-implement:
   needs a decision on silent-vs-explicit truncation semantics (tenet: no silent wrong bytes).
-  — OPEN (v1.1 candidate).
+  — DEFERRED BY RULING 2026-07-09 (Volence): stays jotted; no breakage either way and the
+  `&$FF` spelling stays valid under any future safe-truncation rule (idempotent). Revisit on
+  annoyance.
 - [tranche 3 code-sense review, 2026-07-09] **Typed word-table embeds**: `Sine_Table:
   [u8; $280] = embed(...)` describes a WORD table as bytes; `[i16; 320]` with big-endian
   byte-identity would be the honest type if/when `embed` learns typed element views. Pairs
-  with the comptime-Data-indexing candidate (content asserts want typed reads too). — OPEN
-  (v1.1 candidate).
+  with the comptime-Data-indexing candidate (content asserts want typed reads too). —
+  RATIFIED IN 2026-07-09 (Volence, tranche-3 packet review); one work item with the indexing
+  candidate, tranche 4's opening.
 - [tranche 3 branch review, 2026-07-09] **`ifndef`-guarded equs/structs export NO equ-syms in
   the converged pass** (pre-existing for Task B1 `equ` export; tranche 3 widened the mechanism
   to struct symbols): pass 0 defines the guard symbol and exports, the converged pass sees the
@@ -419,3 +434,13 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   packet review): the run loop carries the ever-exported set across passes and re-attaches
   missing exports from the CONVERGED env (values authoritative — a forward-ref-dependent equ
   gets its final value); pinned by `ifndef_guarded_equs_and_structs_still_export`.
+
+- [tranche-3 packet review (Volence), 2026-07-09] **STEP 5 RATIFIED** — optimization is now
+  the loop's fifth step (post-merge, re-gated, re-baselined; see the loop description above).
+  Tranche 3's reads-wrong list is its first work queue.
+- [tranche-3 packet review (Volence), 2026-07-09] **Unsized-conditional taste call OPEN** —
+  D2.18's unsized `Bcc` relaxation exists; the checklist currently keeps explicit `.s`/`.w`
+  on conditionals in ported files. Dropping suffixes is byte-neutral (relaxation picks the
+  same minimal size). Volence to rule: keep classic explicit sizes vs assembler-managed
+  unsized. `jbcc` (trampoline-expanding unlimited-reach conditional) stays deferred either
+  way (tenet 3). — OPEN (awaiting the call).
