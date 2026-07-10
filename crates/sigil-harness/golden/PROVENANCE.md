@@ -232,3 +232,22 @@ plain `$309F4`/debug `$30A5C`). Gate-off byte-neutrality sha256 ×3 at the
 `755c2c91…` pin (both gates inert without the defines). The TEN-module
 mixed gates (`mixed_tranche4_*`) are the acceptance surface; re-pin these
 bases on any data-region re-baseline.
+
+## Tranche 4 port #3 — act_descriptor (2026-07-10)
+
+`act_descriptor.emp` (the OJZ act-1 descriptor + 9-section table, the
+campaign's biggest and first STRUCT-TYPED port — the Tier-1+2 act shape).
+Bases/size (content shape-invariant modulo per-shape fixup addresses):
+
+- `act_descriptor`: plain `$14AEE`, debug `$14B56`, size `0x274`
+  (`Act` descriptor `0x22` + 9 × `Sec` `0x42`).
+
+Gate define `SIGIL_EMP_ACT_DESCRIPTOR` lives INSIDE
+`games/sonic4/data/levels/ojz/act1/act_descriptor.asm` (the generated
+includes at the file top stay AS-side in BOTH shapes; resume org plain
+`$14D62` / debug `$14DCA`). The scroll test's four consumers were re-spelled
+`lea (OJZ_Act1_Descriptor).l, aN` (byte-neutral — asl already picked abs.l)
+so the new pinned-width lea deferral carries them across the seam. Gate-off
+byte-neutrality sha256 ×3 at the `755c2c91…` pin. The ELEVEN-module mixed
+gates are the acceptance surface; the port test pins 41 cross-seam label
+addresses from both symbol tables — re-derive them on any re-baseline.

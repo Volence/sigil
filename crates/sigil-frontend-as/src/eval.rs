@@ -2646,6 +2646,10 @@ impl Asm {
             self.emit_frag(Ok(frag), span);
             return;
         }
+        if let Some(frag) = self.try_defer_lea_abs(mnemonic, &atoms, span) {
+            self.emit_frag(Ok(frag), span);
+            return;
+        }
         let ops = match self.convert_atoms_m68k(mnemonic, size, &atoms, span) {
             Some(o) => o,
             None => return,
@@ -2658,6 +2662,57 @@ impl Asm {
         };
         let frag = self.m68k.lower_inst(&inst, span);
         self.emit_frag(frag, span);
+    }
+
+    /// Tranche-4 act_descriptor (the "pinned-width abs-sym mode" re-scoped at
+    /// tranche 3): `lea (Sym).w/.l, aN` whose Sym is unresolved (an
+    /// `.emp`-side cross-seam label — ojz_scroll_test's
+    /// `lea (OJZ_Act1_Descriptor).l, a0`) defers to the linker as a pinned
+    /// `Abs16Be`/`Abs32Be` fixup instead of hard-erroring. The WIDTH is
+    /// pinned by the explicit suffix (the consumer spells `.l`, byte-
+    /// identical to what asl's width rule picked with the include present) —
+    /// no relax candidates needed. `lea` has no other extension words, so
+    /// the address hole sits at offset 2. A RESOLVED symbol falls through to
+    /// the eager path unchanged; a BARE (suffix-less) unresolved symbol
+    /// still hard-errors — the suffix is how the author pins what asl chose.
+    fn try_defer_lea_abs(
+        &mut self,
+        mnemonic: M68kMnemonic,
+        atoms: &[OperandAtom],
+        span: Span,
+    ) -> Option<DataFragment> {
+        if mnemonic != M68kMnemonic::Lea {
+            return None;
+        }
+        let (addr, long, reg) = match atoms {
+            [OperandAtom::M68kAbs { addr, long }, OperandAtom::RegOrCond(w)] => {
+                (addr, *long, m68k_addr_reg(w)?)
+            }
+            [OperandAtom::M68kAbs { addr, long }, OperandAtom::Value(Expr::Sym(w))] => {
+                (addr, *long, m68k_addr_reg(w)?)
+            }
+            _ => return None,
+        };
+        let qualified = self.qualify_expr(addr);
+        if !matches!(self.fold(&qualified), Fold::Poison) {
+            return None; // resolved: the eager path picks it up, byte-identical
+        }
+        let inst = M68kInstruction {
+            mnemonic,
+            size: M68kSize::L,
+            ops: vec![
+                if long { M68kOperand::AbsL(0) } else { M68kOperand::AbsW(0) },
+                M68kOperand::An(reg),
+            ],
+        };
+        let mut frag = self.m68k.lower_inst(&inst, span).ok()?;
+        debug_assert!(frag.bytes.len() >= 4, "lea (abs),aN must encode opcode + ext word(s)");
+        frag.fixups.push(Fixup {
+            kind: if long { FixupKind::Abs32Be } else { FixupKind::Abs16Be },
+            offset: 2,
+            target: self.partial_fold(&qualified),
+        });
+        Some(frag)
     }
 
     /// R3 (sound-migration T2, Task 3): a 32-bit immediate operand

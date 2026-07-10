@@ -292,3 +292,166 @@ fn sonic_wrong_base_map_places_the_section_at_a_different_address() {
     assert_eq!(sec.lma, 0x3097A, "the placed LMA must track the (doctored) map base");
     assert_ne!(sec.lma, 0x30978, "…and therefore differ from the true pin");
 }
+
+// ===========================================================================
+// act_descriptor probes (port #3)
+// ===========================================================================
+
+fn act_src() -> Option<String> {
+    let path = aeon_dir().join("games/sonic4/data/levels/ojz/act1/act_descriptor.emp");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Some(s),
+        Err(_) if strict_gate() => panic!("SIGIL_STRICT_GATE set but {} missing", path.display()),
+        Err(_) => {
+            eprintln!("skip: {} not found (set AEON_DIR)", path.display());
+            None
+        }
+    }
+}
+
+fn place_act(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let (module, ldiags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: Some(aeon_dir()),
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
+    let map_toml = "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"act_descriptor\"\n\
+         lma_base = 0x14AEE\n\
+         size = 0x274\n\
+         kind = \"rom\"\n";
+    let map = sigil_link::load_map(map_toml).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
+    (sections, module.link_asserts)
+}
+
+/// THE STRUCT-TYPING NEGATIVE: swap two same-width Sec fields in a doctored
+/// copy of the STRUCT twin (`sec_objects`/`sec_rings`). `sizeof(Sec)` is
+/// unchanged — the old `* == Act_len`-style size guard would PASS — but the
+/// named literals now emit the pointers in the swapped order, so the byte
+/// gate catches what the size guard structurally cannot. This is Tier 1's
+/// whole argument in one probe.
+#[test]
+fn swapped_sec_fields_produce_different_bytes() {
+    let Some(src) = act_src() else { return };
+    let doctored = src.replace(
+        "    sec_objects:         *u8,           // $04",
+        "    sec_rings_swapped_probe: *u8,       // $04",
+    );
+    // rename-then-swap: give the doctored struct rings-before-objects by
+    // swapping the two field LINES wholesale.
+    let doctored = doctored.replace(
+        "    sec_rings:           *u8,           // $08",
+        "    sec_objects:         *u8,           // $08",
+    );
+    let doctored = doctored.replace(
+        "    sec_rings_swapped_probe: *u8,       // $04",
+        "    sec_rings:           *u8,           // $04",
+    );
+    assert_ne!(doctored, src, "precondition: the swap must apply");
+    // The struct literals are NAMED, so they still compile — the bytes move.
+    let (sections, _asserts) = place_act(&doctored);
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    // Cross-seam symbols unresolved — compare the SECTION's fixup TARGETS
+    // instead of linked bytes: the first Sec's field order determines which
+    // symbol's fixup lands at region offset 0x22+0x04 vs 0x22+0x08. Simpler
+    // and just as conclusive: the placed section's fixup list ORDER changed.
+    let sec = resolved.iter().find(|s| s.name == "act_descriptor").expect("section");
+    let names: Vec<String> = sec
+        .fragments
+        .iter()
+        .filter_map(|f| match f {
+            sigil_ir::Fragment::Data(d) => Some(d.fixups.iter()),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|f| match &f.target {
+            sigil_ir::expr::Expr::Sym(n) => Some(n.clone()),
+            _ => None,
+        })
+        .take(12)
+        .collect();
+    let obj_pos = names
+        .iter()
+        .position(|n| n.contains("Sec0_Objects"))
+        .expect("Sec0_Objects fixup must be present");
+    let ring_pos = names
+        .iter()
+        .position(|n| n.contains("Sec0_Rings"))
+        .expect("Sec0_Rings fixup must be present");
+    assert!(
+        obj_pos > ring_pos,
+        "the doctored struct order must emit Rings before Objects (got {names:?})"
+    );
+}
+
+/// Placement genuineness for the act region.
+#[test]
+fn act_wrong_base_map_places_the_section_at_a_different_address() {
+    let Some(src) = act_src() else { return };
+    let (file, pdiags) = parse_str(&src);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let (module, ldiags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: Some(aeon_dir()),
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
+    let map_toml = "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"act_descriptor\"\n\
+         lma_base = 0x14AF0\n\
+         size = 0x274\n\
+         kind = \"rom\"\n";
+    let map = sigil_link::load_map(map_toml).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
+    let sec = sections.iter().find(|s| s.name == "act_descriptor").expect("placed section");
+    assert_eq!(sec.lma, 0x14AF0, "the placed LMA must track the (doctored) map base");
+    assert_ne!(sec.lma, 0x14AEE, "…and therefore differ from the true pin");
+}
+
+/// The Act_len twin pin compiled WITHOUT the AS equs: the link-assert check
+/// against an empty table must FAIL LOUD naming the missing symbol.
+#[test]
+fn act_standalone_twin_pins_fail_loud_on_missing_externs() {
+    let Some(src) = act_src() else { return };
+    let (sections, asserts) = place_act(&src);
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    assert!(
+        diags.iter().any(|d| d.level == Level::Error && d.message.contains("Act_len")),
+        "the Act_len twin pin must fail loud without the AS equs, got {diags:?}"
+    );
+}
