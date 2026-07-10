@@ -796,3 +796,43 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   work (culling, dispatch) is real work. TRIGGER: Prof_TouchResponse/
   Prof_Peak_Frame showing pressure, OR the first object-vs-object demand,
   whichever first. Volence-ratified as jot-now-build-later (2026-07-10). — DESIGN-READY
+- [tranche 8, 2026-07-10] **`.emp assert/diagnostics construct — FIRST demand data
+  point** — rings' `assert.b d4, eq, #0` (DEBUG-fatal buffer-drop check) had to ship
+  as a TRANSLITERATION (real asm skeleton + `dc.b` FSTRING data verbatim from the
+  reference listing; kill row 16) because the real feature is a comptime
+  format-string compiler over debugger.asm's console-token encoding ($E0 endl,
+  $E8/$EA/$EC pal, arg descriptors) — debugger.asm-port-era machinery, not one call
+  site's. Second demand ratifies designing it; the transliteration pattern covers
+  singles until then. — OPEN (demand 1/2)
+- [tranche 8, 2026-07-10] **`dc` link-expr cells** — the new `dc.b/w/l` proc-body
+  statement (H8) is deliberately comptime-only (ints + strings); a link-resolved
+  cell in dc position (`dc.l SomeLabel`) errors with a steering diagnostic. The
+  extension is the D2.25 Value8/16/32 machinery already used by data items — build
+  when a real consumer shows up (jump tables in code position are the likely
+  demand). Z80 `dc` likewise designed-CPU-neutral (LE via stream_data) but
+  unprobed — probe at the first Z80 code port. — OPEN (consumer-gated)
+- [tranche 8, 2026-07-10] **`*` (current location) port-translation rule** — AS's
+  `pea *(pc)` self-address idiom has no `.emp` spelling; the translation is a label
+  on the instruction + `.label(pc)` (byte-identical d16=-2 encoding). Local-label
+  displacement operands SHIPPED this tranche to make that expressible (parser
+  DispInd continuation on the `Tok::Dot` arm). Goes in the D2.7/D2.19
+  port-translation bucket (like `even`→`align 2`), not a language feature. — RECORDED
+- [tranche 8, 2026-07-10] **typed view over a non-SST packed record — SECOND
+  demand class** — the ring buffer's 6-byte entries (x.w, y.w, section_id.b,
+  list_index.b) read via literal 0/2/4/5 displacements and hand-rolled ×6 index
+  math (add/add/add chains at three sites). A `record`-over-raw-RAM view (the
+  role-typed-SST cousin, vars-era neighborhood) would give named displacements +
+  a sizeof-driven stride; the index-scale idiom (strength-reduced ×6) may want a
+  comptime helper. Rings stays literal at transcribe; revisit when the construct
+  gets its second consumer (entity_window's collected-window slots are the likely
+  one). — OPEN (demand 1/2)
+- [tranche 8, 2026-07-10] **hardcoded twin-guard counts CLOSED** — tranche 7's
+  shared equ list still left per-test count literals; the twin's 18→24 growth broke
+  6 targets. All counts now DERIVE from `test_support::engine_constant_equs().len()`
+  (`twin_guards()`), composed per-module (30+N, 31+N, 34+N…). Future twin growth is
+  list-edit-only, as originally intended. — CLOSED (tranche-8 back-prop)
+- [tranche 8, 2026-07-10] **DrawRings culling literals** — `#336`/`#240` are
+  `320+16`/`224+16` (screen + ring size) as comments; spelling them as derived
+  constants needs screen-geometry names in the twin (+2 mirrors for 2 sites).
+  Not worth the mirror tax today; becomes free after the constants.asm ownership
+  flip (row 1). — RECORDED
