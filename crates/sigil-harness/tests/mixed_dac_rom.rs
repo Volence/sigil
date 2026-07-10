@@ -369,14 +369,14 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
 /// Tranche 3's map: `emp_bank_map_with_mt_hblank_tranche2`'s SEVEN regions
 /// PLUS `vdp_init` and `collision_lookup` — the FIFTH and SIXTH
 /// shape-dependent region bases: vdp_init plain `$1C14` / debug `$1C96`
-/// (size `$48`), collision_lookup plain `$4C02` / debug `$5426` (size
+/// (size `$48`), collision_lookup plain `$4C08` / debug `$542C` (size
 /// `$24` since the step-5 tail-call optimize; `$32` as first ported). The
 /// prior regions are byte-for-byte the tranche-2 map's.
 /// `collision_lookup` is the campaign's first region outside the
 /// `engine/system`+sound neighborhoods (`engine/level/`).
 fn emp_bank_map_tranche3(debug: bool) -> String {
     let vdp_init_base = if debug { "0x1C96" } else { "0x1C14" };
-    let collision_base = if debug { "0x5426" } else { "0x4C02" };
+    let collision_base = if debug { "0x542C" } else { "0x4C08" };
     format!(
         "{}\
          \n\
@@ -1335,10 +1335,10 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // The collision_lookup block, pinned explicitly (the port's own
     // 0x24-byte window, post step-5 optimize). Offset 0x1C:
     // `bra.w Tile_Cache_GetCollision` = 6000 + disp16
-    // ($431A - $4C20 = -$906 = $F6FA) — the cross-seam pc-relative
+    // ($4320 - $4C26 = -$906 = $F6FA) — the cross-seam pc-relative
     // TAIL CALL.
     assert_eq!(
-        &rom[0x4C02..0x4C26],
+        &rom[0x4C08..0x4C2C],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x34, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x36, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x38, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x3A, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0xFA,
@@ -1395,7 +1395,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
     );
 
     assert_eq!(
-        &rom[0x5426..0x544A],
+        &rom[0x542C..0x5450],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x56, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x58, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x5A, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x5C, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0x42,
