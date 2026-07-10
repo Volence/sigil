@@ -93,30 +93,10 @@ fn map_toml(debug: bool) -> String {
 /// ride the ambient prepend, so all 11 truths are supplied. A trailing
 /// label+`dc.w` opens a section so the equs flush via `pending_equ_syms`.
 fn as_af_equ() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               BUTTON_UP = 1\n\
-               BUTTON_DOWN = 2\n\
-               BUTTON_LEFT = 4\n\
-               BUTTON_RIGHT = 8\n\
-               HW_PORT_1_DATA = $A10003\n\
-               HW_PORT_2_DATA = $A10005\n\
-               CTYPE_AIR = 0\n\
-               VDP_Shadow_len = 19\n\
-               RF_COORDMODE = 3\n\
-               RF_PRIORITY_SHIFT = 5\n\
-               AF_DELETE = $FB\n\
-               NUM_PLAYERS = 2\n\
-               NUM_DYNAMIC = 40\n\
-               NUM_SYSTEM = 8\n\
-               NUM_EFFECTS = 16\n\
-               COLLISION_TOUCH = 12\n\
-               ST_IN_AIR = 3\n\
-               ST_ON_OBJECT = 5\n\
-               ST_P1_STANDING = 3\n\
-               Stub:\n\
-               \tdc.w 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (AF equ): {d:?}")).sections
+    // The 19-value constants-twin blob (SOURCE OF TRUTH: `constants.asm`),
+    // consolidated in `sigil_harness::test_support` — supplies AF_DELETE plus
+    // every other constant the twin's guards read.
+    sigil_harness::test_support::as_engine_constants_equs()
 }
 
 /// The synthetic AS-side OUTBOUND consumer — the bare-name proof, mirroring

@@ -245,14 +245,7 @@ fn compile_real_file(
 /// The 7 immediate-mirror drift guards must be captured and PASS against
 /// `as_constant_equs`' truths.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
-    let guards = link_asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .count();
+    let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
     assert_eq!(guards, 7, "sound_api's seven drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(

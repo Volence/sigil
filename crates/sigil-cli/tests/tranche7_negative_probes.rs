@@ -20,7 +20,6 @@
 //!     MUST-NOT-alias warning; the distinct-regs ask is ledgered). This probe
 //!     PINS that the template does not (yet) reject the mis-instantiation.
 
-use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
@@ -106,60 +105,11 @@ fn errors(diags: &[sigil_span::Diagnostic]) -> Vec<&str> {
 /// the twins guard against) — a trailing label+`dc.w` opens a section so the
 /// equs flush (the collision_lookup / test_objects pattern).
 fn as_truth_equs() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               SST_code_addr = $00\n\
-               SST_x_pos = $02\n\
-               SST_y_pos = $06\n\
-               SST_x_vel = $0A\n\
-               SST_y_vel = $0C\n\
-               SST_render_flags = $0E\n\
-               SST_collision_resp = $0F\n\
-               SST_mappings = $10\n\
-               SST_art_tile = $14\n\
-               SST_width_pixels = $16\n\
-               SST_height_pixels = $17\n\
-               SST_anim = $18\n\
-               SST_subtype = $19\n\
-               SST_anim_table = $1A\n\
-               SST_status = $1E\n\
-               SST_angle = $1F\n\
-               SST_prev_anim = $20\n\
-               SST_anim_frame = $21\n\
-               SST_anim_timer = $22\n\
-               SST_mapping_frame = $23\n\
-               SST_prev_frame = $24\n\
-               SST_sprite_piece_count = $25\n\
-               SST_parent_ptr = $26\n\
-               SST_sibling_ptr = $28\n\
-               SST_slot_tag = $2A\n\
-               SST_entity_section_id = $2B\n\
-               SST_entity_list_index = $2C\n\
-               SST_layer = $2D\n\
-               SST_sst_custom = $2E\n\
-               SST_len = $50\n\
-               BUTTON_UP = 1\n\
-               BUTTON_DOWN = 2\n\
-               BUTTON_LEFT = 4\n\
-               BUTTON_RIGHT = 8\n\
-               HW_PORT_1_DATA = $A10003\n\
-               HW_PORT_2_DATA = $A10005\n\
-               CTYPE_AIR = 0\n\
-               VDP_Shadow_len = 19\n\
-               RF_COORDMODE = 3\n\
-               RF_PRIORITY_SHIFT = 5\n\
-               AF_DELETE = $FB\n\
-               NUM_PLAYERS = 2\n\
-               NUM_DYNAMIC = 40\n\
-               NUM_SYSTEM = 8\n\
-               NUM_EFFECTS = 16\n\
-               COLLISION_TOUCH = 12\n\
-               ST_IN_AIR = 3\n\
-               ST_ON_OBJECT = 5\n\
-               ST_P1_STANDING = 3\n\
-               Stub:\n\
-               \tdc.w 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (truth equs): {d:?}")).sections
+    // The 30 `SST_*` field pins + 19 engine constants both `.emp` twins guard
+    // (SOURCE OF TRUTH: `structs.asm` / `constants.asm`), shared via
+    // `sigil_harness::test_support`. The drifted-constants probe below builds
+    // its own DOCTORED blob via `with_engine_constant_override`.
+    sigil_harness::test_support::as_engine_constants_and_sst_equs()
 }
 
 /// Lower the quintet (types + sst + constants + aabb ambient, collision main)
@@ -208,15 +158,8 @@ fn check_guards_against_truths(link_asserts: &[sigil_ir::LinkAssert]) -> Vec<Str
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }
-    let guards: Vec<sigil_ir::LinkAssert> = link_asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .cloned()
-        .collect();
+    let guards: Vec<sigil_ir::LinkAssert> =
+        sigil_harness::test_support::drift_guards_only(link_asserts).cloned().collect();
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout (truths): {d:?}"));
     sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &guards)

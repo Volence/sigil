@@ -156,30 +156,9 @@ fn map_toml(debug: bool) -> String {
 /// opens a section so the equs (defined before any section) flush via
 /// `pending_equ_syms` into it.
 fn as_hw_port_equs() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               HW_PORT_1_DATA = $A10003\n\
-               HW_PORT_2_DATA = $A10005\n\
-               BUTTON_UP = 1<<0\n\
-               BUTTON_DOWN = 1<<1\n\
-               BUTTON_LEFT = 1<<2\n\
-               BUTTON_RIGHT = 1<<3\n\
-               CTYPE_AIR = 0\n\
-               VDP_Shadow_len = 19\n\
-               RF_COORDMODE = 3\n\
-               RF_PRIORITY_SHIFT = 5\n\
-               AF_DELETE = $FB\n\
-               NUM_PLAYERS = 2\n\
-               NUM_DYNAMIC = 40\n\
-               NUM_SYSTEM = 8\n\
-               NUM_EFFECTS = 16\n\
-               COLLISION_TOUCH = 12\n\
-               ST_IN_AIR = 3\n\
-               ST_ON_OBJECT = 5\n\
-               ST_P1_STANDING = 3\n\
-               Stub:\n\
-               \tdc.w 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (hw port equs): {d:?}")).sections
+    // The 19-value AS-truth blob for the `engine.constants` twin (SOURCE OF
+    // TRUTH: `constants.asm`), consolidated in `sigil_harness::test_support`.
+    sigil_harness::test_support::as_engine_constants_equs()
 }
 
 /// The synthetic AS-side cross-seam unit supplying the four `Ctrl_*` RAM
@@ -449,15 +428,6 @@ fn controllers_debug_region_matches_reference() {
 }
 
 /// Count the deferred GUARD asserts, excluding the D2.29 `[layout.odd-item]`
-/// parity asserts that also ride `module.link_asserts` — mirrors
-/// `mixed_dac_rom.rs`'s helper of the same name.
-fn guard_assert_count(asserts: &[sigil_ir::LinkAssert]) -> usize {
-    asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .count()
-}
+/// parity asserts that also ride `module.link_asserts`. Shared idiom in
+/// `sigil_harness::test_support`.
+use sigil_harness::test_support::guard_assert_count;

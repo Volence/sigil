@@ -97,7 +97,9 @@ fn controllers_map_toml(base: &str) -> String {
 /// `extern(...)`, so they need real equs to check against here too (mirrors
 /// `controllers_port.rs`'s `as_hw_port_equs`).
 fn as_hw_port_equs() -> Vec<Section> {
-    as_hw_port_equs_with_button_up("1<<0")
+    // The undoctored 19-value constants-twin blob (SOURCE OF TRUTH:
+    // `constants.asm`), shared via `sigil_harness::test_support`.
+    sigil_harness::test_support::as_engine_constants_equs()
 }
 
 /// Like [`as_hw_port_equs`], but with the `BUTTON_UP` equ's RHS overridable
@@ -106,32 +108,11 @@ fn as_hw_port_equs() -> Vec<Section> {
 /// BUTTON_UP, ...)` genuinely fails loud, naming the constant, when the
 /// AS-side source of truth disagrees with the `.emp` twin.
 fn as_hw_port_equs_with_button_up(button_up_rhs: &str) -> Vec<Section> {
-    let asm = format!(
-        "cpu 68000\n\
-         HW_PORT_1_DATA = $A10003\n\
-         HW_PORT_2_DATA = $A10005\n\
-         BUTTON_UP = {button_up_rhs}\n\
-         BUTTON_DOWN = 1<<1\n\
-         BUTTON_LEFT = 1<<2\n\
-         BUTTON_RIGHT = 1<<3\n\
-         CTYPE_AIR = 0\n\
-         VDP_Shadow_len = 19\n\
-         RF_COORDMODE = 3\n\
-         RF_PRIORITY_SHIFT = 5\n\
-         AF_DELETE = $FB\n\
-         NUM_PLAYERS = 2\n\
-         NUM_DYNAMIC = 40\n\
-         NUM_SYSTEM = 8\n\
-         NUM_EFFECTS = 16\n\
-         COLLISION_TOUCH = 12\n\
-         ST_IN_AIR = 3\n\
-         ST_ON_OBJECT = 5\n\
-         ST_P1_STANDING = 3\n\
-         Stub:\n\
-         \tdc.w 0\n"
-    );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (hw port equs): {d:?}")).sections
+    // The DOCTORING seam: the shared 19-value blob with EXACTLY `BUTTON_UP`'s
+    // RHS overridden (every other constant keeps its truth value), so the drift
+    // guard for `BUTTON_UP` fires while the rest pass.
+    let doctored = sigil_harness::test_support::with_engine_constant_override("BUTTON_UP", button_up_rhs);
+    sigil_harness::test_support::assemble_owned_equ_pairs(&doctored)
 }
 
 fn as_ctrl_ram_labels() -> Vec<Section> {

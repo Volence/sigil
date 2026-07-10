@@ -17,6 +17,12 @@
 
 use std::path::Path;
 
+/// Shared test-support: the AS-truth equ blob for the `engine.constants` twin
+/// and the drift-guard filter, consolidated out of ~9 hand-copied port/probe
+/// test files. Reachable by both the CLI tests and this crate's own tests
+/// (both depend on `sigil-harness`).
+pub mod test_support;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;

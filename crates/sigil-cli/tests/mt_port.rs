@@ -157,17 +157,9 @@ fn compile_real_file(
 }
 
 /// Count the deferred GUARD asserts, excluding the D2.29 [layout.odd-item]
-/// parity asserts that now also ride module.link_asserts.
-fn guard_assert_count(asserts: &[sigil_ir::LinkAssert]) -> usize {
-    asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .count()
-}
+/// parity asserts that now also ride module.link_asserts. Shared idiom in
+/// `sigil_harness::test_support`.
+use sigil_harness::test_support::guard_assert_count;
 
 
 /// On mismatch, report the first differing offset plus 8 bytes of context on
