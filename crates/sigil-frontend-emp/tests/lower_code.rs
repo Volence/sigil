@@ -856,3 +856,55 @@ fn sr_operand_round_trips() {
         vec![0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x46, 0xDF]
     );
 }
+
+#[test]
+fn move_sr_is_word_only() {
+    // Tranche-5 adversarial F1: `move.l #$2700, sr` used to emit a LONG imm
+    // the CPU reads as `sr := $0000` + `$2700` executing as an opcode —
+    // silent and behavior-corrupting. Word-only is policed at the ISA level
+    // (fixing BOTH frontends); the word form still round-trips.
+    let (code, ediags) = eval_asm_with(&asm_1("move.l #$2700, sr"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("word-only")),
+        "expected the sr word-only refusal, got: {diags:?}"
+    );
+    let (code, ediags) = eval_asm_with(&asm_1("move.b sr, d0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("word-only")),
+        "expected the sr word-only refusal for move-from too, got: {diags:?}"
+    );
+}
+
+#[test]
+fn quick_form_imm_link_steers_without_placeholder_leak() {
+    // Tranche-5 adversarial F2: `addq.l #extern(A), d0` must steer with the
+    // opcode-embedded-imm message, not leak the zero placeholder into the
+    // backend's range error ("Addq data must be 1..=8, got 0").
+    let (code, ediags) = eval_asm_with(&asm_1("addq.l #extern(\"A\"), d0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("embeds its immediate in the opcode word")),
+        "expected the opcode-embedded-imm steering, got: {diags:?}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("got 0")),
+        "the zero placeholder must not leak into a diagnostic: {diags:?}"
+    );
+}
+
+#[test]
+fn pinned_abs_sr_is_steered() {
+    // Tranche-5 adversarial F3: `(sr).w` must steer early, not resolve as a
+    // symbol named `sr` that dangles at link.
+    let src = "module m\ncomptime fn f() -> Code {\n    return asm {\n        move.w (sr).w, d0\n    }\n}\n";
+    let (_code, ediags) = eval_asm_with(src, &[]);
+    assert!(
+        ediags.iter().any(|d| d.message.contains("status-register operand, not an address")),
+        "expected the (sr).w steering, got: {ediags:?}"
+    );
+}

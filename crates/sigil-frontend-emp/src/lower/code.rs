@@ -631,6 +631,31 @@ fn lower_m68k_imm_link(
         );
         return;
     }
+    // Opcode-embedded-immediate families (quick forms, shift counts, moveq)
+    // have no 32-bit imm field to defer into — steer BEFORE the backend sees
+    // the zero placeholder (which would otherwise leak into its range error:
+    // "Addq data must be 1..=8, got 0").
+    if matches!(
+        m,
+        M68kMnemonic::Moveq
+            | M68kMnemonic::Addq
+            | M68kMnemonic::Subq
+            | M68kMnemonic::Lsl
+            | M68kMnemonic::Lsr
+            | M68kMnemonic::Asl
+            | M68kMnemonic::Asr
+            | M68kMnemonic::Rol
+            | M68kMnemonic::Ror
+    ) {
+        push_err(
+            diags,
+            span,
+            "[lower.imm-link] this instruction embeds its immediate in the opcode word \
+             (moveq/quick/shift-count forms) — no link-time deferral; mirror the value \
+             into a comptime const instead",
+        );
+        return;
+    }
     let mut target: Option<Expr> = None;
     let mut enc_ops = Vec::with_capacity(ops.len());
     for op in ops {

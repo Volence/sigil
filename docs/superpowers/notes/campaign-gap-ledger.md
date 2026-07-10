@@ -589,7 +589,7 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 
 - [tranche-5 port #1 (game_loop), 2026-07-10] **Statement-position comptime `if` SHIPPED**
   (H1's carrier: parser `asm_if`, `AsmStmt::If`, recursive label scope, script-body
-  label-under-if refusal; 8 tests). Two edges deliberately NOT built: (a) a `yield`
+  label-under-if refusal; 12 tests). Two edges deliberately NOT built: (a) a `yield`
   inside a comptime-if branch in a SCRIPT body parses as an unknown mnemonic (a
   `ScriptStmt` can't nest in an `AsmStmt` branch by type) — the error is loud but
   unhelpful; teach a steering diagnostic if a script port ever hits it. (b) the
@@ -627,3 +627,20 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   saving is −4 B, not the naive −16 (review-corrected). Also `moveq #0,d1` +
   reload in Sound_PlaySFX's dedup path reads clunky but is cycle-honest —
   leave it. — OPEN
+- [tranche-5 whole-branch review, 2026-07-10] **F1 FIXED at the ISA level:** move
+  to/from `sr` is now word-only-policed in `encode_move_sr` (both frontends heal at
+  once) — the old encoder keyed the imm ext width to `inst.size`, so
+  `move.l #$2700, sr` silently emitted `sr := $0000` + `$2700`-as-opcode. Pinned by
+  `move_sr_is_word_only`. Remaining legal-68000 SR/CCR forms NOT modeled (all refuse
+  loud): `move <ea>, ccr` (44C0), `andi/ori/eori #imm, sr`, `eori #imm, ccr`
+  (`move.w ccr, d0` refusing is CORRECT — 68010+). Build them when a port demands. — PART-SHIPPED
+- [tranche-5 whole-branch review, 2026-07-10] **emp silently truncates out-of-range
+  word immediates** (`move.w #$12345, d0` → `30 3C 23 45`) where the AS front-end
+  errors — a pre-existing parity divergence in the generic `Imm` path (not
+  tranche-5's; byte-gates can't see it since gated sources are in-range). Add the
+  AS-matching range check. — OPEN
+- [tranche-5 whole-branch review, 2026-07-10] **Minor jots:** a `todo!` in an
+  UNCHOSEN comptime-if arm produces no [todo.present] (consistent with
+  never-lowered, but a define-gated todo vanishes from the list — note-tier
+  candidate); duplicate-label link errors expose the mangled `$m$f$x` name
+  (cosmetic, unmangle in the renderer). — OPEN

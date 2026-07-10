@@ -807,6 +807,19 @@ impl Evaluator<'_> {
                 );
                 return None;
             }
+            // `(sr).w` would otherwise resolve as an ordinary SYMBOL named
+            // `sr` and fail only at link — steer early, matching the
+            // register-class-words-win rule the bare path applies.
+            if p.segments.len() == 1 && matches!(p.segments[0].as_str(), "sr" | "ccr") {
+                self.error(
+                    span,
+                    format!(
+                        "`({0}).w` is not a 68000 form — `{0}` is the status-register operand, not an address",
+                        p.segments[0]
+                    ),
+                );
+                return None;
+            }
             let target = scope.resolve_ref(&p.segments.join("."));
             return Some(CodeOperand::AbsSym { target, long });
         }
