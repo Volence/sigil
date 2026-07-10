@@ -492,3 +492,17 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   vdp_init_port's Flush second-proc offset). A future re-baseline should either grep both
   spellings or (better) derive bare-name expectations from the map constants instead of
   literals — jotted as a small-opens candidate. — OPEN
+
+- [tranche-4 opening build (D2.33), 2026-07-10] **Postfix `.field` size-letter carve-out** —
+  postfix field access off non-path bases (`embed(...).len`) never consumes `b`/`w`/`l`/`s`,
+  or it would swallow asm operand size suffixes (`timer(a0).l` — caught by the existing
+  parser_bodies pin during TDD). Same accepted trade as the `split_size_suffix` operand rule;
+  a comptime struct field genuinely so named needs a const binding first. Also recorded in the
+  D2.33 spec row. Method calls on expression results (`f(x).map(g)`) remain unsupported with a
+  steering diagnostic — jot for a future postfix-call increment if real files want chains. — SHIPPED (the carve-out) / OPEN (postfix method calls)
+- [tranche-4 opening build (D2.33), 2026-07-10] **`[index.uncommitted-byte]` is defensive
+  depth** — every expr-position `Data` source today (embed/bytes/byte/++) builds raw `Bytes`
+  cells, so the eval-path diagnostic can't fire yet; the gate logic (`DataBuf::byte_at`) is
+  unit-tested directly (width-1 scalars read as two's-complement bytes, multi-byte scalars and
+  SymRef/RelOffset/Expr cells refuse). Becomes reachable the day a Data-monoid builtin emits
+  structured cells in expr position. — SHIPPED (noted for the retrospect)
