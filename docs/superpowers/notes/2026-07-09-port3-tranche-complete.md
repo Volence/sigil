@@ -85,8 +85,10 @@ From the code-sense review, each its own commit after merge, oldest-hazard first
 4. **STEP 5 (ratified at the packet review): optimize.** The reads-wrong list lands as
    post-merge commits (each re-gated against a REBUILT reference — these change the
    reference ROM); later retrospects may send step-5 work back to already-ported files.
-5. **Tranche 4 proposal:** the data quick-wins (`vram_bases`, `ojz_act_pool`,
-   `particle_anims`, `plantbadmaps_anims`) — align shipped in tranche 0, `offsets` inline
-   bodies ready; the first real data-tranche exercise. Alternatively `game_loop.asm` now
+5. **Tranche 4 proposal (CORRECTED at recon):** the data quick-wins — `vram_bases`,
+   `ojz_act_pool`, `particle_anims`, and `sonic_anims` (83 ln, the full 15-member
+   offsets+inline-bodies shape). `plantbadmaps_anims` DROPPED: recon found it is not in
+   the build at all (parked editor export, zero s4.lst hits — no window to byte-gate);
+   its naming question is ledgered with a free-rename window. Alternatively `game_loop.asm` now
    that the gate pattern is proven (its SOUND_DRIVER_ENABLED ifdef + gameDebugTick macro
    are the next hazard class to design against deliberately).

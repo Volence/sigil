@@ -453,3 +453,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   assembler picks `.s`/`.w` by reach; explicit sizes remain only under `@as_compat`. All six
   ported files swept (bne/blt/bgt/beq ×8), byte-gates green (relaxation picks the identical
   sizes). Checklist amended.
+
+- [tranche-4 recon (Volence's naming question), 2026-07-10] **`plantbadmaps` is not in the
+  build** — zero hits in s4.lst; `data/sprites/plantbadmaps/` (art.bin + mappings.bin +
+  anims.asm + sprite.json) is a parked editor export whose object was never wired in. Two
+  consequences: (a) it CANNOT be a port target (no reference window to byte-gate — the
+  kickoff's data-quick-win list was wrong about it; `sonic_anims.asm` takes its tranche-4
+  slot); (b) the entity RENAME is free right now — nothing consumes the name. Naming finding
+  (Volence): the sprite entity is named after ONE of its assets ("plant badnik MAPPINGS", a
+  donor-repo label habit — sonic_hack's MapUnc_PlantBad class), and the bundle dir inherits
+  it. Proposal pending Volence's pick: entity → `pitcher_plant`; per-sprite bundle dirs named
+  for the ENTITY with generic member names. "mappings" stays the term for piece tables
+  themselves (community-standard). — OPEN (naming ruling + free rename window).
