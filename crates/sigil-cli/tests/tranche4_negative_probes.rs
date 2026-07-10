@@ -147,3 +147,148 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     assert_eq!(sec.lma, 0x309EE, "the placed LMA must track the (doctored) map base");
     assert_ne!(sec.lma, 0x309EC, "…and therefore differ from the true pin");
 }
+
+// ===========================================================================
+// sonic_anims probes (port #2)
+// ===========================================================================
+
+fn sonic_src() -> Option<String> {
+    let path = aeon_dir().join("games/sonic4/data/animations/sonic_anims.emp");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Some(s),
+        Err(_) if strict_gate() => panic!("SIGIL_STRICT_GATE set but {} missing", path.display()),
+        Err(_) => {
+            eprintln!("skip: {} not found (set AEON_DIR)", path.display());
+            None
+        }
+    }
+}
+
+/// Place `src` as the sonic_anims module (plain shape) and return
+/// (sections, link asserts).
+fn place_sonic(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let (module, ldiags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: Some(aeon_dir()),
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
+    let map_toml = "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"sonic_anims\"\n\
+         lma_base = 0x30978\n\
+         size = 0x74\n\
+         kind = \"rom\"\n";
+    let map = sigil_link::load_map(map_toml).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
+    (sections, module.link_asserts)
+}
+
+/// The AS-side equs at their genuine values (the port gate's set).
+fn sonic_equs() -> Vec<Section> {
+    let asm = "cpu 68000\n\
+               AF_END = $FF\n\
+               AF_BACK = $FE\n\
+               DUR_DYNAMIC = $FF\n\
+               ANIM_WALK = 0\n\
+               ANIM_RUN = 1\n\
+               ANIM_ROLL = 2\n\
+               ANIM_SPINDASH = 3\n\
+               ANIM_PUSH = 4\n\
+               ANIM_IDLE = 5\n\
+               ANIM_BALANCE = 6\n\
+               ANIM_LOOKUP = 7\n\
+               ANIM_DUCK = 8\n\
+               ANIM_SKID = 9\n\
+               ANIM_GETUP = 10\n\
+               ANIM_COUNT = 11\n\
+               Stub:\n\
+               \tdc.w 0\n";
+    let opts = sigil_frontend_as::Options { initial_cpu: Cpu::M68000, ..Default::default() };
+    sigil_frontend_as::assemble(asm, &opts)
+        .unwrap_or_else(|d| panic!("AS assemble (sonic equs): {d:?}"))
+        .sections
+}
+
+/// THE ORDINALS-STORY NEGATIVE: swap the Walk/Run member order — the table
+/// bytes change AND the ordinal drift guards fire (Walk would read ordinal
+/// 1 against ANIM_WALK = 0). Declaration position IS the id; a reorder
+/// cannot silently pass.
+#[test]
+fn reordered_members_trip_the_ordinal_guards() {
+    let Some(src) = sonic_src() else { return };
+    let doctored = src.replace(
+        "    Walk:     Ani_Sonic_Walk,\n    Run:      Ani_Sonic_Run,",
+        "    Run:      Ani_Sonic_Run,\n    Walk:     Ani_Sonic_Walk,",
+    );
+    assert_ne!(doctored, src, "precondition: the swap must apply");
+    let (mut sections, asserts) = place_sonic(&doctored);
+    let mut equs = sonic_equs();
+    for sec in &mut equs {
+        sec.lma = 0x0100_0000;
+        sec.placement = sigil_ir::SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.extend(equs);
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    assert!(
+        diags.iter().any(|d| d.level == Level::Error
+            && (d.message.contains("Walk ordinal drifted") || d.message.contains("Run ordinal drifted"))),
+        "a member reorder must trip the ordinal drift guards, got {diags:?}"
+    );
+}
+
+/// Placement genuineness for the second region.
+#[test]
+fn sonic_wrong_base_map_places_the_section_at_a_different_address() {
+    let Some(src) = sonic_src() else { return };
+    let (file, pdiags) = parse_str(&src);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let (module, ldiags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: Some(aeon_dir()),
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
+    let map_toml = "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"sonic_anims\"\n\
+         lma_base = 0x3097A\n\
+         size = 0x74\n\
+         kind = \"rom\"\n";
+    let map = sigil_link::load_map(map_toml).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
+    let sec = sections.iter().find(|s| s.name == "sonic_anims").expect("placed sonic_anims");
+    assert_eq!(sec.lma, 0x3097A, "the placed LMA must track the (doctored) map base");
+    assert_ne!(sec.lma, 0x30978, "…and therefore differ from the true pin");
+}

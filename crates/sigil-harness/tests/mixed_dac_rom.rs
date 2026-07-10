@@ -401,9 +401,16 @@ fn emp_bank_map_tranche3(debug: bool) -> String {
 /// drift cannot move it: plain `$309EC` / debug `$30A54`, size 8 (table
 /// word + 5-byte inline body + the `align 2` pad; content shape-invariant).
 fn emp_bank_map_tranche4(debug: bool) -> String {
+    let sonic_base = if debug { "0x309E0" } else { "0x30978" };
     let particle_base = if debug { "0x30A54" } else { "0x309EC" };
     format!(
         "{}\
+         \n\
+         [[region]]\n\
+         name = \"sonic_anims\"\n\
+         lma_base = {sonic_base}\n\
+         size = 0x74\n\
+         kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"particle_anims\"\n\
@@ -573,6 +580,7 @@ type Tranche4Sections = (
     Vec<LinkAssert>,
     Vec<LinkAssert>,
     Vec<LinkAssert>,
+    Vec<LinkAssert>,
 );
 
 /// Tranche 4: the NINE-module successor — everything
@@ -612,6 +620,12 @@ fn placed_emp_sections_tranche4(aeon: &Path, debug_val: i128) -> Tranche4Section
         &[],
         &map,
     );
+    let (sonic_sections, sonic_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "sonic_anims.emp",
+        &[],
+        &map,
+    );
     sections.extend(mt_sections);
     sections.extend(sfx_sections);
     sections.extend(hblank_sections);
@@ -620,6 +634,7 @@ fn placed_emp_sections_tranche4(aeon: &Path, debug_val: i128) -> Tranche4Section
     sections.extend(vdp_init_sections);
     sections.extend(collision_sections);
     sections.extend(particle_sections);
+    sections.extend(sonic_sections);
     (
         sections,
         mt_asserts,
@@ -628,6 +643,7 @@ fn placed_emp_sections_tranche4(aeon: &Path, debug_val: i128) -> Tranche4Section
         vdp_init_asserts,
         collision_asserts,
         particle_asserts,
+        sonic_asserts,
     )
 }
 
@@ -1501,7 +1517,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
     );
 }
 
-/// Tranche 4's NINE-module mixed build: tranche 3's composition + the
+/// Tranche 4's TEN-module mixed build: tranche 3's composition + the
 /// `SIGIL_EMP_PARTICLE_ANIMS` gate. Every asserts-bearing module's guards are
 /// checked against the REAL AS tree inside — including particle_anims'
 /// AF_DELETE drift guard, whose AS-side truth lives in
@@ -1518,6 +1534,7 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         vdp_init_asserts,
         collision_asserts,
         particle_asserts,
+        sonic_asserts,
     ) = placed_emp_sections_tranche4(aeon, debug_val);
     let mut sections = as_module.sections;
     sections.extend(emp_sections);
@@ -1536,6 +1553,10 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         // particle_anims: the AF_DELETE drift guard + the align 2 congruence
         // assert (guard_assert_count excludes only [layout.odd-item]).
         ("particle_anims.emp", &particle_asserts, 2),
+        // sonic_anims: 15 drift guards (3 command bytes + 12 ordinal/count)
+        // + 6 align congruence asserts after the odd-sized bodies
+        // (Wait/Balance/LookUp/Duck/Skid/GetUp).
+        ("sonic_anims.emp", &sonic_asserts, 21),
     ] {
         assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
@@ -1552,7 +1573,7 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed tranche4): {e}"))
 }
 
-/// Tranche 4 acceptance — plain NINE-module mixed build == `aeon/s4.bin`,
+/// Tranche 4 acceptance — plain TEN-module mixed build == `aeon/s4.bin`,
 /// modulo the convsym bytes; the particle_anims block pinned explicitly.
 #[test]
 fn mixed_tranche4_rom_matches_assembled_reference() {
@@ -1575,10 +1596,18 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
         "particle_anims block must match the reference bytes exactly (plain)"
     );
 
+    // The sonic_anims table head: eleven self-relative words starting at
+    // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
+    assert_eq!(
+        &rom[0x30978..0x30980],
+        &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
+        "sonic_anims table head must match the reference bytes exactly (plain)"
+    );
+
     assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche4");
 }
 
-/// Tranche 4 acceptance — `__DEBUG__` NINE-module mixed build ==
+/// Tranche 4 acceptance — `__DEBUG__` TEN-module mixed build ==
 /// `aeon/s4.debug.bin`, modulo the convsym bytes.
 #[test]
 fn mixed_tranche4_debug_rom_matches_assembled_reference() {
@@ -1600,6 +1629,12 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
         &rom[0x30A54..0x30A5C],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (debug)"
+    );
+
+    assert_eq!(
+        &rom[0x309E0..0x309E8],
+        &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
+        "sonic_anims table head must match the reference bytes exactly (debug)"
     );
 
     assert_rom_matches(

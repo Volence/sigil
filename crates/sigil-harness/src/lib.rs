@@ -332,6 +332,7 @@ pub fn assemble_mixed_tranche4_as_side(aeon: &Path, debug: bool) -> Result<Modul
         ("SIGIL_EMP_VDP_INIT".to_string(), 1),
         ("SIGIL_EMP_COLLISION_LOOKUP".to_string(), 1),
         ("SIGIL_EMP_PARTICLE_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_SONIC_ANIMS".to_string(), 1),
     ];
     if debug {
         defines.push(("__DEBUG__".to_string(), 1));

@@ -214,3 +214,21 @@ CONTENT is byte-identical (site and target shifted together — disp
   **`fc69fdbf8d0c8f63d30a10410118775be1c1bd6b1ef70d74b558578fbb73af37`**.
 - Debug `s4.debug.bin`: sha256
   **`5e4cbe974007183c652868def207d20a5b72629e0c832755f8dce9d57f42ea58`**.
+
+## Tranche 4 ports #1/#2 — the animation data gates (2026-07-10, overnight)
+
+`particle_anims.emp` + `sonic_anims.emp` (aeon `b66cb4e` + the sonic port
+commit): the campaign's first GAME-DATA regions, both past `org $10000` —
+engine-block drift cannot move them. Bases/sizes (content shape-invariant;
+only the base shifts with `__DEBUG__`):
+
+- `sonic_anims`: plain `$30978`, debug `$309E0`, size `0x74` (11-word
+  table + bodies + six align pads).
+- `particle_anims`: plain `$309EC`, debug `$30A54`, size `0x8`.
+
+Gate defines live in `games/sonic4/main.asm` (`SIGIL_EMP_SONIC_ANIMS`
+resume plain `$309EC`/debug `$30A54`; `SIGIL_EMP_PARTICLE_ANIMS` resume
+plain `$309F4`/debug `$30A5C`). Gate-off byte-neutrality sha256 ×3 at the
+`755c2c91…` pin (both gates inert without the defines). The TEN-module
+mixed gates (`mixed_tranche4_*`) are the acceptance surface; re-pin these
+bases on any data-region re-baseline.
