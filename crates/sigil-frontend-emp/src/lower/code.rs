@@ -184,6 +184,12 @@ fn lower_m68k_instr(
     // Sym guard above passes over): they become absolute-address transfers through
     // THIS seam (RelaxAbsSym, byte-pinned by `jmp_field_operand_is_absolute_
     // address_transfer`), not the `JmpJsrSym` linker ladder.
+    // A link-time immediate routes to its own fixed-shape path (tranche 5 —
+    // the emp mirror of the AS side's `try_defer_long_imm`).
+    if ops.iter().any(|o| matches!(o, CodeOperand::ImmLink { .. })) {
+        lower_m68k_imm_link(m, size, ops, span, builder, diags);
+        return;
+    }
     let sym_count = ops
         .iter()
         .filter(|o| {
@@ -587,6 +593,103 @@ fn lower_m68k_movem(
     }
 }
 
+/// A LINK-TIME 32-bit immediate source (tranche 5 — the emp mirror of the AS
+/// front-end's `try_defer_long_imm`): `movea.l #SONG_TABLE, a0` where the
+/// value is an extern()/equ residual that cannot fold until link. The
+/// instruction encodes ONCE with a zero imm32 placeholder and ONE `Value32Be`
+/// fixup at offset 2 (the imm field always directly follows the one-word
+/// opcode: the imm is the SOURCE, so its ext words come first; any
+/// destination ext words follow the hole and don't move it).
+///
+/// Fenced to the proven shape: `.l` size only (a `.b`/`.w` symbolic imm has
+/// no deferral yet — the ledgered width-extension gap), the imm FIRST, and no
+/// other symbolic operand (their fixups would collide).
+fn lower_m68k_imm_link(
+    m: M68kMnemonic,
+    size: M68kSize,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if size != M68kSize::L {
+        push_err(
+            diags,
+            span,
+            "[lower.imm-link] a link-time immediate needs `.l` size — `.b`/`.w` symbolic \
+             immediates have no deferral yet (mirror the value into a comptime const, or \
+             extend the imm-deferral family)",
+        );
+        return;
+    }
+    if !matches!(ops.first(), Some(CodeOperand::ImmLink { .. })) {
+        push_err(
+            diags,
+            span,
+            "[lower.imm-link] a link-time immediate is only supported as the SOURCE \
+             (first) operand",
+        );
+        return;
+    }
+    let mut target: Option<Expr> = None;
+    let mut enc_ops = Vec::with_capacity(ops.len());
+    for op in ops {
+        match op {
+            CodeOperand::ImmLink { target: t } => {
+                if target.replace(t.clone()).is_some() {
+                    push_err(
+                        diags,
+                        span,
+                        "[lower.imm-link] two link-time immediates in one instruction",
+                    );
+                    return;
+                }
+                enc_ops.push(M68kOperand::Imm(0));
+            }
+            CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. } => {
+                push_err(
+                    diags,
+                    span,
+                    "[lower.imm-link] a link-time immediate combined with another symbolic \
+                     operand is not yet supported",
+                );
+                return;
+            }
+            other => match m68k_operand(other) {
+                Ok(o) => enc_ops.push(o),
+                Err(msg) => {
+                    push_err(diags, span, msg);
+                    return;
+                }
+            },
+        }
+    }
+    let target = target.expect("guarded above: ops[0] is the ImmLink");
+    let refined = refine_m68k_mnemonic(m, &enc_ops);
+    let inst = M68kInst { mnemonic: refined, size, ops: enc_ops };
+    let df = match M68kBackend.lower_inst(&inst, span) {
+        Ok(df) => df,
+        Err(e) => {
+            push_err(diags, span, e.message);
+            return;
+        }
+    };
+    // Defense-in-depth: one opcode word + the 4-byte imm32 field.
+    if df.bytes.len() < 6 {
+        push_err(
+            diags,
+            span,
+            "[lower.imm-link] this instruction embeds its immediate in the opcode word \
+             (moveq/quick/shift-count forms) — no link-time deferral; mirror the value \
+             into a comptime const instead",
+        );
+        return;
+    }
+    let mut df = df;
+    df.fixups.push(Fixup { kind: FixupKind::Value32Be, offset: 2, target });
+    emit_data_frag(builder, df);
+}
+
 /// Lower a straight-line instruction carrying exactly ONE symbolic
 /// absolute-address operand to a length-variable [`Fragment::RelaxAbsSym`]: the
 /// front-end encodes BOTH the `abs.w` and `abs.l` candidates (with a zeroed
@@ -594,24 +697,23 @@ fn lower_m68k_movem(
 /// resolved target address (§5.6 `asl_width_rule`).
 ///
 /// # Fixup offset (the byte-exactness crux)
-/// This first cut requires every OTHER operand to be extension-word-FREE
-/// (register / `(An)` / `-(An)` / `(An)+`) — see [`operand_has_ext_words`]. Under
-/// that restriction the symbolic operand's abs extension words are the LAST bytes
-/// of the encoding, after a single opcode word and no preceding extension words,
-/// so the fixup offset is exactly `short_bytes.len() - 2` (== `long_bytes.len() -
-/// 4`) — identical in both candidates, differing only in extension WIDTH (2 vs 4)
-/// and fixup KIND (`Abs16Be` vs `Abs32Be`).
+/// The symbolic operand's abs extension words must be the LAST bytes of the
+/// encoding, so the fixup offset is exactly `short_bytes.len() - 2` (==
+/// `long_bytes.len() - 4`) — identical in both candidates, differing only in
+/// extension WIDTH (2 vs 4) and fixup KIND (`Abs16Be` vs `Abs32Be`).
 ///
-/// What actually GUARANTEES the offset's placement is that `Sym` is the only
-/// extension-word producer in play: [`operand_has_ext_words`] rejects the two
-/// forms the emp `CodeOperand` model can express that carry ext words (`#imm`,
-/// `(d16,An)`), and the model has NO absolute / indexed / PC-relative EA form
-/// (the only absolute EA is `Sym` itself), so nothing else can precede the abs
-/// operand's ext words. The pre-emission length check below is NOT that proof —
-/// it is defense-in-depth against a broken backend / unexpected multi-word opcode.
-///
-/// A combination with a SECOND extension-word operand (`#imm`, `(d16,An)`) would
-/// move the offset and is deferred with a clear diagnostic.
+/// What GUARANTEES that placement is POSITIONAL (tranche 5, relaxed from the
+/// first cut's every-other-operand-ext-free rule): an extension-word operand
+/// (`#imm`, `(d16,An)`) is allowed only at a position BEFORE the sym operand
+/// (`move.w #$0100, (Z80_BUS_REQUEST).l` — the stopZ80 shape: the 68k emits
+/// ext words in operand order, source first, so a preceding imm's words land
+/// BEFORE the abs words and shift `offset` by a constant both candidates
+/// share). One AFTER the sym operand would land ext words BEHIND the abs
+/// field (`move.w (Sym).l, (d16,An)`) and stays deferred with the clear
+/// diagnostic. Everything that could break "ops order == ext-word order"
+/// (movem's mask word, branches, pc-rel) is routed away before this fn. The
+/// pre-emission length check below is NOT that proof — it is
+/// defense-in-depth against a broken backend / unexpected multi-word opcode.
 fn lower_m68k_abs_sym(
     m: M68kMnemonic,
     size: M68kSize,
@@ -658,11 +760,15 @@ fn lower_m68k_abs_sym(
                 short_ops.push(M68kOperand::AbsW(0));
                 long_ops.push(M68kOperand::AbsL(0));
             }
-            other if operand_has_ext_words(other) => {
+            other if operand_has_ext_words(other) && target.is_some() => {
+                // Ext words AFTER the sym operand would land BEHIND the abs
+                // field and move the fixup offset — still deferred. (BEFORE
+                // it they precede the abs field, which stays last — allowed
+                // since tranche 5.)
                 push_err(
                     diags,
                     span,
-                    "[lower.abs-sym-operand] a symbolic absolute operand combined with another \
+                    "[lower.abs-sym-operand] a symbolic absolute operand followed by another \
                      extension-word operand (#imm / (d16,An)) is not yet supported",
                 );
                 return;
@@ -774,6 +880,12 @@ fn operand_has_ext_words(op: &CodeOperand) -> bool {
 /// mirroring the AS front-end's `m68k_imm_bounds` / `fold_imm(disp, i16..)`.
 fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
     match op {
+        CodeOperand::ImmLink { .. } => {
+            // Routed by `lower_m68k_imm_link` before the generic path; reaching
+            // here means an unsupported combination (e.g. a Z80 instruction, or
+            // a non-first position the router rejected).
+            Err("a link-time immediate is only supported as a 68k `.l` source operand".into())
+        }
         CodeOperand::Imm(n) => {
             let n = *n;
             // A 32-bit immediate field admits either the signed or the
@@ -786,6 +898,8 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
             Ok(M68kOperand::Imm(n as i32))
         }
         CodeOperand::Reg(r) => Ok(m68k_reg_operand(*r)),
+        CodeOperand::Sr => Ok(M68kOperand::Sr),
+        CodeOperand::Ccr => Ok(M68kOperand::Ccr),
         CodeOperand::Ind(r) => {
             an_index(*r).map(M68kOperand::Ind).ok_or_else(|| ind_reg_err(*r))
         }

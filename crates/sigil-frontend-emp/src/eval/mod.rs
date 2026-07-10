@@ -17,7 +17,7 @@ mod compress_common;
 mod control;
 mod emit;
 mod env;
-mod expr;
+pub(crate) mod expr;
 mod float_ns;
 pub(crate) mod guards;
 mod literals;

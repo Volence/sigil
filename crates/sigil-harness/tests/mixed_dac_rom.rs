@@ -435,6 +435,7 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
 /// combo both pins carry).
 fn emp_bank_map_tranche5(debug: bool) -> String {
     let game_loop_base = if debug { "0x238C" } else { "0x22FE" };
+    let sound_api_base = if debug { "0x7252" } else { "0x5D94" };
     format!(
         "{}\
          \n\
@@ -442,6 +443,12 @@ fn emp_bank_map_tranche5(debug: bool) -> String {
          name = \"game_loop\"\n\
          lma_base = {game_loop_base}\n\
          size = 0x12\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"sound_api\"\n\
+         lma_base = {sound_api_base}\n\
+         size = 0x1E8\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche4(debug)
     )
@@ -682,14 +689,32 @@ fn placed_emp_sections_tranche4(aeon: &Path, debug_val: i128) -> Tranche4Section
     )
 }
 
-/// Tranche 5: the TWELVE-module successor — tranche 4's composition plus
-/// `game_loop.emp` (`engine/system/`, the H1/H2 port). game_loop is the
-/// FIRST code module taking build-shape defines: `SOUND_DRIVER_ENABLED=1`
-/// (both pins are sound-on) and `SOUND_DEBUG_HOTKEYS=0` (dev opt-in, neither
-/// pin sets it) — the (1,0) combo; the other three combos are module-gated
-/// in `game_loop_port.rs`'s matrix. It carries no link asserts, so the
-/// tuple shape is tranche 4's.
-fn placed_emp_sections_tranche5(aeon: &Path, debug_val: i128) -> Tranche4Sections {
+/// `placed_emp_sections_tranche5`'s return: tranche 4's tuple plus
+/// `sound_api.emp`'s link asserts (its 7 immediate-mirror drift guards —
+/// kill-list row 10).
+type Tranche5Sections = (
+    Vec<Section>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+);
+
+/// Tranche 5: the THIRTEEN-module successor — tranche 4's composition plus
+/// `game_loop.emp` (`engine/system/`, the H1/H2 port) and `sound_api.emp`
+/// (`engine/sound/`, the extern-equ/imm-link port). game_loop is the FIRST
+/// code module taking build-shape defines: `SOUND_DRIVER_ENABLED=1` (both
+/// pins are sound-on) and `SOUND_DEBUG_HOTKEYS=0` (dev opt-in, neither pin
+/// sets it) — the (1,0) combo; the other three combos are module-gated in
+/// `game_loop_port.rs`'s matrix. sound_api carries 7 drift guards and reads
+/// `SongTable`/`SongPatchTable` — .emp-side under `SIGIL_EMP_MT` — as
+/// link-time imm32s: the .emp-defines/.emp-consumes direction.
+fn placed_emp_sections_tranche5(aeon: &Path, debug_val: i128) -> Tranche5Sections {
     let map = emp_bank_map_tranche5(debug_val != 0);
     let (mut sections, _dac_asserts) =
         placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
@@ -743,6 +768,8 @@ fn placed_emp_sections_tranche5(aeon: &Path, debug_val: i128) -> Tranche4Section
         ],
         &map,
     );
+    let (sound_api_sections, sound_api_asserts) =
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
     sections.extend(mt_sections);
     sections.extend(sfx_sections);
     sections.extend(hblank_sections);
@@ -754,6 +781,7 @@ fn placed_emp_sections_tranche5(aeon: &Path, debug_val: i128) -> Tranche4Section
     sections.extend(sonic_sections);
     sections.extend(act_sections);
     sections.extend(game_loop_sections);
+    sections.extend(sound_api_sections);
     (
         sections,
         mt_asserts,
@@ -764,6 +792,7 @@ fn placed_emp_sections_tranche5(aeon: &Path, debug_val: i128) -> Tranche4Section
         particle_asserts,
         sonic_asserts,
         act_asserts,
+        sound_api_asserts,
     )
 }
 
@@ -1805,6 +1834,7 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         particle_asserts,
         sonic_asserts,
         act_asserts,
+        sound_api_asserts,
     ) = placed_emp_sections_tranche5(aeon, debug_val);
     let mut sections = as_module.sections;
     sections.extend(emp_sections);
@@ -1823,6 +1853,9 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("particle_anims.emp", &particle_asserts, 2),
         ("sonic_anims.emp", &sonic_asserts, 16),
         ("act_descriptor.emp", &act_asserts, 5),
+        // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
+        // checked against the REAL sound_constants.asm / config/sound_ids.asm.
+        ("sound_api.emp", &sound_api_asserts, 7),
     ] {
         assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
@@ -1839,8 +1872,9 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed tranche5): {e}"))
 }
 
-/// Tranche 5 acceptance — plain TWELVE-module mixed build == `aeon/s4.bin`,
-/// modulo the convsym bytes; the game_loop block pinned explicitly.
+/// Tranche 5 acceptance — plain THIRTEEN-module mixed build == `aeon/s4.bin`,
+/// modulo the convsym bytes; the game_loop + sound_api block heads pinned
+/// explicitly.
 #[test]
 fn mixed_tranche5_rom_matches_assembled_reference() {
     let aeon = aeon_dir();
@@ -1867,10 +1901,18 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
         "game_loop block must match the reference bytes exactly (plain)"
     );
 
+    // Sound_PostByte's head: move.w sr,-(sp) / move.w #$2700,sr / the stopZ80
+    // expansion's first word — the sr + imm-before-abs shapes this port added.
+    assert_eq!(
+        &rom[0x5D94..0x5D9C],
+        &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
+        "sound_api block head must match the reference bytes exactly (plain)"
+    );
+
     assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche5");
 }
 
-/// Tranche 5 acceptance — `__DEBUG__` TWELVE-module mixed build ==
+/// Tranche 5 acceptance — `__DEBUG__` THIRTEEN-module mixed build ==
 /// `aeon/s4.debug.bin`, modulo the convsym bytes.
 #[test]
 fn mixed_tranche5_debug_rom_matches_assembled_reference() {
@@ -1895,6 +1937,12 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"
+    );
+
+    assert_eq!(
+        &rom[0x7252..0x725A],
+        &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
+        "sound_api block head must match the reference bytes exactly (debug)"
     );
 
     assert_rom_matches(

@@ -295,3 +295,30 @@ gates are the acceptance surface. Gate-off byte-neutrality sha256 ×3 at
 the `907a9029…` pin (+ debug `7148f938…`, + demo.bin builds clean —
 the engine-side gate must never define for other games). Reference pins
 UNCHANGED.
+
+## Tranche-5 port #2: sound_api (2026-07-10)
+
+`engine/sound/sound_api.asm` → `engine/sound/sound_api.emp` under
+`SIGIL_EMP_SOUND_API` INSIDE engine.inc's `ifdef SOUND_DRIVER_ENABLED`
+block (resume org plain `$5F7C` / debug `$743A`). Region plain
+`$5D94..$5F7C` / debug `$7252..$743A` (0x1E8 bytes, twelve Sound_* procs).
+Three language features shipped mid-port: (1) the abs-sym ext-word fence
+RELAXED to positional (`move.w #$0100, (Z80_BUS_REQUEST).l` — the stopZ80
+shape; ext words BEFORE the sym operand precede the abs field, which
+stays last), (2) LINK-TIME imm32 (`ImmLink`, `Value32Be` at offset 2 —
+the emp mirror of the AS side's `try_defer_long_imm`; `.l` only, the
+`.b`/`.w` gap stays ledgered), (3) `sr`/`ccr` operands. Slot ADDRESSES
+stay AS-owned as extern-equ sums (`equ *_SLOT = extern("SND_Z80_BASE") +
+extern("SND_REQ_*")` — the MUSIC_PARAM block derives from a Z80-driver
+RAM label and floats with driver resizes, so no comptime mirror); only
+the 7 immediate-position values are mirrored, drift-guarded (kill-list
+row 10). `SongTable`/`SongPatchTable` read as imm-link equs — .emp-side
+under `SIGIL_EMP_MT`, so the mixed build exercises .emp-defines/
+.emp-consumes. Cross-seam positions (listing symbol tables): RAM
+`Ring_Sfx_Speaker`/`Sfx_Ring_Buf`/`Wr`/`Rd` plain `$FFFFAF30/32/3A/3B`,
+debug `$FFFFAF52/54/5C/5D`; ROM `SongTable` plain `$63AE0` / debug
+`$65522`, `SongPatchTable` plain `$63AE4` / debug `$6552E`; the SND_*
+equ values are shape-invariant (MUSIC_PARAM base `$1CA6`). The
+THIRTEEN-module mixed gates are the acceptance surface. Gate-off
+byte-neutrality sha256 ×3 at the `907a9029…` pin (+ debug + demo).
+Reference pins UNCHANGED.

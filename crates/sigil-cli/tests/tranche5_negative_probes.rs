@@ -1,5 +1,5 @@
-//! Tranche 5 — negative probes for `game_loop_port.rs` (the house
-//! one-file-per-tranche style; `sound_api` joins when its port lands).
+//! Tranche 5 — negative probes for `game_loop_port.rs` + `sound_api_port.rs`
+//! (the house one-file-per-tranche style).
 //!
 //! (a) missing cross-seam symbol is LOUD — a doctored copy misspelling
 //!     `Sound_DrainSfxRing` fails to resolve/link rather than emitting
@@ -186,5 +186,228 @@ fn drain_define_is_load_bearing() {
         section.bytes.len(),
         0x12 - 4,
         "the sound-off combo must drop exactly the 4-byte bsr.w drain line"
+    );
+}
+
+// ---- sound_api (tranche-5 port #2) ----------------------------------------
+
+fn sound_api_src() -> Option<String> {
+    let path = aeon_dir().join("engine/sound/sound_api.emp");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Some(s),
+        Err(_) if strict_gate() => panic!("SIGIL_STRICT_GATE set but {} missing", path.display()),
+        Err(_) => {
+            eprintln!("skip: {} not found (set AEON_DIR)", path.display());
+            None
+        }
+    }
+}
+
+/// Lower the (possibly doctored) sound_api source standalone. Returns the
+/// module's link asserts plus lower diagnostics; the caller decides which
+/// failure surface it is probing.
+fn lower_sound_api(
+    src: &str,
+) -> (sigil_ir::Module, Vec<sigil_ir::LinkAssert>, Vec<sigil_span::Diagnostic>) {
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse: {pdiags:?}");
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: None,
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    let mut m = module;
+    let asserts = std::mem::take(&mut m.link_asserts);
+    (m, asserts, diags)
+}
+
+/// The full AS-side truth composition (equs + labels) shared by the sound_api
+/// probes — everything the real file reads, at representative positions.
+fn sound_api_truth_sections() -> Vec<sigil_ir::Section> {
+    use sigil_frontend_as::{assemble, Options as AsOptions};
+    let asm = "cpu 68000\n\
+               Z80_BUS_REQUEST = $A11100\n\
+               SND_Z80_BASE = $A00000\n\
+               SND_STAT_ALIVE = $1F10\n\
+               SND_REQ_PING = $1F00\n\
+               SND_REQ_SAMPLE = $1F01\n\
+               SND_REQ_MUSIC = $1F02\n\
+               SND_REQ_SFX = $1F03\n\
+               SND_REQ_FADE = $1F05\n\
+               SND_REQ_TEMPO = $1F06\n\
+               SND_MUSIC_PARAM_BANK = $1CA6\n\
+               SND_MUSIC_PARAM_PTR = $1CA7\n\
+               SND_MUSIC_PARAM_FLAGS = $1CA9\n\
+               SND_MUSIC_PARAM_PATCHPTR = $1CAA\n\
+               SND_ALIVE_MARKER = $5A\n\
+               SND_MUSIC_STOP = $FF\n\
+               SND_FADE_CMD_OUT = 1\n\
+               SND_FADE_CMD_IN = 2\n\
+               SFX_RING_MASK = $07\n\
+               SFXID_RING_RIGHT = $33\n\
+               SFXID_RING_LEFT = $34\n\
+               phase $FFFFAF30\n\
+               Ring_Sfx_Speaker:\n\
+               \tdc.b 0\n\
+               \tdc.b 0\n\
+               Sfx_Ring_Buf:\n\
+               \tdc.b 0,0,0,0,0,0,0,0\n\
+               Sfx_Ring_Wr:\n\
+               \tdc.b 0\n\
+               Sfx_Ring_Rd:\n\
+               \tdc.b 0\n\
+               dephase\n\
+               phase $63AE0\n\
+               SongTable:\n\
+               \tdc.l 0\n\
+               SongPatchTable:\n\
+               \tdc.l 0\n";
+    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let mut truth = assemble(asm, &opts)
+        .unwrap_or_else(|d| panic!("AS assemble (truth): {d:?}"))
+        .sections;
+    let mut lma = 0x0100_0000u32;
+    for sec in &mut truth {
+        sec.lma = lma;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+        lma += 0x10_0000;
+    }
+    truth
+}
+
+/// (d) drift-guard genuineness — a doctored `SND_ALIVE_MARKER` mirror makes
+/// its `ensure` FAIL against the AS-side truth (supplied synthetically), so
+/// a drifted immediate can never link silently.
+#[test]
+fn doctored_immediate_mirror_fails_its_drift_guard() {
+    let Some(src) = sound_api_src() else { return };
+    let doctored = src.replace(
+        "const SND_ALIVE_MARKER  = $5A",
+        "const SND_ALIVE_MARKER  = $5B",
+    );
+    assert_ne!(src, doctored, "the probe must actually doctor the source");
+    let (module, asserts, diags) = lower_sound_api(&doctored);
+    assert!(diags.iter().all(|d| d.level != Level::Error), "lower: {diags:?}");
+
+    // Supply the full AS-side truth (equs + the cross-seam labels) so the
+    // composition RESOLVES — the doctored mirror must then fail its guard,
+    // not the link.
+    use sigil_frontend_as::{assemble, Options as AsOptions};
+    let asm = "cpu 68000\n\
+               Z80_BUS_REQUEST = $A11100\n\
+               SND_Z80_BASE = $A00000\n\
+               SND_STAT_ALIVE = $1F10\n\
+               SND_REQ_PING = $1F00\n\
+               SND_REQ_SAMPLE = $1F01\n\
+               SND_REQ_MUSIC = $1F02\n\
+               SND_REQ_SFX = $1F03\n\
+               SND_REQ_FADE = $1F05\n\
+               SND_REQ_TEMPO = $1F06\n\
+               SND_MUSIC_PARAM_BANK = $1CA6\n\
+               SND_MUSIC_PARAM_PTR = $1CA7\n\
+               SND_MUSIC_PARAM_FLAGS = $1CA9\n\
+               SND_MUSIC_PARAM_PATCHPTR = $1CAA\n\
+               SND_ALIVE_MARKER = $5A\n\
+               SND_MUSIC_STOP = $FF\n\
+               SND_FADE_CMD_OUT = 1\n\
+               SND_FADE_CMD_IN = 2\n\
+               SFX_RING_MASK = $07\n\
+               SFXID_RING_RIGHT = $33\n\
+               SFXID_RING_LEFT = $34\n\
+               phase $FFFFAF30\n\
+               Ring_Sfx_Speaker:\n\
+               \tdc.b 0\n\
+               \tdc.b 0\n\
+               Sfx_Ring_Buf:\n\
+               \tdc.b 0,0,0,0,0,0,0,0\n\
+               Sfx_Ring_Wr:\n\
+               \tdc.b 0\n\
+               Sfx_Ring_Rd:\n\
+               \tdc.b 0\n\
+               dephase\n\
+               phase $63AE0\n\
+               SongTable:\n\
+               \tdc.l 0\n\
+               SongPatchTable:\n\
+               \tdc.l 0\n";
+    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let mut sections = module.sections;
+    // Give the emp section a placement so the union resolves.
+    let map_toml = "fill = 0x00\n\
+                    \n\
+                    [[region]]\n\
+                    name = \"sound_api\"\n\
+                    lma_base = 0x5D94\n\
+                    size = 0x1E8\n\
+                    kind = \"rom\"\n";
+    let map = sigil_link::load_map(map_toml).expect("map must load");
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(pdiags.iter().all(|d| d.level != Level::Error), "place: {pdiags:?}");
+    let mut truth = assemble(asm, &opts)
+        .unwrap_or_else(|d| panic!("AS assemble (truth): {d:?}"))
+        .sections;
+    let mut lma = 0x0100_0000u32;
+    for sec in &mut truth {
+        sec.lma = lma;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+        lma += 0x10_0000;
+    }
+    sections.extend(truth);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout must succeed (only the GUARD drifts): {d:?}"));
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    assert!(
+        diags.iter().any(|d| d.level == Level::Error
+            && d.message.contains("SND_ALIVE_MARKER drifted")),
+        "the doctored mirror must fail its drift guard, got: {diags:?}"
+    );
+}
+
+/// (e) a misspelled extern in a slot equ dangles at resolve/link — never a
+/// silent wrong address. Non-vacuity: the SAME truth composition first
+/// resolves the UNDOCTORED source cleanly, so the failure is provably the
+/// one misspelled name, not a generally-dangling link.
+#[test]
+fn misspelled_extern_slot_is_loud() {
+    let Some(src) = sound_api_src() else { return };
+
+    fn resolves(src: &str) -> bool {
+        let (module, _asserts, diags) = lower_sound_api(src);
+        if diags.iter().any(|d| d.level == Level::Error) {
+            return false;
+        }
+        let mut sections = module.sections;
+        let map_toml = "fill = 0x00\n\
+                        \n\
+                        [[region]]\n\
+                        name = \"sound_api\"\n\
+                        lma_base = 0x5D94\n\
+                        size = 0x1E8\n\
+                        kind = \"rom\"\n";
+        let map = sigil_link::load_map(map_toml).expect("map must load");
+        let pdiags = place_sections(&mut sections, &map);
+        if pdiags.iter().any(|d| d.level == Level::Error) {
+            return false;
+        }
+        sections.extend(sound_api_truth_sections());
+        match sigil_link::resolve_layout(&sections, &SymbolTable::new(), true) {
+            Err(_) => false,
+            Ok(resolved) => sigil_link::link(&resolved, &SymbolTable::new()).is_ok(),
+        }
+    }
+
+    assert!(resolves(&src), "control: the undoctored source must resolve against the truth");
+    let doctored = src.replace("extern(\"SND_REQ_MUSIC\")", "extern(\"SND_REQ_MUSICC\")");
+    assert_ne!(src, doctored, "the probe must actually doctor the source");
+    assert!(
+        !resolves(&doctored),
+        "the misspelled extern must dangle loudly while every correct name resolves"
     );
 }

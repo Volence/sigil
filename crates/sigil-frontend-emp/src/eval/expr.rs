@@ -927,7 +927,7 @@ pub(crate) const BANK_MASK: i64 = 0x7F8000;
 /// `& $7F8000` over a provisional value also matches, yielding the bank-flavored
 /// refusal on an already-erroring path — wrong wording at worst, never wrong
 /// behavior.
-fn expr_carries_bank_mask(e: &sigil_ir::expr::Expr) -> bool {
+pub(crate) fn expr_carries_bank_mask(e: &sigil_ir::expr::Expr) -> bool {
     use sigil_ir::expr::Expr;
     match e {
         Expr::Int(n) => *n == BANK_MASK,

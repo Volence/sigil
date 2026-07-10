@@ -534,9 +534,19 @@ impl Evaluator<'_> {
                 if matches!(v, Value::Poison) {
                     return None;
                 }
-                // A provisional here() immediate gets the SPECIFIC D-H.2
-                // steering message, not the generic "must be an integer".
-                if self.reject_if_provisional(&v, expr_span(e)).is_some() {
+                // A link-time immediate (`#extern(...)` / an equ-aliased
+                // extern sum / label arithmetic) DEFERS to a `Value32Be`
+                // imm32 fixup (tranche 5 — the emp mirror of the AS side's
+                // `try_defer_long_imm`); the `.l`-only width policing lives
+                // at lowering, where the resolved size is known. A
+                // `bankid()`-derived value keeps its provisional rejection
+                // (R7m.3 — the 9-bit-latch semantics need their own ruling
+                // before they ride an instruction immediate).
+                if let Value::LinkExpr(expr) = &v {
+                    if !crate::eval::expr::expr_carries_bank_mask(expr) {
+                        return Some(CodeOperand::ImmLink { target: expr.clone() });
+                    }
+                    self.reject_if_provisional(&v, expr_span(e));
                     return None;
                 }
                 match v.as_stored_int() {
@@ -1137,6 +1147,14 @@ impl Evaluator<'_> {
                 let seg = &p.segments[0];
                 if let Some(r) = reg_from_name(seg) {
                     return Some(CodeOperand::Reg(r));
+                }
+                // `sr`/`ccr` are register-class words too (the AS front-end's
+                // rule): they win over ordinary names in operand position.
+                if seg == "sr" {
+                    return Some(CodeOperand::Sr);
+                }
+                if seg == "ccr" {
+                    return Some(CodeOperand::Ccr);
                 }
                 return Some(CodeOperand::Sym(scope.resolve_ref(seg)));
             }

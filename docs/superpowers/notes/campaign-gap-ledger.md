@@ -606,3 +606,24 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   silently (surfaced by the port tests' far-carrier consumer proofs; game_loop's
   consumer moved in-range, collision_lookup's inherited far carrier left as-is).
   Add a loud link error when a PcRelDisp16 fixup overflows i16. — OPEN
+- [tranche-5 port #2 (sound_api), 2026-07-10] **Three demanded features SHIPPED:**
+  (a) abs-sym ext-word fence relaxed to POSITIONAL (imm/d16 BEFORE the sym operand
+  OK — its ext words precede the abs field; AFTER stays fenced); (b) emp-side
+  link-time imm32 (`ImmLink` → Value32Be at 2, `#extern(...)`/equ-alias spelling —
+  the AS `try_defer_long_imm` mirror; `.l` ONLY, so the `.b`/`.w` row above is
+  UNCHANGED and still blocks kill-row-4 stage 2); (c) `sr`/`ccr` operands
+  (register-class words, the interrupt-mask idiom). Also NOTE: a provisional
+  here() in `.l` IMMEDIATE position now defers as an imm-link instead of the
+  blanket [here.provisional] rejection (sound by the D2.23 model — the fixup
+  resolves at final positions; bankid()-derived values KEEP their rejection).
+  Spec addendum wanted at the checkpoint. Message-tier detail for that pass: a
+  provisional here() in a `.b`/`.w` immediate now surfaces the generic
+  `[lower.imm-link] needs .l` steering instead of D-H.2's `[here.provisional]`
+  wording (still loud; fold the case into the addendum). — SHIPPED (jot the spec pass)
+- [tranche-5 port #2 (sound_api), 2026-07-10] **Reads-wrong list (post-merge step-5
+  candidates, byte-DIFFERENT so post-port):** of the EIGHT `bra.w` tail-calls
+  (6→PostByte, 2→PlaySFX), only Sound_Ping/Sound_PlaySample's two are in `.s`
+  reach (disp ≈ −92/−102) — jbra would keep the other six `.w`, so the real
+  saving is −4 B, not the naive −16 (review-corrected). Also `moveq #0,d1` +
+  reload in Sound_PlaySFX's dedup path reads clunky but is cycle-honest —
+  leave it. — OPEN
