@@ -492,26 +492,3 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   vdp_init_port's Flush second-proc offset). A future re-baseline should either grep both
   spellings or (better) derive bare-name expectations from the map constants instead of
   literals — jotted as a small-opens candidate. — OPEN
-
-- [tranche-4 ports #1/#2 (overnight), 2026-07-10] **Data-file ports are BORN modern** —
-  for offsets-shaped data files, step 1 (transcribe) and step 2 (modernize) collapse: the
-  only .emp spelling of `dc.w Target-Base` IS the offsets construct, the guards are the
-  modern form, and there is no verbatim-instruction dimension. The loop's steps stay
-  meaningful for CODE files; jot for the retrospect (the checklist could say so). — OPEN
-- [tranche-4 port #1, 2026-07-10] **imm32 deferral extended to d16(An) destinations** —
-  `move.l #Ani_Particle, SST_anim_table(a0)` (the anim-table write EVERY spawn template
-  uses) hard-errored cross-seam; the symbolic-operands port's deferred #Sym-immediate
-  item got its real consumer. Shipped with the port (offset-2 proof + 217C encoding
-  test). Remaining imm shapes (other destinations) still fall to the eager path —
-  extend on demand. — SHIPPED
-- [tranche-4 ports #1/#2, 2026-07-10] **AF_*/DUR_DYNAMIC constants-twin growth** — both
-  anims ports carry local const mirrors + extern drift guards (AF_END/AF_BACK/AF_DELETE/
-  DUR_DYNAMIC; truth in animate.asm + engine constants.asm). When a third consumer
-  appears, grow engine.constants' twin an animation block per the twin growth pattern. — OPEN
-- [tranche-4 #3 prep, 2026-07-10] **act_descriptor design note written**
-  (notes/2026-07-10-act-descriptor-design.md — Volence's "we'll have a lot of those"
-  ask): Tier 1+2 (typed Act/Sec literals + a shared validating act() constructor) is the
-  recommended port shape; Tier 3 (mapped section grids via computed string labels) needs
-  ONE small increment (computed-name extern()); Tier 4 (acts via import(), generators
-  stop emitting .asm) is the post-campaign direction and resolves the ojz_act_pool
-  generator question. Ratification rides the checkpoint packet. — OPEN
