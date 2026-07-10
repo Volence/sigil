@@ -465,3 +465,30 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   it. Proposal pending Volence's pick: entity → `pitcher_plant`; per-sprite bundle dirs named
   for the ENTITY with generic member names. "mappings" stays the term for piece tables
   themselves (community-standard). — OPEN (naming ruling + free rename window).
+
+- [step-5 execution, 2026-07-10] **STEP 5 QUEUE COMPLETE** — both ratified reads-wrong items
+  landed as post-merge commit pairs (aeon `4352a40`+sigil `bc55333`; aeon `9eb2101`+sigil
+  `ae48ac7`), each: lockstep .emp+twin edit → both shapes rebuilt → neutrality sha256 ×3 →
+  full re-pin → strict 1895/0 → oracle boot-check. The marginal items (Flush shift-out loop,
+  controllers P1/P2 pointer dedup) stay SKIPPED per the handoff (no VBlank-headroom pressure).
+  Two findings for the record:
+  (a) **"clobbers shrink to d0/d1" was review shorthand for the LOCAL write set** — the
+  caller-facing attribute must stay `clobbers(d0,d1,d2,d3,a0)`: d2/a0 are still trashed via
+  the Tile_Cache_GetCollision TAIL CALL, and the precedent (the original attribute carried
+  d3/a0 "via callee") makes the attribute transitive. Shrinking it would let a caller keep a
+  live d2 across the call. Landed with the full set + a header comment spelling the split —
+  flag at the next packet review in case Volence intended attribute-as-local-writes instead.
+  (b) **`clr.l` is a size win, not a speed win** (Volence asked mid-session): on the 68000,
+  `moveq #0,d0` + `move.l d0,(abs.w)` = 4+16 = 20 cycles (3 reads/2 writes total) and
+  `clr.l (abs.w)` = 20 cycles (3/2 — clr does a dummy read of the destination). Identical
+  cycles AND bus profile; the win is 2 bytes per site + no scratch register. The trade
+  REVERSES with N>1 zero-writes sharing one moveq (each extra move.l is 16 vs clr's 20) —
+  vdp_init has one site per proc, so clr.l is right here. (68010+ makes clr a pure write;
+  the I/O read-hazard caveat stands on 68000 — comment carried in both files.)
+- [step-5 re-pin sweep, 2026-07-10] **RE-PIN HAZARD: per-byte address literals are invisible
+  to hex-string sweeps** — bare-name proofs encode addresses as `[0x00, 0x00, 0x22, 0x7E]`
+  and split words (`0x24, 0x68`), which a `227E`/`2468` grep can't see; three test files
+  tripped the strict gate before being caught (hblank_port, math_port bare-name pins,
+  vdp_init_port's Flush second-proc offset). A future re-baseline should either grep both
+  spellings or (better) derive bare-name expectations from the map constants instead of
+  literals — jotted as a small-opens candidate. — OPEN
