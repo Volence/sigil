@@ -397,3 +397,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `clobbers()` meaning "touches nothing" (the lint then flags ANY register write). Recommend
   (ii) at low priority — it makes the strongest contract expressible — but it needs a Volence
   ruling + checklist amendment. — OPEN (ruling requested).
+- [tranche 3 code-sense review, 2026-07-09] **`~mask` byte-width ceremony tax**:
+  `andi.b #~(BUTTON_LEFT|BUTTON_RIGHT)&$FF, d0` (controllers.emp) — the `&$FF` exists only
+  because comptime `~` is untyped-width; a byte-width operand position could plausibly
+  auto-truncate a comptime complement (loudly range-checked otherwise). Jot-don't-implement:
+  needs a decision on silent-vs-explicit truncation semantics (tenet: no silent wrong bytes).
+  — OPEN (v1.1 candidate).
+- [tranche 3 code-sense review, 2026-07-09] **Typed word-table embeds**: `Sine_Table:
+  [u8; $280] = embed(...)` describes a WORD table as bytes; `[i16; 320]` with big-endian
+  byte-identity would be the honest type if/when `embed` learns typed element views. Pairs
+  with the comptime-Data-indexing candidate (content asserts want typed reads too). — OPEN
+  (v1.1 candidate).
