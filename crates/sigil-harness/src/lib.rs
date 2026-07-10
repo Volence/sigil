@@ -314,6 +314,36 @@ pub fn assemble_mixed_tranche3_as_side(aeon: &Path, debug: bool) -> Result<Modul
     })
 }
 
+/// Assemble the AS side of the tranche-4 NINE-module mixed build: everything
+/// `assemble_mixed_tranche3_as_side` gates PLUS `SIGIL_EMP_PARTICLE_ANIMS`
+/// (the campaign's first GAME-DATA gate — `games/sonic4/main.asm`'s include
+/// site, past `org $10000`, so the resume org lives in main.asm rather than
+/// engine.inc).
+pub fn assemble_mixed_tranche4_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+        ("SIGIL_EMP_HBLANK".to_string(), 1),
+        ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
+        ("SIGIL_EMP_MATH".to_string(), 1),
+        ("SIGIL_EMP_VDP_INIT".to_string(), 1),
+        ("SIGIL_EMP_COLLISION_LOOKUP".to_string(), 1),
+        ("SIGIL_EMP_PARTICLE_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_SONIC_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_ACT_DESCRIPTOR".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche4 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable
