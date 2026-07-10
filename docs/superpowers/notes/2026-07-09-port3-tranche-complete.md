@@ -71,7 +71,7 @@ From the code-sense review, each its own commit after merge, oldest-hazard first
 | **The no-effect proc** (HBlank_Null: no clobbers, no preserves — "no contract" vs "touches nothing" indistinguishable) | Volence ruling: allow explicit empty `clobbers()` meaning "touches nothing"? Recommend YES at low priority (checklist amendment either way) |
 | **Checklist self-review**: the standing step-2 checklist held up; two additions surfaced — stack-discipline writes (now lint-exempt by class) and the no-effect-proc ambiguity above | Amend checklist with both once ruled |
 | **abs.l destinations** (re-scoped) | Stays OPEN for the port that spells it; bare-symbol width-rule idiom covers today's cases |
-| **`ifndef`-guarded equ/struct export gap** (review finding, latent, PRE-EXISTING) | Fix before any port adds include guards; ledgered with fix direction |
+| **`ifndef`-guarded equ/struct export gap** (review finding, latent, PRE-EXISTING) | FIXED on-branch at Volence's packet-review call (ever-exported set carried across passes, re-attached from the converged env; pinned by test) |
 | **Comptime Data indexing** (embed content asserts — sine-table invariants) | v1.1 candidate; needs an A-Spec2.3 decision to grow the comptime surface |
 | **Typed data-register params** (`d0: Angle`) — CONFIRMED WORKING | Application deliberately deferred to construct walk #3 (Volence driving) — don't front-run the newtype naming |
 | `~mask` `&$FF` ceremony; typed word-table embeds (`[i16; 320]`) | Jotted (v1.1 candidates) |
