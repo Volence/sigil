@@ -17,6 +17,12 @@
 
 use std::path::Path;
 
+/// Shared test-support: the AS-truth equ blob for the `engine.constants` twin
+/// and the drift-guard filter, consolidated out of ~9 hand-copied port/probe
+/// test files. Reachable by both the CLI tests and this crate's own tests
+/// (both depend on `sigil-harness`).
+pub mod test_support;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;
@@ -430,6 +436,45 @@ pub fn assemble_mixed_tranche6_as_side(aeon: &Path, debug: bool) -> Result<Modul
     })
 }
 
+/// Assemble the AS side of the tranche-7 SIXTEEN-module mixed build: everything
+/// `assemble_mixed_tranche6_as_side` gates PLUS `SIGIL_EMP_COLLISION` — the
+/// `engine/engine.inc` gate wrapping the `engine/objects/collision.asm` include
+/// (else-arm `org $31FA` plain / `org $34B4` debug). Back in the ENGINE block
+/// (like game_loop/collision_lookup), the window it opens (`$308A..$31FA` plain
+/// / `$3344..$34B4` debug) is filled by `engine/objects/collision.emp` — whose
+/// `TouchResponse` is the sole `pub proc` export (called from the engine object
+/// manager). The module reads only GAME-RAM `Player_1`/`Dynamic_Slots` across
+/// the seam (abs.w, per-shape); its dispatch is a self-contained module-level
+/// handler table (pc-indexed `jsr`), so no ROM cross-seam target moves.
+pub fn assemble_mixed_tranche7_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+        ("SIGIL_EMP_HBLANK".to_string(), 1),
+        ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
+        ("SIGIL_EMP_MATH".to_string(), 1),
+        ("SIGIL_EMP_VDP_INIT".to_string(), 1),
+        ("SIGIL_EMP_COLLISION_LOOKUP".to_string(), 1),
+        ("SIGIL_EMP_PARTICLE_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_SONIC_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_ACT_DESCRIPTOR".to_string(), 1),
+        ("SIGIL_EMP_GAME_LOOP".to_string(), 1),
+        ("SIGIL_EMP_SOUND_API".to_string(), 1),
+        ("SIGIL_EMP_TEST_OBJECTS".to_string(), 1),
+        ("SIGIL_EMP_COLLISION".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche7 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable
@@ -450,8 +495,10 @@ pub fn region_at_lma(img: &LinkedImage, lma: u32) -> Option<&[u8]> {
 pub const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
 /// The debug reference's convsym/fixheader-rewritten set: the larger `__DEBUG__`
 /// deb2 append pushes the ROM-end pointer over a byte boundary, so three bytes
-/// (`$1A5`/`$1A6`/`$1A7`) differ instead of two.
-pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
+/// (`$1A5`/`$1A6`/`$1A7`) differ. At the t7-step5 baseline the checksum's low
+/// byte `$18F` coincidentally matches the reference (only `$18E` differs), so
+/// the set is four bytes — re-derived empirically from the rebuilt debug ROM.
+pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x1A5, 0x1A6, 0x1A7];
 
 /// Assert `rom` is byte-identical to `refrom` modulo the `allow`-listed offsets,
 /// after pinning `rom`'s length to `expected_len` (guards against a regression

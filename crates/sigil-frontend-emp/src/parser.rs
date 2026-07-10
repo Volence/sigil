@@ -1495,6 +1495,23 @@ impl Parser {
                 self.bump();
                 let e = self.expr();
                 self.expect(&Tok::RBrace, "`}`");
+                // F1 (tranche 7): a `{splice}` immediately followed by `(` is a
+                // spliced DISPLACEMENT — `{off}(aN)` / `{off}({reg})` — not a
+                // whole-operand splice. Continue into the same displacement-
+                // indirect grammar a literal displacement uses, with the spliced
+                // expression as the displacement. Eval range-checks it identically
+                // to a literal disp (i16 for `d16(An)`) and diagnoses a non-int
+                // splice with `[asm.splice-kind]`.
+                if self.at(&Tok::LParen) {
+                    let inner = self.paren_operand(splices_allowed, self.span());
+                    let span = start.merge(self.prev_span());
+                    return Operand::DispInd {
+                        disp: e,
+                        inner: Box::new(inner),
+                        disp_spliced: true,
+                        span,
+                    };
+                }
                 Operand::Splice(e)
             }
             Tok::Dot if matches!(self.peek2(), Tok::Ident(_)) => {
@@ -1531,6 +1548,7 @@ impl Parser {
                         return Operand::DispInd {
                             disp: Expr::Path(callee.clone()),
                             inner: Box::new(Operand::Ind { parts, size, span: ispan }),
+                            disp_spliced: false,
                             span: ispan,
                         };
                     }
@@ -1539,7 +1557,12 @@ impl Parser {
                 if self.at(&Tok::LParen) {
                     let inner = self.paren_operand(splices_allowed, self.span());
                     let span = start.merge(self.prev_span());
-                    return Operand::DispInd { disp: e, inner: Box::new(inner), span };
+                    return Operand::DispInd {
+                        disp: e,
+                        inner: Box::new(inner),
+                        disp_spliced: false,
+                        span,
+                    };
                 }
                 let size = self.trailing_size(splices_allowed);
                 let span = start.merge(self.prev_span());
@@ -2360,6 +2383,17 @@ impl Parser {
                     _ => Expr::Path(path),
                 }
             }
+            // F2 (tranche 7): a proc-LOCAL label reference `.name` in expression
+            // position — accepted so it can appear as a `Label`-typed CALL
+            // ARGUMENT (`axis_test(d4, ..., .next_object)`). It is ONLY meaningful
+            // in a label-value context; the evaluator rejects it loudly in any
+            // pure comptime expression position (`const x = .foo`), so parsing it
+            // here never leaks a silent Label into ordinary expressions.
+            Tok::Dot if matches!(self.peek2(), Tok::Ident(_)) => {
+                self.bump(); // `.`
+                let name = self.expect_ident("label");
+                Expr::LocalLabel(name, start.merge(self.prev_span()))
+            }
             other => {
                 self.diag_at(start, format!("expected an expression, found {other:?}"));
                 // Never consume a closer (or newline) an enclosing frame will
@@ -2538,6 +2572,7 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
     match e {
         Expr::Int(_, s) | Expr::Float(_, s) | Expr::Str(_, s) | Expr::Default(s) => *s,
         Expr::Path(p) => p.span,
+        Expr::LocalLabel(_, s) => *s,
         Expr::Unary { span, .. } | Expr::Binary { span, .. } | Expr::Call { span, .. }
         | Expr::StructLit { span, .. } | Expr::ArrayLit { span, .. }
         | Expr::TupleLit { span, .. } | Expr::Range { span, .. } | Expr::If { span, .. }

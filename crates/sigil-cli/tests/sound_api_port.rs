@@ -30,8 +30,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$5D94`): `s4.bin[0x5D94..0x5F78]` (0x1E4 bytes).
-//! Debug (map base `$7252`): `s4.debug.bin[0x7252..0x7436]` (0x1E4 bytes).
+//! Plain (map base `$5D8E`): `s4.bin[0x5D8E..0x5F72]` (0x1E4 bytes).
+//! Debug (map base `$724C`): `s4.debug.bin[0x724C..0x7430]` (0x1E4 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -74,7 +74,7 @@ struct Shape {
 }
 
 const PLAIN: Shape = Shape {
-    base: 0x5D94,
+    base: 0x5D8E,
     ring_sfx_speaker: 0xFFFF_AF30,
     sfx_ring_buf: 0xFFFF_AF32,
     sfx_ring_wr: 0xFFFF_AF3A,
@@ -83,7 +83,7 @@ const PLAIN: Shape = Shape {
     song_patch_table: 0x63AE4,
 };
 const DEBUG: Shape = Shape {
-    base: 0x7252,
+    base: 0x724C,
     ring_sfx_speaker: 0xFFFF_AF52,
     sfx_ring_buf: 0xFFFF_AF54,
     sfx_ring_wr: 0xFFFF_AF5C,
@@ -245,14 +245,7 @@ fn compile_real_file(
 /// The 7 immediate-mirror drift guards must be captured and PASS against
 /// `as_constant_equs`' truths.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
-    let guards = link_asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .count();
+    let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
     assert_eq!(guards, 7, "sound_api's seven drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
@@ -304,7 +297,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 
     // Outbound proof: `bsr.w Sound_PlaySFX` resolves to base + 0x100
-    // (Sound_PlaySFX's offset inside the block: $5E94 - $5D94 — the step-2
+    // (Sound_PlaySFX's offset inside the block: $5E8E - $5D8E — the step-2
     // jbra shrink slid it -4).
     let consumer = linked
         .sections
@@ -320,13 +313,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) `sound_api` bytes == `s4.bin[0x5D94..0x5F7C]`.
+/// (plain) `sound_api` bytes == `s4.bin[0x5D8E..0x5F72]`.
 #[test]
 fn sound_api_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) `sound_api` bytes == `s4.debug.bin[0x7252..0x743A]`.
+/// (debug) `sound_api` bytes == `s4.debug.bin[0x724C..0x7430]`.
 #[test]
 fn sound_api_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

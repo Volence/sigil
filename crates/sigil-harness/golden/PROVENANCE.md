@@ -370,3 +370,70 @@ orgs `$309E6`/`$30A4E`). Demo unaffected.
   **`588adf815c5a84402981a495e3d96f732e721d3ef5560286d9eeb6ef355f0f3f`**.
 - Debug `s4.debug.bin`: sha256
   **`ed96301f5303841a7f12c02ab8dbde5e413b68dca4caed348419ba887504a4f7`**.
+
+## Re-baseline: tranche-7 step 5 — collision per-player standing-bit claim (2026-07-10) — the current pin
+
+Tranche-7 STEP-5 under the RATIFIED loop (`collision.asm` + `collision.emp`
++ `aabb.inc` + `aabb.emp` + `constants.emp` in LOCKSTEP): `Touch_Solid`'s
+top-contact now claims the object with THIS player's standing bit
+(`moveq #ST_P1/P2_STANDING` selected by `cmpa.l #Player_1` — the ledge
+probe scans by player identity; the wrong-bit + stale-bit failures were
+live-verified in oracle), four `move.w #0` zero-writes became `clr.w`
+(−8 B), the `aabb` zero-copy alias skip dropped the redundant `cdim`
+copy (−4 B, BOTH twins), and a dead-path SST reload was elided; net the
+`collision` region shrinks `0x170` → **`0x16E`** (bases UNCHANGED — plain
+`$308A`, debug `$3344`; `TouchResponse` head unmoved, only `Touch_None`/
+`Touch_Hurt`/`Touch_Solid` bodies float within the window). New
+`SIGIL_EMP_COLLISION` resume orgs plain **`$31F8`** / debug **`$34B2`**.
+
+`rings.asm` (NOT ported; between collision and `org $10000`) inherited
+the shared `aabb.inc` alias-skip (−4) AND slid −2 from collision's
+shrink, so **everything between the collision region end and `org $10000`
+slid −6 total**. Re-derived per-shape positions: `Collision_GetType`
+(collision_lookup base) plain `$4C08`→**`$4C02`** / debug `$542C`→**`$5426`**
+(resume orgs `$4C26`/`$544A`), `Tile_Cache_GetCollision` plain
+`$4320`→**`$431A`** / debug `$4A8C`→**`$4A86`**, `sound_api` base plain
+`$5D94`→**`$5D8E`** / debug `$7252`→**`$724C`** (resume orgs `$5F72`/`$7430`;
+`Sound_PlaySFX` = base+`$100`), `Sound_DrainSfxRing` plain
+`$5EDA`→**`$5ED4`** / debug `$7398`→**`$7392`** (game_loop's cross-seam
+`bsr.w` drain disp `$3BD6`→`$3BD0` plain / `$5006`→`$5000` debug — the
+call site is unmoved, the target slid). Regions BEFORE collision
+(`vdp_init` `$1C14`/`$1C96`, `hblank` `$227A`/`$2308`, `controllers`
+`$228C`/`$231A`, `math` `$2464`/`$25F6`, `game_loop` `$22FE`/`$238C`,
+`VSync_Wait` `$2262`/`$22EC`) + the interrupt vectors are UNMOVED;
+everything at/after `org $10000` (`act_descriptor`, `sonic_anims`,
+`particle_anims`, the test-object bank, `SongTable`/`SongPatchTable`
+`$63AE0`/`$65522`) is UNMOVED — the −6 is absorbed at the `org $10000`
+sound boundary, so assembled `EndOfRom` is UNCHANGED both shapes
+(`$658B4` / `$673A2`). Cross-seam collision-lookup tail (`bra.w
+Tile_Cache_GetCollision`, site + target both slid −6) holds its disp
+`$F6FA` plain / `$F642` debug — window CONTENT byte-identical.
+
+`constants.emp` grew `ST_P2_STANDING = 4` (the +1 ensure — the twin's
+guard count is now **20**, and its AS-truth mirror joined the SHARED
+`test_support::engine_constant_equs()` helper, the single place). Every
+gate that compiles the constants twin re-pinned its guard count
+(19→20 direct; 49→50 for the `sst`+`constants` gates; 79→80 for the
+two-module test-object gate; the `particle_anims` ambient-prepend
+gate 20→21).
+
+**Aeon gate-org correction folded in.** The `fbb76f9` engine.inc updated
+only the `SIGIL_EMP_COLLISION` resume orgs ($31FA/$34B4 → $31F8/$34B2);
+the `SIGIL_EMP_COLLISION_LOOKUP` and `SIGIL_EMP_SOUND_API` gate orgs
+(used ONLY by the sigil mixed builds) were left at their pre-shrink
++6 values. They were slid the same −6 the whole tail took —
+`$4C2C`→`$4C26` / `$5450`→`$544A` (collision_lookup) and `$5F78`→`$5F72`
+/ `$7436`→`$7430` (sound_api) — matching where `Collision_ProbeDown` /
+`Sound_FadeIn`'s successor land in the gate-off build. This edits only
+the dead `else` branches of `ifndef SIGIL_EMP_*`, so the gate-off
+reference ROMs are byte-identical (hashes below unchanged, no rebuild).
+The debug convsym-rewritten set re-derived empirically to `{$18E, $1A5,
+$1A6, $1A7}` (the `$18F` checksum low byte now coincides with the
+reference; `$18F` dropped from the four-byte set).
+
+- Aeon repo commit: **`fbb76f9`** (the tranche-7 step-5 fix+perf),
+  working tree carries only the two-gate org correction above.
+- Non-debug `s4.bin`: sha256
+  **`82aac84d49fbb5ad73956bb6b92545c403523b8487f2cea4c14e434172385b9b`**.
+- Debug `s4.debug.bin`: sha256
+  **`ff897d0b49bb19583788ab5f4e4184081fe0311b4694b08b1e854dd4bbdca4bc`**.

@@ -337,6 +337,21 @@ pub struct Evaluator<'a> {
     /// share a name space but their value-eval recursions are separate concerns,
     /// and mixing the stacks would mis-name a cycle chain.
     data_value_in_progress: Vec<String>,
+    /// The hygiene [`Owner`](crate::lower::hygiene::Owner) of the proc/asm body
+    /// currently being evaluated (F2, tranche 7). Set by
+    /// [`eval_asm_owned`](Self::eval_asm_owned) (save/restore around nesting) so a
+    /// proc-LOCAL label CALL ARGUMENT (`axis_test(…, .next)`) — evaluated in the
+    /// CALLER's context, BEFORE the callee template's fresh owner is pushed —
+    /// mangles under the ENCLOSING proc's owner, the SAME scheme a `.next:` label
+    /// written directly in that proc gets. `None` outside any body.
+    enclosing_owner: Option<crate::lower::hygiene::Owner>,
+    /// Every proc-LOCAL label VALUE minted from an `Expr::LocalLabel` call
+    /// argument during the CURRENT body's evaluation (F2 loudness check): the
+    /// bare label name and the arg span. At end-of-body evaluation each is checked
+    /// against the set of local labels actually DEFINED in the body — a miss (a
+    /// typo'd `.labell`) is a LOUD diagnostic naming the label rather than a
+    /// silent undefined link symbol. Reset per body (save/restore around nesting).
+    minted_local_labels: Vec<(String, Span)>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -387,6 +402,8 @@ impl<'a> Evaluator<'a> {
             imported_item_types: HashMap::new(),
             data_value_memo: HashMap::new(),
             data_value_in_progress: Vec::new(),
+            enclosing_owner: None,
+            minted_local_labels: Vec::new(),
         }
     }
 
@@ -887,7 +904,16 @@ impl<'a> Evaluator<'a> {
         };
         self.in_progress.push(name.to_string());
         let mut env = Env::new();
+        // A const initializer is a PURE comptime expression, regardless of where
+        // the const is referenced from: resetting `label_ctx` to 0 across its
+        // evaluation keeps the D-PP.3 bareword-label fallback — and the F2
+        // `.name` local-label form — confined to the IMMEDIATE value position. A
+        // const referenced from a call argument (`foo(x)` where `const x = .bar`)
+        // must NOT fold `.bar` (or a bare name) into a silent Label; it is a loud
+        // error in the const's own body. Restored on the way out.
+        let saved_label_ctx = std::mem::take(&mut self.label_ctx);
         let v = self.eval_expr(value_expr, &mut env);
+        self.label_ctx = saved_label_ctx;
         self.in_progress.pop();
         self.const_memo.insert(name.to_string(), v.clone());
         v

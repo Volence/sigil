@@ -107,11 +107,39 @@ impl Evaluator<'_> {
         }
         let scope = LabelScope::build(&owner, labels.iter().map(|(n, e, _)| (*n, *e)));
 
+        // F2 (tranche 7): enter this body's hygiene context. A proc-LOCAL label
+        // CALL ARGUMENT (`axis(…, .next)`) evaluated inside this body's statement
+        // loop mangles through THIS owner (the caller's space), and every such
+        // minted label is recorded for the end-of-body loudness check. Save and
+        // restore so nesting (a template call whose body has its own owner)
+        // resolves each `.name` arg in ITS enclosing body and never leaks.
+        let prev_owner = self.enclosing_owner.replace(owner.clone());
+        let prev_minted = std::mem::take(&mut self.minted_local_labels);
+
         // Build the resolved item list.
         let mut buf = CodeBuf::empty();
         for stmt in body {
             self.lower_asm_stmt(stmt, &scope, &mut buf, env);
         }
+
+        // Loudness (F2): every proc-local label VALUE minted from a `.name` call
+        // argument in THIS body must name a label actually DEFINED in this body.
+        // A miss (a typo'd `.labell`) is a loud diagnostic naming it — not a
+        // silent undefined link symbol the linker would reject with a mangled name.
+        let minted = std::mem::replace(&mut self.minted_local_labels, prev_minted);
+        for (name, span) in minted {
+            if !labels.iter().any(|(n, _, _)| *n == name) {
+                self.error(
+                    span,
+                    format!(
+                        "unknown local label `.{name}` — no `.{name}:` is defined in this \
+                         proc body"
+                    ),
+                );
+            }
+        }
+        self.enclosing_owner = prev_owner;
+
         Value::Code(buf)
     }
 
@@ -586,7 +614,7 @@ impl Evaluator<'_> {
                 let r = self.inner_ind_reg(inner, env)?;
                 Some(CodeOperand::PostInc(r))
             }
-            Operand::DispInd { disp, inner, span } => {
+            Operand::DispInd { disp, inner, disp_spliced, span } => {
                 // PC-relative EAs: `Sym(pc)` / `Sym(pc,Xn.size)` — 68k `(d16,PC)` /
                 // `(d8,PC,Xn)`. Keyed on the inner base being the LITERAL `pc`
                 // token (never a valid address register, so this can't collide
@@ -647,10 +675,18 @@ impl Evaluator<'_> {
                     return None;
                 }
                 let Some(d) = dv.as_stored_int() else {
-                    self.error(
-                        *span,
-                        format!("displacement must be an integer, got {}", dv.type_name()),
-                    );
+                    // A spliced displacement (`{off}(aN)`, F1) that is not an int
+                    // gets the operand-splice diagnostic naming the expected class
+                    // (`[asm.splice-kind]`); a literal/field displacement keeps its
+                    // generic "must be an integer" message.
+                    if *disp_spliced {
+                        self.splice_kind_err(expr_span(disp), "int", &dv);
+                    } else {
+                        self.error(
+                            *span,
+                            format!("displacement must be an integer, got {}", dv.type_name()),
+                        );
+                    }
                     return None;
                 };
                 // Two-part `d8(An,Xn[.size])` — An-indexed with a comptime
@@ -1546,7 +1582,7 @@ fn two_segment_field(disp: &ast::Expr) -> Option<(&str, &str)> {
 fn operand_to_arg(op: &Operand) -> Option<ast::Arg> {
     let value = match op {
         Operand::Plain { expr, size: None, .. } => expr.clone(),
-        Operand::DispInd { disp: ast::Expr::Path(callee), inner, span } => {
+        Operand::DispInd { disp: ast::Expr::Path(callee), inner, span, .. } => {
             // Only the folded-call shape reverses: a `(parts)` indirect with no
             // per-part or trailing size (an actual displacement `4(a0)` carries a
             // register base and IS an addressing mode, not a call).

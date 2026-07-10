@@ -691,7 +691,9 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 - [tranche 6, 2026-07-10] **clobbers() takes no register ranges** — `clobbers(d0-d4/a1-a3)`
   is a parse error while `preserves(d0-d1/a0)` takes movem-reglists; the eight-register
   contract had to be spelled out comma-by-comma. Ask: accept the movem-reglist grammar in
-  clobbers too (one grammar for both attributes). — OPEN
+  clobbers too (one grammar for both attributes). Third data point tranche 7:
+  TouchResponse's whole-file contract spelled TWELVE registers comma-by-comma
+  (`d0..d7/a0..a3`). — OPEN
 - [tranche 6, 2026-07-10] **offsets-table labels can't be `use`-imported as values** —
   test_particle consumes `Ani_Particle` (an .emp offsets table in particle_anims.emp)
   via `equ ANI_PARTICLE = extern("Ani_Particle")` even though both sides are .emp. Ask:
@@ -718,3 +720,47 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   PRE-MADE for the first consumer: sin/cos return the BARE fixed<8,8> unit fraction —
   NOT Velocity (a scale factor becomes a velocity only when multiplied by a speed;
   Volence probed exactly this and the distinction held). — OPEN
+- [tranche 7, 2026-07-10] **`comptime fn` register-arg DISTINCTNESS is contract-only** —
+  `aabb_axis_test`'s doc contract says `stmp` MUST NOT alias `cdim`/`delt`, but the
+  template splices whatever `Reg` args it is handed: passing `stmp == cdim` assembles
+  CLEAN and emits silently-wrong code (tranche7_negative_probes.rs probe (f) pins this,
+  matching the .inc's identical sharp edge — the AS macro can't check it either). Ask: a
+  `distinct(a, b, ...)` param predicate on `comptime fn` (or an inferred no-alias check
+  over splice sites) so the mis-instantiation fails loud instead of miscompiling. Pairs
+  with the clobbers/preserves contract family. — OPEN
+- [tranche 7, 2026-07-10] **bra.w jump tables are a THIRD dispatch-table encoding class** —
+  collision's handler table is 13 `bra.w` entries indexed `jsr table(pc, type*4)`: the
+  entry STRIDE is ABI, so the entries can never take the jbra idiom (relaxation would
+  corrupt indexing — documented LOAD-BEARING at the table). The `dispatch` construct
+  already owns `word_offsets`/`long_ptrs`; a `branch_table` encoding (fixed-width bra.w
+  entries, stride guaranteed by construction) would make the constraint structural
+  instead of a comment. Demand-gated on the next such table. — OPEN (consumer-gated)
+- [tranche 7, 2026-07-10] **no local typed-register binding inside a proc body** —
+  TouchResponse loads a2/a3 itself (no register-argument contract, so no `*Sst` params)
+  and pays the qualified spelling `Sst.field(aN)` at THIRTEEN sites, while its handlers'
+  `a2: *Sst` params get the bare form. Ask: a body-level binding (`let a2: *Sst` or
+  similar) granting bare field access after a self-loaded pointer. — OPEN
+- [tranche 7, 2026-07-10] **imported `pub comptime fn` bodies can't see their home
+  module's private items** — F3 ships the param-only case (aabb's shape); a shared
+  template referencing a home-module const fails LOUD naming the symbol. Fix direction:
+  canonicalize home-module references at injection (rename-pass extension). Becomes real
+  the first time a shared template wants a module-local constant. — OPEN (consumer-gated)
+- [tranche 7, 2026-07-10] **PROCESS: fresh aeon worktrees silently build a different
+  ROM** — the Aurora editor's per-section `.bin` working data (games/sonic4/data/editor/)
+  is gitignored; without it the generators fall back to air-baseline collision and the
+  ROM diverges 130KB with no error. Ask (aeon-side): build.sh should WARN (or fail under
+  a strict flag) when editor data is absent; worktree setup docs should say "copy
+  games/sonic4/data/editor/ in". — OPEN
+- [tranche 7, 2026-07-10] **`sigil emp --root` prunes modules unreachable from the
+  entry file** — a `pub equ`-only stub module not `use`d by anything never joins the
+  link, so its exports can't satisfy externs (bit during smoke-testing; the harness's
+  explicit module lists are unaffected). Possibly by design (manifest discovery vs
+  link membership); jotted so the next single-program consumer knows. — JOTTED
+- [tranche 7, 2026-07-10] **`Code ++ Code` shipped; label spaces stay per-fragment** —
+  the Code monoid concat existed for Data only (spec §6.2 promised both); the aabb
+  template's conditional head (`let head = if aliased { asm{} } else { asm{ move… } };
+  head ++ asm{ …body… }`) demanded the Code arm. Semantics pinned: `++` composes ITEMS,
+  each `asm { }` keeps its own hygiene scope — a cross-fragment label branch fails LOUD
+  (unresolved symbol), never silent. Ask (consumer-gated): fn-call-scoped hygiene so a
+  template can split a labeled region across fragments; until then keep shared labels in
+  one fragment. — OPEN (consumer-gated)

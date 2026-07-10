@@ -705,6 +705,15 @@ pub enum Expr {
     Str(String, Span),
     /// A path expression: names, enum paths, `none`.
     Path(Path),
+    /// A proc-LOCAL label reference `.name` in expression position (F2, tranche
+    /// 7). ONLY meaningful in a label-value context (a call argument): it
+    /// resolves through the ENCLOSING proc body's hygienic local-label naming to
+    /// a [`Value::Label`](crate::value::Value::Label) carrying the SAME mangled
+    /// link symbol a `.name:` written directly in that proc gets. In any pure
+    /// comptime expression position (`const x = .foo`) it is a loud error — the
+    /// form never leaks a silent Label into ordinary expressions. The `String` is
+    /// the bare label name WITHOUT the leading dot.
+    LocalLabel(String, Span),
     /// A unary operation.
     Unary {
         /// The unary operator.
@@ -1157,6 +1166,12 @@ pub enum Operand {
         disp: Expr,
         /// The inner indirect operand.
         inner: Box<Operand>,
+        /// The displacement arrived as a `{splice}` (`{off}(aN)`, F1/tranche 7),
+        /// not a literal/field expression. Only the DIAGNOSTIC class differs: a
+        /// non-int spliced displacement reports `[asm.splice-kind]` (the operand-
+        /// splice diagnostic) rather than the generic "displacement must be an
+        /// integer" — the evaluation and range-check are otherwise identical.
+        disp_spliced: bool,
         /// Span of the whole operand.
         span: Span,
     },

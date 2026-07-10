@@ -82,6 +82,12 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
         // skips); only the base name crosses modules.
         ast::Item::Script(s) if s.public => Some(s.name.clone()),
         ast::Item::Const(c) if c.public => Some(c.name.clone()),
+        // A `pub comptime fn` is a comptime-only item (no bytes, no link symbol,
+        // F3/tranche 7): it exports its NAME so a consumer's `use a.{template}`
+        // resolves, and the resolver's ambient-injection path (`pub_comptime_name`
+        // in resolve/mod.rs already covers ComptimeFn) makes the DECL visible so
+        // the call evaluates. A non-`pub` comptime fn stays module-private.
+        ast::Item::ComptimeFn(f) if f.public => Some(f.name.clone()),
         ast::Item::Struct(s) if s.public => Some(s.name.clone()),
         ast::Item::Enum(e) if e.public => Some(e.name.clone()),
         ast::Item::Bitfield(b) if b.public => Some(b.name.clone()),
@@ -118,6 +124,10 @@ fn collect_defined(items: &[ast::Item], out: &mut Vec<String>) {
             // path (Plan 7 #9b review fold-in).
             ast::Item::Script(s) => out.push(s.name.clone()),
             ast::Item::Const(c) => out.push(c.name.clone()),
+            // A comptime fn (pub or private) is an own-defined name — so a
+            // same-module call resolves and `report_unresolved` accepts it, and a
+            // consumer's imported call renames to the canonical `a.template` (F3).
+            ast::Item::ComptimeFn(f) => out.push(f.name.clone()),
             ast::Item::Struct(s) => out.push(s.name.clone()),
             ast::Item::Enum(e) => out.push(e.name.clone()),
             ast::Item::Bitfield(b) => out.push(b.name.clone()),

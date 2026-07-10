@@ -119,23 +119,12 @@ fn map_toml(debug: bool) -> String {
 /// A trailing label+`dc.w` opens a section so the equs (defined before any
 /// section) flush via `pending_equ_syms` into it.
 fn as_twin_equs() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               VDP_CTRL = $C00004\n\
-               HW_PORT_1_DATA = $A10003\n\
-               HW_PORT_2_DATA = $A10005\n\
-               BUTTON_UP = 1<<0\n\
-               BUTTON_DOWN = 1<<1\n\
-               BUTTON_LEFT = 1<<2\n\
-               BUTTON_RIGHT = 1<<3\n\
-               CTYPE_AIR = 0\n\
-               VDP_Shadow_len = 19\n\
-               RF_COORDMODE = 3\n\
-               RF_PRIORITY_SHIFT = 5\n\
-               AF_DELETE = $FB\n\
-               Stub:\n\
-               \tdc.w 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (twin equs): {d:?}")).sections
+    // `VDP_CTRL` is this gate's own extra (a real operand it consumes); the
+    // 19-value constants-twin blob (SOURCE OF TRUTH: `constants.asm`) is shared
+    // via `sigil_harness::test_support`.
+    let mut pairs = vec![("VDP_CTRL", "$C00004")];
+    pairs.extend(sigil_harness::test_support::engine_constant_equs());
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
 /// The synthetic AS-side cross-seam unit supplying the two VDP RAM labels —
@@ -290,15 +279,8 @@ fn compile_real_file(
 /// asserts that also ride `module.link_asserts` — same filter as
 /// `controllers_port.rs`'s `guard_assert_count`).
 fn assert_twin_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
-    let guards = link_asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .count();
-    assert_eq!(guards, 11, "engine.constants's eleven drift guards must be captured");
+    let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
+    assert_eq!(guards, 20, "engine.constants's twenty drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

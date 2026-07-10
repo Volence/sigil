@@ -114,8 +114,8 @@ use sigil_harness::{
     assemble_mixed_dac_as_side, assemble_mixed_hblank_as_side, assemble_mixed_mt_as_side,
     assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assemble_mixed_tranche3_as_side,
     assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side,
-    assemble_mixed_tranche6_as_side, assert_rom_matches, CONVSYM_REWRITTEN,
-    CONVSYM_REWRITTEN_DEBUG,
+    assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side, assert_rom_matches,
+    CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -378,7 +378,7 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
 /// `engine/system`+sound neighborhoods (`engine/level/`).
 fn emp_bank_map_tranche3(debug: bool) -> String {
     let vdp_init_base = if debug { "0x1C96" } else { "0x1C14" };
-    let collision_base = if debug { "0x542C" } else { "0x4C08" };
+    let collision_base = if debug { "0x5426" } else { "0x4C02" };
     format!(
         "{}\
          \n\
@@ -435,7 +435,7 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
 /// combo both pins carry).
 fn emp_bank_map_tranche5(debug: bool) -> String {
     let game_loop_base = if debug { "0x238C" } else { "0x22FE" };
-    let sound_api_base = if debug { "0x7252" } else { "0x5D94" };
+    let sound_api_base = if debug { "0x724C" } else { "0x5D8E" };
     format!(
         "{}\
          \n\
@@ -479,6 +479,26 @@ fn emp_bank_map_tranche6(debug: bool) -> String {
          size = 0x52\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche5(debug)
+    )
+}
+
+/// Tranche 7's map: the tranche-6 regions PLUS `collision` — back in the
+/// engine block, the SEVENTH shape-dependent region base (like game_loop /
+/// collision_lookup): plain `$308A` / debug `$3344`, size 0x16E (the
+/// `TouchResponse` body + handler table + stubs + Touch_Hurt/Touch_Solid;
+/// content shape-INVARIANT — only the abs.w `Player_1`/`Dynamic_Slots`
+/// game-RAM addresses resolve per shape).
+fn emp_bank_map_tranche7(debug: bool) -> String {
+    let collision_base = if debug { "0x3344" } else { "0x308A" };
+    format!(
+        "{}\
+         \n\
+         [[region]]\n\
+         name = \"collision\"\n\
+         lma_base = {collision_base}\n\
+         size = 0x16E\n\
+         kind = \"rom\"\n",
+        emp_bank_map_tranche6(debug)
     )
 }
 
@@ -950,6 +970,135 @@ fn placed_emp_sections_tranche6(aeon: &Path, debug_val: i128) -> Tranche6Section
     )
 }
 
+/// `placed_emp_sections_tranche7`'s return: tranche 6's tuple plus
+/// `collision.emp`'s link asserts (the ambient prepend gives it sst.emp's 30
+/// SST_* drift guards + constants.emp's 20 = 50; aabb.emp carries none).
+type Tranche7Sections = (
+    Vec<Section>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+);
+
+/// Tranche 7: the SIXTEEN-module successor — tranche 6's composition plus
+/// `collision.emp` (`engine/objects/` — the campaign's first ENGINE module in
+/// the object neighborhood, and the first to splice a cross-module comptime-fn
+/// template). Defines-less: source AND bank window are shape-invariant CONTENT
+/// (the per-shape bytes come from the abs.w `Player_1`/`Dynamic_Slots` game-RAM
+/// addresses the AS side supplies). Its `use engine.objects.sst` /
+/// `use engine.constants` / `use engine.objects.aabb` edges ride the ambient
+/// prepend inside `placed_module_sections` (see the `collision.emp` arm) — so
+/// the twins' 50 drift guards come back as the module's link_asserts.
+fn placed_emp_sections_tranche7(aeon: &Path, debug_val: i128) -> Tranche7Sections {
+    let map = emp_bank_map_tranche7(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    let (hblank_sections, _hblank_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
+    let (controllers_sections, controllers_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "controllers.emp", &[], &map);
+    let (math_sections, _math_asserts) = placed_module_sections_with_roots(
+        &aeon.join("engine"),
+        &aeon.join("engine/system"),
+        "math.emp",
+        &[],
+        &map,
+    );
+    let (vdp_init_sections, vdp_init_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "vdp_init.emp", &[], &map);
+    let (collision_lookup_sections, collision_lookup_asserts) =
+        placed_module_sections(&aeon.join("engine/level"), "collision_lookup.emp", &[], &map);
+    let (particle_sections, particle_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "particle_anims.emp",
+        &[],
+        &map,
+    );
+    let (sonic_sections, sonic_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "sonic_anims.emp",
+        &[],
+        &map,
+    );
+    let (act_sections, act_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/levels/ojz/act1"),
+        "act_descriptor.emp",
+        &[],
+        &map,
+    );
+    let (game_loop_sections, _game_loop_asserts) = placed_module_sections(
+        &aeon.join("engine/system"),
+        "game_loop.emp",
+        &[
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("SOUND_DEBUG_HOTKEYS".to_string(), 0),
+        ],
+        &map,
+    );
+    let (sound_api_sections, sound_api_asserts) =
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+    let (test_solid_sections, test_solid_asserts) =
+        placed_module_sections(&aeon.join("games/sonic4/objects"), "test_solid.emp", &[], &map);
+    let (test_particle_sections, test_particle_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/objects"),
+        "test_particle.emp",
+        &[],
+        &map,
+    );
+    // The tranche-7 module: `engine/objects/collision.emp`. Its sst+constants+
+    // aabb ambient prepend rides inside `placed_module_sections` (the
+    // `collision.emp` arm in `placed_module_sections_with_roots`).
+    let (touch_response_sections, touch_response_asserts) =
+        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[], &map);
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    sections.extend(hblank_sections);
+    sections.extend(controllers_sections);
+    sections.extend(math_sections);
+    sections.extend(vdp_init_sections);
+    sections.extend(collision_lookup_sections);
+    sections.extend(particle_sections);
+    sections.extend(sonic_sections);
+    sections.extend(act_sections);
+    sections.extend(game_loop_sections);
+    sections.extend(sound_api_sections);
+    sections.extend(test_solid_sections);
+    sections.extend(test_particle_sections);
+    sections.extend(touch_response_sections);
+    (
+        sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_lookup_asserts,
+        particle_asserts,
+        sonic_asserts,
+        act_asserts,
+        sound_api_asserts,
+        test_solid_asserts,
+        test_particle_asserts,
+        touch_response_asserts,
+    )
+}
+
 /// Compile the REAL `dac_samples.emp` and PLACE its sections into the two-bank
 /// map (dac_port.rs pipeline). Returns the placed sections ready to concat with
 /// the AS side. Placement runs against `emp_bank_map`, NOT the whole-ROM
@@ -1080,6 +1229,21 @@ fn sst_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
     items
 }
 
+/// The `engine.objects.aabb` comptime-fn template (`engine/objects/aabb.emp`,
+/// tranche 7): a single `pub comptime fn aabb_axis_test` — zero bytes anywhere
+/// in the ROM (bytes appear only where `collision.emp` splices it). Prepended
+/// wherever a module `use`s it (collision.emp). Carries no drift guards.
+fn aabb_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(objects_dir.join("aabb.emp"))
+        .unwrap_or_else(|e| panic!("cannot read aabb.emp: {e}"));
+    let (file, adiags) = parse_str(&src);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "aabb.emp parse errors: {adiags:?}"
+    );
+    file.items
+}
+
 /// The engine.types domain-type vocabulary (`engine/system/types.emp`,
 /// construct-walk #3): zero-byte pure types (Coord/Velocity/Angle/...),
 /// prepended wherever a module `use`s them (sst.emp, math.emp).
@@ -1139,6 +1303,18 @@ fn placed_module_sections_with_roots(
             ambient_items = constants_ambient_items(
                 &dir.parent().expect("engine/level has a parent").join("system"),
             );
+        }
+        // `collision.emp` lives in `engine/objects/` (like the sst twin). It
+        // `use`s the typed `Sst` struct (sst.emp, sibling — which itself pulls
+        // engine.types), the collision-block constants (constants.emp in the
+        // SIBLING `engine/system/`), AND the `aabb_axis_test` comptime-fn
+        // template (aabb.emp, sibling — F3 cross-module import). Prepend in
+        // `use` order: sst (+types), constants, aabb.
+        "collision.emp" => {
+            let system = dir.parent().expect("engine/objects has a parent").join("system");
+            ambient_items = sst_ambient_items(&dir);
+            ambient_items.extend(constants_ambient_items(&system));
+            ambient_items.extend(aabb_ambient_items(&dir));
         }
         "test_solid.emp" | "test_particle.emp" => {
             let root = dir
@@ -1528,8 +1704,8 @@ fn build_mixed_tranche2_rom(
     );
     assert_eq!(
         guard_assert_count(&controllers_asserts),
-        11,
-        "engine.constants's eleven drift-guard ensures must be captured"
+        20,
+        "engine.constants's twenty drift-guard ensures must be captured"
     );
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
@@ -1724,8 +1900,8 @@ fn build_mixed_tranche3_rom(
     );
     assert_eq!(
         guard_assert_count(&controllers_asserts),
-        11,
-        "engine.constants's eleven drift-guard ensures must be captured"
+        20,
+        "engine.constants's twenty drift-guard ensures must be captured"
     );
 
     // The two tranche-3 modules each carry the twin's eight drift guards
@@ -1737,8 +1913,8 @@ fn build_mixed_tranche3_rom(
     {
         assert_eq!(
             guard_assert_count(asserts),
-            11,
-            "{name} must carry engine.constants's eleven drift guards"
+            20,
+            "{name} must carry engine.constants's twenty drift guards"
         );
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
         assert!(
@@ -1809,10 +1985,10 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // The collision_lookup block, pinned explicitly (the port's own
     // 0x24-byte window, post step-5 optimize). Offset 0x1C:
     // `bra.w Tile_Cache_GetCollision` = 6000 + disp16
-    // ($4320 - $4C26 = -$906 = $F6FA) — the cross-seam pc-relative
-    // TAIL CALL.
+    // ($431A - $4C20 = -$906 = $F6FA) — the cross-seam pc-relative
+    // TAIL CALL (site + target both slid -6, disp held).
     assert_eq!(
-        &rom[0x4C08..0x4C2C],
+        &rom[0x4C02..0x4C26],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x34, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x36, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x38, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x3A, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0xFA,
@@ -1869,7 +2045,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
     );
 
     assert_eq!(
-        &rom[0x542C..0x5450],
+        &rom[0x5426..0x544A],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x56, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x58, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x5A, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x5C, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0x42,
@@ -1917,14 +2093,14 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
 
     assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
     assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
-    assert_eq!(guard_assert_count(&controllers_asserts), 11, "controllers guards captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 20, "controllers guards captured");
     for (name, asserts, want) in [
-        ("vdp_init.emp", &vdp_init_asserts, 11usize),
-        ("collision_lookup.emp", &collision_asserts, 11),
+        ("vdp_init.emp", &vdp_init_asserts, 20usize),
+        ("collision_lookup.emp", &collision_asserts, 20),
         // particle_anims: the constants twin's 11 guards ride the ambient
         // prepend (its local AF_DELETE mirror de-mirrored, tranche-6 step 4)
         // + the align 2 congruence assert.
-        ("particle_anims.emp", &particle_asserts, 12),
+        ("particle_anims.emp", &particle_asserts, 21),
         // sonic_anims: 15 drift guards (3 command bytes + 12 ordinal/count)
         // + the ONE trailing align congruence assert (the step-5 rewrite
         // packed the bodies; only the next-table evenness guard remains).
@@ -2068,11 +2244,11 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
 
     assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
     assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
-    assert_eq!(guard_assert_count(&controllers_asserts), 11, "controllers guards captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 20, "controllers guards captured");
     for (name, asserts, want) in [
-        ("vdp_init.emp", &vdp_init_asserts, 11usize),
-        ("collision_lookup.emp", &collision_asserts, 11),
-        ("particle_anims.emp", &particle_asserts, 12),
+        ("vdp_init.emp", &vdp_init_asserts, 20usize),
+        ("collision_lookup.emp", &collision_asserts, 20),
+        ("particle_anims.emp", &particle_asserts, 21),
         ("sonic_anims.emp", &sonic_asserts, 16),
         ("act_descriptor.emp", &act_asserts, 5),
         // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
@@ -2110,14 +2286,14 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche5_rom(&aeon, false);
 
-    // The game_loop block: bsr.w VSync_Wait ($2262), bsr.w Sound_DrainSfxRing
-    // ($5EDE), movea.l (Game_State).w,a0, jsr (a0), bra.s GameLoop, then
-    // GameState_Idle's rts — the (1,0) combo, gameDebugTick contributing
-    // zero bytes.
+    // The game_loop block: bsr.w VSync_Wait ($2262, unmoved), bsr.w
+    // Sound_DrainSfxRing ($5ED4, slid -6 → disp $3BD6 → $3BD0), movea.l
+    // (Game_State).w,a0, jsr (a0), bra.s GameLoop, then GameState_Idle's rts
+    // — the (1,0) combo, gameDebugTick contributing zero bytes.
     assert_eq!(
         &rom[0x22FE..0x2310],
         &[
-            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0xD6, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0xD0, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (plain)"
@@ -2126,7 +2302,7 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // Sound_PostByte's head: move.w sr,-(sp) / move.w #$2700,sr / the stopZ80
     // expansion's first word — the sr + imm-before-abs shapes this port added.
     assert_eq!(
-        &rom[0x5D94..0x5D9C],
+        &rom[0x5D8E..0x5D96],
         &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
         "sound_api block head must match the reference bytes exactly (plain)"
     );
@@ -2155,14 +2331,14 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     assert_eq!(
         &rom[0x238C..0x239E],
         &[
-            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x50, 0x06, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x50, 0x00, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"
     );
 
     assert_eq!(
-        &rom[0x7252..0x725A],
+        &rom[0x724C..0x7254],
         &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
         "sound_api block head must match the reference bytes exactly (debug)"
     );
@@ -2215,11 +2391,11 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
 
     assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
     assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
-    assert_eq!(guard_assert_count(&controllers_asserts), 11, "controllers guards captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 20, "controllers guards captured");
     for (name, asserts, want) in [
-        ("vdp_init.emp", &vdp_init_asserts, 11usize),
-        ("collision_lookup.emp", &collision_asserts, 11),
-        ("particle_anims.emp", &particle_asserts, 12),
+        ("vdp_init.emp", &vdp_init_asserts, 20usize),
+        ("collision_lookup.emp", &collision_asserts, 20),
+        ("particle_anims.emp", &particle_asserts, 21),
         ("sonic_anims.emp", &sonic_asserts, 16),
         ("act_descriptor.emp", &act_asserts, 5),
         ("sound_api.emp", &sound_api_asserts, 7),
@@ -2229,7 +2405,7 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         // struct-generated SST_*, the constants twins) through the shared
         // link — unlike test_objects_port.rs's synthetic truths.
         ("test_solid.emp", &test_solid_asserts, 30),
-        ("test_particle.emp", &test_particle_asserts, 41),
+        ("test_particle.emp", &test_particle_asserts, 50),
     ] {
         assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
@@ -2329,6 +2505,142 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
         DEBUG_ASSEMBLED_LEN,
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche6 debug",
+    );
+}
+
+/// Tranche 7's shared body: assemble the AS side with ALL SIXTEEN gates on
+/// (tranche 6's fifteen PLUS `SIGIL_EMP_COLLISION` — the `engine.inc` gate
+/// wrapping `collision.asm`, else-arm `org $31FA`/`$34B4`), compose with ALL
+/// SIXTEEN `.emp` modules' placed sections, resolve+link ONCE, and emit the
+/// full ROM. `collision.emp`'s `TouchResponse` fills the engine-block window
+/// (`$308A..$31FA` plain / `$3344..$34B4` debug); its cross-seam reads are the
+/// two abs.w game-RAM labels (`Player_1`/`Dynamic_Slots`), unconditional AS
+/// labels resolved through the shared table — no synthetic injection needed
+/// (like collision_lookup's `Cache_*`, but here supplied by the real AS tree).
+/// `TouchResponse` is called from the engine object manager (unconditional AS
+/// code) — the outbound direction against the REAL caller rather than
+/// `collision_port.rs`'s synthetic `bsr.w` consumer.
+fn build_mixed_tranche7_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche7_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    let (
+        emp_sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_lookup_asserts,
+        particle_asserts,
+        sonic_asserts,
+        act_asserts,
+        sound_api_asserts,
+        test_solid_asserts,
+        test_particle_asserts,
+        touch_response_asserts,
+    ) = placed_emp_sections_tranche7(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed tranche7): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed tranche7): {d:?}"));
+
+    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 20, "controllers guards captured");
+    for (name, asserts, want) in [
+        ("vdp_init.emp", &vdp_init_asserts, 20usize),
+        ("collision_lookup.emp", &collision_lookup_asserts, 20),
+        ("particle_anims.emp", &particle_asserts, 21),
+        ("sonic_anims.emp", &sonic_asserts, 16),
+        ("act_descriptor.emp", &act_asserts, 5),
+        ("sound_api.emp", &sound_api_asserts, 7),
+        ("test_solid.emp", &test_solid_asserts, 30),
+        ("test_particle.emp", &test_particle_asserts, 50),
+        // collision.emp: sst.emp's 30 SST_* struct-equ pins ride via the
+        // ambient prepend, plus engine.constants's 20 (the collision block's
+        // nine NUM_*/COLLISION_TOUCH/ST_* guards on top of the eleven
+        // predating this tranche) = 50; aabb.emp carries none. All read the
+        // REAL AS-side equs (engine/structs.asm, engine/constants.asm) through
+        // the shared link.
+        ("collision.emp", &touch_response_asserts, 50),
+    ] {
+        assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
+        let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "{name}'s asserts must PASS against the real AS tree: {diags:?}"
+        );
+    }
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed tranche7): {e}"))
+}
+
+/// Tranche 7 acceptance — plain SIXTEEN-module mixed build == `aeon/s4.bin`,
+/// modulo the convsym bytes; the collision region head pinned explicitly
+/// (`lea (Player_1).w, a2` — abs.w $89EE plain). The bytes are shape-invariant
+/// but for the two game-RAM abs.w addresses.
+#[test]
+fn mixed_tranche7_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche7_rom(&aeon, false);
+
+    // TouchResponse head: `lea (Player_1).w, a2` (Player_1 = $89EE plain),
+    // then `move.w #NUM_PLAYERS-1, d7` = #$0001.
+    assert_eq!(
+        &rom[0x308A..0x3092],
+        &[0x45, 0xF8, 0x89, 0xEE, 0x3E, 0x3C, 0x00, 0x01][..],
+        "collision region head must match the reference bytes exactly (plain)"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche7");
+}
+
+/// Tranche 7 acceptance — `__DEBUG__` SIXTEEN-module mixed build ==
+/// `aeon/s4.debug.bin`, modulo the convsym bytes. Same region CONTENT; the
+/// game-RAM abs.w addresses take their debug-shape values (Player_1 $8A10).
+#[test]
+fn mixed_tranche7_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche7_rom(&aeon, true);
+
+    assert_eq!(
+        &rom[0x3344..0x334C],
+        &[0x45, 0xF8, 0x8A, 0x10, 0x3E, 0x3C, 0x00, 0x01][..],
+        "collision region head must match the reference bytes exactly (debug)"
+    );
+
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed tranche7 debug",
     );
 }
 
@@ -2511,14 +2823,6 @@ fn mixed_sfx_debug_rom_matches_assembled_reference() {
 }
 
 /// Count the deferred GUARD asserts, excluding the D2.29 [layout.odd-item]
-/// parity asserts that now also ride module.link_asserts.
-fn guard_assert_count(asserts: &[sigil_ir::LinkAssert]) -> usize {
-    asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .count()
-}
+/// parity asserts that now also ride module.link_asserts. Shared idiom in
+/// `sigil_harness::test_support`.
+use sigil_harness::test_support::guard_assert_count;

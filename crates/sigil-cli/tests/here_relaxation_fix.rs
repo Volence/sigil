@@ -331,15 +331,7 @@ fn deferred_fatal_does_not_suppress_later_items() {
     );
     // Exactly one deferred GUARD assert (the D2.29 [layout.odd-item] parity
     // asserts also ride module.link_asserts now — filter them out).
-    let guard_asserts = module
-        .link_asserts
-        .iter()
-        .filter(|a| {
-            !a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
-            })
-        })
-        .count();
+    let guard_asserts = sigil_harness::test_support::guard_assert_count(&module.link_asserts);
     assert_eq!(guard_asserts, 1);
     // Link the image (pre-check): Tail's bytes are physically present…
     let empty = SymbolTable::new();
