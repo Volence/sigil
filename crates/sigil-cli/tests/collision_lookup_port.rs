@@ -10,23 +10,23 @@
 //! ## No shape define
 //!
 //! Like every code port so far, the block's CONTENT is byte-identical plain
-//! and debug (0x32 bytes in both) — only its BASE address shifts (plain
-//! `$4C06`, debug `$542A`), so the shape lives entirely in the MAP.
+//! and debug (0x24 bytes in both since the step-5 tail-call optimize; 0x32
+//! as first ported) — only its BASE address shifts (plain `$4C06`, debug
+//! `$542A`), so the shape lives entirely in the MAP.
 //!
 //! ## What this port exercises that the prior five did not
 //!
-//! - **Cross-seam `bsr.w`** — `bsr.w Tile_Cache_GetCollision` targets an
+//! - **Cross-seam pc-relative TRANSFER** — `jbra Tile_Cache_GetCollision`
+//!   (the step-5 tail call; `jbsr` + `rts` as first ported) targets an
 //!   AS-side ROM label (`engine/level/tile_cache.asm`), so a PC-RELATIVE
 //!   BRANCH fixup (not just a pc-rel EA) resolves against a link-supplied
 //!   symbol at its true per-shape VMA (plain `$431E`, debug `$4A8A`). The
 //!   jsr/jmp cross-seam DEFERRAL (tranche 2) covered absolute transfers;
-//!   this is the first cross-seam pc-relative CALL in a ported body.
+//!   this was the first cross-seam pc-relative CALL in a ported body.
 //! - **SHAPE-DEPENDENT RAM** — the four `Cache_*` words live in GAME RAM,
 //!   which moves between shapes (plain `$FFFFA834+`, debug `$FFFFA856+`) —
 //!   the first port whose RAM imports shift with `__DEBUG__` (the engine-RAM
 //!   ports were shape-invariant). Both spellings width to abs.w.
-//! - **Stack round-trip** — `move.w d0, -(sp)` … `move.w (sp)+, d0` …
-//!   `addq.l #2, sp` (the discard path) in a real ported body.
 //!
 //! ## The cross-seam symbols
 //!
@@ -37,7 +37,7 @@
 //!   consecutive words, phased at the per-shape base — read from each
 //!   shape's symbol table).
 //! - One AS-side ROM label: `Tile_Cache_GetCollision`, phased at its true
-//!   per-shape VMA — the cross-seam `bsr.w` target described above.
+//!   per-shape VMA — the cross-seam `jbra` tail-call target described above.
 //!
 //! `CTYPE_AIR` comes from the `engine.constants` twin (step 2's migration —
 //! `use engine.constants.{CTYPE_AIR}`; the twin lives in the SIBLING
@@ -53,8 +53,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$4C06`): `s4.bin[0x4C06..0x4C38]` (0x32 bytes).
-//! Debug (map base `$542A`): `s4.debug.bin[0x542A..0x545C]` (0x32 bytes).
+//! Plain (map base `$4C06`): `s4.bin[0x4C06..0x4C2A]` (0x24 bytes).
+//! Debug (map base `$542A`): `s4.debug.bin[0x542A..0x544E]` (0x24 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -88,7 +88,7 @@ fn strict_gate() -> bool {
 
 /// The map: a `text` region for the zero-byte default-section carrier, and
 /// the real `collision_lookup` region pinned at the per-shape reference
-/// base, sized to the 0x32-byte block (plain `$4C06`, debug `$542A`).
+/// base, sized to the 0x24-byte block (plain `$4C06`, debug `$542A`).
 fn map_toml(debug: bool) -> String {
     let base = if debug { "0x542A" } else { "0x4C06" };
     format!(
@@ -103,7 +103,7 @@ fn map_toml(debug: bool) -> String {
          [[region]]\n\
          name = \"collision_lookup\"\n\
          lma_base = {base}\n\
-         size = 0x32\n\
+         size = 0x24\n\
          kind = \"rom\"\n"
     )
 }
@@ -322,7 +322,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 }
 
 /// (plain) The `collision_lookup` section's linked bytes equal
-/// `s4.bin[0x4C06..0x4C38]`, AND the outbound `bsr.w` consumer's fixup
+/// `s4.bin[0x4C06..0x4C2A]`, AND the outbound `bsr.w` consumer's fixup
 /// resolves to the correct per-shape address ($4C06) — the bare-name proof.
 #[test]
 fn collision_lookup_region_matches_reference() {
@@ -339,13 +339,13 @@ fn collision_lookup_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(false);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x4C06..0x4C38];
+    let expected = &refrom[0x4C06..0x4C2A];
     let section =
         linked.section("collision_lookup").expect("linked image must carry collision_lookup");
     assert_region_matches(
         &section.bytes,
         expected,
-        "collision_lookup (plain) vs s4.bin[0x4C06..0x4C38]",
+        "collision_lookup (plain) vs s4.bin[0x4C06..0x4C2A]",
     );
 
     let consumer = linked
@@ -362,7 +362,7 @@ fn collision_lookup_region_matches_reference() {
 }
 
 /// (debug) The `collision_lookup` section's linked bytes equal
-/// `s4.debug.bin[0x542A..0x545C]`, AND the outbound consumer's fixup
+/// `s4.debug.bin[0x542A..0x544E]`, AND the outbound consumer's fixup
 /// resolves to the correct per-shape address ($542A).
 #[test]
 fn collision_lookup_debug_region_matches_reference() {
@@ -379,13 +379,13 @@ fn collision_lookup_debug_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(true);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x542A..0x545C];
+    let expected = &refrom[0x542A..0x544E];
     let section =
         linked.section("collision_lookup").expect("linked image must carry collision_lookup");
     assert_region_matches(
         &section.bytes,
         expected,
-        "collision_lookup (debug) vs s4.debug.bin[0x542A..0x545C]",
+        "collision_lookup (debug) vs s4.debug.bin[0x542A..0x544E]",
     );
 
     let consumer = linked

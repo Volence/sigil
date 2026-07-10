@@ -130,3 +130,30 @@ were rebuilt per the T5 capture procedure above and all gates re-run green
   `$60000` — no dac/MT pin shift; `dac_port.rs` goldens untouched.
 - Collision `.bin` files verified byte-identical across the rebuild (still the
   pinned S&K-import tables; OJZ collision switch remains deferred).
+
+## Re-baseline: Collision_GetType step-5 optimize (2026-07-10) — the current pin
+
+First tranche-3 STEP-5 (post-merge optimize) commit: `Collision_GetType`
+drops the world-column stack push (Y shifts in place in d1; the
+`move.w d1,d2` save, push/pop round-trip, and `.cgt_air_pop` discard path
+all deleted) and tail-calls `Tile_Cache_GetCollision` (`jbsr`+`rts` →
+`jbra`). The routine shrinks `0x32` → `0x24` bytes; both shapes rebuilt
+per the T5 capture procedure and the whole gate surface re-pinned
+(`engine.inc` resume orgs plain `$4C38`→`$4C2A` / debug `$545C`→`$544E`;
+the tranche-3 map size + both byte windows in `mixed_dac_rom.rs`,
+`collision_lookup_port.rs`, `tranche3_negative_probes.rs`). The shrink is
+absorbed by the `org $10000` sound boundary, so assembled `EndOfRom` is
+UNCHANGED in both shapes — the file-length deltas below are the smaller
+`convsym` symbol tables (the deleted `.cgt_air_pop` local).
+
+- Aeon repo commit: **`4352a40`** (the step-5 optimize itself), working tree
+  clean at capture; gate-off byte-neutrality sha256 ×3 verified.
+- Non-debug `s4.bin`: **451176 bytes** (assembled `EndOfRom` = `0x658B4`,
+  unchanged), sha256
+  **`36b2e3038e76439ca77fbbed3602b25899eaa7c352db07ce737f6e5a91606439`**.
+- Debug `s4.debug.bin`: **458960 bytes** (assembled `EndOfRom` = `0x673A2`,
+  unchanged), sha256
+  **`993339f82cf81d9be0b6d6356e0b5de885d9f9903f634e741a99d19fea373fe6`**.
+- Collision region bases UNCHANGED (plain `$4C06`, debug `$542A`);
+  `Tile_Cache_GetCollision` UNCHANGED (plain `$431E`, debug `$4A8A`);
+  sound-block layout UNCHANGED.

@@ -506,7 +506,8 @@ fn preserves_composes_with_clobbers_and_falls_into() {
 
 #[test]
 fn stack_pointer_writes_are_not_clobbers() {
-    // Tranche 3 (collision_lookup's `addq.l #2, sp` discard path): direct
+    // Tranche 3 (motivated by collision_lookup's original `addq.l #2, sp`
+    // discard path, since optimized away in step 5): direct
     // stack-pointer arithmetic is stack DISCIPLINE, not a register clobber —
     // every proc that pushes/pops adjusts sp, and balanced-stack verification
     // is S2-D7(b)'s dataflow job, not the clobber heuristic's. A declared

@@ -18,8 +18,9 @@
 //! (c) placement genuineness — a wrong-base map moves the section; the
 //!     placed LMA genuinely tracks the map, not an echo/hardcode.
 //! (d) NEW this tranche: PC-RELATIVE TARGET-POSITION genuineness — both
-//!     files carry a cross-seam pc-relative reference (`bsr.w
-//!     Tile_Cache_GetCollision`; `lea.l BootData_VDPRegs(pc), a0`) whose
+//!     files carry a cross-seam pc-relative reference (`jbra
+//!     Tile_Cache_GetCollision` — the step-5 tail call; `lea.l
+//!     BootData_VDPRegs(pc), a0`) whose
 //!     bytes encode the DISTANCE to the target. Re-linking with the target
 //!     label phased at a wrong VMA (+4) must change the linked bytes —
 //!     proving the displacement is genuinely computed from the supplied
@@ -220,7 +221,7 @@ fn link_all(sections: Vec<Section>) -> sigil_link::LinkedImage {
 /// Full plain-shape collision_lookup link with the given twin source and
 /// tile-cache VMA.
 fn link_collision(src: &str, twin: &str, tile_cache_vma: &str) -> sigil_link::LinkedImage {
-    let mut sections = place_module(src, twin, "collision_lookup", "0x4C06", "0x32");
+    let mut sections = place_module(src, twin, "collision_lookup", "0x4C06", "0x24");
     sections.extend(cache_ram_labels());
     sections.extend(tile_cache_label(tile_cache_vma));
     link_all(sections)
@@ -262,7 +263,7 @@ fn collision_lookup_doctored_ctype_air_twin_produces_different_bytes() {
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
-        &refrom[0x4C06..0x4C38],
+        &refrom[0x4C06..0x4C2A],
         "a drifted CTYPE_AIR twin must NOT byte-match the reference"
     );
 }
@@ -304,7 +305,7 @@ fn vdp_init_doctored_shadow_len_twin_produces_different_bytes() {
 fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "collision_lookup", "0x4C06", "0x32");
+    let sections = place_module(&src, &twin, "collision_lookup", "0x4C06", "0x24");
     let result = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .and_then(|resolved| sigil_link::link(&resolved, &SymbolTable::new()));
     let err = result.expect_err(
@@ -361,7 +362,7 @@ fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
 fn collision_lookup_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "collision_lookup", "0x4C08", "0x32");
+    let sections = place_module(&src, &twin, "collision_lookup", "0x4C08", "0x24");
     let sec = sections
         .iter()
         .find(|s| s.name == "collision_lookup")
@@ -391,13 +392,13 @@ fn vdp_init_wrong_base_map_places_the_section_at_a_different_address() {
 
 /// Re-link the real `collision_lookup.emp` with `Tile_Cache_GetCollision`
 /// phased at a WRONG VMA (`$4322`, +4 from the genuine `$431E`): the
-/// `bsr.w`'s displacement bytes must CHANGE — the cross-seam pc-relative
+/// tail-call `bra.w`'s displacement bytes must CHANGE — the cross-seam pc-relative
 /// distance is genuinely computed from the supplied symbol position.
 ///
 /// FALSIFIED (restore-real-value): with the genuine `$431E` the linked bytes
 /// equal the reference window (the port gate).
 #[test]
-fn collision_lookup_wrong_tile_cache_vma_changes_the_bsr_bytes() {
+fn collision_lookup_wrong_tile_cache_vma_changes_the_bra_bytes() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
     let Some(refrom) = read_reference("s4.bin") else { return };
@@ -405,8 +406,8 @@ fn collision_lookup_wrong_tile_cache_vma_changes_the_bsr_bytes() {
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
-        &refrom[0x4C06..0x4C38],
-        "a moved Tile_Cache_GetCollision must change the bsr.w displacement bytes"
+        &refrom[0x4C06..0x4C2A],
+        "a moved Tile_Cache_GetCollision must change the bra.w displacement bytes"
     );
 }
 
