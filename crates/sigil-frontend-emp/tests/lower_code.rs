@@ -618,3 +618,27 @@ fn an_indexed_rejects_out_of_range_displacement() {
         "expected a displacement-range diagnostic, got: {diags:?}"
     );
 }
+
+#[test]
+fn an_indexed_base_size_suffix_is_rejected() {
+    // Review finding (tranche 3): AS rejects a base size suffix on the
+    // 68000 (`(a0.l,d2.w)` is 68020 syntax with different semantics) —
+    // silently ignoring it is a byte-exactness hazard.
+    let (_code, diags) = eval_asm_with(&asm_1("move.b (a0.l,d2.w), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("base register takes no size suffix")),
+        "a base size suffix must be rejected, got: {diags:?}"
+    );
+}
+
+#[test]
+fn bare_pc_indexed_without_target_gets_a_steering_error() {
+    // Review finding (tranche 3): `(pc,d2.w)` (no displacement) fell into
+    // the An-indexed path and diagnosed `unknown name \`pc\`` — misleading.
+    // Steer to the pc-relative spelling instead.
+    let (_code, diags) = eval_asm_with(&asm_1("move.w (pc,d2.w), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("Sym(pc")),
+        "bare (pc,Xn) must steer to the Sym(pc,Xn) spelling, got: {diags:?}"
+    );
+}

@@ -408,3 +408,13 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   byte-identity would be the honest type if/when `embed` learns typed element views. Pairs
   with the comptime-Data-indexing candidate (content asserts want typed reads too). — OPEN
   (v1.1 candidate).
+- [tranche 3 branch review, 2026-07-09] **`ifndef`-guarded equs/structs export NO equ-syms in
+  the converged pass** (pre-existing for Task B1 `equ` export; tranche 3 widened the mechanism
+  to struct symbols): pass 0 defines the guard symbol and exports, the converged pass sees the
+  guard defined and SKIPS the block, and only the converged module is returned — bytes correct,
+  `equ_syms` empty. Any `extern("X")` on such a symbol fails the link with a misleading
+  "unresolved symbol" even though the front-end folds it fine. Harmless today (aeon's
+  constants/structs are unguarded), but a conventional include guard around a constants file
+  would silently break every drift guard reading it. Fix direction: export from the CONVERGED
+  pass's env rather than re-executing the directive (or re-seed exports for guard-skipped
+  blocks). — OPEN (latent; fix before any port adds include guards).

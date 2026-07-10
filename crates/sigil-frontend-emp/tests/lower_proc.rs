@@ -523,3 +523,104 @@ fn stack_pointer_writes_are_not_clobbers() {
         "sp adjustment must not be flagged as an undeclared clobber: {diags:?}"
     );
 }
+
+#[test]
+fn preserves_movem_w_pair_is_not_verification() {
+    // Review finding (tranche 3, Important): `movem.w (sp)+, <list>`
+    // SIGN-EXTENDS each word into the full 32-bit register — a `.w` pair
+    // does NOT preserve registers, so it must not verify the contract.
+    let src = "module m\n\
+               proc h() preserves(d0-d1) {\n\
+               \x20   movem.w d0-d1, -(sp)\n\
+               \x20   movem.w (sp)+, d0-d1\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().any(|d| {
+            d.level == Level::Error
+                && d.message.contains("[proc.preserves")
+                && d.message.contains("movem.l")
+        }),
+        "a movem.w pair must not verify preserves (sign-extension corrupts \
+         upper halves) and the error must steer to movem.l: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_early_exit_wrong_list_pop_is_caught() {
+    // Review finding (tranche 3): an early-exit restore with the WRONG list
+    // must not slip past a first-push/last-pop-only comparison. Rule: every
+    // stack movem whose list INTERSECTS the declared set must EQUAL it.
+    let src = "module m\n\
+               proc h() preserves(d0-d1) {\n\
+               \x20   movem.l d0-d1, -(sp)\n\
+               \x20   tst.w   d0\n\
+               \x20   beq.s   .out\n\
+               \x20   movem.l (sp)+, d0-d2\n\
+               \x20   rts\n\
+               .out:\n\
+               \x20   movem.l (sp)+, d0-d1\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-mismatch]"),
+        "the wrong-list early-exit pop must be caught: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_disjoint_nested_save_is_allowed() {
+    // The complement of the intersects-must-equal rule: a nested movem pair
+    // saving DISJOINT registers (e.g. around an inner call) is not part of
+    // the declared contract and must not false-positive.
+    let src = "module m\n\
+               proc h() preserves(d0-d1) {\n\
+               \x20   movem.l d0-d1, -(sp)\n\
+               \x20   movem.l d3-d4, -(sp)\n\
+               \x20   nop\n\
+               \x20   movem.l (sp)+, d3-d4\n\
+               \x20   movem.l (sp)+, d0-d1\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[proc.preserves")),
+        "a disjoint nested save must not trip the contract: {diags:?}"
+    );
+}
+
+#[test]
+fn stack_pointer_replacement_is_still_a_clobber() {
+    // Review finding (tranche 3): the sp exemption must cover stack
+    // ARITHMETIC (addq/adda/lea-over-sp cleanup), not stack REPLACEMENT —
+    // `movea.l d0, sp` is a genuine, dangerous a7 clobber.
+    let src = "module m\n\
+               proc h() clobbers(d0) {\n\
+               \x20   movea.l d0, sp\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.clobber-undeclared]"),
+        "replacing sp must still be flagged as an undeclared clobber: {diags:?}"
+    );
+}
+
+#[test]
+fn lea_stack_cleanup_over_sp_is_not_a_clobber() {
+    // The classic `lea N(sp), sp` frame-cleanup idiom is stack arithmetic
+    // (the same class as addq #N, sp) — exempt.
+    let src = "module m\n\
+               proc h() clobbers(d0) {\n\
+               \x20   move.w  d0, -(sp)\n\
+               \x20   lea.l   2(sp), sp\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "lea N(sp), sp cleanup must not be flagged: {diags:?}"
+    );
+}

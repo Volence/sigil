@@ -673,6 +673,29 @@ impl Evaluator<'_> {
         env: &mut Env,
     ) -> Option<CodeOperand> {
         debug_assert_eq!(parts.len(), 2, "caller checked the two-part shape");
+        // `(pc,Xn)` without a displacement is a plausible mis-spelling of the
+        // pc-indexed form — steer to it instead of "unknown name `pc`".
+        if let ast::Expr::Path(p) = &parts[0].0 {
+            if p.segments.len() == 1 && p.segments[0] == "pc" {
+                self.error(
+                    span,
+                    "`pc` cannot be an indexed base without a target — pc-relative \
+                     indexed addressing is spelled `Sym(pc,Xn.size)`"
+                        .to_string(),
+                );
+                return None;
+            }
+        }
+        // AS rejects a base size suffix on the 68000 (`(a0.l,d2.w)` is 68020
+        // syntax with different semantics) — silently ignoring it would be a
+        // byte-exactness hazard.
+        if parts[0].1.is_some() {
+            self.error(
+                span,
+                "the base register takes no size suffix in `(An,Xn)` addressing".to_string(),
+            );
+            return None;
+        }
         let (xn_expr, xn_size) = &parts[1];
         let reg = self.ind_single_reg(std::slice::from_ref(&parts[0]), span, env)?;
         let xn = match xn_expr {

@@ -277,12 +277,13 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
         // clobber (a memory-dest form writes memory, not a register). Reuse
         // `Reg`'s `Display` for the canonical `d0`..`a7` spelling.
         let Some(CodeOperand::Reg(r)) = ops.last() else { continue };
-        // Direct stack-pointer arithmetic (`addq.l #2, sp` cleanup) is stack
-        // DISCIPLINE, not a register clobber — every push/pop-balancing proc
-        // adjusts sp, and balanced-stack verification is S2-D7(b)'s dataflow
-        // job. Exempt a7 rather than force it into clobber sets (tranche 3,
-        // surfaced by collision_lookup's discard path).
-        if *r == crate::value::Reg::A7 {
+        // Stack-pointer ARITHMETIC (`addq.l #2, sp` / `lea N(sp), sp`
+        // cleanup) is stack DISCIPLINE, not a register clobber — every
+        // push/pop-balancing proc adjusts sp, and balanced-stack
+        // verification is S2-D7(b)'s dataflow job. Stack REPLACEMENT
+        // (`movea.l x, sp` — switching stacks) stays a genuine a7 clobber
+        // and is NOT exempt (tranche-3 review scoping).
+        if *r == crate::value::Reg::A7 && is_sp_arithmetic(mnemonic, ops) {
             continue;
         }
         let name = r.to_string();
@@ -488,67 +489,100 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
         }
     }
 
-    // The literal pair: first save to the stack, last restore from it.
-    let mut first_push: Option<(usize, u16)> = None;
-    let mut last_pop: Option<(usize, u16)> = None;
+    // Collect every stack movem (push to / pop from sp), with its size. The
+    // rule: every stack movem whose list INTERSECTS the declared set must
+    // EQUAL it (so a wrong-list early-exit restore is caught, while a
+    // DISJOINT nested save around an inner call stays none of our business),
+    // must be `movem.l` (a `.w` restore SIGN-EXTENDS each word — it does not
+    // preserve anything), and at least one matching save must precede the
+    // last matching restore.
+    let mut matching_push: Option<usize> = None;
+    let mut matching_pop: Option<usize> = None;
     for (i, item) in buf.items.iter().enumerate() {
-        let CodeItem::Instr { mnemonic, ops, .. } = item else { continue };
+        let CodeItem::Instr { mnemonic, size, ops, span } = item else { continue };
         if mnemonic != "movem" {
             continue;
         }
-        match ops.as_slice() {
-            [CodeOperand::RegList(m), CodeOperand::PreDec(crate::value::Reg::A7)] => {
-                if first_push.is_none() {
-                    first_push = Some((i, *m));
-                }
+        let (mask, is_push) = match ops.as_slice() {
+            [CodeOperand::RegList(m), CodeOperand::PreDec(crate::value::Reg::A7)] => (*m, true),
+            [CodeOperand::PostInc(crate::value::Reg::A7), CodeOperand::RegList(m)] => (*m, false),
+            _ => continue,
+        };
+        if mask & declared == 0 {
+            continue; // disjoint nested save — not part of this contract
+        }
+        if *size != Some(crate::value::Width::L) {
+            push(
+                diags,
+                Level::Error,
+                *span,
+                format!(
+                    "[proc.preserves-word-pair] `{}` declares `preserves({})` but this stack \
+                     movem is not `movem.l` — a word-size restore sign-extends each register \
+                     and preserves nothing; use `movem.l`",
+                    proc.name,
+                    mask_reglist(declared),
+                ),
+            );
+            return;
+        }
+        if mask != declared {
+            push(
+                diags,
+                Level::Error,
+                *span,
+                format!(
+                    "[proc.preserves-mismatch] `{}` declares `preserves({})` but this stack \
+                     movem {} `{}` — every save/restore overlapping the declared set must \
+                     cover exactly that set; update the attribute or the movem",
+                    proc.name,
+                    mask_reglist(declared),
+                    if is_push { "saves" } else { "restores" },
+                    mask_reglist(mask),
+                ),
+            );
+            return;
+        }
+        if is_push {
+            if matching_push.is_none() {
+                matching_push = Some(i);
             }
-            [CodeOperand::PostInc(crate::value::Reg::A7), CodeOperand::RegList(m)] => {
-                last_pop = Some((i, *m));
-            }
-            _ => {}
+        } else {
+            matching_pop = Some(i);
         }
     }
-    let pair = match (first_push, last_pop) {
-        (Some((pi, pm)), Some((qi, qm))) if pi < qi => Some((pm, qm)),
-        _ => None,
-    };
-    let Some((push_mask, pop_mask)) = pair else {
+    let paired = matches!((matching_push, matching_pop), (Some(p), Some(q)) if p < q);
+    if !paired {
         push(
             diags,
             Level::Error,
             proc.span,
             format!(
                 "[proc.preserves-missing-pair] `{}` declares `preserves({})` but its body has \
-                 no `movem <list>, -(sp)` … `movem (sp)+, <list>` save/restore pair — the \
+                 no `movem.l <list>, -(sp)` … `movem.l (sp)+, <list>` save/restore pair — the \
                  syntactic slice (S2-D6b) verifies the literal movem pair, so a proc that \
                  preserves registers another way cannot declare `preserves` yet",
                 proc.name,
                 mask_reglist(declared),
             ),
         );
-        return;
-    };
-    if push_mask != declared || pop_mask != declared {
-        let actual = if push_mask == pop_mask {
-            format!("its movem pair saves `{}`", mask_reglist(push_mask))
-        } else {
-            format!(
-                "its movem pair saves `{}` but restores `{}`",
-                mask_reglist(push_mask),
-                mask_reglist(pop_mask)
-            )
-        };
-        push(
-            diags,
-            Level::Error,
-            proc.span,
-            format!(
-                "[proc.preserves-mismatch] `{}` declares `preserves({})` but {actual} — \
-                 update the attribute or the movem pair",
-                proc.name,
-                mask_reglist(declared),
-            ),
-        );
+    }
+}
+
+/// True for an sp-DESTINATION write that is stack arithmetic rather than
+/// stack replacement: the add/sub immediate families (`addq #2, sp`), or a
+/// `lea` whose SOURCE is a displacement over sp itself (`lea N(sp), sp` —
+/// the classic frame cleanup). `move`/`movea`-to-sp (stack switching) and
+/// `lea Table, sp` do not qualify — those genuinely replace the stack.
+fn is_sp_arithmetic(mnemonic: &str, ops: &[CodeOperand]) -> bool {
+    match mnemonic {
+        "add" | "adda" | "addi" | "addq" | "addx" | "sub" | "suba" | "subi" | "subq"
+        | "subx" => true,
+        "lea" => matches!(
+            ops.first(),
+            Some(CodeOperand::DispInd { reg: crate::value::Reg::A7, .. })
+        ),
+        _ => false,
     }
 }
 
