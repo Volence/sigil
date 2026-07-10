@@ -495,8 +495,10 @@ pub fn region_at_lma(img: &LinkedImage, lma: u32) -> Option<&[u8]> {
 pub const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
 /// The debug reference's convsym/fixheader-rewritten set: the larger `__DEBUG__`
 /// deb2 append pushes the ROM-end pointer over a byte boundary, so three bytes
-/// (`$1A5`/`$1A6`/`$1A7`) differ instead of two.
-pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
+/// (`$1A5`/`$1A6`/`$1A7`) differ. At the t7-step5 baseline the checksum's low
+/// byte `$18F` coincidentally matches the reference (only `$18E` differs), so
+/// the set is four bytes — re-derived empirically from the rebuilt debug ROM.
+pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x1A5, 0x1A6, 0x1A7];
 
 /// Assert `rom` is byte-identical to `refrom` modulo the `allow`-listed offsets,
 /// after pinning `rom`'s length to `expected_len` (guards against a regression

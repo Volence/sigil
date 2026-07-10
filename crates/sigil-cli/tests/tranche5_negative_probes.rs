@@ -342,7 +342,7 @@ fn doctored_immediate_mirror_fails_its_drift_guard() {
                     \n\
                     [[region]]\n\
                     name = \"sound_api\"\n\
-                    lma_base = 0x5D94\n\
+                    lma_base = 0x5D8E\n\
                     size = 0x1E8\n\
                     kind = \"rom\"\n";
     let map = sigil_link::load_map(map_toml).expect("map must load");
@@ -388,7 +388,7 @@ fn misspelled_extern_slot_is_loud() {
                         \n\
                         [[region]]\n\
                         name = \"sound_api\"\n\
-                        lma_base = 0x5D94\n\
+                        lma_base = 0x5D8E\n\
                         size = 0x1E8\n\
                         kind = \"rom\"\n";
         let map = sigil_link::load_map(map_toml).expect("map must load");

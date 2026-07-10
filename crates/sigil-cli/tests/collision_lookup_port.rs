@@ -11,8 +11,8 @@
 //!
 //! Like every code port so far, the block's CONTENT is byte-identical plain
 //! and debug (0x24 bytes in both since the step-5 tail-call optimize; 0x32
-//! as first ported) — only its BASE address shifts (plain `$4C08`, debug
-//! `$542C`), so the shape lives entirely in the MAP.
+//! as first ported) — only its BASE address shifts (plain `$4C02`, debug
+//! `$5426`), so the shape lives entirely in the MAP.
 //!
 //! ## What this port exercises that the prior five did not
 //!
@@ -20,7 +20,7 @@
 //!   (the step-5 tail call; `jbsr` + `rts` as first ported) targets an
 //!   AS-side ROM label (`engine/level/tile_cache.asm`), so a PC-RELATIVE
 //!   BRANCH fixup (not just a pc-rel EA) resolves against a link-supplied
-//!   symbol at its true per-shape VMA (plain `$4320`, debug `$4A8C`). The
+//!   symbol at its true per-shape VMA (plain `$431A`, debug `$4A86`). The
 //!   jsr/jmp cross-seam DEFERRAL (tranche 2) covered absolute transfers;
 //!   this was the first cross-seam pc-relative CALL in a ported body.
 //! - **SHAPE-DEPENDENT RAM** — the four `Cache_*` words live in GAME RAM,
@@ -53,8 +53,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$4C08`): `s4.bin[0x4C08..0x4C2C]` (0x24 bytes).
-//! Debug (map base `$542C`): `s4.debug.bin[0x542C..0x5450]` (0x24 bytes).
+//! Plain (map base `$4C02`): `s4.bin[0x4C02..0x4C26]` (0x24 bytes).
+//! Debug (map base `$5426`): `s4.debug.bin[0x5426..0x544A]` (0x24 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -88,9 +88,9 @@ fn strict_gate() -> bool {
 
 /// The map: a `text` region for the zero-byte default-section carrier, and
 /// the real `collision_lookup` region pinned at the per-shape reference
-/// base, sized to the 0x24-byte block (plain `$4C08`, debug `$542C`).
+/// base, sized to the 0x24-byte block (plain `$4C02`, debug `$5426`).
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x542C" } else { "0x4C08" };
+    let base = if debug { "0x5426" } else { "0x4C02" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -108,11 +108,11 @@ fn map_toml(debug: bool) -> String {
     )
 }
 
-/// The eight values `engine.constants`'s drift guards read back through
+/// The values `engine.constants`'s drift guards read back through
 /// `extern()` (the twin rides along via the ambient prepend). A trailing
 /// label+`dc.w` opens a section so the equs flush via `pending_equ_syms`.
 fn as_twin_equs() -> Vec<Section> {
-    // The 19-value constants-twin blob (SOURCE OF TRUTH: `constants.asm`),
+    // The 20-value constants-twin blob (SOURCE OF TRUTH: `constants.asm`),
     // consolidated in `sigil_harness::test_support`.
     sigil_harness::test_support::as_engine_constants_equs()
 }
@@ -141,14 +141,14 @@ fn as_cache_ram_labels(debug: bool) -> Vec<Section> {
 }
 
 /// The synthetic AS-side cross-seam unit supplying `Tile_Cache_GetCollision`
-/// at its TRUE per-shape VMA (plain `$4320`, debug `$4A8C` —
+/// at its TRUE per-shape VMA (plain `$431A`, debug `$4A86` —
 /// `engine/level/tile_cache.asm`, read from the shape's symbol table). A
 /// PC-RELATIVE branch target (`bsr.w`), so the label's absolute position is
 /// load-bearing: the `PcRelDisp16` fixup resolves to
 /// `target_vma - (site_vma + 2)` and the reference bytes only match when
 /// the label sits where the real tile_cache.asm put it.
 fn as_tile_cache_label(debug: bool) -> Vec<Section> {
-    let base = if debug { "$4A8C" } else { "$4320" };
+    let base = if debug { "$4A86" } else { "$431A" };
     let asm = format!(
         "cpu 68000\n\
          phase {base}\n\
@@ -270,12 +270,12 @@ fn compile_real_file(
     (resolved, linked, link_asserts)
 }
 
-/// The twin's eight drift guards must be captured and PASS against
+/// The twin's drift guards must be captured and PASS against
 /// `as_twin_equs`' values (excluding the D2.29 `[layout.odd-item]` parity
 /// asserts that also ride `module.link_asserts`).
 fn assert_twin_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 19, "engine.constants's nineteen drift guards must be captured");
+    assert_eq!(guards, 20, "engine.constants's twenty drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -305,8 +305,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 }
 
 /// (plain) The `collision_lookup` section's linked bytes equal
-/// `s4.bin[0x4C08..0x4C2C]`, AND the outbound `bsr.w` consumer's fixup
-/// resolves to the correct per-shape address ($4C08) — the bare-name proof.
+/// `s4.bin[0x4C02..0x4C26]`, AND the outbound `bsr.w` consumer's fixup
+/// resolves to the correct per-shape address ($4C02) — the bare-name proof.
 #[test]
 fn collision_lookup_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -322,13 +322,13 @@ fn collision_lookup_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(false);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x4C08..0x4C2C];
+    let expected = &refrom[0x4C02..0x4C26];
     let section =
         linked.section("collision_lookup").expect("linked image must carry collision_lookup");
     assert_region_matches(
         &section.bytes,
         expected,
-        "collision_lookup (plain) vs s4.bin[0x4C08..0x4C2C]",
+        "collision_lookup (plain) vs s4.bin[0x4C02..0x4C26]",
     );
 
     let consumer = linked
@@ -337,16 +337,16 @@ fn collision_lookup_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x4C08i64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (0x4C02i64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
-        "bare-name proof: `bsr.w Collision_GetType` must resolve to $4C08 (plain)"
+        "bare-name proof: `bsr.w Collision_GetType` must resolve to $4C02 (plain)"
     );
 }
 
 /// (debug) The `collision_lookup` section's linked bytes equal
-/// `s4.debug.bin[0x542C..0x5450]`, AND the outbound consumer's fixup
-/// resolves to the correct per-shape address ($542C).
+/// `s4.debug.bin[0x5426..0x544A]`, AND the outbound consumer's fixup
+/// resolves to the correct per-shape address ($5426).
 #[test]
 fn collision_lookup_debug_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -362,13 +362,13 @@ fn collision_lookup_debug_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(true);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x542C..0x5450];
+    let expected = &refrom[0x5426..0x544A];
     let section =
         linked.section("collision_lookup").expect("linked image must carry collision_lookup");
     assert_region_matches(
         &section.bytes,
         expected,
-        "collision_lookup (debug) vs s4.debug.bin[0x542C..0x5450]",
+        "collision_lookup (debug) vs s4.debug.bin[0x5426..0x544A]",
     );
 
     let consumer = linked
@@ -377,9 +377,9 @@ fn collision_lookup_debug_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x542Ci64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (0x5426i64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
-        "bare-name proof: `bsr.w Collision_GetType` must resolve to $542C (debug)"
+        "bare-name proof: `bsr.w Collision_GetType` must resolve to $5426 (debug)"
     );
 }

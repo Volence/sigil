@@ -80,7 +80,7 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
-/// The engine-constant equs that `engine.constants`'s 19 drift guards read back
+/// The engine-constant equs that `engine.constants`'s 20 drift guards read back
 /// through `extern()`. SOURCE OF TRUTH: `engine/system/constants.asm`.
 ///
 /// (The four `BUTTON_*` are written as plain magnitudes here; some hand-copied
@@ -107,6 +107,7 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("ST_IN_AIR", "3"),
         ("ST_ON_OBJECT", "5"),
         ("ST_P1_STANDING", "3"),
+        ("ST_P2_STANDING", "4"),
     ]
 }
 
@@ -129,7 +130,7 @@ pub fn assemble_equ_pairs(pairs: &[(&str, &str)]) -> Vec<Section> {
         .sections
 }
 
-/// The complete AS-truth equ blob for the `engine.constants` twin: the 19
+/// The complete AS-truth equ blob for the `engine.constants` twin: the 20
 /// engine constants its guards read. For gates that ALSO compile `sst.emp` (its
 /// 30 `SST_*` guards), use [`as_engine_constants_and_sst_equs`].
 pub fn as_engine_constants_equs() -> Vec<Section> {
@@ -196,11 +197,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_19() {
+    fn engine_constants_blob_assembles_and_defines_all_20() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
-        assert_eq!(engine_constant_equs().len(), 19, "the twin guards 19 engine constants");
+        assert_eq!(engine_constant_equs().len(), 20, "the twin guards 20 engine constants");
     }
 
     #[test]

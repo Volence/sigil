@@ -143,7 +143,7 @@ fn with_ambient(
 /// trailing label+`dc.w` opens a section so the equs flush (the
 /// collision_lookup pattern).
 fn as_constant_equs() -> Vec<Section> {
-    // The 30 `SST_*` field pins + 19 engine constants both `.emp` twins guard
+    // The 30 `SST_*` field pins + 20 engine constants both `.emp` twins guard
     // (SOURCE OF TRUTH: `structs.asm` / `constants.asm`), shared via
     // `sigil_harness::test_support`; `ObjCodeBase` is this gate's own extra.
     use sigil_harness::test_support::{engine_constant_equs, sst_field_equs};
@@ -277,13 +277,13 @@ fn compile_real_files(
 
 /// All prepended drift guards must be captured and PASS against the
 /// synthetic AS-side truths: sst.emp's 30 ride with BOTH modules (60) plus
-/// constants.emp's 19 with test_particle = 79.
+/// constants.emp's 20 with test_particle = 80.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     // The four pub proc labels each carry an always-recorded
     // `[layout.odd-item]` even-address parity assert — not drift guards;
     // exclude them from the count (they still ride the check below).
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 79, "the ambient drift guards must all be captured");
+    assert_eq!(guards, 80, "the ambient drift guards must all be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

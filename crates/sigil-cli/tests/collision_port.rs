@@ -53,8 +53,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$308A`): `s4.bin[0x308A..0x31FA]` (0x170 bytes).
-//! Debug (map base `$3344`): `s4.debug.bin[0x3344..0x34B4]` (0x170 bytes).
+//! Plain (map base `$308A`): `s4.bin[0x308A..0x31F8]` (0x16E bytes).
+//! Debug (map base `$3344`): `s4.debug.bin[0x3344..0x34B2]` (0x16E bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -84,7 +84,7 @@ fn strict_gate() -> bool {
 
 /// The region geometry — SHAPE-DEPENDENT base, shape-invariant size
 /// (2026-07-10 pins, both listings).
-const COLLISION_LEN: usize = 0x170;
+const COLLISION_LEN: usize = 0x16E;
 
 /// Per-shape TRUE VMAs — the region base plus the two GAME-RAM cross-seam
 /// labels (game RAM moves with `__DEBUG__`).
@@ -135,7 +135,7 @@ fn with_ambient(
 /// label+`dc.w` opens a section so the equs flush (the collision_lookup
 /// pattern).
 fn as_constant_equs() -> Vec<Section> {
-    // The 30 `SST_*` field pins + 19 engine constants both `.emp` twins guard
+    // The 30 `SST_*` field pins + 20 engine constants both `.emp` twins guard
     // (SOURCE OF TRUTH: `structs.asm` / `constants.asm`), shared via
     // `sigil_harness::test_support`.
     sigil_harness::test_support::as_engine_constants_and_sst_equs()
@@ -247,13 +247,13 @@ fn compile_real_file(
 }
 
 /// All prepended drift guards must be captured and PASS against the synthetic
-/// AS-side truths: sst.emp's 30 SST_* pins plus constants.emp's 19 (the four
+/// AS-side truths: sst.emp's 30 SST_* pins plus constants.emp's 20 (the four
 /// button + two hw-port + CTYPE_AIR + RF pair + AF_DELETE + VDP_Shadow_len that
-/// predate this tranche, plus the collision block's eight new
-/// NUM_*/COLLISION_TOUCH/ST_* guards) = 49.
+/// predate this tranche, plus the collision block's nine
+/// NUM_*/COLLISION_TOUCH/ST_* guards — ST_P2_STANDING joined at t7-step5) = 50.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 49, "sst.emp's 30 + constants.emp's 19 drift guards must be captured");
+    assert_eq!(guards, 50, "sst.emp's 30 + constants.emp's 20 drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
