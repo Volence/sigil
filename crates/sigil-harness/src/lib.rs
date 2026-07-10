@@ -264,6 +264,56 @@ pub fn assemble_mixed_tranche2_as_side(aeon: &Path, debug: bool) -> Result<Modul
     })
 }
 
+/// Tranche 3's cumulative shape: everything `assemble_mixed_tranche2_as_side`
+/// does, PLUS `SIGIL_EMP_VDP_INIT` and `SIGIL_EMP_COLLISION_LOOKUP` defined
+/// so `engine/engine.inc`'s two new `ifndef` blocks (which normally include
+/// `engine/system/vdp_init.asm` / `engine/level/collision_lookup.asm`) are
+/// each REPLACED by an `org` resume — per shape, vdp_init `$1C60` (plain) /
+/// `$1CE2` (`__DEBUG__`), collision_lookup `$4C38` (plain) / `$545C`
+/// (`__DEBUG__`) — leaving the two windows for the `.emp` side's
+/// `vdp_init`/`collision_lookup` sections to supply. All EIGHT gates are
+/// independent; this is the cumulative shape exercising all eight together.
+///
+/// The cross-seam symbols the two new `.emp` modules read — `VDP_CTRL` (equ),
+/// `VDP_Shadow_Table`/`VDP_Dirty_Mask`/`Cache_*` (RAM labels),
+/// `BootData_VDPRegs`/`Tile_Cache_GetCollision` (ROM labels, PC-RELATIVE
+/// targets) — are real `.asm` symbols defined UNCONDITIONALLY (outside every
+/// gate), so no synthetic injection is needed: the real AS module supplies
+/// them through the shared symbol table, including the two pc-relative
+/// targets at their true per-shape VMAs (the first cross-seam PC-RELATIVE
+/// consumers in the campaign — the fixup is a distance, so the supplied
+/// positions are load-bearing in a way the abs-widthed reads never were).
+/// `boot.asm`'s `bsr.w VDP_Shadow_Init`, the VBlank path's
+/// `Flush_VDP_Shadow` call, and `player_sensors.asm`'s
+/// `bsr.w Collision_GetType` sites are the unconditional AS-side consumers
+/// of the new `pub proc` names.
+///
+/// Returns the UNLINKED [`Module`], exactly like the sibling helpers: the
+/// tranche-3 mixed harness concatenates these sections with all EIGHT `.emp`
+/// modules' placed sections and runs ONE `resolve_layout` + `link` over the
+/// union.
+pub fn assemble_mixed_tranche3_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+        ("SIGIL_EMP_HBLANK".to_string(), 1),
+        ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
+        ("SIGIL_EMP_MATH".to_string(), 1),
+        ("SIGIL_EMP_VDP_INIT".to_string(), 1),
+        ("SIGIL_EMP_COLLISION_LOOKUP".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche3 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable

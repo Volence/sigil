@@ -112,8 +112,8 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::{
     assemble_mixed_dac_as_side, assemble_mixed_hblank_as_side, assemble_mixed_mt_as_side,
-    assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assert_rom_matches,
-    CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
+    assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assemble_mixed_tranche3_as_side,
+    assert_rom_matches, CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -366,6 +366,34 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
     )
 }
 
+/// Tranche 3's map: `emp_bank_map_with_mt_hblank_tranche2`'s SEVEN regions
+/// PLUS `vdp_init` and `collision_lookup` — the FIFTH and SIXTH
+/// shape-dependent region bases: vdp_init plain `$1C14` / debug `$1C96`
+/// (size `$4C`), collision_lookup plain `$4C06` / debug `$542A` (size
+/// `$32`). The prior regions are byte-for-byte the tranche-2 map's.
+/// `collision_lookup` is the campaign's first region outside the
+/// `engine/system`+sound neighborhoods (`engine/level/`).
+fn emp_bank_map_tranche3(debug: bool) -> String {
+    let vdp_init_base = if debug { "0x1C96" } else { "0x1C14" };
+    let collision_base = if debug { "0x542A" } else { "0x4C06" };
+    format!(
+        "{}\
+         \n\
+         [[region]]\n\
+         name = \"vdp_init\"\n\
+         lma_base = {vdp_init_base}\n\
+         size = 0x4C\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"collision_lookup\"\n\
+         lma_base = {collision_base}\n\
+         size = 0x32\n\
+         kind = \"rom\"\n",
+        emp_bank_map_with_mt_hblank_tranche2(debug)
+    )
+}
+
 /// Port #1: `placed_emp_sections_with_mt_sfx`'s four-module successor — DAC +
 /// MT + SFX + HBLANK, all placed into the per-shape `emp_bank_map_with_mt_hblank`
 /// (DAC/SFX/HBLANK defines-less, MT's `DEBUG` — R4). Returns all FOUR modules'
@@ -455,6 +483,58 @@ fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
     sections.extend(hblank_sections);
     sections.extend(controllers_sections);
     sections.extend(math_sections);
+    (sections, mt_asserts, sfx_asserts, controllers_asserts)
+}
+
+/// Tranche 3: the eight-module successor — everything
+/// `placed_emp_sections_with_mt_sfx_hblank_tranche2` composes PLUS
+/// `vdp_init.emp` (`engine/system/`) and `collision_lookup.emp`
+/// (`engine/level/` — the campaign's first module outside `engine/system` +
+/// sound), both defines-less (shape-invariant SOURCE; their linked bytes
+/// still differ per shape because the cross-seam pc-relative distances and
+/// the game-RAM `Cache_*` abs.w addresses resolve per shape — the map bases
+/// and the AS side supply the shape). Neither carries link asserts in step 1
+/// (local const twins; the `extern()` drift guards arrive with the step-2
+/// twin migration), so the asserts tuple shape is unchanged.
+fn placed_emp_sections_tranche3(
+    aeon: &Path,
+    debug_val: i128,
+) -> (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>, Vec<LinkAssert>) {
+    let map = emp_bank_map_tranche3(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    let (hblank_sections, _hblank_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
+    let (controllers_sections, controllers_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "controllers.emp", &[], &map);
+    let (math_sections, _math_asserts) = placed_module_sections_with_roots(
+        &aeon.join("engine"),
+        &aeon.join("engine/system"),
+        "math.emp",
+        &[],
+        &map,
+    );
+    // The two tranche-3 modules: no defines, no embeds, no `use` edges in
+    // step 1 — the plainest `placed_module_sections` shape in the file.
+    let (vdp_init_sections, _vdp_init_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "vdp_init.emp", &[], &map);
+    let (collision_sections, _collision_asserts) =
+        placed_module_sections(&aeon.join("engine/level"), "collision_lookup.emp", &[], &map);
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    sections.extend(hblank_sections);
+    sections.extend(controllers_sections);
+    sections.extend(math_sections);
+    sections.extend(vdp_init_sections);
+    sections.extend(collision_sections);
     (sections, mt_asserts, sfx_asserts, controllers_asserts)
 }
 
@@ -1101,6 +1181,198 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
         DEBUG_ASSEMBLED_LEN,
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche2 debug",
+    );
+}
+
+/// Tranche 3's shared body — the campaign's cumulative EIGHT-module
+/// acceptance: assemble the AS side with all eight gates on, compose with
+/// all eight `.emp` modules' placed sections, and run ONE joint
+/// `resolve_layout` + `link`.
+///
+/// This is where tranche 3's cross-seam reads prove out END-TO-END against
+/// the REAL tree (not the port gates' synthetic label sections): `lea.l
+/// BootData_VDPRegs(pc), a0` and `bsr.w Tile_Cache_GetCollision` resolve
+/// their PC-RELATIVE fixups against the real `boot.asm`/`tile_cache.asm`
+/// labels at whatever address the joint layout puts them — the first
+/// campaign proof that a `.emp` module's pc-relative distance to an AS-side
+/// label survives full-ROM composition (the port gates proved it against
+/// `phase`d stand-ins).
+///
+/// Returns the same tuple shape as `build_mixed_tranche2_rom` — the two new
+/// modules carry no link asserts in step 1 (local const twins; `extern()`
+/// drift guards arrive with the step-2 twin migration).
+fn build_mixed_tranche3_rom(
+    aeon: &Path,
+    debug: bool,
+) -> (Vec<u8>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>, Vec<sigil_span::Diagnostic>) {
+    let as_module = assemble_mixed_tranche3_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    let (emp_sections, mt_asserts, sfx_asserts, controllers_asserts) =
+        placed_emp_sections_tranche3(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed tranche3): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed tranche3): {d:?}"));
+
+    let mt_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &mt_asserts);
+    let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
+    let controllers_diags =
+        sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &controllers_asserts);
+    assert_eq!(
+        guard_assert_count(&mt_asserts),
+        5,
+        "mt_bank.emp's five co-residency ensures must be captured"
+    );
+    assert_eq!(
+        guard_assert_count(&sfx_asserts),
+        1,
+        "sfx_bank.emp's cross-seam co-residency ensure must be captured"
+    );
+    assert_eq!(
+        guard_assert_count(&controllers_asserts),
+        6,
+        "engine.constants's six drift-guard ensures must be captured"
+    );
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    let rom = sigil_link::emit_rom(&linked, &map)
+        .unwrap_or_else(|e| panic!("emit_rom (mixed tranche3): {e}"));
+    (rom, mt_diags, sfx_diags, controllers_diags)
+}
+
+/// Tranche 3 acceptance — plain (non-debug) EIGHT-module mixed build ==
+/// `aeon/s4.bin`, modulo the four convsym bytes. Both new blocks are pinned
+/// explicitly (each port's own byte window) before the whole-ROM assertion
+/// re-proves them in context. Note the two windows' bytes are
+/// SHAPE-DEPENDENT even though the `.emp` sources are shape-invariant: the
+/// `lea (pc)` / `bsr.w` displacements and the game-RAM `Cache_*` abs.w
+/// addresses are link-resolved per shape.
+#[test]
+fn mixed_tranche3_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags, controllers_diags) = build_mixed_tranche3_rom(&aeon, false);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+    assert!(
+        controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+    );
+
+    // The vdp_init block, pinned explicitly (the port's own 0x4C-byte
+    // window). First four bytes: `lea.l BootData_VDPRegs(pc), a0` = 41FA
+    // + disp16 ($3CE - $1C16 = -$1848 = $E7B8) — the cross-seam pc-rel EA.
+    assert_eq!(
+        &rom[0x1C14..0x1C60],
+        &[
+            0x41, 0xFA, 0xE7, 0xB8, 0x43, 0xF8, 0x80, 0x0A, 0x70, 0x12, 0x12, 0xD8, 0x51, 0xC8, 0xFF, 0xFC,
+            0x70, 0x00, 0x21, 0xC0, 0x80, 0x1E, 0x4E, 0x75, 0x22, 0x38, 0x80, 0x1E, 0x67, 0x2C, 0x41, 0xF8,
+            0x80, 0x0A, 0x43, 0xF9, 0x00, 0xC0, 0x00, 0x04, 0x30, 0x3C, 0x80, 0x00, 0x74, 0x00, 0x76, 0x12,
+            0x05, 0x01, 0x67, 0x06, 0x10, 0x30, 0x20, 0x00, 0x32, 0x80, 0x06, 0x40, 0x01, 0x00, 0x52, 0x42,
+            0x51, 0xCB, 0xFF, 0xEE, 0x70, 0x00, 0x21, 0xC0, 0x80, 0x1E, 0x4E, 0x75,
+        ][..],
+        "vdp_init block must match the reference bytes exactly (plain)"
+    );
+
+    // The collision_lookup block, pinned explicitly (the port's own
+    // 0x32-byte window). Offset 0x26: `bsr.w Tile_Cache_GetCollision` =
+    // 6100 + disp16 ($431E - $4C2E = -$910 = $F6F0) — the cross-seam
+    // pc-relative CALL.
+    assert_eq!(
+        &rom[0x4C06..0x4C38],
+        &[
+            0x34, 0x01, 0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x34, 0x6D, 0x24, 0xB0, 0x78, 0xA8, 0x36, 0x6E, 0x1E,
+            0x3F, 0x00, 0x30, 0x02, 0xE6, 0x48, 0x32, 0x00, 0xB2, 0x78, 0xA8, 0x38, 0x6D, 0x0E, 0xB2, 0x78,
+            0xA8, 0x3A, 0x6E, 0x08, 0x30, 0x1F, 0x61, 0x00, 0xF6, 0xF0, 0x4E, 0x75, 0x54, 0x8F, 0x70, 0x00,
+            0x4E, 0x75,
+        ][..],
+        "collision_lookup block must match the reference bytes exactly (plain)"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche3");
+}
+
+/// Tranche 3 acceptance — `__DEBUG__` EIGHT-module mixed build ==
+/// `aeon/s4.debug.bin`, modulo the five convsym bytes. Same composition as
+/// the plain variant; the two new blocks' displacements and `Cache_*`
+/// addresses take their debug-shape values.
+#[test]
+fn mixed_tranche3_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let (rom, mt_diags, sfx_diags, controllers_diags) = build_mixed_tranche3_rom(&aeon, true);
+    assert!(
+        mt_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {mt_diags:?}"
+    );
+    assert!(
+        sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
+    );
+    assert!(
+        controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+    );
+
+    assert_eq!(
+        &rom[0x1C96..0x1CE2],
+        &[
+            0x41, 0xFA, 0xE7, 0x3A, 0x43, 0xF8, 0x80, 0x0A, 0x70, 0x12, 0x12, 0xD8, 0x51, 0xC8, 0xFF, 0xFC,
+            0x70, 0x00, 0x21, 0xC0, 0x80, 0x1E, 0x4E, 0x75, 0x22, 0x38, 0x80, 0x1E, 0x67, 0x2C, 0x41, 0xF8,
+            0x80, 0x0A, 0x43, 0xF9, 0x00, 0xC0, 0x00, 0x04, 0x30, 0x3C, 0x80, 0x00, 0x74, 0x00, 0x76, 0x12,
+            0x05, 0x01, 0x67, 0x06, 0x10, 0x30, 0x20, 0x00, 0x32, 0x80, 0x06, 0x40, 0x01, 0x00, 0x52, 0x42,
+            0x51, 0xCB, 0xFF, 0xEE, 0x70, 0x00, 0x21, 0xC0, 0x80, 0x1E, 0x4E, 0x75,
+        ][..],
+        "vdp_init block must match the reference bytes exactly (debug)"
+    );
+
+    assert_eq!(
+        &rom[0x542A..0x545C],
+        &[
+            0x34, 0x01, 0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x56, 0x6D, 0x24, 0xB0, 0x78, 0xA8, 0x58, 0x6E, 0x1E,
+            0x3F, 0x00, 0x30, 0x02, 0xE6, 0x48, 0x32, 0x00, 0xB2, 0x78, 0xA8, 0x5A, 0x6D, 0x0E, 0xB2, 0x78,
+            0xA8, 0x5C, 0x6E, 0x08, 0x30, 0x1F, 0x61, 0x00, 0xF6, 0x38, 0x4E, 0x75, 0x54, 0x8F, 0x70, 0x00,
+            0x4E, 0x75,
+        ][..],
+        "collision_lookup block must match the reference bytes exactly (debug)"
+    );
+
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed tranche3 debug",
     );
 }
 
