@@ -671,3 +671,138 @@ fn absent_clobbers_still_means_no_contract() {
         "no declared contract must mean no clobber lint: {diags:?}"
     );
 }
+
+// ---- preserves(sr) — S2-D7's first syntactic slice (tranche 5) ------------
+
+/// The Sound_PostByte shape: save → mask → restore, declared `preserves(sr)`
+/// — clean (the balance heuristic passes), and no `[proc.sr-undeclared]`.
+#[test]
+fn preserves_sr_balanced_idiom_is_clean() {
+    let src = "module m\n\
+               proc f() clobbers() preserves(sr) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tnop\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().all(|d| d.level != Level::Error)
+            && !diags.iter().any(|d| d.message.contains("[proc.sr-undeclared]")),
+        "the balanced idiom must be clean: {diags:?}"
+    );
+}
+
+/// Missing restore (or a trailing non-restore SR write) under `preserves(sr)`
+/// is the `[proc.preserves-sr-unbalanced]` error.
+#[test]
+fn preserves_sr_missing_restore_errors() {
+    let src = "module m\n\
+               proc f() preserves(sr) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a missing restore must fail the balance check: {diags:?}"
+    );
+}
+
+/// An SR write BEFORE the save is unbalanced too (the save must bracket).
+#[test]
+fn preserves_sr_write_before_save_errors() {
+    let src = "module m\n\
+               proc f() preserves(sr) {\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a mask before the save must fail the balance check: {diags:?}"
+    );
+}
+
+/// No SR writes at all — `preserves(sr)` holds vacuously.
+#[test]
+fn preserves_sr_vacuous_is_clean() {
+    let src = "module m\nproc f() preserves(sr) {\n\tnop\n\trts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(diags.iter().all(|d| d.level != Level::Error), "vacuous must be clean: {diags:?}");
+}
+
+/// An SR write in a proc whose contract names neither `clobbers(sr)` nor
+/// `preserves(sr)` warns `[proc.sr-undeclared]`; `clobbers(sr)` silences it.
+#[test]
+fn sr_write_without_declaration_warns() {
+    let src = "module m\n\
+               proc f() clobbers() {\n\
+               \tmove.w #$2700, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(has_tag(&diags, "[proc.sr-undeclared]"), "expected the warning: {diags:?}");
+
+    let src = "module m\n\
+               proc f() clobbers(sr) {\n\
+               \tmove.w #$2700, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.sr-undeclared]"),
+        "clobbers(sr) must silence the warning: {diags:?}"
+    );
+}
+
+/// `preserves(sr)` + `clobbers(sr)` is the contradiction error.
+#[test]
+fn preserves_sr_clobbers_sr_overlap_errors() {
+    let src = "module m\nproc f() clobbers(sr) preserves(sr) {\n\trts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-clobbers-overlap]"),
+        "sr in both sets must be diagnosed: {diags:?}"
+    );
+}
+
+/// `preserves(ccr)` steers to S2-D7 (flag liveness needs dataflow, not the
+/// syntactic slice); `sr` inside a reglist RANGE stays invalid.
+#[test]
+fn preserves_ccr_and_sr_range_are_rejected() {
+    let src = "module m\nproc f() preserves(ccr) {\n\trts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("S2-D7")),
+        "ccr must steer to S2-D7: {diags:?}"
+    );
+
+    let src = "module m\nproc f() preserves(sr-d0) {\n\trts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-invalid]"),
+        "sr in a range must stay invalid: {diags:?}"
+    );
+}
+
+/// `preserves(sr)` composes with a reg-list `preserves` — the movem pair is
+/// still demanded for the REGISTER set, the balance check for sr.
+#[test]
+fn preserves_sr_composes_with_reglist() {
+    let src = "module m\n\
+               proc f() preserves(d1/sr) {\n\
+               \tmovem.l d1, -(sp)\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               \tmovem.l (sp)+, d1\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(diags.iter().all(|d| d.level != Level::Error), "composed contract: {diags:?}");
+}

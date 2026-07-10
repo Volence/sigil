@@ -129,8 +129,11 @@ Per-item two-stage reviews ran on both ports; both earned their keep:
 
 1. **Spec addendum pass** (empyrean, docs cadence): statement-position
    comptime `if` (H1), `ImmLink` + the here()-in-.l-imm behavior change,
-   the positional fence, `sr`/`ccr`. All jotted in the gap ledger. The
-   ratified LOOP itself also wants a campaign-doc mention.
+   the positional fence, `sr`/`ccr` operands, AND `preserves(sr)`/
+   `clobbers(sr)` + the balance check (S2-D7's first shipped slice —
+   Volence's catch reading Sound_PostByte, built same-day on his go).
+   All jotted in the gap ledger. The ratified LOOP itself also wants a
+   campaign-doc mention.
 2. ~~Step-5 queue~~ SUPERSEDED by the ratified flow — the jbra flip
    landed IN-TRANCHE as step 2 (done, re-pinned).
 3. **Stretch B** (first object port — test_solid/test_particle): fresh

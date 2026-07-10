@@ -664,4 +664,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   exhibits all three balanced pairs in one proc). Surface ask: accept `sr` (and
   `ccr`?) in preserves()/clobbers() lists as DECLARED contract, verification riding
   the S2-D7 dataflow pass; don't ship the spelling without at least the
-  save/restore-balance heuristic, or it's documentation cosplaying as a check. — OPEN
+  save/restore-balance heuristic, or it's documentation cosplaying as a check.
+  → SHIPPED same-day (Volence's go): `preserves(sr)` + the static-order balance check
+  ([proc.preserves-sr-unbalanced], error-tier — declared contracts are checked),
+  `clobbers(sr)`, the [proc.sr-undeclared] warning (contract'd procs only, @as_compat
+  silenced), ccr steered to S2-D7 proper (flag liveness = dataflow, refused with the
+  pointer). Sound_PostByte/Init/PlayMusic/DrainSfxRing declare it; 8 tests.
+  Path-sensitive save/restore stays S2-D7's dataflow half. — SHIPPED (slice)
+- [preserves(sr) slice, 2026-07-10] **clobbers() entries are never validated** —
+  `clobbers(d9)` or a typo'd name is silently accepted (it just never matches the
+  lint's allowed-set lookup). Cheap fix: validate entries against the register
+  vocabulary (+ `sr`) at the same site preserves validates. — OPEN
