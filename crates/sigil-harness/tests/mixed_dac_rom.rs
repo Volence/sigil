@@ -379,7 +379,7 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
 /// Tranche 3's map: `emp_bank_map_with_mt_hblank_tranche2`'s SEVEN regions
 /// PLUS `vdp_init` and `collision_lookup` — the FIFTH and SIXTH
 /// shape-dependent region bases: vdp_init plain `$1C14` / debug `$1C96`
-/// (size `$48`), collision_lookup plain `$4BFA` / debug `$541E` (size
+/// (size `$48`), collision_lookup plain `$4BF6` / debug `$541A` (size
 /// `$24` since the step-5 tail-call optimize; `$32` as first ported; slid
 /// −8 by the tranche-7b interact fix — pre-player_sensors). The
 /// prior regions are byte-for-byte the tranche-2 map's.
@@ -387,7 +387,7 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
 /// `engine/system`+sound neighborhoods (`engine/level/`).
 fn emp_bank_map_tranche3(debug: bool) -> String {
     let vdp_init_base = if debug { "0x1C96" } else { "0x1C14" };
-    let collision_base = if debug { "0x541E" } else { "0x4BFA" };
+    let collision_base = if debug { "0x541A" } else { "0x4BF6" };
     format!(
         "{}\
          \n\
@@ -444,7 +444,7 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
 /// combo both pins carry).
 fn emp_bank_map_tranche5(debug: bool) -> String {
     let game_loop_base = if debug { "0x238C" } else { "0x22FE" };
-    let sound_api_base = if debug { "0x7228" } else { "0x5D6A" };
+    let sound_api_base = if debug { "0x7224" } else { "0x5D66" };
     format!(
         "{}\
          \n\
@@ -1996,10 +1996,10 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // The collision_lookup block, pinned explicitly (the port's own
     // 0x24-byte window, post step-5 optimize). Offset 0x1C:
     // `bra.w Tile_Cache_GetCollision` = 6000 + disp16
-    // ($4312 - $4C18 = -$906 = $F6FA) — the cross-seam pc-relative
+    // ($430E - $4C14 = -$906 = $F6FA) — the cross-seam pc-relative
     // TAIL CALL (site + target both slid -8 in the interact fix, disp held).
     assert_eq!(
-        &rom[0x4BFA..0x4C1E],
+        &rom[0x4BF6..0x4C1A],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x34, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x36, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x38, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x3A, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0xFA,
@@ -2056,7 +2056,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
     );
 
     assert_eq!(
-        &rom[0x541E..0x5442],
+        &rom[0x541A..0x543E],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x56, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x58, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x5A, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x5C, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0x42,
@@ -2298,14 +2298,15 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche5_rom(&aeon, false);
 
     // The game_loop block: bsr.w VSync_Wait ($2262, unmoved), bsr.w
-    // Sound_DrainSfxRing ($5EB0, slid -36 in the interact fix → disp $3BD0 →
-    // $3BAC; site unmoved, target slid), movea.l (Game_State).w,a0, jsr (a0),
+    // Sound_DrainSfxRing ($5EAC — slid -36 in the interact fix, -4 more in
+    // the tranche-8 rings step-5 shrink → disp $3BA8; site unmoved, target
+    // slid), movea.l (Game_State).w,a0, jsr (a0),
     // bra.s GameLoop, then GameState_Idle's rts — the (1,0) combo,
     // gameDebugTick contributing zero bytes.
     assert_eq!(
         &rom[0x22FE..0x2310],
         &[
-            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0xAC, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0xA8, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (plain)"
@@ -2314,7 +2315,7 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // Sound_PostByte's head: move.w sr,-(sp) / move.w #$2700,sr / the stopZ80
     // expansion's first word — the sr + imm-before-abs shapes this port added.
     assert_eq!(
-        &rom[0x5D6A..0x5D72],
+        &rom[0x5D66..0x5D6E],
         &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
         "sound_api block head must match the reference bytes exactly (plain)"
     );
@@ -2343,14 +2344,14 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     assert_eq!(
         &rom[0x238C..0x239E],
         &[
-            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x4F, 0xDC, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x4F, 0xD8, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"
     );
 
     assert_eq!(
-        &rom[0x7228..0x7230],
+        &rom[0x7224..0x722C],
         &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
         "sound_api block head must match the reference bytes exactly (debug)"
     );
@@ -2659,11 +2660,11 @@ fn mixed_tranche7_debug_rom_matches_assembled_reference() {
 }
 
 /// Tranche 8's map: the tranche-7 regions PLUS `rings` — the campaign's FIRST
-/// shape-dependent-LENGTH region (plain 0x1B8, debug 0x214 bytes: the
+/// shape-dependent-LENGTH region (plain 0x1B4, debug 0x210 bytes: the
 /// `__DEBUG__` assert block in `RingBuffer_Add.full` exists only in the debug
 /// shape). Plain `$31F0` / debug `$34AA` (the collision resume orgs).
 fn emp_bank_map_tranche8(debug: bool) -> String {
-    let (rings_base, rings_len) = if debug { ("0x34AA", "0x214") } else { ("0x31F0", "0x1B8") };
+    let (rings_base, rings_len) = if debug { ("0x34AA", "0x210") } else { ("0x31F0", "0x1B4") };
     format!(
         "{}\
          \n\

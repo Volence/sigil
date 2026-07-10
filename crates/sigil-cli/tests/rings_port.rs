@@ -9,8 +9,8 @@
 //! ## What this port exercises that the prior seven did not
 //!
 //! - **The FIRST shape-dependent-LENGTH region** — the `__DEBUG__` assert block
-//!   in `RingBuffer_Add.full` exists only in the debug shape (plain 0x1B8,
-//!   debug 0x214 bytes), so `Shape` carries a per-shape `len`, not the usual
+//!   in `RingBuffer_Add.full` exists only in the debug shape (plain 0x1B4,
+//!   debug 0x210 bytes), so `Shape` carries a per-shape `len`, not the usual
 //!   shared constant.
 //! - **`dc.b` in a proc body (H8)** — the transliterated `assert.b` expansion
 //!   carries its FSTRING string/flag data as code-embedded `dc.b` statements
@@ -47,8 +47,8 @@
 //!
 //! ## Reference windows (2026-07-10 pins, from the master listings)
 //!
-//! Plain (map base `$31F0`): `s4.bin[0x31F0..0x33A8]` (0x1B8 bytes).
-//! Debug (map base `$34AA`): `s4.debug.bin[0x34AA..0x36BE]` (0x214 bytes).
+//! Plain (map base `$31F0`): `s4.bin[0x31F0..0x33A4]` (0x1B4 bytes).
+//! Debug (map base `$34AA`): `s4.debug.bin[0x34AA..0x36BA]` (0x210 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
@@ -91,8 +91,8 @@ struct Shape {
 
 const PLAIN: Shape = Shape {
     base: 0x31F0,
-    len: 0x1B8,
-    ringcol_off: 0x116,
+    len: 0x1B4,
+    ringcol_off: 0x112,
     labels: &[
         ("Ring_Buffer", 0xFFFF_A8F4),
         ("Ring_Count", 0xFFFF_ABF4),
@@ -104,17 +104,17 @@ const PLAIN: Shape = Shape {
         ("Camera_X", 0xFFFF_A11E),
         ("Camera_Y", 0xFFFF_A122),
         ("Player_1", 0xFFFF_89EE),
-        ("Collected_MarkRing", 0x342C),
-        ("EntityWindow_EntryForSection", 0x3650),
-        ("EntityLoaded_Clear", 0x363C),
-        ("Sound_PlayRing", 0x5F00),
+        ("Collected_MarkRing", 0x3428),
+        ("EntityWindow_EntryForSection", 0x364C),
+        ("EntityLoaded_Clear", 0x3638),
+        ("Sound_PlayRing", 0x5EFC),
     ],
 };
 
 const DEBUG: Shape = Shape {
     base: 0x34AA,
-    len: 0x214,
-    ringcol_off: 0x172,
+    len: 0x210,
+    ringcol_off: 0x16E,
     labels: &[
         ("Ring_Buffer", 0xFFFF_A916),
         ("Ring_Count", 0xFFFF_AC16),
@@ -126,10 +126,10 @@ const DEBUG: Shape = Shape {
         ("Camera_X", 0xFFFF_A140),
         ("Camera_Y", 0xFFFF_A144),
         ("Player_1", 0xFFFF_8A10),
-        ("Collected_MarkRing", 0x37A4),
-        ("EntityWindow_EntryForSection", 0x3C86),
-        ("EntityLoaded_Clear", 0x3C10),
-        ("Sound_PlayRing", 0x73BE),
+        ("Collected_MarkRing", 0x37A0),
+        ("EntityWindow_EntryForSection", 0x3C82),
+        ("EntityLoaded_Clear", 0x3C0C),
+        ("Sound_PlayRing", 0x73BA),
         // Debug shape only: the assert transliteration's error-handler entry
         // points (values read from the reference ROM's own jsr/jmp operands).
         ("MDDBG__ErrorHandler", 0x6_644C),
@@ -409,13 +409,13 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
     );
 }
 
-/// (plain) the `rings` region == `s4.bin[0x31F0..0x33A8]` — DEBUG=0.
+/// (plain) the `rings` region == `s4.bin[0x31F0..0x33A4]` — DEBUG=0.
 #[test]
 fn rings_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", 0);
 }
 
-/// (debug) the `rings` region == `s4.debug.bin[0x34AA..0x36BE]` — DEBUG=1,
+/// (debug) the `rings` region == `s4.debug.bin[0x34AA..0x36BA]` — DEBUG=1,
 /// including the transliterated assert block and its `dc.b` FSTRING data.
 #[test]
 fn rings_debug_region_matches_reference() {
