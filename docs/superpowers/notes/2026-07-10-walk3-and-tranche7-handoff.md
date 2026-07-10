@@ -1,28 +1,23 @@
-# The 6/7 gap — construct-walk #3, then tranche 7 (written 2026-07-10, post tranche-6 merge)
+# Tranche 7 handoff — collision.asm into the typed surface (written 2026-07-10; walk #3 DONE)
 
-Tranche 6 is MERGED AND PUSHED both sides (sigil master `91a3f51`, aeon
-master `2c0a1f4`; strict **1998/0**; pins plain `588adf81…` / debug
-`ed96301f…`; packet: `notes/2026-07-10-tranche6-packet.md`).
+Tranche 6 is MERGED AND PUSHED both sides, and **construct-walk #3 RAN AND
+SHIPPED same day** (Volence driving; sigil master `c779977`, aeon master
+`d3cf26b`; strict **1998/0**; pins plain `588adf81…` / debug `ed96301f…`;
+tranche packet: `notes/2026-07-10-tranche6-packet.md`).
 
-## FIRST: construct-walk #3 (Volence-ratified into this gap)
+## Walk #3 is DONE — the typed surface exists
 
-**The Sonic newtype set vs player physics — ~30 min, VOLENCE DRIVING.**
-Ordered BEFORE tranche 7 so collision.asm ports ONCE into the final typed
-surface. Materials:
-- the candidates memory (`emp-sonic-newtype-candidates`): Angle,
-  SubPixel/Speed fixed pair, VramTile + conversion, Tile/Block/Chunk,
-  palette/collision/sound ids;
-- the target surface: aeon `engine/objects/sst.emp` (authored walk-ready —
-  raw ints, fields grouped so newtypes land as annotation diffs);
-- the demand evidence: `engine/objects/collision.asm` (32 SST refs) +
-  `games/sonic4/player/player_ground.asm`-class hot code — read the
-  candidates AGAINST these, don't design in a vacuum;
-- typed data-register params (`d0: Angle`) are CONFIRMED WORKING and have
-  been waiting for this walk since tranche 3.
-Output: the ratified type set applied to sst.emp + back-propped onto the
-two object modules (a small annotation diff; the loop's step-4 mechanics).
+Rulings + rationale: `notes/2026-07-10-construct-walk3-outcome.md`. The
+vocabulary lives in aeon `engine/system/types.emp` (zero-byte module):
+**Coord** fixed<16,16> / **Velocity** fixed<8,8> / **Angle** u8 /
+ObjRoutine / Radius / VramArtTile / AnimId / FrameId. sst.emp is retyped;
+GetSineCosine takes `(d0: Angle)` and returns the BARE fixed<8,8> fraction
+(NOT Velocity — ruled, ledgered with the out-typing ask). Modules that
+`use` sst.emp or math.emp need `types.emp` items ambient
+(`types_ambient_items` in the mixed harness; the port tests show the
+pattern).
 
-## THEN: tranche 7 — engine/objects/collision.asm
+## Tranche 7 — engine/objects/collision.asm
 
 232 ln, 32 SST refs, hot bug-fix file; its step-5 engine review IS the
 point. **GATE (re-ask, was "not sure yet" at tranche-6 kickoff): do
@@ -33,6 +28,8 @@ AABB shared macro (`engine/objects/aabb.inc`) is the ledgered
 
 ## Carried context
 
+- Collision ports INTO the typed surface: Coord/Velocity/Radius/Angle all
+  sit in its hot path — spell field access off `Sst` from day one.
 - Headline ledger ask from tranche 6: **label values in imm exprs**
   (every object port self-externs its own Main for the objroutine store
   until it lands). Also open: equ hygiene (link-global non-pub equs),
