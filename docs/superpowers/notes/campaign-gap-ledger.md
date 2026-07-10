@@ -194,16 +194,22 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 - [tranche 2 T1 review, 2026-07-09] **`pc` is a reserved EA token in inner-base position** — a
   user symbol literally named `pc` can't be the sole inner base of `Sym(pc)` (the pc-rel
   carve-out wins, matching AS); `pc` as a displacement over a real register still works. One
-  doc line owed in the .emp EA docs. — OPEN (docs-only).
+  doc line owed in the .emp EA docs. — CLOSED tranche 3 (the reserved-token consequence documented on `pc_rel_shape`, eval/asm.rs).
 - [tranche 2 T1 review, 2026-07-09] **PcRel range-check errors name distance+section but not
   the target SYMBOL** (sigil-link lib.rs ~482/498) — house style shared with bra/bsr messages;
   a cross-section disp8 target is almost always out of range, so the symbol name would pay.
-  Repo-wide message-quality item. — OPEN.
+  Repo-wide message-quality item. — CLOSED tranche 3 (all three 68k PcRel kinds + the zero-disp escape message now name the target symbol; pinned by `pcrel_out_of_range_messages_name_the_target_symbol`).
 - [tranche 2 T1 review, 2026-07-09] **abs.l as an .emp DESTINATION is unsupported**
   (`move.w x, ($abs).l` → "indirect base must be a register") — pre-existing, surfaced by an
-  adversarial probe; will matter for some future port (VDP register writes spell this). — OPEN.
+  adversarial probe; will matter for some future port (VDP register writes spell this). — OPEN
+  (scoped at tranche 3: NOT a bundle-sized item — the explicit-width `(Sym).w`/`(Sym).l` spelling
+  needs a pinned-width mode on the abs-sym relaxation seam (a one-rung RelaxAbsSym or direct
+  fragment emission with the ext-offset math) plus the comptime-int abs form; belongs to the
+  port that actually spells it. Note today's idiom already covers the common case: a BARE
+  symbol destination relaxes via the width rule byte-identically to asl — vdp_init's
+  `lea.l VDP_CTRL, a1` and `move.l d0, VDP_Dirty_Mask` both land this way.)
 - [tranche 2 T1 review, 2026-07-09] **`Owner.label(pc)` multi-segment pc-rel target untested**
-  — path shared verbatim with tested branch resolution; one-line test owed. — OPEN (low risk).
+  — path shared verbatim with tested branch resolution; one-line test owed. — CLOSED tranche 3 (`owner_label_pcrel_target_resolves`, pcrel_port.rs; passed first run, a pin not a fix).
 - [tranche 2 T3, port #2 (controllers.emp + math.emp), 2026-07-09] **`embed()` paths resolve
   relative to `include_root` directly — there is no separate "module's own directory" concept**
   — `math.emp`'s `embed("../data/sine.bin")` (the module lives in `engine/system/`, the embed
@@ -341,14 +347,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   in step 2** — controllers.asm's "Clobbers: d0-d1, a0" and math.asm's clobber notes were
   carried as comments, not as the existing `clobbers(...)` proc attribute. Byte-neutral;
   land in tranche 3's step 2 (incl. hblank's dispatch proc alongside its @as_compat removal).
-  — OPEN (tranche 3 step 2).
+  — CLOSED tranche 3 step 2 (clobbers on Read_Controllers/GetSineCosine + all three new-port procs; hblank got `preserves`, being movem-preserved).
 - [tranche-2 retrospect follow-up (Volence), 2026-07-09] **Pull the SYNTACTIC slice of
   S2-D6(b) `preserves(...)` forward** — declared `preserves(d0-d1/a0)` verified against the
   literal `movem` push/pop pair (HBlank_Dispatch is the poster child). The full S2-D6
   register-contract batch stays gated on the dataflow pass, but the movem-pair check is
   simple pattern matching, the campaign keeps producing exactly this shape, and Volence asked
   for it by name. Candidate for tranche 3 step 4 (a recorded decision per A-Spec2.3 — it adds
-  a proc-attribute surface). — OPEN (recommend IN, tranche 3).
+  a proc-attribute surface). — SHIPPED tranche 3 (pulled FORWARD to the tranche opening per the step-2-apex rule; D2.32 recorded per A-Spec2.3; HBlank_Dispatch annotated).
 - [step-2 checklist audit of hblank/controllers/math, 2026-07-09] Beyond the clobbers miss:
   (a) **hblank's dispatch proc clobbers NOTHING** (movem-preserved) — its correct annotation
   is `preserves`, which waits on the S2-D6(b) slice; annotate when it ships. (b) **math's
@@ -359,5 +365,35 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   binary-literal candidates (taste; step-2 judgment). (d) idea jotted: comptime CONTENT
   asserts on embedded blobs (e.g. sine table's sin(0)=0 / +$40 overlap invariants checked
   against the embed bytes at build time) — needs comptime byte-indexing of Data values;
-  check support, else v1.1 candidate. — OPEN (a: tranche 3 w/ preserves; b/d: check-then-
+  check support, else v1.1 candidate. — RESOLVED tranche 3 (a: preserves shipped + applied; b/d: checked, see the tranche-3 entries below; c: applied). — (a: tranche 3 w/ preserves; b/d: check-then-
   ledger; c: taste).
+
+- [tranche 3, 2026-07-09] **Typed data-register params ALREADY WORK** (checklist-audit item (b)
+  resolved): `proc GetSC (d0: Angle)` with `newtype Angle = u8` parses, lowers, and emits
+  byte-identically (probed through the real CLI). Deliberately NOT applied to math.emp this
+  tranche: the Angle newtype belongs to the engine-side type surface that construct walk #3
+  (the Sonic newtype set vs player physics — Volence driving) is scheduled to design; typing
+  one param ahead of that walk would front-run the naming/ownership decisions. — RESOLVED
+  (support confirmed); application rides construct walk #3.
+- [tranche 3, 2026-07-09] **Comptime byte-indexing of `Data` values does NOT exist** (checklist-
+  audit item (d) resolved): `ensure(embed("f.bin")[0] == 0, ...)` fails to parse (`expected
+  \`)\`, found LBracket`). Blocks comptime CONTENT asserts on embedded blobs (the sine-table
+  sin(0)=0 / +$40-overlap invariants). v1.1 candidate: index + `.len` on `Data` in comptime
+  exprs — pays at every embed with a checkable invariant. — OPEN (v1.1 candidate, recorded
+  decision needed per A-Spec2.3 since it grows the comptime surface).
+- [tranche 3, 2026-07-09] **Clobber lint: `dbcc`'s first-operand write remains the recorded
+  blind spot** (pre-existing TODO(S2-D6) in lower/proc.rs) — vdp_init's two `dbf` loops write
+  d0/d3, which its `clobbers` declares anyway; noting the tranche relied on declaration
+  discipline, not the lint, for those two. — OPEN (S2-D6 territory, unchanged).
+- [tranche 3, 2026-07-09] **Struct-equ export exports EVERY struct's `_len` + field offsets**
+  (the VDP_Shadow_len enabler). Surplus symbols in the link table are harmless today (the
+  convsym allowlists are inclusive), but if link-symbol-table noise ever matters (Spec 4 debug
+  info?), an export filter is the knob. — jotted.
+- [tranche 3 retrospect, 2026-07-09] **Checklist gap for rulings: the no-effect proc.**
+  `HBlank_Null` (bare `rts`) carries neither `clobbers` nor `preserves` — the checklist says
+  "clobbers on every proc" but an EMPTY `clobbers()` is currently unparseable-by-intent and
+  "no contract declared" is indistinguishable from "contract: touches nothing". Options:
+  (i) bare stays legal, absence = no contract (today's shape); (ii) allow explicit empty
+  `clobbers()` meaning "touches nothing" (the lint then flags ANY register write). Recommend
+  (ii) at low priority — it makes the strongest contract expressible — but it needs a Volence
+  ruling + checklist amendment. — OPEN (ruling requested).
