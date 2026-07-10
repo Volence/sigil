@@ -841,6 +841,27 @@ pub enum Expr {
         /// Span of the whole expression.
         span: Span,
     },
+    /// Postfix indexing `base[i]` (D2.33): comptime element access into an
+    /// array, or raw-byte access into a `Data` value (`embed(...)[i]`).
+    Index {
+        /// The indexed expression.
+        base: Box<Expr>,
+        /// The index expression (a comptime integer).
+        index: Box<Expr>,
+        /// Span of the whole expression.
+        span: Span,
+    },
+    /// Postfix field access off a NON-path base (D2.33): `embed(...).len`.
+    /// Path-shaped access (`a.b`) stays inside [`Expr::Path`] segments — this
+    /// node only ever wraps calls/literals/parenthesized/indexed bases.
+    Field {
+        /// The receiver expression.
+        base: Box<Expr>,
+        /// The accessed field name.
+        name: String,
+        /// Span of the whole expression.
+        span: Span,
+    },
 }
 
 /// A single arm of a [`Expr::Match`]: `Pat => body`.

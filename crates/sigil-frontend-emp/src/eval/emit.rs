@@ -552,12 +552,48 @@ impl<'a> Evaluator<'a> {
             return DataBuf::empty();
         }
         if let Value::Data(buf) = value {
-            // A `Data`-monoid initializer (byte/bytes/++) is already lowered, but
-            // an explicit annotation still pins the size — a `data D: [u8;3] =
-            // bytes([1,2])` that produces the wrong byte count is a mismatch.
+            // A `Data`-monoid initializer (byte/bytes/++/embed) is already
+            // lowered, but an explicit annotation still pins the size — a
+            // `data D: [u8;3] = bytes([1,2])` that produces the wrong byte
+            // count is a mismatch. An ARRAY annotation over raw Data is the
+            // D2.33 element-typed VIEW: the bytes pass through VERBATIM (no
+            // decode/re-encode — the file's big-endian words survive any
+            // section), the element type polices the shape: a `le` element
+            // would lie about the file's byte order, and a non-scalar element
+            // has no verbatim reading.
             if let Some(t) = &decl.ty {
                 let ty = self.resolve_type(t);
                 if !matches!(ty, Ty::Poison) {
+                    if let Ty::Array(elem, _) = &ty {
+                        match elem.as_ref() {
+                            Ty::Prim { le: false, .. } => {}
+                            Ty::Prim { le: true, .. } => {
+                                self.error(
+                                    decl.span,
+                                    format!(
+                                        "[data.view-le] data `{}`: a Data view's element type \
+                                         is read as BIG-endian file bytes — a `le` element \
+                                         type would misdescribe them (use the plain-width \
+                                         type, or restructure the source file)",
+                                        decl.name
+                                    ),
+                                );
+                            }
+                            other => {
+                                self.error(
+                                    decl.span,
+                                    format!(
+                                        "[data.view-elem] data `{}`: a Data view's element \
+                                         type must be a plain scalar (u8/i8/u16/i16/u32/i32), \
+                                         got {} — decode structured layouts through their own \
+                                         typed items instead",
+                                        decl.name,
+                                        other.describe()
+                                    ),
+                                );
+                            }
+                        }
+                    }
                     let declared = self.size_of_ty(&ty, decl.span);
                     if declared != buf.size {
                         self.error(

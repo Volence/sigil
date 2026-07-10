@@ -1988,7 +1988,69 @@ impl Parser {
             let span = start.merge(expr_span(&expr));
             return Expr::Unary { op, expr: Box::new(expr), span };
         }
-        self.primary_expr()
+        self.postfix_expr()
+    }
+
+    /// A primary expression followed by any chain of postfix operators
+    /// (D2.33): `base[i]` comptime indexing and `.field` access off a
+    /// non-path base (`embed(...).len` — a PATH primary eats its own dots as
+    /// segments, so this arm only ever fires after calls/literals/parens).
+    ///
+    /// Postfix binds tighter than unary (`-x[0]` negates the element), and
+    /// both operators require the opener on the SAME line: a line-leading
+    /// `[` stays an array literal, and `Tok::Newline` between base and `.`
+    /// keeps statement boundaries intact (both loops test the token stream,
+    /// where the newline token intervenes).
+    fn postfix_expr(&mut self) -> Expr {
+        let mut e = self.primary_expr();
+        loop {
+            if self.at(&Tok::LBracket) {
+                self.bump();
+                self.skip_newlines();
+                let index = self.expr();
+                self.skip_newlines();
+                self.expect(&Tok::RBracket, "`]`");
+                let span = expr_span(&e).merge(self.prev_span());
+                e = Expr::Index { base: Box::new(e), index: Box::new(index), span };
+                continue;
+            }
+            // `.field` — only off a NON-path base (paths consume their own
+            // dotted segments in `path()`), and never a method CALL: a `(`
+            // after the field would be a method call on an expression
+            // result, which has no evaluation route yet — steer instead of
+            // mis-parsing.
+            if self.at(&Tok::Dot) {
+                if let Tok::Ident(name) = self.peek2().clone() {
+                    // The size-suffix guard (the `split_size_suffix` rule,
+                    // applied postfix): `timer(a0).l` in operand position is
+                    // a SIZE, not a field — postfix field access never
+                    // consumes the four size letters, so `trailing_size`
+                    // still finds them. A comptime struct field genuinely
+                    // named `b`/`w`/`l`/`s` on a call result needs a const
+                    // binding first — same accepted trade as the operand
+                    // rule.
+                    if matches!(name.as_str(), "b" | "w" | "l" | "s") {
+                        break;
+                    }
+                    if matches!(self.peek_at(2), Tok::LParen) {
+                        let sp = self.span();
+                        self.diag_at(
+                            sp,
+                            "method calls on an expression result are not supported — \
+                             bind the receiver to a `const` first, then call through the name",
+                        );
+                        return e;
+                    }
+                    self.bump(); // dot
+                    self.bump(); // ident
+                    let span = expr_span(&e).merge(self.prev_span());
+                    e = Expr::Field { base: Box::new(e), name, span };
+                    continue;
+                }
+            }
+            break;
+        }
+        e
     }
 
     fn primary_expr(&mut self) -> Expr {
@@ -2393,7 +2455,8 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
         | Expr::TupleLit { span, .. } | Expr::Range { span, .. } | Expr::If { span, .. }
         | Expr::For { span, .. } | Expr::Asm { span, .. }
         | Expr::Lambda { span, .. } | Expr::Match { span, .. }
-        | Expr::Rescale { span, .. } => *span,
+        | Expr::Rescale { span, .. } | Expr::Index { span, .. }
+        | Expr::Field { span, .. } => *span,
         Expr::SizeOf(_, s) | Expr::OffsetOf(_, _, s) => *s,
     }
 }

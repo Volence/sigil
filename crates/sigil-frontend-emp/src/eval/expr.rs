@@ -172,6 +172,95 @@ impl<'a> Evaluator<'a> {
             ast::Expr::Match { scrutinee, arms, span } => {
                 self.eval_match(scrutinee, arms, *span, env)
             }
+            // Postfix indexing `base[i]` (D2.33): array element / Data raw
+            // byte access.
+            ast::Expr::Index { base, index, span } => {
+                let b = self.eval_expr(base, env);
+                let i = self.eval_expr(index, env);
+                self.eval_index(b, i, *span)
+            }
+            // Postfix `.field` off a non-path base (D2.33): same resolution
+            // as a path-shaped `a.b` value access (`field_or_len`), so
+            // `embed(...).len` and `Kick.len` agree.
+            ast::Expr::Field { base, name, span } => {
+                let b = self.eval_expr(base, env);
+                self.field_or_len(b, name, *span)
+            }
+        }
+    }
+
+    /// Evaluate a postfix index (D2.33). Arrays yield the element; a `Data`
+    /// value yields the raw BYTE at that offset as an int — but only where
+    /// the byte is comptime-known ([`DataBuf::byte_at`]): a multi-byte
+    /// scalar's byte order and a symbol reference's value are committed at
+    /// link/stream time, so reading their bytes here would guess. Bounds are
+    /// total: out-of-range or negative is `[index.out-of-bounds]`, never a
+    /// wrap or a silent zero.
+    fn eval_index(&mut self, base: Value, index: Value, span: Span) -> Value {
+        if matches!(base, Value::Poison) || matches!(index, Value::Poison) {
+            return Value::Poison;
+        }
+        let Some(i) = index.as_stored_int() else {
+            self.error(
+                span,
+                format!("index must be a comptime integer, got {}", index.type_name()),
+            );
+            return Value::Poison;
+        };
+        match base {
+            Value::Array(elems) => {
+                if i < 0 || i as usize >= elems.len() {
+                    self.error(
+                        span,
+                        format!(
+                            "[index.out-of-bounds] index {i} is out of bounds for an array of \
+                             length {}",
+                            elems.len()
+                        ),
+                    );
+                    return Value::Poison;
+                }
+                elems[i as usize].clone()
+            }
+            Value::Data(buf) => {
+                if i < 0 || i as usize >= buf.size {
+                    self.error(
+                        span,
+                        format!(
+                            "[index.out-of-bounds] byte index {i} is out of bounds for Data of \
+                             {} byte(s)",
+                            buf.size
+                        ),
+                    );
+                    return Value::Poison;
+                }
+                match buf.byte_at(i as usize) {
+                    Some(b) => Value::Int(i128::from(b)),
+                    None => {
+                        self.error(
+                            span,
+                            format!(
+                                "[index.uncommitted-byte] byte {i} of this Data is not a \
+                                 comptime-known raw byte — a multi-byte scalar's byte order, \
+                                 and a symbol reference's value, are committed at link time \
+                                 (raw `embed` bytes and byte-width cells index fine)"
+                            ),
+                        );
+                        Value::Poison
+                    }
+                }
+            }
+            other => {
+                self.error(
+                    span,
+                    format!(
+                        "{} is not indexable — comptime `[i]` reads array elements and raw \
+                         Data bytes",
+                        other.type_name()
+                    ),
+                );
+                Value::Poison
+            }
         }
     }
 

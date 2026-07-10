@@ -274,6 +274,33 @@ impl DataBuf {
         self.size += cell.byte_size();
         self.cells.push(cell);
     }
+
+    /// The comptime-known raw byte at `offset` (D2.33 indexing), or `None`
+    /// where the byte is NOT knowable before link/stream time. Knowable:
+    /// a [`Cell::Bytes`] run, and a width-1 [`Cell::Scalar`] (a single byte
+    /// has no byte order; the stored two's-complement low byte IS the
+    /// emitted byte). Not knowable: a multi-byte scalar (its byte order is
+    /// committed by the section's CPU at stream time), and every symbolic
+    /// cell (`SymRef`/`RelOffset`/`Expr` — values folded at link).
+    ///
+    /// Out-of-range offsets also return `None`; the caller distinguishes
+    /// (it bounds-checks against [`size`](DataBuf::size) first, so its
+    /// diagnostic can tell "past the end" from "not comptime-known").
+    pub fn byte_at(&self, offset: usize) -> Option<u8> {
+        let mut pos = 0usize;
+        for cell in &self.cells {
+            let sz = cell.byte_size();
+            if offset < pos + sz {
+                return match cell {
+                    Cell::Bytes(v) => Some(v[offset - pos]),
+                    Cell::Scalar { value, width: 1, .. } => Some((value & 0xFF) as u8),
+                    _ => None,
+                };
+            }
+            pos += sz;
+        }
+        None
+    }
 }
 
 /// A RESOLVED instruction list (T1, D-P4.3): the `Code` monoid's carrier,
