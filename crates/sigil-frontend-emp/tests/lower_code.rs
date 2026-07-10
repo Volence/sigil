@@ -540,3 +540,81 @@ fn const_named_sp_still_resolves_like_any_other_identifier() {
     assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
     assert_eq!(v, Some(Value::Int(5)));
 }
+
+// ---- `(An,Xn)` / `d8(An,Xn)` indexed EAs (tranche 3, vdp_init recon) ------
+//
+// Port #3 (vdp_init) recon found the third operand-grammar gap: address-
+// register indirect with index (68k `(d8,An,Xn)`, brief extension word).
+// The ISA layer is complete (`Disp8AnXn`, corpus-pinned); only the `.emp`
+// surface is missing — `ind_single_reg` rejects the two-part form. Reference
+// bytes: the real vdp_init line (s4.lst:13139, `move.b (a0,d2.w), d0` at
+// $1C48 → `10 30 2000`) plus the ISA corpus vectors for the disp/long forms.
+
+#[test]
+fn an_indexed_zero_disp_matches_vdp_init_reference() {
+    // `move.b (a0,d2.w), d0` — the real Flush_VDP_Shadow shadow-value load.
+    // Brief ext: d2.w, d=0 → 0x2000.
+    let (code, diags) = eval_asm_with(&asm_1("move.b (a0,d2.w), d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x10, 0x30, 0x20, 0x00]);
+}
+
+#[test]
+fn an_indexed_unsuffixed_index_defaults_to_word() {
+    // `(a0,d2)` must be byte-identical to `(a0,d2.w)` — AS's unsuffixed
+    // default (same rule the pc-indexed form pinned in tranche 2).
+    let (unsuf, d1) = eval_asm_with(&asm_1("move.b (a0,d2), d0"), &[]);
+    assert!(d1.is_empty(), "unexpected eval diagnostics: {d1:?}");
+    let (suf, d2) = eval_asm_with(&asm_1("move.b (a0,d2.w), d0"), &[]);
+    assert!(d2.is_empty(), "unexpected eval diagnostics: {d2:?}");
+    assert_eq!(lower_link_68k(&unsuf), lower_link_68k(&suf));
+}
+
+#[test]
+fn an_indexed_with_displacement_and_long_index() {
+    // `move.l 2(a3,a4.l), d0` — ISA corpus vector ("move.l (2,a3,a4.l),d0"):
+    // opcode 0x2033, brief ext a4.l d=2 → 0xC802.
+    let (code, diags) = eval_asm_with(&asm_1("move.l 2(a3,a4.l), d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x20, 0x33, 0xC8, 0x02]);
+}
+
+#[test]
+fn an_indexed_negative_displacement() {
+    // `move.w -2(a2,d3.w), d0` — ISA corpus vector ("move.w (-2,a2,d3.w),d0"):
+    // opcode 0x3032, brief ext d3.w d=-2 → 0x30FE.
+    let (code, diags) = eval_asm_with(&asm_1("move.w -2(a2,d3.w), d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x30, 0x32, 0x30, 0xFE]);
+}
+
+#[test]
+fn an_indexed_as_destination() {
+    // `move.b d0, (a0,d2.w)` — indexed EA in the DESTINATION position
+    // (vdp_init only reads through it, but the form is position-agnostic).
+    // move.b src d0, dest mode 110 reg 000 → opcode 0x1180, ext 0x2000.
+    let (code, diags) = eval_asm_with(&asm_1("move.b d0, (a0,d2.w)"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x11, 0x80, 0x20, 0x00]);
+}
+
+#[test]
+fn an_indexed_rejects_byte_index_size() {
+    // Brief-extension index widths are `.w`/`.l` only — same diagnostic
+    // contract as the pc-indexed form.
+    let (_code, diags) = eval_asm_with(&asm_1("move.b (a0,d2.b), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("index size must be `.w` or `.l`")),
+        "expected an index-size diagnostic, got: {diags:?}"
+    );
+}
+
+#[test]
+fn an_indexed_rejects_out_of_range_displacement() {
+    // The brief extension word carries an 8-bit displacement: -128..=127.
+    let (_code, diags) = eval_asm_with(&asm_1("move.b 128(a0,d2.w), d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("-128..=127") || d.message.contains("8-bit")),
+        "expected a displacement-range diagnostic, got: {diags:?}"
+    );
+}

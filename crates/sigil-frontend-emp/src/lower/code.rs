@@ -726,7 +726,10 @@ fn lower_m68k_abs_sym(
 /// symbolic operand itself (handled by the caller) and a `Cc` is never a valid
 /// EA — neither is classified here.
 fn operand_has_ext_words(op: &CodeOperand) -> bool {
-    matches!(op, CodeOperand::Imm(_) | CodeOperand::DispInd { .. })
+    matches!(
+        op,
+        CodeOperand::Imm(_) | CodeOperand::DispInd { .. } | CodeOperand::IndIdx { .. }
+    )
 }
 
 /// Map a [`CodeOperand`] to a 68k [`M68kOperand`]. A symbolic operand only makes
@@ -769,6 +772,18 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
                 return Err(format!("displacement out of range for (d16,An): {d}"));
             }
             Ok(M68kOperand::Disp16An(d as i16, an))
+        }
+        CodeOperand::IndIdx { reg, disp, xn, xlong } => {
+            let an = an_index(*reg).ok_or_else(|| ind_reg_err(*reg))?;
+            let d = *disp;
+            // Eval range-checked this already (`map_an_indexed`); re-check as
+            // defense-in-depth at the byte-exactness seam, mirroring DispInd.
+            if d < i8::MIN as i128 || d > i8::MAX as i128 {
+                return Err(format!("displacement out of range for (d8,An,Xn): {d}"));
+            }
+            let (is_a, n) = reg_kind(*xn);
+            let xn = if is_a { M68kXn::A(n) } else { M68kXn::D(n) };
+            Ok(M68kOperand::Disp8AnXn { d: d as i8, an, xn, long: *xlong })
         }
         CodeOperand::Cc(_) => {
             Err("a condition code is not valid as an instruction operand".to_string())

@@ -356,6 +356,22 @@ pub enum CodeOperand {
         /// The base register.
         reg: Reg,
     },
+    /// An-indexed indirect: `(a0,d2.w)` / `d8(a0,d2.w)` — 68k `(d8,An,Xn)`,
+    /// brief extension word. Unlike the pc-indexed sibling there is no
+    /// link-time fact here: the displacement is comptime-resolved and
+    /// range-checked to the brief extension's signed-8-bit field at eval
+    /// time (defense-in-depth re-check at lowering).
+    IndIdx {
+        /// The base address register.
+        reg: Reg,
+        /// The comptime displacement (i8 range).
+        disp: i128,
+        /// The index register.
+        xn: Reg,
+        /// `true` for `.l` (long index), `false` for `.w` (sign-extended,
+        /// the AS-matching default when unsuffixed).
+        xlong: bool,
+    },
     /// A `movem` register-list operand (`d0-d1/a0`), already folded to the
     /// CANONICAL 16-bit mask (bit0=D0..bit7=D7, bit8=A0..bit15=A7) — the same
     /// convention as `sigil_isa::m68k::Operand::RegList`. Reglist parsing is

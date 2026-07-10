@@ -470,6 +470,12 @@ impl Evaluator<'_> {
             }
             Operand::Plain { expr, .. } => self.map_plain(expr, scope, env),
             Operand::Ind { parts, span, .. } => {
+                // Two-part `(An,Xn[.size])` — An-indexed with zero displacement
+                // (68k `(d8,An,Xn)`, d=0). Checked before the single-register
+                // path so the two-part form stops diagnosing as unsupported.
+                if parts.len() == 2 {
+                    return self.map_an_indexed(parts, 0, *span, env);
+                }
                 let r = self.ind_single_reg(parts, *span, env)?;
                 Some(CodeOperand::Ind(r))
             }
@@ -548,6 +554,15 @@ impl Evaluator<'_> {
                     );
                     return None;
                 };
+                // Two-part `d8(An,Xn[.size])` — An-indexed with a comptime
+                // displacement. The pc-indexed shape was peeled off above, and
+                // the D6.A3/A4 field-space peeks only match one-part inners, so
+                // a two-part inner reaching here is exactly this form.
+                if let Operand::Ind { parts, .. } = &**inner {
+                    if parts.len() == 2 {
+                        return self.map_an_indexed(parts, d, *span, env);
+                    }
+                }
                 let r = self.inner_ind_reg(inner, env)?;
                 Some(CodeOperand::DispInd { disp: d, reg: r })
             }
@@ -606,28 +621,84 @@ impl Evaluator<'_> {
                     );
                     return None;
                 };
-                let xlong = match self.resolve_size(xn_size, span, env) {
-                    Some(Some(Width::L)) => true,
-                    Some(Some(Width::W)) | Some(None) => false,
-                    Some(Some(other)) => {
-                        let suffix = match other {
-                            Width::B => "b",
-                            Width::S => "s",
-                            Width::W | Width::L => unreachable!("handled above"),
-                        };
-                        self.error(
-                            span,
-                            format!(
-                                "`pc`-relative index size must be `.w` or `.l`, got `.{suffix}`"
-                            ),
-                        );
-                        return None;
-                    }
-                    None => return None,
-                };
+                let xlong = self.resolve_index_size(xn_size, span, env, "`pc`-relative ")?;
                 Some(CodeOperand::PcRelIdx { target, xn, xlong })
             }
         }
+    }
+
+    /// Resolve a brief-extension index size suffix: `.l` → long, `.w` or
+    /// unsuffixed → sign-extended word (the AS-matching default). Anything
+    /// else diagnoses with `ctx` prefixed to the message (`"`pc`-relative "`
+    /// for the pc-indexed form, `""` for the An-indexed form). Shared by
+    /// [`Self::map_pcrel_operand`] and [`Self::map_an_indexed`].
+    fn resolve_index_size(
+        &mut self,
+        xn_size: Option<&TextOrSplice>,
+        span: Span,
+        env: &mut Env,
+        ctx: &str,
+    ) -> Option<bool> {
+        match self.resolve_size(xn_size, span, env) {
+            Some(Some(Width::L)) => Some(true),
+            Some(Some(Width::W)) | Some(None) => Some(false),
+            Some(Some(other)) => {
+                let suffix = match other {
+                    Width::B => "b",
+                    Width::S => "s",
+                    Width::W | Width::L => unreachable!("handled above"),
+                };
+                self.error(
+                    span,
+                    format!("{ctx}index size must be `.w` or `.l`, got `.{suffix}`"),
+                );
+                None
+            }
+            None => None,
+        }
+    }
+
+    /// Resolve a two-part `(An,Xn[.size])` inner to an An-indexed operand
+    /// (68k `(d8,An,Xn)`, brief extension word) with the given comptime
+    /// displacement — `0` from the bare `(An,Xn)` spelling, the evaluated
+    /// displacement from `d8(An,Xn)`. Everything here is comptime (register
+    /// spellings + an integer), so unlike the pc-indexed sibling nothing
+    /// defers to the linker; the displacement is range-checked to the brief
+    /// extension's signed-8-bit field now, at the spelling's own span.
+    fn map_an_indexed(
+        &mut self,
+        parts: &[(ast::Expr, Option<TextOrSplice>)],
+        disp: i128,
+        span: Span,
+        env: &mut Env,
+    ) -> Option<CodeOperand> {
+        debug_assert_eq!(parts.len(), 2, "caller checked the two-part shape");
+        let (xn_expr, xn_size) = &parts[1];
+        let reg = self.ind_single_reg(std::slice::from_ref(&parts[0]), span, env)?;
+        let xn = match xn_expr {
+            ast::Expr::Path(xp) if xp.segments.len() == 1 => reg_from_name(&xp.segments[0]),
+            _ => None,
+        };
+        let Some(xn) = xn else {
+            self.error(
+                expr_span(xn_expr),
+                "indexed addressing needs a valid index register (d0-d7/a0-a7)".to_string(),
+            );
+            return None;
+        };
+        let xlong = self.resolve_index_size(xn_size.as_ref(), span, env, "")?;
+        // The brief extension word carries a signed 8-bit displacement.
+        if disp < i8::MIN as i128 || disp > i8::MAX as i128 {
+            self.error(
+                span,
+                format!(
+                    "indexed-addressing displacement must fit the brief extension's \
+                     8-bit field (-128..=127), got {disp}"
+                ),
+            );
+            return None;
+        }
+        Some(CodeOperand::IndIdx { reg, disp, xn, xlong })
     }
 
     /// Peek the base register of a `(aN)` inner operand WITHOUT emitting any
