@@ -4,11 +4,10 @@
 //! index, ordered by the shared `ANIM_*` ids. What it exercises beyond
 //! port #1:
 //!
-//! - **By-reference offsets members at scale** — eleven `Name: Body`
-//!   entries whose table words resolve to separate `data` bodies, with
-//!   REAL `align 2` pads between the odd-sized bodies (the AS twin pads
-//!   five of them; the .emp carries the same aligns at item position, so
-//!   the 0x74-byte layout is byte-identical).
+//! - **Fully-INLINE offsets members at scale** — eleven `Name: [u8; N] =
+//!   [...]` entries packed back-to-back (the step-5 rewrite dropped the AS
+//!   twin's dead inter-body pads — AnimateSprite reads scripts BYTE-wise —
+//!   so the construct's inline form became expressible; 0x6E bytes).
 //! - **The ordinals-replace-hand-synced-constants story** — twelve drift
 //!   guards prove `Ani_Sonic.Walk == ANIM_WALK` .. `.count == ANIM_COUNT`
 //!   against the AS-side config equs: declaration position IS the id, and
@@ -16,8 +15,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$30978`): `s4.bin[0x30978..0x309EC]` (0x74 bytes).
-//! Debug (map base `$309E0`): `s4.debug.bin[0x309E0..0x30A54]`.
+//! Plain (map base `$30978`): `s4.bin[0x30978..0x309E6]` (0x6E bytes).
+//! Debug (map base `$309E0`): `s4.debug.bin[0x309E0..0x30A4E]`.
 //! Content is shape-invariant.
 //!
 //! ```text
@@ -56,7 +55,7 @@ fn map_toml(debug: bool) -> String {
          [[region]]\n\
          name = \"sonic_anims\"\n\
          lma_base = {base}\n\
-         size = 0x74\n\
+         size = 0x6E\n\
          kind = \"rom\"\n"
     )
 }
@@ -154,8 +153,8 @@ fn compile_real_file(
 }
 
 /// All fifteen drift guards (3 command bytes + 12 ordinal/count) must be
-/// captured (identified by their message text — the five `align 2`
-/// congruence asserts also ride `link_asserts`) and PASS against the equs.
+/// captured (identified by their message text — the trailing `align 2`
+/// congruence assert also rides `link_asserts`) and PASS against the equs.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = link_asserts
         .iter()
@@ -187,19 +186,19 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let (resolved, linked, link_asserts) = compile_real_file(debug);
     assert_drift_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[base..base + 0x74];
+    let expected = &refrom[base..base + 0x6E];
     let section = linked.section("sonic_anims").expect("linked image must carry sonic_anims");
     assert_eq!(
         section.bytes.len(),
-        0x74,
-        "sonic_anims must emit exactly 0x74 bytes (table + bodies + pads)"
+        0x6E,
+        "sonic_anims must emit exactly 0x6E bytes (table + packed bodies)"
     );
-    if let Some(i) = (0..0x74).find(|&i| section.bytes[i] != expected[i]) {
+    if let Some(i) = (0..0x6E).find(|&i| section.bytes[i] != expected[i]) {
         panic!(
             "sonic_anims ({}) first diff at region offset {i:#x}: got {:02x?}, expected {:02x?}",
             if debug { "debug" } else { "plain" },
-            &section.bytes[i.saturating_sub(4)..(i + 8).min(0x74)],
-            &expected[i.saturating_sub(4)..(i + 8).min(0x74)]
+            &section.bytes[i.saturating_sub(4)..(i + 8).min(0x6E)],
+            &expected[i.saturating_sub(4)..(i + 8).min(0x6E)]
         );
     }
 

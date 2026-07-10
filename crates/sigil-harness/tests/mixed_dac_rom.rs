@@ -403,7 +403,7 @@ fn emp_bank_map_tranche3(debug: bool) -> String {
 fn emp_bank_map_tranche4(debug: bool) -> String {
     let act_base = if debug { "0x14B56" } else { "0x14AEE" };
     let sonic_base = if debug { "0x309E0" } else { "0x30978" };
-    let particle_base = if debug { "0x30A54" } else { "0x309EC" };
+    let particle_base = if debug { "0x30A4E" } else { "0x309E6" };
     format!(
         "{}\
          \n\
@@ -416,7 +416,7 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
          [[region]]\n\
          name = \"sonic_anims\"\n\
          lma_base = {sonic_base}\n\
-         size = 0x74\n\
+         size = 0x6E\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
@@ -1571,9 +1571,9 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         // assert (guard_assert_count excludes only [layout.odd-item]).
         ("particle_anims.emp", &particle_asserts, 2),
         // sonic_anims: 15 drift guards (3 command bytes + 12 ordinal/count)
-        // + 6 align congruence asserts after the odd-sized bodies
-        // (Wait/Balance/LookUp/Duck/Skid/GetUp).
-        ("sonic_anims.emp", &sonic_asserts, 21),
+        // + the ONE trailing align congruence assert (the step-5 rewrite
+        // packed the bodies; only the next-table evenness guard remains).
+        ("sonic_anims.emp", &sonic_asserts, 16),
         // act_descriptor: Act_len/Sec_len twin pins + the two engine-limit
         // mirrors + EDGE_CLAMP (the comptime grid facts fold before link).
         ("act_descriptor.emp", &act_asserts, 5),
@@ -1611,7 +1611,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x309EC..0x309F4],
+        &rom[0x309E6..0x309EE],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -1654,7 +1654,7 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche4_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x30A54..0x30A5C],
+        &rom[0x30A4E..0x30A56],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (debug)"
     );

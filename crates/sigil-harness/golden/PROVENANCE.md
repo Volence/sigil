@@ -251,3 +251,23 @@ so the new pinned-width lea deferral carries them across the seam. Gate-off
 byte-neutrality sha256 ×3 at the `755c2c91…` pin. The ELEVEN-module mixed
 gates are the acceptance surface; the port test pins 41 cross-seam label
 addresses from both symbol tables — re-derive them on any re-baseline.
+
+## Re-baseline: sonic_anims pad-drop + inline rewrite (2026-07-10) — the current pin
+
+Tranche-4 STEP-5 (post-merge, Volence-approved): the five inter-body
+`align 2` pads in `sonic_anims` were dead weight (AnimateSprite reads
+scripts BYTE-wise; verified — only the TABLE is word-read), so the bodies
+pack and the offsets construct's fully-INLINE form becomes expressible —
+the .emp rewrote to `Name: [u8; N] = [...]` members (−6 bytes, region
+`0x74` → `0x6E`), the AS twin dropped the same pads in LOCKSTEP (the
+trailing align stays: it guards Ani_Particle's word-read table evenness).
+`Ani_Particle` slid −6 (plain `$309EC`→`$309E6`, debug `$30A54`→`$30A4E`;
+resume orgs `$309EE`/`$30A56`); `EndOfRom` UNCHANGED both shapes (absorbed
+at `org $50000`); act_descriptor and everything below `$30978` unmoved.
+Gate-off neutrality sha256 ×3. Behavior check: walk cycle advancing
+through correct frame bytes live in oracle.
+
+- Non-debug `s4.bin`: sha256
+  **`907a902966efc0dccf09339a10da3dc949560983fc442c8bd302ed696bd2fbd7`**.
+- Debug `s4.debug.bin`: sha256
+  **`7148f938b1d0e4b0f465e8204566ce598c23cac93381fadbc46a67c0452c5d78`**.

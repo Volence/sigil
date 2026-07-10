@@ -110,10 +110,10 @@ fn doctored_af_delete_produces_different_bytes() {
         "precondition: the port spells `const AF_DELETE = $FB`"
     );
     let doctored = src.replace("const AF_DELETE = $FB", "const AF_DELETE = $FA");
-    let (sections, _asserts) = place(&doctored, "0x309EC");
+    let (sections, _asserts) = place(&doctored, "0x309E6");
     assert_ne!(
         link_bytes(&sections),
-        refrom[0x309EC..0x309F4].to_vec(),
+        refrom[0x309E6..0x309EE].to_vec(),
         "a drifted AF_DELETE const must NOT byte-match the reference"
     );
 }
@@ -124,7 +124,7 @@ fn doctored_af_delete_produces_different_bytes() {
 #[test]
 fn standalone_drift_guard_fails_loud_on_the_missing_extern() {
     let Some(src) = real_src() else { return };
-    let (sections, asserts) = place(&src, "0x309EC");
+    let (sections, asserts) = place(&src, "0x309E6");
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
@@ -135,7 +135,7 @@ fn standalone_drift_guard_fails_loud_on_the_missing_extern() {
 }
 
 /// (c) A wrong-base map moves the section — the placed LMA tracks the map,
-/// not an echo. FALSIFIED by the port gate placing at the true `0x309EC`.
+/// not an echo. FALSIFIED by the port gate placing at the true `0x309E6`.
 #[test]
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src() else { return };
@@ -145,7 +145,7 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
         .find(|s| s.name == "particle_anims")
         .expect("placed particle_anims section");
     assert_eq!(sec.lma, 0x309EE, "the placed LMA must track the (doctored) map base");
-    assert_ne!(sec.lma, 0x309EC, "…and therefore differ from the true pin");
+    assert_ne!(sec.lma, 0x309E6, "…and therefore differ from the true pin");
 }
 
 // ===========================================================================
@@ -190,7 +190,7 @@ fn place_sonic(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
          [[region]]\n\
          name = \"sonic_anims\"\n\
          lma_base = 0x30978\n\
-         size = 0x74\n\
+         size = 0x6E\n\
          kind = \"rom\"\n";
     let map = sigil_link::load_map(map_toml).expect("map must load");
     let mut sections = module.sections;
@@ -232,10 +232,11 @@ fn sonic_equs() -> Vec<Section> {
 #[test]
 fn reordered_members_trip_the_ordinal_guards() {
     let Some(src) = sonic_src() else { return };
-    let doctored = src.replace(
-        "    Walk:     Ani_Sonic_Walk,\n    Run:      Ani_Sonic_Run,",
-        "    Run:      Ani_Sonic_Run,\n    Walk:     Ani_Sonic_Walk,",
-    );
+    let walk = "    Walk:     [u8; 10] = [DUR_DYNAMIC, 7, 8, 1, 2, 3, 4, 5, 6, AF_END],\n";
+    let run = "    Run:      [u8; 6]  = [DUR_DYNAMIC, $21, $22, $23, $24, AF_END],\n";
+    let pair: String = format!("{walk}{run}");
+    let swapped: String = format!("{run}{walk}");
+    let doctored = src.replace(&pair, &swapped);
     assert_ne!(doctored, src, "precondition: the swap must apply");
     let (mut sections, asserts) = place_sonic(&doctored);
     let mut equs = sonic_equs();
@@ -282,7 +283,7 @@ fn sonic_wrong_base_map_places_the_section_at_a_different_address() {
          [[region]]\n\
          name = \"sonic_anims\"\n\
          lma_base = 0x3097A\n\
-         size = 0x74\n\
+         size = 0x6E\n\
          kind = \"rom\"\n";
     let map = sigil_link::load_map(map_toml).expect("map must load");
     let mut sections = module.sections;
