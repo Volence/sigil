@@ -250,13 +250,16 @@ fn compile_real_files(
     shape: &Shape,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let aeon = aeon_dir();
+    let types = || parse_file(&aeon.join("engine/system/types.emp"));
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = || parse_file(&aeon.join("engine/system/constants.emp"));
     let solid = parse_file(&aeon.join("games/sonic4/objects/test_solid.emp"));
     let particle = parse_file(&aeon.join("games/sonic4/objects/test_particle.emp"));
 
-    let solid_file = with_ambient(vec![sst()], solid);
-    let particle_file = with_ambient(vec![sst(), constants()], particle);
+    // engine.types rides in front of sst (sst.emp itself imports it —
+    // construct-walk #3's vocabulary).
+    let solid_file = with_ambient(vec![types(), sst()], solid);
+    let particle_file = with_ambient(vec![types(), sst(), constants()], particle);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,

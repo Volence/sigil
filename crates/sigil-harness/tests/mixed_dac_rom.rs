@@ -1071,6 +1071,26 @@ fn sst_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
         sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sst.emp parse errors: {sdiags:?}"
     );
+    // sst.emp itself `use`s the engine.types vocabulary (construct-walk #3)
+    // — its items ride in front, transitively.
+    let mut items = types_ambient_items(
+        &objects_dir.parent().expect("engine/objects has a parent").join("system"),
+    );
+    items.extend(file.items);
+    items
+}
+
+/// The engine.types domain-type vocabulary (`engine/system/types.emp`,
+/// construct-walk #3): zero-byte pure types (Coord/Velocity/Angle/...),
+/// prepended wherever a module `use`s them (sst.emp, math.emp).
+fn types_ambient_items(system_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(system_dir.join("types.emp"))
+        .unwrap_or_else(|e| panic!("cannot read types.emp: {e}"));
+    let (file, tdiags) = parse_str(&src);
+    assert!(
+        tdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "types.emp parse errors: {tdiags:?}"
+    );
     file.items
 }
 
@@ -1113,6 +1133,8 @@ fn placed_module_sections_with_roots(
     let mut ambient_items: Vec<sigil_frontend_emp::ast::Item> = Vec::new();
     match module_file {
         "controllers.emp" | "vdp_init.emp" => ambient_items = constants_ambient_items(&dir),
+        // math.emp uses engine.types (the Angle param, construct-walk #3).
+        "math.emp" => ambient_items = types_ambient_items(&dir),
         "collision_lookup.emp" => {
             ambient_items = constants_ambient_items(
                 &dir.parent().expect("engine/level has a parent").join("system"),

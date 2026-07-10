@@ -176,6 +176,22 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
         "parse errors: {pdiags:?}"
     );
 
+    // engine.types rides ambient (math.emp's `use` for the Angle param,
+    // construct-walk #3 — the controllers_port ambient technique).
+    let types_src = std::fs::read_to_string(dir.join("types.emp"))
+        .unwrap_or_else(|e| panic!("cannot read types.emp: {e}"));
+    let (types_file, tdiags) = parse_str(&types_src);
+    assert!(
+        tdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "types.emp parse errors: {tdiags:?}"
+    );
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: types_file.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
+
     // NO defines: the math block is shape-invariant; the shape lives in the
     // map. include_root = the module's PARENT dir (`engine/`, the sandbox
     // boundary); embed_base = the module's OWN dir (`engine/system/`, the

@@ -711,3 +711,10 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   would collapse them to three lines. Reflection is a big hammer for one file; jotted as
   taste, NOT asked — revisit only if a second full-struct twin appears before structs.asm
   ports. — JOTTED
+- [construct-walk #3, 2026-07-10] **Register OUTPUT typing does not exist** — proc
+  params take types (`d0: Angle`, shipped for GetSineCosine this walk) but there is no
+  out-annotation for register returns, so sin/cos's output contract lives in a comment.
+  Ask: out-register contracts (pairs with the clobbers/preserves family). Ruling
+  PRE-MADE for the first consumer: sin/cos return the BARE fixed<8,8> unit fraction —
+  NOT Velocity (a scale factor becomes a velocity only when multiplied by a speed;
+  Volence probed exactly this and the distinction held). — OPEN

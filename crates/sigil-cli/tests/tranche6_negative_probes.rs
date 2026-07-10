@@ -200,7 +200,9 @@ fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
 /// against the truths — the resolving CONTROL every doctored probe pairs
 /// with. Extra synthetic sections ride along per probe.
 fn solid_outcome(sst_src: &str, solid_src: &str, extra: Vec<Vec<Section>>) -> LinkOutcome {
-    let (sections, asserts, ldiags) = lower_with_ambient(&[sst_src], solid_src);
+    let types_src = read_aeon("engine/system/types.emp")
+        .expect("engine/system/types.emp present (construct-walk #3 vocabulary)");
+    let (sections, asserts, ldiags) = lower_with_ambient(&[&types_src, sst_src], solid_src);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "unexpected lower errors: {ldiags:?}"
@@ -255,7 +257,7 @@ fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
     // and consumers would emit wrong displacements... but the twin's own
     // guards fire first, naming both drifted fields.
     let doctored = sst
-        .replace("anim: u8 @ $18,", "subtype: u8 @ $18,")
+        .replace("anim: AnimId @ $18,", "subtype: AnimId @ $18,")
         .replace("subtype: u8 @ $19,", "anim: u8 @ $19,")
         .replace(
             "ensure(extern(\"SST_anim\") == $18,",
