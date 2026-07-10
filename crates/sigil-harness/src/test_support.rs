@@ -43,8 +43,10 @@ use sigil_ir::{Cpu, LinkAssert, Section};
 // ── 1. The AS-truth equ blob ────────────────────────────────────────────────
 
 /// The `SST_*` struct-field equs (`structs.asm`'s generated layout) that
-/// `sst.emp`'s 30 drift guards read back through `extern()`. Ordered as the
-/// struct declares them. SOURCE OF TRUTH: `engine/objects/structs.asm`.
+/// `sst.emp`'s 30 drift guards read back through `extern()`, plus the
+/// supply-only `SST_interact` ($4E) that `collision.emp`'s `interact_off()`
+/// guard reads (31 entries; 30 guarded + 1 supply). Ordered as the struct
+/// declares them. SOURCE OF TRUTH: `engine/objects/structs.asm`.
 pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
     vec![
         ("SST_code_addr", "$00"),
@@ -77,10 +79,15 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
         ("SST_layer", "$2D"),
         ("SST_sst_custom", "$2E"),
         ("SST_len", "$50"),
+        // The engine-owned player-slot tail word (structs.asm: SST_sst_custom +
+        // SST_CUSTOM_SIZE - 2 = $4E). Not one of sst.emp's 30 field guards —
+        // supplied here so `collision.emp`'s `interact_off()` SST_interact guard
+        // resolves its `extern("SST_interact")` across the link seam.
+        ("SST_interact", "$4E"),
     ]
 }
 
-/// The engine-constant equs that `engine.constants`'s 20 drift guards read back
+/// The engine-constant equs that `engine.constants`'s 18 drift guards read back
 /// through `extern()`. SOURCE OF TRUTH: `engine/system/constants.asm`.
 ///
 /// (The four `BUTTON_*` are written as plain magnitudes here; some hand-copied
@@ -106,8 +113,6 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("COLLISION_TOUCH", "12"),
         ("ST_IN_AIR", "3"),
         ("ST_ON_OBJECT", "5"),
-        ("ST_P1_STANDING", "3"),
-        ("ST_P2_STANDING", "4"),
     ]
 }
 
@@ -139,7 +144,7 @@ pub fn as_engine_constants_equs() -> Vec<Section> {
 
 /// The AS-truth equ blob for gates that compile BOTH `constants.emp` and
 /// `sst.emp` (e.g. the `collision.emp` / test-object gates): the 30 `SST_*`
-/// field pins followed by the 19 engine constants.
+/// field pins followed by the 18 engine constants.
 pub fn as_engine_constants_and_sst_equs() -> Vec<Section> {
     let mut pairs = sst_field_equs();
     pairs.extend(engine_constant_equs());
@@ -197,17 +202,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_20() {
+    fn engine_constants_blob_assembles_and_defines_all_18() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
-        assert_eq!(engine_constant_equs().len(), 20, "the twin guards 20 engine constants");
+        assert_eq!(engine_constant_equs().len(), 18, "the twin guards 18 engine constants");
     }
 
     #[test]
     fn sst_and_constants_blob_carries_both_layers() {
         let _ = as_engine_constants_and_sst_equs();
-        assert_eq!(sst_field_equs().len(), 30, "sst.emp guards 30 SST_* fields");
+        assert_eq!(
+            sst_field_equs().len(),
+            31,
+            "sst.emp guards 30 SST_* fields + 1 supply-only SST_interact for collision.emp"
+        );
     }
 
     #[test]

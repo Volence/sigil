@@ -764,3 +764,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   (unresolved symbol), never silent. Ask (consumer-gated): fn-call-scoped hygiene so a
   template can split a labeled region across fragments; until then keep shared labels in
   one fragment. — OPEN (consumer-gated)
+- [tranche 7b, 2026-07-10] **bare const names in displacement position are CLOSED on
+  typed base registers** — the interact-pointer fix needed to write the engine-owned
+  `$4E` tail word off a `*Sst`-typed register. A bare const `interact_off(a2)` on a TYPED
+  base register does NOT resolve the const — the displacement slot is closed to the
+  struct's field namespace, so a typo'd field can never silently resolve to a same-named
+  module const (correct totality). The sanctioned escape is the CALL-EXPR spelling
+  `interact_off()(a2)` (comptime fn returning the int) — probe-verified. On UNTYPED
+  registers a bare const in displacement position resolves fine (no field namespace to
+  shadow it). Right call — the typed-register closure is the feature, not a gap. — RECORDED
+- [tranche 7b, 2026-07-10] **operand splices are template-only** — F1's `{off}({reg})`
+  operand-position splice parses inside a `comptime fn` asm block (aabb's `sub.w
+  {boff}({breg}), {delt}` shape) but NOT in a plain proc body: `splices_allowed` gates
+  the splice syntax to template contexts. So a proc that wants a spliced displacement
+  reaches for the call-expr escape (row above) rather than a raw `{}` splice. Noted as a
+  deliberate SCOPE boundary (splices belong to comptime-fn templates), not necessarily
+  wrong — jotted so the next proc-body consumer knows the boundary before hitting it. — RECORDED

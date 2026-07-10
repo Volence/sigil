@@ -437,3 +437,92 @@ reference; `$18F` dropped from the four-byte set).
   **`82aac84d49fbb5ad73956bb6b92545c403523b8487f2cea4c14e434172385b9b`**.
 - Debug `s4.debug.bin`: sha256
   **`ff897d0b49bb19583788ab5f4e4184081fe0311b4694b08b1e854dd4bbdca4bc`**.
+
+## Re-baseline: tranche-7b — the interact-pointer staleness fix (2026-07-10) — the current pin
+
+Tranche-7 FOLLOW-UP (`collision.asm` + `collision.emp` + `player_sensors.asm`
++ `structs.asm` + `constants.asm`/`constants.emp` in LOCKSTEP; aeon
+**`7138ca3`** on branch `collision-interact`, all shapes freshly captured —
+do NOT rebuild). The per-player standing-BIT scheme (object-side bits, prone
+to going stale when a player walked off between the mid-frame clear and the
+animation classifier's ledge probe) is REPLACED by a single engine-owned
+pointer: **`SST_interact`**, a new word at **`$4E`** — the tail of the
+player-slot custom window (`SST_sst_custom + SST_CUSTOM_SIZE - 2`;
+`structs.asm` equ + `<> $4E` guard). `Touch_Solid`'s top-contact now stores
+the claimed solid's address there (replacing the 16-byte per-player
+standing-bit block, −12 B); `TouchResponse` clears it at pass start
+(`clr.w SST_interact(a2)`, +4 B alongside the `bclr #ST_ON_OBJECT`); the
+ledge probe in `player_sensors.asm` reads it directly (slot scan deleted,
+−30-class). Claim / transfer / walk-off were LIVE-VERIFIED in oracle. The
+two `ST_P1/P2_STANDING` bits had NO remaining consumer and were deleted from
+both `constants.asm` (tombstone note) and `constants.emp` — **constants twin
+20 → 18**.
+
+**collision region: `$16E` → `$166`** (bases UNCHANGED — plain `$308A`,
+debug `$3344`; `TouchResponse` head unmoved, the standing-block removal
+shrinks the pass-start clear so the `lea (Dynamic_Slots).w, a3` slides from
+region offset `0x1C` to **`0x20`** — its abs.w word moves to offset `0x22`).
+New `SIGIL_EMP_COLLISION` resume orgs plain **`$31F0`** / debug **`$34AA`**.
+
+**Two-stage tail slide** (`player_sensors.asm` sits inside
+`gameEngineBlockIncludes`, between `collision_lookup` and `section.asm`):
+- Regions between collision's end and `player_sensors` slid **−8** (collision
+  shrink only): `Collision_GetType` (collision_lookup base) plain
+  `$4C02`→**`$4BFA`** / debug `$5426`→**`$541E`** (size `$24` held; resume
+  orgs / `SIGIL_EMP_COLLISION_LOOKUP` gate plain **`$4C1E`** / debug
+  **`$5442`** = `Collision_ProbeDown`), `Tile_Cache_GetCollision` plain
+  `$431A`→**`$4312`** / debug `$4A86`→**`$4A7E`**. The cross-seam
+  collision-lookup tail `bra.w Tile_Cache_GetCollision` holds its disp
+  `$F6FA` plain / `$F642` debug (site + target both slid −8 equally — window
+  CONTENT byte-identical).
+- Regions AT/after `player_sensors` slid **−36** (collision −8 + the ledge
+  probe's scan-to-read shrink): `sound_api` base (`Sound_PostByte`) plain
+  `$5D8E`→**`$5D6A`** / debug `$724C`→**`$7228`** (size `$1E4` held;
+  `SIGIL_EMP_SOUND_API` gate plain **`$5F4E`** / debug **`$740C`** =
+  `Sound_FadeIn`'s successor; `Sound_PlaySFX` = base+`$100` INVARIANT),
+  `Sound_DrainSfxRing` plain `$5ED4`→**`$5EB0`** / debug `$7392`→**`$736E`**.
+  `game_loop`'s cross-seam `bsr.w` drain (site UNMOVED, target slid) re-derives
+  disp plain `$3BD0`→**`$3BAC`** / debug `$5000`→**`$4FDC`**. (The prompt's
+  −38 estimate for this stage read −36 in the listings — the ledge-probe scan
+  collapsed 28 B, not 30; the listings are truth.)
+
+Regions BEFORE collision (`vdp_init`, `hblank`, `controllers`, `math`,
+`game_loop` `$22FE`/`$238C`, `VSync_Wait` `$2262`/`$22EC`) + the vectors are
+UNMOVED; everything at/after `org $10000` (`act_descriptor`, `sonic_anims`,
+`particle_anims`, the test-object bank, `SongTable` `$63AE0` /
+`SongPatchTable` `$63AE4`) is UNMOVED — the −36 is absorbed at the
+`org $10000` sound boundary, so assembled `EndOfRom` is UNCHANGED both shapes.
+Demo unaffected.
+
+**Guard-count re-derivation** (constants twin 20→18 rippled everywhere it
+compiles, and `collision.emp` gained ONE new ensure — `comptime fn
+interact_off()` drift-locks `$4E` against `extern("SST_interact")`):
+constants-only gates 20→**18** (controllers / vdp_init / collision_lookup),
+`collision.emp` 50→**49** (sst 30 + constants 18 + collision.emp's own 1),
+`test_particle.emp` 50→**48** (sst 30 + constants 18), `test_objects_port`
+80→**78** (sst 30 ×2 + constants 18), `particle_anims.emp` 21→**19**
+(constants 18 + its own AF_DELETE prepend guard). `sigil_harness::test_support`:
+`engine_constant_equs()` dropped both STANDING entries (20→18 pairs);
+`sst_field_equs()` gained a SUPPLY-ONLY `("SST_interact", "$4E")` (31 pairs —
+30 guarded + 1 supply so `collision.emp`'s new guard resolves its extern).
+
+**Debug convsym-rewritten set re-derived** to `{$18E, $18F, $1A5, $1A6,
+$1A7}` (5 bytes): the collision content change moves the checksum, so `$18F`
+DIVERGES again (it had coincided at t7-step5). Plain set UNCHANGED
+(`{$18E, $18F, $1A6, $1A7}`).
+
+**Aeon engine.inc gate-org VERIFIED (not edited).** The `7138ca3` engine.inc
+already re-derived all three downstream gate orgs this time; cross-checked
+against my listing reads and CONSISTENT: `SIGIL_EMP_COLLISION` resume
+`$31F0`/`$34AA`, `SIGIL_EMP_COLLISION_LOOKUP` gate `$4C1E`/`$5442`,
+`SIGIL_EMP_SOUND_API` gate `$5F4E`/`$740C`.
+
+Full strict workspace (`SIGIL_STRICT_GATE=1`) = **2034 passed / 0 failed**;
+`clippy -D warnings` clean; `corpus_bytediff` all-identical (the fix is
+test-pin-only — no engine/lowering change).
+
+- Aeon repo commit: **`7138ca3`** (branch `collision-interact`).
+- Non-debug `s4.bin`: sha256
+  **`e22a82b397525d8021e6facdd4f307ed1886ac7f497c08fc95f19f7182f61f0e`**.
+- Debug `s4.debug.bin`: sha256
+  **`0c9f1952b50e4bec8f02cf0fb57195c8c73b7ce98a4dcaedb87ae2d9aca6869d`**.

@@ -105,7 +105,7 @@ fn errors(diags: &[sigil_span::Diagnostic]) -> Vec<&str> {
 /// the twins guard against) — a trailing label+`dc.w` opens a section so the
 /// equs flush (the collision_lookup / test_objects pattern).
 fn as_truth_equs() -> Vec<Section> {
-    // The 30 `SST_*` field pins + 20 engine constants both `.emp` twins guard
+    // The 30 `SST_*` field pins + 18 engine constants both `.emp` twins guard
     // (SOURCE OF TRUTH: `structs.asm` / `constants.asm`), shared via
     // `sigil_harness::test_support`. The drifted-constants probe below builds
     // its own DOCTORED blob via `with_engine_constant_override`.
