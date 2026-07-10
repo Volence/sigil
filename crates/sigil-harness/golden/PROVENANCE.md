@@ -271,3 +271,27 @@ through correct frame bytes live in oracle.
   **`907a902966efc0dccf09339a10da3dc949560983fc442c8bd302ed696bd2fbd7`**.
 - Debug `s4.debug.bin`: sha256
   **`7148f938b1d0e4b0f465e8204566ce598c23cac93381fadbc46a67c0452c5d78`**.
+
+## Tranche-5 port #1: game_loop (2026-07-10)
+
+`engine/system/game_loop.asm` → `engine/system/game_loop.emp` under
+`SIGIL_EMP_GAME_LOOP` at `engine/engine.inc:136` (the sixth engine-side
+gate; resume org plain `$2310` / debug `$239E`). Region plain
+`$22FE..$2310` / debug `$238C..$239E` (0x12 bytes: GameLoop +
+GameState_Idle). The FIRST code module taking build-shape defines — the
+.emp requires `-D SOUND_DRIVER_ENABLED` and `-D SOUND_DEBUG_HOTKEYS`
+(0|1); both pinned shapes are the (1,0) combo (build.sh defaults:
+sound on, hotkeys env-opt-in off), where sonic4's `gameDebugTick`
+expansion contributes ZERO bytes. The other three combos are gated
+module-level against the AS twin assembled through sigil's AS front-end
+(`game_loop_port.rs`'s matrix — ALSO the drift guard for the H2
+expansion mirror, kill-list row 9: it re-extracts the macro body from
+the real `games/sonic4/config/game.asm` every run). Cross-seam reads:
+`VSync_Wait` (plain `$2262` / debug `$22EC`) and `Sound_DrainSfxRing`
+(plain `$5EDE` / debug `$739C`) as pc-relative `bsr.w` targets,
+`Game_State` (`$FFFF8004`, engine RAM, shape-invariant); outbound
+consumer `boot.asm:220`'s `bra.w GameLoop`. The TWELVE-module mixed
+gates are the acceptance surface. Gate-off byte-neutrality sha256 ×3 at
+the `907a9029…` pin (+ debug `7148f938…`, + demo.bin builds clean —
+the engine-side gate must never define for other games). Reference pins
+UNCHANGED.

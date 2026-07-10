@@ -732,6 +732,29 @@ fn collect_body_labels(
                         );
                     }
                 }
+                ScriptStmt::Asm(AsmStmt::If { then, els, span, .. }) => {
+                    // Comptime-`if` branches (tranche 5) hold `AsmStmt` only —
+                    // a `yield` is a `ScriptStmt` and cannot nest inside one —
+                    // but LABELS can, and a resume/branch target defined under
+                    // an `if` would only conditionally exist. Refuse rather
+                    // than half-support: hoist the label out of the `if`.
+                    let mut nested = Vec::new();
+                    collect_if_labels(then, &mut nested);
+                    if let Some(els) = els {
+                        collect_if_labels(els, &mut nested);
+                    }
+                    if let Some(first) = nested.first() {
+                        err(
+                            diags,
+                            *span,
+                            format!(
+                                "label `.{first}` is defined inside a comptime `if` \
+                                 in a script body — a resume/branch target must \
+                                 exist unconditionally; define it outside the `if`"
+                            ),
+                        );
+                    }
+                }
                 ScriptStmt::Asm(_) => {}
                 ScriptStmt::Loop { body, .. } => walk(body, out, diags),
                 ScriptStmt::Yield { .. } | ScriptStmt::WaitFrames { .. } => {}
@@ -741,6 +764,23 @@ fn collect_body_labels(
     let mut out = std::collections::HashSet::new();
     walk(stmts, &mut out, diags);
     out
+}
+
+/// Labels defined anywhere under a comptime-`if`'s branches (recursively) —
+/// the script-body refusal above needs their names for its diagnostic.
+fn collect_if_labels(stmts: &[AsmStmt], out: &mut Vec<String>) {
+    for st in stmts {
+        match st {
+            AsmStmt::Label { name, .. } => out.push(name.clone()),
+            AsmStmt::If { then, els, .. } => {
+                collect_if_labels(then, out);
+                if let Some(els) = els {
+                    collect_if_labels(els, out);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// The `__resume$<k>` hidden proc-local label name for resume member `k`

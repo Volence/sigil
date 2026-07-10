@@ -344,6 +344,40 @@ pub fn assemble_mixed_tranche4_as_side(aeon: &Path, debug: bool) -> Result<Modul
     })
 }
 
+/// Assemble the AS side of the tranche-5 TWELVE-module mixed build:
+/// everything `assemble_mixed_tranche4_as_side` gates PLUS
+/// `SIGIL_EMP_GAME_LOOP` — the `engine/engine.inc:136` gate (engine-side,
+/// like controllers/math/collision_lookup). The window it opens
+/// (plain `$22FE..$2310`, debug `$238C..$239E`) is filled by
+/// `engine/system/game_loop.emp`, whose body takes the
+/// `SOUND_DRIVER_ENABLED`/`SOUND_DEBUG_HOTKEYS` defines (tranche-5 H1/H2 —
+/// the first CODE module with build-shape conditionals).
+pub fn assemble_mixed_tranche5_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+        ("SIGIL_EMP_HBLANK".to_string(), 1),
+        ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
+        ("SIGIL_EMP_MATH".to_string(), 1),
+        ("SIGIL_EMP_VDP_INIT".to_string(), 1),
+        ("SIGIL_EMP_COLLISION_LOOKUP".to_string(), 1),
+        ("SIGIL_EMP_PARTICLE_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_SONIC_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_ACT_DESCRIPTOR".to_string(), 1),
+        ("SIGIL_EMP_GAME_LOOP".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche5 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable

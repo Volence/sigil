@@ -586,3 +586,23 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   player shape `move.b #ANIM_WALK, SST_anim(a0)` hard-errors cross-seam (only `.l`
   defers). Blocks kill-list row 4 stage 2; extend try_defer_long_imm's family when the
   flip (or any port) demands it. — OPEN
+
+- [tranche-5 port #1 (game_loop), 2026-07-10] **Statement-position comptime `if` SHIPPED**
+  (H1's carrier: parser `asm_if`, `AsmStmt::If`, recursive label scope, script-body
+  label-under-if refusal; 8 tests). Two edges deliberately NOT built: (a) a `yield`
+  inside a comptime-if branch in a SCRIPT body parses as an unknown mnemonic (a
+  `ScriptStmt` can't nest in an `AsmStmt` branch by type) — the error is loud but
+  unhelpful; teach a steering diagnostic if a script port ever hits it. (b) the
+  AS-`ifdef`-presence vs .emp-value-define convention (AS omits the define, .emp
+  passes 0) is harness-mapped per call site — fine while the harness owns both
+  sides; the sigil CLI's `-D` story should NAME the convention when sound-off
+  builds go end-to-end through the CLI. — OPEN (both jots)
+- [tranche-5 port #1 (game_loop), 2026-07-10] **`extern-macro` / game-contract-hook
+  construct NOT built** (H2 option (c) rejected — no demand): sonic4's gameDebugTick
+  body is a plain `jsr`, mirrored under comptime-if (kill-list row 9). The demand
+  moment is the first game-contract macro with a NON-TRIVIAL body reaching a port. — OPEN
+- [tranche-5 review, 2026-07-10] **sigil-link does not range-check pc-rel16 fixups** — a
+  `bsr.w`/`bra.w` whose resolved displacement exceeds ±32K wraps mod 2^16 and links
+  silently (surfaced by the port tests' far-carrier consumer proofs; game_loop's
+  consumer moved in-range, collision_lookup's inherited far carrier left as-is).
+  Add a loud link error when a PcRelDisp16 fixup overflows i16. — OPEN

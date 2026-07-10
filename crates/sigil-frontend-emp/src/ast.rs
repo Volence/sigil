@@ -1081,6 +1081,23 @@ pub enum AsmStmt {
         /// Span of the whole statement.
         span: Span,
     },
+    /// A comptime `if` at proc/asm statement position (tranche 5, H1 —
+    /// mt_bank's define-conditional pattern for CODE): the condition must
+    /// evaluate to a comptime bool/int; the chosen branch's statements lower
+    /// inline, the unchosen branch is never lowered. `els` holds either the
+    /// `else { }` body or a single nested `If` for an `else if` chain.
+    /// Branches hold `AsmStmt` only, so a script `yield` (a `ScriptStmt`)
+    /// can never nest inside one by construction.
+    If {
+        /// The comptime condition.
+        cond: Expr,
+        /// Statements lowered when the condition is true.
+        then: Vec<AsmStmt>,
+        /// `else` statements (or a single `If` for `else if`), if any.
+        els: Option<Vec<AsmStmt>>,
+        /// Span of the whole statement.
+        span: Span,
+    },
 }
 
 /// The two statement-trap spellings (S2-D11(e)).

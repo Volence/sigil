@@ -1274,6 +1274,14 @@ impl Parser {
                 return Some(AsmStmt::Trap { kind, message, span });
             }
         }
+        // statement-position comptime `if` (tranche 5, H1): `if` is a
+        // reserved statement-leading keyword (S2-D1) and no 68k/Z80 mnemonic
+        // is named `if`, so this can never shadow an instruction line — and
+        // S2-D15's control-flow-sugar "no" means it can never AMBIGUATE with
+        // a future runtime `if` either.
+        if self.at_kw("if") {
+            return Some(self.asm_if(splices_allowed));
+        }
         // statement-position comptime call: `ident(` where the `(` is
         // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
         // is an instruction with a parenthesized operand, not a call.
@@ -1284,6 +1292,81 @@ impl Parser {
             return Some(AsmStmt::Call(e));
         }
         Some(AsmStmt::Instr(self.instr_line(splices_allowed)))
+    }
+
+    /// `if cond { asm... } [else if ... | else { asm... }]` at proc/asm
+    /// statement position. The branches parse with the SAME statement grammar
+    /// as the enclosing body ([`Parser::asm_body`]), so labels, nested `if`s,
+    /// traps, and comptime calls all work inside. The condition parses with
+    /// struct literals disabled (`if_expr`'s rule): `if X { ... }` must not
+    /// read `X {` as a struct literal. Newlines before `else` (and between
+    /// `else` and its `{`) are skipped — `} else {`, a next-line `else`, and
+    /// an `else` with its brace on the next line all spell the same statement
+    /// (the caller's loop skips newlines anyway, so the lookahead costs
+    /// nothing). A statement after a closing brace on the SAME line is
+    /// diagnosed like every other statement form's trailing junk.
+    ///
+    /// Recursion (nested `if`, `else if`, and branch bodies) is guarded by
+    /// the same `block_depth` counter/ceiling as `stmt_block`/`loop` (and for
+    /// the same reason: adversarial `if 1 { if 1 { …` is shaped like a
+    /// paren-bomb, and an unbounded descent would abort the process instead
+    /// of diagnosing). This also bounds the eval side's `lower_asm_stmt`/
+    /// label-collection recursions, since AST depth is parser-bounded.
+    fn asm_if(&mut self, splices_allowed: bool) -> AsmStmt {
+        let start = self.span();
+        self.bump(); // `if`
+        let cond = self.expr_no_struct_lit();
+        if self.block_depth >= MAX_EXPR_DEPTH {
+            let span = self.span();
+            self.diag_at(span, "block nesting too deep (max 128)");
+            // Do not recurse; consume the whole `{ ... }` so the caller's
+            // loop provably makes progress.
+            self.skip_unparsed_block();
+            return AsmStmt::If {
+                cond,
+                then: Vec::new(),
+                els: None,
+                span: start.merge(self.prev_span()),
+            };
+        }
+        self.block_depth += 1;
+        self.expect(&Tok::LBrace, "`{`");
+        let then = self.asm_body(splices_allowed);
+        self.expect(&Tok::RBrace, "`}`");
+        self.trailing_junk_after_brace();
+        self.skip_newlines();
+        let els = if self.eat_kw("else") {
+            self.skip_newlines();
+            if self.at_kw("if") {
+                Some(vec![self.asm_if(splices_allowed)])
+            } else {
+                self.expect(&Tok::LBrace, "`{`");
+                let body = self.asm_body(splices_allowed);
+                self.expect(&Tok::RBrace, "`}`");
+                self.trailing_junk_after_brace();
+                Some(body)
+            }
+        } else {
+            None
+        };
+        self.block_depth -= 1;
+        AsmStmt::If { cond, then, els, span: start.merge(self.prev_span()) }
+    }
+
+    /// Diagnose a statement continuing on the same line after a closing `}`
+    /// (`if X { nop } moveq #0, d0`) — every other statement form requires a
+    /// line end, so `if` does too. `else` is legal there (the caller reads
+    /// it); a newline / `}` / EOF ends the statement normally. Consumes
+    /// nothing: the caller's newline-skipping loop recovers on its own.
+    fn trailing_junk_after_brace(&mut self) {
+        if !(self.at(&Tok::Newline)
+            || self.at(&Tok::RBrace)
+            || self.at(&Tok::Eof)
+            || self.at_kw("else"))
+        {
+            let sp = self.span();
+            self.diag_at(sp, "expected end of line after `}`");
+        }
     }
 
     /// Is the token immediately after the current one lexically adjacent to

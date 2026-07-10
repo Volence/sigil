@@ -27,6 +27,28 @@ use crate::parser::expr_span;
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg, Value, Width};
 use sigil_span::{Level, Span};
 
+/// Collect every source-label definition in `body`, RECURSIVELY through
+/// comptime-`if` branches (tranche 5, H1) — the label scope is pure syntax,
+/// built before any condition can be evaluated. See the call site in
+/// [`Evaluator::eval_asm_owned`] for why both-arm duplicates are benign.
+/// Spans ride along so the caller can diagnose export-flag disagreement
+/// between arms (same name, different flavor — the scope maps a name to ONE
+/// symbol, so the flavors cannot coexist).
+fn collect_labels<'a>(body: &'a [AsmStmt], out: &mut Vec<(&'a str, bool, Span)>) {
+    for stmt in body {
+        match stmt {
+            AsmStmt::Label { name, export, span } => out.push((name.as_str(), *export, *span)),
+            AsmStmt::If { then, els, .. } => {
+                collect_labels(then, out);
+                if let Some(els) = els {
+                    collect_labels(els, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 impl Evaluator<'_> {
     /// Evaluate a raw `asm { }` body to a [`Value::Code`]. Its owner scope is the
     /// instantiation itself (a fresh `k`), so an exported label is stable per
@@ -60,112 +82,172 @@ impl Evaluator<'_> {
         };
 
         // Resolve every source label to its emitted symbol up front (export →
-        // `Owner.name`, non-export → owner-scoped hidden symbol).
-        let scope = LabelScope::build(
-            &owner,
-            body.iter().filter_map(|stmt| match stmt {
-                AsmStmt::Label { name, export, .. } => Some((name.as_str(), *export)),
-                _ => None,
-            }),
-        );
+        // `Owner.name`, non-export → owner-scoped hidden symbol). Labels are
+        // collected RECURSIVELY through comptime-`if` branches: the scope is
+        // pure syntax (built before any condition can be evaluated), and a
+        // label spelled in BOTH arms maps to the same symbol — only the
+        // chosen arm ever DEFINES it, so there is no collision; a reference
+        // to a label in the unchosen arm resolves in scope and fails loudly
+        // at link (symbol never defined).
+        let mut labels: Vec<(&str, bool, Span)> = Vec::new();
+        collect_labels(body, &mut labels);
+        // Same name with DIFFERENT export flavors (one arm `export .x:`, the
+        // other `.x:`) cannot share the one symbol the scope maps — diagnose
+        // rather than silently taking whichever arm was collected first.
+        for (i, (name, export, span)) in labels.iter().enumerate() {
+            if labels[..i].iter().any(|(n, e, _)| n == name && e != export) {
+                self.error(
+                    *span,
+                    format!(
+                        "label `.{name}` is defined both `export` and non-`export` \
+                         across comptime-`if` arms — pick one flavor"
+                    ),
+                );
+            }
+        }
+        let scope = LabelScope::build(&owner, labels.iter().map(|(n, e, _)| (*n, *e)));
 
         // Build the resolved item list.
         let mut buf = CodeBuf::empty();
         for stmt in body {
-            match stmt {
-                AsmStmt::Label { name, export, span } => {
-                    buf.push(CodeItem::Label {
-                        name: scope.label_def(name),
-                        export: *export,
-                        span: *span,
-                    });
+            self.lower_asm_stmt(stmt, &scope, &mut buf, env);
+        }
+        Value::Code(buf)
+    }
+
+    /// Lower ONE proc/asm statement into `buf`, resolving labels against
+    /// `scope`. Factored out of [`Self::eval_asm_owned`]'s loop so a comptime
+    /// `if`'s chosen branch can lower RECURSIVELY against the same scope and
+    /// buffer (tranche 5, H1) — branch statements are ordinary statements of
+    /// the enclosing body, not a nested hygiene domain.
+    fn lower_asm_stmt(
+        &mut self,
+        stmt: &AsmStmt,
+        scope: &LabelScope,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+    ) {
+        match stmt {
+            AsmStmt::Label { name, export, span } => {
+                buf.push(CodeItem::Label {
+                    name: scope.label_def(name),
+                    export: *export,
+                    span: *span,
+                });
+            }
+            AsmStmt::Instr(instr) => {
+                // D-PP.1: a leading bareword that is NOT a recognized mnemonic
+                // for this section's CPU (and not jbra/jbsr) but RESOLVES to an
+                // in-scope comptime fn is a bare directive-style STATEMENT CALL
+                // — pure sugar for the paren form. The decision lives HERE (not
+                // the parser): only at lowering are BOTH the CPU's mnemonic
+                // table and the comptime-fn table in hand. Mnemonics win
+                // unconditionally, so this fires only for a bareword the
+                // mnemonic table rejects; a bareword that then resolves to
+                // nothing falls through to the unchanged "not a recognized
+                // mnemonic" error, and a non-fn value gets a specific error.
+                if let Some(spliced) = self.try_bare_statement_call(instr, env) {
+                    buf.items.extend(spliced.items);
+                    return;
                 }
-                AsmStmt::Instr(instr) => {
-                    // D-PP.1: a leading bareword that is NOT a recognized mnemonic
-                    // for this section's CPU (and not jbra/jbsr) but RESOLVES to an
-                    // in-scope comptime fn is a bare directive-style STATEMENT CALL
-                    // — pure sugar for the paren form. The decision lives HERE (not
-                    // the parser): only at lowering are BOTH the CPU's mnemonic
-                    // table and the comptime-fn table in hand. Mnemonics win
-                    // unconditionally, so this fires only for a bareword the
-                    // mnemonic table rejects; a bareword that then resolves to
-                    // nothing falls through to the unchanged "not a recognized
-                    // mnemonic" error, and a non-fn value gets a specific error.
-                    if let Some(spliced) = self.try_bare_statement_call(instr, env) {
-                        buf.items.extend(spliced.items);
-                        continue;
-                    }
-                    if let Some(item) = self.lower_instr_to_item(instr, &scope, env) {
-                        buf.push(item);
-                    }
+                if let Some(item) = self.lower_instr_to_item(instr, scope, env) {
+                    buf.push(item);
                 }
-                AsmStmt::Call(expr) => {
-                    // A statement-position call splices a nested template's items
-                    // in (§6.2): it MUST evaluate to a `Code` value.
-                    //
-                    // Provenance (§9, D-P4.11) — the SMALLEST HONEST version of
-                    // `ProvFrame::Comptime`. Core does NOT reserve a provenance
-                    // *stack* on a `Diagnostic` (it carries a single `primary`
-                    // span) nor on a `DataFragment` (a single span), so a
-                    // structured `ProvFrame::Comptime { call_site, def_site }`
-                    // cannot be attached to the emitted fragment here — that is
-                    // FLAGGED for the checkpoint (see the T7 report). What we CAN
-                    // do, Core-free and at the splice site, is name the generator
-                    // CALL SITE: if evaluating the generator produced any
-                    // diagnostics (an out-of-range value in the generated table, a
-                    // failed `ensure`, a bad splice, …), follow them with a `Note`
-                    // pointing at THIS call, so an error inside a comptime-
-                    // generated table is traceable back to where it was
-                    // instantiated (call_site = this call; def_site = the span the
-                    // generator's own diagnostic already carries).
-                    let watermark = self.diags.len();
-                    let v = self.eval_expr(expr, env);
-                    self.note_if_comptime_error(watermark, expr_span(expr));
-                    match v {
-                        Value::Code(inner) => buf.items.extend(inner.items),
-                        Value::Poison => {}
-                        other => self.error(
-                            expr_span(expr),
+            }
+            AsmStmt::Call(expr) => {
+                // A statement-position call splices a nested template's items
+                // in (§6.2): it MUST evaluate to a `Code` value.
+                //
+                // Provenance (§9, D-P4.11) — the SMALLEST HONEST version of
+                // `ProvFrame::Comptime`. Core does NOT reserve a provenance
+                // *stack* on a `Diagnostic` (it carries a single `primary`
+                // span) nor on a `DataFragment` (a single span), so a
+                // structured `ProvFrame::Comptime { call_site, def_site }`
+                // cannot be attached to the emitted fragment here — that is
+                // FLAGGED for the checkpoint (see the T7 report). What we CAN
+                // do, Core-free and at the splice site, is name the generator
+                // CALL SITE: if evaluating the generator produced any
+                // diagnostics (an out-of-range value in the generated table, a
+                // failed `ensure`, a bad splice, …), follow them with a `Note`
+                // pointing at THIS call, so an error inside a comptime-
+                // generated table is traceable back to where it was
+                // instantiated (call_site = this call; def_site = the span the
+                // generator's own diagnostic already carries).
+                let watermark = self.diags.len();
+                let v = self.eval_expr(expr, env);
+                self.note_if_comptime_error(watermark, expr_span(expr));
+                match v {
+                    Value::Code(inner) => buf.items.extend(inner.items),
+                    Value::Poison => {}
+                    other => self.error(
+                        expr_span(expr),
+                        format!(
+                            "an `asm` statement-call must evaluate to Code, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                }
+            }
+            AsmStmt::Trap { kind, message, span } => {
+                // S2-D11(e): both spellings assemble to the 68k ILLEGAL
+                // word — the file builds and RUNS to the hole. 68k-only
+                // in v1 (the script/offsets precedent): Z80 has no
+                // ratified trap word.
+                if self.cpu == Some(sigil_ir::backend::Cpu::Z80) {
+                    self.error(
+                        *span,
+                        "[todo.non-68k] `todo!`/`unreachable!` are 68k-only in v1 \
+                         (they assemble to the 68k ILLEGAL word; no Z80 trap \
+                         encoding is ratified)",
+                    );
+                    return;
+                }
+                if matches!(kind, crate::ast::TrapKind::Todo) {
+                    // One [todo.present] per site — together they ARE the
+                    // "list of all todos"; `--deny-todo` promotes them.
+                    let msg = match message {
+                        Some(m) => format!("[todo.present] todo!: {m}"),
+                        None => "[todo.present] todo! left in the build".to_string(),
+                    };
+                    self.warn(*span, msg);
+                }
+                buf.push(CodeItem::Instr {
+                    mnemonic: "illegal".to_string(),
+                    size: None,
+                    ops: vec![],
+                    span: *span,
+                });
+            }
+            AsmStmt::If { cond, then, els, span: _ } => {
+                // Tranche 5, H1: the condition must be a comptime
+                // bool/int (mt_bank's define pattern — `if DEFINE == 1`).
+                // The chosen branch lowers inline against the SAME scope
+                // and buffer; the unchosen branch is never lowered.
+                let truthy = match self.eval_expr(cond, env) {
+                    Value::Bool(b) => b,
+                    Value::Int(i) => i != 0,
+                    Value::Poison => return,
+                    other => {
+                        self.error(
+                            expr_span(cond),
                             format!(
-                                "an `asm` statement-call must evaluate to Code, got {}",
+                                "[asm.if-not-comptime] a statement-position `if` \
+                                 condition must be a comptime bool or int, got {}",
                                 other.type_name()
                             ),
-                        ),
-                    }
-                }
-                AsmStmt::Trap { kind, message, span } => {
-                    // S2-D11(e): both spellings assemble to the 68k ILLEGAL
-                    // word — the file builds and RUNS to the hole. 68k-only
-                    // in v1 (the script/offsets precedent): Z80 has no
-                    // ratified trap word.
-                    if self.cpu == Some(sigil_ir::backend::Cpu::Z80) {
-                        self.error(
-                            *span,
-                            "[todo.non-68k] `todo!`/`unreachable!` are 68k-only in v1 \
-                             (they assemble to the 68k ILLEGAL word; no Z80 trap \
-                             encoding is ratified)",
                         );
-                        continue;
+                        return;
                     }
-                    if matches!(kind, crate::ast::TrapKind::Todo) {
-                        // One [todo.present] per site — together they ARE the
-                        // "list of all todos"; `--deny-todo` promotes them.
-                        let msg = match message {
-                            Some(m) => format!("[todo.present] todo!: {m}"),
-                            None => "[todo.present] todo! left in the build".to_string(),
-                        };
-                        self.warn(*span, msg);
+                };
+                let branch: Option<&[AsmStmt]> =
+                    if truthy { Some(then) } else { els.as_deref() };
+                if let Some(stmts) = branch {
+                    for stmt in stmts {
+                        self.lower_asm_stmt(stmt, scope, buf, env);
                     }
-                    buf.push(CodeItem::Instr {
-                        mnemonic: "illegal".to_string(),
-                        size: None,
-                        ops: vec![],
-                        span: *span,
-                    });
                 }
             }
         }
-        Value::Code(buf)
     }
 
     /// Emit the `[prov.comptime]` call-site note if a comptime GENERATOR call
