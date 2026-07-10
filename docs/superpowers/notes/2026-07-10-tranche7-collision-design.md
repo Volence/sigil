@@ -130,6 +130,13 @@ this turns out deeper than it looks: the template drops its trailing
 .inc/.emp twin shapes diverge and the "single source of truth" claim
 weakens — prefer F2).
 
+**F3 — cross-module `pub comptime fn` import (found during step-1 prep).**
+`pub comptime fn` parses (ComptimeFnDecl.public exists) but
+resolve/imports.rs has no ComptimeFn arm — a shared template module
+cannot export its templates. The aabb.emp module is the demand:
+collision.emp must `use engine.objects.aabb.{aabb_axis_test}`. Mirror
+Const's import treatment (comptime-only item, no bytes/link symbol).
+
 NOT demanded here (stay ledgered): label values in imm exprs (no
 objroutine store in this file — engine block, not object bank), `.b`
 ImmLink, equ hygiene, clobbers() ranges.
