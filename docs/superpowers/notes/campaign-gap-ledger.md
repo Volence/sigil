@@ -566,3 +566,10 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   ONE small increment (computed-name extern()); Tier 4 (acts via import(), generators
   stop emitting .asm) is the post-campaign direction and resolves the ojz_act_pool
   generator question. Ratification rides the checkpoint packet. — OPEN
+
+- [Volence's ask, 2026-07-10] **Twin-scaffolding kill list CREATED** —
+  notes/twin-scaffolding-kill-list.md: every temporary seam mirror (local const twins, the
+  engine.constants twin, the ANIM ordinal guards, the AS twins + gate pins themselves) gets
+  a row with its kill condition (ownership flip / twin consolidation / Spec-5 deletion).
+  Cadence: ports that add mirrors add rows; checkpoint packets review the list;
+  campaign-end sweep closes survivors. — SHIPPED (the practice)
