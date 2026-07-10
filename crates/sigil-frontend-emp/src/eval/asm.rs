@@ -1037,6 +1037,19 @@ impl Evaluator<'_> {
         scope: &LabelScope,
         env: &mut Env,
     ) -> Option<CodeOperand> {
+        // D2.33 review M6 (Volence-ratified): a top-level comptime INDEX as a
+        // bare operand is FENCED — `move.w Tbl[2], d0` would read memory at
+        // the element's VALUE as an absolute address, one typo away from the
+        // address arithmetic `Tbl+2` and not classic syntax on an
+        // instruction line (tenet 3). The IMMEDIATE form (`#Tbl[2]`) is
+        // BLESSED — a pure comptime value, same class as `sizeof(T)`.
+        if matches!(expr, ast::Expr::Index { .. }) {
+            self.error(
+                expr_span(expr),
+                "[asm.index-operand] comptime element indexing is not an address operand —                  use `#Tbl[i]` for the element's VALUE as an immediate, or bind the                  address math to a `const` first",
+            );
+            return None;
+        }
         if let ast::Expr::Path(p) = expr {
             if p.segments.len() == 1 {
                 let seg = &p.segments[0];

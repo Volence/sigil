@@ -573,3 +573,16 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   a row with its kill condition (ownership flip / twin consolidation / Spec-5 deletion).
   Cadence: ports that add mirrors add rows; checkpoint packets review the list;
   campaign-end sweep closes survivors. — SHIPPED (the practice)
+
+- [D2.33/D2.34 rulings (Volence), 2026-07-10] **Three rulings landed same-day:** (a) I1 —
+  scalar `le` annotations over raw Data POLICED (same [data.view-le] as arrays; the
+  hypothetical LE-blob case designs its real answer if it ever appears); (b) M6 — SPLIT:
+  `#Tbl[i]` immediate BLESSED (pure comptime, sizeof's class), bare `Tbl[i]` address
+  operand FENCED with steering ([asm.index-operand] — one typo from `Tbl+2`, not classic
+  instruction syntax); (c) the ANIM-ordinal reverse-seam flip, SCOPED — stage 1 proven
+  (reverse_seam_ordinals.rs: .emp equ-exports ordinals, AS consumes; zero new machinery),
+  stage 2 (config-block deletion) parked at Spec 5. — SHIPPED
+- [reverse-seam proof, 2026-07-10] **imm deferral lacks `.b`/`.w` widths** — the real
+  player shape `move.b #ANIM_WALK, SST_anim(a0)` hard-errors cross-seam (only `.l`
+  defers). Blocks kill-list row 4 stage 2; extend try_defer_long_imm's family when the
+  flip (or any port) demands it. — OPEN

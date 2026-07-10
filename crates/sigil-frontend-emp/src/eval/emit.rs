@@ -564,6 +564,21 @@ impl<'a> Evaluator<'a> {
             if let Some(t) = &decl.ty {
                 let ty = self.resolve_type(t);
                 if !matches!(ty, Ty::Poison) {
+                    // A SCALAR `le` annotation over raw Data is the same lie
+                    // the array-view rule rejects, one shape away
+                    // (`data X: u16le = embed(...)` — D2.33 review I1,
+                    // Volence-ratified): the bytes pass through verbatim as
+                    // BIG-endian file content, so the annotation would
+                    // misdescribe them.
+                    if let Ty::Prim { le: true, .. } = &ty {
+                        self.error(
+                            decl.span,
+                            format!(
+                                "[data.view-le] data `{}`: a Data initializer's bytes are                                  BIG-endian file content — a `le` annotation would                                  misdescribe them (use the plain-width type)",
+                                decl.name
+                            ),
+                        );
+                    }
                     // A poisoned ELEMENT type is already-reported (the
                     // resolve diagnosed the unknown name) — suppress both
                     // the view policing and the size check (whose

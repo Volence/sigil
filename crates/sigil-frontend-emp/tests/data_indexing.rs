@@ -389,3 +389,50 @@ fn sine_style_content_assert_passes_and_fails_correctly() {
         "a false content assert must fail loudly with the interpolated byte, got {diags:?}"
     );
 }
+
+#[test]
+fn scalar_le_annotation_over_data_is_rejected() {
+    // D2.33 review I1 (Volence-ratified): the array-view `le` rule applies
+    // to SCALAR annotations over raw Data too — same lie, one shape away.
+    let src = "module m\ndata X: u16le = bytes([1, 2])\n";
+    let (_buf, diags) = data(src, "X");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[data.view-le]")),
+        "expected [data.view-le] for the scalar form, got {diags:?}"
+    );
+    // The plain-width spelling stays accepted (pre-existing behavior).
+    let src_ok = "module m\ndata X: u16 = bytes([1, 2])\n";
+    let (_buf, diags) = data(src_ok, "X");
+    assert!(diags.is_empty(), "plain u16 over Data must stay accepted: {diags:?}");
+}
+
+#[test]
+fn index_in_operand_position_blessed_as_immediate_fenced_as_address() {
+    // D2.33 review M6 (Volence-ratified): `#Tbl[i]` — a pure comptime
+    // value — folds into the immediate (same class as sizeof); the BARE
+    // form is fenced with steering (memory-at-element-value is one typo
+    // from `Tbl+2` address math, and not classic instruction syntax).
+    let src_ok = "module m\n\
+                  const Tbl = [$100, $200, $300]\n\
+                  proc f () clobbers(d0) {\n\
+                      move.w  #Tbl[2], d0\n\
+                      rts\n\
+                  }\n";
+    let diags = lower_all(src_ok);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "#Tbl[2] must lower cleanly as an immediate: {diags:?}"
+    );
+
+    let src_bad = "module m\n\
+                   const Tbl = [$100, $200, $300]\n\
+                   proc f () clobbers(d0) {\n\
+                       move.w  Tbl[2], d0\n\
+                       rts\n\
+                   }\n";
+    let diags = lower_all(src_bad);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[asm.index-operand]")),
+        "bare Tbl[2] must fence with steering, got {diags:?}"
+    );
+}
