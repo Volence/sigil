@@ -531,3 +531,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   ask. (c) `particle_anims.asm` (15 ln) + `sonic_anims.asm` (83 ln): committed, in-build,
   exactly the offsets+inline-bodies shapes — the tranche's two LIVE port targets. — OPEN
   (two packet asks ride the checkpoint)
+
+- [tranche-4 port recon, addendum (Volence's catch), 2026-07-10] **The `ojz_act_pool` slot
+  is really `act_descriptor.asm`** — the handoff's "align 2 ×3 between BINCLUDEs + dc.l
+  table" describes the GENERATED wrapper, but the committed, portable file in that
+  neighborhood is `data/levels/ojz/act1/act_descriptor.asm` (254 ln): the Act descriptor
+  struct written as raw dc rows (→ struct-typed `data` item, the type IS the Act_len
+  guard), three hand-maintained if/error asserts (→ `ensure`s), the 3×3 section tables,
+  and the generated includes staying AS-side with `OJZ_Act_Pool_PageTable`/
+  `OJZ_ACT_POOL_PAGES` crossing the seam as externs — recovering seam coverage the
+  dropped `vram_bases` was meant to provide. ADOPTED as the tranche-4 third target
+  (recon-correction precedent: plantbadmaps→sonic_anims); ratification rides the
+  checkpoint packet. — OPEN
