@@ -810,6 +810,7 @@ fn yield_store(ordinal: i64, offset: i64, reg: &str, span: Span) -> AsmStmt {
             Operand::DispInd {
                 disp: Expr::Int(offset, span),
                 inner: Box::new(inner),
+                disp_spliced: false,
                 span,
             },
         ],

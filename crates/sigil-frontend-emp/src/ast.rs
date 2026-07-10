@@ -1157,6 +1157,12 @@ pub enum Operand {
         disp: Expr,
         /// The inner indirect operand.
         inner: Box<Operand>,
+        /// The displacement arrived as a `{splice}` (`{off}(aN)`, F1/tranche 7),
+        /// not a literal/field expression. Only the DIAGNOSTIC class differs: a
+        /// non-int spliced displacement reports `[asm.splice-kind]` (the operand-
+        /// splice diagnostic) rather than the generic "displacement must be an
+        /// integer" — the evaluation and range-check are otherwise identical.
+        disp_spliced: bool,
         /// Span of the whole operand.
         span: Span,
     },

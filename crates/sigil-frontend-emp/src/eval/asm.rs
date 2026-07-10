@@ -586,7 +586,7 @@ impl Evaluator<'_> {
                 let r = self.inner_ind_reg(inner, env)?;
                 Some(CodeOperand::PostInc(r))
             }
-            Operand::DispInd { disp, inner, span } => {
+            Operand::DispInd { disp, inner, disp_spliced, span } => {
                 // PC-relative EAs: `Sym(pc)` / `Sym(pc,Xn.size)` — 68k `(d16,PC)` /
                 // `(d8,PC,Xn)`. Keyed on the inner base being the LITERAL `pc`
                 // token (never a valid address register, so this can't collide
@@ -647,10 +647,18 @@ impl Evaluator<'_> {
                     return None;
                 }
                 let Some(d) = dv.as_stored_int() else {
-                    self.error(
-                        *span,
-                        format!("displacement must be an integer, got {}", dv.type_name()),
-                    );
+                    // A spliced displacement (`{off}(aN)`, F1) that is not an int
+                    // gets the operand-splice diagnostic naming the expected class
+                    // (`[asm.splice-kind]`); a literal/field displacement keeps its
+                    // generic "must be an integer" message.
+                    if *disp_spliced {
+                        self.splice_kind_err(expr_span(disp), "int", &dv);
+                    } else {
+                        self.error(
+                            *span,
+                            format!("displacement must be an integer, got {}", dv.type_name()),
+                        );
+                    }
                     return None;
                 };
                 // Two-part `d8(An,Xn[.size])` — An-indexed with a comptime
@@ -1546,7 +1554,7 @@ fn two_segment_field(disp: &ast::Expr) -> Option<(&str, &str)> {
 fn operand_to_arg(op: &Operand) -> Option<ast::Arg> {
     let value = match op {
         Operand::Plain { expr, size: None, .. } => expr.clone(),
-        Operand::DispInd { disp: ast::Expr::Path(callee), inner, span } => {
+        Operand::DispInd { disp: ast::Expr::Path(callee), inner, span, .. } => {
             // Only the folded-call shape reverses: a `(parts)` indirect with no
             // per-part or trailing size (an actual displacement `4(a0)` carries a
             // register base and IS an addressing mode, not a call).
