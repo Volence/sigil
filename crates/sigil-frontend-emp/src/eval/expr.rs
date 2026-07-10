@@ -837,6 +837,15 @@ impl<'a> Evaluator<'a> {
             (Value::Data(a), Value::Data(b)) => {
                 Value::Data(crate::value::DataBuf::concat(a, b))
             }
+            // The `Code` monoid `++` (§6.2; tranche 7): append item lists in
+            // emission order. Labels stay owner-resolved the way each side
+            // already resolved them — concat composes fragments, it does not
+            // re-scope (the aabb template's conditional-head shape:
+            // `let head = if ... { asm {...} } else { asm { } }; head ++ asm {...}`).
+            (Value::Code(mut a), Value::Code(b)) => {
+                a.items.extend(b.items);
+                Value::Code(a)
+            }
             (a, b) => self.binop_type_error(span, "++", &a, &b),
         }
     }
