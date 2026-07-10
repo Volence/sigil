@@ -113,7 +113,8 @@ use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::{
     assemble_mixed_dac_as_side, assemble_mixed_hblank_as_side, assemble_mixed_mt_as_side,
     assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assemble_mixed_tranche3_as_side,
-    assert_rom_matches, CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
+    assemble_mixed_tranche4_as_side, assert_rom_matches, CONVSYM_REWRITTEN,
+    CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -395,6 +396,24 @@ fn emp_bank_map_tranche3(debug: bool) -> String {
     )
 }
 
+/// Tranche 4's map: the tranche-3 NINE regions PLUS `particle_anims` — the
+/// campaign's first GAME-DATA region, past `org $10000` so engine-block
+/// drift cannot move it: plain `$309EC` / debug `$30A54`, size 8 (table
+/// word + 5-byte inline body + the `align 2` pad; content shape-invariant).
+fn emp_bank_map_tranche4(debug: bool) -> String {
+    let particle_base = if debug { "0x30A54" } else { "0x309EC" };
+    format!(
+        "{}\
+         \n\
+         [[region]]\n\
+         name = \"particle_anims\"\n\
+         lma_base = {particle_base}\n\
+         size = 0x8\n\
+         kind = \"rom\"\n",
+        emp_bank_map_tranche3(debug)
+    )
+}
+
 /// Port #1: `placed_emp_sections_with_mt_sfx`'s four-module successor — DAC +
 /// MT + SFX + HBLANK, all placed into the per-shape `emp_bank_map_with_mt_hblank`
 /// (DAC/SFX/HBLANK defines-less, MT's `DEBUG` — R4). Returns all FOUR modules'
@@ -541,6 +560,75 @@ fn placed_emp_sections_tranche3(aeon: &Path, debug_val: i128) -> Tranche3Section
     sections.extend(vdp_init_sections);
     sections.extend(collision_sections);
     (sections, mt_asserts, sfx_asserts, controllers_asserts, vdp_init_asserts, collision_asserts)
+}
+
+/// `placed_emp_sections_tranche4`'s return: tranche 3's tuple plus
+/// `particle_anims.emp`'s link asserts (its AF_DELETE drift guard + the
+/// trailing `align 2` congruence assert).
+type Tranche4Sections = (
+    Vec<Section>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+);
+
+/// Tranche 4: the NINE-module successor — everything
+/// `placed_emp_sections_tranche3` composes PLUS `particle_anims.emp`
+/// (`games/sonic4/data/animations/` — the campaign's first GAME-DATA module),
+/// defines-less (shape-invariant content; the shape lives in the map base).
+fn placed_emp_sections_tranche4(aeon: &Path, debug_val: i128) -> Tranche4Sections {
+    let map = emp_bank_map_tranche4(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    let (hblank_sections, _hblank_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
+    let (controllers_sections, controllers_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "controllers.emp", &[], &map);
+    let (math_sections, _math_asserts) = placed_module_sections_with_roots(
+        &aeon.join("engine"),
+        &aeon.join("engine/system"),
+        "math.emp",
+        &[],
+        &map,
+    );
+    let (vdp_init_sections, vdp_init_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "vdp_init.emp", &[], &map);
+    let (collision_sections, collision_asserts) =
+        placed_module_sections(&aeon.join("engine/level"), "collision_lookup.emp", &[], &map);
+    let (particle_sections, particle_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "particle_anims.emp",
+        &[],
+        &map,
+    );
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    sections.extend(hblank_sections);
+    sections.extend(controllers_sections);
+    sections.extend(math_sections);
+    sections.extend(vdp_init_sections);
+    sections.extend(collision_sections);
+    sections.extend(particle_sections);
+    (
+        sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_asserts,
+        particle_asserts,
+    )
 }
 
 /// Compile the REAL `dac_samples.emp` and PLACE its sections into the two-bank
@@ -1410,6 +1498,116 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
         DEBUG_ASSEMBLED_LEN,
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche3 debug",
+    );
+}
+
+/// Tranche 4's NINE-module mixed build: tranche 3's composition + the
+/// `SIGIL_EMP_PARTICLE_ANIMS` gate. Every asserts-bearing module's guards are
+/// checked against the REAL AS tree inside — including particle_anims'
+/// AF_DELETE drift guard, whose AS-side truth lives in
+/// `engine/objects/animate.asm`.
+fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche4_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    let (
+        emp_sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_asserts,
+        particle_asserts,
+    ) = placed_emp_sections_tranche4(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed tranche4): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed tranche4): {d:?}"));
+
+    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), 8, "controllers guards captured");
+    for (name, asserts, want) in [
+        ("vdp_init.emp", &vdp_init_asserts, 8usize),
+        ("collision_lookup.emp", &collision_asserts, 8),
+        // particle_anims: the AF_DELETE drift guard + the align 2 congruence
+        // assert (guard_assert_count excludes only [layout.odd-item]).
+        ("particle_anims.emp", &particle_asserts, 2),
+    ] {
+        assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
+        let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "{name}'s asserts must PASS against the real AS tree: {diags:?}"
+        );
+    }
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed tranche4): {e}"))
+}
+
+/// Tranche 4 acceptance — plain NINE-module mixed build == `aeon/s4.bin`,
+/// modulo the convsym bytes; the particle_anims block pinned explicitly.
+#[test]
+fn mixed_tranche4_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche4_rom(&aeon, false);
+
+    // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
+    // align pad 00 — shape-invariant content at the plain base.
+    assert_eq!(
+        &rom[0x309EC..0x309F4],
+        &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
+        "particle_anims block must match the reference bytes exactly (plain)"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche4");
+}
+
+/// Tranche 4 acceptance — `__DEBUG__` NINE-module mixed build ==
+/// `aeon/s4.debug.bin`, modulo the convsym bytes.
+#[test]
+fn mixed_tranche4_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche4_rom(&aeon, true);
+
+    assert_eq!(
+        &rom[0x30A54..0x30A5C],
+        &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
+        "particle_anims block must match the reference bytes exactly (debug)"
+    );
+
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed tranche4 debug",
     );
 }
 

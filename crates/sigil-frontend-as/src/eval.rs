@@ -2757,6 +2757,20 @@ impl Asm {
                 };
                 (e, dst)
             }
+            [OperandAtom::Imm(e), OperandAtom::M68kDisp { disp, an }] if mnemonic == M68kMnemonic::Move => {
+                // `move.l #Sym, d16(An)` — the tranche-4 particle_anims
+                // consumer shape (`move.l #Ani_Particle, SST_anim_table(a0)`,
+                // test_particle.asm). The displacement resolves EAGERLY (an
+                // SST_* equ, not the cross-seam leaf); m68k orders SOURCE
+                // extension words before the destination's, so the imm32
+                // hole stays at offset 2 and the d16 ext word follows it —
+                // the same offset proof as the absolute arm (encoding:
+                // opcode word, 4-byte imm32, d16 word).
+                let n = m68k_addr_reg(an)?;
+                let qd = self.qualify_expr(disp);
+                let d = self.fold_imm(&qd, span, i16::MIN as i64, i16::MAX as i64);
+                (e, M68kOperand::Disp16An(d as i16, n))
+            }
             _ => return None,
         };
         let qualified = self.qualify_expr(imm_expr);
@@ -6148,6 +6162,33 @@ C:\n";
             Some(8),
             "move.l #imm,(abs).w must encode to 8 bytes (opcode + imm32 + abs.w ext word)"
         );
+    }
+
+    /// Tranche-4 extension: the same imm32-source deferral with a `(d16,An)`
+    /// destination — `test_particle.asm`'s real shape
+    /// (`move.l #Ani_Particle, SST_anim_table(a0)`, the anim-table pointer
+    /// write every object spawn template uses). The displacement (`$1A`
+    /// here) resolves eagerly; only the source immediate defers. Source
+    /// extension words precede the destination's, so the fixup hole stays
+    /// at offset 2 with the d16 word after it.
+    #[test]
+    fn move_l_imm_unresolved_source_defers_with_disp_an_dest() {
+        let src = "\
+        cpu 68000\n\
+        SST_anim_table = $1A\n\
+        \tmove.l #CrossSeamOnly, SST_anim_table(a0)\n";
+        let m = run(src, &Options::default()).expect("assemble (must defer, not hard-error)");
+        let bytes = m.sections.iter().find(|s| !s.image_bytes().is_empty()).map(|s| s.image_bytes());
+        assert_eq!(
+            bytes.as_deref().map(|b| b.len()),
+            Some(8),
+            "move.l #imm,d16(An) must encode to 8 bytes (opcode + imm32 + d16 ext word)"
+        );
+        // Opcode: move.l #imm -> (d16,a0) = 0x217C; the d16 ext word ($001A)
+        // sits AFTER the imm32 hole — the offset-2 proof in bytes.
+        let b = bytes.unwrap();
+        assert_eq!(&b[0..2], &[0x21, 0x7C], "move.l #imm,(d16,a0) opcode");
+        assert_eq!(&b[6..8], &[0x00, 0x1A], "d16 ext word follows the imm32 hole");
     }
 
     /// Same shape with an explicit `.l`-absolute destination
