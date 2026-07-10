@@ -656,3 +656,12 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   currently sound_api-local; when a SECOND file wants them (sound_debug port is the
   likely demand), lift into a shared engine-macros .emp module (`use`-imported
   Code-returning fns). Demand-gated, don't pre-build. — OPEN
+- [tranche-5 retrospect, Volence reading Sound_PostByte, 2026-07-10] **`preserves(sr)`
+  is unspellable** — the contract vocabulary is d0-a7 only, so the SR save/mask/
+  restore idiom's contract lives in a comment ("Clobbers: SR restored") the compiler
+  can't check. This is S2-D7's first concrete demand site (machine-state contracts:
+  SR/CCR liveness, stack-delta, stopZ80/disableInts PAIRING lints — Sound_PostByte
+  exhibits all three balanced pairs in one proc). Surface ask: accept `sr` (and
+  `ccr`?) in preserves()/clobbers() lists as DECLARED contract, verification riding
+  the S2-D7 dataflow pass; don't ship the spelling without at least the
+  save/restore-balance heuristic, or it's documentation cosplaying as a check. — OPEN
