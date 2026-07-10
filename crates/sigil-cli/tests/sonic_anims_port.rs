@@ -15,8 +15,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$30978`): `s4.bin[0x30978..0x309E6]` (0x6E bytes).
-//! Debug (map base `$309E0`): `s4.debug.bin[0x309E0..0x30A4E]`.
+//! Plain (map base `$30970`): `s4.bin[0x30970..0x309DE]` (0x6E bytes).
+//! Debug (map base `$309D8`): `s4.debug.bin[0x309D8..0x30A46]`.
 //! Content is shape-invariant.
 //!
 //! ```text
@@ -42,7 +42,7 @@ fn strict_gate() -> bool {
 }
 
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x309E0" } else { "0x30978" };
+    let base = if debug { "0x309D8" } else { "0x30970" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -218,10 +218,10 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
 
 #[test]
 fn sonic_anims_region_matches_reference() {
-    gate(false, "s4.bin", 0x30978);
+    gate(false, "s4.bin", 0x30970);
 }
 
 #[test]
 fn sonic_anims_debug_region_matches_reference() {
-    gate(true, "s4.debug.bin", 0x309E0);
+    gate(true, "s4.debug.bin", 0x309D8);
 }

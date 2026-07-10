@@ -47,7 +47,7 @@
 //! tables, 2026-07-10 pins): `Draw_Sprite` (plain `$2970` / debug `$2C2A`),
 //! `ObjectMove` (`$2922`/`$2BDC`), `AnimateSprite` (`$2D78`/`$3032`) — all
 //! abs.w width-selected, so positions are load-bearing — and `Ani_Particle`
-//! (`$309E6`/`$30A4E`), the imm32 value.
+//! (`$309DE`/`$30A46`), the imm32 value.
 //!
 //! OUTBOUND: the AS-side consumer shape — `dc.w TestSolid_Init-ObjCodeBase`
 //! (ObjDef_Solid's `objdef` word, `data/objdefs/test_objects.asm`) and
@@ -58,7 +58,7 @@
 //! ## Reference windows (both shapes — bank addresses shape-invariant)
 //!
 //! `test_solid`: `[0x10F7C..0x10F8A]` (0xE bytes).
-//! `test_particle`: `[0x10F8A..0x10FE4]` (0x5A bytes).
+//! `test_particle`: `[0x10F8A..0x10FDC]` (0x52 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the reference tests SKIP green —
@@ -90,7 +90,7 @@ fn strict_gate() -> bool {
 const SOLID_BASE: u32 = 0x10F7C;
 const SOLID_LEN: usize = 0xE;
 const PARTICLE_BASE: u32 = 0x10F8A;
-const PARTICLE_LEN: usize = 0x5A;
+const PARTICLE_LEN: usize = 0x52;
 const OBJ_CODE_BASE: u32 = 0x10000;
 
 /// Per-shape TRUE VMAs of the cross-seam targets (listing symbol tables).
@@ -102,9 +102,9 @@ struct Shape {
 }
 
 const PLAIN: Shape =
-    Shape { draw_sprite: 0x2970, object_move: 0x2922, animate_sprite: 0x2D78, ani_particle: 0x309E6 };
+    Shape { draw_sprite: 0x2970, object_move: 0x2922, animate_sprite: 0x2D78, ani_particle: 0x309DE };
 const DEBUG: Shape =
-    Shape { draw_sprite: 0x2C2A, object_move: 0x2BDC, animate_sprite: 0x3032, ani_particle: 0x30A4E };
+    Shape { draw_sprite: 0x2C2A, object_move: 0x2BDC, animate_sprite: 0x3032, ani_particle: 0x30A46 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
 fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {

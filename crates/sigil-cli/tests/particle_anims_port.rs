@@ -36,8 +36,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$309EC`): `s4.bin[0x309E6..0x309EE]` (8 bytes).
-//! Debug (map base `$30A54`): `s4.debug.bin[0x30A4E..0x30A56]` (8 bytes).
+//! Plain (map base `$309DE`): `s4.bin[0x309DE..0x309E6]` (8 bytes).
+//! Debug (map base `$30A46`): `s4.debug.bin[0x30A46..0x30A4E]` (8 bytes).
 //! Content is shape-invariant (`00 02 | 04 02 02 02 FB | 00`).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
@@ -69,7 +69,7 @@ fn strict_gate() -> bool {
 /// The map: a `text` carrier region plus the real `particle_anims` region
 /// pinned at the per-shape reference base, sized to the 8-byte block.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x30A4E" } else { "0x309E6" };
+    let base = if debug { "0x30A46" } else { "0x309DE" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -267,10 +267,10 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
 
 #[test]
 fn particle_anims_region_matches_reference() {
-    gate(false, "s4.bin", 0x309E6);
+    gate(false, "s4.bin", 0x309DE);
 }
 
 #[test]
 fn particle_anims_debug_region_matches_reference() {
-    gate(true, "s4.debug.bin", 0x30A4E);
+    gate(true, "s4.debug.bin", 0x30A46);
 }

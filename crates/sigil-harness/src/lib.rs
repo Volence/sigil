@@ -391,9 +391,9 @@ pub fn assemble_mixed_tranche5_as_side(aeon: &Path, debug: bool) -> Result<Modul
 /// everything `assemble_mixed_tranche5_as_side` gates PLUS
 /// `SIGIL_EMP_TEST_OBJECTS` — ONE gate covering TWO modules (a first:
 /// `games/sonic4/main.asm:43` wraps the `test_solid.asm` +
-/// `test_particle.asm` includes together, else-arm `org $10FE4`). The
+/// `test_particle.asm` includes together, else-arm `org $10FDC`). The
 /// campaign's first GAME-CODE gate, inside the object code bank
-/// (`org $10000`, ObjCodeBase): the window it opens (`$10F7C..$10FE4`) is
+/// (`org $10000`, ObjCodeBase): the window it opens (`$10F7C..$10FDC`) is
 /// SHAPE-INVARIANT — the bank's contents up to here don't move with
 /// `__DEBUG__`, so one org serves both shapes; only the cross-seam
 /// engine/data targets (`Draw_Sprite`/`ObjectMove`/`AnimateSprite` abs.w,

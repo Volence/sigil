@@ -30,8 +30,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$14AEE`): `s4.bin[0x14AEE..0x14D62]` (0x274 bytes).
-//! Debug (map base `$14B56`): `s4.debug.bin[0x14B56..0x14DCA]`.
+//! Plain (map base `$14AE6`): `s4.bin[0x14AE6..0x14D5A]` (0x274 bytes).
+//! Debug (map base `$14B4E`): `s4.debug.bin[0x14B4E..0x14DC2]`.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test act_descriptor_port
@@ -55,12 +55,12 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-const PLAIN_BASE: usize = 0x14AEE;
-const DEBUG_BASE: usize = 0x14B56;
+const PLAIN_BASE: usize = 0x14AE6;
+const DEBUG_BASE: usize = 0x14B4E;
 const SIZE: usize = 0x274;
 
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x14B56" } else { "0x14AEE" };
+    let base = if debug { "0x14B4E" } else { "0x14AE6" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -84,47 +84,47 @@ fn map_toml(debug: bool) -> String {
 fn as_seam_equs(debug: bool) -> Vec<Section> {
     // (name, plain, debug) — label addresses from the two symbol tables.
     const LABELS: &[(&str, u32, u32)] = &[
-        ("OJZ_Palette", 0x1FDEC, 0x1FE54),
-        ("OJZ_Act1_BG_Layout", 0x1FE6C, 0x1FED4),
-        ("OJZ_Act1_BG_Tiles", 0x21E6C, 0x21ED4),
-        ("ParallaxConfig_OJZ_Default", 0x11350, 0x113B8),
-        ("OJZ_Act_Pool_PageTable", 0x14AE2, 0x14B4A),
-        ("OJZ_Sec0_Blocks", 0x14D62, 0x14DCA),
-        ("OJZ_Sec1_Blocks", 0x16952, 0x169BA),
-        ("OJZ_Sec2_Blocks", 0x17CCE, 0x17D36),
-        ("OJZ_Sec3_Blocks", 0x19466, 0x194CE),
-        ("OJZ_Sec4_Blocks", 0x17CCE, 0x17D36), // content-dedup alias of Sec2
-        ("OJZ_Sec5_Blocks", 0x1A5B2, 0x1A61A),
-        ("OJZ_Sec6_Blocks", 0x1B3D8, 0x1B440),
-        ("OJZ_Sec7_Blocks", 0x1CFD8, 0x1D040),
-        ("OJZ_Sec8_Blocks", 0x1E24C, 0x1E2B4),
-        ("OJZ_Sec0_Objects", 0x11D48, 0x11DB0),
-        ("OJZ_Sec0_Rings", 0x11D50, 0x11DB8),
-        ("OJZ_Sec0_TypeTable", 0x11D42, 0x11DAA),
-        ("OJZ_Sec1_Objects", 0x11D7A, 0x11DE2),
-        ("OJZ_Sec1_Rings", 0x11D8E, 0x11DF6),
-        ("OJZ_Sec1_TypeTable", 0x11D70, 0x11DD8),
-        ("OJZ_Sec2_Objects", 0x11DC0, 0x11E28),
-        ("OJZ_Sec2_Rings", 0x11DCE, 0x11E36),
-        ("OJZ_Sec2_TypeTable", 0x11DB6, 0x11E1E),
-        ("OJZ_Sec3_Objects", 0x11E04, 0x11E6C),
-        ("OJZ_Sec3_Rings", 0x11E06, 0x11E6E),
-        ("OJZ_Sec3_TypeTable", 0x11E02, 0x11E6A),
-        ("OJZ_Sec4_Objects", 0x11E0C, 0x11E74),
-        ("OJZ_Sec4_Rings", 0x11E0E, 0x11E76),
-        ("OJZ_Sec4_TypeTable", 0x11E0A, 0x11E72),
-        ("OJZ_Sec5_Objects", 0x11E44, 0x11EAC),
-        ("OJZ_Sec5_Rings", 0x11E46, 0x11EAE),
-        ("OJZ_Sec5_TypeTable", 0x11E42, 0x11EAA),
-        ("OJZ_Sec6_Objects", 0x11E6C, 0x11ED4),
-        ("OJZ_Sec6_Rings", 0x11E6E, 0x11ED6),
-        ("OJZ_Sec6_TypeTable", 0x11E6A, 0x11ED2),
-        ("OJZ_Sec7_Objects", 0x11E74, 0x11EDC),
-        ("OJZ_Sec7_Rings", 0x11E76, 0x11EDE),
-        ("OJZ_Sec7_TypeTable", 0x11E72, 0x11EDA),
-        ("OJZ_Sec8_Objects", 0x11E9C, 0x11F04),
-        ("OJZ_Sec8_Rings", 0x11E9E, 0x11F06),
-        ("OJZ_Sec8_TypeTable", 0x11E9A, 0x11F02),
+        ("OJZ_Palette", 0x1FDE4, 0x1FE4C),
+        ("OJZ_Act1_BG_Layout", 0x1FE64, 0x1FECC),
+        ("OJZ_Act1_BG_Tiles", 0x21E64, 0x21ECC),
+        ("ParallaxConfig_OJZ_Default", 0x11348, 0x113B0),
+        ("OJZ_Act_Pool_PageTable", 0x14ADA, 0x14B42),
+        ("OJZ_Sec0_Blocks", 0x14D5A, 0x14DC2),
+        ("OJZ_Sec1_Blocks", 0x1694A, 0x169B2),
+        ("OJZ_Sec2_Blocks", 0x17CC6, 0x17D2E),
+        ("OJZ_Sec3_Blocks", 0x1945E, 0x194C6),
+        ("OJZ_Sec4_Blocks", 0x17CC6, 0x17D2E), // content-dedup alias of Sec2
+        ("OJZ_Sec5_Blocks", 0x1A5AA, 0x1A612),
+        ("OJZ_Sec6_Blocks", 0x1B3D0, 0x1B438),
+        ("OJZ_Sec7_Blocks", 0x1CFD0, 0x1D038),
+        ("OJZ_Sec8_Blocks", 0x1E244, 0x1E2AC),
+        ("OJZ_Sec0_Objects", 0x11D40, 0x11DA8),
+        ("OJZ_Sec0_Rings", 0x11D48, 0x11DB0),
+        ("OJZ_Sec0_TypeTable", 0x11D3A, 0x11DA2),
+        ("OJZ_Sec1_Objects", 0x11D72, 0x11DDA),
+        ("OJZ_Sec1_Rings", 0x11D86, 0x11DEE),
+        ("OJZ_Sec1_TypeTable", 0x11D68, 0x11DD0),
+        ("OJZ_Sec2_Objects", 0x11DB8, 0x11E20),
+        ("OJZ_Sec2_Rings", 0x11DC6, 0x11E2E),
+        ("OJZ_Sec2_TypeTable", 0x11DAE, 0x11E16),
+        ("OJZ_Sec3_Objects", 0x11DFC, 0x11E64),
+        ("OJZ_Sec3_Rings", 0x11DFE, 0x11E66),
+        ("OJZ_Sec3_TypeTable", 0x11DFA, 0x11E62),
+        ("OJZ_Sec4_Objects", 0x11E04, 0x11E6C),
+        ("OJZ_Sec4_Rings", 0x11E06, 0x11E6E),
+        ("OJZ_Sec4_TypeTable", 0x11E02, 0x11E6A),
+        ("OJZ_Sec5_Objects", 0x11E3C, 0x11EA4),
+        ("OJZ_Sec5_Rings", 0x11E3E, 0x11EA6),
+        ("OJZ_Sec5_TypeTable", 0x11E3A, 0x11EA2),
+        ("OJZ_Sec6_Objects", 0x11E64, 0x11ECC),
+        ("OJZ_Sec6_Rings", 0x11E66, 0x11ECE),
+        ("OJZ_Sec6_TypeTable", 0x11E62, 0x11ECA),
+        ("OJZ_Sec7_Objects", 0x11E6C, 0x11ED4),
+        ("OJZ_Sec7_Rings", 0x11E6E, 0x11ED6),
+        ("OJZ_Sec7_TypeTable", 0x11E6A, 0x11ED2),
+        ("OJZ_Sec8_Objects", 0x11E94, 0x11EFC),
+        ("OJZ_Sec8_Rings", 0x11E96, 0x11EFE),
+        ("OJZ_Sec8_TypeTable", 0x11E92, 0x11EFA),
     ];
     const VALUES: &[(&str, u32)] = &[
         ("OJZ_ACT_POOL_PAGES", 3),

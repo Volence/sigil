@@ -399,12 +399,12 @@ fn emp_bank_map_tranche3(debug: bool) -> String {
 
 /// Tranche 4's map: the tranche-3 NINE regions PLUS `particle_anims` — the
 /// campaign's first GAME-DATA region, past `org $10000` so engine-block
-/// drift cannot move it: plain `$309EC` / debug `$30A54`, size 8 (table
+/// drift cannot move it: plain `$309DE` / debug `$30A46`, size 8 (table
 /// word + 5-byte inline body + the `align 2` pad; content shape-invariant).
 fn emp_bank_map_tranche4(debug: bool) -> String {
-    let act_base = if debug { "0x14B56" } else { "0x14AEE" };
-    let sonic_base = if debug { "0x309E0" } else { "0x30978" };
-    let particle_base = if debug { "0x30A4E" } else { "0x309E6" };
+    let act_base = if debug { "0x14B4E" } else { "0x14AE6" };
+    let sonic_base = if debug { "0x309D8" } else { "0x30970" };
+    let particle_base = if debug { "0x30A46" } else { "0x309DE" };
     format!(
         "{}\
          \n\
@@ -455,8 +455,8 @@ fn emp_bank_map_tranche5(debug: bool) -> String {
 }
 
 /// Tranche 6's map: the tranche-5 regions PLUS the two object-bank regions —
-/// `test_solid` @ `$10F7C` size 0xE and `test_particle` @ `$10F8A` size 0x5A
-/// (contiguous; the gate's else-arm resumes at `org $10FE4`). Both bases are
+/// `test_solid` @ `$10F7C` size 0xE and `test_particle` @ `$10F8A` size 0x52
+/// (contiguous; the gate's else-arm resumes at `org $10FDC`). Both bases are
 /// SHAPE-INVARIANT — the object code bank's contents up to here don't move
 /// with `__DEBUG__`, so one base serves both shapes (unlike every engine
 /// region above; `debug` is taken only to chain the tranche-5 map). The
@@ -476,7 +476,7 @@ fn emp_bank_map_tranche6(debug: bool) -> String {
          [[region]]\n\
          name = \"test_particle\"\n\
          lma_base = 0x10F8A\n\
-         size = 0x5A\n\
+         size = 0x52\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche5(debug)
     )
@@ -1944,7 +1944,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x309E6..0x309EE],
+        &rom[0x309DE..0x309E6],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -1952,16 +1952,16 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The sonic_anims table head: eleven self-relative words starting at
     // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
     assert_eq!(
-        &rom[0x30978..0x30980],
+        &rom[0x30970..0x30978],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (plain)"
     );
 
     // The act_descriptor head: sec_grid_ptr (= the sections table at
-    // base+0x22 = $14B10) then grid_w/grid_h words — the typed Act literal.
+    // base+0x22 = $14B08) then grid_w/grid_h words — the typed Act literal.
     assert_eq!(
-        &rom[0x14AEE..0x14AF6],
-        &[0x00, 0x01, 0x4B, 0x10, 0x00, 0x03, 0x00, 0x03][..],
+        &rom[0x14AE6..0x14AEE],
+        &[0x00, 0x01, 0x4B, 0x08, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (plain)"
     );
 
@@ -1987,20 +1987,20 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche4_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x30A4E..0x30A56],
+        &rom[0x30A46..0x30A4E],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (debug)"
     );
 
     assert_eq!(
-        &rom[0x309E0..0x309E8],
+        &rom[0x309D8..0x309E0],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (debug)"
     );
 
     assert_eq!(
-        &rom[0x14B56..0x14B5E],
-        &[0x00, 0x01, 0x4B, 0x78, 0x00, 0x03, 0x00, 0x03][..],
+        &rom[0x14B4E..0x14B56],
+        &[0x00, 0x01, 0x4B, 0x70, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (debug)"
     );
 
@@ -2257,10 +2257,10 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
 
     // test_particle's head: move.l #Ani_Particle, Sst.anim_table(a0) — the
     // `.emp`↔`.emp` imm32, resolving to particle_anims' region base
-    // ($309E6 plain — emp_bank_map_tranche4's pin).
+    // ($309DE plain — emp_bank_map_tranche4's pin).
     assert_eq!(
         &rom[0x10F8A..0x10F92],
-        &[0x21, 0x7C, 0x00, 0x03, 0x09, 0xE6, 0x00, 0x1A][..],
+        &[0x21, 0x7C, 0x00, 0x03, 0x09, 0xDE, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (plain)"
     );
 
@@ -2297,7 +2297,7 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
 
     assert_eq!(
         &rom[0x10F8A..0x10F92],
-        &[0x21, 0x7C, 0x00, 0x03, 0x0A, 0x4E, 0x00, 0x1A][..],
+        &[0x21, 0x7C, 0x00, 0x03, 0x0A, 0x46, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (debug)"
     );
 
