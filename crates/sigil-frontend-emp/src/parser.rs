@@ -2383,6 +2383,17 @@ impl Parser {
                     _ => Expr::Path(path),
                 }
             }
+            // F2 (tranche 7): a proc-LOCAL label reference `.name` in expression
+            // position — accepted so it can appear as a `Label`-typed CALL
+            // ARGUMENT (`axis_test(d4, ..., .next_object)`). It is ONLY meaningful
+            // in a label-value context; the evaluator rejects it loudly in any
+            // pure comptime expression position (`const x = .foo`), so parsing it
+            // here never leaks a silent Label into ordinary expressions.
+            Tok::Dot if matches!(self.peek2(), Tok::Ident(_)) => {
+                self.bump(); // `.`
+                let name = self.expect_ident("label");
+                Expr::LocalLabel(name, start.merge(self.prev_span()))
+            }
             other => {
                 self.diag_at(start, format!("expected an expression, found {other:?}"));
                 // Never consume a closer (or newline) an enclosing frame will
@@ -2561,6 +2572,7 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
     match e {
         Expr::Int(_, s) | Expr::Float(_, s) | Expr::Str(_, s) | Expr::Default(s) => *s,
         Expr::Path(p) => p.span,
+        Expr::LocalLabel(_, s) => *s,
         Expr::Unary { span, .. } | Expr::Binary { span, .. } | Expr::Call { span, .. }
         | Expr::StructLit { span, .. } | Expr::ArrayLit { span, .. }
         | Expr::TupleLit { span, .. } | Expr::Range { span, .. } | Expr::If { span, .. }

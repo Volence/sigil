@@ -98,3 +98,82 @@ fn spliced_displacement_matches_as_reference() {
     let candidate = emp_candidate(EMP_DISP);
     assert_byte_identical(&reference, &candidate, "spliced displacement vs AS");
 }
+
+// ---------------------------------------------------------------------------
+// The combined F1 + F2 shape (the aabb_axis_test template): a comptime fn taking
+// (apos, breg, boff, adim, bdim, stmp: Reg, mlab: Label) emitting
+// move/add/sub/bpl/neg/cmp/bhs — the disp splice `{boff}({breg})` (F1) AND the
+// caller-local-label branch target `{mlab}` (F2). Called TWICE in one proc with
+// DIFFERENT args (two instantiations exercise both disp-splice range and
+// template-label hygiene). Byte-identical to the hand-expanded AS equivalent,
+// where each instantiation's internal `.aov` is hand-uniquified.
+// ---------------------------------------------------------------------------
+
+const EMP_AABB: &str = concat!(
+    "module m\n",
+    "comptime fn axis_test(apos: Reg, breg: Reg, boff: int, adim: Reg, bdim: Reg, \
+        stmp: Reg, mlab: Label) -> Code {\n",
+    "    return asm {\n",
+    "        move.w  {adim}, {adim}\n",
+    "        add.w   {bdim}, {adim}\n",
+    "        move.w  {apos}, {bdim}\n",
+    "        sub.w   {boff}({breg}), {bdim}\n",
+    "        move.w  {bdim}, {stmp}\n",
+    "        bpl.s   .aov\n",
+    "        neg.w   {stmp}\n",
+    "    .aov:\n",
+    "        add.w   {stmp}, {stmp}\n",
+    "        cmp.w   {adim}, {stmp}\n",
+    "        bhs.w   {mlab}\n",
+    "    }\n",
+    "}\n",
+    "pub proc Caller () {\n",
+    "    axis_test(d4, a3, 2, d0, d1, d2, .next_object)\n",
+    "    nop\n",
+    "    axis_test(d5, a2, 8, d3, d6, d7, .next_object)\n",
+    ".next_object:\n",
+    "    rts\n",
+    "}\n",
+);
+
+// Hand-expanded AS: each `axis_test` call inlined, its `.aov` renamed to a
+// unique global (.aov0 / .aov1), the disp splice folded to the literal, and the
+// `bhs.w` target the shared caller-local `.next_object`.
+const AS_AABB: &str = concat!(
+    "\tcpu 68000\n",
+    "Caller:\n",
+    // -- axis_test(d4, a3, 2, d0, d1, d2, .next_object) --
+    "\tmove.w\td0, d0\n",
+    "\tadd.w\td1, d0\n",
+    "\tmove.w\td4, d1\n",
+    "\tsub.w\t2(a3), d1\n",
+    "\tmove.w\td1, d2\n",
+    "\tbpl.s\t.aov0\n",
+    "\tneg.w\td2\n",
+    ".aov0:\n",
+    "\tadd.w\td2, d2\n",
+    "\tcmp.w\td0, d2\n",
+    "\tbhs.w\t.next_object\n",
+    "\tnop\n",
+    // -- axis_test(d5, a2, 8, d3, d6, d7, .next_object) --
+    "\tmove.w\td3, d3\n",
+    "\tadd.w\td6, d3\n",
+    "\tmove.w\td5, d6\n",
+    "\tsub.w\t8(a2), d6\n",
+    "\tmove.w\td6, d7\n",
+    "\tbpl.s\t.aov1\n",
+    "\tneg.w\td7\n",
+    ".aov1:\n",
+    "\tadd.w\td7, d7\n",
+    "\tcmp.w\td3, d7\n",
+    "\tbhs.w\t.next_object\n",
+    ".next_object:\n",
+    "\trts\n",
+);
+
+#[test]
+fn aabb_axis_test_two_instantiations_match_as_reference() {
+    let reference = as_reference(AS_AABB);
+    let candidate = emp_candidate(EMP_AABB);
+    assert_byte_identical(&reference, &candidate, "aabb axis_test (F1+F2) vs AS");
+}

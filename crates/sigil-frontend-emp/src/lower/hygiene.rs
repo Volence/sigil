@@ -77,7 +77,7 @@ impl Owner {
     /// table rows' final names through this SAME one-source-of-truth mangling
     /// (R9b.11): the table's `Expr::Str` targets must equal the emitted symbol
     /// of the body's `__resume$<k>` label definitions, or the link fails.
-    pub(super) fn local_symbol(&self, name: &str) -> String {
+    pub(crate) fn local_symbol(&self, name: &str) -> String {
         match self {
             Owner::Proc { module, name: p } => format!("${module}${p}${name}"),
             Owner::Asm { module, k } => format!("${module}$asm{k}${name}"),

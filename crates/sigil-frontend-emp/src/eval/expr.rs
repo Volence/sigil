@@ -33,6 +33,15 @@ impl<'a> Evaluator<'a> {
             ast::Expr::Float(x, _) => Value::Float(*x),
             ast::Expr::Str(s, _) => Value::Str(s.clone()),
             ast::Expr::Path(path) => self.eval_path(path, env),
+            // F2 (tranche 7): a proc-LOCAL label reference `.name` in expression
+            // position. Meaningful ONLY as a `Label`-typed CALL ARGUMENT (a
+            // label-value context): it mangles through the ENCLOSING proc body's
+            // owner — the SAME scheme a `.name:` label written directly there
+            // gets — and becomes a `Value::Label` carrying that link symbol.
+            // Recorded for the end-of-body loudness check so a typo names the
+            // label. In ANY pure comptime expression position (`const x = .foo`)
+            // it is a loud error — the form never leaks a silent Label.
+            ast::Expr::LocalLabel(name, span) => self.eval_local_label(name, *span),
             ast::Expr::Unary { op, expr, span } => {
                 let v = self.eval_expr(expr, env);
                 self.eval_unary(*op, v, *span)
@@ -265,6 +274,44 @@ impl<'a> Evaluator<'a> {
                 Value::Poison
             }
         }
+    }
+
+    /// Resolve a proc-LOCAL label reference `.name` (F2, tranche 7). Legal ONLY
+    /// in a label-value context (a call argument): it mangles `name` through the
+    /// ENCLOSING proc body's [`Owner`](crate::lower::hygiene::Owner) — the SAME
+    /// `local_symbol` scheme a `.name:` label written directly in that proc gets —
+    /// and yields a [`Value::Label`] carrying that link symbol. The minted label
+    /// is recorded so an undefined `.name` is diagnosed loudly at end-of-body.
+    ///
+    /// Outside a label-value context (a pure comptime expression like
+    /// `const x = .foo`) it is a loud error — the form never leaks a silent Label
+    /// into an ordinary expression. With no enclosing body owner (a top-level
+    /// comptime expression), it is likewise an error.
+    fn eval_local_label(&mut self, name: &str, span: Span) -> Value {
+        if !self.label_ctx_active() {
+            self.error(
+                span,
+                format!(
+                    "`.{name}` is a proc-local label reference — it is only valid as a \
+                     label-value argument, not in a comptime expression"
+                ),
+            );
+            return Value::Poison;
+        }
+        let Some(owner) = self.enclosing_owner.clone() else {
+            self.error(
+                span,
+                format!(
+                    "`.{name}` has no enclosing proc body — a proc-local label reference \
+                     only resolves inside a proc/asm body"
+                ),
+            );
+            return Value::Poison;
+        };
+        // Record for the end-of-body loudness check (a typo'd `.labell` must name
+        // itself rather than mint a silent, unresolvable mangled symbol).
+        self.minted_local_labels.push((name.to_string(), span));
+        Value::Label(owner.local_symbol(name))
     }
 
     /// Resolve a path expression: the boolean/`none` keywords; a single name
