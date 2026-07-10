@@ -1194,6 +1194,13 @@ fn flatten_reglist_expr(expr: &ast::Expr, out: &mut Vec<(Reg, ReglistSep)>) -> O
 /// part's raw expr + optional size suffix for the caller to resolve. Any other
 /// shape (wrong part count, first part not literally `pc`) yields `None` and
 /// the caller falls through to ordinary `(An[,Xn])` handling.
+///
+/// RESERVED-TOKEN consequence (the small-opens doc line, tranche 3): inside
+/// operand parentheses `pc` is claimed by this carve-out, so a user symbol
+/// literally named `pc` can never be the SOLE inner base — `x(pc)` always
+/// means PC-relative, matching AS. Such a symbol still works everywhere
+/// else: as a displacement over a real register (`pc(a0)`), in comptime
+/// expressions, and as a plain operand.
 enum PcRelShape<'a> {
     /// `Sym(pc)` — plain PC-relative, `(d16,PC)`.
     Plain,

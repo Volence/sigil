@@ -39,15 +39,15 @@
 //! (`resolve/mod.rs`'s `ambient_items` + synthetic-`File` prepend, `Item`
 //! being `Clone` and carrying no lowering side effects until `lower_module`
 //! walks it) MINUS the whole-program closure check: `engine.constants`'s six
-//! items (`pub const` ×6) are parsed once and prepended to `controllers.emp`'s
+//! items (`pub const` ×8) are parsed once and prepended to `controllers.emp`'s
 //! own items before ONE `lower_module` call over the merged synthetic file —
-//! so the consts resolve locally, `engine.constants`'s own six
+//! so the consts resolve locally, `engine.constants`'s own eight
 //! `ensure(extern(...) == ...)` drift guards ride along and their link asserts
 //! attach to the merged module, and every genuinely-external bare symbol
 //! (`HW_PORT_*_DATA`, `Ctrl_*`) stays exactly the link-time-deferred `Sym`
 //! fixup it always was.
 //!
-//! `engine.constants`'s six drift guards need the REAL AS-side equs to check
+//! `engine.constants`'s eight drift guards need the REAL AS-side equs to check
 //! against. `as_hw_port_equs` below now defines the four `BUTTON_*` equs
 //! (`engine/constants.asm:89-92`) alongside the two `HW_PORT_*_DATA` equs it
 //! already carried, so this test's own compile is what the twin's drift
@@ -163,6 +163,8 @@ fn as_hw_port_equs() -> Vec<Section> {
                BUTTON_DOWN = 1<<1\n\
                BUTTON_LEFT = 1<<2\n\
                BUTTON_RIGHT = 1<<3\n\
+               CTYPE_AIR = 0\n\
+               VDP_Shadow_len = 19\n\
                Stub:\n\
                \tdc.w 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
@@ -211,7 +213,7 @@ fn as_outbound_consumer() -> Vec<Section> {
 }
 
 /// Parse `constants.emp`, parse `controllers.emp`, and return a synthetic
-/// [`ast::File`] carrying `constants.emp`'s items (its six `pub const`s AND
+/// [`ast::File`] carrying `constants.emp`'s items (its eight `pub const`s AND
 /// its six `ensure(extern(...) == ...)` drift guards — both ride along, same
 /// as `build_program`'s own ambient-injection technique) PREPENDED to
 /// `controllers.emp`'s own items, under `controllers.emp`'s own module
@@ -356,19 +358,19 @@ fn controllers_region_matches_reference() {
 
     let (resolved, linked, link_asserts) = compile_real_file(false);
 
-    // `engine.constants`'s six drift-guard `ensure`s must genuinely run and
+    // `engine.constants`'s eight drift-guard `ensure`s must genuinely run and
     // pass — the twin's BUTTON_*/HW_PORT_*_DATA consts must equal the
     // synthetic AS-side equs `as_hw_port_equs` defines. `guard_assert_count`
     // (mirrors `mixed_dac_rom.rs`'s helper) excludes the D2.29
     // `[layout.odd-item]` parity assert that also rides `module.link_asserts`
-    // (the merged file's odd 68k proc labels), so the six drift guards pin
+    // (the merged file's odd 68k proc labels), so the eight drift guards pin
     // exactly.
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 6, "engine.constants's six drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), 8, "engine.constants's eight drift guards must be captured");
 
     let expected = &refrom[0x2290..0x2302];
     let section = linked.section("controllers").expect("linked image must carry controllers");
@@ -416,7 +418,7 @@ fn controllers_debug_region_matches_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 6, "engine.constants's six drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), 8, "engine.constants's eight drift guards must be captured");
 
     let expected = &refrom[0x231E..0x2390];
     let section = linked.section("controllers").expect("linked image must carry controllers");

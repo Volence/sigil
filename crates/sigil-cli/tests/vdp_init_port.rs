@@ -42,9 +42,12 @@
 //! - One AS-side ROM label: `BootData_VDPRegs` (`engine/system/boot.asm`),
 //!   phased at its true per-shape VMA — the pc-rel target described above.
 //!
-//! `VDP_Shadow_len` is a LOCAL const twin in step 1 (immediate-position use;
-//! the step-2 modernize pass migrates it to `engine.constants` with a drift
-//! guard), so no `extern()` read rides this gate yet.
+//! `VDP_Shadow_len` comes from the `engine.constants` twin (step 2's
+//! migration — `use engine.constants.{VDP_Shadow_len}`), so the twin's EIGHT
+//! drift-guard `ensure`s ride this gate: `as_twin_equs` supplies all eight
+//! AS-side values (incl. `VDP_Shadow_len`, which the REAL tree derives from
+//! the `VDP_Shadow` struct — struct-generated `_len` symbols export over the
+//! same equ seam), and both tests `check_link_asserts` them.
 //!
 //! OUTBOUND: `VDP_Shadow_Init` is called from `engine/system/boot.asm`
 //! (`bsr.w VDP_Shadow_Init`) and `Flush_VDP_Shadow` from the VBlank path —
@@ -110,16 +113,26 @@ fn map_toml(debug: bool) -> String {
 }
 
 /// The synthetic AS-side cross-seam unit supplying the `VDP_CTRL` equ —
-/// `engine/constants.asm:12` verbatim — through the genuine AS-equ-export
-/// path. A trailing label+`dc.w` opens a section so the equ (defined before
-/// any section) flushes via `pending_equ_syms` into it.
-fn as_vdp_ctrl_equ() -> Vec<Section> {
+/// `engine/constants.asm:12` verbatim — PLUS the eight values
+/// `engine.constants`'s drift guards read back through `extern()` (the twin
+/// rides along via the ambient prepend, `controllers_port.rs`'s technique).
+/// A trailing label+`dc.w` opens a section so the equs (defined before any
+/// section) flush via `pending_equ_syms` into it.
+fn as_twin_equs() -> Vec<Section> {
     let asm = "cpu 68000\n\
                VDP_CTRL = $C00004\n\
+               HW_PORT_1_DATA = $A10003\n\
+               HW_PORT_2_DATA = $A10005\n\
+               BUTTON_UP = 1<<0\n\
+               BUTTON_DOWN = 1<<1\n\
+               BUTTON_LEFT = 1<<2\n\
+               BUTTON_RIGHT = 1<<3\n\
+               CTYPE_AIR = 0\n\
+               VDP_Shadow_len = 19\n\
                Stub:\n\
                \tdc.w 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (vdp ctrl equ): {d:?}")).sections
+    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (twin equs): {d:?}")).sections
 }
 
 /// The synthetic AS-side cross-seam unit supplying the two VDP RAM labels —
@@ -178,7 +191,9 @@ fn as_outbound_consumer() -> Vec<Section> {
 /// equ + VDP RAM labels + per-shape BootData_VDPRegs + outbound consumer) at
 /// harness-private LMAs (clear of both map regions) -> ONE `resolve_layout`
 /// -> `link`.
-fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
+fn compile_real_file(
+    debug: bool,
+) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let dir = vdp_init_dir();
     let src = std::fs::read_to_string(dir.join("vdp_init.emp"))
         .unwrap_or_else(|e| panic!("cannot read vdp_init.emp: {e}"));
@@ -187,6 +202,22 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "vdp_init.emp parse errors: {pdiags:?}"
     );
+    // `vdp_init.emp` `use`s the `engine.constants` twin (step 2) — prepend
+    // its items (eight `pub const`s + eight drift guards), the ambient
+    // technique `controllers_port.rs` documents.
+    let constants_src = std::fs::read_to_string(dir.join("constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (constants_file, cdiags) = parse_str(&constants_src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "constants.emp parse errors: {cdiags:?}"
+    );
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: constants_file.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -199,6 +230,7 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "lower errors: {ldiags:?}"
     );
+    let link_asserts = module.link_asserts;
 
     let map = sigil_link::load_map(&map_toml(debug)).expect("map must load");
     let mut sections = module.sections;
@@ -208,7 +240,7 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
         "place_sections errors (region-per-section): {pdiags:?}"
     );
 
-    let mut equs = as_vdp_ctrl_equ();
+    let mut equs = as_twin_equs();
     for sec in &mut equs {
         sec.lma = 0x0100_0000;
         sec.placement = SectionPlacement::Pinned;
@@ -247,7 +279,28 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link failed: {d:?}"));
-    (resolved, linked)
+    (resolved, linked, link_asserts)
+}
+
+/// The twin's eight drift guards must be captured and PASS against
+/// `as_twin_equs`' values (excluding the D2.29 `[layout.odd-item]` parity
+/// asserts that also ride `module.link_asserts` — same filter as
+/// `controllers_port.rs`'s `guard_assert_count`).
+fn assert_twin_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
+    let guards = link_asserts
+        .iter()
+        .filter(|a| {
+            !a.message.iter().any(|p| {
+                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.odd-item]"))
+            })
+        })
+        .count();
+    assert_eq!(guards, 8, "engine.constants's eight drift guards must be captured");
+    let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "engine.constants's drift guards must all PASS: {diags:?}"
+    );
 }
 
 /// On mismatch, report the first differing offset plus 8 bytes of context on
@@ -311,7 +364,8 @@ fn vdp_init_region_matches_reference() {
         return;
     };
 
-    let (_resolved, linked) = compile_real_file(false);
+    let (resolved, linked, link_asserts) = compile_real_file(false);
+    assert_twin_guards(&resolved, &link_asserts);
 
     let expected = &refrom[0x1C14..0x1C60];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
@@ -335,7 +389,8 @@ fn vdp_init_debug_region_matches_reference() {
         return;
     };
 
-    let (_resolved, linked) = compile_real_file(true);
+    let (resolved, linked, link_asserts) = compile_real_file(true);
+    assert_twin_guards(&resolved, &link_asserts);
 
     let expected = &refrom[0x1C96..0x1CE2];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");

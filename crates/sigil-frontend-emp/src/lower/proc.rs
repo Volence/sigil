@@ -277,6 +277,14 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
         // clobber (a memory-dest form writes memory, not a register). Reuse
         // `Reg`'s `Display` for the canonical `d0`..`a7` spelling.
         let Some(CodeOperand::Reg(r)) = ops.last() else { continue };
+        // Direct stack-pointer arithmetic (`addq.l #2, sp` cleanup) is stack
+        // DISCIPLINE, not a register clobber — every push/pop-balancing proc
+        // adjusts sp, and balanced-stack verification is S2-D7(b)'s dataflow
+        // job. Exempt a7 rather than force it into clobber sets (tranche 3,
+        // surfaced by collision_lookup's discard path).
+        if *r == crate::value::Reg::A7 {
+            continue;
+        }
         let name = r.to_string();
         if !allowed.contains(name.as_str()) {
             push(

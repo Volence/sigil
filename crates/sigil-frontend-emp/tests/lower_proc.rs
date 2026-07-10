@@ -503,3 +503,23 @@ fn preserves_composes_with_clobbers_and_falls_into() {
         "composed attributes must lower cleanly: {diags:?}"
     );
 }
+
+#[test]
+fn stack_pointer_writes_are_not_clobbers() {
+    // Tranche 3 (collision_lookup's `addq.l #2, sp` discard path): direct
+    // stack-pointer arithmetic is stack DISCIPLINE, not a register clobber —
+    // every proc that pushes/pops adjusts sp, and balanced-stack verification
+    // is S2-D7(b)'s dataflow job, not the clobber heuristic's. A declared
+    // clobber set must not force `sp` (or warn on it).
+    let src = "module m\n\
+               proc h() clobbers(d0) {\n\
+               \x20   move.w  d0, -(sp)\n\
+               \x20   addq.l  #2, sp\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "sp adjustment must not be flagged as an undeclared clobber: {diags:?}"
+    );
+}

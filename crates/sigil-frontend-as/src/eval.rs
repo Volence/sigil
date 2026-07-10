@@ -1584,6 +1584,10 @@ impl Asm {
                 if !field.is_empty() {
                     self.env
                         .define(&format!("{name}_{field}"), SymbolValue::Int(off));
+                    // Struct member offsets are int equates semantically —
+                    // export them on the same Item-B seam as `equ` (tranche 3:
+                    // `.emp` drift guards read `extern("VDP_Shadow_len")`).
+                    self.export_equ_sym(format!("{name}_{field}"), off, span);
                 }
                 off += width * count;
                 // asl-verified, and it depends on the `padding` state: with
@@ -1604,7 +1608,26 @@ impl Asm {
         }
         self.env
             .define(&format!("{name}_len"), SymbolValue::Int(off));
+        // The struct's total length exports too — the actual tranche-3
+        // consumer shape (`VDP_Shadow_len`'s cross-seam drift guard).
+        self.export_equ_sym(format!("{name}_len"), off, span);
         end + 1
+    }
+
+    /// Export an int equate to the module's link-level `equ_syms` so `.emp`
+    /// code can read it via `extern()` (Task B1, seam re-eval; extended to
+    /// struct-generated symbols in tranche 3). `add_equ_sym` panics with no
+    /// open section, and an equate CAN occur before any section has opened —
+    /// see `directive_equate`'s inline comment for why eagerly opening a
+    /// section here is WRONG (`org`/`phase` rely on possibly-section-free
+    /// evaluation): attach to the currently open section if one exists,
+    /// otherwise stash in `pending_equ_syms` for the next section that opens.
+    fn export_equ_sym(&mut self, name: String, value: i64, span: Span) {
+        if self.in_section {
+            self.builder.add_equ_sym(EquSym { name, expr: Expr::Int(value), span });
+        } else {
+            self.pending_equ_syms.push(EquSym { name, expr: Expr::Int(value), span });
+        }
     }
 
     /// Parse a `<field> ds.b|ds.w|ds.l <count>` struct-member line.
@@ -4525,6 +4548,30 @@ mod tests {
             equ_syms_named(&m, "bar").is_empty(),
             "a `set` symbol must not be exported as an equ"
         );
+    }
+
+    #[test]
+    fn struct_len_and_field_offsets_are_exported_as_equ_syms() {
+        // Tranche 3 (the vdp_init constants-twin): struct-generated
+        // `Name_len` / `Name_field` symbols are int equates SEMANTICALLY
+        // (comptime constants derived from struct layout), so they ride the
+        // same Item-B export path as `equ` — an `.emp` drift guard reads
+        // them via `extern("VDP_Shadow_len")` exactly like a hand-written
+        // equate. `padding off` (Aeon's global setting): b at 1, len 3.
+        let m = run(
+            "\tcpu 68000\n\tpadding off\nV struct\na ds.b 1\nb ds.w 1\nV endstruct\n\tdc.b 0\n",
+            &Options::default(),
+        )
+        .expect("assemble");
+        let len = equ_syms_named(&m, "V_len");
+        assert_eq!(len.len(), 1, "expected exactly one EquSym(V_len), got {len:?}");
+        assert_eq!(len[0].expr, sigil_ir::Expr::Int(3));
+        let a = equ_syms_named(&m, "V_a");
+        assert_eq!(a.len(), 1, "expected exactly one EquSym(V_a), got {a:?}");
+        assert_eq!(a[0].expr, sigil_ir::Expr::Int(0));
+        let b = equ_syms_named(&m, "V_b");
+        assert_eq!(b.len(), 1, "expected exactly one EquSym(V_b), got {b:?}");
+        assert_eq!(b[0].expr, sigil_ir::Expr::Int(1));
     }
 
     #[test]

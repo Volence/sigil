@@ -435,7 +435,7 @@ fn placed_emp_sections_with_mt_sfx_hblank(
 /// CONTROLLERS/MATH defines-less, MT's `DEBUG` — R4). Returns all SIX
 /// modules' placed sections concatenated (declaration order only) AND all
 /// THREE asserts-bearing modules' link_asserts (mt == 5, sfx == 1,
-/// controllers == 6 — `engine.constants`'s drift guards, tranche 2's step-2
+/// controllers == 8 — `engine.constants`'s drift guards, tranche 2's step-2
 /// modernize pass; hblank/math carry none) — the ONE lower pass per module
 /// (M2).
 fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
@@ -486,6 +486,12 @@ fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
     (sections, mt_asserts, sfx_asserts, controllers_asserts)
 }
 
+/// `placed_emp_sections_tranche3`'s return: the placed sections plus the
+/// five asserts-bearing modules' link_asserts (mt, sfx, controllers,
+/// vdp_init, collision_lookup — in that order).
+type Tranche3Sections =
+    (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>, Vec<LinkAssert>, Vec<LinkAssert>, Vec<LinkAssert>);
+
 /// Tranche 3: the eight-module successor — everything
 /// `placed_emp_sections_with_mt_sfx_hblank_tranche2` composes PLUS
 /// `vdp_init.emp` (`engine/system/`) and `collision_lookup.emp`
@@ -496,10 +502,7 @@ fn placed_emp_sections_with_mt_sfx_hblank_tranche2(
 /// and the AS side supply the shape). Neither carries link asserts in step 1
 /// (local const twins; the `extern()` drift guards arrive with the step-2
 /// twin migration), so the asserts tuple shape is unchanged.
-fn placed_emp_sections_tranche3(
-    aeon: &Path,
-    debug_val: i128,
-) -> (Vec<Section>, Vec<LinkAssert>, Vec<LinkAssert>, Vec<LinkAssert>) {
+fn placed_emp_sections_tranche3(aeon: &Path, debug_val: i128) -> Tranche3Sections {
     let map = emp_bank_map_tranche3(debug_val != 0);
     let (mut sections, _dac_asserts) =
         placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
@@ -522,11 +525,12 @@ fn placed_emp_sections_tranche3(
         &[],
         &map,
     );
-    // The two tranche-3 modules: no defines, no embeds, no `use` edges in
-    // step 1 — the plainest `placed_module_sections` shape in the file.
-    let (vdp_init_sections, _vdp_init_asserts) =
+    // The two tranche-3 modules: no defines, no embeds; both `use
+    // engine.constants` (step 2's twin migration), so each carries the
+    // twin's eight drift guards via the ambient prepend.
+    let (vdp_init_sections, vdp_init_asserts) =
         placed_module_sections(&aeon.join("engine/system"), "vdp_init.emp", &[], &map);
-    let (collision_sections, _collision_asserts) =
+    let (collision_sections, collision_asserts) =
         placed_module_sections(&aeon.join("engine/level"), "collision_lookup.emp", &[], &map);
     sections.extend(mt_sections);
     sections.extend(sfx_sections);
@@ -535,7 +539,7 @@ fn placed_emp_sections_tranche3(
     sections.extend(math_sections);
     sections.extend(vdp_init_sections);
     sections.extend(collision_sections);
-    (sections, mt_asserts, sfx_asserts, controllers_asserts)
+    (sections, mt_asserts, sfx_asserts, controllers_asserts, vdp_init_asserts, collision_asserts)
 }
 
 /// Compile the REAL `dac_samples.emp` and PLACE its sections into the two-bank
@@ -672,11 +676,22 @@ fn placed_module_sections_with_roots(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{module_file} parse errors: {pdiags:?}"
     );
-    let file = if module_file == "controllers.emp" {
+    // The `use engine.constants` modules get the twin's items prepended (the
+    // ambient technique — see `constants_ambient_items`). `constants.emp`
+    // lives in `engine/system/`; for `collision_lookup.emp` (the one module
+    // in `engine/level/`) that is a SIBLING directory, not its own.
+    let ambient_constants_dir = match module_file {
+        "controllers.emp" | "vdp_init.emp" => Some(dir.clone()),
+        "collision_lookup.emp" => {
+            Some(dir.parent().expect("engine/level has a parent").join("system"))
+        }
+        _ => None,
+    };
+    let file = if let Some(cdir) = ambient_constants_dir {
         sigil_frontend_emp::ast::File {
             module: file.module.clone(),
             attrs: file.attrs.clone(),
-            items: constants_ambient_items(&dir).into_iter().chain(file.items).collect(),
+            items: constants_ambient_items(&cdir).into_iter().chain(file.items).collect(),
             docs: file.docs.clone(),
         }
     } else {
@@ -1001,7 +1016,7 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
 ///
 /// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags,
 /// controllers_assert_diags)` — the caller pins all THREE asserts-bearing
-/// modules' `check_link_asserts` (mt == 5, sfx == 1, controllers == 6 —
+/// modules' `check_link_asserts` (mt == 5, sfx == 1, controllers == 8 —
 /// `engine.constants`'s drift guards) and asserts every diagnostic is
 /// non-Error. `hblank.emp`/`math.emp` carry no link asserts of their own (no
 /// `ensure`/`extern`), so they contribute none here.
@@ -1038,8 +1053,8 @@ fn build_mixed_tranche2_rom(
     );
     assert_eq!(
         guard_assert_count(&controllers_asserts),
-        6,
-        "engine.constants's six drift-guard ensures must be captured"
+        8,
+        "engine.constants's eight drift-guard ensures must be captured"
     );
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
@@ -1097,7 +1112,7 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
     );
     assert!(
         controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+        "engine.constants's eight drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
     // The controllers block itself, pinned explicitly (the port's own
@@ -1157,7 +1172,7 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
     );
     assert!(
         controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+        "engine.constants's eight drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
     assert_eq!(
@@ -1208,7 +1223,7 @@ fn build_mixed_tranche3_rom(
     let as_module = assemble_mixed_tranche3_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
     let debug_val: i128 = if debug { 1 } else { 0 };
 
-    let (emp_sections, mt_asserts, sfx_asserts, controllers_asserts) =
+    let (emp_sections, mt_asserts, sfx_asserts, controllers_asserts, vdp_init_asserts, collision_asserts) =
         placed_emp_sections_tranche3(aeon, debug_val);
     let mut sections = as_module.sections;
     sections.extend(emp_sections);
@@ -1234,9 +1249,28 @@ fn build_mixed_tranche3_rom(
     );
     assert_eq!(
         guard_assert_count(&controllers_asserts),
-        6,
-        "engine.constants's six drift-guard ensures must be captured"
+        8,
+        "engine.constants's eight drift-guard ensures must be captured"
     );
+
+    // The two tranche-3 modules each carry the twin's eight drift guards
+    // (step 2's migration); they must be captured AND pass against the real
+    // AS tree — including `VDP_Shadow_len`, whose AS-side value is a
+    // STRUCT-GENERATED symbol riding the new struct-equ export.
+    for (name, asserts) in
+        [("vdp_init.emp", &vdp_init_asserts), ("collision_lookup.emp", &collision_asserts)]
+    {
+        assert_eq!(
+            guard_assert_count(asserts),
+            8,
+            "{name} must carry engine.constants's eight drift guards"
+        );
+        let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "{name}'s drift guards must all PASS against the real AS tree: {diags:?}"
+        );
+    }
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map_src = std::fs::read_to_string(&map_path)
@@ -1276,7 +1310,7 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     );
     assert!(
         controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+        "engine.constants's eight drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
     // The vdp_init block, pinned explicitly (the port's own 0x4C-byte
@@ -1341,7 +1375,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
     );
     assert!(
         controllers_diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "engine.constants's six drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
+        "engine.constants's eight drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
     assert_eq!(

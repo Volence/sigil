@@ -434,3 +434,31 @@ fn relax_abs_sym_seam_still_works_after_pcrel_addition() {
     let candidate = emp_candidate(emp);
     assert_byte_identical(&reference, &candidate, "RelaxAbsSym seam post-pcrel");
 }
+
+#[test]
+fn owner_label_pcrel_target_resolves() {
+    // Small-opens bundle (tranche-2 T1 review, landed tranche 3): a
+    // MULTI-SEGMENT `Owner.label` as a pc-relative target. The resolution
+    // path is shared verbatim with branch targets (`map_pcrel_operand`
+    // mirrors `map_plain`'s multi-segment arm), but no test pinned it.
+    // `entry` sits at vma $0004 (after owner's leading rts+nop); the
+    // referencing lea opens `user` at $0006 with its ext word at $0008 →
+    // disp = $0004 - $0008 = -4 = $FFFC.
+    let emp = "module m\n\
+        section s (cpu: m68000, vma: $000000) {\n\
+        \tproc owner () {\n\
+        \t\trts\n\
+        \t\tnop\n\
+        export .entry:\n\
+        \t\trts\n\
+        \t}\n\
+        \tproc user () {\n\
+        \t\tlea.l\towner.entry(pc), a0\n\
+        \t}\n\
+        }\n";
+    let (image, msgs) = compile_full(emp);
+    let image = image.unwrap_or_else(|| panic!("Owner.label(pc) must resolve: {msgs:?}"));
+    // owner: 4E75 4E71, entry: 4E75, user at $6: lea (d16,PC),a0 = 41FA FFFC
+    // (disp measured from the ext word at $8: $4 - $8 = -4).
+    assert_eq!(&image[6..10], &[0x41, 0xFA, 0xFF, 0xFC]);
+}

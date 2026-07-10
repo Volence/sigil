@@ -3,13 +3,14 @@
 //! (`tranche2_negative_probes.rs`), reusing its probe classes for EACH file
 //! where they apply, plus one class this tranche adds:
 //!
-//! (a) genuineness — a doctored COPY of the emp source produces DIFFERENT
-//!     linked bytes than the reference, proving the byte-diff gate is
-//!     non-vacuous. Both doctors target the STEP-1 LOCAL CONST TWINS
-//!     (`CTYPE_AIR` 0 -> 1, `VDP_Shadow_len` 19 -> 18), so the probes double
-//!     as proof the twins are load-bearing for the emitted immediates — the
-//!     step-1 analog of tranche 2's constants-twin drift-guard probe (the
-//!     `extern()` guards arrive with the step-2 twin migration).
+//! (a) genuineness — a doctored COPY of the `engine.constants` TWIN produces
+//!     DIFFERENT linked bytes than the reference, proving the byte-diff gate
+//!     is non-vacuous AND the twin's values are load-bearing for the emitted
+//!     immediates (`CTYPE_AIR` 0 -> 1 feeds collision_lookup's `moveq`;
+//!     `VDP_Shadow_len` 19 -> 18 feeds vdp_init's two loop counters). The
+//!     `extern()` drift guards would ALSO catch these (tranche 2's probe
+//!     class, exercised by the port gates' `check_link_asserts`); this probe
+//!     proves the BYTES change too — two independent tripwires.
 //! (b) standalone-compile missing-symbol diagnostic — compile the real file
 //!     WITHOUT its synthetic cross-seam sections: the link fails LOUD,
 //!     naming a genuinely-missing symbol from the module's own cross-seam
@@ -65,6 +66,11 @@ fn real_src(subdir: &str, name: &str) -> Option<String> {
     }
 }
 
+/// The real `engine.constants` twin source (`engine/system/constants.emp`).
+fn twin_src() -> Option<String> {
+    real_src("engine/system", "constants.emp")
+}
+
 fn read_reference(name: &str) -> Option<Vec<u8>> {
     let path = aeon_dir().join(name);
     match std::fs::read(&path) {
@@ -77,12 +83,23 @@ fn read_reference(name: &str) -> Option<Vec<u8>> {
     }
 }
 
-/// Parse + lower `src` and place it into a two-region map (`text` carrier +
-/// the named region at `base`, `size`). Panics on any error diagnostic —
-/// probes doctor VALUES, never break the compile.
-fn place_module(src: &str, region: &str, base: &str, size: &str) -> Vec<Section> {
+/// Parse + lower `src` (with `twin_src` — the `engine.constants` twin, real
+/// or probe-doctored — prepended via the ambient technique, since both
+/// tranche-3 files `use engine.constants` after step 2's migration) and
+/// place it into a two-region map (`text` carrier + the named region at
+/// `base`, `size`). Panics on any error diagnostic — probes doctor VALUES,
+/// never break the compile.
+fn place_module(src: &str, twin_src: &str, region: &str, base: &str, size: &str) -> Vec<Section> {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let (twin_file, tdiags) = parse_str(twin_src);
+    assert!(tdiags.iter().all(|d| d.level != Level::Error), "twin parse errors: {tdiags:?}");
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: twin_file.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon_dir()),
@@ -200,17 +217,18 @@ fn link_all(sections: Vec<Section>) -> sigil_link::LinkedImage {
     sigil_link::link(&resolved, &SymbolTable::new()).unwrap_or_else(|d| panic!("link: {d:?}"))
 }
 
-/// Full plain-shape collision_lookup link with the given tile-cache VMA.
-fn link_collision(src: &str, tile_cache_vma: &str) -> sigil_link::LinkedImage {
-    let mut sections = place_module(src, "collision_lookup", "0x4C06", "0x32");
+/// Full plain-shape collision_lookup link with the given twin source and
+/// tile-cache VMA.
+fn link_collision(src: &str, twin: &str, tile_cache_vma: &str) -> sigil_link::LinkedImage {
+    let mut sections = place_module(src, twin, "collision_lookup", "0x4C06", "0x32");
     sections.extend(cache_ram_labels());
     sections.extend(tile_cache_label(tile_cache_vma));
     link_all(sections)
 }
 
-/// Full plain-shape vdp_init link with the given bootdata VMA.
-fn link_vdp_init(src: &str, bootdata_vma: &str) -> sigil_link::LinkedImage {
-    let mut sections = place_module(src, "vdp_init", "0x1C14", "0x4C");
+/// Full plain-shape vdp_init link with the given twin source and bootdata VMA.
+fn link_vdp_init(src: &str, twin: &str, bootdata_vma: &str) -> sigil_link::LinkedImage {
+    let mut sections = place_module(src, twin, "vdp_init", "0x1C14", "0x4C");
     sections.extend(vdp_cross_seam());
     sections.extend(bootdata_label(bootdata_vma));
     link_all(sections)
@@ -220,25 +238,27 @@ fn link_vdp_init(src: &str, bootdata_vma: &str) -> sigil_link::LinkedImage {
 // Probe (a) — GENUINENESS via the step-1 local const twins
 // ===========================================================================
 
-/// Doctor `collision_lookup.emp`'s local `CTYPE_AIR` twin from the genuine
-/// `0` to `1` and prove the linked bytes DIFFER from the reference window —
-/// the twin is load-bearing for the `moveq #CTYPE_AIR, d0` immediate, so a
-/// drifted twin cannot silently pass the byte gate.
+/// Doctor the TWIN's `CTYPE_AIR` from the genuine `0` to `1` and prove the
+/// linked collision_lookup bytes DIFFER from the reference window — the
+/// twin's value is load-bearing for the `moveq #CTYPE_AIR, d0` immediate,
+/// so a drifted twin cannot silently pass the byte gate (independent of the
+/// `extern()` drift guard, which would ALSO fire at `check_link_asserts`).
 ///
-/// FALSIFIED (restore-real-value): with the undoctored source the same
+/// FALSIFIED (restore-real-value): with the undoctored twin the same
 /// compile path equals the reference window byte-for-byte (that is exactly
 /// `collision_lookup_port.rs`'s plain gate, which stays green beside this
 /// probe).
 #[test]
 fn collision_lookup_doctored_ctype_air_twin_produces_different_bytes() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
+    let Some(twin) = twin_src() else { return };
     let Some(refrom) = read_reference("s4.bin") else { return };
     assert!(
-        src.contains("const CTYPE_AIR = 0"),
-        "precondition: the real file spells `const CTYPE_AIR = 0`"
+        twin.contains("pub const CTYPE_AIR = 0"),
+        "precondition: the twin spells `pub const CTYPE_AIR = 0`"
     );
-    let doctored = src.replace("const CTYPE_AIR = 0", "const CTYPE_AIR = 1");
-    let linked = link_collision(&doctored, "$431E");
+    let doctored = twin.replace("pub const CTYPE_AIR = 0", "pub const CTYPE_AIR = 1");
+    let linked = link_collision(&src, &doctored, "$431E");
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
@@ -247,22 +267,23 @@ fn collision_lookup_doctored_ctype_air_twin_produces_different_bytes() {
     );
 }
 
-/// Doctor `vdp_init.emp`'s local `VDP_Shadow_len` twin from the genuine `19`
-/// to `18` and prove the linked bytes DIFFER from the reference window —
-/// the twin feeds BOTH `moveq #VDP_Shadow_len-1` loop counters.
+/// Doctor the TWIN's `VDP_Shadow_len` from the genuine `19` to `18` and
+/// prove the linked vdp_init bytes DIFFER from the reference window — the
+/// twin's value feeds BOTH `moveq #VDP_Shadow_len-1` loop counters.
 ///
-/// FALSIFIED (restore-real-value): the undoctored source equals the
-/// reference window byte-for-byte (`vdp_init_port.rs`'s plain gate).
+/// FALSIFIED (restore-real-value): the undoctored twin equals the reference
+/// window byte-for-byte (`vdp_init_port.rs`'s plain gate).
 #[test]
 fn vdp_init_doctored_shadow_len_twin_produces_different_bytes() {
     let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
+    let Some(twin) = twin_src() else { return };
     let Some(refrom) = read_reference("s4.bin") else { return };
     assert!(
-        src.contains("const VDP_Shadow_len = 19"),
-        "precondition: the real file spells `const VDP_Shadow_len = 19`"
+        twin.contains("pub const VDP_Shadow_len = 19"),
+        "precondition: the twin spells `pub const VDP_Shadow_len = 19`"
     );
-    let doctored = src.replace("const VDP_Shadow_len = 19", "const VDP_Shadow_len = 18");
-    let linked = link_vdp_init(&doctored, "$3CE");
+    let doctored = twin.replace("pub const VDP_Shadow_len = 19", "pub const VDP_Shadow_len = 18");
+    let linked = link_vdp_init(&src, &doctored, "$3CE");
     let section = linked.section("vdp_init").expect("vdp_init section");
     assert_ne!(
         section.bytes,
@@ -282,7 +303,8 @@ fn vdp_init_doctored_shadow_len_twin_produces_different_bytes() {
 #[test]
 fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
-    let sections = place_module(&src, "collision_lookup", "0x4C06", "0x32");
+    let Some(twin) = twin_src() else { return };
+    let sections = place_module(&src, &twin, "collision_lookup", "0x4C06", "0x32");
     let result = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .and_then(|resolved| sigil_link::link(&resolved, &SymbolTable::new()));
     let err = result.expect_err(
@@ -310,7 +332,8 @@ fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
 #[test]
 fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
-    let sections = place_module(&src, "vdp_init", "0x1C14", "0x4C");
+    let Some(twin) = twin_src() else { return };
+    let sections = place_module(&src, &twin, "vdp_init", "0x1C14", "0x4C");
     let result = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .and_then(|resolved| sigil_link::link(&resolved, &SymbolTable::new()));
     let err = result.expect_err(
@@ -337,7 +360,8 @@ fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
 #[test]
 fn collision_lookup_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
-    let sections = place_module(&src, "collision_lookup", "0x4C08", "0x32");
+    let Some(twin) = twin_src() else { return };
+    let sections = place_module(&src, &twin, "collision_lookup", "0x4C08", "0x32");
     let sec = sections
         .iter()
         .find(|s| s.name == "collision_lookup")
@@ -354,7 +378,8 @@ fn collision_lookup_wrong_base_map_places_the_section_at_a_different_address() {
 #[test]
 fn vdp_init_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
-    let sections = place_module(&src, "vdp_init", "0x1C16", "0x4C");
+    let Some(twin) = twin_src() else { return };
+    let sections = place_module(&src, &twin, "vdp_init", "0x1C16", "0x4C");
     let sec = sections.iter().find(|s| s.name == "vdp_init").expect("placed vdp_init section");
     assert_eq!(sec.lma, 0x1C16, "the placed LMA must track the (doctored) map base");
     assert_ne!(sec.lma, 0x1C14, "…and therefore differ from the true pin");
@@ -374,8 +399,9 @@ fn vdp_init_wrong_base_map_places_the_section_at_a_different_address() {
 #[test]
 fn collision_lookup_wrong_tile_cache_vma_changes_the_bsr_bytes() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
+    let Some(twin) = twin_src() else { return };
     let Some(refrom) = read_reference("s4.bin") else { return };
-    let linked = link_collision(&src, "$4322");
+    let linked = link_collision(&src, &twin, "$4322");
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
@@ -394,8 +420,9 @@ fn collision_lookup_wrong_tile_cache_vma_changes_the_bsr_bytes() {
 #[test]
 fn vdp_init_wrong_bootdata_vma_changes_the_pcrel_lea_bytes() {
     let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
+    let Some(twin) = twin_src() else { return };
     let Some(refrom) = read_reference("s4.bin") else { return };
-    let linked = link_vdp_init(&src, "$3D2");
+    let linked = link_vdp_init(&src, &twin, "$3D2");
     let section = linked.section("vdp_init").expect("vdp_init section");
     assert_ne!(
         section.bytes,
