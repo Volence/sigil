@@ -21,6 +21,11 @@
 // spacing between the fields we actually care about. `Sst` below mirrors the
 // SST const in crates/sigil-frontend-emp/tests/overlay.rs exactly (same shape,
 // teaching comments instead of test terseness).
+//
+// The PRODUCTION SST layout is different (aeon `engine/objects/sst.emp`:
+// dispatch word at $00, positions at $02/$06 — only the `sst_custom` window
+// at $2E matches this cut-down shape). Teach the constructs from here; take
+// the layout from the production twin.
 // ===========================================================================
 
 module m

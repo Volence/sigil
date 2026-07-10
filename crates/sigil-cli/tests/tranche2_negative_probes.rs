@@ -116,6 +116,9 @@ fn as_hw_port_equs_with_button_up(button_up_rhs: &str) -> Vec<Section> {
          BUTTON_RIGHT = 1<<3\n\
          CTYPE_AIR = 0\n\
          VDP_Shadow_len = 19\n\
+         RF_COORDMODE = 3\n\
+         RF_PRIORITY_SHIFT = 5\n\
+         AF_DELETE = $FB\n\
          Stub:\n\
          \tdc.w 0\n"
     );

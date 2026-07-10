@@ -165,6 +165,9 @@ fn as_hw_port_equs() -> Vec<Section> {
                BUTTON_RIGHT = 1<<3\n\
                CTYPE_AIR = 0\n\
                VDP_Shadow_len = 19\n\
+               RF_COORDMODE = 3\n\
+               RF_PRIORITY_SHIFT = 5\n\
+               AF_DELETE = $FB\n\
                Stub:\n\
                \tdc.w 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
@@ -370,7 +373,7 @@ fn controllers_region_matches_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 8, "engine.constants's eight drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), 11, "engine.constants's eleven drift guards must be captured");
 
     let expected = &refrom[0x228C..0x22FE];
     let section = linked.section("controllers").expect("linked image must carry controllers");
@@ -418,7 +421,7 @@ fn controllers_debug_region_matches_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 8, "engine.constants's eight drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), 11, "engine.constants's eleven drift guards must be captured");
 
     let expected = &refrom[0x231A..0x238C];
     let section = linked.section("controllers").expect("linked image must carry controllers");

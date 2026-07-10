@@ -348,3 +348,25 @@ the mixed-gate head-pin displacements re-derived: plain `3BD6`, debug
   **`bcd4e3a5f42d63a7994fb989d076435a5242b4cb48203a99edfb01ac34189ee4`**.
 - Debug `s4.debug.bin`: sha256
   **`634fea687f6ebe44fca4cc50a9e2e9cfaeaa6c4740fcaffbc429f96bc6305184`**.
+
+## Re-baseline: tranche-6 step 5 — test_particle optimize (2026-07-10) — the current pin
+
+Tranche-6 STEP-5 under the RATIFIED loop: two peepholes in
+`test_particle` (.emp + AS twin in LOCKSTEP) — `moveq #0,d0` +
+`move.b d0, anim(a0)` → `clr.b anim(a0)` (−2 B), and the gravity
+register round-trip (`move.w y_vel(a0),d0` / `addi.w` / `move.w`
+back) → the read-modify-write `addi.w #PARTICLE_GRAVITY, y_vel(a0)`
+(−6 B). Region `test_particle` shrinks 0x5A → **0x52** (base `$10F8A`
+UNCHANGED, shape-invariant; end / bank resume org `$10FE4`→`$10FDC`;
+`TestParticle_Main` now `$10FCA` both shapes). Everything in
+`$10FDC..$5FFFF` slid −8; absorbed at `org $60000` (`EndOfRom` + all
+sound/data pins at/after `$60000` UNCHANGED). Re-derived per-shape
+positions: act_descriptor plain `$14AE6` / debug `$14B4E` (resume orgs
+`$14D5A`/`$14DC2`), sonic_anims plain `$30970` / debug `$309D8`,
+particle_anims/`Ani_Particle` plain `$309DE` / debug `$30A46` (resume
+orgs `$309E6`/`$30A4E`). Demo unaffected.
+
+- Non-debug `s4.bin`: sha256
+  **`588adf815c5a84402981a495e3d96f732e721d3ef5560286d9eeb6ef355f0f3f`**.
+- Debug `s4.debug.bin`: sha256
+  **`ed96301f5303841a7f12c02ab8dbde5e413b68dca4caed348419ba887504a4f7`**.

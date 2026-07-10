@@ -14,6 +14,15 @@
 // Everything here is REAL — it lowers and links — but the CONTENT (exact
 // offsets, mock art/mapping bytes, stub proc bodies) is illustrative. Where an
 // engine convention had to be invented for the exhibit, the comment says so.
+//
+// THE PRODUCTION SST IS NOT THIS ONE. The real engine's record (aeon
+// `engine/objects/sst.emp`, the type-only twin of `engine/structs.asm`) puts
+// the DISPATCH at offset $00 (`code_addr`, a word offset from ObjCodeBase —
+// there is no object-id field, and no `resume` slot at $20: the routine
+// store IS `code_addr`), positions at $02/$06 as 16.16 u32s, velocities at
+// $0A/$0C. Only the `sst_custom` window ($2E, 34 bytes, $50 total) matches
+// this exhibit. Teach the CONSTRUCTS from here; take the LAYOUT from the
+// production twin.
 // ===========================================================================
 
 module prelude

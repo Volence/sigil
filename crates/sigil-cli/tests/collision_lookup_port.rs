@@ -121,6 +121,9 @@ fn as_twin_equs() -> Vec<Section> {
                BUTTON_RIGHT = 1<<3\n\
                CTYPE_AIR = 0\n\
                VDP_Shadow_len = 19\n\
+               RF_COORDMODE = 3\n\
+               RF_PRIORITY_SHIFT = 5\n\
+               AF_DELETE = $FB\n\
                Stub:\n\
                \tdc.w 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
@@ -292,7 +295,7 @@ fn assert_twin_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert
             })
         })
         .count();
-    assert_eq!(guards, 8, "engine.constants's eight drift guards must be captured");
+    assert_eq!(guards, 11, "engine.constants's eleven drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

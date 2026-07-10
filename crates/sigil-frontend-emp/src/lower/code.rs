@@ -226,6 +226,17 @@ fn lower_m68k_instr(
             }
         }
     }
+    // asl zero-displacement optimization (`(0,An)` → `(An)`), mirroring the AS
+    // front-end's post-conversion pass — `movep` is the sole 68000 exception
+    // (it HAS no `(An)` mode; its d16 field is load-bearing even at 0). The
+    // real demand site is typed field access on an offset-0 field
+    // (`Sst.code_addr(a0)`, the object dispatch slot): asl emits the 4-byte
+    // `(An)` form there, so byte parity requires the same collapse here.
+    if m != M68kMnemonic::Movep {
+        for op in &mut mops {
+            collapse_zero_disp(op);
+        }
+    }
     let m = refine_m68k_mnemonic(m, &mops);
     let inst = M68kInst { mnemonic: m, size, ops: mops };
     match M68kBackend.lower_inst(&inst, span) {
@@ -481,7 +492,11 @@ fn lower_m68k_pcrel(
                 mops.push(M68kOperand::Pcd8Xn { d: 0, xn, long: *xlong });
             }
             other => match m68k_operand(other) {
-                Ok(o) => mops.push(o),
+                // movep has no pc-relative form, so the collapse is unconditional here.
+                Ok(mut o) => {
+                    collapse_zero_disp(&mut o);
+                    mops.push(o);
+                }
                 Err(msg) => {
                     push_err(diags, span, msg);
                     return;
@@ -541,12 +556,10 @@ fn lower_m68k_dbcc(
 /// and operand shape, maps the OTHER (memory-EA) operand through the ordinary
 /// mapper, and hands both straight to the ISA encoder — direction (store vs
 /// load) and the `-(An)` predecrement mask reversal are entirely the encoder's
-/// job (mirrors the AS front-end's `lower_m68k_movem` doc comment). Unlike the
-/// AS front-end, this does NOT apply a zero-displacement `(0,An)` → `(An)`
-/// collapse — that optimization exists there to fold a forward-reference
-/// displacement that resolved to 0; `.emp` operands are fully resolved at eval
-/// time (no lazy/forward-ref displacement pass), and no port #1 test exercises
-/// this shape, so it stays out of scope here.
+/// job (mirrors the AS front-end's `lower_m68k_movem` doc comment). The
+/// zero-displacement `(0,An)` → `(An)` collapse applies here as it does on
+/// every other path (tranche 6 — asl collapses movem's memory EA too; the
+/// earlier "out of scope" reading predated the offset-0 field-access class).
 fn lower_m68k_movem(
     size: Option<Width>,
     ops: &[CodeOperand],
@@ -577,13 +590,14 @@ fn lower_m68k_movem(
             return;
         }
     };
-    let mem_op = match m68k_operand(mem_op) {
+    let mut mem_op = match m68k_operand(mem_op) {
         Ok(o) => o,
         Err(msg) => {
             push_err(diags, span, msg);
             return;
         }
     };
+    collapse_zero_disp(&mut mem_op);
     let list_op = M68kOperand::RegList(mask);
     let ops = if list_first { vec![list_op, mem_op] } else { vec![mem_op, list_op] };
     let inst = M68kInst { mnemonic: M68kMnemonic::Movem, size, ops };
@@ -593,17 +607,25 @@ fn lower_m68k_movem(
     }
 }
 
-/// A LINK-TIME 32-bit immediate source (tranche 5 — the emp mirror of the AS
-/// front-end's `try_defer_long_imm`): `movea.l #SONG_TABLE, a0` where the
-/// value is an extern()/equ residual that cannot fold until link. The
-/// instruction encodes ONCE with a zero imm32 placeholder and ONE `Value32Be`
-/// fixup at offset 2 (the imm field always directly follows the one-word
-/// opcode: the imm is the SOURCE, so its ext words come first; any
-/// destination ext words follow the hole and don't move it).
+/// A LINK-TIME immediate source (tranche 5 `.l`, tranche 6 `.w` — the emp
+/// mirror of the AS front-end's `try_defer_long_imm`): `movea.l #SONG_TABLE,
+/// a0` / `move.w #ROUTINE_OFF, (a0)` where the value is an extern()/equ
+/// residual that cannot fold until link. The instruction encodes ONCE with a
+/// zero-imm placeholder and ONE `Value32Be` (`.l`) / `Value16Be` (`.w`) fixup
+/// at offset 2 (the imm field always directly follows the one-word opcode:
+/// the imm is the SOURCE, so its ext words come first; any destination ext
+/// words follow the hole and don't move it).
 ///
-/// Fenced to the proven shape: `.l` size only (a `.b`/`.w` symbolic imm has
-/// no deferral yet — the ledgered width-extension gap), the imm FIRST, and no
-/// other symbolic operand (their fixups would collide).
+/// The `.w` width's demand site is the object-bank dispatch store (tranche 6:
+/// `move.w #(Main - ObjCodeBase), Sst.code_addr(a0)` — objroutine): a
+/// link-time symbol DIFFERENCE in a word immediate. `Value16Be` range-checks
+/// the folded value to the unsigned 16-bit window at link, so a negative or
+/// oversize difference is loud, not wrapped.
+///
+/// Fenced to the proven shapes: `.w`/`.l` sizes only (a `.b` symbolic imm has
+/// no deferral yet — the remaining width of the ledgered extension gap,
+/// consumer-gated), the imm FIRST, and no other symbolic operand (their
+/// fixups would collide).
 fn lower_m68k_imm_link(
     m: M68kMnemonic,
     size: M68kSize,
@@ -612,12 +634,12 @@ fn lower_m68k_imm_link(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    if size != M68kSize::L {
+    if !matches!(size, M68kSize::L | M68kSize::W) {
         push_err(
             diags,
             span,
-            "[lower.imm-link] a link-time immediate needs `.l` size — `.b`/`.w` symbolic \
-             immediates have no deferral yet (mirror the value into a comptime const, or \
+            "[lower.imm-link] a link-time immediate needs `.w` or `.l` size — a `.b` symbolic \
+             immediate has no deferral yet (mirror the value into a comptime const, or \
              extend the imm-deferral family)",
         );
         return;
@@ -681,7 +703,15 @@ fn lower_m68k_imm_link(
                 return;
             }
             other => match m68k_operand(other) {
-                Ok(o) => enc_ops.push(o),
+                // The zero-disp collapse applies to the non-imm operands here
+                // too — the `.w` demand site's DESTINATION is exactly an
+                // offset-0 field EA (`Sst.code_addr(a0)` → `(a0)`, asl's 30BC
+                // shape). movep can't reach this path (its EA pairs with Dn,
+                // never an immediate), so the collapse is unconditional.
+                Ok(mut o) => {
+                    collapse_zero_disp(&mut o);
+                    enc_ops.push(o);
+                }
                 Err(msg) => {
                     push_err(diags, span, msg);
                     return;
@@ -699,8 +729,15 @@ fn lower_m68k_imm_link(
             return;
         }
     };
-    // Defense-in-depth: one opcode word + the 4-byte imm32 field.
-    if df.bytes.len() < 6 {
+    // Defense-in-depth: one opcode word + the imm field (4 bytes for `.l`,
+    // 2 for `.w`) — anything shorter means the immediate landed in the opcode
+    // word itself and there is no hole to defer into.
+    let (kind, min_len) = match size {
+        M68kSize::L => (FixupKind::Value32Be, 6),
+        M68kSize::W => (FixupKind::Value16Be, 4),
+        _ => unreachable!("guarded at entry: imm-link size is .w or .l"),
+    };
+    if df.bytes.len() < min_len {
         push_err(
             diags,
             span,
@@ -711,7 +748,7 @@ fn lower_m68k_imm_link(
         return;
     }
     let mut df = df;
-    df.fixups.push(Fixup { kind: FixupKind::Value32Be, offset: 2, target });
+    df.fixups.push(Fixup { kind, offset: 2, target });
     emit_data_frag(builder, df);
 }
 
@@ -799,7 +836,10 @@ fn lower_m68k_abs_sym(
                 return;
             }
             other => match m68k_operand(other) {
-                Ok(o) => {
+                // movep never carries an abs-sym operand (Dn ↔ d16(An) only),
+                // so the zero-disp collapse is unconditional on this path.
+                Ok(mut o) => {
+                    collapse_zero_disp(&mut o);
                     short_ops.push(o);
                     long_ops.push(o);
                 }
@@ -903,13 +943,25 @@ fn operand_has_ext_words(op: &CodeOperand) -> bool {
 /// lowering) crosses, so the width-narrowing casts (`i128` → `i32` immediate /
 /// `i16` displacement) are RANGE-CHECKED here rather than truncating silently —
 /// mirroring the AS front-end's `m68k_imm_bounds` / `fold_imm(disp, i16..)`.
+/// asl's zero-displacement optimization: a `(d16,An)` EA whose displacement
+/// resolved to 0 encodes as plain `(An)` (2 bytes + 1 memory cycle cheaper).
+/// Twin of the AS front-end's `collapse_zero_disp`; every m68k lowering path
+/// that can carry a `Disp16An` applies it (gated off only for `movep`, whose
+/// encoding has no `(An)` mode). The demand class is typed field access on an
+/// offset-0 struct field — `Sst.code_addr(a0)`, the object dispatch slot.
+fn collapse_zero_disp(op: &mut M68kOperand) {
+    if let M68kOperand::Disp16An(0, n) = *op {
+        *op = M68kOperand::Ind(n);
+    }
+}
+
 fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
     match op {
         CodeOperand::ImmLink { .. } => {
             // Routed by `lower_m68k_imm_link` before the generic path; reaching
             // here means an unsupported combination (e.g. a Z80 instruction, or
             // a non-first position the router rejected).
-            Err("a link-time immediate is only supported as a 68k `.l` source operand".into())
+            Err("a link-time immediate is only supported as a 68k `.w`/`.l` source operand".into())
         }
         CodeOperand::Imm(n) => {
             let n = *n;

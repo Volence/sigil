@@ -368,8 +368,17 @@ fn apply_fixup(
     let value = match fx.target.fold(&|name| syms.resolve(name, None)) {
         Fold::Value(v) => v,
         Fold::Poison => {
+            // Name the dangling leaves: a compound target (`Main - ObjCodeBase`,
+            // the objroutine word) with one misspelled symbol should say WHICH
+            // name dangled, same as the bare-Sym arm (tranche-6 probe finding).
+            let lookup = |name: &str| syms.resolve(name, None);
+            let missing = unresolved_sym_leaves(&fx.target, &lookup);
             let what = match &fx.target {
                 Expr::Sym(name) => format!("symbol `{name}`"),
+                _ if !missing.is_empty() => {
+                    let names: Vec<String> = missing.iter().map(|n| format!("`{n}`")).collect();
+                    format!("target expression (dangling symbol(s) {})", names.join(", "))
+                }
                 _ => "target expression".to_string(),
             };
             diags.push(diag(

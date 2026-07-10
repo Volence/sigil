@@ -675,3 +675,39 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `clobbers(d9)` or a typo'd name is silently accepted (it just never matches the
   lint's allowed-set lookup). Cheap fix: validate entries against the register
   vocabulary (+ `sr`) at the same site preserves validates. — OPEN
+- [tranche 6, 2026-07-10] **Label references in comptime/immediate expressions do not
+  exist** — a bare proc name in an instruction immediate is `unknown name` (the D-PP.3
+  label-value fallback is confined to data initializers and call args). The objroutine
+  store had to spell its OWN module's label through the link:
+  `equ SOLID_ROUTINE_MAIN = extern("TestSolid_Main") - extern("ObjCodeBase")` — legal
+  (the R3-flip precedent), but self-extern reads as ceremony. Ask: label values in imm
+  exprs (→ LinkExpr), which also unlocks an expression-position `objroutine(label)`
+  comptime helper. Every future object port hits this once per routine store. — OPEN
+- [tranche 6, 2026-07-10] **equ names are link-global and unhygienic** — two modules
+  declaring `equ OBJ_CODE_BASE = …` collide at link ("symbol redefined"), so
+  module-local equs must carry manual name prefixes (SOLID_/PARTICLE_). Ask: mangle
+  non-pub equs like non-pub procs (they are module-local by declaration), or at least
+  say "equ" and name both modules in the collision diagnostic. — OPEN
+- [tranche 6, 2026-07-10] **clobbers() takes no register ranges** — `clobbers(d0-d4/a1-a3)`
+  is a parse error while `preserves(d0-d1/a0)` takes movem-reglists; the eight-register
+  contract had to be spelled out comma-by-comma. Ask: accept the movem-reglist grammar in
+  clobbers too (one grammar for both attributes). — OPEN
+- [tranche 6, 2026-07-10] **offsets-table labels can't be `use`-imported as values** —
+  test_particle consumes `Ani_Particle` (an .emp offsets table in particle_anims.emp)
+  via `equ ANI_PARTICLE = extern("Ani_Particle")` even though both sides are .emp. Ask:
+  `use games.sonic4.particle_anims.{Ani_Particle}` importing the table label as a
+  link-value name usable in imm position (pairs with the label-in-expr ask above). — OPEN
+- [tranche 6, 2026-07-10] **AS-side deferred `dc.w` values use the UNSIGNED Value16Be
+  window** (shipped this tranche for the objroutine consumer words): a NEGATIVE deferred
+  difference fails the link loud where asl would truncate mod 2^16. Right call for bank
+  offsets (totality); recorded as a deliberate asl divergence in the F5 truncation-parity
+  family. Bank offsets ≥ $8000 stay representable (unsigned window) — the earlier
+  signed-window worry applies only to the offsets-construct's RelWord16Be, unchanged. — RECORDED
+- [tranche 6, 2026-07-10] **`.b` ImmLink still unbuilt** — the `.w` half shipped this
+  tranche (Value16Be at offset 2); `.b` waits for its first consumer (kill-row-4 stage 2
+  wants `.b`/`.w` BOTH — the `.w` half is now real). — OPEN (consumer-gated)
+- [tranche 6, 2026-07-10] **sst.emp's 30 drift ensures are hand-written boilerplate** —
+  a comptime iteration over a struct's fields (`for f in Sst.fields { ensure(...) }`)
+  would collapse them to three lines. Reflection is a big hammer for one file; jotted as
+  taste, NOT asked — revisit only if a second full-struct twin appears before structs.asm
+  ports. — JOTTED
