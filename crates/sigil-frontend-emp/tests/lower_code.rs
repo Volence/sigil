@@ -831,17 +831,88 @@ fn imm_link_movea_defers_value32_fixup() {
 }
 
 #[test]
-fn imm_link_word_size_is_refused_with_steering() {
-    // `.b`/`.w` symbolic immediates have no deferral yet (the ledgered
-    // width-extension gap) — steer, don't guess.
+fn imm_link_word_defers_value16_fixup() {
+    // Tranche 6 (the objroutine width): `move.w #extern("Tbl"), d0` — a
+    // link-time imm16 encodes with a zero placeholder and ONE Value16Be
+    // fixup at 2. (Supersedes tranche 5's refusal probe for this width.)
+    use sigil_ir::{Expr, Fragment};
     let (code, ediags) = eval_asm_with(&asm_1("move.w #extern(\"Tbl\"), d0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.bytes, vec![0x30, 0x3C, 0x00, 0x00], "move.w #0, d0 hole");
+            assert_eq!(df.fixups.len(), 1, "one fixup");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value16Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_word_objroutine_store_collapses_zero_disp_dest() {
+    // THE tranche-6 demand shape: `move.w #(extern("Main") - extern("Base")),
+    // $0(a0)` — a link-time symbol DIFFERENCE in a word immediate, stored to
+    // an offset-0 EA. The dest collapses to `(a0)` (asl's 30BC form, 4 bytes)
+    // and the Sub target rides one Value16Be fixup at 2.
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(
+        &asm_1("move.w #(extern(\"Main\") - extern(\"Base\")), $0(a0)"),
+        &[],
+    );
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.bytes, vec![0x30, 0xBC, 0x00, 0x00], "move.w #0, (a0) hole");
+            assert_eq!(df.fixups.len(), 1, "one fixup");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value16Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            match &df.fixups[0].target {
+                Expr::Binary { .. } => {}
+                other => panic!("expected a Sub link expr target, got {other:?}"),
+            }
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_byte_size_is_refused_with_steering() {
+    // A `.b` symbolic immediate has no deferral yet (the remaining width of
+    // the ledgered extension gap) — steer, don't guess.
+    let (code, ediags) = eval_asm_with(&asm_1("move.b #extern(\"Tbl\"), d0"), &[]);
     assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
     let (_module, diags) = lower_module_68k(&code);
     assert!(
         diags.iter().any(|d| d.message.contains("[lower.imm-link]")
-            && d.message.contains("`.l` size")),
-        "expected the .l-only imm-link steering, got: {diags:?}"
+            && d.message.contains("`.w` or `.l` size")),
+        "expected the .b imm-link steering, got: {diags:?}"
     );
+}
+
+#[test]
+fn zero_displacement_collapses_to_address_indirect() {
+    // asl's zero-displacement optimization, mirrored (tranche 6): a
+    // `(d16,An)` EA whose displacement is 0 encodes as plain `(An)` —
+    // `move.w d0, $0(a0)` = 3080 (2 bytes), not 3140 0000. The demand class
+    // is typed field access on an offset-0 field (`Sst.code_addr(a0)`).
+    let (code, ediags) = eval_asm_with(&asm_1("move.w d0, $0(a0)"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x30, 0x80]);
+}
+
+#[test]
+fn movep_keeps_zero_displacement() {
+    // The sole 68000 exception: movep has NO `(An)` mode — its d16 field is
+    // load-bearing even at 0. `movep.w d0, $0(a0)` = 0188 0000.
+    let (code, ediags) = eval_asm_with(&asm_1("movep.w d0, $0(a0)"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x01, 0x88, 0x00, 0x00]);
 }
 
 #[test]
