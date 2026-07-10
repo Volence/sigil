@@ -718,3 +718,11 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   PRE-MADE for the first consumer: sin/cos return the BARE fixed<8,8> unit fraction —
   NOT Velocity (a scale factor becomes a velocity only when multiplied by a speed;
   Volence probed exactly this and the distinction held). — OPEN
+- [tranche 7, 2026-07-10] **`comptime fn` register-arg DISTINCTNESS is contract-only** —
+  `aabb_axis_test`'s doc contract says `stmp` MUST NOT alias `cdim`/`delt`, but the
+  template splices whatever `Reg` args it is handed: passing `stmp == cdim` assembles
+  CLEAN and emits silently-wrong code (tranche7_negative_probes.rs probe (f) pins this,
+  matching the .inc's identical sharp edge — the AS macro can't check it either). Ask: a
+  `distinct(a, b, ...)` param predicate on `comptime fn` (or an inferred no-alias check
+  over splice sites) so the mis-instantiation fails loud instead of miscompiling. Pairs
+  with the clobbers/preserves contract family. — OPEN

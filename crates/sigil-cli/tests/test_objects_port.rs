@@ -185,6 +185,14 @@ fn as_constant_equs() -> Vec<Section> {
                RF_COORDMODE = 3\n\
                RF_PRIORITY_SHIFT = 5\n\
                AF_DELETE = $FB\n\
+               NUM_PLAYERS = 2\n\
+               NUM_DYNAMIC = 40\n\
+               NUM_SYSTEM = 8\n\
+               NUM_EFFECTS = 16\n\
+               COLLISION_TOUCH = 12\n\
+               ST_IN_AIR = 3\n\
+               ST_ON_OBJECT = 5\n\
+               ST_P1_STANDING = 3\n\
                ObjCodeBase = $10000\n\
                Stub:\n\
                \tdc.w 0\n";
@@ -316,7 +324,7 @@ fn compile_real_files(
 
 /// All prepended drift guards must be captured and PASS against the
 /// synthetic AS-side truths: sst.emp's 30 ride with BOTH modules (60) plus
-/// constants.emp's 11 with test_particle = 71.
+/// constants.emp's 19 with test_particle = 79.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     // The four pub proc labels each carry an always-recorded
     // `[layout.odd-item]` even-address parity assert — not drift guards;
@@ -329,7 +337,7 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
             })
         })
         .count();
-    assert_eq!(guards, 71, "the ambient drift guards must all be captured");
+    assert_eq!(guards, 79, "the ambient drift guards must all be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

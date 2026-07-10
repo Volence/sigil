@@ -105,6 +105,14 @@ fn as_af_equ() -> Vec<Section> {
                RF_COORDMODE = 3\n\
                RF_PRIORITY_SHIFT = 5\n\
                AF_DELETE = $FB\n\
+               NUM_PLAYERS = 2\n\
+               NUM_DYNAMIC = 40\n\
+               NUM_SYSTEM = 8\n\
+               NUM_EFFECTS = 16\n\
+               COLLISION_TOUCH = 12\n\
+               ST_IN_AIR = 3\n\
+               ST_ON_OBJECT = 5\n\
+               ST_P1_STANDING = 3\n\
                Stub:\n\
                \tdc.w 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
