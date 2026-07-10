@@ -68,14 +68,14 @@ From the code-sense review, each its own commit after merge, oldest-hazard first
 | Entry | Recommendation |
 |---|---|
 | Items 1–7 above | SHIPPED in-tranche — ratify with merge |
-| **The no-effect proc** | RULED (packet review): empty `clobbers()` IN, opt-in; checklist amended; build rides tranche 4's opening |
+| **The no-effect proc** | RULED + SHIPPED same day: `clobbers()` = verified touches-nothing (lint-enforced); HBlank_Null annotated |
 | **Checklist self-review**: the standing step-2 checklist held up; two additions surfaced — stack-discipline writes (now lint-exempt by class) and the no-effect-proc ambiguity above | Amend checklist with both once ruled |
-| **abs.l destinations** (re-scoped) | Stays OPEN for the port that spells it; bare-symbol width-rule idiom covers today's cases |
+| **abs.l destinations** | RULED + SHIPPED same day: explicit `(expr).w`/`(expr).l`, both positions, int + symbolic (pinned single fixup); bare symbols stay the default; `(a0).w` now rejects |
 | **`ifndef`-guarded equ/struct export gap** (review finding, latent, PRE-EXISTING) | FIXED on-branch at Volence's packet-review call (ever-exported set carried across passes, re-attached from the converged env; pinned by test) |
 | **Comptime Data indexing** + typed Data views (`[i16; 320]` embeds) | RATIFIED IN (packet review) — one work item, tranche 4's opening; A-Spec2.3 record rides the build |
 | **Typed data-register params** (`d0: Angle`) — CONFIRMED WORKING | Application deliberately deferred to construct walk #3 (Volence driving) — don't front-run the newtype naming |
-| `~mask` `&$FF` ceremony | DEFERRED BY RULING — stays jotted; `&$FF` stays valid under any future rule |
-| **Unsized conditionals** (drop `.s`/`.w`, byte-neutral — D2.18 relaxation exists) | NEW taste call, awaiting Volence |
+| `~mask` `&$FF` ceremony | RESOLVED: probe showed `#~(mask)` already works (signed imm8) — the `&$FF` was inherited asl spelling, now dropped from controllers.emp |
+| **Unsized conditionals** | RULED + SWEPT same day: unsized in new-style files (8 sites across 3 files, byte-identical); explicit sizes only under `@as_compat`; checklist + §10 amended |
 
 ## Checkpoint asks
 
