@@ -780,3 +780,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   reaches for the call-expr escape (row above) rather than a raw `{}` splice. Noted as a
   deliberate SCOPE boundary (splices belong to comptime-fn templates), not necessarily
   wrong — jotted so the next proc-body consumer knows the boundary before hitting it. — RECORDED
+- [tranche 7 close, 2026-07-10] **DESIGN-READY: object-pool occupancy structure** —
+  four per-frame sites walk FIXED capacity to find sparse occupancy (RunObjects'
+  dynamic/system/effects sweeps incl. per-live distance culling; TouchResponse ×2
+  players ~5.3k cycles measured; EntityWindow_DespawnObjects' 40-slot walk;
+  RunObjects_Frozen cold). ~7-8k cycles/frame (~6% NTSC) of pure empty-slot tax at
+  typical occupancy. Fix: ONE compact live-index array per pool, maintained at
+  spawn/despawn (rare events — swap-remove), consumed by all four sites; the SAME
+  structure is the registered-participants list opt-in object-vs-object collision
+  needs (one build, two features). Rings already escaped this pattern at birth
+  (dense ring buffer). HAZARDS: mutation-during-iteration (children/effects spawn
+  MID-RunObjects-walk — needs append-only-during-frame + deferred removals, or a
+  snapshot; full step-5 + oracle treatment); effects pool churns too fast to pay
+  (exempt — its 16-slot sweep stays). Ceiling = the empty-slot tax only; per-live
+  work (culling, dispatch) is real work. TRIGGER: Prof_TouchResponse/
+  Prof_Peak_Frame showing pressure, OR the first object-vs-object demand,
+  whichever first. Volence-ratified as jot-now-build-later (2026-07-10). — DESIGN-READY
