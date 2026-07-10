@@ -225,3 +225,17 @@ today's bank is nowhere near; **gap-ledger row** (asl truncates mod
 2. Comptime expression-position `objroutine(label)` helper if it turns
    out to need machinery (else it ships in D1 and this row is void).
 3. `.b` ImmLink still unbuilt (the `.w` half lands here; consumer-gated).
+
+## Addendum (Volence review, 2026-07-10) — RATIFIED, with a scheduling decision
+
+Design approved as written (type-only twin, raw ints). Volence raised
+"full how-we-want-SST now?"; settled: **construct-walk #3 (the Sonic
+newtype set vs player physics, Volence driving) is PULLED FORWARD to
+between tranches 6 and 7** — the typing pass runs against
+player_ground/collision hot code, then back-props onto sst.emp + the two
+object modules (a type-annotation diff over a 2-file corpus), so
+collision.asm (T7, 32 SST refs) ports ONCE into the final typed surface.
+Tranche-6 packet must carry walk #3 as a named gate item for tranche 7,
+alongside the collision.asm structural-changes re-ask. sst.emp is to be
+authored walk-#3-ready: fields grouped/commented so newtypes drop in as
+annotations, not a rewrite.
