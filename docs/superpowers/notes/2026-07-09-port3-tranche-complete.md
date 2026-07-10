@@ -68,21 +68,23 @@ From the code-sense review, each its own commit after merge, oldest-hazard first
 | Entry | Recommendation |
 |---|---|
 | Items 1–7 above | SHIPPED in-tranche — ratify with merge |
-| **The no-effect proc** (HBlank_Null: no clobbers, no preserves — "no contract" vs "touches nothing" indistinguishable) | Volence ruling: allow explicit empty `clobbers()` meaning "touches nothing"? Recommend YES at low priority (checklist amendment either way) |
+| **The no-effect proc** | RULED (packet review): empty `clobbers()` IN, opt-in; checklist amended; build rides tranche 4's opening |
 | **Checklist self-review**: the standing step-2 checklist held up; two additions surfaced — stack-discipline writes (now lint-exempt by class) and the no-effect-proc ambiguity above | Amend checklist with both once ruled |
 | **abs.l destinations** (re-scoped) | Stays OPEN for the port that spells it; bare-symbol width-rule idiom covers today's cases |
 | **`ifndef`-guarded equ/struct export gap** (review finding, latent, PRE-EXISTING) | FIXED on-branch at Volence's packet-review call (ever-exported set carried across passes, re-attached from the converged env; pinned by test) |
-| **Comptime Data indexing** (embed content asserts — sine-table invariants) | v1.1 candidate; needs an A-Spec2.3 decision to grow the comptime surface |
+| **Comptime Data indexing** + typed Data views (`[i16; 320]` embeds) | RATIFIED IN (packet review) — one work item, tranche 4's opening; A-Spec2.3 record rides the build |
 | **Typed data-register params** (`d0: Angle`) — CONFIRMED WORKING | Application deliberately deferred to construct walk #3 (Volence driving) — don't front-run the newtype naming |
-| `~mask` `&$FF` ceremony; typed word-table embeds (`[i16; 320]`) | Jotted (v1.1 candidates) |
+| `~mask` `&$FF` ceremony | DEFERRED BY RULING — stays jotted; `&$FF` stays valid under any future rule |
+| **Unsized conditionals** (drop `.s`/`.w`, byte-neutral — D2.18 relaxation exists) | NEW taste call, awaiting Volence |
 
 ## Checkpoint asks
 
 1. Merge sigil `port-tranche3` → master (`--no-ff`), remove worktree, delete branch.
 2. Merge aeon `sigil-emp-tranche3` → master (`--no-ff`), delete branch.
 3. Rule on the retrospect table (esp. the empty-`clobbers()` question).
-4. The reads-wrong list lands as post-merge commits (each byte-gated by the eight-module
-   mixed run against a REBUILT reference — these change the reference ROM).
+4. **STEP 5 (ratified at the packet review): optimize.** The reads-wrong list lands as
+   post-merge commits (each re-gated against a REBUILT reference — these change the
+   reference ROM); later retrospects may send step-5 work back to already-ported files.
 5. **Tranche 4 proposal:** the data quick-wins (`vram_bases`, `ojz_act_pool`,
    `particle_anims`, `plantbadmaps_anims`) — align shipped in tranche 0, `offsets` inline
    bodies ready; the first real data-tranche exercise. Alternatively `game_loop.asm` now
