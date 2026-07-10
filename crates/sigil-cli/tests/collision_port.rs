@@ -42,7 +42,8 @@
 //! ## Cross-seam symbols
 //!
 //! INBOUND equs (values): the SST_* struct-equ seam + the engine constants
-//! (the collision block's eight, guarded by `constants.emp`). INBOUND labels
+//! (the collision block's seven, guarded by `constants.emp` — the two STANDING
+//! bits died with their consumers in the interact-pointer fix). INBOUND labels
 //! at true per-shape VMAs (GAME RAM, moves with `__DEBUG__`): `Player_1`
 //! (plain `$FFFF89EE` / debug `$FFFF8A10`) and `Dynamic_Slots`
 //! (`$FFFF8A8E` / `$FFFF8AB0`), both `.w`-addressed, width-selected to abs.w.
@@ -53,8 +54,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$308A`): `s4.bin[0x308A..0x31F8]` (0x16E bytes).
-//! Debug (map base `$3344`): `s4.debug.bin[0x3344..0x34B2]` (0x16E bytes).
+//! Plain (map base `$308A`): `s4.bin[0x308A..0x31F0]` (0x166 bytes).
+//! Debug (map base `$3344`): `s4.debug.bin[0x3344..0x34AA]` (0x166 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -84,7 +85,7 @@ fn strict_gate() -> bool {
 
 /// The region geometry — SHAPE-DEPENDENT base, shape-invariant size
 /// (2026-07-10 pins, both listings).
-const COLLISION_LEN: usize = 0x16E;
+const COLLISION_LEN: usize = 0x166;
 
 /// Per-shape TRUE VMAs — the region base plus the two GAME-RAM cross-seam
 /// labels (game RAM moves with `__DEBUG__`).
@@ -135,7 +136,7 @@ fn with_ambient(
 /// label+`dc.w` opens a section so the equs flush (the collision_lookup
 /// pattern).
 fn as_constant_equs() -> Vec<Section> {
-    // The 30 `SST_*` field pins + 20 engine constants both `.emp` twins guard
+    // The 30 `SST_*` field pins + 18 engine constants both `.emp` twins guard
     // (SOURCE OF TRUTH: `structs.asm` / `constants.asm`), shared via
     // `sigil_harness::test_support`.
     sigil_harness::test_support::as_engine_constants_and_sst_equs()
@@ -165,7 +166,7 @@ fn as_outbound_consumer() -> Vec<Section> {
 
 /// The map: a `text` region for the zero-byte default-section carrier, and the
 /// real `collision` region pinned at the per-shape reference base, sized to the
-/// 0x170-byte block.
+/// 0x166-byte block.
 fn map_toml(base: u32) -> String {
     format!(
         "fill = 0x00\n\
@@ -247,13 +248,15 @@ fn compile_real_file(
 }
 
 /// All prepended drift guards must be captured and PASS against the synthetic
-/// AS-side truths: sst.emp's 30 SST_* pins plus constants.emp's 20 (the four
+/// AS-side truths: sst.emp's 30 SST_* pins plus constants.emp's 18 (the four
 /// button + two hw-port + CTYPE_AIR + RF pair + AF_DELETE + VDP_Shadow_len that
-/// predate this tranche, plus the collision block's nine
-/// NUM_*/COLLISION_TOUCH/ST_* guards — ST_P2_STANDING joined at t7-step5) = 50.
+/// predate this tranche, plus the collision block's seven
+/// NUM_*/COLLISION_TOUCH/ST_IN_AIR/ST_ON_OBJECT guards — the two STANDING bits
+/// died with their consumers in the interact-pointer fix) plus collision.emp's
+/// own `interact_off()` SST_interact guard = 49.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 50, "sst.emp's 30 + constants.emp's 20 drift guards must be captured");
+    assert_eq!(guards, 49, "sst.emp's 30 + constants.emp's 18 + collision.emp's 1 drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -307,14 +310,17 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     // Cross-seam label pins (act_descriptor_port.rs / test_objects_port.rs
     // style): the first instruction is `lea (Player_1).w, a2` — abs.w word at
     // region offset 2 must equal the low half of Player_1's VMA — and the
-    // second `lea (Dynamic_Slots).w, a3` sits at region offset 0x1C.
+    // `lea (Dynamic_Slots).w, a3` now sits at region offset 0x20 (word at 0x22:
+    // the interact-pointer fix replaced the 16-byte per-player standing-bit
+    // block at the pass-start clear with a single `clr.w interact_off()(a2)`,
+    // sliding the Dynamic_Slots lea forward from its old 0x1C).
     let player_word = u16::from_be_bytes([section.bytes[2], section.bytes[3]]);
     assert_eq!(
         player_word,
         (shape.player_1 & 0xFFFF) as u16,
         "`lea (Player_1).w, a2` must carry Player_1's abs.w address"
     );
-    let dynamic_word = u16::from_be_bytes([section.bytes[0x1E], section.bytes[0x1F]]);
+    let dynamic_word = u16::from_be_bytes([section.bytes[0x22], section.bytes[0x23]]);
     assert_eq!(
         dynamic_word,
         (shape.dynamic_slots & 0xFFFF) as u16,
@@ -337,13 +343,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) the `collision` region == `s4.bin[0x308A..0x31FA]`.
+/// (plain) the `collision` region == `s4.bin[0x308A..0x31F0]`.
 #[test]
 fn collision_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) the `collision` region == `s4.debug.bin[0x3344..0x34B4]`.
+/// (debug) the `collision` region == `s4.debug.bin[0x3344..0x34AA]`.
 #[test]
 fn collision_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

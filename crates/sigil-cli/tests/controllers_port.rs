@@ -360,7 +360,7 @@ fn controllers_region_matches_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 20, "engine.constants's twenty drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), 18, "engine.constants's eighteen drift guards must be captured");
 
     let expected = &refrom[0x228C..0x22FE];
     let section = linked.section("controllers").expect("linked image must carry controllers");
@@ -408,7 +408,7 @@ fn controllers_debug_region_matches_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 20, "engine.constants's twenty drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), 18, "engine.constants's eighteen drift guards must be captured");
 
     let expected = &refrom[0x231A..0x238C];
     let section = linked.section("controllers").expect("linked image must carry controllers");

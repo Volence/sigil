@@ -36,7 +36,7 @@
 //! VMAs (read from each shape's listing symbol table):
 //!
 //! - `VSync_Wait` (plain `$2262`, debug `$22EC`) and `Sound_DrainSfxRing`
-//!   (plain `$5ED4`, debug `$7392`) — both `jbsr` -> `bsr.w` PC-RELATIVE, so
+//!   (plain `$5EB0`, debug `$736E`) — both `jbsr` -> `bsr.w` PC-RELATIVE, so
 //!   the positions are load-bearing. (The drain target flips .emp-side when
 //!   sound_api ports later this tranche — the port order is deliberate: this
 //!   gate exercises the .emp->AS direction first.)
@@ -88,8 +88,8 @@ struct Shape {
     drain: u32,
 }
 
-const PLAIN: Shape = Shape { base: 0x22FE, vsync_wait: 0x2262, drain: 0x5ED4 };
-const DEBUG: Shape = Shape { base: 0x238C, vsync_wait: 0x22EC, drain: 0x7392 };
+const PLAIN: Shape = Shape { base: 0x22FE, vsync_wait: 0x2262, drain: 0x5EB0 };
+const DEBUG: Shape = Shape { base: 0x238C, vsync_wait: 0x22EC, drain: 0x736E };
 const REGION_LEN: usize = 0x12;
 
 /// Compile the real `engine/system/game_loop.emp` with the given defines,

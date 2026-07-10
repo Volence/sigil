@@ -280,7 +280,7 @@ fn compile_real_file(
 /// `controllers_port.rs`'s `guard_assert_count`).
 fn assert_twin_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 20, "engine.constants's twenty drift guards must be captured");
+    assert_eq!(guards, 18, "engine.constants's eighteen drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

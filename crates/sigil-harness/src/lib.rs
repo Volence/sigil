@@ -439,9 +439,9 @@ pub fn assemble_mixed_tranche6_as_side(aeon: &Path, debug: bool) -> Result<Modul
 /// Assemble the AS side of the tranche-7 SIXTEEN-module mixed build: everything
 /// `assemble_mixed_tranche6_as_side` gates PLUS `SIGIL_EMP_COLLISION` — the
 /// `engine/engine.inc` gate wrapping the `engine/objects/collision.asm` include
-/// (else-arm `org $31FA` plain / `org $34B4` debug). Back in the ENGINE block
-/// (like game_loop/collision_lookup), the window it opens (`$308A..$31FA` plain
-/// / `$3344..$34B4` debug) is filled by `engine/objects/collision.emp` — whose
+/// (else-arm `org $31F0` plain / `org $34AA` debug). Back in the ENGINE block
+/// (like game_loop/collision_lookup), the window it opens (`$308A..$31F0` plain
+/// / `$3344..$34AA` debug) is filled by `engine/objects/collision.emp` — whose
 /// `TouchResponse` is the sole `pub proc` export (called from the engine object
 /// manager). The module reads only GAME-RAM `Player_1`/`Dynamic_Slots` across
 /// the seam (abs.w, per-shape); its dispatch is a self-contained module-level
@@ -495,10 +495,12 @@ pub fn region_at_lma(img: &LinkedImage, lma: u32) -> Option<&[u8]> {
 pub const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
 /// The debug reference's convsym/fixheader-rewritten set: the larger `__DEBUG__`
 /// deb2 append pushes the ROM-end pointer over a byte boundary, so three bytes
-/// (`$1A5`/`$1A6`/`$1A7`) differ. At the t7-step5 baseline the checksum's low
-/// byte `$18F` coincidentally matches the reference (only `$18E` differs), so
-/// the set is four bytes — re-derived empirically from the rebuilt debug ROM.
-pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x1A5, 0x1A6, 0x1A7];
+/// (`$1A5`/`$1A6`/`$1A7`) differ, plus the two-byte header checksum (`$18E`/
+/// `$18F`). At the t7-step5 baseline the checksum's low byte `$18F`
+/// coincidentally matched the reference; the tranche-7b interact fix changes
+/// the assembled content (collision region), so `$18F` diverges again — the
+/// set is five bytes, re-derived empirically from the rebuilt debug ROM.
+pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
 
 /// Assert `rom` is byte-identical to `refrom` modulo the `allow`-listed offsets,
 /// after pinning `rom`'s length to `expected_len` (guards against a regression
