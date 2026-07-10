@@ -87,7 +87,7 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
-/// The engine-constant equs that `engine.constants`'s 18 drift guards read back
+/// The engine-constant equs that `engine.constants`'s 24 drift guards read back
 /// through `extern()`. SOURCE OF TRUTH: `engine/system/constants.asm`.
 ///
 /// (The four `BUTTON_*` are written as plain magnitudes here; some hand-copied
@@ -113,6 +113,17 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("COLLISION_TOUCH", "12"),
         ("ST_IN_AIR", "3"),
         ("ST_ON_OBJECT", "5"),
+        // Ring geometry/animation (constants.asm:401-403) + VDP sprite-table
+        // geometry (truth: engine/objects/sprites.asm:6-8 — kill-list row 17),
+        // tranche 8. The GAME-owned ring capacity constants (MAX_RING_BUFFER
+        // etc.) are rings.emp-local mirrors, supplied by rings_port.rs, not
+        // this engine twin.
+        ("RING_HEIGHT", "16"),
+        ("RING_ANIM_FRAMES", "4"),
+        ("RING_ANIM_SPEED", "8"),
+        ("MAX_VDP_SPRITES", "80"),
+        ("VDP_SPRITE_X_OFFSET", "128"),
+        ("VDP_SPRITE_Y_OFFSET", "128"),
     ]
 }
 
@@ -135,7 +146,7 @@ pub fn assemble_equ_pairs(pairs: &[(&str, &str)]) -> Vec<Section> {
         .sections
 }
 
-/// The complete AS-truth equ blob for the `engine.constants` twin: the 20
+/// The complete AS-truth equ blob for the `engine.constants` twin: the 24
 /// engine constants its guards read. For gates that ALSO compile `sst.emp` (its
 /// 30 `SST_*` guards), use [`as_engine_constants_and_sst_equs`].
 pub fn as_engine_constants_equs() -> Vec<Section> {
@@ -144,7 +155,7 @@ pub fn as_engine_constants_equs() -> Vec<Section> {
 
 /// The AS-truth equ blob for gates that compile BOTH `constants.emp` and
 /// `sst.emp` (e.g. the `collision.emp` / test-object gates): the 30 `SST_*`
-/// field pins followed by the 18 engine constants.
+/// field pins followed by the 24 engine constants.
 pub fn as_engine_constants_and_sst_equs() -> Vec<Section> {
     let mut pairs = sst_field_equs();
     pairs.extend(engine_constant_equs());
@@ -202,11 +213,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_18() {
+    fn engine_constants_blob_assembles_and_defines_all_24() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
-        assert_eq!(engine_constant_equs().len(), 18, "the twin guards 18 engine constants");
+        assert_eq!(engine_constant_equs().len(), 24, "the twin guards 24 engine constants");
     }
 
     #[test]

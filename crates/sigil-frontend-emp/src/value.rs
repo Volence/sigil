@@ -341,8 +341,11 @@ pub enum CodeItem {
         span: Span,
     },
     /// A [`DataBuf`] spliced into a code stream (§6.2) — a `Data` value inlined
-    /// between instructions.
-    Inline(DataBuf),
+    /// between instructions. Produced today by `dc.b`/`dc.w`/`dc.l` statements
+    /// (tranche 8 — code-embedded constant data, e.g. an error handler's
+    /// format-string bytes between a `jsr` and its resume label). Carries the
+    /// producing statement's span so emission diagnostics anchor at the source.
+    Inline(DataBuf, Span),
 }
 
 /// A resolved splice operand value (T1): the CPU-neutral surface forms an

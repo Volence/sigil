@@ -86,6 +86,13 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
+/// The engine-constants twin's guard count, derived from the shared truth list
+/// (test_support) — count literals here broke on every twin growth (the
+/// tranche-8 back-prop completing tranche 7's shared-list move).
+fn twin_guards() -> usize {
+    sigil_harness::test_support::engine_constant_equs().len()
+}
+
 /// The map: a `text` region for the zero-byte default-section carrier, and
 /// the real `collision_lookup` region pinned at the per-shape reference
 /// base, sized to the 0x24-byte block (plain `$4C02`, debug `$5426`).
@@ -275,7 +282,7 @@ fn compile_real_file(
 /// asserts that also ride `module.link_asserts`).
 fn assert_twin_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 18, "engine.constants's eighteen drift guards must be captured");
+    assert_eq!(guards, twin_guards(), "the engine.constants twin's drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

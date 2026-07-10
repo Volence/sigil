@@ -526,3 +526,32 @@ test-pin-only — no engine/lowering change).
   **`e22a82b397525d8021e6facdd4f307ed1886ac7f497c08fc95f19f7182f61f0e`**.
 - Debug `s4.debug.bin`: sha256
   **`0c9f1952b50e4bec8f02cf0fb57195c8c73b7ce98a4dcaedb87ae2d9aca6869d`**.
+
+## Tranche 8 — the rings region (2026-07-10) — NEW REGION, reference UNCHANGED
+
+`engine/objects/rings.asm` → `rings.emp` (step-1 transcribe): byte-exact
+against the UNCHANGED tranche-7b reference ROMs (pins above still current —
+the port adds a gate, no AS-side content changed; gate-off plain build
+re-verified `e22a82b3…`).
+
+**rings region (NEW):** plain `s4.bin[$31F0..$33A8]` (0x1B8), debug
+`s4.debug.bin[$34AA..$36BE]` (0x214) — the campaign's FIRST
+shape-dependent-LENGTH region (the `__DEBUG__` assert block in
+`RingBuffer_Add.full` exists only in the debug shape; its FSTRING data is
+transliterated `dc.b`, kill-list row 16). `SIGIL_EMP_RINGS` resume orgs:
+plain `$33A8`, debug `$36BE` (engine.inc; from the 2026-07-10 listings).
+
+**Guard-count surface:** `engine_constant_equs()` grew the rings/sprites
+block 18→**24** (RING_HEIGHT/RING_ANIM_FRAMES/RING_ANIM_SPEED +
+MAX_VDP_SPRITES/VDP_SPRITE_X_OFFSET/VDP_SPRITE_Y_OFFSET — the latter three's
+truth is `engine/objects/sprites.asm`, kill-list row 17). Every count
+assertion is now DERIVED from the shared list (`twin_guards()` — the
+tranche-8 back-prop completing tranche 7's shared-list move), so future twin
+growth stops breaking counts. `rings.emp` carries FOUR module-local
+game-owned mirrors (kill-list row 18): gate total 30+24+4 = **58**.
+
+Full strict workspace (`SIGIL_STRICT_GATE=1`, `AEON_DIR` at the tranche-8
+worktree) = **2048 passed / 0 failed**; clippy clean.
+
+- Aeon worktree branch: `sigil-emp-tranche8`.
+- Reference sha256 pins UNCHANGED from tranche 7b (above).

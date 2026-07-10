@@ -86,6 +86,13 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
+/// The engine-constants twin's guard count, derived from the shared truth list
+/// (test_support) — count literals here broke on every twin growth (the
+/// tranche-8 back-prop completing tranche 7's shared-list move).
+fn twin_guards() -> usize {
+    sigil_harness::test_support::engine_constant_equs().len()
+}
+
 /// Bank geometry — SHAPE-INVARIANT (2026-07-10 pins, both listings agree).
 const SOLID_BASE: u32 = 0x10F7C;
 const SOLID_LEN: usize = 0xE;
@@ -283,7 +290,7 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
     // `[layout.odd-item]` even-address parity assert — not drift guards;
     // exclude them from the count (they still ride the check below).
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 78, "the ambient drift guards must all be captured");
+    assert_eq!(guards, 60 + twin_guards(), "the ambient drift guards must all be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
