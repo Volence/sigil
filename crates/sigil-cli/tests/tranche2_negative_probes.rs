@@ -291,8 +291,8 @@ fn controllers_doctored_eor_operand_order_produces_different_bytes_than_genuine(
     let doctored = src.replacen("eor.b   d0, d1", "eor.b   d1, d0", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
-    let genuine_linked = link_controllers_placed(place_controllers(&src, "0x2290"));
-    let doctored_linked = link_controllers_placed(place_controllers(&doctored, "0x2290"));
+    let genuine_linked = link_controllers_placed(place_controllers(&src, "0x228C"));
+    let doctored_linked = link_controllers_placed(place_controllers(&doctored, "0x228C"));
 
     let genuine_bytes = &genuine_linked.section("controllers").expect("controllers section").bytes;
     let doctored_bytes = &doctored_linked.section("controllers").expect("controllers section").bytes;
@@ -317,8 +317,8 @@ fn math_doctored_dropped_add_produces_different_bytes_than_genuine() {
     let doctored = src.replacen("add.w   d0, d0\n", "", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
-    let genuine_linked = link_math_placed(place_math(&src, "0x2468"));
-    let doctored_linked = link_math_placed(place_math(&doctored, "0x2468"));
+    let genuine_linked = link_math_placed(place_math(&src, "0x2464"));
+    let doctored_linked = link_math_placed(place_math(&doctored, "0x2464"));
 
     let genuine_bytes = &genuine_linked.section("math").expect("math section").bytes;
     let doctored_bytes = &doctored_linked.section("math").expect("math section").bytes;
@@ -348,7 +348,7 @@ fn math_doctored_dropped_add_produces_different_bytes_than_genuine() {
 #[test]
 fn controllers_standalone_compile_without_cross_seam_sections_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("controllers.emp") else { return };
-    let sections = place_controllers(&src, "0x2290");
+    let sections = place_controllers(&src, "0x228C");
     // NO cross-seam sections appended — every one of HW_PORT_1_DATA /
     // HW_PORT_2_DATA / Ctrl_1_Held / Ctrl_2_Held / Ctrl_1_Press_Accum /
     // Ctrl_2_Press_Accum is genuinely absent.
@@ -408,7 +408,7 @@ fn controllers_standalone_compile_without_cross_seam_sections_is_a_loud_missing_
 #[test]
 fn constants_twin_drift_guard_fires_loudly_when_as_side_button_up_disagrees() {
     let Some(src) = real_src("controllers.emp") else { return };
-    let (sections, link_asserts) = place_controllers_with_asserts(&src, "0x2290");
+    let (sections, link_asserts) = place_controllers_with_asserts(&src, "0x228C");
 
     let mut all_sections = sections;
     // Doctor ONLY `BUTTON_UP` — a wrong AS-side equate, exactly the drift
@@ -457,12 +457,12 @@ fn constants_twin_drift_guard_fires_loudly_when_as_side_button_up_disagrees() {
 // ===========================================================================
 
 /// Place the real `controllers.emp` at a WRONG base (`$2292` instead of the
-/// real plain `$2290`) and prove the placed section's bytes, while
+/// real plain `$228C`) and prove the placed section's bytes, while
 /// internally self-consistent, land at a DIFFERENT VMA than the reference
 /// expects — placement genuinely tracks the map, not an echo/hardcode.
 ///
 /// FALSIFIED (restore-real-value): re-ran with the base restored to the real
-/// `0x2290` — the placed section's `lma` equals `0x2290`, so `assert_ne!`
+/// `0x228C` — the placed section's `lma` equals `0x228C`, so `assert_ne!`
 /// against the wrong-base result would panic on equal values; confirmed by
 /// temporarily placing at the real base twice and observing the (trivially)
 /// equal `lma`s, then reverting to the doctored `0x2292` comparison below.
@@ -470,7 +470,7 @@ fn constants_twin_drift_guard_fires_loudly_when_as_side_button_up_disagrees() {
 fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("controllers.emp") else { return };
 
-    let real_sections = place_controllers(&src, "0x2290");
+    let real_sections = place_controllers(&src, "0x228C");
     let wrong_sections = place_controllers(&src, "0x2292");
 
     let real_controllers =
@@ -478,7 +478,7 @@ fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
     let wrong_controllers =
         wrong_sections.iter().find(|s| s.name == "controllers").expect("wrong controllers section");
 
-    assert_eq!(real_controllers.lma, 0x2290, "the real map must place controllers at $2290");
+    assert_eq!(real_controllers.lma, 0x228C, "the real map must place controllers at $228C");
     assert_eq!(wrong_controllers.lma, 0x2292, "the doctored map must place controllers at $2292");
     assert_ne!(
         real_controllers.lma, wrong_controllers.lma,
@@ -498,7 +498,7 @@ fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
 }
 
 /// Place the real `math.emp` at a WRONG base (`$246A` instead of the real
-/// plain `$2468`) — the math analogue of the controllers probe above.
+/// plain `$2464`) — the math analogue of the controllers probe above.
 ///
 /// FALSIFIED (restore-real-value): same technique as the controllers probe —
 /// re-ran at the real base twice and observed trivially-equal `lma`s before
@@ -507,13 +507,13 @@ fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
 fn math_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("math.emp") else { return };
 
-    let real_sections = place_math(&src, "0x2468");
+    let real_sections = place_math(&src, "0x2464");
     let wrong_sections = place_math(&src, "0x246A");
 
     let real_math = real_sections.iter().find(|s| s.name == "math").expect("real math section");
     let wrong_math = wrong_sections.iter().find(|s| s.name == "math").expect("wrong math section");
 
-    assert_eq!(real_math.lma, 0x2468, "the real map must place math at $2468");
+    assert_eq!(real_math.lma, 0x2464, "the real map must place math at $2464");
     assert_eq!(wrong_math.lma, 0x246A, "the doctored map must place math at $246A");
     assert_ne!(
         real_math.lma, wrong_math.lma,

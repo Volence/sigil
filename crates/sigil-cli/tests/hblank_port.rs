@@ -10,7 +10,7 @@
 //!
 //! `hblank.emp` carries no `DEBUG` member and needs none: the block's CONTENT
 //! is byte-identical plain and debug (18 bytes in both) — only its BASE
-//! address shifts (plain `$227E`, debug `$230C`), so the shape lives entirely
+//! address shifts (plain `$227A`, debug `$2308`), so the shape lives entirely
 //! in the MAP (per-shape `map_toml(debug)` region base), exactly like
 //! `sfx_port.rs`. `lower_module` runs with an EMPTY `defines` vec for both
 //! shapes.
@@ -35,8 +35,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$227E`): `s4.bin[0x227E..0x2290]` (18 bytes).
-//! Debug (map base `$230C`): `s4.debug.bin[0x230C..0x231E]` (18 bytes).
+//! Plain (map base `$227A`): `s4.bin[0x227A..0x228C]` (18 bytes).
+//! Debug (map base `$2308`): `s4.debug.bin[0x2308..0x231A]` (18 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -71,10 +71,10 @@ fn strict_gate() -> bool {
 /// (opened by the module's top-level items, if any — `place_sections` requires
 /// a home for it regardless), and the real `hblank` region pinned at the
 /// per-shape reference base, sized to the 18-byte block. Only the region base
-/// differs from `sfx_port.rs`'s map shape: plain `$227E`, debug `$230C`, both
+/// differs from `sfx_port.rs`'s map shape: plain `$227A`, debug `$2308`, both
 /// size `$12`.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x230C" } else { "0x227E" };
+    let base = if debug { "0x2308" } else { "0x227A" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -205,9 +205,9 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (plain) The `hblank` section's linked bytes equal `s4.bin[0x227E..0x2290]`,
+/// (plain) The `hblank` section's linked bytes equal `s4.bin[0x227A..0x228C]`,
 /// AND the outbound consumer's fixups resolve to the correct per-shape
-/// addresses (`$0000227E`/`$0000228E`) — the bare-name proof.
+/// addresses (`$0000227A`/`$0000228A`) — the bare-name proof.
 #[test]
 fn hblank_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -222,31 +222,31 @@ fn hblank_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(false);
 
-    let expected = &refrom[0x227E..0x2290];
+    let expected = &refrom[0x227A..0x228C];
     let section = linked.section("hblank").expect("linked image must carry hblank");
-    assert_region_matches(&section.bytes, expected, "hblank (plain) vs s4.bin[0x227E..0x2290]");
+    assert_region_matches(&section.bytes, expected, "hblank (plain) vs s4.bin[0x227A..0x228C]");
 
-    // The bare-name proof: `dc.l HBlank_Dispatch` = $0000227E at bytes [0..4);
+    // The bare-name proof: `dc.l HBlank_Dispatch` = $0000227A at bytes [0..4);
     // `move.l #HBlank_Null, ($FFF0).w` follows at [4..12) — opcode word
-    // [4..6), the imm32 fixup hole at [6..10) resolving to $0000228E
+    // [4..6), the imm32 fixup hole at [6..10) resolving to $0000228A
     // (HBlank_Null is the SECOND proc, right after the 16-byte
     // HBlank_Dispatch body), then the abs.w dest ext word at [10..12).
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
         &consumer.bytes[0..4],
-        &[0x00, 0x00, 0x22, 0x7E],
-        "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $0000227E (plain)"
+        &[0x00, 0x00, 0x22, 0x7A],
+        "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $0000227A (plain)"
     );
     assert_eq!(
         &consumer.bytes[6..10],
-        &[0x00, 0x00, 0x22, 0x8E],
-        "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $0000228E (plain)"
+        &[0x00, 0x00, 0x22, 0x8A],
+        "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $0000228A (plain)"
     );
 }
 
 /// (debug) The `hblank` section's linked bytes equal
-/// `s4.debug.bin[0x230C..0x231E]`, AND the outbound consumer's fixups resolve
-/// to the correct per-shape addresses (`$0000230C`/`$0000231C`).
+/// `s4.debug.bin[0x2308..0x231A]`, AND the outbound consumer's fixups resolve
+/// to the correct per-shape addresses (`$00002308`/`$00002318`).
 #[test]
 fn hblank_debug_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -261,20 +261,20 @@ fn hblank_debug_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(true);
 
-    let expected = &refrom[0x230C..0x231E];
+    let expected = &refrom[0x2308..0x231A];
     let section = linked.section("hblank").expect("linked image must carry hblank");
-    assert_region_matches(&section.bytes, expected, "hblank (debug) vs s4.debug.bin[0x230C..0x231E]");
+    assert_region_matches(&section.bytes, expected, "hblank (debug) vs s4.debug.bin[0x2308..0x231A]");
 
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
         &consumer.bytes[0..4],
-        &[0x00, 0x00, 0x23, 0x0C],
-        "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $0000230C (debug)"
+        &[0x00, 0x00, 0x23, 0x08],
+        "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $00002308 (debug)"
     );
     assert_eq!(
         &consumer.bytes[6..10],
-        &[0x00, 0x00, 0x23, 0x1C],
-        "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $0000231C (debug)"
+        &[0x00, 0x00, 0x23, 0x18],
+        "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $00002318 (debug)"
     );
 }
 

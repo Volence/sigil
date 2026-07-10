@@ -36,7 +36,7 @@
 //! Like `hblank.emp`/`controllers.emp`, `math.emp` carries no `DEBUG`
 //! member: the block's CONTENT (24 bytes of code + the 640-byte embedded
 //! sine table = 0x298 bytes total) is byte-identical plain and debug — only
-//! its BASE address shifts (plain `$2468`, debug `$25FA`), so the shape
+//! its BASE address shifts (plain `$2464`, debug `$25F6`), so the shape
 //! lives entirely in the MAP. `lower_module` runs with an EMPTY `defines`
 //! vec for both shapes.
 //!
@@ -66,8 +66,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$2468`): `s4.bin[0x2468..0x2700]` (0x298 bytes).
-//! Debug (map base `$25FA`): `s4.debug.bin[0x25FA..0x2892]` (0x298 bytes).
+//! Plain (map base `$2464`): `s4.bin[0x2464..0x26FC]` (0x298 bytes).
+//! Debug (map base `$25F6`): `s4.debug.bin[0x25F6..0x288E]` (0x298 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -122,10 +122,10 @@ fn strict_gate() -> bool {
 /// carrier, and the real `math` region pinned at the per-shape reference
 /// base, sized to the 0x298-byte block (24 bytes of code + the 640-byte
 /// embedded sine table). Only the region base differs from
-/// `hblank_port.rs`'s map shape: plain `$2468`, debug `$25FA`, both size
+/// `hblank_port.rs`'s map shape: plain `$2464`, debug `$25F6`, both size
 /// `$298`.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x25FA" } else { "0x2468" };
+    let base = if debug { "0x25F6" } else { "0x2464" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -239,7 +239,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (plain) The `math` section's linked bytes equal `s4.bin[0x2468..0x2700]`,
+/// (plain) The `math` section's linked bytes equal `s4.bin[0x2464..0x26FC]`,
 /// AND the outbound consumer's fixups resolve to the correct per-shape
 /// addresses — the bare-name proof, for both `GetSineCosine` and
 /// `Sine_Table`.
@@ -257,37 +257,37 @@ fn math_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(false);
 
-    let expected = &refrom[0x2468..0x2700];
+    let expected = &refrom[0x2464..0x26FC];
     let section = linked.section("math").expect("linked image must carry math");
-    assert_region_matches(&section.bytes, expected, "math (plain) vs s4.bin[0x2468..0x2700]");
+    assert_region_matches(&section.bytes, expected, "math (plain) vs s4.bin[0x2464..0x26FC]");
 
-    // The bare-name proof: `jsr GetSineCosine`'s target ($2468) fits the
+    // The bare-name proof: `jsr GetSineCosine`'s target ($2464) fits the
     // abs.w range, so the deferred `JmpJsrSym`'s relaxation ladder picks the
     // SHORT form — opcode `4EB8` + a 2-byte abs.w address at bytes [2..4).
     // GetSineCosine is the FIRST proc in the section, so it resolves to the
-    // section base, $2468 (plain). `dc.l Sine_Table` follows at [4..8) —
-    // Sine_Table starts right after the 24-byte code body, at $2468+24 =
-    // $2480.
+    // section base, $2464 (plain). `dc.l Sine_Table` follows at [4..8) —
+    // Sine_Table starts right after the 24-byte code body, at $2464+24 =
+    // $247C.
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
         &consumer.bytes[0..2],
         &[0x4E, 0xB8],
-        "sanity: `jsr` opcode must be absolute-word form (4EB8) — $2468 fits abs.w"
+        "sanity: `jsr` opcode must be absolute-word form (4EB8) — $2464 fits abs.w"
     );
     assert_eq!(
         &consumer.bytes[2..4],
-        &[0x24, 0x68],
-        "bare-name proof: `jsr GetSineCosine` must resolve to $2468 (plain)"
+        &[0x24, 0x64],
+        "bare-name proof: `jsr GetSineCosine` must resolve to $2464 (plain)"
     );
     assert_eq!(
         &consumer.bytes[4..8],
-        &[0x00, 0x00, 0x24, 0x80],
-        "bare-name proof: `dc.l Sine_Table` must resolve to $00002480 (plain)"
+        &[0x00, 0x00, 0x24, 0x7C],
+        "bare-name proof: `dc.l Sine_Table` must resolve to $0000247C (plain)"
     );
 }
 
 /// (debug) The `math` section's linked bytes equal
-/// `s4.debug.bin[0x25FA..0x2892]`, AND the outbound consumer's fixups
+/// `s4.debug.bin[0x25F6..0x288E]`, AND the outbound consumer's fixups
 /// resolve to the correct per-shape addresses.
 #[test]
 fn math_debug_region_matches_reference() {
@@ -303,27 +303,27 @@ fn math_debug_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(true);
 
-    let expected = &refrom[0x25FA..0x2892];
+    let expected = &refrom[0x25F6..0x288E];
     let section = linked.section("math").expect("linked image must carry math");
-    assert_region_matches(&section.bytes, expected, "math (debug) vs s4.debug.bin[0x25FA..0x2892]");
+    assert_region_matches(&section.bytes, expected, "math (debug) vs s4.debug.bin[0x25F6..0x288E]");
 
-    // $25FA also fits abs.w — see the plain variant's comment for the byte
+    // $25F6 also fits abs.w — see the plain variant's comment for the byte
     // layout (opcode `4EB8` + 2-byte abs.w address at [2..4), then `dc.l
     // Sine_Table` at [4..8)).
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
         &consumer.bytes[0..2],
         &[0x4E, 0xB8],
-        "sanity: `jsr` opcode must be absolute-word form (4EB8) — $25FA fits abs.w"
+        "sanity: `jsr` opcode must be absolute-word form (4EB8) — $25F6 fits abs.w"
     );
     assert_eq!(
         &consumer.bytes[2..4],
-        &[0x25, 0xFA],
-        "bare-name proof: `jsr GetSineCosine` must resolve to $25FA (debug)"
+        &[0x25, 0xF6],
+        "bare-name proof: `jsr GetSineCosine` must resolve to $25F6 (debug)"
     );
     assert_eq!(
         &consumer.bytes[4..8],
-        &[0x00, 0x00, 0x26, 0x12],
-        "bare-name proof: `dc.l Sine_Table` must resolve to $00002612 (debug)"
+        &[0x00, 0x00, 0x26, 0x0E],
+        "bare-name proof: `dc.l Sine_Table` must resolve to $0000260E (debug)"
     );
 }

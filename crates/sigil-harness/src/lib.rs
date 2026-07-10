@@ -168,8 +168,8 @@ pub fn assemble_mixed_sfx_as_side(aeon: &Path, debug: bool) -> Result<Module, St
 /// `assemble_mixed_sfx_as_side` does, PLUS `SIGIL_EMP_HBLANK` defined so
 /// `engine/engine.inc:92`'s `ifndef SIGIL_EMP_HBLANK` block (which normally
 /// includes `engine/system/hblank.asm`) is REPLACED by an `org` resume — per
-/// shape, `$2290` (plain) or `$231E` (`__DEBUG__`) — leaving the 18-byte
-/// `$227E..$2290` / `$230C..$231E` window for the `.emp` side's `hblank`
+/// shape, `$228C` (plain) or `$231A` (`__DEBUG__`) — leaving the 18-byte
+/// `$227A..$228C` / `$2308..$231A` window for the `.emp` side's `hblank`
 /// section to supply. All FOUR gates (`SIGIL_EMP_DAC`, `SIGIL_EMP_MT`,
 /// `SIGIL_EMP_SFX`, `SIGIL_EMP_HBLANK`) are independent; this is the
 /// cumulative shape exercising all four together — the campaign's first CODE
@@ -216,8 +216,8 @@ pub fn assemble_mixed_hblank_as_side(aeon: &Path, debug: bool) -> Result<Module,
 /// `SIGIL_EMP_MATH` defined so `engine/engine.inc`'s two `ifndef` blocks
 /// (which normally include `engine/system/controllers.asm` /
 /// `engine/system/math.asm`) are each REPLACED by an `org` resume — per
-/// shape, controllers `$2302` (plain) / `$2390` (`__DEBUG__`), math `$2700`
-/// (plain) / `$2892` (`__DEBUG__`) — leaving the two windows for the `.emp`
+/// shape, controllers `$22FE` (plain) / `$238C` (`__DEBUG__`), math `$26FC`
+/// (plain) / `$288E` (`__DEBUG__`) — leaving the two windows for the `.emp`
 /// side's `controllers`/`math` sections to supply. All SIX gates
 /// (`SIGIL_EMP_DAC`, `SIGIL_EMP_MT`, `SIGIL_EMP_SFX`, `SIGIL_EMP_HBLANK`,
 /// `SIGIL_EMP_CONTROLLERS`, `SIGIL_EMP_MATH`) are independent; this is the
@@ -268,8 +268,8 @@ pub fn assemble_mixed_tranche2_as_side(aeon: &Path, debug: bool) -> Result<Modul
 /// does, PLUS `SIGIL_EMP_VDP_INIT` and `SIGIL_EMP_COLLISION_LOOKUP` defined
 /// so `engine/engine.inc`'s two new `ifndef` blocks (which normally include
 /// `engine/system/vdp_init.asm` / `engine/level/collision_lookup.asm`) are
-/// each REPLACED by an `org` resume — per shape, vdp_init `$1C60` (plain) /
-/// `$1CE2` (`__DEBUG__`), collision_lookup `$4C38` (plain) / `$545C`
+/// each REPLACED by an `org` resume — per shape, vdp_init `$1C5C` (plain) /
+/// `$1CDE` (`__DEBUG__`), collision_lookup `$4C38` (plain) / `$545C`
 /// (`__DEBUG__`) — leaving the two windows for the `.emp` side's
 /// `vdp_init`/`collision_lookup` sections to supply. All EIGHT gates are
 /// independent; this is the cumulative shape exercising all eight together.

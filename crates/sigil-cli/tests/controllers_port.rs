@@ -10,7 +10,7 @@
 //!
 //! Like `hblank.emp`, `controllers.emp` carries no `DEBUG` member: the
 //! block's CONTENT is byte-identical plain and debug (0x72 bytes in both) —
-//! only its BASE address shifts (plain `$2290`, debug `$231E`), so the shape
+//! only its BASE address shifts (plain `$228C`, debug `$231A`), so the shape
 //! lives entirely in the MAP. `lower_module` runs with an EMPTY `defines`
 //! vec for both shapes.
 //!
@@ -87,8 +87,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$2290`): `s4.bin[0x2290..0x2302]` (0x72 bytes).
-//! Debug (map base `$231E`): `s4.debug.bin[0x231E..0x2390]` (0x72 bytes).
+//! Plain (map base `$228C`): `s4.bin[0x228C..0x22FE]` (0x72 bytes).
+//! Debug (map base `$231A`): `s4.debug.bin[0x231A..0x238C]` (0x72 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -124,10 +124,10 @@ fn strict_gate() -> bool {
 /// name, chained — the P5/R7 same-named-`text`-chains-cleanly precedent), and
 /// the real `controllers` region pinned at the per-shape reference base,
 /// sized to the 0x72-byte block. Only the region base differs from
-/// `hblank_port.rs`'s map shape: plain `$2290`, debug `$231E`, both size
+/// `hblank_port.rs`'s map shape: plain `$228C`, debug `$231A`, both size
 /// `$72`.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x231E" } else { "0x2290" };
+    let base = if debug { "0x231A" } else { "0x228C" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -342,8 +342,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 }
 
 /// (plain) The `controllers` section's linked bytes equal
-/// `s4.bin[0x2290..0x2302]`, AND the outbound `bsr.w` consumer's fixup
-/// resolves to the correct per-shape address ($2290) — the bare-name proof.
+/// `s4.bin[0x228C..0x22FE]`, AND the outbound `bsr.w` consumer's fixup
+/// resolves to the correct per-shape address ($228C) — the bare-name proof.
 #[test]
 fn controllers_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -372,14 +372,14 @@ fn controllers_region_matches_reference() {
     );
     assert_eq!(guard_assert_count(&link_asserts), 8, "engine.constants's eight drift guards must be captured");
 
-    let expected = &refrom[0x2290..0x2302];
+    let expected = &refrom[0x228C..0x22FE];
     let section = linked.section("controllers").expect("linked image must carry controllers");
-    assert_region_matches(&section.bytes, expected, "controllers (plain) vs s4.bin[0x2290..0x2302]");
+    assert_region_matches(&section.bytes, expected, "controllers (plain) vs s4.bin[0x228C..0x22FE]");
 
     // The bare-name proof: `bsr.w Read_Controllers` = opcode `6100` + a
     // 16-bit PC-relative displacement, computed as `target - (consumer.lma +
     // 2)` truncated to 16 bits (the harness-private LMA $0300_0000 is far
-    // from the ROM-range target $2290, so the raw disp16 wraps — expected
+    // from the ROM-range target $228C, so the raw disp16 wraps — expected
     // and harmless, since the linker and this assertion both do modular
     // 16-bit arithmetic; a REAL consumer, placed near its target in ROM,
     // would see the same disp16 bytes without any wraparound).
@@ -389,16 +389,16 @@ fn controllers_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x2290i64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (0x228Ci64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
-        "bare-name proof: `bsr.w Read_Controllers` must resolve to $2290 (plain)"
+        "bare-name proof: `bsr.w Read_Controllers` must resolve to $228C (plain)"
     );
 }
 
 /// (debug) The `controllers` section's linked bytes equal
-/// `s4.debug.bin[0x231E..0x2390]`, AND the outbound consumer's fixup
-/// resolves to the correct per-shape address ($231E).
+/// `s4.debug.bin[0x231A..0x238C]`, AND the outbound consumer's fixup
+/// resolves to the correct per-shape address ($231A).
 #[test]
 fn controllers_debug_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -420,9 +420,9 @@ fn controllers_debug_region_matches_reference() {
     );
     assert_eq!(guard_assert_count(&link_asserts), 8, "engine.constants's eight drift guards must be captured");
 
-    let expected = &refrom[0x231E..0x2390];
+    let expected = &refrom[0x231A..0x238C];
     let section = linked.section("controllers").expect("linked image must carry controllers");
-    assert_region_matches(&section.bytes, expected, "controllers (debug) vs s4.debug.bin[0x231E..0x2390]");
+    assert_region_matches(&section.bytes, expected, "controllers (debug) vs s4.debug.bin[0x231A..0x238C]");
 
     let consumer = linked
         .sections
@@ -430,10 +430,10 @@ fn controllers_debug_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x231Ei64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (0x231Ai64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
-        "bare-name proof: `bsr.w Read_Controllers` must resolve to $231E (debug)"
+        "bare-name proof: `bsr.w Read_Controllers` must resolve to $231A (debug)"
     );
 }
 

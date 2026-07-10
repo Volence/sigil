@@ -9,7 +9,7 @@
 //! ## No shape define
 //!
 //! Like every code port so far, `vdp_init.emp` carries no `DEBUG` member:
-//! the block's CONTENT is byte-identical plain and debug (0x4C bytes in
+//! the block's CONTENT is byte-identical plain and debug (0x48 bytes in
 //! both) — only its BASE address shifts (plain `$1C14`, debug `$1C96`), so
 //! the shape lives entirely in the MAP. `lower_module` runs with an EMPTY
 //! `defines` vec for both shapes.
@@ -53,13 +53,13 @@
 //! (`bsr.w VDP_Shadow_Init`) and `Flush_VDP_Shadow` from the VBlank path —
 //! this test builds a synthetic AS-side consumer with BOTH `bsr.w` forms and
 //! asserts each fixup resolves to the correct per-shape address (plain
-//! `$1C14`/`$1C2C`, debug `$1C96`/`$1CAE`), proving both `pub proc` names
+//! `$1C14`/`$1C2A`, debug `$1C96`/`$1CAC`), proving both `pub proc` names
 //! surface as bare link symbols cross-seam.
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$1C14`): `s4.bin[0x1C14..0x1C60]` (0x4C bytes).
-//! Debug (map base `$1C96`): `s4.debug.bin[0x1C96..0x1CE2]` (0x4C bytes).
+//! Plain (map base `$1C14`): `s4.bin[0x1C14..0x1C5C]` (0x48 bytes).
+//! Debug (map base `$1C96`): `s4.debug.bin[0x1C96..0x1CDE]` (0x48 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -92,7 +92,7 @@ fn strict_gate() -> bool {
 
 /// The map: a `text` region for `vdp_init.emp`'s zero-byte default-section
 /// carrier, and the real `vdp_init` region pinned at the per-shape reference
-/// base, sized to the 0x4C-byte block (plain `$1C14`, debug `$1C96`).
+/// base, sized to the 0x48-byte block (plain `$1C14`, debug `$1C96`).
 fn map_toml(debug: bool) -> String {
     let base = if debug { "0x1C96" } else { "0x1C14" };
     format!(
@@ -107,7 +107,7 @@ fn map_toml(debug: bool) -> String {
          [[region]]\n\
          name = \"vdp_init\"\n\
          lma_base = {base}\n\
-         size = 0x4C\n\
+         size = 0x48\n\
          kind = \"rom\"\n"
     )
 }
@@ -350,7 +350,7 @@ fn assert_outbound_consumer(linked: &sigil_link::LinkedImage, init: i64, flush: 
 }
 
 /// (plain) The `vdp_init` section's linked bytes equal
-/// `s4.bin[0x1C14..0x1C60]`, AND both outbound `bsr.w` fixups resolve to the
+/// `s4.bin[0x1C14..0x1C5C]`, AND both outbound `bsr.w` fixups resolve to the
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_region_matches_reference() {
@@ -367,15 +367,15 @@ fn vdp_init_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(false);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x1C14..0x1C60];
+    let expected = &refrom[0x1C14..0x1C5C];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
-    assert_region_matches(&section.bytes, expected, "vdp_init (plain) vs s4.bin[0x1C14..0x1C60]");
+    assert_region_matches(&section.bytes, expected, "vdp_init (plain) vs s4.bin[0x1C14..0x1C5C]");
 
-    assert_outbound_consumer(&linked, 0x1C14, 0x1C2C, "plain");
+    assert_outbound_consumer(&linked, 0x1C14, 0x1C2A, "plain");
 }
 
 /// (debug) The `vdp_init` section's linked bytes equal
-/// `s4.debug.bin[0x1C96..0x1CE2]`, AND both outbound fixups resolve to the
+/// `s4.debug.bin[0x1C96..0x1CDE]`, AND both outbound fixups resolve to the
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_debug_region_matches_reference() {
@@ -392,9 +392,9 @@ fn vdp_init_debug_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(true);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x1C96..0x1CE2];
+    let expected = &refrom[0x1C96..0x1CDE];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
-    assert_region_matches(&section.bytes, expected, "vdp_init (debug) vs s4.debug.bin[0x1C96..0x1CE2]");
+    assert_region_matches(&section.bytes, expected, "vdp_init (debug) vs s4.debug.bin[0x1C96..0x1CDE]");
 
-    assert_outbound_consumer(&linked, 0x1C96, 0x1CAE, "debug");
+    assert_outbound_consumer(&linked, 0x1C96, 0x1CAC, "debug");
 }

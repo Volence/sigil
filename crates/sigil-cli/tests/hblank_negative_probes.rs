@@ -143,8 +143,8 @@ fn doctored_jsr_register_produces_different_bytes_than_genuine() {
     let doctored = src.replacen("jsr     (a0)", "jsr     (a1)", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
-    let genuine_sections = place_hblank(&src, "0x227E");
-    let doctored_sections = place_hblank(&doctored, "0x227E");
+    let genuine_sections = place_hblank(&src, "0x227A");
+    let doctored_sections = place_hblank(&doctored, "0x227A");
 
     let genuine_linked = link_placed(genuine_sections);
     let doctored_linked = link_placed(doctored_sections);
@@ -203,7 +203,7 @@ fn link_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImage {
 #[test]
 fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() {
     let Some(src) = real_hblank_src() else { return };
-    let sections = place_hblank(&src, "0x227E");
+    let sections = place_hblank(&src, "0x227A");
     // NO cross-seam label appended — `HBlank_Handler_Ptr` is genuinely absent.
     let err = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true).expect_err(
         "compiling hblank.emp standalone (no HBlank_Handler_Ptr cross-seam section) \
@@ -231,19 +231,19 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
 // ===========================================================================
 
 /// Place the real `hblank.emp` at a WRONG base (`$2280` instead of the real
-/// plain `$227E`) and prove the placed section's bytes, while internally
+/// plain `$227A`) and prove the placed section's bytes, while internally
 /// self-consistent (same content, 18 bytes), land at a DIFFERENT VMA than the
 /// reference expects — so a byte-diff against the FIXED reference window
-/// `s4.bin[0x227E..0x2290]` would fail on a naive same-length compare done at
+/// `s4.bin[0x227A..0x228C]` would fail on a naive same-length compare done at
 /// the wrong offset. Concretely: this probe recompiles at `$2280` and shows
-/// the resulting section's `vma`/`lma` differ from the real port's `$227E`,
+/// the resulting section's `vma`/`lma` differ from the real port's `$227A`,
 /// which is what would make `hblank_port.rs`'s fixed-offset reference slice
 /// wrong if `hblank_port.rs`'s own map ever silently drifted — i.e., the
 /// placement step genuinely determines the address, it isn't hardcoded/an
 /// echo of the expected value.
 ///
 /// FALSIFIED (restore-real-value): re-ran with the base restored to the real
-/// `0x227E` — the placed section's `lma` equals `0x227E` (matching the
+/// `0x227A` — the placed section's `lma` equals `0x227A` (matching the
 /// reference base exactly), so `assert_ne!` against the wrong-base result
 /// would panic on equal values; confirmed by temporarily placing at the real
 /// base twice and observing the (trivially) equal `lma`s, then reverting to
@@ -252,13 +252,13 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_hblank_src() else { return };
 
-    let real_sections = place_hblank(&src, "0x227E");
+    let real_sections = place_hblank(&src, "0x227A");
     let wrong_sections = place_hblank(&src, "0x2280");
 
     let real_hblank = real_sections.iter().find(|s| s.name == "hblank").expect("real hblank section");
     let wrong_hblank = wrong_sections.iter().find(|s| s.name == "hblank").expect("wrong hblank section");
 
-    assert_eq!(real_hblank.lma, 0x227E, "the real map must place hblank at $227E");
+    assert_eq!(real_hblank.lma, 0x227A, "the real map must place hblank at $227A");
     assert_eq!(wrong_hblank.lma, 0x2280, "the doctored map must place hblank at $2280");
     assert_ne!(
         real_hblank.lma, wrong_hblank.lma,

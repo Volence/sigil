@@ -157,3 +157,38 @@ UNCHANGED in both shapes — the file-length deltas below are the smaller
 - Collision region bases UNCHANGED (plain `$4C06`, debug `$542A`);
   `Tile_Cache_GetCollision` UNCHANGED (plain `$431E`, debug `$4A8A`);
   sound-block layout UNCHANGED.
+
+## Re-baseline: vdp_init `clr.l` step-5 optimize (2026-07-10) — the current pin
+
+Second tranche-3 STEP-5 commit: both `VDP_Dirty_Mask` zero-writes in
+`vdp_init` become `clr.l` (RAM operand — the 68000 `clr` read-before-write
+hazard only matters on I/O; and note it is a SIZE win, not a speed win:
+`moveq`+`move.l (abs.w)` and `clr.l (abs.w)` are both 20 cycles, but the
+pair is 6 bytes to `clr.l`'s 4 and burns a scratch register). The region
+shrinks `0x4C` → `0x48`, and since vdp_init sits at the FRONT of the gated
+chain, every region between it and the `org $10000` boundary slid −4:
+hblank `$227E`→`$227A` / `$230C`→`$2308`, controllers `$2290`→`$228C` /
+`$231E`→`$231A`, math `$2468`→`$2464` / `$25FA`→`$25F6`, collision
+`$4C06`→`$4C02` / `$542A`→`$5426`, `Tile_Cache_GetCollision`
+`$431E`→`$431A` / `$4A8A`→`$4A86`, and the two resident interrupt
+handlers (`HBlank_Dispatch` `$227E`→`$227A`, `VBlank_Handler`
+`$2156`→`$2152` — the m1c vector-table stubs). All five `engine.inc`
+resume orgs, every port-gate map base/window, both probe files, and the
+mixed maps re-derived from the rebuilt listings. `EndOfRom` again
+UNCHANGED both shapes (absorbed by `org $10000`); module CONTENT bytes
+outside vdp_init are unchanged (no pc-rel crosses the vdp_init boundary —
+collision's tail `bra.w` site and target slid together, disp `$F6FA`
+held).
+
+- Aeon repo commit: **`9eb2101`** (the vdp_init step-5 optimize, child of
+  `4352a40`), working tree clean at capture; gate-off byte-neutrality
+  sha256 ×3 verified.
+- Non-debug `s4.bin`: **451176 bytes** (assembled `EndOfRom` = `0x658B4`,
+  unchanged), sha256
+  **`57ff6b0d66596fd8a72c08027e1cc3bf3a8563d4f888926fc1f8be8e97a89904`**.
+- Debug `s4.debug.bin`: **458960 bytes** (assembled `EndOfRom` = `0x673A2`,
+  unchanged), sha256
+  **`3cb6679299d4fdba287506986b3f713ad5fdedefd18966868231c74f514b7ee2`**.
+- vdp_init region bases UNCHANGED (plain `$1C14`, debug `$1C96`);
+  `BootData_VDPRegs` UNCHANGED (`$3CE`/`$3D2`); sound-block layout
+  UNCHANGED.

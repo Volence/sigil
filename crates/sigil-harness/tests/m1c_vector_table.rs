@@ -34,11 +34,11 @@ fn strict_gate() -> bool {
 /// seeded BOTH as front-end `-D` defines and as link-time symbols (mirroring the
 /// M0 harness's dual stub seeding). SYSTEM_STACK is intentionally absent: it is a
 /// genuine equate in constants.asm, so stubbing it would double-define it.
-// Addresses re-derived from the current-source `s4.lst` (aeon f828406, clean
-// working tree, s4.bin 451198 B — the engine/game split baseline). Only the two
-// resident interrupt handlers moved vs the prior 9bacc93 pin: the +0x114 boot/
-// engine growth shifted HBlank_Dispatch (0x216A→0x227E) and VBlank_Handler
-// (0x2042→0x2156); every $64xxx exception target in the object-code bank held.
+// Addresses re-derived from the current-source `s4.lst` (the tranche-3 step-5
+// vdp_init `clr.l` re-baseline: the −4 shrink shifted everything between
+// vdp_init and the `org $10000` boundary, so HBlank_Dispatch 0x227E→0x227A and
+// VBlank_Handler 0x2156→0x2152; every $64xxx exception target in the
+// object-code bank held, as at every prior re-baseline).
 const STUBS: &[(&str, i64)] = &[
     ("EntryPoint", 0x200),
     ("BusError", 0x64804),
@@ -53,8 +53,8 @@ const STUBS: &[(&str, i64)] = &[
     ("Line1111Emu", 0x64908),
     ("ErrorExcept", 0x64928),
     ("NullInterrupt", 0x64802),
-    ("HBlank_Dispatch", 0x227E),
-    ("VBlank_Handler", 0x2156),
+    ("HBlank_Dispatch", 0x227A),
+    ("VBlank_Handler", 0x2152),
     ("ErrorTrap", 0x64946),
 ];
 
