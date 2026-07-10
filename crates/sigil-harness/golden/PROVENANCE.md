@@ -322,3 +322,29 @@ equ values are shape-invariant (MUSIC_PARAM base `$1CA6`). The
 THIRTEEN-module mixed gates are the acceptance surface. Gate-off
 byte-neutrality sha256 ×3 at the `907a9029…` pin (+ debug + demo).
 Reference pins UNCHANGED.
+
+## Re-baseline: tranche-5 step 2 — the modernize pass (2026-07-10, the current pin
+
+Tranche-5 STEP-2 under the RATIFIED loop (Volence, 2026-07-10 — see
+`notes/campaign-port-loop.md`: the byte gate is a step-1 transcribe
+verifier; step 2 converts to the complete house format and MAY change
+bytes, paying lockstep + re-pin). sound_api.emp: all eight `bra.w`
+tail-calls → `jbra` (only Sound_Ping/Sound_PlaySample relax to `.s` —
+−2 B each, −4 B total), the four inline stopZ80/startZ80 expansions →
+`stop_z80()`/`start_z80()` comptime-fn templates (hygienic per-site
+`.wait_z80`; byte-identical), pinned `(X).w/.l` spellings → bare
+width-rule idiom (byte-identical). AS twin lockstep: the two `bra.s`
+sites only. game_loop.emp was born-modern (no changes).
+
+Region `sound_api` shrinks 0x1E8 → **0x1E4** (plain `$5D94..$5F78`,
+debug `$7252..$7436`; engine.inc resume orgs re-pinned). Everything
+after Sound_PlaySample slid −4: `Sound_PlaySFX` plain `$5E94` / debug
+`$7352` (outbound proofs re-anchored to base+0x100), `Sound_DrainSfxRing`
+plain `$5EDA` / debug `$7398` (game_loop's cross-seam drain position +
+the mixed-gate head-pin displacements re-derived: plain `3BD6`, debug
+`5006`). EndOfRom unchanged (org-anchored); demo unaffected.
+
+- Non-debug `s4.bin`: sha256
+  **`bcd4e3a5f42d63a7994fb989d076435a5242b4cb48203a99edfb01ac34189ee4`**.
+- Debug `s4.debug.bin`: sha256
+  **`634fea687f6ebe44fca4cc50a9e2e9cfaeaa6c4740fcaffbc429f96bc6305184`**.

@@ -30,8 +30,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$5D94`): `s4.bin[0x5D94..0x5F7C]` (0x1E8 bytes).
-//! Debug (map base `$7252`): `s4.debug.bin[0x7252..0x743A]` (0x1E8 bytes).
+//! Plain (map base `$5D94`): `s4.bin[0x5D94..0x5F78]` (0x1E4 bytes).
+//! Debug (map base `$7252`): `s4.debug.bin[0x7252..0x7436]` (0x1E4 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -91,7 +91,7 @@ const DEBUG: Shape = Shape {
     song_table: 0x65522,
     song_patch_table: 0x6552E,
 };
-const REGION_LEN: usize = 0x1E8;
+const REGION_LEN: usize = 0x1E4;
 
 /// The AS-side constants the .emp reads through the link: the EA-position
 /// equs (slot addresses — deliberately NOT mirrored) and the 7 drift-guard
@@ -174,7 +174,7 @@ fn compile_real_file(
          [[region]]\n\
          name = \"sound_api\"\n\
          lma_base = {:#x}\n\
-         size = 0x1E8\n\
+         size = 0x1E4\n\
          kind = \"rom\"\n",
         shape.base
     );
@@ -303,15 +303,16 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         &format!("sound_api vs {rom_name}[{lo:#x}..{:#x}]", lo + REGION_LEN),
     );
 
-    // Outbound proof: `bsr.w Sound_PlaySFX` resolves to base + 0x104
-    // (Sound_PlaySFX's offset inside the block: $5E98 - $5D94).
+    // Outbound proof: `bsr.w Sound_PlaySFX` resolves to base + 0x100
+    // (Sound_PlaySFX's offset inside the block: $5E94 - $5D94 — the step-2
+    // jbra shrink slid it -4).
     let consumer = linked
         .sections
         .iter()
         .find(|s| s.lma == 0x8000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let target = shape.base as i64 + 0x104;
+    let target = shape.base as i64 + 0x100;
     let expected_disp = (target - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
