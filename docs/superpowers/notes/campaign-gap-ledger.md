@@ -836,3 +836,22 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   constants needs screen-geometry names in the twin (+2 mirrors for 2 sites).
   Not worth the mirror tax today; becomes free after the constants.asm ownership
   flip (row 1). — RECORDED
+- [tranche 8 step 5, 2026-07-10] **the GENERALIZED re-pin rule** — tranche 7's rule
+  ("a region byte-change re-derives every SIGIL_EMP_* org between it and the next
+  org boundary") is NECESSARY but not SUFFICIENT: the tranche-8 −4 shrink also hit
+  mixed-map REGION BASES (sound_api/collision_lookup strings in the map fns),
+  synthetic LABEL VMAs in port tests (Tile_Cache_GetCollision, Sound_DrainSfxRing,
+  drain pointers), a probe's deliberately-wrong VMA (kept +4 from the NEW genuine),
+  and a hardcoded BYTE-PIN ARRAY carrying a cross-region bsr.w displacement
+  (tranche-5 mixed game_loop block). Rule as now practiced: a region size change
+  re-derives EVERY harness pin whose value lies in [region_end, next org boundary)
+  — orgs, map bases, label VMAs, byte arrays with displacement bytes, probe
+  constants — all from listings. The org-$10000 boundary absorbs the slide
+  (MDDBG__* verified unmoved from ROM bytes). Sweep grep: hex literals in the
+  window over crates/*/tests + lib.rs, then let the strict suite name survivors. — RECORDED
+- [tranche 8 step 5, 2026-07-10] **step-5 items deliberately NOT taken** —
+  RingBuffer_Add's stack-round-trip ×6 (~24c, SPAWN-time cold path; fixing needs a
+  wider clobber contract); RingBuffer_Remove's two remaining ×6 chains (COLLECT-time
+  cold path; arbitrary-index remove can't roll); DrawRings (already
+  rolling-pointer). Numbers recorded so future profiling has the baseline; the hot
+  loop (RingCollision, per-frame × per-ring × per-player) got the rolling pointer. — RECORDED
