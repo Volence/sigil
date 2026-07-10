@@ -20,9 +20,10 @@ pattern).
 ## Tranche 7 — engine/objects/collision.asm
 
 232 ln, 32 SST refs, hot bug-fix file; its step-5 engine review IS the
-point. **GATE (re-ask, was "not sure yet" at tranche-6 kickoff): do
-Volence's queued STRUCTURAL engine changes touch collision.asm? If yes,
-those land aeon-side first** (transcribe the file he intends to keep). Its
+point. **GATE RESOLVED at T7 kickoff (2026-07-10): the "queued structural
+engine changes" was Volence thinking out loud at the tranche-4 close —
+nothing is queued. Question retired permanently; do NOT carry it into
+future handoffs.** collision.asm ports as-is from aeon master. Its
 AABB shared macro (`engine/objects/aabb.inc`) is the ledgered
 "second consumer" demand for a shared engine-macros templates module.
 
