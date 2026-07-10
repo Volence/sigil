@@ -40,6 +40,18 @@ fn real_src() -> Option<String> {
     }
 }
 
+fn constants_src() -> Option<String> {
+    let path = aeon_dir().join("engine/system/constants.emp");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Some(s),
+        Err(_) if strict_gate() => panic!("SIGIL_STRICT_GATE set but {} missing", path.display()),
+        Err(_) => {
+            eprintln!("skip: {} not found (set AEON_DIR)", path.display());
+            None
+        }
+    }
+}
+
 fn read_reference() -> Option<Vec<u8>> {
     let path = aeon_dir().join("s4.bin");
     match std::fs::read(&path) {
@@ -52,12 +64,23 @@ fn read_reference() -> Option<Vec<u8>> {
     }
 }
 
-/// Parse + lower `src` and place into a two-region map (probes run
-/// plain-shape only — the shape axis is the port gate's job). Returns the
-/// placed sections and the module's link asserts.
-fn place(src: &str, base: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+/// Parse + lower `src` (with `constants_src`'s items prepended — AF_DELETE
+/// arrives from the constants twin via `use` since the tranche-6 step-4
+/// de-mirror, so the twin rides ambient exactly as in the port gate) and
+/// place into a two-region map (probes run plain-shape only — the shape
+/// axis is the port gate's job). Returns the placed sections and the
+/// module's link asserts.
+fn place(constants_src: &str, src: &str, base: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let (cfile, cdiags) = parse_str(constants_src);
+    assert!(cdiags.iter().all(|d| d.level != Level::Error), "constants parse errors: {cdiags:?}");
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: cfile.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
@@ -98,19 +121,21 @@ fn link_bytes(sections: &[Section]) -> Vec<u8> {
     linked.section("particle_anims").expect("particle_anims section").bytes.clone()
 }
 
-/// (a) Doctor the local `AF_DELETE` const $FB -> $FA: the inline body's
-/// despawn byte changes, so the linked bytes must DIFFER from the reference
+/// (a) Doctor the CONSTANTS TWIN's `AF_DELETE` $FB -> $FA (the mirror moved
+/// there in tranche-6 step 4): the inline body's despawn byte changes
+/// THROUGH the import, so the linked bytes must DIFFER from the reference
 /// window. FALSIFIED by the port gate (undoctored == reference).
 #[test]
 fn doctored_af_delete_produces_different_bytes() {
     let Some(src) = real_src() else { return };
+    let Some(constants) = constants_src() else { return };
     let Some(refrom) = read_reference() else { return };
     assert!(
-        src.contains("const AF_DELETE = $FB"),
-        "precondition: the port spells `const AF_DELETE = $FB`"
+        constants.contains("pub const AF_DELETE = $FB"),
+        "precondition: the twin spells `pub const AF_DELETE = $FB`"
     );
-    let doctored = src.replace("const AF_DELETE = $FB", "const AF_DELETE = $FA");
-    let (sections, _asserts) = place(&doctored, "0x309E6");
+    let doctored = constants.replace("pub const AF_DELETE = $FB", "pub const AF_DELETE = $FA");
+    let (sections, _asserts) = place(&doctored, &src, "0x309E6");
     assert_ne!(
         link_bytes(&sections),
         refrom[0x309E6..0x309EE].to_vec(),
@@ -124,7 +149,8 @@ fn doctored_af_delete_produces_different_bytes() {
 #[test]
 fn standalone_drift_guard_fails_loud_on_the_missing_extern() {
     let Some(src) = real_src() else { return };
-    let (sections, asserts) = place(&src, "0x309E6");
+    let Some(constants) = constants_src() else { return };
+    let (sections, asserts) = place(&constants, &src, "0x309E6");
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
@@ -139,7 +165,8 @@ fn standalone_drift_guard_fails_loud_on_the_missing_extern() {
 #[test]
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src() else { return };
-    let (sections, _asserts) = place(&src, "0x309EE");
+    let Some(constants) = constants_src() else { return };
+    let (sections, _asserts) = place(&constants, &src, "0x309EE");
     let sec = sections
         .iter()
         .find(|s| s.name == "particle_anims")

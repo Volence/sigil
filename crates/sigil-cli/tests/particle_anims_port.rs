@@ -87,11 +87,23 @@ fn map_toml(debug: bool) -> String {
     )
 }
 
-/// The AS-side equ the drift guard reads back through `extern()` —
-/// `AF_DELETE` from `engine/objects/animate.asm`. A trailing label+`dc.w`
-/// opens a section so the equ flushes via `pending_equ_syms`.
+/// The AS-side truths the CONSTANTS TWIN's guards read back through
+/// `extern()` — AF_DELETE now arrives via `use engine.constants.{AF_DELETE}`
+/// (tranche-6 step 4 de-mirrored the local copy), and the twin's 11 guards
+/// ride the ambient prepend, so all 11 truths are supplied. A trailing
+/// label+`dc.w` opens a section so the equs flush via `pending_equ_syms`.
 fn as_af_equ() -> Vec<Section> {
     let asm = "cpu 68000\n\
+               BUTTON_UP = 1\n\
+               BUTTON_DOWN = 2\n\
+               BUTTON_LEFT = 4\n\
+               BUTTON_RIGHT = 8\n\
+               HW_PORT_1_DATA = $A10003\n\
+               HW_PORT_2_DATA = $A10005\n\
+               CTYPE_AIR = 0\n\
+               VDP_Shadow_len = 19\n\
+               RF_COORDMODE = 3\n\
+               RF_PRIORITY_SHIFT = 5\n\
                AF_DELETE = $FB\n\
                Stub:\n\
                \tdc.w 0\n";
@@ -124,6 +136,25 @@ fn compile_real_file(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "particle_anims.emp parse errors: {pdiags:?}"
     );
+    // AF_DELETE arrives from the constants twin via `use` — prepend the
+    // twin's items (the controllers_port ambient technique). Its 11 guards
+    // ride along and are checked against `as_af_equ`'s truths.
+    let constants_src = std::fs::read_to_string(
+        dir.ancestors().nth(4).expect("anims dir is four levels below the aeon root")
+            .join("engine/system/constants.emp"),
+    )
+    .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (constants_file, cdiags) = parse_str(&constants_src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "constants.emp parse errors: {cdiags:?}"
+    );
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: constants_file.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -169,15 +200,16 @@ fn compile_real_file(
     (resolved, linked, link_asserts)
 }
 
-/// The drift guard must be captured and PASS against `as_af_equ`'s value.
-/// The `align 2` congruence assert (D2.29) also rides `module.link_asserts`,
-/// so the guard is identified by its own message text rather than by count.
+/// The twin's AF_DELETE guard must be captured (riding the ambient prepend)
+/// and PASS against `as_af_equ`'s value. The `align 2` congruence assert
+/// (D2.29) also rides `module.link_asserts`, so the guard is identified by
+/// its own message text rather than by count.
 fn assert_drift_guard(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = link_asserts
         .iter()
         .filter(|a| {
             a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("AF_DELETE drifted"))
+                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("disagree on AF_DELETE"))
             })
         })
         .count();

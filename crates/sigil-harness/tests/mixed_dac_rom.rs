@@ -1128,6 +1128,16 @@ fn placed_module_sections_with_roots(
                 ambient_items.extend(constants_ambient_items(&root.join("engine/system")));
             }
         }
+        // particle_anims imports AF_DELETE from the constants twin (tranche-6
+        // step 4 de-mirrored its local copy); it lives GAME-side too, four
+        // levels below the root.
+        "particle_anims.emp" => {
+            let root = dir
+                .ancestors()
+                .nth(4)
+                .expect("games/sonic4/data/animations is four levels below the aeon root");
+            ambient_items = constants_ambient_items(&root.join("engine/system"));
+        }
         _ => {}
     }
     let file = if ambient_items.is_empty() {
@@ -1889,9 +1899,10 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, 11usize),
         ("collision_lookup.emp", &collision_asserts, 11),
-        // particle_anims: the AF_DELETE drift guard + the align 2 congruence
-        // assert (guard_assert_count excludes only [layout.odd-item]).
-        ("particle_anims.emp", &particle_asserts, 2),
+        // particle_anims: the constants twin's 11 guards ride the ambient
+        // prepend (its local AF_DELETE mirror de-mirrored, tranche-6 step 4)
+        // + the align 2 congruence assert.
+        ("particle_anims.emp", &particle_asserts, 12),
         // sonic_anims: 15 drift guards (3 command bytes + 12 ordinal/count)
         // + the ONE trailing align congruence assert (the step-5 rewrite
         // packed the bodies; only the next-table evenness guard remains).
@@ -2039,7 +2050,7 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, 11usize),
         ("collision_lookup.emp", &collision_asserts, 11),
-        ("particle_anims.emp", &particle_asserts, 2),
+        ("particle_anims.emp", &particle_asserts, 12),
         ("sonic_anims.emp", &sonic_asserts, 16),
         ("act_descriptor.emp", &act_asserts, 5),
         // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
@@ -2186,7 +2197,7 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, 11usize),
         ("collision_lookup.emp", &collision_asserts, 11),
-        ("particle_anims.emp", &particle_asserts, 2),
+        ("particle_anims.emp", &particle_asserts, 12),
         ("sonic_anims.emp", &sonic_asserts, 16),
         ("act_descriptor.emp", &act_asserts, 5),
         ("sound_api.emp", &sound_api_asserts, 7),
