@@ -644,3 +644,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   never-lowered, but a define-gated todo vanishes from the list — note-tier
   candidate); duplicate-label link errors expose the mangled `$m$f$x` name
   (cosmetic, unmangle in the renderer). — OPEN
+- [tranche-5 step 5 (engine review), 2026-07-10] **No engine changes — recorded why:**
+  game_loop is optimal for its design (RAM-dispatch loop, 18 B). sound_api: (a) the
+  SR-mask is load-bearing in ALL builds (VBlank's DMA stopZ80, not just the DEBUG
+  mirror — comment fixed both twins); (b) Sound_PlayMusic's `>>15` via two lsr.l
+  could be ~34 cycles cheaper (`add.l dN,dN` + `swap`) — REJECTED: once-per-song
+  cold path, clarity wins (recorded so nobody re-derives); (c) the PlaySFX ring
+  dedup was already judged cycle-honest. — CLOSED
+- [tranche-5 step 2 retrospect, 2026-07-10] **stop_z80()/start_z80() comptime-fn
+  templates proven** (the .emp answer to AS macros, hygienic per-site labels) —
+  currently sound_api-local; when a SECOND file wants them (sound_debug port is the
+  likely demand), lift into a shared engine-macros .emp module (`use`-imported
+  Code-returning fns). Demand-gated, don't pre-build. — OPEN

@@ -1,10 +1,15 @@
-# Tranche 5 checkpoint packet — SPINE COMPLETE (2026-07-10, awaiting Volence)
+# Tranche 5 checkpoint packet — COMPLETE THROUGH A DRY RETROSPECT (2026-07-10, awaiting Volence's merge gate)
 
-Fourth tranche under the 5-step loop. Scope A (the spine — Volence-ratified
-in the tranche-5 handoff) is DONE on the branch: **game_loop + sound_api**,
-both byte-exact both shapes, THIRTEEN-module mixed gates green. Scope B
-(stretch: first object port) NOT started — it wants its own step-0 against
-the SST-overlay/spawn-template surface, better fresh than appended.
+FIRST tranche run fully under the RE-RATIFIED loop (Volence corrected the
+flow mid-tranche; canonical text now in `notes/campaign-port-loop.md`):
+transcribe → modernize (bytes may change) → retrospect (incl. language
+asks) → back-propagate → engine-optimize → LOOP UNTIL DRY → merge. Scope
+A: **game_loop + sound_api**, transcribed byte-exact, then modernized to
+the complete format, back-propagated, engine-reviewed, retrospect DRY.
+THIRTEEN-module mixed gates green at the re-baselined pins. Scope B
+(stretch: first object port) NOT started — it wants its own step-0
+against the SST-overlay/spawn-template surface, better fresh than
+appended.
 
 **UNMERGED** — this packet is the checkpoint ask. Branches: sigil
 `port-tranche5` (worktree, 3 commits off `cc4535a`), aeon
@@ -63,10 +68,30 @@ the SST-overlay/spawn-template surface, better fresh than appended.
   drain define load-bearing (−4 B); doctored mirror fails its OWN guard
   against a resolving composition; misspelled extern dangles while an
   undoctored control resolves.
+- **Step 2 — modernize (the ratified loop's first outing)**: sound_api →
+  the complete format: all eight tail-calls `jbra` (Ping/PlaySample relax
+  to `.s`, −4 B; the twin takes two `bra.s` in lockstep), the 4× inline
+  stopZ80/startZ80 expansions → `stop_z80()`/`start_z80()` comptime-fn
+  templates (hygienic per-site `.wait_z80` — the .emp answer to AS
+  macros, now proven), pinned `(X).w/.l` → the bare width-rule idiom.
+  Region 0x1E8 → 0x1E4; drain/PlaySFX slid −4; re-pin paid in full
+  (engine.inc orgs, harness windows, PROVENANCE). game_loop was
+  born-modern. The debug head-pin's first derivation was off by 2
+  (PC-after-opcode-word) — the gate caught it, as designed.
+- **Step 4 — back-propagate**: prior ports were already modern except
+  `lea.l` size-suffix noise (6 sites, controllers/vdp_init) → bare `lea`,
+  byte-identical, gates re-verified.
+- **Step 5 — engine review**: ONE yield — the SR-mask hazard comment
+  under-scoped (it cited the DEBUG mirror; vblank.asm's DMA window
+  stopZ80s in ALL builds — the mask was always load-bearing everywhere;
+  fixed both twins). Rejected-and-recorded: PlayMusic's `>>15` could be
+  ~34 cycles cheaper but is a once-per-song cold path — clarity wins.
+  game_loop: optimal for its design.
+- **Loop-until-dry**: pass 2 over the steps' own yields found nothing
+  new → DRY, merge-eligible.
 - **Numbers**: strict workspace **1977/0** (tranche-4 close: 1944), clippy
-  clean, gate-off neutrality sha256 ×3 at `907a9029…` + debug `7148f938…`
-  + demo builds clean, reference pins UNCHANGED (no re-baseline this
-  tranche — first tranche with zero re-pins).
+  clean. Pins RE-BASELINED by step 2 (the new normal): plain
+  `bcd4e3a5…`, debug `634fea68…`, neutrality sha256 ×3 + demo clean.
 
 ## Review discipline record
 
@@ -104,10 +129,10 @@ Per-item two-stage reviews ran on both ports; both earned their keep:
 
 1. **Spec addendum pass** (empyrean, docs cadence): statement-position
    comptime `if` (H1), `ImmLink` + the here()-in-.l-imm behavior change,
-   the positional fence, `sr`/`ccr`. All jotted in the gap ledger.
-2. **Step-5 queue** (post-merge, byte-different): the two in-reach
-   `bra.w` tail-calls (Sound_Ping/Sound_PlaySample) → `jbra` (−4 B);
-   re-pin + aeon lockstep like tranche-4's step 5.
+   the positional fence, `sr`/`ccr`. All jotted in the gap ledger. The
+   ratified LOOP itself also wants a campaign-doc mention.
+2. ~~Step-5 queue~~ SUPERSEDED by the ratified flow — the jbra flip
+   landed IN-TRANCHE as step 2 (done, re-pinned).
 3. **Stretch B** (first object port — test_solid/test_particle): fresh
    step-0 against `examples/sst_overlay.emp` + the pitcher_plant exhibits;
    opens the object-bank neighborhood (SST overlays, spawn templates,
@@ -118,7 +143,7 @@ Per-item two-stage reviews ran on both ports; both earned their keep:
 
 ## Post-merge state (when Volence ratifies)
 
-Merge --no-ff both sides, push, remove worktree/branch, then the step-5
-queue (ask 2) as its own commit pair. The empyrean amendment stack
-(D2.33 + 2026-07-10b + D2.34 + this tranche's addendum) stays in the
-working tree per the docs cadence.
+Merge --no-ff both sides, push, remove worktree/branch — nothing queued
+behind the merge (the loop ran to dry BEFORE the gate, per the ratified
+flow). The empyrean amendment stack (D2.33 + 2026-07-10b + D2.34 + this
+tranche's addendum) stays in the working tree per the docs cadence.
