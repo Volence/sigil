@@ -469,12 +469,19 @@ impl Evaluator<'_> {
                 }
             }
             Operand::Plain { expr, .. } => self.map_plain(expr, scope, env),
-            Operand::Ind { parts, span, .. } => {
+            Operand::Ind { parts, size, span } => {
                 // Two-part `(An,Xn[.size])` — An-indexed with zero displacement
                 // (68k `(d8,An,Xn)`, d=0). Checked before the single-register
                 // path so the two-part form stops diagnosing as unsupported.
                 if parts.len() == 2 {
                     return self.map_an_indexed(parts, 0, *span, env);
+                }
+                // A GROUP size suffix on a one-part indirect is the
+                // explicit-width absolute form: `(Sym).w` / `($C00004).l`
+                // (Volence-ratified, tranche 3). A sized REGISTER indirect
+                // (`(a0).w`) is not a 68000 form and is rejected inside.
+                if size.is_some() && parts.len() == 1 {
+                    return self.map_pinned_abs(&parts[0].0, size.as_ref(), scope, env, *span);
                 }
                 let r = self.ind_single_reg(parts, *span, env)?;
                 Some(CodeOperand::Ind(r))
@@ -656,6 +663,105 @@ impl Evaluator<'_> {
             }
             None => None,
         }
+    }
+
+    /// Resolve a one-part sized indirect `(expr).w` / `(expr).l` to an
+    /// explicit-width ABSOLUTE operand (Volence-ratified, tranche 3 — the
+    /// AS-parity forced-width spelling; the bare-symbol relax-via-width-rule
+    /// idiom stays the new-style default). A bare path is ALWAYS a symbol
+    /// (`map_plain`'s rule — never a const read in operand position) →
+    /// [`CodeOperand::AbsSym`], width pinned, address deferred as one
+    /// fixed-width fixup. Anything else comptime-evaluates to an integer
+    /// address → [`CodeOperand::AbsInt`], with the `.w` window validated
+    /// against asl's sign-extension rule. A register (spelled or evaluated)
+    /// is rejected: `(a0).w` is not a 68000 form, and silently dropping the
+    /// suffix was the same hazard class as the indexed base suffix.
+    fn map_pinned_abs(
+        &mut self,
+        expr: &ast::Expr,
+        size: Option<&TextOrSplice>,
+        scope: &LabelScope,
+        env: &mut Env,
+        span: Span,
+    ) -> Option<CodeOperand> {
+        let long = match self.resolve_size(size, span, env) {
+            Some(Some(Width::L)) => true,
+            Some(Some(Width::W)) => false,
+            Some(Some(other)) => {
+                let suffix = match other {
+                    Width::B => "b",
+                    Width::S => "s",
+                    Width::W | Width::L => unreachable!("handled above"),
+                };
+                self.error(
+                    span,
+                    format!("absolute width must be `.w` or `.l`, got `.{suffix}`"),
+                );
+                return None;
+            }
+            Some(None) => {
+                // Caller only routes here when a size suffix is present.
+                self.error(span, "absolute width must be `.w` or `.l`".to_string());
+                return None;
+            }
+            None => return None,
+        };
+        if let ast::Expr::Path(p) = expr {
+            if p.segments.len() == 1 && reg_from_name(&p.segments[0]).is_some() {
+                self.error(
+                    span,
+                    "register indirect takes no size suffix — `(a0).w` is not a 68000 form"
+                        .to_string(),
+                );
+                return None;
+            }
+            let target = scope.resolve_ref(&p.segments.join("."));
+            return Some(CodeOperand::AbsSym { target, long });
+        }
+        let v = self.eval_expr(expr, env);
+        if matches!(v, Value::Poison) {
+            return None;
+        }
+        if matches!(v, Value::Reg(_)) {
+            self.error(
+                span,
+                "register indirect takes no size suffix — `(a0).w` is not a 68000 form"
+                    .to_string(),
+            );
+            return None;
+        }
+        if self.reject_if_provisional(&v, span).is_some() {
+            return None;
+        }
+        let Some(addr) = v.as_stored_int() else {
+            self.error(
+                span,
+                format!(
+                    "an explicit-width absolute needs an integer address or a symbol, got {}",
+                    v.type_name()
+                ),
+            );
+            return None;
+        };
+        if !long {
+            // asl's abs.w window: the 24-bit address must sign-extend
+            // losslessly from 16 bits (shared rule, sigil-ir width.rs).
+            let a = (addr as i64) & 0xFF_FFFF;
+            if !(a <= 0x7FFF || a >= 0xFF_8000) {
+                self.error(
+                    span,
+                    format!(
+                        "address {addr:#X} has no abs.w spelling (the 24-bit address must \
+                         sign-extend losslessly from 16 bits) — use `.l`"
+                    ),
+                );
+                return None;
+            }
+        } else if addr < i32::MIN as i128 || addr > u32::MAX as i128 {
+            self.error(span, format!("address out of range for abs.l: {addr}"));
+            return None;
+        }
+        Some(CodeOperand::AbsInt { addr, long })
     }
 
     /// Resolve a two-part `(An,Xn[.size])` inner to an An-indexed operand

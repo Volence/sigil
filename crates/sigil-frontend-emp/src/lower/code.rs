@@ -186,7 +186,12 @@ fn lower_m68k_instr(
     // address_transfer`), not the `JmpJsrSym` linker ladder.
     let sym_count = ops
         .iter()
-        .filter(|o| matches!(o, CodeOperand::Sym(_) | CodeOperand::SymOff { .. }))
+        .filter(|o| {
+            matches!(
+                o,
+                CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
+            )
+        })
         .count();
     match sym_count {
         0 => {}
@@ -625,10 +630,20 @@ fn lower_m68k_abs_sym(
     // as the Core `Expr` so the linker folds it (rename canonicalizes the inner
     // `Sym`; `asl_width_rule` widths the folded SUM).
     let mut target: Option<Expr> = None;
+    // `Some(width)` when the author PINNED the width (`(Sym).w`/`(Sym).l`,
+    // tranche 3): emit ONE finished candidate with a fixed-width fixup
+    // instead of the RelaxAbsSym pair.
+    let mut pinned: Option<bool> = None;
     for op in ops {
         match op {
             CodeOperand::Sym(n) => {
                 target = Some(Expr::Sym(n.clone()));
+                short_ops.push(M68kOperand::AbsW(0));
+                long_ops.push(M68kOperand::AbsL(0));
+            }
+            CodeOperand::AbsSym { target: n, long } => {
+                target = Some(Expr::Sym(n.clone()));
+                pinned = Some(*long);
                 short_ops.push(M68kOperand::AbsW(0));
                 long_ops.push(M68kOperand::AbsL(0));
             }
@@ -703,6 +718,20 @@ fn lower_m68k_abs_sym(
         return;
     }
     let offset = (short_bytes.len() - 2) as u32;
+    // Author-pinned width: no relaxation — one finished encoding, one
+    // fixed-width fixup (the same `offset` works for both: the long
+    // candidate is the short plus 2 ext bytes, so `short.len()-2` ==
+    // `long.len()-4`, i.e. the ext field's start either way).
+    if let Some(long) = pinned {
+        let (bytes, kind) = if long {
+            (long_bytes, FixupKind::Abs32Be)
+        } else {
+            (short_bytes, FixupKind::Abs16Be)
+        };
+        let df = DataFragment { bytes, fixups: vec![Fixup { kind, offset, target }], span };
+        emit_data_frag(builder, df);
+        return;
+    }
     let advance = short_bytes.len() as u32; // baseline (abs.w) cursor advance
     let frag = Fragment::RelaxAbsSym {
         short: RelaxCandidate {
@@ -728,7 +757,10 @@ fn lower_m68k_abs_sym(
 fn operand_has_ext_words(op: &CodeOperand) -> bool {
     matches!(
         op,
-        CodeOperand::Imm(_) | CodeOperand::DispInd { .. } | CodeOperand::IndIdx { .. }
+        CodeOperand::Imm(_)
+            | CodeOperand::DispInd { .. }
+            | CodeOperand::IndIdx { .. }
+            | CodeOperand::AbsInt { .. }
     )
 }
 
@@ -773,6 +805,28 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
             }
             Ok(M68kOperand::Disp16An(d as i16, an))
         }
+        CodeOperand::AbsInt { addr, long } => {
+            let a = *addr;
+            // Eval range-checked already; re-check as defense-in-depth at
+            // the byte-exactness seam, mirroring DispInd/IndIdx.
+            if *long {
+                if a < i32::MIN as i128 || a > u32::MAX as i128 {
+                    return Err(format!("address out of range for abs.l: {a}"));
+                }
+                Ok(M68kOperand::AbsL(a as u32 as i32))
+            } else {
+                let w = (a as i64) & 0xFF_FFFF;
+                if !(w <= 0x7FFF || w >= 0xFF_8000) {
+                    return Err(format!("address {a:#X} has no abs.w spelling"));
+                }
+                Ok(M68kOperand::AbsW((a as i64 & 0xFFFF) as u16 as i16))
+            }
+        }
+        // A pinned symbolic abs is always routed through `lower_m68k_abs_sym`
+        // by the sym-count dispatch, exactly like `Sym`/`SymOff` — defense.
+        CodeOperand::AbsSym { target, .. } => Err(format!(
+            "symbolic absolute operand `{target}` in this position is not yet supported              (routed via the abs-sym seam)"
+        )),
         CodeOperand::IndIdx { reg, disp, xn, xlong } => {
             let an = an_index(*reg).ok_or_else(|| ind_reg_err(*reg))?;
             let d = *disp;

@@ -624,3 +624,49 @@ fn lea_stack_cleanup_over_sp_is_not_a_clobber() {
         "lea N(sp), sp cleanup must not be flagged: {diags:?}"
     );
 }
+
+#[test]
+fn empty_clobbers_means_touches_nothing_and_flags_any_write() {
+    // Volence ruling (tranche-3 packet review): explicit `clobbers()` is the
+    // strongest contract — "verified: touches nothing" — so ANY register
+    // write inside is an undeclared clobber.
+    let src = "module m\n\
+               proc h() clobbers() {\n\
+               \x20   moveq   #0, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.clobber-undeclared]"),
+        "a write inside clobbers() must be flagged: {diags:?}"
+    );
+}
+
+#[test]
+fn empty_clobbers_on_a_no_effect_proc_is_clean() {
+    // The HBlank_Null shape: bare rts, contract declared and verified.
+    let src = "module m\n\
+               proc h() clobbers() {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !diags.iter().any(|d| d.level == Level::Error || d.message.contains("[proc.clobber")),
+        "a no-effect proc with clobbers() must lower clean: {diags:?}"
+    );
+}
+
+#[test]
+fn absent_clobbers_still_means_no_contract() {
+    // Absence stays legal (half-ported files): no declaration, no lint.
+    let src = "module m\n\
+               proc h() {\n\
+               \x20   moveq   #0, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "no declared contract must mean no clobber lint: {diags:?}"
+    );
+}

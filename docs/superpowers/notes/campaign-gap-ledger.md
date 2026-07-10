@@ -50,7 +50,8 @@ tranche's modernize pass; the step-3 retrospect reviews the checklist itself for
 - **Constants:** no bare magic number where a named constant exists (`use engine.constants`);
   every mirrored cross-seam value gets its `ensure(extern("X") == X)` drift guard.
 - **Control flow:** `jbra`/`jbsr` for label transfers; bare `jmp`/`jsr` only for computed
-  targets; conditionals keep explicit sizes (no jbcc by decision).
+  targets; conditionals UNSIZED (Volence ruling 2026-07-09 — the assembler relaxes `.s`/`.w`
+  by reach; explicit sizes only under `@as_compat`; `jbcc` still deliberately absent).
 - **Guards & tests:** every hand-maintained invariant living in a comment becomes an
   `ensure`/`ensure_fatal` (item or statement position); cross-seam facts via `extern()`;
   `comptime test` beside every comptime fn.
@@ -208,13 +209,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   Repo-wide message-quality item. — CLOSED tranche 3 (all three 68k PcRel kinds + the zero-disp escape message now name the target symbol; pinned by `pcrel_out_of_range_messages_name_the_target_symbol`).
 - [tranche 2 T1 review, 2026-07-09] **abs.l as an .emp DESTINATION is unsupported**
   (`move.w x, ($abs).l` → "indirect base must be a register") — pre-existing, surfaced by an
-  adversarial probe; will matter for some future port (VDP register writes spell this). — OPEN
-  (scoped at tranche 3: NOT a bundle-sized item — the explicit-width `(Sym).w`/`(Sym).l` spelling
-  needs a pinned-width mode on the abs-sym relaxation seam (a one-rung RelaxAbsSym or direct
-  fragment emission with the ext-offset math) plus the comptime-int abs form; belongs to the
-  port that actually spells it. Note today's idiom already covers the common case: a BARE
-  symbol destination relaxes via the width rule byte-identically to asl — vdp_init's
-  `lea.l VDP_CTRL, a1` and `move.l d0, VDP_Dirty_Mask` both land this way.)
+  adversarial probe; will matter for some future port (VDP register writes spell this). —
+  SHIPPED 2026-07-09 (Volence ratified at the packet review): explicit-width `(expr).w`/
+  `(expr).l` absolutes, BOTH positions — comptime-int addresses pin their bytes at lower
+  (with asl's abs.w sign-extension window validated), symbolic addresses pin the WIDTH and
+  defer as ONE fixed-width fixup (no RelaxAbsSym pair). Coexists cleanly with the bare-symbol
+  idiom, which stays the new-style default (relaxes via the width rule to the same-or-smaller
+  encoding). Ride-along hardening: `(a0).w` (sized register indirect — not a 68000 form) now
+  rejects instead of silently dropping the suffix.
 - [tranche 2 T1 review, 2026-07-09] **`Owner.label(pc)` multi-segment pc-rel target untested**
   — path shared verbatim with tested branch resolution; one-line test owed. — CLOSED tranche 3 (`owner_label_pcrel_target_resolves`, pcrel_port.rs; passed first run, a pin not a fix).
 - [tranche 2 T3, port #2 (controllers.emp + math.emp), 2026-07-09] **`embed()` paths resolve
@@ -408,15 +410,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   option (ii) ADOPTED as OPT-IN — absence stays legal (half-ported/@as_compat files), empty
   `clobbers()` means "touches nothing" (lint flags any write), and the step-2 checklist is
   amended: every FINISHED proc declares its register contract (clobbers(...) / clobbers() /
-  preserves(...)). Build rides tranche 4's opening.
+  preserves(...)). — SHIPPED same day (pulled into the tranche at Volence's "let's do" —
+  `clobbers` is now `Option<Vec>`, `Some([])` = the verified touches-nothing contract, the
+  lint flags any write inside; HBlank_Null annotated).
 - [tranche 3 code-sense review, 2026-07-09] **`~mask` byte-width ceremony tax**:
   `andi.b #~(BUTTON_LEFT|BUTTON_RIGHT)&$FF, d0` (controllers.emp) — the `&$FF` exists only
   because comptime `~` is untyped-width; a byte-width operand position could plausibly
   auto-truncate a comptime complement (loudly range-checked otherwise). Jot-don't-implement:
   needs a decision on silent-vs-explicit truncation semantics (tenet: no silent wrong bytes).
-  — DEFERRED BY RULING 2026-07-09 (Volence): stays jotted; no breakage either way and the
-  `&$FF` spelling stays valid under any future safe-truncation rule (idempotent). Revisit on
-  annoyance.
+  — RESOLVED 2026-07-09 (post-ruling probe): NO language change was ever needed —
+  `#~(BUTTON_LEFT|BUTTON_RIGHT)` = -13 already fits the signed imm8 window and emits the
+  identical $F3 (CLI-probed). The `&$FF` was INHERITED AS SPELLING (controllers.asm needs it
+  under asl); dropped from controllers.emp, byte-gates green. The safe-truncation design
+  question is moot for this case; reopen only if a genuinely-out-of-window complement shows up.
 - [tranche 3 code-sense review, 2026-07-09] **Typed word-table embeds**: `Sine_Table:
   [u8; $280] = embed(...)` describes a WORD table as bytes; `[i16; 320]` with big-endian
   byte-identity would be the honest type if/when `embed` learns typed element views. Pairs
@@ -443,4 +449,7 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   on conditionals in ported files. Dropping suffixes is byte-neutral (relaxation picks the
   same minimal size). Volence to rule: keep classic explicit sizes vs assembler-managed
   unsized. `jbcc` (trampoline-expanding unlimited-reach conditional) stays deferred either
-  way (tenet 3). — OPEN (awaiting the call).
+  way (tenet 3). — RULED 2026-07-09 (Volence): UNSIZED adopted for new-style files — the
+  assembler picks `.s`/`.w` by reach; explicit sizes remain only under `@as_compat`. All six
+  ported files swept (bne/blt/bgt/beq ×8), byte-gates green (relaxation picks the identical
+  sizes). Checklist amended.

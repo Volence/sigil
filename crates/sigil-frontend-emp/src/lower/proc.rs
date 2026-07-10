@@ -120,9 +120,11 @@ pub(super) fn lower_proc(
         None => {}
     }
 
-    // 4. Clobbers lint (only when the proc declares a clobber set) — likewise a
-    // modernization warning silenced under `@as_compat`.
-    if !proc.clobbers.is_empty() && !ctx.as_compat {
+    // 4. Clobbers lint (only when the proc declares a clobber set — the
+    // explicit empty `clobbers()` counts: it declares "touches nothing", so
+    // every register write is undeclared) — likewise a modernization warning
+    // silenced under `@as_compat`.
+    if proc.clobbers.is_some() && !ctx.as_compat {
         check_clobbers(proc, &buf, diags);
     }
 
@@ -263,7 +265,8 @@ fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
 /// (`a0`/`d2`/…), which is today's model (§5.1); if params ever gain symbolic
 /// names bound to registers, a write to that register would false-positive here.
 fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
-    let mut allowed: HashSet<&str> = proc.clobbers.iter().map(String::as_str).collect();
+    let mut allowed: HashSet<&str> =
+        proc.clobbers.as_deref().unwrap_or(&[]).iter().map(String::as_str).collect();
     // Params are declarative register bindings (§5.1): a write to a param
     // register is part of the proc's own contract, not an undeclared clobber.
     allowed.extend(proc.params.iter().map(|(name, _, _)| name.as_str()));
@@ -471,7 +474,7 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
 
     // A register cannot be both preserved and clobbered — a contradictory
     // contract is diagnosed, not resolved.
-    for c in &proc.clobbers {
+    for c in proc.clobbers.as_deref().unwrap_or(&[]) {
         if let Some(bit) = preserves_reg_bit(c) {
             if declared & (1 << bit) != 0 {
                 push(

@@ -1023,17 +1023,23 @@ impl Parser {
         self.bump(); // `proc`
         let name = self.expect_ident("proc name");
         let params = self.param_list();
-        let mut clobbers = Vec::new();
+        let mut clobbers = None;
         let mut preserves = Vec::new();
         let mut falls_into = None;
         loop {
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
-                loop {
-                    clobbers.push(self.expect_ident("register"));
-                    if !self.eat(&Tok::Comma) { break; }
-                    if self.at(&Tok::RParen) { break; } // trailing comma
+                // `clobbers()` — the empty form is the explicit "touches
+                // nothing" contract (distinct from no declaration at all).
+                let mut list = Vec::new();
+                if !self.at(&Tok::RParen) {
+                    loop {
+                        list.push(self.expect_ident("register"));
+                        if !self.eat(&Tok::Comma) { break; }
+                        if self.at(&Tok::RParen) { break; } // trailing comma
+                    }
                 }
+                clobbers = Some(list);
                 self.expect(&Tok::RParen, "`)`");
             } else if self.eat_kw("preserves") {
                 // `preserves(d0-d1/a0)` — a movem-style reglist: `/`-separated

@@ -642,3 +642,115 @@ fn bare_pc_indexed_without_target_gets_a_steering_error() {
         "bare (pc,Xn) must steer to the Sym(pc,Xn) spelling, got: {diags:?}"
     );
 }
+
+// ---- explicit-width absolute EAs `(expr).w` / `(expr).l` (tranche 3) ------
+//
+// Volence-ratified at the packet review (the former abs.l-destinations open):
+// the AS-parity FORCED-width spelling, complementing the bare-symbol idiom
+// (which relaxes via the width rule and stays the new-style default). Two
+// shapes: a comptime integer address pins its bytes at lower time; a symbol
+// pins the WIDTH and defers the address as a single fixed-width fixup (no
+// RelaxAbsSym pair). Both positions (source and destination).
+
+/// A pinned symbolic abs must emit ONE Fragment::Data with a single
+/// fixed-width fixup — not a RelaxAbsSym candidate pair.
+fn assert_pinned_abs(src: &str, sym: &str, bytes: &[u8], kind: sigil_ir::FixupKind, offset: u32) {
+    use sigil_ir::{Expr, Fixup, Fragment};
+    let (code, ediags) = eval_asm_with(src, &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    assert_eq!(module.sections[0].fragments.len(), 1, "expected one fragment");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.bytes, bytes, "pinned abs bytes");
+            assert_eq!(
+                df.fixups,
+                vec![Fixup { kind, offset, target: Expr::Sym(sym.into()) }],
+                "pinned abs fixup"
+            );
+        }
+        other => panic!("expected a pinned Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn pinned_abs_w_int_destination() {
+    // `move.w d0, ($FFFF8022).w` — the RAM-mirror idiom, forced word:
+    // opcode 31C0 (dest abs.w), ext = low word $8022.
+    let (code, diags) = eval_asm_with(&asm_1("move.w d0, ($FFFF8022).w"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x31, 0xC0, 0x80, 0x22]);
+}
+
+#[test]
+fn pinned_abs_l_int_source() {
+    // `move.w ($C00004).l, d0` — reading the VDP control port, forced long:
+    // opcode 3039 (src abs.l), ext = 00C0 0004.
+    let (code, diags) = eval_asm_with(&asm_1("move.w ($C00004).l, d0"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x30, 0x39, 0x00, 0xC0, 0x00, 0x04]);
+}
+
+#[test]
+fn pinned_abs_l_int_lea() {
+    // `lea.l ($C00004).l, a1` → 43F9 00C0 0004.
+    let (code, diags) = eval_asm_with(&asm_1("lea.l ($C00004).l, a1"), &[]);
+    assert!(diags.is_empty(), "unexpected eval diagnostics: {diags:?}");
+    assert_eq!(lower_link_68k(&code), vec![0x43, 0xF9, 0x00, 0xC0, 0x00, 0x04]);
+}
+
+#[test]
+fn pinned_abs_l_symbol_destination_defers_one_fixed_fixup() {
+    // `move.w d0, (Foo).l` — width pinned by the author, address deferred:
+    // opcode 33C0 (dest abs.l) + a 4-byte hole with ONE Abs32Be fixup at 2.
+    assert_pinned_abs(
+        &asm_1("move.w d0, (Foo).l"),
+        "Foo",
+        &[0x33, 0xC0, 0x00, 0x00, 0x00, 0x00],
+        sigil_ir::FixupKind::Abs32Be,
+        2,
+    );
+}
+
+#[test]
+fn pinned_abs_w_symbol_source_defers_one_fixed_fixup() {
+    // `move.w (Foo).w, d0` → 3038 + Abs16Be at 2.
+    assert_pinned_abs(
+        &asm_1("move.w (Foo).w, d0"),
+        "Foo",
+        &[0x30, 0x38, 0x00, 0x00],
+        sigil_ir::FixupKind::Abs16Be,
+        2,
+    );
+}
+
+#[test]
+fn pinned_abs_w_out_of_window_int_is_rejected() {
+    // $10000 has no abs.w spelling (outside asl's sign-extension window).
+    let (_code, diags) = eval_asm_with(&asm_1("move.w d0, ($10000).w"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("abs.w")),
+        "an out-of-window .w address must be rejected naming abs.w, got: {diags:?}"
+    );
+}
+
+#[test]
+fn register_indirect_group_size_suffix_is_rejected() {
+    // `(a0).w` is not a 68000 form — silently ignoring the suffix was the
+    // same hazard class as the indexed base suffix.
+    let (_code, diags) = eval_asm_with(&asm_1("move.w (a0).w, d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("register indirect takes no size suffix")),
+        "a sized register indirect must be rejected, got: {diags:?}"
+    );
+}
+
+#[test]
+fn pinned_abs_byte_width_is_rejected() {
+    let (_code, diags) = eval_asm_with(&asm_1("move.w (Foo).b, d0"), &[]);
+    assert!(
+        diags.iter().any(|d| d.message.contains("absolute width must be `.w` or `.l`")),
+        "a .b absolute width must be rejected, got: {diags:?}"
+    );
+}
