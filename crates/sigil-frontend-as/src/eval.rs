@@ -52,6 +52,15 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     let mut macros = MacroTable::new();
     let mut functions = FunctionTable::new();
     let mut prev = seed.clone();
+    // Every equ-sym name any pass exports, in first-seen order. An
+    // `ifndef`-guarded definition block executes (and exports) on pass 0,
+    // then SKIPS on later passes once its guard symbol is seeded — the
+    // definitions persist via env seeding, but the export side effect
+    // vanished with the skipped block (tranche-3 review finding). The
+    // converged module gets any missing exports re-attached from the
+    // CONVERGED env, whose values are authoritative.
+    let mut ever_exported: Vec<(String, Span)> = Vec::new();
+    let mut ever_exported_names: std::collections::HashSet<String> = Default::default();
     for pass in 0..PASS_CAP {
         let PassOutput {
             module,
@@ -61,6 +70,13 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
             diags,
             poison,
         } = one_pass(src, opts, &seed, &macros, &functions);
+        for sec in &module.sections {
+            for eq in &sec.equ_syms {
+                if ever_exported_names.insert(eq.name.clone()) {
+                    ever_exported.push((eq.name.clone(), eq.span));
+                }
+            }
+        }
         if pass > 0 && env == prev {
             // Converged: this pass's result is authoritative. The env is now final,
             // so any operand that still folded to Poison references a genuinely
@@ -79,6 +95,8 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
             // pre-existing passing compile): zero extra work, byte-identical
             // output.
             if poison.is_empty() {
+                let mut module = module;
+                restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 return if diags.iter().any(|d| d.level == Level::Error) {
                     Err(diags)
                 } else {
@@ -94,10 +112,12 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
                     primary: span,
                 });
             }
+            let mut bonus_module = bonus.module;
+            restore_missing_equ_exports(&mut bonus_module, &ever_exported, &env);
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(diags)
             } else {
-                Ok(bonus.module)
+                Ok(bonus_module)
             };
         }
         prev = env.clone();
@@ -127,6 +147,39 @@ struct PassOutput {
     diags: Vec<Diagnostic>,
     /// Operand symbols that folded to Poison this pass (name + site span).
     poison: Vec<(String, Span)>,
+}
+
+/// Re-attach equ exports the CONVERGED pass lost to a guard-skipped block
+/// (tranche-3 review finding — see `run`'s `ever_exported` comment): any name
+/// some earlier pass exported that the final module lacks gets an `EquSym`
+/// with its value from the converged `env` (authoritative — a forward-ref-
+/// dependent equ gets its FINAL value, not the earlier pass's). Attached to
+/// the first section (the link flattens equ_syms; placement is arbitrary).
+/// String equs never export (they resolve to `None` here), matching
+/// `directive_equate`. A module with no sections has nothing to attach to —
+/// and nothing to link either.
+fn restore_missing_equ_exports(
+    module: &mut Module,
+    ever_exported: &[(String, Span)],
+    env: &SymbolTable,
+) {
+    if ever_exported.is_empty() || module.sections.is_empty() {
+        return;
+    }
+    let present: std::collections::HashSet<&str> = module
+        .sections
+        .iter()
+        .flat_map(|s| s.equ_syms.iter())
+        .map(|e| e.name.as_str())
+        .collect();
+    let missing: Vec<EquSym> = ever_exported
+        .iter()
+        .filter(|(n, _)| !present.contains(n.as_str()))
+        .filter_map(|(n, sp)| {
+            env.resolve(n, None).map(|v| EquSym { name: n.clone(), expr: Expr::Int(v), span: *sp })
+        })
+        .collect();
+    module.sections[0].equ_syms.extend(missing);
 }
 
 /// One assembly pass seeded with `seed_env` (symbols) plus the macro/function
@@ -4548,6 +4601,38 @@ mod tests {
             equ_syms_named(&m, "bar").is_empty(),
             "a `set` symbol must not be exported as an equ"
         );
+    }
+
+    #[test]
+    fn ifndef_guarded_equs_and_structs_still_export() {
+        // Tranche-3 branch-review finding (latent): pass 0 executes an
+        // `ifndef`-guarded block and exports its equs; the guard symbol is
+        // then seeded into later passes, so the CONVERGED pass skips the
+        // block — bytes correct, but the export side effect vanished with
+        // it, and any `.emp` `extern("FOO")` failed with a misleading
+        // "unresolved symbol". The run loop now carries the ever-exported
+        // set across passes and re-attaches missing exports from the
+        // CONVERGED env (values authoritative — a forward-ref-dependent equ
+        // gets its final value, not pass 0's).
+        let src = "\tcpu 68000\n\
+                   \tifndef GUARD\n\
+                   GUARD = 1\n\
+                   FOO = 42\n\
+                   V struct\n\
+                   a ds.b 1\n\
+                   b ds.w 1\n\
+                   V endstruct\n\
+                   \tendif\n\
+                   Stub:\n\
+                   \tdc.b 0\n";
+        let m = run(src, &Options::default()).expect("assemble");
+        let foo = equ_syms_named(&m, "FOO");
+        assert_eq!(foo.len(), 1, "guarded FOO must still export exactly once, got {foo:?}");
+        assert_eq!(foo[0].expr, sigil_ir::Expr::Int(42));
+        let vlen = equ_syms_named(&m, "V_len");
+        assert_eq!(vlen.len(), 1, "guarded V_len must still export exactly once, got {vlen:?}");
+        let guard = equ_syms_named(&m, "GUARD");
+        assert_eq!(guard.len(), 1, "the guard symbol itself is an int equate and exports too");
     }
 
     #[test]

@@ -415,6 +415,7 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `equ_syms` empty. Any `extern("X")` on such a symbol fails the link with a misleading
   "unresolved symbol" even though the front-end folds it fine. Harmless today (aeon's
   constants/structs are unguarded), but a conventional include guard around a constants file
-  would silently break every drift guard reading it. Fix direction: export from the CONVERGED
-  pass's env rather than re-executing the directive (or re-seed exports for guard-skipped
-  blocks). — OPEN (latent; fix before any port adds include guards).
+  would silently break every drift guard reading it. — CLOSED tranche 3 (Volence's call at the
+  packet review): the run loop carries the ever-exported set across passes and re-attaches
+  missing exports from the CONVERGED env (values authoritative — a forward-ref-dependent equ
+  gets its final value); pinned by `ifndef_guarded_equs_and_structs_still_export`.
