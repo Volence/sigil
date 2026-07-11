@@ -16,12 +16,12 @@
 //!   $FB entry is `bra.w AnimateSprite.cc_delete` (the shared delete stub
 //!   lives in the OTHER interpreter's scope). Spec §5's `ProcName.label`
 //!   surface, first real consumer.
-//! - **A cross-seam bare `jmp`/`jsr` that must relax to abs.w** — the
-//!   `.cc_delete` stub's `jmp DeleteObject` assembles to `4EF8 281C`
-//!   (abs.SHORT) in the reference; the .emp spells the same bare form and
-//!   the link-seam relaxation must land on the identical encoding. The
-//!   outbound consumer proves the mirror-image direction (`jsr
-//!   AnimateSprite` from an AS unit, undefined in-unit).
+//! - **Cross-seam width relaxation, both directions** — `.cc_delete`'s
+//!   `jbra DeleteObject` (step 2's static-tail-call spelling; step 1's
+//!   `jmp` landed abs.w `4EF8`) must relax to `bra.w` with the per-shape
+//!   displacement, and the outbound consumer proves the mirror image: a
+//!   bare `jsr AnimateSprite` from an AS unit (undefined in-unit) relaxes
+//!   to abs.w.
 //! - **A comptime-fn template with MEMORY operands and a module const** —
 //!   `reload_anim_timer(src: Reg)` expands `Sst.anim_timer(a0)` +
 //!   `#DUR_DYNAMIC` inside `asm {}` (aabb only spliced registers/labels).
@@ -48,8 +48,8 @@
 //!
 //! ## Reference windows (2026-07-10 pins, from the master listings)
 //!
-//! Plain (map base `$2D78`): `s4.bin[0x2D78..0x308A]` (0x312 bytes).
-//! Debug (map base `$3032`): `s4.debug.bin[0x3032..0x3344]` (0x312 bytes).
+//! Plain (map base `$2D78`): `s4.bin[0x2D78..0x3080]` (0x308 bytes).
+//! Debug (map base `$3032`): `s4.debug.bin[0x3032..0x333A]` (0x308 bytes).
 //! Length is shape-INVARIANT (no `__DEBUG__` code in this file).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
@@ -88,23 +88,26 @@ struct Shape {
 
 /// Region-relative proc/anchor offsets — shape-INVARIANT (equal length, no
 /// conditional code), so shared constants rather than `Shape` fields.
-/// `.cc_delete`'s `jmp DeleteObject` (`4EF8 xxxx`).
-const CC_DELETE_OFF: usize = 0x10A;
-/// `AnimateSprite_PerFrame:` (listing `$2EF2`/`$31AC`).
-const PERFRAME_OFF: usize = 0x17A;
-/// `RefreshSpritePieceCount:` (listing `$306C`/`$3326`).
-const REFRESH_OFF: usize = 0x2F4;
+/// (Step 2 shrank the region 0x312 → 0x308: bare Bcc/jbra relaxation found
+/// five suboptimal hand widths; every offset below is from the re-derived
+/// listings.)
+/// `.cc_delete`'s `jbra DeleteObject` (bra.w `6000 xxxx`).
+const CC_DELETE_OFF: usize = 0x104;
+/// `AnimateSprite_PerFrame:` (listing `$2EEC`/`$31A6`).
+const PERFRAME_OFF: usize = 0x174;
+/// `RefreshSpritePieceCount:` (listing `$3062`/`$331C`).
+const REFRESH_OFF: usize = 0x2EA;
 
 const PLAIN: Shape = Shape {
     base: 0x2D78,
-    len: 0x312,
-    labels: &[("DeleteObject", 0x281C), ("Sound_PlaySFX", 0x5E66)],
+    len: 0x308,
+    labels: &[("DeleteObject", 0x281C), ("Sound_PlaySFX", 0x5E5C)],
 };
 
 const DEBUG: Shape = Shape {
     base: 0x3032,
-    len: 0x312,
-    labels: &[("DeleteObject", 0x29AE), ("Sound_PlaySFX", 0x7324)],
+    len: 0x308,
+    labels: &[("DeleteObject", 0x29AE), ("Sound_PlaySFX", 0x731A)],
 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
@@ -307,8 +310,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// The region reference gate + cross-seam pins + the outbound bare-name proof
-/// + the drift guards, shared body. Reference shapes always run
+/// The region reference gate + cross-seam pins + the outbound bare-name
+/// proof + the drift guards, shared body. Reference shapes always run
 /// SOUND_DRIVER_ENABLED=1 (both pinned ROMs have sound on).
 fn reference_gate(shape: &Shape, rom_name: &str) {
     let rom_path = aeon_dir().join(rom_name);
@@ -332,14 +335,17 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         &format!("animate vs {rom_name}[{base:#x}..{:#x}]", base + shape.len),
     );
 
-    // Cross-seam pin: `.cc_delete`'s `jmp DeleteObject` must carry the abs.w
-    // encoding (`4EF8`) + DeleteObject's per-shape address — the campaign's
-    // first cross-seam bare jmp, and the operand the debug shape moves.
+    // Cross-seam pin: `.cc_delete`'s `jbra DeleteObject` (step 2 — the static
+    // tail-call house spelling; step 1 transcribed the original `jmp`, which
+    // relaxed to abs.w `4EF8`) must relax to bra.w with the per-shape
+    // displacement — same 4-byte length, so no region slide.
     let delete_obj = shape.labels.iter().find(|(n, _)| *n == "DeleteObject").unwrap().1;
+    let disp =
+        (delete_obj as i64 - (shape.base as i64 + CC_DELETE_OFF as i64 + 2)) as i16 as u16;
     assert_eq!(
         &section.bytes[CC_DELETE_OFF..CC_DELETE_OFF + 4],
-        &[0x4E, 0xF8, (delete_obj >> 8) as u8, delete_obj as u8],
-        "`jmp DeleteObject` must land on the abs.w encoding at the per-shape address"
+        &[0x60, 0x00, (disp >> 8) as u8, disp as u8],
+        "`jbra DeleteObject` must relax to bra.w with the per-shape displacement"
     );
 
     // Outbound bare-name proof: the AS-side bare `jsr AnimateSprite` must
@@ -375,13 +381,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) the `animate` region == `s4.bin[0x2D78..0x308A]`.
+/// (plain) the `animate` region == `s4.bin[0x2D78..0x3080]`.
 #[test]
 fn animate_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) the `animate` region == `s4.debug.bin[0x3032..0x3344]`.
+/// (debug) the `animate` region == `s4.debug.bin[0x3032..0x333A]`.
 #[test]
 fn animate_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

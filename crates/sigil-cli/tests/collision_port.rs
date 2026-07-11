@@ -54,8 +54,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$308A`): `s4.bin[0x308A..0x31F0]` (0x166 bytes).
-//! Debug (map base `$3344`): `s4.debug.bin[0x3344..0x34AA]` (0x166 bytes).
+//! Plain (map base `$3080`): `s4.bin[0x3080..0x31E6]` (0x166 bytes).
+//! Debug (map base `$333A`): `s4.debug.bin[0x333A..0x34A0]` (0x166 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -102,8 +102,8 @@ struct Shape {
     dynamic_slots: u32,
 }
 
-const PLAIN: Shape = Shape { base: 0x308A, player_1: 0xFFFF_89EE, dynamic_slots: 0xFFFF_8A8E };
-const DEBUG: Shape = Shape { base: 0x3344, player_1: 0xFFFF_8A10, dynamic_slots: 0xFFFF_8AB0 };
+const PLAIN: Shape = Shape { base: 0x3080, player_1: 0xFFFF_89EE, dynamic_slots: 0xFFFF_8A8E };
+const DEBUG: Shape = Shape { base: 0x333A, player_1: 0xFFFF_8A10, dynamic_slots: 0xFFFF_8AB0 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
 fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
@@ -350,13 +350,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) the `collision` region == `s4.bin[0x308A..0x31F0]`.
+/// (plain) the `collision` region == `s4.bin[0x3080..0x31E6]`.
 #[test]
 fn collision_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) the `collision` region == `s4.debug.bin[0x3344..0x34AA]`.
+/// (debug) the `collision` region == `s4.debug.bin[0x333A..0x34A0]`.
 #[test]
 fn collision_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

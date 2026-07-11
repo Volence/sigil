@@ -439,9 +439,9 @@ pub fn assemble_mixed_tranche6_as_side(aeon: &Path, debug: bool) -> Result<Modul
 /// Assemble the AS side of the tranche-7 SIXTEEN-module mixed build: everything
 /// `assemble_mixed_tranche6_as_side` gates PLUS `SIGIL_EMP_COLLISION` — the
 /// `engine/engine.inc` gate wrapping the `engine/objects/collision.asm` include
-/// (else-arm `org $31F0` plain / `org $34AA` debug). Back in the ENGINE block
-/// (like game_loop/collision_lookup), the window it opens (`$308A..$31F0` plain
-/// / `$3344..$34AA` debug) is filled by `engine/objects/collision.emp` — whose
+/// (else-arm `org $31E6` plain / `org $34A0` debug). Back in the ENGINE block
+/// (like game_loop/collision_lookup), the window it opens (`$3080..$31E6` plain
+/// / `$333A..$34A0` debug) is filled by `engine/objects/collision.emp` — whose
 /// `TouchResponse` is the sole `pub proc` export (called from the engine object
 /// manager). The module reads only GAME-RAM `Player_1`/`Dynamic_Slots` across
 /// the seam (abs.w, per-shape); its dispatch is a self-contained module-level
@@ -478,7 +478,7 @@ pub fn assemble_mixed_tranche7_as_side(aeon: &Path, debug: bool) -> Result<Modul
 /// `assemble_mixed_tranche7_as_side` gates PLUS `SIGIL_EMP_RINGS` — the
 /// `engine/engine.inc` gate wrapping the `engine/objects/rings.asm` include
 /// (else-arm `org $33A8` plain / `org $36BE` debug). The window it opens
-/// (`$31F0..$33A8` plain / `$34AA..$36BE` debug) is filled by
+/// (`$31E6..$33A8` plain / `$34A0..$36BE` debug) is filled by
 /// `engine/objects/rings.emp` — the campaign's FIRST shape-dependent-LENGTH
 /// region (the `__DEBUG__` assert block exists only in the debug shape), so
 /// the two orgs differ by more than the usual base slide. All five procs are
@@ -519,8 +519,8 @@ pub fn assemble_mixed_tranche8_as_side(aeon: &Path, debug: bool) -> Result<Modul
 
 /// `assemble_mixed_tranche8_as_side` gates PLUS `SIGIL_EMP_ANIMATE` — the
 /// `engine/engine.inc` gate wrapping the `engine/objects/animate.asm` include
-/// (else-arm `org $308A` plain / `org $3344` debug). The window it opens
-/// (`$2D78..$308A` plain / `$3032..$3344` debug — 0x312 bytes, length
+/// (else-arm `org $3080` plain / `org $333A` debug). The window it opens
+/// (`$2D78..$3080` plain / `$3032..$333A` debug — 0x308 bytes, length
 /// shape-INVARIANT: no `__DEBUG__` code) is filled by
 /// `engine/objects/animate.emp`. animate sits UPSTREAM of every other gated
 /// engine region, so its gate orgs are the first in the ladder's sliding

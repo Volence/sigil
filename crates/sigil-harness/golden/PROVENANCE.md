@@ -595,3 +595,56 @@ Full strict workspace = **2048 passed / 0 failed**; clippy clean.
   **`c973091d14c5cb5657f7e900b08584ce876c13da2bb95bc0f4e5f291537aad18`**.
 - Debug `s4.debug.bin`: sha256
   **`6a0f9c3f44986916ddd971cbc541cce1b199c6c26b4e16bf27073c28ffaf15d0`**.
+
+## 2026-07-10 — tranche 9 (animate.emp) step-1/step-2 re-baseline
+
+Tranche 9 ported `engine/objects/animate.asm` → `animate.emp`
+(`SIGIL_EMP_ANIMATE` gate; region base plain `$2D78` / debug `$3032`,
+length shape-INVARIANT — no `__DEBUG__` code).
+
+Step 1 was byte-exact against the tranche-8 pins (`c973091d…`/`6a0f9c3f…`)
+at len 0x312, including the AF_* equ re-home animate.asm →
+engine/constants.asm (equ moves emit nothing; script data files keep their
+truth when the gate strips animate.asm from the AS side).
+
+Step 2 (house format) changed bytes TWICE over:
+
+- `.cc_delete`'s `jmp DeleteObject` (`4EF8`, abs.w) → `jbra DeleteObject`
+  relaxing to `bra.w` — the static-tail-call house spelling (jmp reserved
+  for computed targets). Length-neutral.
+- **The bare-Bcc relaxation found FIVE suboptimal hand widths** (`bhi.w`
+  ×2, `bhs.w` ×2, one `bra.w` tail-call — all reached short):
+  **region 0x312 → 0x308**, the first time the rule's width-selection
+  actually shrank a port (t7/t8 hand widths were optimal). The −10 slid
+  every downstream engine pin (absorbed at `org $10000`):
+  - gate orgs (engine.inc, from listings): animate resume `$3080`/`$333A`;
+    collision resume `$31E6`/`$34A0`; rings resume `$339A`/`$36B0`;
+    collision_lookup resume `$4C10`/`$5434`; sound_api resume
+    `$5F40`/`$73FE`.
+  - region bases: collision `$3080`/`$333A`; rings `$31E6`/`$34A0`;
+    collision_lookup `$4BEC`/`$5410`; sound_api `$5D5C`/`$721A`.
+  - labels: `Collected_MarkRing` `$341E`/`$3796`; `EntityLoaded_Clear`
+    `$362E`/`$3C02`; `EntityWindow_EntryForSection` `$3642`/`$3C78`;
+    `Sound_PlaySFX` `$5E5C`/`$731A`; `Sound_DrainSfxRing` `$5EA2`/`$7360`;
+    `Sound_PlayRing` `$5EF2`/`$73B0`; `Tile_Cache_GetCollision`
+    `$4304`/`$4A70`. `DeleteObject` (upstream) and all RAM cells unmoved;
+    `MDDBG__*` unmoved (past `org $10000`).
+  - byte-pin arrays: tranche-5's game_loop `bsr.w Sound_DrainSfxRing`
+    displacement `$3BA8`→`$3B9E` plain / `$4FD8`→`$4FCE` debug.
+
+The AS twin LOCKSTEP spells the five new widths EXPLICITLY (`.s`,
+commented) — the sigil AS front-end deliberately pins branch widths
+(no relaxation on the .asm side), so bare Bcc is an `.emp`-only surface;
+asl was verified to select the identical widths (same hashes from the
+bare and explicit spellings). Pinned exceptions, commented in place: the
+two 9-entry `bra.w` dispatch tables (load-bearing 4-byte slots under a
+pc-indexed jmp) and the `reload_anim_timer` template's `bne.s`
+(byte-locked to the macro twin).
+
+Full strict workspace = **2054 passed / 0 failed**.
+
+- Aeon worktree branch: `sigil-emp-tranche9`.
+- Non-debug `s4.bin`: sha256
+  **`3b0357ad651152e10886ac6e4d1da3ea457d6acfc52b077a8e80fb9359a55927`**.
+- Debug `s4.debug.bin`: sha256
+  **`8cd33561714d4fc95ce3508c05df6d90fc6ca54478c1f4a7e9de292bffd272e3`**.
