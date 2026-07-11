@@ -28,6 +28,11 @@ pub mod test_support;
 /// bin and the `repin_pins` staleness test.
 pub mod repin;
 
+/// GENERATED layout pins (regions/symbols/offsets in both build shapes) —
+/// the single source the port tests import. Regenerate with
+/// `cargo run -p sigil-harness --bin repin`; never edit by hand.
+pub mod pins;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;
