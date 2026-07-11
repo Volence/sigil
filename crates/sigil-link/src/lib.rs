@@ -463,6 +463,30 @@ fn apply_fixup(
             bytes[site_abs as usize] = (w >> 8) as u8;
             bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
         }
+        FixupKind::ImmWord16Be => {
+            // A `#imm16` word immediate holds the LOW 16 bits of a value whose
+            // high 16 bits must be a consistent extension — all-zero (unsigned
+            // value / objroutine offset in [0, 0xFFFF]) or all-one (sign-extended
+            // RAM address like $FFFF9EDE). This is AS's word-immediate rule; it
+            // is the UNION of Value16Be (rejects the address) and Abs16Be
+            // (rejects the [0x8000, 0xFFFF] upper-unsigned half). Truncating to
+            // u32 first canonicalizes both the sign-extended-i64 ($…FFFF9E8E)
+            // and raw-u32 ($FFFF9E8E) representations of a RAM address.
+            let hi = (value as u32) >> 16;
+            if hi != 0 && hi != 0xFFFF {
+                diags.push(diag(
+                    format!(
+                        "value {value:#X} does not fit a 16-bit immediate \
+                         (high half neither zero- nor sign-extension) in section {section}"
+                    ),
+                    span,
+                ));
+                return;
+            }
+            let w = (value & 0xFFFF) as u16;
+            bytes[site_abs as usize] = (w >> 8) as u8;
+            bytes[site_abs as usize + 1] = (w & 0xFF) as u8;
+        }
         FixupKind::Abs32Be => {
             let w = value as u32;
             bytes[site_abs as usize] = (w >> 24) as u8;
@@ -1530,6 +1554,47 @@ mod tests {
         };
         let err = link(&[bad], &stubs).unwrap_err();
         assert!(err.iter().any(|d| d.message.contains("abs.w")), "got: {:?}", err);
+    }
+
+    #[test]
+    fn imm_word16_be_accepts_the_full_word_immediate_union() {
+        // A `.w` link immediate accepts the UNION of unsigned `[0, 0xFFFF]` and a
+        // sign-extended RAM address — the two cases the single-window kinds each
+        // reject: `Value16Be` rejects the address (negative), `Abs16Be` rejects
+        // the `[0x8000, 0xFFFF]` upper-unsigned half (a valid objroutine offset).
+        let mut stubs = SymbolTable::new();
+        stubs.define("Upper", SymbolValue::Int(0xF800)); // objroutine offset, upper bank half
+        stubs.define("Ram", SymbolValue::Int(0xFFFF_9EDE)); // sign-extended RAM address
+        stubs.define("Small", SymbolValue::Int(0x0F7C)); // ordinary small offset
+        stubs.define("Over", SymbolValue::Int(0x1_9EDE)); // genuine >16-bit value
+
+        let write = |sym: &str| {
+            let sec = Section {
+                name: "s".to_string(), cpu: Cpu::M68000, vma_base: None, lma: 0x400, labels: vec![],
+                fragments: vec![Fragment::Data(DataFragment {
+                    bytes: vec![0, 0],
+                    fixups: vec![Fixup {
+                        kind: FixupKind::ImmWord16Be, offset: 0, target: Expr::Sym(sym.into()),
+                    }],
+                    span: span(),
+                })],
+                placement: SectionPlacement::Pinned,
+                reserved_span: 0, group: None, bank: None, equ_syms: Vec::new(),
+            };
+            link(&[sec], &stubs).map(|img| img.section("s").unwrap().bytes.clone())
+        };
+
+        // Upper-unsigned half: Abs16Be would REJECT this; ImmWord16Be accepts.
+        assert_eq!(write("Upper").unwrap(), vec![0xF8, 0x00]);
+        // Sign-extended RAM address: Value16Be would REJECT this; low word stored.
+        assert_eq!(write("Ram").unwrap(), vec![0x9E, 0xDE]);
+        assert_eq!(write("Small").unwrap(), vec![0x0F, 0x7C]);
+        // Genuine >16-bit value: neither zero- nor sign-extension → loud error.
+        let err = write("Over").unwrap_err();
+        assert!(
+            err.iter().any(|d| d.message.contains("16-bit immediate")),
+            "got: {:?}", err
+        );
     }
 
     #[test]

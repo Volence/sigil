@@ -833,9 +833,11 @@ fn imm_link_movea_defers_value32_fixup() {
 #[test]
 fn imm_link_word_defers_value16_fixup() {
     // Tranche 6 (the objroutine width): `move.w #extern("Tbl"), d0` — a
-    // link-time imm16 encodes with a zero placeholder and ONE word-address
-    // fixup at 2 (Abs16Be: a `.w` symbolic immediate carries an address, so it
-    // takes word-ADDRESS truncation/range semantics — tranche-10 refinement).
+    // link-time imm16 encodes with a zero placeholder and ONE word-immediate
+    // fixup at 2 (ImmWord16Be: a `.w` immediate accepts the UNION of unsigned
+    // `[0, 0xFFFF]` and a sign-extended RAM address — AS's rule; tranche-10
+    // refinement over the earlier Abs16Be, which rejected upper-unsigned
+    // objroutine offsets `[0x8000, 0xFFFF]`).
     // (Supersedes tranche 5's refusal probe for this width.)
     use sigil_ir::{Expr, Fragment};
     let (code, ediags) = eval_asm_with(&asm_1("move.w #extern(\"Tbl\"), d0"), &[]);
@@ -846,7 +848,7 @@ fn imm_link_word_defers_value16_fixup() {
         Fragment::Data(df) => {
             assert_eq!(df.bytes, vec![0x30, 0x3C, 0x00, 0x00], "move.w #0, d0 hole");
             assert_eq!(df.fixups.len(), 1, "one fixup");
-            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Abs16Be);
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::ImmWord16Be);
             assert_eq!(df.fixups[0].offset, 2);
             assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
         }
@@ -859,8 +861,8 @@ fn imm_link_word_objroutine_store_collapses_zero_disp_dest() {
     // THE tranche-6 demand shape: `move.w #(extern("Main") - extern("Base")),
     // $0(a0)` — a link-time symbol DIFFERENCE in a word immediate, stored to
     // an offset-0 EA. The dest collapses to `(a0)` (asl's 30BC form, 4 bytes)
-    // and the Sub target rides one word-address fixup at 2 (Abs16Be — the
-    // difference folds to a small offset that passes its i16 check identically).
+    // and the Sub target rides one word-immediate fixup at 2 (ImmWord16Be — the
+    // difference folds to a small offset in the accepted `[0, 0xFFFF]` half).
     use sigil_ir::{Expr, Fragment};
     let (code, ediags) = eval_asm_with(
         &asm_1("move.w #(extern(\"Main\") - extern(\"Base\")), $0(a0)"),
@@ -873,7 +875,7 @@ fn imm_link_word_objroutine_store_collapses_zero_disp_dest() {
         Fragment::Data(df) => {
             assert_eq!(df.bytes, vec![0x30, 0xBC, 0x00, 0x00], "move.w #0, (a0) hole");
             assert_eq!(df.fixups.len(), 1, "one fixup");
-            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Abs16Be);
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::ImmWord16Be);
             assert_eq!(df.fixups[0].offset, 2);
             match &df.fixups[0].target {
                 Expr::Binary { .. } => {}
@@ -889,9 +891,9 @@ fn imm_link_word_plus_pinned_abs_w_emits_two_fixups() {
     // Tranche 10 (core's Init/Alloc SP-write shape): a LINK-time word immediate
     // SOURCE combined with a PINNED-absolute `.w` destination —
     // `move.w #extern("Tbl"), (SP).w`. Two INDEPENDENT fixups at distinct
-    // offsets: the imm hole @2 (Abs16Be word-address, source ext word first)
-    // and the abs.w ext word @4 (Abs16Be). Opcode `31FC` (`move.w #imm,
-    // (abs).w`).
+    // offsets: the imm hole @2 (ImmWord16Be word-immediate, source ext word
+    // first) and the abs.w ext word @4 (Abs16Be — a real EA address). Opcode
+    // `31FC` (`move.w #imm, (abs).w`).
     use sigil_ir::{Expr, Fragment};
     let (code, ediags) = eval_asm_with(&asm_1("move.w #extern(\"Tbl\"), (SP).w"), &[]);
     assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
@@ -905,8 +907,8 @@ fn imm_link_word_plus_pinned_abs_w_emits_two_fixups() {
                 "move.w #0, (0).w hole (opcode + imm hole + abs.w hole)"
             );
             assert_eq!(df.fixups.len(), 2, "exactly two independent fixups");
-            // The imm SOURCE ext word @2 (word-address semantics).
-            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Abs16Be);
+            // The imm SOURCE ext word @2 (word-immediate semantics).
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::ImmWord16Be);
             assert_eq!(df.fixups[0].offset, 2);
             assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
             // The pinned abs.w ext word @4 (after opcode word + imm field).
@@ -935,8 +937,8 @@ fn imm_link_word_cmpi_plus_pinned_abs_w_emits_two_fixups() {
                 "cmpi.w #0, (0).w hole"
             );
             assert_eq!(df.fixups.len(), 2, "exactly two independent fixups");
-            // The imm SOURCE ext word @2 (word-address semantics).
-            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Abs16Be);
+            // The imm SOURCE ext word @2 (word-immediate semantics).
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::ImmWord16Be);
             assert_eq!(df.fixups[0].offset, 2);
             assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
             assert_eq!(df.fixups[1].kind, sigil_ir::FixupKind::Abs16Be);
