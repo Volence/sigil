@@ -857,6 +857,82 @@ fn imm_link_word_defers_value16_fixup() {
 }
 
 #[test]
+fn imm_link_bare_label_long_matches_extern_form() {
+    // C1 item 1: a BARE label immediate (`movea.l #Tbl, a0`) defers to the SAME
+    // Value32Be fixup the `#extern("Tbl")` form does — byte-identical, same
+    // target `Sym("Tbl")`. The self-extern ceremony is gone.
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(&asm_1("movea.l #Tbl, a0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.bytes, vec![0x20, 0x7C, 0x00, 0x00, 0x00, 0x00], "movea.l #0, a0 hole");
+            assert_eq!(df.fixups.len(), 1, "one fixup");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value32Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_bare_label_difference_matches_extern_form() {
+    // C1 item 1 — THE objroutine retrofit shape: `move.w #Main - Base, $0(a0)`
+    // with bare labels lowers byte-identically to the `extern(..) - extern(..)`
+    // form (imm_link_word_objroutine_store_collapses_zero_disp_dest): dest
+    // collapses to `(a0)`, one ImmWord16Be @2 targeting a `Sub` link expr.
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(&asm_1("move.w #Main - Base, $0(a0)"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.bytes, vec![0x30, 0xBC, 0x00, 0x00], "move.w #0, (a0) hole");
+            assert_eq!(df.fixups.len(), 1, "one fixup");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::ImmWord16Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            match &df.fixups[0].target {
+                Expr::Binary { op: sigil_ir::expr::BinOp::Sub, lhs, rhs } => {
+                    assert_eq!(**lhs, Expr::Sym("Main".into()));
+                    assert_eq!(**rhs, Expr::Sym("Base".into()));
+                }
+                other => panic!("expected Sub(Sym,Sym), got {other:?}"),
+            }
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_bare_label_plus_const_folds_addend() {
+    // C1 item 1: `label + const` in an immediate folds the addend into an
+    // `Add` link expr (the tranche-9 pc-rel addend precedent).
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(&asm_1("move.w #Routine + 4, d0"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.fixups.len(), 1, "one fixup");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::ImmWord16Be);
+            match &df.fixups[0].target {
+                Expr::Binary { op: sigil_ir::expr::BinOp::Add, lhs, rhs } => {
+                    assert_eq!(**lhs, Expr::Sym("Routine".into()));
+                    assert_eq!(**rhs, Expr::Int(4));
+                }
+                other => panic!("expected Add(Sym,Int), got {other:?}"),
+            }
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
 fn imm_link_word_objroutine_store_collapses_zero_disp_dest() {
     // THE tranche-6 demand shape: `move.w #(extern("Main") - extern("Base")),
     // $0(a0)` — a link-time symbol DIFFERENCE in a word immediate, stored to

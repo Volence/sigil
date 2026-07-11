@@ -310,6 +310,18 @@ pub struct Evaluator<'a> {
     /// `unknown name`. A COUNTER (not a bool) so nested value positions restore
     /// correctly.
     label_ctx: u32,
+    /// Depth of enclosing IMMEDIATE-OPERAND contexts (C1 item 1). A SUBSET of
+    /// [`label_ctx`](Self::label_ctx): bumped only inside an instruction `#`
+    /// immediate (by [`in_imm_link_ctx`](Self::in_imm_link_ctx), which bumps
+    /// `label_ctx` too). Where this is non-zero a bareword still becomes a
+    /// [`Value::Label`](crate::value::Value::Label) AND that label participates
+    /// in link-time arithmetic (`#Main - Base`, `#Routine + 4`) — the label is
+    /// normalized to a `LinkExpr(Sym)` before an arithmetic op so the existing
+    /// `here()`-lift path builds the residual `Sub`/`Add` tree. OUTSIDE an
+    /// immediate (data initializers, call arguments) a `Value::Label` stays
+    /// arithmetic-inert, so `data D = E{ code: init + 2 }` keeps its loud
+    /// label-arithmetic error (pinned by `tests/label_values.rs`).
+    imm_ctx: u32,
     /// Cross-module type-only records for `pub data` items of struct type
     /// (D-PP.5): item name → struct type name. A `pub data Player_1: Sst` emits
     /// bytes, so — unlike a `pub struct`/`const` — it is NOT injected into a
@@ -399,6 +411,7 @@ impl<'a> Evaluator<'a> {
             reg_pointee_struct: HashMap::new(),
             cpu: None,
             label_ctx: 0,
+            imm_ctx: 0,
             imported_item_types: HashMap::new(),
             data_value_memo: HashMap::new(),
             data_value_in_progress: Vec::new(),
@@ -437,6 +450,27 @@ impl<'a> Evaluator<'a> {
     /// label where a symbol reference is meaningful.
     pub(super) fn label_ctx_active(&self) -> bool {
         self.label_ctx > 0
+    }
+
+    /// Run `body` inside an IMMEDIATE-OPERAND context (C1 item 1): label-value
+    /// resolution is enabled (as [`in_label_ctx`](Self::in_label_ctx)) AND a
+    /// label may participate in link-time arithmetic. Used only when mapping an
+    /// instruction `#` immediate, so `move.w #Main - Base, d0` folds to a
+    /// `LinkExpr(Sub(..))` while a bare label in a data field or a call argument
+    /// stays arithmetic-inert. Both counters restore on the way out.
+    pub(super) fn in_imm_link_ctx<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
+        self.label_ctx += 1;
+        self.imm_ctx += 1;
+        let out = body(self);
+        self.imm_ctx -= 1;
+        self.label_ctx -= 1;
+        out
+    }
+
+    /// Whether an immediate-operand context is active (C1 item 1) — a label may
+    /// be folded into a link-time arithmetic expression here.
+    pub(super) fn imm_ctx_active(&self) -> bool {
+        self.imm_ctx > 0
     }
 
     /// Set the VMA `here()` resolves to for the item about to be evaluated
@@ -912,7 +946,13 @@ impl<'a> Evaluator<'a> {
         // must NOT fold `.bar` (or a bare name) into a silent Label; it is a loud
         // error in the const's own body. Restored on the way out.
         let saved_label_ctx = std::mem::take(&mut self.label_ctx);
+        // A const/equ initializer is also NOT an immediate context (C1 item 1):
+        // `#SOME_CONST` resolves the const in a PURE comptime scope, so a bare
+        // name in the const's body must hard-error, not fold into a link expr.
+        // Reset `imm_ctx` alongside `label_ctx` to keep the subset invariant.
+        let saved_imm_ctx = std::mem::take(&mut self.imm_ctx);
         let v = self.eval_expr(value_expr, &mut env);
+        self.imm_ctx = saved_imm_ctx;
         self.label_ctx = saved_label_ctx;
         self.in_progress.pop();
         self.const_memo.insert(name.to_string(), v.clone());

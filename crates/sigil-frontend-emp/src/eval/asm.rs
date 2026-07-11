@@ -658,9 +658,26 @@ impl Evaluator<'_> {
     ) -> Option<CodeOperand> {
         match op {
             Operand::Imm(e) => {
-                let v = self.eval_expr(e, env);
+                // C1 item 1: an immediate is the third and last deferral
+                // position — an unresolved bareword (`#TestSolid_Main`) becomes
+                // a deferred link symbol, and `label ± const` / `label − label`
+                // fold into a link-time expr (the objroutine store shape). The
+                // `in_imm_link_ctx` scope enables both the bareword→`Label`
+                // fallback AND label arithmetic; a comptime bareword outside an
+                // immediate keeps its loud `unknown name` (the totality fence).
+                let v = self.in_imm_link_ctx(|this| this.eval_expr(e, env));
                 if matches!(v, Value::Poison) {
                     return None;
+                }
+                // A bare single label (`#TestSolid_Main`) — the D-PP.3 label
+                // value in immediate position — defers to the SAME imm fixup a
+                // string/extern would (byte-identical to `#extern("…")`). Width
+                // routing (`.w` → `ImmWord16Be`, `.l` → `Value32Be`) is policed
+                // at lowering, where the resolved size is known.
+                if let Value::Label(n) = &v {
+                    return Some(CodeOperand::ImmLink {
+                        target: sigil_ir::expr::Expr::Sym(n.clone()),
+                    });
                 }
                 // A link-time immediate (`#extern(...)` / an equ-aliased
                 // extern sum / label arithmetic) DEFERS to a `Value32Be`
