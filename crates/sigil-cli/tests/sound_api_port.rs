@@ -29,6 +29,7 @@
 //!   (`preserves(d1/a0)` on Sound_PlaySFX — the hblank precedent).
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$5BE6`): `s4.bin[0x5BE6..0x5DCA]` (0x1E4 bytes).
 //! Debug (map base `$70A4`): `s4.debug.bin[0x70A4..0x7288]` (0x1E4 bytes).
@@ -45,6 +46,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
@@ -59,8 +61,8 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// Per-shape gate geometry (listing symbol tables, 2026-07-10 pins). The
-/// constants (equ values) are SHAPE-INVARIANT — including the
+/// Per-shape gate geometry (sourced from `sigil_harness::pins` — regenerate
+/// via repin). The constants (equ values) are SHAPE-INVARIANT — including the
 /// `SND_MUSIC_PARAM_*` block (the Z80 driver's RAM layout is identical in
 /// both shapes; only 68k-side placement moves).
 struct Shape {
@@ -74,24 +76,24 @@ struct Shape {
 }
 
 const PLAIN: Shape = Shape {
-    base: 0x5BE6,
-    ring_sfx_speaker: 0xFFFF_AF30,
-    sfx_ring_buf: 0xFFFF_AF32,
-    sfx_ring_wr: 0xFFFF_AF3A,
-    sfx_ring_rd: 0xFFFF_AF3B,
-    song_table: 0x63AE0,
-    song_patch_table: 0x63AE4,
+    base: pins::SOUND_API.plain_base,
+    ring_sfx_speaker: pins::RING_SFX_SPEAKER.plain,
+    sfx_ring_buf: pins::SFX_RING_BUF.plain,
+    sfx_ring_wr: pins::SFX_RING_WR.plain,
+    sfx_ring_rd: pins::SFX_RING_RD.plain,
+    song_table: pins::SONG_TABLE.plain,
+    song_patch_table: pins::SONG_PATCH_TABLE.plain,
 };
 const DEBUG: Shape = Shape {
-    base: 0x70A4,
-    ring_sfx_speaker: 0xFFFF_AF52,
-    sfx_ring_buf: 0xFFFF_AF54,
-    sfx_ring_wr: 0xFFFF_AF5C,
-    sfx_ring_rd: 0xFFFF_AF5D,
-    song_table: 0x65522,
-    song_patch_table: 0x6552E,
+    base: pins::SOUND_API.debug_base,
+    ring_sfx_speaker: pins::RING_SFX_SPEAKER.debug,
+    sfx_ring_buf: pins::SFX_RING_BUF.debug,
+    sfx_ring_wr: pins::SFX_RING_WR.debug,
+    sfx_ring_rd: pins::SFX_RING_RD.debug,
+    song_table: pins::SONG_TABLE.debug,
+    song_patch_table: pins::SONG_PATCH_TABLE.debug,
 };
-const REGION_LEN: usize = 0x1E4;
+const REGION_LEN: usize = pins::SOUND_API.plain_len;
 
 /// The AS-side constants the .emp reads through the link: the EA-position
 /// equs (slot addresses — deliberately NOT mirrored) and the 7 drift-guard
@@ -174,9 +176,9 @@ fn compile_real_file(
          [[region]]\n\
          name = \"sound_api\"\n\
          lma_base = {:#x}\n\
-         size = 0x1E4\n\
+         size = {:#x}\n\
          kind = \"rom\"\n",
-        shape.base
+        shape.base, REGION_LEN
     );
     let map = sigil_link::load_map(&map_toml).expect("map must load");
     let mut sections = module.sections;
@@ -296,8 +298,8 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         &format!("sound_api vs {rom_name}[{lo:#x}..{:#x}]", lo + REGION_LEN),
     );
 
-    // Outbound proof: `bsr.w Sound_PlaySFX` resolves to base + 0x100
-    // (Sound_PlaySFX's offset inside the block: $5E6A - $5BE6 — invariant, the
+    // Outbound proof: `bsr.w Sound_PlaySFX` resolves to base + SOUND_PLAY_SFX_OFF
+    // (Sound_PlaySFX's offset inside the block — invariant, the
     // block only slid -36 wholesale in the tranche-7b interact fix).
     let consumer = linked
         .sections
@@ -305,7 +307,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         .find(|s| s.lma == 0x8000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let target = shape.base as i64 + 0x100;
+    let target = shape.base as i64 + pins::SOUND_PLAY_SFX_OFF as i64;
     let expected_disp = (target - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
