@@ -31,9 +31,27 @@ re-green. No emulator time needed at this step.
   (b) reads-wrong / could-be-better findings;
   (c) new mirrors → kill-list rows, gaps → ledger.
 
-**Step 4 — Back-propagate**: apply the retrospect items to ALL previously
-converted files, not just jot them — the corpus converges on one format
-instead of stratifying by era.
+**Step 4 — Construct pass** (Volence-ratified 2026-07-11): the same reflex
+as the demanded-features law, widened from language PRIMITIVES to reusable
+MACROS/CONSTRUCTS — build the toolbox up WHILE live-porting so the corpus
+compounds instead of re-hand-rolling shapes. Step 3(a) is pain-triggered
+("what did this port NEED"); code that WORKS but is repetitive emits no
+signal, so this pass makes the looking un-skippable. Scan for repeated /
+patterned emission; for each, one of FOUR verbs (size-gated, byte-neutral
+by default):
+  (a) **adopt** — an existing construct fits (`offsets` / a comptime-fn
+      helper / `dispatch` / `table`) → convert here;
+  (b) **build** — no construct fits and it's SMALL (a comptime-fn helper,
+      `clear_longs`/`rep` class) → build it in-port, minutes, byte-neutral;
+  (c) **ask** — no construct fits and it's BIG (new grammar/lowering,
+      `table` class) → it becomes a step-3(a) ask, its own design + build;
+      do NOT hand-build a stopgap;
+  (d) **delete** — DEAD code. "No callers" ≠ "dead": *incidental* dead code
+      (orphaned/obsoleted by OUR work) → cut (surfaced at the merge gate);
+      *deliberate/feature* dead code (forward-scaffolding, an alternate
+      path, an API awaiting its consumer) → FLAG to Volence first, never
+      auto-cut (the `AnimateSprite_PerFrame` precedent). When ambiguous →
+      treat as feature → flag. Cross-check the kill-list (kill-conditions).
 
 **Step 5 — Optimize**: the real question — is this ENGINE CODE actually
 good? Algorithmic/cycle-level, not assembler spelling. Behavior-affecting
@@ -42,13 +60,28 @@ lockstep + re-pin mechanics. "No changes, recorded why" is a valid
 outcome.
 
 **Loop until dry**: after step 5, retrospect again; anything found →
-back-prop/optimize again; repeat until a retrospect pass comes up EMPTY.
-Optimizations discovered late get back-propagated to prior files in the
-same sweep (one combined wave, not two).
+construct-pass/optimize again; repeat until a retrospect pass comes up
+EMPTY.
 
-**Merge**: only after a dry retrospect — checkpoint packet to Volence,
-his gate, then --no-ff merge both sides + push. Every merge to master is
-FINISHED code, not faithful-but-stale-idiom code.
+**Step 6 — Corpus sweep** (Volence-ratified 2026-07-11; was the old
+in-loop step-4 back-propagate, pulled OUT to a single final GATED pass —
+"one combined wave, not two", stated plainly): ANY new addition this
+tranche made that PRIOR FILES could use — a format idiom, an adopted/built
+macro/construct, OR an optimization — triggers a sweep of ALL
+previously-ported `.emp` files. **Retrofit where clean; LEDGER where
+blocked** (a site waiting on an unshipped dependency gets a ledger row, not
+a forced conversion — else the sweep stalls). Trigger is "new thing PRIOR
+FILES could use" (something unique to this one file earns no sweep).
+Verification differs by kind: construct-adoption is usually byte-neutral
+(cheap, byte gate); an OPTIMIZATION sweep changes bytes (re-pin +
+live-verify per site). This trigger also closes the hole a per-port step
+can't reach: constructs ship AFTER files are ported (a standalone build
+like `table` has no in-tranche step-4), so the obligation attaches to the
+ADDITION, whenever/however it ships.
+
+**Merge**: only after a dry retrospect + the corpus sweep — checkpoint
+packet to Volence, his gate, then --no-ff merge both sides + push. Every
+merge to master is FINISHED code, not faithful-but-stale-idiom code.
 
 **Packet format (Volence-ratified 2026-07-10)**: the packet ends with a
 "What each pass added" section separating STEP-3 findings (asks / reads-wrong

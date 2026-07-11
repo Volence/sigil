@@ -24,6 +24,32 @@ fn proc_header_forms() {
 }
 
 #[test]
+fn proc_out_clause_forms() {
+    // `out(...)` (S2-D6e) — a plain register list mirroring `clobbers`.
+    // Present → Some(list); empty `out()` → Some(vec![]); absent → None.
+    let f = ok("module m\n\
+                proc a() out(d0, a1) {\n}\n\
+                proc b() out() {\n}\n\
+                proc c() {\n}\n");
+    let Item::Proc(a) = &f.items[0] else { panic!() };
+    assert_eq!(a.out.as_deref(), Some(&["d0".to_string(), "a1".to_string()][..]));
+    let Item::Proc(b) = &f.items[1] else { panic!() };
+    assert_eq!(b.out.as_deref(), Some(&[][..]), "out() is Some(empty), not None");
+    let Item::Proc(c) = &f.items[2] else { panic!() };
+    assert_eq!(c.out, None, "no out clause is None");
+}
+
+#[test]
+fn proc_all_three_contracts_compose() {
+    // `clobbers` + `preserves` + `out` all parse on one header (order free).
+    let f = ok("module m\nproc f() clobbers(d0) preserves(a2) out(a1) {\n}\n");
+    let Item::Proc(p) = &f.items[0] else { panic!() };
+    assert_eq!(p.clobbers.as_deref(), Some(&["d0".to_string()][..]));
+    assert_eq!(p.preserves, vec![("a2".to_string(), None)]);
+    assert_eq!(p.out.as_deref(), Some(&["a1".to_string()][..]));
+}
+
+#[test]
 fn instructions_and_labels() {
     let f = ok(concat!(
         "module m\n",

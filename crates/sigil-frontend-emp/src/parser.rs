@@ -1016,8 +1016,28 @@ impl Parser {
         params
     }
 
-    /// Parse a `proc name(params...) [clobbers(...)] [preserves(...)]
-    /// [falls_into name] { body }` declaration.
+    /// Parse the comma-separated register-name list inside a `clobbers(...)` /
+    /// `out(...)` clause, consuming the closing `)`. The opening `(` must
+    /// already have been eaten. The empty form (`()`) yields an empty vec — the
+    /// explicit "touches nothing" / "returns nothing" contract, distinct from
+    /// no declaration at all. Register-name VALIDITY is a lowering-time check
+    /// (`[proc.clobber-undeclared]` / `[proc.out-invalid]`), not parse-time, so
+    /// this accepts any identifier.
+    fn reg_name_list(&mut self) -> Vec<String> {
+        let mut list = Vec::new();
+        if !self.at(&Tok::RParen) {
+            loop {
+                list.push(self.expect_ident("register"));
+                if !self.eat(&Tok::Comma) { break; }
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.expect(&Tok::RParen, "`)`");
+        list
+    }
+
+    /// Parse a `proc name(params...) [clobbers(...)] [out(...)] [preserves(...)]
+    /// [falls_into name] { body }` declaration. Clause order is free.
     fn proc_decl(&mut self, public: bool) -> ProcDecl {
         let start = self.span();
         self.bump(); // `proc`
@@ -1025,22 +1045,21 @@ impl Parser {
         let params = self.param_list();
         let mut clobbers = None;
         let mut preserves = Vec::new();
+        let mut out = None;
         let mut falls_into = None;
         loop {
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
                 // `clobbers()` — the empty form is the explicit "touches
                 // nothing" contract (distinct from no declaration at all).
-                let mut list = Vec::new();
-                if !self.at(&Tok::RParen) {
-                    loop {
-                        list.push(self.expect_ident("register"));
-                        if !self.eat(&Tok::Comma) { break; }
-                        if self.at(&Tok::RParen) { break; } // trailing comma
-                    }
-                }
-                clobbers = Some(list);
-                self.expect(&Tok::RParen, "`)`");
+                clobbers = Some(self.reg_name_list());
+            } else if self.eat_kw("out") {
+                // `out(d0, a1)` — the third partition member (S2-D6e): a
+                // comma-separated register list mirroring `clobbers`. `out()`
+                // empty is the explicit "returns nothing" contract. Register
+                // validity is a lowering-time check (`[proc.out-invalid]`).
+                self.expect(&Tok::LParen, "`(`");
+                out = Some(self.reg_name_list());
             } else if self.eat_kw("preserves") {
                 // `preserves(d0-d1/a0)` — a movem-style reglist: `/`-separated
                 // segments, each a register or an inclusive `lo-hi` range
@@ -1066,7 +1085,7 @@ impl Parser {
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(/* splices_allowed = */ false);
         self.expect(&Tok::RBrace, "`}`");
-        ProcDecl { public, name, params, clobbers, preserves, falls_into, body, span: start.merge(self.prev_span()) }
+        ProcDecl { public, name, params, clobbers, preserves, out, falls_into, body, span: start.merge(self.prev_span()) }
     }
 
     /// Parse a `script name(params) (encoding: E) [shows label] { body }`

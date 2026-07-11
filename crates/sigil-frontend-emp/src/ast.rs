@@ -534,6 +534,15 @@ pub struct ProcDecl {
     /// (`[proc.preserves-invalid]`), not a parse-time one, mirroring
     /// `clobbers`.
     pub preserves: Vec<(String, Option<String>)>,
+    /// Registers this proc RETURNS — the third partition member (S2-D6e). `None`
+    /// = no `out(...)` declared (legal); `Some(vec![])` = the explicit `out()`
+    /// form (declares "returns nothing"). Mirrors `clobbers`'s plain register
+    /// list (NOT `preserves`' movem-reglist form — outputs are named single
+    /// registers, never movem ranges). Output registers join `check_clobbers`'
+    /// `allowed` set (a result-register write is not `[proc.clobber-undeclared]`);
+    /// register validity is a lowering-time check (`[proc.out-invalid]`), not a
+    /// parse-time one, mirroring `clobbers`/`preserves`.
+    pub out: Option<Vec<String>>,
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
     /// The proc's assembly body.

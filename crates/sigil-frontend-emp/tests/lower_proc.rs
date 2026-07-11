@@ -806,3 +806,178 @@ fn preserves_sr_composes_with_reglist() {
     let (_module, diags) = lower(src);
     assert!(diags.iter().all(|d| d.level != Level::Error), "composed contract: {diags:?}");
 }
+
+// ---- `out(...)` — the S2-D6(e) register-output partition member ------------
+//
+// A proc does one of three things to each register: preserves it (untouched),
+// clobbers it (destroyed scratch), or RETURNS it (a result the caller reads).
+// `out(...)` spells the third. Output registers join `check_clobbers`' allowed
+// set (a result write is not `[proc.clobber-undeclared]` — the immediate win),
+// and a declared-but-unwritten output / an out-clobbers|preserves overlap /
+// an invalid spelling are diagnosed. Like `preserves`, a DECLARED contract —
+// NOT silenced by `@as_compat`. Byte-neutral: `out` is pure metadata.
+
+#[test]
+fn out_register_write_is_not_an_undeclared_clobber() {
+    // THE win: `movea.w (X).w, a1` writes a1, which is neither a clobber nor a
+    // param — but `out(a1)` declares it a returned result, so no
+    // clobber-undeclared for a1.
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1) {\n\
+               \x20   movea.w (0).w, a1\n\
+               \x20   moveq   #0, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "an out-declared register write must not be a clobber: {diags:?}"
+    );
+    assert!(
+        !has_tag(&diags, "[proc.out-unwritten]"),
+        "a1 IS written, so no out-unwritten: {diags:?}"
+    );
+    assert!(diags.iter().all(|d| d.level != Level::Error), "clean contract: {diags:?}");
+}
+
+#[test]
+fn out_unwritten_warns() {
+    // `out(a1)` but a1 is never written on any path — a false output claim.
+    let src = "module m\n\
+               proc f() out(a1) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-unwritten]"))
+        .expect("expected an out-unwritten diagnostic");
+    assert_eq!(hit.level, Level::Warning);
+    assert!(hit.message.contains("a1"), "must name the unwritten output: {}", hit.message);
+}
+
+#[test]
+fn out_clobbers_overlap_errors() {
+    // A register cannot be both a returned result and destroyed scratch.
+    let src = "module m\n\
+               proc f() clobbers(d0) out(d0) {\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-clobbers-overlap]"))
+        .unwrap_or_else(|| panic!("expected [proc.out-clobbers-overlap], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(hit.message.contains("d0"), "must name the overlapping register: {}", hit.message);
+}
+
+#[test]
+fn out_preserves_overlap_errors() {
+    // A register cannot be both a returned result and left untouched.
+    let src = "module m\n\
+               proc f() preserves(a0) out(a0) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-preserves-overlap]"))
+        .unwrap_or_else(|| panic!("expected [proc.out-preserves-overlap], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(hit.message.contains("a0"), "must name the overlapping register: {}", hit.message);
+}
+
+#[test]
+fn out_preserves_overlap_within_a_range_errors() {
+    // The overlap check must expand a preserves RANGE — `out(a1)` overlaps
+    // `preserves(a0-a2)`.
+    let src = "module m\n\
+               proc f() preserves(a0-a2) out(a1) {\n\
+               \x20   movem.l a0-a2, -(sp)\n\
+               \x20   movem.l (sp)+, a0-a2\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.out-preserves-overlap]"),
+        "an out register inside a preserves range must overlap: {diags:?}"
+    );
+}
+
+#[test]
+fn out_invalid_register_errors() {
+    // `zz` is not a register; a declared output over nonsense is an error.
+    let src = "module m\n\
+               proc f() out(zz) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-invalid]"))
+        .unwrap_or_else(|| panic!("expected [proc.out-invalid], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+}
+
+#[test]
+fn as_compat_does_not_silence_out_contract() {
+    // `out` is a declared contract, not a heuristic modernization lint — so
+    // `@as_compat` must NOT silence its checks (mirrors preserves).
+    let src = "module m\n@as_compat\n\
+               proc f() out(a1) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.out-unwritten]"),
+        "@as_compat must not silence a declared out contract: {diags:?}"
+    );
+}
+
+#[test]
+fn out_composes_with_clobbers_and_preserves() {
+    // Clause order is free; disjoint clobbers + preserves + out all on one
+    // proc must parse and check cleanly.
+    let src = "module m\n\
+               proc f() clobbers(d0) preserves(a2) out(a1) {\n\
+               \x20   movem.l a2, -(sp)\n\
+               \x20   movea.w (0).w, a1\n\
+               \x20   moveq   #0, d0\n\
+               \x20   movem.l (sp)+, a2\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().all(|d| d.level != Level::Error),
+        "composed contract must lower cleanly: {diags:?}"
+    );
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]") && !has_tag(&diags, "[proc.out-unwritten]"),
+        "no spurious clobber/out warnings: {diags:?}"
+    );
+}
+
+#[test]
+fn out_is_byte_neutral() {
+    // `out(...)` is metadata — it changes NO codegen. A proc with vs without
+    // `out(a1)` must emit IDENTICAL bytes.
+    let with = "module m\n\
+                proc f() out(a1) {\n\
+                \x20   movea.w (0).w, a1\n\
+                \x20   rts\n\
+                }\n";
+    let without = "module m\n\
+                   proc f() {\n\
+                   \x20   movea.w (0).w, a1\n\
+                   \x20   rts\n\
+                   }\n";
+    let (m_with, _) = lower(with);
+    let (m_without, _) = lower(without);
+    assert_eq!(
+        flatten(&m_with),
+        flatten(&m_without),
+        "out is metadata — the emitted bytes must be identical"
+    );
+}

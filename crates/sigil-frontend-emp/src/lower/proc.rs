@@ -135,6 +135,16 @@ pub(super) fn lower_proc(
     if !proc.preserves.is_empty() {
         check_preserves(proc, &buf, diags);
     }
+
+    // 6. Output contract (S2-D6e): a declared `out(...)` set. Like `preserves`,
+    // an opt-in declared CONTRACT — error/warning tier, NOT silenced by
+    // `@as_compat` (only the heuristic modernization lints are). Runs only when
+    // a contract is declared (`Some(_)`; the explicit empty `out()` counts —
+    // it declares "returns nothing", so any listed register would be moot but
+    // the overlap/unwritten checks still apply to whatever IS listed).
+    if proc.out.is_some() {
+        check_out(proc, &buf, diags);
+    }
 }
 
 /// `falls_into next` requires `next` to be the item immediately following `proc`
@@ -270,6 +280,13 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
     // Params are declarative register bindings (§5.1): a write to a param
     // register is part of the proc's own contract, not an undeclared clobber.
     allowed.extend(proc.params.iter().map(|(name, _, _)| name.as_str()));
+    // Output registers (S2-D6e) are RESULTS: the proc writes them for the
+    // caller to read, so a write to one is part of the contract, not an
+    // undeclared clobber. THIS is the immediate win — it silences
+    // clobber-undeclared on every declared output register. (Whether such a
+    // register is actually written is a SEPARATE concern: `check_out`'s
+    // `[proc.out-unwritten]` catches a declared-but-never-written output.)
+    allowed.extend(proc.out.as_deref().unwrap_or(&[]).iter().map(String::as_str));
 
     for item in &buf.items {
         let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };
@@ -636,6 +653,138 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
                 mask_reglist(declared),
             ),
         );
+    }
+}
+
+/// Verify a declared `out(...)` set (S2-D6e — the third register-contract
+/// partition member: returned results, beside `clobbers`' scratch and
+/// `preserves`' untouched). Four checks, mirroring the `preserves` tiers:
+///
+/// - `[proc.out-invalid]` (ERROR) — a listed name that is not a register
+///   spelling (`d0-d7`/`a0-a7`/`sp`), mirroring `[proc.preserves-invalid]`.
+/// - `[proc.out-clobbers-overlap]` / `[proc.out-preserves-overlap]` (ERROR) — a
+///   register in BOTH `out` and (`clobbers` | `preserves`) is a contradiction
+///   (returned-and-scratch / returned-and-untouched). Preserves segments are
+///   expanded to their register set for the membership test.
+/// - `[proc.out-unwritten]` (WARN) — an `out`-declared register never written
+///   on any path in the body is a false output claim (a stale `out()` after a
+///   refactor). The dual of `[proc.clobber-undeclared]`; reuses the SAME
+///   register-write detection (`writes_dest_register` → last-operand register
+///   destination). Note this is a SEPARATE concern from the register being in
+///   `check_clobbers`' `allowed` set: an output is allowed-to-write there AND
+///   must-be-written here.
+///
+/// Register spelling is validated per name (unlike `preserves`, `out` names are
+/// never ranges — D-out.1), so an invalid name is reported once and excluded
+/// from the overlap/unwritten checks (a nonsense name has no meaningful set
+/// membership). 68k + Z80 (D-out.5): outputs are a general calling-convention
+/// concept, so this runs for both CPUs; the unwritten check reuses the 68k
+/// write-form heuristic, which on Z80 simply finds no matching writes (a Z80
+/// `out` currently cannot be verified-written — honest, like `preserves`).
+fn check_out(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
+    use crate::value::Reg;
+    let out = proc.out.as_deref().unwrap_or(&[]);
+
+    // Validate spellings first; a nonsense name is reported and dropped from the
+    // downstream set-membership checks.
+    let mut valid: Vec<&str> = Vec::new();
+    for name in out {
+        if Reg::from_name(name).is_some() {
+            valid.push(name.as_str());
+        } else {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.out-invalid] `{}` declares `out({name})` — `{name}` is not a \
+                     register (d0-d7/a0-a7/sp)",
+                    proc.name
+                ),
+            );
+        }
+    }
+
+    // out ∩ clobbers — returned AND scratch is contradictory.
+    let clobbers = proc.clobbers.as_deref().unwrap_or(&[]);
+    for name in &valid {
+        if clobbers.iter().any(|c| c == name) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.out-clobbers-overlap] `{}` declares `{name}` both output and \
+                     clobbered — a register is either a returned result or destroyed scratch, \
+                     not both",
+                    proc.name
+                ),
+            );
+        }
+    }
+
+    // out ∩ preserves — returned AND untouched is contradictory. Preserves
+    // stores movem-reglist segments (`(lo, Option<hi>)`): expand each to the
+    // canonical mask bits and test the single output register's bit.
+    let mut preserved_mask: u16 = 0;
+    for (lo, hi) in &proc.preserves {
+        let Some(lo_bit) = preserves_reg_bit(lo) else { continue };
+        let hi_bit = match hi {
+            None => lo_bit,
+            Some(h) => match preserves_reg_bit(h) {
+                Some(b) if b >= lo_bit => b,
+                _ => continue,
+            },
+        };
+        for bit in lo_bit..=hi_bit {
+            preserved_mask |= 1 << bit;
+        }
+    }
+    for name in &valid {
+        if let Some(bit) = preserves_reg_bit(name) {
+            if preserved_mask & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
+                         preserved — a register is either a returned result or left untouched, \
+                         not both",
+                        proc.name
+                    ),
+                );
+            }
+        }
+    }
+
+    // out-unwritten — a declared output never written on any path is a false
+    // claim. Same write detection as check_clobbers: the destination (last
+    // operand) of a write-form mnemonic, when it is a register.
+    let mut written: HashSet<String> = HashSet::new();
+    for item in &buf.items {
+        let CodeItem::Instr { mnemonic, ops, .. } = item else { continue };
+        if !writes_dest_register(mnemonic) {
+            continue;
+        }
+        if let Some(CodeOperand::Reg(r)) = ops.last() {
+            written.insert(r.to_string());
+        }
+    }
+    for name in &valid {
+        if !written.contains(*name) {
+            push(
+                diags,
+                Level::Warning,
+                proc.span,
+                format!(
+                    "[proc.out-unwritten] `{}` declares `out({name})` but never writes `{name}` \
+                     — a declared output register must be written (a false result claim, or a \
+                     stale `out()` after a refactor)",
+                    proc.name
+                ),
+            );
+        }
     }
 }
 
