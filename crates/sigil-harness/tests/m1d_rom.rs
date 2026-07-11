@@ -80,6 +80,7 @@ fn full_rom_matches_assembled_reference() {
     // below. `EndOfRom` at the T0.0 clean-tree pin (aeon 9bacc93) is `0x658B4`;
     // this is the assembled (pre-convsym-append) ROM length. Pinned like the
     // `m1c_vector_table` stub addresses.
-    const ASSEMBLED_LEN: usize = 0x658B4;
-    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "sigil");
+    // Sourced from `sigil_harness::pins` (regenerate via `repin`).
+    let assembled_len = sigil_harness::pins::ASSEMBLED_LEN;
+    assert_rom_matches_convsym(&rom, &refrom, assembled_len, "sigil");
 }

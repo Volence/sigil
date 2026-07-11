@@ -147,8 +147,9 @@ fn twin_guards() -> usize {
 /// `m1d_debug_rom` — `EndOfRom` of each build shape. The mixed build reproduces
 /// the same `EndOfRom` (identical content), so these pins double as a
 /// dropped-section guard here too.
-const ASSEMBLED_LEN: usize = 0x658B4;
-const DEBUG_ASSEMBLED_LEN: usize = 0x673A2;
+// Sourced from `sigil_harness::pins` (regenerate via `repin`).
+const ASSEMBLED_LEN: usize = sigil_harness::pins::ASSEMBLED_LEN;
+const DEBUG_ASSEMBLED_LEN: usize = sigil_harness::pins::DEBUG_ASSEMBLED_LEN;
 
 /// The `.emp` module's own directory in aeon's tree — the `include_root` under
 /// which `embed("temp_blip.bin")` / `embed("dac/*.pcm")` resolve (dac_port.rs).

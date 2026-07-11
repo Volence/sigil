@@ -83,6 +83,7 @@ fn full_debug_rom_matches_assembled_reference() {
     // Pin the assembled debug length (EndOfRom of the DEBUG build at the T5 pin),
     // so a regression that drops a trailing section can't silently pass the diff
     // check. Larger than the non-debug `0x658B4` — the debugger code adds bytes.
-    const DEBUG_ASSEMBLED_LEN: usize = 0x673A2;
-    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "sigil debug");
+    // Sourced from `sigil_harness::pins` (regenerate via `repin`).
+    let debug_assembled_len = sigil_harness::pins::DEBUG_ASSEMBLED_LEN;
+    assert_rom_matches_convsym(&rom, &refrom, debug_assembled_len, "sigil debug");
 }

@@ -39,23 +39,26 @@ fn strict_gate() -> bool {
 // vdp_init and the `org $10000` boundary, so HBlank_Dispatch 0x227E→0x227A and
 // VBlank_Handler 0x2156→0x2152; every $64xxx exception target in the
 // object-code bank held, as at every prior re-baseline).
+// Plain-shape stub VMAs sourced from `sigil_harness::pins` (regenerate via
+// `repin`); HBlank_Dispatch rides the hblank region base.
+use sigil_harness::pins;
 const STUBS: &[(&str, i64)] = &[
-    ("EntryPoint", 0x200),
-    ("BusError", 0x64804),
-    ("AddressError", 0x6481C),
-    ("IllegalInstr", 0x64838),
-    ("ZeroDivide", 0x6485A),
-    ("ChkInstr", 0x64874),
-    ("TrapvInstr", 0x64892),
-    ("PrivilegeViol", 0x648B2),
-    ("Trace", 0x648D4),
-    ("Line1010Emu", 0x648E8),
-    ("Line1111Emu", 0x64908),
-    ("ErrorExcept", 0x64928),
-    ("NullInterrupt", 0x64802),
-    ("HBlank_Dispatch", 0x227A),
-    ("VBlank_Handler", 0x2152),
-    ("ErrorTrap", 0x64946),
+    ("EntryPoint", pins::ENTRY_POINT.plain as i64),
+    ("BusError", pins::BUS_ERROR.plain as i64),
+    ("AddressError", pins::ADDRESS_ERROR.plain as i64),
+    ("IllegalInstr", pins::ILLEGAL_INSTR.plain as i64),
+    ("ZeroDivide", pins::ZERO_DIVIDE.plain as i64),
+    ("ChkInstr", pins::CHK_INSTR.plain as i64),
+    ("TrapvInstr", pins::TRAPV_INSTR.plain as i64),
+    ("PrivilegeViol", pins::PRIVILEGE_VIOL.plain as i64),
+    ("Trace", pins::TRACE.plain as i64),
+    ("Line1010Emu", pins::LINE1010_EMU.plain as i64),
+    ("Line1111Emu", pins::LINE1111_EMU.plain as i64),
+    ("ErrorExcept", pins::ERROR_EXCEPT.plain as i64),
+    ("NullInterrupt", pins::NULL_INTERRUPT.plain as i64),
+    ("HBlank_Dispatch", pins::HBLANK.plain_base as i64),
+    ("VBlank_Handler", pins::V_BLANK_HANDLER.plain as i64),
+    ("ErrorTrap", pins::ERROR_TRAP.plain as i64),
 ];
 
 #[test]
