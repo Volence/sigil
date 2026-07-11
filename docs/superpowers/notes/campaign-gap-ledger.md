@@ -928,3 +928,16 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   not scaffolded: lower_m68k_imm_link admits ONE AbsSym{long} operand, second
   fixup at 2+imm_field_width. Relaxable Sym/SymOff still rejected (width
   selection genuinely conflicts). — IMPLEMENTED
+- [tranche 10 step 1, 2026-07-10] **ImmWord16Be — the .w link-immediate range
+  rule (corrected a shared-path regression)** — core's RAM-address immediates
+  ($FFFF9EDE) forced the .w imm-link source fixup off Value16Be (unsigned
+  [0,0xFFFF] — rejects the sign-extended address). The transcription pass first
+  moved it to Abs16Be, but Abs16Be's EA-address window ([-0x8000,0x7FFF] U
+  [0xFF8000,0xFFFFFF]) silently REJECTS an objroutine offset in [0x8000,0xFFFF]
+  — a valid upper-bank tranche-6 store. Neither single-window kind is AS's
+  actual word-immediate rule (high 16 bits all-0 OR all-1 = unsigned-value OR
+  sign-extended-address union). Added FixupKind::ImmWord16Be (that union),
+  routed the .w imm-link SOURCE to it; the abs.w DESTINATION stays Abs16Be (a
+  real EA). Byte-neutral, strict 2086/0. Caught by adversarial review of the
+  transcription agent's fixup-kind swap (not by a failing test — the regression
+  was latent). — IMPLEMENTED (commit 80b6686)
