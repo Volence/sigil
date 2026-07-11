@@ -648,3 +648,23 @@ Full strict workspace = **2054 passed / 0 failed**.
   **`3b0357ad651152e10886ac6e4d1da3ea457d6acfc52b077a8e80fb9359a55927`**.
 - Debug `s4.debug.bin`: sha256
   **`8cd33561714d4fc95ce3508c05df6d90fc6ca54478c1f4a7e9de292bffd272e3`**.
+
+## 2026-07-10 — tranche 9 gate ruling: AnimateSprite_PerFrame DELETED
+
+Volence's gate call: the dead per-frame-duration interpreter (zero callers,
+no DUR_DYNAMIC support, ~2× script bytes for the uniform case) is deleted
+from BOTH twins; uneven timing is answered by sonic_anims.emp's documented
+`rep()` comptime helper (probe-tested in sonic_anims_port.rs) with
+AF_DURATION recorded as the fallback design. Region 0x308 → **0x192**
+(`$2D78..$2F0A` plain / `$3032..$31C4` debug); the −0x176 slid every
+downstream engine pin (second sweep this tranche, all values from
+listings). The debug convsym allowlist shrank to the plain set's shape
+(the deb2 symbol append lost the PerFrame symbols; `$1A5` matches again).
+`export .cc_delete` reverted (its only consumer was PerFrame's table).
+
+Full strict workspace = **2055 passed / 0 failed**, clippy clean.
+
+- Non-debug `s4.bin`: sha256
+  **`50f92f57b112966df9ab836cad8971296decab6e6fe8aee2da62b37b51dc9f2c`**.
+- Debug `s4.debug.bin`: sha256
+  **`1dfe4a4c3767a3ada2a18b5bbc4cb0810d41bb94bc7cfaee29a1a53f56c05edf`**.

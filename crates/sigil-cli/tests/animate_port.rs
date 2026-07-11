@@ -9,13 +9,13 @@
 //! ## What this port exercises that the prior eight did not
 //!
 //! - **Local-label ARITHMETIC in a pc-indexed EA** — the control-code
-//!   dispatch `jmp .cc_table-4(pc,d0.w)` (×2): the d8 slot carries
+//!   dispatch `jmp .cc_table-4(pc,d0.w)`: the d8 slot carries
 //!   `label - 4`, and the -4 lands INSIDE the jmp instruction itself, so no
 //!   relocated label can absorb it.
-//! - **A cross-proc local-label reference** — the PerFrame dispatch table's
-//!   $FB entry is `bra.w AnimateSprite.cc_delete` (the shared delete stub
-//!   lives in the OTHER interpreter's scope). Spec §5's `ProcName.label`
-//!   surface, first real consumer.
+//! - (Historical: step 1 also shipped the first `ProcName.label` /
+//!   `export .label` consumer via the PerFrame dispatch table; the gate
+//!   ruling deleted the dead PerFrame interpreter, so the surface is now
+//!   covered by `lower_hygiene.rs` only — see the tranche-9 packet.)
 //! - **Cross-seam width relaxation, both directions** — `.cc_delete`'s
 //!   `jbra DeleteObject` (step 2's static-tail-call spelling; step 1's
 //!   `jmp` landed abs.w `4EF8`) must relax to `bra.w` with the per-shape
@@ -39,17 +39,17 @@
 //! and `Sound_PlaySFX` (the latter referenced only when
 //! SOUND_DRIVER_ENABLED=1).
 //!
-//! OUTBOUND: all three procs are `pub` (`AnimateSprite` called by
-//! player_common + the test objects; `AnimateSprite_PerFrame` currently has
-//! ZERO callers — ported faithfully, flagged in the tranche packet;
-//! `RefreshSpritePieceCount` is intra-module today). The consumer probe
-//! mirrors player_common's bare `jsr AnimateSprite` and must land on the
-//! abs.w encoding (`4EB8 base`) for mixed-build parity.
+//! OUTBOUND: both procs are `pub` — `AnimateSprite` called by player_common
+//! and the test objects; `RefreshSpritePieceCount` intra-module today.
+//! (`AnimateSprite_PerFrame` was deleted at the gate: zero callers; its
+//! uneven-timing use case is covered by sonic_anims.emp's `rep()` helper.)
+//! The consumer probe mirrors player_common's bare `jsr AnimateSprite` and
+//! must land on the abs.w encoding (`4EB8 base`) for mixed-build parity.
 //!
 //! ## Reference windows (2026-07-10 pins, from the master listings)
 //!
-//! Plain (map base `$2D78`): `s4.bin[0x2D78..0x3080]` (0x308 bytes).
-//! Debug (map base `$3032`): `s4.debug.bin[0x3032..0x333A]` (0x308 bytes).
+//! Plain (map base `$2D78`): `s4.bin[0x2D78..0x2F0A]` (0x192 bytes).
+//! Debug (map base `$3032`): `s4.debug.bin[0x3032..0x31C4]` (0x192 bytes).
 //! Length is shape-INVARIANT (no `__DEBUG__` code in this file).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
@@ -88,26 +88,25 @@ struct Shape {
 
 /// Region-relative proc/anchor offsets — shape-INVARIANT (equal length, no
 /// conditional code), so shared constants rather than `Shape` fields.
-/// (Step 2 shrank the region 0x312 → 0x308: bare Bcc/jbra relaxation found
-/// five suboptimal hand widths; every offset below is from the re-derived
-/// listings.)
+/// (Step 2 shrank the region 0x312 → 0x308 — bare Bcc/jbra relaxation found
+/// five suboptimal hand widths; the gate ruling then DELETED the dead
+/// `AnimateSprite_PerFrame` interpreter → 0x192. Offsets from the
+/// re-derived listings.)
 /// `.cc_delete`'s `jbra DeleteObject` (bra.w `6000 xxxx`).
 const CC_DELETE_OFF: usize = 0x104;
-/// `AnimateSprite_PerFrame:` (listing `$2EEC`/`$31A6`).
-const PERFRAME_OFF: usize = 0x174;
-/// `RefreshSpritePieceCount:` (listing `$3062`/`$331C`).
-const REFRESH_OFF: usize = 0x2EA;
+/// `RefreshSpritePieceCount:` (listing `$2EEC`/`$31A6`).
+const REFRESH_OFF: usize = 0x174;
 
 const PLAIN: Shape = Shape {
     base: 0x2D78,
-    len: 0x308,
-    labels: &[("DeleteObject", 0x281C), ("Sound_PlaySFX", 0x5E5C)],
+    len: 0x192,
+    labels: &[("DeleteObject", 0x281C), ("Sound_PlaySFX", 0x5CE6)],
 };
 
 const DEBUG: Shape = Shape {
     base: 0x3032,
-    len: 0x308,
-    labels: &[("DeleteObject", 0x29AE), ("Sound_PlaySFX", 0x731A)],
+    len: 0x192,
+    labels: &[("DeleteObject", 0x29AE), ("Sound_PlaySFX", 0x71A4)],
 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
@@ -364,30 +363,24 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         "bare-name proof: `jsr AnimateSprite` must relax to abs.w at the region base"
     );
 
-    // Structural anchors: both secondary procs open with the shared
-    // `andi.b #$F9, SST_render_flags(a0)` prologue (PerFrame) and
-    // `movea.l SST_mappings(a0), a1` (Refresh) — offset drift would mean a
-    // mid-region size change the whole-region diff already caught; these
-    // name the spot for the re-pin sweep.
-    assert_eq!(
-        &section.bytes[PERFRAME_OFF..PERFRAME_OFF + 2],
-        &[0x02, 0x28],
-        "AnimateSprite_PerFrame must sit at +0x17A (andi.b #imm opword)"
-    );
+    // Structural anchor: `RefreshSpritePieceCount` opens with
+    // `movea.l SST_mappings(a0), a1` — offset drift would mean a mid-region
+    // size change the whole-region diff already caught; this names the spot
+    // for the re-pin sweep.
     assert_eq!(
         &section.bytes[REFRESH_OFF..REFRESH_OFF + 2],
         &[0x22, 0x68],
-        "RefreshSpritePieceCount must sit at +0x2F4 (movea.l d16(a0) opword)"
+        "RefreshSpritePieceCount must sit at +0x174 (movea.l d16(a0) opword)"
     );
 }
 
-/// (plain) the `animate` region == `s4.bin[0x2D78..0x3080]`.
+/// (plain) the `animate` region == `s4.bin[0x2D78..0x2F0A]`.
 #[test]
 fn animate_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) the `animate` region == `s4.debug.bin[0x3032..0x333A]`.
+/// (debug) the `animate` region == `s4.debug.bin[0x3032..0x31C4]`.
 #[test]
 fn animate_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

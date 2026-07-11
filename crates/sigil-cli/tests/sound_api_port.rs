@@ -30,8 +30,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$5D5C`): `s4.bin[0x5D5C..0x5F40]` (0x1E4 bytes).
-//! Debug (map base `$721A`): `s4.debug.bin[0x721A..0x73FE]` (0x1E4 bytes).
+//! Plain (map base `$5BE6`): `s4.bin[0x5BE6..0x5DCA]` (0x1E4 bytes).
+//! Debug (map base `$70A4`): `s4.debug.bin[0x70A4..0x7288]` (0x1E4 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -74,7 +74,7 @@ struct Shape {
 }
 
 const PLAIN: Shape = Shape {
-    base: 0x5D5C,
+    base: 0x5BE6,
     ring_sfx_speaker: 0xFFFF_AF30,
     sfx_ring_buf: 0xFFFF_AF32,
     sfx_ring_wr: 0xFFFF_AF3A,
@@ -83,7 +83,7 @@ const PLAIN: Shape = Shape {
     song_patch_table: 0x63AE4,
 };
 const DEBUG: Shape = Shape {
-    base: 0x721A,
+    base: 0x70A4,
     ring_sfx_speaker: 0xFFFF_AF52,
     sfx_ring_buf: 0xFFFF_AF54,
     sfx_ring_wr: 0xFFFF_AF5C,
@@ -297,7 +297,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 
     // Outbound proof: `bsr.w Sound_PlaySFX` resolves to base + 0x100
-    // (Sound_PlaySFX's offset inside the block: $5E6A - $5D5C — invariant, the
+    // (Sound_PlaySFX's offset inside the block: $5E6A - $5BE6 — invariant, the
     // block only slid -36 wholesale in the tranche-7b interact fix).
     let consumer = linked
         .sections
@@ -313,13 +313,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) `sound_api` bytes == `s4.bin[0x5D5C..0x5F40]`.
+/// (plain) `sound_api` bytes == `s4.bin[0x5BE6..0x5DCA]`.
 #[test]
 fn sound_api_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) `sound_api` bytes == `s4.debug.bin[0x721A..0x73FE]`.
+/// (debug) `sound_api` bytes == `s4.debug.bin[0x70A4..0x7288]`.
 #[test]
 fn sound_api_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

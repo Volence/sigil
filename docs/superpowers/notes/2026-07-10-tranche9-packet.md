@@ -141,3 +141,20 @@ module-local mirrors.
 - Empyrean amendment stack (Volence's cadence, uncommitted) grows: pc-rel
   addend operand form, the export-label first-consumer note, the bare-Bcc
   shrink-lockstep procedure.
+
+## Gate outcome (amended in place, Volence 2026-07-10)
+
+- **Headline 1 RESOLVED: DELETE.** PerFrame removed from both twins (it
+  also lacked DUR_DYNAMIC support — not actually the stronger interpreter).
+  Uneven timing = `rep(frame, n)` comptime helper, added DOCUMENTED in
+  sonic_anims.emp (probe-tested: `[1] ++ rep(2,3) ++ [255]` → `01 02 02 02
+  FF`), AF_DURATION recorded as the fallback. Region 0x308 → 0x192; second
+  full re-pin sweep; debug convsym allowlist re-derived (4 bytes, `$1A5`
+  rejoined the matching set). `export .cc_delete` reverted with its only
+  consumer. Strict 2055/0 (the +1 is the rep probe), clippy clean. Final
+  pins: plain `50f92f57…` / debug `1dfe4a4c…`.
+- Live note: the delete leaves AnimateSprite's bytes untouched up to the
+  deletion point (verified by the byte gates against the rebuilt asl
+  reference); the earlier instruction-level oracle trace stands as the
+  live evidence for this tranche.
+- **Tranche 10 RATIFIED at the gate: core.asm + dplc.asm.**

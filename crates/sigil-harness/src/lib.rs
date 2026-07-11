@@ -439,9 +439,9 @@ pub fn assemble_mixed_tranche6_as_side(aeon: &Path, debug: bool) -> Result<Modul
 /// Assemble the AS side of the tranche-7 SIXTEEN-module mixed build: everything
 /// `assemble_mixed_tranche6_as_side` gates PLUS `SIGIL_EMP_COLLISION` — the
 /// `engine/engine.inc` gate wrapping the `engine/objects/collision.asm` include
-/// (else-arm `org $31E6` plain / `org $34A0` debug). Back in the ENGINE block
-/// (like game_loop/collision_lookup), the window it opens (`$3080..$31E6` plain
-/// / `$333A..$34A0` debug) is filled by `engine/objects/collision.emp` — whose
+/// (else-arm `org $3070` plain / `org $332A` debug). Back in the ENGINE block
+/// (like game_loop/collision_lookup), the window it opens (`$2F0A..$3070` plain
+/// / `$31C4..$332A` debug) is filled by `engine/objects/collision.emp` — whose
 /// `TouchResponse` is the sole `pub proc` export (called from the engine object
 /// manager). The module reads only GAME-RAM `Player_1`/`Dynamic_Slots` across
 /// the seam (abs.w, per-shape); its dispatch is a self-contained module-level
@@ -478,7 +478,7 @@ pub fn assemble_mixed_tranche7_as_side(aeon: &Path, debug: bool) -> Result<Modul
 /// `assemble_mixed_tranche7_as_side` gates PLUS `SIGIL_EMP_RINGS` — the
 /// `engine/engine.inc` gate wrapping the `engine/objects/rings.asm` include
 /// (else-arm `org $33A8` plain / `org $36BE` debug). The window it opens
-/// (`$31E6..$33A8` plain / `$34A0..$36BE` debug) is filled by
+/// (`$3070..$33A8` plain / `$332A..$36BE` debug) is filled by
 /// `engine/objects/rings.emp` — the campaign's FIRST shape-dependent-LENGTH
 /// region (the `__DEBUG__` assert block exists only in the debug shape), so
 /// the two orgs differ by more than the usual base slide. All five procs are
@@ -519,12 +519,12 @@ pub fn assemble_mixed_tranche8_as_side(aeon: &Path, debug: bool) -> Result<Modul
 
 /// `assemble_mixed_tranche8_as_side` gates PLUS `SIGIL_EMP_ANIMATE` — the
 /// `engine/engine.inc` gate wrapping the `engine/objects/animate.asm` include
-/// (else-arm `org $3080` plain / `org $333A` debug). The window it opens
-/// (`$2D78..$3080` plain / `$3032..$333A` debug — 0x308 bytes, length
+/// (else-arm `org $2F0A` plain / `org $31C4` debug). The window it opens
+/// (`$2D78..$2F0A` plain / `$3032..$31C4` debug — 0x192 bytes, length
 /// shape-INVARIANT: no `__DEBUG__` code) is filled by
 /// `engine/objects/animate.emp`. animate sits UPSTREAM of every other gated
 /// engine region, so its gate orgs are the first in the ladder's sliding
-/// window. All three procs are `pub` exports (player_common + the test
+/// window. Both procs are `pub` exports (player_common + the test
 /// objects `jsr AnimateSprite` across the seam — bare jsr relaxing to
 /// abs.w); the module reads NO RAM cells and calls two ROM procs
 /// (`DeleteObject` via bare abs.w `jmp`, `Sound_PlaySFX` under
@@ -580,14 +580,13 @@ pub fn region_at_lma(img: &LinkedImage, lma: u32) -> Option<&[u8]> {
 /// target is the pre-append ASSEMBLED ROM). See `m1d_rom`/`m1d_debug_rom`/
 /// `mixed_dac_rom` for the full provenance.
 pub const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
-/// The debug reference's convsym/fixheader-rewritten set: the larger `__DEBUG__`
-/// deb2 append pushes the ROM-end pointer over a byte boundary, so three bytes
-/// (`$1A5`/`$1A6`/`$1A7`) differ, plus the two-byte header checksum (`$18E`/
-/// `$18F`). At the t7-step5 baseline the checksum's low byte `$18F`
-/// coincidentally matched the reference; the tranche-7b interact fix changes
-/// the assembled content (collision region), so `$18F` diverges again — the
-/// set is five bytes, re-derived empirically from the rebuilt debug ROM.
-pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A5, 0x1A6, 0x1A7];
+/// The debug reference's convsym/fixheader-rewritten set. Historically five
+/// bytes (the `__DEBUG__` deb2 append pushed the ROM-end pointer over a byte
+/// boundary, `$1A5` differing too); the tranche-9 PerFrame deletion shrank
+/// the appended symbol table enough that `$1A5` matches the assembled value
+/// again — the set is four bytes, re-derived empirically from the rebuilt
+/// debug ROM (the same shape as the plain set).
+pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
 
 /// Assert `rom` is byte-identical to `refrom` modulo the `allow`-listed offsets,
 /// after pinning `rom`'s length to `expected_len` (guards against a regression
