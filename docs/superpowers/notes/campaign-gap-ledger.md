@@ -868,3 +868,52 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   divergent relaxation between twins is the hazard). jbcc-the-MNEMONIC stays
   deferred — bare Bcc IS the idiom. — CLOSED (rule canonical in
   campaign-port-loop.md step 2)
+- [tranche 9 step 1, 2026-07-10] **pc-rel target ADDEND shipped (demanded)** —
+  `jmp .cc_table-4(pc,d0.w)`: the parser gives `.local` operand atoms binary
+  continuations (`binary_continue` split out of `expr_bp`), eval folds the
+  comptime addend (`label ± int` only; symbol stays link-time),
+  `CodeOperand::PcRel{,Idx}` carries `addend: i64`, lowering emits `Sym ± n`
+  through the existing `PcRelDisp8/16` fixup fold. Global-label `Sym±n(pc,…)`
+  rides the same path (the `_` operand arm already parsed full exprs). — SHIPPED
+- [tranche 9 step 1, 2026-07-10] **diagnostics ask: unexported-label hint** —
+  `bra.w AnimateSprite.cc_delete` failed at LINK with "unresolved symbol
+  `AnimateSprite.cc_delete`" when the label existed but lacked `export`. The
+  fix (add `export .cc_delete:`) is not discoverable from the message. Ask: when
+  an `Owner.label` reference misses AND `Owner` has a non-exported `.label`,
+  say so and suggest the marker. One data point. — OPEN
+- [tranche 9 step 2, 2026-07-10] **bare-Bcc lockstep procedure when the
+  relaxation SHRINKS** — first occurrence: animate's five suboptimal hand
+  widths (region 0x312→0x308). The .asm twin cannot go bare (the sigil AS
+  front-end deliberately pins branch widths — "Aeon pins branch width, no
+  relaxation"; bare Bcc is an .emp-only surface), so the lockstep move is:
+  strip .emp widths → rebuild reference with asl (which DOES width-select
+  bare spellings) → re-spell the twin's changed sites EXPLICITLY at the new
+  optimal widths (commented) → verify identical hashes → full re-pin sweep.
+  asl and the .emp relaxation were verified to agree on all five sites. — RECORDED
+- [tranche 9 step 3, 2026-07-10] **AnimId/FrameId newtype demand point:
+  AGAINST (interpreter-side)** — animate.emp does raw byte inc/dec/index
+  arithmetic on anim/anim_frame; a newtype here would be cast ceremony with
+  no misuse prevented inside the module. The real demand moment stays the
+  MODULE BOUNDARY (player code ↔ anim tables), construct-walk #3 thread. — RECORDED
+- [tranche 9 step 3, 2026-07-10] **interpreter duplication note** — AnimateSprite
+  and AnimateSprite_PerFrame duplicate the control-code/event machinery (~90%
+  same shape, different stream layout). A parameterized comptime-fn template
+  could single-source it .emp-side, but the .asm twin cannot express the
+  unification — divergent source SHAPES between twins raise the lockstep cost
+  for every future edit. Deferred until the twin dies (Spec 5) or PerFrame
+  gains a caller. — RECORDED (see also the D8 dead-export headline)
+- [tranche 9 step 5, 2026-07-10] **step-5 items deliberately NOT taken (animate)** —
+  (a) hot-path prologue (render_flags/status flip sync, ~56c/object/frame):
+  alternatives cost the same 56c; behavior-load-bearing during frame holds.
+  (b) `andi.w #$FF, d0` in both dispatchers looks dead but is LOAD-BEARING:
+  it clears the high byte `add.w d0,d0` leaves when an anim id ≥ $80 — the
+  read-through was verified, the instruction stays. (c) event-chain d1
+  re-derivation (~16c/event) and the bra.w dispatch tables (24c/dispatch vs
+  ~equal offset-table cost): control codes fire at script boundaries, not
+  per frame — cold; not worth the upstream re-pin + lockstep tax. (d) the
+  REAL candidate — deleting dead `AnimateSprite_PerFrame` (−404 bytes, zero
+  callers) — is an engine-API scope call, headlined to Volence in the
+  packet. LIVE-VERIFIED in oracle: anim-change path traced instruction-level
+  (prev_anim write, DUR_DYNAMIC → d3 hold = 8, mapping_frame 7,
+  piece count 5), Walk script cycling in the real game state, collision +
+  rings (both slid −10) live under Sonic. — RECORDED
