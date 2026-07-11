@@ -51,6 +51,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
@@ -74,7 +75,9 @@ fn strict_gate() -> bool {
 /// differs from `sfx_port.rs`'s map shape: plain `$227A`, debug `$2308`, both
 /// size `$12`.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x2308" } else { "0x227A" };
+    // Base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
+    let base = if debug { pins::HBLANK.debug_base } else { pins::HBLANK.plain_base };
+    let size = pins::HBLANK.plain_len;
     format!(
         "fill = 0x00\n\
          \n\
@@ -86,8 +89,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"hblank\"\n\
-         lma_base = {base}\n\
-         size = 0x12\n\
+         lma_base = {base:#x}\n\
+         size = {size:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -222,7 +225,8 @@ fn hblank_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(false);
 
-    let expected = &refrom[0x227A..0x228C];
+    let base = pins::HBLANK.plain_base as usize;
+    let expected = &refrom[base..base + pins::HBLANK.plain_len];
     let section = linked.section("hblank").expect("linked image must carry hblank");
     assert_region_matches(&section.bytes, expected, "hblank (plain) vs s4.bin[0x227A..0x228C]");
 
@@ -231,15 +235,17 @@ fn hblank_region_matches_reference() {
     // [4..6), the imm32 fixup hole at [6..10) resolving to $0000228A
     // (HBlank_Null is the SECOND proc, right after the 16-byte
     // HBlank_Dispatch body), then the abs.w dest ext word at [10..12).
+    let dispatch = pins::HBLANK.plain_base;
+    let null = pins::HBLANK.plain_base + pins::HBLANK_NULL_OFF as u32;
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
         &consumer.bytes[0..4],
-        &[0x00, 0x00, 0x22, 0x7A],
+        &dispatch.to_be_bytes(),
         "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $0000227A (plain)"
     );
     assert_eq!(
         &consumer.bytes[6..10],
-        &[0x00, 0x00, 0x22, 0x8A],
+        &null.to_be_bytes(),
         "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $0000228A (plain)"
     );
 }
@@ -261,19 +267,22 @@ fn hblank_debug_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(true);
 
-    let expected = &refrom[0x2308..0x231A];
+    let base = pins::HBLANK.debug_base as usize;
+    let expected = &refrom[base..base + pins::HBLANK.debug_len];
     let section = linked.section("hblank").expect("linked image must carry hblank");
     assert_region_matches(&section.bytes, expected, "hblank (debug) vs s4.debug.bin[0x2308..0x231A]");
 
+    let dispatch = pins::HBLANK.debug_base;
+    let null = pins::HBLANK.debug_base + pins::HBLANK_NULL_OFF as u32;
     let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
     assert_eq!(
         &consumer.bytes[0..4],
-        &[0x00, 0x00, 0x23, 0x08],
+        &dispatch.to_be_bytes(),
         "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $00002308 (debug)"
     );
     assert_eq!(
         &consumer.bytes[6..10],
-        &[0x00, 0x00, 0x23, 0x18],
+        &null.to_be_bytes(),
         "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $00002318 (debug)"
     );
 }

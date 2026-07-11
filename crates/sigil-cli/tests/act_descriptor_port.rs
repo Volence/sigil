@@ -37,6 +37,7 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test act_descriptor_port
 //! ```
 
+use sigil_harness::pins;
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
@@ -55,12 +56,13 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-const PLAIN_BASE: usize = 0x14AE6;
-const DEBUG_BASE: usize = 0x14B4E;
-const SIZE: usize = 0x274;
+// Region base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
+const PLAIN_BASE: usize = pins::ACT_DESCRIPTOR.plain_base as usize;
+const DEBUG_BASE: usize = pins::ACT_DESCRIPTOR.debug_base as usize;
+const SIZE: usize = pins::ACT_DESCRIPTOR.plain_len;
 
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x14B4E" } else { "0x14AE6" };
+    let base = if debug { pins::ACT_DESCRIPTOR.debug_base } else { pins::ACT_DESCRIPTOR.plain_base };
     format!(
         "fill = 0x00\n\
          \n\
@@ -72,8 +74,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"act_descriptor\"\n\
-         lma_base = {base}\n\
-         size = 0x274\n\
+         lma_base = {base:#x}\n\
+         size = {SIZE:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -84,65 +86,65 @@ fn map_toml(debug: bool) -> String {
 fn as_seam_equs(debug: bool) -> Vec<Section> {
     // (name, plain, debug) — label addresses from the two symbol tables.
     const LABELS: &[(&str, u32, u32)] = &[
-        ("OJZ_Palette", 0x1FDE4, 0x1FE4C),
-        ("OJZ_Act1_BG_Layout", 0x1FE64, 0x1FECC),
-        ("OJZ_Act1_BG_Tiles", 0x21E64, 0x21ECC),
-        ("ParallaxConfig_OJZ_Default", 0x11348, 0x113B0),
-        ("OJZ_Act_Pool_PageTable", 0x14ADA, 0x14B42),
-        ("OJZ_Sec0_Blocks", 0x14D5A, 0x14DC2),
-        ("OJZ_Sec1_Blocks", 0x1694A, 0x169B2),
-        ("OJZ_Sec2_Blocks", 0x17CC6, 0x17D2E),
-        ("OJZ_Sec3_Blocks", 0x1945E, 0x194C6),
-        ("OJZ_Sec4_Blocks", 0x17CC6, 0x17D2E), // content-dedup alias of Sec2
-        ("OJZ_Sec5_Blocks", 0x1A5AA, 0x1A612),
-        ("OJZ_Sec6_Blocks", 0x1B3D0, 0x1B438),
-        ("OJZ_Sec7_Blocks", 0x1CFD0, 0x1D038),
-        ("OJZ_Sec8_Blocks", 0x1E244, 0x1E2AC),
-        ("OJZ_Sec0_Objects", 0x11D40, 0x11DA8),
-        ("OJZ_Sec0_Rings", 0x11D48, 0x11DB0),
-        ("OJZ_Sec0_TypeTable", 0x11D3A, 0x11DA2),
-        ("OJZ_Sec1_Objects", 0x11D72, 0x11DDA),
-        ("OJZ_Sec1_Rings", 0x11D86, 0x11DEE),
-        ("OJZ_Sec1_TypeTable", 0x11D68, 0x11DD0),
-        ("OJZ_Sec2_Objects", 0x11DB8, 0x11E20),
-        ("OJZ_Sec2_Rings", 0x11DC6, 0x11E2E),
-        ("OJZ_Sec2_TypeTable", 0x11DAE, 0x11E16),
-        ("OJZ_Sec3_Objects", 0x11DFC, 0x11E64),
-        ("OJZ_Sec3_Rings", 0x11DFE, 0x11E66),
-        ("OJZ_Sec3_TypeTable", 0x11DFA, 0x11E62),
-        ("OJZ_Sec4_Objects", 0x11E04, 0x11E6C),
-        ("OJZ_Sec4_Rings", 0x11E06, 0x11E6E),
-        ("OJZ_Sec4_TypeTable", 0x11E02, 0x11E6A),
-        ("OJZ_Sec5_Objects", 0x11E3C, 0x11EA4),
-        ("OJZ_Sec5_Rings", 0x11E3E, 0x11EA6),
-        ("OJZ_Sec5_TypeTable", 0x11E3A, 0x11EA2),
-        ("OJZ_Sec6_Objects", 0x11E64, 0x11ECC),
-        ("OJZ_Sec6_Rings", 0x11E66, 0x11ECE),
-        ("OJZ_Sec6_TypeTable", 0x11E62, 0x11ECA),
-        ("OJZ_Sec7_Objects", 0x11E6C, 0x11ED4),
-        ("OJZ_Sec7_Rings", 0x11E6E, 0x11ED6),
-        ("OJZ_Sec7_TypeTable", 0x11E6A, 0x11ED2),
-        ("OJZ_Sec8_Objects", 0x11E94, 0x11EFC),
-        ("OJZ_Sec8_Rings", 0x11E96, 0x11EFE),
-        ("OJZ_Sec8_TypeTable", 0x11E92, 0x11EFA),
+        ("OJZ_Palette", pins::OJZ_PALETTE.plain, pins::OJZ_PALETTE.debug),
+        ("OJZ_Act1_BG_Layout", pins::OJZ_ACT1_BG_LAYOUT.plain, pins::OJZ_ACT1_BG_LAYOUT.debug),
+        ("OJZ_Act1_BG_Tiles", pins::OJZ_ACT1_BG_TILES.plain, pins::OJZ_ACT1_BG_TILES.debug),
+        ("ParallaxConfig_OJZ_Default", pins::PARALLAX_CONFIG_OJZ_DEFAULT.plain, pins::PARALLAX_CONFIG_OJZ_DEFAULT.debug),
+        ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
+        ("OJZ_Sec0_Blocks", pins::OJZ_SEC0_BLOCKS.plain, pins::OJZ_SEC0_BLOCKS.debug),
+        ("OJZ_Sec1_Blocks", pins::OJZ_SEC1_BLOCKS.plain, pins::OJZ_SEC1_BLOCKS.debug),
+        ("OJZ_Sec2_Blocks", pins::OJZ_SEC2_BLOCKS.plain, pins::OJZ_SEC2_BLOCKS.debug),
+        ("OJZ_Sec3_Blocks", pins::OJZ_SEC3_BLOCKS.plain, pins::OJZ_SEC3_BLOCKS.debug),
+        ("OJZ_Sec4_Blocks", pins::OJZ_SEC4_BLOCKS.plain, pins::OJZ_SEC4_BLOCKS.debug), // content-dedup alias of Sec2
+        ("OJZ_Sec5_Blocks", pins::OJZ_SEC5_BLOCKS.plain, pins::OJZ_SEC5_BLOCKS.debug),
+        ("OJZ_Sec6_Blocks", pins::OJZ_SEC6_BLOCKS.plain, pins::OJZ_SEC6_BLOCKS.debug),
+        ("OJZ_Sec7_Blocks", pins::OJZ_SEC7_BLOCKS.plain, pins::OJZ_SEC7_BLOCKS.debug),
+        ("OJZ_Sec8_Blocks", pins::OJZ_SEC8_BLOCKS.plain, pins::OJZ_SEC8_BLOCKS.debug),
+        ("OJZ_Sec0_Objects", pins::OJZ_SEC0_OBJECTS.plain, pins::OJZ_SEC0_OBJECTS.debug),
+        ("OJZ_Sec0_Rings", pins::OJZ_SEC0_RINGS.plain, pins::OJZ_SEC0_RINGS.debug),
+        ("OJZ_Sec0_TypeTable", pins::OJZ_SEC0_TYPE_TABLE.plain, pins::OJZ_SEC0_TYPE_TABLE.debug),
+        ("OJZ_Sec1_Objects", pins::OJZ_SEC1_OBJECTS.plain, pins::OJZ_SEC1_OBJECTS.debug),
+        ("OJZ_Sec1_Rings", pins::OJZ_SEC1_RINGS.plain, pins::OJZ_SEC1_RINGS.debug),
+        ("OJZ_Sec1_TypeTable", pins::OJZ_SEC1_TYPE_TABLE.plain, pins::OJZ_SEC1_TYPE_TABLE.debug),
+        ("OJZ_Sec2_Objects", pins::OJZ_SEC2_OBJECTS.plain, pins::OJZ_SEC2_OBJECTS.debug),
+        ("OJZ_Sec2_Rings", pins::OJZ_SEC2_RINGS.plain, pins::OJZ_SEC2_RINGS.debug),
+        ("OJZ_Sec2_TypeTable", pins::OJZ_SEC2_TYPE_TABLE.plain, pins::OJZ_SEC2_TYPE_TABLE.debug),
+        ("OJZ_Sec3_Objects", pins::OJZ_SEC3_OBJECTS.plain, pins::OJZ_SEC3_OBJECTS.debug),
+        ("OJZ_Sec3_Rings", pins::OJZ_SEC3_RINGS.plain, pins::OJZ_SEC3_RINGS.debug),
+        ("OJZ_Sec3_TypeTable", pins::OJZ_SEC3_TYPE_TABLE.plain, pins::OJZ_SEC3_TYPE_TABLE.debug),
+        ("OJZ_Sec4_Objects", pins::OJZ_SEC4_OBJECTS.plain, pins::OJZ_SEC4_OBJECTS.debug),
+        ("OJZ_Sec4_Rings", pins::OJZ_SEC4_RINGS.plain, pins::OJZ_SEC4_RINGS.debug),
+        ("OJZ_Sec4_TypeTable", pins::OJZ_SEC4_TYPE_TABLE.plain, pins::OJZ_SEC4_TYPE_TABLE.debug),
+        ("OJZ_Sec5_Objects", pins::OJZ_SEC5_OBJECTS.plain, pins::OJZ_SEC5_OBJECTS.debug),
+        ("OJZ_Sec5_Rings", pins::OJZ_SEC5_RINGS.plain, pins::OJZ_SEC5_RINGS.debug),
+        ("OJZ_Sec5_TypeTable", pins::OJZ_SEC5_TYPE_TABLE.plain, pins::OJZ_SEC5_TYPE_TABLE.debug),
+        ("OJZ_Sec6_Objects", pins::OJZ_SEC6_OBJECTS.plain, pins::OJZ_SEC6_OBJECTS.debug),
+        ("OJZ_Sec6_Rings", pins::OJZ_SEC6_RINGS.plain, pins::OJZ_SEC6_RINGS.debug),
+        ("OJZ_Sec6_TypeTable", pins::OJZ_SEC6_TYPE_TABLE.plain, pins::OJZ_SEC6_TYPE_TABLE.debug),
+        ("OJZ_Sec7_Objects", pins::OJZ_SEC7_OBJECTS.plain, pins::OJZ_SEC7_OBJECTS.debug),
+        ("OJZ_Sec7_Rings", pins::OJZ_SEC7_RINGS.plain, pins::OJZ_SEC7_RINGS.debug),
+        ("OJZ_Sec7_TypeTable", pins::OJZ_SEC7_TYPE_TABLE.plain, pins::OJZ_SEC7_TYPE_TABLE.debug),
+        ("OJZ_Sec8_Objects", pins::OJZ_SEC8_OBJECTS.plain, pins::OJZ_SEC8_OBJECTS.debug),
+        ("OJZ_Sec8_Rings", pins::OJZ_SEC8_RINGS.plain, pins::OJZ_SEC8_RINGS.debug),
+        ("OJZ_Sec8_TypeTable", pins::OJZ_SEC8_TYPE_TABLE.plain, pins::OJZ_SEC8_TYPE_TABLE.debug),
     ];
     const VALUES: &[(&str, u32)] = &[
-        ("OJZ_ACT_POOL_PAGES", 3),
-        ("BLOCK_INDEX_SIZE", 1024),
-        ("EDGE_CLAMP", 0),
-        ("MAX_ACT_SECTIONS", 48),
-        ("SECTION_SIZE_SHIFT", 11),
-        ("Act_len", 34),
-        ("Sec_len", 66),
-        ("OJZ_SEC0_BLOCK_DICT_LEN", 0),
-        ("OJZ_SEC1_BLOCK_DICT_LEN", 768),
-        ("OJZ_SEC2_BLOCK_DICT_LEN", 768),
-        ("OJZ_SEC3_BLOCK_DICT_LEN", 768),
-        ("OJZ_SEC4_BLOCK_DICT_LEN", 768),
-        ("OJZ_SEC5_BLOCK_DICT_LEN", 768),
-        ("OJZ_SEC6_BLOCK_DICT_LEN", 768),
-        ("OJZ_SEC7_BLOCK_DICT_LEN", 768),
-        ("OJZ_SEC8_BLOCK_DICT_LEN", 768),
+        ("OJZ_ACT_POOL_PAGES", pins::OJZ_ACT_POOL_PAGES.plain),
+        ("BLOCK_INDEX_SIZE", pins::BLOCK_INDEX_SIZE.plain),
+        ("EDGE_CLAMP", pins::EDGE_CLAMP.plain),
+        ("MAX_ACT_SECTIONS", pins::MAX_ACT_SECTIONS.plain),
+        ("SECTION_SIZE_SHIFT", pins::SECTION_SIZE_SHIFT.plain),
+        ("Act_len", pins::ACT_LEN.plain),
+        ("Sec_len", pins::SEC_LEN.plain),
+        ("OJZ_SEC0_BLOCK_DICT_LEN", pins::OJZ_SEC0_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC1_BLOCK_DICT_LEN", pins::OJZ_SEC1_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC2_BLOCK_DICT_LEN", pins::OJZ_SEC2_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC3_BLOCK_DICT_LEN", pins::OJZ_SEC3_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC4_BLOCK_DICT_LEN", pins::OJZ_SEC4_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC5_BLOCK_DICT_LEN", pins::OJZ_SEC5_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC6_BLOCK_DICT_LEN", pins::OJZ_SEC6_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC7_BLOCK_DICT_LEN", pins::OJZ_SEC7_BLOCK_DICT_LEN.plain),
+        ("OJZ_SEC8_BLOCK_DICT_LEN", pins::OJZ_SEC8_BLOCK_DICT_LEN.plain),
     ];
     let mut asm = String::from("cpu 68000\n");
     for (name, plain, dbg) in LABELS {
