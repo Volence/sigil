@@ -207,9 +207,13 @@ pub fn assemble_owned_equ_pairs(pairs: &[(&str, String)]) -> Vec<Section> {
 /// assert). Drift guards and parity asserts both ride `module.link_asserts`;
 /// this is the predicate that tells them apart.
 pub fn is_drift_guard(a: &LinkAssert) -> bool {
-    !a.message
-        .iter()
-        .any(|p| matches!(p, MsgPart::Text(t) if t.contains("[layout.odd-item]")))
+    // Exclude the D2.29 STRUCTURAL alignment asserts — both the `[layout.odd-item]`
+    // odd-address parity asserts and the `[layout.align]` congruence asserts that
+    // an `align` / `table item_align:` pad records. Neither is a user DRIFT guard
+    // (an `ensure`/twin-mirror co-residency check); they are layout invariants.
+    !a.message.iter().any(|p| {
+        matches!(p, MsgPart::Text(t) if t.contains("[layout.odd-item]") || t.contains("[layout.align]"))
+    })
 }
 
 /// The drift guards among `asserts`, excluding the `[layout.odd-item]` parity

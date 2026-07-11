@@ -73,6 +73,11 @@ pub enum Item {
     Struct(StructDecl),
     /// `offsets ...` declaration.
     Offsets(OffsetsDecl),
+    /// `table ...` declaration (Plan 7 T2-d): a counted / sentinel / sparse
+    /// collection. Sibling of [`Item::Offsets`] (disjoint cell byte contract),
+    /// sharing lowering machinery. Boxed — the attribute-rich [`TableDecl`] is
+    /// much larger than the other variants.
+    Table(Box<TableDecl>),
     /// `dispatch ...` declaration.
     Dispatch(DispatchDecl),
     /// `vars ...` declaration.
@@ -140,6 +145,7 @@ pub fn item_span(item: &Item) -> Span {
         Item::Bitfield(d) => d.span,
         Item::Struct(d) => d.span,
         Item::Offsets(d) => d.span,
+        Item::Table(d) => d.span,
         Item::Dispatch(d) => d.span,
         Item::Vars(d) => d.span,
         Item::Data(d) => d.span,
@@ -364,6 +370,107 @@ pub enum OffsetsTarget {
     /// table in declaration order under a hidden hygienic label; the table
     /// word targets it.
     Inline(Type, Expr),
+}
+
+/// A `table Name [: [RowType]] [(attrs)] { rows }` block (Plan 7 T2-d): a
+/// counted / sentinel / sparse ROM-data collection. The single abstract shape
+/// `[count header] rows [terminator]`, optionally fronted by a keyed index
+/// table. Two emission shapes, chosen by the presence of the `cell:` attribute:
+/// record-list (contiguous `[header?] rows [sentinel?]`) or index (a payload
+/// stream plus a key-addressed cell table). See the design doc
+/// `2026-07-11-counted-sparse-collection-design.md`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableDecl {
+    /// Whether this table is exported (`pub table`).
+    pub public: bool,
+    /// The table's name — the base label (record-list: the header/first byte;
+    /// index: the first CELL, so `Table[key - min_key]` indexing is correct).
+    pub name: String,
+    /// The optional `: [RowType]` element-type annotation (typed rows). `None`
+    /// for blob/parts rows.
+    pub row_type: Option<Type>,
+    /// The attribute knobs (`cell:`/`key:`/`hole:`/`header:`/…).
+    pub attrs: TableAttrs,
+    /// The rows, in declaration order (keyed rows must be ascending).
+    pub rows: Vec<TableRow>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// The `(attr, ...)` knobs of a [`TableDecl`]. Every field is optional; their
+/// presence selects the emission shape and semantics (design §3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableAttrs {
+    /// `cell: PtrType` — index mode: emit a cell per key over the key domain.
+    pub cell: Option<Type>,
+    /// `key: KeyDomain` — the key domain (a `lo..=hi` range in v1).
+    pub key: Option<KeyDomain>,
+    /// `hole: IntLiteral` — sparse fill for absent keys (else exhaustive).
+    pub hole: Option<Expr>,
+    /// `header: Type(Expr)` — a count header word; `Expr` is over the reserved
+    /// `count` (the derived row count).
+    pub header: Option<(Type, Expr)>,
+    /// `sentinel: Value` — a trailing terminator row/value.
+    pub sentinel: Option<Expr>,
+    /// `item_align: N` — a self-adjusting pad after every emitted part.
+    pub item_align: Option<Expr>,
+    /// `body: before | after` — payload-stream placement vs the cell table
+    /// (index mode only; default `after`).
+    pub body: Option<BodyPlacement>,
+    /// Span of the whole attribute list (for whole-list diagnostics).
+    pub span: Span,
+}
+
+/// Placement of the index-mode payload stream relative to the cell table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodyPlacement {
+    /// Payload emits BEFORE the cell table (`body: before`).
+    Before,
+    /// Payload emits AFTER the cell table (`body: after`, the default).
+    After,
+}
+
+/// A `table`'s key domain (design §3). v1 supports an inclusive integer range;
+/// enum / `offsets`-name domains are a later increment.
+#[derive(Debug, Clone, PartialEq)]
+pub enum KeyDomain {
+    /// `lo..=hi` — an inclusive integer range.
+    Range(Expr, Expr),
+}
+
+/// One row of a [`TableDecl`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableRow {
+    /// The optional `Key:` prefix (required in keyed tables, absent otherwise).
+    pub key: Option<Expr>,
+    /// The row's body — labeled data parts, or a typed record literal.
+    pub body: TableRowBody,
+    /// Span of the whole row.
+    pub span: Span,
+}
+
+/// A [`TableRow`]'s body (design §3 `row_body`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum TableRowBody {
+    /// Blob mode: one or more `Label = DataExpr` parts (the `offsets` D2.31
+    /// inline-body precedent). The cell (index mode) targets the FIRST part's
+    /// label.
+    Parts(Vec<TablePart>),
+    /// Typed mode: a `[RowType]` record literal (§4.5 struct-literal rules).
+    Record(Expr),
+}
+
+/// One `Label = DataExpr` part of a [`TableRowBody::Parts`] row — the exact
+/// `data`-item shape. The label is an ordinary module-scoped data label (real
+/// link symbol, `pub`-able, cross-seam-visible).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TablePart {
+    /// The part's label (a real link symbol).
+    pub label: String,
+    /// The part's data expression.
+    pub value: Expr,
+    /// Span of the whole part.
+    pub span: Span,
 }
 
 /// A `dispatch Name (encoding: E) { Member: target, ... }` block: an

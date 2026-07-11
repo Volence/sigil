@@ -457,6 +457,45 @@ impl<'a> Evaluator<'a> {
                 self.error(path.span, format!("dispatch `{a}` has no member `{b}`"));
                 return Value::Poison;
             }
+            // Step 3c: a `table` derived fact (Plan 7 T2-d) — `Name.count`
+            // (row count), and in keyed mode `Name.len` (key-span, the
+            // cell-table element count), `Name.min_key`, `Name.max_key`. All
+            // plain comptime ints, like the `offsets` ordinals.
+            if let Some(decl) = self.tables.get(a).copied() {
+                if b == "count" {
+                    return Value::Int(decl.rows.len() as i128);
+                }
+                if matches!(b, "len" | "min_key" | "max_key") {
+                    let ast::KeyDomain::Range(lo, hi) = match &decl.attrs.key {
+                        Some(k) => k,
+                        None => {
+                            self.error(
+                                path.span,
+                                format!(
+                                    "table `{a}` has no key domain — `.{b}` needs a `key:` attribute"
+                                ),
+                            );
+                            return Value::Poison;
+                        }
+                    };
+                    let mut env = crate::eval::Env::new();
+                    let lo_v = self.eval_expr(lo, &mut env);
+                    let hi_v = self.eval_expr(hi, &mut env);
+                    let (Some(lo), Some(hi)) = (lo_v.as_stored_int(), hi_v.as_stored_int()) else {
+                        return Value::Poison;
+                    };
+                    return match b {
+                        "min_key" => Value::Int(lo),
+                        "max_key" => Value::Int(hi),
+                        _ => Value::Int(hi - lo + 1),
+                    };
+                }
+                self.error(
+                    path.span,
+                    format!("table `{a}` has no derived fact `{b}` (expected count/len/min_key/max_key)"),
+                );
+                return Value::Poison;
+            }
         }
         // Any other multi-segment path (module paths, unknown enums).
         let full = path.segments.join(".");

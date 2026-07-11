@@ -322,6 +322,7 @@ impl Parser {
         if self.at_kw("bitfield") { return Some(Item::Bitfield(self.bitfield_decl(public))); }
         if self.at_kw("struct") { return Some(Item::Struct(self.struct_decl(public))); }
         if self.at_kw("offsets") { return Some(Item::Offsets(self.offsets_decl(public))); }
+        if self.at_kw("table") { return Some(Item::Table(Box::new(self.table_decl(public)))); }
         if self.at_kw("dispatch") { return Some(Item::Dispatch(self.dispatch_decl(public))); }
         if self.at_kw("vars") { return Some(Item::Vars(self.vars_decl(public))); }
         if self.at_kw("data") { return Some(Item::Data(self.data_decl(public))); }
@@ -400,9 +401,9 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 19] = ["use", "const", "equ", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 20] = ["use", "const", "equ", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "script", "comptime", "section", "pub",
-                                     "newtype", "offsets", "dispatch", "ensure", "ensure_fatal",
+                                     "newtype", "offsets", "table", "dispatch", "ensure", "ensure_fatal",
                                      "align"];
         let mut depth = 0i32;
         loop {
@@ -830,6 +831,183 @@ impl Parser {
         self.skip_newlines();
         self.expect(&Tok::RBrace, "`}`");
         OffsetsDecl { public, name, members, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse a `table Name [: [RowType]] [(attrs)] { rows }` declaration
+    /// (Plan 7 T2-d). A contextual item opener (the `offsets`/`align`
+    /// precedent). The attribute knobs and row grammar are described on
+    /// [`TableDecl`]; the ratified design lives in
+    /// `2026-07-11-counted-sparse-collection-design.md`.
+    fn table_decl(&mut self, public: bool) -> TableDecl {
+        let start = self.span();
+        self.bump(); // `table`
+        let name = self.expect_ident("table name");
+        // Optional `: [RowType]` element-type annotation.
+        let row_type = if self.eat(&Tok::Colon) {
+            self.expect(&Tok::LBracket, "`[` in table row type");
+            let ty = self.ty();
+            self.expect(&Tok::RBracket, "`]`");
+            Some(ty)
+        } else {
+            None
+        };
+        let attrs = self.table_attrs();
+        self.expect(&Tok::LBrace, "`{`");
+        let mut rows = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) {
+                break;
+            }
+            rows.push(self.table_row());
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) {
+                break; // trailing comma
+            }
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RBrace, "`}`");
+        TableDecl { public, name, row_type, attrs, rows, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse a `table`'s optional `(attr, ...)` knob list. Returns a default
+    /// (all-`None`) [`TableAttrs`] when no `(` follows.
+    fn table_attrs(&mut self) -> TableAttrs {
+        let start = self.span();
+        let mut attrs = TableAttrs {
+            cell: None,
+            key: None,
+            hole: None,
+            header: None,
+            sentinel: None,
+            item_align: None,
+            body: None,
+            span: start,
+        };
+        if !self.eat(&Tok::LParen) {
+            return attrs;
+        }
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RParen) {
+                break;
+            }
+            let key = self.expect_ident("table attribute name");
+            self.expect(&Tok::Colon, "`:`");
+            match key.as_str() {
+                "cell" => attrs.cell = Some(self.ty()),
+                "key" => attrs.key = Some(self.table_key_domain()),
+                "hole" => attrs.hole = Some(self.expr()),
+                "header" => {
+                    // `Type(Expr)` — a count word over the reserved `count`.
+                    let ty = self.ty();
+                    self.expect(&Tok::LParen, "`(` in table header");
+                    let e = self.expr();
+                    self.expect(&Tok::RParen, "`)`");
+                    attrs.header = Some((ty, e));
+                }
+                "sentinel" => attrs.sentinel = Some(self.expr()),
+                "item_align" => attrs.item_align = Some(self.expr()),
+                "body" => {
+                    let sp = self.span();
+                    let word = self.expect_ident("`before` or `after`");
+                    attrs.body = match word.as_str() {
+                        "before" => Some(BodyPlacement::Before),
+                        "after" => Some(BodyPlacement::After),
+                        _ => {
+                            self.diag_at(sp, "table `body:` must be `before` or `after`");
+                            None
+                        }
+                    };
+                }
+                other => {
+                    let sp = self.prev_span();
+                    self.diag_at(
+                        sp,
+                        format!(
+                            "unknown table attribute `{other}` (expected cell/key/hole/\
+                             header/sentinel/item_align/body)"
+                        ),
+                    );
+                    // Best-effort skip of the value expression.
+                    let _ = self.expr();
+                }
+            }
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        self.skip_newlines();
+        self.expect(&Tok::RParen, "`)`");
+        attrs.span = start.merge(self.prev_span());
+        attrs
+    }
+
+    /// Parse a `key:` domain — an inclusive integer range `lo..=hi` (v1). The
+    /// bounds are parsed at a binding power ABOVE the `..` range operator (5),
+    /// so the pratt parser does not swallow `..` into `lo` (it would otherwise
+    /// read `lo..` as a half-open [`Expr::Range`] and choke on the `=`).
+    fn table_key_domain(&mut self) -> KeyDomain {
+        let lo = self.expr_bp(5);
+        self.expect(&Tok::DotDot, "`..=` in table key range");
+        if !self.eat(&Tok::Eq) {
+            let sp = self.span();
+            self.diag_at(sp, "table `key:` range must be inclusive (`lo..=hi`)");
+        }
+        let hi = self.expr_bp(5);
+        KeyDomain::Range(lo, hi)
+    }
+
+    /// Parse one `table` row: an optional `Key:` prefix, then either a
+    /// comma-separated `Label = DataExpr` part list (blob mode) or a single
+    /// record literal (typed mode). Within a parts row, a `,` continues the
+    /// row only when a `Label =` part follows (else it separates rows) — this
+    /// keeps keyed multi-part rows unambiguous (design §3).
+    fn table_row(&mut self) -> TableRow {
+        let start = self.span();
+        // Optional key: speculatively parse `<expr> :`; rewind if no colon.
+        let save_pos = self.pos;
+        let save_diags = self.diags.len();
+        let key_candidate = self.expr_no_struct_lit();
+        let key = if self.at(&Tok::Colon) {
+            self.bump(); // `:`
+            Some(key_candidate)
+        } else {
+            self.pos = save_pos;
+            self.diags.truncate(save_diags);
+            None
+        };
+        let body = if matches!(self.peek(), Tok::Ident(_)) && matches!(self.peek2(), Tok::Eq) {
+            // Parts (blob) mode.
+            let mut parts = Vec::new();
+            loop {
+                let pspan = self.span();
+                let label = self.expect_ident("table part label");
+                self.expect(&Tok::Eq, "`=`");
+                let value = self.expr();
+                parts.push(TablePart { label, value, span: pspan.merge(self.prev_span()) });
+                // Continue as another PART only when `, Label =` follows;
+                // otherwise the comma separates ROWS (handled by the caller).
+                if self.at(&Tok::Comma)
+                    && matches!(self.peek_at(1), Tok::Ident(_))
+                    && matches!(self.peek_at(2), Tok::Eq)
+                {
+                    self.bump(); // `,`
+                    continue;
+                }
+                break;
+            }
+            TableRowBody::Parts(parts)
+        } else {
+            // Typed (record) mode.
+            TableRowBody::Record(self.expr())
+        };
+        TableRow { key, body, span: start.merge(self.prev_span()) }
     }
 
     /// Parse a `dispatch Name (encoding: E) { Member: target, ... }`
