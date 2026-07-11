@@ -15,7 +15,11 @@ Language features the file DEMANDS ship here (the demanded-features law).
 Byte-exactness is proven HERE and only owed here.
 
 **Step 2 — Modernize**: convert to the complete house format — jbra/jbsr,
-bare-symbol width-rule spellings, new-style idioms. Bytes MAY change;
+BARE conditional branches (no `.s`/`.w` — the assembler width-selects over
+the relaxation ladder; ratified 2026-07-10; exceptions: transliteration
+blocks pinned to a macro expansion, templates byte-locked to an AS twin's
+explicit widths, load-bearing bra.w tables), bare-symbol width-rule
+spellings, new-style idioms. Bytes MAY change;
 constraint is BEHAVIOR-IDENTICAL (spelling/idiom/layout/dead padding —
 no logic change). AS twin edits in lockstep, pins re-derived, gates
 re-green. No emulator time needed at this step.

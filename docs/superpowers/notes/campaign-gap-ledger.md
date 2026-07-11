@@ -855,3 +855,16 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   cold path; arbitrary-index remove can't roll); DrawRings (already
   rolling-pointer). Numbers recorded so future profiling has the baseline; the hot
   loop (RingCollision, per-frame × per-ring × per-player) got the rolling pointer. — RECORDED
+- [post-t8, 2026-07-10] **bare-Bcc house rule RATIFIED + back-propagated** — Volence:
+  conditional branches in .emp ports carry NO `.s`/`.w`; the assembler width-selects
+  (the two-rung relaxation ladder). The rule was already PRACTICED in tranches 1-6
+  (controllers/vdp_init/collision_lookup/sound_api are bare) but tranches 7-8
+  (collision.emp 13, rings.emp 14) pinned widths citing the jbcc deferral — a
+  drift the step-2 canonical text never named, now fixed there. Sweep result:
+  ALL 27 stripped branches relax to their original widths (hand-written sizes
+  were optimal) → byte-identical, no re-pin. Pinned exceptions, each commented
+  in place: rings' assert-transliteration `beq.w` (macro-expansion parity, row
+  16), aabb.emp's two `.s` (byte-locked to aabb.inc's explicit spellings —
+  divergent relaxation between twins is the hazard). jbcc-the-MNEMONIC stays
+  deferred — bare Bcc IS the idiom. — CLOSED (rule canonical in
+  campaign-port-loop.md step 2)
