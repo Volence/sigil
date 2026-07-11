@@ -64,6 +64,15 @@ impl SymbolTable {
             Some(SymbolValue::Poison) | None => None,
         }
     }
+
+    /// Whether any defined symbol's key ends with `suffix`. Used by the linker's
+    /// unexported-label hint (C1 item 5): a missing `Owner.label` reference is
+    /// contrasted against the hidden `$module$Owner$label` mangled form of a
+    /// NON-export local label — if one exists, the label is defined but simply
+    /// unexported, so the diagnostic can suggest the `export .label:` marker.
+    pub fn any_key_with_suffix(&self, suffix: &str) -> bool {
+        self.entries.keys().any(|k| k.ends_with(suffix))
+    }
 }
 
 #[cfg(test)]

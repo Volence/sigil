@@ -365,6 +365,68 @@ data D = E{ n: X }
 }
 
 // =============================================================================
+// C1 item 5 — unexported-label hint diagnostic
+// =============================================================================
+
+/// A cross-proc reference to a NON-export local label (`target.inner`) fails at
+/// link, but because the private mangled form exists the diagnostic suggests the
+/// `export .inner:` marker rather than a bare "unresolved symbol".
+#[test]
+fn unexported_label_reference_suggests_export_marker() {
+    let src = "\
+module m
+proc caller (a0: *u8) {
+    bra.w target.inner
+}
+proc target (a0: *u8) {
+.inner:
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected lowering errors: {:?}", errors(&diags));
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let link_err = sigil_link::link(&resolved, &SymbolTable::new())
+        .expect_err("a reference to an unexported label must fail at link");
+    let msgs: Vec<&str> = link_err.iter().map(|d| d.message.as_str()).collect();
+    assert!(
+        msgs.iter().any(|m| m.contains("not exported") && m.contains("export .inner:")),
+        "the unresolved-label error must suggest the export marker, got: {msgs:?}"
+    );
+}
+
+/// A genuine typo (no such label anywhere) stays a plain unresolved error — the
+/// hint does NOT false-fire.
+#[test]
+fn typo_label_reference_has_no_export_hint() {
+    let src = "\
+module m
+proc caller (a0: *u8) {
+    bra.w target.nonesuch
+}
+proc target (a0: *u8) {
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected lowering errors: {:?}", errors(&diags));
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let link_err = sigil_link::link(&resolved, &SymbolTable::new())
+        .expect_err("a reference to a nonexistent label must fail at link");
+    let msgs: Vec<&str> = link_err.iter().map(|d| d.message.as_str()).collect();
+    assert!(
+        msgs.iter().any(|m| m.contains("nonesuch")),
+        "the error must name the missing symbol: {msgs:?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("not exported")),
+        "a genuine typo must NOT get the export hint: {msgs:?}"
+    );
+}
+
+// =============================================================================
 // Call arguments — `routine shoot` / `routine(shoot)` binding a Label param
 // =============================================================================
 
