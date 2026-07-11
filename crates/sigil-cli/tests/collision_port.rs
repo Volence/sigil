@@ -53,6 +53,7 @@
 //! surfaces as a bare link symbol resolving to the per-shape region base.
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$2F0A`): `s4.bin[0x2F0A..0x3070]` (0x166 bytes).
 //! Debug (map base `$31C4`): `s4.debug.bin[0x31C4..0x332A]` (0x166 bytes).
@@ -69,6 +70,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
@@ -91,8 +93,8 @@ fn twin_guards() -> usize {
 }
 
 /// The region geometry — SHAPE-DEPENDENT base, shape-invariant size
-/// (2026-07-10 pins, both listings).
-const COLLISION_LEN: usize = 0x166;
+/// (sourced from `sigil_harness::pins` — regenerate via repin).
+const COLLISION_LEN: usize = pins::COLLISION.plain_len;
 
 /// Per-shape TRUE VMAs — the region base plus the two GAME-RAM cross-seam
 /// labels (game RAM moves with `__DEBUG__`).
@@ -102,8 +104,16 @@ struct Shape {
     dynamic_slots: u32,
 }
 
-const PLAIN: Shape = Shape { base: 0x2F0A, player_1: 0xFFFF_89EE, dynamic_slots: 0xFFFF_8A8E };
-const DEBUG: Shape = Shape { base: 0x31C4, player_1: 0xFFFF_8A10, dynamic_slots: 0xFFFF_8AB0 };
+const PLAIN: Shape = Shape {
+    base: pins::COLLISION.plain_base,
+    player_1: pins::PLAYER_1.plain,
+    dynamic_slots: pins::DYNAMIC_SLOTS.plain,
+};
+const DEBUG: Shape = Shape {
+    base: pins::COLLISION.debug_base,
+    player_1: pins::PLAYER_1.debug,
+    dynamic_slots: pins::DYNAMIC_SLOTS.debug,
+};
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
 fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
