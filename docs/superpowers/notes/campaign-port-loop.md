@@ -4,6 +4,17 @@ Per file/tranche. The byte gate is a STEP-1 artifact (the transcribe
 verifier), not a permanent style cage — after step 1 proves identity,
 later steps may change bytes, paying the lockstep + re-pin tax each time.
 
+**After step 1 the goal is BETTER, not SAME** (Volence, 2026-07-11).
+Byte-exactness to the original is proven at step 1 and never owed again.
+The continuous gate is only `.emp == AS twin` — two forms of the same
+file agreeing — and it is satisfied by EDITING BOTH SIDES in lockstep,
+never by freezing the .emp to the twin's stale spelling. "The twin has
+X", "it wouldn't be byte-exact", and "re-pin is work" are never reasons
+to keep old spelling or skip an improvement: the re-pin tax is the
+routine, budgeted cost of steps 2–5. Declining an improvement is a
+step-5 decision logged in the packet ("not taken, because X") — never a
+silent default.
+
 **Step 0 — Recon + design** (when the file carries hazards): read the real
 tree, extract per-shape addresses, settle design questions in a written
 note BEFORE code. Trivial files skip it.
@@ -14,12 +25,19 @@ shapes + mixed-build acceptance + negative probes + gate-off neutrality.
 Language features the file DEMANDS ship here (the demanded-features law).
 Byte-exactness is proven HERE and only owed here.
 
-**Step 2 — Modernize**: convert to the complete house format — jbra/jbsr,
-BARE conditional branches (no `.s`/`.w` — the assembler width-selects over
-the relaxation ladder; ratified 2026-07-10; exceptions: transliteration
-blocks pinned to a macro expansion, templates byte-locked to an AS twin's
-explicit widths, load-bearing bra.w tables), bare-symbol width-rule
-spellings, new-style idioms. Bytes MAY change;
+**Step 2 — Modernize**: convert to the complete house format. ALL
+control flow goes new-style — `bra.w`/`bra.s`/`jmp` → `jbra`,
+`bsr.w`/`bsr.s`/`jsr` → `jbsr` (`jmp`/`jsr` stay ONLY for computed
+targets), conditional branches go BARE (no `.s`/`.w` — the assembler
+width-selects over the relaxation ladder; ratified 2026-07-10). The ONLY
+width exceptions are STRUCTURAL, each with a site comment naming which:
+(1) transliteration blocks pinned to a macro expansion, (2)
+stride-locked jump-table slots (load-bearing `bra.w` tables). "The AS
+twin has an explicit width" is NEVER an exception (clarified 2026-07-11;
+the core.emp `bne.w RunObjects_Frozen` pin was a misapplication of the
+old wording) — the twin is ours: when a bare Bcc relaxes, shrink the
+twin in lockstep and re-pin, same as any step-2 byte change. Also:
+bare-symbol width-rule spellings, new-style idioms. Bytes MAY change;
 constraint is BEHAVIOR-IDENTICAL (spelling/idiom/layout/dead padding —
 no logic change). AS twin edits in lockstep, pins re-derived, gates
 re-green. No emulator time needed at this step.
