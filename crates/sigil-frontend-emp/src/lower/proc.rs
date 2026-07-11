@@ -275,18 +275,29 @@ fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
 /// (`a0`/`d2`/…), which is today's model (§5.1); if params ever gain symbolic
 /// names bound to registers, a write to that register would false-positive here.
 fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
-    let mut allowed: HashSet<&str> =
-        proc.clobbers.as_deref().unwrap_or(&[]).iter().map(String::as_str).collect();
+    // Expand + validate the clobbers reglist (C1 items 2/6): ranges expand to
+    // their register set, and an invalid entry (`clobbers(d9)`/typo) is a loud
+    // `[proc.clobber-invalid]` error at THIS site (the primary owner).
+    let clob = reglist_expand_checked(
+        proc.clobbers.as_deref().unwrap_or(&[]),
+        "clobber",
+        &proc.name,
+        proc.span,
+        diags,
+    );
+    let mut allowed: HashSet<String> = clob.regs;
     // Params are declarative register bindings (§5.1): a write to a param
     // register is part of the proc's own contract, not an undeclared clobber.
-    allowed.extend(proc.params.iter().map(|(name, _, _)| name.as_str()));
+    allowed.extend(proc.params.iter().map(|(name, _, _)| name.clone()));
     // Output registers (S2-D6e) are RESULTS: the proc writes them for the
     // caller to read, so a write to one is part of the contract, not an
     // undeclared clobber. THIS is the immediate win — it silences
     // clobber-undeclared on every declared output register. (Whether such a
     // register is actually written is a SEPARATE concern: `check_out`'s
     // `[proc.out-unwritten]` catches a declared-but-never-written output.)
-    allowed.extend(proc.out.as_deref().unwrap_or(&[]).iter().map(String::as_str));
+    // `out`'s own validation runs in `check_out`, so expand it quietly here.
+    let outs = reglist_set_quiet(proc.out.as_deref().unwrap_or(&[]));
+    allowed.extend(outs.regs);
 
     for item in &buf.items {
         let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };
@@ -294,10 +305,11 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
             continue;
         }
         // An SR destination is a machine-state clobber (tranche 5): undeclared
-        // unless the contract carries `clobbers(sr)` or `preserves(sr)` (the
-        // latter's balance is checked separately).
+        // unless the contract carries `clobbers(sr)`/`out(sr)` or `preserves(sr)`
+        // (the latter's balance is checked separately).
         if matches!(ops.last(), Some(CodeOperand::Sr))
-            && !allowed.contains("sr")
+            && !clob.has_sr
+            && !outs.has_sr
             && !proc.preserves.iter().any(|(lo, hi)| lo == "sr" && hi.is_none())
         {
             push(
@@ -537,8 +549,11 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
     }
 
     // A register cannot be both preserved and clobbered — a contradictory
-    // contract is diagnosed, not resolved. (`sr` first: it has no mask bit.)
-    if preserves_sr && proc.clobbers.as_deref().unwrap_or(&[]).iter().any(|c| c == "sr") {
+    // contract is diagnosed, not resolved. Expand the clobbers reglist quietly
+    // (C1 item 2 — `check_clobbers` owns its diagnostics). (`sr` first: it has
+    // no mask bit.)
+    let clob = reglist_set_quiet(proc.clobbers.as_deref().unwrap_or(&[]));
+    if preserves_sr && clob.has_sr {
         push(
             diags,
             Level::Error,
@@ -551,7 +566,7 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
         );
         return;
     }
-    for c in proc.clobbers.as_deref().unwrap_or(&[]) {
+    for c in &clob.regs {
         if let Some(bit) = preserves_reg_bit(c) {
             if declared & (1 << bit) != 0 {
                 push(
@@ -682,33 +697,25 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
 /// write-form heuristic, which on Z80 simply finds no matching writes (a Z80
 /// `out` currently cannot be verified-written — honest, like `preserves`).
 fn check_out(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
-    use crate::value::Reg;
-    let out = proc.out.as_deref().unwrap_or(&[]);
+    // Expand + validate the out reglist (C1 items 2/6): ranges (`out(d0-d1)`)
+    // expand to their register set; a nonsense name is `[proc.out-invalid]` and
+    // dropped from the downstream membership checks. Sorted for deterministic
+    // diagnostic order.
+    let out_set = reglist_expand_checked(
+        proc.out.as_deref().unwrap_or(&[]),
+        "out",
+        &proc.name,
+        proc.span,
+        diags,
+    );
+    let mut valid: Vec<String> = out_set.regs.into_iter().collect();
+    valid.sort();
 
-    // Validate spellings first; a nonsense name is reported and dropped from the
-    // downstream set-membership checks.
-    let mut valid: Vec<&str> = Vec::new();
-    for name in out {
-        if Reg::from_name(name).is_some() {
-            valid.push(name.as_str());
-        } else {
-            push(
-                diags,
-                Level::Error,
-                proc.span,
-                format!(
-                    "[proc.out-invalid] `{}` declares `out({name})` — `{name}` is not a \
-                     register (d0-d7/a0-a7/sp)",
-                    proc.name
-                ),
-            );
-        }
-    }
-
-    // out ∩ clobbers — returned AND scratch is contradictory.
-    let clobbers = proc.clobbers.as_deref().unwrap_or(&[]);
+    // out ∩ clobbers — returned AND scratch is contradictory. Expand the
+    // clobbers reglist quietly (`check_clobbers` owns its diagnostics).
+    let clobbers = reglist_set_quiet(proc.clobbers.as_deref().unwrap_or(&[]));
     for name in &valid {
-        if clobbers.iter().any(|c| c == name) {
+        if clobbers.regs.contains(name) {
             push(
                 diags,
                 Level::Error,
@@ -772,7 +779,7 @@ fn check_out(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<
         }
     }
     for name in &valid {
-        if !written.contains(*name) {
+        if !written.contains(name.as_str()) {
             push(
                 diags,
                 Level::Warning,
@@ -862,6 +869,89 @@ fn preserves_reg_bit(name: &str) -> Option<u8> {
     let r = Reg::from_name(name)?;
     let (is_a, n) = super::code::reg_kind(r);
     Some(if is_a { 8 + n } else { n })
+}
+
+/// A canonical movem-mask bit back to its register spelling (`d0`..`d7`,
+/// `a0`..`a7`) — the inverse of [`preserves_reg_bit`], for expanding a range.
+fn reg_bit_name(bit: u8) -> String {
+    if bit < 8 { format!("d{bit}") } else { format!("a{}", bit - 8) }
+}
+
+/// The expansion of a `clobbers`/`out` reglist (C1 items 2 + 6): the canonical
+/// register-name SET plus whether `sr` was declared (`sr` is machine state, not
+/// a movem register, so it rides its own set rather than a mask bit).
+#[derive(Default)]
+struct RegSet {
+    regs: std::collections::HashSet<String>,
+    has_sr: bool,
+}
+
+/// Expand + validate a `clobbers`/`out` reglist (C1 item 2 = ranges, item 6 =
+/// validation), calling `on_error` with a human reason for each invalid segment.
+/// Each segment is a single register (`sr` composes), or an inclusive `lo-hi`
+/// movem range; a range endpoint that is not a movem register, or a reversed
+/// range, is an error. Canonical names (`sp`→`a7`) so the set matches the
+/// `Reg::Display` spelling `check_clobbers`/`check_out` compare against.
+fn reglist_expand(segs: &[(String, Option<String>)], mut on_error: impl FnMut(String)) -> RegSet {
+    let mut set = RegSet::default();
+    for (lo, hi) in segs {
+        match hi {
+            // A single register or `sr`.
+            None => {
+                if lo == "sr" {
+                    set.has_sr = true;
+                } else if let Some(bit) = preserves_reg_bit(lo) {
+                    set.regs.insert(reg_bit_name(bit));
+                } else {
+                    on_error(format!("`{lo}` is not a register (d0-d7/a0-a7/sp) or `sr`"));
+                }
+            }
+            // An inclusive `lo-hi` movem range (`sr` cannot appear in a range).
+            Some(h) => {
+                let (Some(lo_bit), Some(hi_bit)) = (preserves_reg_bit(lo), preserves_reg_bit(h))
+                else {
+                    on_error(format!(
+                        "`{lo}-{h}` has a non-register endpoint (a range runs d0-d7/a0-a7/sp)"
+                    ));
+                    continue;
+                };
+                if hi_bit < lo_bit {
+                    on_error(format!("the range `{lo}-{h}` is reversed — a reglist range runs low to high"));
+                    continue;
+                }
+                for bit in lo_bit..=hi_bit {
+                    set.regs.insert(reg_bit_name(bit));
+                }
+            }
+        }
+    }
+    set
+}
+
+/// [`reglist_expand`] that emits `[proc.{tag}-invalid]` diagnostics for each bad
+/// segment (the primary validation site — C1 item 6).
+fn reglist_expand_checked(
+    segs: &[(String, Option<String>)],
+    tag: &str,
+    proc_name: &str,
+    span: Span,
+    diags: &mut Vec<Diagnostic>,
+) -> RegSet {
+    reglist_expand(segs, |reason| {
+        push(
+            diags,
+            Level::Error,
+            span,
+            format!("[proc.{tag}-invalid] `{proc_name}` declares an invalid `{tag}` register: {reason}"),
+        )
+    })
+}
+
+/// [`reglist_expand`] with errors DISCARDED — for a secondary reader of an
+/// attribute whose diagnostics another check already owns (so a bad register is
+/// reported once, not thrice).
+fn reglist_set_quiet(segs: &[(String, Option<String>)]) -> RegSet {
+    reglist_expand(segs, |_| {})
 }
 
 /// Format a canonical movem mask back to its reglist spelling (`d0-d1/a0`) —

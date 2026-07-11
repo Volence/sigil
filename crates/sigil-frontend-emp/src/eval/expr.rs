@@ -514,11 +514,29 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// In an immediate-operand context (C1 item 1), normalize a bare
+    /// [`Value::Label`] to its `LinkExpr(Sym(name))` form so it participates in
+    /// link-time arithmetic (`#Main - Base`) through the existing `here()`-lift
+    /// path. Outside an immediate (data initializers, call arguments) a label is
+    /// returned untouched, so `init + 2` in a data field stays a loud
+    /// label-arithmetic error. Any non-label value is returned as-is.
+    fn normalize_imm_label(&self, v: Value) -> Value {
+        if self.imm_ctx_active() {
+            if let Value::Label(n) = v {
+                return Value::LinkExpr(sigil_ir::expr::Expr::Sym(n));
+            }
+        }
+        v
+    }
+
     /// Apply a unary operator (D-P2.3). A `Poison` operand propagates silently.
     fn eval_unary(&mut self, op: UnOp, v: Value, span: Span) -> Value {
         if matches!(v, Value::Poison) {
             return Value::Poison;
         }
+        // C1 item 1: a label in an immediate (`#-Offset`) lifts into the
+        // link-time unary path below; inert elsewhere.
+        let v = self.normalize_imm_label(v);
         // D-H.2: a provisional operand lifts. `-x` → IR `Neg`; `~x` → IR `Not`
         // (bitwise complement); logical `!x` on a link value has no direct IR
         // node, so it becomes `x == 0` (its neutral 0/1 truth value at link).
@@ -591,6 +609,12 @@ impl<'a> Evaluator<'a> {
         if matches!(lhs, Value::Poison) || matches!(rhs, Value::Poison) {
             return Value::Poison;
         }
+        // C1 item 1: in an immediate operand, a label is a link-time value —
+        // `#Main - Base` / `#Routine + 4` build a residual `Sub`/`Add` tree via
+        // the `here()`-lift path below. Inert outside an immediate (a label in a
+        // data field / call argument keeps its loud label-arithmetic error).
+        let lhs = self.normalize_imm_label(lhs);
+        let rhs = self.normalize_imm_label(rhs);
         // D-H.2: a PROVISIONAL `here()` operand (a `LinkExpr`) makes the whole op
         // a residual link-time expression — build the `Expr` tree instead of
         // folding. Any operand mix where at least one side is `LinkExpr` lifts;

@@ -523,11 +523,14 @@ pub struct ProcDecl {
     pub name: String,
     /// Parameters as `(name, type, span)`, e.g. `(a0, *Sst)`.
     pub params: Vec<(String, Type, Span)>,
-    /// Registers this proc clobbers. `None` = no contract declared (legal —
-    /// half-ported files); `Some(vec![])` = the explicit `clobbers()` form,
-    /// "verified: touches nothing" (Volence ruling, tranche 3) — the lint
-    /// then flags ANY register write.
-    pub clobbers: Option<Vec<String>>,
+    /// Registers this proc clobbers, as declared reglist segments (C1 item 2 —
+    /// the movem-reglist grammar `preserves` uses): `clobbers(d0-d3/a1)` →
+    /// `[("d0", Some("d3")), ("a1", None)]`. `None` = no contract declared
+    /// (legal — half-ported files); `Some(vec![])` = the explicit `clobbers()`
+    /// form, "verified: touches nothing" (Volence ruling, tranche 3) — the lint
+    /// then flags ANY register write. Register validity + range expansion is a
+    /// lowering-time check (`[proc.clobber-invalid]`), not a parse-time one.
+    pub clobbers: Option<Vec<(String, Option<String>)>>,
     /// Registers this proc preserves (S2-D6b syntactic slice), as declared
     /// reglist segments: `preserves(d0-d1/a0)` → `[("d0", Some("d1")),
     /// ("a0", None)]`. Register validity is a lowering-time check
@@ -536,13 +539,13 @@ pub struct ProcDecl {
     pub preserves: Vec<(String, Option<String>)>,
     /// Registers this proc RETURNS — the third partition member (S2-D6e). `None`
     /// = no `out(...)` declared (legal); `Some(vec![])` = the explicit `out()`
-    /// form (declares "returns nothing"). Mirrors `clobbers`'s plain register
-    /// list (NOT `preserves`' movem-reglist form — outputs are named single
-    /// registers, never movem ranges). Output registers join `check_clobbers`'
-    /// `allowed` set (a result-register write is not `[proc.clobber-undeclared]`);
-    /// register validity is a lowering-time check (`[proc.out-invalid]`), not a
+    /// form (declares "returns nothing"). As of C1 item 2 it takes the SAME
+    /// movem-reglist grammar as `clobbers`/`preserves` (`out(d0-d1/a0)`).
+    /// Output registers join `check_clobbers`' `allowed` set (a result-register
+    /// write is not `[proc.clobber-undeclared]`); register validity + range
+    /// expansion is a lowering-time check (`[proc.out-invalid]`), not a
     /// parse-time one, mirroring `clobbers`/`preserves`.
-    pub out: Option<Vec<String>>,
+    pub out: Option<Vec<(String, Option<String>)>>,
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
     /// The proc's assembly body.

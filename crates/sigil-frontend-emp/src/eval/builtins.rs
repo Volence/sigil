@@ -559,7 +559,12 @@ impl<'a> Evaluator<'a> {
         if args[0].name.is_some() {
             self.error(args[0].span, format!("`{builtin}` takes a positional argument"));
         }
-        let arg = self.eval_expr(&args[0].value, env);
+        // C1 item 3: a BAREWORD argument (`bankid(Sfx_33)`) is a deferred link
+        // symbol here, exactly as it is in every other call-argument position
+        // (D-PP.3). Evaluate in a label context so an otherwise-unknown bareword
+        // becomes a `Value::Label` instead of `unknown name`; the string form
+        // (`bankid("Sfx_33")`) stays — it is the computed-name path.
+        let arg = self.in_label_ctx(|this| this.eval_expr(&args[0].value, env));
         // A leaked return / abort from the argument belongs to the caller.
         if self.aborted || self.pending_return.is_some() {
             return Err(Value::Poison);
@@ -567,6 +572,8 @@ impl<'a> Evaluator<'a> {
         match arg {
             Value::FnRef(n) => Ok(n),
             Value::Str(s) => Ok(s),
+            // A bareword label (`Sfx_33`) — the D-PP.3 deferred link symbol.
+            Value::Label(n) => Ok(n),
             Value::Poison => Err(Value::Poison),
             other => {
                 self.error(

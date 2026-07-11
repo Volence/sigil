@@ -319,6 +319,27 @@ fn unresolved_sym_leaves(expr: &Expr, lookup: &dyn Fn(&str) -> Option<i64>) -> V
     out
 }
 
+/// The C1-item-5 teaching hint: if `name` is a missing `Owner.label` reference
+/// and the symbol table holds a NON-export mangled definition for it
+/// (`$module$Owner$label` — the hidden form a private `.label:` in `proc Owner`
+/// emits), the label EXISTS but was never exported. Return the trailing hint
+/// suggesting the `export .label:` marker; `None` when `name` is not dotted or
+/// no such private label exists (a genuine typo stays a plain unresolved error).
+fn unexported_label_hint(name: &str, syms: &SymbolTable) -> Option<String> {
+    let (owner, label) = name.split_once('.')?;
+    // The private-label mangled key ends with `$Owner$label` (hygiene
+    // `local_symbol`: `$module$owner$name`).
+    let suffix = format!("${owner}${label}");
+    if syms.any_key_with_suffix(&suffix) {
+        Some(format!(
+            " — `{owner}` defines a label `.{label}` but it is not exported; add \
+             `export .{label}:` at its definition to reference it as `{owner}.{label}`"
+        ))
+    } else {
+        None
+    }
+}
+
 fn collect_unresolved_sym_leaves(expr: &Expr, lookup: &dyn Fn(&str) -> Option<i64>, out: &mut Vec<String>) {
     match expr {
         Expr::Int(_) => {}
@@ -381,8 +402,17 @@ fn apply_fixup(
                 }
                 _ => "target expression".to_string(),
             };
+            // C1 item 5: if a dangling `Owner.label` reference has a matching
+            // NON-export mangled definition (`$module$Owner$label`), the label
+            // exists but lacks `export` — suggest the marker rather than leaving
+            // the fix undiscoverable.
+            let hint = match &fx.target {
+                Expr::Sym(name) => unexported_label_hint(name, syms),
+                _ => missing.iter().find_map(|n| unexported_label_hint(n, syms)),
+            }
+            .unwrap_or_default();
             diags.push(diag(
-                format!("unresolved {what} for fixup in section {section} at offset {site_abs}"),
+                format!("unresolved {what} for fixup in section {section} at offset {site_abs}{hint}"),
                 span,
             ));
             return;

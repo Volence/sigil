@@ -280,6 +280,153 @@ data D = E{ code: nonesuch }
 }
 
 // =============================================================================
+// C1 item 1 — label values in INSTRUCTION IMMEDIATES (`#Main - Base`)
+// =============================================================================
+
+/// The objroutine demonstrator (C1 item 1): a prelude-class `comptime fn`
+/// returning the `l − ObjCodeBase` link expr is now WRITABLE — the bare label
+/// `ObjCodeBase` in its body resolves in the caller's immediate context. The
+/// `#objroutine(Main)` store lowers byte-identically to the hand-written
+/// `#Main − ObjCodeBase` bare form.
+const OBJROUTINE_DEMO: &str = "\
+module m
+comptime fn objroutine(l: Label) -> u16 { return l - ObjCodeBase }
+proc via_fn (a0: *u8) {
+    move.w #objroutine(Main), d0
+    rts
+}
+proc via_bare (a0: *u8) {
+    move.w #Main - ObjCodeBase, d0
+    rts
+}
+proc ObjCodeBase (a0: *u8) { rts }
+proc Main (a0: *u8) { rts }
+";
+
+#[test]
+fn objroutine_fn_matches_bare_label_difference() {
+    let (module, diags) = lower(OBJROUTINE_DEMO);
+    assert!(errors(&diags).is_empty(), "unexpected errors: {:?}", errors(&diags));
+    // move.w #imm, d0 (30 3C xx xx) then rts (4E 75) = 6 bytes.
+    let via_fn = label_bytes(&module, "text", "via_fn", 6);
+    let via_bare = label_bytes(&module, "text", "via_bare", 6);
+    assert_eq!(via_fn, via_bare, "objroutine(fn) must equal the bare label-difference form");
+    assert_eq!(&via_fn[0..2], &[0x30, 0x3C], "must be move.w #imm, d0");
+}
+
+/// The totality fence, immediate side: a typo'd label in an immediate is a LOUD
+/// LINK error naming the symbol — never a silent zero.
+#[test]
+fn typo_label_in_immediate_is_a_loud_link_error() {
+    let src = "\
+module m
+proc p (a0: *u8) {
+    move.w #NoSuchLabel, d0
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    // Nothing at eval (it is a deferred symbol) — the link pipeline rejects the
+    // unresolved reference loudly, naming it.
+    let mut errs: Vec<String> = errors(&diags).into_iter().map(|s| s.to_string()).collect();
+    if errs.is_empty() {
+        match sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true) {
+            Ok(resolved) => {
+                if let Err(ds) = sigil_link::link(&resolved, &SymbolTable::new()) {
+                    errs.extend(ds.iter().map(|d| d.message.clone()));
+                }
+            }
+            Err(ds) => errs.extend(ds.iter().map(|d| d.message.clone())),
+        }
+    }
+    assert!(
+        errs.iter().any(|e| e.contains("NoSuchLabel")),
+        "a typo'd immediate label must be a loud link error naming the symbol, got: {errs:?}"
+    );
+}
+
+/// The totality fence, comptime side: a bare name in a `const` body (NOT an
+/// immediate) keeps its loud `unknown name` — the immediate opening does not
+/// leak into comptime expressions.
+#[test]
+fn bare_name_in_const_body_still_hard_errors() {
+    let src = "\
+module m
+const X: u16 = Bogus + 1
+struct E { n: u16 }
+data D = E{ n: X }
+";
+    let (_module, diags) = lower(src);
+    let errs = errors(&diags);
+    assert!(
+        errs.iter().any(|e| e.contains("unknown name `Bogus`")),
+        "a bare name in a const body must keep the loud unknown-name error, got: {errs:?}"
+    );
+}
+
+// =============================================================================
+// C1 item 5 — unexported-label hint diagnostic
+// =============================================================================
+
+/// A cross-proc reference to a NON-export local label (`target.inner`) fails at
+/// link, but because the private mangled form exists the diagnostic suggests the
+/// `export .inner:` marker rather than a bare "unresolved symbol".
+#[test]
+fn unexported_label_reference_suggests_export_marker() {
+    let src = "\
+module m
+proc caller (a0: *u8) {
+    bra.w target.inner
+}
+proc target (a0: *u8) {
+.inner:
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected lowering errors: {:?}", errors(&diags));
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let link_err = sigil_link::link(&resolved, &SymbolTable::new())
+        .expect_err("a reference to an unexported label must fail at link");
+    let msgs: Vec<&str> = link_err.iter().map(|d| d.message.as_str()).collect();
+    assert!(
+        msgs.iter().any(|m| m.contains("not exported") && m.contains("export .inner:")),
+        "the unresolved-label error must suggest the export marker, got: {msgs:?}"
+    );
+}
+
+/// A genuine typo (no such label anywhere) stays a plain unresolved error — the
+/// hint does NOT false-fire.
+#[test]
+fn typo_label_reference_has_no_export_hint() {
+    let src = "\
+module m
+proc caller (a0: *u8) {
+    bra.w target.nonesuch
+}
+proc target (a0: *u8) {
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected lowering errors: {:?}", errors(&diags));
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let link_err = sigil_link::link(&resolved, &SymbolTable::new())
+        .expect_err("a reference to a nonexistent label must fail at link");
+    let msgs: Vec<&str> = link_err.iter().map(|d| d.message.as_str()).collect();
+    assert!(
+        msgs.iter().any(|m| m.contains("nonesuch")),
+        "the error must name the missing symbol: {msgs:?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("not exported")),
+        "a genuine typo must NOT get the export hint: {msgs:?}"
+    );
+}
+
+// =============================================================================
 // Call arguments — `routine shoot` / `routine(shoot)` binding a Label param
 // =============================================================================
 

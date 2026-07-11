@@ -1016,19 +1016,33 @@ impl Parser {
         params
     }
 
-    /// Parse the comma-separated register-name list inside a `clobbers(...)` /
-    /// `out(...)` clause, consuming the closing `)`. The opening `(` must
-    /// already have been eaten. The empty form (`()`) yields an empty vec — the
-    /// explicit "touches nothing" / "returns nothing" contract, distinct from
-    /// no declaration at all. Register-name VALIDITY is a lowering-time check
-    /// (`[proc.clobber-undeclared]` / `[proc.out-invalid]`), not parse-time, so
-    /// this accepts any identifier.
-    fn reg_name_list(&mut self) -> Vec<String> {
+    /// Parse the register reglist inside a `clobbers(...)` / `out(...)` /
+    /// `preserves(...)` clause, consuming the closing `)`. The opening `(` must
+    /// already have been eaten. As of C1 item 2 all three share ONE grammar: a
+    /// list of segments, each a single register or an inclusive `lo-hi` range
+    /// (`d0-d3/a1`, the movem-reglist form), separated by `/` OR `,` (comma
+    /// singles stay legal for `clobbers`/`out` back-compat; `sr` composes as a
+    /// single). The empty form (`()`) yields an empty vec — the explicit
+    /// "touches nothing" / "returns nothing" contract, distinct from no
+    /// declaration at all. Register-name VALIDITY + range expansion is a
+    /// lowering-time check (`[proc.clobber-invalid]` / `[proc.out-invalid]` /
+    /// `[proc.preserves-invalid]`), not parse-time, so this accepts any
+    /// identifier as a segment endpoint.
+    fn reg_list(&mut self) -> Vec<(String, Option<String>)> {
         let mut list = Vec::new();
         if !self.at(&Tok::RParen) {
             loop {
-                list.push(self.expect_ident("register"));
-                if !self.eat(&Tok::Comma) { break; }
+                let lo = self.expect_ident("register");
+                let hi = if self.eat(&Tok::Minus) {
+                    Some(self.expect_ident("range-end register"))
+                } else {
+                    None
+                };
+                list.push((lo, hi));
+                // Segments separate on `/` (movem) OR `,` (clobbers/out singles).
+                if !self.eat(&Tok::Slash) && !self.eat(&Tok::Comma) {
+                    break;
+                }
                 if self.at(&Tok::RParen) { break; } // trailing comma
             }
         }
@@ -1051,31 +1065,20 @@ impl Parser {
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
                 // `clobbers()` — the empty form is the explicit "touches
-                // nothing" contract (distinct from no declaration at all).
-                clobbers = Some(self.reg_name_list());
+                // nothing" contract (distinct from no declaration at all). C1
+                // item 2: accepts the movem-reglist grammar (`d0-d3/a1`).
+                clobbers = Some(self.reg_list());
             } else if self.eat_kw("out") {
-                // `out(d0, a1)` — the third partition member (S2-D6e): a
-                // comma-separated register list mirroring `clobbers`. `out()`
-                // empty is the explicit "returns nothing" contract. Register
-                // validity is a lowering-time check (`[proc.out-invalid]`).
+                // `out(d0-d1/a1)` — the third partition member (S2-D6e), C1
+                // item 2: same reglist grammar as `clobbers`/`preserves`.
+                // `out()` empty is the explicit "returns nothing" contract.
                 self.expect(&Tok::LParen, "`(`");
-                out = Some(self.reg_name_list());
+                out = Some(self.reg_list());
             } else if self.eat_kw("preserves") {
-                // `preserves(d0-d1/a0)` — a movem-style reglist: `/`-separated
-                // segments, each a register or an inclusive `lo-hi` range
-                // (S2-D6b syntactic slice).
+                // `preserves(d0-d1/a0)` — the movem-style reglist (S2-D6b
+                // syntactic slice), now the shared `clobbers`/`out` grammar.
                 self.expect(&Tok::LParen, "`(`");
-                loop {
-                    let lo = self.expect_ident("register");
-                    let hi = if self.eat(&Tok::Minus) {
-                        Some(self.expect_ident("range-end register"))
-                    } else {
-                        None
-                    };
-                    preserves.push((lo, hi));
-                    if !self.eat(&Tok::Slash) { break; }
-                }
-                self.expect(&Tok::RParen, "`)`");
+                preserves = self.reg_list();
             } else if self.eat_kw("falls_into") {
                 falls_into = Some(self.expect_ident("target proc name"));
             } else {

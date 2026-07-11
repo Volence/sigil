@@ -12,6 +12,54 @@ pub fn canonical(module_id: &str, name: &str) -> String {
     format!("{module_id}.{name}")
 }
 
+/// The owner-mangled link name of a NON-`pub` equ (C1 item 4): `$module$NAME`,
+/// exactly the hidden-symbol shape a non-export local label uses. The `$`
+/// wrapping is unspellable from source, so the equ stays module-local and two
+/// modules' same-named private equs no longer collide in the flat link table.
+pub fn mangled_equ(module_id: &str, name: &str) -> String {
+    format!("${module_id}${name}")
+}
+
+/// Every non-`pub` equ name a file declares (recursing into `section {}` bodies,
+/// consistent with [`defined_names`]) — the C1-item-4 set the rename pass mangles
+/// (both the equ's own [`EquSym`](sigil_ir::EquSym) and its in-module references,
+/// in lockstep). `pub equ`s are excluded: they keep their plain cross-seam name.
+pub fn nonpub_equ_names(file: &ast::File) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_nonpub_equs(&file.items, &mut out);
+    out
+}
+
+fn collect_nonpub_equs(items: &[ast::Item], out: &mut Vec<String>) {
+    for it in items {
+        match it {
+            ast::Item::Equ(e) if !e.is_pub => out.push(e.name.clone()),
+            ast::Item::Section(sec) => collect_nonpub_equs(&sec.items, out),
+            _ => {}
+        }
+    }
+}
+
+/// Every `pub equ` name a file declares (recursing into `section {}` bodies) —
+/// the cross-seam-contract equs that keep their plain link name (C1 item 4). Two
+/// modules declaring the same `pub equ` genuinely collide in the flat link
+/// table; `build_program` uses this to name both modules in that diagnostic.
+pub fn pub_equ_names(file: &ast::File) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_pub_equs(&file.items, &mut out);
+    out
+}
+
+fn collect_pub_equs(items: &[ast::Item], out: &mut Vec<String>) {
+    for it in items {
+        match it {
+            ast::Item::Equ(e) if e.is_pub => out.push(e.name.clone()),
+            ast::Item::Section(sec) => collect_pub_equs(&sec.items, out),
+            _ => {}
+        }
+    }
+}
+
 /// Every module's `pub` top-level LABEL/VALUE names → its module id.
 /// (Types/consts/fns are handled by the ambient path in Task 3, but they are
 /// indexed here too so `suggest_use` can point at any exported name.)
@@ -188,6 +236,21 @@ impl<'a> ResolveEnv<'a> {
         for name in defined_names(file) {
             let c = canonical(module_id, &name);
             map.insert(name, c);
+        }
+        // C1 item 4: equ names enter the map so an in-module operand reference
+        // to an equ (a symbol reference — an equ used as an absolute address is
+        // NOT inlined) resolves in `report_unresolved` and the rename pass
+        // rewrites the reference and the equ's own `EquSym` in lockstep. Inserted
+        // LAST so a module-local equ wins over an imported/prelude name of the
+        // same spelling. A `pub equ` maps to ITSELF — it keeps its plain
+        // cross-seam name; a non-`pub` equ maps to its owner-mangled
+        // `$module$NAME`, so two modules' same-named private equs never collide.
+        for name in pub_equ_names(file) {
+            map.insert(name.clone(), name);
+        }
+        for name in nonpub_equ_names(file) {
+            let m = mangled_equ(module_id, &name);
+            map.insert(name, m);
         }
         (ResolveEnv { map, index }, diags)
     }
