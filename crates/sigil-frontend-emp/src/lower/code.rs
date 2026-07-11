@@ -696,6 +696,12 @@ fn lower_m68k_imm_link(
         return;
     }
     let mut target: Option<Expr> = None;
+    // A single PINNED-absolute operand (`(Sym).w`/`.l`) is ADMITTED alongside the
+    // imm (tranche 10 — core's Init/Alloc SP-write shape): its address is a
+    // SECOND, independent fixup at a distinct offset. `Some((target, long))` when
+    // seen. RELAXABLE absolutes (`Sym`/`SymOff`) stay refused below — their
+    // abs.w/abs.l width selection would genuinely conflict with the imm deferral.
+    let mut abs: Option<(Expr, bool)> = None;
     let mut enc_ops = Vec::with_capacity(ops.len());
     for op in ops {
         match op {
@@ -710,12 +716,41 @@ fn lower_m68k_imm_link(
                 }
                 enc_ops.push(M68kOperand::Imm(0));
             }
-            CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. } => {
+            CodeOperand::AbsSym { target: n, long } => {
+                if abs.is_some() {
+                    push_err(
+                        diags,
+                        span,
+                        "[lower.imm-link] a link-time immediate combined with more than one \
+                         symbolic absolute operand is not yet supported",
+                    );
+                    return;
+                }
+                abs = Some((Expr::Sym(n.clone()), *long));
+                enc_ops.push(if *long {
+                    M68kOperand::AbsL(0)
+                } else {
+                    M68kOperand::AbsW(0)
+                });
+            }
+            CodeOperand::Sym(_) | CodeOperand::SymOff { .. } => {
                 push_err(
                     diags,
                     span,
                     "[lower.imm-link] a link-time immediate combined with another symbolic \
                      operand is not yet supported",
+                );
+                return;
+            }
+            // Any OTHER extension-word operand AFTER a pinned-abs operand would
+            // land its ext words BEHIND the abs field and move the abs fixup
+            // offset (mirrors `lower_m68k_abs_sym`'s caution) — still deferred.
+            other if operand_has_ext_words(other) && abs.is_some() => {
+                push_err(
+                    diags,
+                    span,
+                    "[lower.imm-link] a symbolic absolute operand followed by another \
+                     extension-word operand is not yet supported",
                 );
                 return;
             }
@@ -766,6 +801,20 @@ fn lower_m68k_imm_link(
     }
     let mut df = df;
     df.fixups.push(Fixup { kind, offset: 2, target });
+    // The pinned-absolute destination is a SECOND, independent fixup at a
+    // distinct offset. The imm is the SOURCE, so ITS ext words come first —
+    // the abs ext word follows the opcode word (2) + the imm field
+    // (`imm_field_width`). Byte-exact for core's `move.w #imm, (abs).w` (imm
+    // @2, abs.w @4) and its `.l`/abs.l relatives.
+    if let Some((abs_target, long)) = abs {
+        let imm_field_width = match size {
+            M68kSize::W => 2,
+            M68kSize::L => 4,
+            _ => unreachable!("guarded at entry: imm-link size is .w or .l"),
+        };
+        let abs_kind = if long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
+        df.fixups.push(Fixup { kind: abs_kind, offset: 2 + imm_field_width, target: abs_target });
+    }
     emit_data_frag(builder, df);
 }
 

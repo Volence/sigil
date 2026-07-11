@@ -882,6 +882,107 @@ fn imm_link_word_objroutine_store_collapses_zero_disp_dest() {
 }
 
 #[test]
+fn imm_link_word_plus_pinned_abs_w_emits_two_fixups() {
+    // Tranche 10 (core's Init/Alloc SP-write shape): a LINK-time word immediate
+    // SOURCE combined with a PINNED-absolute `.w` destination —
+    // `move.w #extern("Tbl"), (SP).w`. Two INDEPENDENT fixups at distinct
+    // offsets: the imm hole @2 (Value16Be, source ext word first) and the
+    // abs.w ext word @4 (Abs16Be). Opcode `31FC` (`move.w #imm, (abs).w`).
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(&asm_1("move.w #extern(\"Tbl\"), (SP).w"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(
+                df.bytes,
+                vec![0x31, 0xFC, 0x00, 0x00, 0x00, 0x00],
+                "move.w #0, (0).w hole (opcode + imm hole + abs.w hole)"
+            );
+            assert_eq!(df.fixups.len(), 2, "exactly two independent fixups");
+            // The imm SOURCE ext word @2.
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value16Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
+            // The pinned abs.w ext word @4 (after opcode word + imm field).
+            assert_eq!(df.fixups[1].kind, sigil_ir::FixupKind::Abs16Be);
+            assert_eq!(df.fixups[1].offset, 4);
+            assert_eq!(df.fixups[1].target, Expr::Sym("SP".into()));
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_word_cmpi_plus_pinned_abs_w_emits_two_fixups() {
+    // The `cmpi.w #extern("Tbl"), (SP).w` variant (core's cmpi bound-check
+    // shape) — same two-fixup skeleton, opcode `0C78`.
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(&asm_1("cmpi.w #extern(\"Tbl\"), (SP).w"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(
+                df.bytes,
+                vec![0x0C, 0x78, 0x00, 0x00, 0x00, 0x00],
+                "cmpi.w #0, (0).w hole"
+            );
+            assert_eq!(df.fixups.len(), 2, "exactly two independent fixups");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value16Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
+            assert_eq!(df.fixups[1].kind, sigil_ir::FixupKind::Abs16Be);
+            assert_eq!(df.fixups[1].offset, 4);
+            assert_eq!(df.fixups[1].target, Expr::Sym("SP".into()));
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_long_plus_pinned_abs_w_emits_two_fixups() {
+    // A `.l` link imm with a pinned abs.w destination: the imm SOURCE ext
+    // words (4 bytes) precede the abs.w ext word, so Value32Be @2 + Abs16Be @6.
+    use sigil_ir::{Expr, Fragment};
+    let (code, ediags) = eval_asm_with(&asm_1("move.l #extern(\"X\"), (SP).w"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            assert_eq!(df.fixups.len(), 2, "exactly two independent fixups");
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value32Be);
+            assert_eq!(df.fixups[0].offset, 2);
+            assert_eq!(df.fixups[0].target, Expr::Sym("X".into()));
+            assert_eq!(df.fixups[1].kind, sigil_ir::FixupKind::Abs16Be);
+            assert_eq!(df.fixups[1].offset, 6);
+            assert_eq!(df.fixups[1].target, Expr::Sym("SP".into()));
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
+}
+
+#[test]
+fn imm_link_plus_relaxable_sym_still_refused() {
+    // A RELAXABLE second symbol (a bare `Foo`, width undecided between
+    // abs.w/abs.l) STILL collides with the imm deferral — only the PINNED
+    // `(Sym).w`/`.l` form is admitted.
+    let (code, ediags) = eval_asm_with(&asm_1("move.w #extern(\"Tbl\"), Foo"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d
+            .message
+            .contains("[lower.imm-link]")
+            && d.message.contains("combined with another symbolic")),
+        "expected the relaxable-second-symbol refusal, got: {diags:?}"
+    );
+}
+
+#[test]
 fn imm_link_byte_size_is_refused_with_steering() {
     // A `.b` symbolic immediate has no deferral yet (the remaining width of
     // the ledgered extension gap) — steer, don't guess.
