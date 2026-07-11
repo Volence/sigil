@@ -308,6 +308,21 @@ fn bankid_width1_folds_to_bank_id_68k() {
     assert_eq!(bytes[0], 0x01, "bankid at $8000 must fold to 1; got {:#X}", bytes[0]);
 }
 
+/// (C1 item 3) `bankid(L)` with a BAREWORD label argument captures the same
+/// symbol name as `bankid("L")` — byte-identical fold at vma $8000 (bank 1).
+/// The string form stays valid (it is the computed-name path); the bareword
+/// gains rename-refactor + typo checking.
+#[test]
+fn bankid_bareword_matches_string_form() {
+    let src = "module m\n\
+               section s (cpu: m68000, vma: $8000) {\n\
+                 data L: u8 = bankid(L)\n\
+               }\n";
+    let m = lower_ok(src);
+    let bytes = linked_bytes(&m, "s");
+    assert_eq!(bytes[0], 0x01, "bankid(L) bareword must fold like bankid(\"L\"); got {:#X}", bytes[0]);
+}
+
 /// bankid via the FnRef capture path (a bare name — winptr's first capture path)
 /// captures the NAME identically to `winptr(sfx)` and builds the same residual
 /// tree over `Sym("sfx")`. Proven at the frontend cell (a `comptime fn` is erased
