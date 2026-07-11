@@ -261,9 +261,33 @@ pub fn build_program(
     // `dedup_overlay_pass_diags`'s own O(n·m) shape in `lower/mod.rs`.
     let mut seen_across_modules: Vec<Diagnostic> = Vec::new();
 
+    // C1 item 4: a `pub equ` keeps its plain link name, so two modules declaring
+    // the same one genuinely collide in the flat link table. Detect it HERE,
+    // where module identity is known, so the diagnostic can NAME both modules
+    // (the linker's dup-symbol check sees only section names). `pub equ` name →
+    // the first module id that declared it.
+    let mut pub_equ_owner: HashMap<String, String> = HashMap::new();
+
     // 4. Per-module: resolve names, lower, report unresolved, rename, concat.
     for &i in &reachable {
         let pm = &manifest.modules[i];
+        for equ_name in imports::pub_equ_names(&pm.file) {
+            if let Some(prev) = pub_equ_owner.get(&equ_name) {
+                diags.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "[equ.collision] `pub equ {equ_name}` is declared by both module `{prev}` \
+                         and module `{}` — a `pub equ` is a plain cross-seam link symbol, so its \
+                         name must be unique across the program; rename one, or make one non-`pub` \
+                         (a private equ is module-scoped)",
+                        pm.id
+                    ),
+                    primary: pm.file.module.span,
+                });
+            } else {
+                pub_equ_owner.insert(equ_name, pm.id.clone());
+            }
+        }
         // ResolveEnv/report_unresolved/rename all operate on the ORIGINAL file &
         // env — the rename map is this module's own defs + its label imports. The
         // prepended comptime items belong to OTHER modules and must not be renamed.

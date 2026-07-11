@@ -70,6 +70,15 @@ pub fn rename_module(module: &mut Module, map: &HashMap<String, String>) {
                 label.name = canon;
             }
         }
+        // C1 item 4: a non-`pub` equ's own symbol is mangled through the SAME
+        // map that rewrites its references (below), so definition and use stay
+        // in lockstep. A `pub equ` is absent from the map and keeps its plain
+        // name; a plain-int equ passes through unchanged.
+        for eq in &mut sec.equ_syms {
+            if let Some(canon) = canonicalize_name(&eq.name, map) {
+                eq.name = canon;
+            }
+        }
         for frag in &mut sec.fragments {
             rename_fragment(frag, map);
         }

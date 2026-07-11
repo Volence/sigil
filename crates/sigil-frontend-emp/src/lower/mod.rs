@@ -592,6 +592,11 @@ fn lower_equ_item(
             }
         }
     };
+    // C1 item 4: the equ's link NAME is plain here; a non-`pub` equ is owner-
+    // mangled to `$module$NAME` by the RENAME pass (multi-module build), which
+    // rewrites the matching in-module symbol references in lockstep. Standalone
+    // lowering has no rename pass, so both definition and references keep the
+    // plain name and stay consistent.
     builder.add_equ_sym(sigil_ir::EquSym { name: decl.name.clone(), expr, span: decl.span });
 }
 
