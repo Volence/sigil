@@ -35,6 +35,7 @@
 //! consumer and asserts the fixup resolves to the per-shape base.
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$309DE`): `s4.bin[0x309DE..0x309E6]` (8 bytes).
 //! Debug (map base `$30A46`): `s4.debug.bin[0x30A46..0x30A4E]` (8 bytes).
@@ -52,9 +53,18 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// Region geometry (sourced from `sigil_harness::pins` — regenerate via
+/// repin). Content is shape-invariant; only the base moves.
+const REGION_LEN: usize = pins::PARTICLE_ANIMS.plain_len;
+
+fn region_base(debug: bool) -> u32 {
+    if debug { pins::PARTICLE_ANIMS.debug_base } else { pins::PARTICLE_ANIMS.plain_base }
+}
 
 fn anims_dir() -> PathBuf {
     let aeon =
@@ -69,7 +79,7 @@ fn strict_gate() -> bool {
 /// The map: a `text` carrier region plus the real `particle_anims` region
 /// pinned at the per-shape reference base, sized to the 8-byte block.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x30A46" } else { "0x309DE" };
+    let base = region_base(debug);
     format!(
         "fill = 0x00\n\
          \n\
@@ -81,8 +91,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"particle_anims\"\n\
-         lma_base = {base}\n\
-         size = 0x8\n\
+         lma_base = {base:#x}\n\
+         size = {REGION_LEN:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -223,7 +233,7 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let (resolved, linked, link_asserts) = compile_real_file(debug);
     assert_drift_guard(&resolved, &link_asserts);
 
-    let expected = &refrom[base..base + 8];
+    let expected = &refrom[base..base + REGION_LEN];
     let section =
         linked.section("particle_anims").expect("linked image must carry particle_anims");
     assert_eq!(
@@ -231,7 +241,7 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
         expected,
         "particle_anims ({}) vs {rom_name}[{base:#X}..{:#X}]",
         if debug { "debug" } else { "plain" },
-        base + 8
+        base + REGION_LEN
     );
 
     // Bare-name proof: the `dc.l Ani_Particle` consumer resolves to the
@@ -255,10 +265,10 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
 
 #[test]
 fn particle_anims_region_matches_reference() {
-    gate(false, "s4.bin", 0x309DE);
+    gate(false, "s4.bin", region_base(false) as usize);
 }
 
 #[test]
 fn particle_anims_debug_region_matches_reference() {
-    gate(true, "s4.debug.bin", 0x30A46);
+    gate(true, "s4.debug.bin", region_base(true) as usize);
 }
