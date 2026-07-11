@@ -1091,6 +1091,22 @@ pub enum AsmStmt {
     Instr(InstrLine),
     /// A comptime-fn call at statement position, e.g. `spawn(SeedDef, offset: ...)`.
     Call(Expr),
+    /// A local typed-register binding (Spec 2, C2): `let a2: *Sst`. Emits ZERO
+    /// bytes — it is the author's typing ASSERTION about a register that already
+    /// holds its value (no initializer). From the `let` to the end of the
+    /// enclosing block (or until a subsequent `let` rebinds the same register), a
+    /// bare field displacement `field(a2)` resolves in the type's field space,
+    /// identically to a typed proc PARAM. `reg` is the register spelling (aN/dN);
+    /// a non-register name is diagnosed at lowering.
+    Let {
+        /// The register being typed (spelling, e.g. `"a2"`).
+        reg: String,
+        /// The asserted type (anything a typed param accepts: `*Struct` pointer
+        /// views, value newtypes).
+        ty: Type,
+        /// Span of the whole `let` statement.
+        span: Span,
+    },
     /// A `todo!`/`unreachable!` statement trap (S2-D11(e)): assembles to the
     /// 68k ILLEGAL word so a WIP file builds and RUNS to the hole; `todo!`
     /// additionally names itself at build time (`[todo.present]`).

@@ -216,6 +216,46 @@ impl Evaluator<'_> {
                     ),
                 }
             }
+            AsmStmt::Let { reg, ty, span } => {
+                // Spec 2, C2: a local typed-register binding. Emits ZERO bytes —
+                // it writes the SAME `reg_pointee_struct` overlay params seed
+                // (D6.A3), so from here down a bare field displacement `f(reg)`
+                // resolves in the type's field space exactly as a param does,
+                // including the tranche-7b namespace closure (a bare const does
+                // not resolve in the displacement slot on a typed register). The
+                // binding rides to the end of the enclosing block — the `If` arm
+                // snapshots/restores the map so a branch-local `let` cannot leak.
+                //
+                // Register-name validity is the ONE divergence from a param
+                // (params silently skip a non-register name; `let` is the decl
+                // site, so it reports): a non-register name is a loud error.
+                let Some(r) = Reg::from_name(reg) else {
+                    self.error(
+                        *span,
+                        format!(
+                            "[asm.let-not-register] `{reg}` is not a register; \
+                             `let <reg>: <Type>` types an address/data register (aN/dN)"
+                        ),
+                    );
+                    return;
+                };
+                // Only a pointer-to-struct participates in field-space
+                // resolution (param-identical: a value newtype on a data
+                // register — `let d0: Angle` — is accepted but has no
+                // displacement effect, since data registers take no field
+                // displacement). Resolve SILENTLY: an unresolvable/non-struct
+                // pointee simply does not bind — its diagnostics belong to the
+                // type's own decl site, and reporting here would diverge from
+                // the param path (which resolves on a scratch evaluator).
+                if let ast::Type::Ptr(inner) = ty {
+                    let watermark = self.diags.len();
+                    let inner_ty = self.resolve_type(inner);
+                    if let Some(sname) = self.struct_name_for_offsetof(&inner_ty, *span) {
+                        self.reg_pointee_struct.insert(r, sname);
+                    }
+                    self.diags.truncate(watermark);
+                }
+            }
             AsmStmt::Trap { kind, message, span } => {
                 // S2-D11(e): both spellings assemble to the 68k ILLEGAL
                 // word — the file builds and RUNS to the hole. 68k-only
@@ -270,9 +310,18 @@ impl Evaluator<'_> {
                 let branch: Option<&[AsmStmt]> =
                     if truthy { Some(then) } else { els.as_deref() };
                 if let Some(stmts) = branch {
+                    // C2 lexical scope: a `let` binding is scoped to its
+                    // enclosing block. The branch is a nested block, so snapshot
+                    // the register-type map and restore it after lowering — a
+                    // binding made INSIDE the branch does not leak past it, while
+                    // a binding made before the `if` (already in the map) stays
+                    // visible within. Bindings emit no bytes, so this affects
+                    // operand resolution only.
+                    let saved_reg_types = self.reg_pointee_struct.clone();
                     for stmt in stmts {
                         self.lower_asm_stmt(stmt, scope, buf, env);
                     }
+                    self.reg_pointee_struct = saved_reg_types;
                 }
             }
         }

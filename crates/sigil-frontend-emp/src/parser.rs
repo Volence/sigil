@@ -1304,6 +1304,17 @@ impl Parser {
         if self.at_kw("if") {
             return Some(self.asm_if(splices_allowed));
         }
+        // statement-position local typed-register binding (Spec 2, C2):
+        // `let <reg>: <Type>` (NO `=`). `let` is reserved statement-leading
+        // (S2-D1) and no 68k/Z80 mnemonic is named `let`, so this can never
+        // shadow an instruction line. The register-token class + the absence of
+        // `=` make it syntactically disjoint from any comptime value binding
+        // (`let name = expr`); register-name VALIDITY is a lowering-time check
+        // (mirroring params / the clobber-lint model), so a bad name still parses
+        // here and is diagnosed with its type in hand.
+        if self.at_kw("let") {
+            return Some(self.asm_let());
+        }
         // statement-position comptime call: `ident(` where the `(` is
         // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
         // is an instruction with a parenthesized operand, not a call.
@@ -1314,6 +1325,24 @@ impl Parser {
             return Some(AsmStmt::Call(e));
         }
         Some(AsmStmt::Instr(self.instr_line(splices_allowed)))
+    }
+
+    /// Parse a `let <reg>: <Type>` local typed-register binding (Spec 2, C2).
+    /// The leading `let` is already confirmed by the caller. Reuses the SAME
+    /// type grammar as a proc param (`self.ty()`), so `<Type>` accepts everything
+    /// a param does (`*Struct` pointer views, value newtypes). No initializer —
+    /// the register already holds its value; `let` only types it. The register
+    /// name is captured as a bare identifier (validity checked at lowering, like
+    /// params), and a line end / `}` must follow like every other statement form.
+    fn asm_let(&mut self) -> AsmStmt {
+        let start = self.span();
+        self.bump(); // `let`
+        let reg = self.expect_ident("register name after `let`");
+        self.expect(&Tok::Colon, "`:` after register in `let <reg>: <Type>`");
+        let ty = self.ty();
+        let span = start.merge(self.prev_span());
+        self.expect_line_end_or_rbrace();
+        AsmStmt::Let { reg, ty, span }
     }
 
     /// `if cond { asm... } [else if ... | else { asm... }]` at proc/asm
