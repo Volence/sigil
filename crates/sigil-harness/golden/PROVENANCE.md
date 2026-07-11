@@ -668,3 +668,23 @@ Full strict workspace = **2055 passed / 0 failed**, clippy clean.
   **`50f92f57b112966df9ab836cad8971296decab6e6fe8aee2da62b37b51dc9f2c`**.
 - Debug `s4.debug.bin`: sha256
   **`1dfe4a4c3767a3ada2a18b5bbc4cb0810d41bb94bc7cfaee29a1a53f56c05edf`**.
+
+## Tranche 10 — core.emp + dplc.emp (2026-07-11, MERGED)
+
+The object-system spine ported (`RunObjects`/`DeleteObject`/pools/DPLC).
+Step 0 shipped the `repin` tool (generated `pins.rs`); step 1 transcribed
+byte-exact (constants twin 30→34; two shipped language features — imm-link +
+one pinned-abs operand, and `FixupKind::ImmWord16Be` = AS's word-immediate
+rule); step 2 modernized to house format and took core's −4 shrink
+(`bsr.w .run_culled`/`bsr.w Draw_Sprite`→`bsr.s`, both shapes, `.asm` twins
+in lockstep), re-pinned via the tool. `org $10000` absorbs the shrink so
+`EndOfRom` is UNCHANGED (`$658B4`/`$673A2`); only engine-block-downstream
+regions moved −4. RunObjects live-profiled (9.3% frame budget; the empty-slot
+occupancy redesign is deferred to its own tranche).
+
+Full strict workspace = **2086 passed / 0 failed**, clippy clean.
+
+- Non-debug `s4.bin`: sha256
+  **`15f2d69e428f64b5f5c887fd57364fa06826b636eae2df20efbeff6f1bb4cbed`**.
+- Debug `s4.debug.bin`: sha256
+  **`2d095a44d7fbb061b39ddc999106e406ab88f823056b46b70cf533c395052cb0`**.
