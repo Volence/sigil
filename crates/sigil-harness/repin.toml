@@ -354,6 +354,59 @@ name = "MDDBG__ErrorHandler_PagesController"
 debug_only = true
 tests = ["rings_port"]
 
+# dplc (tranche 10)
+
+[[symbol]]
+name = "QueueDMA_Important"
+tests = ["dplc_port"]
+
+[[symbol]]
+name = "QueueDMA_Deferrable"
+tests = ["dplc_port"]
+
+# core (tranche 10) — cross-seam RAM labels + procs (PLAYER_1/DYNAMIC_SLOTS/
+# CAMERA_X/CAMERA_Y/DRAW_SPRITE/ObjectMove already pinned above; reused).
+
+[[symbol]]
+name = "Object_RAM"
+tests = ["core_port"]
+
+[[symbol]]
+name = "System_Slots"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Effect_Slots"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Spawn_Count"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Game_Paused"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Object_RAM_End"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Dynamic_Free_Stack"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Dynamic_Free_SP"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Effect_Free_Stack"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Effect_Free_SP"
+tests = ["core_port"]
+
 # animate (tranche 9)
 
 [[symbol]]

@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/10/2026 10:03:54 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/10/2026 10:03:52 PM)
-//! [provenance] 17 regions, 110 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche10/s4.lst (07/11/2026 12:37:49 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche10/s4.debug.lst (07/10/2026 10:41:49 PM)
+//! [provenance] 17 regions, 122 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,6 +223,42 @@ pub const MDDBG_ERROR_HANDLER: u32 = 0x6644C;
 
 /// `MDDBG__ErrorHandler_PagesController` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x67212;
+
+/// `QueueDMA_Important`. tests: dplc_port
+pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1D84, debug: 0x1E06 };
+
+/// `QueueDMA_Deferrable`. tests: dplc_port
+pub const QUEUE_DMA_DEFERRABLE: Pin = Pin { plain: 0x1D8E, debug: 0x1E10 };
+
+/// `Object_RAM`. tests: core_port
+pub const OBJECT_RAM: Pin = Pin { plain: 0xFFFF89EE, debug: 0xFFFF8A10 };
+
+/// `System_Slots`. tests: core_port
+pub const SYSTEM_SLOTS: Pin = Pin { plain: 0xFFFF970E, debug: 0xFFFF9730 };
+
+/// `Effect_Slots`. tests: core_port
+pub const EFFECT_SLOTS: Pin = Pin { plain: 0xFFFF998E, debug: 0xFFFF99B0 };
+
+/// `Spawn_Count`. tests: core_port
+pub const SPAWN_COUNT: Pin = Pin { plain: 0xFFFF9F02, debug: 0xFFFF9F24 };
+
+/// `Game_Paused`. tests: core_port
+pub const GAME_PAUSED: Pin = Pin { plain: 0xFFFFA126, debug: 0xFFFFA148 };
+
+/// `Object_RAM_End`. tests: core_port
+pub const OBJECT_RAM_END: Pin = Pin { plain: 0xFFFF9E8E, debug: 0xFFFF9EB0 };
+
+/// `Dynamic_Free_Stack`. tests: core_port
+pub const DYNAMIC_FREE_STACK: Pin = Pin { plain: 0xFFFF9E8E, debug: 0xFFFF9EB0 };
+
+/// `Dynamic_Free_SP`. tests: core_port
+pub const DYNAMIC_FREE_SP: Pin = Pin { plain: 0xFFFF9EDE, debug: 0xFFFF9F00 };
+
+/// `Effect_Free_Stack`. tests: core_port
+pub const EFFECT_FREE_STACK: Pin = Pin { plain: 0xFFFF9EE0, debug: 0xFFFF9F02 };
+
+/// `Effect_Free_SP`. tests: core_port
+pub const EFFECT_FREE_SP: Pin = Pin { plain: 0xFFFF9F00, debug: 0xFFFF9F22 };
 
 /// `DeleteObject`. tests: animate_port
 pub const DELETE_OBJECT: Pin = Pin { plain: 0x281C, debug: 0x29AE };
