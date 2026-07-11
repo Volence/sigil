@@ -917,3 +917,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   (prev_anim write, DUR_DYNAMIC → d3 hold = 8, mapping_frame 7,
   piece count 5), Walk script cycling in the real game state, collision +
   rings (both slid −10) live under Sonic. — RECORDED
+- [tranche 10 step 1, 2026-07-10] **imm-link + pinned-abs.w in one instruction
+  (IMPLEMENTED, not deferred)** — core's `move.w #<link-imm16>, (<link-abs>).w`
+  and `cmpi.w #<link-imm16>, (<link-abs>).w` (Init/Alloc free-stack pointer
+  writes; ref `31FC 9EDE 9EDE` / `0C78 9E8E 9EDE`) demand a link immediate
+  SOURCE plus a pinned-abs.w link DESTINATION — two independent fixups
+  (Value16Be @2, Abs16Be @4). The imm-link path rejected any second symbolic
+  operand ("fixups would collide" — over-broad; they're at different offsets).
+  RULED a permanent capability (demanded-features law) and SHIPPED in step 1,
+  not scaffolded: lower_m68k_imm_link admits ONE AbsSym{long} operand, second
+  fixup at 2+imm_field_width. Relaxable Sym/SymOff still rejected (width
+  selection genuinely conflicts). — IMPLEMENTED
