@@ -581,22 +581,57 @@ pub fn region_at_lma(img: &LinkedImage, lma: u32) -> Option<&[u8]> {
     img.sections.iter().find(|s| s.lma == lma).map(|s| s.bytes.as_slice())
 }
 
-/// The only offsets at which Sigil's assembled (non-debug) ROM legitimately
-/// differs from the pinned `s4.bin`: the header checksum and the low half of the
-/// `dc.l EndOfRom-1` ROM-end pointer, both rewritten by the out-of-scope
-/// `convsym -a`/`fixheader` post-steps (`convsym -a` appends the MD-Debugger
-/// `deb2` symbol table and rewrites two header fields; `fixheader` re-checksums
-/// the appended image — M1.B models `convsym` as a no-op, so Sigil's `emit_rom`
-/// target is the pre-append ASSEMBLED ROM). See `m1d_rom`/`m1d_debug_rom`/
-/// `mixed_dac_rom` for the full provenance.
-pub const CONVSYM_REWRITTEN: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
-/// The debug reference's convsym/fixheader-rewritten set. Historically five
-/// bytes (the `__DEBUG__` deb2 append pushed the ROM-end pointer over a byte
-/// boundary, `$1A5` differing too); the tranche-9 PerFrame deletion shrank
-/// the appended symbol table enough that `$1A5` matches the assembled value
-/// again — the set is four bytes, re-derived empirically from the rebuilt
-/// debug ROM (the same shape as the plain set).
-pub const CONVSYM_REWRITTEN_DEBUG: &[usize] = &[0x18E, 0x18F, 0x1A6, 0x1A7];
+/// The Genesis header's checksum word (`$18E..$190`) — a SEMANTIC header
+/// fact, not a layout pin. One of the only two fields the out-of-scope
+/// `convsym -a`/`fixheader` post-steps rewrite (`convsym -a` appends the
+/// MD-Debugger `deb2` symbol table; `fixheader` re-checksums the appended
+/// image — M1.B models `convsym` as a no-op, so Sigil's `emit_rom` target is
+/// the pre-append ASSEMBLED ROM).
+pub const CHECKSUM_FIELD_RANGE: std::ops::Range<usize> = 0x18E..0x190;
+/// The header's `dc.l EndOfRom-1` ROM-end pointer (`$1A4..$1A8`) — the other
+/// convsym-rewritten field (bumped to the POST-append end). Which of its four
+/// bytes actually differ shifts whenever the deb2 append changes size (the
+/// tranche-9 PerFrame deletion flipped `$1A5` back), which is why the
+/// rewritten set is DERIVED per comparison rather than pinned — see
+/// [`derive_convsym_rewritten`] (tranche-10 step 0, D-T10.6).
+pub const ROM_END_FIELD_RANGE: std::ops::Range<usize> = 0x1A4..0x1A8;
+
+/// The offsets at which `rom` (assembled) and `refrom` (final, post-convsym)
+/// differ WITHIN the two semantic header fields above — the derived
+/// convsym/fixheader allowlist. Confinement is NOT checked here: pass the
+/// result to [`assert_rom_matches`] (or use [`assert_rom_matches_convsym`]),
+/// whose unexpected-offset check then asserts the FULL diff set ⊆ these two
+/// fields with the DSM.9 evidence format on failure.
+pub fn derive_convsym_rewritten(rom: &[u8], refrom: &[u8]) -> Vec<usize> {
+    let n = rom.len().min(refrom.len());
+    (0..n)
+        .filter(|&i| CHECKSUM_FIELD_RANGE.contains(&i) || ROM_END_FIELD_RANGE.contains(&i))
+        .filter(|&i| rom[i] != refrom[i])
+        .collect()
+}
+
+/// [`assert_rom_matches`] with the convsym allowlist DERIVED-and-CONFINED
+/// (D-T10.6): the allowlist is computed from the actual header diff instead
+/// of pinned, killing that re-pin row; confinement to the two semantic
+/// fields is enforced by the unexpected-offset check (any diff outside them
+/// is unlisted and fails with full evidence). Each field must genuinely
+/// differ somewhere — a reference rebuilt WITHOUT the convsym append would
+/// otherwise silently change shape under us (the guard the pinned arrays'
+/// "allowlisted bytes must differ" assert used to provide).
+pub fn assert_rom_matches_convsym(rom: &[u8], refrom: &[u8], expected_len: usize, label: &str) {
+    let allow = derive_convsym_rewritten(rom, refrom);
+    for (field, range) in
+        [("checksum", CHECKSUM_FIELD_RANGE), ("ROM-end pointer", ROM_END_FIELD_RANGE)]
+    {
+        assert!(
+            allow.iter().any(|i| range.contains(i)),
+            "{label}: expected the convsym/fixheader post-steps to rewrite the header {field} \
+             field ({range:#X?}), but assembled and final ROMs match there — did the reference \
+             lose its deb2 append?"
+        );
+    }
+    assert_rom_matches(rom, refrom, expected_len, &allow, label);
+}
 
 /// Assert `rom` is byte-identical to `refrom` modulo the `allow`-listed offsets,
 /// after pinning `rom`'s length to `expected_len` (guards against a regression

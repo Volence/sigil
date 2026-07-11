@@ -33,7 +33,7 @@
 
 use std::path::PathBuf;
 
-use sigil_harness::{assemble_full_rom, assert_rom_matches, CONVSYM_REWRITTEN};
+use sigil_harness::{assemble_full_rom, assert_rom_matches_convsym};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -44,10 +44,12 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-// `CONVSYM_REWRITTEN` (imported from `sigil_harness`): the only offsets at which
-// Sigil's assembled ROM legitimately differs from the pinned `s4.bin` — the
-// checksum and the low half of the ROM-end pointer, both rewritten by the
+// The only offsets at which Sigil's assembled ROM legitimately differs from the
+// pinned `s4.bin` are the checksum + ROM-end header fields rewritten by the
 // out-of-scope `convsym`/`fixheader` post-steps (see module header above).
+// `assert_rom_matches_convsym` DERIVES that allowlist per comparison, confined
+// to the two semantic fields (`CHECKSUM_FIELD_RANGE`/`ROM_END_FIELD_RANGE`) —
+// the tranche-10 D-T10.6 replacement for the pinned `CONVSYM_REWRITTEN` array.
 
 #[test]
 fn full_rom_matches_assembled_reference() {
@@ -79,5 +81,5 @@ fn full_rom_matches_assembled_reference() {
     // this is the assembled (pre-convsym-append) ROM length. Pinned like the
     // `m1c_vector_table` stub addresses.
     const ASSEMBLED_LEN: usize = 0x658B4;
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "sigil");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "sigil");
 }

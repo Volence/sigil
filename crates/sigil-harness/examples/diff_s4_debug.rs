@@ -1,7 +1,7 @@
 //! M1.D T5 exploration: assemble the `__DEBUG__` ROM in Sigil and diff it against
 //! the deliberately-built debug reference (`aeon/s4.debug.bin`, produced by
 //! `DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4`). Reports the assembled
-//! length, the four expected convsym/fixheader header bytes, and the first
+//! length, the derived convsym/fixheader header-field diffs, and the first
 //! divergences beyond those — the first-diff triage input.
 //!
 //! ```text
@@ -9,15 +9,13 @@
 //! ```
 use std::path::PathBuf;
 
-use sigil_harness::{assemble_full_rom_debug, CONVSYM_REWRITTEN};
+use sigil_harness::{assemble_full_rom_debug, derive_convsym_rewritten};
 
-// convsym rewrites the checksum (0x18E) and the low half of the ROM-end pointer
-// (0x1A6); fixheader re-checksums. These are the only *legitimate* diffs (A1/A2
-// scope decision). NOTE: this example diffs against the plain (non-debug) 4-byte
-// set for a quick triage pass; `m1d_debug_rom`'s gate uses the debug-specific
-// 5-byte `CONVSYM_REWRITTEN_DEBUG` set (the deb2 append is larger and pushes the
-// ROM-end pointer over a byte boundary), so a few extra "unexpected" diffs at
-// $1A5 are expected noise here — this tool is a triage aid, not the gate.
+// convsym rewrites the checksum word ($18E..$190) and the ROM-end pointer
+// ($1A4..$1A8); fixheader re-checksums. Those two header fields are the only
+// *legitimate* diffs (A1/A2 scope decision); which of their bytes actually
+// differ is DERIVED per comparison (D-T10.6) — this tool is a triage aid,
+// `m1d_debug_rom` is the gate.
 
 fn main() {
     let aeon = PathBuf::from(
@@ -53,15 +51,19 @@ fn main() {
 
     let n = rom.len().min(refrom.len());
     let diffs: Vec<usize> = (0..n).filter(|&i| rom[i] != refrom[i]).collect();
+    let allow = derive_convsym_rewritten(&rom, &refrom);
     let unexpected: Vec<usize> =
-        diffs.iter().copied().filter(|i| !CONVSYM_REWRITTEN.contains(i)).collect();
+        diffs.iter().copied().filter(|i| !allow.contains(i)).collect();
 
     println!("total diffs over [0,{n:#x}): {}", diffs.len());
-    for &i in CONVSYM_REWRITTEN {
-        let m = if i < n && rom[i] != refrom[i] { "DIFF" } else { "same" };
-        println!("  convsym byte {i:#x}: sigil {:#04x} ref {:#04x} [{m}]", rom.get(i).copied().unwrap_or(0), refrom.get(i).copied().unwrap_or(0));
+    for &i in &allow {
+        println!(
+            "  convsym byte {i:#x}: sigil {:#04x} ref {:#04x} [DIFF]",
+            rom.get(i).copied().unwrap_or(0),
+            refrom.get(i).copied().unwrap_or(0)
+        );
     }
-    println!("UNEXPECTED diffs (beyond the 4 convsym bytes): {}", unexpected.len());
+    println!("UNEXPECTED diffs (beyond the derived convsym bytes): {}", unexpected.len());
     for &i in unexpected.iter().take(40) {
         println!("  {i:#x}: sigil {:#04x} != ref {:#04x}", rom[i], refrom[i]);
     }

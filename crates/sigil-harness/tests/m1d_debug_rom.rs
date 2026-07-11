@@ -34,7 +34,7 @@
 
 use std::path::PathBuf;
 
-use sigil_harness::{assemble_full_rom_debug, assert_rom_matches, CONVSYM_REWRITTEN_DEBUG};
+use sigil_harness::{assemble_full_rom_debug, assert_rom_matches_convsym};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -45,15 +45,17 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-// `CONVSYM_REWRITTEN_DEBUG` (imported from `sigil_harness`): the only offsets at
-// which Sigil's assembled debug ROM legitimately differs from `s4.debug.bin` —
-// the checksum (`$18E/$18F`) and the ROM-end pointer at `$1A4`, both rewritten by
-// the out-of-scope `convsym -a`/`fixheader` post-steps. `convsym -a` appends the
-// (larger, under `__DEBUG__`) deb2 symbol table and rewrites `EndOfRom-1` to the
-// POST-append size ($0700E5 in the reference vs Sigil's assembled $0673A1); at
-// the current debug build that pointer now differs in THREE bytes
-// ($1A5/$1A6/$1A7 — the append pushed it over a byte boundary), where the
-// earlier smaller pin differed in only $1A6/$1A7.
+// The only offsets at which Sigil's assembled debug ROM legitimately differs
+// from `s4.debug.bin` are the checksum (`$18E..$190`) and ROM-end pointer
+// (`$1A4..$1A8`) header fields, rewritten by the out-of-scope
+// `convsym -a`/`fixheader` post-steps (`convsym -a` appends the larger
+// `__DEBUG__` deb2 symbol table and bumps `EndOfRom-1` to the POST-append
+// size). WHICH pointer bytes differ shifts with the append size (historically
+// $1A5/$1A6/$1A7, four bytes since the tranche-9 PerFrame deletion), so
+// `assert_rom_matches_convsym` DERIVES the allowlist per comparison, confined
+// to the two semantic fields — the tranche-10 D-T10.6 replacement for the
+// pinned `CONVSYM_REWRITTEN_DEBUG` array that re-pinned on every append-size
+// change.
 
 #[test]
 fn full_debug_rom_matches_assembled_reference() {
@@ -82,5 +84,5 @@ fn full_debug_rom_matches_assembled_reference() {
     // so a regression that drops a trailing section can't silently pass the diff
     // check. Larger than the non-debug `0x658B4` — the debugger code adds bytes.
     const DEBUG_ASSEMBLED_LEN: usize = 0x673A2;
-    assert_rom_matches(&rom, &refrom, DEBUG_ASSEMBLED_LEN, CONVSYM_REWRITTEN_DEBUG, "sigil debug");
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "sigil debug");
 }

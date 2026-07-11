@@ -115,8 +115,8 @@ use sigil_harness::{
     assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assemble_mixed_tranche3_as_side,
     assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side,
     assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side,
-    assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side, assert_rom_matches,
-    CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
+    assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
+    assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -137,10 +137,11 @@ fn twin_guards() -> usize {
     sigil_harness::test_support::engine_constant_equs().len()
 }
 
-// `CONVSYM_REWRITTEN` / `CONVSYM_REWRITTEN_DEBUG` (imported from `sigil_harness`):
-// IDENTICAL to `m1d_rom` / `m1d_debug_rom`'s sets — the mixed build's ROM content
-// is byte-identical to the all-`.asm` build, so `convsym` rewrites the same
-// bytes to the same values relative to the same assembled length.
+// `assert_rom_matches_convsym` (imported from `sigil_harness`) DERIVES the
+// convsym/fixheader allowlist per comparison, confined to the checksum +
+// ROM-end header fields — the mixed build's ROM content is byte-identical to
+// the all-`.asm` build, so the same fields differ by the same post-steps as in
+// `m1d_rom` / `m1d_debug_rom` (D-T10.6 replaced the pinned arrays).
 
 /// The assembled (pre-convsym-append) ROM length pins, from `m1d_rom` /
 /// `m1d_debug_rom` — `EndOfRom` of each build shape. The mixed build reproduces
@@ -1588,7 +1589,7 @@ fn build_mixed_hblank_rom(
 }
 
 /// Port #1 acceptance — plain (non-debug) DAC+MT+SFX+HBLANK mixed build ==
-/// `aeon/s4.bin`, modulo the four convsym bytes. All four gates are ON; all
+/// `aeon/s4.bin`, modulo the derived convsym bytes. All four gates are ON; all
 /// four `.emp` modules are lowered and composed; the mt/sfx cross-seam
 /// ensures must genuinely run and pass; the `hblank` section itself is pinned
 /// explicitly (the port's own byte gate — `hblank_port.rs`'s region-level
@@ -1622,11 +1623,11 @@ fn mixed_hblank_rom_matches_assembled_reference() {
         "hblank block must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed HBLANK");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed HBLANK");
 }
 
 /// Port #1 acceptance — `__DEBUG__` DAC+MT+SFX+HBLANK mixed build ==
-/// `aeon/s4.debug.bin`, modulo the five convsym bytes. Same four-module
+/// `aeon/s4.debug.bin`, modulo the derived convsym bytes. Same four-module
 /// composition as the plain variant, with `DEBUG=1` driving `mt_bank.emp`'s
 /// if-expressions and `__DEBUG__` on the AS side; `hblank.emp` is
 /// shape-invariant (its content is identical in both shapes — only its map
@@ -1661,11 +1662,10 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
         "hblank block must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed HBLANK debug",
     );
 }
@@ -1739,7 +1739,7 @@ fn build_mixed_tranche2_rom(
 }
 
 /// Port #2 acceptance — plain (non-debug) DAC+MT+SFX+HBLANK+CONTROLLERS+MATH
-/// mixed build == `aeon/s4.bin`, modulo the four convsym bytes. All six gates
+/// mixed build == `aeon/s4.bin`, modulo the derived convsym bytes. All six gates
 /// are ON; all six `.emp` modules are lowered and composed; the mt/sfx
 /// cross-seam ensures must genuinely run and pass; the `controllers`/`math`
 /// sections themselves are pinned explicitly (each port's own byte gate —
@@ -1804,12 +1804,12 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
         "controllers block must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche2");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche2");
 }
 
 /// Port #2 acceptance — `__DEBUG__`
 /// DAC+MT+SFX+HBLANK+CONTROLLERS+MATH mixed build == `aeon/s4.debug.bin`,
-/// modulo the five convsym bytes. Same six-module composition as the plain
+/// modulo the derived convsym bytes. Same six-module composition as the plain
 /// variant, with `DEBUG=1` driving `mt_bank.emp`'s if-expressions and
 /// `__DEBUG__` on the AS side; `hblank.emp`/`controllers.emp`/`math.emp` are
 /// all shape-invariant (identical content in both shapes — only their map
@@ -1862,11 +1862,10 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
         "controllers block must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche2 debug",
     );
 }
@@ -1954,7 +1953,7 @@ fn build_mixed_tranche3_rom(
 }
 
 /// Tranche 3 acceptance — plain (non-debug) EIGHT-module mixed build ==
-/// `aeon/s4.bin`, modulo the four convsym bytes. Both new blocks are pinned
+/// `aeon/s4.bin`, modulo the derived convsym bytes. Both new blocks are pinned
 /// explicitly (each port's own byte window) before the whole-ROM assertion
 /// re-proves them in context. Note the two windows' bytes are
 /// SHAPE-DEPENDENT even though the `.emp` sources are shape-invariant: the
@@ -2018,11 +2017,11 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
         "collision_lookup block must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche3");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche3");
 }
 
 /// Tranche 3 acceptance — `__DEBUG__` EIGHT-module mixed build ==
-/// `aeon/s4.debug.bin`, modulo the five convsym bytes. Same composition as
+/// `aeon/s4.debug.bin`, modulo the derived convsym bytes. Same composition as
 /// the plain variant; the two new blocks' displacements and `Cache_*`
 /// addresses take their debug-shape values.
 #[test]
@@ -2075,11 +2074,10 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
         "collision_lookup block must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche3 debug",
     );
 }
@@ -2185,7 +2183,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
         "act_descriptor head must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche4");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche4");
 }
 
 /// Tranche 4 acceptance — `__DEBUG__` ELEVEN-module mixed build ==
@@ -2224,11 +2222,10 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
         "act_descriptor head must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche4 debug",
     );
 }
@@ -2332,7 +2329,7 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
         "sound_api block head must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche5");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche5");
 }
 
 /// Tranche 5 acceptance — `__DEBUG__` THIRTEEN-module mixed build ==
@@ -2368,11 +2365,10 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
         "sound_api block head must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche5 debug",
     );
 }
@@ -2487,7 +2483,7 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
         "test_particle block head must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche6");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche6");
 }
 
 /// Tranche 6 acceptance — `__DEBUG__` FIFTEEN-module mixed build ==
@@ -2524,11 +2520,10 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
         "test_particle block head must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche6 debug",
     );
 }
@@ -2634,7 +2629,7 @@ fn mixed_tranche7_rom_matches_assembled_reference() {
         "collision region head must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche7");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche7");
 }
 
 /// Tranche 7 acceptance — `__DEBUG__` SIXTEEN-module mixed build ==
@@ -2662,11 +2657,10 @@ fn mixed_tranche7_debug_rom_matches_assembled_reference() {
         "collision region head must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche7 debug",
     );
 }
@@ -2914,7 +2908,7 @@ fn mixed_tranche8_rom_matches_assembled_reference() {
         "rings region head must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche8");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche8");
 }
 
 /// Tranche 8 acceptance — `__DEBUG__` SEVENTEEN-module mixed build ==
@@ -2944,11 +2938,10 @@ fn mixed_tranche8_debug_rom_matches_assembled_reference() {
         "rings region head must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche8 debug",
     );
 }
@@ -3203,7 +3196,7 @@ fn mixed_tranche9_rom_matches_assembled_reference() {
         "animate region head must match the reference bytes exactly (plain)"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche9");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche9");
 }
 
 /// Tranche 9 acceptance — `__DEBUG__` EIGHTEEN-module mixed build ==
@@ -3231,16 +3224,15 @@ fn mixed_tranche9_debug_rom_matches_assembled_reference() {
         "animate region head must match the reference bytes exactly (debug)"
     );
 
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche9 debug",
     );
 }
 
-/// Plain (non-debug) mixed build == `aeon/s4.bin`, modulo the four convsym bytes.
+/// Plain (non-debug) mixed build == `aeon/s4.bin`, modulo the derived convsym bytes.
 #[test]
 fn mixed_dac_rom_matches_assembled_reference() {
     let aeon = aeon_dir();
@@ -3253,10 +3245,10 @@ fn mixed_dac_rom_matches_assembled_reference() {
         return;
     };
     let rom = build_mixed_rom(&aeon, false);
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed");
 }
 
-/// `__DEBUG__` mixed build == `aeon/s4.debug.bin`, modulo the five convsym bytes.
+/// `__DEBUG__` mixed build == `aeon/s4.debug.bin`, modulo the derived convsym bytes.
 #[test]
 fn mixed_dac_debug_rom_matches_assembled_reference() {
     let aeon = aeon_dir();
@@ -3272,17 +3264,16 @@ fn mixed_dac_debug_rom_matches_assembled_reference() {
         return;
     };
     let rom = build_mixed_rom(&aeon, true);
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed debug",
     );
 }
 
 /// T2 acceptance — plain (non-debug) DAC+MT mixed build == `aeon/s4.bin`,
-/// modulo the four convsym bytes. Both `SIGIL_EMP_DAC` and `SIGIL_EMP_MT` are
+/// modulo the derived convsym bytes. Both `SIGIL_EMP_DAC` and `SIGIL_EMP_MT` are
 /// ON; both `.emp` modules are lowered and composed; the five `mt_bank.emp`
 /// cross-seam ensures must genuinely run (via `check_link_asserts`) and pass.
 #[test]
@@ -3301,11 +3292,11 @@ fn mixed_mt_rom_matches_assembled_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed MT");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed MT");
 }
 
 /// T2 acceptance — `__DEBUG__` DAC+MT mixed build == `aeon/s4.debug.bin`,
-/// modulo the five convsym bytes. Same composition as the plain variant, with
+/// modulo the derived convsym bytes. Same composition as the plain variant, with
 /// `DEBUG=1` driving both `mt_bank.emp`'s if-expressions and `__DEBUG__` on
 /// the AS side.
 #[test]
@@ -3327,21 +3318,21 @@ fn mixed_mt_debug_rom_matches_assembled_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "mt_bank.emp's five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed MT debug",
     );
 }
 
 /// T3 acceptance — plain (non-debug) DAC+MT+SFX mixed build == `aeon/s4.bin`,
-/// modulo the four convsym bytes. All three sound gates are ON; all three
+/// modulo the derived convsym bytes. All three sound gates are ON; all three
 /// `.emp` modules are lowered and composed; BOTH the five `mt_bank.emp` and the
 /// one `sfx_bank.emp` cross-seam ensures must genuinely run (via
 /// `check_link_asserts`) and pass. The composed ROM content is byte-identical to
-/// the all-`.asm` build, so the SAME `ASSEMBLED_LEN`/`CONVSYM_REWRITTEN` pins as
+/// the all-`.asm` build, so the SAME `ASSEMBLED_LEN` pin (and derived convsym
+/// allowlist) as
 /// the T1/T2 gates apply. This test also proves the win-tab `dw sfx_winptr`
 /// deferral resolves end-to-end (see `build_mixed_sfx_rom`).
 #[test]
@@ -3378,11 +3369,11 @@ fn mixed_sfx_rom_matches_assembled_reference() {
         "SfxBlobWinTab[0] = sfx_winptr(Sfx_33) must resolve to $BAE8 (LE `E8 BA`) via the joint link"
     );
 
-    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed SFX");
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed SFX");
 }
 
 /// T3 acceptance — `__DEBUG__` DAC+MT+SFX mixed build == `aeon/s4.debug.bin`,
-/// modulo the five convsym bytes. Same three-module composition as the plain
+/// modulo the derived convsym bytes. Same three-module composition as the plain
 /// variant, with `DEBUG=1` driving `mt_bank.emp`'s if-expressions and
 /// `__DEBUG__` on the AS side; `sfx_bank.emp` is shape-invariant (its content is
 /// identical in both shapes — only its map base moves, R7).
@@ -3409,11 +3400,10 @@ fn mixed_sfx_debug_rom_matches_assembled_reference() {
         sfx_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
     );
-    assert_rom_matches(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         DEBUG_ASSEMBLED_LEN,
-        CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed SFX debug",
     );
 }
