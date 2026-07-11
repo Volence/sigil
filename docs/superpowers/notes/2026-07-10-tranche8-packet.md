@@ -129,6 +129,42 @@ debugger.asm port era does.
   convenient collision fixtures at $80/$90/$A0/… (teleport the player's
   x/y int words at Player_1+2/+6).
 
+## What each pass added (step 3 vs step 5, per look)
+
+**Pass 1 — step 3 (retrospect after transcribe+modernize):**
+- Ledger +6: `.emp assert` construct (demand 1/2); `dc` link-expr cells
+  (consumer-gated); `*` current-location port-translation rule; non-SST
+  packed-record view (demand 1/2 — the ring entry's literal offsets + ×6
+  chains); hardcoded guard-counts CLOSED; DrawRings culling literals.
+- Kill list: row 13 CLOSED by consolidation (+ the pre-written-kill-condition
+  lesson); rows 16 / 17 / 18 opened.
+- Back-prop executed: `twin_guards()` derived counts across the suite;
+  stale row-13 reference sweep (clean).
+
+**Pass 1 — step 5 (optimize):**
+- TAKEN: RingCollision rolling entry pointer (~28 c/ring-test/player/frame,
+  net-0 bytes, live-verified); RingBuffer_Remove `lea (aN,dN.w)` → `adda.w`
+  ×2 (−4 B).
+- NOT taken (recorded with numbers): Add's stack-round-trip ×6 (~24 c,
+  spawn-time cold); Remove's two remaining ×6 chains (collect-time cold,
+  arbitrary-index remove can't roll); DrawRings already optimal.
+
+**Pass 2 — step 3 (dry-check retrospect after the step-5 wave):**
+- Ledger +2: the GENERALIZED re-pin rule (every harness pin in the sliding
+  window, not just engine.inc orgs); the step-5 not-taken record. Nothing
+  else on the re-read → DRY.
+
+**Neither bucket (headline class):**
+- Step-1 demanded feature: `dc.b/w/l` proc-body statement (+ 7 negative
+  probes); parser gap fixed: local-label displacement operands.
+- Probe outcome: zero-disp collapse passed UNCHANGED (row 13's promise held
+  with no compiler work).
+- Live verification found NO bugs in rings (unlike tranche 7's standing-bit
+  find) — collection, removal, counters all exact on the first live pass.
+- Post-packet same-day addendum (your ask): bare-Bcc house rule ratified +
+  back-propagated (27 branches unsized across collision/rings,
+  byte-identical; canonical step-2 text amended).
+
 ## Asks
 
 1. **Merge gate ×2**: sigil `port-tranche8` (dc feature + parser + harness +

@@ -50,6 +50,13 @@ same sweep (one combined wave, not two).
 his gate, then --no-ff merge both sides + push. Every merge to master is
 FINISHED code, not faithful-but-stale-idiom code.
 
+**Packet format (Volence-ratified 2026-07-10)**: the packet ends with a
+"What each pass added" section separating STEP-3 findings (asks / reads-wrong
+/ kill rows / ledger) from STEP-5 findings (optimizations taken + not-taken),
+PER LOOP PASS — so each look of the tranche shows what it added. Findings
+that fit neither (step-1 demanded features, live bugs, probe outcomes) keep
+their own headline bucket.
+
 Keep tranches small (2-3 files): step 2 makes re-pins routine, and
 short-lived branches keep the re-pin tax per-tranche instead of
 compounding against master drift.
