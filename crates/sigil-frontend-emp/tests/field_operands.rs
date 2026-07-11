@@ -501,3 +501,79 @@ proc go() {
         "jmp Item.field must encode jmp abs.w of Player_1 + 2 = {addr:#x}"
     );
 }
+
+// ---- `Sym ± const` absolute-address operands (tranche 11 — sprites.emp
+//      demanded `btst #0, Sprite_Cycle_Counter+1`, the odd byte of a word
+//      RAM cell). A bare symbol plus a comptime byte offset rides the SAME
+//      `SymOff`/RelaxAbsSym seam as `Item.field`, widthed by asl on the SUM.
+
+#[test]
+fn sym_plus_const_operand_lowers_as_abs_sym_sum() {
+    // `move.w Foo+2, d0` — abs.w src (30 38) of `Foo + 2`, the bare-label
+    // idiom extended with a constant byte offset. Foo is a low-placed data
+    // label, so the sum stays in abs.w range.
+    let src = "\
+module m
+data Foo: [u8; 8] = [0,0,0,0,0,0,0,0]
+proc read() {
+    move.w Foo+2, d0
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected errors: {:?}", errors(&diags));
+    let s = section(&module, "text");
+    let addr = label_offset(s, "Foo") + 2;
+    assert_eq!(
+        label_bytes(&module, "text", "read", 4),
+        vec![0x30, 0x38, (addr >> 8) as u8, (addr & 0xFF) as u8],
+        "Sym+const operand must encode abs.w of Foo + 2 = {addr:#x}"
+    );
+}
+
+#[test]
+fn sym_minus_const_operand_subtracts_the_offset() {
+    // `move.w Foo-2, d0` — the `-` form subtracts: abs.w of `Foo - 2`. Foo is
+    // placed past a leading pad so the difference stays non-negative + low.
+    let src = "\
+module m
+data Pad: [u8; 8] = [0,0,0,0,0,0,0,0]
+data Foo: [u8; 4] = [0,0,0,0]
+proc read() {
+    move.w Foo-2, d0
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected errors: {:?}", errors(&diags));
+    let s = section(&module, "text");
+    let addr = label_offset(s, "Foo") - 2;
+    assert_eq!(
+        label_bytes(&module, "text", "read", 4),
+        vec![0x30, 0x38, (addr >> 8) as u8, (addr & 0xFF) as u8],
+        "Sym-const operand must encode abs.w of Foo - 2 = {addr:#x}"
+    );
+}
+
+#[test]
+fn const_plus_sym_operand_commutes() {
+    // `move.w 4+Foo, d0` — address addition commutes for `+`, so the symbol
+    // may sit on the right. Same abs.w encoding as `Foo+4`.
+    let src = "\
+module m
+data Foo: [u8; 8] = [0,0,0,0,0,0,0,0]
+proc read() {
+    move.w 4+Foo, d0
+    rts
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected errors: {:?}", errors(&diags));
+    let s = section(&module, "text");
+    let addr = label_offset(s, "Foo") + 4;
+    assert_eq!(
+        label_bytes(&module, "text", "read", 4),
+        vec![0x30, 0x38, (addr >> 8) as u8, (addr & 0xFF) as u8],
+        "const+Sym operand must encode abs.w of 4 + Foo = {addr:#x}"
+    );
+}

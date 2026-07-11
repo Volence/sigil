@@ -1443,8 +1443,51 @@ impl Evaluator<'_> {
             // segments to the `Owner.label` spelling the defining owner emitted.
             return Some(CodeOperand::Sym(scope.resolve_ref(&p.segments.join("."))));
         }
+        // A `Sym ± const` sum in operand position denotes the ABSOLUTE address
+        // `sym + off` — the bare-label idiom extended with a constant byte
+        // offset (`Sprite_Cycle_Counter+1`, the odd byte of a word RAM cell).
+        // Route it to `SymOff` so it rides the SAME RelaxAbsSym width-rule seam
+        // as a bare symbol (a RAM address widths to abs.w), rather than
+        // comptime-folding the link-time symbol and failing "unknown name".
+        if let Some(op) = self.sym_off_operand(expr, scope, env) {
+            return Some(op);
+        }
         let v = self.eval_expr(expr, env);
         self.classify_operand_splice(v, expr_span(expr))
+    }
+
+    /// Match `Sym ± const` (either operand order for `+`, symbol-left only for
+    /// `-`) where one side is a bare non-register single-segment symbol path (a
+    /// link symbol, per the bare-path-is-a-symbol rule) and the other folds to a
+    /// comptime integer → a [`CodeOperand::SymOff`] absolute operand with fixup
+    /// target `sym + off`. Returns `None` (fall through to the generic path)
+    /// unless the shape matches exactly — so pure-const sums and register
+    /// arithmetic are untouched.
+    fn sym_off_operand(
+        &mut self,
+        expr: &ast::Expr,
+        scope: &LabelScope,
+        env: &mut Env,
+    ) -> Option<CodeOperand> {
+        let ast::Expr::Binary { op, lhs, rhs, .. } = expr else { return None };
+        let op = *op;
+        if !matches!(op, ast::BinOp::Add | ast::BinOp::Sub) {
+            return None;
+        }
+        // `sym ± const`
+        if let Some(seg) = bare_symbol_seg(lhs) {
+            let off = self.eval_expr(rhs, env).as_stored_int()?;
+            let off = if matches!(op, ast::BinOp::Sub) { -off } else { off };
+            return Some(CodeOperand::SymOff { sym: scope.resolve_ref(seg), off });
+        }
+        // `const + sym` (address commutes only for `+`)
+        if matches!(op, ast::BinOp::Add) {
+            if let Some(seg) = bare_symbol_seg(rhs) {
+                let off = self.eval_expr(lhs, env).as_stored_int()?;
+                return Some(CodeOperand::SymOff { sym: scope.resolve_ref(seg), off });
+            }
+        }
+        None
     }
 
     /// Extract the single address/data register naming an indirect base. Only a
@@ -1552,6 +1595,22 @@ fn width_from_text(t: &str) -> Option<Width> {
 /// call sites' brevity.
 fn reg_from_name(name: &str) -> Option<Reg> {
     Reg::from_name(name)
+}
+
+/// The bare-symbol operand a single-segment path denotes: a name that is NOT a
+/// register-class word (`d0`..`a7`/`sp`/`sr`/`ccr`). `None` for multi-segment
+/// paths and register words. Used to spot the symbol side of a `Sym ± const`
+/// absolute-address operand.
+fn bare_symbol_seg(e: &ast::Expr) -> Option<&str> {
+    let ast::Expr::Path(p) = e else { return None };
+    if p.segments.len() != 1 {
+        return None;
+    }
+    let seg = p.segments[0].as_str();
+    if reg_from_name(seg).is_some() || seg == "sr" || seg == "ccr" {
+        return None;
+    }
+    Some(seg)
 }
 
 /// The register-list bit index of a single [`Reg`] in the CANONICAL `movem`

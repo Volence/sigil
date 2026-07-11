@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche10/s4.lst (07/11/2026 01:29:52 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche10/s4.debug.lst (07/11/2026 01:29:43 AM)
-//! [provenance] 17 regions, 122 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/11/2026 04:49:04 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/11/2026 04:49:02 PM)
+//! [provenance] 18 regions, 133 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +65,9 @@ pub const DPLC: Region = Region { plain_base: 0x26FC, debug_base: 0x288E, plain_
 
 /// `InitObjectRAM` .. `InitSpriteSystem` — gate `SIGIL_EMP_CORE`. tests: core_port
 pub const CORE: Region = Region { plain_base: 0x2794, debug_base: 0x2926, plain_len: 0x1C0, debug_len: 0x2E8 };
+
+/// `InitSpriteSystem` .. `AnimateSprite` — gate `SIGIL_EMP_SPRITES`. tests: sprites_port
+pub const SPRITES: Region = Region { plain_base: 0x2954, debug_base: 0x2C0E, plain_len: 0x420, debug_len: 0x420 };
 
 /// `AnimateSprite` .. `TouchResponse` — gate `SIGIL_EMP_ANIMATE`. tests: animate_port, test_objects_port
 pub const ANIMATE: Region = Region { plain_base: 0x2D74, debug_base: 0x302E, plain_len: 0x192, debug_len: 0x192 };
@@ -262,6 +265,39 @@ pub const EFFECT_FREE_SP: Pin = Pin { plain: 0xFFFF9F00, debug: 0xFFFF9F22 };
 
 /// `DeleteObject`. tests: animate_port
 pub const DELETE_OBJECT: Pin = Pin { plain: 0x281C, debug: 0x29AE };
+
+/// `DrawRings`. tests: sprites_port
+pub const DRAW_RINGS: Pin = Pin { plain: 0x30F2, debug: 0x3408 };
+
+/// `Sprite_Table_Buffer`. tests: sprites_port
+pub const SPRITE_TABLE_BUFFER: Pin = Pin { plain: 0xFFFF8288, debug: 0xFFFF8288 };
+
+/// `Sprite_Table_Dirty`. tests: sprites_port
+pub const SPRITE_TABLE_DIRTY: Pin = Pin { plain: 0xFFFF8508, debug: 0xFFFF8508 };
+
+/// `Sprite_Bands`. tests: sprites_port
+pub const SPRITE_BANDS: Pin = Pin { plain: 0xFFFF9F04, debug: 0xFFFF9F26 };
+
+/// `Sprite_Band_Counts`. tests: sprites_port
+pub const SPRITE_BAND_COUNTS: Pin = Pin { plain: 0xFFFFA104, debug: 0xFFFFA126 };
+
+/// `Sprites_Rendered`. tests: sprites_port
+pub const SPRITES_RENDERED: Pin = Pin { plain: 0xFFFFA10C, debug: 0xFFFFA12E };
+
+/// `Sprite_Cycle_Counter`. tests: sprites_port
+pub const SPRITE_CYCLE_COUNTER: Pin = Pin { plain: 0xFFFFA10E, debug: 0xFFFFA130 };
+
+/// `SpriteMask_Y`. tests: sprites_port
+pub const SPRITE_MASK_Y: Pin = Pin { plain: 0xFFFFA110, debug: 0xFFFFA132 };
+
+/// `SpriteMask_Height`. tests: sprites_port
+pub const SPRITE_MASK_HEIGHT: Pin = Pin { plain: 0xFFFFA112, debug: 0xFFFFA134 };
+
+/// `SpriteMask_After_Band`. tests: sprites_port
+pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA114, debug: 0xFFFFA136 };
+
+/// `Scanline_Band_Sprites`. tests: sprites_port
+pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA116, debug: 0xFFFFA138 };
 
 /// `Sound_PlaySFX`. tests: animate_port
 pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x5CE2, debug: 0x71A0 };
