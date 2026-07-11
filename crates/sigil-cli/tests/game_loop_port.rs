@@ -88,8 +88,8 @@ struct Shape {
     drain: u32,
 }
 
-const PLAIN: Shape = Shape { base: 0x22FE, vsync_wait: 0x2262, drain: 0x5EAC };
-const DEBUG: Shape = Shape { base: 0x238C, vsync_wait: 0x22EC, drain: 0x736A };
+const PLAIN: Shape = Shape { base: 0x22FE, vsync_wait: 0x2262, drain: 0x5D2C };
+const DEBUG: Shape = Shape { base: 0x238C, vsync_wait: 0x22EC, drain: 0x71EA };
 const REGION_LEN: usize = 0x12;
 
 /// Compile the real `engine/system/game_loop.emp` with the given defines,

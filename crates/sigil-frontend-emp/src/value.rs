@@ -454,6 +454,11 @@ pub enum CodeOperand {
     PcRel {
         /// The target's resolved link symbol.
         target: String,
+        /// Comptime addend on the target (`Sym+n(pc)` / `Sym-n(pc)`) — the
+        /// dispatch-table anchor idiom (`jmp .cc_table-4(pc,d0.w)`, tranche
+        /// 9) where the adjusted address lands mid-instruction so no
+        /// relocated label can express it. 0 for the plain `Sym(pc)` form.
+        addend: i64,
     },
     /// PC-indexed: `Sym(pc,Xn.size)` — 68k `(d8,PC,Xn)`, brief extension word.
     /// `target` is the hygiene-resolved link symbol; `xn`/`xlong` are the
@@ -463,6 +468,8 @@ pub enum CodeOperand {
     PcRelIdx {
         /// The target's resolved link symbol.
         target: String,
+        /// Comptime addend on the target (see [`PcRel::addend`]).
+        addend: i64,
         /// The index register.
         xn: Reg,
         /// `true` for `.l` (long index), `false` for `.w` (sign-extended,

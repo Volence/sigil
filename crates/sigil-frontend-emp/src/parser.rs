@@ -1519,7 +1519,13 @@ impl Parser {
                 self.bump();
                 let name = self.expect_ident("label");
                 let span = start.merge(self.prev_span());
-                let expr = Expr::Path(Path { segments: vec![format!(".{name}")], span });
+                let mut expr = Expr::Path(Path { segments: vec![format!(".{name}")], span });
+                // The expression grammar can't OPEN with a `.local` atom, but
+                // once one is parsed it takes binary continuations like any
+                // other term — `.cc_table-4` (the tranche-9 dispatch-anchor
+                // idiom). `(` is not a binary operator, so the displacement
+                // check below is unaffected.
+                expr = self.binary_continue(expr, 1);
                 // A local label immediately followed by `(` is a DISPLACEMENT
                 // (tranche 8 — `pea .raise(pc)`, the pc-relative self-address
                 // idiom AS spells `pea *(pc)`): continue into the same
@@ -2049,7 +2055,15 @@ impl Parser {
     }
 
     fn expr_bp(&mut self, min_bp: u8) -> Expr {
-        let mut lhs = self.unary_expr();
+        let lhs = self.unary_expr();
+        self.binary_continue(lhs, min_bp)
+    }
+
+    /// The operator half of [`Parser::expr_bp`], with the left side already
+    /// parsed. Split out so operand-position atoms the expression grammar
+    /// can't open (a `.local` label) can still take binary continuations —
+    /// `jmp .cc_table-4(pc,d0.w)`'s `label - 4` (tranche 9).
+    fn binary_continue(&mut self, mut lhs: Expr, min_bp: u8) -> Expr {
         loop {
             let (op, bp) = match self.peek() {
                 Tok::OrOr => (BinOp::Or, 1),

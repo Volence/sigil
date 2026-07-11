@@ -115,7 +115,7 @@ use sigil_harness::{
     assemble_mixed_sfx_as_side, assemble_mixed_tranche2_as_side, assemble_mixed_tranche3_as_side,
     assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side,
     assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side,
-    assemble_mixed_tranche8_as_side, assert_rom_matches,
+    assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side, assert_rom_matches,
     CONVSYM_REWRITTEN, CONVSYM_REWRITTEN_DEBUG,
 };
 use sigil_ir::backend::Cpu;
@@ -379,7 +379,7 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
 /// Tranche 3's map: `emp_bank_map_with_mt_hblank_tranche2`'s SEVEN regions
 /// PLUS `vdp_init` and `collision_lookup` — the FIFTH and SIXTH
 /// shape-dependent region bases: vdp_init plain `$1C14` / debug `$1C96`
-/// (size `$48`), collision_lookup plain `$4BF6` / debug `$541A` (size
+/// (size `$48`), collision_lookup plain `$4A76` / debug `$529A` (size
 /// `$24` since the step-5 tail-call optimize; `$32` as first ported; slid
 /// −8 by the tranche-7b interact fix — pre-player_sensors). The
 /// prior regions are byte-for-byte the tranche-2 map's.
@@ -387,7 +387,7 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
 /// `engine/system`+sound neighborhoods (`engine/level/`).
 fn emp_bank_map_tranche3(debug: bool) -> String {
     let vdp_init_base = if debug { "0x1C96" } else { "0x1C14" };
-    let collision_base = if debug { "0x541A" } else { "0x4BF6" };
+    let collision_base = if debug { "0x529A" } else { "0x4A76" };
     format!(
         "{}\
          \n\
@@ -444,7 +444,7 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
 /// combo both pins carry).
 fn emp_bank_map_tranche5(debug: bool) -> String {
     let game_loop_base = if debug { "0x238C" } else { "0x22FE" };
-    let sound_api_base = if debug { "0x7224" } else { "0x5D66" };
+    let sound_api_base = if debug { "0x70A4" } else { "0x5BE6" };
     format!(
         "{}\
          \n\
@@ -493,12 +493,12 @@ fn emp_bank_map_tranche6(debug: bool) -> String {
 
 /// Tranche 7's map: the tranche-6 regions PLUS `collision` — back in the
 /// engine block, the SEVENTH shape-dependent region base (like game_loop /
-/// collision_lookup): plain `$308A` / debug `$3344`, size 0x166 (the
+/// collision_lookup): plain `$2F0A` / debug `$31C4`, size 0x166 (the
 /// `TouchResponse` body + handler table + stubs + Touch_Hurt/Touch_Solid;
 /// content shape-INVARIANT — only the abs.w `Player_1`/`Dynamic_Slots`
 /// game-RAM addresses resolve per shape).
 fn emp_bank_map_tranche7(debug: bool) -> String {
-    let collision_base = if debug { "0x3344" } else { "0x308A" };
+    let collision_base = if debug { "0x31C4" } else { "0x2F0A" };
     format!(
         "{}\
          \n\
@@ -1338,14 +1338,24 @@ fn placed_module_sections_with_roots(
             }
         }
         // particle_anims imports AF_DELETE from the constants twin (tranche-6
-        // step 4 de-mirrored its local copy); it lives GAME-side too, four
-        // levels below the root.
-        "particle_anims.emp" => {
+        // step 4 de-mirrored its local copy); sonic_anims joined at the
+        // tranche-9 row-3 consolidation (AF_END/AF_BACK/DUR_DYNAMIC now come
+        // from the twin too). Both live GAME-side, four levels below the root.
+        "particle_anims.emp" | "sonic_anims.emp" => {
             let root = dir
                 .ancestors()
                 .nth(4)
                 .expect("games/sonic4/data/animations is four levels below the aeon root");
             ambient_items = constants_ambient_items(&root.join("engine/system"));
+        }
+        // animate.emp (tranche 9) lives in `engine/objects/` and uses the
+        // typed Sst plus the constants twin (its AF_SET_FIELD/DUR_DYNAMIC/
+        // OBJ_CODE_BANK/FRAME_PIECE_COUNT inputs) — the collision/rings arm
+        // minus the aabb template (no splice consumer here).
+        "animate.emp" => {
+            let system = dir.parent().expect("engine/objects has a parent").join("system");
+            ambient_items = sst_ambient_items(&dir);
+            ambient_items.extend(constants_ambient_items(&system));
         }
         _ => {}
     }
@@ -1996,10 +2006,10 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // The collision_lookup block, pinned explicitly (the port's own
     // 0x24-byte window, post step-5 optimize). Offset 0x1C:
     // `bra.w Tile_Cache_GetCollision` = 6000 + disp16
-    // ($430E - $4C14 = -$906 = $F6FA) — the cross-seam pc-relative
+    // ($418E - $4C14 = -$906 = $F6FA) — the cross-seam pc-relative
     // TAIL CALL (site + target both slid -8 in the interact fix, disp held).
     assert_eq!(
-        &rom[0x4BF6..0x4C1A],
+        &rom[0x4A76..0x4A9A],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x34, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x36, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x38, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x3A, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0xFA,
@@ -2056,7 +2066,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
     );
 
     assert_eq!(
-        &rom[0x541A..0x543E],
+        &rom[0x529A..0x52BE],
         &[
             0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x56, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x58, 0x6E, 0x12, 0xE6, 0x49,
             0xB2, 0x78, 0xA8, 0x5A, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x5C, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0x42,
@@ -2112,10 +2122,11 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         // prepend (its local AF_DELETE mirror de-mirrored, tranche-6 step 4)
         // + the align 2 congruence assert.
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
-        // sonic_anims: 15 drift guards (3 command bytes + 12 ordinal/count)
+        // sonic_anims: the constants twin rides ambient (tranche-9 row-3
+        // consolidation de-mirrored its 3 command bytes) + 12 ordinal/count
         // + the ONE trailing align congruence assert (the step-5 rewrite
         // packed the bodies; only the next-table evenness guard remains).
-        ("sonic_anims.emp", &sonic_asserts, 16),
+        ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         // act_descriptor: Act_len/Sec_len twin pins + the two engine-limit
         // mirrors + EDGE_CLAMP (the comptime grid facts fold before link).
         ("act_descriptor.emp", &act_asserts, 5),
@@ -2260,7 +2271,7 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
-        ("sonic_anims.emp", &sonic_asserts, 16),
+        ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 5),
         // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
         // checked against the REAL sound_constants.asm / config/sound_ids.asm.
@@ -2298,15 +2309,16 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche5_rom(&aeon, false);
 
     // The game_loop block: bsr.w VSync_Wait ($2262, unmoved), bsr.w
-    // Sound_DrainSfxRing ($5EAC — slid -36 in the interact fix, -4 more in
-    // the tranche-8 rings step-5 shrink → disp $3BA8; site unmoved, target
+    // Sound_DrainSfxRing ($5D2C — slid -36 in the interact fix, -4 more in
+    // the tranche-8 rings step-5 shrink, -0x180 more in tranche 9 (the step-2
+    // width shrink + the PerFrame deletion) → disp $3A28; site unmoved, target
     // slid), movea.l (Game_State).w,a0, jsr (a0),
     // bra.s GameLoop, then GameState_Idle's rts — the (1,0) combo,
     // gameDebugTick contributing zero bytes.
     assert_eq!(
         &rom[0x22FE..0x2310],
         &[
-            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0xA8, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3A, 0x28, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (plain)"
@@ -2315,7 +2327,7 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // Sound_PostByte's head: move.w sr,-(sp) / move.w #$2700,sr / the stopZ80
     // expansion's first word — the sr + imm-before-abs shapes this port added.
     assert_eq!(
-        &rom[0x5D66..0x5D6E],
+        &rom[0x5BE6..0x5BEE],
         &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
         "sound_api block head must match the reference bytes exactly (plain)"
     );
@@ -2344,14 +2356,14 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     assert_eq!(
         &rom[0x238C..0x239E],
         &[
-            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x4F, 0xD8, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x4E, 0x58, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"
     );
 
     assert_eq!(
-        &rom[0x7224..0x722C],
+        &rom[0x70A4..0x70AC],
         &[0x40, 0xE7, 0x46, 0xFC, 0x27, 0x00, 0x33, 0xFC][..],
         "sound_api block head must match the reference bytes exactly (debug)"
     );
@@ -2409,7 +2421,7 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
-        ("sonic_anims.emp", &sonic_asserts, 16),
+        ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 5),
         ("sound_api.emp", &sound_api_asserts, 7),
         // The object modules' ambient guards: sst.emp's 30 SST_* struct-equ
@@ -2523,10 +2535,10 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
 
 /// Tranche 7's shared body: assemble the AS side with ALL SIXTEEN gates on
 /// (tranche 6's fifteen PLUS `SIGIL_EMP_COLLISION` — the `engine.inc` gate
-/// wrapping `collision.asm`, else-arm `org $31F0`/`$34AA`), compose with ALL
+/// wrapping `collision.asm`, else-arm `org $3070`/`$332A`), compose with ALL
 /// SIXTEEN `.emp` modules' placed sections, resolve+link ONCE, and emit the
 /// full ROM. `collision.emp`'s `TouchResponse` fills the engine-block window
-/// (`$308A..$31F0` plain / `$3344..$34AA` debug); its cross-seam reads are the
+/// (`$2F0A..$3070` plain / `$31C4..$332A` debug); its cross-seam reads are the
 /// two abs.w game-RAM labels (`Player_1`/`Dynamic_Slots`), unconditional AS
 /// labels resolved through the shared table — no synthetic injection needed
 /// (like collision_lookup's `Cache_*`, but here supplied by the real AS tree).
@@ -2567,7 +2579,7 @@ fn build_mixed_tranche7_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
-        ("sonic_anims.emp", &sonic_asserts, 16),
+        ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 5),
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
@@ -2617,7 +2629,7 @@ fn mixed_tranche7_rom_matches_assembled_reference() {
     // TouchResponse head: `lea (Player_1).w, a2` (Player_1 = $89EE plain),
     // then `move.w #NUM_PLAYERS-1, d7` = #$0001.
     assert_eq!(
-        &rom[0x308A..0x3092],
+        &rom[0x2F0A..0x2F12],
         &[0x45, 0xF8, 0x89, 0xEE, 0x3E, 0x3C, 0x00, 0x01][..],
         "collision region head must match the reference bytes exactly (plain)"
     );
@@ -2645,7 +2657,7 @@ fn mixed_tranche7_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche7_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x3344..0x334C],
+        &rom[0x31C4..0x31CC],
         &[0x45, 0xF8, 0x8A, 0x10, 0x3E, 0x3C, 0x00, 0x01][..],
         "collision region head must match the reference bytes exactly (debug)"
     );
@@ -2662,9 +2674,9 @@ fn mixed_tranche7_debug_rom_matches_assembled_reference() {
 /// Tranche 8's map: the tranche-7 regions PLUS `rings` — the campaign's FIRST
 /// shape-dependent-LENGTH region (plain 0x1B4, debug 0x210 bytes: the
 /// `__DEBUG__` assert block in `RingBuffer_Add.full` exists only in the debug
-/// shape). Plain `$31F0` / debug `$34AA` (the collision resume orgs).
+/// shape). Plain `$3070` / debug `$332A` (the collision resume orgs).
 fn emp_bank_map_tranche8(debug: bool) -> String {
-    let (rings_base, rings_len) = if debug { ("0x34AA", "0x210") } else { ("0x31F0", "0x1B4") };
+    let (rings_base, rings_len) = if debug { ("0x332A", "0x210") } else { ("0x3070", "0x1B4") };
     format!(
         "{}\
          \n\
@@ -2853,7 +2865,7 @@ fn build_mixed_tranche8_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
-        ("sonic_anims.emp", &sonic_asserts, 16),
+        ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 5),
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
@@ -2897,7 +2909,7 @@ fn mixed_tranche8_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche8_rom(&aeon, false);
 
     assert_eq!(
-        &rom[0x31F0..0x31F6],
+        &rom[0x3070..0x3076],
         &[0x78, 0x00, 0x18, 0x38, 0xAB, 0xF4][..],
         "rings region head must match the reference bytes exactly (plain)"
     );
@@ -2927,7 +2939,7 @@ fn mixed_tranche8_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche8_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x34AA..0x34B0],
+        &rom[0x332A..0x3330],
         &[0x78, 0x00, 0x18, 0x38, 0xAC, 0x16][..],
         "rings region head must match the reference bytes exactly (debug)"
     );
@@ -2938,6 +2950,293 @@ fn mixed_tranche8_debug_rom_matches_assembled_reference() {
         DEBUG_ASSEMBLED_LEN,
         CONVSYM_REWRITTEN_DEBUG,
         "DSM.9 STOP: mixed tranche8 debug",
+    );
+}
+
+/// Tranche 9's map: the tranche-8 regions PLUS `animate` — length is
+/// shape-INVARIANT (0x192 both shapes; no `__DEBUG__` code in the file), only
+/// the base moves. Plain `$2D78` / debug `$3032` (upstream of every other
+/// gated engine region — the first window in the ladder's slide).
+fn emp_bank_map_tranche9(debug: bool) -> String {
+    let animate_base = if debug { "0x3032" } else { "0x2D78" };
+    format!(
+        "{}\
+         \n\
+         [[region]]\n\
+         name = \"animate\"\n\
+         lma_base = {animate_base}\n\
+         size = 0x192\n\
+         kind = \"rom\"\n",
+        emp_bank_map_tranche8(debug)
+    )
+}
+
+/// `placed_emp_sections_tranche9`'s return: tranche 8's tuple plus
+/// `animate.emp`'s link asserts (sst.emp's 30 + constants.emp's 30 — the
+/// tranche-9 animation block; animate carries NO module-local mirrors).
+type Tranche9Sections = (
+    Vec<Section>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+    Vec<LinkAssert>,
+);
+
+/// Tranche 9: the EIGHTEEN-module successor — tranche 8's composition plus
+/// `animate.emp` (`engine/objects/` — the animation interpreter: the
+/// pc-indexed dispatch with a label-arithmetic anchor, the cross-proc
+/// `AnimateSprite.cc_delete` export, and the cross-seam abs.w `jmp
+/// DeleteObject`). `SOUND_DRIVER_ENABLED` stays 1 in the mixed build.
+fn placed_emp_sections_tranche9(aeon: &Path, debug_val: i128) -> Tranche9Sections {
+    let map = emp_bank_map_tranche9(debug_val != 0);
+    let (mut sections, _dac_asserts) =
+        placed_module_sections(&sound_dir(aeon), "dac_samples.emp", &[], &map);
+    let (mt_sections, mt_asserts) = placed_module_sections(
+        &sound_dir(aeon),
+        "mt_bank.emp",
+        &[("DEBUG".to_string(), debug_val)],
+        &map,
+    );
+    let (sfx_sections, sfx_asserts) =
+        placed_module_sections(&sound_dir(aeon).join("sfx"), "sfx_bank.emp", &[], &map);
+    let (hblank_sections, _hblank_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "hblank.emp", &[], &map);
+    let (controllers_sections, controllers_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "controllers.emp", &[], &map);
+    let (math_sections, _math_asserts) = placed_module_sections_with_roots(
+        &aeon.join("engine"),
+        &aeon.join("engine/system"),
+        "math.emp",
+        &[],
+        &map,
+    );
+    let (vdp_init_sections, vdp_init_asserts) =
+        placed_module_sections(&aeon.join("engine/system"), "vdp_init.emp", &[], &map);
+    let (collision_lookup_sections, collision_lookup_asserts) =
+        placed_module_sections(&aeon.join("engine/level"), "collision_lookup.emp", &[], &map);
+    let (particle_sections, particle_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "particle_anims.emp",
+        &[],
+        &map,
+    );
+    let (sonic_sections, sonic_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/animations"),
+        "sonic_anims.emp",
+        &[],
+        &map,
+    );
+    let (act_sections, act_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/data/levels/ojz/act1"),
+        "act_descriptor.emp",
+        &[],
+        &map,
+    );
+    let (game_loop_sections, _game_loop_asserts) = placed_module_sections(
+        &aeon.join("engine/system"),
+        "game_loop.emp",
+        &[
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("SOUND_DEBUG_HOTKEYS".to_string(), 0),
+        ],
+        &map,
+    );
+    let (sound_api_sections, sound_api_asserts) =
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+    let (test_solid_sections, test_solid_asserts) =
+        placed_module_sections(&aeon.join("games/sonic4/objects"), "test_solid.emp", &[], &map);
+    let (test_particle_sections, test_particle_asserts) = placed_module_sections(
+        &aeon.join("games/sonic4/objects"),
+        "test_particle.emp",
+        &[],
+        &map,
+    );
+    let (touch_response_sections, touch_response_asserts) =
+        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[], &map);
+    let (rings_sections, rings_asserts) = placed_module_sections(
+        &aeon.join("engine/objects"),
+        "rings.emp",
+        &[
+            ("DEBUG".to_string(), debug_val),
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ],
+        &map,
+    );
+    // The tranche-9 module: `engine/objects/animate.emp` — its sst+constants
+    // ambient prepend rides the dedicated `animate.emp` arm.
+    let (animate_sections, animate_asserts) = placed_module_sections(
+        &aeon.join("engine/objects"),
+        "animate.emp",
+        &[("SOUND_DRIVER_ENABLED".to_string(), 1)],
+        &map,
+    );
+    sections.extend(mt_sections);
+    sections.extend(sfx_sections);
+    sections.extend(hblank_sections);
+    sections.extend(controllers_sections);
+    sections.extend(math_sections);
+    sections.extend(vdp_init_sections);
+    sections.extend(collision_lookup_sections);
+    sections.extend(particle_sections);
+    sections.extend(sonic_sections);
+    sections.extend(act_sections);
+    sections.extend(game_loop_sections);
+    sections.extend(sound_api_sections);
+    sections.extend(test_solid_sections);
+    sections.extend(test_particle_sections);
+    sections.extend(touch_response_sections);
+    sections.extend(rings_sections);
+    sections.extend(animate_sections);
+    (
+        sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_lookup_asserts,
+        particle_asserts,
+        sonic_asserts,
+        act_asserts,
+        sound_api_asserts,
+        test_solid_asserts,
+        test_particle_asserts,
+        touch_response_asserts,
+        rings_asserts,
+        animate_asserts,
+    )
+}
+
+/// The tranche-9 mixed ROM: the AS side with EIGHTEEN gates on, the .emp side
+/// supplying every gated region, jointly resolved and linked, emitted through
+/// the production map.
+fn build_mixed_tranche9_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche9_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let debug_val: i128 = if debug { 1 } else { 0 };
+
+    let (
+        emp_sections,
+        mt_asserts,
+        sfx_asserts,
+        controllers_asserts,
+        vdp_init_asserts,
+        collision_lookup_asserts,
+        particle_asserts,
+        sonic_asserts,
+        act_asserts,
+        sound_api_asserts,
+        test_solid_asserts,
+        test_particle_asserts,
+        touch_response_asserts,
+        rings_asserts,
+        animate_asserts,
+    ) = placed_emp_sections_tranche9(aeon, debug_val);
+    let mut sections = as_module.sections;
+    sections.extend(emp_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed tranche9): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed tranche9): {d:?}"));
+
+    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&controllers_asserts), twin_guards(), "controllers guards captured");
+    for (name, asserts, want) in [
+        ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
+        ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
+        ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
+        ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
+        ("act_descriptor.emp", &act_asserts, 5),
+        ("sound_api.emp", &sound_api_asserts, 7),
+        ("test_solid.emp", &test_solid_asserts, 30),
+        ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
+        ("collision.emp", &touch_response_asserts, 31 + twin_guards()),
+        ("rings.emp", &rings_asserts, 34 + twin_guards()),
+        // animate.emp: sst.emp's 30 + the constants twin (now 30 with the
+        // tranche-9 animation block) and NOTHING module-local.
+        ("animate.emp", &animate_asserts, 30 + twin_guards()),
+    ] {
+        assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
+        let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "{name}'s asserts must PASS against the real AS tree: {diags:?}"
+        );
+    }
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed tranche9): {e}"))
+}
+
+/// Tranche 9 acceptance — plain EIGHTEEN-module mixed build == `aeon/s4.bin`,
+/// modulo the convsym bytes; the animate region head pinned explicitly
+/// (`andi.b #$F9, SST_render_flags(a0)` — `0228 00F9 000E`).
+#[test]
+fn mixed_tranche9_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche9_rom(&aeon, false);
+
+    assert_eq!(
+        &rom[0x2D78..0x2D7E],
+        &[0x02, 0x28, 0x00, 0xF9, 0x00, 0x0E][..],
+        "animate region head must match the reference bytes exactly (plain)"
+    );
+
+    assert_rom_matches(&rom, &refrom, ASSEMBLED_LEN, CONVSYM_REWRITTEN, "DSM.9 STOP: mixed tranche9");
+}
+
+/// Tranche 9 acceptance — `__DEBUG__` EIGHTEEN-module mixed build ==
+/// `aeon/s4.debug.bin`, modulo the convsym bytes. The animate region LENGTH is
+/// shape-invariant — only its base slides with `__DEBUG__`.
+#[test]
+fn mixed_tranche9_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!(
+                "SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin \
+                 (build it: DEBUG=1 SOUND_DRIVER_ENABLED=1 ./build.sh sonic4; see PROVENANCE.md)"
+            );
+        }
+        eprintln!("skip: debug reference not at {} (build per PROVENANCE.md)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche9_rom(&aeon, true);
+
+    assert_eq!(
+        &rom[0x3032..0x3038],
+        &[0x02, 0x28, 0x00, 0xF9, 0x00, 0x0E][..],
+        "animate region head must match the reference bytes exactly (debug)"
+    );
+
+    assert_rom_matches(
+        &rom,
+        &refrom,
+        DEBUG_ASSEMBLED_LEN,
+        CONVSYM_REWRITTEN_DEBUG,
+        "DSM.9 STOP: mixed tranche9 debug",
     );
 }
 

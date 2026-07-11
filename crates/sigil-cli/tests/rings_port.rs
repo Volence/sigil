@@ -47,8 +47,8 @@
 //!
 //! ## Reference windows (2026-07-10 pins, from the master listings)
 //!
-//! Plain (map base `$31F0`): `s4.bin[0x31F0..0x33A4]` (0x1B4 bytes).
-//! Debug (map base `$34AA`): `s4.debug.bin[0x34AA..0x36BA]` (0x210 bytes).
+//! Plain (map base `$3070`): `s4.bin[0x3070..0x3224]` (0x1B4 bytes).
+//! Debug (map base `$332A`): `s4.debug.bin[0x332A..0x353A]` (0x210 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
@@ -90,7 +90,7 @@ struct Shape {
 }
 
 const PLAIN: Shape = Shape {
-    base: 0x31F0,
+    base: 0x3070,
     len: 0x1B4,
     ringcol_off: 0x112,
     labels: &[
@@ -104,15 +104,15 @@ const PLAIN: Shape = Shape {
         ("Camera_X", 0xFFFF_A11E),
         ("Camera_Y", 0xFFFF_A122),
         ("Player_1", 0xFFFF_89EE),
-        ("Collected_MarkRing", 0x3428),
-        ("EntityWindow_EntryForSection", 0x364C),
-        ("EntityLoaded_Clear", 0x3638),
-        ("Sound_PlayRing", 0x5EFC),
+        ("Collected_MarkRing", 0x32A8),
+        ("EntityWindow_EntryForSection", 0x34CC),
+        ("EntityLoaded_Clear", 0x34B8),
+        ("Sound_PlayRing", 0x5D7C),
     ],
 };
 
 const DEBUG: Shape = Shape {
-    base: 0x34AA,
+    base: 0x332A,
     len: 0x210,
     ringcol_off: 0x16E,
     labels: &[
@@ -126,10 +126,10 @@ const DEBUG: Shape = Shape {
         ("Camera_X", 0xFFFF_A140),
         ("Camera_Y", 0xFFFF_A144),
         ("Player_1", 0xFFFF_8A10),
-        ("Collected_MarkRing", 0x37A0),
-        ("EntityWindow_EntryForSection", 0x3C82),
-        ("EntityLoaded_Clear", 0x3C0C),
-        ("Sound_PlayRing", 0x73BA),
+        ("Collected_MarkRing", 0x3620),
+        ("EntityWindow_EntryForSection", 0x3B02),
+        ("EntityLoaded_Clear", 0x3A8C),
+        ("Sound_PlayRing", 0x723A),
         // Debug shape only: the assert transliteration's error-handler entry
         // points (values read from the reference ROM's own jsr/jmp operands).
         ("MDDBG__ErrorHandler", 0x6_644C),
@@ -315,7 +315,7 @@ fn compile_real_file_with(
 /// rings.emp's own 4 game-owned mirrors = 58.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 58, "sst.emp's 30 + constants.emp's 24 + rings.emp's 4 drift guards must be captured");
+    assert_eq!(guards, 64, "sst.emp's 30 + constants.emp's 30 (tranche-9 animation block) + rings.emp's 4 drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -409,13 +409,13 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
     );
 }
 
-/// (plain) the `rings` region == `s4.bin[0x31F0..0x33A4]` — DEBUG=0.
+/// (plain) the `rings` region == `s4.bin[0x3070..0x3224]` — DEBUG=0.
 #[test]
 fn rings_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", 0);
 }
 
-/// (debug) the `rings` region == `s4.debug.bin[0x34AA..0x36BA]` — DEBUG=1,
+/// (debug) the `rings` region == `s4.debug.bin[0x332A..0x353A]` — DEBUG=1,
 /// including the transliterated assert block and its `dc.b` FSTRING data.
 #[test]
 fn rings_debug_region_matches_reference() {

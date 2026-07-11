@@ -60,30 +60,29 @@ fn map_toml(debug: bool) -> String {
     )
 }
 
-/// The fifteen AS-side equs the drift guards read back through `extern()`:
-/// the three animation-command/duration bytes plus the twelve `ANIM_*` ids
-/// (`games/sonic4/config/constants.asm` truth).
+/// The AS-side equs the drift guards read back through `extern()`: the
+/// twelve `ANIM_*` ids (`games/sonic4/config/constants.asm` truth) plus the
+/// full engine-constants twin blob — sonic_anims' three former local command
+/// mirrors consolidated into the twin at the animate port (tranche 9,
+/// kill-list row 3), so the twin's 30 ensures now ride this module's
+/// lowering and need their truths present.
 fn as_equs() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               AF_END = $FF\n\
-               AF_BACK = $FE\n\
-               DUR_DYNAMIC = $FF\n\
-               ANIM_WALK = 0\n\
-               ANIM_RUN = 1\n\
-               ANIM_ROLL = 2\n\
-               ANIM_SPINDASH = 3\n\
-               ANIM_PUSH = 4\n\
-               ANIM_IDLE = 5\n\
-               ANIM_BALANCE = 6\n\
-               ANIM_LOOKUP = 7\n\
-               ANIM_DUCK = 8\n\
-               ANIM_SKID = 9\n\
-               ANIM_GETUP = 10\n\
-               ANIM_COUNT = 11\n\
-               Stub:\n\
-               \tdc.w 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (equs): {d:?}")).sections
+    let mut pairs = sigil_harness::test_support::engine_constant_equs();
+    pairs.extend([
+        ("ANIM_WALK", "0"),
+        ("ANIM_RUN", "1"),
+        ("ANIM_ROLL", "2"),
+        ("ANIM_SPINDASH", "3"),
+        ("ANIM_PUSH", "4"),
+        ("ANIM_IDLE", "5"),
+        ("ANIM_BALANCE", "6"),
+        ("ANIM_LOOKUP", "7"),
+        ("ANIM_DUCK", "8"),
+        ("ANIM_SKID", "9"),
+        ("ANIM_GETUP", "10"),
+        ("ANIM_COUNT", "11"),
+    ]);
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
 /// The synthetic outbound consumer — sonic.asm's real anim-table pointer
@@ -107,6 +106,24 @@ fn compile_real_file(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sonic_anims.emp parse errors: {pdiags:?}"
     );
+    // `use engine.constants.{AF_END, AF_BACK, DUR_DYNAMIC}` (the tranche-9
+    // row-3 consolidation) — plain `lower_module` never resolves cross-module
+    // `use`, so the twin's items ride in front (the ambient technique).
+    let aeon =
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let csrc = std::fs::read_to_string(Path::new(&aeon).join("engine/system/constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (cfile, cdiags) = parse_str(&csrc);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "constants.emp parse errors: {cdiags:?}"
+    );
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: cfile.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -152,9 +169,11 @@ fn compile_real_file(
     (resolved, linked, link_asserts)
 }
 
-/// All fifteen drift guards (3 command bytes + 12 ordinal/count) must be
-/// captured (identified by their message text — the trailing `align 2`
-/// congruence assert also rides `link_asserts`) and PASS against the equs.
+/// All twelve ordinal/count drift guards must be captured (identified by
+/// their message text — the constants twin's 30 "disagree" ensures and the
+/// trailing `align 2` congruence assert also ride `link_asserts`) and PASS
+/// against the equs. The three former command-byte guards died in the
+/// tranche-9 row-3 consolidation (the twin's own ensures cover the values).
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = link_asserts
         .iter()
@@ -164,7 +183,7 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
             })
         })
         .count();
-    assert_eq!(guards, 15, "all fifteen drift guards must be captured");
+    assert_eq!(guards, 12, "all twelve ordinal drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -224,4 +243,79 @@ fn sonic_anims_region_matches_reference() {
 #[test]
 fn sonic_anims_debug_region_matches_reference() {
     gate(true, "s4.debug.bin", 0x309D8);
+}
+
+
+// ── The rep() helper probe ──────────────────────────────────────────────────
+
+/// `rep(frame, n)` — the documented uneven-timing helper (a held pose is its
+/// frame repeated; the tranche-9 gate deleted the dead per-frame-duration
+/// interpreter in its favor) — is UNUSED by today's uniform-timed scripts,
+/// so this probe keeps its body compiling and correct: a scratch data item
+/// appended to the REAL sonic_anims.emp splices `[1] ++ rep(2, 3) ++ [255]`
+/// and must emit `01 02 02 02 FF`.
+#[test]
+fn rep_helper_compiles_and_repeats() {
+    let dir = anims_dir();
+    if !dir.join("sonic_anims.emp").exists() {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but sonic_anims.emp missing");
+        }
+        eprintln!("skip: sonic_anims.emp not found (set AEON_DIR)");
+        return;
+    }
+    let src = std::fs::read_to_string(dir.join("sonic_anims.emp")).unwrap();
+    assert!(src.contains("comptime fn rep("), "the documented rep() helper must exist");
+    let (file, pdiags) = parse_str(&src);
+    assert!(pdiags.iter().all(|d| d.level != sigil_span::Level::Error), "{pdiags:?}");
+    let aeon =
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let csrc =
+        std::fs::read_to_string(Path::new(&aeon).join("engine/system/constants.emp")).unwrap();
+    let (cfile, cdiags) = parse_str(&csrc);
+    assert!(cdiags.iter().all(|d| d.level != sigil_span::Level::Error), "{cdiags:?}");
+    let probe_src = "module probe.rep\ndata RepProbe: [u8; 5] = [1] ++ rep(2, 3) ++ [255]\n";
+    let (pfile, ppdiags) = parse_str(probe_src);
+    assert!(ppdiags.iter().all(|d| d.level != sigil_span::Level::Error), "{ppdiags:?}");
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: cfile.items.into_iter().chain(file.items).chain(pfile.items).collect(),
+        docs: file.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(dir.clone()),
+        embed_base: None,
+        defines: vec![],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(ldiags.iter().all(|d| d.level != sigil_span::Level::Error), "lower errors: {ldiags:?}");
+    // The probe grows the section past the pinned 0x6E window — its own map.
+    let map_src = "fill = 0x00\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n[[region]]\nname = \"sonic_anims\"\nlma_base = 0x30970\nsize = 0x80\nkind = \"rom\"\n";
+    let map = sigil_link::load_map(map_src).expect("probe map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(pdiags.iter().all(|d| d.level != sigil_span::Level::Error), "{pdiags:?}");
+    let mut equs = as_equs();
+    for sec in &mut equs {
+        sec.lma = 0x0100_0000;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.extend(equs);
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+    let sec = linked
+        .sections
+        .iter()
+        .find(|s| s.lma == 0x30970 && !s.bytes.is_empty())
+        .expect("sonic_anims section must link");
+    assert_eq!(
+        &sec.bytes[sec.bytes.len() - 5..],
+        &[0x01, 0x02, 0x02, 0x02, 0xFF],
+        "rep(2, 3) must splice three repeated frames"
+    );
 }
