@@ -23,6 +23,11 @@ use std::path::Path;
 /// (both depend on `sigil-harness`).
 pub mod test_support;
 
+/// The `repin` pin generator (tranche-10 step 0): listing parsing, the
+/// `repin.toml` manifest, and the `pins.rs` renderer. Driven by the `repin`
+/// bin and the `repin_pins` staleness test.
+pub mod repin;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;

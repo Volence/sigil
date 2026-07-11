@@ -8,6 +8,10 @@ sigil-span = { path = "../sigil-span" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-link = { path = "../sigil-link" }
 sigil-frontend-as = { path = "../sigil-frontend-as" }
+# The `repin` manifest (`repin.toml`) rides the same TOML+serde pair
+# sigil-link's map loader established — no new dependency class.
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [dev-dependencies]
 # The mixed .asm+.emp harness (mixed_dac_rom) composes the emp front-end's
