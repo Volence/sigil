@@ -697,7 +697,8 @@ fn lower_align_item(
         },
     };
 
-    emit_align_pad(origin, module_id, anchor_counter, n, decl.span, builder, diags);
+    // An EXPLICIT `align N` item: a counted, reviewable structural guard.
+    emit_align_pad(origin, module_id, anchor_counter, n, decl.span, false, builder, diags);
 }
 
 /// Emit one alignment pad (D2.29): refuse a provisional position, `$00`-fill the
@@ -707,6 +708,13 @@ fn lower_align_item(
 /// [`lower_align_item`] (`align N`) and [`lower_table_item`] (`item_align: N`,
 /// the self-adjusting pad after every emitted part) so the two use the identical
 /// machinery — the design's byte-neutral guarantee.
+///
+/// `structural` tags the congruence assert `[layout.align]` when the pad is an
+/// IMPLICIT one — a `table item_align:` pad, of which there is one per part
+/// (many): those are layout invariants, not user drift guards, so the harness
+/// excludes them from `guard_assert_count` (parity with `[layout.odd-item]`). An
+/// EXPLICIT `align N` item stays an untagged, counted structural guard (one,
+/// reviewable), preserving the established twin-guard accounting.
 #[allow(clippy::too_many_arguments)]
 fn emit_align_pad(
     origin: u32,
@@ -714,6 +722,7 @@ fn emit_align_pad(
     anchor_counter: &mut u32,
     n: u32,
     span: Span,
+    structural: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -758,8 +767,9 @@ fn emit_align_pad(
         },
         message: vec![
             MsgPart::Text(format!(
-                "align {n}: final placement broke this alignment (padding was computed \
-                 against the lowering-baseline address {pos}, but the final address is "
+                "{}align {n}: final placement broke this alignment (padding was computed \
+                 against the lowering-baseline address {pos}, but the final address is ",
+                if structural { "[layout.align] " } else { "" }
             )),
             MsgPart::Expr(Expr::Sym(anchor)),
             MsgPart::Text(
@@ -1127,7 +1137,9 @@ fn emit_table_part(
 ) {
     emit_table_buf(file, &part.buf, part.label.as_deref(), placement, as_compat, part.span, builder, diags);
     if let Some(n) = item_align {
-        emit_align_pad(placement.origin, module_id, anchor_counter, n, part.span, builder, diags);
+        // Implicit per-part pads: STRUCTURAL (tagged `[layout.align]`, not a
+        // counted user drift guard).
+        emit_align_pad(placement.origin, module_id, anchor_counter, n, part.span, true, builder, diags);
     }
 }
 
