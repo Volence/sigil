@@ -830,16 +830,48 @@ impl Evaluator<'_> {
         env: &mut Env,
         span: Span,
     ) -> Option<CodeOperand> {
-        let ast::Expr::Path(p) = disp else {
+        // `Sym±n(pc[,Xn])` — a comptime addend on the symbolic target (the
+        // dispatch-table anchor idiom, tranche 9: `jmp .cc_table-4(pc,d0.w)`
+        // where the adjusted address lands INSIDE the jmp itself, so no
+        // relocated label can absorb it). The symbol stays a link-time fixup;
+        // only the addend folds here.
+        let (path_expr, addend) = match disp {
+            ast::Expr::Binary { op, lhs, rhs, .. }
+                if matches!(op, ast::BinOp::Add | ast::BinOp::Sub)
+                    && matches!(&**lhs, ast::Expr::Path(_)) =>
+            {
+                let nv = self.eval_expr(rhs, env);
+                if matches!(nv, Value::Poison) {
+                    return None;
+                }
+                let Some(n) = nv.as_stored_int() else {
+                    self.error(
+                        expr_span(rhs),
+                        format!(
+                            "a PC-relative target addend must be a comptime integer, got {}",
+                            nv.type_name()
+                        ),
+                    );
+                    return None;
+                };
+                let Ok(n) = i64::try_from(n) else {
+                    self.error(expr_span(rhs), "PC-relative target addend out of range".to_string());
+                    return None;
+                };
+                (&**lhs, if matches!(op, ast::BinOp::Sub) { -n } else { n })
+            }
+            other => (other, 0),
+        };
+        let ast::Expr::Path(p) = path_expr else {
             self.error(
                 expr_span(disp),
-                "a PC-relative target must be a label or symbol path".to_string(),
+                "a PC-relative target must be a label or symbol path (optionally ± a comptime integer)".to_string(),
             );
             return None;
         };
         let target = scope.resolve_ref(&p.segments.join("."));
         match shape {
-            PcRelShape::Plain => Some(CodeOperand::PcRel { target }),
+            PcRelShape::Plain => Some(CodeOperand::PcRel { target, addend }),
             PcRelShape::Indexed { xn_expr, xn_size } => {
                 let xn = match xn_expr {
                     ast::Expr::Path(xp) if xp.segments.len() == 1 => {
@@ -857,7 +889,7 @@ impl Evaluator<'_> {
                     return None;
                 };
                 let xlong = self.resolve_index_size(xn_size, span, env, "`pc`-relative ")?;
-                Some(CodeOperand::PcRelIdx { target, xn, xlong })
+                Some(CodeOperand::PcRelIdx { target, addend, xn, xlong })
             }
         }
     }

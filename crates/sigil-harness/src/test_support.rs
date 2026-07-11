@@ -87,7 +87,7 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
-/// The engine-constant equs that `engine.constants`'s 24 drift guards read back
+/// The engine-constant equs that `engine.constants`'s 30 drift guards read back
 /// through `extern()`. SOURCE OF TRUTH: `engine/system/constants.asm`.
 ///
 /// (The four `BUTTON_*` are written as plain magnitudes here; some hand-copied
@@ -105,7 +105,16 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("VDP_Shadow_len", "19"),
         ("RF_COORDMODE", "3"),
         ("RF_PRIORITY_SHIFT", "5"),
+        // Animation block (tranche 9 — AF_* truth re-homed from animate.asm to
+        // engine/constants.asm at the animate port so script data files survive
+        // the SIGIL_EMP_ANIMATE gate; consumed-only mirroring, kill-list row 2).
+        ("AF_END", "$FF"),
+        ("AF_BACK", "$FE"),
         ("AF_DELETE", "$FB"),
+        ("AF_SET_FIELD", "$F7"),
+        ("DUR_DYNAMIC", "$FF"),
+        ("OBJ_CODE_BANK", "1"),
+        ("FRAME_PIECE_COUNT", "4"),
         ("NUM_PLAYERS", "2"),
         ("NUM_DYNAMIC", "40"),
         ("NUM_SYSTEM", "8"),
@@ -213,11 +222,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_24() {
+    fn engine_constants_blob_assembles_and_defines_all_30() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
-        assert_eq!(engine_constant_equs().len(), 24, "the twin guards 24 engine constants");
+        assert_eq!(
+            engine_constant_equs().len(),
+            30,
+            "the twin guards 30 engine constants (24 + the tranche-9 animation block)"
+        );
     }
 
     #[test]

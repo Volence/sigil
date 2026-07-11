@@ -130,11 +130,12 @@ fn doctored_af_delete_produces_different_bytes() {
     let Some(src) = real_src() else { return };
     let Some(constants) = constants_src() else { return };
     let Some(refrom) = read_reference() else { return };
+    // (column-aligned since the tranche-9 animation-block growth)
     assert!(
-        constants.contains("pub const AF_DELETE = $FB"),
-        "precondition: the twin spells `pub const AF_DELETE = $FB`"
+        constants.contains("pub const AF_DELETE    = $FB"),
+        "precondition: the twin spells `pub const AF_DELETE    = $FB`"
     );
-    let doctored = constants.replace("pub const AF_DELETE = $FB", "pub const AF_DELETE = $FA");
+    let doctored = constants.replace("pub const AF_DELETE    = $FB", "pub const AF_DELETE    = $FA");
     let (sections, _asserts) = place(&doctored, &src, "0x309DE");
     assert_ne!(
         link_bytes(&sections),
@@ -192,10 +193,22 @@ fn sonic_src() -> Option<String> {
 }
 
 /// Place `src` as the sonic_anims module (plain shape) and return
-/// (sections, link asserts).
+/// (sections, link asserts). The constants twin rides ambient — sonic_anims'
+/// command bytes arrive via `use engine.constants` since the tranche-9
+/// row-3 consolidation.
 fn place_sonic(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let csrc = std::fs::read_to_string(aeon_dir().join("engine/system/constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (cfile, cdiags) = parse_str(&csrc);
+    assert!(cdiags.iter().all(|d| d.level != Level::Error), "constants parse errors: {cdiags:?}");
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: cfile.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
@@ -228,28 +241,24 @@ fn place_sonic(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
 
 /// The AS-side equs at their genuine values (the port gate's set).
 fn sonic_equs() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               AF_END = $FF\n\
-               AF_BACK = $FE\n\
-               DUR_DYNAMIC = $FF\n\
-               ANIM_WALK = 0\n\
-               ANIM_RUN = 1\n\
-               ANIM_ROLL = 2\n\
-               ANIM_SPINDASH = 3\n\
-               ANIM_PUSH = 4\n\
-               ANIM_IDLE = 5\n\
-               ANIM_BALANCE = 6\n\
-               ANIM_LOOKUP = 7\n\
-               ANIM_DUCK = 8\n\
-               ANIM_SKID = 9\n\
-               ANIM_GETUP = 10\n\
-               ANIM_COUNT = 11\n\
-               Stub:\n\
-               \tdc.w 0\n";
-    let opts = sigil_frontend_as::Options { initial_cpu: Cpu::M68000, ..Default::default() };
-    sigil_frontend_as::assemble(asm, &opts)
-        .unwrap_or_else(|d| panic!("AS assemble (sonic equs): {d:?}"))
-        .sections
+    // The full constants-twin blob rides too (its 30 ensures come ambient
+    // with the tranche-9 consolidation), plus the ANIM_* ordinal truths.
+    let mut pairs = sigil_harness::test_support::engine_constant_equs();
+    pairs.extend([
+        ("ANIM_WALK", "0"),
+        ("ANIM_RUN", "1"),
+        ("ANIM_ROLL", "2"),
+        ("ANIM_SPINDASH", "3"),
+        ("ANIM_PUSH", "4"),
+        ("ANIM_IDLE", "5"),
+        ("ANIM_BALANCE", "6"),
+        ("ANIM_LOOKUP", "7"),
+        ("ANIM_DUCK", "8"),
+        ("ANIM_SKID", "9"),
+        ("ANIM_GETUP", "10"),
+        ("ANIM_COUNT", "11"),
+    ]);
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
 /// THE ORDINALS-STORY NEGATIVE: swap the Walk/Run member order — the table
@@ -287,8 +296,18 @@ fn reordered_members_trip_the_ordinal_guards() {
 #[test]
 fn sonic_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = sonic_src() else { return };
+    let csrc = std::fs::read_to_string(aeon_dir().join("engine/system/constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
+    let (cfile, cdiags) = parse_str(&csrc);
+    assert!(cdiags.iter().all(|d| d.level != Level::Error), "constants parse errors: {cdiags:?}");
     let (file, pdiags) = parse_str(&src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: cfile.items.into_iter().chain(file.items).collect(),
+        docs: file.docs.clone(),
+    };
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {

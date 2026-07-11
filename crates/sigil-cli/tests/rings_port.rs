@@ -315,7 +315,7 @@ fn compile_real_file_with(
 /// rings.emp's own 4 game-owned mirrors = 58.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 58, "sst.emp's 30 + constants.emp's 24 + rings.emp's 4 drift guards must be captured");
+    assert_eq!(guards, 64, "sst.emp's 30 + constants.emp's 30 (tranche-9 animation block) + rings.emp's 4 drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

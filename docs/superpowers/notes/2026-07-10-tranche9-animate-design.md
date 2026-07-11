@@ -22,8 +22,9 @@ it). The `Shape` struct keeps per-shape `len` fields anyway (the rings
 precedent — equal values, one less special case). Region tail is clean:
 `RefreshSpritePieceCount`'s `rts` lands exactly on the boundary, no
 padding. Proc offsets (plain listing): AnimateSprite +0,
-AnimateSprite_PerFrame +$13A ($2EB2), RefreshSpritePieceCount +$2F4
-($306C). Debug offsets identical (invariant length).
+AnimateSprite_PerFrame +$17A ($2EF2), RefreshSpritePieceCount +$2F4
+($306C). Debug offsets identical (invariant length; debug listing agrees:
+$31AC/$3326 from base $3032).
 
 **UPSTREAM EXPOSURE (hazard 4)**: any step-2/5 byte change slides
 collision ($308A/$3344), rings ($31F0/$34AA), collision_lookup

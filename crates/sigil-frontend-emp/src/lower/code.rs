@@ -443,6 +443,22 @@ fn lower_jbra_jbsr(
 /// So the plain form's d16 ext word always starts at byte offset 2; the
 /// indexed form's brief ext word also starts at offset 2, and its disp8 is
 /// that word's LOW byte, i.e. offset 3.
+/// The link-time fixup expression for a PC-relative target: the bare symbol,
+/// or `Sym ± n` when the operand carried a comptime addend (`Sym-4(pc,Xn)` —
+/// the linker's `Expr::fold` does the arithmetic after symbol resolution).
+fn pcrel_target_expr(target: &str, addend: i64) -> Expr {
+    let sym = Expr::Sym(target.to_string());
+    if addend == 0 {
+        sym
+    } else {
+        Expr::Binary {
+            op: sigil_ir::expr::BinOp::Add,
+            lhs: Box::new(sym),
+            rhs: Box::new(Expr::Int(addend)),
+        }
+    }
+}
+
 fn lower_m68k_pcrel(
     m: M68kMnemonic,
     size: Option<Width>,
@@ -481,12 +497,12 @@ fn lower_m68k_pcrel(
     let mut is_indexed = false;
     for op in ops {
         match op {
-            CodeOperand::PcRel { target: t } => {
-                target = Some(Expr::Sym(t.clone()));
+            CodeOperand::PcRel { target: t, addend } => {
+                target = Some(pcrel_target_expr(t, *addend));
                 mops.push(M68kOperand::Pcd16(0));
             }
-            CodeOperand::PcRelIdx { target: t, xn, xlong } => {
-                target = Some(Expr::Sym(t.clone()));
+            CodeOperand::PcRelIdx { target: t, addend, xn, xlong } => {
+                target = Some(pcrel_target_expr(t, *addend));
                 is_indexed = true;
                 let (is_a, n) = reg_kind(*xn);
                 let xn = if is_a { M68kXn::A(n) } else { M68kXn::D(n) };
