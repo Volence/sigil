@@ -52,6 +52,7 @@
 //! asserts the linked fixup resolves to the correct per-shape address.
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$4A76`): `s4.bin[0x4A76..0x4A9A]` (0x24 bytes).
 //! Debug (map base `$529A`): `s4.debug.bin[0x529A..0x52BE]` (0x24 bytes).
@@ -68,9 +69,15 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// Per-shape region base (sourced from `sigil_harness::pins`).
+fn region_base(debug: bool) -> u32 {
+    if debug { pins::COLLISION_LOOKUP.debug_base } else { pins::COLLISION_LOOKUP.plain_base }
+}
 
 /// The module's own directory in aeon's tree — `collision_lookup.emp` has no
 /// `embed`s, but `include_root` is still set for parity with every other
@@ -97,7 +104,8 @@ fn twin_guards() -> usize {
 /// the real `collision_lookup` region pinned at the per-shape reference
 /// base, sized to the 0x24-byte block (plain `$4C02`, debug `$5426`).
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x529A" } else { "0x4A76" };
+    let base = region_base(debug);
+    let len = pins::COLLISION_LOOKUP.plain_len;
     format!(
         "fill = 0x00\n\
          \n\
@@ -109,8 +117,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"collision_lookup\"\n\
-         lma_base = {base}\n\
-         size = 0x24\n\
+         lma_base = {base:#x}\n\
+         size = {len:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -130,7 +138,10 @@ fn as_twin_equs() -> Vec<Section> {
 /// read from each shape's symbol table; `Head_Col` = base+2, `Top_Row` =
 /// base+4, `Bottom_Row` = base+6 in both).
 fn as_cache_ram_labels(debug: bool) -> Vec<Section> {
-    let base = if debug { "$FFFFA856" } else { "$FFFFA834" };
+    let base = format!(
+        "${:X}",
+        if debug { pins::CACHE_LEFT_COL.debug } else { pins::CACHE_LEFT_COL.plain }
+    );
     let asm = format!(
         "cpu 68000\n\
          phase {base}\n\
@@ -155,7 +166,10 @@ fn as_cache_ram_labels(debug: bool) -> Vec<Section> {
 /// `target_vma - (site_vma + 2)` and the reference bytes only match when
 /// the label sits where the real tile_cache.asm put it.
 fn as_tile_cache_label(debug: bool) -> Vec<Section> {
-    let base = if debug { "$48FA" } else { "$418E" };
+    let base = format!(
+        "${:X}",
+        if debug { pins::TILE_CACHE_GET_COLLISION.debug } else { pins::TILE_CACHE_GET_COLLISION.plain }
+    );
     let asm = format!(
         "cpu 68000\n\
          phase {base}\n\
@@ -329,7 +343,8 @@ fn collision_lookup_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(false);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x4A76..0x4A9A];
+    let base = region_base(false) as usize;
+    let expected = &refrom[base..base + pins::COLLISION_LOOKUP.plain_len];
     let section =
         linked.section("collision_lookup").expect("linked image must carry collision_lookup");
     assert_region_matches(
@@ -344,7 +359,7 @@ fn collision_lookup_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x4A76i64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (base as i64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
         "bare-name proof: `bsr.w Collision_GetType` must resolve to $4C02 (plain)"
@@ -369,7 +384,8 @@ fn collision_lookup_debug_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(true);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x529A..0x52BE];
+    let base = region_base(true) as usize;
+    let expected = &refrom[base..base + pins::COLLISION_LOOKUP.debug_len];
     let section =
         linked.section("collision_lookup").expect("linked image must carry collision_lookup");
     assert_region_matches(
@@ -384,7 +400,7 @@ fn collision_lookup_debug_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x529Ai64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (base as i64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
         "bare-name proof: `bsr.w Collision_GetType` must resolve to $5426 (debug)"
