@@ -119,6 +119,13 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("NUM_DYNAMIC", "40"),
         ("NUM_SYSTEM", "8"),
         ("NUM_EFFECTS", "16"),
+        // Object-core block (tranche 10 — NUM_TOTAL_SLOTS is the pool sum,
+        // culling geometry + the untagged-slot sentinel; source of truth
+        // engine/constants.asm).
+        ("NUM_TOTAL_SLOTS", "66"),
+        ("CULL_DISTANCE_X", "$300"),
+        ("CULL_DISTANCE_Y", "$200"),
+        ("SLOT_TAG_UNTAGGED", "$FF"),
         ("COLLISION_TOUCH", "12"),
         ("ST_IN_AIR", "3"),
         ("ST_ON_OBJECT", "5"),
@@ -222,14 +229,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_30() {
+    fn engine_constants_blob_assembles_and_defines_all_34() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            30,
-            "the twin guards 30 engine constants (24 + the tranche-9 animation block)"
+            34,
+            "the twin guards 34 engine constants (30 + the tranche-10 object-core block)"
         );
     }
 

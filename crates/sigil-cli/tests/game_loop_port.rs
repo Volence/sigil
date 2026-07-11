@@ -48,6 +48,7 @@
 //! asserts the pc-rel fixup resolves to the per-shape `GameLoop`.
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$22FE`): `s4.bin[0x22FE..0x2310]` (0x12 bytes).
 //! Debug (map base `$238C`): `s4.debug.bin[0x238C..0x239E]` (0x12 bytes).
@@ -66,6 +67,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
@@ -81,16 +83,25 @@ fn strict_gate() -> bool {
 }
 
 /// Per-shape gate geometry: the region base and the true VMAs of the two
-/// pc-relative call targets (listing symbol tables, 2026-07-10 pins).
+/// pc-relative call targets (sourced from `sigil_harness::pins` — regenerate
+/// via repin).
 struct Shape {
     base: u32,
     vsync_wait: u32,
     drain: u32,
 }
 
-const PLAIN: Shape = Shape { base: 0x22FE, vsync_wait: 0x2262, drain: 0x5D2C };
-const DEBUG: Shape = Shape { base: 0x238C, vsync_wait: 0x22EC, drain: 0x71EA };
-const REGION_LEN: usize = 0x12;
+const PLAIN: Shape = Shape {
+    base: pins::GAME_LOOP.plain_base,
+    vsync_wait: pins::V_SYNC_WAIT.plain,
+    drain: pins::SOUND_DRAIN_SFX_RING.plain,
+};
+const DEBUG: Shape = Shape {
+    base: pins::GAME_LOOP.debug_base,
+    vsync_wait: pins::V_SYNC_WAIT.debug,
+    drain: pins::SOUND_DRAIN_SFX_RING.debug,
+};
+const REGION_LEN: usize = pins::GAME_LOOP.plain_len;
 
 /// Compile the real `engine/system/game_loop.emp` with the given defines,
 /// pinned at `base`, with the synthetic cross-seam labels at the given VMAs.
@@ -157,7 +168,7 @@ fn compile_emp(
         ("VSync_Wait", vsync_wait),
         ("Sound_DrainSfxRing", drain),
         ("Debug_MusicToggle", dbg_toggle),
-        ("Game_State", 0xFFFF_8004),
+        ("Game_State", pins::GAME_STATE.plain),
     ] {
         let asm = format!(
             "cpu 68000\n\
@@ -244,13 +255,14 @@ fn as_twin_bytes(
         .expect("gameDebugTick macro must close with endm");
     let macro_text = lines[start..=end].join("\n");
 
+    let game_state = pins::GAME_STATE.plain;
     let src = format!(
         "cpu 68000\n\
          supmode on\n\
          VSync_Wait = ${vsync_wait:X}\n\
          Sound_DrainSfxRing = ${drain:X}\n\
          Debug_MusicToggle = ${dbg_toggle:X}\n\
-         Game_State = $FFFF8004\n\
+         Game_State = ${game_state:X}\n\
          {macro_text}\n\
          org ${base:X}\n\
          {loop_src}\n"

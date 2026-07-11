@@ -47,6 +47,7 @@
 //! must land on the abs.w encoding (`4EB8 base`) for mixed-build parity.
 //!
 //! ## Reference windows (2026-07-10 pins, from the master listings)
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$2D78`): `s4.bin[0x2D78..0x2F0A]` (0x192 bytes).
 //! Debug (map base `$3032`): `s4.debug.bin[0x3032..0x31C4]` (0x192 bytes).
@@ -64,6 +65,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
@@ -78,7 +80,8 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// Per-shape geometry + TRUE cross-seam VMAs (2026-07-10 pins, both listings).
+/// Per-shape geometry + TRUE cross-seam VMAs (sourced from
+/// `sigil_harness::pins` — regenerate via repin).
 struct Shape {
     base: u32,
     len: usize,
@@ -90,23 +93,28 @@ struct Shape {
 /// conditional code), so shared constants rather than `Shape` fields.
 /// (Step 2 shrank the region 0x312 → 0x308 — bare Bcc/jbra relaxation found
 /// five suboptimal hand widths; the gate ruling then DELETED the dead
-/// `AnimateSprite_PerFrame` interpreter → 0x192. Offsets from the
-/// re-derived listings.)
+/// `AnimateSprite_PerFrame` interpreter → 0x192.)
 /// `.cc_delete`'s `jbra DeleteObject` (bra.w `6000 xxxx`).
-const CC_DELETE_OFF: usize = 0x104;
-/// `RefreshSpritePieceCount:` (listing `$2EEC`/`$31A6`).
-const REFRESH_OFF: usize = 0x174;
+const CC_DELETE_OFF: usize = pins::CC_DELETE_OFF;
+/// `RefreshSpritePieceCount:` structural anchor.
+const REFRESH_OFF: usize = pins::REFRESH_OFF;
 
 const PLAIN: Shape = Shape {
-    base: 0x2D78,
-    len: 0x192,
-    labels: &[("DeleteObject", 0x281C), ("Sound_PlaySFX", 0x5CE6)],
+    base: pins::ANIMATE.plain_base,
+    len: pins::ANIMATE.plain_len,
+    labels: &[
+        ("DeleteObject", pins::DELETE_OBJECT.plain),
+        ("Sound_PlaySFX", pins::SOUND_PLAY_SFX.plain),
+    ],
 };
 
 const DEBUG: Shape = Shape {
-    base: 0x3032,
-    len: 0x192,
-    labels: &[("DeleteObject", 0x29AE), ("Sound_PlaySFX", 0x71A4)],
+    base: pins::ANIMATE.debug_base,
+    len: pins::ANIMATE.debug_len,
+    labels: &[
+        ("DeleteObject", pins::DELETE_OBJECT.debug),
+        ("Sound_PlaySFX", pins::SOUND_PLAY_SFX.debug),
+    ],
 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.

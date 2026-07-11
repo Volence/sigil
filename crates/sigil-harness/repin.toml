@@ -1,0 +1,746 @@
+# repin.toml — the declarative pin manifest (tranche-10 step 0, D-T10.2).
+#
+# `cargo run -p sigil-harness --bin repin` resolves every entry against BOTH
+# aeon listings (s4.lst / s4.debug.lst) and regenerates src/pins.rs. Order is
+# load-bearing: pins.rs emits in manifest order. Adding a region/symbol is a
+# manifest edit + regenerate — the tool never re-pins a NEW region into
+# existence on its own.
+#
+# `tests` lists name the test BINARIES that consume the pin — printed as the
+# rerun hint when the pin moves. (dplc_port/core_port are tranche 10's
+# to-be-written binaries; their regions are pinned ahead per the handoff.)
+#
+# Inventory transcribed 2026-07-10 from the hand-typed pins in:
+#   sigil-cli tests: rings_port collision_port collision_lookup_port
+#     game_loop_port test_objects_port sound_api_port animate_port
+#     sonic_anims_port particle_anims_port controllers_port math_port
+#     vdp_init_port hblank_port act_descriptor_port
+#   sigil-harness tests: m1d_rom m1d_debug_rom m1c_vector_table
+#     (+ mixed_dac_rom's ASSEMBLED_LEN twins)
+# Every value was cross-checked against both listings before ratifying the
+# start/end symbols below.
+
+[rom]
+# The listing END-line address per shape — the assembled (pre-convsym) ROM
+# lengths ASSEMBLED_LEN / DEBUG_ASSEMBLED_LEN.
+end_symbol = "__END__"
+tests = ["m1d_rom", "m1d_debug_rom", "mixed_dac_rom"]
+
+# ── Gated regions, engine.inc ladder order ──────────────────────────────────
+
+[[region]]
+name = "vdp_init"
+start = "VDP_Shadow_Init"
+end = "Init_DMA_Queue"
+gate = "SIGIL_EMP_VDP_INIT"
+tests = ["vdp_init_port"]
+
+[[region]]
+name = "hblank"
+start = "HBlank_Dispatch"
+end = "Read_Controllers"
+gate = "SIGIL_EMP_HBLANK"
+# m1c_vector_table stubs HBlank_Dispatch (= this region's base).
+tests = ["hblank_port", "m1c_vector_table"]
+
+[[region]]
+name = "controllers"
+start = "Read_Controllers"
+end = "GameLoop"
+gate = "SIGIL_EMP_CONTROLLERS"
+tests = ["controllers_port"]
+
+[[region]]
+name = "game_loop"
+start = "GameLoop"
+end = "S4LZ_DecompressDict"
+gate = "SIGIL_EMP_GAME_LOOP"
+tests = ["game_loop_port"]
+
+[[region]]
+name = "math"
+start = "GetSineCosine"
+end = "Perform_DPLC"
+gate = "SIGIL_EMP_MATH"
+tests = ["math_port"]
+
+[[region]]
+name = "dplc"
+start = "Perform_DPLC"
+end = "InitObjectRAM"
+gate = "SIGIL_EMP_DPLC"
+tests = ["dplc_port"]
+
+[[region]]
+# Shape-DEPENDENT length: the debug surplus is the assert transliterations +
+# the Debug_AssertObjLoop proc (rings precedent).
+name = "core"
+start = "InitObjectRAM"
+end = "InitSpriteSystem"
+gate = "SIGIL_EMP_CORE"
+tests = ["core_port"]
+
+[[region]]
+name = "animate"
+start = "AnimateSprite"
+end = "TouchResponse"
+gate = "SIGIL_EMP_ANIMATE"
+# test_objects_port pins AnimateSprite (= this region's base) as a call target.
+tests = ["animate_port", "test_objects_port"]
+
+[[region]]
+name = "collision"
+start = "TouchResponse"
+end = "RingBuffer_Add"
+gate = "SIGIL_EMP_COLLISION"
+tests = ["collision_port"]
+
+[[region]]
+# Shape-DEPENDENT length (the debug-only assert block) — the campaign's first.
+name = "rings"
+start = "RingBuffer_Add"
+end = "Collected_Init"
+gate = "SIGIL_EMP_RINGS"
+tests = ["rings_port"]
+
+[[region]]
+name = "collision_lookup"
+start = "Collision_GetType"
+end = "Collision_ProbeDown"
+gate = "SIGIL_EMP_COLLISION_LOOKUP"
+tests = ["collision_lookup_port"]
+
+[[region]]
+# The one region whose END carries no listing symbol: the include's content
+# ends unlabeled after Sound_FadeIn (the next placement is the org $10000
+# object bank / sound_debug.asm). The literal len is the engine.inc gate
+# window size — shape-invariant, re-checked by sound_api_port's byte gate.
+name = "sound_api"
+start = "Sound_PostByte"
+len = 0x1E4
+gate = "SIGIL_EMP_SOUND_API"
+tests = ["sound_api_port"]
+
+# ── Object-code bank (org $10000; windows shape-invariant) ──────────────────
+
+[[region]]
+name = "test_solid"
+start = "TestSolid_Init"
+end = "TestParticle"
+gate = "SIGIL_EMP_TEST_OBJECTS"
+tests = ["test_objects_port"]
+
+[[region]]
+name = "test_particle"
+start = "TestParticle"
+end = "TestEmitter"
+gate = "SIGIL_EMP_TEST_OBJECTS"
+tests = ["test_objects_port"]
+
+# ── Game data (main.asm gates) ──────────────────────────────────────────────
+
+[[region]]
+name = "sonic_anims"
+start = "Ani_Sonic"
+end = "Ani_Sonic_End"
+gate = "SIGIL_EMP_SONIC_ANIMS"
+tests = ["sonic_anims_port"]
+
+[[region]]
+name = "particle_anims"
+start = "Ani_Particle"
+end = "Ani_Particle_End"
+gate = "SIGIL_EMP_PARTICLE_ANIMS"
+# test_objects_port pins Ani_Particle (= this region's base) as an anim table.
+tests = ["particle_anims_port", "test_objects_port"]
+
+[[region]]
+name = "act_descriptor"
+start = "OJZ_Act1_Descriptor"
+end = "OJZ_Sec0_Blocks"
+gate = "SIGIL_EMP_ACT_DESCRIPTOR"
+tests = ["act_descriptor_port"]
+
+# ── Cross-seam symbols ──────────────────────────────────────────────────────
+# m1c_vector_table's exception-stub VMAs (HBlank_Dispatch rides the hblank
+# region above; SYSTEM_STACK is a genuine constants.asm equate, not a pin).
+
+[[symbol]]
+name = "EntryPoint"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "NullInterrupt"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "BusError"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "AddressError"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "IllegalInstr"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "ZeroDivide"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "ChkInstr"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "TrapvInstr"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "PrivilegeViol"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "Trace"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "Line1010Emu"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "Line1111Emu"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "ErrorExcept"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "ErrorTrap"
+tests = ["m1c_vector_table"]
+
+[[symbol]]
+name = "VBlank_Handler"
+tests = ["m1c_vector_table"]
+
+# hblank (port #1)
+
+[[symbol]]
+name = "HBlank_Handler_Ptr"
+tests = ["hblank_port"]
+
+# vdp_init (tranche 3)
+
+[[symbol]]
+name = "VDP_Shadow_Table"
+tests = ["vdp_init_port"]
+
+[[symbol]]
+name = "VDP_Dirty_Mask"
+tests = ["vdp_init_port"]
+
+[[symbol]]
+name = "BootData_VDPRegs"
+tests = ["vdp_init_port"]
+
+# controllers (port #2; Ctrl_2_Held/*_Press_Accum derive from this base in
+# the test's phased carrier)
+
+[[symbol]]
+name = "Ctrl_1_Held"
+tests = ["controllers_port"]
+
+# game_loop (tranche 5)
+
+[[symbol]]
+name = "VSync_Wait"
+tests = ["game_loop_port"]
+
+[[symbol]]
+name = "Sound_DrainSfxRing"
+tests = ["game_loop_port"]
+
+[[symbol]]
+name = "Game_State"
+tests = ["game_loop_port"]
+
+# collision_lookup (tranche 3; Cache_Head_Col/Top/Bottom derive +2/+4/+6)
+
+[[symbol]]
+name = "Cache_Left_Col"
+tests = ["collision_lookup_port"]
+
+[[symbol]]
+name = "Tile_Cache_GetCollision"
+tests = ["collision_lookup_port"]
+
+# collision + rings shared RAM
+
+[[symbol]]
+name = "Player_1"
+tests = ["collision_port", "rings_port"]
+
+[[symbol]]
+name = "Dynamic_Slots"
+tests = ["collision_port"]
+
+# rings (tranche 8)
+
+[[symbol]]
+name = "Ring_Buffer"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Ring_Count"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Ring_HighWater"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Ring_Add_Dropped"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Ring_Counter"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Ring_Anim_Frame"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Ring_Anim_Timer"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Camera_X"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Camera_Y"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Collected_MarkRing"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "EntityWindow_EntryForSection"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "EntityLoaded_Clear"
+tests = ["rings_port"]
+
+[[symbol]]
+name = "Sound_PlayRing"
+tests = ["rings_port"]
+
+# rings' debug-shape error-handler entries. debug_only: the sole consumer is
+# the DEBUG shape's assert transliteration (the plain listing also carries
+# these names, but no test reads the plain values).
+
+[[symbol]]
+name = "MDDBG__ErrorHandler"
+debug_only = true
+tests = ["rings_port"]
+
+[[symbol]]
+name = "MDDBG__ErrorHandler_PagesController"
+debug_only = true
+tests = ["rings_port"]
+
+# dplc (tranche 10)
+
+[[symbol]]
+name = "QueueDMA_Important"
+tests = ["dplc_port"]
+
+[[symbol]]
+name = "QueueDMA_Deferrable"
+tests = ["dplc_port"]
+
+# core (tranche 10) — cross-seam RAM labels + procs (PLAYER_1/DYNAMIC_SLOTS/
+# CAMERA_X/CAMERA_Y/DRAW_SPRITE/ObjectMove already pinned above; reused).
+
+[[symbol]]
+name = "Object_RAM"
+tests = ["core_port"]
+
+[[symbol]]
+name = "System_Slots"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Effect_Slots"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Spawn_Count"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Game_Paused"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Object_RAM_End"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Dynamic_Free_Stack"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Dynamic_Free_SP"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Effect_Free_Stack"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Effect_Free_SP"
+tests = ["core_port"]
+
+# animate (tranche 9)
+
+[[symbol]]
+name = "DeleteObject"
+tests = ["animate_port"]
+
+[[symbol]]
+name = "Sound_PlaySFX"
+tests = ["animate_port"]
+
+# test_objects (tranche 6)
+
+[[symbol]]
+name = "ObjCodeBase"
+tests = ["test_objects_port"]
+
+[[symbol]]
+name = "Draw_Sprite"
+tests = ["test_objects_port"]
+
+[[symbol]]
+name = "ObjectMove"
+tests = ["test_objects_port"]
+
+# sound_api (tranche 5)
+
+[[symbol]]
+name = "Ring_Sfx_Speaker"
+tests = ["sound_api_port"]
+
+[[symbol]]
+name = "Sfx_Ring_Buf"
+tests = ["sound_api_port"]
+
+[[symbol]]
+name = "Sfx_Ring_Wr"
+tests = ["sound_api_port"]
+
+[[symbol]]
+name = "Sfx_Ring_Rd"
+tests = ["sound_api_port"]
+
+[[symbol]]
+name = "SongTable"
+tests = ["sound_api_port"]
+
+[[symbol]]
+name = "SongPatchTable"
+tests = ["sound_api_port"]
+
+# act_descriptor (tranche 4): the 42 cross-seam data labels…
+
+[[symbol]]
+name = "OJZ_Palette"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Act1_BG_Layout"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Act1_BG_Tiles"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "ParallaxConfig_OJZ_Default"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Act_Pool_PageTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec0_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec1_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec2_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec3_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+# Content-dedup alias of Sec2 (same address by design).
+name = "OJZ_Sec4_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec5_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec6_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec7_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec8_Blocks"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec0_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec0_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec0_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec1_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec1_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec1_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec2_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec2_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec2_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec3_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec3_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec3_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec4_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec4_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec4_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec5_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec5_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec5_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec6_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec6_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec6_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec7_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec7_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec7_TypeTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec8_Objects"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec8_Rings"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Sec8_TypeTable"
+tests = ["act_descriptor_port"]
+
+# …and the 16 equ-like values its seam supplies (shape-invariant in the
+# listings today, but the dict lens shift whenever the act art re-exports —
+# exactly the class the tool exists for).
+
+[[symbol]]
+name = "OJZ_ACT_POOL_PAGES"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "BLOCK_INDEX_SIZE"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "EDGE_CLAMP"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "MAX_ACT_SECTIONS"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "SECTION_SIZE_SHIFT"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "Act_len"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "Sec_len"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC0_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC1_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC2_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC3_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC4_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC5_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC6_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC7_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_SEC8_BLOCK_DICT_LEN"
+tests = ["act_descriptor_port"]
+
+# ── Region-relative offsets ─────────────────────────────────────────────────
+
+[[offset]]
+# `.cc_delete`'s `jbra DeleteObject` site.
+name = "CC_DELETE_OFF"
+sym = "AnimateSprite.cc_delete"
+region = "animate"
+tests = ["animate_port"]
+
+[[offset]]
+# `RefreshSpritePieceCount:` structural anchor.
+name = "REFRESH_OFF"
+sym = "RefreshSpritePieceCount"
+region = "animate"
+tests = ["animate_port"]
+
+[[offset]]
+# `RingCollision`'s spot-check + outbound-consumer target. Per-shape: the
+# debug-only assert block sits between the region base and this proc.
+name = "RINGCOL_OFF"
+sym = "RingCollision"
+region = "rings"
+per_shape = true
+tests = ["rings_port"]
+
+[[offset]]
+# The outbound `bsr.w Sound_PlaySFX` proof target (`base + 0x100` today).
+name = "SOUND_PLAY_SFX_OFF"
+sym = "Sound_PlaySFX"
+region = "sound_api"
+tests = ["sound_api_port"]
+
+[[offset]]
+# The consumer's `dc.l Sine_Table` fixup target.
+name = "SINE_TABLE_OFF"
+sym = "Sine_Table"
+region = "math"
+tests = ["math_port"]
+
+[[offset]]
+# The consumer's second `bsr.w` target.
+name = "FLUSH_VDP_SHADOW_OFF"
+sym = "Flush_VDP_Shadow"
+region = "vdp_init"
+tests = ["vdp_init_port"]
+
+[[offset]]
+# The consumer's `move.l #HBlank_Null` imm32 target.
+name = "HBLANK_NULL_OFF"
+sym = "HBlank_Null"
+region = "hblank"
+tests = ["hblank_port"]

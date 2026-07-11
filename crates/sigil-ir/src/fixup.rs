@@ -54,6 +54,19 @@ pub enum FixupKind {
     /// Unsigned-window range check (`0 ≤ v < 2^16`), then written verbatim
     /// little-endian.
     Value16Le,
+    /// A link-time `#imm16` word IMMEDIATE, big-endian (68k `move.w`/`cmpi.w`/…).
+    /// Distinct from both the value and address kinds: a word immediate holds
+    /// the LOW 16 bits of a value whose high 16 bits must be a consistent
+    /// extension — either all-zero (an unsigned/positive value like an
+    /// objroutine offset in `[0, 0xFFFF]`) OR all-one (a sign-extended RAM
+    /// address like `$FFFF9EDE`). This is exactly AS's rule for a word
+    /// immediate (`move.w #$FFFF9EDE, d0` and `move.w #$F800, d0` both assemble;
+    /// `move.w #$00019EDE, d0` errors). [`Value16Be`](Self::Value16Be) rejects
+    /// the sign-extended address (negative); [`Abs16Be`](Self::Abs16Be) rejects
+    /// the `[0x8000, 0xFFFF]` upper-unsigned half — a word immediate needs the
+    /// UNION. Writes the low 16 bits verbatim big-endian; a value whose high
+    /// half is neither all-0 nor all-1 is an error (no silent truncation).
+    ImmWord16Be,
     /// A general link-expr data VALUE, width 4, big-endian (68k sections).
     /// Unsigned-window range check (`0 ≤ v < 2^32`), then written verbatim
     /// big-endian.
@@ -72,6 +85,7 @@ impl FixupKind {
             FixupKind::BankPtr16Le
             | FixupKind::BankPtr16Be
             | FixupKind::Abs16Be
+            | FixupKind::ImmWord16Be
             | FixupKind::RelWord16Be => 2,
             FixupKind::PcRelDisp16 | FixupKind::HeaderChecksum => 2,
             FixupKind::Z80JrRel8 | FixupKind::PcRel8 | FixupKind::PcRelDisp8 => 1,

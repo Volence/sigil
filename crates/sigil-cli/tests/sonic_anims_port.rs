@@ -14,6 +14,7 @@
 //!   the pairing is a checked fact.
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$30970`): `s4.bin[0x30970..0x309DE]` (0x6E bytes).
 //! Debug (map base `$309D8`): `s4.debug.bin[0x309D8..0x30A46]`.
@@ -27,9 +28,18 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// Region geometry (sourced from `sigil_harness::pins` — regenerate via
+/// repin). Content is shape-invariant; only the base moves.
+const REGION_LEN: usize = pins::SONIC_ANIMS.plain_len;
+
+fn region_base(debug: bool) -> u32 {
+    if debug { pins::SONIC_ANIMS.debug_base } else { pins::SONIC_ANIMS.plain_base }
+}
 
 fn anims_dir() -> PathBuf {
     let aeon =
@@ -42,7 +52,7 @@ fn strict_gate() -> bool {
 }
 
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x309D8" } else { "0x30970" };
+    let base = region_base(debug);
     format!(
         "fill = 0x00\n\
          \n\
@@ -54,8 +64,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"sonic_anims\"\n\
-         lma_base = {base}\n\
-         size = 0x6E\n\
+         lma_base = {base:#x}\n\
+         size = {REGION_LEN:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -205,19 +215,19 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let (resolved, linked, link_asserts) = compile_real_file(debug);
     assert_drift_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[base..base + 0x6E];
+    let expected = &refrom[base..base + REGION_LEN];
     let section = linked.section("sonic_anims").expect("linked image must carry sonic_anims");
     assert_eq!(
         section.bytes.len(),
-        0x6E,
-        "sonic_anims must emit exactly 0x6E bytes (table + packed bodies)"
+        REGION_LEN,
+        "sonic_anims must emit exactly {REGION_LEN:#x} bytes (table + packed bodies)"
     );
-    if let Some(i) = (0..0x6E).find(|&i| section.bytes[i] != expected[i]) {
+    if let Some(i) = (0..REGION_LEN).find(|&i| section.bytes[i] != expected[i]) {
         panic!(
             "sonic_anims ({}) first diff at region offset {i:#x}: got {:02x?}, expected {:02x?}",
             if debug { "debug" } else { "plain" },
-            &section.bytes[i.saturating_sub(4)..(i + 8).min(0x6E)],
-            &expected[i.saturating_sub(4)..(i + 8).min(0x6E)]
+            &section.bytes[i.saturating_sub(4)..(i + 8).min(REGION_LEN)],
+            &expected[i.saturating_sub(4)..(i + 8).min(REGION_LEN)]
         );
     }
 
@@ -237,12 +247,12 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
 
 #[test]
 fn sonic_anims_region_matches_reference() {
-    gate(false, "s4.bin", 0x30970);
+    gate(false, "s4.bin", region_base(false) as usize);
 }
 
 #[test]
 fn sonic_anims_debug_region_matches_reference() {
-    gate(true, "s4.debug.bin", 0x309D8);
+    gate(true, "s4.debug.bin", region_base(true) as usize);
 }
 
 
@@ -291,9 +301,12 @@ fn rep_helper_compiles_and_repeats() {
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != sigil_span::Level::Error), "lower errors: {ldiags:?}");
-    // The probe grows the section past the pinned 0x6E window — its own map.
-    let map_src = "fill = 0x00\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n[[region]]\nname = \"sonic_anims\"\nlma_base = 0x30970\nsize = 0x80\nkind = \"rom\"\n";
-    let map = sigil_link::load_map(map_src).expect("probe map must load");
+    // The probe grows the section past the pinned window — its own map.
+    let map_src = format!(
+        "fill = 0x00\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n[[region]]\nname = \"sonic_anims\"\nlma_base = {:#x}\nsize = 0x80\nkind = \"rom\"\n",
+        region_base(false)
+    );
+    let map = sigil_link::load_map(&map_src).expect("probe map must load");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != sigil_span::Level::Error), "{pdiags:?}");
@@ -311,7 +324,7 @@ fn rep_helper_compiles_and_repeats() {
     let sec = linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x30970 && !s.bytes.is_empty())
+        .find(|s| s.lma == region_base(false) && !s.bytes.is_empty())
         .expect("sonic_anims section must link");
     assert_eq!(
         &sec.bytes[sec.bytes.len() - 5..],

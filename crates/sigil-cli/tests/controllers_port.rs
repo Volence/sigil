@@ -86,6 +86,7 @@
 //! absolute one).
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$228C`): `s4.bin[0x228C..0x22FE]` (0x72 bytes).
 //! Debug (map base `$231A`): `s4.debug.bin[0x231A..0x238C]` (0x72 bytes).
@@ -102,9 +103,15 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// Per-shape region base (sourced from `sigil_harness::pins`).
+fn region_base(debug: bool) -> u32 {
+    if debug { pins::CONTROLLERS.debug_base } else { pins::CONTROLLERS.plain_base }
+}
 
 /// The module's own directory in aeon's tree — `controllers.emp` has no
 /// `embed`s, but `include_root` is still set for parity with every other
@@ -127,7 +134,8 @@ fn strict_gate() -> bool {
 /// `hblank_port.rs`'s map shape: plain `$228C`, debug `$231A`, both size
 /// `$72`.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x231A" } else { "0x228C" };
+    let base = region_base(debug);
+    let len = pins::CONTROLLERS.plain_len;
     format!(
         "fill = 0x00\n\
          \n\
@@ -139,8 +147,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"controllers\"\n\
-         lma_base = {base}\n\
-         size = 0x72\n\
+         lma_base = {base:#x}\n\
+         size = {len:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -171,8 +179,9 @@ fn as_hw_port_equs() -> Vec<Section> {
 /// `hblank_port.rs::as_handler_ptr_label`'s technique, one `phase`d section
 /// carrying all four labels at their real relative offsets.
 fn as_ctrl_ram_labels() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               phase $FFFF802C\n\
+    let asm = format!(
+        "cpu 68000\n\
+               phase ${:X}\n\
                Ctrl_1_Held:\n\
                \tdc.b 0\n\
                \tds.b 1\n\
@@ -182,9 +191,11 @@ fn as_ctrl_ram_labels() -> Vec<Section> {
                Ctrl_1_Press_Accum:\n\
                \tdc.b 0\n\
                Ctrl_2_Press_Accum:\n\
-               \tdc.b 0\n";
+               \tdc.b 0\n",
+        pins::CTRL_1_HELD.plain
+    );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
+    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
 }
 
 /// The synthetic AS-side OUTBOUND consumer — THE BARE-NAME PROOF. Mirrors
@@ -362,7 +373,8 @@ fn controllers_region_matches_reference() {
     );
     assert_eq!(guard_assert_count(&link_asserts), twin_guards(), "the engine.constants twin's drift guards must be captured");
 
-    let expected = &refrom[0x228C..0x22FE];
+    let base = region_base(false) as usize;
+    let expected = &refrom[base..base + pins::CONTROLLERS.plain_len];
     let section = linked.section("controllers").expect("linked image must carry controllers");
     assert_region_matches(&section.bytes, expected, "controllers (plain) vs s4.bin[0x228C..0x22FE]");
 
@@ -379,7 +391,7 @@ fn controllers_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x228Ci64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (base as i64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
         "bare-name proof: `bsr.w Read_Controllers` must resolve to $228C (plain)"
@@ -410,7 +422,8 @@ fn controllers_debug_region_matches_reference() {
     );
     assert_eq!(guard_assert_count(&link_asserts), twin_guards(), "the engine.constants twin's drift guards must be captured");
 
-    let expected = &refrom[0x231A..0x238C];
+    let base = region_base(true) as usize;
+    let expected = &refrom[base..base + pins::CONTROLLERS.debug_len];
     let section = linked.section("controllers").expect("linked image must carry controllers");
     assert_region_matches(&section.bytes, expected, "controllers (debug) vs s4.debug.bin[0x231A..0x238C]");
 
@@ -420,7 +433,7 @@ fn controllers_debug_region_matches_reference() {
         .find(|s| s.lma == 0x0300_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let expected_disp = (0x231Ai64 - (consumer.lma as i64 + 2)) as i16;
+    let expected_disp = (base as i64 - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,
         "bare-name proof: `bsr.w Read_Controllers` must resolve to $231A (debug)"

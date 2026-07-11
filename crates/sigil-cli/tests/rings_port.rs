@@ -46,6 +46,7 @@
 //! proves the exports surface as bare link symbols at per-shape addresses.
 //!
 //! ## Reference windows (2026-07-10 pins, from the master listings)
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$3070`): `s4.bin[0x3070..0x3224]` (0x1B4 bytes).
 //! Debug (map base `$332A`): `s4.debug.bin[0x332A..0x353A]` (0x210 bytes).
@@ -60,6 +61,7 @@
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_harness::pins;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
@@ -76,7 +78,8 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// Per-shape geometry + TRUE cross-seam VMAs (2026-07-10 pins, both listings).
+/// Per-shape geometry + TRUE cross-seam VMAs (sourced from
+/// `sigil_harness::pins` — regenerate via repin).
 /// Rings is the FIRST region whose LENGTH is shape-dependent (the debug-only
 /// assert block), so `len` lives here rather than in a shared constant.
 struct Shape {
@@ -90,50 +93,50 @@ struct Shape {
 }
 
 const PLAIN: Shape = Shape {
-    base: 0x3070,
-    len: 0x1B4,
-    ringcol_off: 0x112,
+    base: pins::RINGS.plain_base,
+    len: pins::RINGS.plain_len,
+    ringcol_off: pins::RINGCOL_OFF.plain,
     labels: &[
-        ("Ring_Buffer", 0xFFFF_A8F4),
-        ("Ring_Count", 0xFFFF_ABF4),
-        ("Ring_HighWater", 0xFFFF_ABF5),
-        ("Ring_Add_Dropped", 0xFFFF_ABF6),
-        ("Ring_Counter", 0xFFFF_AC60),
-        ("Ring_Anim_Frame", 0xFFFF_AC62),
-        ("Ring_Anim_Timer", 0xFFFF_AC63),
-        ("Camera_X", 0xFFFF_A11E),
-        ("Camera_Y", 0xFFFF_A122),
-        ("Player_1", 0xFFFF_89EE),
-        ("Collected_MarkRing", 0x32A8),
-        ("EntityWindow_EntryForSection", 0x34CC),
-        ("EntityLoaded_Clear", 0x34B8),
-        ("Sound_PlayRing", 0x5D7C),
+        ("Ring_Buffer", pins::RING_BUFFER.plain),
+        ("Ring_Count", pins::RING_COUNT.plain),
+        ("Ring_HighWater", pins::RING_HIGH_WATER.plain),
+        ("Ring_Add_Dropped", pins::RING_ADD_DROPPED.plain),
+        ("Ring_Counter", pins::RING_COUNTER.plain),
+        ("Ring_Anim_Frame", pins::RING_ANIM_FRAME.plain),
+        ("Ring_Anim_Timer", pins::RING_ANIM_TIMER.plain),
+        ("Camera_X", pins::CAMERA_X.plain),
+        ("Camera_Y", pins::CAMERA_Y.plain),
+        ("Player_1", pins::PLAYER_1.plain),
+        ("Collected_MarkRing", pins::COLLECTED_MARK_RING.plain),
+        ("EntityWindow_EntryForSection", pins::ENTITY_WINDOW_ENTRY_FOR_SECTION.plain),
+        ("EntityLoaded_Clear", pins::ENTITY_LOADED_CLEAR.plain),
+        ("Sound_PlayRing", pins::SOUND_PLAY_RING.plain),
     ],
 };
 
 const DEBUG: Shape = Shape {
-    base: 0x332A,
-    len: 0x210,
-    ringcol_off: 0x16E,
+    base: pins::RINGS.debug_base,
+    len: pins::RINGS.debug_len,
+    ringcol_off: pins::RINGCOL_OFF.debug,
     labels: &[
-        ("Ring_Buffer", 0xFFFF_A916),
-        ("Ring_Count", 0xFFFF_AC16),
-        ("Ring_HighWater", 0xFFFF_AC17),
-        ("Ring_Add_Dropped", 0xFFFF_AC18),
-        ("Ring_Counter", 0xFFFF_AC82),
-        ("Ring_Anim_Frame", 0xFFFF_AC84),
-        ("Ring_Anim_Timer", 0xFFFF_AC85),
-        ("Camera_X", 0xFFFF_A140),
-        ("Camera_Y", 0xFFFF_A144),
-        ("Player_1", 0xFFFF_8A10),
-        ("Collected_MarkRing", 0x3620),
-        ("EntityWindow_EntryForSection", 0x3B02),
-        ("EntityLoaded_Clear", 0x3A8C),
-        ("Sound_PlayRing", 0x723A),
+        ("Ring_Buffer", pins::RING_BUFFER.debug),
+        ("Ring_Count", pins::RING_COUNT.debug),
+        ("Ring_HighWater", pins::RING_HIGH_WATER.debug),
+        ("Ring_Add_Dropped", pins::RING_ADD_DROPPED.debug),
+        ("Ring_Counter", pins::RING_COUNTER.debug),
+        ("Ring_Anim_Frame", pins::RING_ANIM_FRAME.debug),
+        ("Ring_Anim_Timer", pins::RING_ANIM_TIMER.debug),
+        ("Camera_X", pins::CAMERA_X.debug),
+        ("Camera_Y", pins::CAMERA_Y.debug),
+        ("Player_1", pins::PLAYER_1.debug),
+        ("Collected_MarkRing", pins::COLLECTED_MARK_RING.debug),
+        ("EntityWindow_EntryForSection", pins::ENTITY_WINDOW_ENTRY_FOR_SECTION.debug),
+        ("EntityLoaded_Clear", pins::ENTITY_LOADED_CLEAR.debug),
+        ("Sound_PlayRing", pins::SOUND_PLAY_RING.debug),
         // Debug shape only: the assert transliteration's error-handler entry
         // points (values read from the reference ROM's own jsr/jmp operands).
-        ("MDDBG__ErrorHandler", 0x6_644C),
-        ("MDDBG__ErrorHandler_PagesController", 0x6_7212),
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ],
 };
 
@@ -311,11 +314,13 @@ fn compile_real_file_with(
 }
 
 /// All prepended drift guards must be captured and PASS: sst.emp's 30 SST_*
-/// pins + constants.emp's 24 (18 pre-tranche + the rings/sprites block's 6) +
-/// rings.emp's own 4 game-owned mirrors = 58.
+/// pins + the engine constants twin (derived via the shared truth list, so
+/// twin growth doesn't need a literal bump here) + rings.emp's own 4
+/// game-owned mirrors.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 64, "sst.emp's 30 + constants.emp's 30 (tranche-9 animation block) + rings.emp's 4 drift guards must be captured");
+    let want = 30 + sigil_harness::test_support::engine_constant_equs().len() + 4;
+    assert_eq!(guards, want, "sst.emp's 30 + the constants twin's {} + rings.emp's 4 drift guards must be captured", sigil_harness::test_support::engine_constant_equs().len());
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

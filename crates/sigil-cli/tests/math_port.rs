@@ -65,6 +65,7 @@
 //!   directly today.
 //!
 //! ## Reference windows
+//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
 //! Plain (map base `$2464`): `s4.bin[0x2464..0x26FC]` (0x298 bytes).
 //! Debug (map base `$25F6`): `s4.debug.bin[0x25F6..0x288E]` (0x298 bytes).
@@ -81,9 +82,15 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// Per-shape region base (sourced from `sigil_harness::pins`).
+fn region_base(debug: bool) -> u32 {
+    if debug { pins::MATH.debug_base } else { pins::MATH.plain_base }
+}
 
 /// The module's own directory in aeon's tree — where `math.emp` itself
 /// lives, and the base for reading the source file.
@@ -125,7 +132,8 @@ fn strict_gate() -> bool {
 /// `hblank_port.rs`'s map shape: plain `$2464`, debug `$25F6`, both size
 /// `$298`.
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x25F6" } else { "0x2464" };
+    let base = region_base(debug);
+    let len = pins::MATH.plain_len;
     format!(
         "fill = 0x00\n\
          \n\
@@ -137,8 +145,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"math\"\n\
-         lma_base = {base}\n\
-         size = 0x298\n\
+         lma_base = {base:#x}\n\
+         size = {len:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -273,7 +281,8 @@ fn math_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(false);
 
-    let expected = &refrom[0x2464..0x26FC];
+    let base = region_base(false) as usize;
+    let expected = &refrom[base..base + pins::MATH.plain_len];
     let section = linked.section("math").expect("linked image must carry math");
     assert_region_matches(&section.bytes, expected, "math (plain) vs s4.bin[0x2464..0x26FC]");
 
@@ -292,12 +301,12 @@ fn math_region_matches_reference() {
     );
     assert_eq!(
         &consumer.bytes[2..4],
-        &[0x24, 0x64],
+        &(base as u16).to_be_bytes(),
         "bare-name proof: `jsr GetSineCosine` must resolve to $2464 (plain)"
     );
     assert_eq!(
         &consumer.bytes[4..8],
-        &[0x00, 0x00, 0x24, 0x7C],
+        &((base + pins::SINE_TABLE_OFF) as u32).to_be_bytes(),
         "bare-name proof: `dc.l Sine_Table` must resolve to $0000247C (plain)"
     );
 }
@@ -319,7 +328,8 @@ fn math_debug_region_matches_reference() {
 
     let (_resolved, linked) = compile_real_file(true);
 
-    let expected = &refrom[0x25F6..0x288E];
+    let base = region_base(true) as usize;
+    let expected = &refrom[base..base + pins::MATH.debug_len];
     let section = linked.section("math").expect("linked image must carry math");
     assert_region_matches(&section.bytes, expected, "math (debug) vs s4.debug.bin[0x25F6..0x288E]");
 
@@ -334,12 +344,12 @@ fn math_debug_region_matches_reference() {
     );
     assert_eq!(
         &consumer.bytes[2..4],
-        &[0x25, 0xF6],
+        &(base as u16).to_be_bytes(),
         "bare-name proof: `jsr GetSineCosine` must resolve to $25F6 (debug)"
     );
     assert_eq!(
         &consumer.bytes[4..8],
-        &[0x00, 0x00, 0x26, 0x0E],
+        &((base + pins::SINE_TABLE_OFF) as u32).to_be_bytes(),
         "bare-name proof: `dc.l Sine_Table` must resolve to $0000260E (debug)"
     );
 }

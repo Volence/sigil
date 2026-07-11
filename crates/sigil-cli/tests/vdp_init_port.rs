@@ -74,6 +74,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
+use sigil_harness::pins;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
@@ -101,7 +102,9 @@ fn twin_guards() -> usize {
 /// carrier, and the real `vdp_init` region pinned at the per-shape reference
 /// base, sized to the 0x48-byte block (plain `$1C14`, debug `$1C96`).
 fn map_toml(debug: bool) -> String {
-    let base = if debug { "0x1C96" } else { "0x1C14" };
+    // Base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
+    let base = if debug { pins::VDP_INIT.debug_base } else { pins::VDP_INIT.plain_base };
+    let size = pins::VDP_INIT.plain_len;
     format!(
         "fill = 0x00\n\
          \n\
@@ -113,8 +116,8 @@ fn map_toml(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"vdp_init\"\n\
-         lma_base = {base}\n\
-         size = 0x48\n\
+         lma_base = {base:#x}\n\
+         size = {size:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -359,11 +362,12 @@ fn vdp_init_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(false);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x1C14..0x1C5C];
+    let base = pins::VDP_INIT.plain_base as usize;
+    let expected = &refrom[base..base + pins::VDP_INIT.plain_len];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
     assert_region_matches(&section.bytes, expected, "vdp_init (plain) vs s4.bin[0x1C14..0x1C5C]");
 
-    assert_outbound_consumer(&linked, 0x1C14, 0x1C2A, "plain");
+    assert_outbound_consumer(&linked, base as i64, (base + pins::FLUSH_VDP_SHADOW_OFF) as i64, "plain");
 }
 
 /// (debug) The `vdp_init` section's linked bytes equal
@@ -384,9 +388,10 @@ fn vdp_init_debug_region_matches_reference() {
     let (resolved, linked, link_asserts) = compile_real_file(true);
     assert_twin_guards(&resolved, &link_asserts);
 
-    let expected = &refrom[0x1C96..0x1CDE];
+    let base = pins::VDP_INIT.debug_base as usize;
+    let expected = &refrom[base..base + pins::VDP_INIT.debug_len];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
     assert_region_matches(&section.bytes, expected, "vdp_init (debug) vs s4.debug.bin[0x1C96..0x1CDE]");
 
-    assert_outbound_consumer(&linked, 0x1C96, 0x1CAC, "debug");
+    assert_outbound_consumer(&linked, base as i64, (base + pins::FLUSH_VDP_SHADOW_OFF) as i64, "debug");
 }

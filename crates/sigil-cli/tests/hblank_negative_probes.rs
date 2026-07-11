@@ -41,6 +41,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
+use sigil_harness::pins;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use sigil_span::Level;
 use std::path::{Path, PathBuf};
@@ -143,8 +144,8 @@ fn doctored_jsr_register_produces_different_bytes_than_genuine() {
     let doctored = src.replacen("jsr     (a0)", "jsr     (a1)", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
-    let genuine_sections = place_hblank(&src, "0x227A");
-    let doctored_sections = place_hblank(&doctored, "0x227A");
+    let genuine_sections = place_hblank(&src, &format!("{:#x}", pins::HBLANK.plain_base));
+    let doctored_sections = place_hblank(&doctored, &format!("{:#x}", pins::HBLANK.plain_base));
 
     let genuine_linked = link_placed(genuine_sections);
     let doctored_linked = link_placed(doctored_sections);
@@ -203,7 +204,7 @@ fn link_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImage {
 #[test]
 fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() {
     let Some(src) = real_hblank_src() else { return };
-    let sections = place_hblank(&src, "0x227A");
+    let sections = place_hblank(&src, &format!("{:#x}", pins::HBLANK.plain_base));
     // NO cross-seam label appended — `HBlank_Handler_Ptr` is genuinely absent.
     let err = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true).expect_err(
         "compiling hblank.emp standalone (no HBlank_Handler_Ptr cross-seam section) \
@@ -252,13 +253,13 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_hblank_src() else { return };
 
-    let real_sections = place_hblank(&src, "0x227A");
+    let real_sections = place_hblank(&src, &format!("{:#x}", pins::HBLANK.plain_base));
     let wrong_sections = place_hblank(&src, "0x2280");
 
     let real_hblank = real_sections.iter().find(|s| s.name == "hblank").expect("real hblank section");
     let wrong_hblank = wrong_sections.iter().find(|s| s.name == "hblank").expect("wrong hblank section");
 
-    assert_eq!(real_hblank.lma, 0x227A, "the real map must place hblank at $227A");
+    assert_eq!(real_hblank.lma, pins::HBLANK.plain_base, "the real map must place hblank at $227A");
     assert_eq!(wrong_hblank.lma, 0x2280, "the doctored map must place hblank at $2280");
     assert_ne!(
         real_hblank.lma, wrong_hblank.lma,

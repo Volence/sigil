@@ -917,3 +917,32 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   (prev_anim write, DUR_DYNAMIC → d3 hold = 8, mapping_frame 7,
   piece count 5), Walk script cycling in the real game state, collision +
   rings (both slid −10) live under Sonic. — RECORDED
+- [tranche 10 step 1, 2026-07-10] **imm-link + pinned-abs.w in one instruction
+  (IMPLEMENTED, not deferred)** — core's `move.w #<link-imm16>, (<link-abs>).w`
+  and `cmpi.w #<link-imm16>, (<link-abs>).w` (Init/Alloc free-stack pointer
+  writes; ref `31FC 9EDE 9EDE` / `0C78 9E8E 9EDE`) demand a link immediate
+  SOURCE plus a pinned-abs.w link DESTINATION — two independent fixups
+  (Value16Be @2, Abs16Be @4). The imm-link path rejected any second symbolic
+  operand ("fixups would collide" — over-broad; they're at different offsets).
+  RULED a permanent capability (demanded-features law) and SHIPPED in step 1,
+  not scaffolded: lower_m68k_imm_link admits ONE AbsSym{long} operand, second
+  fixup at 2+imm_field_width. Relaxable Sym/SymOff still rejected (width
+  selection genuinely conflicts). — IMPLEMENTED
+- [tranche 10 step 1, 2026-07-10] **ImmWord16Be — the .w link-immediate range
+  rule (corrected a shared-path regression)** — core's RAM-address immediates
+  ($FFFF9EDE) forced the .w imm-link source fixup off Value16Be (unsigned
+  [0,0xFFFF] — rejects the sign-extended address). The transcription pass first
+  moved it to Abs16Be, but Abs16Be's EA-address window ([-0x8000,0x7FFF] U
+  [0xFF8000,0xFFFFFF]) silently REJECTS an objroutine offset in [0x8000,0xFFFF]
+  — a valid upper-bank tranche-6 store. Neither single-window kind is AS's
+  actual word-immediate rule (high 16 bits all-0 OR all-1 = unsigned-value OR
+  sign-extended-address union). Added FixupKind::ImmWord16Be (that union),
+  routed the .w imm-link SOURCE to it; the abs.w DESTINATION stays Abs16Be (a
+  real EA). Byte-neutral, strict 2086/0. Caught by adversarial review of the
+  transcription agent's fixup-kind swap (not by a failing test — the regression
+  was latent). — IMPLEMENTED (commit 80b6686)
+- [tranche 10 step 3, 2026-07-11] **byte-lock friction: bare Bcc can't pin a width the twin forces** — `bne.w RunObjects_Frozen` sits within `.s` range (disp 0x7E=126) yet MUST stay explicit `.w` to match the AS twin's `bne.w`. Bare Bcc relaxes to the shortest reaching width, so it over-relaxed to `.s` and the byte gate caught it (candidate 446 vs ref 448). Recurring pattern (animate had the bra.w table; every debug/macro-expansion byte-lock). ASK: a force-width idiom (e.g. `bne.w!` / a `pin_width` attribute) OR a twin-parity lint so these byte-locks are DECLARATIVE, not landmines caught only by the gate. Until then the rule is "explicit width + a `// byte-lock:` comment." No back-prop code change (prior files' bare Bccs all happen to relax to their twin's width — latent fragility, not a current bug). — RECORDED (ask)
+- [tranche 10 step 3, 2026-07-11] **`org $10000` shields downstream from engine-block shrinks** — core's −4 shrink did NOT move EndOfRom or any object-bank/data region: the object bank is re-anchored at `org $10000` ~42KB past the engine block's end, so an engine-internal shrink is absorbed as extra pad before the bank. PROCESS NOTE for future tranches: an engine-block-internal shrink only re-pins engine-block-downstream regions (up to the next `org`), NOT the object-bank/data regions. Don't budget re-pins for those (the ASSEMBLED_LEN "−4 both shapes" prediction was wrong for exactly this reason). — RECORDED
+- [tranche 10 step 3, 2026-07-11] **repin can't track inline target BYTES in mixed-test slices** — a byte-array slice that hard-codes an abs.w/pc-rel TARGET's low word (test_solid's `jmp (Draw_Sprite).w`, game_loop's `bsr.w Sound_DrainSfxRing` disp) slides when the target moves, but it's a `[u8]` literal, not a pin. Mitigation applied: splice `pins::DRAW_SPRITE.<shape>` low word into the array instead of a hex literal. GENERALIZATION candidate: a `pin_lo16(pins::X)` test helper (or a repin mode that rewrites known-target bytes in slices). — RECORDED
+- [tranche 10 step 5, 2026-07-11] **RunObjects profiled (numbers, not vibes)** — oracle profiler, live in-level with 3 active objects (Player + 2 TestSolid): RunObjects = **11,841 cycles = 9.3% of the 128k NTSC frame budget**, dominated by fixed iteration over all 66 pool slots (2 player + 40 dynamic + 8 system + 16 effect), ~63 EMPTY in this scene. The dispatch loops ($0028B6 ×3 = 9,677 cyc) are the bulk. **Two step-5 candidates, BOTH NOT TAKEN:** (a) hoist the `moveq #OBJ_CODE_BANK; swap d0` bank-prefix build out of the per-slot loop (currently rebuilt every iteration incl. empties, ~8cyc×empty ≈ 200cyc/frame in a light scene) — but it ADDS ~8 bytes (one-time setup before each of 2 loops) → reverses part of the shrink → another downstream re-pin, for 0.15% budget. Bad trade. (b) the REAL lever — an occupancy/active-list so RunObjects skips empty slots instead of iterating all 66 — is an ENGINE-ARCHITECTURE change (the pool-iteration contract), behavior-affecting, Volence's call (same class as the tranche-9 PerFrame deletion). Headlined to Volence in the packet, NOT taken unilaterally. DeleteObject's 20× unrolled $50-byte clear: deletion is not per-frame-hot (didn't surface in the profile), the unroll is a fine size/speed choice — recorded, not taken. — RECORDED (numbers + not-taken)
+- [tranche 10 step 5, 2026-07-11] **dplc dedup (carried from step-1 H5)** — Perform_DPLC / Perform_DPLC_Deferrable are near-identical (only the QueueDMA_Important vs _Deferrable target differs). A comptime-fn template (`perform_dplc(queue: ProcRef)`) would single-source it .emp-side, but the AS twin can't express the unification → divergent twin SHAPES raise the lockstep cost for every future edit (the animate PerFrame-interpreter reasoning). Deferred until the twin dies (Spec 5). — RECORDED (deferred)
