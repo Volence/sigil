@@ -16,6 +16,34 @@ alloc/free — the hottest code in the engine, where step 5 earns its keep.
 dplc is its small upstream neighbor (DPLC art streaming). Both engine-side,
 `engine/objects/`.
 
+## Step 0 FIRST: the `repin` tool (Volence's ask, 2026-07-10 — "20 minutes
+for a simple fix smells funny")
+
+Root cause diagnosed at t9: pins live as ~60 hand-typed literals scattered
+across ~10 test files; re-pin waves are string substitution, and every
+substitution error (slice ends, stale keys) costs a full suite run to find.
+Build BEFORE the port:
+
+1. **One generated pin table** — a `repin` tool (sigil-cli subcommand or
+   xtask) parses BOTH listings for the known symbol/region list and emits a
+   single `pins.rs` module the port tests import. Slice ranges become
+   `base..base + len` COMPUTED from the table — the slice-end bug class
+   becomes unwritable; no sweep chaining (the tool always reads current
+   listings).
+2. **Review stays in the loop** — the tool prints the old→new diff for
+   eyeballing; the strict suite still independently verifies bytes, so a
+   layout bug cannot silently re-pin itself green. Only the typing is
+   automated, never the checking.
+3. **Self-deriving-but-CONFINED convsym allowlist** — compute which header
+   bytes differ, assert diffs are confined to the checksum + ROM-end
+   fields (the exact set shifts whenever the deb2 append changes size).
+4. Process note: run the AFFECTED test binaries first, full workspace once
+   at the end — not full-suite-per-iteration.
+
+Target: a core-sized re-pin wave ≈ the 5-minute floor (two builds + one
+suite run). engine.inc org values stay hand-written (they are build inputs
+asl reads — but the tool can PRINT the expected org block for pasting).
+
 ## Step-0 hazards (settle in the design note BEFORE code)
 
 1. **The biggest upstream window yet**: engine.inc order is `dplc → core →
