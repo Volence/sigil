@@ -97,22 +97,26 @@ fn pins_rs_is_current() {
 #[test]
 fn generated_pins_match_the_hand_typed_baseline() {
     // animate_port.rs: PLAIN/DEBUG Shape { base, len } — len shape-invariant.
-    assert_eq!(pins::ANIMATE.plain_base, 0x2D78);
-    assert_eq!(pins::ANIMATE.debug_base, 0x3032);
+    // Bases slid −4 in the tranche-10 step-2 core shrink.
+    assert_eq!(pins::ANIMATE.plain_base, 0x2D74);
+    assert_eq!(pins::ANIMATE.debug_base, 0x302E);
     assert_eq!(pins::ANIMATE.plain_len, 0x192);
     assert_eq!(pins::ANIMATE.debug_len, 0x192);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
-    assert_eq!(pins::RINGS.plain_base, 0x3070);
-    assert_eq!(pins::RINGS.debug_base, 0x332A);
+    // Bases slid −4 in the tranche-10 step-2 core shrink.
+    assert_eq!(pins::RINGS.plain_base, 0x306C);
+    assert_eq!(pins::RINGS.debug_base, 0x3326);
     assert_eq!(pins::RINGS.plain_len, 0x1B4);
     assert_eq!(pins::RINGS.debug_len, 0x210);
 
-    // Tranche-10 geometry from the design note's table.
+    // Tranche-10 geometry: the step-2 core shrink took its LEN −4 both shapes
+    // (two bsr.w→bsr.s at .run_culled/Draw_Sprite); base unchanged (InitObjectRAM
+    // = dplc's unchanged end).
     assert_eq!(pins::CORE.plain_base, 0x2794);
-    assert_eq!(pins::CORE.plain_len, 0x1C4);
+    assert_eq!(pins::CORE.plain_len, 0x1C0);
     assert_eq!(pins::CORE.debug_base, 0x2926);
-    assert_eq!(pins::CORE.debug_len, 0x2EC);
+    assert_eq!(pins::CORE.debug_len, 0x2E8);
     assert_eq!(pins::DPLC.plain_base, 0x26FC);
     assert_eq!(pins::DPLC.debug_base, 0x288E);
     assert_eq!(pins::DPLC.plain_len, 0x98);
@@ -139,8 +143,9 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     assert_eq!(pins::RINGCOL_OFF, pins::ShapeOffset { plain: 0x112, debug: 0x16E });
 
     // sound_api_port.rs: base + literal len (no end symbol in the listing).
-    assert_eq!(pins::SOUND_API.plain_base, 0x5BE6);
-    assert_eq!(pins::SOUND_API.debug_base, 0x70A4);
+    // Bases slid −4 in the tranche-10 step-2 core shrink (downstream in-block).
+    assert_eq!(pins::SOUND_API.plain_base, 0x5BE2);
+    assert_eq!(pins::SOUND_API.debug_base, 0x70A0);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);

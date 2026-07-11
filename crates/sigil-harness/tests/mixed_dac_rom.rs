@@ -2478,11 +2478,13 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
     // Sst.subtype(a0),Sst.mapping_frame(a0), then the objroutine store —
     // move.w #(TestSolid_Main-ObjCodeBase) = #$F86 into the OFFSET-0
     // code_addr EA (asl's 4-byte `30BC` zero-disp collapse) — then
-    // `jmp (Draw_Sprite).w` at its plain VMA $2970.
+    // `jmp (Draw_Sprite).w` at its plain VMA $296C (slid −4 in the
+    // tranche-10 core shrink; last two bytes track DRAW_SPRITE).
     assert_eq!(
         &rom[0x10F7C..0x10F8A],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x86, 0x4E, 0xF8, 0x29, 0x70,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x86, 0x4E, 0xF8,
+            (pins::DRAW_SPRITE.plain >> 8) as u8, pins::DRAW_SPRITE.plain as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (plain)"
     );
@@ -2522,7 +2524,8 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
     assert_eq!(
         &rom[0x10F7C..0x10F8A],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x86, 0x4E, 0xF8, 0x2C, 0x2A,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x86, 0x4E, 0xF8,
+            (pins::DRAW_SPRITE.debug >> 8) as u8, pins::DRAW_SPRITE.debug as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (debug)"
     );

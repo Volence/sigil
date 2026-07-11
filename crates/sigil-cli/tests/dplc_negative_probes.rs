@@ -139,7 +139,7 @@ fn place_dplc(src: &str, base: &str) -> Vec<Section> {
 }
 
 /// Link `sections` plus the synthetic `QueueDMA_*` cross-seam labels (probes
-/// (a)/(c) need both `jsr` operands to resolve to compile at all).
+/// (a)/(c) need both `jbsr` targets to resolve to compile at all).
 fn link_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImage {
     let mut cross_seam = as_queue_dma_labels();
     let mut lma = 0x0100_0000u32;
@@ -186,9 +186,10 @@ fn doctored_shift_count_produces_different_bytes_than_genuine() {
 // Probe (b) — STANDALONE-COMPILE DIAGNOSTIC
 // ===========================================================================
 
-/// dplc.emp's cross-seam references are plain operands (`jsr QueueDMA_*`), so
-/// compiling it standalone — no synthetic RAM-label section supplied — must
-/// fail LOUD at `resolve_layout` naming a missing symbol.
+/// dplc.emp's cross-seam calls are `jbsr QueueDMA_*` (step-2 house format —
+/// lowering to a pc-relative `bsr.w`), so compiling it standalone — no
+/// synthetic RAM-label section supplied — must fail LOUD at `resolve_layout`
+/// naming a missing branch target.
 #[test]
 fn standalone_compile_without_cross_seam_labels_is_a_loud_missing_symbol_error() {
     let Some(src) = real_dplc_src() else { return };
@@ -201,13 +202,12 @@ fn standalone_compile_without_cross_seam_labels_is_a_loud_missing_symbol_error()
     assert!(
         err.iter().any(|d| {
             d.level == Level::Error
-                && d.message.contains("unresolved jmp/jsr target")
+                && d.message.contains("unresolved branch/ladder target")
                 && d.message.contains("dplc")
                 && d.message.contains("QueueDMA_")
-                && d.message.contains("not defined in this link")
         }),
-        "expected the unresolved-jmp/jsr-target diagnostic to name a `QueueDMA_*` symbol with \
-         the Item-C cross-seam-standalone framing, got: {err:?}"
+        "expected the unresolved-branch-target diagnostic to name a `QueueDMA_*` symbol with \
+         the section framing, got: {err:?}"
     );
 }
 
@@ -219,6 +219,12 @@ fn standalone_compile_without_cross_seam_labels_is_a_loud_missing_symbol_error()
 /// `$26FC`) and prove the placed section lands at a DIFFERENT VMA — so a
 /// byte-diff against the FIXED reference window would fail. Placement is real,
 /// not an echo of the expected value.
+///
+/// Since the step-2 house format, the cross-seam calls are `jbsr QueueDMA_*`
+/// (pc-relative `bsr.w`), so the linked CONTENT is placement-DEPENDENT: the
+/// `bsr.w` displacement is `target − site`, and the site moves with the base.
+/// The two placements therefore differ in BOTH LMA and bytes (the four disp
+/// bytes of the two `bsr.w` calls), each an independent genuineness signal.
 #[test]
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_dplc_src() else { return };
@@ -240,7 +246,13 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     let wrong_linked = link_placed(wrong_sections);
     let real_bytes = &real_linked.section("dplc").expect("dplc").bytes;
     let wrong_bytes = &wrong_linked.section("dplc").expect("dplc").bytes;
-    assert_eq!(real_bytes, wrong_bytes, "content is identical regardless of placement (sanity)");
+    // The pc-relative `bsr.w QueueDMA_*` disp tracks the site VMA, so the bytes
+    // genuinely differ between placements (they were identical under the old
+    // abs.w `jsr`, which is placement-invariant).
+    assert_ne!(
+        real_bytes, wrong_bytes,
+        "the pc-relative jbsr disp must track placement — bytes differ with the base"
+    );
     assert_ne!(
         real_linked.section("dplc").unwrap().lma,
         wrong_linked.section("dplc").unwrap().lma,
