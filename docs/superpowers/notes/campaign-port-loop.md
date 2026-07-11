@@ -53,6 +53,24 @@ by default):
       auto-cut (the `AnimateSprite_PerFrame` precedent). When ambiguous →
       treat as feature → flag. Cross-check the kill-list (kill-conditions).
 
+  **The construct inventory** (the "adopt" checklist — check the file's
+  patterns against EACH; don't work from memory. Spec §10 is the canonical
+  list; this is the working cheat-sheet, keep it current as constructs ship):
+  - `offsets` — `dc.w Target-Base` self-relative word tables (dense ordinal).
+  - `table` (D2.36) — counted/sentinel/SPARSE keyed collection: sparse
+    `{id: ptr}` blob banks (sfx_bank), count-header record lists (PLC lists,
+    the six back-patch macros). NOT dense-conditional-multi-cell yet (mt_bank
+    gap, ledgered).
+  - `dispatch` (D2.21) — computed state/jump dispatch (encoding-agnostic).
+  - comptime-fn helpers — repeated-emission templates: `clear_longs` (unrolled
+    fill), `rep` (repeated bytes), `reload_anim_timer`/`perform_dplc`
+    (instruction templates), `aabb_axis_test`, `ojz_sec` (validating record
+    constructor), `objroutine(label)` (label − ObjCodeBase).
+  - contracts — `clobbers`/`preserves`/`out` (reglist form), `let rN: Type`
+    (body-position typed register).
+  - spelling idioms (step 2, not this pass) — bare Bcc, `jbra`/`jbsr`,
+    `Sst.field`, bareword `bankid`/`winptr`, label-in-immediate.
+
 **Step 5 — Optimize**: the real question — is this ENGINE CODE actually
 good? Algorithmic/cycle-level, not assembler spelling. Behavior-affecting
 changes live here and need LIVE verification (oracle) on top of the
