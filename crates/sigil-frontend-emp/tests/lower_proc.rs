@@ -178,6 +178,51 @@ fn clobber_undeclared_warns() {
 }
 
 #[test]
+fn clobbers_reglist_range_expands_for_the_lint() {
+    // C1 item 2: `clobbers(d0-d3/a1)` is the movem-reglist grammar. A write to
+    // a register INSIDE the range (d2) is allowed (no undeclared warning); a
+    // write OUTSIDE it (d4) is still `[proc.clobber-undeclared]`.
+    let src = "module m\nproc p() clobbers(d0-d3/a1) {\n    move.l d5, d2\n    move.l d5, d4\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let undeclared: Vec<&str> = diags
+        .iter()
+        .filter(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        undeclared.iter().any(|m| m.contains("d4")),
+        "d4 (outside the range) must warn: {diags:?}"
+    );
+    assert!(
+        !undeclared.iter().any(|m| m.contains("`d2`")),
+        "d2 (inside the d0-d3 range) must NOT warn: {diags:?}"
+    );
+}
+
+#[test]
+fn clobbers_invalid_register_errors() {
+    // C1 item 6: `clobbers(d9)` is not a register — a loud `[proc.clobber-invalid]`.
+    let src = "module m\nproc p() clobbers(d9) {\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-invalid]"))
+        .unwrap_or_else(|| panic!("expected [proc.clobber-invalid], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+}
+
+#[test]
+fn out_reglist_range_all_written_is_clean() {
+    // C1 item 2: `out(d0-d1)` expands; both written → no out-unwritten warning.
+    let src = "module m\nproc p() out(d0-d1) {\n    moveq #0, d0\n    moveq #0, d1\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[proc.out-")),
+        "a fully-written out range must be clean: {diags:?}"
+    );
+}
+
+#[test]
 fn scc_write_undeclared_warns() {
     // `seq d0` (Scc) sets a byte in its sole operand — a real register write.
     // Under `clobbers(d1)`, d0 is undeclared → `[proc.clobber-undeclared]` naming d0.

@@ -20,7 +20,23 @@ fn proc_header_forms() {
     assert_eq!(p.params[0].0, "a0");
     assert!(matches!(p.params[0].1, Type::Ptr(_)));
     let Item::Proc(p) = &f.items[1] else { panic!() };
-    assert_eq!(p.clobbers.as_deref(), Some(&["d0".to_string(), "d1".to_string()][..]));
+    assert_eq!(
+        p.clobbers.as_deref(),
+        Some(&[("d0".to_string(), None), ("d1".to_string(), None)][..])
+    );
+}
+
+#[test]
+fn proc_clobbers_out_accept_reglist_ranges() {
+    // C1 item 2: `clobbers`/`out` take the movem-reglist grammar (`/`-separated
+    // ranges), not just comma singles. `d0-d3/a1` → two segments, one a range.
+    let f = ok("module m\nproc f() clobbers(d0-d3/a1) out(d0-d1) {\n}\n");
+    let Item::Proc(p) = &f.items[0] else { panic!() };
+    assert_eq!(
+        p.clobbers.as_deref(),
+        Some(&[("d0".to_string(), Some("d3".to_string())), ("a1".to_string(), None)][..])
+    );
+    assert_eq!(p.out.as_deref(), Some(&[("d0".to_string(), Some("d1".to_string()))][..]));
 }
 
 #[test]
@@ -32,7 +48,7 @@ fn proc_out_clause_forms() {
                 proc b() out() {\n}\n\
                 proc c() {\n}\n");
     let Item::Proc(a) = &f.items[0] else { panic!() };
-    assert_eq!(a.out.as_deref(), Some(&["d0".to_string(), "a1".to_string()][..]));
+    assert_eq!(a.out.as_deref(), Some(&[("d0".to_string(), None), ("a1".to_string(), None)][..]));
     let Item::Proc(b) = &f.items[1] else { panic!() };
     assert_eq!(b.out.as_deref(), Some(&[][..]), "out() is Some(empty), not None");
     let Item::Proc(c) = &f.items[2] else { panic!() };
@@ -44,9 +60,9 @@ fn proc_all_three_contracts_compose() {
     // `clobbers` + `preserves` + `out` all parse on one header (order free).
     let f = ok("module m\nproc f() clobbers(d0) preserves(a2) out(a1) {\n}\n");
     let Item::Proc(p) = &f.items[0] else { panic!() };
-    assert_eq!(p.clobbers.as_deref(), Some(&["d0".to_string()][..]));
+    assert_eq!(p.clobbers.as_deref(), Some(&[("d0".to_string(), None)][..]));
     assert_eq!(p.preserves, vec![("a2".to_string(), None)]);
-    assert_eq!(p.out.as_deref(), Some(&["a1".to_string()][..]));
+    assert_eq!(p.out.as_deref(), Some(&[("a1".to_string(), None)][..]));
 }
 
 #[test]
