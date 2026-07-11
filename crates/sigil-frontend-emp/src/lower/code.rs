@@ -784,9 +784,18 @@ fn lower_m68k_imm_link(
     // Defense-in-depth: one opcode word + the imm field (4 bytes for `.l`,
     // 2 for `.w`) — anything shorter means the immediate landed in the opcode
     // word itself and there is no hole to defer into.
+    // The `.w` link-time immediate carries a symbolic ADDRESS (or an
+    // address-difference), so it takes WORD-ADDRESS semantics — `Abs16Be`,
+    // which truncates a `$FFFFxxxx` abs.w-range address to its low word and
+    // accepts the sign-extended-16 window, exactly as AS does for
+    // `move.w #RamLabel, …` (core's free-stack SP writes: `#Dynamic_Free_Stack`
+    // resolves to `$FFFF9EDE`, stored `9EDE`). A plain `Value16Be` would
+    // strict-reject the high half. Value-DIFFERENCES (objroutine offsets) fold
+    // to small values that pass `Abs16Be`'s i16 check identically. `.l` stays a
+    // verbatim `Value32Be` (a full 32-bit address fits without truncation).
     let (kind, min_len) = match size {
         M68kSize::L => (FixupKind::Value32Be, 6),
-        M68kSize::W => (FixupKind::Value16Be, 4),
+        M68kSize::W => (FixupKind::Abs16Be, 4),
         _ => unreachable!("guarded at entry: imm-link size is .w or .l"),
     };
     if df.bytes.len() < min_len {
