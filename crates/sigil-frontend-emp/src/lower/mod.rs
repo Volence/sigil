@@ -233,6 +233,26 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     &mut diags,
                 );
             }
+            ast::Item::Table(decl) => {
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                lower_table_item(
+                    file,
+                    decl,
+                    &Placement {
+                        cpu: opts.initial_cpu,
+                        origin: next_lma,
+                        byte_access: false,
+                        include_root: opts.include_root.as_deref(),
+                        embed_base: opts.embed_base.as_deref(),
+                        defines: &opts.defines,
+                    },
+                    as_compat,
+                    &module_id,
+                    &mut here_anchor_counter,
+                    &mut builder,
+                    &mut diags,
+                );
+            }
             ast::Item::Dispatch(decl) => {
                 ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
                 lower_dispatch_item(
@@ -464,6 +484,11 @@ fn lower_section_items(
             ast::Item::Offsets(decl) => {
                 lower_offsets_item(file, decl, placement, as_compat, builder, diags);
             }
+            ast::Item::Table(decl) => {
+                lower_table_item(
+                    file, decl, placement, as_compat, module_id, here_anchor_counter, builder, diags,
+                );
+            }
             ast::Item::Dispatch(decl) => {
                 lower_dispatch_item(file, decl, placement, as_compat, builder, diags, asm_counter);
             }
@@ -639,8 +664,6 @@ fn lower_align_item(
     diags: &mut Vec<Diagnostic>,
 ) {
     use crate::value::Value;
-    use sigil_ir::assert::{LinkAssert, MsgPart};
-    use sigil_ir::expr::{BinOp, Expr};
 
     // Evaluate `N` — a plain comptime expression (no `here()` position is
     // supplied: an alignment that depends on its own address is circular).
@@ -674,16 +697,39 @@ fn lower_align_item(
         },
     };
 
+    emit_align_pad(origin, module_id, anchor_counter, n, decl.span, builder, diags);
+}
+
+/// Emit one alignment pad (D2.29): refuse a provisional position, `$00`-fill the
+/// lowering-baseline position up to the next multiple of `n`, then define a
+/// hidden congruence anchor and record the link-time `anchor % n == 0` assert
+/// (so a final placement that breaks the alignment fails loudly). Shared by
+/// [`lower_align_item`] (`align N`) and [`lower_table_item`] (`item_align: N`,
+/// the self-adjusting pad after every emitted part) so the two use the identical
+/// machinery — the design's byte-neutral guarantee.
+#[allow(clippy::too_many_arguments)]
+fn emit_align_pad(
+    origin: u32,
+    module_id: &str,
+    anchor_counter: &mut u32,
+    n: u32,
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use sigil_ir::assert::{LinkAssert, MsgPart};
+    use sigil_ir::expr::{BinOp, Expr};
+
     // A size-relaxable fragment earlier in the section makes this position
     // provisional — v1 refuses (D2.29; the link-time gap-fill fragment is the
     // recorded S2-D16(c) extension if code ports demand it).
     if builder.section_has_relaxable() {
         err(
             diags,
-            decl.span,
-            "[align.provisional] `align` at a provisional position (a size-relaxable \
+            span,
+            "[align.provisional] alignment pad at a provisional position (a size-relaxable \
              instruction sits earlier in this section) — pin the earlier branch sizes \
-             (`bra.w`/`bra.s`) or move the `align`"
+             (`bra.w`/`bra.s`) or move the item"
                 .to_string(),
         );
         return;
@@ -692,7 +738,7 @@ fn lower_align_item(
     let pos = origin.wrapping_add(builder.current_offset());
     let pad = (n - (pos % n)) % n;
     if pad > 0 {
-        builder.emit_fill(pad, 0, decl.span);
+        builder.emit_fill(pad, 0, span);
     }
 
     // The congruence anchor: byte-free, name-collision-free (`$` is unlexable
@@ -722,7 +768,7 @@ fn lower_align_item(
         ],
         fatal: false,
         level: Level::Error,
-        span: decl.span,
+        span,
     });
 }
 
@@ -1033,6 +1079,124 @@ fn lower_offsets_item(
             );
         }
         builder.emit_data(&bytes, fixups, body.span);
+    }
+}
+
+/// Emit one plain [`DataBuf`] piece of a `table` (a header word, the index-mode
+/// cell table, or a sentinel), optionally defining `label` at its first byte and
+/// recording the D2.29 `[layout.odd-item]` word-alignment assert when it carries
+/// word/long cells and has a label to anchor the assert to.
+#[allow(clippy::too_many_arguments)]
+fn emit_table_buf(
+    file: &ast::File,
+    buf: &crate::value::DataBuf,
+    label: Option<&str>,
+    placement: &Placement,
+    as_compat: bool,
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let (bytes, fixups, mut sd) = data::stream_data(buf, placement.cpu, span);
+    diags.append(&mut sd);
+    if let Some(l) = label {
+        builder.define_label(l);
+    }
+    if let Some(l) = label {
+        if buf_carries_words(buf) && !placement.byte_access {
+            record_odd_item_assert(file, builder, placement.cpu, as_compat, OddItemKind::WordData, l, span);
+        }
+    }
+    builder.emit_data(&bytes, fixups, span);
+}
+
+/// Emit one `table` PART (a payload part or a record-list row part), defining its
+/// label (blob mode) and inserting the `item_align` pad after it (design §3: a
+/// self-adjusting pad after every emitted part).
+#[allow(clippy::too_many_arguments)]
+fn emit_table_part(
+    file: &ast::File,
+    part: &crate::layout::LoweredPart,
+    placement: &Placement,
+    as_compat: bool,
+    item_align: Option<u32>,
+    module_id: &str,
+    anchor_counter: &mut u32,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    emit_table_buf(file, &part.buf, part.label.as_deref(), placement, as_compat, part.span, builder, diags);
+    if let Some(n) = item_align {
+        emit_align_pad(placement.origin, module_id, anchor_counter, n, part.span, builder, diags);
+    }
+}
+
+/// Lower one `table` block (Plan 7 T2-d) — the sibling of [`lower_offsets_item`].
+/// [`eval_table`](crate::layout::eval_table) does the checking/synthesis; this
+/// orchestrates emission with the builder: the base label anchoring (record-list
+/// = the header/first byte; index = the first cell, after the header — the §3
+/// ruling), the two-stream `body:` ordering, and the `item_align` pads (which
+/// need the running builder position, so they cannot be pre-baked).
+#[allow(clippy::too_many_arguments)]
+fn lower_table_item(
+    file: &ast::File,
+    decl: &ast::TableDecl,
+    placement: &Placement,
+    as_compat: bool,
+    module_id: &str,
+    anchor_counter: &mut u32,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::layout::TableModeLowered;
+    let (low, mut ds) = crate::layout::eval_table(file, decl, placement.include_root, placement.defines);
+    diags.append(&mut ds);
+    let Some(low) = low else { return };
+    let n = low.item_align;
+
+    match low.mode {
+        TableModeLowered::RecordList { header, rows, sentinel } => {
+            // `Name` sits on the first byte — the header when present, else the
+            // first row part (AS-macro `__LABEL__` parity).
+            builder.define_label(&decl.name);
+            if let Some(h) = &header {
+                emit_table_buf(file, h, None, placement, as_compat, decl.span, builder, diags);
+            }
+            for part in &rows {
+                emit_table_part(file, part, placement, as_compat, n, module_id, anchor_counter, builder, diags);
+            }
+            if let Some(s) = &sentinel {
+                emit_table_buf(file, s, None, placement, as_compat, decl.span, builder, diags);
+            }
+        }
+        TableModeLowered::Index { body, payload, header, cells, sentinel } => {
+            let emit_payload = |builder: &mut IrBuilder, diags: &mut Vec<Diagnostic>, anchor_counter: &mut u32| {
+                for part in &payload {
+                    emit_table_part(file, part, placement, as_compat, n, module_id, anchor_counter, builder, diags);
+                }
+            };
+            let emit_table = |builder: &mut IrBuilder, diags: &mut Vec<Diagnostic>| {
+                // The header emits BEFORE `Name`'s anchor, so `Table[key - min_key]`
+                // indexes off the first CELL (§3 ruling).
+                if let Some(h) = &header {
+                    emit_table_buf(file, h, None, placement, as_compat, decl.span, builder, diags);
+                }
+                emit_table_buf(file, &cells, Some(&decl.name), placement, as_compat, decl.span, builder, diags);
+                if let Some(s) = &sentinel {
+                    emit_table_buf(file, s, None, placement, as_compat, decl.span, builder, diags);
+                }
+            };
+            match body {
+                ast::BodyPlacement::Before => {
+                    emit_payload(builder, diags, anchor_counter);
+                    emit_table(builder, diags);
+                }
+                ast::BodyPlacement::After => {
+                    emit_table(builder, diags);
+                    emit_payload(builder, diags, anchor_counter);
+                }
+            }
+        }
     }
 }
 

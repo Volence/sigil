@@ -1709,6 +1709,339 @@ pub(crate) fn offsets_body_label(module: &ast::Path, table: &str, member: &str) 
     format!("__offsets${}${table}${member}", module.segments.join("."))
 }
 
+// ===========================================================================
+// `table` (Plan 7 T2-d) — counted / sentinel / sparse collection lowering.
+// ===========================================================================
+
+/// One emitted part of a lowered `table`: a payload part (index mode) or a row
+/// part (record-list mode). `label` is the part's real link symbol (blob mode)
+/// or `None` (a typed record row / anonymous `item_align` context).
+pub struct LoweredPart {
+    /// The part's label (a real link symbol), or `None` for a typed record row.
+    pub label: Option<String>,
+    /// The part's evaluated payload.
+    pub buf: DataBuf,
+    /// The part's span (diagnostics + odd-item asserts point here).
+    pub span: Span,
+}
+
+/// The two emission shapes of a lowered `table` (design §3).
+pub enum TableModeLowered {
+    /// No `cell:` — a contiguous `[header?] rows [sentinel?]` stream. `Name`
+    /// anchors to the header (first byte).
+    RecordList {
+        /// The count header word (Name sits on it), if configured.
+        header: Option<DataBuf>,
+        /// The row parts in emission order.
+        rows: Vec<LoweredPart>,
+        /// The trailing terminator, if configured.
+        sentinel: Option<DataBuf>,
+    },
+    /// `cell:` — two streams: a payload stream plus a key-addressed cell table
+    /// (`[header?] cells [sentinel?]`). `Name` anchors to the FIRST CELL (after
+    /// the header), so `Table[key - min_key]` indexing is correct (§3 ruling).
+    Index {
+        /// Payload placement relative to the cell table (default `after`).
+        body: ast::BodyPlacement,
+        /// The payload stream parts, declaration order.
+        payload: Vec<LoweredPart>,
+        /// The count header word (emitted BEFORE `Name`'s anchor), if configured.
+        header: Option<DataBuf>,
+        /// The cell table — one cell per key in the domain.
+        cells: DataBuf,
+        /// The trailing terminator, if configured.
+        sentinel: Option<DataBuf>,
+    },
+}
+
+/// A fully-evaluated `table`, ready for [`lower_table_item`](crate::lower) to
+/// emit with the builder (which owns `item_align` pad placement + label
+/// anchoring).
+pub struct TableLowering {
+    /// The emission shape + its pieces.
+    pub mode: TableModeLowered,
+    /// The `item_align: N` pad width, if configured (a self-adjusting pad after
+    /// every emitted part, reusing the D2.29 `align` machinery).
+    pub item_align: Option<u32>,
+}
+
+/// Evaluate a `table` block to its [`TableLowering`] (design §3–§5). This is the
+/// sibling of [`eval_offsets_with_root`]: it checks the keys, synthesizes the
+/// holes, evaluates the header expression over the reserved `count`, and lowers
+/// the payload/cells to CPU-neutral [`DataBuf`]s — but leaves `item_align` pad
+/// placement + base-label anchoring to the caller (which owns the builder).
+pub fn eval_table(
+    file: &ast::File,
+    decl: &ast::TableDecl,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+) -> (Option<TableLowering>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let attrs = &decl.attrs;
+        let index_mode = attrs.cell.is_some();
+
+        // --- item_align: N (a positive comptime int) --------------------------
+        let item_align = match &attrs.item_align {
+            Some(e) => {
+                let mut env = Env::new();
+                let v = ev.eval_expr(e, &mut env);
+                match v.as_stored_int() {
+                    Some(n) if n > 0 && n <= u32::MAX as i128 => Some(n as u32),
+                    _ => {
+                        ev.error(attrs.span, "table `item_align:` needs a positive comptime int".to_string());
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+
+        // --- attribute coherence ---------------------------------------------
+        if index_mode && attrs.key.is_none() {
+            ev.error(attrs.span, format!(
+                "index-mode table `{}` (`cell:`) needs a `key:` domain to address its cells",
+                decl.name
+            ));
+        }
+        if attrs.hole.is_some() && attrs.key.is_none() {
+            ev.error(attrs.span, format!(
+                "table `{}`: `hole:` fills absent keys, so it requires a `key:` domain",
+                decl.name
+            ));
+        }
+        if attrs.body.is_some() && !index_mode {
+            ev.error(attrs.span, format!(
+                "table `{}`: `body:` places the payload vs the cell table — index-mode only (`cell:`)",
+                decl.name
+            ));
+        }
+
+        // --- key domain -------------------------------------------------------
+        let key_domain: Option<(i128, i128)> = match &attrs.key {
+            Some(ast::KeyDomain::Range(lo, hi)) => {
+                let mut env = Env::new();
+                let lo_v = ev.eval_expr(lo, &mut env);
+                let hi_v = ev.eval_expr(hi, &mut env);
+                match (lo_v.as_stored_int(), hi_v.as_stored_int()) {
+                    (Some(l), Some(h)) if l <= h => Some((l, h)),
+                    (Some(l), Some(h)) => {
+                        ev.error(attrs.span, format!("table `{}`: key range lo ({l}) > hi ({h})", decl.name));
+                        None
+                    }
+                    _ => {
+                        ev.error(attrs.span, format!("table `{}`: key range bounds must be comptime ints", decl.name));
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+        let keys_expected = attrs.key.is_some();
+
+        // --- per-row keys + ascending / duplicate / range checks -------------
+        let mut declared_keys: Vec<i128> = Vec::with_capacity(decl.rows.len());
+        for row in &decl.rows {
+            match (&row.key, keys_expected) {
+                (Some(ke), true) => {
+                    let mut env = Env::new();
+                    let kv = ev.eval_expr(ke, &mut env);
+                    let Some(k) = kv.as_stored_int() else {
+                        ev.error(row.span, format!("table `{}`: row key must be a comptime int", decl.name));
+                        continue;
+                    };
+                    if let Some((lo, hi)) = key_domain {
+                        if k < lo || k > hi {
+                            ev.error(row.span, format!(
+                                "table `{}`: key {k} is outside the domain {lo}..={hi}", decl.name
+                            ));
+                        }
+                    }
+                    if declared_keys.contains(&k) {
+                        ev.error(row.span, format!("table `{}`: duplicate key {k}", decl.name));
+                    } else if declared_keys.last().is_some_and(|&prev| k <= prev) {
+                        ev.error(row.span, format!(
+                            "table `{}`: keys must be declared in ascending order (key {k} follows {})",
+                            decl.name, declared_keys.last().unwrap()
+                        ));
+                    }
+                    declared_keys.push(k);
+                }
+                (Some(_), false) => {
+                    ev.error(row.span, format!(
+                        "table `{}` has no `key:` domain, so its rows cannot carry keys", decl.name
+                    ));
+                }
+                (None, true) => {
+                    ev.error(row.span, format!("table `{}`: keyed table row needs a `Key:` prefix", decl.name));
+                }
+                (None, false) => {}
+            }
+        }
+
+        // --- lower each row's body to labeled parts --------------------------
+        // (`first_label` per row is the index-mode cell target.)
+        let mut row_first_label: Vec<Option<String>> = Vec::with_capacity(decl.rows.len());
+        let mut all_parts: Vec<LoweredPart> = Vec::new();
+        for row in &decl.rows {
+            match &row.body {
+                ast::TableRowBody::Parts(parts) => {
+                    row_first_label.push(parts.first().map(|p| p.label.clone()));
+                    for p in parts {
+                        let mut env = Env::new();
+                        let v = ev.eval_expr(&p.value, &mut env);
+                        let buf = match v {
+                            Value::Data(b) => b,
+                            Value::Poison => DataBuf::empty(),
+                            other => {
+                                ev.error(p.span, format!(
+                                    "table part `{}` must be a data expression (embed/byte/bytes/++), got {}",
+                                    p.label, other.type_name()
+                                ));
+                                DataBuf::empty()
+                            }
+                        };
+                        all_parts.push(LoweredPart { label: Some(p.label.clone()), buf, span: p.span });
+                    }
+                }
+                ast::TableRowBody::Record(e) => {
+                    row_first_label.push(None);
+                    if index_mode {
+                        ev.error(row.span, format!(
+                            "table `{}`: index-mode rows need explicit part labels — auto-labeled \
+                             record rows are deferred (design decision 6)", decl.name
+                        ));
+                    }
+                    let Some(rt) = &decl.row_type else {
+                        ev.error(row.span, format!(
+                            "table `{}`: a typed record row needs a `: [RowType]` element type", decl.name
+                        ));
+                        continue;
+                    };
+                    let mut env = Env::new();
+                    let v = ev.eval_expr(e, &mut env);
+                    let ty = ev.resolve_type(rt);
+                    let buf = if matches!(v, Value::Poison) || matches!(ty, Ty::Poison) {
+                        DataBuf::empty()
+                    } else {
+                        ev.lower_to_data(&v, &ty, row.span)
+                    };
+                    all_parts.push(LoweredPart { label: None, buf, span: row.span });
+                }
+            }
+        }
+
+        // --- header: Type(Expr over `count`) ----------------------------------
+        let header = attrs.header.as_ref().map(|(hty, hexpr)| {
+            let mut env = Env::new();
+            env.define("count", Value::Int(decl.rows.len() as i128), false);
+            let v = ev.eval_expr(hexpr, &mut env);
+            let ty = ev.resolve_type(hty);
+            if matches!(v, Value::Poison) || matches!(ty, Ty::Poison) {
+                DataBuf::empty()
+            } else {
+                ev.lower_to_data(&v, &ty, attrs.span)
+            }
+        });
+
+        // --- sentinel ---------------------------------------------------------
+        let sentinel = attrs.sentinel.as_ref().map(|se| {
+            let mut env = Env::new();
+            let v = ev.eval_expr(se, &mut env);
+            if matches!(v, Value::Poison) {
+                return DataBuf::empty();
+            }
+            if let Some(rt) = &decl.row_type {
+                let ty = ev.resolve_type(rt);
+                if matches!(ty, Ty::Poison) { DataBuf::empty() } else { ev.lower_to_data(&v, &ty, attrs.span) }
+            } else if let Value::Data(b) = v {
+                b
+            } else {
+                ev.error(attrs.span, format!(
+                    "table `{}`: `sentinel:` needs a data value (or a `: [RowType]` to type it), got {}",
+                    decl.name, v.type_name()
+                ));
+                DataBuf::empty()
+            }
+        });
+
+        // --- assemble the emission shape -------------------------------------
+        let mode = if index_mode {
+            // Build the cell table over the key domain.
+            let cells = if let Some((lo, hi)) = key_domain {
+                let span_len = hi - lo + 1;
+                if span_len > 1_000_000 {
+                    ev.error(attrs.span, format!(
+                        "table `{}`: key span {span_len} is too large (>1_000_000 cells)", decl.name
+                    ));
+                    DataBuf::empty()
+                } else {
+                    // Sparse (hole present) vs exhaustive (missing keys = error).
+                    let hole = match &attrs.hole {
+                        Some(he) => {
+                            let mut env = Env::new();
+                            let hv = ev.eval_expr(he, &mut env);
+                            hv.as_stored_int()
+                        }
+                        None => None,
+                    };
+                    // Map declared key -> row's first label.
+                    let mut declared: std::collections::BTreeMap<i128, String> = std::collections::BTreeMap::new();
+                    for (row_idx, row) in decl.rows.iter().enumerate() {
+                        if let (Some(ke), Some(lbl)) = (&row.key, &row_first_label[row_idx]) {
+                            let mut env = Env::new();
+                            if let Some(k) = ev.eval_expr(ke, &mut env).as_stored_int() {
+                                declared.entry(k).or_insert_with(|| lbl.clone());
+                            }
+                        }
+                    }
+                    if attrs.hole.is_none() {
+                        let missing: Vec<i128> = (lo..=hi).filter(|k| !declared.contains_key(k)).collect();
+                        if !missing.is_empty() {
+                            let list: Vec<String> = missing.iter().take(32).map(|k| format!("{k:#x}")).collect();
+                            let more = if missing.len() > 32 { format!(" (+{} more)", missing.len() - 32) } else { String::new() };
+                            ev.error(attrs.span, format!(
+                                "table `{}` is exhaustive (no `hole:`) but is missing keys: {}{}",
+                                decl.name, list.join(", "), more
+                            ));
+                        }
+                    }
+                    let cell_ty = ev.resolve_type(attrs.cell.as_ref().unwrap());
+                    let hole_val = hole.unwrap_or(0);
+                    let elems: Vec<Value> = (lo..=hi)
+                        .map(|k| match declared.get(&k) {
+                            Some(lbl) => Value::Str(lbl.clone()),
+                            None => Value::Int(hole_val),
+                        })
+                        .collect();
+                    if matches!(cell_ty, Ty::Poison) {
+                        DataBuf::empty()
+                    } else {
+                        ev.lower_to_data(&Value::Array(elems), &Ty::Array(Box::new(cell_ty), span_len as usize), decl.span)
+                    }
+                }
+            } else {
+                DataBuf::empty()
+            };
+            TableModeLowered::Index {
+                body: attrs.body.unwrap_or(ast::BodyPlacement::After),
+                payload: all_parts,
+                header,
+                cells,
+                sentinel,
+            }
+        } else {
+            TableModeLowered::RecordList { header, rows: all_parts, sentinel }
+        };
+
+        (Some(TableLowering { mode, item_align }), ev.diags)
+    })
+}
+
 /// Lower a `dispatch Name (encoding: E) { Member: target, ... }` block's
 /// FORWARD emission (Spec 2, Plan 7 backlog #6, Part B — D6.B2) to a checked,
 /// CPU-neutral [`DataBuf`]. The sibling of [`eval_offsets_with_root`] for

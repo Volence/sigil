@@ -123,6 +123,11 @@ pub struct Evaluator<'a> {
     /// consulted by the forward-emission target kind check
     /// ([`is_data`](Self::is_data)/[`is_dispatch`](Self::is_dispatch)).
     pub(crate) dispatches: HashMap<&'a str, &'a ast::DispatchDecl>,
+    /// File-level `table` decls, indexed by name (empty in no-file mode).
+    /// Plan 7 T2-d: [`eval::expr`](expr)'s `eval_path` resolves the derived
+    /// facts `Name.count` (row count), `Name.len` (key-span), `Name.min_key`,
+    /// `Name.max_key` — plain comptime ints, mirroring [`offsets`](Self::offsets).
+    pub(crate) tables: HashMap<&'a str, &'a ast::TableDecl>,
     /// Named SST overlay decls (`vars Name: window { .. }`), indexed by name
     /// (Spec 2, Plan 7 #6, Part A). Only the *named* overlay form is indexed;
     /// the region form (`vars region { .. }`, `name: None`) stays inert.
@@ -385,6 +390,7 @@ impl<'a> Evaluator<'a> {
             datas: HashMap::new(),
             offsets: HashMap::new(),
             dispatches: HashMap::new(),
+            tables: HashMap::new(),
             overlays: HashMap::new(),
             struct_layout_memo: HashMap::new(),
             overlay_layout_memo: HashMap::new(),
@@ -603,6 +609,14 @@ impl<'a> Evaluator<'a> {
                     // `lower::validate_dispatch`, NOT here (this re-indexes on
                     // every per-item evaluator, mirroring the `Offsets` arm).
                     self.dispatches.insert(d.name.as_str(), d);
+                }
+                ast::Item::Table(t) => {
+                    // Index for `Name.count`/`.len`/`.min_key`/`.max_key`
+                    // derived-fact resolution in `eval_path`. Row/key ERROR
+                    // reporting lives once-per-compile in `lower::validate_table`
+                    // (this re-indexes on every per-item evaluator, mirroring
+                    // the `Offsets`/`Dispatch` arms).
+                    self.tables.insert(t.name.as_str(), t.as_ref());
                 }
                 ast::Item::Vars(v) => {
                     // Only the NAMED overlay form (`vars Name: window { .. }`)
