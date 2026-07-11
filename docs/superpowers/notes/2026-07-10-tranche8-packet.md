@@ -86,8 +86,14 @@ debugger.asm port era does.
   + 4 rings-local); outbound consumer; gate-off neutrality (plain hash
   unchanged pre-wave); mixed tranche-8 both shapes; strict 2038/0.
 - **Step 2**: born-modern except five `bsr.w` → `jbsr` flips — byte-identical,
-  so NO re-pin. Conditional widths stay pinned (jbcc deferred). The
-  transliteration block stays as-expanded (row 16 owns its demolition).
+  so NO re-pin. The transliteration block stays as-expanded (row 16 owns its
+  demolition). [AMENDED same day, your ask: conditional branches are now BARE
+  (`.s`/`.w` stripped, assembler width-selects) — the rule tranches 1-6
+  already practiced and 7-8 had drifted from; collision.emp (13) + rings.emp
+  (14) swept, ALL relaxed to their original widths → byte-identical, no
+  re-pin. Pinned exceptions commented in place: the assert-transliteration
+  `beq.w`, aabb.emp's two `.s` (byte-locked to the .inc twin). Canonical
+  step-2 text updated in campaign-port-loop.md.]
 - **Steps 3+4**: ledger +6 (assert construct 1/2, dc link-expr cells, `*`
   port-translation, non-SST packed-record view 1/2 — the ring entry's
   0/2/4/5 literals + ×6 chains want a `record`-over-RAM view; second consumer
