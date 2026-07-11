@@ -73,7 +73,7 @@ fn display_reg() {
 #[test]
 fn display_code() {
     let mut b = CodeBuf::empty();
-    b.push(CodeItem::Inline(DataBuf::empty()));
+    b.push(CodeItem::Inline(DataBuf::empty(), dummy_span()));
     b.push(CodeItem::Label { name: "x".into(), export: false, span: dummy_span() });
     assert_eq!(Value::Code(b).to_string(), "code[2 items]");
 }

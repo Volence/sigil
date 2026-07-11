@@ -360,7 +360,7 @@ fn controllers_region_matches_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 18, "engine.constants's eighteen drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), twin_guards(), "the engine.constants twin's drift guards must be captured");
 
     let expected = &refrom[0x228C..0x22FE];
     let section = linked.section("controllers").expect("linked image must carry controllers");
@@ -408,7 +408,7 @@ fn controllers_debug_region_matches_reference() {
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "engine.constants's drift-guard ensures must all PASS: {assert_diags:?}"
     );
-    assert_eq!(guard_assert_count(&link_asserts), 18, "engine.constants's eighteen drift guards must be captured");
+    assert_eq!(guard_assert_count(&link_asserts), twin_guards(), "the engine.constants twin's drift guards must be captured");
 
     let expected = &refrom[0x231A..0x238C];
     let section = linked.section("controllers").expect("linked image must carry controllers");
@@ -431,3 +431,10 @@ fn controllers_debug_region_matches_reference() {
 /// parity asserts that also ride `module.link_asserts`. Shared idiom in
 /// `sigil_harness::test_support`.
 use sigil_harness::test_support::guard_assert_count;
+
+/// The engine-constants twin's guard count, derived from the shared truth list
+/// (test_support) — count literals here broke on every twin growth (the
+/// tranche-8 back-prop completing tranche 7's shared-list move).
+fn twin_guards() -> usize {
+    sigil_harness::test_support::engine_constant_equs().len()
+}

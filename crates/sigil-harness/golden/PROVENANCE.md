@@ -526,3 +526,72 @@ test-pin-only — no engine/lowering change).
   **`e22a82b397525d8021e6facdd4f307ed1886ac7f497c08fc95f19f7182f61f0e`**.
 - Debug `s4.debug.bin`: sha256
   **`0c9f1952b50e4bec8f02cf0fb57195c8c73b7ce98a4dcaedb87ae2d9aca6869d`**.
+
+## Tranche 8 — the rings region (2026-07-10) — NEW REGION, reference UNCHANGED
+
+`engine/objects/rings.asm` → `rings.emp` (step-1 transcribe): byte-exact
+against the UNCHANGED tranche-7b reference ROMs (pins above still current —
+the port adds a gate, no AS-side content changed; gate-off plain build
+re-verified `e22a82b3…`).
+
+**rings region (NEW):** plain `s4.bin[$31F0..$33A8]` (0x1B8), debug
+`s4.debug.bin[$34AA..$36BE]` (0x214) — the campaign's FIRST
+shape-dependent-LENGTH region (the `__DEBUG__` assert block in
+`RingBuffer_Add.full` exists only in the debug shape; its FSTRING data is
+transliterated `dc.b`, kill-list row 16). `SIGIL_EMP_RINGS` resume orgs:
+plain `$33A8`, debug `$36BE` (engine.inc; from the 2026-07-10 listings).
+
+**Guard-count surface:** `engine_constant_equs()` grew the rings/sprites
+block 18→**24** (RING_HEIGHT/RING_ANIM_FRAMES/RING_ANIM_SPEED +
+MAX_VDP_SPRITES/VDP_SPRITE_X_OFFSET/VDP_SPRITE_Y_OFFSET — the latter three's
+truth is `engine/objects/sprites.asm`, kill-list row 17). Every count
+assertion is now DERIVED from the shared list (`twin_guards()` — the
+tranche-8 back-prop completing tranche 7's shared-list move), so future twin
+growth stops breaking counts. `rings.emp` carries FOUR module-local
+game-owned mirrors (kill-list row 18): gate total 30+24+4 = **58**.
+
+Full strict workspace (`SIGIL_STRICT_GATE=1`, `AEON_DIR` at the tranche-8
+worktree) = **2048 passed / 0 failed**; clippy clean.
+
+- Aeon worktree branch: `sigil-emp-tranche8`.
+- Reference sha256 pins UNCHANGED from tranche 7b (above).
+
+## Re-baseline: tranche-8 step-5 — the RingCollision rolling pointer (2026-07-10) — the current pin
+
+Step-5 optimization wave (`rings.asm` + `rings.emp` in LOCKSTEP), all shapes
+freshly captured:
+
+**RingCollision rolling entry pointer** — the per-ring `×6 index chain + lea
+pair` (~36 c/ring-test) is replaced by ONE `subq.w #6, a3` (8 c): the entry
+pointer is computed once per player and decremented per iteration. Correct
+across removals because swap-with-last only rewrites the removed slot from an
+already-visited HIGHER index (entries below the cursor never move); a3
+survives the collect path (all callees clobber d0-d2/a0-a1 only — contracts
+verified). ~28 c/ring-test/player/frame at the hot loop; net-ZERO region
+bytes (the chain moved out of the loop). **LIVE-VERIFIED in oracle**: draw,
+collect, counter, high-water, and swap-with-last removal (twice — including
+a MID-BUFFER collect with live entries below the cursor).
+
+**RingBuffer_Remove `lea (aN,dN.w)` → `adda.w dN, aN`** ×2 (−4 B, −4 c each;
+matches RingBuffer_Add's existing idiom).
+
+**rings region: `0x1B8/0x214` → `0x1B4/0x210`** (bases unchanged). The −4
+shrink slid every downstream engine-block pin (absorbed at `org $10000`):
+- rings resume orgs `$33A4`/`$36BA`; collision_lookup gate `$4C1A`/`$543E`;
+  sound_api gate `$5F4A`/`$7408` (engine.inc, from listings).
+- collision_lookup base `$4BF6`/`$541A`; sound_api base `$5D66`/`$7224`;
+  `Tile_Cache_GetCollision` `$430E`/`$4A7A`; `Sound_DrainSfxRing`
+  `$5EAC`/`$736A`; `Sound_PlayRing` `$5EFC`/`$73BA`; rings-port labels
+  (`Collected_MarkRing` `$3428`/`$37A0` etc.) — all listings-derived.
+- RingCollision region offset `0x112`/`0x16E` (RingBuffer_Remove shrank
+  ahead of it).
+- MDDBG__* UNMOVED (past the `org $10000` boundary), verified from the
+  rebuilt debug ROM's own jsr/jmp operands.
+
+Full strict workspace = **2048 passed / 0 failed**; clippy clean.
+
+- Aeon worktree branch: `sigil-emp-tranche8`.
+- Non-debug `s4.bin`: sha256
+  **`c973091d14c5cb5657f7e900b08584ce876c13da2bb95bc0f4e5f291537aad18`**.
+- Debug `s4.debug.bin`: sha256
+  **`6a0f9c3f44986916ddd971cbc541cce1b199c6c26b4e16bf27073c28ffaf15d0`**.

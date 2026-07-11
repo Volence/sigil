@@ -55,15 +55,13 @@ pub fn lower_code_buf(
     for item in &code.items {
         match item {
             CodeItem::Label { name, .. } => builder.define_label(name),
-            CodeItem::Inline(buf) => {
-                // A `Data` value spliced into the code stream (§6.2). It carries
-                // no span of its own; anchor any diagnostic at a zero span.
-                // TODO(T4/T5): thread a real span once inline-data splices are
-                // actually produced (unreachable until proc lowering exercises it).
-                let span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
-                let (bytes, fixups, mut ds) = super::data::stream_data(buf, cpu, span);
+            CodeItem::Inline(buf, span) => {
+                // A `Data` value spliced into the code stream (§6.2) — today a
+                // `dc.b`/`dc.w`/`dc.l` statement's cells (tranche 8). Scalars
+                // serialize in the section CPU's byte order (68k BE / Z80 LE).
+                let (bytes, fixups, mut ds) = super::data::stream_data(buf, cpu, *span);
                 diags.append(&mut ds);
-                builder.emit_data(&bytes, fixups, span);
+                builder.emit_data(&bytes, fixups, *span);
             }
             CodeItem::Instr { mnemonic, size, ops, span } => {
                 // `jbra`/`jbsr` are emp-ONLY mnemonic-position words (D2.18): they
@@ -98,7 +96,10 @@ pub fn lower_code_buf(
 /// (`m68k_mnemonic`/`z80_mnemonic`) already fold the conditional-branch /
 /// `dbcc`/`scc` families, so this stays a thin membership query over them.
 pub(crate) fn is_recognized_mnemonic(base: &str, cpu: Cpu) -> bool {
-    if matches!(base, "jbra" | "jbsr") {
+    // `dc` is the code-embedded-data statement (tranche 8), CPU-neutral like
+    // the DataBuf it produces — reserved on both CPUs so a comptime fn named
+    // `dc` can never shadow it (tenet 3, same footing as jbra/jbsr).
+    if matches!(base, "jbra" | "jbsr" | "dc") {
         return true;
     }
     match cpu {

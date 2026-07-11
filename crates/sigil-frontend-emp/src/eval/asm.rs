@@ -427,6 +427,9 @@ impl Evaluator<'_> {
     ) -> Option<CodeItem> {
         let mnemonic = self.resolve_mnemonic(&instr.mnemonic, env)?;
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
+        if mnemonic == "dc" {
+            return self.lower_dc(instr, size, env);
+        }
         if mnemonic == "movem" {
             let ops = self.map_movem_operands(instr, scope, env, size)?;
             return Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span });
@@ -436,6 +439,103 @@ impl Evaluator<'_> {
             ops.push(self.map_operand(op, scope, env, size)?);
         }
         Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span })
+    }
+
+    /// `dc.b`/`dc.w`/`dc.l` — code-embedded constant data (tranche 8, the
+    /// rings-port H8 demand: an error handler's format-string bytes sit
+    /// MID-PROC between a `jsr` and its resume label; no item-position
+    /// construct can express them). Elements must be COMPTIME-KNOWN: ints
+    /// (range-checked to the width's signed∪unsigned window, loud on
+    /// overflow — never silent truncation) or, for `dc.b` only, raw-ASCII
+    /// string literals (D2.16 — no implicit terminator). Link-expr cells in
+    /// `dc` position are a recorded extension (ledger), not built until a
+    /// real consumer demands them; typed `data` items remain the story for
+    /// item-position data. Produces a [`CodeItem::Inline`] — scalar cells
+    /// serialize in the section CPU's byte order at lowering (68k BE,
+    /// Z80 LE), so the statement is CPU-neutral like the DataBuf it builds.
+    fn lower_dc(
+        &mut self,
+        instr: &InstrLine,
+        size: Option<Width>,
+        env: &mut Env,
+    ) -> Option<CodeItem> {
+        use crate::value::{Cell, DataBuf};
+        let Some(width) = size else {
+            self.error(instr.span, "[dc.missing-size] `dc` needs an explicit width — `dc.b`, `dc.w`, or `dc.l`");
+            return None;
+        };
+        let width_bytes: usize = match width {
+            Width::B => 1,
+            Width::W => 2,
+            Width::L => 4,
+            Width::S => {
+                self.error(instr.span, "[dc.missing-size] `.s` is a branch width — `dc` takes `.b`, `.w`, or `.l`");
+                return None;
+            }
+        };
+        if instr.operands.is_empty() {
+            self.error(instr.span, "[dc.empty] `dc` needs at least one element");
+            return None;
+        }
+        let mut cells = Vec::with_capacity(instr.operands.len());
+        let mut total = 0usize;
+        for op in &instr.operands {
+            let expr = match op {
+                Operand::Plain { expr, size: None, .. } => expr,
+                Operand::Splice(e) => e,
+                _ => {
+                    self.error(
+                        instr.span,
+                        "[dc.operand] `dc` elements are plain comptime expressions — addressing-mode operands have no meaning here",
+                    );
+                    return None;
+                }
+            };
+            match self.eval_expr(expr, env) {
+                Value::Int(n) => {
+                    let bits = (width_bytes * 8) as u32;
+                    let lo = -(1i128 << (bits - 1));
+                    let hi = (1i128 << bits) - 1;
+                    if n < lo || n > hi {
+                        self.error(
+                            expr_span(expr),
+                            format!("[dc.range] {n} does not fit a {width_bytes}-byte `dc` element (allowed {lo}..={hi})"),
+                        );
+                        return None;
+                    }
+                    cells.push(Cell::Scalar {
+                        value: n,
+                        width: width_bytes as u8,
+                        signed: n < 0,
+                        le: false,
+                    });
+                    total += width_bytes;
+                }
+                Value::Str(s) if width_bytes == 1 => {
+                    total += s.len();
+                    cells.push(Cell::Bytes(s.into_bytes()));
+                }
+                Value::Str(_) => {
+                    self.error(
+                        expr_span(expr),
+                        "[dc.string-width] string elements are `dc.b`-only (a string is a run of bytes; it has no word/long reading)",
+                    );
+                    return None;
+                }
+                Value::Poison => return None,
+                other => {
+                    self.error(
+                        expr_span(expr),
+                        format!(
+                            "[dc.comptime-only] `dc` elements must be comptime ints or strings, got {} (link-resolved cells in `dc` position are a recorded extension — use a typed `data` item)",
+                            other.type_name()
+                        ),
+                    );
+                    return None;
+                }
+            }
+        }
+        Some(CodeItem::Inline(DataBuf { cells, size: total }, instr.span))
     }
 
     /// Map a `movem`'s two operands (D-P1H.2): exactly one must be a register

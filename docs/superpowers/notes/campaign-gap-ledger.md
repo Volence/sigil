@@ -796,3 +796,75 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   work (culling, dispatch) is real work. TRIGGER: Prof_TouchResponse/
   Prof_Peak_Frame showing pressure, OR the first object-vs-object demand,
   whichever first. Volence-ratified as jot-now-build-later (2026-07-10). — DESIGN-READY
+- [tranche 8, 2026-07-10] **`.emp assert/diagnostics construct — FIRST demand data
+  point** — rings' `assert.b d4, eq, #0` (DEBUG-fatal buffer-drop check) had to ship
+  as a TRANSLITERATION (real asm skeleton + `dc.b` FSTRING data verbatim from the
+  reference listing; kill row 16) because the real feature is a comptime
+  format-string compiler over debugger.asm's console-token encoding ($E0 endl,
+  $E8/$EA/$EC pal, arg descriptors) — debugger.asm-port-era machinery, not one call
+  site's. Second demand ratifies designing it; the transliteration pattern covers
+  singles until then. — OPEN (demand 1/2)
+- [tranche 8, 2026-07-10] **`dc` link-expr cells** — the new `dc.b/w/l` proc-body
+  statement (H8) is deliberately comptime-only (ints + strings); a link-resolved
+  cell in dc position (`dc.l SomeLabel`) errors with a steering diagnostic. The
+  extension is the D2.25 Value8/16/32 machinery already used by data items — build
+  when a real consumer shows up (jump tables in code position are the likely
+  demand). Z80 `dc` likewise designed-CPU-neutral (LE via stream_data) but
+  unprobed — probe at the first Z80 code port. — OPEN (consumer-gated)
+- [tranche 8, 2026-07-10] **`*` (current location) port-translation rule** — AS's
+  `pea *(pc)` self-address idiom has no `.emp` spelling; the translation is a label
+  on the instruction + `.label(pc)` (byte-identical d16=-2 encoding). Local-label
+  displacement operands SHIPPED this tranche to make that expressible (parser
+  DispInd continuation on the `Tok::Dot` arm). Goes in the D2.7/D2.19
+  port-translation bucket (like `even`→`align 2`), not a language feature. — RECORDED
+- [tranche 8, 2026-07-10] **typed view over a non-SST packed record — SECOND
+  demand class** — the ring buffer's 6-byte entries (x.w, y.w, section_id.b,
+  list_index.b) read via literal 0/2/4/5 displacements and hand-rolled ×6 index
+  math (add/add/add chains at three sites). A `record`-over-raw-RAM view (the
+  role-typed-SST cousin, vars-era neighborhood) would give named displacements +
+  a sizeof-driven stride; the index-scale idiom (strength-reduced ×6) may want a
+  comptime helper. Rings stays literal at transcribe; revisit when the construct
+  gets its second consumer (entity_window's collected-window slots are the likely
+  one). — OPEN (demand 1/2)
+- [tranche 8, 2026-07-10] **hardcoded twin-guard counts CLOSED** — tranche 7's
+  shared equ list still left per-test count literals; the twin's 18→24 growth broke
+  6 targets. All counts now DERIVE from `test_support::engine_constant_equs().len()`
+  (`twin_guards()`), composed per-module (30+N, 31+N, 34+N…). Future twin growth is
+  list-edit-only, as originally intended. — CLOSED (tranche-8 back-prop)
+- [tranche 8, 2026-07-10] **DrawRings culling literals** — `#336`/`#240` are
+  `320+16`/`224+16` (screen + ring size) as comments; spelling them as derived
+  constants needs screen-geometry names in the twin (+2 mirrors for 2 sites).
+  Not worth the mirror tax today; becomes free after the constants.asm ownership
+  flip (row 1). — RECORDED
+- [tranche 8 step 5, 2026-07-10] **the GENERALIZED re-pin rule** — tranche 7's rule
+  ("a region byte-change re-derives every SIGIL_EMP_* org between it and the next
+  org boundary") is NECESSARY but not SUFFICIENT: the tranche-8 −4 shrink also hit
+  mixed-map REGION BASES (sound_api/collision_lookup strings in the map fns),
+  synthetic LABEL VMAs in port tests (Tile_Cache_GetCollision, Sound_DrainSfxRing,
+  drain pointers), a probe's deliberately-wrong VMA (kept +4 from the NEW genuine),
+  and a hardcoded BYTE-PIN ARRAY carrying a cross-region bsr.w displacement
+  (tranche-5 mixed game_loop block). Rule as now practiced: a region size change
+  re-derives EVERY harness pin whose value lies in [region_end, next org boundary)
+  — orgs, map bases, label VMAs, byte arrays with displacement bytes, probe
+  constants — all from listings. The org-$10000 boundary absorbs the slide
+  (MDDBG__* verified unmoved from ROM bytes). Sweep grep: hex literals in the
+  window over crates/*/tests + lib.rs, then let the strict suite name survivors. — RECORDED
+- [tranche 8 step 5, 2026-07-10] **step-5 items deliberately NOT taken** —
+  RingBuffer_Add's stack-round-trip ×6 (~24c, SPAWN-time cold path; fixing needs a
+  wider clobber contract); RingBuffer_Remove's two remaining ×6 chains (COLLECT-time
+  cold path; arbitrary-index remove can't roll); DrawRings (already
+  rolling-pointer). Numbers recorded so future profiling has the baseline; the hot
+  loop (RingCollision, per-frame × per-ring × per-player) got the rolling pointer. — RECORDED
+- [post-t8, 2026-07-10] **bare-Bcc house rule RATIFIED + back-propagated** — Volence:
+  conditional branches in .emp ports carry NO `.s`/`.w`; the assembler width-selects
+  (the two-rung relaxation ladder). The rule was already PRACTICED in tranches 1-6
+  (controllers/vdp_init/collision_lookup/sound_api are bare) but tranches 7-8
+  (collision.emp 13, rings.emp 14) pinned widths citing the jbcc deferral — a
+  drift the step-2 canonical text never named, now fixed there. Sweep result:
+  ALL 27 stripped branches relax to their original widths (hand-written sizes
+  were optimal) → byte-identical, no re-pin. Pinned exceptions, each commented
+  in place: rings' assert-transliteration `beq.w` (macro-expansion parity, row
+  16), aabb.emp's two `.s` (byte-locked to aabb.inc's explicit spellings —
+  divergent relaxation between twins is the hazard). jbcc-the-MNEMONIC stays
+  deferred — bare Bcc IS the idiom. — CLOSED (rule canonical in
+  campaign-port-loop.md step 2)

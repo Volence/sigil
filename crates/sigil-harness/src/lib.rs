@@ -475,6 +475,48 @@ pub fn assemble_mixed_tranche7_as_side(aeon: &Path, debug: bool) -> Result<Modul
     })
 }
 
+/// `assemble_mixed_tranche7_as_side` gates PLUS `SIGIL_EMP_RINGS` — the
+/// `engine/engine.inc` gate wrapping the `engine/objects/rings.asm` include
+/// (else-arm `org $33A8` plain / `org $36BE` debug). The window it opens
+/// (`$31F0..$33A8` plain / `$34AA..$36BE` debug) is filled by
+/// `engine/objects/rings.emp` — the campaign's FIRST shape-dependent-LENGTH
+/// region (the `__DEBUG__` assert block exists only in the debug shape), so
+/// the two orgs differ by more than the usual base slide. All five procs are
+/// `pub` exports (entity_window/sprites/game states call them); the module
+/// reads seven `Ring_*` RAM cells + `Camera_X/Y` + `Player_1` across the seam
+/// (abs.w, per-shape), calls four ROM procs (`Collected_MarkRing`,
+/// `EntityWindow_EntryForSection`, `EntityLoaded_Clear`, `Sound_PlayRing`),
+/// and in the debug shape jumps into the two `MDDBG__ErrorHandler*` entries.
+pub fn assemble_mixed_tranche8_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+        ("SIGIL_EMP_HBLANK".to_string(), 1),
+        ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
+        ("SIGIL_EMP_MATH".to_string(), 1),
+        ("SIGIL_EMP_VDP_INIT".to_string(), 1),
+        ("SIGIL_EMP_COLLISION_LOOKUP".to_string(), 1),
+        ("SIGIL_EMP_PARTICLE_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_SONIC_ANIMS".to_string(), 1),
+        ("SIGIL_EMP_ACT_DESCRIPTOR".to_string(), 1),
+        ("SIGIL_EMP_GAME_LOOP".to_string(), 1),
+        ("SIGIL_EMP_SOUND_API".to_string(), 1),
+        ("SIGIL_EMP_TEST_OBJECTS".to_string(), 1),
+        ("SIGIL_EMP_COLLISION".to_string(), 1),
+        ("SIGIL_EMP_RINGS".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche8 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
 /// names (`sec{vma}`) are disambiguated on collision and so are not stable

@@ -1519,11 +1519,22 @@ impl Parser {
                 self.bump();
                 let name = self.expect_ident("label");
                 let span = start.merge(self.prev_span());
-                Operand::Plain {
-                    expr: Expr::Path(Path { segments: vec![format!(".{name}")], span }),
-                    size: None,
-                    span,
+                let expr = Expr::Path(Path { segments: vec![format!(".{name}")], span });
+                // A local label immediately followed by `(` is a DISPLACEMENT
+                // (tranche 8 — `pea .raise(pc)`, the pc-relative self-address
+                // idiom AS spells `pea *(pc)`): continue into the same
+                // displacement-indirect grammar every other disp form uses.
+                if self.at(&Tok::LParen) {
+                    let inner = self.paren_operand(splices_allowed, self.span());
+                    let span = start.merge(self.prev_span());
+                    return Operand::DispInd {
+                        disp: expr,
+                        inner: Box::new(inner),
+                        disp_spliced: false,
+                        span,
+                    };
                 }
+                Operand::Plain { expr, size: None, span }
             }
             _ => {
                 let e = self.expr();

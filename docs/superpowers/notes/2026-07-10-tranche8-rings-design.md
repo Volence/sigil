@@ -171,6 +171,23 @@ Intra-module: RingCollision `bsr.w RingBuffer_Remove` (stays local).
   Render_Sprites) is a proc-signature question for step 2 — transcribe
   keeps bare clobbers-style like TouchResponse.
 
+## H8 — demanded feature: `dc.b`/`dc.w`/`dc.l` in proc bodies (found at step-1 entry)
+
+Proc bodies parse Label/Instr/Call/Trap/If only — no raw-data statement.
+The assert blob (H1) is MID-PROC data (the RaiseError string sits between
+the jsr and `.skip`; the handler reads it at the return address). No
+existing construct expresses it: `data` items are item-position,
+`offsets`/`[u8;N]` are typed tables, `embed` is file-backed.
+
+Decision (demanded-features law — ships at step 1): `dc.b`/`dc.w`/`dc.l`
+as proc-body statements. Code-embedded data is an assembler fundamental
+(every Sonic tree carries mid-code dc.*), instruction-position vocabulary
+is protected AS ground (tenet 3), and D2.16's raw-ASCII string literals
+compose (`dc.b "Assertion failed:", $E0, …`). Scope kept narrow:
+comptime-known elements only (ints + string bytes); link-expr cells in dc
+position are a recorded extension (ledger), not built until demanded.
+Typed data items remain the story for item-position data.
+
 ## Gate mechanics (step 1 checklist shape)
 
 - engine.inc: `ifndef SIGIL_EMP_RINGS` around the include + per-shape
