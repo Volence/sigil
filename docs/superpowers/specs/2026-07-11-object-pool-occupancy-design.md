@@ -45,17 +45,29 @@ Dynamic_Live_Dirty: ds.b 1             ; a deletion happened; compact at frame e
 
 RAM cost: 83 bytes. `code_addr == 0` REMAINS the single source of truth;
 the live list is a conservative over-approximation (may briefly contain
-dead slots, never misses a live one). Walkers keep a `tst.w (a0)` guard —
-2 cycles per LIVE object, and it is what makes every mutation case safe
-(§6).
+dead/zeroed entries, never misses a live one) **in which each live slot
+appears EXACTLY ONCE** (uniqueness clause — amendment A1, 2026-07-12; see
+§6). Walkers null-guard the ENTRY (load to dN, `beq` skip, then `movea`
+— the sprites band-walk pattern) and keep the `tst.w` slot guard; the
+pair is what makes every mutation case safe (§6).
 
 ### Maintenance (rare events, not per-frame)
 - **AllocDynamic** (core.emp:77): append the popped slot's address —
-  `move.w a1, offset(Dynamic_Live + 2×count)`, `addq.w #1, count`. O(1).
+  `move.w a1, offset(Dynamic_Live + 2×count)`, `addq.w #1, count`. O(1)
+  in the common case. **Amendment A1: append is capacity-guarded** — at
+  `count == NUM_DYNAMIC`, run the compaction pass inline before
+  appending (room is guaranteed: the free stack being nonempty at full
+  count implies zeroed entries exist). Rare, O(NUM_DYNAMIC); Count can
+  never exceed capacity by design.
 - **DeleteObject** dynamic path (core.emp:126): existing pool-detection
-  already branches per pool; the dynamic arm additionally
-  `st Dynamic_Live_Dirty`. The slot clear (`code_addr = 0`) is what
-  actually kills it. O(1), no search, no back-pointer field in the SST.
+  already branches per pool; the dynamic arm sets `Dynamic_Live_Dirty`
+  AND — **amendment A1 — scans `Dynamic_Live[0..count)` for the slot's
+  address and ZEROES that entry in place** (deletes are rare; a ≤40-word
+  scan is trivial; zeroing moves nothing, so a live walker's cursor
+  stays valid). The slot clear (`code_addr = 0`) still kills the object;
+  the entry-zero is what keeps the list DUPLICATE-FREE when the LIFO
+  free stack recycles the slot later the same frame (§6). No
+  back-pointer field in the SST.
 - **Compaction**: at RunObjects tail (after all walks), if dirty: one pass
   copying entries whose `code_addr != 0` down over dead ones, recount,
   clear dirty. O(live), runs only on frames with a deletion.
@@ -96,7 +108,9 @@ stable behavior is lost).
     jbeq    .culled_done
     subq.w  #1, d7
 .culled_loop:
-    movea.w (a2)+, a0
+    move.w  (a2)+, d0               // entry null-guard (A1): zeroed by a
+    jbeq    .culled_next            // same-frame delete — skip
+    movea.w d0, a0
     tst.w   (a0)                    // truth guard: dead-but-uncompacted
     jbeq    .culled_next
     // unchanged: X/Y cull vs CULL_DISTANCE, then bank dispatch
@@ -105,8 +119,11 @@ stable behavior is lost).
     dbf     d7, .culled_loop
 ```
 
-Empty slots cost ZERO; dead-uncompacted cost one tst+branch until the
-frame-end compact. The `moveq #OBJ_CODE_BANK; swap` prefix-rebuild
+(Sketch amended per the Step-2 build: the list cursor a2 must be saved
+across the `jsr` — object code preserves only a0/d7 — and d7 snapshots
+the count per §3. The committed loop is the reference, not this sketch.)
+Empty slots cost ZERO; dead-uncompacted or zeroed entries cost one
+load+branch until the frame-end compact. The `moveq #OBJ_CODE_BANK; swap` prefix-rebuild
 (t10's declined micro-hoist) now only runs per LIVE object — the hoist
 question dissolves.
 
@@ -158,9 +175,28 @@ children.asm:367 DeleteChildren, entity_window.asm:1365):
 - **DespawnObjects deletions**: before RunObjects, same deferred rule;
   its own walk tolerates the dead entries it just made. Safe.
 - **Freeze**: separate path, same lists, no interaction. Safe.
+**Amendment A1 (2026-07-12, caught at the Step-2 build checkpoint) —
+the same-frame delete+realloc duplicate.** The original design relied on
+`code_addr == 0` alone to mark dead entries. That breaks in one common
+sequence: DeleteObject frees slot N (entry stays, "dead by code_addr");
+LATER THE SAME FRAME an allocation occurs, and the LIFO free stack hands
+back slot N preferentially; AllocDynamic appends N again. N is now
+listed TWICE with a live code_addr — the old entry is no longer
+skippable, and a code_addr-based compaction KEEPS BOTH: the slot
+dispatches twice per frame, permanently. This is not exotic — it is the
+entity window's STEADY STATE while scrolling (despawn one edge + spawn
+the other, same frame, LIFO recycling the just-freed slot). The pinned
+stress scene (pool full, no realloc) structurally cannot produce it.
+Fix: DeleteObject zeroes its entry (uniqueness by construction),
+walkers null-guard entries, AllocDynamic compacts-on-full; compaction
+drops zero entries and dead-code_addr entries alike. VERIFICATION RIDER:
+every walker soak from Step 2 onward must include a forced
+delete → same-frame-realloc cycle, confirming exactly one entry for the
+recycled slot.
+
 The invariant, stated once: **the list may over-approximate, never
-under-approximate; `code_addr` decides; compaction only runs when no walk
-is live.** DEBUG builds enforce it with the new `assert` construct
+under-approximate; each live slot appears exactly once; `code_addr` and
+the entry-zero decide; compaction only runs when no walk is live.** DEBUG builds enforce it with the new `assert` construct
 (count ≤ NUM_DYNAMIC; every entry in-pool; post-compact count == a full
 tst.w sweep's live count — three one-liners once the diagnostics
 construct ships; sequence them AFTER it).
