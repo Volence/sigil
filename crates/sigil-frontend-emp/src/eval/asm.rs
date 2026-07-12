@@ -357,7 +357,17 @@ impl Evaluator<'_> {
             // expansion, then lower it through THIS SAME statement loop — the
             // exact path a comptime-`if`'s chosen branch takes.
             AsmStmt::Assert { width, src, src_spelling, cond, dest, span } => {
-                self.lower_assert(width, src, src_spelling, cond, dest, *span, scope, buf, env);
+                // Bundle the parsed pieces (the AST already pairs each operand
+                // with its verbatim spelling) so they stay together through the
+                // desugar.
+                let parts = crate::eval::diag::AssertParts {
+                    width: *width,
+                    src: (**src).clone(),
+                    src_spelling: src_spelling.clone(),
+                    cond: cond.clone(),
+                    dest: dest.as_ref().map(|(op, s)| ((**op).clone(), s.clone())),
+                };
+                self.lower_assert(&parts, *span, scope, buf, env);
             }
             AsmStmt::RaiseError { fstring, span } => {
                 self.lower_raise_error(fstring, *span, scope, buf, env);
@@ -380,25 +390,21 @@ impl Evaluator<'_> {
     /// it RECURSIVELY through `lower_asm_stmt` (the same path the `If` arm's
     /// chosen branch takes); anything else → emit nothing. `src` must be a
     /// register (§5) — else the "move to a register first" steering error.
-    #[allow(clippy::too_many_arguments)]
     fn lower_assert(
         &mut self,
-        width: &crate::eval::diag::Width,
-        src: &Operand,
-        src_spelling: &str,
-        cond: &str,
-        dest: &Option<(Box<Operand>, String)>,
+        p: &crate::eval::diag::AssertParts,
         span: Span,
         scope: &LabelScope,
         buf: &mut CodeBuf,
         env: &mut Env,
     ) {
         // §5: cond membership (re-validated so the desugar can't form `b<xx>.w`).
-        if !Self::ASSERT_CONDS.contains(&cond) {
+        if !Self::ASSERT_CONDS.contains(&p.cond.as_str()) {
             self.error(
                 span,
                 format!(
-                    "unknown assert condition `{cond}` — expected one of {}",
+                    "unknown assert condition `{}` — expected one of {}",
+                    p.cond,
                     Self::ASSERT_CONDS.join(", ")
                 ),
             );
@@ -407,14 +413,15 @@ impl Evaluator<'_> {
         // §5: src must be a register (dn/an) — the debugger.asm limitation
         // (a parenthesised memory operand assembles to AS error #1300; the
         // rings.emp comment names this precedent).
-        if !operand_is_register(src) {
+        if !operand_is_register(&p.src) {
             self.error(
                 span,
                 format!(
-                    "assert `src` must be a register (dn/an) in v1, got `{src_spelling}` — \
+                    "assert `src` must be a register (dn/an) in v1, got `{}` — \
                      move the value to a register first (debugger.asm's message expansion \
                      cannot take a parenthesised memory operand; matches the rings.emp \
-                     precedent / AS error #1300)"
+                     precedent / AS error #1300)",
+                    p.src_spelling
                 ),
             );
             return;
@@ -430,18 +437,7 @@ impl Evaluator<'_> {
 
         let n = self.asm_counter;
         self.asm_counter += 1;
-        let dest_op = dest.as_ref().map(|(op, _)| (**op).clone());
-        let dest_spelling = dest.as_ref().map(|(_, s)| s.as_str());
-        let stmts = crate::eval::diag::build_assert_expansion(
-            n,
-            *width,
-            src.clone(),
-            src_spelling,
-            cond,
-            dest_op,
-            dest_spelling,
-            span,
-        );
+        let stmts = crate::eval::diag::build_assert_expansion(n, p, span);
         for stmt in &stmts {
             self.lower_asm_stmt(stmt, scope, buf, env);
         }
@@ -483,7 +479,7 @@ impl Evaluator<'_> {
                 );
                 return;
             };
-            arg_pushes.extend(crate::eval::diag::fstring_arg_push(arg.width, operand, span));
+            arg_pushes.extend(crate::eval::diag::arg_push(arg.width, operand, span));
         }
         let n = self.asm_counter;
         self.asm_counter += 1;

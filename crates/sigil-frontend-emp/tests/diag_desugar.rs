@@ -135,7 +135,7 @@ section s (cpu: m68000) {
 // 2. Full-expansion byte equality vs the assembled transliteration.
 // ---------------------------------------------------------------------------
 
-/// rings.emp's `assert.b d4, eq, #0` — cmp form, `.b` arg push, ODD-parity flag
+/// rings.emp's `assert.b d4, eq, #0` — cmp form, `.b` arg push, EVEN-parity flag
 /// (`$A0,$00`). Golden = the hand-written transliteration, assembled.
 #[test]
 fn rings_byte_form_matches_transliteration() {
@@ -175,7 +175,7 @@ section s (cpu: m68000) {
 }
 
 /// core.emp's `assert.l a0, hs, #Object_RAM` — `.l` cmp form with a symbol
-/// immediate, EVEN-parity flag (`$20`, no pad). Golden = the transliteration.
+/// immediate, ODD-parity flag (`$20`, no pad). Golden = the transliteration.
 #[test]
 fn core_long_form_matches_transliteration() {
     let src = "\

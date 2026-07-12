@@ -401,24 +401,31 @@ fn path_op(seg: &str, span: Span) -> Operand {
     }
 }
 
-/// `-(sp)` — pre-decrement on the stack pointer.
-fn predec_sp(span: Span) -> Operand {
-    Operand::PreDec(Box::new(Operand::Ind {
+/// `(sp)` — the bare stack-pointer register indirect, shared base for the
+/// pre-decrement / post-increment / displacement stack forms below.
+fn sp_ind(span: Span) -> Operand {
+    Operand::Ind {
         parts: vec![(Expr::Path(ast::Path { segments: vec!["sp".into()], span }), None)],
         size: None,
         span,
-    }))
+    }
+}
+
+/// `-(sp)` — pre-decrement on the stack pointer.
+fn predec_sp(span: Span) -> Operand {
+    Operand::PreDec(Box::new(sp_ind(span)))
+}
+
+/// `(sp)+` — post-increment on the stack pointer (the CCR restore's source).
+fn postinc_sp(span: Span) -> Operand {
+    Operand::PostInc(Box::new(sp_ind(span)))
 }
 
 /// `1(sp)` — displacement-indirect on the stack pointer (the `.b` arg slot).
 fn disp1_sp(span: Span) -> Operand {
     Operand::DispInd {
         disp: Expr::Int(1, span),
-        inner: Box::new(Operand::Ind {
-            parts: vec![(Expr::Path(ast::Path { segments: vec!["sp".into()], span }), None)],
-            size: None,
-            span,
-        }),
+        inner: Box::new(sp_ind(span)),
         disp_spliced: false,
         span,
     }
@@ -532,9 +539,15 @@ fn raise_tail(raise_label: &str, message: &[u8], arg_pushes: Vec<AsmStmt>, span:
 }
 
 /// The `.b`/`.w`/`.l` argument-push statements for pushing `src` for the
-/// handler to read (§4.2 step 6): `.b` → `subq.w #2,sp` + `move.b src,1(sp)`
-/// (2-byte slot, low byte written); `.w`/`.l` → `move.<w> src,-(sp)`.
-fn arg_push(w: Width, src: Operand, span: Span) -> Vec<AsmStmt> {
+/// handler to read: `.b` → `subq.w #2,sp` + `move.b src,1(sp)` (2-byte slot,
+/// low byte written); `.w`/`.l` → `move.<w> src,-(sp)`. Shared by BOTH call
+/// contexts — `assert`'s single auto-message arg (§4.2 step 6) and each
+/// `raise_error` FSTRING `%<...>` token's arg (§4.3, pushed in reverse token
+/// order by the caller). The operand class is validated upstream (a register
+/// for assert; register-or-immediate for raise_error, via
+/// [`fstring_arg_operand`]).
+#[allow(dead_code)] // driven by the diag arms in eval/asm.rs
+pub fn arg_push(w: Width, src: Operand, span: Span) -> Vec<AsmStmt> {
     match w {
         Width::B => vec![
             instr("subq", Some("w"), vec![Operand::Imm(Expr::Int(2, span)), path_op("sp", span)], span),
@@ -545,72 +558,72 @@ fn arg_push(w: Width, src: Operand, span: Span) -> Vec<AsmStmt> {
     }
 }
 
+/// The compare mnemonic for the `assert` cmp form — always `cmp` (§4.2 #2),
+/// paralleling the [`HANDLER`]/[`PAGES`] handler-entry consts above.
+const CMP: &str = "cmp";
+
+/// The parsed pieces of one `assert` site, carried together into the desugar.
+/// Mirrors the AST's own pairing (`AsmStmt::Assert` keeps `dest` as an
+/// `Option<(Operand, spelling)>`), so the operand and its verbatim source
+/// spelling never drift apart. `dest = Some` is the cmp form (`cmp.<w> dest,
+/// src`), `None` the tst form (`tst.<w> src`).
+#[allow(dead_code)] // constructed by the `Assert` arm in eval/asm.rs
+#[derive(Clone, Debug)]
+pub struct AssertParts {
+    /// The operation width (`.b`/`.w`/`.l`).
+    pub width: Width,
+    /// The compared/tested source operand (a register, §5).
+    pub src: Operand,
+    /// `src`'s verbatim source spelling, for the auto-message.
+    pub src_spelling: String,
+    /// The condition code (one of the 16 Bcc codes, lowercase).
+    pub cond: String,
+    /// The compare destination + its verbatim spelling (`cmp` form); `None` is
+    /// the `tst` form.
+    pub dest: Option<(Operand, String)>,
+}
+
 /// Build the full `assert` DEBUG-shape expansion (§4.2, 11 steps IN ORDER).
 ///
 /// `n` is a fresh instantiation id (from the evaluator's counter) that makes the
 /// `.skip`/`.raise` symbols unique — two asserts in one proc get distinct
-/// `$diag{n}$…` labels. `src`/`dest_op` are the ALREADY-PARSED operands (cloned
-/// from the AST) so their exact addressing shape rides through unchanged; `src`
-/// is also pushed for the handler to display. `dest_op` present = the cmp form
-/// (`cmp.<w> dest, src`); absent = the tst form (`tst.<w> src`). The message
-/// bytes come from [`assert_message`] over the source spellings.
+/// `$diag{n}$…` labels. `p` carries the ALREADY-PARSED operands (cloned from the
+/// AST) so their exact addressing shape rides through unchanged; `p.src` is also
+/// pushed for the handler to display. The message bytes come from
+/// [`assert_message`] over the source spellings.
 #[allow(dead_code)] // driven by the `Assert` arm in eval/asm.rs
-#[allow(clippy::too_many_arguments)]
-pub fn build_assert_expansion(
-    n: u32,
-    w: Width,
-    src: Operand,
-    src_spelling: &str,
-    cond: &str,
-    dest_op: Option<Operand>,
-    dest_spelling: Option<&str>,
-    span: Span,
-) -> Vec<AsmStmt> {
+pub fn build_assert_expansion(n: u32, p: &AssertParts, span: Span) -> Vec<AsmStmt> {
     let skip = format!("$diag{n}$skip");
     let raise = format!("$diag{n}$raise");
-    let wsfx = w.suffix();
+    let wsfx = p.width.suffix();
     let mut out = Vec::new();
 
     // 1. move.w sr, -(sp) — CCR save.
     out.push(instr("move", Some("w"), vec![path_op("sr", span), predec_sp(span)], span));
 
     // 2. cmp.<w> dest, src  (cmp form)  |  tst.<w> src  (tst form).
-    match &dest_op {
-        Some(dest) => {
-            out.push(instr(wsfx_cmp(), Some(wsfx), vec![dest.clone(), src.clone()], span));
+    match &p.dest {
+        Some((dest, _)) => {
+            out.push(instr(CMP, Some(wsfx), vec![dest.clone(), p.src.clone()], span));
         }
         None => {
-            out.push(instr("tst", Some(wsfx), vec![src.clone()], span));
+            out.push(instr("tst", Some(wsfx), vec![p.src.clone()], span));
         }
     }
 
     // 3. b<cond>.w .skip — PINNED .w (generator-owned structural width, §4.2 #3).
-    out.push(instr(&format!("b{cond}"), Some("w"), vec![path_op(&skip, span)], span));
+    out.push(instr(&format!("b{}", p.cond), Some("w"), vec![path_op(&skip, span)], span));
 
     // 4-10. the RaiseError tail (auto-message).
-    let message = assert_message(w, src_spelling, cond, dest_spelling);
-    let arg_pushes = arg_push(w, src, span);
+    let dest_spelling = p.dest.as_ref().map(|(_, s)| s.as_str());
+    let message = assert_message(p.width, &p.src_spelling, &p.cond, dest_spelling);
+    let arg_pushes = arg_push(p.width, p.src.clone(), span);
     out.extend(raise_tail(&raise, &message, arg_pushes, span));
 
     // 11. .skip: then move.w (sp)+, sr — CCR restore.
     out.push(label(&skip, span));
-    out.push(instr(
-        "move",
-        Some("w"),
-        vec![Operand::PostInc(Box::new(Operand::Ind {
-            parts: vec![(Expr::Path(ast::Path { segments: vec!["sp".into()], span }), None)],
-            size: None,
-            span,
-        })), path_op("sr", span)],
-        span,
-    ));
+    out.push(instr("move", Some("w"), vec![postinc_sp(span), path_op("sr", span)], span));
     out
-}
-
-/// The compare mnemonic for the `assert` cmp form — always `cmp` (§4.2 #2).
-/// Factored to a fn only so the string literal has ONE home.
-fn wsfx_cmp() -> &'static str {
-    "cmp"
 }
 
 /// Build the `raise_error` expansion (§4.3): steps 4-10 only — NO DEBUG gate,
@@ -629,18 +642,6 @@ pub fn build_raise_error_expansion(
     raise_tail(&raise, message, arg_pushes, span)
 }
 
-/// Emit one FSTRING argument push (`raise_error`, §4.3). Same width shapes as
-/// [`arg_push`], but the operand comes from a recorded [`FStringArg`] and is
-/// limited to a register or immediate (§5); anything else is a steering error
-/// the caller reports. Returns the built operand alongside so the caller can
-/// validate the spelling before committing.
-///
-/// (The reverse-order sequencing across multiple args lives in the caller, so
-/// this stays a single-arg builder.)
-#[allow(dead_code)] // driven by the `RaiseError` arm in eval/asm.rs
-pub fn fstring_arg_push(w: Width, src: Operand, span: Span) -> Vec<AsmStmt> {
-    arg_push(w, src, span)
-}
 
 /// Build the operand for an FSTRING argument spelling (`d0`, `#$8000`, …),
 /// enforcing the §5 register-or-immediate limit. A leading `#` → an immediate
@@ -935,6 +936,18 @@ mod tests {
         path_op(name, sp())
     }
 
+    /// Build [`AssertParts`] for a cmp-form (`dest = Some`) or tst-form (`None`)
+    /// assert over register `src`, for the structural unit tests.
+    fn parts(w: Width, src: &str, cond: &str, dest: Option<&str>) -> AssertParts {
+        AssertParts {
+            width: w,
+            src: reg_op(src),
+            src_spelling: src.to_string(),
+            cond: cond.to_string(),
+            dest: dest.map(|d| (Operand::Imm(Expr::Int(0, sp())), d.to_string())),
+        }
+    }
+
     /// The parity IDENTITY: `exit_flag_bytes` is fed `message.len() % 2 == 0`,
     /// and — because every synthesized statement before the message is a
     /// word-sized 68k instruction — that equals "the flag byte lands at an even
@@ -960,16 +973,7 @@ mod tests {
     /// the STRUCTURE — mnemonics, the pinned branch width, hygienic label names.)
     #[test]
     fn assert_expansion_structure_cmp_form() {
-        let stmts = build_assert_expansion(
-            7,
-            Width::B,
-            reg_op("d4"),
-            "d4",
-            "eq",
-            Some(Operand::Imm(Expr::Int(0, sp()))),
-            Some("#0"),
-            sp(),
-        );
+        let stmts = build_assert_expansion(7, &parts(Width::B, "d4", "eq", Some("#0")), sp());
         // 1: move.w sr,-(sp)
         assert!(matches!(&stmts[0], AsmStmt::Instr(i) if i.mnemonic == vec![TextOrSplice::Text("move".into())]));
         // 2: cmp.b (cmp form, not tst)
@@ -992,16 +996,7 @@ mod tests {
     /// The tst form emits `tst.<w>` (one operand), NOT `cmp` — and no dest.
     #[test]
     fn assert_expansion_structure_tst_form() {
-        let stmts = build_assert_expansion(
-            0,
-            Width::W,
-            reg_op("d1"),
-            "d1",
-            "eq",
-            None,
-            None,
-            sp(),
-        );
+        let stmts = build_assert_expansion(0, &parts(Width::W, "d1", "eq", None), sp());
         let AsmStmt::Instr(op) = &stmts[1] else { panic!() };
         assert_eq!(op.mnemonic, vec![TextOrSplice::Text("tst".into())]);
         assert_eq!(op.size, Some(TextOrSplice::Text("w".into())));
@@ -1011,8 +1006,8 @@ mod tests {
     /// Two expansions with distinct ids never share a label symbol (hygiene).
     #[test]
     fn fresh_labels_per_instantiation() {
-        let a = build_assert_expansion(1, Width::B, reg_op("d4"), "d4", "eq", Some(Operand::Imm(Expr::Int(0, sp()))), Some("#0"), sp());
-        let b = build_assert_expansion(2, Width::B, reg_op("d4"), "d4", "eq", Some(Operand::Imm(Expr::Int(0, sp()))), Some("#0"), sp());
+        let a = build_assert_expansion(1, &parts(Width::B, "d4", "eq", Some("#0")), sp());
+        let b = build_assert_expansion(2, &parts(Width::B, "d4", "eq", Some("#0")), sp());
         let names = |v: &[AsmStmt]| -> Vec<String> {
             v.iter().filter_map(|s| if let AsmStmt::Label { name, .. } = s { Some(name.clone()) } else { None }).collect()
         };
