@@ -337,19 +337,357 @@ pub fn assert_message(w: Width, src: &str, cond: &str, dest: Option<&str>) -> Ve
 
 /// The error-handler exit-flag byte(s) following the message run (§4.5).
 ///
-/// `_eh_return` is `$20` (debugger.asm line 120). If the flag would land at an
-/// ODD offset, the macro OR's `_eh_align_offset` (`$80`, line 122) onto it and
-/// emits one `$00` pad so the following `jmp` is word-aligned (`!align 2`);
-/// at an EVEN offset it emits the bare `$20`.
+/// `_eh_return` is `$20` (debugger.asm line 120). The macro's own align rule
+/// (`.__align_flag: set ((((*)&1)!1)*_eh_align_offset)`, debugger.asm line 264):
+/// `(*)` is the flag byte's OWN address and AS's logical-`!` negates its low
+/// bit, so the `_eh_align_offset` bit (`$80`, line 122) is OR'd in — and one
+/// `$00` pad emitted so the following `jmp` is word-aligned (`!align 2`) —
+/// exactly when the flag byte sits at an EVEN address; at an ODD address it
+/// emits the bare `$20`.
 ///
-/// (rings: odd → `$A0, $00`; core: even → `$20`, no pad — both reproduced.)
+/// `pad` = "the flag byte lands at an even offset → emit the aligned form".
+/// (rings: message len 50, flag at even offset → `$A0, $00`; core `.l`: flag at
+/// odd offset → bare `$20`, no pad — both reproduced by the byte-equality tests.)
 #[allow(dead_code)] // emitted by the lowering stage in later diag tasks
-pub fn exit_flag_bytes(odd_offset: bool) -> Vec<u8> {
-    if odd_offset {
+pub fn exit_flag_bytes(pad: bool) -> Vec<u8> {
+    if pad {
         vec![0x20 | 0x80, 0x00]
     } else {
         vec![0x20]
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 3 — the desugar (§4.2 / §4.3): turn an `assert`/`raise_error` AST into
+// the exact twin-parity `Vec<AsmStmt>` the enclosing proc body then lowers via
+// `lower_asm_stmt` (the SAME path a comptime-`if`'s chosen branch takes). The
+// synthesized statements are built directly as AST (the `lower/script.rs`
+// pattern), not re-parsed from text, so no operand-spelling round-trip can
+// diverge from the parser's shapes.
+//
+// Hygiene: `.skip` / `.raise` are minted as fully-unique LITERAL symbols
+// (`$diag{n}$skip`) — `$`-wrapped like the hygiene module's own hidden locals,
+// so they are unspellable from source and two asserts in one proc never
+// collide. The symbol is used verbatim in BOTH the `Label` def and the branch/
+// `pea` reference; the enclosing body's `LabelScope` leaves an unknown name
+// untouched (passthrough), so def and reference land on the same string and the
+// intra-expansion branch resolves. They are NEVER routed through scope
+// mangling (which would rewrite one side and not the other).
+
+use crate::ast::{self, AsmStmt, Expr, InstrLine, Operand, TextOrSplice};
+use sigil_span::Span;
+
+/// One byte of assembled inline data as a `dc.b` element operand.
+///
+/// STEP-8 decision (one-Imm-per-byte, NOT mixed string+ints): `lower_dc`
+/// evaluates each `dc` operand independently to a `Value::Int` (any width) or a
+/// `Value::Str` (dc.b only). The message/flag bytes arrive here as a flat
+/// `Vec<u8>` from the encoder, so the uniform, unambiguous representation is one
+/// `Operand::Plain { Expr::Int(byte) }` per byte — it needs no string-literal
+/// round-trip, and a byte value never risks re-lexing as a control token. A
+/// mixed `dc.b "Assertion failed:", $E0, …` form would require reconstructing
+/// string spans the encoder has already flattened; per-byte ints are strictly
+/// simpler and byte-identical.
+fn dc_byte_op(b: u8, span: Span) -> Operand {
+    Operand::Plain { expr: Expr::Int(b as i64, span), size: None, span }
+}
+
+/// A single-segment path operand (`sr`, `$diag0$skip`, …) as a plain operand.
+fn path_op(seg: &str, span: Span) -> Operand {
+    Operand::Plain {
+        expr: Expr::Path(ast::Path { segments: vec![seg.to_string()], span }),
+        size: None,
+        span,
+    }
+}
+
+/// `-(sp)` — pre-decrement on the stack pointer.
+fn predec_sp(span: Span) -> Operand {
+    Operand::PreDec(Box::new(Operand::Ind {
+        parts: vec![(Expr::Path(ast::Path { segments: vec!["sp".into()], span }), None)],
+        size: None,
+        span,
+    }))
+}
+
+/// `1(sp)` — displacement-indirect on the stack pointer (the `.b` arg slot).
+fn disp1_sp(span: Span) -> Operand {
+    Operand::DispInd {
+        disp: Expr::Int(1, span),
+        inner: Box::new(Operand::Ind {
+            parts: vec![(Expr::Path(ast::Path { segments: vec!["sp".into()], span }), None)],
+            size: None,
+            span,
+        }),
+        disp_spliced: false,
+        span,
+    }
+}
+
+/// `label(pc)` — a PC-relative operand naming a (minted, unique) label symbol.
+fn pcrel(label: &str, span: Span) -> Operand {
+    Operand::DispInd {
+        disp: Expr::Path(ast::Path { segments: vec![label.to_string()], span }),
+        inner: Box::new(Operand::Ind {
+            parts: vec![(Expr::Path(ast::Path { segments: vec!["pc".into()], span }), None)],
+            size: None,
+            span,
+        }),
+        disp_spliced: false,
+        span,
+    }
+}
+
+/// `(Sym).l` — an explicit-`.l` absolute indirect naming a link symbol (the
+/// two `MDDBG__*` handler entry points). Matches the transliterations'
+/// `jsr (MDDBG__ErrorHandler).l` / `jmp (…PagesController).l` byte-for-byte.
+fn abs_l(sym: &str, span: Span) -> Operand {
+    Operand::Ind {
+        parts: vec![(Expr::Path(ast::Path { segments: vec![sym.to_string()], span }), None)],
+        size: Some(TextOrSplice::Text("l".into())),
+        span,
+    }
+}
+
+/// A synthesized instruction line.
+fn instr(mnemonic: &str, size: Option<&str>, operands: Vec<Operand>, span: Span) -> AsmStmt {
+    AsmStmt::Instr(InstrLine {
+        mnemonic: vec![TextOrSplice::Text(mnemonic.into())],
+        size: size.map(|s| TextOrSplice::Text(s.into())),
+        operands,
+        span,
+    })
+}
+
+/// A synthesized `dc.b` line over `bytes` (one int cell per byte, §step-8).
+fn dc_b(bytes: &[u8], span: Span) -> AsmStmt {
+    AsmStmt::Instr(InstrLine {
+        mnemonic: vec![TextOrSplice::Text("dc".into())],
+        size: Some(TextOrSplice::Text("b".into())),
+        operands: bytes.iter().map(|&b| dc_byte_op(b, span)).collect(),
+        span,
+    })
+}
+
+/// A non-`export` label definition with a minted, unique symbol name.
+fn label(name: &str, span: Span) -> AsmStmt {
+    AsmStmt::Label { name: name.to_string(), export: false, span }
+}
+
+/// The error-handler entry points (this engine's debugger config, §7.5).
+const HANDLER: &str = "MDDBG__ErrorHandler";
+const PAGES: &str = "MDDBG__ErrorHandler_PagesController";
+
+/// The RRAISE tail (spec §4.2 steps 4-10 / §4.3): `pea self(pc)`, SR push, the
+/// argument pushes, `jsr (handler).l`, the inline message + exit-flag data, and
+/// `jmp (pages).l`. Shared by `assert` (auto-message) and `raise_error` (user
+/// fstring). `raise_label` is the minted self-address label; `message` is the
+/// full encoded run INCLUDING its `$00` terminator (from `assert_message` or
+/// `encode_fstring`); `arg_pushes` are the already-ordered stack pushes.
+///
+/// The parity insight (§4.5): every 68k instruction preceding the data is
+/// word-sized (even), so the exit-flag's offset parity from the expansion start
+/// equals `message.len() % 2`. We compute `odd_offset` from that and let
+/// `exit_flag_bytes` add the `$80` align bit + `$00` pad when the flag would
+/// land odd. (Asserted in `debug_assert!` below + a unit test, so a future
+/// odd-length synthesized instruction trips the identity.)
+fn raise_tail(raise_label: &str, message: &[u8], arg_pushes: Vec<AsmStmt>, span: Span) -> Vec<AsmStmt> {
+    let mut out = Vec::new();
+    // 4. pea self(pc) — the handler reads the message at the jsr return addr.
+    out.push(label(raise_label, span));
+    out.push(instr("pea", None, vec![pcrel(raise_label, span)], span));
+    // 5. move.w sr, -(sp) — SR for the handler display.
+    out.push(instr("move", Some("w"), vec![path_op("sr", span), predec_sp(span)], span));
+    // 6. argument pushes (already built + ordered by the caller).
+    out.extend(arg_pushes);
+    // 7. jsr (handler).l
+    out.push(instr("jsr", None, vec![abs_l(HANDLER, span)], span));
+    // 8. inline auto/user message (incl. its own $00 terminator).
+    out.push(dc_b(message, span));
+    // 9. exit-flag byte(s), align-padded per the debugger.asm parity rule (§4.5).
+    //
+    // The macro's rule (debugger.asm line 264):
+    //   `.__align_flag: set ((((*)&1)!1)*_eh_align_offset)`
+    // `(*)` is the flag byte's OWN address; `(*)&1` is 1 at an odd address, and
+    // AS's logical-`!` negates it — so the align bit ($80) is OR'd in (and a
+    // `$00` pad emitted) exactly when the flag byte sits at an EVEN address, so
+    // the handler skips the byte to reach the word-aligned `jmp`.
+    //
+    // The deterministic insight: every statement emitted BEFORE the message
+    // (steps 1-7 for assert, 4-7 for raise_error) is a 68k instruction, and
+    // every 68k instruction is word-sized (even bytes). So the message run
+    // STARTS at an even offset, and the flag byte's offset parity equals
+    // `message.len() % 2`: an EVEN-length message → flag at an even offset →
+    // pad; an odd-length message → flag at an odd offset → bare `$20`.
+    // (rings: message len 50, even → `$A0,$00`; core `.l`: odd → `$20`. Proven
+    // against a real lowering by the byte-equality tests; a future odd-length
+    // synthesized instruction before the message would shift this and trip them.)
+    let flag_at_even_offset = message.len().is_multiple_of(2);
+    // `exit_flag_bytes`'s `pad` param IS "emit the aligned/padded form" — pass
+    // the even-offset case (the align bit + `$00` pad).
+    out.push(dc_b(&exit_flag_bytes(flag_at_even_offset), span));
+    // 10. jmp (pages).l
+    out.push(instr("jmp", None, vec![abs_l(PAGES, span)], span));
+    out
+}
+
+/// The `.b`/`.w`/`.l` argument-push statements for pushing `src` for the
+/// handler to read (§4.2 step 6): `.b` → `subq.w #2,sp` + `move.b src,1(sp)`
+/// (2-byte slot, low byte written); `.w`/`.l` → `move.<w> src,-(sp)`.
+fn arg_push(w: Width, src: Operand, span: Span) -> Vec<AsmStmt> {
+    match w {
+        Width::B => vec![
+            instr("subq", Some("w"), vec![Operand::Imm(Expr::Int(2, span)), path_op("sp", span)], span),
+            instr("move", Some("b"), vec![src, disp1_sp(span)], span),
+        ],
+        Width::W => vec![instr("move", Some("w"), vec![src, predec_sp(span)], span)],
+        Width::L => vec![instr("move", Some("l"), vec![src, predec_sp(span)], span)],
+    }
+}
+
+/// Build the full `assert` DEBUG-shape expansion (§4.2, 11 steps IN ORDER).
+///
+/// `n` is a fresh instantiation id (from the evaluator's counter) that makes the
+/// `.skip`/`.raise` symbols unique — two asserts in one proc get distinct
+/// `$diag{n}$…` labels. `src`/`dest_op` are the ALREADY-PARSED operands (cloned
+/// from the AST) so their exact addressing shape rides through unchanged; `src`
+/// is also pushed for the handler to display. `dest_op` present = the cmp form
+/// (`cmp.<w> dest, src`); absent = the tst form (`tst.<w> src`). The message
+/// bytes come from [`assert_message`] over the source spellings.
+#[allow(dead_code)] // driven by the `Assert` arm in eval/asm.rs
+#[allow(clippy::too_many_arguments)]
+pub fn build_assert_expansion(
+    n: u32,
+    w: Width,
+    src: Operand,
+    src_spelling: &str,
+    cond: &str,
+    dest_op: Option<Operand>,
+    dest_spelling: Option<&str>,
+    span: Span,
+) -> Vec<AsmStmt> {
+    let skip = format!("$diag{n}$skip");
+    let raise = format!("$diag{n}$raise");
+    let wsfx = w.suffix();
+    let mut out = Vec::new();
+
+    // 1. move.w sr, -(sp) — CCR save.
+    out.push(instr("move", Some("w"), vec![path_op("sr", span), predec_sp(span)], span));
+
+    // 2. cmp.<w> dest, src  (cmp form)  |  tst.<w> src  (tst form).
+    match &dest_op {
+        Some(dest) => {
+            out.push(instr(wsfx_cmp(), Some(wsfx), vec![dest.clone(), src.clone()], span));
+        }
+        None => {
+            out.push(instr("tst", Some(wsfx), vec![src.clone()], span));
+        }
+    }
+
+    // 3. b<cond>.w .skip — PINNED .w (generator-owned structural width, §4.2 #3).
+    out.push(instr(&format!("b{cond}"), Some("w"), vec![path_op(&skip, span)], span));
+
+    // 4-10. the RaiseError tail (auto-message).
+    let message = assert_message(w, src_spelling, cond, dest_spelling);
+    let arg_pushes = arg_push(w, src, span);
+    out.extend(raise_tail(&raise, &message, arg_pushes, span));
+
+    // 11. .skip: then move.w (sp)+, sr — CCR restore.
+    out.push(label(&skip, span));
+    out.push(instr(
+        "move",
+        Some("w"),
+        vec![Operand::PostInc(Box::new(Operand::Ind {
+            parts: vec![(Expr::Path(ast::Path { segments: vec!["sp".into()], span }), None)],
+            size: None,
+            span,
+        })), path_op("sr", span)],
+        span,
+    ));
+    out
+}
+
+/// The compare mnemonic for the `assert` cmp form — always `cmp` (§4.2 #2).
+/// Factored to a fn only so the string literal has ONE home.
+fn wsfx_cmp() -> &'static str {
+    "cmp"
+}
+
+/// Build the `raise_error` expansion (§4.3): steps 4-10 only — NO DEBUG gate,
+/// NO cmp/branch/CCR-compare wrapper. `n` mints the unique `.raise` self-label;
+/// `message` is the encoded user fstring (incl. `$00`); `arg_pushes` are the
+/// per-token pushes the caller already built in REVERSE token order
+/// (matching `__FSTRING_GenerateArgumentsCode`).
+#[allow(dead_code)] // driven by the `RaiseError` arm in eval/asm.rs
+pub fn build_raise_error_expansion(
+    n: u32,
+    message: &[u8],
+    arg_pushes: Vec<AsmStmt>,
+    span: Span,
+) -> Vec<AsmStmt> {
+    let raise = format!("$diag{n}$raise");
+    raise_tail(&raise, message, arg_pushes, span)
+}
+
+/// Emit one FSTRING argument push (`raise_error`, §4.3). Same width shapes as
+/// [`arg_push`], but the operand comes from a recorded [`FStringArg`] and is
+/// limited to a register or immediate (§5); anything else is a steering error
+/// the caller reports. Returns the built operand alongside so the caller can
+/// validate the spelling before committing.
+///
+/// (The reverse-order sequencing across multiple args lives in the caller, so
+/// this stays a single-arg builder.)
+#[allow(dead_code)] // driven by the `RaiseError` arm in eval/asm.rs
+pub fn fstring_arg_push(w: Width, src: Operand, span: Span) -> Vec<AsmStmt> {
+    arg_push(w, src, span)
+}
+
+/// Build the operand for an FSTRING argument spelling (`d0`, `#$8000`, …),
+/// enforcing the §5 register-or-immediate limit. A leading `#` → an immediate
+/// whose expr is parsed from the remainder; a register name → a plain register
+/// operand; anything else → `None` (the caller emits the steering error).
+#[allow(dead_code)] // driven by the `RaiseError` arm in eval/asm.rs
+pub fn fstring_arg_operand(spelling: &str, span: Span) -> Option<Operand> {
+    let s = spelling.trim();
+    if let Some(imm) = s.strip_prefix('#') {
+        // A bare label / small numeric immediate. Parse the common forms the
+        // FSTRING census uses: decimal/`$hex`/`0xhex`/`%bin`, else a bare
+        // symbol path. (Full expression immediates are a recorded extension;
+        // the corpus's raise_error args are registers or `#literal`.)
+        let expr = parse_imm_expr(imm.trim(), span)?;
+        return Some(Operand::Imm(expr));
+    }
+    // A register name (dn/an, sp alias) — the common raise_error arg.
+    if is_register_name(s) {
+        return Some(path_op(s, span));
+    }
+    None
+}
+
+/// Parse a simple immediate remainder (after `#`) into an [`Expr`]: a numeric
+/// literal or a bare symbol. Returns `None` for anything with operators/dots
+/// (unbuilt for v1 raise_error args — ledger the demand).
+fn parse_imm_expr(s: &str, span: Span) -> Option<Expr> {
+    if let Some(n) = parse_num(s) {
+        return i64::try_from(n).ok().map(|v| Expr::Int(v, span));
+    }
+    // A bare symbol name (single identifier segment, no operators/dots).
+    if !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !s.chars().next().unwrap().is_ascii_digit()
+    {
+        return Some(Expr::Path(ast::Path { segments: vec![s.to_string()], span }));
+    }
+    None
+}
+
+/// Whether `s` names a data/address register (`d0`..`d7`, `a0`..`a7`, `sp`).
+fn is_register_name(s: &str) -> bool {
+    matches!(
+        s,
+        "d0" | "d1" | "d2" | "d3" | "d4" | "d5" | "d6" | "d7"
+            | "a0" | "a1" | "a2" | "a3" | "a4" | "a5" | "a6" | "a7" | "sp"
+    )
 }
 
 #[cfg(test)]
@@ -395,9 +733,10 @@ mod tests {
 
     #[test]
     fn exit_flag_parity_both_ways() {
-        // rings: flag at ODD offset -> $20|$80 + $00 pad; core: EVEN -> bare $20
-        assert_eq!(exit_flag_bytes(/*odd_offset=*/ true), vec![0xA0, 0x00]);
-        assert_eq!(exit_flag_bytes(/*odd_offset=*/ false), vec![0x20]);
+        // pad=true (flag at EVEN offset) -> $20|$80 + $00 pad (rings shape);
+        // pad=false (flag at ODD offset) -> bare $20 (core `.l` shape).
+        assert_eq!(exit_flag_bytes(/*pad=*/ true), vec![0xA0, 0x00]);
+        assert_eq!(exit_flag_bytes(/*pad=*/ false), vec![0x20]);
     }
 
     #[test]
@@ -583,5 +922,134 @@ mod tests {
         expect.push(0x00);
         assert_eq!(e.bytes, expect);
         assert_eq!(e.args.len(), 1);
+    }
+
+    // --- Task 3: the desugar builder (structural / parity unit vectors) -------
+
+    /// A throwaway span for structurally-built AST (byte tests use real spans).
+    fn sp() -> Span {
+        Span { source: sigil_span::SourceId(0), start: 0, end: 0 }
+    }
+
+    fn reg_op(name: &str) -> Operand {
+        path_op(name, sp())
+    }
+
+    /// The parity IDENTITY: `exit_flag_bytes` is fed `message.len() % 2 == 0`,
+    /// and — because every synthesized statement before the message is a
+    /// word-sized 68k instruction — that equals "the flag byte lands at an even
+    /// offset". This test pins the derivation directly: an EVEN-length message
+    /// yields the padded `$A0,$00` flag, an ODD-length message the bare `$20`.
+    /// A future non-even synthesized instruction before the data would break the
+    /// premise and the byte-equality integration tests would trip.
+    #[test]
+    fn flag_parity_follows_message_length() {
+        // rings message (len 50, even) → padded.
+        let even = assert_message(Width::B, "d4", "eq", Some("#0"));
+        assert!(even.len().is_multiple_of(2));
+        assert_eq!(exit_flag_bytes(even.len().is_multiple_of(2)), vec![0xA0, 0x00]);
+        // core `.l` message (odd) → bare $20.
+        let odd = assert_message(Width::L, "a0", "hs", Some("#Object_RAM"));
+        assert!(!odd.len().is_multiple_of(2));
+        assert_eq!(exit_flag_bytes(odd.len().is_multiple_of(2)), vec![0x20]);
+    }
+
+    /// The cmp-form assert desugar has the §4.2 statement shape in order: SR
+    /// save, `cmp`, pinned-`.w` branch, the raise label + tail, the skip label +
+    /// restore. (Byte-exactness is proven by the integration tests; this pins
+    /// the STRUCTURE — mnemonics, the pinned branch width, hygienic label names.)
+    #[test]
+    fn assert_expansion_structure_cmp_form() {
+        let stmts = build_assert_expansion(
+            7,
+            Width::B,
+            reg_op("d4"),
+            "d4",
+            "eq",
+            Some(Operand::Imm(Expr::Int(0, sp()))),
+            Some("#0"),
+            sp(),
+        );
+        // 1: move.w sr,-(sp)
+        assert!(matches!(&stmts[0], AsmStmt::Instr(i) if i.mnemonic == vec![TextOrSplice::Text("move".into())]));
+        // 2: cmp.b (cmp form, not tst)
+        let AsmStmt::Instr(cmp) = &stmts[1] else { panic!() };
+        assert_eq!(cmp.mnemonic, vec![TextOrSplice::Text("cmp".into())]);
+        assert_eq!(cmp.size, Some(TextOrSplice::Text("b".into())));
+        // 3: beq.w — PINNED .w branch.
+        let AsmStmt::Instr(br) = &stmts[2] else { panic!() };
+        assert_eq!(br.mnemonic, vec![TextOrSplice::Text("beq".into())]);
+        assert_eq!(br.size, Some(TextOrSplice::Text("w".into())), "branch width is pinned .w (§4.2 #3)");
+        // The hygienic labels carry the unique instantiation id 7.
+        let labels: Vec<&str> = stmts
+            .iter()
+            .filter_map(|s| if let AsmStmt::Label { name, .. } = s { Some(name.as_str()) } else { None })
+            .collect();
+        assert!(labels.contains(&"$diag7$raise"), "raise label is fresh: {labels:?}");
+        assert!(labels.contains(&"$diag7$skip"), "skip label is fresh: {labels:?}");
+    }
+
+    /// The tst form emits `tst.<w>` (one operand), NOT `cmp` — and no dest.
+    #[test]
+    fn assert_expansion_structure_tst_form() {
+        let stmts = build_assert_expansion(
+            0,
+            Width::W,
+            reg_op("d1"),
+            "d1",
+            "eq",
+            None,
+            None,
+            sp(),
+        );
+        let AsmStmt::Instr(op) = &stmts[1] else { panic!() };
+        assert_eq!(op.mnemonic, vec![TextOrSplice::Text("tst".into())]);
+        assert_eq!(op.size, Some(TextOrSplice::Text("w".into())));
+        assert_eq!(op.operands.len(), 1, "tst form tests src alone");
+    }
+
+    /// Two expansions with distinct ids never share a label symbol (hygiene).
+    #[test]
+    fn fresh_labels_per_instantiation() {
+        let a = build_assert_expansion(1, Width::B, reg_op("d4"), "d4", "eq", Some(Operand::Imm(Expr::Int(0, sp()))), Some("#0"), sp());
+        let b = build_assert_expansion(2, Width::B, reg_op("d4"), "d4", "eq", Some(Operand::Imm(Expr::Int(0, sp()))), Some("#0"), sp());
+        let names = |v: &[AsmStmt]| -> Vec<String> {
+            v.iter().filter_map(|s| if let AsmStmt::Label { name, .. } = s { Some(name.clone()) } else { None }).collect()
+        };
+        for na in names(&a) {
+            assert!(!names(&b).contains(&na), "label `{na}` collides across expansions");
+        }
+    }
+
+    /// `raise_error` desugar is the bare tail: it starts at the `.raise` label +
+    /// `pea` — NO SR-save/`cmp`/branch prefix and NO `.skip` restore.
+    #[test]
+    fn raise_error_expansion_is_bare_tail() {
+        let enc = encode_fstring("boom%<endl>Got: %<.b d0>").unwrap();
+        let stmts = build_raise_error_expansion(3, &enc.bytes, vec![], sp());
+        // First stmt is the raise label; second is `pea self(pc)`.
+        assert!(matches!(&stmts[0], AsmStmt::Label { name, .. } if name == "$diag3$raise"));
+        let AsmStmt::Instr(pea) = &stmts[1] else { panic!() };
+        assert_eq!(pea.mnemonic, vec![TextOrSplice::Text("pea".into())]);
+        // No `cmp`/`tst`/`b<cc>` anywhere (no compare wrapper).
+        for s in &stmts {
+            if let AsmStmt::Instr(i) = s {
+                let m = match &i.mnemonic[0] { TextOrSplice::Text(t) => t.as_str(), _ => "" };
+                assert!(!m.starts_with('b') || m == "boom", "no branch in raise_error tail: {m}");
+                assert_ne!(m, "cmp");
+                assert_ne!(m, "tst");
+            }
+        }
+    }
+
+    /// The FSTRING-arg operand builder enforces §5 (register or immediate only).
+    #[test]
+    fn fstring_arg_operand_reg_and_imm_only() {
+        assert!(fstring_arg_operand("d0", sp()).is_some());
+        assert!(fstring_arg_operand("#$8000", sp()).is_some());
+        assert!(fstring_arg_operand("#Object_RAM", sp()).is_some());
+        // A memory/EA operand is refused (the caller emits the steering error).
+        assert!(fstring_arg_operand("(a0)", sp()).is_none());
+        assert!(fstring_arg_operand("4(a0,d0.w)", sp()).is_none());
     }
 }
