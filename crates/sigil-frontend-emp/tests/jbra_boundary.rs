@@ -33,7 +33,7 @@ fn text_bytes(src: &str) -> Vec<u8> {
 
 /// Build a proc: `jbra .far`, then `nops` nops (2 bytes each), then `.far: rts`.
 fn jbra_over(nops: usize) -> String {
-    let body: String = std::iter::repeat("        nop\n").take(nops).collect();
+    let body: String = "        nop\n".repeat(nops);
     format!("module m\nproc p() {{\n        jbra .far\n{body}    .far:\n        rts\n}}\n")
 }
 
