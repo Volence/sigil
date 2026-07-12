@@ -42,6 +42,15 @@ constraint is BEHAVIOR-IDENTICAL (spelling/idiom/layout/dead padding —
 no logic change). AS twin edits in lockstep, pins re-derived, gates
 re-green. No emulator time needed at this step.
 
+  **Brace-indent rule** (Volence, 2026-07-11; style, not
+  assembler-enforced): every `{` block body indents ONE level — `if`/
+  `else` blocks (`if DEBUG == 1 {`), construct bodies, any braces. Labels
+  inside a block keep their usual shallower offset relative to that
+  block's instructions. The eye must see membership without hunting for
+  the `}`. Formatting-only (bytes unaffected); existing files re-indent
+  at their next touch, not as a dedicated wave (a future `sigil fmt`
+  would mechanize this — ledgered, zero tooling demand yet).
+
 **Step 3 — Retrospect**: three explicit deliverables —
   (a) **language/format asks**: what did this port need that the language
       or the house format lacks or does awkwardly? (The campaign's main
