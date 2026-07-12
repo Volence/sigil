@@ -97,26 +97,30 @@ fn pins_rs_is_current() {
 #[test]
 fn generated_pins_match_the_hand_typed_baseline() {
     // animate_port.rs: PLAIN/DEBUG Shape { base, len } — len shape-invariant.
-    // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias) — net.
-    assert_eq!(pins::ANIMATE.plain_base, 0x2D74);
-    assert_eq!(pins::ANIMATE.debug_base, 0x302E);
+    // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
+    // −2 plain/−4 debug (C-A1 core shrink) — net.
+    assert_eq!(pins::ANIMATE.plain_base, 0x2D72);
+    assert_eq!(pins::ANIMATE.debug_base, 0x302A);
     assert_eq!(pins::ANIMATE.plain_len, 0x192);
     assert_eq!(pins::ANIMATE.debug_len, 0x192);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
-    // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias) — net.
-    assert_eq!(pins::RINGS.plain_base, 0x306C);
-    assert_eq!(pins::RINGS.debug_base, 0x3326);
-    assert_eq!(pins::RINGS.plain_len, 0x1B4);
-    assert_eq!(pins::RINGS.debug_len, 0x210);
+    // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
+    // −2 plain/−4 debug (C-A1 core shrink) — net. LEN unchanged: R-A1's
+    // addi #16→#8 is same-size (immediate only).
+    assert_eq!(pins::RINGS.plain_base, 0x306A);
+    assert_eq!(pins::RINGS.debug_base, 0x3322);
+    assert_eq!(pins::RINGS.plain_len, 0x1BE);   // +0xA: ring-art DrawRings frame-tile calc
+    assert_eq!(pins::RINGS.debug_len, 0x21A);
 
-    // Tranche-10 geometry: the step-2 core shrink took its LEN −4 both shapes
-    // (two bsr.w→bsr.s at .run_culled/Draw_Sprite); base unchanged (InitObjectRAM
-    // = dplc's unchanged end).
+    // C-A1 retro geometry: core LEN −2 plain (bne.w→.s, plain disp fits) /
+    // −4 debug (the two ifdebug bsr.w→bsr.s at the dispatch loops reach .s to
+    // the nearby Debug_AssertObjLoop); base unchanged (InitObjectRAM =
+    // dplc's unchanged end).
     assert_eq!(pins::CORE.plain_base, 0x2794);
-    assert_eq!(pins::CORE.plain_len, 0x1C0);
+    assert_eq!(pins::CORE.plain_len, 0x1BE);
     assert_eq!(pins::CORE.debug_base, 0x2926);
-    assert_eq!(pins::CORE.debug_len, 0x2E8);
+    assert_eq!(pins::CORE.debug_len, 0x2E4);
     assert_eq!(pins::DPLC.plain_base, 0x26FC);
     assert_eq!(pins::DPLC.debug_base, 0x288E);
     assert_eq!(pins::DPLC.plain_len, 0x98);
@@ -126,8 +130,9 @@ fn generated_pins_match_the_hand_typed_baseline() {
     assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x281C, debug: 0x29AE });
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x658B4);
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x673A2);
+    // +0x1E0 = the ring-art growth (1 placeholder tile → 16 S3K tiles = +15).
+    assert_eq!(pins::ASSEMBLED_LEN, 0x65A94);
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x67582);
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`,
     // shape-invariant (asserted at generation).
@@ -140,19 +145,21 @@ fn generated_pins_match_the_hand_typed_baseline() {
 #[test]
 fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // rings_port.rs: ringcol_off, the one per-shape offset.
-    assert_eq!(pins::RINGCOL_OFF, pins::ShapeOffset { plain: 0x112, debug: 0x16E });
+    assert_eq!(pins::RINGCOL_OFF, pins::ShapeOffset { plain: 0x11C, debug: 0x178 });
 
     // sound_api_port.rs: base + literal len (no end symbol in the listing).
-    // Bases slid −4 (t10), −8 (t11), +8 (A1), downstream in-block.
-    assert_eq!(pins::SOUND_API.plain_base, 0x5BE2);
-    assert_eq!(pins::SOUND_API.debug_base, 0x70A0);
+    // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), then +0xA in
+    // the ring-art port (DrawRings frame-tile calc grew the rings region above),
+    // downstream in-block.
+    assert_eq!(pins::SOUND_API.plain_base, 0x5BF0);
+    assert_eq!(pins::SOUND_API.debug_base, 0x70AC);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
-    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x6_644C);
-    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x6_7212);
+    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x6_662C);
+    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x6_73F2);
 
     // collision_port.rs: sign-extended RAM labels truncated to u32.
     assert_eq!(pins::PLAYER_1, pins::Pin { plain: 0xFFFF_89EE, debug: 0xFFFF_8A10 });

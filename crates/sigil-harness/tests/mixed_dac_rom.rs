@@ -2319,14 +2319,16 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // Sound_DrainSfxRing ($5D28 — slid -36 in the interact fix, -4 more in
     // the tranche-8 rings step-5 shrink, -0x180 more in tranche 9 (the step-2
     // width shrink + the PerFrame deletion), -4 more in the tranche-10 core
-    // shrink → disp $3A24; site unmoved, target slid), movea.l
+    // shrink, then +4 in the C-A1/R-A1 retro (core -2 plain, camera Bug-1 +6),
+    // then +0xA in the ring-art port (DrawRings frame-tile calc grew the rings
+    // region) → disp $3A32; site unmoved, target slid), movea.l
     // (Game_State).w,a0, jsr (a0),
     // bra.s GameLoop, then GameState_Idle's rts — the (1,0) combo,
     // gameDebugTick contributing zero bytes.
     assert_eq!(
         &rom[0x22FE..0x2310],
         &[
-            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3A, 0x24, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3A, 0x32, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (plain)"
@@ -2365,7 +2367,7 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     assert_eq!(
         &rom[0x238C..0x239E],
         &[
-            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x4E, 0x54, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x4E, 0x60, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"
