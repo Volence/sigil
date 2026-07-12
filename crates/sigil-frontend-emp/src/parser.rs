@@ -1702,6 +1702,15 @@ impl Parser {
         }
         let start = self.toks[from].span.start as usize;
         let end = self.toks[to - 1].span.end as usize;
+        // Loud-over-silent: a `None` here means a span-accounting regression
+        // (a token span out of range, or not byte-aligned to `src`), which
+        // would silently corrupt the byte-exact auto-message (spec §4.4). Trip
+        // it in tests; keep the `.unwrap_or("")` so release builds stay safe.
+        debug_assert!(
+            self.src.get(start..end).is_some(),
+            "operand span [{start}, {end}) does not index into the parser source \
+             (span-accounting bug: spelling would be silently empty)"
+        );
         self.src.get(start..end).unwrap_or("").to_string()
     }
 
@@ -3020,13 +3029,11 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
     }
 }
 
-/// Render a token back to (an approximation of) its source spelling, for the
-/// diagnostics-construct operand-spelling reconstruction (`operand_with_spelling`).
-/// Faithful for the token classes an assert operand uses (idents, `#`, `-`, `+`,
-/// `(`/`)`, `*`, arithmetic). Numeric literals reprint in DECIMAL — the lexer
-/// discards the radix, so `$100` would come back as `256`; the corpus assert
-/// sites use `#0`/symbol immediates, so this is exact for them (see the
-/// `operand_with_spelling` note).
+/// Render one token to a human-readable spelling for the `assert` bad-width
+/// DIAGNOSTIC (`assert_width`, its only caller): naming the unexpected token
+/// that showed up where a `.b`/`.w`/`.l` suffix was required. Operand spellings
+/// are NOT built here — those are verbatim source slices (`source_span_text`),
+/// so this helper is diagnostic-only and its rendering need only be legible.
 fn tok_display(tok: &Tok) -> String {
     match tok {
         Tok::Ident(s) => s.clone(),
