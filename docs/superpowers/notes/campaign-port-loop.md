@@ -58,6 +58,26 @@ re-green. No emulator time needed at this step.
   (b) reads-wrong / could-be-better findings;
   (c) new mirrors → kill-list rows, gaps → ledger.
 
+  **The step-3(b) interrogation** (added 2026-07-11, same rationale as
+  step 5's: reads-wrong is a checklist, not a vibe. Run EACH; outcomes
+  named in the packet):
+  - **Comment-claim audit** — every comment that makes a CLAIM ("no X
+    can happen yet", "equivalent to Y", "safe because Z") is verified
+    against the code AS IT NOW STANDS; a false or half-true claim is a
+    finding (the "no band can overflow yet" class — true for the check,
+    false for the bookkeeping).
+  - **Contract audit** — every proc header's In/Out/Clobbers/Preserves
+    matches actual register usage including transitive callees; a
+    repurposed register is documented AT the repurpose site.
+  - **Name audit** — labels and consts say what they do NOW (a
+    `.budget_ok` that also means skipped-the-commit is a rename
+    candidate).
+  - **Magic-number audit** — every bare literal is a named const or
+    carries a site comment saying what it encodes.
+  - **Cold-reader test** — trace one frame/call through the file using
+    only headers and comments; every point where you must read the
+    implementation to know what happens next is a finding.
+
 **Step 4 — Construct pass** (Volence-ratified 2026-07-11): the same reflex
 as the demanded-features law, widened from language PRIMITIVES to reusable
 MACROS/CONSTRUCTS — build the toolbox up WHILE live-porting so the corpus
@@ -97,6 +117,11 @@ by default):
     (body-position typed register).
   - spelling idioms (step 2, not this pass) — bare Bcc, `jbra`/`jbsr`,
     `Sst.field`, bareword `bankid`/`winptr`, label-in-immediate.
+
+  Also scan for STRUCTURAL clones — N-variant duplicated bodies
+  differing in one or two terms (the `emit_piece_loop` class): they are
+  adopt/build/ask candidates even when each copy is individually clean
+  code, and the varying terms name the template's parameters.
 
 **Step 5 — Optimize**: the real question — is this ENGINE CODE actually
 good? Algorithmic/cycle-level, not assembler spelling. Behavior-affecting
