@@ -258,7 +258,14 @@ live verification:
       CLEANLY through all three asserts — NO divert to MDDBG__ErrorHandler ($6662C bp
       hits: 0 across the soak). NOTE: mixing step_out/resume/pause wedged the emulator
       (needed a restart) — prefer press-only for soaks.
-- [ ] **8. Profile packet** vs t10 11,841-cycle pin (needs oracle profiler fix).
+- [x] **8. Profile packet** vs t10 11,841-cycle pin — DONE. Full packet:
+      `notes/2026-07-12-object-pool-occupancy-profile-packet.md`. Oracle caching-bug
+      jitter check PASSED (two reads across advancing frames differ → live data).
+      **RunObjects 11,841 cyc (9.3%) → 2,428 cyc (1.9%), −79.5%** in the matched
+      Player+2-dynamic light scene — the −9,413 cyc saving tracks the pin's own
+      9,677 cyc of fixed-sweep dispatch (empty-slot tax eliminated). Beats spec §7's
+      "drop to a third" estimate (actual ~1/5). TouchResponse (step 4) also lean at
+      1,002 cyc (0.8%). Measured on the PLAIN shipping shape.
 
 Each behavior-affecting step: run-order trace + spawn/despawn soak, frame-locked
 comparison (A1 precedent). Loop invariant: list may over-approximate, never
