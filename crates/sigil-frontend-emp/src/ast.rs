@@ -1,6 +1,15 @@
 //! Spanned AST for .emp (Spec 2 §10 surface). Pure data — no semantics.
 use sigil_span::Span;
 
+/// The `assert.<w>` / FSTRING-argument display width, re-exported from the
+/// diagnostics encoder ([`crate::eval::diag`], Task 1) so the AST and the
+/// byte-encoder name ONE type — the desugar/lowering stage (Task 3) hands an
+/// [`AsmStmt::Assert`]'s `width` straight to `diag::assert_message` with no
+/// conversion seam. (The encoder module owns the definition because its
+/// `width_bits` mapping is the byte-level ground truth; `ast` merely surfaces
+/// the spelling in the grammar.)
+pub use crate::eval::diag::Width;
+
 /// A whole parsed `.emp` source file: its module header, module-level
 /// attributes, and top-level items.
 #[derive(Debug, Clone, PartialEq)]
@@ -1251,6 +1260,46 @@ pub enum AsmStmt {
     /// a skeleton label. `Code.empty()` splices to nothing; a `Data`/other
     /// value is a steering/type error.
     Splice(Expr),
+    /// `assert.<w> src, cond [, dest]` (diagnostics construct, spec §3). A
+    /// self-gated debug check: when `DEBUG != 1` it lowers to ZERO bytes (Task
+    /// 3), else it expands to the CCR-safe compare/tst + `RaiseError` blob whose
+    /// auto-message is built from the source SPELLINGS (spec §4.4). The parser
+    /// records both the structured [`Operand`] (for eval's register/immediate
+    /// validation, spec §5) AND the verbatim source spelling (for the message
+    /// bytes — `#Object_RAM` must survive as `#Object_RAM` or the twin bytes
+    /// diverge, spec §4.4 retrofit rule).
+    Assert {
+        /// The operation width (`.b`/`.w`/`.l`) — required at parse time.
+        width: Width,
+        /// The compared/tested source operand (register in v1, spec §5). Boxed
+        /// because an [`Operand`] carries a full [`Expr`] — inlining two of them
+        /// by value would make this the outsized `AsmStmt` variant
+        /// (`clippy::large_enum_variant`).
+        src: Box<Operand>,
+        /// The verbatim source spelling of `src`, for the auto-message.
+        src_spelling: String,
+        /// The condition code: one of the 16 Bcc codes, lowercased. Validated
+        /// against the code set at parse time (spec §5).
+        cond: String,
+        /// The compare destination (`cmp` form). `None` is the `tst` form —
+        /// a flag test on `src` alone. The `String` is the verbatim spelling.
+        dest: Option<(Box<Operand>, String)>,
+        /// Span of the whole statement.
+        span: Span,
+    },
+    /// `raise_error "<fstring>"` (diagnostics construct, spec §4.1) — an
+    /// UNCONDITIONAL fatal: it lowers to the `RaiseError` blob (Task 3) with the
+    /// user's format string encoded via [`crate::eval::diag::encode_fstring`].
+    /// Unlike `assert` it has no DEBUG gate (matches AS: path_swap's is a
+    /// release-path fatal). The single string argument is captured raw here; the
+    /// `consoleprogram` two-argument form is a steering error at parse time
+    /// (spec §5, out of scope).
+    RaiseError {
+        /// The user's format string (decoded string-literal contents).
+        fstring: String,
+        /// Span of the whole statement.
+        span: Span,
+    },
 }
 
 /// The two statement-trap spellings (S2-D11(e)).

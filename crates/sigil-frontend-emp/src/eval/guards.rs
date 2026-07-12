@@ -279,7 +279,7 @@ impl<'a> Evaluator<'a> {
         if !lex_errs.is_empty() {
             return bad(self, "lex error");
         }
-        let mut p = crate::parser::Parser::new(toks);
+        let mut p = crate::parser::Parser::new(toks, inner);
         let expr = p.expr();
         if !p.into_diagnostics().is_empty() {
             return bad(self, "parse error");
@@ -356,7 +356,7 @@ impl<'a> Evaluator<'a> {
         if !lex_errs.is_empty() {
             return bad(self, "lex error");
         }
-        let mut p = crate::parser::Parser::new(toks);
+        let mut p = crate::parser::Parser::new(toks, inner);
         let expr = p.expr();
         if !p.into_diagnostics().is_empty() {
             return bad(self, "parse error");

@@ -22,7 +22,7 @@ pub fn parse_str(src: &str) -> (ast::File, Vec<Diagnostic>) {
 /// and every diagnostic collected from lexing and parsing.
 pub fn parse_file(src: &str, source: SourceId) -> (ast::File, Vec<Diagnostic>) {
     let (tokens, lex_errs) = lexer::lex(src, source);
-    let mut p = parser::Parser::new(tokens);
+    let mut p = parser::Parser::new(tokens, src);
     for e in lex_errs {
         p.diag_at(e.span, e.message);
     }

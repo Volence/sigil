@@ -353,6 +353,175 @@ impl Evaluator<'_> {
                     ),
                 }
             }
+            // Diagnostics construct (spec §3, Task 3): desugar to the twin-parity
+            // expansion, then lower it through THIS SAME statement loop — the
+            // exact path a comptime-`if`'s chosen branch takes.
+            AsmStmt::Assert { width, src, src_spelling, cond, dest, span } => {
+                // Bundle the parsed pieces (the AST already pairs each operand
+                // with its verbatim spelling) so they stay together through the
+                // desugar.
+                let parts = crate::eval::diag::AssertParts {
+                    width: *width,
+                    src: (**src).clone(),
+                    src_spelling: src_spelling.clone(),
+                    cond: cond.clone(),
+                    dest: dest.as_ref().map(|(op, s)| ((**op).clone(), s.clone())),
+                };
+                self.lower_assert(&parts, *span, scope, buf, env);
+            }
+            AsmStmt::RaiseError { fstring, span } => {
+                self.lower_raise_error(fstring, *span, scope, buf, env);
+            }
+        }
+    }
+
+    /// The 16 Bcc condition codes an `assert` accepts (spec §3/§5), lowercase.
+    /// The `b<cond>.w` branch mnemonic is formed directly from the spelling, so
+    /// this is the ONE membership gate (an unknown cond is caught at parse time,
+    /// but re-validated here so the desugar never forms a bogus mnemonic).
+    const ASSERT_CONDS: &'static [&'static str] = &[
+        "eq", "ne", "cs", "cc", "pl", "mi", "hi", "hs", "ls", "lo", "gt", "ge", "le", "lt", "vs",
+        "vc",
+    ];
+
+    /// Lower an `assert` (spec §4.2): read `DEBUG` from the comptime env exactly
+    /// as the `If` arm reads its condition (undefined → the spec-§5 "shapes are
+    /// explicit" error). `DEBUG == 1` → desugar the 11-step expansion and lower
+    /// it RECURSIVELY through `lower_asm_stmt` (the same path the `If` arm's
+    /// chosen branch takes); anything else → emit nothing. `src` must be a
+    /// register (§5) — else the "move to a register first" steering error.
+    fn lower_assert(
+        &mut self,
+        p: &crate::eval::diag::AssertParts,
+        span: Span,
+        scope: &LabelScope,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+    ) {
+        // §5: cond membership (re-validated so the desugar can't form `b<xx>.w`).
+        if !Self::ASSERT_CONDS.contains(&p.cond.as_str()) {
+            self.error(
+                span,
+                format!(
+                    "unknown assert condition `{}` — expected one of {}",
+                    p.cond,
+                    Self::ASSERT_CONDS.join(", ")
+                ),
+            );
+            return;
+        }
+        // §5: src must be a register (dn/an) — the debugger.asm limitation
+        // (a parenthesised memory operand assembles to AS error #1300; the
+        // rings.emp comment names this precedent).
+        if !operand_is_register(&p.src) {
+            self.error(
+                span,
+                format!(
+                    "assert `src` must be a register (dn/an) in v1, got `{}` — \
+                     move the value to a register first (debugger.asm's message expansion \
+                     cannot take a parenthesised memory operand; matches the rings.emp \
+                     precedent / AS error #1300)",
+                    p.src_spelling
+                ),
+            );
+            return;
+        }
+        // Gate on DEBUG exactly like the `If` arm — but a MISSING `DEBUG` is the
+        // spec-§5 explicit-shape error (an ordinary `if DEBUG == 1` would just
+        // say "unknown name"; assert's contract is that the shape is explicit).
+        match self.debug_gate(span, env) {
+            Some(true) => {}
+            Some(false) => return, // DEBUG != 1: emit ZERO bytes (§4.1).
+            None => return,        // undefined: error already emitted.
+        }
+
+        let n = self.asm_counter;
+        self.asm_counter += 1;
+        let stmts = crate::eval::diag::build_assert_expansion(n, p, span);
+        for stmt in &stmts {
+            self.lower_asm_stmt(stmt, scope, buf, env);
+        }
+    }
+
+    /// Lower a `raise_error` (spec §4.3): NO DEBUG gate, NO cmp/branch/CCR
+    /// wrapper — just the steps 4-10 tail with the user's fstring. Arg pushes
+    /// are generated in REVERSE token order (matching
+    /// `__FSTRING_GenerateArgumentsCode`); each arg operand is limited to a
+    /// register or immediate (§5), else a steering error.
+    fn lower_raise_error(
+        &mut self,
+        fstring: &str,
+        span: Span,
+        scope: &LabelScope,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+    ) {
+        let encoded = match crate::eval::diag::encode_fstring(fstring) {
+            Ok(e) => e,
+            Err(msg) => {
+                self.error(span, msg);
+                return;
+            }
+        };
+        // Arg pushes in REVERSE token order (§4.3): the last `%<...>` operand is
+        // pushed first, so the handler pops them in string order.
+        let mut arg_pushes = Vec::new();
+        for arg in encoded.args.iter().rev() {
+            let Some(operand) = crate::eval::diag::fstring_arg_operand(&arg.operand_spelling, span)
+            else {
+                self.error(
+                    span,
+                    format!(
+                        "raise_error argument `{}` must be a register or immediate in v1 \
+                         (§5) — a memory/EA operand arg is a recorded extension",
+                        arg.operand_spelling
+                    ),
+                );
+                return;
+            };
+            arg_pushes.extend(crate::eval::diag::arg_push(arg.width, operand, span));
+        }
+        let n = self.asm_counter;
+        self.asm_counter += 1;
+        let stmts = crate::eval::diag::build_raise_error_expansion(n, &encoded.bytes, arg_pushes, span);
+        for stmt in &stmts {
+            self.lower_asm_stmt(stmt, scope, buf, env);
+        }
+    }
+
+    /// Read `DEBUG` from the comptime scope for the `assert` gate. Returns
+    /// `Some(truthy)` when it resolves to an int/bool, and `None` (after
+    /// emitting the spec-§5 "shapes are explicit" error) when it is undefined.
+    /// A `DEBUG` that resolves to a non-int/bool value is also `None` with a
+    /// steering error. Mirrors the `If` arm's truthiness read (int != 0, bool).
+    fn debug_gate(&mut self, span: Span, env: &mut Env) -> Option<bool> {
+        if !(self.defines.contains_key("DEBUG")
+            || self.consts.contains_key("DEBUG")
+            || self.equs.contains_key("DEBUG"))
+        {
+            self.error(
+                span,
+                "`assert` requires `DEBUG` to be defined (house convention: the debug \
+                 shape is explicit) — define it (`-D DEBUG=1`, a `const DEBUG`, or an \
+                 `equ`) so the gate is unambiguous",
+            );
+            return None;
+        }
+        let debug_path = ast::Expr::Path(ast::Path { segments: vec!["DEBUG".into()], span });
+        match self.eval_expr(&debug_path, env) {
+            Value::Int(i) => Some(i != 0),
+            Value::Bool(b) => Some(b),
+            Value::Poison => None,
+            other => {
+                self.error(
+                    span,
+                    format!(
+                        "`DEBUG` must be a comptime int or bool for the assert gate, got {}",
+                        other.type_name()
+                    ),
+                );
+                None
+            }
         }
     }
 
@@ -1886,6 +2055,16 @@ fn operand_to_arg(op: &Operand) -> Option<ast::Arg> {
     };
     let span = expr_span(&value);
     Some(ast::Arg { name: None, value, span })
+}
+
+/// Whether a parsed operand is a bare data/address register (`dn`/`an`) — the
+/// only `assert` `src` form v1 accepts (spec §5). A register parses as a
+/// single-segment `Operand::Plain { Path([reg]) }` with no size suffix; any
+/// addressing mode (`(a0)`, `#imm`, displacement) or a non-register bareword is
+/// rejected so the desugar never pushes a non-register comparand.
+fn operand_is_register(op: &Operand) -> bool {
+    let Operand::Plain { expr: ast::Expr::Path(p), size: None, .. } = op else { return false };
+    p.segments.len() == 1 && reg_from_name(&p.segments[0]).is_some()
 }
 
 /// The span of an operand, for diagnostics on the inner-operand paths.

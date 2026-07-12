@@ -15,6 +15,7 @@ mod call;
 mod classic_compress;
 mod compress_common;
 mod control;
+pub mod diag;
 mod emit;
 mod env;
 pub(crate) mod expr;

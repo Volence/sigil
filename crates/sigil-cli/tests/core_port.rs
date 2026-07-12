@@ -17,7 +17,7 @@
 //! - **Shape-DEPENDENT region LENGTH from a whole debug-only proc** — plain
 //!   0x1C4, debug 0x2EC. The 0x128 surplus is the two `if DEBUG == 1 { bsr.w
 //!   Debug_AssertObjLoop }` call sites + the `Debug_AssertObjLoop` proc (three
-//!   `assert` macro-expansion transliterations, rings.emp `.full` precedent).
+//!   `assert` construct expansions, rings.emp `.full` precedent).
 //!   The proc emits ZERO bytes in the plain shape (its whole body is inside
 //!   `if DEBUG == 1 {}`).
 //! - **The largest cross-seam RAM surface of the campaign** — Object_RAM,
@@ -69,7 +69,7 @@ fn twin_guards() -> usize {
 
 /// Per-shape geometry + TRUE cross-seam VMAs (sourced from
 /// `sigil_harness::pins` — regenerate via repin). The DEBUG shape references
-/// the two MDDBG__* error-handler entries the assert transliterations jump to;
+/// the two MDDBG__* error-handler entries the assert construct expansions jump to;
 /// the plain shape does not (the whole proc is elided).
 struct Shape {
     base: u32,
@@ -119,7 +119,7 @@ const DEBUG: Shape = Shape {
         ("Camera_X", pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.debug),
         ("Draw_Sprite", pins::DRAW_SPRITE.debug),
-        // DEBUG-only: the assert transliterations jsr/jmp these.
+        // DEBUG-only: the assert construct expansions jsr/jmp these.
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ],

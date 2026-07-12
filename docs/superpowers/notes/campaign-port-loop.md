@@ -139,6 +139,14 @@ by default):
     the six back-patch macros). NOT dense-conditional-multi-cell yet (mt_bank
     gap, ledgered).
   - `dispatch` (D2.21) — computed state/jump dispatch (encoding-agnostic).
+  - `assert` / `raise_error` (2026-07-12) — DEBUG-diagnostics: `assert.<w> src,
+    cond [, dest]` (self-gates to zero bytes in the plain shape) and unconditional
+    `raise_error "<fstring>"`. Replaces hand-spelled debugger.asm macro-tower
+    transliterations (kill row 16). `ifdebug <x>` ports to `if DEBUG == 1 { <x> }`.
+    The `src` must be a register (load first, inside the `if DEBUG == 1` so the load
+    itself is gated). Keep operand spellings identical to the AS twin (the auto-
+    message embeds them). rings/core are the shipped consumers; entity_window (11
+    sites) is the ratifying demand.
   - comptime-fn helpers — repeated-emission templates: `clear_longs` (unrolled
     fill), `rep` (repeated bytes), `reload_anim_timer`/`perform_dplc`
     (instruction templates), `aabb_axis_test`, `ojz_sec` (validating record
