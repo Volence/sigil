@@ -425,6 +425,19 @@ tests = ["core_port"]
 name = "Effect_Free_SP"
 tests = ["core_port"]
 
+# object-pool occupancy — the dynamic live-list (spawn-order run objects list)
+[[symbol]]
+name = "Dynamic_Live"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Dynamic_Live_Count"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Dynamic_Live_Dirty"
+tests = ["core_port"]
+
 # animate (tranche 9)
 
 [[symbol]]

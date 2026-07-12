@@ -60,6 +60,10 @@ const PLAIN_LABELS: &[(&str, u32)] = &[
     ("Camera_X", pins::CAMERA_X.plain),
     ("Camera_Y", pins::CAMERA_Y.plain),
     ("Draw_Sprite", pins::DRAW_SPRITE.plain),
+    // object-pool occupancy — the dynamic live-list (spawn-order maintenance)
+    ("Dynamic_Live", pins::DYNAMIC_LIVE.plain),
+    ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.plain),
+    ("Dynamic_Live_Dirty", pins::DYNAMIC_LIVE_DIRTY.plain),
 ];
 
 /// The ambient deps prepended so `Sst.<field>(a0)` + the engine constants

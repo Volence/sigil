@@ -98,36 +98,38 @@ fn pins_rs_is_current() {
 fn generated_pins_match_the_hand_typed_baseline() {
     // animate_port.rs: PLAIN/DEBUG Shape { base, len } — len shape-invariant.
     // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
-    // −2 plain/−4 debug (C-A1 core shrink) — net.
-    assert_eq!(pins::ANIMATE.plain_base, 0x2D72);
-    assert_eq!(pins::ANIMATE.debug_base, 0x302A);
+    // −2 plain/−4 debug (C-A1 core shrink), +0x22 both (object-pool occupancy
+    // grew the core region) — net.
+    assert_eq!(pins::ANIMATE.plain_base, 0x2D94);
+    assert_eq!(pins::ANIMATE.debug_base, 0x304C);
     assert_eq!(pins::ANIMATE.plain_len, 0x192);
     assert_eq!(pins::ANIMATE.debug_len, 0x192);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
-    // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
-    // −2 plain/−4 debug (C-A1 core shrink) — net. LEN unchanged: R-A1's
-    // addi #16→#8 is same-size (immediate only).
-    assert_eq!(pins::RINGS.plain_base, 0x306A);
-    assert_eq!(pins::RINGS.debug_base, 0x3322);
+    // Bases slid as animate above, incl. +0x22 (object-pool occupancy core
+    // growth). LEN unchanged: R-A1's addi #16→#8 is same-size (immediate only).
+    assert_eq!(pins::RINGS.plain_base, 0x308C);
+    assert_eq!(pins::RINGS.debug_base, 0x3344);
     assert_eq!(pins::RINGS.plain_len, 0x1BE);   // +0xA: ring-art DrawRings frame-tile calc
     assert_eq!(pins::RINGS.debug_len, 0x21A);
 
-    // C-A1 retro geometry: core LEN −2 plain (bne.w→.s, plain disp fits) /
-    // −4 debug (the two ifdebug bsr.w→bsr.s at the dispatch loops reach .s to
-    // the nearby Debug_AssertObjLoop); base unchanged (InitObjectRAM =
-    // dplc's unchanged end).
+    // Object-pool occupancy geometry: core LEN +0x22 both shapes (the
+    // InitObjectRAM live-list reset + AllocDynamic append + DeleteObject dirty
+    // flag, all unconditional). Base unchanged (InitObjectRAM = dplc's
+    // unchanged end).
     assert_eq!(pins::CORE.plain_base, 0x2794);
-    assert_eq!(pins::CORE.plain_len, 0x1BE);
+    assert_eq!(pins::CORE.plain_len, 0x1E0);
     assert_eq!(pins::CORE.debug_base, 0x2926);
-    assert_eq!(pins::CORE.debug_len, 0x2E4);
+    assert_eq!(pins::CORE.debug_len, 0x306);
     assert_eq!(pins::DPLC.plain_base, 0x26FC);
     assert_eq!(pins::DPLC.debug_base, 0x288E);
     assert_eq!(pins::DPLC.plain_len, 0x98);
     assert_eq!(pins::DPLC.debug_len, 0x98);
 
-    // animate_port.rs: the DeleteObject inbound label (both shapes).
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x281C, debug: 0x29AE });
+    // animate_port.rs: the DeleteObject inbound label (both shapes). Slid +0x1E
+    // (object-pool occupancy: InitObjectRAM +8 + AllocDynamic append +0x16
+    // precede DeleteObject within core).
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x283A, debug: 0x29CC });
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0x1E0 = the ring-art growth (1 placeholder tile → 16 S3K tiles = +15).
@@ -148,11 +150,11 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     assert_eq!(pins::RINGCOL_OFF, pins::ShapeOffset { plain: 0x11C, debug: 0x178 });
 
     // sound_api_port.rs: base + literal len (no end symbol in the listing).
-    // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), then +0xA in
-    // the ring-art port (DrawRings frame-tile calc grew the rings region above),
-    // downstream in-block.
-    assert_eq!(pins::SOUND_API.plain_base, 0x5BF0);
-    assert_eq!(pins::SOUND_API.debug_base, 0x70AC);
+    // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), +0xA (ring-art
+    // DrawRings), then +0x22 (object-pool occupancy core growth) — all downstream
+    // in-block.
+    assert_eq!(pins::SOUND_API.plain_base, 0x5C12);
+    assert_eq!(pins::SOUND_API.debug_base, 0x70CE);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);
