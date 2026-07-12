@@ -118,7 +118,35 @@ live verification:
 - [ ] **4. Walker: TouchResponse** dynamic inner walk → live list + fixed
       system+effect sweep. Live-verify.
 - [ ] **5. Walker: EntityWindow_DespawnObjects** → live list (.asm-only). Live-verify.
-- [ ] **6. Compaction** at RunObjects tail (if dirty). Live-verify.
+- [x] **A1. Same-frame delete+realloc duplicate fix** (spec amendment 05ae564,
+      caught at the Step-2 checkpoint) — DONE + VERIFIED. Touches Steps 1+2:
+      · DeleteObject dynamic arm: after the free-stack push, scan Dynamic_Live[0..
+        Count) for the slot's low word and `clr.w` that entry in place (d1 saved;
+        ≤40-word scan, delete-rare; zeroing moves nothing → cursor-safe). Keeps dirty.
+      · .run_culled walker: null-guard the entry — `move.w (a2)+,d0 / beq skip /
+        movea.w d0,a0 / tst.w (a0)` (don't dereference a zero entry).
+      · AllocDynamic: capacity-guard — at Count==NUM_DYNAMIC, `jbsr
+        CompactDynamicLive` first (movem-save d1/a0-a2 around it; room guaranteed
+        since the free stack was nonempty). Count ≤ capacity by construction.
+      · NEW proc CompactDynamicLive: keep nonzero + live-code_addr entries in place,
+        drop zeroed + dead ones, recount, `sf` dirty. Runs only when no walk is live.
+      Twins lockstep byte-identical both shapes; core +0x6A both; full re-pin cascade
+      (engine.inc orgs, mixed tranche5 $3A5C→$3AC6 / $4E88→$4EF2, repin_pins
+      CORE-len/ANIMATE/RINGS/SOUND_API/DELETE_OBJECT). **Strict 2208/0, clippy clean.**
+      LIVE (OJZScroll entity-window — the exact scrolling despawn+respawn scene the
+      amendment names; ObjectTest structurally can't produce it): scrolled + oscillated
+      across section boundaries (continuous LIFO delete+realloc). Dynamic_Live held
+      DUPLICATE-FREE throughout — e.g. `0000 0000 0000 0000 0000 95CE 96BE 0000`
+      (Count 8): 6 ZEROED entries (A1 DeleteObject zeroing) + slots 38 & 41 each
+      EXACTLY ONCE despite repeated recycling. Walker ran clean with the zero entries
+      present (null-guard skips them — no crash from dereferencing 0). Count stayed
+      ≤ NUM_DYNAMIC. OWED: CompactDynamicLive's own execution — neither available
+      scene triggers AllocDynamic-at-full (OJZScroll peaks ~8; ObjectTest fills to 40
+      but never reallocs). Its MAIN path is Step-6's frame-end wiring (runs every
+      dirty frame), so verify the compact loop THERE (watch Count reconcile + zeros
+      drain per frame); the compact-on-full guard is a rare safety valve, byte-verified.
+- [ ] **6. Compaction** at RunObjects tail (if dirty) — CompactDynamicLive built in
+      A1; Step 6 wires the frame-end call + live-verifies the compact loop. Live-verify.
 - [ ] **7. DEBUG asserts** (§6, three one-liners via `assert`): count ≤ NUM_DYNAMIC;
       every entry in-pool; post-compact count == full tst.w sweep live count.
 - [ ] **8. Profile packet** vs t10 11,841-cycle pin (needs oracle profiler fix).
