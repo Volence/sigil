@@ -324,6 +324,35 @@ impl Evaluator<'_> {
                     self.reg_pointee_struct = saved_reg_types;
                 }
             }
+            AsmStmt::Splice(expr) => {
+                // 2026-07-11 mini-spec: `{expr}` inlines a Code value's items in
+                // place — the SAME append path as `AsmStmt::Call`'s Code return,
+                // one surface up (ANY expr, not just a call; the braces mark the
+                // hole). An empty Code (`Code.empty()`) inlines nothing. A `Data`
+                // value is a steering error (data belongs in `dc`/`bytes()`);
+                // any other value is a type error naming Code. The `[prov.comptime]`
+                // call-site note rides the same watermark as the Call arm.
+                let watermark = self.diags.len();
+                let v = self.eval_expr(expr, env);
+                self.note_if_comptime_error(watermark, expr_span(expr));
+                match v {
+                    Value::Code(inner) => buf.items.extend(inner.items),
+                    Value::Poison => {}
+                    Value::Data(_) => self.error(
+                        expr_span(expr),
+                        "a `{expr}` splice must be Code — data belongs in `dc`/`bytes()`; \
+                         a Data splice is unbuilt (ledger the demand if you hit this)"
+                            .to_string(),
+                    ),
+                    other => self.error(
+                        expr_span(expr),
+                        format!(
+                            "a `{{expr}}` splice must evaluate to Code, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                }
+            }
         }
     }
 

@@ -1242,6 +1242,15 @@ pub enum AsmStmt {
         /// Span of the whole statement.
         span: Span,
     },
+    /// A `{expr}` Code-splice at statement position (2026-07-11 mini-spec): a
+    /// hole whose `expr` evaluates to `Code`, inlined in place. Distinct from
+    /// [`Call`](AsmStmt::Call) (a bare `foo(...)`) in that the braces admit ANY
+    /// expr — a variable, an `if`-expr, `Code.empty()` — and mark the hole
+    /// visibly. Hygiene is unchanged: the spliced items are already resolved
+    /// within their producing block; a fragment neither defines nor references
+    /// a skeleton label. `Code.empty()` splices to nothing; a `Data`/other
+    /// value is a steering/type error.
+    Splice(Expr),
 }
 
 /// The two statement-trap spellings (S2-D11(e)).

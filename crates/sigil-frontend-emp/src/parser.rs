@@ -1493,6 +1493,20 @@ impl Parser {
         if self.at_kw("let") {
             return Some(self.asm_let());
         }
+        // statement-position `{expr}` Code-splice (2026-07-11 mini-spec): a
+        // hole whose expr yields Code, inlined at eval. `{` at statement
+        // position is otherwise unused here (the `if`/`let`/label/call/trap
+        // arms above never start with `{`; an `if`/`else` body's `{` is
+        // consumed by `asm_if`), so this cannot shadow an instruction line.
+        // Gated on `splices_allowed` for the same reason operand splices are:
+        // a splice is only meaningful inside a comptime-fn template body.
+        if splices_allowed && self.at(&Tok::LBrace) {
+            self.bump(); // `{`
+            let e = self.expr();
+            self.expect(&Tok::RBrace, "`}` to close the `{expr}` splice");
+            self.expect_line_end_or_rbrace();
+            return Some(AsmStmt::Splice(e));
+        }
         // statement-position comptime call: `ident(` where the `(` is
         // DIRECTLY adjacent to the identifier (no space) — `bne (a0)`
         // is an instruction with a parenthesized operand, not a call.
