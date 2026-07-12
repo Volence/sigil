@@ -2333,10 +2333,14 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // (Game_State).w,a0, jsr (a0),
     // bra.s GameLoop, then GameState_Idle's rts — the (1,0) combo,
     // gameDebugTick contributing zero bytes.
+    // `bsr.w Sound_DrainSfxRing` disp is pin-spliced (target slides when any
+    // upstream region resizes — e.g. entity_window's tranche-12 step-2 shrink;
+    // gap-ledger "repin can't track inline target BYTES in mixed-test slices").
+    let sdsr = (pins::SOUND_DRAIN_SFX_RING.plain as i64 - 0x2304) as u16;
     assert_eq!(
         &rom[0x22FE..0x2310],
         &[
-            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0x9A, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (plain)"
@@ -2372,10 +2376,12 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche5_rom(&aeon, true);
 
+    // pin-spliced disp — see the plain variant's note.
+    let sdsr = (pins::SOUND_DRAIN_SFX_RING.debug as i64 - 0x2392) as u16;
     assert_eq!(
         &rom[0x238C..0x239E],
         &[
-            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x51, 0x64, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"

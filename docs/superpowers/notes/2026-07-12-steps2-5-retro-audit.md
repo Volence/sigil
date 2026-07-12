@@ -59,6 +59,12 @@ density, not their length.
 1. **Audit the file as it stands on aeon master TODAY** (post-
    consolidation, post-occupancy) — not the packet-era version. Read the
    whole file, its `.asm` twin, and the tranche packet's record for it.
+   Corpus-wide sweeps/greps run against COMMITTED master state
+   (`git grep` on HEAD, or check `git status` first) — the checkout may
+   carry another agent's in-flight tranche work, and uncommitted files
+   must not become audit evidence (2026-07-12: the t12 entity_window.emp
+   showed up in working-tree greps; it was recognized and excluded, but
+   only because the auditor knew it was in flight).
 2. **Run EVERY checklist line** from `campaign-port-loop.md` — step
    3(a), 3(b), step-4 construct pass, step-5 (per hot proc). An outcome
    is named even when it's "audited, nothing" — that's a [CERT] line,

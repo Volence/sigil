@@ -151,10 +151,11 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
 
     // sound_api_port.rs: base + literal len (no end symbol in the listing).
     // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), +0xA (ring-art
-    // DrawRings), then +0x22 (object-pool occupancy core growth) — all downstream
+    // DrawRings), +0x22 (object-pool occupancy core growth), then −0x1C plain /
+    // −0xC debug (tranche-12 entity_window step-2 branch shrink) — all downstream
     // in-block.
-    assert_eq!(pins::SOUND_API.plain_base, 0x5D58);
-    assert_eq!(pins::SOUND_API.debug_base, 0x73B0);
+    assert_eq!(pins::SOUND_API.plain_base, 0x5D3C);
+    assert_eq!(pins::SOUND_API.debug_base, 0x73A4);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);
