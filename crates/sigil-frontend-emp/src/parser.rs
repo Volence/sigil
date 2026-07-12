@@ -1493,6 +1493,19 @@ impl Parser {
         if self.at_kw("let") {
             return Some(self.asm_let());
         }
+        // statement-position diagnostics construct (spec §3): `assert.<w> ...`
+        // and `raise_error "<fstring>"`. Neither name is a 68k/Z80 mnemonic, so
+        // this can never shadow an instruction line (tenet 3). Both names are
+        // reserved construct keywords at statement position (like `if`/`let`):
+        // `assert` unconditionally (a missing `.b`/`.w`/`.l` suffix is the
+        // spec-§5 missing-width steering error, NOT a fallthrough to some other
+        // reading); `raise_error` on the bare keyword (it takes a string).
+        if self.at_kw("assert") {
+            return Some(self.asm_assert());
+        }
+        if self.at_kw("raise_error") {
+            return Some(self.asm_raise_error());
+        }
         // statement-position `{expr}` Code-splice (2026-07-11 mini-spec): a
         // hole whose expr yields Code, inlined at eval. `{` at statement
         // position is otherwise unused here (the `if`/`let`/label/call/trap
@@ -1535,6 +1548,157 @@ impl Parser {
         let span = start.merge(self.prev_span());
         self.expect_line_end_or_rbrace();
         AsmStmt::Let { reg, ty, span }
+    }
+
+    /// Parse `assert.<w> src, cond [, dest]` (diagnostics construct, spec §3).
+    /// The leading `assert` + `.` are confirmed by the caller. `<w>` is required
+    /// (b/w/l); the condition is validated against the 16 Bcc codes AT PARSE
+    /// TIME (spec §5). `src`/`dest` parse with the ordinary operand grammar
+    /// (register/immediate validity is an eval-stage check, spec §5) and each
+    /// carries its verbatim source spelling for the auto-message (spec §4.4).
+    fn asm_assert(&mut self) -> AsmStmt {
+        let start = self.span();
+        self.bump(); // `assert`
+        let width = self.assert_width();
+        let (src, src_spelling) = self.operand_with_spelling(false);
+        self.expect(&Tok::Comma, "`,` after the assert source operand");
+        let cond = self.assert_cond();
+        // Optional `, dest` — its absence is the `tst` form (spec §3).
+        let dest = if self.eat(&Tok::Comma) {
+            let (op, sp) = self.operand_with_spelling(false);
+            Some((Box::new(op), sp))
+        } else {
+            None
+        };
+        let src = Box::new(src);
+        let span = start.merge(self.prev_span());
+        self.expect_line_end_or_rbrace();
+        AsmStmt::Assert { width, src, src_spelling, cond, dest, span }
+    }
+
+    /// Parse the REQUIRED `.b`/`.w`/`.l` width suffix after `assert`. A missing
+    /// suffix (`assert d4, ...`) or a non-b/w/l one is a steering error naming
+    /// the legal widths (spec §5). Recovers as `.w` so the rest of the line
+    /// still parses (and the cond/operand checks still run).
+    fn assert_width(&mut self) -> Width {
+        if !self.at(&Tok::Dot) {
+            let span = self.span();
+            self.diag_at(
+                span,
+                "`assert` needs a width suffix `.b`/`.w`/`.l` (e.g. `assert.b d4, eq, #0`)",
+            );
+            return Width::W;
+        }
+        self.bump(); // `.`
+        match self.peek().clone() {
+            Tok::Ident(s) if s == "b" => { self.bump(); Width::B }
+            Tok::Ident(s) if s == "w" => { self.bump(); Width::W }
+            Tok::Ident(s) if s == "l" => { self.bump(); Width::L }
+            other => {
+                let span = self.span();
+                self.diag_at(
+                    span,
+                    format!(
+                        "`assert` needs a width suffix `.b`/`.w`/`.l`, found `.{}`",
+                        tok_display(&other)
+                    ),
+                );
+                // Recover as `.w` so the rest of the line still parses.
+                if matches!(self.peek(), Tok::Ident(_)) { self.bump(); }
+                Width::W
+            }
+        }
+    }
+
+    /// Parse + validate the assert condition code against the 16 Bcc codes
+    /// (spec §5). Returns it lowercased. An unknown code is a steering error
+    /// LISTING every legal code.
+    fn assert_cond(&mut self) -> String {
+        const CONDS: &[&str] = &[
+            "eq", "ne", "cs", "cc", "pl", "mi", "hi", "hs", "ls", "lo", "gt", "ge", "le", "lt", "vs",
+            "vc",
+        ];
+        let raw = self.expect_ident("an assert condition code");
+        let lc = raw.to_ascii_lowercase();
+        if !CONDS.contains(&lc.as_str()) {
+            let span = self.prev_span();
+            self.diag_at(
+                span,
+                format!(
+                    "unknown assert condition `{raw}` (expected one of: {})",
+                    CONDS.join(" ")
+                ),
+            );
+        }
+        lc
+    }
+
+    /// Parse `raise_error "<fstring>"` (diagnostics construct, spec §4.1). The
+    /// leading `raise_error` is confirmed by the caller. Takes EXACTLY ONE
+    /// string literal; a second argument (the `consoleprogram` form) is a
+    /// steering error naming the single-string shape as out of scope (spec §5).
+    fn asm_raise_error(&mut self) -> AsmStmt {
+        let start = self.span();
+        self.bump(); // `raise_error`
+        let fstring = if let Tok::Str(s) = self.peek().clone() {
+            self.bump();
+            s
+        } else {
+            let span = self.span();
+            self.diag_at(span, "expected a format string after `raise_error`");
+            String::new()
+        };
+        // A trailing `,` opens the out-of-scope `consoleprogram` form (spec §5).
+        if self.at(&Tok::Comma) {
+            let span = self.span();
+            self.diag_at(
+                span,
+                "`raise_error` takes exactly one string; the `consoleprogram` \
+                 two-argument form is out of scope",
+            );
+            // Swallow the rest of the line so recovery stays in step.
+            while !matches!(self.peek(), Tok::Newline | Tok::RBrace | Tok::Eof) {
+                self.bump();
+            }
+        }
+        let span = start.merge(self.prev_span());
+        self.expect_line_end_or_rbrace();
+        AsmStmt::RaiseError { fstring, span }
+    }
+
+    /// Parse one operand AND recover its verbatim source spelling (spec §4.4 —
+    /// the auto-message copies `src`/`dest` byte-for-byte, so `#Object_RAM` must
+    /// survive as `#Object_RAM`). The parser holds no source text, so the
+    /// spelling is reconstructed from the consumed token run using span
+    /// adjacency (a space is inserted only where the source had a gap between
+    /// two tokens). NB: numeric literals reprint in DECIMAL (the lexer discards
+    /// the radix), so a `#$100` spelling would surface as `#256`; the corpus
+    /// assert sites use `#0` / symbol immediates only, so this is faithful for
+    /// them (flagged: a hex-spelled immediate would diverge — see report).
+    fn operand_with_spelling(&mut self, splices_allowed: bool) -> (Operand, String) {
+        let first = self.pos;
+        let op = self.operand(splices_allowed);
+        let spelling = self.render_tokens(first, self.pos);
+        (op, spelling)
+    }
+
+    /// Reconstruct the verbatim source spelling of the token run `[from, to)`.
+    /// A separating space is emitted only where the SOURCE had whitespace
+    /// between adjacent tokens (their spans do not abut), so `#Object_RAM`
+    /// round-trips tight while `d0 , d1`-style gaps are preserved.
+    fn render_tokens(&self, from: usize, to: usize) -> String {
+        let mut out = String::new();
+        let mut prev_end: Option<u32> = None;
+        for tok in &self.toks[from..to] {
+            if let Some(pe) = prev_end {
+                if tok.span.start != pe {
+                    out.push(' ');
+                }
+            }
+            out.push_str(&tok_display(&tok.tok));
+            prev_end = Some(tok.span.end);
+        }
+        out
     }
 
     /// `if cond { asm... } [else if ... | else { asm... }]` at proc/asm
@@ -2849,6 +3013,50 @@ pub(crate) fn expr_span(e: &Expr) -> Span {
         | Expr::Rescale { span, .. } | Expr::Index { span, .. }
         | Expr::Field { span, .. } => *span,
         Expr::SizeOf(_, s) | Expr::OffsetOf(_, _, s) => *s,
+    }
+}
+
+/// Render a token back to (an approximation of) its source spelling, for the
+/// diagnostics-construct operand-spelling reconstruction (`operand_with_spelling`).
+/// Faithful for the token classes an assert operand uses (idents, `#`, `-`, `+`,
+/// `(`/`)`, `*`, arithmetic). Numeric literals reprint in DECIMAL — the lexer
+/// discards the radix, so `$100` would come back as `256`; the corpus assert
+/// sites use `#0`/symbol immediates, so this is exact for them (see the
+/// `operand_with_spelling` note).
+fn tok_display(tok: &Tok) -> String {
+    match tok {
+        Tok::Ident(s) => s.clone(),
+        Tok::Int(n) => n.to_string(),
+        Tok::Float(f) => f.to_string(),
+        Tok::Str(s) => format!("{s:?}"),
+        Tok::Hash => "#".into(),
+        Tok::Star => "*".into(),
+        Tok::Plus => "+".into(),
+        Tok::Minus => "-".into(),
+        Tok::Slash => "/".into(),
+        Tok::Percent => "%".into(),
+        Tok::Amp => "&".into(),
+        Tok::Pipe => "|".into(),
+        Tok::Caret => "^".into(),
+        Tok::Tilde => "~".into(),
+        Tok::Bang => "!".into(),
+        Tok::Lt => "<".into(),
+        Tok::Gt => ">".into(),
+        Tok::LParen => "(".into(),
+        Tok::RParen => ")".into(),
+        Tok::LBracket => "[".into(),
+        Tok::RBracket => "]".into(),
+        Tok::LBrace => "{".into(),
+        Tok::RBrace => "}".into(),
+        Tok::Dot => ".".into(),
+        Tok::At => "@".into(),
+        Tok::Comma => ",".into(),
+        Tok::Colon => ":".into(),
+        Tok::Shl => "<<".into(),
+        Tok::Shr => ">>".into(),
+        // Anything else is not expected in an operand; fall back to a debug
+        // rendering so a surprising token is visible rather than silently empty.
+        other => format!("{other:?}"),
     }
 }
 

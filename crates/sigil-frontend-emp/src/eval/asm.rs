@@ -353,6 +353,23 @@ impl Evaluator<'_> {
                     ),
                 }
             }
+            // Diagnostics construct (spec §3): the parser produces these, but
+            // the desugar/lowering (auto-message + FSTRING blob emission) is
+            // Task 3 and NOT wired yet. Fail LOUD rather than emit nothing or
+            // wrong bytes, so no downstream vector accidentally rests on an
+            // unimplemented shape (house rule: loud over silent).
+            AsmStmt::Assert { span, .. } => self.error(
+                *span,
+                "`assert` lowering is not implemented yet (diagnostics construct Task 3); \
+                 the grammar parses but no bytes are emitted"
+                    .to_string(),
+            ),
+            AsmStmt::RaiseError { span, .. } => self.error(
+                *span,
+                "`raise_error` lowering is not implemented yet (diagnostics construct Task 3); \
+                 the grammar parses but no bytes are emitted"
+                    .to_string(),
+            ),
         }
     }
 
