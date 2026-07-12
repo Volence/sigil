@@ -212,4 +212,107 @@ entry-zero decide; compaction only runs when no walk is live.
   kills badniks mid-walk), so its live-list segment gets the same null-guard shape,
   and its soak needs a HANDLER-triggered delete → same-frame realloc, not just a
   forced one. Start the Step-4 design from that case. (Handlers are stubs today —
-  design for the real deleter anyway.)
+  design for the real deleter anyway.) [DONE — Step 4.]
+
+## Handoff for the fresh agent (Steps 5-8)
+
+Branches carry Steps 0-4 + A1 (aeon `83027c8`, sigil `7c33d84` at handoff; `git
+log --oneline` both). This section is the mechanical continuation knowledge that
+was live in the build session — the durable how, so you don't re-derive it.
+
+### The re-pin cascade (run it on EVERY byte-changing step)
+1. Edit `.emp` + `.asm` twin in LOCKSTEP (ported modules: core.emp↔core.asm,
+   collision.emp↔collision.asm). entity_window.asm/children.asm/load_object.asm
+   are UNPORTED — single-side .asm, no twin, no `.emp` gate.
+2. Rebuild both shapes:
+   `DEBUG=1 ./build.sh && cp s4.bin s4.debug.bin && cp s4.lst s4.debug.lst && ./build.sh`
+3. `cargo run -p sigil-harness --bin repin` (regenerates `crates/sigil-harness/src/pins.rs`).
+   `... --bin repin -- --verbose` PRINTS the engine.inc resume-org values (debug
+   line first, then plain, per region).
+4. **engine.inc**: update the 7 gate resume-org else-arms (core/sprites/animate/
+   collision/rings/collision_lookup/sound_api). Only regions AT/AFTER the changed
+   one shift. These orgs affect ONLY the sigil mixed build (gates on), NOT
+   `build.sh` — so no rebuild needed after editing them.
+5. **mixed_dac_rom.rs tranche5**: the game_loop `bsr.w Sound_DrainSfxRing` disp
+   (both plain+debug byte arrays) grows by the shift when the change is UPSTREAM
+   of sound_api. **tranche7**: the collision region-head byte array (if collision's
+   first bytes change).
+6. **repin_pins.rs**: the hand-typed acceptance baselines (CORE/ANIMATE/RINGS/
+   SOUND_API bases+lens, DELETE_OBJECT) for whatever shifted.
+7. NEW cross-seam symbols: add to `crates/sigil-harness/repin.toml` +the port
+   harness Shape.labels (`core_port.rs`/`collision_port.rs`) +`core_negative_probes.rs`.
+   Watch the harness's byte-offset spot-checks + the consumer-LMA index (grows with
+   label count).
+8. Gate: `SIGIL_STRICT_GATE=1 AEON_DIR=/home/volence/sonic_hacks/aeon cargo test --workspace`
+   → **2208/0**; `cargo clippy --workspace --all-targets`. Strict FAILURES
+   SELF-DESCRIBE (left=actual, right=expected) — read the diff, it names the value.
+9. Which regions shift: everything from the changed region up to the next `org`
+   (`org $10000`, the object bank). All 7 engine.inc regions are before it. Step 5's
+   entity_window growth shifts collision_lookup + sound_api + the tranche5 disp.
+
+### Gotchas (each cost a build cycle here)
+- **Bare Bcc in .emp auto-selects width; the .asm twin MUST match.** When a growth
+  pushes a branch past `.s`, the twin follows to `.w` (e.g. `bne.w RunObjects_Frozen`
+  step 2; `beq.w .dyn_done` step 4). asl error "jump distance too big" points at it.
+  NEVER keep an explicit `.s` on the twin as an "exception" — shrink/widen in lockstep.
+- **68000 `jsr table(pc,d4.w)` has an 8-bit PC disp** — can't reach a far/multi-site
+  table. Use `lea table,a0 / jsr (a0,d4.w)` (step-4 fix).
+- **`movea.w` sign-extends word→long** (fine for RAM $FFxx addrs). Save a0 as LONG
+  when it may hold a ROM pointer (AllocDynamic append).
+- **Comptime-fn template**: `{f()}` splice is `asm{}`-ONLY; proc-body instantiation
+  is a BARE call `f()`. Field access inside a template: qualified `Sst.field(reg)`
+  (resolves offset without needing the reg typed). AS twin duplicates the body
+  literally (no comptime fn in AS) — bytes identical either way.
+- **deny_todo_leaves_unreachable_alone** flakes under parallel runs (temp-dir /
+  binary-rebuild race); re-run isolated to confirm green.
+
+### Oracle verification harness
+- **Determinism**: anchor captures to `Frame_Counter` ($FF8002), NOT press-count
+  (boot jitter + two vblank increment sites). Object state is deterministic in FC.
+  RELOAD fresh `s4.lst` symbols after EVERY rebuild (stale symbols mis-resolve).
+- **Scenes**: `GameState_ObjectTest` (40 dynamic + 16 effect, player among them) via
+  the Game_Entry flip — patch at `scratchpad/game_entry_objtest.patch` (`git apply`
+  to enable; `git checkout games/sonic4/config/game.asm` to revert). OJZScroll (the
+  REAL boot, flip absent) = entity-window scrolling → the natural delete+realloc /
+  uniqueness scene (Step 5's consumer).
+- **Test-only deleting handler** for collision soaks: `Touch_Hurt` (TestEnemy uses
+  COLLISION_HURT=3, NOT Touch_Enemy) → `movea.l a3,a0 / jmp DeleteObject`. To force
+  a player↔object overlap deterministically: write the target's x_pos/y_pos (slot
+  N at Object_RAM+N*$50, x_pos@+2 y_pos@+6, 16.16) into the player (slot 0).
+- **Key RAM (re-derive code addrs from s4.lst per build — they shift)**: Dynamic_Live
+  $FFAFF0, Dynamic_Live_Count $FFB040, Dynamic_Live_Dirty $FFB042, Object_RAM
+  $FF89EE, Game_Paused $FFA12A, Frame_Counter $FF8002.
+- **Commit hygiene**: before EVERY commit, `git show --stat HEAD` (or `git status`)
+  must show game.asm ABSENT and zero `TEST-ONLY` markers. Stash the flip as the patch.
+
+### Per-step remaining work
+- **Step 5 — EntityWindow_DespawnObjects** (entity_window.asm:1324-1371): walk
+  Dynamic_Live instead of the fixed 40-slot Dynamic_Slots sweep. UNPORTED .asm —
+  single-side, no twin/gate. Its DeleteObject calls already set dirty + A1-zero
+  (global). Add the null-guard (load entry, beq skip, movea). REGISTER CARE: today
+  it uses a0=cursor + d5=counter, and `.despawn` does `movem.l d5-d7/a0` around
+  `jsr DeleteObject` (which clobbers d0/d1/a1 + A1-scans). The live-list cursor must
+  survive DeleteObject — use a register DeleteObject preserves (a2+) or extend the
+  movem. Live-verify: OJZScroll scroll-despawn.
+- **Step 6 — Compaction**: wire `jbsr CompactDynamicLive` at the RunObjects tail
+  (after all walks, if Dirty). The proc is already BUILT (core, A1). Live-verify the
+  compact loop runs each dirty frame (Count reconciles to live, zeros drain) + the
+  compact-on-full rider (see Standing riders — force it in ObjectTest via a parent
+  code_addr→init re-run so CreateChild→AllocDynamic fires at Count==40).
+- **Step 7 — DEBUG asserts** (§6, `assert` construct): count ≤ NUM_DYNAMIC; every
+  entry in-pool; post-compact count == a full tst.w sweep's live count. One-liners
+  (`assert.<w> src, cond [,dest]`), self-gate to zero bytes in the plain shape —
+  see the diag-construct precedent (rings/core asserts; kill row 16 pattern).
+- **Step 8 — Profile packet** vs the t10 **11,841-cycle** pin (gap-ledger:954,
+  scene = Player + 2 TestSolid; dispatch loops $0028B6 ×3 = 9,677 cyc). NEEDS the
+  oracle profiler caching fix (gap-ledger:978, FIXED 2026-07-12 in oracle
+  `linux-port`, pending merge). CONFIRM the running oracle has it via a same-ROM
+  jitter check (two `get_profiler_frames` reads must differ frame-to-frame); if it
+  still serves stale data, name it a pending follow-up rather than trusting numbers.
+  Expected: RunObjects' 9.3% drops to ~a third in the light scene.
+
+### Merge (after Step 8 + a dry retrospect + the §6 corpus sweep)
+Packet to Volence → his gate → `--no-ff` merge both sides + push. THEN rebuild
+master s4.bin/s4.debug.bin from the REAL config (flip reverted) + provenance hashes.
+The Game_Entry flip is a scaffold — retire it in favor of the oracle
+`Debug_Scene_Pin` hook once that lands (Volence's note), don't institutionalize it.
