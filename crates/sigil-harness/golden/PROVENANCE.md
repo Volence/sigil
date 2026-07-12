@@ -688,3 +688,51 @@ Full strict workspace = **2086 passed / 0 failed**, clippy clean.
   **`15f2d69e428f64b5f5c887fd57364fa06826b636eae2df20efbeff6f1bb4cbed`**.
 - Debug `s4.debug.bin`: sha256
   **`2d095a44d7fbb061b39ddc999106e406ab88f823056b46b70cf533c395052cb0`**.
+
+## Object-pool occupancy — dynamic live-list (2026-07-12, MERGED) — the current pin
+
+The tranche-9-class PerFrame-deletion engine-arch item: a word-address live
+list for the DYNAMIC pool (`Dynamic_Live[NUM_DYNAMIC]` + count + dirty, RAM
+tail — `Engine_RAM_End` grew to `$FFFFB044` plain / `$FFFFB066` debug, zero
+ripple to existing RAM). Walkers (`RunObjects` `.run_culled` / `_Frozen`
+dynamic segment, `TouchResponse`, `EntityWindow_DespawnObjects`) walk the live
+list in SPAWN order instead of the fixed 40/66-slot sweeps; AllocDynamic
+appends, DeleteObject flags dirty + A1-zeroes its entry (duplicate-free under
+same-frame LIFO recycle), frame-end `CompactDynamicLive` reconciles. DEBUG-only
+§6 invariant asserts (self-gating — the plain shape carries ZERO of them).
+Spawn-order dispatch is Volence's ruling (§3a); code_addr stays the single
+truth. Built as spec build-order steps 1-8 + amendment A1.
+
+Region growth (all absorbed at `org $10000` — assembled `EndOfRom` UNCHANGED
+both shapes at `$65A94` / `$67582`, = the tranche-10 pin):
+- PLAIN: core +0x22 (step 1 structure) +0x8 (step 2) +0x6A (A1) +0x2A (step 3)
+  net through step 6's +0x8 compaction call; entity_window +0x8 (step 5).
+  Step 7's DEBUG asserts add ZERO plain bytes (self-gate) — the plain ROM is
+  byte-identical whether or not step 7 is present. Every downstream engine
+  region (sprites/animate/collision/rings/collision_lookup/sound_api) slid by
+  the cumulative plain growth; the tranche-5 game_loop `bsr.w Sound_DrainSfxRing`
+  disp tracked its target.
+- DEBUG: the same, PLUS step 7's +0x19E of self-gating asserts in core — so the
+  debug engine regions slid further than plain, and the `bsr CompactDynamicLive`
+  at the RunObjects tail is `bsr.w` in debug / `bsr.s` in plain (jbsr auto-selects
+  per shape).
+
+All harness pins re-derived via `cargo run -p sigil-harness --bin repin` +
+hand-typed baselines (`repin_pins.rs`), engine.inc resume orgs (7 regions ×
+both shapes), and the tranche5 disp. Full strict workspace
+(`SIGIL_STRICT_GATE=1`) = **2208 passed / 0 failed**; clippy clean. Live-verified
+in oracle: null-guard walk, forced-despawn cursor survival, compact-on-full
+a1 survival, self-cleaning compaction (Count == true live count), DEBUG asserts
+never fire (error-handler hits 0). Profiler (caching fix confirmed live via
+jitter check): **RunObjects 11,841 cyc (9.3%) → 2,428 cyc (1.9%), −79.5%** in
+the light OJZScroll scene — the empty-slot tax eliminated (packet:
+`notes/2026-07-12-object-pool-occupancy-profile-packet.md`).
+
+- Aeon repo commit: **`f64ebf7`** (merge of `object-pool-occupancy`), working
+  tree clean apart from an untracked concurrent doc; sigil merge `fdf8d36`.
+- Non-debug `s4.bin`: **451861 bytes** (assembled `EndOfRom` = `0x65A94`,
+  unchanged), sha256
+  **`514361b743af4a04b8d5b38be74c15d1affd6906b6cf2d883611172a4e9be0e7`**.
+- Debug `s4.debug.bin`: **459735 bytes** (assembled `EndOfRom` = `0x67582`,
+  unchanged), sha256
+  **`0f03dd2e87ce1f4aeda4f2385aa8581701e84934d9ef3fa860ef2fe0b89e3cc0`**.
