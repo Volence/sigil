@@ -29,10 +29,34 @@ use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Module, SymbolTable, SymbolValue};
 use sigil_span::Level;
+use std::path::PathBuf;
+
+/// The aeon source tree (same convention as `core_port.rs`): `$AEON_DIR`, else
+/// the default checkout path. The AS reference reads the REAL debugger.asm from
+/// here, so a relocated tree / CI without it is handled by the skip guard below.
+fn aeon_dir() -> PathBuf {
+    PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    )
+}
+
+fn strict_gate() -> bool {
+    std::env::var("SIGIL_STRICT_GATE").is_ok()
+}
+
+/// The path to debugger.asm under the aeon tree.
+fn debugger_asm_path() -> PathBuf {
+    aeon_dir().join("engine/debug/debugger.asm")
+}
 
 // ---------------------------------------------------------------------------
-// Shared symbol addresses — pinned IDENTICALLY on both sides so the two
-// front-ends resolve the same operands to the same bytes.
+// Shared symbol addresses — pinned IDENTICALLY on both sides (the ONE source of
+// truth): the EMP stub table and the AS `equ` header are both GENERATED from
+// this list, so a drift between the two front-ends' operand addresses is
+// impossible. (The three AS-header-only config stubs — `MDDBG__Debugger_*`,
+// `MDDBG__Str_OffsetLocation_24bit` — are deliberately NOT here: they are not
+// operands either side resolves, only symbols debugger.asm's header references
+// so it assembles; see `as_reference`.)
 // ---------------------------------------------------------------------------
 
 const SYMS: &[(&str, i64)] = &[
@@ -78,19 +102,19 @@ fn linked(m: &Module, st: &SymbolTable) -> Vec<u8> {
 /// section after the (byte-emitting-nothing) macro definitions, so the linked
 /// bytes ARE the expansion.
 fn as_reference(site: &str) -> Vec<u8> {
-    let debugger =
-        std::fs::read_to_string("/home/volence/sonic_hacks/aeon/engine/debug/debugger.asm")
-            .expect("read debugger.asm");
+    let debugger = std::fs::read_to_string(debugger_asm_path()).expect("read debugger.asm");
+    // The shared operand/handler `equ`s are GENERATED from `SYMS` (single source
+    // of truth with the EMP stub table); the three config stubs below are
+    // AS-header-only (see `SYMS`'s comment).
+    let shared: String =
+        SYMS.iter().map(|(name, addr)| format!("{name}: equ ${addr:X}\n")).collect();
     let asm = format!(
         "cpu 68000\n\
 __DEBUG__: equ 1\n\
-MDDBG__ErrorHandler: equ $100000\n\
-MDDBG__ErrorHandler_PagesController: equ $100100\n\
+{shared}\
 MDDBG__Debugger_AddressRegisters: equ 0\n\
 MDDBG__Debugger_Backtrace: equ 0\n\
 MDDBG__Str_OffsetLocation_24bit: equ 0\n\
-Object_RAM: equ $FFB000\n\
-NUM_DYNAMIC: equ $60\n\
 {debugger}\n\
 phase 0\n\
 Test:\n\
@@ -148,6 +172,17 @@ section s (cpu: m68000) {{\n\
 /// carry no trailing `rts`; the whole linked section IS the expansion. Assert
 /// AS == EMP with a hex dump on mismatch.
 fn assert_vector(label: &str, site: &str, body: &str, debug: i128) {
+    // Graceful SKIP on a relocated tree / CI without the aeon sources (same
+    // idiom as `core_port.rs`): escalate to a hard failure only under
+    // `SIGIL_STRICT_GATE`.
+    let dbg = debugger_asm_path();
+    if !dbg.exists() {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debugger.asm missing at {}", dbg.display());
+        }
+        eprintln!("skip: [{label}] debugger.asm not at {} (set AEON_DIR)", dbg.display());
+        return;
+    }
     let a = as_reference(site);
     let e = emp_candidate(body, debug);
     let hex = |v: &[u8]| v.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
