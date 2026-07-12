@@ -65,18 +65,28 @@ game_loop disp `$3A24`→`$3A1C` / `$4E54`→`$4E4C`.
   (simple vs neg+height), X transform (simple vs neg+width-LUT), the tile
   `eori` mask (`0/$0800/$1000/$1800` = `xflip<<11 | yflip<<12`), and whether
   the size byte is read from `d1` or re-read `-6(a3)` (yflip clobbers d1).
-  - Verdict: **BUILD candidate, DEFERRED to a Volence decision (step-3(a)
-    ask).** A `comptime fn emit_piece_loop(xflip: bool, yflip: bool) -> Code`
-    with flip-conditional `asm{}` composition would collapse ~160 lines → ~50,
-    **byte-neutral** (still fully unrolled — the zero-JSR-per-piece perf
-    intent is preserved). NOT built this pass because: (1) it is
-    **file-specific** (no other file emits VDP SAT piece loops — low
-    corpus-reuse, unlike `clear_longs`/`rep`), so it is a dedup-within-one-file
-    win, not a toolbox addition; (2) byte-exactness across four variants is
-    delicate and deserves focused work, not a rushed in-port build. Design
-    sketch above; recommend as a fast follow-up if Volence wants the
-    collapse. The `CellOffsets_XFlip` LUT stays as-is (consumed by the x/xy
-    variants).
+  - Verdict: **BUILD ATTEMPTED (Volence-approved), BLOCKED by a language
+    gap.** Built `comptime fn emit_piece_loop(xflip, yflip) -> Code`
+    imperatively (`comptime var body`, `body ++ asm{...}` per conditional
+    segment). It compiled but **failed at link: `unresolved symbol
+    .piece_loop`** — labels do NOT resolve across `++`-concatenated `asm{}`
+    fragments (each block is its own hygiene scope), so the loop-back
+    `.piece_loop:` (reads fragment) is invisible to `dbeq d4, .piece_loop`
+    (tail fragment). A runtime loop whose body varies conditionally can't be
+    assembled from concatenated fragments — the loop-back label must span
+    them. Relocating the four full single-block variants into the fn gives NO
+    dedup (just moves code). **THE LANGUAGE ASK (step-3(a)):** either `++`
+    preserves labels across fragments within one comptime-fn instantiation
+    (per-instantiation hygiene, not per-`asm{}`-block), OR `asm{}` supports
+    splicing a Code-fragment value (`{code_val}` — the Plan-4 `CodeItem::Inline`
+    gap) so the loop stays ONE block with conditional middles spliced in.
+    Either unblocks this AND any conditional-body loop template. **Reverted to
+    the byte-exact four-inline-variant step-2 state** (the documented
+    zero-JSR-per-piece design stands unchanged). Also noteworthy: `aabb.emp`'s
+    `let head = if c { asm{move} } else { asm{} }` "works" only because every
+    call site aliases (head is always the empty-`asm{}` Unit branch) — an
+    if-branch `asm{}` is a statement yielding Unit, so its conditional move is
+    latently never emitted; the same gap, from the other side.
   - Other verbs: no `adopt` (offsets/table/dispatch don't fit sprites'
     shapes); no `delete` (no dead code — every proc has a live caller:
     Draw_Sprite←core.emp, Init/Render←game states, Emit/InsertSpriteMasks
