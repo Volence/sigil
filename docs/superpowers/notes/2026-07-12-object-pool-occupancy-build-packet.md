@@ -114,7 +114,21 @@ live verification:
       AllocDynamic returns full — no realloc). Step 6 compaction resolves it;
       Step 7 asserts catch count ≤ NUM_DYNAMIC. Verify each interim walker in a
       non-realloc scene.
-- [ ] **3. Walker: RunObjects_Frozen** dynamic segment → live list. Live-verify.
+- [x] **3. Walker: RunObjects_Frozen dynamic segment → live list** — DONE + VERIFIED.
+      The single 66-slot sweep split into: player fixed sweep (2) + dynamic live-list
+      walk + system/effect fixed sweep (24 contiguous), via a shared `.frozen_fixed`
+      subroutine. Draw_Sprite preserves a0/d7/AND a2 (clobbers d0-d3/a1), so the
+      dynamic walk needs NO cursor save (unlike .run_culled). Same null-guard shape
+      (move.w (a2)+,d0 / beq / movea.w d0,a0 / tst.w). Twins lockstep byte-identical
+      both shapes; core +0x2A both; re-pin cascade (engine.inc, mixed tranche5
+      $3AC6→$3AF0 / $4EF2→$4F1C, repin_pins CORE-len/ANIMATE/RINGS/SOUND_API;
+      DELETE_OBJECT unchanged — Frozen is after it). **Strict 2208/0, clippy clean.**
+      LIVE (OJZScroll, Game_Paused=1 forced): RunObjects_Frozen bp hit (routes on
+      pause); frozen dynamic Draw_Sprite (0x29B8) fired with a0=slot 41 (live obj),
+      a2=0xAFF6 (cursor past the 2 skipped ZERO entries + entry 2), d7 decremented
+      per skip — the null-guard skipped the zeros without dereferencing, then drew
+      the live slots. Frozen framebuffer byte-identical to the unpaused reference.
+      No crash.
 - [ ] **4. Walker: TouchResponse** dynamic inner walk → live list + fixed
       system+effect sweep. Live-verify.
 - [ ] **5. Walker: EntityWindow_DespawnObjects** → live list (.asm-only). Live-verify.
@@ -153,4 +167,24 @@ live verification:
 
 Each behavior-affecting step: run-order trace + spawn/despawn soak, frame-locked
 comparison (A1 precedent). Loop invariant: list may over-approximate, never
-under-approximate; `code_addr` decides; compaction only runs when no walk is live.
+under-approximate; each live slot appears EXACTLY ONCE; `code_addr` + the
+entry-zero decide; compaction only runs when no walk is live.
+
+## Standing riders (Volence, carried forward)
+
+- **Every walker soak** includes a forced delete → same-frame-realloc check
+  (uniqueness of the recycled slot). A1 verified this in OJZScroll.
+- **Step 6 rider**: also force the compact-ON-FULL guard path once, in its actual
+  register context (inside AllocDynamic, under the movem — differs from the
+  frame-end call context). ObjectTest recipe: at the full pool, one
+  write_memory-forced dynamic delete (free stack → nonempty, Count still 40 with
+  a zero), then let a spawn attempt run → AllocDynamic hits Count==NUM_DYNAMIC →
+  inline compact fires → Count drops → append lands. (Need a dynamic spawn source
+  in ObjectTest — likely force a parent's code_addr back to its init routine so
+  CreateChild → AllocDynamic fires; work out at Step 6.) No path ships
+  byte-verified-only.
+- **Step 4 rider (TouchResponse)**: collision handlers are DELETERS (Touch_Enemy
+  kills badniks mid-walk), so its live-list segment gets the same null-guard shape,
+  and its soak needs a HANDLER-triggered delete → same-frame realloc, not just a
+  forced one. Start the Step-4 design from that case. (Handlers are stubs today —
+  design for the real deleter anyway.)
