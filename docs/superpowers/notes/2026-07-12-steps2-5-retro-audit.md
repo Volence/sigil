@@ -597,6 +597,20 @@ flag symbol):**
     the Compact assert ever fires — that report is the evidence for
     Volence's pending A2 design ruling. Close the ledger row's OPEN
     status on landing.
+    **Churn profile (conditional add-on, same soak session):** the
+    entity-window high-churn profile is a carried ledger debt. The
+    oracle profiler has a KNOWN stale-after-ROM-reload bug; the flush
+    fix lives on oracle branch `linux-port` and is NOT on oracle main
+    (checked 2026-07-12). Rules: (a) if the running oracle build has
+    the fix, capture the EntityWindow_Scan / RescanY / DespawnObjects
+    frame shares during the churn soak and close the churn-profile
+    ledger row too; (b) without the fix, profiler numbers are usable
+    ONLY in a single-load session (no ROM reload after profiler
+    enable) AND after a jitter check passes — read the same counter
+    across two frames; byte-identical values = stale data, discard;
+    (c) if neither holds, do the soak for the fire/no-fire answer
+    only and leave the churn-profile row OPEN. Never let the profile
+    add-on delay the rail landing.
 
 **Byte-changing (re-pin wave + oracle verify, LAST):**
 10. rings: the DrawRings camera-bias fold — bias d6/d7 once at the
