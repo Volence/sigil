@@ -142,7 +142,10 @@ by default):
   - comptime-fn helpers — repeated-emission templates: `clear_longs` (unrolled
     fill), `rep` (repeated bytes), `reload_anim_timer`/`perform_dplc`
     (instruction templates), `aabb_axis_test`, `ojz_sec` (validating record
-    constructor), `objroutine(label)` (label − ObjCodeBase).
+    constructor), `objroutine(label)` (label − ObjCodeBase); loop templates via
+    `{code}` splice (skeleton-with-holes — the loop skeleton's label + branch
+    live in ONE `asm{}` block, flip/variant-dependent segments are label-free
+    `{term()}` splice holes; `emit_piece_loop` is the reference).
   - contracts — `clobbers`/`preserves`/`out` (reglist form), `let rN: Type`
     (body-position typed register).
   - spelling idioms (step 2, not this pass) — bare Bcc, `jbra`/`jbsr`,
