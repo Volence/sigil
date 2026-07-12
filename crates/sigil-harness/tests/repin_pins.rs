@@ -108,8 +108,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
     // Bases slid as animate above, incl. +0x22 (object-pool occupancy core
     // growth). LEN unchanged: R-A1's addi #16→#8 is same-size (immediate only).
-    assert_eq!(pins::RINGS.plain_base, 0x3128);
-    assert_eq!(pins::RINGS.debug_base, 0x33DE);
+    assert_eq!(pins::RINGS.plain_base, 0x31C2);
+    assert_eq!(pins::RINGS.debug_base, 0x3478);
     assert_eq!(pins::RINGS.plain_len, 0x1BE);   // +0xA: ring-art DrawRings frame-tile calc
     assert_eq!(pins::RINGS.debug_len, 0x21A);
 
@@ -153,8 +153,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), +0xA (ring-art
     // DrawRings), then +0x22 (object-pool occupancy core growth) — all downstream
     // in-block.
-    assert_eq!(pins::SOUND_API.plain_base, 0x5CAE);
-    assert_eq!(pins::SOUND_API.debug_base, 0x7168);
+    assert_eq!(pins::SOUND_API.plain_base, 0x5D48);
+    assert_eq!(pins::SOUND_API.debug_base, 0x7202);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);

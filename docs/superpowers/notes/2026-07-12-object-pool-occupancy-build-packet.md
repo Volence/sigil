@@ -129,8 +129,33 @@ live verification:
       per skip — the null-guard skipped the zeros without dereferencing, then drew
       the live slots. Frozen framebuffer byte-identical to the unpaused reference.
       No crash.
-- [ ] **4. Walker: TouchResponse** dynamic inner walk → live list + fixed
-      system+effect sweep. Live-verify.
+- [x] **4. Walker: TouchResponse → live-list segment + fixed sweep** — DONE + VERIFIED.
+      The 64-slot inner walk split into a dynamic live-list segment (a4 cursor) +
+      a fixed system/effect sweep (24 contiguous, a3). Register plan (Volence):
+      a4 = cursor, saved at the proc boundary so clobbers(a0-a3) is unchanged; the
+      dispatch movem extended d6-d7/a2-a3 → d6-d7/a2-a4 (a4 survives the handler,
+      cost only on overlap). Body single-sourced as the `touch_test_target(skip)`
+      comptime-fn template (gate + AABB pair + dispatch + reload) spliced into both
+      segments (emit_piece_loop skeleton-with-holes) — the AS twin spells it inline
+      TWICE, byte gate guards agreement. Handler contract stated in the header.
+      Two build hurdles solved: (1) splice-syntax `{f()}` is asm{}-only — proc-body
+      instantiation is a bare call `touch_test_target(...)`; (2) 68000
+      `jsr table(pc,d4.w)` 8-bit disp can't reach the table from BOTH spliced sites
+      → dispatch via `lea Touch_HandlerTable,a0 / jsr (a0,d4.w)` (a0 free, stash
+      consumed). Twins byte-identical both shapes; collision +0x9A; re-pin cascade
+      (engine.inc collision..sound_api, mixed tranche5 $3AF0→$3B8A / $4F1C→$4FB6,
+      tranche7 collision head now `2F 0C …` = move.l a4, collision_port labels +=
+      Dynamic_Live/Count/System_Slots + offsets, repin_pins RINGS/SOUND_API).
+      **Strict 2208/0, clippy clean, collision_port + core_port byte-identical both.**
+      LIVE (ObjectTest, TEST-ONLY deleting Touch_Hurt — TestEnemy=COLLISION_HURT;
+      reverted+rebuilt+re-gated before commit): dynamic dispatch (0x305A) fired with
+      a2=player, a3=slot 32, a4=0xB004 (cursor at entry 10, mid-walk), d4=3→Touch_Hurt.
+      Handler deleted slot 32; at the post-jsr return **a4=0xB004 RESTORED** (extended
+      movem survived the handler+delete). Dynamic_Live[9]=0x0000 (entry zeroed by A1
+      from the handler-delete), slot 32 active:false, all other entries unique, no
+      crash — rider case (a) "handler deletes the current target, cursor advanced,
+      entry zeroes behind it" holds. Case (b) = the same null-guard (proven); case
+      (c) same-frame-realloc uniqueness = proven in A1's OJZScroll.
 - [ ] **5. Walker: EntityWindow_DespawnObjects** → live list (.asm-only). Live-verify.
 - [x] **A1. Same-frame delete+realloc duplicate fix** (spec amendment 05ae564,
       caught at the Step-2 checkpoint) — DONE + VERIFIED. Touches Steps 1+2:
