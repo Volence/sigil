@@ -156,7 +156,35 @@ live verification:
       crash — rider case (a) "handler deletes the current target, cursor advanced,
       entry zeroes behind it" holds. Case (b) = the same null-guard (proven); case
       (c) same-frame-realloc uniqueness = proven in A1's OJZScroll.
-- [ ] **5. Walker: EntityWindow_DespawnObjects** → live list (.asm-only). Live-verify.
+- [x] **5. Walker: EntityWindow_DespawnObjects** → live list (.asm-only) — DONE + VERIFIED
+      (aeon 2bb1e92 / sigil 1504221). The 40-slot Dynamic_Slots sweep → Dynamic_Live
+      walk (spawn order); a2 = cursor, saved across the .despawn DeleteObject by
+      EXTENDING the existing movem to `d5-d7/a0/a2` (a0 still reloaded from 12(sp)
+      after clearLoadedObj clobbers it — unchanged offset since a2 pushed last).
+      A1 null-guard (move.w (a2)+,d0 / beq / movea) + the code_addr tst guard;
+      Count==0 early-exit rts. Despawn DECISION logic (.check_active/.check_y)
+      byte-UNCHANGED — only the iteration changed. entity_window +0x8 both shapes →
+      collision_lookup + sound_api resume orgs +0x8 (engine.inc); re-pin cascade:
+      pins.rs regen (COLLISION_LOOKUP/SOUND_API bases +0x8), mixed tranche5 disp
+      $3B8A→$3B92 / $4FB6→$4FBE, repin_pins SOUND_API base 0x5D48→0x5D50 / 0x7202→0x720A.
+      **Strict 2208/0, clippy clean, byte-identical both shapes** (entity_window is
+      UNPORTED — the mixed tranche5 ROM test is its byte gate).
+      LIVE (OJZScroll, real boot — no flip needed): instruction-traced the null-guard
+      skipping a zeroed entry[0] (beq, no deref) then dereferencing live entry[1] →
+      a0 = slot addr, code_addr guard passing. FORCED .despawn (airtight: break at
+      proc entry $3B02, write target y_pos far below-band while paused, resume the
+      SAME frame's walk so nothing restores it): DeleteObject fired at $3B7E,
+      **a2 RESTORED to $AFF4** across the call (DeleteObject clobbered d0/d1/a1),
+      deleted entry zeroed BEHIND the cursor (duplicate-free, cursor-safe), slot
+      code_addr cleared. RIDER: the force-deleted slot 40 LIFO-recycled into a fresh
+      object → re-appeared EXACTLY ONCE in the list (`0000 0000 966E 96BE`, both
+      live slots unique). No crash across 1000+ frames of scroll soak; Count bounded
+      ≤ NUM_DYNAMIC. NOTE: natural .despawn is RARE in this sparse test level (the
+      TestSolid/PhysTable fixtures are persistent tracked-section objects; the entity
+      re-scan rewrites a hacked section_id back to its real tracked value, so the
+      y_pos-far-below force is the reliable trigger). `press` DOES honor breakpoints
+      (aborts with "system paused") — but DespawnObjects only runs on section-boundary
+      crossings, not every frame.
 - [x] **A1. Same-frame delete+realloc duplicate fix** (spec amendment 05ae564,
       caught at the Step-2 checkpoint) — DONE + VERIFIED. Touches Steps 1+2:
       · DeleteObject dynamic arm: after the free-stack push, scan Dynamic_Live[0..
