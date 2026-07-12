@@ -465,6 +465,87 @@ meaningfully shackled on idiom-level output; the shackle shows in
 missed RESTRUCTURING wins (A1 itself only surfaced in the t11 second
 look, and its rings sibling is still unfixed).
 
+## RULINGS (Volence, 2026-07-12)
+
+1. **A2 mid-walk compact: RAIL FIRST, decide after soak.** Land the
+   DEBUG walk-live flag (st/clr at each live-list walker's entry/exit)
+   + `assert` not-set at CompactDynamicLive entry; soak ObjectTest;
+   the design fix (alloc-fail / latch / hole-fill) is ruled only if it
+   fires. Occupancy spec gets an A2 note pointing here.
+2. **clobbers() = EXHAUSTIVE LICENSE, ratified** — canonical text now in
+   campaign-port-loop.md (before the Step-4 section). Consequences:
+   sound_api's "incidental — do not rely" text is nonconformant
+   (rewrite in the fix batch); animate drops BOTH saves around
+   Sound_PlaySFX; Frozen's a2 reliance is correct as-is (Draw_Sprite's
+   header gains a2 nowhere — not-listed already covers it; its explicit
+   "Preserves: a0, d7" line stays as movem-emphasis only if enforced,
+   else reads as prose emphasis).
+3. **Retro-fix batch: FULL BATCH, one branch, now** (brief below).
+4. **Step-4/6 pattern-enumeration amendment: RATIFIED as written** —
+   canonical text appended to campaign-port-loop.md Step 6.
+
+## Retro-fix batch brief (for the implementing agent)
+
+One branch off both masters (`retro-fix-audit-1` sigil / aeon), one
+review, one re-pin wave at the end. Work in this order — byte-neutral
+items first, the two byte-changing items last. EVERY item lands with its
+twin edited in lockstep and the relevant port gate green both shapes.
+Mind the in-flight t12 entity_window work — do NOT touch
+entity_window.{asm,emp}; anything landing there goes through the t12
+tranche instead.
+
+**Byte-neutral (DEBUG-shape-only or comment/ensure — release ROM
+unchanged; DEBUG ROM re-pins expected):**
+1. core: A2 rail — walk-live DEBUG flag set/cleared by .run_culled,
+   RunObjects_Frozen's dyn walk, and TouchResponse's dyn segment;
+   `assert` clear at CompactDynamicLive entry. New DEBUG-only RAM byte.
+2. core: DeleteObject entry assert (a0 within Object_RAM..End — reuse
+   the Debug_AssertObjLoop spelling) + double-delete assert (code_addr
+   ≠ 0 at entry; if the assert construct lacks memory operands, load to
+   a saved scratch first — RingBuffer_Add's register-comparand
+   precedent).
+3. core: document the set-code_addr-immediately caller invariant in
+   AllocDynamic's header; delete the unused NUM_TOTAL_SLOTS import;
+   fix CompactDynamicLive's "before any dispatch this frame" comment to
+   name the rail instead.
+4. animate: AF_SET_FIELD bounds assert (offset < sizeof(Sst)) + assert
+   offset ≠ mapping_frame; AF_BACK N≠0 assert; site comments for the
+   AF_CHANGE-to-self freeze and the frameless-script hang (assert if a
+   cheap spelling exists, else comment + script-DSL ledger ref).
+5. animate: drop BOTH saves around Sound_PlaySFX (movem pair deleted —
+   exhaustive-license ruling). NOTE: this IS byte-changing (−8 B) —
+   group with item 10's re-pin.
+6. dplc: DEBUG assert entry_count == 1 (d4 == 0 after the subq) — the
+   single-entry invariant, comment becomes checked.
+7. aabb: comptime ensure stmp ≠ cdim && stmp ≠ delt in aabb_axis_test;
+   one-line comment on the −32768 neg.w edge.
+8. vdp_init: `ensure(VDP_Shadow_len <= 32)`; hblank: handler-contract
+   comment (handlers may clobber only d0-d1/a0).
+9. sound_api: rewrite the enforced/incidental paragraph per the
+   exhaustive-license ruling (a1/d2-d7 preservation is contractual;
+   the movem'd d1/a0 stay "enforced-emphasis"). Try
+   `ensure(extern("Effect_Slots") == extern("System_Slots") +
+   sizeof(Sst)*NUM_SYSTEM)` in core (collision.emp extern-ensure
+   precedent); if extern-in-ensure rejects RAM labels, put the
+   equivalent if/error in ram.asm and add the link-time-ensure ledger
+   row.
+
+**Byte-changing (re-pin wave + oracle verify, LAST):**
+10. rings: the DrawRings camera-bias fold — bias d6/d7 once at the
+    cache site (fold the −8 centre offset in), drop all four per-ring
+    subi/addi, compensate the two cull immediates at comptime. Twin in
+    lockstep. Oracle verify: rings render identical (SAT compare at a
+    fixed Frame_Counter anchor — frame-lock, press-only driving), then
+    re-pin.
+11. dplc: move the `prev_frame` commit AFTER a successful enqueue OR
+    give QueueDMATransfer a carry return consumed by perform_dplc —
+    design choice documented in the packet; bg_anim.asm calls
+    Deferrable too, keep its behavior unchanged. Oracle verify art
+    loads under queue pressure if reproducible, else static + gate.
+
+Packet at the end: per-item outcome + the re-pin diff, findings
+cross-referenced to this doc's sections.
+
 ## Proposed audit order
 
 1. **animate.emp** (t9) — hot path, pre-checklist "not taken" verdict is

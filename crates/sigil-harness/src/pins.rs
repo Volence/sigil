@@ -6,7 +6,7 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/12/2026 03:59:57 PM)
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/12/2026 05:07:46 PM)
 //! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/12/2026 03:59:55 PM)
 //! [provenance] 19 regions, 156 symbols, 7 offsets
 

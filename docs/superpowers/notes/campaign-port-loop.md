@@ -102,6 +102,17 @@ re-green. No emulator time needed at this step.
     only headers and comments; every point where you must read the
     implementation to know what happens next is a finding.
 
+**Register-contract convention (Volence-ratified 2026-07-12, retro-audit):
+`clobbers()` is an EXHAUSTIVE LICENSE** — everything not listed is
+contractually preserved and callers MAY rely on it (this is what the
+S2-D6 checked-clobbers lint will eventually verify). `preserves()` adds
+movem-ENFORCED emphasis for hot reliances, but its absence does not
+demote a non-clobbered register to "incidental". Prose that says a
+non-clobbered register is "not a guarantee — do not rely" (the old
+sound_api language) is NONCONFORMANT and gets rewritten on touch. The
+step-3(b) contract audit checks BOTH directions: the body stays inside
+its license, and header prose doesn't disclaim what the license grants.
+
 **Step 4 — Construct pass** (Volence-ratified 2026-07-11): the same reflex
 as the demanded-features law, widened from language PRIMITIVES to reusable
 MACROS/CONSTRUCTS — build the toolbox up WHILE live-porting so the corpus
@@ -222,6 +233,16 @@ live-verify per site). This trigger also closes the hole a per-port step
 can't reach: constructs ship AFTER files are ported (a standalone build
 like `table` has no in-tranche step-4), so the obligation attaches to the
 ADDITION, whenever/however it ships.
+
+  **Pattern-enumeration amendment (Volence-ratified 2026-07-12, from the
+  retro-audit's three confirmed misses — A1→rings, preserves()→animate,
+  compact-comment→mid-dispatch):** the sweep is an ENUMERATION, not a
+  judgment pass. When the addition is an optimization, contract
+  capability, or invalidated assumption, grep the SHAPE it addresses
+  across the whole corpus (the pattern's operands/idiom, e.g.
+  `VDP_SPRITE_._OFFSET` for the A1 fold) and name EVERY site's outcome
+  (retrofitted / ledgered / not-an-instance) in the packet. "I updated
+  the file at hand" is a file-scoped fix, not a sweep.
 
 **Merge**: only after a dry retrospect + the corpus sweep — checkpoint
 packet to Volence, his gate, then --no-ff merge both sides + push. Every
