@@ -58,6 +58,30 @@ re-green. No emulator time needed at this step.
   (b) reads-wrong / could-be-better findings;
   (c) new mirrors → kill-list rows, gaps → ledger.
 
+  **The step-3(a) interrogation** (added 2026-07-11: pain speaks for
+  itself — OPPORTUNITY doesn't. The table-for-sfx_bank class was found by
+  looking at WORKING code and asking "why is this so long?", not by
+  hitting a wall. Run EACH; outcomes named in the packet):
+  - **Ceremony scan** — where does the file spend many lines saying
+    something simple? Lines-per-intent is the signal (sfx_bank: 197
+    lines for "nine SFX entries"). A high ratio is a construct/DSL
+    candidate even though every line works.
+  - **Comment-as-compensation** — a comment explaining WHAT the code
+    does (not why) is the language failing to say it in code; a
+    RECURRING what-comment shape is an ask (the FSTRING-transliteration
+    class: 10 lines of comment per site because the language had no
+    `assert`).
+  - **Escape-hatch census** — every `extern()`, call-expr escape,
+    manual `ensure()` drift-lock, and transliteration block is a place
+    the language forced a detour. Count them BY SHAPE; recurring shapes
+    are asks with demand data attached (they accumulate across
+    tranches via the ledger).
+  - **Domain-type scan** — raw ints flowing where a newtype would catch
+    real mistakes (Angle, SubPixel/Speed, VramTile — the
+    newtype-candidates list). FP-taste lens, gated by adoption-over-
+    cleverness: a type earns its place by catching errors or naming
+    intent at call sites, not by existing.
+
   **The step-3(b) interrogation** (added 2026-07-11, same rationale as
   step 5's: reads-wrong is a checklist, not a vibe. Run EACH; outcomes
   named in the packet):
@@ -81,15 +105,21 @@ re-green. No emulator time needed at this step.
 **Step 4 — Construct pass** (Volence-ratified 2026-07-11): the same reflex
 as the demanded-features law, widened from language PRIMITIVES to reusable
 MACROS/CONSTRUCTS — build the toolbox up WHILE live-porting so the corpus
-compounds instead of re-hand-rolling shapes. Step 3(a) is pain-triggered
-("what did this port NEED"); code that WORKS but is repetitive emits no
-signal, so this pass makes the looking un-skippable. Scan for repeated /
+compounds instead of re-hand-rolling shapes. Step 3(a)'s interrogation
+finds LANGUAGE-level opportunity (ceremony, escape hatches, types); this
+pass finds the CONSTRUCT/macro level — code that WORKS but is repetitive
+or patterned emits no pain signal, so the looking is made un-skippable
+here too. Scan for repeated /
 patterned emission; for each, one of FOUR verbs (size-gated, byte-neutral
 by default):
   (a) **adopt** — an existing construct fits (`offsets` / a comptime-fn
       helper / `dispatch` / `table`) → convert here;
   (b) **build** — no construct fits and it's SMALL (a comptime-fn helper,
-      `clear_longs`/`rep` class) → build it in-port, minutes, byte-neutral;
+      `clear_longs`/`rep` class) → build it in-port, minutes, byte-neutral.
+      Readability ALONE justifies a small helper — "name the idiom" is a
+      valid build reason even at 1-2 sites (Volence, 2026-07-11: using
+      the language well is the point, not only dedup) — gated by taste:
+      the call site must read BETTER (state intent), not merely shorter;
   (c) **ask** — no construct fits and it's BIG (new grammar/lowering,
       `table` class) → it becomes a step-3(a) ask, its own design + build;
       do NOT hand-build a stopgap;
