@@ -263,3 +263,42 @@ proc p() {
         "a `{{...}}` at proc-body position (splices not allowed) must be a parse error"
     );
 }
+
+/// The aabb.emp fix pattern: a helper returns a Reg-move or empty by comparing
+/// Reg params, spliced into the stream. Distinct registers emit the move;
+/// aliased registers splice nothing. (Formerly an if-branch `asm{}` that
+/// yielded Unit → the move was latently dead.)
+#[test]
+fn conditionally_empty_reg_splice_emits_only_when_distinct() {
+    let src = "\
+module m
+comptime fn lead(a: Reg, b: Reg) -> Code {
+    if a != b { return asm { move.w {a}, {b} } }
+    return asm { }
+}
+comptime fn distinct() -> Code {
+    return asm {
+        { lead(d0, d1) }
+        rts
+    }
+}
+comptime fn alias() -> Code {
+    return asm {
+        { lead(d0, d0) }
+        rts
+    }
+}
+proc pd() {
+    distinct()
+}
+proc pa() {
+    alias()
+}
+";
+    let (module, diags) = lower(src);
+    assert!(errors(&diags).is_empty(), "unexpected errors: {:?}", errors(&diags));
+    // distinct: move.w d0,d1 (3200) ; rts (4E75)
+    assert_eq!(proc_bytes(&module, "text", "pd", 4), vec![0x32, 0x00, 0x4E, 0x75]);
+    // aliased: the splice inlines nothing ; rts only
+    assert_eq!(proc_bytes(&module, "text", "pa", 2), vec![0x4E, 0x75]);
+}
