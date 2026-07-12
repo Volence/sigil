@@ -101,18 +101,24 @@ const COLLISION_LEN: usize = pins::COLLISION.plain_len;
 struct Shape {
     base: u32,
     player_1: u32,
-    dynamic_slots: u32,
+    dynamic_live: u32,
+    dynamic_live_count: u32,
+    system_slots: u32,
 }
 
 const PLAIN: Shape = Shape {
     base: pins::COLLISION.plain_base,
     player_1: pins::PLAYER_1.plain,
-    dynamic_slots: pins::DYNAMIC_SLOTS.plain,
+    dynamic_live: pins::DYNAMIC_LIVE.plain,
+    dynamic_live_count: pins::DYNAMIC_LIVE_COUNT.plain,
+    system_slots: pins::SYSTEM_SLOTS.plain,
 };
 const DEBUG: Shape = Shape {
     base: pins::COLLISION.debug_base,
     player_1: pins::PLAYER_1.debug,
-    dynamic_slots: pins::DYNAMIC_SLOTS.debug,
+    dynamic_live: pins::DYNAMIC_LIVE.debug,
+    dynamic_live_count: pins::DYNAMIC_LIVE_COUNT.debug,
+    system_slots: pins::SYSTEM_SLOTS.debug,
 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
@@ -245,7 +251,9 @@ fn compile_real_file(
     for group in [
         &mut as_constant_equs(),
         &mut as_label_at("Player_1", shape.player_1),
-        &mut as_label_at("Dynamic_Slots", shape.dynamic_slots),
+        &mut as_label_at("Dynamic_Live", shape.dynamic_live),
+        &mut as_label_at("Dynamic_Live_Count", shape.dynamic_live_count),
+        &mut as_label_at("System_Slots", shape.system_slots),
         &mut as_outbound_consumer(),
     ] {
         for sec in group.iter_mut() {
@@ -325,32 +333,31 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 
     // Cross-seam label pins (act_descriptor_port.rs / test_objects_port.rs
-    // style): the first instruction is `lea (Player_1).w, a2` — abs.w word at
-    // region offset 2 must equal the low half of Player_1's VMA — and the
-    // `lea (Dynamic_Slots).w, a3` now sits at region offset 0x20 (word at 0x22:
-    // the interact-pointer fix replaced the 16-byte per-player standing-bit
-    // block at the pass-start clear with a single `clr.w interact_off()(a2)`,
-    // sliding the Dynamic_Slots lea forward from its old 0x1C).
-    let player_word = u16::from_be_bytes([section.bytes[2], section.bytes[3]]);
+    // style): the proc opens with `move.l a4, -(sp)` (occupancy step 4 — a4 is
+    // the live-list cursor), so `lea (Player_1).w, a2` sits at region offset 2
+    // and its abs.w word at offset 4. The dynamic-pool `lea (Dynamic_Slots).w,
+    // a3` was replaced by the live-list cursor setup `lea (Dynamic_Live).w, a4`
+    // at region offset 0x22 (abs.w word at 0x24).
+    let player_word = u16::from_be_bytes([section.bytes[4], section.bytes[5]]);
     assert_eq!(
         player_word,
         (shape.player_1 & 0xFFFF) as u16,
         "`lea (Player_1).w, a2` must carry Player_1's abs.w address"
     );
-    let dynamic_word = u16::from_be_bytes([section.bytes[0x22], section.bytes[0x23]]);
+    let dynamic_word = u16::from_be_bytes([section.bytes[0x24], section.bytes[0x25]]);
     assert_eq!(
         dynamic_word,
-        (shape.dynamic_slots & 0xFFFF) as u16,
-        "`lea (Dynamic_Slots).w, a3` must carry Dynamic_Slots's abs.w address"
+        (shape.dynamic_live & 0xFFFF) as u16,
+        "`lea (Dynamic_Live).w, a4` must carry Dynamic_Live's abs.w address"
     );
 
     // Outbound bare-name proof: the AS-side `bsr.w TouchResponse` fixup
-    // resolves to the per-shape region base. The consumer is the FOURTH
-    // synthetic group: 0x0100_0000 + 3 × 0x10_0000.
+    // resolves to the per-shape region base. The consumer is the SIXTH
+    // synthetic group (equs + 4 labels + consumer): 0x0100_0000 + 5 × 0x10_0000.
     let consumer = linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x0130_0000)
+        .find(|s| s.lma == 0x0150_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
     let expected_disp = (shape.base as i64 - (consumer.lma as i64 + 2)) as i16;

@@ -2321,14 +2321,22 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // width shrink + the PerFrame deletion), -4 more in the tranche-10 core
     // shrink, then +4 in the C-A1/R-A1 retro (core -2 plain, camera Bug-1 +6),
     // then +0xA in the ring-art port (DrawRings frame-tile calc grew the rings
-    // region) → disp $3A32; site unmoved, target slid), movea.l
+    // region), then +0x22 in the object-pool occupancy build (the core
+    // maintenance grew the core region, sliding Sound_DrainSfxRing down) → disp
+    // $3A54, then +0x8 in occupancy step 2 (.run_culled live-list retrofit grew
+    // core plain +0x8) → disp $3A5C; further occupancy steps (A1/3/4) slid the
+    // target down to disp $3B8A, then +0x8 in step 5 (entity_window despawn
+    // live-list retrofit grew entity_window +0x8, upstream of sound_api) →
+    // disp $3B92, then +0x8 in step 6 (frame-end compaction call grew core
+    // +0x8, upstream of sound_api) → disp $3B9A; site unmoved, target slid),
+    // movea.l
     // (Game_State).w,a0, jsr (a0),
     // bra.s GameLoop, then GameState_Idle's rts — the (1,0) combo,
     // gameDebugTick contributing zero bytes.
     assert_eq!(
         &rom[0x22FE..0x2310],
         &[
-            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3A, 0x32, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, 0x3B, 0x9A, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (plain)"
@@ -2367,7 +2375,7 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     assert_eq!(
         &rom[0x238C..0x239E],
         &[
-            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x4E, 0x60, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, 0x51, 0x64, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"
@@ -2639,12 +2647,13 @@ fn mixed_tranche7_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche7_rom(&aeon, false);
 
-    // TouchResponse head: `lea (Player_1).w, a2` (Player_1 = $89EE plain),
-    // then `move.w #NUM_PLAYERS-1, d7` = #$0001.
+    // TouchResponse head: `move.l a4, -(sp)` (occupancy step 4 — a4 cursor save),
+    // then `lea (Player_1).w, a2` (Player_1 = $89EE plain), then `move.w
+    // #NUM_PLAYERS-1, d7`'s opcode word.
     let cbase = pins::COLLISION.plain_base as usize;
     assert_eq!(
         &rom[cbase..cbase + 8],
-        &[0x45, 0xF8, 0x89, 0xEE, 0x3E, 0x3C, 0x00, 0x01][..],
+        &[0x2F, 0x0C, 0x45, 0xF8, 0x89, 0xEE, 0x3E, 0x3C][..],
         "collision region head must match the reference bytes exactly (plain)"
     );
 
@@ -2673,7 +2682,7 @@ fn mixed_tranche7_debug_rom_matches_assembled_reference() {
     let cbase = pins::COLLISION.debug_base as usize;
     assert_eq!(
         &rom[cbase..cbase + 8],
-        &[0x45, 0xF8, 0x8A, 0x10, 0x3E, 0x3C, 0x00, 0x01][..],
+        &[0x2F, 0x0C, 0x45, 0xF8, 0x8A, 0x10, 0x3E, 0x3C][..],
         "collision region head must match the reference bytes exactly (debug)"
     );
 

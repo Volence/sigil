@@ -97,6 +97,10 @@ const PLAIN: Shape = Shape {
         ("Camera_X", pins::CAMERA_X.plain),
         ("Camera_Y", pins::CAMERA_Y.plain),
         ("Draw_Sprite", pins::DRAW_SPRITE.plain),
+        // object-pool occupancy — the dynamic live-list (spawn-order maintenance)
+        ("Dynamic_Live", pins::DYNAMIC_LIVE.plain),
+        ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.plain),
+        ("Dynamic_Live_Dirty", pins::DYNAMIC_LIVE_DIRTY.plain),
     ],
 };
 
@@ -119,6 +123,10 @@ const DEBUG: Shape = Shape {
         ("Camera_X", pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.debug),
         ("Draw_Sprite", pins::DRAW_SPRITE.debug),
+        // object-pool occupancy — the dynamic live-list (spawn-order maintenance)
+        ("Dynamic_Live", pins::DYNAMIC_LIVE.debug),
+        ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.debug),
+        ("Dynamic_Live_Dirty", pins::DYNAMIC_LIVE_DIRTY.debug),
         // DEBUG-only: the assert construct expansions jsr/jmp these.
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
