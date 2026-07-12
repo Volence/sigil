@@ -39,14 +39,16 @@ packet contract.
    loop is the guard. A future `{code}`-splice `emit_piece_loop` unification MUST
    keep it in the skeleton (noted in the addendum + the code-splice packet).
 
-4. **Hardware cross-check → C1 NAMED (design question for Volence).** The VDP
-   X=0 sprite-mask FIRST-SPRITE-ON-LINE exemption: masking only takes effect when
-   at least one EARLIER-linked (higher-priority) sprite already touches the masked
-   scanline. `InsertSpriteMasks` inserts at a band boundary, so on scanlines whose
-   higher bands are EMPTY the mask sprite is first-on-line and does NOT hide the
-   sprites after it. Outcome: **masking does NOT hold for an empty high band** —
-   documented VDP behavior. Per the addendum this is NOT fixed ad-hoc; it is a
-   design question (below).
+4. **Hardware cross-check → C1 ACCEPTED + documented + ledgered (Volence's gate
+   ruling).** The VDP X=0 sprite-mask FIRST-SPRITE-ON-LINE exemption: masking only
+   takes effect when at least one EARLIER-linked (higher-priority) sprite already
+   touches the masked scanline. `InsertSpriteMasks` inserts at a band boundary, so
+   on scanlines whose higher bands are EMPTY the mask sprite is first-on-line and
+   does NOT hide the sprites after it — masking does NOT hold for an empty high
+   band (documented VDP behavior). Volence's ruling: **ACCEPT the exemption as a
+   known limitation, document it at the site, and ledger the leader-sprite fix**
+   (a future guaranteed leading sprite on the masked lines) as consumer-gated. No
+   ad-hoc fix. Site comment added to `InsertSpriteMasks`; gap-ledger row added.
 
 5. **Silent-tradeoff comments → B2 ALL ADDED (5).** cascade-down under overflow
    (renders behind, doesn't drop — CHOSEN); `.band_limit_pop` skips DrawRings
@@ -70,32 +72,36 @@ packet contract.
   construction — world path `d2 = obj − (Camera − 128) = screen + 128`, per-piece
   drops the `+128`, so every SAT X/Y byte (and the X=0-avoidance `bne` test) is
   unchanged; the flip variants ride along (bias in d2/d3, never the neg/width math).
-- **Oracle (BlastEm-accurate):** both master (pre-A1) and A1 ROMs built and run;
-  both render sprites correctly — Sonic, rings, landscape, no corruption or
-  dropped/misplaced sprites. A1's live SAT (`Sprite_Table_Buffer`) is well-formed
-  (valid Y/size/link/tile/X entries) at a scrolled frame.
-- **Profiler delta (recorded, honest):** the OJZScroll test scene is VSync-bound
-  (`VSync_Wait` 54% idle) with a LIGHT piece count (`Emit_ObjectPieces` one call).
-  In that regime the per-piece savings are absorbed into idle time and sit below
-  the frame-average resolution; cross-run profiler values were byte-identical
-  (VSync_Wait 69805 both runs), indicating per-session measurement caching, so no
-  clean numeric delta was extractable in this scene. The win is STRUCTURAL and
-  quantified by the removed code: −8 `addi` in `Emit` (−16 cyc/piece) vs +6
-  instructions once/frame in the prologue (~+56 cyc) → breaks even at ~3–4 pieces,
-  and at the addendum's cited heavy load (500–800 pieces) saves ~8–13k cyc/frame
-  (6–10% of the 128k NTSC budget). Recommend re-measuring under the object-test
-  stress state (many pieces) for a clean number.
+- **Oracle (BlastEm-accurate) — PIXEL-IDENTICAL, frame-locked:** master (pre-A1)
+  and A1 ROMs, both reset to the same deterministic settled frame (`Camera_X` =
+  `$0060`), produced a **byte-identical Sprite_Table_Buffer** (the literal SAT the
+  VDP renders): `00E8 0501 A3EC 0118 | 0085 0502 03E8 014C | 0085 0500 03E8 015C
+  | 0000 …` on both, and **byte-identical framebuffer PNGs** (same md5
+  `a03fbdf5…`). Identical SAT ⇒ pixel-identical sprites. Empirical confirmation of
+  the algebraic proof.
+- **Profiler delta (recorded, honest) — corrected math:** the OJZScroll test scene
+  is VSync-bound (`VSync_Wait` 54% idle) with a LIGHT piece count (3 sprites in the
+  SAT). In that regime the savings are absorbed into idle time and below the
+  frame-average resolution; cross-run profiler values were byte-identical
+  (`VSync_Wait` 69805 both runs) — a profiler measurement-caching bug (stale data
+  after ROM reload; gap-ledgered), so no clean numeric delta was extractable here.
+  The win is STRUCTURAL: −8 `addi` in `Emit` = **−16 cyc/piece** (2 addis × 8 cyc),
+  vs **+64 cyc/frame** once in the prologue (2× [`move.w abs`+`subi`+`move.w abs`]).
+  Pieces are HARD-CAPPED at `MAX_VDP_SPRITES = 80` (the SAT ceiling), so the win is
+  bounded: **~1k cyc/frame ceiling** (80 × 16 = 1280, minus the 64 prologue) at a
+  full SAT — **break-even ~4 pieces**. NOT 8–13k (that assumed an impossible
+  500–800 pieces; the 80-sprite SAT cap is the real ceiling). A clean stress-scene
+  re-measure (near-full SAT) is gap-ledgered.
 
-## C1 design question (for Volence)
+## C1 ruling (Volence: accept + document + ledger)
 
 `InsertSpriteMasks`' X=0 masking is only reliable when the masked scanlines carry
 an EARLIER-linked sprite (VDP first-sprite-on-line exemption). At a band boundary
 with an empty high band, the mask is first-on-line and silently fails to hide.
-Options: (a) `InsertSpriteMasks` guarantees a leading (higher-priority, earlier-
-linked) sprite on the masked lines before the mask; (b) a documented SCENE
-CONTRACT that any band configured for masking always has content above it; (c)
-accept the exemption as a known limitation of the feature. Not fixed ad-hoc per
-the addendum.
+**Ruling: ACCEPTED as a known limitation** — documented at the `InsertSpriteMasks`
+site, and the leader-sprite fix (a future guaranteed leading sprite on the masked
+lines) is gap-ledgered (consumer-gated: build it when a scene actually needs
+masking over a potentially-empty band). No ad-hoc fix.
 
 ## What each pass added
 
@@ -116,9 +122,13 @@ reproduction proved sigil's `jbra` relaxation is CORRECT (widens to `.w`), and t
 sprites divergence was a stale `.asm` explicit width (t11's `beq.w .pieces_yflip`).
 Kept the 2 guards.
 
-## Merge checklist (Volence's gate)
-- `--no-ff` merge both sides + push. A1 is byte-changing (reference rebuilt,
-  re-pinned +8); B2/B1 byte-neutral. Rebuild master s4.bin/debug + provenance on merge.
-- Decisions for the gate: B1 (soft budget vs always-commit) and C1 (mask exemption
-  contract).
+## Gate rulings applied (Volence 2026-07-11)
+- **B1 — keep SOFT** (the soft-budget comment stands; always-commit NOT taken).
+- **C1 — ACCEPT** the mask exemption; documented at the site; leader-sprite fix
+  gap-ledgered.
+- **A1 — pixel-identical verified** (SAT + framebuffer byte-identical); cycle math
+  corrected (16 cyc/piece, ~1k/frame ceiling at the 80-sprite SAT cap).
+- Gap-ledger: profiler measurement-caching bug + A1 stress-scene re-measure +
+  C1 leader-sprite fix (all recorded).
+- Merge: `--no-ff` both sides + push; rebuild master s4.bin/debug + provenance.
 </content>
