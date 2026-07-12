@@ -101,6 +101,55 @@ inline in this doc's commits.
    commit on failure. Contract change also touches bg_anim.asm.
    Predates the port — inherited, not introduced.
 
+### Mechanical byte-shackle sweep — corpus-wide, 2026-07-12
+
+**Question (Volence):** did pre-checklist step 2/5 fail to optimize because
+byte-exactness anchoring bled past step 1? (The t6 packet's "byte-neutral
+this time" and the bne.w incident are the documented smoke.)
+
+**Method:** grep-class sweep of every ported `.emp` for mechanically
+checkable residue: `addi/subi #1-8` (addq/subq-able), `move #imm≤127,dN`
+(moveq candidates), `cmpi #0` (tst-able), `lsl #1` (add-able), and local
+`Bcc.w` (the bne.w shrink class). Decimal + hex immediate forms.
+
+**Result: the corpus is largely CLEAN on peephole classes** — core,
+sprites, dplc, collision, aabb, game_loop, and all old-loop files show
+zero hits. The idiom floor (moveq/tst/addq usage) was already right in
+the transliterations. The `.w` clusters that do exist are documented
+structural pins (animate's `.cc_table` bra.w ×9 = pc-indexed 4-byte
+slots, comment names the exception; entity_window's DEBUG-conditional
+locks per the t12 design note).
+
+**One confirmed residue instance — rings.emp DrawRings (lines ~209-217),
+and it's the restructuring class, not the peephole class:**
+
+- Surface: `subi.w #8` ×2 should at minimum be `subq.w` (−4 B), and each
+  `subi #8` + `addi #VDP_SPRITE_{X,Y}_OFFSET` pair folds to one
+  immediate (−8 B, −16 cyc per ring).
+- Real finding **[OPT]+[PROC]**: this is the **A1 camera-bias-fold class**
+  — DrawRings re-adds the SAT bias per ring exactly the way
+  Emit_ObjectPieces did per piece before A1. `Camera_{X,Y}_Biased`
+  ALREADY exist in RAM (ram.asm:275, computed per-frame by
+  Render_Sprites). Bias DrawRings' camera regs once before the loop
+  (folding the −8 ring-centre offset into the same load) and the loop
+  body drops ~16 B / 32 cyc per drawn ring; cull-check immediates
+  compensate at comptime. Caveats for the fix batch: verify DrawRings
+  runs after Render_Sprites' biased-camera write in frame order (else
+  compute locally, 2 instrs/frame); X=0 sprite-mask check semantics
+  unchanged (it already tests the biased value).
+- Process lesson: this is a **t11-A1 step-4 back-prop miss** — when A1
+  landed, "who else writes SAT entries with per-sprite bias?" was one
+  grep away (this sweep's grep). Back-prop after an engine optimization
+  should enumerate the PATTERN's other instances, not just the file's.
+
+**Honest scope note:** the sweep covers greppable classes only. The
+deeper step-5 classes (counter/cache asymmetry, guard coverage,
+algorithmic) are not greppable — that's what the per-file sittings
+below are for. Interim answer to the opening question: step 2 was NOT
+meaningfully shackled on idiom-level output; the shackle shows in
+missed RESTRUCTURING wins (A1 itself only surfaced in the t11 second
+look, and its rings sibling is still unfixed).
+
 ## Proposed audit order
 
 1. **animate.emp** (t9) — hot path, pre-checklist "not taken" verdict is
