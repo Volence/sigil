@@ -54,7 +54,7 @@ inline in this doc's commits.
 | engine/objects/dplc.emp | t10 | none (core only) | **DONE 2026-07-12** — 3 findings below |
 | engine/objects/core.emp | t10 | RunObjects profiled; 2 not-taken recorded | pending (occupancy + diagnostics both reworked it since — re-audit vs today's file) |
 | engine/objects/sprites.emp | t11 | full checklist + Fable second look (A1 etc.) | **exempt** — set the standard |
-| engine/objects/animate.emp | t9 | "no opt taken, reasons recorded" | pending (pre-checklist not-taken = anchoring risk; hot path) |
+| engine/objects/animate.emp | t9 | "no opt taken, reasons recorded" | **DONE 2026-07-12** — t9 verdicts confirmed; 10 new findings (below) |
 | engine/objects/rings.emp | t8 | RingCollision win, live-verified + not-taken record | pending (strongest pre-checklist record; also reworked by S3K ring art + colours since) |
 | engine/objects/collision.emp | t7 | step-5 review (Volence's AABB, honest review) | pending |
 | engine/objects/aabb.emp | t7 | same tranche | pending (asm-splice lead_move touched it since) |
