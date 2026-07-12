@@ -113,6 +113,17 @@ gate = "SIGIL_EMP_RINGS"
 tests = ["rings_port"]
 
 [[region]]
+# Shape-DEPENDENT length (the 11 assert sites + 3 __DEBUG__ blocks). Immediate
+# downstream neighbour of rings (rings ends at Collected_Init = this base); ends
+# at children.asm's first label. The ratifying demand for the diagnostics
+# construct.
+name = "entity_window"
+start = "Collected_Init"
+end = "PopulateSpawnedPieceCount"
+gate = "SIGIL_EMP_ENTITY_WINDOW"
+tests = ["entity_window_port"]
+
+[[region]]
 name = "collision_lookup"
 start = "Collision_GetType"
 end = "Collision_ProbeDown"
@@ -774,6 +785,80 @@ tests = ["act_descriptor_port"]
 [[symbol]]
 name = "OJZ_SEC8_BLOCK_DICT_LEN"
 tests = ["act_descriptor_port"]
+
+# entity_window (tranche 12) cross-seam INBOUND symbols: RAM cells it reads +
+# the external procs it calls (RingBuffer_*, Section_*, Load_Object).
+[[symbol]]
+name = "Camera_Y_Coarse_Prev"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Current_Act_Ptr"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Window_Active"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Window_Anchor"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Window_OriginX"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Window_OriginY"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Window_Center_ID"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Scan_State"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Loaded_Masks"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Entity_Mask_Scratch"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Ring_Collected_Window"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Ring_Collected_Park"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Collected_Park_Next"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "RingBuffer_Clear"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "RingBuffer_Remove"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Section_GetSecPtrXY"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Section_FlatIDXY"
+tests = ["entity_window_port"]
+
+[[symbol]]
+name = "Load_Object"
+tests = ["entity_window_port"]
 
 # ── Region-relative offsets ─────────────────────────────────────────────────
 

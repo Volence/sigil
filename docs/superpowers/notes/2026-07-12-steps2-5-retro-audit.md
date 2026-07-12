@@ -98,20 +98,21 @@ density, not their length.
 | File | Tranche | Packet step-5 evidence for THIS file | Audit |
 |---|---|---|---|
 | engine/objects/dplc.emp | t10 | none (core only) | **DONE 2026-07-12** — 3 findings below |
-| engine/objects/core.emp | t10 | RunObjects profiled; 2 not-taken recorded | pending (occupancy + diagnostics both reworked it since — re-audit vs today's file) |
+| engine/objects/core.emp | t10 | RunObjects profiled; 2 not-taken recorded | **DONE 2026-07-12** — 8 findings incl. the mid-walk compact hazard (see collision entry) |
 | engine/objects/sprites.emp | t11 | full checklist + Fable second look (A1 etc.) | **exempt** — set the standard |
 | engine/objects/animate.emp | t9 | "no opt taken, reasons recorded" | **DONE 2026-07-12** — t9 verdicts confirmed; 10 new findings (below) |
-| engine/objects/rings.emp | t8 | RingCollision win, live-verified + not-taken record | pending (strongest pre-checklist record; also reworked by S3K ring art + colours since) |
-| engine/objects/collision.emp | t7 | step-5 review (Volence's AABB, honest review) | pending |
-| engine/objects/aabb.emp | t7 | same tranche | pending (asm-splice lead_move touched it since) |
-| engine/system/game_loop.emp | t5 | one yield (SR-mask hazard comment) | pending |
+| engine/objects/rings.emp | t8 | RingCollision win, live-verified + not-taken record | **DONE 2026-07-12** — A1-fold residue + certs |
+| engine/objects/collision.emp | t7 | step-5 review (Volence's AABB, honest review) | **DONE 2026-07-12** — HEADLINE mid-walk compact hazard; Touch_Solid certified |
+| engine/objects/aabb.emp | t7 | same tranche | **DONE 2026-07-12** — ensure-the-alias-constraint retrofit |
+| engine/system/game_loop.emp | t5 | one yield (SR-mask hazard comment) | **DONE 2026-07-12** — clean |
 | games/sonic4 object bank (test_particle/test_solid, act_descriptor) | t6 | −8 B live-verified | pending |
 | data: particle_anims / sonic_anims | t4 | step-5 queue (pads) — executed? verify | pending (data files — 3(a)/3(b) focus) |
-| engine/level/collision_lookup.emp | t3 (OLD loop) | n/a — step 5 didn't exist | pending |
-| engine/system/vdp_init.emp | t3 (OLD loop) | n/a | pending |
-| engine/system/controllers.emp | t2 (OLD loop; note says "complete through step 2") | n/a | pending — confirm steps 3+ ever ran |
-| engine/system/math.emp | t2 (OLD loop) | n/a | pending |
-| engine/sound/sound_api.emp, engine/system/hblank.emp | pre-loop (pin exact provenance during audit) | n/a | pending |
+| engine/level/collision_lookup.emp | t3 (OLD loop) | n/a — step 5 didn't exist | **DONE 2026-07-12** — clean, transitive-clobber model file |
+| engine/system/vdp_init.emp | t3 (OLD loop) | n/a | **DONE 2026-07-12** — ensure(len<=32) retrofit + flush-race probe named |
+| engine/system/controllers.emp | t2 (OLD loop) | n/a | **DONE 2026-07-12** — clean; Press_Accum-consumer probe named |
+| engine/system/math.emp | t2 (OLD loop) | n/a | **DONE 2026-07-12** — clean, boundary verified exact |
+| engine/system/hblank.emp | pre-loop | n/a | **DONE 2026-07-12** — handler-contract comment wanted |
+| engine/sound/sound_api.emp | pre-loop + A2 audit | own A2 audit | light pass 2026-07-12 — A2 credited; triggered the clobbers-semantics ruling; full sitting deferred |
 | data/sound: mt_bank, sfx_bank, dac_samples | pre-campaign (M1.D/Plan-6/7 era); sfx_bank got the `table` retrofit | n/a | pending — low priority, data-shaped |
 | support twins: sst.emp, constants.emp, types.emp | grown across tranches | n/a | audit as cross-cutting pass at the end |
 
@@ -212,6 +213,208 @@ guard/claim class and diagnostics-era retrofits that didn't exist at t9.
 No oracle probes required — all findings static-decidable. Optional:
 re-profile AnimateSprite's frame share post-occupancy (t9's numbers
 predate the live-list).
+
+### core.emp (t10, post-occupancy) — audited 2026-07-12 (Fable)
+
+Fresh occupancy code is GOOD — capacity-guard logic verified sound
+(pop-succeeded ⇒ stale entry exists ⇒ compact reclaims ⇒ append has
+room), §6 DEBUG rails verified, `clear_longs` derive-from-type is the
+construct pattern working. Findings are mostly at the SEAMS:
+
+1. **[HAZ-lite/contract] RunObjects_Frozen relies on Draw_Sprite
+   preserving a2 — the contract doesn't say that.** Frozen's comment:
+   "Draw_Sprite preserves a0/d7/a2, so no save is needed". Draw_Sprite's
+   header (sprites.emp:47-50): "Preserves: a0, d7" — a2 is INCIDENTAL
+   (body happens not to touch it). If Draw_Sprite ever grows an a2 use,
+   the frozen dynamic walk corrupts its cursor silently. Introduced by
+   occupancy step 3 (fresh code). Zero-cost fix: promote a2 into
+   Draw_Sprite's documented+enforced preserves, or fix Frozen's comment
+   + save a2. Same enforced-vs-incidental class as the animate finding.
+2. **[HAZ-lite/claim] AllocDynamic's compact-on-full guard depends on an
+   UNDOCUMENTED caller invariant** — compaction treats code_addr==0 as
+   dead, so a caller that allocs a second slot before initializing the
+   first would get the first silently dropped from the live list
+   (claimed-but-invisible zombie), only when the list is full. All
+   current callers verified clean (children.asm ×4, load_object.asm,
+   object_test_state.asm — all write code_addr immediately). Fix:
+   document "callers must set code_addr before the next AllocDynamic"
+   in the header; optionally a spec §6 note.
+3. **[RETRO] DeleteObject's "shouldn't happen" out-of-range path clears
+   64 bytes at a wild address** — an a0 past the effect range falls to
+   `.clear_slot` and zeroes memory beyond Object_RAM. DEBUG assert at
+   entry (a0 within Object_RAM..End, Debug_AssertObjLoop spelling) turns
+   silent corruption into a named error.
+4. **[RETRO] No double-delete guard** — deleting an already-deleted
+   pool slot pushes its address onto the free stack TWICE → a later
+   double-alloc puts two objects in one SST (the classic catastrophic
+   Sonic bug class). DEBUG assert candidate: code_addr ≠ 0 at entry.
+   (Caveat: needs assert-construct memory-operand support, else
+   `if DEBUG==1 { tst.w (a0) … raise_error }`.)
+5. **[RETRO→ram.asm] Frozen's merged System+Effect 24-slot sweep
+   depends on RAM adjacency nothing drift-locks.** Comptime `ensure()`
+   CANNOT check it (link-time addresses) — but ram.asm can
+   (`if Effect_Slots <> System_Slots+SST_len*NUM_SYSTEM / error`), all
+   symbols resolve there. Ledger note: "link-time ensure" is a small
+   language gap (demand row 1).
+6. **[3(b)] Unused import**: NUM_TOTAL_SLOTS — stale from the
+   pre-occupancy 66-slot sweep. Remove at next touch. Language ask:
+   sigil has no unused-import lint (would have caught this).
+7. **[OPT, recorded-not-urged] .run_culled reloads Camera_X/Y from RAM
+   per checked object** (~24 cyc/object); frame-invariant, but a
+   register hoist is blocked by dispatch clobbers (only a0/d7 survive
+   object code) — a reload-after-dispatch pattern nets a few hundred
+   cyc/frame at high occupancy. Post-occupancy RunObjects is 1.9% of
+   frame, so this is small; profile-then-decide.
+8. **[CERT]**: ObjectMove/X/Y = S3K-standard shape, alternatives
+   cost-equal (invariant-ladder outcome: no change). AllocDynamic /
+   CompactDynamicLive logic sound. extern() census: ~7 RAM-symbol
+   sites = S2-D3 demand-data increment (known gap, no new ask).
+
+### collision.emp + aabb.emp (t7, post-occupancy/splice) — audited 2026-07-12 (Fable)
+
+**THE HEADLINE FINDING OF THE AUDIT SO FAR — [HAZ] mid-walk
+compact-on-full (really a core.emp/occupancy hazard, surfaced by
+tracing the collision walk):**
+
+AllocDynamic's capacity guard runs CompactDynamicLive whenever an alloc
+finds Dynamic_Live_Count == NUM_DYNAMIC. But allocs happen MID-DISPATCH:
+object routines spawn children (children.asm, called from object code)
+and the ObjectTest emitters alloc every frame from inside RunObjects.
+CompactDynamicLive MOVES entries down and shrinks the count while a
+walker (.run_culled / .frozen_dyn / TouchResponse's dyn segment) holds a
+cursor into the array. After a mid-walk compact: the cursor points past
+the compacted prefix, the walker's snapshot count keeps it reading the
+STALE TAIL (compaction rewrites only the kept prefix — tail words keep
+their old values), and a stale duplicate that still passes the tst.w
+guard **double-dispatches an object in one frame** — the exact A1 bug
+class the occupancy design fought. CompactDynamicLive's own header
+claims the alloc-guard case runs "before any dispatch this frame" —
+FALSE for mid-dispatch spawns; the comment encodes the wrong
+assumption. Reachable: churn-heavy frames where deletes have zeroed
+entries (count still high) and a spawner allocs — the ObjectTest stress
+scene (33/40 occupied + per-frame particle churn) is plausibly close.
+RECOMMEND NOW (rail): DEBUG walk-live flag (st/clr at each walker's
+entry/exit) + `assert` not-set in CompactDynamicLive — cheap,
+soak-testable. DESIGN FIX = Volence ruling (occupancy amendment A2
+candidate): (a) hole-fill append at full count (positions stable;
+bends spawn-order for the filler), (b) treat full-count-during-walk as
+alloc-fail (callers already handle .alloc_fail), or (c) overflow latch
+drained at frame end.
+
+Other findings:
+
+1. **[CERT] Touch_Solid verified line-by-line** — min-pen axis logic,
+   sign handling, 1px maintain-contact bias, rising/falling gates all
+   correct. The t7 honest-review verdict holds.
+2. **[CERT] touch_test_target** — every aabb template instantiation
+   satisfies the stmp non-alias constraint; the movea.w stash
+   round-trip is exact (sign-extend in, low-word out); the
+   COLLISION_TOUCH bhi guard + cache-freshness reasoning verified.
+   The skeleton-with-holes dedup + stub falls_into chain (every stub
+   aliases one rts, lint-guarded) are exemplary construct use.
+3. **[RETRO] aabb.emp: the "stmp MUST NOT alias cdim or delt"
+   constraint is prose — make it a comptime `ensure`** (Reg equality
+   already works: lead_move compares `adim != cdim`). Compile error
+   instead of silent wrong code for a future call site. Optional
+   sibling: delt==apos aliasing breaks the apos-read-only promise —
+   consider ensuring or documenting.
+4. **[NOTE] aabb boundary**: delta = −32768 survives `neg.w` as $8000 →
+   doubled = 0 → false overlap. Unreachable through current callers
+   (cull windows bound |delta| ≪ $4000); one site comment would
+   immunize it against new callers.
+5. **[NOTE] handler contract** ("a5-a6 MUST survive") is enforced
+   nowhere — fine while handlers are stubs; the first real handler
+   should carry enforced `preserves()`.
+6. **[LEAD] `ensure(extern("SST_interact") == …)` WORKS** (the
+   interact_off drift-lock) — extern-in-ensure resolves through the
+   link seam. core finding 5's RAM-adjacency lock may be expressible
+   in .emp directly after all; try before the ram.asm fallback.
+
+### rings.emp (t8 + art/colour rework) — audited 2026-07-12 (Fable)
+
+1. **[OPT]** the DrawRings A1-fold residue — see the byte-shackle sweep
+   section (the audit's rings headline). Two tiers: minimum = fold each
+   `subi #8`+`addi #offset` pair into one immediate (−8 B, −16 cyc/ring,
+   no restructuring); full = bias the cached camera regs once (d6/d7
+   load site) and drop all four per-ring ops (−16 B, −32 cyc/ring),
+   cull immediates compensate at comptime.
+2. **[CERT] the t8 rolling-pointer + swap-with-last removal is PROVEN
+   correct** — backward iteration means the swapped-in entry (from a
+   higher index) was already visited: no double-test, no miss. Per-player
+   count re-read is correct after P1 removals.
+3. **[CERT] all five callee-contract claims in RingCollision's header
+   verified EXACT** against today's procs (Collected_MarkRing d0-d1/a0;
+   EntityWindow_EntryForSection d1/a0; EntityLoaded_Clear d0/d2/a0;
+   Sound_PlayRing d0/a0; RingBuffer_Remove d1-d2/a0-a1).
+4. **[RETRO-micro]** RingBuffer_Remove has no bounds check on the index —
+   DEBUG assert (d0 ≤ last) candidate.
+5. **[NOTE — named assumption]** DrawRings emits mid-chain SAT entries;
+   final-link=0 termination is Render_Sprites' job (t11-audited file).
+6. **[CERT]** RingBuffer_Add's stack-based ×6 keeps the clobber contract
+   tight (deliberate); the DEBUG drop-assert (always-fails-on-drop with
+   register comparand) is sound; the per-frame anim-attr hoist (d4) is
+   the invariant ladder already applied.
+
+### game_loop / controllers / math / vdp_init / collision_lookup / hblank (t2/t3/t5 + pre-loop) — audited 2026-07-12 (Fable)
+
+Small files (25-66 ln each), first-ever step-5 pass for the old-loop
+ones. Overall verdict: **clean — the transliterations were careful and
+the recent retrofits (drift-lock ensures, tradeoff comments) reached
+these files.** Real items:
+
+- **[CERT+] math.emp**: cos overlap boundary verified exact — angle $FF
+  → ×2+$80 = $27E reads the last word of the $280 table, no overflow;
+  typed embed length doubles as a size check. Exemplary.
+- **[CERT+] controllers.emp**: L+R/U+D worn-pad guard is a CHOSEN,
+  commented tradeoff (re-edge on blip end — named by design); edge
+  accumulation logic verified ((old^new)&new). Step-4 candidate: the
+  P1/P2 duplicated body is a 2-instance comptime-fn candidate
+  (borderline — note only). Named probe: confirm the Press_Accum
+  consumer clears after read (cross-file; §5 design says lag-frame
+  accumulation, so a non-clearing consumer would stick presses).
+- **[RETRO-micro] vdp_init.emp**: Flush's `btst d2` mask aliases mod 32
+  and the moveq caps at 127 — `ensure(VDP_Shadow_len <= 32)` comptime
+  drift-lock (imported const, so ensure CAN see it). Named probe:
+  confirm no dirty-bit writer runs in interrupt context (the
+  read-mask→clr.l window would lose a mid-flush dirty set; if all
+  writers are main-loop + flush is VBlank-context, race-free).
+- **[3(b)-micro] hblank.emp**: the handler-side contract is unstated —
+  dispatch preserves d0-d1/a0, so handlers may clobber ONLY those; one
+  comment line at HBlank_Handler_Ptr / HBlank_Null states it.
+- **[CERT] game_loop.emp**: non-returning loop (contract moot but
+  harmless); drain + debug-hook gating correct. collision_lookup.emp:
+  bounds logic verified (lsr makes operands non-negative, signed
+  compares safe); transitive tail-call clobbers documented RIGHT —
+  a model for other files.
+- **sound_api.emp: light pass only** — it carries its own recent audit
+  (the A2 ring-drain fix + enforced/incidental preserve distinctions);
+  its contract language triggered the cross-cutting finding below. Full
+  sitting deferred; credited.
+
+### CROSS-CUTTING — the audit's decision item: `clobbers()` semantics
+need ONE ruling (Volence)
+
+The corpus holds two incompatible conventions:
+
+- **Exhaustive-license** (the S2-D6 lint direction, and how callers
+  behave): `clobbers()` is the COMPLETE license — everything not listed
+  is contractually preserved. RingCollision's five-callee reliance,
+  Frozen's a2-across-Draw_Sprite, and collision_lookup's transitive
+  documentation all assume this.
+- **Minimum-license** (sound_api.emp's explicit language): regs outside
+  the clobber list are "INCIDENTAL — NOT a guarantee, do not rely";
+  only `preserves()` (movem-enforced) is contractual.
+
+Under exhaustive-license: sound_api's warning text is wrong and should
+be rewritten; animate may drop BOTH saves around Sound_PlaySFX (−8 B);
+Frozen's a2 reliance is fine as-is. Under minimum-license: Frozen's a2
+reliance is a live bug-in-waiting, animate's a1 save is load-bearing,
+and dozens of not-in-clobbers reliances corpus-wide need re-audit.
+**Recommendation: ratify exhaustive-license** — it matches the S2-D6
+checked-clobbers future (the lint will VERIFY the license), makes
+today's caller behavior correct, and turns the fix into one text edit
+in sound_api + two comment edits. The earlier core finding 1 and
+animate finding 5 resolve per this ruling.
 
 ### Mechanical byte-shackle sweep — corpus-wide, 2026-07-12
 

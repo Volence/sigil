@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/12/2026 03:28:48 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/12/2026 03:28:46 PM)
-//! [provenance] 18 regions, 138 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/12/2026 03:59:57 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/12/2026 03:59:55 PM)
+//! [provenance] 19 regions, 156 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +77,9 @@ pub const COLLISION: Region = Region { plain_base: 0x2FCA, debug_base: 0x341E, p
 
 /// `RingBuffer_Add` .. `Collected_Init` — gate `SIGIL_EMP_RINGS`. tests: rings_port
 pub const RINGS: Region = Region { plain_base: 0x31CA, debug_base: 0x361E, plain_len: 0x1BE, debug_len: 0x21A };
+
+/// `Collected_Init` .. `PopulateSpawnedPieceCount` — gate `SIGIL_EMP_ENTITY_WINDOW`. tests: entity_window_port
+pub const ENTITY_WINDOW: Region = Region { plain_base: 0x3388, debug_base: 0x3838, plain_len: 0x8EE, debug_len: 0xD44 };
 
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
 pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x4BE2, debug_base: 0x55A0, plain_len: 0x24, debug_len: 0x24 };
@@ -514,6 +517,60 @@ pub const OJZ_SEC7_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
 
 /// `OJZ_SEC8_BLOCK_DICT_LEN`. tests: act_descriptor_port
 pub const OJZ_SEC8_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
+
+/// `Camera_Y_Coarse_Prev`. tests: entity_window_port
+pub const CAMERA_Y_COARSE_PREV: Pin = Pin { plain: 0xFFFFAD74, debug: 0xFFFFAD96 };
+
+/// `Current_Act_Ptr`. tests: entity_window_port
+pub const CURRENT_ACT_PTR: Pin = Pin { plain: 0xFFFFAF30, debug: 0xFFFFAF52 };
+
+/// `Entity_Window_Active`. tests: entity_window_port
+pub const ENTITY_WINDOW_ACTIVE: Pin = Pin { plain: 0xFFFFAC68, debug: 0xFFFFAC8A };
+
+/// `Entity_Window_Anchor`. tests: entity_window_port
+pub const ENTITY_WINDOW_ANCHOR: Pin = Pin { plain: 0xFFFFAC6A, debug: 0xFFFFAC8C };
+
+/// `Entity_Window_OriginX`. tests: entity_window_port
+pub const ENTITY_WINDOW_ORIGIN_X: Pin = Pin { plain: 0xFFFFAC6C, debug: 0xFFFFAC8E };
+
+/// `Entity_Window_OriginY`. tests: entity_window_port
+pub const ENTITY_WINDOW_ORIGIN_Y: Pin = Pin { plain: 0xFFFFAC6E, debug: 0xFFFFAC90 };
+
+/// `Entity_Window_Center_ID`. tests: entity_window_port
+pub const ENTITY_WINDOW_CENTER_ID: Pin = Pin { plain: 0xFFFFAC69, debug: 0xFFFFAC8B };
+
+/// `Entity_Scan_State`. tests: entity_window_port
+pub const ENTITY_SCAN_STATE: Pin = Pin { plain: 0xFFFFABFC, debug: 0xFFFFAC1E };
+
+/// `Entity_Loaded_Masks`. tests: entity_window_port
+pub const ENTITY_LOADED_MASKS: Pin = Pin { plain: 0xFFFFAC70, debug: 0xFFFFAC92 };
+
+/// `Entity_Mask_Scratch`. tests: entity_window_port
+pub const ENTITY_MASK_SCRATCH: Pin = Pin { plain: 0xFFFFACF0, debug: 0xFFFFAD12 };
+
+/// `Ring_Collected_Window`. tests: entity_window_port
+pub const RING_COLLECTED_WINDOW: Pin = Pin { plain: 0xFFFFAD76, debug: 0xFFFFAD98 };
+
+/// `Ring_Collected_Park`. tests: entity_window_port
+pub const RING_COLLECTED_PARK: Pin = Pin { plain: 0xFFFFAEAA, debug: 0xFFFFAECC };
+
+/// `Collected_Park_Next`. tests: entity_window_port
+pub const COLLECTED_PARK_NEXT: Pin = Pin { plain: 0xFFFFAF2E, debug: 0xFFFFAF50 };
+
+/// `RingBuffer_Clear`. tests: entity_window_port
+pub const RING_BUFFER_CLEAR: Pin = Pin { plain: 0x3242, debug: 0x36F2 };
+
+/// `RingBuffer_Remove`. tests: entity_window_port
+pub const RING_BUFFER_REMOVE: Pin = Pin { plain: 0x320E, debug: 0x36BE };
+
+/// `Section_GetSecPtrXY`. tests: entity_window_port
+pub const SECTION_GET_SEC_PTR_XY: Pin = Pin { plain: 0x5154, debug: 0x5B12 };
+
+/// `Section_FlatIDXY`. tests: entity_window_port
+pub const SECTION_FLAT_IDXY: Pin = Pin { plain: 0x513A, debug: 0x5AF8 };
+
+/// `Load_Object`. tests: entity_window_port
+pub const LOAD_OBJECT: Pin = Pin { plain: 0x3F84, debug: 0x488A };
 
 // ── Region-relative offsets (manifest order) ──
 
