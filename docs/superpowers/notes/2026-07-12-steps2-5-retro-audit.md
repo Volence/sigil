@@ -581,6 +581,23 @@ unchanged; DEBUG ROM re-pins expected):**
    equivalent if/error in ram.asm and add the link-time-ensure ledger
    row.
 
+**Rider (added at the t12 second look — do together with item 1, same
+flag symbol):**
+
+12. entity_window: DEBUG walk-live flag set/clear around
+    EntityWindow_DespawnObjects' live-list walk (the fourth walker; see
+    the ledger row "retro-audit A2 rider" and the second-look entry
+    above). The batch fence on entity_window.{asm,emp} is OPEN for
+    exactly this hook — t12 is merged; touch nothing else in the file.
+    Twin in lockstep; DEBUG-shape-only (release byte-neutral).
+    **Item-1+12 acceptance includes the soak**: after the rail lands,
+    run an ObjectTest soak in oracle (press-only frame driving — never
+    bare `resume` before `press`, never interleave `step_out` with
+    `press`) long enough to exercise particle churn, and REPORT whether
+    the Compact assert ever fires — that report is the evidence for
+    Volence's pending A2 design ruling. Close the ledger row's OPEN
+    status on landing.
+
 **Byte-changing (re-pin wave + oracle verify, LAST):**
 10. rings: the DrawRings camera-bias fold — bias d6/d7 once at the
     cache site (fold the −8 centre offset in), drop all four per-ring
