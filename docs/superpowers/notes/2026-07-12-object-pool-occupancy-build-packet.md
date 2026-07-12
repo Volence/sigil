@@ -234,8 +234,30 @@ live verification:
       (entry[0]=slot, Count 0→1). Game continued clean (Count 2 == 2 objects). NOTE:
       oracle re-triggers a bp at the current PC on resume (no-op step) — clear it or
       single-step past to advance.
-- [ ] **7. DEBUG asserts** (§6, three one-liners via `assert`): count ≤ NUM_DYNAMIC;
-      every entry in-pool; post-compact count == full tst.w sweep live count.
+- [x] **7. DEBUG asserts** (§6, via `assert`) — DONE + VERIFIED (aeon d3a6dc2 /
+      sigil 05daaf7). All three in CompactDynamicLive, self-gating (PLAIN ROM
+      BYTE-IDENTICAL to step 6 — asserts add zero plain bytes): (1) `assert.w d1,
+      ls, #NUM_DYNAMIC` at the top (Count in d1); (2) tail entry-loop asserting each
+      entry in `#Object_RAM`..`#Object_RAM_End` (SAME spelling as Debug_AssertObjLoop
+      → byte-identical message across twins); (3) tail sweep decrementing the fresh
+      count per live slot, `assert.w d0, eq, #0` (dup→>0, missing→<0). §6-2/§6-3 in a
+      single `if DEBUG` tail block AFTER .recount so the hot loop keeps its .s
+      branches + plain stays untouched. core DEBUG +0x19E, plain UNCHANGED → only
+      the 7 debug engine.inc orgs + debug pins slide; tranche5 DEBUG disp only
+      ($4FC6→$5164). **Strict 2208/0, clippy clean, byte-identical both shapes.**
+      GOTCHAS (each a build cycle): (a) step-7 DEBUG growth pushed the step-6 `bsr
+      CompactDynamicLive` past .s IN DEBUG ONLY → twin bsr now ifdef'd (plain .s /
+      debug .w); jbsr auto-selects per shape. (b) asserts INSIDE the compaction loop
+      broke `beq.s .recount` in debug → moved §6-2 OUT of the loop to the tail. (c)
+      the assert message embeds the VERBATIM operand source-slice, so `#extern("...")`
+      / `sizeof(Sst)` (.emp) vs `#Dynamic_Slots` / `SST_len` (AS) diverged by 24
+      bytes — fixed by using bare `#Object_RAM`/`#Object_RAM_End` (resolves identically
+      both sides). (d) `.dbg_done` empty-guard spans the assert-heavy entry loop → .w.
+      LIVE (debug ROM, OJZScroll): compaction runs naturally; step_out through a real
+      dirty compaction (`0000 9690` Count 2 → `9690` Count 1, dirty cleared) returned
+      CLEANLY through all three asserts — NO divert to MDDBG__ErrorHandler ($6662C bp
+      hits: 0 across the soak). NOTE: mixing step_out/resume/pause wedged the emulator
+      (needed a restart) — prefer press-only for soaks.
 - [ ] **8. Profile packet** vs t10 11,841-cycle pin (needs oracle profiler fix).
 
 Each behavior-affecting step: run-order trace + spawn/despawn soak, frame-locked
