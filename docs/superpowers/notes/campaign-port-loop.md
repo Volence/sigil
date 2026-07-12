@@ -1,5 +1,16 @@
 # The port loop (canonical — Volence-ratified 2026-07-10, supersedes all prior loop descriptions)
 
+**CHANGELOG (re-read this doc at each step boundary — it changes
+mid-campaign, and a ruling ratified after your last read still binds
+you):**
+- 2026-07-12: register-contract convention (`clobbers()` = exhaustive
+  license, before Step 4); step-6 pattern-enumeration amendment;
+  packet step-5 section = filled per-line checklist (below); step-4
+  kill-row same-commit rule made explicit; step-0 ledger sweep for
+  file-implicating hazards.
+- 2026-07-11: step-3(a)/3(b)/5 interrogation checklists; step 4
+  Construct pass; step 6 Corpus sweep.
+
 Per file/tranche. The byte gate is a STEP-1 artifact (the transcribe
 verifier), not a permanent style cage — after step 1 proves identity,
 later steps may change bytes, paying the lockstep + re-pin tax each time.
@@ -17,7 +28,12 @@ silent default.
 
 **Step 0 — Recon + design** (when the file carries hazards): read the real
 tree, extract per-shape addresses, settle design questions in a written
-note BEFORE code. Trivial files skip it.
+note BEFORE code. Trivial files skip it. **Hazard sweep (added
+2026-07-12, from the t12 blind-run miss): grep the campaign gap-ledger
+for this file's name and its proc symbols** — audit/spec findings that
+implicate a file are ledgered against it (that's the handoff channel;
+an in-flight hazard you didn't sweep for is a step-0 failure, not bad
+luck).
 
 **Step 1 — Transcribe**: the 1-1 faithful port. Same mnemonics, same
 explicit widths, comments carried. Gate + region pin + byte gates both
@@ -120,7 +136,11 @@ compounds instead of re-hand-rolling shapes. Step 3(a)'s interrogation
 finds LANGUAGE-level opportunity (ceremony, escape hatches, types); this
 pass finds the CONSTRUCT/macro level — code that WORKS but is repetitive
 or patterned emits no pain signal, so the looking is made un-skippable
-here too. Scan for repeated /
+here too. **Every twin mirror this pass creates (a comptime-fn whose AS
+twin spells the shape inline, a mirrored const block, any scaffolding
+seam) adds its twin-scaffolding kill-list row IN THE SAME COMMIT — a
+mirror without a kill condition is unfinished (made explicit 2026-07-12
+after the t12 clear_slot_bitmasks miss).** Scan for repeated /
 patterned emission; for each, one of FOUR verbs (size-gated, byte-neutral
 by default):
   (a) **adopt** — an existing construct fits (`offsets` / a comptime-fn
@@ -254,6 +274,14 @@ merge to master is FINISHED code, not faithful-but-stale-idiom code.
 PER LOOP PASS — so each look of the tranche shows what it added. Findings
 that fit neither (step-1 demanded features, live bugs, probe outcomes) keep
 their own headline bucket.
+
+**The packet's step-5 (and step-3(a)/3(b)) sections ARE the filled
+checklists (enforced at the gate from 2026-07-12):** one line per
+interrogation item per hot proc, each with its outcome (taken /
+not-taken-with-reason / not-applicable-because). A prose summary
+("hot path already minimal") in place of the table does not pass the
+merge gate — the t11 sprites review and the t12 blind run both showed
+summaries hide items the per-line walk finds.
 
 Keep tranches small (2-3 files): step 2 makes re-pins routine, and
 short-lived branches keep the re-pin tax per-tranche instead of
