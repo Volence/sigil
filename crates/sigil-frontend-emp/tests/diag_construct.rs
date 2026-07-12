@@ -110,6 +110,31 @@ fn assert_symbol_immediate_survives_verbatim() {
     assert_eq!(dest.as_ref().unwrap().1, "#Object_RAM");
 }
 
+#[test]
+fn assert_hex_immediate_survives_verbatim() {
+    // The spelling is sliced from SOURCE, not re-rendered from tokens, so a
+    // non-decimal literal round-trips byte-for-byte (spec §4.4 is byte-exact:
+    // `#$8000` must stay `#$8000`, never normalize to `#32768`). This is the
+    // regression guard against the token-reconstruction defect.
+    let f = ok(&body_stmt("assert.w d0, ne, #$8000"));
+    let p = first_proc(&f);
+    let AsmStmt::Assert { dest, .. } = &p.body[0] else { panic!() };
+    assert_eq!(dest.as_ref().unwrap().1, "#$8000");
+}
+
+#[test]
+fn assert_binary_and_arith_immediates_survive_verbatim() {
+    // Binary literals and arithmetic expressions in the operand also come back
+    // exactly as written — no operand-form taxonomy to keep in sync.
+    let f = ok(&body_stmt("assert.b d1, eq, #%1010"));
+    let AsmStmt::Assert { dest, .. } = &first_proc(&f).body[0] else { panic!() };
+    assert_eq!(dest.as_ref().unwrap().1, "#%1010");
+
+    let f = ok(&body_stmt("assert.w d2, lt, #MAX-$10"));
+    let AsmStmt::Assert { dest, .. } = &first_proc(&f).body[0] else { panic!() };
+    assert_eq!(dest.as_ref().unwrap().1, "#MAX-$10");
+}
+
 // ---- raise_error -----------------------------------------------------------
 
 #[test]

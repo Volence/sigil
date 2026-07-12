@@ -11,6 +11,12 @@ const MAX_EXPR_DEPTH: u32 = 128;
 /// instead of failing fast.
 pub struct Parser {
     toks: Vec<Token>,
+    /// The original source text this parser's tokens were lexed from, kept so a
+    /// construct that needs a VERBATIM source substring (the diagnostics
+    /// construct's operand spelling — spec §4.4 is a byte-exact contract) can
+    /// slice it by token byte-span. Shared (`Rc`) so cloning the parser or
+    /// handing the text around costs a refcount, not a copy.
+    src: std::rc::Rc<str>,
     pos: usize,
     diags: Vec<Diagnostic>,
     depth: u32,
@@ -42,9 +48,14 @@ pub struct Parser {
 
 impl Parser {
     /// Build a parser over an already-lexed token stream (must end in `Eof`).
-    pub fn new(toks: Vec<Token>) -> Self {
+    /// `src` is the original source text the tokens were lexed from — the
+    /// caller MUST pass the same string it handed [`crate::lexer::lex`], so
+    /// token byte-spans index into it (used for verbatim source slicing, e.g.
+    /// the diagnostics construct's operand spelling, spec §4.4).
+    pub fn new(toks: Vec<Token>, src: impl Into<std::rc::Rc<str>>) -> Self {
         Parser {
             toks,
+            src: src.into(),
             pos: 0,
             diags: Vec::new(),
             depth: 0,
@@ -1666,39 +1677,32 @@ impl Parser {
         AsmStmt::RaiseError { fstring, span }
     }
 
-    /// Parse one operand AND recover its verbatim source spelling (spec §4.4 —
-    /// the auto-message copies `src`/`dest` byte-for-byte, so `#Object_RAM` must
-    /// survive as `#Object_RAM`). The parser holds no source text, so the
-    /// spelling is reconstructed from the consumed token run using span
-    /// adjacency (a space is inserted only where the source had a gap between
-    /// two tokens). NB: numeric literals reprint in DECIMAL (the lexer discards
-    /// the radix), so a `#$100` spelling would surface as `#256`; the corpus
-    /// assert sites use `#0` / symbol immediates only, so this is faithful for
-    /// them (flagged: a hex-spelled immediate would diverge — see report).
+    /// Parse one operand AND recover its VERBATIM source spelling (spec §4.4 —
+    /// the auto-message copies `src`/`dest` byte-for-byte, so `#Object_RAM`
+    /// stays `#Object_RAM` and `#$8000` stays `#$8000`). The spelling is the
+    /// exact source substring the operand's tokens span, sliced from the
+    /// original text ([`Parser::src`]) — no token re-rendering, so every literal
+    /// form (hex/binary immediates, displacements, arithmetic) round-trips
+    /// exactly as the author wrote it.
     fn operand_with_spelling(&mut self, splices_allowed: bool) -> (Operand, String) {
         let first = self.pos;
         let op = self.operand(splices_allowed);
-        let spelling = self.render_tokens(first, self.pos);
+        let spelling = self.source_span_text(first, self.pos);
         (op, spelling)
     }
 
-    /// Reconstruct the verbatim source spelling of the token run `[from, to)`.
-    /// A separating space is emitted only where the SOURCE had whitespace
-    /// between adjacent tokens (their spans do not abut), so `#Object_RAM`
-    /// round-trips tight while `d0 , d1`-style gaps are preserved.
-    fn render_tokens(&self, from: usize, to: usize) -> String {
-        let mut out = String::new();
-        let mut prev_end: Option<u32> = None;
-        for tok in &self.toks[from..to] {
-            if let Some(pe) = prev_end {
-                if tok.span.start != pe {
-                    out.push(' ');
-                }
-            }
-            out.push_str(&tok_display(&tok.tok));
-            prev_end = Some(tok.span.end);
+    /// The verbatim source substring covered by the token run `[from, to)`:
+    /// from the first token's start byte to the last token's end byte. Tokens
+    /// index into [`Parser::src`] (the caller of [`Parser::new`] guarantees it
+    /// is the same text `lex` saw), so this is the author's exact spelling,
+    /// interior whitespace and radix included. Empty range → empty string.
+    fn source_span_text(&self, from: usize, to: usize) -> String {
+        if from >= to {
+            return String::new();
         }
-        out
+        let start = self.toks[from].span.start as usize;
+        let end = self.toks[to - 1].span.end as usize;
+        self.src.get(start..end).unwrap_or("").to_string()
     }
 
     /// `if cond { asm... } [else if ... | else { asm... }]` at proc/asm
@@ -3080,7 +3084,7 @@ pub(crate) fn split_size_suffix(e: Expr) -> (Expr, Option<TextOrSplice>) {
 pub fn parse_expr_for_tests(src: &str) -> Expr {
     let (tokens, errs) = crate::lexer::lex(src, sigil_span::SourceId(0));
     assert!(errs.is_empty(), "{errs:?}");
-    let mut p = Parser::new(tokens);
+    let mut p = Parser::new(tokens, src);
     let e = p.expr();
     assert!(p.diags.is_empty(), "{:?}", p.diags);
     e
