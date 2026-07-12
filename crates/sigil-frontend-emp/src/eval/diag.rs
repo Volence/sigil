@@ -29,14 +29,17 @@
 //!
 //! Task 1 of the diagnostics-construct build ships this encoder as the
 //! ground-truth foundation; the parser/desugar/lowering that CONSUME its
-//! `pub` API land in later tasks. Until then the items are exercised only by
-//! the `#[cfg(test)]` vectors below, so the module-level `allow(dead_code)`
-//! keeps the tree warning-free without weakening the public surface.
-#![allow(dead_code)]
+//! `pub` API land in later tasks. Until then those public items are exercised
+//! only by the `#[cfg(test)]` vectors below, so each carries a per-item
+//! `#[allow(dead_code)]`. The attribute is deliberately NOT module-scoped:
+//! private helpers (`encode_token`/`resolve_param`/`parse_num`) stay
+//! dead-code-checked, so a genuinely-orphaned helper still warns once the
+//! encoder is wired in.
 
 /// Argument display width for an FSTRING `%<.b|.w|.l ...>` operand and for
 /// `assert.<w>`. The `width_bits` (0/1/3) are OR'd into the param base to
 /// form the descriptor byte (debugger.asm lines 87-89, 750-756).
+#[allow(dead_code)] // consumed by the parser/desugar in later diag tasks
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Width {
     B,
@@ -101,16 +104,22 @@ const PARAM_FLAGS: &[(&str, u8)] = &[("signed", 8), ("split", 8), ("forced", 4),
 /// One `%<.b|.w|.l operand [param]>` argument recorded in string order, so the
 /// downstream push-code generator can emit the stack pushes (in reverse token
 /// order, per `__FSTRING_GenerateArgumentsCode`).
+#[allow(dead_code)] // consumed by the push-code generator in later diag tasks
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FStringArg {
     pub width: Width,
     pub operand_spelling: String,
+    /// The canonical param spelling (empty input normalizes to `"hex"`).
+    /// This is the SPELLING for diagnostics/round-tripping; a consumer that
+    /// needs the descriptor byte re-resolves it through the param table
+    /// (same path `encode_fstring` uses), it is not stored pre-resolved here.
     pub param: String,
 }
 
 /// The encoded inline-message byte run for a format string, plus the ordered
 /// argument list. `bytes` includes the trailing `$00` terminator but NOT the
 /// exit-flag byte (that is offset-parity-dependent — see [`exit_flag_bytes`]).
+#[allow(dead_code)] // returned to the lowering stage in later diag tasks
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncodedFString {
     pub bytes: Vec<u8>,
@@ -170,6 +179,7 @@ fn resolve_param(param: &str) -> Result<u8, String> {
 ///     `param` defaults to `hex`.
 ///
 /// A trailing `$00` terminator is always appended.
+#[allow(dead_code)] // driven by `raise_error` lowering in later diag tasks
 pub fn encode_fstring(s: &str) -> Result<EncodedFString, String> {
     let mut bytes = Vec::new();
     let mut args = Vec::new();
@@ -251,8 +261,15 @@ fn encode_token(inner: &str, bytes: &mut Vec<u8>, args: &mut Vec<FStringArg>) ->
         }
         let n = parse_num(arg)
             .ok_or_else(|| format!("FSTRING control token `%<{name} {arg}>`: `{arg}` is not a number"))?;
+        // The control param is a single byte — refuse to silently truncate
+        // (house rule: loud over silent). Names the token and the value.
+        if n > 0xFF {
+            return Err(format!(
+                "FSTRING control token `%<{name} {arg}>`: value {n} does not fit one byte (0..=255)"
+            ));
+        }
         bytes.push(*b);
-        bytes.push((n & 0xFF) as u8);
+        bytes.push(n as u8);
         return Ok(());
     }
 
@@ -290,6 +307,7 @@ fn parse_num(s: &str) -> Option<u64> {
 /// (`dest == None`) the `$E8 ",<dest>"` segment is omitted. The run includes
 /// the `%<.<w> src>` descriptor byte (`hex | width_bits`) and the `$00`
 /// terminator, but NOT the exit-flag byte (see [`exit_flag_bytes`]).
+#[allow(dead_code)] // driven by `assert` lowering in later diag tasks
 pub fn assert_message(w: Width, src: &str, cond: &str, dest: Option<&str>) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(b"Assertion failed:");
@@ -325,6 +343,7 @@ pub fn assert_message(w: Width, src: &str, cond: &str, dest: Option<&str>) -> Ve
 /// at an EVEN offset it emits the bare `$20`.
 ///
 /// (rings: odd → `$A0, $00`; core: even → `$20`, no pad — both reproduced.)
+#[allow(dead_code)] // emitted by the lowering stage in later diag tasks
 pub fn exit_flag_bytes(odd_offset: bool) -> Vec<u8> {
     if odd_offset {
         vec![0x20 | 0x80, 0x00]
@@ -484,6 +503,17 @@ mod tests {
     }
 
     #[test]
+    fn control_param_out_of_range_errors() {
+        // Loud over silent: >255 must error, not truncate to the low byte.
+        let e = encode_fstring("%<setw 400>");
+        assert!(e.is_err());
+        let msg = e.unwrap_err();
+        assert!(msg.contains("setw") && msg.contains("400"), "names token+value: {msg}");
+        // Boundary: 255 is the largest one-byte value and must succeed.
+        assert_eq!(encode_fstring("%<setw 255>").unwrap().bytes, vec![0xF0, 0xFF, 0x00]);
+    }
+
+    #[test]
     fn all_plain_control_tokens() {
         assert_eq!(encode_fstring("%<endl>").unwrap().bytes, vec![0xE0, 0x00]);
         assert_eq!(encode_fstring("%<cr>").unwrap().bytes, vec![0xE6, 0x00]);
@@ -496,6 +526,26 @@ mod tests {
     #[test]
     fn empty_fstring_is_just_terminator() {
         assert_eq!(encode_fstring("").unwrap().bytes, vec![0x00]);
+    }
+
+    #[test]
+    fn encode_fstring_ends_at_terminator_no_exit_flag() {
+        // The run must end at the $00 string terminator with NO exit-flag byte
+        // ($20/$A0) after it — the exit flag is offset-parity-dependent and is
+        // appended by the lowering stage, not the encoder. This pins the seam
+        // later tasks concatenate across (assert_message is locked separately
+        // by core_long_message_vector).
+        for s in ["", "plain text", "Got: %<.l a0 sym>", "a%<endl>b%<setw 20>c"] {
+            let bytes = encode_fstring(s).unwrap().bytes;
+            // Exactly one $00 and it is the final byte: nothing (no exit flag)
+            // follows the terminator.
+            assert_eq!(*bytes.last().unwrap(), 0x00, "must end at terminator: {s:?}");
+            assert_eq!(
+                bytes.iter().filter(|&&b| b == 0x00).count(),
+                1,
+                "exactly one terminator, none embedded: {s:?}"
+            );
+        }
     }
 
     #[test]
