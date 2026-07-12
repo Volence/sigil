@@ -102,7 +102,8 @@ own — path_swap's is a release-path fatal).
 8. inline data: the encoded auto-message (§4.4), arg descriptor byte
    (`$80|0/1/3` for b/w/l, hex), `$00` terminator
 9. exit-flag byte: `_eh_return` (`$20`), OR'd with `_eh_align_offset`
-   (`$80`) + one `$00` pad iff the flag lands at an odd offset (§4.5)
+   (`$80`) + one `$00` pad iff the flag lands at an EVEN offset (§4.5;
+   direction corrected 2026-07-12 — build finding 1)
 10. `jmp (MDDBG__ErrorHandler_PagesController).l` (extensions-enabled
     config — §7 caveat)
 11. `.skip:` (hygienic, generated) then `move.w (sp)+, sr` — CCR restore
@@ -121,11 +122,27 @@ operand spellings verbatim from source. **Retrofit rule: keep the .emp
 operand spelling identical to the AS twin's** (`#Object_RAM` stays
 `#Object_RAM`) or the message bytes diverge.
 
+**§4.4 amendment (2026-07-12, Task-2 gate, Fable-ratified):** spellings
+are VERBATIM SOURCE SUBSTRINGS — the parser retains the file text
+(`Rc<str>`) and slices each operand's span at parse time. Byte-exact by
+construction: any spelling the author writes (`#0`, `#$100`, `#%1010`,
+`#Object_RAM`, internal whitespace) reproduces exactly, so there is NO
+radix or form restriction on message-visible operands. (The plan's
+slice-at-parse intent stands; the interim "slice at eval" routing rested
+on a false premise — eval/lowering verifiably carry no source — and is
+void. The loud-guard fallback is dead: with no token-reconstruction
+step, there is nothing to guard. Scaffolding-era mechanism, ledgered.)
+
 ### 4.5 Parity rule
-Offset parity is tracked across the emitted data run; if the exit-flag byte
-would land odd, emit `flag|$80` + `$00` pad so the following jmp is
-word-aligned (rings: `$A0,$00`; core: `$20`, no pad — both reproduced).
-Final alignment matches the macro's trailing `!align 2`.
+**(Direction corrected 2026-07-12, build finding 1 — the original said
+"odd"; the byte examples were always right, the prose was inverted.)**
+Offset parity is tracked across the emitted data run; if the exit-flag
+byte would land at an EVEN offset, emit `flag|$80` + `$00` pad — the jmp
+that follows must start word-aligned, so flag-at-even (jmp would start
+odd) pads, flag-at-odd (jmp starts even) doesn't (rings: `$A0,$00` =
+padded; core: `$20`, no pad — both reproduced; verified from
+debugger.asm:264 + all four transliteration blocks). Final alignment
+matches the macro's trailing `!align 2`.
 
 ## 5. Validation (eval/layout stage — fail loud, steer)
 - unknown cond → error listing the 16 codes; missing width → error.
