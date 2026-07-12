@@ -212,8 +212,28 @@ live verification:
       but never reallocs). Its MAIN path is Step-6's frame-end wiring (runs every
       dirty frame), so verify the compact loop THERE (watch Count reconcile + zeros
       drain per frame); the compact-on-full guard is a rare safety valve, byte-verified.
-- [ ] **6. Compaction** at RunObjects tail (if dirty) — CompactDynamicLive built in
-      A1; Step 6 wires the frame-end call + live-verifies the compact loop. Live-verify.
+- [x] **6. Compaction** at RunObjects tail (if dirty) — DONE + VERIFIED (aeon ed2488c /
+      sigil dda6c15). Gated `tst.b Dynamic_Live_Dirty / beq .no_compact / jbsr
+      CompactDynamicLive` before the RunObjects rts (after all walks — entries may
+      safely move). jbsr auto-selects .s (target ~0x6A back, shape-invariant region →
+      bsr.s both shapes; disp -106 = $6196). O(1) on clean frames. core +0x8 both →
+      ALL downstream engine.inc regions +0x8; re-pin cascade: pins.rs regen (CORE len,
+      sprites/animate/collision/rings/collision_lookup/sound_api bases + region Pins),
+      mixed tranche5 disp $3B92→$3B9A / $4FBE→$4FC6, repin_pins CORE-len/ANIMATE/RINGS/
+      SOUND_API. ASSEMBLED_LEN + DELETE_OBJECT unchanged (before insertion / absorbed
+      before $10000 org). **Strict 2208/0, clippy clean, byte-identical both shapes.**
+      LIVE (OJZScroll): the list now SELF-CLEANS every dirty frame — where step 5
+      accumulated zeros (`0000 0000 96BE 961E` Count 4), step 6 compacts to `96BE 961E`
+      Count 2; Count always == the true live dynamic count (verified 1==1, 2==2 vs
+      object_list), Dirty cleared, no unbounded accumulation, no crash 600+ frames.
+      RIDER (compact-ON-FULL in AllocDynamic's actual register context): broke at the
+      `cmpi #NUM_DYNAMIC` ($2802) on the first spawn (a1=popped slot), fabricated
+      Count==40 with all-reclaimable entries, resumed — the guard fired ($280E reached),
+      CompactDynamicLive reclaimed all 40 zeros (Count 40→0, Dirty cleared), **a1 SURVIVED
+      the movem d1/a0-a2** (restored to $96BE at .append), append landed exactly once
+      (entry[0]=slot, Count 0→1). Game continued clean (Count 2 == 2 objects). NOTE:
+      oracle re-triggers a bp at the current PC on resume (no-op step) — clear it or
+      single-step past to advance.
 - [ ] **7. DEBUG asserts** (§6, three one-liners via `assert`): count ≤ NUM_DYNAMIC;
       every entry in-pool; post-compact count == full tst.w sweep live count.
 - [ ] **8. Profile packet** vs t10 11,841-cycle pin (needs oracle profiler fix).
