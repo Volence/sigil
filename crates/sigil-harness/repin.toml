@@ -333,6 +333,15 @@ tests = ["rings_port"]
 name = "Camera_Y"
 tests = ["rings_port"]
 
+# Biased camera RAM cells (A1 camera-bias fold, sprites step-5 follow-up).
+[[symbol]]
+name = "Camera_X_Biased"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "Camera_Y_Biased"
+tests = ["sprites_port"]
+
 [[symbol]]
 name = "Collected_MarkRing"
 tests = ["rings_port"]
