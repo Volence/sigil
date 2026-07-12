@@ -140,6 +140,23 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("MAX_VDP_SPRITES", "80"),
         ("VDP_SPRITE_X_OFFSET", "128"),
         ("VDP_SPRITE_Y_OFFSET", "128"),
+        // Sprite rendering geometry + render-flag bits + frame-header offsets
+        // (constants.asm — first consumed at the tranche-11 sprites.emp port).
+        ("RF_ONSCREEN", "0"),
+        ("RF_XFLIP", "1"),
+        ("RF_YFLIP", "2"),
+        ("RF_MULTISPRITE", "4"),
+        ("PRIORITY_BANDS", "8"),
+        ("SPRITES_PER_BAND", "32"),
+        ("SCANLINE_BANDS", "7"),
+        ("SCANLINE_SPRITE_LIMIT", "24"),
+        ("SCREEN_WIDTH", "320"),
+        ("SCREEN_HEIGHT", "224"),
+        ("FRAME_BBOX_X_MIN", "0"),
+        ("FRAME_BBOX_X_MAX", "1"),
+        ("FRAME_BBOX_Y_MIN", "2"),
+        ("FRAME_BBOX_Y_MAX", "3"),
+        ("FRAME_PIECES", "6"),
     ]
 }
 
@@ -233,14 +250,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_34() {
+    fn engine_constants_blob_assembles_and_defines_all_49() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            34,
-            "the twin guards 34 engine constants (30 + the tranche-10 object-core block)"
+            49,
+            "the twin guards 49 engine constants (34 + the tranche-11 sprites render/frame/screen block of 15)"
         );
     }
 

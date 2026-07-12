@@ -81,6 +81,15 @@ gate = "SIGIL_EMP_CORE"
 tests = ["core_port"]
 
 [[region]]
+# Shape-INDEPENDENT length ($420 both shapes — no __DEBUG__ code); base
+# slides with core's debug surplus. Downstream neighbour of core.
+name = "sprites"
+start = "InitSpriteSystem"
+end = "AnimateSprite"
+gate = "SIGIL_EMP_SPRITES"
+tests = ["sprites_port"]
+
+[[region]]
 name = "animate"
 start = "AnimateSprite"
 end = "TouchResponse"
@@ -412,6 +421,58 @@ tests = ["core_port"]
 [[symbol]]
 name = "DeleteObject"
 tests = ["animate_port"]
+
+# sprites (tranche 11) — the one outbound cross-region call: Render_Sprites
+# tail-calls DrawRings (rings region). Render_Sprites/InitSpriteSystem are
+# OUTBOUND exports (proven via bare-name consumer relaxation, no pin);
+# Draw_Sprite is internal to this region (pinned above for test_objects_port).
+
+[[symbol]]
+name = "DrawRings"
+tests = ["sprites_port"]
+
+# sprites' engine RAM cells (engine/ram.asm) — abs.w EAs, per-shape VMAs.
+# Camera_X/Camera_Y are pinned above (rings). Sprite_Cycle_Counter+1 derives.
+
+[[symbol]]
+name = "Sprite_Table_Buffer"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "Sprite_Table_Dirty"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "Sprite_Bands"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "Sprite_Band_Counts"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "Sprites_Rendered"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "Sprite_Cycle_Counter"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "SpriteMask_Y"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "SpriteMask_Height"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "SpriteMask_After_Band"
+tests = ["sprites_port"]
+
+[[symbol]]
+name = "Scanline_Band_Sprites"
+tests = ["sprites_port"]
 
 [[symbol]]
 name = "Sound_PlaySFX"

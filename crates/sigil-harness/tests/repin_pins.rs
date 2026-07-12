@@ -97,16 +97,16 @@ fn pins_rs_is_current() {
 #[test]
 fn generated_pins_match_the_hand_typed_baseline() {
     // animate_port.rs: PLAIN/DEBUG Shape { base, len } — len shape-invariant.
-    // Bases slid −4 in the tranche-10 step-2 core shrink.
-    assert_eq!(pins::ANIMATE.plain_base, 0x2D74);
-    assert_eq!(pins::ANIMATE.debug_base, 0x302E);
+    // Bases slid −4 (tranche-10 core) then −8 (tranche-11 sprites) at step 2.
+    assert_eq!(pins::ANIMATE.plain_base, 0x2D6C);
+    assert_eq!(pins::ANIMATE.debug_base, 0x3026);
     assert_eq!(pins::ANIMATE.plain_len, 0x192);
     assert_eq!(pins::ANIMATE.debug_len, 0x192);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
-    // Bases slid −4 in the tranche-10 step-2 core shrink.
-    assert_eq!(pins::RINGS.plain_base, 0x306C);
-    assert_eq!(pins::RINGS.debug_base, 0x3326);
+    // Bases slid −4 (tranche-10 core) then −8 (tranche-11 sprites) at step 2.
+    assert_eq!(pins::RINGS.plain_base, 0x3064);
+    assert_eq!(pins::RINGS.debug_base, 0x331E);
     assert_eq!(pins::RINGS.plain_len, 0x1B4);
     assert_eq!(pins::RINGS.debug_len, 0x210);
 
@@ -143,9 +143,9 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     assert_eq!(pins::RINGCOL_OFF, pins::ShapeOffset { plain: 0x112, debug: 0x16E });
 
     // sound_api_port.rs: base + literal len (no end symbol in the listing).
-    // Bases slid −4 in the tranche-10 step-2 core shrink (downstream in-block).
-    assert_eq!(pins::SOUND_API.plain_base, 0x5BE2);
-    assert_eq!(pins::SOUND_API.debug_base, 0x70A0);
+    // Bases slid −4 (tranche-10 core) then −8 (tranche-11 sprites), downstream in-block.
+    assert_eq!(pins::SOUND_API.plain_base, 0x5BDA);
+    assert_eq!(pins::SOUND_API.debug_base, 0x7098);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);
