@@ -102,7 +102,40 @@ by default):
 good? Algorithmic/cycle-level, not assembler spelling. Behavior-affecting
 changes live here and need LIVE verification (oracle) on top of the
 lockstep + re-pin mechanics. "No changes, recorded why" is a valid
-outcome.
+outcome — but only AFTER the interrogation below, with each line's
+outcome named in the packet.
+
+  **The step-5 interrogation** (added 2026-07-11 after the t11 sprites
+  review: a second look found real items behind a "no changes" verdict.
+  "Looks hand-optimized" is ANCHORING, not analysis; "no profiler" blocks
+  measurement, never inspection. Run EACH line, per hot proc):
+  - **Invariant ladder** — classify every loop instruction by the WIDEST
+    scope it's invariant over (iteration → object → band → frame →
+    build); anything sitting below its scope is a hoist/fold candidate
+    (the camera-bias class: per-piece `addi #128` folds into the
+    per-frame camera read).
+  - **Counter/cache audit** — for every counter, cache, or budget: list
+    ALL writers and ALL readers; every path that consumes the guarded
+    resource must charge it, or the asymmetry is documented as intended
+    (the scanline-budget class: an early-out skipped the COMMIT; a
+    sibling path skipped the charge entirely).
+  - **Guard-coverage audit** — for every limit/safety check: enumerate
+    every emission path; is the check on all of them? Name which checks
+    are LOAD-BEARING vs redundant (the dbeq cap-net class: sole guard
+    for uncached counts — protect it from future "cleanup").
+  - **Hardware cross-check** — every VDP/hardware-facing behavior gets
+    checked against the documented quirks (sprite-mask first-sprite-
+    on-line exemption, per-line sprite/pixel limits, DMA boundaries…);
+    what can't be verified statically becomes a named oracle probe in
+    the packet, not a silent assumption.
+  - **Silent-tradeoff comments** — every accepted behavioral compromise
+    (cascade-down under overflow, a skipped call that's coincidentally
+    equivalent, unconditional fairness cycling) gets a site comment
+    saying it is CHOSEN — an uncommented compromise is a finding.
+
+  **Hot-path second look**: files on the per-frame hot path (render,
+  physics, object/frame loop) get a Fable review pass before the merge
+  gate — the checklist raises the floor; the second look is the ceiling.
 
 **Loop until dry**: after step 5, retrospect again; anything found →
 construct-pass/optimize again; repeat until a retrospect pass comes up
