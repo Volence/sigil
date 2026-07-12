@@ -100,6 +100,8 @@ const PLAIN: Shape = Shape {
         ("Scanline_Band_Sprites", pins::SCANLINE_BAND_SPRITES.plain),
         ("Camera_X", pins::CAMERA_X.plain),
         ("Camera_Y", pins::CAMERA_Y.plain),
+        ("Camera_X_Biased", pins::CAMERA_X_BIASED.plain),
+        ("Camera_Y_Biased", pins::CAMERA_Y_BIASED.plain),
     ],
 };
 
@@ -120,6 +122,8 @@ const DEBUG: Shape = Shape {
         ("Scanline_Band_Sprites", pins::SCANLINE_BAND_SPRITES.debug),
         ("Camera_X", pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.debug),
+        ("Camera_X_Biased", pins::CAMERA_X_BIASED.debug),
+        ("Camera_Y_Biased", pins::CAMERA_Y_BIASED.debug),
     ],
 };
 
@@ -458,3 +462,4 @@ fn doctored_twin_mirror_fires_its_guard() {
         "the fired guard must NAME the drifted constant: {fired:?}"
     );
 }
+
