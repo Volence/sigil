@@ -47,6 +47,52 @@ shipped-construct retrofit, `[CERT]` audited clean. Fixes ship as
 retro-fix batches (precedent: 2026-07-11-retro-fixes-CA1-RA1), never
 inline in this doc's commits.
 
+## Brief for the auditing agent (one file per sitting)
+
+You are running a retro-audit sitting on ONE ported `.emp` file. The two
+completed entries below (dplc.emp, animate.emp) are your calibration
+exhibits — read them first; your output must match their evidence
+density, not their length.
+
+**Ground rules:**
+
+1. **Audit the file as it stands on aeon master TODAY** (post-
+   consolidation, post-occupancy) — not the packet-era version. Read the
+   whole file, its `.asm` twin, and the tranche packet's record for it.
+2. **Run EVERY checklist line** from `campaign-port-loop.md` — step
+   3(a), 3(b), step-4 construct pass, step-5 (per hot proc). An outcome
+   is named even when it's "audited, nothing" — that's a [CERT] line,
+   and it counts.
+3. **Every finding carries evidence**: file:line, plus the verification
+   you did. A claim about a callee's contract means you READ the
+   callee's contract text (enforced vs incidental preserves are
+   different things — see the animate/Sound_PlaySFX exhibit). A claim
+   that a comment lies means you traced the code that falsifies it
+   (see the dplc "can slip one frame" exhibit). No vibes.
+4. **When a finding is an instance of a PATTERN, enumerate the pattern
+   corpus-wide before writing it up** (grep is fine for enumeration —
+   the rings A1-fold sibling was found that way). One pattern with all
+   its sites beats N duplicate findings in later sittings.
+5. **Credit the original record where it holds.** If the packet's
+   not-taken reasoning survives your re-check, say so — the audit's
+   credibility depends on not manufacturing findings.
+6. **Findings only — NO fixes in audit commits.** Bucket as [PROC] /
+   [OPT] / [HAZ] / [RETRO] / [CERT]. Fixes ship later as retro-fix
+   batches. DEBUG-assert candidates use the shipped diagnostics
+   construct and must note byte-neutrality in release.
+7. **Static analysis first.** If a question genuinely needs the
+   emulator, NAME the probe in your findings rather than improvising —
+   and if you do run oracle, press-only frame driving (never bare
+   `resume` before `press`; never interleave `step_out` with `press` —
+   ledger row 990, it wedges the emulator).
+8. **Output**: append a `### <file> (t<N>) — audited <date>` section
+   after the last completed one, flip the file's status-table row to
+   DONE with a finding count, one commit, message style:
+   `docs(audit): <file> full-checklist sitting — <top findings>`.
+   Your final report to the orchestrator = the findings section
+   verbatim; it will be gate-reviewed against the code before the
+   sitting is accepted.
+
 ## Corpus status table
 
 | File | Tranche | Packet step-5 evidence for THIS file | Audit |
