@@ -101,6 +101,72 @@ inline in this doc's commits.
    commit on failure. Contract change also touches bg_anim.asm.
    Predates the port — inherited, not introduced.
 
+### animate.emp (t9) — audited 2026-07-12, full-checklist sitting (Fable)
+
+**Credit first: the t9 record was honest and strong** — not-taken items
+recorded WITH numbers (flip-sync ~56c behavior-load-bearing; d1
+re-derivation ~16c cold; bra.w tables ≈cost-neutral), `andi.w #$FF`
+verified load-bearing (reads-dead but isn't), the dead
+`AnimateSprite_PerFrame` caught at the gate (absent today ✓), and the
+whole thing live-verified in oracle. This sitting re-confirms those
+step-5 verdicts. Everything below is NEW — almost all of it is the 3(b)
+guard/claim class and diagnostics-era retrofits that didn't exist at t9.
+
+1. **[HAZ] `.evt_set_field` writes a script-supplied offset into the SST
+   unbounded** — `move.b 3(a1,d1.w), (a0,d0.w)` with d0 straight from
+   script data. An offset ≥ sizeof(Sst) writes into the NEXT object's
+   SST (neighbour corruption, nightmare-class to debug). DEBUG
+   `assert.w d0, lo, #sizeof(Sst)` — byte-neutral in release.
+2. **[HAZ] Two hang-class script-authoring traps (in-frame infinite
+   loops = full game hang, not garbage art):**
+   (a) `AF_BACK` with N=0 — `.cc_back` subtracts 0, re-reads the same
+   `AF_BACK` byte, dispatches forever within one frame.
+   (b) A frameless script (byte 1 is a non-exiting control code, e.g.
+   `dc.b dur, AF_END`) — `.cc_end` clears anim_frame, re-reads byte 1,
+   loops forever. DEBUG asserts: N ≠ 0 at `.cc_back`; the full cure is
+   the script DSL (finding 9).
+3. **[HAZ-lite] `AF_CHANGE` to the CURRENT anim silently fails to
+   restart** — target == prev_anim takes the unchanged path, so
+   anim_frame never resets; the object freezes at the AF_CHANGE
+   position and re-dispatches every timer expiry. Site comment
+   minimum; DEBUG assert (target ≠ current) optional.
+4. **[HAZ-lite] `AF_SET_FIELD` targeting mapping_frame bypasses
+   `RefreshSpritePieceCount`** — stale piece count → SAT emits wrong
+   piece count for the frame. Site comment + DEBUG assert
+   (offset ≠ Sst.mapping_frame).
+5. **[OPT] redundant d1 save around `Sound_PlaySFX`** — the callee's
+   `preserves(d1/a0)` is ENFORCED (movem-backed, contract-stable);
+   animate's `movem.l a1/d1` can be `move.l a1` (a1 stays — it's only
+   INCIDENTALLY preserved, contract says don't rely). −4 B, ~24 cyc,
+   cold path. Same back-prop class as the rings A1 miss: the
+   `preserves()` contract shipped and callers were never re-swept.
+6. **[guard-coverage] the `cmpi.b #9 / bhi .cc_end` in `.control_code`
+   is unreachable** from all 6 entry paths (every entry pre-checks
+   ≥ AF_SET_FIELD; `neg.b` maps $F7-$FF → 1-9 exactly). Pure defense —
+   per the checklist it needs a CHOSEN site comment or removal
+   (−6 B on the dispatch path). Note its fallback (.cc_end) would
+   itself loop on a corrupt byte, so as defense it's half-hearted;
+   naming it is the point.
+7. **[OPT-micro]** `.evt_sound`'s d0 arg load sits outside the
+   `SOUND_DRIVER_ENABLED` gate — 4 dead bytes in the SND=0 shape only.
+8. **[NOTE]** `RefreshSpritePieceCount`'s `(a1,d2.w)` sign-extended
+   index caps mapping files at <$8000 bytes — a comptime `ensure()`
+   candidate when mapping data ports to `.emp`.
+9. **[ASK — the 3(a) headline] animation scripts are THE
+   byte-command-DSL demand case** (Plan-7 research item #3). A typed
+   script construct makes findings 1-4 UNREPRESENTABLE: typed args
+   (AF_BACK count ≠ 0 by refinement), required terminator, even-length
+   invariant checked at comptime, field-write whitelist. This file +
+   sonic_anims/particle_anims are the demand evidence; attach to the
+   existing ledger row.
+10. **[RETRO/step 4]** the fetch-frame-and-dispatch tail (6 lines)
+    appears 3 full + 2 partial times — comptime-fn dedup candidate,
+    byte-neutral (emit_piece_loop skeleton precedent).
+
+No oracle probes required — all findings static-decidable. Optional:
+re-profile AnimateSprite's frame share post-occupancy (t9's numbers
+predate the live-list).
+
 ### Mechanical byte-shackle sweep — corpus-wide, 2026-07-12
 
 **Question (Volence):** did pre-checklist step 2/5 fail to optimize because
