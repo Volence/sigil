@@ -471,6 +471,51 @@ meaningfully shackled on idiom-level output; the shackle shows in
 missed RESTRUCTURING wins (A1 itself only surfaced in the t11 second
 look, and its rings sibling is still unfixed).
 
+### entity_window (t12, at merge gate) — Fable second look 2026-07-12
+(rides t12, recorded here; also the blind-run experiment scorecard)
+
+**Blind-run experiment result:** the t12 agent, given only "continue
+steps 3-5", produced real 3(b) yield (6 stale byte-lock comments caught
++ fixed) and disciplined step-4 deferrals (each with a cause + ledger
+row), but did NOT run the per-line step-5 interrogation (summary verdict
+— the anchoring shape), did NOT discover the A2 rail need (cross-doc
+hazard), and showed no contract-audit under the new clobbers ruling.
+**Lesson ratified into practice: cross-doc hazards need explicit
+handoff, and the checklist does not self-enforce from a bare "continue"
+— the brief travels with the task.**
+
+Second-look findings (the file's audit sitting):
+
+1. **[RAIL — precise scoping]** EntityWindow_DespawnObjects is the
+   fourth live-list walker but has NO alloc path (it only deletes —
+   A1-safe by design), so it cannot trigger the mid-walk compact hazard
+   TODAY. The walk-live flag hook is still required for the invariant
+   to be TOTAL — without it, the Compact assert is unsound the day
+   anyone adds a spawn to despawn. Not merge-blocking. Lands as a
+   named rider on the retro-fix batch integration AFTER t12 merges
+   (the batch fence opens for exactly this one hook).
+2. **[CERT] DespawnObjects verified line-by-line**: movem frame offset
+   exact (12(sp) = saved a0), clearLoadedObj-before-delete ordering
+   correct, A1 null-guard + truth-guard present, ANY_Y semantics match
+   the header exactly (Y-band exemption only, section lifetime still
+   applies — the header even argues the re-entry-duplicate why).
+   O(live) per frame, bounded.
+3. **[CERT] RescanY**: ratchet-bounded (0..right_idx only), loaded-bit
+   idempotent, defensive terminators on both list kinds; cost
+   O(X-range entities) per 128px coarse crossing. The agent's step-5
+   "bounded, not a hotspot" verdict is structurally SUPPORTED — right
+   answer, under-evidenced.
+4. **[CERT] Counter audit**: Camera_Y_Coarse_Prev — two writers (Init
+   baseline, per-frame trigger), one reader; teleport-safe (Init
+   rewrites; a raw jump costs one idempotent rescan).
+5. **[CERT] MigrateMasks**: snapshot-based identity match (no in-place
+   aliasing), cold-path clarity choice stated in the header.
+6. **[DEBT, carried]** high-entity-churn profile owed (agent named it;
+   costs bounded by construction, so post-merge ledger row is fine).
+
+**Verdict: t12 is mergeable.** Deltas −28 plain / −12 debug, gates
+green both shapes, loop genuinely dry after the second look.
+
 ## RULINGS (Volence, 2026-07-12)
 
 1. **A2 mid-walk compact: RAIL FIRST, decide after soak.** Land the
