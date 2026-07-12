@@ -100,16 +100,16 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
     // −2 plain/−4 debug (C-A1 core shrink), +0x22 both (object-pool occupancy
     // grew the core region) — net.
-    assert_eq!(pins::ANIMATE.plain_base, 0x2D94);
-    assert_eq!(pins::ANIMATE.debug_base, 0x304C);
+    assert_eq!(pins::ANIMATE.plain_base, 0x2D9C);
+    assert_eq!(pins::ANIMATE.debug_base, 0x3052);
     assert_eq!(pins::ANIMATE.plain_len, 0x192);
     assert_eq!(pins::ANIMATE.debug_len, 0x192);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
     // Bases slid as animate above, incl. +0x22 (object-pool occupancy core
     // growth). LEN unchanged: R-A1's addi #16→#8 is same-size (immediate only).
-    assert_eq!(pins::RINGS.plain_base, 0x308C);
-    assert_eq!(pins::RINGS.debug_base, 0x3344);
+    assert_eq!(pins::RINGS.plain_base, 0x3094);
+    assert_eq!(pins::RINGS.debug_base, 0x334A);
     assert_eq!(pins::RINGS.plain_len, 0x1BE);   // +0xA: ring-art DrawRings frame-tile calc
     assert_eq!(pins::RINGS.debug_len, 0x21A);
 
@@ -118,9 +118,9 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // flag, all unconditional). Base unchanged (InitObjectRAM = dplc's
     // unchanged end).
     assert_eq!(pins::CORE.plain_base, 0x2794);
-    assert_eq!(pins::CORE.plain_len, 0x1E0);
+    assert_eq!(pins::CORE.plain_len, 0x1E8);
     assert_eq!(pins::CORE.debug_base, 0x2926);
-    assert_eq!(pins::CORE.debug_len, 0x306);
+    assert_eq!(pins::CORE.debug_len, 0x30C);
     assert_eq!(pins::DPLC.plain_base, 0x26FC);
     assert_eq!(pins::DPLC.debug_base, 0x288E);
     assert_eq!(pins::DPLC.plain_len, 0x98);
@@ -153,8 +153,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), +0xA (ring-art
     // DrawRings), then +0x22 (object-pool occupancy core growth) — all downstream
     // in-block.
-    assert_eq!(pins::SOUND_API.plain_base, 0x5C12);
-    assert_eq!(pins::SOUND_API.debug_base, 0x70CE);
+    assert_eq!(pins::SOUND_API.plain_base, 0x5C1A);
+    assert_eq!(pins::SOUND_API.debug_base, 0x70D4);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);

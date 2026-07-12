@@ -87,7 +87,33 @@ live verification:
       deferred-compaction over-approximation (delete flags dirty, leaves the list
       untouched; compaction reconciles in Step 6). Maintenance matrix fully green:
       append + negative-dirty + positive-dirty.
-- [ ] **2. Walker: RunObjects .run_culled** → live-list loop. Live-verify.
+- [x] **2. Walker: RunObjects .run_culled → live-list loop** — DONE + VERIFIED.
+      New loop: `lea Dynamic_Live,a2 / move.w Count,d7 / beq .culled_done /
+      subq #1,d7 / .culled_loop: movea.w (a2)+,a0 / tst.w (a0) guard / …cull… /
+      dispatch (a2 saved across jsr — object code may clobber it; only a0/d7 are
+      preserved) / dbf`. Caller drops the dead `lea Dynamic_Slots/move.w #NUM-1`.
+      d7 snapshots the count (mid-walk child spawn runs next frame). Twins lockstep
+      byte-identical both shapes; the growth pushed the plain-shape
+      `bne RunObjects_Frozen` past .s → twin now unconditional `bne.w` (bare-Bcc
+      relaxes, twin follows). Core +0x8 plain / +0x6 debug; full re-pin cascade
+      (engine.inc orgs, mixed tranche5 disp $3A54→$3A5C / $4E82→$4E88, repin_pins
+      ANIMATE/RINGS/SOUND_API/CORE-len). **Strict 2208/0, clippy clean, core_port
+      byte-identical both shapes.**
+      LIVE (frame-locked, FC-anchored): RUN-ORDER FLIP proven — first dynamic
+      dispatch a0 = slot 2 (BEFORE, slot sweep) → slot 41 (AFTER: `movea.w (a2)+`
+      loads Dynamic_Live[0]=0x96BE, cursor→0xAFF2). Dispatch order = list forward
+      = slots 41→2 (spawn order). PARENTS-BEFORE-CHILDREN: parents (slots 17-19)
+      at list indices 22-24, children (slots 2-8) at 33-39 → every child dispatches
+      after all parents. SOUNDNESS: scene renders + runs correctly; forced a
+      dynamic delete (parent self-destruct → 4 dead entries) + 150-frame soak —
+      no crash, dead-but-uncompacted entries safely skipped by the tst.w guard
+      (§6 hazard), Count held 40 (deferred compaction, no overflow).
+      CAVEAT (pre-compaction transient): between Steps 2-5 the walker reads the
+      list but nothing compacts, so a DELETE+REALLOC cycle grows Count unbounded
+      (past NUM_DYNAMIC). Not triggered in ObjectTest (pool fills to 40, then
+      AllocDynamic returns full — no realloc). Step 6 compaction resolves it;
+      Step 7 asserts catch count ≤ NUM_DYNAMIC. Verify each interim walker in a
+      non-realloc scene.
 - [ ] **3. Walker: RunObjects_Frozen** dynamic segment → live list. Live-verify.
 - [ ] **4. Walker: TouchResponse** dynamic inner walk → live list + fixed
       system+effect sweep. Live-verify.
