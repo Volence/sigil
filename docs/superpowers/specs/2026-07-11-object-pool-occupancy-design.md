@@ -1,7 +1,15 @@
 # Object-pool occupancy (the "run objects list") — design
 
-2026-07-11 · Fable · status: DRAFT awaiting Volence gate (engine-arch,
-behavior-affecting — the tranche-9 PerFrame-deletion class).
+2026-07-11 · Fable · status: **SHIPPED 2026-07-12** (built steps 1-8 +
+amendment A1 on branch object-pool-occupancy; merged aeon f64ebf7 /
+sigil fdf8d36, master ROMs re-baselined). §3 ruling: SPAWN-ORDER
+dispatch (Volence, 2026-07-12). Measured result: RunObjects 11,841 cyc
+(9.3% NTSC frame) → 2,428 cyc (1.9%), −79.5% — the −9,413 saving tracks
+the t10 pin's 9,677 cyc of fixed-sweep dispatch; beats §7's "roughly a
+third" estimate (actual ~1/5). Packet:
+notes/2026-07-12-object-pool-occupancy-profile-packet.md.
+(Originally: DRAFT for Volence's gate — engine-arch, behavior-affecting,
+the tranche-9 PerFrame-deletion class.)
 Promotes the gap-ledger DESIGN-READY entry (tranche-7 close) to a full
 spec, grounded in the tranche-10 profile and a fresh full-corpus site map.
 Supersedes the ledger row's sketch; the row gets a pointer here at the
@@ -80,7 +88,7 @@ high-slot-first (InitObjectRAM primes 0..39 so slot 39 allocates first),
 so today's order is already an allocation-history artifact, not a designed
 contract. The live list makes order explicit. Two options:
 
-**(a) SPAWN order (append + compact — RECOMMENDED).** Iteration order =
+**(a) SPAWN order (append + compact — RECOMMENDED; RULED + SHIPPED).** Iteration order =
 allocation order, stable under deletion (compaction preserves relative
 order). Deterministic, and it yields the genuinely useful invariant
 **parents always run before their children** (children are allocated
@@ -205,6 +213,8 @@ construct ships; sequence them AFTER it).
 - Ceiling: the empty-slot tax only (~7-8k cycles/frame, ~6% NTSC at
   typical occupancy; per-live work is real work and stays). RunObjects'
   9.3% should drop to roughly a third of itself in the 3-object scene.
+  **As-built: dropped to ~1/5 (2,428 cyc, 1.9%) — the null-guard walk is
+  cheaper than the old triple-early-out sweep it replaced.**
 - **This is behavior-affecting (order, timing) — full step-5 live
   treatment**: oracle profiler before/after on the same scene
   (emulator_get_profiler; compare against t10's pinned 11,841); object
