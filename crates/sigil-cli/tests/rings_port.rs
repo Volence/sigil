@@ -12,9 +12,9 @@
 //!   in `RingBuffer_Add.full` exists only in the debug shape (plain 0x1B4,
 //!   debug 0x210 bytes), so `Shape` carries a per-shape `len`, not the usual
 //!   shared constant.
-//! - **`dc.b` in a proc body (H8)** — the transliterated `assert.b` expansion
-//!   carries its FSTRING string/flag data as code-embedded `dc.b` statements
-//!   between the `jsr (MDDBG__ErrorHandler).l` and the resume label.
+//! - **`dc.b` in a proc body (H8)** — the `assert.b` construct's DEBUG-shape
+//!   expansion carries its FSTRING string/flag data as code-embedded `dc.b`
+//!   bytes between the `jsr (MDDBG__ErrorHandler).l` and the resume label.
 //! - **Comptime-`if` build shapes in a BYTE-GATED engine region** — `DEBUG`
 //!   and `SOUND_DRIVER_ENABLED` (`-D NAME=0|1`) mirror the AS twin's `ifdef`s;
 //!   the reference gates run (0,1) and (1,1), the combo probe below covers the
@@ -39,7 +39,7 @@
 //! `Player_1` (GAME RAM, moves with `__DEBUG__`), plus the ROM code targets
 //! `Collected_MarkRing`, `EntityWindow_EntryForSection`, `EntityLoaded_Clear`,
 //! `Sound_PlayRing`, and (debug shape only) the two `MDDBG__ErrorHandler*`
-//! entry points the assert transliteration jumps into.
+//! entry points the assert construct's expansion jumps into.
 //!
 //! OUTBOUND: all five procs are `pub` (callers: entity_window.asm,
 //! sprites.asm, game states); a synthetic `bsr.w RingCollision` consumer
@@ -133,7 +133,7 @@ const DEBUG: Shape = Shape {
         ("EntityWindow_EntryForSection", pins::ENTITY_WINDOW_ENTRY_FOR_SECTION.debug),
         ("EntityLoaded_Clear", pins::ENTITY_LOADED_CLEAR.debug),
         ("Sound_PlayRing", pins::SOUND_PLAY_RING.debug),
-        // Debug shape only: the assert transliteration's error-handler entry
+        // Debug shape only: the assert construct's error-handler entry
         // points (values read from the reference ROM's own jsr/jmp operands).
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
@@ -421,7 +421,8 @@ fn rings_region_matches_reference() {
 }
 
 /// (debug) the `rings` region == `s4.debug.bin[0x332A..0x353A]` — DEBUG=1,
-/// including the transliterated assert block and its `dc.b` FSTRING data.
+/// including the assert construct's DEBUG-shape expansion and its `dc.b`
+/// FSTRING data.
 #[test]
 fn rings_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin", 1);
