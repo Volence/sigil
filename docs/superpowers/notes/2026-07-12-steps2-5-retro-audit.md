@@ -111,16 +111,16 @@ density, not their length.
 | engine/objects/collision.emp | t7 | step-5 review (Volence's AABB, honest review) | **DONE 2026-07-12** — HEADLINE mid-walk compact hazard; Touch_Solid certified |
 | engine/objects/aabb.emp | t7 | same tranche | **DONE 2026-07-12** — ensure-the-alias-constraint retrofit |
 | engine/system/game_loop.emp | t5 | one yield (SR-mask hazard comment) | **DONE 2026-07-12** — clean |
-| games/sonic4 object bank (test_particle/test_solid, act_descriptor) | t6 | −8 B live-verified | pending |
-| data: particle_anims / sonic_anims | t4 | step-5 queue (pads) — executed? verify | pending (data files — 3(a)/3(b) focus) |
+| games/sonic4 object bank (test_particle/test_solid, act_descriptor) | t6 | −8 B live-verified | **DONE 2026-07-12** — clobber-drift pattern named (3 corpus instances) |
+| data: particle_anims / sonic_anims | t4 | step-5 queue (pads) — executed? verify | **DONE 2026-07-12** — pad question ANSWERED (executed, −6 B); CERT+ |
 | engine/level/collision_lookup.emp | t3 (OLD loop) | n/a — step 5 didn't exist | **DONE 2026-07-12** — clean, transitive-clobber model file |
 | engine/system/vdp_init.emp | t3 (OLD loop) | n/a | **DONE 2026-07-12** — ensure(len<=32) retrofit + flush-race probe named |
 | engine/system/controllers.emp | t2 (OLD loop) | n/a | **DONE 2026-07-12** — clean; Press_Accum-consumer probe named |
 | engine/system/math.emp | t2 (OLD loop) | n/a | **DONE 2026-07-12** — clean, boundary verified exact |
 | engine/system/hblank.emp | pre-loop | n/a | **DONE 2026-07-12** — handler-contract comment wanted |
 | engine/sound/sound_api.emp | pre-loop + A2 audit | own A2 audit | **DONE 2026-07-12 (full sitting)** — A2-era work verified; 4 findings (PlayMusic id bounds, ring-drop assert, DrainSfxRing sr claim, PlayRing over-declared a0) |
-| data/sound: mt_bank, sfx_bank, dac_samples | pre-campaign (M1.D/Plan-6/7 era); sfx_bank got the `table` retrofit | n/a | pending — low priority, data-shaped |
-| support twins: sst.emp, constants.emp, types.emp | grown across tranches | n/a | audit as cross-cutting pass at the end |
+| data/sound: mt_bank, sfx_bank, dac_samples | pre-campaign; sfx_bank got the `table` retrofit | n/a | **DONE 2026-07-12** — mt_bank SONG_* mirrors ensure-able (closable hand-sync) |
+| support twins: sst.emp, constants.emp, types.emp | grown across tranches | n/a | **DONE 2026-07-12** — CERT+; Radius rename = Volence one-worder |
 
 ## Findings
 
@@ -569,6 +569,104 @@ Findings:
    boundary — [[emp-sonic-newtype-candidates]] class); the S2-D7 CCR
    instance from finding 3; confirm the stop_z80/start_z80 comptime
    templates carry their kill-list row (macros.asm mirror class).
+
+**Per-step outcomes (the filled checklist, held to my own rule):**
+- *Step 2 residue:* CLEAN — jbra tail-calls throughout, bare Bcc, house
+  comments, brace style; no width or idiom residue.
+- *3(a) ceremony:* low; the equ-mirror block is the known kill-row-10
+  escape class, documented in-file. *Comment-as-compensation:* the big
+  proc headers are why-narration, not what-compensation — fine.
+  *Escape-hatch census:* extern() equ sums (known class, demand data
+  logged); stop/start_z80 macro mirrors (kill-row confirm above).
+  *Domain-type scan:* finding 6 (SoundId).
+- *3(b) comment-claim:* findings 2 (ring "never" claim) and 5 (Init's
+  unexplained probe-release); all other claims traced true (bus-hold
+  hardware claim, dedup exact-id rationale, param-ordering claim).
+  *Contract audit:* findings 3 (sr half-true) and 4 (a0 over-declared);
+  all other headers exact. *Name audit:* clean. *Magic numbers:* clean
+  (mirrors + named consts). *Cold-reader:* passes — the file traces
+  from headers alone.
+- *Step 4 construct:* nothing new warranted — PostByte already
+  single-sources the post shape via tail-calls; the stop/start_z80
+  templates are the construct layer working. NOT-taken: a
+  "posted-slot proc" comptime-fn for the four two-line wrappers
+  (Stop/Fade×2/Tempo-ish) — 4 sites × 2 lines, dedup gain ~nil,
+  clarity loss real.
+- *Step 5 (per hot proc):* DrainSfxRing (per-frame): invariant ladder
+  CLEAN (cheapest-gate-first: 4-instr empty check before any bus hold);
+  counter/cache audit CLEAN (SPSC Rd/Wr, finding-6 credit);
+  guard-coverage = finding 2; hardware cross-check CLEAN (bus-hold +
+  SR-mask non-nesting rationale verified against the vblank claim);
+  silent tradeoffs: latest-wins slot model + one-per-frame drain both
+  documented-as-chosen. PlaySFX (per-event): ladder n/a (straight
+  line); guard-coverage = finding 2; index-safety verified both sites.
+  PlayMusic (rare): guard-coverage = finding 1; ordering claim
+  verified. No optimization taken — nothing warranted, all paths are
+  either cold or already minimal.
+
+### t6 object bank (test_particle / test_solid / act_descriptor) — audited 2026-07-12 (Fable)
+
+- **[3(b)/contract — the dangerous direction] `TestSolid_Main` declares
+  NO clobbers while tail-calling Draw_Sprite** (d0-d3/a1). The header
+  prose documents the right set; the SIGNATURE is the contract under
+  exhaustive-license, and it under-declares. Add
+  `clobbers(d0-d3/a1)`.
+- **[3(b)-micro] `TestParticle_Main` declares `clobbers(d0-d4/a1-a3)`
+  claiming "(ObjectMove/AnimateSprite/Draw_Sprite's union)"** — the true
+  union is d0-d3/a1-a2; the license over-declares d4/a3 while its prose
+  claims exactness. Tighten or reword.
+- **PATTERN NAMED: clobber-declaration drift** — three instances today
+  (PlayRing over-declares, TestParticle over-claims-union, TestSolid
+  under-declares). All are what the deferred S2-D6 checked-clobbers
+  lint exists for (demand data += 3); near-term, a declared-vs-union
+  sweep is a natural fix-batch-2 item.
+- **[CERT]** act_descriptor: 9 drift ensures, data-shaped, clean.
+  test files otherwise clean (falls_into chains, honest init-frame
+  comment, screen-coord flag correct).
+
+### t4 anims (particle_anims / sonic_anims) — audited 2026-07-12 (Fable)
+
+- **[CERT+] — and the table's open question is ANSWERED**: the t4
+  step-5 queue ("drop the inter-body align pads") WAS executed — the
+  file documents the rewrite (bodies pack, −6 B vs the first port,
+  align kept only where the next word-read table needs it, commented
+  as inert-today-guards-edits).
+- sonic_anims is a corpus showpiece: ordinals-as-ids with 12
+  `ensure(extern(...))` drift guards making the hand-synced pairing
+  CHECKED FACTS; the `rep()` held-pose idiom probe-tested so it stays
+  one grep away; AF_BACK counts verified against script positions.
+  Nothing new — these files are already the script-DSL demand evidence
+  (animate sitting, finding 9).
+
+### sound data banks (mt_bank / sfx_bank / dac_samples) — audited 2026-07-12 (Fable)
+
+- **[CERT] sfx_bank**: the `table`-construct showpiece — every replaced
+  .asm guard's fate is documented (straddle fatal → `bank:` property;
+  co-residency → ensure; length self-check → structural), the
+  deliberate non-ports are named with reasons.
+- **[RETRO-micro] mt_bank's UNCHECKED `SONG_*` mirrors are closable** —
+  the file (line ~102) and sfx_bank both document the sound_ids.asm
+  seam as "stays hand-synced", but sound_api ALREADY
+  `ensure(extern(...))`s its SFXID mirrors against that same file — the
+  mechanism works. Sweep both banks for ensure-able mirrors; zero
+  bytes, kills the last documented hand-sync in the sound data.
+- **[CERT]** dac_samples: 10 ensures, clean.
+
+### support twins (sst / types / constants) — cross-pass 2026-07-12 (Fable)
+
+- **[CERT+] sst.emp**: double-locked layout (in-file `@` assertions +
+  cross-seam drift guards against the AS struct equs — a change on
+  EITHER side fails the link naming the field); typed fields carry the
+  domain vocabulary with erasure guaranteed.
+- **[DECISION for Volence, surfaced from in-file flag] types.emp's
+  `Radius` name** — the file itself flags it: the value is a FULL
+  box dimension, not a half-extent, and the name reads as half. The
+  flag has sat in-file since the construct walk; rename candidates:
+  `BoxDim` / `HitboxDim`. One-word ruling closes it (rename is
+  mechanical, erasing, byte-neutral).
+- **[CERT] constants.emp**: 49 drift ensures — the mirror architecture
+  makes AS-side drift loud by construction. (Unused-mirror detection
+  remains the unused-import lint ask from the core sitting.)
 
 ## RULINGS (Volence, 2026-07-12)
 
