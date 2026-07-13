@@ -134,7 +134,8 @@ untouched** — its existing `bcs` now works as its author intended (behavior
 becomes correct, which the brief's "keep unchanged" is read as "don't modify
 its source"). Known remaining edge documented in the QueueDMATransfer header: a
 128KB-split-with-one-slot still returns carry-clear (atomic rollback is the
-art-streaming plan's Vectorman work; unreachable for dplc's small loads).
+art-streaming plan's Vectorman work; vanishingly rare for dplc — a small source
+can still straddle a 128KB boundary — not impossible).
 
 dma_queue's +12 B (3 CCR ops) shifts the whole engine block +0xC.
 
@@ -259,3 +260,29 @@ enqueue-order correctness fix (item 11).
 not an opt), the DEBUG asserts (items 2/4), the comptime ensures (items 7/8/9),
 and — the batch's headline — the **oracle soak disproving item 6**, the one
 finding that only live verification could produce.
+
+---
+
+## PRECEDENT — the assert → disproof → fix-the-claim pattern (Volence, 2026-07-12)
+
+Item 6 is the model outcome for a shipped assert that a soak contradicts.
+When a DEBUG assert derived from a documented CLAIM ("exactly 1 DPLC entry")
+FIRES on legitimate live data, the resolution is NOT to silence the assert or
+special-case the data — it is:
+
+1. **Trust the soak over the claim.** The assert firing on real data
+   (`DPLC_Sonic`, 6-entry frames) is EVIDENCE the invariant is false, not a
+   nuisance. The gate could not catch this (test art or none); only live
+   verification against real content could.
+2. **Remove the assert AND correct the source claim that spawned it.** The
+   `.emp`/`.asm` header's "each frame has exactly 1 DPLC entry" comment was
+   itself wrong — it was corrected to state the truth (N entries; the loop is
+   load-bearing), so the next reader is not re-misled into re-adding the assert.
+3. **Record the reversal at the finding's origin.** The audit's dplc-finding-2
+   `[OPT]` ("if the invariant is real, the entry loop is dead generality") is
+   explicitly reversed in the ledger — the loop is NOT dead.
+
+A DEBUG assert is a HYPOTHESIS about an invariant; a soak is the experiment.
+When the experiment refutes the hypothesis, the deliverable is the corrected
+claim, with the disproof recorded — never a green assert kept green by narrowing
+what it runs on.
