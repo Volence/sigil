@@ -18,17 +18,16 @@
 //! - **Two near-identical procs** (`Perform_DPLC` / `Perform_DPLC_Deferrable`,
 //!   differing only in the QueueDMA target) — transcribed verbatim, NOT
 //!   dedup'd (that's a step-2/3 retrospect item).
-//! - **DEBUG divergence as of retro-fix item 6** — the single-entry assert
-//!   (`assert.w d4, eq, #0`, ×2 procs) self-gates to zero bytes in the plain
-//!   shape but expands in the debug shape, so the region len is now
-//!   shape-DEPENDENT (plain 0x98, debug 0x148) and the debug shape references
-//!   the MDDBG error-handler entries.
+//! - **No SOUND / no DEBUG divergence** — the region len is shape-INVARIANT
+//!   (item 11's carry-return restructure grew both shapes equally; item 6's
+//!   single-entry assert was REMOVED after the oracle soak disproved the
+//!   invariant, so dplc carries no DEBUG-only code). Single AS-twin check.
 //!
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$26FC`): `s4.bin[0x26FC..0x2794]` (0x98 bytes).
-//! Debug (map base `$288E`): `s4.debug.bin[0x288E..0x29D6]` (0x148 bytes).
+//! Plain (map base `$2708`): `s4.bin[0x2708..0x27AC]` (0xA4 bytes).
+//! Debug (map base `$289A`): `s4.debug.bin[0x289A..0x293E]` (0xA4 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
@@ -62,9 +61,6 @@ fn strict_gate() -> bool {
 struct Shape {
     base: u32,
     len: usize,
-    /// Whether to lower with `DEBUG == 1` — the item-6 single-entry assert is
-    /// DEBUG-shape-only (self-gates to zero bytes in the plain shape).
-    debug: bool,
     /// `(name, vma)` for every INBOUND label this shape references.
     labels: &'static [(&'static str, u32)],
 }
@@ -72,7 +68,6 @@ struct Shape {
 const PLAIN: Shape = Shape {
     base: pins::DPLC.plain_base,
     len: pins::DPLC.plain_len,
-    debug: false,
     labels: &[
         ("QueueDMA_Important", pins::QUEUE_DMA_IMPORTANT.plain),
         ("QueueDMA_Deferrable", pins::QUEUE_DMA_DEFERRABLE.plain),
@@ -82,13 +77,9 @@ const PLAIN: Shape = Shape {
 const DEBUG: Shape = Shape {
     base: pins::DPLC.debug_base,
     len: pins::DPLC.debug_len,
-    debug: true,
     labels: &[
         ("QueueDMA_Important", pins::QUEUE_DMA_IMPORTANT.debug),
         ("QueueDMA_Deferrable", pins::QUEUE_DMA_DEFERRABLE.debug),
-        // item 6: the single-entry assert's RaiseError jsr/jmp targets.
-        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
-        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ],
 };
 
@@ -188,9 +179,7 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,
-        // The item-6 single-entry assert self-gates on DEBUG (0 = plain, elided;
-        // 1 = debug, expands to the RaiseError check).
-        defines: vec![("DEBUG".to_string(), if shape.debug { 1 } else { 0 })],
+        defines: vec![],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
