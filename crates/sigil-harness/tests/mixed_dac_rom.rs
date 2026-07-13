@@ -1629,9 +1629,11 @@ fn mixed_hblank_rom_matches_assembled_reference() {
 
     // The hblank block itself, pinned explicitly (the port's own 18-byte
     // window) before the whole-ROM assertion below re-proves it in context.
+    // `movea.l (HBlank_Handler_Ptr).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
+    let h = pins::H_BLANK_HANDLER_PTR.plain;
     assert_eq!(
         &rom[0x2286..0x2298],
-        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, 0x80, 0x22, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
+        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, (h >> 8) as u8, h as u8, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
         "hblank block must match the reference bytes exactly (plain)"
     );
 
@@ -1668,9 +1670,11 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
         "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
     );
 
+    // `movea.l (HBlank_Handler_Ptr).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
+    let h = pins::H_BLANK_HANDLER_PTR.debug;
     assert_eq!(
         &rom[0x2314..0x2326],
-        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, 0x80, 0x22, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
+        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, (h >> 8) as u8, h as u8, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
         "hblank block must match the reference bytes exactly (debug)"
     );
 
@@ -2002,14 +2006,18 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // ($3CE - $1C16 = -$1848 = $E7B8) — the cross-seam pc-rel EA. Both
     // `VDP_Dirty_Mask` zero-writes are `clr.l (abs.w)` = 42B8 801E, and
     // Flush's `beq .done` tightened 672C -> 672A.
+    // abs.w RAM targets: VDP_Shadow_Table ($800A, ×2) and its +0x14 field
+    // ($801E, ×3), pin-spliced (tranche-12). The `80 00` (move.w #$8000) is an
+    // IMMEDIATE and `$C00004` is a hardware port — both stay literal.
+    let v = pins::VDP_SHADOW_TABLE.plain;
     assert_eq!(
         &rom[0x1C14..0x1C5C],
         &[
-            0x41, 0xFA, 0xE7, 0xB8, 0x43, 0xF8, 0x80, 0x0A, 0x70, 0x12, 0x12, 0xD8, 0x51, 0xC8, 0xFF, 0xFC,
-            0x42, 0xB8, 0x80, 0x1E, 0x4E, 0x75, 0x22, 0x38, 0x80, 0x1E, 0x67, 0x2A, 0x41, 0xF8, 0x80, 0x0A,
+            0x41, 0xFA, 0xE7, 0xB8, 0x43, 0xF8, (v >> 8) as u8, v as u8, 0x70, 0x12, 0x12, 0xD8, 0x51, 0xC8, 0xFF, 0xFC,
+            0x42, 0xB8, ((v + 0x14) >> 8) as u8, (v + 0x14) as u8, 0x4E, 0x75, 0x22, 0x38, ((v + 0x14) >> 8) as u8, (v + 0x14) as u8, 0x67, 0x2A, 0x41, 0xF8, (v >> 8) as u8, v as u8,
             0x43, 0xF9, 0x00, 0xC0, 0x00, 0x04, 0x30, 0x3C, 0x80, 0x00, 0x74, 0x00, 0x76, 0x12, 0x05, 0x01,
             0x67, 0x06, 0x10, 0x30, 0x20, 0x00, 0x32, 0x80, 0x06, 0x40, 0x01, 0x00, 0x52, 0x42, 0x51, 0xCB,
-            0xFF, 0xEE, 0x42, 0xB8, 0x80, 0x1E, 0x4E, 0x75,
+            0xFF, 0xEE, 0x42, 0xB8, ((v + 0x14) >> 8) as u8, (v + 0x14) as u8, 0x4E, 0x75,
         ][..],
         "vdp_init block must match the reference bytes exactly (plain)"
     );
@@ -2020,11 +2028,14 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // ($418E - $4C14 = -$906 = $F6FA) — the cross-seam pc-relative
     // TAIL CALL (site + target both slid -8 in the interact fix, disp held).
     let clbase = pins::COLLISION_LOOKUP.plain_base as usize;
+    // Four consecutive Tile_Cache viewport-bound abs.w targets (Cache_Left_Col
+    // + 0/2/4/6), pin-spliced so they track the pin (tranche-12).
+    let clc = pins::CACHE_LEFT_COL.plain;
     assert_eq!(
         &rom[clbase..clbase + pins::COLLISION_LOOKUP.plain_len],
         &[
-            0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x38, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x3A, 0x6E, 0x12, 0xE6, 0x49,
-            0xB2, 0x78, 0xA8, 0x3C, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x3E, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0xFA,
+            0xE6, 0x48, 0xB0, 0x78, (clc >> 8) as u8, clc as u8, 0x6D, 0x18, 0xB0, 0x78, ((clc + 2) >> 8) as u8, (clc + 2) as u8, 0x6E, 0x12, 0xE6, 0x49,
+            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0xFA,
             0x70, 0x00, 0x4E, 0x75,
         ][..],
         "collision_lookup block must match the reference bytes exactly (plain)"
@@ -2065,24 +2076,31 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
         "engine.constants's eight drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
+    // abs.w RAM targets: VDP_Shadow_Table ($800A, ×2) + its +0x14 field ($801E,
+    // ×3), pin-spliced (tranche-12); `80 00` immediate + `$C00004` port literal.
+    let v = pins::VDP_SHADOW_TABLE.debug;
     assert_eq!(
         &rom[0x1C96..0x1CDE],
         &[
-            0x41, 0xFA, 0xE7, 0x3A, 0x43, 0xF8, 0x80, 0x0A, 0x70, 0x12, 0x12, 0xD8, 0x51, 0xC8, 0xFF, 0xFC,
-            0x42, 0xB8, 0x80, 0x1E, 0x4E, 0x75, 0x22, 0x38, 0x80, 0x1E, 0x67, 0x2A, 0x41, 0xF8, 0x80, 0x0A,
+            0x41, 0xFA, 0xE7, 0x3A, 0x43, 0xF8, (v >> 8) as u8, v as u8, 0x70, 0x12, 0x12, 0xD8, 0x51, 0xC8, 0xFF, 0xFC,
+            0x42, 0xB8, ((v + 0x14) >> 8) as u8, (v + 0x14) as u8, 0x4E, 0x75, 0x22, 0x38, ((v + 0x14) >> 8) as u8, (v + 0x14) as u8, 0x67, 0x2A, 0x41, 0xF8, (v >> 8) as u8, v as u8,
             0x43, 0xF9, 0x00, 0xC0, 0x00, 0x04, 0x30, 0x3C, 0x80, 0x00, 0x74, 0x00, 0x76, 0x12, 0x05, 0x01,
             0x67, 0x06, 0x10, 0x30, 0x20, 0x00, 0x32, 0x80, 0x06, 0x40, 0x01, 0x00, 0x52, 0x42, 0x51, 0xCB,
-            0xFF, 0xEE, 0x42, 0xB8, 0x80, 0x1E, 0x4E, 0x75,
+            0xFF, 0xEE, 0x42, 0xB8, ((v + 0x14) >> 8) as u8, (v + 0x14) as u8, 0x4E, 0x75,
         ][..],
         "vdp_init block must match the reference bytes exactly (debug)"
     );
 
     let clbase = pins::COLLISION_LOOKUP.debug_base as usize;
+    // Four consecutive Tile_Cache viewport-bound abs.w targets (Cache_Left_Col
+    // + 0/2/4/6). Pin-spliced so they track the pin instead of going stale on a
+    // RAM shift (tranche-12 inline-target mitigation).
+    let clc = pins::CACHE_LEFT_COL.debug;
     assert_eq!(
         &rom[clbase..clbase + pins::COLLISION_LOOKUP.debug_len],
         &[
-            0xE6, 0x48, 0xB0, 0x78, 0xA8, 0x5A, 0x6D, 0x18, 0xB0, 0x78, 0xA8, 0x5C, 0x6E, 0x12, 0xE6, 0x49,
-            0xB2, 0x78, 0xA8, 0x5E, 0x6D, 0x0A, 0xB2, 0x78, 0xA8, 0x60, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0x42,
+            0xE6, 0x48, 0xB0, 0x78, (clc >> 8) as u8, clc as u8, 0x6D, 0x18, 0xB0, 0x78, ((clc + 2) >> 8) as u8, (clc + 2) as u8, 0x6E, 0x12, 0xE6, 0x49,
+            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF6, 0x42,
             0x70, 0x00, 0x4E, 0x75,
         ][..],
         "collision_lookup block must match the reference bytes exactly (debug)"
@@ -2191,9 +2209,12 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
 
     // The act_descriptor head: sec_grid_ptr (= the sections table at
     // base+0x22 = $14B80) then grid_w/grid_h words — the typed Act literal.
+    // act_descriptor head: sec_grid_ptr is an abs.l self-pointer to the sections
+    // table (base + 0x22); pin-spliced so it tracks the pin on a ROM shift (t12).
+    let ad = pins::ACT_DESCRIPTOR.plain_base + 0x22;
     assert_eq!(
         &rom[0x14B5E..0x14B66],
-        &[0x00, 0x01, 0x4B, 0x80, 0x00, 0x03, 0x00, 0x03][..],
+        &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (plain)"
     );
 
@@ -2230,9 +2251,11 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
         "sonic_anims table head must match the reference bytes exactly (debug)"
     );
 
+    // act_descriptor sec_grid_ptr — abs.l self-pointer (base + 0x22), pin-spliced (t12).
+    let ad = pins::ACT_DESCRIPTOR.debug_base + 0x22;
     assert_eq!(
         &rom[0x14BC6..0x14BCE],
-        &[0x00, 0x01, 0x4B, 0xE8, 0x00, 0x03, 0x00, 0x03][..],
+        &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (debug)"
     );
 
@@ -2341,10 +2364,12 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // upstream region resizes — e.g. entity_window's tranche-12 step-2 shrink;
     // gap-ledger "repin can't track inline target BYTES in mixed-test slices").
     let sdsr = (pins::SOUND_DRAIN_SFX_RING.plain as i64 - 0x2310) as u16;
+    // `movea.l (Game_State).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
+    let gs = pins::GAME_STATE.plain;
     assert_eq!(
         &rom[0x230A..0x231C],
         &[
-            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, (gs >> 8) as u8, gs as u8, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (plain)"
@@ -2382,10 +2407,12 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
 
     // pin-spliced disp — see the plain variant's note.
     let sdsr = (pins::SOUND_DRAIN_SFX_RING.debug as i64 - 0x239E) as u16;
+    // `movea.l (Game_State).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
+    let gs = pins::GAME_STATE.debug;
     assert_eq!(
         &rom[0x2398..0x23AA],
         &[
-            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, 0x80, 0x04, 0x4E,
+            0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, (gs >> 8) as u8, gs as u8, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
         ][..],
         "game_loop block must match the reference bytes exactly (debug)"
@@ -2512,9 +2539,12 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
     // test_particle's head: move.l #Ani_Particle, Sst.anim_table(a0) — the
     // `.emp`↔`.emp` imm32, resolving to particle_anims' region base
     // ($309DE plain — emp_bank_map_tranche4's pin).
+    // `move.l #Ani_Particle,anim_table(a0)` — imm32 resolving to particle_anims'
+    // region base; pin-spliced so it tracks the pin on a ROM shift (tranche-12).
+    let pa = pins::PARTICLE_ANIMS.plain_base;
     assert_eq!(
         &rom[0x10F8A..0x10F92],
-        &[0x21, 0x7C, 0x00, 0x03, 0x0A, 0x56, 0x00, 0x1A][..],
+        &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (plain)"
     );
 
@@ -2550,9 +2580,11 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
         "test_solid block must match the reference bytes exactly (debug)"
     );
 
+    // `move.l #Ani_Particle,anim_table(a0)` — imm32 = particle_anims base, pin-spliced (t12).
+    let pa = pins::PARTICLE_ANIMS.debug_base;
     assert_eq!(
         &rom[0x10F8A..0x10F92],
-        &[0x21, 0x7C, 0x00, 0x03, 0x0A, 0xBE, 0x00, 0x1A][..],
+        &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (debug)"
     );
 
@@ -2661,9 +2693,11 @@ fn mixed_tranche7_rom_matches_assembled_reference() {
     // then `lea (Player_1).w, a2` (Player_1 = $89EE plain), then `move.w
     // #NUM_PLAYERS-1, d7`'s opcode word.
     let cbase = pins::COLLISION.plain_base as usize;
+    // `lea (Player_1).w,a2` — abs.w game-RAM target, pin-spliced (tranche-12).
+    let p1 = pins::PLAYER_1.plain;
     assert_eq!(
         &rom[cbase..cbase + 8],
-        &[0x2F, 0x0C, 0x45, 0xF8, 0x89, 0xEE, 0x3E, 0x3C][..],
+        &[0x2F, 0x0C, 0x45, 0xF8, (p1 >> 8) as u8, p1 as u8, 0x3E, 0x3C][..],
         "collision region head must match the reference bytes exactly (plain)"
     );
 
@@ -2690,9 +2724,11 @@ fn mixed_tranche7_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche7_rom(&aeon, true);
 
     let cbase = pins::COLLISION.debug_base as usize;
+    // `lea (Player_1).w,a2` — abs.w game-RAM target, pin-spliced (tranche-12).
+    let p1 = pins::PLAYER_1.debug;
     assert_eq!(
         &rom[cbase..cbase + 8],
-        &[0x2F, 0x0C, 0x45, 0xF8, 0x8A, 0x10, 0x3E, 0x3C][..],
+        &[0x2F, 0x0C, 0x45, 0xF8, (p1 >> 8) as u8, p1 as u8, 0x3E, 0x3C][..],
         "collision region head must match the reference bytes exactly (debug)"
     );
 
@@ -2946,9 +2982,11 @@ fn mixed_tranche8_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche8_rom(&aeon, false);
 
     let rbase = pins::RINGS.plain_base as usize;
+    // `move.b (Ring_Count).w,d4` — abs.w game-RAM target, pin-spliced (tranche-12).
+    let rc = pins::RING_COUNT.plain;
     assert_eq!(
         &rom[rbase..rbase + 6],
-        &[0x78, 0x00, 0x18, 0x38, 0xAB, 0xF8][..],
+        &[0x78, 0x00, 0x18, 0x38, (rc >> 8) as u8, rc as u8][..],
         "rings region head must match the reference bytes exactly (plain)"
     );
 
@@ -2977,9 +3015,11 @@ fn mixed_tranche8_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche8_rom(&aeon, true);
 
     let rbase = pins::RINGS.debug_base as usize;
+    // `move.b (Ring_Count).w,d4` — abs.w game-RAM target, pin-spliced (tranche-12).
+    let rc = pins::RING_COUNT.debug;
     assert_eq!(
         &rom[rbase..rbase + 6],
-        &[0x78, 0x00, 0x18, 0x38, 0xAC, 0x1A][..],
+        &[0x78, 0x00, 0x18, 0x38, (rc >> 8) as u8, rc as u8][..],
         "rings region head must match the reference bytes exactly (debug)"
     );
 
