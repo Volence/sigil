@@ -73,7 +73,7 @@ const PLAIN: Shape = Shape {
         ("RingBuffer_Remove", pins::RING_BUFFER_REMOVE.plain),
         ("Section_GetSecPtrXY", pins::SECTION_GET_SEC_PTR_XY.plain),
         ("Section_FlatIDXY", pins::SECTION_FLAT_IDXY.plain),
-        ("Load_Object", pins::LOAD_OBJECT.plain),
+        ("Load_Object", pins::LOAD_OBJECT.plain_base),
         ("DeleteObject", pins::DELETE_OBJECT.plain),
     ],
 };
@@ -109,7 +109,7 @@ const DEBUG: Shape = Shape {
         ("RingBuffer_Remove", pins::RING_BUFFER_REMOVE.debug),
         ("Section_GetSecPtrXY", pins::SECTION_GET_SEC_PTR_XY.debug),
         ("Section_FlatIDXY", pins::SECTION_FLAT_IDXY.debug),
-        ("Load_Object", pins::LOAD_OBJECT.debug),
+        ("Load_Object", pins::LOAD_OBJECT.debug_base),
         ("DeleteObject", pins::DELETE_OBJECT.debug),
         // Debug shape only: the assert construct's error-handler entries.
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
