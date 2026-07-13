@@ -268,6 +268,20 @@ ADDITION, whenever/however it ships.
 packet to Volence, his gate, then --no-ff merge both sides + push. Every
 merge to master is FINISHED code, not faithful-but-stale-idiom code.
 
+  **Paired-state gate (Volence-ratified 2026-07-13, the mulu/13-gate
+  merge night — full story in 2026-07-13-paired-state-gate-merge-packet):**
+  an aeon branch is NOT mergeable until sigil's FULL strict suite runs
+  green with `AEON_DIR` pointed at THAT BRANCH'S TREE — never at aeon
+  master. Gating against master certifies your code against a world it
+  isn't in (two same-night instances: a churn-scene `mulu` sigil's
+  frontends lacked, and a +0x78 bank growth colliding with pinned .emp
+  placements — both invisible until merge). Corollaries from the same
+  packet: attribute EVERY delta to its cause before merging; split a
+  multi-cause regression by OWNER; push coupled masters TOGETHER (no
+  stale window); a fragility class gets EXTINGUISHED on its second bite,
+  not re-patched; and predicted-delta lines model the change's CODE, not
+  just its data.
+
 **Packet format (Volence-ratified 2026-07-10)**: the packet ends with a
 "What each pass added" section separating STEP-3 findings (asks / reads-wrong
 / kill rows / ledger) from STEP-5 findings (optimizations taken + not-taken),
