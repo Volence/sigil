@@ -368,9 +368,9 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
 /// TODO(S2-D6): give the lint a per-mnemonic dest-position notion and cover dbcc.
 ///
 /// This is a PARALLEL string list the compiler cannot keep honest against the
-/// ISA `Mnemonic` set: a newly-supported write-form (`mulu`, `bchg`, `roxl`, …)
-/// will silently escape the lint until it is added HERE. Keep this in sync as
-/// the backend's mnemonic table grows. Heuristic (see [`check_clobbers`]).
+/// ISA `Mnemonic` set: a newly-supported write-form (`bchg`, `roxl`, …) will
+/// silently escape the lint until it is added HERE. Keep this in sync as the
+/// backend's mnemonic table grows. Heuristic (see [`check_clobbers`]).
 fn writes_dest_register(m: &str) -> bool {
     matches!(
         m,
@@ -399,6 +399,7 @@ fn writes_dest_register(m: &str) -> bool {
             | "swap"
             | "ext"
             | "muls"
+            | "mulu"
             | "asl"
             | "asr"
             | "lsl"

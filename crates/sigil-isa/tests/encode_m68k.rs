@@ -109,6 +109,22 @@ fn alu_ea_family() {
     ]);
 }
 
+// mulu (unsigned word multiply) — the signed/unsigned pair proves the one-bit
+// (bit 8) opmode distinction lands right and neither encoding regressed. All
+// golden bytes are asl-assembled. First real consumer: aeon's ObjectTest churn
+// scene (`mulu.w #36/#40,d0`).
+#[test]
+fn mulu_word_multiply() {
+    check(&[
+        "muls.w d1,d0",         // C1 C1 — signed twin (adjacent pair)
+        "mulu.w d1,d0",         // C0 C1 — Dn source
+        "mulu.w (a1),d0",       // C0 D1 — memory-EA source
+        "mulu.w ($1234).w,d0",  // C0 F8 12 34 — absolute-word source
+        "mulu.w #36,d0",        // C0 FC 00 24 — immediate (the churn form)
+        "mulu.w #40,d0",        // C0 FC 00 28 — immediate (the churn form)
+    ]);
+}
+
 #[test]
 fn alu_immediate_family() {
     check(&[

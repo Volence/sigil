@@ -30,7 +30,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mnemonic {
     Move, Movea,
-    Add, Adda, Sub, Suba, And, Or, Eor, Cmp, Cmpa, Muls,
+    Add, Adda, Sub, Suba, And, Or, Eor, Cmp, Cmpa, Muls, Mulu,
     Addi, Subi, Andi, Ori, Eori, Cmpi,
     Moveq, Addq, Subq,
     Asl, Asr, Lsl, Lsr, Rol, Ror,
@@ -137,7 +137,7 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Add | Mnemonic::Sub | Mnemonic::And | Mnemonic::Or
         | Mnemonic::Cmp | Mnemonic::Eor
         | Mnemonic::Cmpa | Mnemonic::Adda | Mnemonic::Suba
-        | Mnemonic::Muls => encode_alu_ea(inst),
+        | Mnemonic::Muls | Mnemonic::Mulu => encode_alu_ea(inst),
         Mnemonic::Addi | Mnemonic::Subi | Mnemonic::Andi
         | Mnemonic::Ori | Mnemonic::Eori | Mnemonic::Cmpi => encode_alu_imm(inst),
         Mnemonic::Moveq | Mnemonic::Addq | Mnemonic::Subq => encode_quick(inst),
@@ -171,7 +171,7 @@ fn size_code(size: Size) -> Result<u16, IsaError> {
     }
 }
 
-/// Encode the ALU-EA family (`add/sub/and/or/cmp/eor/cmpa/adda/suba/muls`).
+/// Encode the ALU-EA family (`add/sub/and/or/cmp/eor/cmpa/adda/suba/muls/mulu`).
 ///
 /// Base word: `base<<12 | reg<<9 | opmode<<6 | (ea_mode<<3 | ea_reg)`, followed by
 /// the source/dest `<ea>` extension words. The register field (bits 11–9) holds the
@@ -221,20 +221,23 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             };
             (base, an, opmode, src)
         }
-        // Word multiply: reg = Dn destination, opmode 111, source is the EA.
-        Mnemonic::Muls => {
+        // Word multiply: reg = Dn destination, source is the EA. muls opmode 111
+        // (signed), mulu opmode 011 (unsigned) — a one-bit (bit 8) distinction.
+        Mnemonic::Muls | Mnemonic::Mulu => {
+            let signed = inst.mnemonic == Mnemonic::Muls;
+            let name = if signed { "muls" } else { "mulu" };
             let dn = match dst {
                 Operand::Dn(n) => n & 0b111,
                 other => {
                     return Err(IsaError::UnsupportedForm(format!(
-                        "muls requires Dn destination, got {other:?}"
+                        "{name} requires Dn destination, got {other:?}"
                     )))
                 }
             };
             if inst.size != Size::W {
-                return Err(IsaError::UnsupportedForm("muls is word only".into()));
+                return Err(IsaError::UnsupportedForm(format!("{name} is word only")));
             }
-            (0b1100, dn, 0b111, src)
+            (0b1100, dn, if signed { 0b111 } else { 0b011 }, src)
         }
         // `<ea>,Dn` only: reg = Dn destination.
         Mnemonic::Cmp => {

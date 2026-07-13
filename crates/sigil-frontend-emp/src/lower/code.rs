@@ -1207,6 +1207,7 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "cmp" => Cmp,
         "cmpa" => Cmpa,
         "muls" => Muls,
+        "mulu" => Mulu,
         "addi" => Addi,
         "subi" => Subi,
         "andi" => Andi,
