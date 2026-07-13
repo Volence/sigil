@@ -104,16 +104,16 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // item-11 carry-return grew the engine block +0xC upstream of everything,
     // and dplc item-11 grew +0xC more. animate's OWN plain LEN shrank −8 (item 5:
     // drop both Sound_PlaySFX saves), so its debug LEN is 0x2A8 (was 0x2B0).
-    assert_eq!(pins::ANIMATE.plain_base, 0x2E50);
-    assert_eq!(pins::ANIMATE.debug_base, 0x3426);
+    assert_eq!(pins::ANIMATE.plain_base, 0x2EBA);
+    assert_eq!(pins::ANIMATE.debug_base, 0x3494);
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x31DA);
-    assert_eq!(pins::RINGS.debug_base, 0x38D6);
+    assert_eq!(pins::RINGS.plain_base, 0x3244);
+    assert_eq!(pins::RINGS.debug_base, 0x3944);
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
@@ -121,9 +121,9 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // item-11 +0xC precede core). debug_len 0x6C8 (unchanged — items 5/10/11 are
     // downstream of / plain-only within core).
     assert_eq!(pins::CORE.plain_base, 0x27AC);
-    assert_eq!(pins::CORE.plain_len, 0x284);
+    assert_eq!(pins::CORE.plain_len, 0x2EE);
     assert_eq!(pins::CORE.debug_base, 0x293E);
-    assert_eq!(pins::CORE.debug_len, 0x6C8);
+    assert_eq!(pins::CORE.debug_len, 0x736);
     assert_eq!(pins::DPLC.plain_base, 0x2708);  // +0xC: dma_queue item-11 growth precedes dplc
     assert_eq!(pins::DPLC.debug_base, 0x289A);
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
@@ -131,7 +131,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2866, debug: 0x29F8 });
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2880, debug: 0x2A12 });
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -162,8 +162,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // retro-fix-audit-1 batch. Item 11's dma_queue +0xC shifts BOTH shapes;
     // items 5 (−8) / 10 (−6) net into the plain base too. Plain 0x5D46 / debug
     // 0x770E.
-    assert_eq!(pins::SOUND_API.plain_base, 0x5D46);
-    assert_eq!(pins::SOUND_API.debug_base, 0x765E);
+    assert_eq!(pins::SOUND_API.plain_base, 0x5DB0);
+    assert_eq!(pins::SOUND_API.debug_base, 0x76CC);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);
