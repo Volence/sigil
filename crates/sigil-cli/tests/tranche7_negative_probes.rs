@@ -15,10 +15,10 @@
 //!     argument is a LOUD error naming the label (not a silent link dangle).
 //! (e) A BROKEN falls_into stub chain (a `falls_into` removed so a stub gains
 //!     fallthrough) fires the `[proc.undeclared-fallthrough]` diagnostic.
-//! (f) The DOCUMENTED sharp edge: `aabb_axis_test` with `stmp` aliasing `cdim`
-//!     ASSEMBLES CLEAN (the contract doc — and the .inc twin — carry the
-//!     MUST-NOT-alias warning; the distinct-regs ask is ledgered). This probe
-//!     PINS that the template does not (yet) reject the mis-instantiation.
+//! (f) `aabb_axis_test` with `stmp` aliasing `cdim` is a COMPILE ERROR naming
+//!     the MUST-NOT-alias constraint (retro-fix-audit-1 item 7: the template
+//!     carries `ensure(stmp != cdim)` / `ensure(stmp != delt)` — the distinct-
+//!     regs ledger row, now resolved via comptime Reg-equality ensure).
 
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
@@ -66,7 +66,9 @@ fn lower_with_ambient(dep_srcs: &[&str], main_src: &str) -> Vec<sigil_span::Diag
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
-        defines: vec![],
+        // collision.emp's A2 rail (item 1) references DEBUG in `if DEBUG == 1`
+        // blocks; bind it (0 = plain, rail elided) so the ambient prepend lowers.
+        defines: vec![("DEBUG".to_string(), 0)],
     };
     let (_module, ldiags) = lower_module(&file, &opts);
     ldiags
@@ -140,7 +142,9 @@ fn lower_quintet(
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
-            defines: vec![],
+            // collision.emp's A2 rail (item 1) references DEBUG; bind it (0 =
+            // plain, rail elided) so the doctored twin lowers to the link asserts.
+            defines: vec![("DEBUG".to_string(), 0)],
         },
     );
     (module.sections, module.link_asserts, ldiags)
@@ -337,23 +341,22 @@ fn broken_falls_into_stub_chain_fires_fallthrough() {
     );
 }
 
-// ---- (f) documented sharp edge: stmp aliasing cdim ASSEMBLES ----------------
+// ---- (f) stmp aliasing cdim is now a COMPILE ERROR (retro-fix item 7) -------
 
 #[test]
-fn aabb_stmp_aliasing_cdim_assembles_by_design() {
+fn aabb_stmp_aliasing_cdim_is_a_compile_error() {
     let Some(s) = sources() else {
         eprintln!("skip: aeon tree not present");
         return;
     };
 
     // The real aabb.emp template, instantiated with `stmp` aliasing `cdim`
-    // (both d0) — the contract doc (and the aabb.inc twin) say this MUST NOT
-    // be done (the scratch clobbers the combined-dim before the compare), but
-    // NOTHING checks it: the template splices the Reg args verbatim, so it
-    // ASSEMBLES CLEAN and emits silently-wrong code. This probe PINS that
-    // behavior — the distinct-regs predicate is the ledgered ask
-    // (docs/superpowers/notes/campaign-gap-ledger.md, tranche-7 row); until it
-    // ships, mis-instantiation is a miscompile, not a diagnostic.
+    // (both d0) — the contract's MUST-NOT-alias rule (the scratch neg/double
+    // clobbers the combined-dim before the compare). As of retro-fix-audit-1
+    // item 7, aabb_axis_test carries `ensure(stmp != cdim)` / `ensure(stmp !=
+    // delt)`, so this mis-instantiation is a COMPILE ERROR naming the constraint
+    // — was a silent miscompile (gap-ledger tranche-7 distinct-regs row, now
+    // RESOLVED via comptime Reg-equality ensure).
     let consumer = concat!(
         "module m in collision\n",
         "pub proc P () {\n",
@@ -368,8 +371,9 @@ fn aabb_stmp_aliasing_cdim_assembles_by_design() {
     );
     let diags = lower_with_ambient(&[&s.aabb], consumer);
     assert!(
-        diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "stmp aliasing cdim must ASSEMBLE CLEAN (documented sharp edge, no check yet): {:?}",
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("stmp MUST NOT alias cdim")),
+        "stmp aliasing cdim must now be a COMPILE ERROR naming the constraint (item 7): {:?}",
         errors(&diags)
     );
 }

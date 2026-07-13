@@ -101,6 +101,9 @@ const DEBUG: Shape = Shape {
         ("Collected_Park_Next", pins::COLLECTED_PARK_NEXT.debug),
         ("Dynamic_Live", pins::DYNAMIC_LIVE.debug),
         ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.debug),
+        // A2 walk-live rail rider (item 12): DespawnObjects sets/clears this
+        // DEBUG-only flag around its live-list walk.
+        ("Dynamic_Live_Walking", pins::DYNAMIC_LIVE_WALKING),
         ("RingBuffer_Clear", pins::RING_BUFFER_CLEAR.debug),
         ("RingBuffer_Add", pins::RINGS.debug_base),
         ("RingBuffer_Remove", pins::RING_BUFFER_REMOVE.debug),

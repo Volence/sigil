@@ -85,23 +85,28 @@ fn strict_gate() -> bool {
 struct Shape {
     base: u32,
     len: usize,
+    /// Whether to lower with `DEBUG == 1` — animate's AF_* asserts (item 4)
+    /// are DEBUG-shape-only.
+    debug: bool,
+    /// `.cc_delete`'s `jbra DeleteObject` offset — shape-dependent as of
+    /// retro-fix item 4 (the AF_* DEBUG asserts precede it in the region).
+    cc_delete_off: usize,
+    /// `RefreshSpritePieceCount:` anchor offset — shape-dependent (same cause).
+    refresh_off: usize,
     /// `(name, vma)` for every INBOUND label this shape references.
     labels: &'static [(&'static str, u32)],
 }
 
-/// Region-relative proc/anchor offsets — shape-INVARIANT (equal length, no
-/// conditional code), so shared constants rather than `Shape` fields.
-/// (Step 2 shrank the region 0x312 → 0x308 — bare Bcc/jbra relaxation found
-/// five suboptimal hand widths; the gate ruling then DELETED the dead
-/// `AnimateSprite_PerFrame` interpreter → 0x192.)
-/// `.cc_delete`'s `jbra DeleteObject` (bra.w `6000 xxxx`).
-const CC_DELETE_OFF: usize = pins::CC_DELETE_OFF;
-/// `RefreshSpritePieceCount:` structural anchor.
-const REFRESH_OFF: usize = pins::REFRESH_OFF;
-
+// Region-relative proc/anchor offsets. Shape-DEPENDENT as of retro-fix item 4:
+// the AF_* DEBUG asserts (AF_SET_FIELD/AF_BACK) grow the debug shape between the
+// AnimateSprite entry and these anchors, so plain != debug (they were invariant
+// before the asserts). Carried per-shape on `Shape`.
 const PLAIN: Shape = Shape {
     base: pins::ANIMATE.plain_base,
     len: pins::ANIMATE.plain_len,
+    debug: false,
+    cc_delete_off: pins::CC_DELETE_OFF.plain,
+    refresh_off: pins::REFRESH_OFF.plain,
     labels: &[
         ("DeleteObject", pins::DELETE_OBJECT.plain),
         ("Sound_PlaySFX", pins::SOUND_PLAY_SFX.plain),
@@ -111,9 +116,15 @@ const PLAIN: Shape = Shape {
 const DEBUG: Shape = Shape {
     base: pins::ANIMATE.debug_base,
     len: pins::ANIMATE.debug_len,
+    debug: true,
+    cc_delete_off: pins::CC_DELETE_OFF.debug,
+    refresh_off: pins::REFRESH_OFF.debug,
     labels: &[
         ("DeleteObject", pins::DELETE_OBJECT.debug),
         ("Sound_PlaySFX", pins::SOUND_PLAY_SFX.debug),
+        // item 4: the AF_* asserts' RaiseError jsr/jmp targets.
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ],
 };
 
@@ -330,7 +341,10 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         return;
     };
 
-    let defines: Vec<(&str, i128)> = vec![("SOUND_DRIVER_ENABLED", 1)];
+    // animate's AF_* asserts (item 4) are DEBUG-shape-only, so DEBUG must be
+    // bound per shape (0 = plain elides them, 1 = debug expands them).
+    let defines: Vec<(&str, i128)> =
+        vec![("SOUND_DRIVER_ENABLED", 1), ("DEBUG", i128::from(shape.debug))];
     let (resolved, linked, link_asserts) = compile_real_file(shape, &defines);
     assert_drift_guards(&resolved, &link_asserts);
 
@@ -347,10 +361,11 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     // relaxed to abs.w `4EF8`) must relax to bra.w with the per-shape
     // displacement — same 4-byte length, so no region slide.
     let delete_obj = shape.labels.iter().find(|(n, _)| *n == "DeleteObject").unwrap().1;
+    let cc_off = shape.cc_delete_off;
     let disp =
-        (delete_obj as i64 - (shape.base as i64 + CC_DELETE_OFF as i64 + 2)) as i16 as u16;
+        (delete_obj as i64 - (shape.base as i64 + cc_off as i64 + 2)) as i16 as u16;
     assert_eq!(
-        &section.bytes[CC_DELETE_OFF..CC_DELETE_OFF + 4],
+        &section.bytes[cc_off..cc_off + 4],
         &[0x60, 0x00, (disp >> 8) as u8, disp as u8],
         "`jbra DeleteObject` must relax to bra.w with the per-shape displacement"
     );
@@ -375,10 +390,11 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     // `movea.l SST_mappings(a0), a1` — offset drift would mean a mid-region
     // size change the whole-region diff already caught; this names the spot
     // for the re-pin sweep.
+    let refresh_off = shape.refresh_off;
     assert_eq!(
-        &section.bytes[REFRESH_OFF..REFRESH_OFF + 2],
+        &section.bytes[refresh_off..refresh_off + 2],
         &[0x22, 0x68],
-        "RefreshSpritePieceCount must sit at +0x174 (movea.l d16(a0) opword)"
+        "RefreshSpritePieceCount must open with the movea.l d16(a0) opword"
     );
 }
 
@@ -455,8 +471,10 @@ fn snd_combo_matches_as_twin() {
         return;
     }
     for snd_on in [true, false] {
+        // PLAIN shape (DEBUG=0): the AS twin `as_twin_bytes` assembles without
+        // __DEBUG__, so the item-4 AF_* asserts are absent on both sides.
         let defines: Vec<(&str, i128)> =
-            vec![("SOUND_DRIVER_ENABLED", i128::from(snd_on))];
+            vec![("SOUND_DRIVER_ENABLED", i128::from(snd_on)), ("DEBUG", 0)];
         let (_, linked, _) = compile_real_file(&PLAIN, &defines);
         let section = linked.section("animate").expect("linked image must carry animate");
         let expected = as_twin_bytes(snd_on);
@@ -487,7 +505,7 @@ fn doctored_twin_mirror_fires_its_guard() {
         eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
         return;
     }
-    let defines: Vec<(&str, i128)> = vec![("SOUND_DRIVER_ENABLED", 1)];
+    let defines: Vec<(&str, i128)> = vec![("SOUND_DRIVER_ENABLED", 1), ("DEBUG", 0)];
     let (resolved, _, link_asserts) =
         compile_real_file_with(&PLAIN, &defines, Some(("AF_SET_FIELD", "$F6")));
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);

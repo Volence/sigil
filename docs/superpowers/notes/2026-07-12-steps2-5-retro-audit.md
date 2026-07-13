@@ -537,6 +537,19 @@ green both shapes, loop genuinely dry after the second look.
 
 ## Retro-fix batch brief (for the implementing agent)
 
+> **IMPLEMENTED 2026-07-12** on `retro-fix-audit-1` (aeon
+> `ff646c8..64ef75f` / sigil `d647a97..5520c38`), NOT merged — at Volence's
+> gate. Full record: `notes/2026-07-12-retro-fix-batch-packet.md`. All 12
+> items DONE **except item 6, which the A2 oracle soak DISPROVED and was
+> removed** — `DPLC_Sonic` frames legitimately carry up to 6 DPLC entries, so
+> the single-entry invariant is false and the assert fired on valid data
+> (perform_dplc's entry loop is load-bearing, reversing dplc-finding-2's
+> `[OPT]` speculation). A2 soak: no assert fires; the mid-walk-compact trigger
+> (`CompactDynamicLive` under a live dynamic walk) is not reached in ObjectTest
+> (dynamic pool saturates static) — "not reached", not "proven safe"; keep the
+> rail. Item 10 landed at −6 B not −16 (the cull addi compensates, doesn't
+> drop). Full strict 2210/0, clippy clean, both aeon shapes build.
+
 One branch off both masters (`retro-fix-audit-1` sigil / aeon), one
 review, one re-pin wave at the end. Work in this order — byte-neutral
 items first, the two byte-changing items last. EVERY item lands with its

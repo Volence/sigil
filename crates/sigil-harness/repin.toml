@@ -449,6 +449,14 @@ tests = ["core_port"]
 name = "Dynamic_Live_Dirty"
 tests = ["core_port"]
 
+# A2 walk-live rail (retro-fix-audit-1 item 1/12). debug_only: the flag is
+# referenced only inside `if DEBUG == 1` blocks (core/collision/entity_window
+# walkers + the CompactDynamicLive assert), so no plain-shape port test sees it.
+[[symbol]]
+name = "Dynamic_Live_Walking"
+debug_only = true
+tests = ["core_port", "collision_port", "entity_window_port"]
+
 # animate (tranche 9)
 
 [[symbol]]
@@ -863,17 +871,22 @@ tests = ["entity_window_port"]
 # ── Region-relative offsets ─────────────────────────────────────────────────
 
 [[offset]]
-# `.cc_delete`'s `jbra DeleteObject` site.
+# `.cc_delete`'s `jbra DeleteObject` site. Shape-dependent as of retro-fix
+# item 4: the AF_* DEBUG asserts (AF_SET_FIELD/AF_BACK) sit between AnimateSprite
+# and .cc_delete, so the debug-shape offset (0x15E) exceeds the plain (0x104).
 name = "CC_DELETE_OFF"
 sym = "AnimateSprite.cc_delete"
 region = "animate"
+per_shape = true
 tests = ["animate_port"]
 
 [[offset]]
-# `RefreshSpritePieceCount:` structural anchor.
+# `RefreshSpritePieceCount:` structural anchor. Shape-dependent as of retro-fix
+# item 4 (the AF_* DEBUG asserts precede this proc within the animate region).
 name = "REFRESH_OFF"
 sym = "RefreshSpritePieceCount"
 region = "animate"
+per_shape = true
 tests = ["animate_port"]
 
 [[offset]]

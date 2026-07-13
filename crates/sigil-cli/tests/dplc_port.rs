@@ -19,13 +19,15 @@
 //!   differing only in the QueueDMA target) — transcribed verbatim, NOT
 //!   dedup'd (that's a step-2/3 retrospect item).
 //! - **No SOUND / no DEBUG divergence** — the region len is shape-INVARIANT
-//!   (0x98 both shapes); no combo probe, single AS-twin equality check.
+//!   (item 11's carry-return restructure grew both shapes equally; item 6's
+//!   single-entry assert was REMOVED after the oracle soak disproved the
+//!   invariant, so dplc carries no DEBUG-only code). Single AS-twin check.
 //!
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$26FC`): `s4.bin[0x26FC..0x2794]` (0x98 bytes).
-//! Debug (map base `$288E`): `s4.debug.bin[0x288E..0x2926]` (0x98 bytes).
+//! Plain (map base `$2708`): `s4.bin[0x2708..0x27AC]` (0xA4 bytes).
+//! Debug (map base `$289A`): `s4.debug.bin[0x289A..0x293E]` (0xA4 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
