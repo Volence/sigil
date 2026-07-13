@@ -31,8 +31,9 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$5BE6`): `s4.bin[0x5BE6..0x5DCA]` (0x1E4 bytes).
-//! Debug (map base `$70A4`): `s4.debug.bin[0x70A4..0x7288]` (0x1E4 bytes).
+//! Plain (map base `$5DB0`): `s4.bin[0x5DB0..0x5F94]` (0x1E4 bytes).
+//! Debug (map base `$76CC`): `s4.debug.bin[0x76CC..0x79A0]` (0x2D4 bytes —
+//! per-shape as of retro-fix batch 2; the debug song-id + SFX-ring asserts).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -67,6 +68,15 @@ fn strict_gate() -> bool {
 /// both shapes; only 68k-side placement moves).
 struct Shape {
     base: u32,
+    /// Region byte length — PER-SHAPE as of retro-fix batch 2 (the DEBUG
+    /// song-id + SFX-ring asserts, findings 1/2, grow the debug region).
+    len: usize,
+    /// Whether to lower with `DEBUG == 1` — findings 1/2's asserts are
+    /// DEBUG-shape-only, so DEBUG must be bound per shape.
+    debug: bool,
+    /// `Sound_PlaySFX`'s offset inside the region — per-shape as of batch 2
+    /// (PlayMusic's two song-id asserts precede it in the debug shape).
+    play_sfx_off: usize,
     ring_sfx_speaker: u32,
     sfx_ring_buf: u32,
     sfx_ring_wr: u32,
@@ -77,6 +87,9 @@ struct Shape {
 
 const PLAIN: Shape = Shape {
     base: pins::SOUND_API.plain_base,
+    len: pins::SOUND_API.plain_len,
+    debug: false,
+    play_sfx_off: pins::SOUND_PLAY_SFX_OFF.plain,
     ring_sfx_speaker: pins::RING_SFX_SPEAKER.plain,
     sfx_ring_buf: pins::SFX_RING_BUF.plain,
     sfx_ring_wr: pins::SFX_RING_WR.plain,
@@ -86,6 +99,9 @@ const PLAIN: Shape = Shape {
 };
 const DEBUG: Shape = Shape {
     base: pins::SOUND_API.debug_base,
+    len: pins::SOUND_API.debug_len,
+    debug: true,
+    play_sfx_off: pins::SOUND_PLAY_SFX_OFF.debug,
     ring_sfx_speaker: pins::RING_SFX_SPEAKER.debug,
     sfx_ring_buf: pins::SFX_RING_BUF.debug,
     sfx_ring_wr: pins::SFX_RING_WR.debug,
@@ -93,7 +109,6 @@ const DEBUG: Shape = Shape {
     song_table: pins::SONG_TABLE.debug,
     song_patch_table: pins::SONG_PATCH_TABLE.debug,
 };
-const REGION_LEN: usize = pins::SOUND_API.plain_len;
 
 /// The AS-side constants the .emp reads through the link: the EA-position
 /// equs (slot addresses — deliberately NOT mirrored) and the 7 drift-guard
@@ -122,6 +137,7 @@ fn as_constant_equs() -> Vec<Section> {
                SFX_RING_MASK = $07\n\
                SFXID_RING_RIGHT = $33\n\
                SFXID_RING_LEFT = $34\n\
+               SONG_COUNT = 3\n\
                Stub:\n\
                \tdc.w 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
@@ -151,11 +167,15 @@ fn compile_real_file(
         "sound_api.emp parse errors: {pdiags:?}"
     );
 
+    // findings 1/2's asserts are DEBUG-shape-only: DEBUG must always be DEFINED
+    // (house convention — the debug shape is explicit), 0 in plain (elides the
+    // asserts) / 1 in debug (expands them). #SONG_COUNT resolves through the
+    // synthetic AS equ seam (as_constant_equs).
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![],
+        defines: vec![("DEBUG".to_string(), i128::from(shape.debug))],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -178,7 +198,7 @@ fn compile_real_file(
          lma_base = {:#x}\n\
          size = {:#x}\n\
          kind = \"rom\"\n",
-        shape.base, REGION_LEN
+        shape.base, shape.len
     );
     let map = sigil_link::load_map(&map_toml).expect("map must load");
     let mut sections = module.sections;
@@ -197,14 +217,25 @@ fn compile_real_file(
     sections.extend(equs);
 
     let mut lma = 0x0200_0000u32;
-    for (name, vma) in [
+    // findings 1/2's DEBUG asserts (Sound_PlayMusic bounds, Sound_PlaySFX
+    // ring-full raise_error) reference the debugger.asm error-handler tail —
+    // supply those two symbols at their true debug VMAs in the debug shape only.
+    let mut labels: Vec<(&str, u32)> = vec![
         ("Ring_Sfx_Speaker", shape.ring_sfx_speaker),
         ("Sfx_Ring_Buf", shape.sfx_ring_buf),
         ("Sfx_Ring_Wr", shape.sfx_ring_wr),
         ("Sfx_Ring_Rd", shape.sfx_ring_rd),
         ("SongTable", shape.song_table),
         ("SongPatchTable", shape.song_patch_table),
-    ] {
+    ];
+    if shape.debug {
+        labels.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+        labels.push((
+            "MDDBG__ErrorHandler_PagesController",
+            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+        ));
+    }
+    for (name, vma) in labels {
         let mut secs = as_label_at(name, vma);
         for sec in &mut secs {
             sec.lma = lma;
@@ -290,12 +321,12 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     assert_drift_guards(&resolved, &link_asserts);
 
     let lo = shape.base as usize;
-    let expected = &refrom[lo..lo + REGION_LEN];
+    let expected = &refrom[lo..lo + shape.len];
     let section = linked.section("sound_api").expect("linked image must carry sound_api");
     assert_region_matches(
         &section.bytes,
         expected,
-        &format!("sound_api vs {rom_name}[{lo:#x}..{:#x}]", lo + REGION_LEN),
+        &format!("sound_api vs {rom_name}[{lo:#x}..{:#x}]", lo + shape.len),
     );
 
     // Outbound proof: `bsr.w Sound_PlaySFX` resolves to base + SOUND_PLAY_SFX_OFF
@@ -307,7 +338,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         .find(|s| s.lma == 0x8000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
-    let target = shape.base as i64 + pins::SOUND_PLAY_SFX_OFF as i64;
+    let target = shape.base as i64 + shape.play_sfx_off as i64;
     let expected_disp = (target - (consumer.lma as i64 + 2)) as i16;
     assert_eq!(
         disp, expected_disp,

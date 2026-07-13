@@ -453,6 +453,10 @@ fn emp_bank_map_tranche5(debug: bool) -> String {
     let game_loop_base = if debug { "0x2398" } else { "0x230A" };
     let sound_api_base =
         if debug { format!("{:#x}", pins::SOUND_API.debug_base) } else { format!("{:#x}", pins::SOUND_API.plain_base) };
+    // Shape-DEPENDENT size as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
+    // asserts, findings 1/2, grow the debug region — plain 0x1E4 / debug 0x2DA).
+    let sound_api_size =
+        if debug { format!("{:#x}", pins::SOUND_API.debug_len) } else { format!("{:#x}", pins::SOUND_API.plain_len) };
     format!(
         "{}\
          \n\
@@ -465,7 +469,7 @@ fn emp_bank_map_tranche5(debug: bool) -> String {
          [[region]]\n\
          name = \"sound_api\"\n\
          lma_base = {sound_api_base}\n\
-         size = 0x1E4\n\
+         size = {sound_api_size}\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche4(debug)
     )
@@ -528,8 +532,8 @@ fn emp_bank_map_tranche7(debug: bool) -> String {
 /// MT + SFX + HBLANK, all placed into the per-shape `emp_bank_map_with_mt_hblank`
 /// (DAC/SFX/HBLANK defines-less, MT's `DEBUG` — R4). Returns all FOUR modules'
 /// placed sections concatenated (dac, mt, sfx, hblank — declaration order
-/// only) AND all three asserts-bearing modules' link_asserts (mt == 5,
-/// sfx == 1; `hblank.emp` carries none), so the caller can `check_link_asserts`
+/// only) AND all three asserts-bearing modules' link_asserts (mt == 7,
+/// sfx == 4; `hblank.emp` carries none), so the caller can `check_link_asserts`
 /// and pin every count after the joint link — the ONE lower pass per module
 /// (M2), no second lowering to recover the asserts.
 fn placed_emp_sections_with_mt_sfx_hblank(
@@ -564,7 +568,7 @@ fn placed_emp_sections_with_mt_sfx_hblank(
 /// per-shape `emp_bank_map_with_mt_hblank_tranche2` (DAC/SFX/HBLANK/
 /// CONTROLLERS/MATH defines-less, MT's `DEBUG` — R4). Returns all SIX
 /// modules' placed sections concatenated (declaration order only) AND all
-/// THREE asserts-bearing modules' link_asserts (mt == 5, sfx == 1,
+/// THREE asserts-bearing modules' link_asserts (mt == 7, sfx == 4,
 /// controllers == 11 — `engine.constants`'s drift guards, tranche 2's step-2
 /// modernize pass; hblank/math carry none) — the ONE lower pass per module
 /// (M2).
@@ -839,7 +843,7 @@ fn placed_emp_sections_tranche5(aeon: &Path, debug_val: i128) -> Tranche5Section
         &map,
     );
     let (sound_api_sections, sound_api_asserts) =
-        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[("DEBUG".to_string(), debug_val)], &map);
     sections.extend(mt_sections);
     sections.extend(sfx_sections);
     sections.extend(hblank_sections);
@@ -950,7 +954,7 @@ fn placed_emp_sections_tranche6(aeon: &Path, debug_val: i128) -> Tranche6Section
         &map,
     );
     let (sound_api_sections, sound_api_asserts) =
-        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[("DEBUG".to_string(), debug_val)], &map);
     // The two object modules live in `games/sonic4/objects/` (GAME side —
     // their engine twins are reached from the aeon root, inside
     // `placed_module_sections_with_roots`'s ambient match).
@@ -1077,7 +1081,7 @@ fn placed_emp_sections_tranche7(aeon: &Path, debug_val: i128) -> Tranche7Section
         &map,
     );
     let (sound_api_sections, sound_api_asserts) =
-        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[("DEBUG".to_string(), debug_val)], &map);
     let (test_solid_sections, test_solid_asserts) =
         placed_module_sections(&aeon.join("games/sonic4/objects"), "test_solid.emp", &[], &map);
     let (test_particle_sections, test_particle_asserts) = placed_module_sections(
@@ -1165,7 +1169,7 @@ fn placed_emp_sections_with_mt(
 /// less except MT's `DEBUG`, SFX defines-less in BOTH shapes — R4). Returns all
 /// THREE modules' placed sections concatenated (dac, mt, sfx — declaration
 /// order only) AND BOTH the MT and SFX modules' link_asserts, so the caller can
-/// `check_link_asserts` and pin BOTH counts (mt == 5, sfx == 1) after the joint
+/// `check_link_asserts` and pin BOTH counts (mt == 7, sfx == 4) after the joint
 /// link — the ONE lower pass per module (M2), no second lowering to recover the
 /// asserts.
 fn placed_emp_sections_with_mt_sfx(
@@ -1467,8 +1471,8 @@ fn build_mixed_mt_rom(aeon: &Path, debug: bool) -> (Vec<u8>, Vec<sigil_span::Dia
     let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     assert_eq!(
         guard_assert_count(&link_asserts),
-        5,
-        "mt_bank.emp's five co-residency ensures must be captured"
+        7,
+        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
     );
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
@@ -1495,7 +1499,7 @@ fn build_mixed_mt_rom(aeon: &Path, debug: bool) -> (Vec<u8>, Vec<sigil_span::Dia
 /// phase-based at `$60000+$45F`) — covered by the full-ROM byte assertion below.
 ///
 /// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags)` — the caller pins
-/// BOTH modules' `check_link_asserts` (mt == 5, sfx == 1) and asserts every
+/// BOTH modules' `check_link_asserts` (mt == 7, sfx == 4) and asserts every
 /// diagnostic is non-Error (the I1 non-vacuous lesson: a positive gate that
 /// never ran would silently pass).
 fn build_mixed_sfx_rom(
@@ -1524,13 +1528,13 @@ fn build_mixed_sfx_rom(
     let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
     assert_eq!(
         guard_assert_count(&mt_asserts),
-        5,
-        "mt_bank.emp's five co-residency ensures must be captured"
+        7,
+        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
     );
     assert_eq!(
         guard_assert_count(&sfx_asserts),
-        1,
-        "sfx_bank.emp's single co-residency ensure must be captured"
+        4,
+        "sfx_bank.emp's ensures must be captured (1 co-residency + SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN drift guards, item 10)"
     );
 
     let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
@@ -1582,12 +1586,12 @@ fn build_mixed_hblank_rom(
     let sfx_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &sfx_asserts);
     assert_eq!(
         guard_assert_count(&mt_asserts),
-        5,
-        "mt_bank.emp's five co-residency ensures must be captured"
+        7,
+        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
     );
     assert_eq!(
         guard_assert_count(&sfx_asserts),
-        1,
+        4,
         "sfx_bank.emp's cross-seam co-residency ensure must be captured"
     );
 
@@ -1731,12 +1735,12 @@ fn build_mixed_tranche2_rom(
         sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &controllers_asserts);
     assert_eq!(
         guard_assert_count(&mt_asserts),
-        5,
-        "mt_bank.emp's five co-residency ensures must be captured"
+        7,
+        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
     );
     assert_eq!(
         guard_assert_count(&sfx_asserts),
-        1,
+        4,
         "sfx_bank.emp's cross-seam co-residency ensure must be captured"
     );
     assert_eq!(
@@ -1926,12 +1930,12 @@ fn build_mixed_tranche3_rom(
         sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &controllers_asserts);
     assert_eq!(
         guard_assert_count(&mt_asserts),
-        5,
-        "mt_bank.emp's five co-residency ensures must be captured"
+        7,
+        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
     );
     assert_eq!(
         guard_assert_count(&sfx_asserts),
-        1,
+        4,
         "sfx_bank.emp's cross-seam co-residency ensure must be captured"
     );
     assert_eq!(
@@ -2142,8 +2146,8 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link (mixed tranche4): {d:?}"));
 
-    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
-    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&mt_asserts), 7, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 4, "sfx guard captured");
     assert_eq!(guard_assert_count(&controllers_asserts), twin_guards(), "controllers guards captured");
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
@@ -2298,8 +2302,8 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link (mixed tranche5): {d:?}"));
 
-    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
-    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&mt_asserts), 7, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 4, "sfx guard captured");
     assert_eq!(guard_assert_count(&controllers_asserts), twin_guards(), "controllers guards captured");
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
@@ -2470,8 +2474,8 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link (mixed tranche6): {d:?}"));
 
-    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
-    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&mt_asserts), 7, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 4, "sfx guard captured");
     assert_eq!(guard_assert_count(&controllers_asserts), twin_guards(), "controllers guards captured");
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
@@ -2635,8 +2639,8 @@ fn build_mixed_tranche7_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link (mixed tranche7): {d:?}"));
 
-    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
-    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&mt_asserts), 7, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 4, "sfx guard captured");
     assert_eq!(guard_assert_count(&controllers_asserts), twin_guards(), "controllers guards captured");
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
@@ -2844,7 +2848,7 @@ fn placed_emp_sections_tranche8(aeon: &Path, debug_val: i128) -> Tranche8Section
         &map,
     );
     let (sound_api_sections, sound_api_asserts) =
-        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[("DEBUG".to_string(), debug_val)], &map);
     let (test_solid_sections, test_solid_asserts) =
         placed_module_sections(&aeon.join("games/sonic4/objects"), "test_solid.emp", &[], &map);
     let (test_particle_sections, test_particle_asserts) = placed_module_sections(
@@ -2931,8 +2935,8 @@ fn build_mixed_tranche8_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link (mixed tranche8): {d:?}"));
 
-    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
-    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&mt_asserts), 7, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 4, "sfx guard captured");
     assert_eq!(guard_assert_count(&controllers_asserts), twin_guards(), "controllers guards captured");
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),
@@ -3131,7 +3135,7 @@ fn placed_emp_sections_tranche9(aeon: &Path, debug_val: i128) -> Tranche9Section
         &map,
     );
     let (sound_api_sections, sound_api_asserts) =
-        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/sound"), "sound_api.emp", &[("DEBUG".to_string(), debug_val)], &map);
     let (test_solid_sections, test_solid_asserts) =
         placed_module_sections(&aeon.join("games/sonic4/objects"), "test_solid.emp", &[], &map);
     let (test_particle_sections, test_particle_asserts) = placed_module_sections(
@@ -3227,8 +3231,8 @@ fn build_mixed_tranche9_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link (mixed tranche9): {d:?}"));
 
-    assert_eq!(guard_assert_count(&mt_asserts), 5, "mt guards captured");
-    assert_eq!(guard_assert_count(&sfx_asserts), 1, "sfx guard captured");
+    assert_eq!(guard_assert_count(&mt_asserts), 7, "mt guards captured");
+    assert_eq!(guard_assert_count(&sfx_asserts), 4, "sfx guard captured");
     assert_eq!(guard_assert_count(&controllers_asserts), twin_guards(), "controllers guards captured");
     for (name, asserts, want) in [
         ("vdp_init.emp", &vdp_init_asserts, twin_guards()),

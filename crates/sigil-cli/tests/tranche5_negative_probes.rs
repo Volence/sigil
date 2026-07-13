@@ -217,7 +217,10 @@ fn lower_sound_api(
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
-            defines: vec![],
+            // DEBUG must be DEFINED (house convention) — 0 elides sound_api's
+            // song-id/ring-full asserts (retro-fix batch 2), so #SONG_COUNT is
+            // never referenced and needs no synthetic symbol on this probe path.
+            defines: vec![("DEBUG".to_string(), 0)],
         },
     );
     let mut m = module;

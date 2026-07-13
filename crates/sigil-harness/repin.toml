@@ -131,13 +131,14 @@ gate = "SIGIL_EMP_COLLISION_LOOKUP"
 tests = ["collision_lookup_port"]
 
 [[region]]
-# The one region whose END carries no listing symbol: the include's content
-# ends unlabeled after Sound_FadeIn (the next placement is the org $10000
-# object bank / sound_debug.asm). The literal len is the engine.inc gate
-# window size — shape-invariant, re-checked by sound_api_port's byte gate.
+# Shape-DEPENDENT length as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
+# asserts, findings 1/2). The content used to end unlabeled after Sound_FadeIn
+# (literal-len region); the twin now carries a `Sound_Api_End` anchor at exactly
+# the mixed-build resume position (engine.inc's per-shape `org`) so repin derives
+# plain/debug lengths PER SHAPE — the debug asserts grow the debug region.
 name = "sound_api"
 start = "Sound_PostByte"
-len = 0x1E4
+end = "Sound_Api_End"
 gate = "SIGIL_EMP_SOUND_API"
 tests = ["sound_api_port"]
 
@@ -909,10 +910,14 @@ per_shape = true
 tests = ["rings_port"]
 
 [[offset]]
-# The outbound `bsr.w Sound_PlaySFX` proof target (`base + 0x100` today).
+# The outbound `bsr.w Sound_PlaySFX` proof target. Shape-dependent as of
+# retro-fix batch 2: Sound_PlayMusic's two DEBUG song-id asserts (finding 1)
+# sit between the region base and Sound_PlaySFX, so the debug offset (0x1B0)
+# exceeds the plain (0x100).
 name = "SOUND_PLAY_SFX_OFF"
 sym = "Sound_PlaySFX"
 region = "sound_api"
+per_shape = true
 tests = ["sound_api_port"]
 
 [[offset]]

@@ -165,8 +165,11 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     assert_eq!(pins::SOUND_API.plain_base, 0x5DB0);
     assert_eq!(pins::SOUND_API.debug_base, 0x76CC);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
-    assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
-    assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);
+    // debug_len grew 0x1E4 -> 0x2D8 (retro-fix batch 2: the PlayMusic song-id +
+    // PlaySFX ring-full DEBUG asserts, +0xF4); plain unchanged. SOUND_PLAY_SFX_OFF
+    // became per-shape (PlayMusic's asserts precede Sound_PlaySFX in the debug region).
+    assert_eq!(pins::SOUND_API.debug_len, 0x2D8);
+    assert_eq!(pins::SOUND_PLAY_SFX_OFF, pins::ShapeOffset { plain: 0x100, debug: 0x1B0 });
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
     // +0xCC (churn) +0xC (hook guards) both in the debug ROM, like DEBUG_ASSEMBLED_LEN.

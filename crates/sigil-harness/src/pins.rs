@@ -6,8 +6,8 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/13/2026 01:37:13 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/13/2026 01:37:11 AM)
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/13/2026 03:23:40 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/13/2026 03:23:38 AM)
 //! [provenance] 19 regions, 159 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
@@ -84,8 +84,8 @@ pub const ENTITY_WINDOW: Region = Region { plain_base: 0x33FC, debug_base: 0x3B5
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
 pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x4C3A, debug_base: 0x58BC, plain_len: 0x24, debug_len: 0x24 };
 
-/// `Sound_PostByte` .. start + 0x1E4 (no end symbol in the listing) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
-pub const SOUND_API: Region = Region { plain_base: 0x5DB0, debug_base: 0x76CC, plain_len: 0x1E4, debug_len: 0x1E4 };
+/// `Sound_PostByte` .. `Sound_Api_End` — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
+pub const SOUND_API: Region = Region { plain_base: 0x5DB0, debug_base: 0x76CC, plain_len: 0x1E4, debug_len: 0x2D8 };
 
 /// `TestSolid_Init` .. `TestParticle` — gate `SIGIL_EMP_TEST_OBJECTS`. tests: test_objects_port
 pub const TEST_SOLID: Region = Region { plain_base: 0x10F7C, debug_base: 0x10F7C, plain_len: 0xE, debug_len: 0xE };
@@ -168,7 +168,7 @@ pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x226E, debug: 0x22F8 };
 
 /// `Sound_DrainSfxRing`. tests: game_loop_port
-pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x5EF6, debug: 0x7812 };
+pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x5EF6, debug: 0x7906 };
 
 /// `Game_State`. tests: game_loop_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
@@ -228,7 +228,7 @@ pub const ENTITY_WINDOW_ENTRY_FOR_SECTION: Pin = Pin { plain: 0x369A, debug: 0x4
 pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3686, debug: 0x40A8 };
 
 /// `Sound_PlayRing`. tests: rings_port
-pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x5F46, debug: 0x7862 };
+pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x5F46, debug: 0x7956 };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x66704;
@@ -327,7 +327,7 @@ pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA114, debug: 0xFFFFA1
 pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA116, debug: 0xFFFFA13A };
 
 /// `Sound_PlaySFX`. tests: animate_port
-pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x5EB0, debug: 0x77CC };
+pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x5EB0, debug: 0x787C };
 
 /// `ObjCodeBase`. tests: test_objects_port
 pub const OBJ_CODE_BASE: Pin = Pin { plain: 0x10000, debug: 0x10000 };
@@ -592,8 +592,8 @@ pub const REFRESH_OFF: ShapeOffset = ShapeOffset { plain: 0x16C, debug: 0x28A };
 /// `RingCollision` − `rings` start (per-shape). tests: rings_port
 pub const RINGCOL_OFF: ShapeOffset = ShapeOffset { plain: 0x116, debug: 0x172 };
 
-/// `Sound_PlaySFX` − `sound_api` start (shape-invariant, asserted at generation). tests: sound_api_port
-pub const SOUND_PLAY_SFX_OFF: usize = 0x100;
+/// `Sound_PlaySFX` − `sound_api` start (per-shape). tests: sound_api_port
+pub const SOUND_PLAY_SFX_OFF: ShapeOffset = ShapeOffset { plain: 0x100, debug: 0x1B0 };
 
 /// `Sine_Table` − `math` start (shape-invariant, asserted at generation). tests: math_port
 pub const SINE_TABLE_OFF: usize = 0x18;

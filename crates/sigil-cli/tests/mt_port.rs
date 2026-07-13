@@ -87,10 +87,17 @@ fn map_toml() -> &'static str {
 /// `probe_b` idiom (`ports.rs`), which proved a `bankid("Name")` ensure
 /// resolves against a label defined this way exactly as it would against the
 /// real cross-source symbol.
-fn as_bank_start_label() -> Vec<Section> {
-    let asm = "cpu 68000\nphase $60000\nMovingTrucks_Bank_Start:\n\tdc.w 0\n";
+fn as_bank_start_label(debug: i128) -> Vec<Section> {
+    // The bank-start label PLUS the config/sound_ids.asm song-id equs that
+    // mt_bank.emp's SONG_MOVINGTRUCKS/SONG_COUNT drift guards read cross-seam
+    // (retro-fix batch 2, item 10). SONG_COUNT is shape-dependent (3 debug / 1
+    // plain), matching sound_ids.asm's `ifdef __DEBUG__`.
+    let song_count = if debug != 0 { 3 } else { 1 };
+    let asm = format!(
+        "cpu 68000\nphase $60000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
+    );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
+    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
 }
 
 /// Parse -> lower (with the sound-dir include-root + shape defines) -> place
@@ -139,7 +146,7 @@ fn compile_real_file(
     // cannot collide with either map region. Its VMA ($60000, from `phase`)
     // is what the `bankid()` ensures actually read; its LMA placement here is
     // an inert harness bookkeeping detail, exactly as in `probe_b`.
-    let mut cross_seam = as_bank_start_label();
+    let mut cross_seam = as_bank_start_label(debug);
     for sec in &mut cross_seam {
         sec.lma = 0x0100_0000;
         sec.placement = SectionPlacement::Pinned;
@@ -201,8 +208,8 @@ fn mt_bank_region_matches_reference() {
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(0);
     assert_eq!(
         guard_assert_count(&link_asserts),
-        5,
-        "mt_bank.emp's five co-residency ensures must be captured"
+        7,
+        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -231,8 +238,8 @@ fn mt_bank_debug_region_matches_reference() {
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(1);
     assert_eq!(
         guard_assert_count(&link_asserts),
-        5,
-        "mt_bank.emp's five co-residency ensures must be captured"
+        7,
+        "mt_bank.emp's ensures must be captured (5 co-residency + SONG_MOVINGTRUCKS/SONG_COUNT drift guards, item 10)"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
