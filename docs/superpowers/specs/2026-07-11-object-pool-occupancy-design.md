@@ -261,7 +261,29 @@ compacts/frame at saturation = 8.1% of frame (~2,600 cyc each).
   preserved exactly. 4+ compacts/frame → 1.
 - Latch full ⇒ alloc-fail (moveq #1/Z-clear — callers already handle
   .alloc_fail). Bounded, rare (requires >latch-size allocs in one
-  saturated frame).
+  saturated frame). The latch-full check is POST-pop (the full count is
+  only known after popping), so alloc-fail MUST roll the slot back onto the
+  free stack (`addq.w #2,(Dynamic_Free_SP)`) or it leaks — the `.latch_full`
+  arm does this then falls into `.full`.
+- **Room proof — the drain never overflows the live list (canonical
+  argument, 2026-07-13; the earlier "compact reclaims ≥ latch count"
+  framing was WRONG — it fails when latch-side deletes are in play).** The
+  bound is PHYSICAL: only NUM_DYNAMIC slots exist, and at drain every
+  OCCUPIED slot (code_addr ≠ 0) has EXACTLY ONE live entry, in the live
+  list OR the pending latch, never both — DeleteObject zeroes the deleted
+  slot's entry in BOTH arrays (the A1 zero + its latch twin), and once
+  Count hits NUM_DYNAMIC it stays there with no mid-frame compact, so a
+  latched slot can only ever be re-latched, never normal-appended. Hence
+  `live_count_after_compact + (non-zero latch entries) = occupied ≤
+  NUM_DYNAMIC`, so `room = NUM_DYNAMIC − live_count_after_compact ≥ latch
+  entries appended`. Each latched alloc's free-stack pop is what proves its
+  slot counts toward that ≤ NUM_DYNAMIC. DEBUG guards it: the moved §6-3
+  post-drain sweep (count == full tst.w live sweep ≤ NUM_DYNAMIC).
+- **Latch-side "exactly once" (amendment to §6's A1 clause).** DeleteObject
+  must zero a matching PENDING entry too, not just the live-list entry: a
+  slot latched, deleted, then re-latched the same frame would else be
+  drained twice → permanent double-dispatch (the exact A1 class). The drain
+  null-guards zeroed latch entries.
 - Documented tradeoff: a latched spawn is not in the live list until
   frame end, so it misses same-frame TouchResponse (collision begins next
   frame) — only for spawns during saturated frames; normal-append spawns
@@ -274,8 +296,7 @@ compacts/frame at saturation = 8.1% of frame (~2,600 cyc each).
   non-saturated run), profile packet showing the compact share drop from
   8.1%.
 
-**BUILT + VERIFIED 2026-07-13 (branch `occupancy-a2-latch`, aeon `264037b` /
-sigil `fa02f91`, NOT merged — gate). Packet:
+**SHIPPED 2026-07-13 (merged --no-ff; gate passed). Packet:
 notes/2026-07-13-occupancy-a2-latch-packet.md.** Latch shipped
 (`Dynamic_Live_Pending`, 8 words release; AllocDynamic latches at full count
 with pop-rollback on latch-full; DrainDynamicPending drains at the RunObjects
