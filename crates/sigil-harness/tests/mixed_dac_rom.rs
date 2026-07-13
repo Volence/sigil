@@ -508,13 +508,17 @@ fn emp_bank_map_tranche6(debug: bool) -> String {
 fn emp_bank_map_tranche7(debug: bool) -> String {
     let collision_base =
         if debug { format!("{:#x}", pins::COLLISION.debug_base) } else { format!("{:#x}", pins::COLLISION.plain_base) };
+    // The A2 walk-live rail (item 1) adds 8 DEBUG-only bytes to TouchResponse
+    // (st + sf around the dynamic live-list walk), so the collision window is
+    // 0x16E in the debug shape and 0x166 in the plain shape.
+    let collision_size = if debug { "0x16e" } else { "0x166" };
     format!(
         "{}\
          \n\
          [[region]]\n\
          name = \"collision\"\n\
          lma_base = {collision_base}\n\
-         size = 0x166\n\
+         size = {collision_size}\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche6(debug)
     )
@@ -1086,7 +1090,7 @@ fn placed_emp_sections_tranche7(aeon: &Path, debug_val: i128) -> Tranche7Section
     // aabb ambient prepend rides inside `placed_module_sections` (the
     // `collision.emp` arm in `placed_module_sections_with_roots`).
     let (touch_response_sections, touch_response_asserts) =
-        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[("DEBUG".to_string(), debug_val)], &map);
     sections.extend(mt_sections);
     sections.extend(sfx_sections);
     sections.extend(hblank_sections);
@@ -2814,7 +2818,7 @@ fn placed_emp_sections_tranche8(aeon: &Path, debug_val: i128) -> Tranche8Section
         &map,
     );
     let (touch_response_sections, touch_response_asserts) =
-        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[("DEBUG".to_string(), debug_val)], &map);
     // The tranche-8 module: `engine/objects/rings.emp` — its sst+constants+
     // aabb ambient prepend rides the shared `collision.emp | rings.emp` arm.
     let (rings_sections, rings_asserts) = placed_module_sections(
@@ -3097,7 +3101,7 @@ fn placed_emp_sections_tranche9(aeon: &Path, debug_val: i128) -> Tranche9Section
         &map,
     );
     let (touch_response_sections, touch_response_asserts) =
-        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[], &map);
+        placed_module_sections(&aeon.join("engine/objects"), "collision.emp", &[("DEBUG".to_string(), debug_val)], &map);
     let (rings_sections, rings_asserts) = placed_module_sections(
         &aeon.join("engine/objects"),
         "rings.emp",

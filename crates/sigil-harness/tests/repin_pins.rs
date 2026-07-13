@@ -100,16 +100,20 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
     // −2 plain/−4 debug (C-A1 core shrink), +0x22 both (object-pool occupancy
     // grew the core region) — net.
+    // debug_base +0x6C from retro-fix-audit-1 item 1 (the A2 walk-live rail's
+    // CompactDynamicLive assert + 4 st/sf in core precede animate; DEBUG-only).
     assert_eq!(pins::ANIMATE.plain_base, 0x2E38);
-    assert_eq!(pins::ANIMATE.debug_base, 0x328C);
+    assert_eq!(pins::ANIMATE.debug_base, 0x32F8);
     assert_eq!(pins::ANIMATE.plain_len, 0x192);
     assert_eq!(pins::ANIMATE.debug_len, 0x192);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
     // Bases slid as animate above, incl. +0x22 (object-pool occupancy core
     // growth). LEN unchanged: R-A1's addi #16→#8 is same-size (immediate only).
+    // debug_base +0x74 (item 1: core rail +0x6C + collision rail +0x8 precede
+    // rings; DEBUG-only). LEN unchanged (rings itself untouched by this batch).
     assert_eq!(pins::RINGS.plain_base, 0x31CA);
-    assert_eq!(pins::RINGS.debug_base, 0x361E);
+    assert_eq!(pins::RINGS.debug_base, 0x3692);
     assert_eq!(pins::RINGS.plain_len, 0x1BE);   // +0xA: ring-art DrawRings frame-tile calc
     assert_eq!(pins::RINGS.debug_len, 0x21A);
 
@@ -120,7 +124,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     assert_eq!(pins::CORE.plain_base, 0x2794);
     assert_eq!(pins::CORE.plain_len, 0x284);    // +0x8: step-6 frame-end compaction call
     assert_eq!(pins::CORE.debug_base, 0x2926);
-    assert_eq!(pins::CORE.debug_len, 0x546);    // +0x8 step-6 compaction call; +0x19E step-7 DEBUG asserts (self-gate in plain)
+    assert_eq!(pins::CORE.debug_len, 0x5B2);    // +0x8 step-6 compaction call; +0x19E step-7 DEBUG asserts; +0x6C retro-fix item 1 (A2 rail: CompactDynamicLive assert + 4 st/sf) — all self-gate in plain
     assert_eq!(pins::DPLC.plain_base, 0x26FC);
     assert_eq!(pins::DPLC.debug_base, 0x288E);
     assert_eq!(pins::DPLC.plain_len, 0x98);
@@ -152,10 +156,11 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // sound_api_port.rs: base + literal len (no end symbol in the listing).
     // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), +0xA (ring-art
     // DrawRings), +0x22 (object-pool occupancy core growth), then −0x1C plain /
-    // −0xC debug (tranche-12 entity_window step-2 branch shrink) — all downstream
-    // in-block.
+    // −0xC debug (tranche-12 entity_window step-2 branch shrink), then +0x7C debug
+    // (retro-fix-audit-1 item 1/12: core +0x6C, collision +0x8, entity_window +0x8
+    // A2-rail DEBUG growth) — all downstream in-block; plain unchanged.
     assert_eq!(pins::SOUND_API.plain_base, 0x5D3C);
-    assert_eq!(pins::SOUND_API.debug_base, 0x73A4);
+    assert_eq!(pins::SOUND_API.debug_base, 0x7420);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);

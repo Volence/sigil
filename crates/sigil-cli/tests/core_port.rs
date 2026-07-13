@@ -127,6 +127,9 @@ const DEBUG: Shape = Shape {
         ("Dynamic_Live", pins::DYNAMIC_LIVE.debug),
         ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.debug),
         ("Dynamic_Live_Dirty", pins::DYNAMIC_LIVE_DIRTY.debug),
+        // A2 walk-live rail (item 1) — DEBUG-only flag set/cleared by the walkers
+        // and asserted clear at CompactDynamicLive entry.
+        ("Dynamic_Live_Walking", pins::DYNAMIC_LIVE_WALKING),
         // DEBUG-only: the assert construct expansions jsr/jmp these.
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),

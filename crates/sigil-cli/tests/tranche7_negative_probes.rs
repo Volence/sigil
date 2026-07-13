@@ -66,7 +66,9 @@ fn lower_with_ambient(dep_srcs: &[&str], main_src: &str) -> Vec<sigil_span::Diag
         initial_cpu: Cpu::M68000,
         include_root: None,
         embed_base: None,
-        defines: vec![],
+        // collision.emp's A2 rail (item 1) references DEBUG in `if DEBUG == 1`
+        // blocks; bind it (0 = plain, rail elided) so the ambient prepend lowers.
+        defines: vec![("DEBUG".to_string(), 0)],
     };
     let (_module, ldiags) = lower_module(&file, &opts);
     ldiags
@@ -140,7 +142,9 @@ fn lower_quintet(
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
-            defines: vec![],
+            // collision.emp's A2 rail (item 1) references DEBUG; bind it (0 =
+            // plain, rail elided) so the doctored twin lowers to the link asserts.
+            defines: vec![("DEBUG".to_string(), 0)],
         },
     );
     (module.sections, module.link_asserts, ldiags)

@@ -92,33 +92,42 @@ fn twin_guards() -> usize {
     sigil_harness::test_support::engine_constant_equs().len()
 }
 
-/// The region geometry — SHAPE-DEPENDENT base, shape-invariant size
-/// (sourced from `sigil_harness::pins` — regenerate via repin).
-const COLLISION_LEN: usize = pins::COLLISION.plain_len;
-
 /// Per-shape TRUE VMAs — the region base plus the two GAME-RAM cross-seam
 /// labels (game RAM moves with `__DEBUG__`).
 struct Shape {
     base: u32,
+    len: usize,
+    /// Whether to lower with `DEBUG == 1` (the A2 walk-live rail's st/sf +
+    /// the Dynamic_Live_Walking flag reference are DEBUG-shape-only).
+    debug: bool,
     player_1: u32,
     dynamic_live: u32,
     dynamic_live_count: u32,
     system_slots: u32,
+    /// `Dynamic_Live_Walking` VMA — `Some` in the debug shape only (the flag
+    /// is referenced solely inside `if DEBUG == 1` blocks; item 1).
+    walking: Option<u32>,
 }
 
 const PLAIN: Shape = Shape {
     base: pins::COLLISION.plain_base,
+    len: pins::COLLISION.plain_len,
+    debug: false,
     player_1: pins::PLAYER_1.plain,
     dynamic_live: pins::DYNAMIC_LIVE.plain,
     dynamic_live_count: pins::DYNAMIC_LIVE_COUNT.plain,
     system_slots: pins::SYSTEM_SLOTS.plain,
+    walking: None,
 };
 const DEBUG: Shape = Shape {
     base: pins::COLLISION.debug_base,
+    len: pins::COLLISION.debug_len,
+    debug: true,
     player_1: pins::PLAYER_1.debug,
     dynamic_live: pins::DYNAMIC_LIVE.debug,
     dynamic_live_count: pins::DYNAMIC_LIVE_COUNT.debug,
     system_slots: pins::SYSTEM_SLOTS.debug,
+    walking: Some(pins::DYNAMIC_LIVE_WALKING),
 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
@@ -190,7 +199,7 @@ fn as_outbound_consumer() -> Vec<Section> {
 /// The map: a `text` region for the zero-byte default-section carrier, and the
 /// real `collision` region pinned at the per-shape reference base, sized to the
 /// 0x166-byte block.
-fn map_toml(base: u32) -> String {
+fn map_toml(base: u32, len: usize) -> String {
     format!(
         "fill = 0x00\n\
          \n\
@@ -203,7 +212,7 @@ fn map_toml(base: u32) -> String {
          [[region]]\n\
          name = \"collision\"\n\
          lma_base = {base:#x}\n\
-         size = {COLLISION_LEN:#x}\n\
+         size = {len:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -230,7 +239,10 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,
-        defines: vec![],
+        // The A2 walk-live rail (item 1) adds `if DEBUG == 1` st/sf to
+        // TouchResponse — DEBUG must be BOUND (0 or 1) in both shapes so the
+        // comptime `if` resolves.
+        defines: vec![("DEBUG".to_string(), if shape.debug { 1 } else { 0 })],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -239,7 +251,7 @@ fn compile_real_file(
     );
     let link_asserts = module.link_asserts;
 
-    let map = sigil_link::load_map(&map_toml(shape.base)).expect("map must load");
+    let map = sigil_link::load_map(&map_toml(shape.base, shape.len)).expect("map must load");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(
@@ -248,14 +260,21 @@ fn compile_real_file(
     );
 
     let mut lma = 0x0100_0000u32;
-    for group in [
-        &mut as_constant_equs(),
-        &mut as_label_at("Player_1", shape.player_1),
-        &mut as_label_at("Dynamic_Live", shape.dynamic_live),
-        &mut as_label_at("Dynamic_Live_Count", shape.dynamic_live_count),
-        &mut as_label_at("System_Slots", shape.system_slots),
-        &mut as_outbound_consumer(),
-    ] {
+    // The consumer stays the SIXTH group (LMA 0x0150_0000, asserted below);
+    // the debug-only Dynamic_Live_Walking label is appended AFTER it so its
+    // presence never shifts the consumer's fixed LMA.
+    let mut groups: Vec<Vec<Section>> = vec![
+        as_constant_equs(),
+        as_label_at("Player_1", shape.player_1),
+        as_label_at("Dynamic_Live", shape.dynamic_live),
+        as_label_at("Dynamic_Live_Count", shape.dynamic_live_count),
+        as_label_at("System_Slots", shape.system_slots),
+        as_outbound_consumer(),
+    ];
+    if let Some(w) = shape.walking {
+        groups.push(as_label_at("Dynamic_Live_Walking", w));
+    }
+    for group in &mut groups {
         for sec in group.iter_mut() {
             sec.lma = lma;
             sec.placement = SectionPlacement::Pinned;
@@ -328,23 +347,25 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let section = linked.section("collision").expect("linked image must carry collision");
     assert_region_matches(
         &section.bytes,
-        &refrom[base..base + COLLISION_LEN],
-        &format!("collision vs {rom_name}[{base:#x}..{:#x}]", base + COLLISION_LEN),
+        &refrom[base..base + shape.len],
+        &format!("collision vs {rom_name}[{base:#x}..{:#x}]", base + shape.len),
     );
 
     // Cross-seam label pins (act_descriptor_port.rs / test_objects_port.rs
     // style): the proc opens with `move.l a4, -(sp)` (occupancy step 4 — a4 is
     // the live-list cursor), so `lea (Player_1).w, a2` sits at region offset 2
-    // and its abs.w word at offset 4. The dynamic-pool `lea (Dynamic_Slots).w,
-    // a3` was replaced by the live-list cursor setup `lea (Dynamic_Live).w, a4`
-    // at region offset 0x22 (abs.w word at 0x24).
+    // and its abs.w word at offset 4. The dynamic-pool `lea (Dynamic_Live).w,
+    // a4` carries the cursor setup: its abs.w word is at region offset 0x24 in
+    // the plain shape, and 0x28 in the debug shape (the A2 rail's DEBUG-only
+    // `st (Dynamic_Live_Walking).w` — 4 bytes — precedes the lea; item 1).
     let player_word = u16::from_be_bytes([section.bytes[4], section.bytes[5]]);
     assert_eq!(
         player_word,
         (shape.player_1 & 0xFFFF) as u16,
         "`lea (Player_1).w, a2` must carry Player_1's abs.w address"
     );
-    let dynamic_word = u16::from_be_bytes([section.bytes[0x24], section.bytes[0x25]]);
+    let dyn_off = if shape.debug { 0x28 } else { 0x24 };
+    let dynamic_word = u16::from_be_bytes([section.bytes[dyn_off], section.bytes[dyn_off + 1]]);
     assert_eq!(
         dynamic_word,
         (shape.dynamic_live & 0xFFFF) as u16,
