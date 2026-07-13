@@ -795,3 +795,31 @@ symbols in the post-`convsym -a` table; body up to `EndOfRom` unchanged length).
   **`65c3681cc7118fc120332894a0404090784192911afe72456ba26a75e1eb4013`**.
 - Debug `s4.debug.bin`: **459753 bytes** (`EndOfRom` = `0x67582`, unchanged), sha256
   **`7d24abbf2de46a1f5941e33a543308be79683f755f943e912897c69299d911e2`**.
+
+## Re-baseline 2026-07-13 — churn-first ObjectTest scene + OJZ scene-pin hook + mulu
+
+Paired-state batch (aeon + sigil pushed together). Three ROM-affecting inputs:
+
+- **churn-first ObjectTest scene** (aeon `test_churn.asm` + `object_test_state`
+  growth): **+0xCC B both shapes**, shifting downstream data regions +0x78 and
+  ROM-end/exception-vector pins +0xCC. First `mulu` consumer (`mulu.w #36/#40,d0`).
+- **OJZ scene-pin hook** (`Debug_Scene_Freeze`, `__DEBUG__`-only): debug ROM
+  **+0xC** (two `ifdef __DEBUG__` guards, 6 B each) and every `__DEBUG__`-block-
+  downstream RAM symbol **+0x2** (the RAM byte + evenness pad). **Plain `s4.bin`
+  byte-IDENTICAL** — the hook emits nothing in the non-debug build.
+- **`mulu` in sigil-as** (demanded-features law, first consumer = the churn
+  scene): sigil now natively assembles `mulu`, so the M1.D full-build gate stays
+  green. sigil-side only, no ROM effect.
+
+Gate maintenance: `pins.rs` re-derived via `repin` (two waves: churn +0xCC, then
+hook debug +0x2/+0xC); the `mixed_dac_rom` inline-target slices had their
+hardcoded abs.w/abs.l/imm32 targets **pin-spliced corpus-wide** (tranche-12
+mitigation, inline-bytes fragility now extinct); the `repin_pins.rs` hand-typed
+tripwire consciously updated for the shifted end/MDDBG/RAM pins. Full strict
+suite 2211/0; `repin --check` clean; `s4.bin` boot-checked.
+
+- Aeon repo commit: **`c4cf2be`**; sigil merge **`62d898d`**.
+- Non-debug `s4.bin`: **452275 bytes** (`EndOfRom` = `0x65B60`, +0xCC), sha256
+  **`96deff287905dbbf6ff16a9514efa8094cda595de5db869eb59dffa6394164e2`**.
+- Debug `s4.debug.bin`: **460268 bytes** (`EndOfRom` = `0x6765A`, +0xCC+0xC), sha256
+  **`85e5b14cbd06acf8f19fe81381b2ac1c960d534cea24db13da692af282aec433`**.
