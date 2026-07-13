@@ -235,3 +235,41 @@ design's DEBUG rail), then occupancy. Build order within: structure +
 maintenance (behavior-neutral, lists maintained but unread — verifiable
 alone) → walker retrofits one at a time, live-verified each → compaction
 → DEBUG asserts → profile packet to Volence.
+
+## 9. Amendment A2 — full-list alloc: overflow latch (RULED 2026-07-12)
+
+**Evidence (churn-first ObjectTest soak, packet
+notes/2026-07-12-churn-first-objecttest-a2-soak-packet.md):** the DEBUG
+walk-live rail FIRED ~4 frames into genuine dynamic-pool churn — faulting
+PC CompactDynamicLive+14, stack RunObjects.run_culled → TestChurnObj_Main
+→ AllocDynamic(compact-on-full) → CompactDynamicLive, state Count=40
+Dirty=set. The §6 capacity-guard's "before any dispatch this frame"
+assumption is disproven: mid-dispatch spawns reach compact-on-full and
+mutate the array under a live walker (stale-tail double-dispatch class).
+The same soak's profile shows compact-on-full is also a COST: 4
+compacts/frame at saturation = 8.1% of frame (~2,600 cyc each).
+
+**Ruling (Volence, 2026-07-12): overflow latch, drained at frame end.**
+
+- AllocDynamic at Count == NUM_DYNAMIC appends the popped slot word to a
+  small pending latch (Dynamic_Live_Pending, capacity ~8 words + count
+  byte) instead of compacting; the live list array is NEVER mutated
+  mid-frame by the alloc path.
+- The RunObjects frame-end tail (the existing step-6 site) drains: ONE
+  CompactDynamicLive (reconciles zeros/dead AND makes room), then appends
+  latched entries IN ALLOC ORDER — spawn-order dispatch semantics
+  preserved exactly. 4+ compacts/frame → 1.
+- Latch full ⇒ alloc-fail (moveq #1/Z-clear — callers already handle
+  .alloc_fail). Bounded, rare (requires >latch-size allocs in one
+  saturated frame).
+- Documented tradeoff: a latched spawn is not in the live list until
+  frame end, so it misses same-frame TouchResponse (collision begins next
+  frame) — only for spawns during saturated frames; normal-append spawns
+  keep today's semantics.
+- The DEBUG walk-live rail STAYS (now guards the invariant "compact runs
+  only at the frame-end drain"); the frame-end drain site itself runs
+  with no walk live by construction.
+- Verification: re-run the churn-first soak — assert must NOT fire, churn
+  sustained, spawn-order preserved (oracle frame-locked A/B vs a
+  non-saturated run), profile packet showing the compact share drop from
+  8.1%.
