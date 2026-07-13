@@ -124,6 +124,19 @@ gate = "SIGIL_EMP_ENTITY_WINDOW"
 tests = ["entity_window_port"]
 
 [[region]]
+# Shape-INVARIANT length ($9E both shapes — no asserts, no __DEBUG__; the
+# cleanest region since dplc). The spawn-seam callee of entity_window's
+# TrySpawnObject and the sole consumer of AllocDynamic here. Sits after
+# children.asm (unported) and before plane_buffer.asm; its start doubles as the
+# `Load_Object` symbol that entity_window_port pins (via LOAD_OBJECT.plain_base,
+# the RingBuffer_Add/RINGS precedent).
+name = "load_object"
+start = "Load_Object"
+end = "Plane_Buffer_Reset"
+gate = "SIGIL_EMP_LOAD_OBJECT"
+tests = ["load_object_port", "entity_window_port"]
+
+[[region]]
 name = "collision_lookup"
 start = "Collision_GetType"
 end = "Collision_ProbeDown"
@@ -879,9 +892,14 @@ tests = ["entity_window_port"]
 name = "Section_FlatIDXY"
 tests = ["entity_window_port"]
 
+# (Load_Object is now the `load_object` region's start symbol — pinned as
+# LOAD_OBJECT.plain_base/.debug_base, consumed by entity_window_port.)
+
 [[symbol]]
-name = "Load_Object"
-tests = ["entity_window_port"]
+# The `jsr AllocDynamic` target in load_object.emp (the sole inbound extern);
+# the AllocDynamic latch/live-list owner lives in core.emp.
+name = "AllocDynamic"
+tests = ["load_object_port"]
 
 # ── Region-relative offsets ─────────────────────────────────────────────────
 

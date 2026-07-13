@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/13/2026 09:11:34 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/13/2026 09:11:33 AM)
-//! [provenance] 19 regions, 159 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/13/2026 09:36:58 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/13/2026 09:36:56 AM)
+//! [provenance] 20 regions, 159 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +80,9 @@ pub const RINGS: Region = Region { plain_base: 0x3244, debug_base: 0x3944, plain
 
 /// `Collected_Init` .. `PopulateSpawnedPieceCount` — gate `SIGIL_EMP_ENTITY_WINDOW`. tests: entity_window_port
 pub const ENTITY_WINDOW: Region = Region { plain_base: 0x33FC, debug_base: 0x3B58, plain_len: 0x8D2, debug_len: 0xD40 };
+
+/// `Load_Object` .. `Plane_Buffer_Reset` — gate `SIGIL_EMP_LOAD_OBJECT`. tests: load_object_port, entity_window_port
+pub const LOAD_OBJECT: Region = Region { plain_base: 0x3FDC, debug_base: 0x4BA6, plain_len: 0x9E, debug_len: 0x9E };
 
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
 pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x4C3A, debug_base: 0x58BC, plain_len: 0x24, debug_len: 0x24 };
@@ -578,8 +581,8 @@ pub const SECTION_GET_SEC_PTR_XY: Pin = Pin { plain: 0x51AC, debug: 0x5E2E };
 /// `Section_FlatIDXY`. tests: entity_window_port
 pub const SECTION_FLAT_IDXY: Pin = Pin { plain: 0x5192, debug: 0x5E14 };
 
-/// `Load_Object`. tests: entity_window_port
-pub const LOAD_OBJECT: Pin = Pin { plain: 0x3FDC, debug: 0x4BA6 };
+/// `AllocDynamic`. tests: load_object_port
+pub const ALLOC_DYNAMIC: Pin = Pin { plain: 0x2802, debug: 0x2994 };
 
 // ── Region-relative offsets (manifest order) ──
 
