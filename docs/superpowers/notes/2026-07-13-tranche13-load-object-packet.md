@@ -8,7 +8,9 @@ Design note: `2026-07-13-tranche13-load-object-design.md`.
 Ported `aeon/engine/objects/load_object.asm` (107 lines, `Load_Object` +
 `Load_ObjectList`) — the spawn-seam callee of entity_window's TrySpawnObject.
 The cleanest region since dplc: shape-INVARIANT length, no asserts, no
-`__DEBUG__`. Loop ran dry after one step-5 optimization.
+`__DEBUG__`. Loop ran TWO retrospect passes to dryness (pass 1 = the a3 fix +
+redundant-save removal; pass 2 caught a shared-idiom the first pass missed —
+see Pass 2 below).
 
 **Final region:** plain `$3FDC..$4074`, debug `$4BA6..$4C3E`, len **`$98`**
 both shapes (started `$9E`; step-2 −2 + step-5 −4).
@@ -104,6 +106,33 @@ no kill row). 4 ledger rows (ASKs 1-3 + the unique burst-copy idiom).
 - *Silent-tradeoff*: "alloc failures silently skipped" is the documented
   contract (Out: none) — commented in the header. named.
 - **Verdict: 1 optimization taken** (redundant a0 save/restore removed).
+
+### Pass 2 (second retrospect — the loop-until-dry pass)
+
+Pass 1 asserted dryness on a light check; a proper re-run of the step-3
+interrogation on the post-step-5 code surfaced two items the first pass glossed
+(both marginal; neither changed shipped bytes):
+
+- **Comment-as-compensation (the miss)**: the mappings→frame-0 piece-count read
+  is NOT unique — `animate.emp:276` does the same `move.w FRAME_PIECE_COUNT(base,
+  off.w), dest` with a byte-identical "+4 bbox bytes" comment. A duplicated
+  what-comment across two files is the exact signal step-3(a) exists to catch;
+  pass 1 (reading load_object in isolation) walked past it.
+  - **Attempted** (Volence-directed) a `frame_piece_count` `pub comptime fn` in a
+    new helper-only module → **BLOCKED** by two language gaps (ledgered): (A) a
+    size-suffixed spliced index reg `{off}.w` won't parse in an asm-template EA;
+    (B, decisive) statement-position Code-splices are gated to `asm { }`
+    templates — a plain `proc { }` body can't invoke a Code-returning helper
+    without being restructured into an asm-body proc. Disproportionate for a
+    1-instruction share. Reverted; **Gap B is the campaign-relevant find** (it's
+    the gate on adopting comptime-fn helpers into the corpus of plain procs).
+- **Magic-number (hidden coupling)**: `rol.w #4` silently encodes
+  `(RF_XFLIP - OEF_XFLIP) & 15`. Drift-safe rewrite needs OEF_XFLIP in the
+  constants twin (a ripple to `engine_constant_equs` + guard count across many
+  port tests) and reads more cleverly than `#4`+comment → **deferred, ledgered**.
+
+Pass 3 retrospect: empty → **dry**. Net shipped delta from pass 2: none (both
+items ledgered); the value is the two language gaps.
 
 ## Merge integration checklist (for Volence's gate)
 
