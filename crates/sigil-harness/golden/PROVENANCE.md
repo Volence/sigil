@@ -760,3 +760,38 @@ pin-spliced (survives future target slides).
   **`e55a010ce6470f3f4caca8c51cad9b795888fb9f39b32417ea87c79dff760046`**.
 - Debug `s4.debug.bin`: **459735 bytes** (`EndOfRom` = `0x67582`, unchanged), sha256
   **`6c21b56cb2f68390c94fbcc548faf307e23f32981af4c292fe0e233f375708e5`**.
+
+## Re-baseline 2026-07-12 — retro-fix-audit-1 (steps-2-5 audit batch)
+
+The ratified retro-fix batch off the 2026-07-12 steps-2-5 retro-audit. Three
+items change ROM BYTES (plain + debug); the rest are DEBUG-shape-only asserts
+(self-gating) or comment/ensure (byte-neutral in both shapes):
+
+- **item 5** (animate): drop both `Sound_PlaySFX` movem saves (exhaustive-license
+  ruling — a1/d1 contractually preserved). −8 B.
+- **item 10** (rings): DrawRings camera-bias fold (A1 class) — pre-bias the cached
+  camera regs, drop the per-ring subi/addi, compensate the cull addi immediate to
+  reproduce the EXACT pre-fold d0 (wraparound-safe). SAT bytes identical; net
+  −6 B (the cull addi compensates, can't be dropped — hence −6 not the audit's
+  −16).
+- **item 11** (dplc + dma_queue): `QueueDMATransfer` now HONORS its long-documented
+  carry-on-full contract (+12 B, 3 CCR ops — shifts the whole engine block +0xC);
+  `perform_dplc` commits `prev_frame` only after a successful enqueue.
+- **item 6 REMOVED**: the DPLC single-entry assert — the A2 ObjectTest oracle soak
+  disproved the invariant (`DPLC_Sonic` carries multi-entry frames), so it was
+  removed (debug-shape shrinks back).
+
+Engine-block growth absorbed at `org $10000` — assembled `EndOfRom` UNCHANGED both
+shapes (`$65A94` / `$67582`). engine.inc's 14 `SIGIL_EMP_*` gate resume orgs
+re-derived; the mixed_dac_rom pre-pin hardcoded engine-block addresses bumped
++0xC; harness pins re-derived via `repin` + hand-typed baselines. New RAM
+symbol `Dynamic_Live_Walking` (DEBUG-only, reuses the ram.asm pad → Engine_RAM_End
+shape-invariant). The debug `s4.debug.bin` file grew +18 B (the added DEBUG
+symbols in the post-`convsym -a` table; body up to `EndOfRom` unchanged length).
+
+- Aeon repo commit: **`5e946ca`** (merge of `retro-fix-audit-1`); sigil merge
+  **`a17e0b7`**.
+- Non-debug `s4.bin`: **451861 bytes** (`EndOfRom` = `0x65A94`, unchanged), sha256
+  **`65c3681cc7118fc120332894a0404090784192911afe72456ba26a75e1eb4013`**.
+- Debug `s4.debug.bin`: **459753 bytes** (`EndOfRom` = `0x67582`, unchanged), sha256
+  **`7d24abbf2de46a1f5941e33a543308be79683f755f943e912897c69299d911e2`**.
