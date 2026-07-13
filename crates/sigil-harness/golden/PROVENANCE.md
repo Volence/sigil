@@ -736,3 +736,27 @@ the light OJZScroll scene — the empty-slot tax eliminated (packet:
 - Debug `s4.debug.bin`: **459735 bytes** (assembled `EndOfRom` = `0x67582`,
   unchanged), sha256
   **`0f03dd2e87ce1f4aeda4f2385aa8581701e84934d9ef3fa860ef2fe0b89e3cc0`**.
+
+## Re-baseline 2026-07-12 — tranche 12 (entity_window.asm → .emp)
+
+The 12th code port modernizes `entity_window.asm` in lockstep with its `.emp`
+port (steps 1-5): control flow → jbsr/jbra/bare-Bcc; the Init→Scan tail branch
+DELETED (fall-through via `falls_into EntityWindow_Scan`); the DEBUG-conditional-
+width branches hand-set per-shape (`ifdef __DEBUG__ .w / else .s`; `197`'s bsr
+stays `.w`); 4 backward-near `bsr.w`→`bsr.s`; `clear_slot_bitmasks` comptime-fn.
+entity_window shrank **-0x1C plain / -0xC debug**; collision_lookup + sound_api
+slid; engine.inc resume orgs re-pinned; the `SIGIL_EMP_ENTITY_WINDOW` gate wired
+(resume orgs plain `$3C5A` / debug `$4570`).
+
+Region growth absorbed at `org $10000` — assembled `EndOfRom` UNCHANGED both
+shapes (`$65A94` / `$67582`); ROM lengths unchanged, engine-block CONTENT changed
+(hence the new hashes). Harness pins re-derived via `repin` + hand-typed
+baselines; the mixed_dac_rom game_loop `bsr.w Sound_DrainSfxRing` disp is now
+pin-spliced (survives future target slides).
+
+- Aeon repo commit: **`2751a27`** (merge of `port-tranche12`) + **`281198f`**
+  (gate-wiring integration); sigil merge **`e2ad6d7`**.
+- Non-debug `s4.bin`: **451861 bytes** (`EndOfRom` = `0x65A94`, unchanged), sha256
+  **`e55a010ce6470f3f4caca8c51cad9b795888fb9f39b32417ea87c79dff760046`**.
+- Debug `s4.debug.bin`: **459735 bytes** (`EndOfRom` = `0x67582`, unchanged), sha256
+  **`6c21b56cb2f68390c94fbcc548faf307e23f32981af4c292fe0e233f375708e5`**.

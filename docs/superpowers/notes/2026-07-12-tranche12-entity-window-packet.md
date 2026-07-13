@@ -119,3 +119,28 @@ setup per the oracle-harness ledger row).
   precedent) — the RIGHT answer over matching ASL's nop or sigil's bra.w.
 - The shift-aware `.emp`-vs-fresh-`.lst`-region diff is the reusable technique
   for any future hand-set-twin lockstep (no disassembler needed).
+
+## Merge addendum (2026-07-12)
+
+**Attribution note (no history rewrite, per the review ruling):** the tranche-12
+harness re-pins (pins.rs entity_window −0x1C/−0xC + downstream, mixed_dac_rom
+game_loop pin-splice, repin_pins SOUND_API baseline, gap-ledger t12 rows) rode
+the audit docs commits on sigil master (`93220c0`/`5c65641`/`bec172d`) — the
+review seat's `git add -u` in the shared checkout; root cause owned, a hygiene
+rule recorded. The hunks stay where they landed; the clean tranche commit
+`869c6bf` carries the byte gate + kill-rows + design/packet. `f640473` (branch,
+docs-only) rode the merge harmlessly.
+
+**Merge commits:** aeon `2751a27` (merge) + `281198f` (gate-wiring integration);
+sigil `e2ad6d7` (merge). `SIGIL_EMP_ENTITY_WINDOW` gate live (resume orgs plain
+`$3C5A` / debug `$4570`).
+
+**Final master ROM hashes** (rebuilt, gate-off = normal build unchanged):
+- `s4.bin` 451861 B — sha256 `e55a010ce6470f3f4caca8c51cad9b795888fb9f39b32417ea87c79dff760046`
+- `s4.debug.bin` 459735 B — sha256 `6c21b56cb2f68390c94fbcc548faf307e23f32981af4c292fe0e233f375708e5`
+
+**Handoff — retro-fix batch:** gap-ledger **row 999** (A2 walk-live rider) is the
+batch's entry point — the entity_window fence opens for exactly one hook: the
+DEBUG set/clear walk-live flag on `EntityWindow_DespawnObjects` (4th live-list
+walker), using the batch's flag symbol, asserted clear at `CompactDynamicLive`
+entry. Delete-only today ⇒ A1-safe ⇒ invariant completeness, not a live hole.
