@@ -457,6 +457,16 @@ name = "Dynamic_Live_Walking"
 debug_only = true
 tests = ["core_port", "collision_port", "entity_window_port"]
 
+# A2 overflow latch (occupancy amendment A2, spec §9) — RELEASE both shapes.
+# AllocDynamic latches saturated-frame allocs here; RunObjects' tail drains them.
+[[symbol]]
+name = "Dynamic_Live_Pending"
+tests = ["core_port"]
+
+[[symbol]]
+name = "Dynamic_Live_Pending_Count"
+tests = ["core_port"]
+
 # animate (tranche 9)
 
 [[symbol]]

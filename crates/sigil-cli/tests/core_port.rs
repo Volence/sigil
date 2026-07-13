@@ -101,6 +101,8 @@ const PLAIN: Shape = Shape {
         ("Dynamic_Live", pins::DYNAMIC_LIVE.plain),
         ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.plain),
         ("Dynamic_Live_Dirty", pins::DYNAMIC_LIVE_DIRTY.plain),
+        ("Dynamic_Live_Pending", pins::DYNAMIC_LIVE_PENDING.plain),
+        ("Dynamic_Live_Pending_Count", pins::DYNAMIC_LIVE_PENDING_COUNT.plain),
     ],
 };
 
@@ -127,6 +129,8 @@ const DEBUG: Shape = Shape {
         ("Dynamic_Live", pins::DYNAMIC_LIVE.debug),
         ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.debug),
         ("Dynamic_Live_Dirty", pins::DYNAMIC_LIVE_DIRTY.debug),
+        ("Dynamic_Live_Pending", pins::DYNAMIC_LIVE_PENDING.debug),
+        ("Dynamic_Live_Pending_Count", pins::DYNAMIC_LIVE_PENDING_COUNT.debug),
         // A2 walk-live rail (item 1) — DEBUG-only flag set/cleared by the walkers
         // and asserted clear at CompactDynamicLive entry.
         ("Dynamic_Live_Walking", pins::DYNAMIC_LIVE_WALKING),

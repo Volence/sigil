@@ -123,6 +123,7 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         // culling geometry + the untagged-slot sentinel; source of truth
         // engine/constants.asm).
         ("NUM_TOTAL_SLOTS", "66"),
+        ("NUM_DYNAMIC_PENDING", "8"),
         ("CULL_DISTANCE_X", "$300"),
         ("CULL_DISTANCE_Y", "$200"),
         ("SLOT_TAG_UNTAGGED", "$FF"),
@@ -250,14 +251,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_49() {
+    fn engine_constants_blob_assembles_and_defines_all_50() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            49,
-            "the twin guards 49 engine constants (34 + the tranche-11 sprites render/frame/screen block of 15)"
+            50,
+            "the twin guards 50 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2)"
         );
     }
 

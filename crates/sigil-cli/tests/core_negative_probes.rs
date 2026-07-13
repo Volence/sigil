@@ -64,6 +64,8 @@ const PLAIN_LABELS: &[(&str, u32)] = &[
     ("Dynamic_Live", pins::DYNAMIC_LIVE.plain),
     ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.plain),
     ("Dynamic_Live_Dirty", pins::DYNAMIC_LIVE_DIRTY.plain),
+    ("Dynamic_Live_Pending", pins::DYNAMIC_LIVE_PENDING.plain),
+    ("Dynamic_Live_Pending_Count", pins::DYNAMIC_LIVE_PENDING_COUNT.plain),
 ];
 
 /// The ambient deps prepended so `Sst.<field>(a0)` + the engine constants
