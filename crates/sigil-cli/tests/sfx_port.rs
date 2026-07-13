@@ -100,7 +100,10 @@ fn map_toml(debug: bool) -> String {
 /// label defined this way exactly as it would against the real cross-source
 /// symbol.
 fn as_bank_start_label() -> Vec<Section> {
-    let asm = "cpu 68000\nphase $60000\nMovingTrucks_Bank_Start:\n\tdc.w 0\n";
+    // Bank-start label PLUS the SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN equs
+    // sfx_bank.emp's drift guards read cross-seam (retro-fix batch 2, item 10) —
+    // shape-invariant values from config/sound_ids.asm.
+    let asm = "cpu 68000\nphase $60000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSFX_ID_BASE = $33\nSFX_COUNT = 9\nSFX_TABLE_LEN = 135\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
 }
@@ -206,8 +209,8 @@ fn sfx_bank_region_matches_reference() {
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(false);
     assert_eq!(
         guard_assert_count(&link_asserts),
-        1,
-        "sfx_bank.emp's single co-residency ensure must be captured"
+        4,
+        "sfx_bank.emp's ensures must be captured (1 co-residency + SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN drift guards, item 10)"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -236,8 +239,8 @@ fn sfx_bank_debug_region_matches_reference() {
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(true);
     assert_eq!(
         guard_assert_count(&link_asserts),
-        1,
-        "sfx_bank.emp's single co-residency ensure must be captured"
+        4,
+        "sfx_bank.emp's ensures must be captured (1 co-residency + SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN drift guards, item 10)"
     );
     assert!(
         assert_diags.iter().all(|d| d.level != sigil_span::Level::Error),

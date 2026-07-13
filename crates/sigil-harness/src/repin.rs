@@ -228,6 +228,13 @@ pub struct RegionSpec {
     pub end: Option<String>,
     #[serde(default)]
     pub len: Option<u32>,
+    /// Per-shape DEBUG length override for a literal-`len` region whose debug
+    /// extent differs from plain but whose end carries no listing symbol
+    /// (sound_api: DEBUG asserts grow it, but a real end-symbol would ship in
+    /// the release convsym appendix and perturb the byte-identical plain ROM).
+    /// Only valid alongside `len`; when absent, debug_len = len.
+    #[serde(default)]
+    pub debug_len: Option<u32>,
     #[serde(default)]
     pub gate: Option<String>,
     #[serde(default)]
@@ -282,6 +289,12 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
                 return Err(format!("region `{}`: needs `end` (symbol) or `len` (literal)", r.name))
             }
             _ => {}
+        }
+        if r.debug_len.is_some() && r.len.is_none() {
+            return Err(format!(
+                "region `{}`: `debug_len` is a per-shape override for a literal-`len` region — set `len` too (or use an `end` symbol for per-shape lengths)",
+                r.name
+            ));
         }
     }
     Ok(m)
@@ -472,7 +485,10 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
                 }
                 (pe - plain_base, de - debug_base, format!("`{end}`"))
             }
-            (None, Some(len)) => (len, len, format!("start + {len:#X} (no end symbol in the listing)")),
+            (None, Some(len)) => {
+                let dl = r.debug_len.unwrap_or(len);
+                (len, dl, format!("start + {len:#X} plain / {dl:#X} debug (literal — no end symbol)"))
+            }
             // load_manifest already rejected the other arms.
             _ => unreachable!("load_manifest validates end/len exclusivity"),
         };
