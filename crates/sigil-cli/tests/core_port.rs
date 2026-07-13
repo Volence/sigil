@@ -295,13 +295,15 @@ fn compile_real_file_with(
 }
 
 /// All prepended drift guards must be captured and PASS: sst.emp's 30 SST_*
-/// pins + constants.emp's 34 (30 pre-tranche + the object-core block's 4).
+/// pins + constants.emp's twin guards + core.emp's OWN 1 (the retro-fix item-9
+/// System/Effect_Slots RAM-adjacency ensure — extern-in-ensure over RAM labels,
+/// the collision.emp SST_interact precedent).
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    let want = 30 + twin_guards();
+    let want = 30 + twin_guards() + 1;
     assert_eq!(
         guards, want,
-        "sst.emp's 30 + constants.emp's {} drift guards must be captured",
+        "sst.emp's 30 + constants.emp's {} + core.emp's 1 (item-9 adjacency ensure) drift guards must be captured",
         twin_guards()
     );
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);

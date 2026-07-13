@@ -100,49 +100,52 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
     // −2 plain/−4 debug (C-A1 core shrink), +0x22 both (object-pool occupancy
     // grew the core region) — net.
-    // debug_base +0x6C from retro-fix-audit-1 item 1 (the A2 walk-live rail's
-    // CompactDynamicLive assert + 4 st/sf in core precede animate; DEBUG-only).
+    // debug_base moved by retro-fix-audit-1's DEBUG asserts UPSTREAM of animate:
+    // dplc item-6 assert (+0xB0), core item-1 A2 rail + item-2 DeleteObject
+    // asserts. animate's OWN debug LEN grew +0x11E (item-4 AF_* asserts). Plain
+    // is byte-identical to baseline (every assert self-gates in release).
     assert_eq!(pins::ANIMATE.plain_base, 0x2E38);
-    assert_eq!(pins::ANIMATE.debug_base, 0x32F8);
+    assert_eq!(pins::ANIMATE.debug_base, 0x34BE);
     assert_eq!(pins::ANIMATE.plain_len, 0x192);
-    assert_eq!(pins::ANIMATE.debug_len, 0x192);
+    assert_eq!(pins::ANIMATE.debug_len, 0x2B0);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH.
     // Bases slid as animate above, incl. +0x22 (object-pool occupancy core
     // growth). LEN unchanged: R-A1's addi #16→#8 is same-size (immediate only).
-    // debug_base +0x74 (item 1: core rail +0x6C + collision rail +0x8 precede
-    // rings; DEBUG-only). LEN unchanged (rings itself untouched by this batch).
+    // debug_base moved again by items 1/2/4/6 (all upstream DEBUG growth). RINGS
+    // LEN unchanged (rings itself untouched by this batch — items 10-11 pending).
     assert_eq!(pins::RINGS.plain_base, 0x31CA);
-    assert_eq!(pins::RINGS.debug_base, 0x3692);
+    assert_eq!(pins::RINGS.debug_base, 0x3976);
     assert_eq!(pins::RINGS.plain_len, 0x1BE);   // +0xA: ring-art DrawRings frame-tile calc
     assert_eq!(pins::RINGS.debug_len, 0x21A);
 
-    // Object-pool occupancy geometry: core LEN +0x22 both shapes (the
-    // InitObjectRAM live-list reset + AllocDynamic append + DeleteObject dirty
-    // flag, all unconditional). Base unchanged (InitObjectRAM = dplc's
-    // unchanged end).
+    // Object-pool occupancy geometry: core LEN +0x22 both shapes. debug_base
+    // +0xB0 (dplc item-6 assert precedes core). debug_len +0x116 (item-2
+    // DeleteObject bounds + double-delete asserts) on top of item-1's +0x6C.
+    // Plain unchanged (asserts self-gate).
     assert_eq!(pins::CORE.plain_base, 0x2794);
     assert_eq!(pins::CORE.plain_len, 0x284);    // +0x8: step-6 frame-end compaction call
-    assert_eq!(pins::CORE.debug_base, 0x2926);
-    assert_eq!(pins::CORE.debug_len, 0x5B2);    // +0x8 step-6 compaction call; +0x19E step-7 DEBUG asserts; +0x6C retro-fix item 1 (A2 rail: CompactDynamicLive assert + 4 st/sf) — all self-gate in plain
+    assert_eq!(pins::CORE.debug_base, 0x29D6);
+    assert_eq!(pins::CORE.debug_len, 0x6C8);    // step-7 asserts + item-1 A2 rail (+0x6C) + item-2 DeleteObject asserts (+0x116) — all self-gate in plain
     assert_eq!(pins::DPLC.plain_base, 0x26FC);
-    assert_eq!(pins::DPLC.debug_base, 0x288E);
+    assert_eq!(pins::DPLC.debug_base, 0x288E);  // dplc is first — nothing upstream grows it
     assert_eq!(pins::DPLC.plain_len, 0x98);
-    assert_eq!(pins::DPLC.debug_len, 0x98);
+    assert_eq!(pins::DPLC.debug_len, 0x148);    // +0xB0: item-6 single-entry assert (×2 procs, self-gates in plain)
 
-    // animate_port.rs: the DeleteObject inbound label (both shapes). Slid +0x1E
-    // (object-pool occupancy: InitObjectRAM +8 + AllocDynamic append +0x16
-    // precede DeleteObject within core).
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x284E, debug: 0x29E0 });
+    // animate_port.rs: the DeleteObject inbound label. Plain unchanged; debug
+    // +0xB0 (dplc item-6 assert shifts core's base; DeleteObject's offset within
+    // core is unchanged — item-2's asserts sit AT its entry, inside it).
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x284E, debug: 0x2A90 });
 
-    // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
-    // +0x1E0 = the ring-art growth (1 placeholder tile → 16 S3K tiles = +15).
+    // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins. The
+    // batch's DEBUG growth is absorbed before the ROM end (unchanged both shapes).
     assert_eq!(pins::ASSEMBLED_LEN, 0x65A94);
     assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x67582);
 
-    // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`,
-    // shape-invariant (asserted at generation).
-    assert_eq!(pins::CC_DELETE_OFF, 0x104);
+    // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
+    // DEPENDENT as of item 4 (the AF_* asserts sit between the region start and
+    // .cc_delete, so debug 0x15E > plain 0x104).
+    assert_eq!(pins::CC_DELETE_OFF, pins::ShapeOffset { plain: 0x104, debug: 0x15E });
 }
 
 /// The remaining pin classes the migration will lean on: per-shape offsets
@@ -156,11 +159,12 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // sound_api_port.rs: base + literal len (no end symbol in the listing).
     // Bases slid −4 (t10), −8 (t11), +8 (A1), +4/+2 (C-A1/Bug-1), +0xA (ring-art
     // DrawRings), +0x22 (object-pool occupancy core growth), then −0x1C plain /
-    // −0xC debug (tranche-12 entity_window step-2 branch shrink), then +0x7C debug
-    // (retro-fix-audit-1 item 1/12: core +0x6C, collision +0x8, entity_window +0x8
-    // A2-rail DEBUG growth) — all downstream in-block; plain unchanged.
+    // −0xC debug (tranche-12 entity_window step-2 branch shrink), then the whole
+    // retro-fix-audit-1 DEBUG batch (items 1/2/4/6/12 asserts + rails in dplc/
+    // core/animate/collision/entity_window) grows the debug shape upstream —
+    // debug_base lands at 0x7704. Plain unchanged (asserts self-gate in release).
     assert_eq!(pins::SOUND_API.plain_base, 0x5D3C);
-    assert_eq!(pins::SOUND_API.debug_base, 0x7420);
+    assert_eq!(pins::SOUND_API.debug_base, 0x7704);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     assert_eq!(pins::SOUND_API.debug_len, 0x1E4);
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);

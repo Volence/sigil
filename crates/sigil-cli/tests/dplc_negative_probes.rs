@@ -126,7 +126,9 @@ fn place_dplc(src: &str, base: &str) -> Vec<Section> {
         initial_cpu: Cpu::M68000,
         include_root: Some(dplc_dir()),
         embed_base: None,
-        defines: vec![],
+        // dplc.emp's item-6 single-entry assert requires DEBUG bound (the assert
+        // construct refuses an implicit shape); 0 = plain (the probe geometry).
+        defines: vec![("DEBUG".to_string(), 0)],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");

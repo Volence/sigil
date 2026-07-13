@@ -871,17 +871,22 @@ tests = ["entity_window_port"]
 # ── Region-relative offsets ─────────────────────────────────────────────────
 
 [[offset]]
-# `.cc_delete`'s `jbra DeleteObject` site.
+# `.cc_delete`'s `jbra DeleteObject` site. Shape-dependent as of retro-fix
+# item 4: the AF_* DEBUG asserts (AF_SET_FIELD/AF_BACK) sit between AnimateSprite
+# and .cc_delete, so the debug-shape offset (0x15E) exceeds the plain (0x104).
 name = "CC_DELETE_OFF"
 sym = "AnimateSprite.cc_delete"
 region = "animate"
+per_shape = true
 tests = ["animate_port"]
 
 [[offset]]
-# `RefreshSpritePieceCount:` structural anchor.
+# `RefreshSpritePieceCount:` structural anchor. Shape-dependent as of retro-fix
+# item 4 (the AF_* DEBUG asserts precede this proc within the animate region).
 name = "REFRESH_OFF"
 sym = "RefreshSpritePieceCount"
 region = "animate"
+per_shape = true
 tests = ["animate_port"]
 
 [[offset]]

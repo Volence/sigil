@@ -2991,20 +2991,20 @@ fn mixed_tranche8_debug_rom_matches_assembled_reference() {
     );
 }
 
-/// Tranche 9's map: the tranche-8 regions PLUS `animate` — length is
-/// shape-INVARIANT (0x192 both shapes; no `__DEBUG__` code in the file), only
-/// the base moves. Plain `$2D78` / debug `$3032` (upstream of every other
-/// gated engine region — the first window in the ladder's slide).
+/// Tranche 9's map: the tranche-8 regions PLUS `animate`. Length is
+/// shape-DEPENDENT as of retro-fix item 4 (the AF_* DEBUG asserts grow the
+/// debug shape: 0x192 plain, 0x2B0 debug); only the base moves otherwise.
 fn emp_bank_map_tranche9(debug: bool) -> String {
     let animate_base =
         if debug { format!("{:#x}", pins::ANIMATE.debug_base) } else { format!("{:#x}", pins::ANIMATE.plain_base) };
+    let animate_size = if debug { pins::ANIMATE.debug_len } else { pins::ANIMATE.plain_len };
     format!(
         "{}\
          \n\
          [[region]]\n\
          name = \"animate\"\n\
          lma_base = {animate_base}\n\
-         size = 0x192\n\
+         size = {animate_size:#x}\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche8(debug)
     )
@@ -3116,7 +3116,7 @@ fn placed_emp_sections_tranche9(aeon: &Path, debug_val: i128) -> Tranche9Section
     let (animate_sections, animate_asserts) = placed_module_sections(
         &aeon.join("engine/objects"),
         "animate.emp",
-        &[("SOUND_DRIVER_ENABLED".to_string(), 1)],
+        &[("SOUND_DRIVER_ENABLED".to_string(), 1), ("DEBUG".to_string(), debug_val)],
         &map,
     );
     sections.extend(mt_sections);
