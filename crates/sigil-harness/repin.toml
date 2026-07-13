@@ -131,14 +131,18 @@ gate = "SIGIL_EMP_COLLISION_LOOKUP"
 tests = ["collision_lookup_port"]
 
 [[region]]
+# The one region whose end carries no listing symbol: the include's content ends
+# unlabeled after Sound_FadeIn (next placement is org $10000 / sound_debug.asm).
 # Shape-DEPENDENT length as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
-# asserts, findings 1/2). The content used to end unlabeled after Sound_FadeIn
-# (literal-len region); the twin now carries a `Sound_Api_End` anchor at exactly
-# the mixed-build resume position (engine.inc's per-shape `org`) so repin derives
-# plain/debug lengths PER SHAPE — the debug asserts grow the debug region.
+# asserts, findings 1/2, grow the debug shape): a literal `len` + `debug_len`
+# override — NOT an `end` symbol, because a real end label would ship in the
+# release convsym appendix and perturb the byte-identical plain ROM. Re-derive
+# `debug_len` from repin --verbose (= the debug resume org − debug base) on any
+# sound_api debug-shape byte change.
 name = "sound_api"
 start = "Sound_PostByte"
-end = "Sound_Api_End"
+len = 0x1E4
+debug_len = 0x2DA
 gate = "SIGIL_EMP_SOUND_API"
 tests = ["sound_api_port"]
 

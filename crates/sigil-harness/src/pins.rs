@@ -6,8 +6,8 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/13/2026 03:23:40 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/13/2026 03:23:38 AM)
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/13/2026 09:11:34 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/13/2026 09:11:33 AM)
 //! [provenance] 19 regions, 159 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
@@ -84,8 +84,8 @@ pub const ENTITY_WINDOW: Region = Region { plain_base: 0x33FC, debug_base: 0x3B5
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
 pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x4C3A, debug_base: 0x58BC, plain_len: 0x24, debug_len: 0x24 };
 
-/// `Sound_PostByte` .. `Sound_Api_End` — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
-pub const SOUND_API: Region = Region { plain_base: 0x5DB0, debug_base: 0x76CC, plain_len: 0x1E4, debug_len: 0x2D8 };
+/// `Sound_PostByte` .. start + 0x1E4 plain / 0x2DA debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
+pub const SOUND_API: Region = Region { plain_base: 0x5DB0, debug_base: 0x76CC, plain_len: 0x1E4, debug_len: 0x2DA };
 
 /// `TestSolid_Init` .. `TestParticle` — gate `SIGIL_EMP_TEST_OBJECTS`. tests: test_objects_port
 pub const TEST_SOLID: Region = Region { plain_base: 0x10F7C, debug_base: 0x10F7C, plain_len: 0xE, debug_len: 0xE };
@@ -168,7 +168,7 @@ pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x226E, debug: 0x22F8 };
 
 /// `Sound_DrainSfxRing`. tests: game_loop_port
-pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x5EF6, debug: 0x7906 };
+pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x5EF6, debug: 0x7908 };
 
 /// `Game_State`. tests: game_loop_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
@@ -228,7 +228,7 @@ pub const ENTITY_WINDOW_ENTRY_FOR_SECTION: Pin = Pin { plain: 0x369A, debug: 0x4
 pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3686, debug: 0x40A8 };
 
 /// `Sound_PlayRing`. tests: rings_port
-pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x5F46, debug: 0x7956 };
+pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x5F46, debug: 0x7958 };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x66704;

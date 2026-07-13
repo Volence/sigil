@@ -15,12 +15,21 @@ aeon `5e946ca`) and t12 (`e2ad6d7`) merged.
 
 ## Byte-change summary (the ONLY ROM movement in the batch)
 
-Everything is **release-byte-neutral**. The sole ROM change is the **debug shape** of
-`sound_api` (findings 1+2's DEBUG asserts): debug `sound_api` grew **+0xF4** (0x1E4 → 0x2D8),
-absorbed by the `org $10000` object-bank boundary so `EndOfRom` is UNCHANGED both shapes. Every
-other item (findings 3-6, items 7-12) is comments / clobber-metadata / `ensure` / type-rename —
-**zero ROM bytes**, confirmed by `s4.bin`/`s4.debug.bin` size-stability across the item-7-11 rebuild
-and `repin --check` staying clean.
+Everything is **release-byte-neutral** — the **plain `s4.bin` is byte-IDENTICAL to the pre-batch
+baseline** (452500 B, sha256 `297dc0f3…`, VERIFIED by hash, not assumed). The sole ROM change is the
+**debug shape** of `sound_api` (findings 1+2's DEBUG asserts): debug `sound_api` grew **+0xF6**
+(0x1E4 → 0x2DA), absorbed by the `org $10000` object-bank boundary so `EndOfRom` is UNCHANGED both
+shapes. Every other item (findings 3-6, items 7-12) is comments / clobber-metadata / `ensure` /
+type-rename — **zero ROM bytes**.
+
+**Plain byte-identity was engineered, not incidental** (Volence's provenance-integrity demand): the
+DEBUG diagnostics must not perturb the release artifact *at all* — not even its convsym symbol
+appendix. Two things had to change from the first cut: (a) finding 2's assert is placed BEFORE the
+shared drop branch inside an `if DEBUG` block that fully elides in plain — the earlier `.ps_full`
+label split shipped a `Sound_PlaySFX.ps_full` symbol into the plain appendix (+bytes past EndOfRom);
+(b) the repin end-anchor `Sound_Api_End` was removed (it too shipped into the plain appendix) in
+favour of a `repin.toml` per-shape literal (`len` + new `debug_len` override). Result: plain hash
+back to the exact baseline.
 
 ---
 
@@ -41,16 +50,16 @@ pattern (HBlank_Handler_Ptr / HW_PORT_1_DATA precedent). Byte-neutral (same valu
 in song_table.asm). The assert comparand is a bare `#SONG_COUNT` on BOTH sides so the auto-message
 bytes match (the verbatim-spelling rule; extern("...") would diverge).
 
-**Finding 2 — Sound_PlaySFX ring-FULL drop assert (DEBUG).** Split the shared `.ps_drop` label:
-the full-drop `beq` now targets a new `.ps_full` (its own landing), which in DEBUG fires
-`raise_error "Sound_PlaySFX: SFX ring full (>7 in one frame)"` then falls into `.ps_drop`; the
-dedup-skip still lands on `.ps_drop` (silent, correct). **Byte-neutral in release** — `.ps_full` is
-an empty label aliasing `.ps_drop` when the `if DEBUG` block emits nothing. This is `raise_error`'s
-**first `.emp` consumer** (shipped construct, path_swap.asm has the twin macro; diag_assert_vector.rs
-covers the lowering). Twin lockstep: the DEBUG raise_error blob pushed two branches past `.s` range —
-`beq .ps_ret` (top→end, spans the blob) needed `.w` in debug (the AS build errored loud on it); the
-dedup `beq .ps_drop` (~84 B) still fits `.s`. The `.emp` bare branches auto-relax; the twin carries
-the hand-set `ifdef __DEBUG__ beq.w / else beq.s` for `.ps_ret` only.
+**Finding 2 — Sound_PlaySFX ring-FULL drop assert (DEBUG).** A DEBUG-only assert placed BEFORE the
+shared drop branch: `if DEBUG { bne .ps_full_ok; raise_error "…"; .ps_full_ok: }` then the unchanged
+`beq .ps_drop`. In the full case the `bne` isn't taken → `raise_error` halts; not-full → `bne` skips
+it and the cmp's Z survives to the `beq`. **Fires ONLY on the full path** (the dedup-skip reaches
+`.ps_drop` from earlier and never runs this cmp) — finding 2's requirement met WITHOUT splitting the
+shared label. **Plain byte-IDENTICAL by construction:** the whole block elides in plain, so no
+`.ps_full`/`.ps_full_ok` label ships in the release convsym appendix (the first cut split `.ps_drop`
+and leaked a symbol — corrected). This is `raise_error`'s **first `.emp` consumer**. Twin lockstep:
+the DEBUG blob pushes the top `beq .ps_ret` past `.s` → hand-set `ifdef __DEBUG__ beq.w / else beq.s`;
+the `bne .ps_full_ok` fits `.s` (skips only the blob); dedup `beq .ps_drop` still fits `.s`.
 
 **Finding 3 — Sound_DrainSfxRing SR contract reworded (not restructured).** The `preserves(sr)` /
 "SR restored" was half-true (the empty fast-path saves no SR — CCR clobbered). Reworded the header
@@ -212,23 +221,27 @@ sweep transcript names each individually.)
 
 ## Re-pin diff (debug-shape only — `repin --check` = plain untouched)
 
-Regenerated `pins.rs` from the rebuilt reference ROMs:
+Regenerated `pins.rs` from the rebuilt reference ROMs. **Every plain value unchanged; debug only.**
 
-- `SOUND_API`: `len` region converted from a literal (`len = 0x1E4`, no end symbol) to an **end
-  symbol** `Sound_Api_End` (a zero-byte anchor added to sound_api.asm at the resume position) so
-  repin derives PER-SHAPE lengths. `plain_len` 0x1E4 (unchanged); `debug_len` **0x1E4 → 0x2D8**.
+- `SOUND_API`: kept a literal-`len` region (no end symbol — a real anchor would ship in the plain
+  convsym appendix and break byte-identity) but repin.rs gained an optional **`debug_len` override**
+  for exactly this shape-dependent literal-len case. `plain_len` 0x1E4 (unchanged); `debug_len`
+  **0x1E4 → 0x2DA**.
 - `SOUND_DRAIN_SFX_RING` debug 0x7812 → **0x7908** (+0xF6); plain unchanged.
 - `SOUND_PLAY_RING` debug 0x7862 → **0x7958** (+0xF6); plain unchanged.
 - `SOUND_PLAY_SFX` debug 0x77CC → **0x787C** (+0xB0); plain unchanged.
 - `SOUND_PLAY_SFX_OFF`: `usize 0x100` → **`ShapeOffset { plain: 0x100, debug: 0x1B0 }`** (per-shape;
   PlayMusic's two asserts precede Sound_PlaySFX in the debug region). repin.toml offset gained
   `per_shape = true`.
-- `engine.inc` SIGIL_EMP_SOUND_API debug resume org **$78B0 → $79A4** (= debug_base + new debug_len;
-  plain $5F94 unchanged). This is the row-6/row-mixed-gate hand-maintained pin the ledger's
-  2026-07-13 "mixed-gate maintenance" row flags — batch 2 is another instance of that burden (the
-  sound_api debug org + the mixed_dac_rom sound_api `size` both hand-updated).
-- `repin.toml`: sound_api region `len` → `end = "Sound_Api_End"`; SOUND_PLAY_SFX_OFF per_shape.
-- `repin_pins.rs` baseline: SOUND_API.debug_len 0x2D8, SOUND_PLAY_SFX_OFF ShapeOffset.
+- `engine.inc` SIGIL_EMP_SOUND_API debug resume org **$78B0 → $79A6** (= debug_base + new debug_len;
+  plain $5F94 unchanged). This is the row-6/mixed-gate hand-maintained pin the ledger's 2026-07-13
+  "mixed-gate maintenance" row flags — batch 2 is another instance of that burden (the sound_api
+  debug org + the mixed_dac_rom sound_api `size` both hand-updated). Because sound_api uses a literal
+  `debug_len`, re-derive it from `repin --verbose` (= debug resume org − debug base) on any future
+  sound_api debug-shape change.
+- `repin.toml`: sound_api `len = 0x1E4` + `debug_len = 0x2DA`; SOUND_PLAY_SFX_OFF per_shape. repin.rs:
+  `RegionSpec.debug_len` field + validation + resolve.
+- `repin_pins.rs` baseline: SOUND_API.debug_len 0x2DA, SOUND_PLAY_SFX_OFF ShapeOffset.
 
 Test-harness updates (all to keep gates green with the new DEBUG shape): sound_api_port grew a
 `debug` bool + per-shape `len`/`play_sfx_off` + DEBUG-per-shape define + the SONG_COUNT synthetic equ
