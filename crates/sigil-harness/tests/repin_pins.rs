@@ -133,10 +133,12 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
     assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2866, debug: 0x29F8 });
 
-    // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins. The
-    // whole batch's growth is absorbed before the ROM end (unchanged both shapes).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x65A94);
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x67582);
+    // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
+    // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
+    // object_test_state growth), then +0xC debug only from the OJZ scene-pin
+    // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
+    assert_eq!(pins::ASSEMBLED_LEN, 0x65B60);       // +0xCC churn
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x6765A); // +0xCC churn +0xC hook guards
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
@@ -167,10 +169,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     assert_eq!(pins::SOUND_PLAY_SFX_OFF, 0x100);
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
-    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x6_662C);
-    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x6_73F2);
+    // +0xCC (churn) +0xC (hook guards) both in the debug ROM, like DEBUG_ASSEMBLED_LEN.
+    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x6_6704);
+    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x6_74CA);
 
-    // collision_port.rs: sign-extended RAM labels truncated to u32.
-    assert_eq!(pins::PLAYER_1, pins::Pin { plain: 0xFFFF_89EE, debug: 0xFFFF_8A10 });
-    assert_eq!(pins::DYNAMIC_SLOTS, pins::Pin { plain: 0xFFFF_8A8E, debug: 0xFFFF_8AB0 });
+    // collision_port.rs: sign-extended RAM labels truncated to u32. debug +0x2:
+    // Debug_Scene_Freeze's RAM byte+pad shifts every __DEBUG__-block-downstream
+    // RAM symbol (Player_1 among them); plain shape unchanged.
+    assert_eq!(pins::PLAYER_1, pins::Pin { plain: 0xFFFF_89EE, debug: 0xFFFF_8A12 });
+    // DYNAMIC_SLOTS also debug +0x2 (downstream of the __DEBUG__ block).
+    assert_eq!(pins::DYNAMIC_SLOTS, pins::Pin { plain: 0xFFFF_8A8E, debug: 0xFFFF_8AB2 });
 }
