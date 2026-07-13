@@ -823,3 +823,35 @@ suite 2211/0; `repin --check` clean; `s4.bin` boot-checked.
   **`96deff287905dbbf6ff16a9514efa8094cda595de5db869eb59dffa6394164e2`**.
 - Debug `s4.debug.bin`: **460268 bytes** (`EndOfRom` = `0x6765A`, +0xCC+0xC), sha256
   **`85e5b14cbd06acf8f19fe81381b2ac1c960d534cea24db13da692af282aec433`**.
+
+## Re-baseline 2026-07-13 — occupancy amendment A2 overflow latch (spec §9) — the current pin
+
+AllocDynamic latches saturated-frame allocs into `Dynamic_Live_Pending` (8 words,
+RELEASE) instead of compacting mid-frame under a held walker cursor (the A2
+hazard); RunObjects' tail drains (one `CompactDynamicLive`, then
+`DrainDynamicPending` appends in ALLOC ORDER). Byte-changing BOTH shapes (release
+fix): the core region grew plain +0x6A / debug +0x6E (AllocDynamic latch +
+DeleteObject latch-scan + the new `DrainDynamicPending`; `CompactDynamicLive`'s
+§6-2/§6-3 asserts moved out). The engine-block growth is ABSORBED by the
+`org $10000` boundary → assembled `EndOfRom` UNCHANGED both shapes; game data /
+object bank unmoved. Engine regions after core slid uniformly (sprites/animate/
+collision/rings/entity_window/collision_lookup/sound_api +0x6A plain / +0x6E
+debug); all 8 `engine.inc` `SIGIL_EMP_*` resume orgs re-derived (else-arms only —
+the real ROM's `ifndef` path is unchanged). Two new RELEASE RAM symbols
+(`Dynamic_Live_Pending` `$B044`/`$B068`, `Dynamic_Live_Pending_Count`
+`$B054`/`$B078`) → `Engine_RAM_End` +0x12 both shapes → game RAM +0x12. Gate
+maintenance: `pins.rs` re-derived via `repin` + 2 new RAM pins; `repin.toml` +
+`core_port`/`core_negative_probes` symbol tables + `repin_pins.rs` baseline + the
+engine-constants guard count (49→50) all updated; `repin --check` clean. Full
+strict suite 2211/0; clippy clean; core_port twin byte-parity both shapes.
+Verified in oracle: churn soak walk-live assert 0 hits / ~6800 frames (fired
+frame ~4 pre-A2); latch engages (Pending=6); `CompactDynamicLive` frame-end-only
+(Walking=0); profile `CompactDynamicLive` 8.1%→0.7% (4 compacts/frame → 1).
+
+- Aeon repo commit: **`101dd06`** (merge of `occupancy-a2-latch`); sigil merge
+  **`4a78802`**.
+- Non-debug `s4.bin`: **452500 bytes** (`EndOfRom` = `0x65B60`, unchanged — engine
+  growth absorbed by `org $10000`), sha256
+  **`297dc0f3c3bab3a6bfdd330a9518821f7c78eb65964a7811ad439cf180aa38c1`** (md5 `393dd0e3…`).
+- Debug `s4.debug.bin`: **460501 bytes** (`EndOfRom` = `0x6765A`, unchanged), sha256
+  **`84a1fc51cb3930c74c70c13f1e004ac02289f8ab310471402c009518d1fce587`** (md5 `0c1c6fab…`).
