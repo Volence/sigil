@@ -273,3 +273,19 @@ compacts/frame at saturation = 8.1% of frame (~2,600 cyc each).
   sustained, spawn-order preserved (oracle frame-locked A/B vs a
   non-saturated run), profile packet showing the compact share drop from
   8.1%.
+
+**BUILT + VERIFIED 2026-07-13 (branch `occupancy-a2-latch`, aeon `264037b` /
+sigil `fa02f91`, NOT merged — gate). Packet:
+notes/2026-07-13-occupancy-a2-latch-packet.md.** Latch shipped
+(`Dynamic_Live_Pending`, 8 words release; AllocDynamic latches at full count
+with pop-rollback on latch-full; DrainDynamicPending drains at the RunObjects
+tail in alloc order; DeleteObject zeroes latch entries too — the latch-side A1
+duplicate guard; §6-2/§6-3 asserts moved to the drain). Room proof is the
+physical-slot bound (occupied = live-list + non-zero latch, disjoint, ≤
+NUM_DYNAMIC), not "compact reclaims ≥ latch". Strict 2211/0, clippy clean,
+core_port twin byte-parity both shapes. Soak: walk-live assert **0 hits /
+~6800 frames** (fired frame ~4 pre-A2); latch engages (Pending=6);
+CompactDynamicLive frame-end-only (Walking=0, called from RunObjects).
+Profile: **CompactDynamicLive 8.1% → 0.7%** (4 compacts/frame → 1). Spawn-order:
+structural (alloc-order append) + §6-3 exactly-once assert every reconcile frame
+(a labeled-object A/B wasn't run — identical churners; gate note in the packet).
