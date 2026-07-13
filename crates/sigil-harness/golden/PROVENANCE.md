@@ -855,3 +855,29 @@ frame ~4 pre-A2); latch engages (Pending=6); `CompactDynamicLive` frame-end-only
   **`297dc0f3c3bab3a6bfdd330a9518821f7c78eb65964a7811ad439cf180aa38c1`** (md5 `393dd0e3…`).
 - Debug `s4.debug.bin`: **460501 bytes** (`EndOfRom` = `0x6765A`, unchanged), sha256
   **`84a1fc51cb3930c74c70c13f1e004ac02289f8ab310471402c009518d1fce587`** (md5 `0c1c6fab…`).
+
+## Re-baseline 2026-07-13 — retro-fix batch 2 (sound_api full sitting + banks/twins) — the current pin
+
+Retro-fix batch 2 closes the retro-audit arc. **Release ROM byte-IDENTICAL** — the only ROM change
+is the DEBUG shape of `sound_api` (findings 1/2's song-id + ring-full asserts, +0xF6 → engine-block
+growth absorbed by `org $10000`, assembled `EndOfRom` UNCHANGED both shapes). Plain byte-identity was
+ENGINEERED, not incidental (provenance-integrity demand): the DEBUG diagnostics do not perturb the
+release artifact at all — not even its convsym symbol appendix (finding 2's assert sits before the
+shared drop branch in a fully-eliding `if DEBUG` block, no `.ps_full` label; the repin end-anchor was
+replaced by a `repin.toml` per-shape literal `debug_len` so no `Sound_Api_End` symbol ships). Every
+other item (findings 3-6, items 7-12: clobber-metadata, `ensure(extern)` drift guards, Radius→
+HitboxDim) is zero ROM bytes. SONG_COUNT relocated (song_table.asm gated → config/sound_ids.asm
+ungated) so it resolves cross-seam in the mixed build — byte-neutral (same value). Gate maintenance:
+`pins.rs` re-derived via `repin` (SOUND_API.debug_len 0x1E4→0x2DA + sound pins debug +0xF6, ALL PLAIN
+UNCHANGED); `repin.rs` gained a `RegionSpec.debug_len` per-shape literal override; `repin.toml`
+sound_api `len`+`debug_len`; `engine.inc` SIGIL_EMP_SOUND_API debug org $78B0→$79A6 (else-arm only,
+the real ROM's `ifndef` path is unchanged); sound_api_port/mixed_dac_rom/mt+sfx port+probe tests +
+`repin_pins.rs` baseline updated; kill-list row 24; `repin --check` clean. Full strict suite 2211/0;
+clippy clean.
+
+- Aeon repo commit: **`6e9f4a7`** (merge of `retro-fix-audit-2`); sigil merge **`f22c845`**.
+- Non-debug `s4.bin`: **452500 bytes** (`EndOfRom` = `0x65B60`), sha256
+  **`297dc0f3c3bab3a6bfdd330a9518821f7c78eb65964a7811ad439cf180aa38c1`** (md5 `393dd0e3…`) —
+  **BYTE-IDENTICAL to the occupancy-A2 baseline above; VERIFIED unchanged by hash, not assumed.**
+- Debug `s4.debug.bin`: **460521 bytes** (`EndOfRom` = `0x6765A`, unchanged), sha256
+  **`f71da7272444fa9cd61b83c1cfb60b2fa9122cb94e3df73be3bafa8c5612ceb6`** (md5 `4e89ebd2…`).
