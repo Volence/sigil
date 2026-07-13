@@ -793,6 +793,16 @@ flag symbol):**
 Packet at the end: per-item outcome + the re-pin diff, findings
 cross-referenced to this doc's sections.
 
+### Follow-up (batch-2 candidates — land when the file is next touched)
+
+- **rings.emp `.x_ok` guard: add site comment** `defensive — unreachable
+  post-cull (SAT X ∈ [112,448] for any drawn ring; live-confirmed 2026-07-13)`
+  — the X=0 SAT-mask guard (`tst.w d2 / bne .x_ok / moveq #1,d2`) can never fire
+  because SAT X=0 ⟺ screenX=−120, which the X cull always skips (oracle-verified,
+  packet notes/2026-07-13-r-a1-ring-cull-live-confirm-packet.md). Comment-only,
+  byte-neutral; optional −4 B removal is the lesser call (keep as cheap insurance
+  against a future cull-window change).
+
 ## Proposed audit order
 
 1. **animate.emp** (t9) — hot path, pre-checklist "not taken" verdict is
