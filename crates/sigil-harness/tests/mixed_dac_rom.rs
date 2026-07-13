@@ -264,7 +264,7 @@ fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
     } else {
         ("0x63AE8", "0x4518")
     };
-    let hblank_base = if debug { "0x2308" } else { "0x227A" };
+    let hblank_base = if debug { "0x2314" } else { "0x2286" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -323,9 +323,9 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
     } else {
         ("0x63AE8", "0x4518")
     };
-    let hblank_base = if debug { "0x2308" } else { "0x227A" };
-    let controllers_base = if debug { "0x231A" } else { "0x228C" };
-    let math_base = if debug { "0x25F6" } else { "0x2464" };
+    let hblank_base = if debug { "0x2314" } else { "0x2286" };
+    let controllers_base = if debug { "0x2326" } else { "0x2298" };
+    let math_base = if debug { "0x2602" } else { "0x2470" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -450,7 +450,7 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
 /// bytes + GameState_Idle's rts; content shape-invariant in the (1,0) define
 /// combo both pins carry).
 fn emp_bank_map_tranche5(debug: bool) -> String {
-    let game_loop_base = if debug { "0x238C" } else { "0x22FE" };
+    let game_loop_base = if debug { "0x2398" } else { "0x230A" };
     let sound_api_base =
         if debug { format!("{:#x}", pins::SOUND_API.debug_base) } else { format!("{:#x}", pins::SOUND_API.plain_base) };
     format!(
@@ -1630,7 +1630,7 @@ fn mixed_hblank_rom_matches_assembled_reference() {
     // The hblank block itself, pinned explicitly (the port's own 18-byte
     // window) before the whole-ROM assertion below re-proves it in context.
     assert_eq!(
-        &rom[0x227A..0x228C],
+        &rom[0x2286..0x2298],
         &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, 0x80, 0x22, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
         "hblank block must match the reference bytes exactly (plain)"
     );
@@ -1669,7 +1669,7 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
     );
 
     assert_eq!(
-        &rom[0x2308..0x231A],
+        &rom[0x2314..0x2326],
         &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, 0x80, 0x22, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
         "hblank block must match the reference bytes exactly (debug)"
     );
@@ -1802,7 +1802,7 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
     // The controllers block itself, pinned explicitly (the port's own
     // 0x72-byte window) before the whole-ROM assertion below re-proves it.
     assert_eq!(
-        &rom[0x228C..0x22FE],
+        &rom[0x2298..0x230A],
         &[
             0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
             0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
@@ -1860,7 +1860,7 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
     );
 
     assert_eq!(
-        &rom[0x231A..0x238C],
+        &rom[0x2326..0x2398],
         &[
             0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
             0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
@@ -2340,9 +2340,9 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // `bsr.w Sound_DrainSfxRing` disp is pin-spliced (target slides when any
     // upstream region resizes — e.g. entity_window's tranche-12 step-2 shrink;
     // gap-ledger "repin can't track inline target BYTES in mixed-test slices").
-    let sdsr = (pins::SOUND_DRAIN_SFX_RING.plain as i64 - 0x2304) as u16;
+    let sdsr = (pins::SOUND_DRAIN_SFX_RING.plain as i64 - 0x2310) as u16;
     assert_eq!(
-        &rom[0x22FE..0x2310],
+        &rom[0x230A..0x231C],
         &[
             0x61, 0x00, 0xFF, 0x62, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
@@ -2381,9 +2381,9 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche5_rom(&aeon, true);
 
     // pin-spliced disp — see the plain variant's note.
-    let sdsr = (pins::SOUND_DRAIN_SFX_RING.debug as i64 - 0x2392) as u16;
+    let sdsr = (pins::SOUND_DRAIN_SFX_RING.debug as i64 - 0x239E) as u16;
     assert_eq!(
-        &rom[0x238C..0x239E],
+        &rom[0x2398..0x23AA],
         &[
             0x61, 0x00, 0xFF, 0x5E, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, 0x80, 0x04, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
