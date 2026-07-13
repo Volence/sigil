@@ -118,7 +118,7 @@ density, not their length.
 | engine/system/controllers.emp | t2 (OLD loop) | n/a | **DONE 2026-07-12** — clean; Press_Accum-consumer probe named |
 | engine/system/math.emp | t2 (OLD loop) | n/a | **DONE 2026-07-12** — clean, boundary verified exact |
 | engine/system/hblank.emp | pre-loop | n/a | **DONE 2026-07-12** — handler-contract comment wanted |
-| engine/sound/sound_api.emp | pre-loop + A2 audit | own A2 audit | light pass 2026-07-12 — A2 credited; triggered the clobbers-semantics ruling; full sitting deferred |
+| engine/sound/sound_api.emp | pre-loop + A2 audit | own A2 audit | **DONE 2026-07-12 (full sitting)** — A2-era work verified; 4 findings (PlayMusic id bounds, ring-drop assert, DrainSfxRing sr claim, PlayRing over-declared a0) |
 | data/sound: mt_bank, sfx_bank, dac_samples | pre-campaign (M1.D/Plan-6/7 era); sfx_bank got the `table` retrofit | n/a | pending — low priority, data-shaped |
 | support twins: sst.emp, constants.emp, types.emp | grown across tranches | n/a | audit as cross-cutting pass at the end |
 
@@ -515,6 +515,60 @@ Second-look findings (the file's audit sitting):
 
 **Verdict: t12 is mergeable.** Deltas −28 plain / −12 debug, gates
 green both shapes, loop genuinely dry after the second look.
+
+### sound_api.emp (pre-loop + A2 audit) — FULL sitting 2026-07-12 (Fable)
+(upgrades the earlier light pass; audited from committed master,
+post-retro-fix-batch — item 9's exhaustive-license rewrite is in and
+conformant)
+
+**Credit first:** the A2-era engineering verifies. Sound_DrainSfxRing's
+race-freedom is real (mailbox read-of-0 + post inside ONE bus hold, so
+the Z80's once/VBlank consume can't land between); the Rd/Wr ring is
+clean SPSC (Wr written only by PlaySFX, Rd only by Drain); the
+2026-07-03 d1.w index-bug lesson was propagated to BOTH cursor sites
+with the story recorded — historical pattern-enumeration done right.
+PlayMusic's param-block-then-trigger single-hold ordering is sound.
+PostByte / Init / Stop / Fade / Tempo contracts verified exact.
+
+Findings:
+
+1. **[RETRO] Sound_PlayMusic has no song-id bounds check** —
+   `andi.l #$FF` then straight into `SongTable[id-1]`: a bad id reads a
+   garbage table entry and posts a garbage bank/window/patch param
+   block to the Z80, which then streams garbage as music. DEBUG assert
+   d0 in 1..SONG_COUNT (the count is game-data-owned; extern it).
+   Same class as animate's script rails.
+2. **[RETRO] the SFX ring-full drop is silent and the impossibility is
+   prose** — "(>7 same-frame: never)" is exactly the claim-to-check
+   class; RingBuffer_Add's assert-on-drop is the house precedent. One
+   DEBUG assert at `.ps_drop`'s full-branch (id dropped = content bug).
+   Note the dedup-skip also lands on `.ps_drop` — assert only the
+   full-path branch, not the dedup path.
+3. **[3(b)/contract, both-directions] Sound_DrainSfxRing's
+   `preserves(sr)` / "SR restored" is half-true** — the empty-ring fast
+   path (`beq .dr_ret`) never saves SR: CCR leaves modified (the
+   interrupt mask is untouched there, and the posting path restores
+   fully). Harmless to the only caller (GameLoop discards flags), but
+   the ratified both-directions rule says prose must match body: reword
+   the claim ("mask never altered; CCR clobbered on the empty path;
+   full SR restored on the posting path") or unconditionally
+   save/restore. Files a concrete S2-D7 demand instance (CCR-liveness
+   contracts are the deferred lint that would catch this).
+4. **[3(b)-micro] Sound_PlayRing over-declares `clobbers(d0, a0)`** —
+   the body never touches a0 and the tail-callee (PlaySFX) preserves it
+   ENFORCED; the true license is `clobbers(d0)`. Over-declaration is
+   the safe direction, but under exhaustive-license the license is also
+   documentation — tighten it, and update RingCollision's callee-list
+   comment (which faithfully quotes "d0/a0") in lockstep.
+5. **[CERT+comment] Sound_Init's probe-release-probe loop is
+   load-bearing** — the bus is released between probes so the Z80 can
+   actually run and boot (holding continuously would deadlock the
+   handshake). Worth the one-line why; the no-timeout boot block is a
+   chosen tradeoff, name it.
+6. **Demand rows:** SoundId newtype instance (raw u8 ids at every API
+   boundary — [[emp-sonic-newtype-candidates]] class); the S2-D7 CCR
+   instance from finding 3; confirm the stop_z80/start_z80 comptime
+   templates carry their kill-list row (macros.asm mirror class).
 
 ## RULINGS (Volence, 2026-07-12)
 
