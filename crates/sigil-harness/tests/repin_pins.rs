@@ -161,9 +161,10 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // −0xC debug (tranche-12 entity_window step-2 branch shrink), then the whole
     // retro-fix-audit-1 batch. Item 11's dma_queue +0xC shifts BOTH shapes;
     // items 5 (−8) / 10 (−6) net into the plain base too. Plain 0x5D46 / debug
-    // 0x770E.
-    assert_eq!(pins::SOUND_API.plain_base, 0x5DB0);
-    assert_eq!(pins::SOUND_API.debug_base, 0x76CC);
+    // 0x770E. Then −0x2 both shapes (tranche-13 load_object step-2 `bne.w
+    // .alloc_fail` → bne.s shrink, upstream of sound_api).
+    assert_eq!(pins::SOUND_API.plain_base, 0x5DAE);
+    assert_eq!(pins::SOUND_API.debug_base, 0x76CA);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
