@@ -119,13 +119,18 @@ interrogation on the post-step-5 code surfaced two items the first pass glossed
   what-comment across two files is the exact signal step-3(a) exists to catch;
   pass 1 (reading load_object in isolation) walked past it.
   - **Attempted** (Volence-directed) a `frame_piece_count` `pub comptime fn` in a
-    new helper-only module → **BLOCKED** by two language gaps (ledgered): (A) a
-    size-suffixed spliced index reg `{off}.w` won't parse in an asm-template EA;
-    (B, decisive) statement-position Code-splices are gated to `asm { }`
-    templates — a plain `proc { }` body can't invoke a Code-returning helper
-    without being restructured into an asm-body proc. Disproportionate for a
-    1-instruction share. Reverted; **Gap B is the campaign-relevant find** (it's
-    the gate on adopting comptime-fn helpers into the corpus of plain procs).
+    new helper-only module. Interim MIS-DIAGNOSIS (committed then corrected): I
+    first reported a "Gap B" that plain procs can't invoke Code helpers — FALSE;
+    that was a syntax error on my part (brace splice `{helper()}` in a proc body
+    instead of a bare call `helper()`; `TouchResponse` calls
+    `touch_test_target(.dyn_next)` bare). **The real, single gap:** an asm-template
+    EA can't take a spliced INDEX register — `map_an_indexed` (asm.rs:1345)
+    resolves the index only from a literal `Path`, while the base register already
+    accepts a `{splice}`. Two mechanical sub-fixes (parser `.w` after a spliced
+    index + eval the index-slot splice, base path is the template); byte-neutral.
+    Reverted the half-built helper to green step-5. Ledgered as a worth-building
+    step-3(a) ask (indexed-addressing helper class; frame_piece_count is the
+    first consumer across load_object + animate).
 - **Magic-number (hidden coupling)**: `rol.w #4` silently encodes
   `(RF_XFLIP - OEF_XFLIP) & 15`. Drift-safe rewrite needs OEF_XFLIP in the
   constants twin (a ripple to `engine_constant_equs` + guard count across many
