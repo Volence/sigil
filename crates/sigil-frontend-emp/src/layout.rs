@@ -324,7 +324,7 @@ impl<'a> Evaluator<'a> {
     /// length or a refinement bound), returning the `i128`. A non-int result is
     /// a diagnostic (returning `None`); an already-`Poison` result is silent
     /// (also `None`), so a reported sub-error does not double-report.
-    fn eval_const_index(&mut self, expr: &ast::Expr) -> Option<i128> {
+    pub(crate) fn eval_const_index(&mut self, expr: &ast::Expr) -> Option<i128> {
         let mut env = Env::new();
         let v = self.eval_expr(expr, &mut env);
         // A provisional `here()` (a `LinkExpr`) cannot size an array or bound a

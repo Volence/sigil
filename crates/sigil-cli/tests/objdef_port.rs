@@ -253,6 +253,27 @@ fn objdef_priority_over_7_is_a_compile_error() {
     );
 }
 
+#[test]
+fn vram_art_pal_over_3_is_a_compile_error() {
+    // The typed-interface upgrade of vram_art: pal is a `0..3` refinement, so
+    // pal=4 (which would corrupt the priority bit via `pal<<13`) is caught at
+    // compile time instead of silently mis-packing.
+    let file = emitter_ambient(
+        "data Bad: ObjDef = objdef(code: \"X\", map: \"Y\", art: vram_art($100, 4))\n",
+    );
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: None,
+        embed_base: None,
+        defines: vec![],
+    };
+    let (_module, diags) = lower_module(&file, &opts);
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error),
+        "vram_art pal=4 must be a compile error (0..3 refinement), got: {diags:?}"
+    );
+}
+
 // ---- the reference byte gate: test_objects.emp vs s4.bin windows --------
 // Compiles the REAL games/sonic4/data/objdefs/test_objects.emp through the
 // production pipeline, resolves its cross-seam symbols (the four routine

@@ -1272,6 +1272,22 @@ fn aabb_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> 
     file.items
 }
 
+/// The `engine.objects.objdef` module (`engine/objects/objdef.emp`): home of the
+/// `vram_art` comptime fn that rings.emp imports (`use
+/// engine.objects.objdef.{vram_art}` for RING_ART_ATTR). Its `objdef()` fn leans
+/// on ObjDef (sst) + RF_PRIORITY_SHIFT (constants), so it rides AFTER
+/// `sst_ambient_items`/`constants_ambient_items` in the prepend order.
+fn objdef_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(objects_dir.join("objdef.emp"))
+        .unwrap_or_else(|e| panic!("cannot read objdef.emp: {e}"));
+    let (file, odiags) = parse_str(&src);
+    assert!(
+        odiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "objdef.emp parse errors: {odiags:?}"
+    );
+    file.items
+}
+
 /// The `engine.objects.frames` comptime-fn template (`engine/objects/frames.emp`):
 /// a single `pub comptime fn frame_piece_count` — zero bytes anywhere, spliced
 /// by animate/load_object at the piece-count read. Uses FRAME_PIECE_COUNT from
@@ -1359,6 +1375,10 @@ fn placed_module_sections_with_roots(
             ambient_items = sst_ambient_items(&dir);
             ambient_items.extend(constants_ambient_items(&system));
             ambient_items.extend(aabb_ambient_items(&dir));
+            // rings.emp additionally imports `vram_art` from objdef.emp (RING_ART_ATTR).
+            if module_file == "rings.emp" {
+                ambient_items.extend(objdef_ambient_items(&dir));
+            }
         }
         "test_solid.emp" | "test_particle.emp" => {
             let root = dir

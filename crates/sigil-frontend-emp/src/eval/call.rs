@@ -288,7 +288,23 @@ impl<'a> Evaluator<'a> {
         // Comptime fns are pure: a fresh env, seeing only their params (and, via
         // `self`, file consts/fns) — never the caller's locals.
         let mut fenv = Env::new();
-        for ((pname, _, _, _), v) in decl.params.iter().zip(arg_values) {
+        for ((pname, ptype, _, _), v) in decl.params.iter().zip(arg_values) {
+            // A `where LO..HI` refinement on a param (`pal: int where 0..3`) is a
+            // COMPILE-time totality check: an out-of-range argument is an error at
+            // the call, not a silently-wrapped byte. Mirrors newtype-construction
+            // bound checking (`check_value_fits_ty`) — the refinement bounds a
+            // param the same way it bounds a `newtype … where …` construction.
+            // Only refined params carry a check; a bare `int`/`u8`/Reg/Label param
+            // stays loosely typed at bind (unchanged behavior).
+            if let ast::Type::Refined(_, lo_expr, hi_expr) = ptype {
+                if let Some(n) = v.as_stored_int() {
+                    if let (Some(lo), Some(hi)) =
+                        (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr))
+                    {
+                        self.check_in_range(n, lo, hi, call_span, &format!("parameter `{pname}`"));
+                    }
+                }
+            }
             fenv.define(pname.clone(), v, false);
         }
         // A comptime-fn body IS a comptime-mutable context (D-P2.5): `comptime

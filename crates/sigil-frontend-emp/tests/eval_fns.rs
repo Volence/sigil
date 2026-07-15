@@ -143,6 +143,42 @@ fn duplicate_argument_errors() {
     );
 }
 
+// ---- param `where` refinement bounds (vram_art typed-interface driver) -----
+//
+// A `where LO..HI` refinement on a comptime-fn param is a COMPILE-time totality
+// check at the call, mirroring newtype-construction bound checking: an
+// out-of-range argument is an error, not a silently-wrapped value. A bare-int
+// param stays loosely typed (no check). The default (when in range) never trips.
+
+#[test]
+fn param_refinement_in_range_passes() {
+    let src = "module m\ncomptime fn f(x: int where 0..3) -> int { return x }\nconst R = f(2)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(2)));
+    assert!(diags.is_empty(), "in-range arg must not diagnose: {diags:?}");
+}
+
+#[test]
+fn param_refinement_out_of_range_errors() {
+    let src = "module m\ncomptime fn f(x: int where 0..3) -> int { return x }\nconst R = f(4)\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("parameter `x`")
+            && d.message.contains("4 not in 0..3")),
+        "out-of-range arg must be a compile error naming the param: {diags:?}"
+    );
+}
+
+#[test]
+fn param_refinement_default_in_range_passes() {
+    // The omitted arg falls to its default (0), which is in range — no diagnostic.
+    let src = "module m\ncomptime fn f(x: int where 0..3 = 0) -> int { return x }\nconst R = f()\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(0)));
+    assert!(diags.is_empty(), "in-range default must not diagnose: {diags:?}");
+}
+
 // ---- D-PP.4: named call arguments (Spec 2, Plan 7 — pitcher_plant tranche) --
 //
 // The paren-form binder above (`named_args_out_of_order` /
