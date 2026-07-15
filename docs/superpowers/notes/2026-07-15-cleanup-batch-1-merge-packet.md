@@ -145,7 +145,10 @@ All 7 files' operand-spelling count → 0 (core's 4 are commented exceptions).
 
 ### Item 7 — codename scrub, durable anchors kept
 
-59 replacements / 19 files. Ephemeral session codenames → the adjacent
+62 replacements / 19 files (58 first pass + 1 audit-ref + 3 Fable-gate riders:
+`core.emp` "A1 double-dispatch check", `entity_window.emp` "A1-safe today",
+`animate.emp` "audit §clobbers-semantics", and a dangling-colon scrub artifact
+in `test_solid.emp`). Ephemeral session codenames → the adjacent
 behavioral reason. The two recurring *names* got consistent rewordings: `A1` →
 the delete-zeroes-the-live-list-entry fix; `A2` → "overflow latch (spec §9)" /
 "walk-flag assert rail". KEPT (per the classification rule): `spec §`, `kill-list
@@ -182,3 +185,24 @@ for a future entity_window touch, NOT converted here.
 (step-2 retro conformance — items 4/5/6), 1046 (codename-narration — item 7),
 1057 (enumerated reglists — item 8). All CLOSED with their outcomes in
 `campaign-gap-ledger.md`.
+
+## Fable gate result
+
+**PASS-WITH-NITS** (2026-07-15). Fable re-ran every falsifiable claim against the
+repos rather than trusting prose: reverted the item-1 `call.rs` hunk and
+confirmed the two refinement tests go RED (red-first is real); re-ran the strict
+suite (193 ok / 0 failed), clippy (clean), repin (`pins.rs unchanged`); rebuilt
+both gate-off ROMs to the canonical CRCs; empirically re-confirmed the item-6
+imm-link block by baring core.emp:63 and observing the exact `[lower.imm-link]`
+error; and validated the item-4/5/2/6 judgment calls against the real files. No
+misrepresentations found.
+
+Nits (all comment-only) were folded in the same wave as a **rider commit**:
+3 A1/audit-ref codename residuals the first pass missed (`core.emp:371`,
+`entity_window.emp:1474`, `animate.emp:221`) + a dangling-colon scrub artifact
+(`test_solid.emp:11`). Post-rider, the codename count → 0 claim holds (corpus
+grep for `\bA[12]\b`/`item N`/`audit §` empty modulo durable anchors). Touched
+files re-gated green.
+
+**Merge-ready.** Volence's call on the merge (`--no-ff` both sides + push together
+per the paired-state gate).
