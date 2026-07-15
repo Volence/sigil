@@ -167,3 +167,51 @@ Mirror the collision_lookup / entity_window wiring:
 - Watch the four near-identical **clamp ladders** in `UpdateColumns`
   (right/left/bot/top each do cache-clamp + wrap-clamp + tracker-min/max):
   a structural-clone / `emit_*` construct candidate for step-4.
+
+## Step-1 build log (VDP interface, mem-to-mem feature, syntax facts)
+
+**Demanded feature — two-pinned-abs-operand lowering (mem-to-mem move).** section.asm's
+`move.w (Cache_Top_Row).w, (Section_Top_Row_Written).w` (×2) is two width-pinned symbolic
+absolutes in one instruction — unsupported (code.rs). Built (Fable path 1, TDD): exactly-two-
+`AbsSym` routes to a new arm, encode once + two fixed-width fixups (src ext @2, dst ext
+@2+src_width, 68k source-then-dest order); any bare operand among 2+ still diagnoses (two-way
+RelaxAbsSym unbuilt), reworded. 5 tests (shape+routing, .l, mixed, two negatives); 1362/0
+frontend, clippy clean; sigil `4ec988f`. The two section sites keep explicit `.w` (step-2 pre-
+ruling) — bare would demand two-way RelaxAbsSym; zero byte cost (RAM syms, asl width rule →
+abs.w). Ledger: two-way-RelaxAbsSym spelling gap, 5 demand sites (section ×2, vblank ×3 hot).
+
+**R6 — VDP target/op typing → Option B (Fable ruling).** emp enums are opaque tagged values;
+T4 shipped a checked int→enum cast but NOT the reverse (enum→int in expression position), so
+`type & rwd` on enum params won't fold. Option B: pure sum types (`comptime enum VdpTarget {
+Vram, Cram, Vsram }` / `VdpOp { Read, Write, Dma }`, NO discriminants) + two exhaustive-match
+mappers `target_bits`/`op_bits` returning the %-encodings, feeding the AS `(type & rwd)`
+derivation VERBATIM. Mapping drift-locked per-variant (`ensure(target_bits(VdpTarget.Vram) ==
+extern("VRAM"), …)`), truth stays constants.asm. Option A (enum→repr expr cast — the T4
+symmetry half) LEDGERED, not built (demand point #1: t15 VDP mappers; build at 2nd instance).
+Option C (newtype/u8) rejected — doesn't close the vocabulary. Confirmed: enum-typed comptime-fn
+params, `match`, and defaults all work; section.emp lowers clean.
+
+**Guard analysis (macro-port "guard upgrade" line — honest NEGATIVE result).** Recomputed all
+9 target×op products against macros.asm:264: addq fires for all WRITE+DMA combos, skips READs;
+`tas.b` (`(tr&$FC)==$20`) fires for Vram&Dma ($21→$20) and Cram&Dma ($23→$20), Vsram&Dma falls
+to ori ($25→$24); ori-elseif also hit by Cram&Read/Vsram&Read/Vsram&Write; bare-else covers
+Vram&Read/Vram&Write/Cram&Write. Every arm reachable; all four `vdp_comm_reg` guards select
+ENCODING CASES (behavior), zero are vocabulary validation → **no guard died to the sum types**.
+The rule working via a negative result (the enums add call-site safety, not guard removal).
+
+**clr census (engine-wide, corrected).** `clr: bool = true` — the dominant vdpCommReg value
+across all 5 engine call sites: **3:2** (section ×2 + one DMA-queue write = clr=1; two DMA-queue
+`VRAM,DMA,0` = clr=0), NOT 2/0. The clr=0 minority is in the DMA-queue path (ports next), so the
+next VDP consumer WILL pass `clr: false` — the default is a mild convenience at a marginal 3:2.
+
+**t15 proved the typed-parameter surface end-to-end**: first enum-typed comptime-fn params AND
+(as far as known) the corpus's first bool-typed comptime-fn param (`vcr_clr(clr: bool)` /
+`vdp_comm_reg(… clr: bool = true)`).
+
+**House-style syntax facts (found converging section.emp; for the packet + style notes):**
+1. `if` conditions are UNPARENTHESIZED (`if bits != 0`, not `if (bits) != 0`) — a leading `(`
+   parses as a lambda-param list.
+2. A Code-returning comptime-fn spliced in a PROC BODY is a BARE call (`vdp_comm_reg(d2, …)`);
+   the `{fn(…)}` splice form is asm-BLOCK-only (inside `asm { }`).
+3. Expressions do NOT span newlines — a leading `|` parses as a lambda delimiter, a trailing
+   binary operator dies on the newline; multi-term comptime exprs go on ONE line.
