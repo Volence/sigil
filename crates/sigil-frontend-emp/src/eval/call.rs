@@ -288,7 +288,7 @@ impl<'a> Evaluator<'a> {
         // Comptime fns are pure: a fresh env, seeing only their params (and, via
         // `self`, file consts/fns) — never the caller's locals.
         let mut fenv = Env::new();
-        for ((pname, _, _), v) in decl.params.iter().zip(arg_values) {
+        for ((pname, _, _, _), v) in decl.params.iter().zip(arg_values) {
             fenv.define(pname.clone(), v, false);
         }
         // A comptime-fn body IS a comptime-mutable context (D-P2.5): `comptime
@@ -468,8 +468,10 @@ impl<'a> Evaluator<'a> {
     /// positional arg after a named one, an unknown named parameter, a parameter
     /// filled twice (positionally then by name, or twice by name), a positional
     /// arg past the last parameter (`too many arguments`), and any parameter left
-    /// unfilled (`missing argument` — D-PP.4 builds no default values, so a
-    /// param that is simply never mentioned is always this error).
+    /// unfilled that has NO default (`missing argument`). A param with a default
+    /// (`name: T = expr`, t14 — reverses D-PP.4's original "no defaults") takes
+    /// that default, evaluated in a fresh global-only declaration scope, when
+    /// left unbound.
     fn bind_args(
         &mut self,
         decl: &ast::ComptimeFnDecl,
@@ -521,7 +523,7 @@ impl<'a> Evaluator<'a> {
                 }
                 Some(pname) => {
                     seen_named = true;
-                    match decl.params.iter().position(|(p, _, _)| p == pname) {
+                    match decl.params.iter().position(|(p, _, _, _)| p == pname) {
                         None => {
                             self.error(arg.span, format!("unknown named parameter `{pname}`"));
                         }
@@ -546,18 +548,28 @@ impl<'a> Evaluator<'a> {
         if self.aborted || self.pending_return.is_some() {
             return vec![Value::Poison; n];
         }
-        slots
-            .into_iter()
-            .enumerate()
-            .map(|(i, s)| match s {
-                Some(v) => v,
-                None => {
-                    let pname = &decl.params[i].0;
-                    self.error(span, format!("missing argument `{pname}`"));
-                    Value::Poison
-                }
-            })
-            .collect()
+        // Fill any unbound slot from its default (t14), else report it missing.
+        // A default evaluates in a FRESH global-only env — declaration scope,
+        // matching a comptime fn's own body env (never the caller's locals,
+        // never a sibling param). This reverses D-PP.4's "no default values".
+        let mut out = Vec::with_capacity(n);
+        for (i, s) in slots.into_iter().enumerate() {
+            match s {
+                Some(v) => out.push(v),
+                None => match decl.params[i].3.clone() {
+                    Some(default) => {
+                        let mut denv = Env::new();
+                        out.push(self.eval_expr(&default, &mut denv));
+                    }
+                    None => {
+                        let pname = &decl.params[i].0;
+                        self.error(span, format!("missing argument `{pname}`"));
+                        out.push(Value::Poison);
+                    }
+                },
+            }
+        }
+        out
     }
 
     /// `Name(x)` where `Name` is a `newtype` (T4): comptime construction.

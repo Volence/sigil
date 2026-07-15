@@ -2140,7 +2140,10 @@ impl Parser {
                 let pname = self.expect_ident("parameter name");
                 self.expect(&Tok::Colon, "`:`");
                 let pty = self.ty();
-                params.push((pname, pty, pspan));
+                // `name: T = expr` — an optional default (t14). Same spelling
+                // as struct-field defaults; the parameter becomes optional.
+                let default = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
+                params.push((pname, pty, pspan, default));
                 if !self.eat(&Tok::Comma) { break; }
                 if self.at(&Tok::RParen) { break; } // trailing comma
             }

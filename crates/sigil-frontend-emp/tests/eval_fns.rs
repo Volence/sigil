@@ -425,3 +425,64 @@ fn let_tuple_non_tuple_errors() {
         "diagnostics were {diags:?}"
     );
 }
+
+// ---- default parameter values (t14 demanded feature) ------------------
+
+#[test]
+fn default_param_used_when_omitted() {
+    let src = "module m\ncomptime fn f(a: int, b: int = 10) -> int { return a + b }\nconst R = f(5)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(15)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn default_param_overridden_positionally() {
+    let src = "module m\ncomptime fn f(a: int, b: int = 10) -> int { return a + b }\nconst R = f(5, 3)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(8)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn default_param_overridden_by_name() {
+    let src = "module m\ncomptime fn f(a: int, b: int = 10) -> int { return a + b }\nconst R = f(5, b: 3)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(8)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn required_param_missing_still_errors_but_default_does_not() {
+    // `a` has no default (required); `b` does. Omitting both: only `a` is a
+    // missing-argument error — `b` silently takes its default.
+    let src = "module m\ncomptime fn g(a: int, b: int = 1) -> int { return a + b }\nconst R = g()\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        diags.iter().any(|d| d.message.contains("missing argument `a`")),
+        "expected missing-arg for `a`, diagnostics were {diags:?}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("missing argument `b`")),
+        "`b` has a default and must NOT be a missing-arg error: {diags:?}"
+    );
+}
+
+#[test]
+fn default_expr_resolves_a_module_const() {
+    let src = "module m\nconst D = 7\ncomptime fn f(a: int, b: int = D) -> int { return a + b }\nconst R = f(5)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(12)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn multiple_defaults_partial_named_override() {
+    let src = "module m\ncomptime fn f(a: int, b: int = 2, c: int = 3) -> int { return a * 100 + b * 10 + c }\nconst A = f(9)\nconst B = f(9, c: 7)\n";
+    let (a, d1) = eval(src, "A");
+    assert_eq!(a, Some(int(923)));
+    assert!(d1.is_empty(), "unexpected diagnostics: {d1:?}");
+    let (b, d2) = eval(src, "B");
+    assert_eq!(b, Some(int(927)));
+    assert!(d2.is_empty(), "unexpected diagnostics: {d2:?}");
+}
