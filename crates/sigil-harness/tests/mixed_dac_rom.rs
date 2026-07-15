@@ -1272,6 +1272,22 @@ fn aabb_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> 
     file.items
 }
 
+/// The `engine.objects.frames` comptime-fn template (`engine/objects/frames.emp`):
+/// a single `pub comptime fn frame_piece_count` — zero bytes anywhere, spliced
+/// by animate/load_object at the piece-count read. Uses FRAME_PIECE_COUNT from
+/// the constants twin, so it rides AFTER `constants_ambient_items` in the
+/// prepend order.
+fn frames_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(objects_dir.join("frames.emp"))
+        .unwrap_or_else(|e| panic!("cannot read frames.emp: {e}"));
+    let (file, fdiags) = parse_str(&src);
+    assert!(
+        fdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "frames.emp parse errors: {fdiags:?}"
+    );
+    file.items
+}
+
 /// The engine.types domain-type vocabulary (`engine/system/types.emp`,
 /// construct-walk #3): zero-byte pure types (Coord/Velocity/Angle/...),
 /// prepended wherever a module `use`s them (sst.emp, math.emp).
@@ -1367,12 +1383,14 @@ fn placed_module_sections_with_roots(
         }
         // animate.emp (tranche 9) lives in `engine/objects/` and uses the
         // typed Sst plus the constants twin (its AF_SET_FIELD/DUR_DYNAMIC/
-        // OBJ_CODE_BANK/FRAME_PIECE_COUNT inputs) — the collision/rings arm
-        // minus the aabb template (no splice consumer here).
+        // OBJ_CODE_BANK inputs), AND the `frame_piece_count` comptime-fn
+        // template (frames.emp, sibling) it now splices at the piece-count read.
+        // Prepend in `use` order: sst (+types), constants, frames.
         "animate.emp" => {
             let system = dir.parent().expect("engine/objects has a parent").join("system");
             ambient_items = sst_ambient_items(&dir);
             ambient_items.extend(constants_ambient_items(&system));
+            ambient_items.extend(frames_ambient_items(&dir));
         }
         _ => {}
     }
