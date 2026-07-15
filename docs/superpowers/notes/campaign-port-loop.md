@@ -3,6 +3,12 @@
 **CHANGELOG (re-read this doc at each step boundary — it changes
 mid-campaign, and a ruling ratified after your last read still binds
 you):**
+- 2026-07-15 (3rd): loop self-extension audit — step-0 TRIP-CHECK (kill
+  conditions this port trips, not just file-keyed rows) + probe
+  BINDING-CLASS rule; step-1 GATE-ARTIFACT discipline (every gate names
+  its test/commit) + PROOF-MECHANISM feed-forward (ownership-flip class
+  requires its two-module link test per flip); noticing clauses added to
+  the 3(a)/3(b)/5 interrogations (all three now self-extending).
 - 2026-07-15 (2nd): step-2 CHECKLIST formalized (was the only judgment
   step with no enforced list) + the NOTICING clause (step 2 is
   self-extending per file) + the FEED-FORWARD rule (a shipped feature
@@ -41,7 +47,22 @@ note BEFORE code. Trivial files skip it. **Hazard sweep (added
 for this file's name and its proc symbols** — audit/spec findings that
 implicate a file are ledgered against it (that's the handoff channel;
 an in-flight hazard you didn't sweep for is a step-0 failure, not bad
-luck).
+luck). **Trip-check (added 2026-07-15, from the t15 row-22 miss — the
+SECTION_SIZE due-bill was const-keyed, not file-keyed, and the sweep
+walked past it):** the sweep ALSO reads kill-list/ledger KILL CONDITIONS
+this port could TRIP — consts/symbols the file consumes, "Nth consumer"
+clauses that this port satisfies, and at-next-touch rows naming any file
+the tranche touches. Corollary for row authors: at-next-touch rows must
+NAME their files explicitly, or the sweep can't surface them.
+
+  **Probe binding-class rule (2026-07-15; the lesson cost a wrong step-0
+  diagnosis in the sst-usability batch and was never written down):** a
+  confirming probe must replicate the real site's BINDING CLASS —
+  comptime vs link-time, gated vs ungated, extern vs local — not just
+  its expression shape. A probe that "confirms" a spelling against a
+  comptime base says nothing about the link-time sites it claims to
+  clear. Design notes state each probe's binding class next to its
+  conclusion.
 
 **Step 1 — Transcribe**: the 1-1 faithful port. Same mnemonics, same
 explicit widths, comments carried. Gate + region pin + byte gates both
@@ -52,6 +73,25 @@ feature is the .emp counterpart of a donor MACRO or AS function, its
 interface is designed under the macro-port rule (below) BEFORE it is
 built — the byte gate binds the counterpart's emitted bytes, never its
 signature.
+
+  **Gate-artifact discipline (2026-07-15, from the t15 mixed-build row
+  that described a run that never happened + the acceptance bar's silent
+  drift across tranches):** the packet's step-1 section is a FILLED gate
+  list where every gate names its ARTIFACT — the test fn or commit that
+  proves it ("mixed acceptance: `two_module_ownership_flip_*`", "negative
+  probe: <test>", "gate-off: <CRCs>"). A gate row without an artifact is
+  a claim, not a gate; checklist rows describe what was EXECUTED, never
+  what the plan intended.
+
+  **Proof-mechanism feed-forward (2026-07-15, same shape as step 2's
+  feed-forward rule):** when a port creates a NEW seam-configuration
+  class and builds its proof, that proof becomes REQUIRED for every
+  future instance of the class — named here so it binds: the
+  symbol-ownership FLIP class (an already-ported .emp module's calls
+  re-resolving to a newly-ported .emp owner) requires a persisted
+  two-module link test per flip (t15 section/entity_window is the
+  template; plane_buffer's port flips Draw_TileColumn for section.emp
+  and owes the next one).
 
 **Step 2 — Modernize**: convert to the complete house format. ALL
 control flow goes new-style — `bra.w`/`bra.s`/`jmp` → `jbra`,
@@ -145,6 +185,11 @@ re-green. No emulator time needed at this step.
     newtype-candidates list). FP-taste lens, gated by adoption-over-
     cleverness: a type earns its place by catching errors or naming
     intent at call sites, not by existing.
+  - **Noticing clause (2026-07-15)** — did this file expose an
+    opportunity CLASS no line above covers? Propose the new
+    interrogation line in the packet; ratified lines join this list
+    (every line above was born from a specific miss — the list is not
+    finished).
 
   **The step-3(b) interrogation** (added 2026-07-11, same rationale as
   step 5's: reads-wrong is a checklist, not a vibe. Run EACH; outcomes
@@ -165,6 +210,9 @@ re-green. No emulator time needed at this step.
   - **Cold-reader test** — trace one frame/call through the file using
     only headers and comments; every point where you must read the
     implementation to know what happens next is a finding.
+  - **Noticing clause (2026-07-15)** — did this file expose a
+    reads-wrong CLASS no line above covers? Propose it in the packet;
+    ratified lines join this list.
 
 **Register-contract convention (Volence-ratified 2026-07-12, retro-audit):
 `clobbers()` is an EXHAUSTIVE LICENSE** — everything not listed is
@@ -315,6 +363,9 @@ outcome named in the packet.
     (cascade-down under overflow, a skipped call that's coincidentally
     equivalent, unconditional fairness cycling) gets a site comment
     saying it is CHOSEN — an uncommented compromise is a finding.
+  - **Noticing clause (2026-07-15)** — did this file expose an
+    optimization or hazard CLASS no line above covers? Propose it in
+    the packet; ratified lines join this list.
 
   **Hot-path second look**: files on the per-frame hot path (render,
   physics, object/frame loop) get a Fable review pass before the merge
