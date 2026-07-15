@@ -62,3 +62,30 @@ take at step 5**, under the target: **2 rows/frame with zero VInt_Lag** (clear t
   23.5% at 16 px/f. The t15 figure was a heavier/colder or differently-driven
   sample; the RELATIVE conclusion (FillRow's own loop is the lever) stands and is
   now measured exclusive-vs-inclusive. Supersede row 1057's absolute with these.
+
+## Refreshed baseline — post-step-2 ROM (Rider 3, before any FillRow edit)
+
+Re-probed the SAME scene/method on the post-step-2 ROM (worktree s4.debug.bin =
+canonical **88354f87**, verified by explicit-path reload; steps 3/4 were .emp-only
+byte-neutral so gate-off behavior = post-step-2). Identical Camera_Y schedule
+($00900000 start, +16 px/frame × 20) so the A/B against the post-step-5 re-probe
+is apples-to-apples (same crossing positions).
+
+**20-frame 16 px/f:** `TileCache_FillRow` **26219 (19.7%)**, `Tile_Cache_Fill`
+**27785 (20.9%)**, `Parallax_Update` 23961 (18.0%), `Draw_TileRow_FromCache` 6710
+(5.0%), `Section_UpdateColumns` 7645 (5.7%). budget **103.9%**, `VSync_Wait` idle
+**43.6%**, **`VInt_Lag` absent (< top-14)**, `DecompressBlock`/`FindStagedBlock`
+also < top-14 (this window's crossings hit the staging cache — the leftover-budget
+prefetch amortized them; contrast R2's heavier window with DecompressBlock 3414 +
+VInt_Lag 476).
+
+**Read for step 5:** FillRow's OWN per-cell loop (the hoist+SR target, crossing-
+independent) ≈ 25-26k cyc/f — consistent with R2's ~27.9k; the inclusive/window
+variance is whether a cold DecompressBlock crossing folds in. The step-2 branch
+relaxations shaved a touch (budget 108→104% vs R2). **This is the step-5 accounting
+baseline.** NOTE on the exit criterion: VInt_Lag firing is INTERMITTENT — it hits
+only when the prefetch falls behind on a crossing frame (R2 caught one; this window
+didn't). So verifying "zero VInt_Lag at 16 px/f" post-optimization means re-running
+the worst case (and if this schedule won't reliably lag, the pre-sanctioned debug
+scroll-speed knob / a longer sustained run stresses it). The hoist+SR lowers EVERY
+frame's FillRow ~6-8k → more headroom for the crossing spikes regardless.
