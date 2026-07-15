@@ -744,11 +744,9 @@ fn sized_override_bounded_by_struct_end() {
     // RIDER: `d:l(a0)` where `d` is at offset 3 of an 8-byte struct — the :l
     // overlay (offset 3 + 4 = 7 <= 8) is fine; but a field too near the end
     // must fail. Use a 4-byte struct: `d` at 3, :l → 3+4=7 > 4 → past struct end.
-    let src = format!(
-        "module m\nstruct Tiny (size: 4) {{\n    a: u8 @ 0,\n    b: u8 @ 1,\n    c: u8 @ 2,\n    d: u8 @ 3,\n}}\n\
-         proc p (a0: *Tiny) {{\n    move.l #$FF000000, d:l(a0)\n    rts\n}}\n"
-    );
-    let (_module, errs) = lower(&src);
+    let src = "module m\nstruct Tiny (size: 4) {\n    a: u8 @ 0,\n    b: u8 @ 1,\n    c: u8 @ 2,\n    d: u8 @ 3,\n}\n\
+         proc p (a0: *Tiny) {\n    move.l #$FF000000, d:l(a0)\n    rts\n}\n";
+    let (_module, errs) = lower(src);
     assert!(
         errs.iter().any(|m| m.contains("[operand.field-overrun]") && m.contains("d")),
         "an overlay running past the struct end must be caught: {errs:?}"
