@@ -1365,6 +1365,13 @@ pub enum Operand {
         /// splice diagnostic) rather than the generic "displacement must be an
         /// integer" — the evaluation and range-check are otherwise identical.
         disp_spliced: bool,
+        /// A `:b`/`:w`/`:l` sized override on a typed field displacement
+        /// (`Sst.prev_anim:l(a1)`) — DECLARES the intended access width for a
+        /// deliberate multi-field overlay write, replacing the field's own size
+        /// in the `[operand.field-overrun]` check (bounded by the struct end).
+        /// `None` for ordinary displacements. Distinct from the trailing
+        /// instruction size; it binds to the field via `:`, not `.`.
+        field_size_override: Option<TextOrSplice>,
         /// Span of the whole operand.
         span: Span,
     },

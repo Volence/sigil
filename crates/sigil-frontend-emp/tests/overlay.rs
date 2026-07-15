@@ -690,3 +690,67 @@ fn qualified_field_overrun() {
         "want [operand.field-overrun] naming timer, got: {errs:?}"
     );
 }
+
+// ---- 9. sized overlay-write override (`field:l`) — sst-usability-batch ----
+
+// A struct with a leading u8 and room to overlay: `a:l` writes 4 bytes from
+// `a`'s offset, a deliberate multi-field overlay (the load_object $20-$23 idiom).
+const OVL: &str = "struct Ovl (size: 8) {\n    \
+    a: u8 @ 0,\n    b: u8 @ 1,\n    c: u8 @ 2,\n    d: u8 @ 3,\n    e: u32 @ 4,\n}\n";
+
+#[test]
+fn sized_override_authorizes_wide_overlay_write() {
+    // `move.l a:l(a0)` — `a` is 1 byte, `:l` declares a 4-byte overlay → NO
+    // overrun, displacement is `a`'s offset (0), same as offsetof would give.
+    let src = format!(
+        "module m\n{OVL}proc p (a0: *Ovl) {{\n    move.l #$FF000000, a:l(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower(&src);
+    assert!(
+        !errs.iter().any(|m| m.contains("[operand.field-overrun]")),
+        "the :l override must authorize the wide write: {errs:?}"
+    );
+}
+
+#[test]
+fn sized_override_is_a_stated_width_not_a_mute_switch() {
+    // `move.l a:w(a0)` — the override declares 2 bytes but the instruction reads
+    // 4 → STILL an overrun (4 > 2). The override is a stated width, not blanket opt-out.
+    let src = format!(
+        "module m\n{OVL}proc p (a0: *Ovl) {{\n    move.l #$FF000000, a:w(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.field-overrun]")),
+        "move.l against a :w override must still overrun: {errs:?}"
+    );
+}
+
+#[test]
+fn sized_override_narrower_access_is_legal() {
+    // `move.b a:l(a0)` — access 1 <= override 4 → clean (documents intent harmlessly).
+    let src = format!(
+        "module m\n{OVL}proc p (a0: *Ovl) {{\n    move.b #$FF, a:l(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower(&src);
+    assert!(
+        !errs.iter().any(|m| m.contains("[operand.field-overrun]")),
+        "narrower access under an override is legal: {errs:?}"
+    );
+}
+
+#[test]
+fn sized_override_bounded_by_struct_end() {
+    // RIDER: `d:l(a0)` where `d` is at offset 3 of an 8-byte struct — the :l
+    // overlay (offset 3 + 4 = 7 <= 8) is fine; but a field too near the end
+    // must fail. Use a 4-byte struct: `d` at 3, :l → 3+4=7 > 4 → past struct end.
+    let src = format!(
+        "module m\nstruct Tiny (size: 4) {{\n    a: u8 @ 0,\n    b: u8 @ 1,\n    c: u8 @ 2,\n    d: u8 @ 3,\n}}\n\
+         proc p (a0: *Tiny) {{\n    move.l #$FF000000, d:l(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower(&src);
+    assert!(
+        errs.iter().any(|m| m.contains("[operand.field-overrun]") && m.contains("d")),
+        "an overlay running past the struct end must be caught: {errs:?}"
+    );
+}
