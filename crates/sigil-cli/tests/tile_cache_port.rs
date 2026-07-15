@@ -4,7 +4,7 @@
 //! production parse -> lower -> place -> resolve -> link pipeline and asserts the
 //! `tile_cache` region's flattened bytes equal the reference ROM window at the
 //! pinned base, in BOTH build shapes. The BIGGEST region ported to date
-//! ($924 plain / $9DC debug), section.emp's paired streaming sibling, and the
+//! ($916 plain / $9D6 debug), section.emp's paired streaming sibling, and the
 //! measured vertical-streaming lag driver.
 //!
 //! ## Shape
@@ -59,7 +59,7 @@ fn strict_gate() -> bool {
 
 /// The map: a `text` carrier for the zero-byte default section, and the
 /// `tile_cache` region pinned at the per-shape reference base + per-shape length
-/// (SHAPE-VARYING: plain $924, debug $9DC).
+/// (SHAPE-VARYING: plain $916, debug $9D6).
 fn map_toml(debug: bool) -> String {
     let base = region_base(debug);
     let len = region_len(debug);
