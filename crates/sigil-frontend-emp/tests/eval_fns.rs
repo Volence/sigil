@@ -486,3 +486,21 @@ fn multiple_defaults_partial_named_override() {
     assert_eq!(b, Some(int(927)));
     assert!(d2.is_empty(), "unexpected diagnostics: {d2:?}");
 }
+
+// ---- multi-line parameter lists (t14: wide emitter signatures) --------
+
+#[test]
+fn multiline_param_list_with_defaults() {
+    // A wide signature spread across lines (trailing comma) must parse and
+    // bind exactly like the single-line form.
+    let src = "module m\n\
+        comptime fn f(\n\
+            a: int,\n\
+            b: int = 2,\n\
+            c: int = 3,\n\
+        ) -> int { return a * 100 + b * 10 + c }\n\
+        const R = f(9, c: 7)\n";
+    let (v, diags) = eval(src, "R");
+    assert_eq!(v, Some(int(927)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}

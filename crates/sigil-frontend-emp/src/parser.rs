@@ -2133,6 +2133,10 @@ impl Parser {
         }
         let name = self.expect_ident("function name");
         self.expect(&Tok::LParen, "`(`");
+        // Newlines inside the parameter list are insignificant (t14): a wide
+        // emitter signature (objdef's 14 params) reads one-per-line with a
+        // trailing comma, like a multi-line struct decl.
+        self.skip_newlines();
         let mut params = Vec::new();
         if !self.at(&Tok::RParen) {
             loop {
@@ -2145,9 +2149,11 @@ impl Parser {
                 let default = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
                 params.push((pname, pty, pspan, default));
                 if !self.eat(&Tok::Comma) { break; }
+                self.skip_newlines();
                 if self.at(&Tok::RParen) { break; } // trailing comma
             }
         }
+        self.skip_newlines();
         self.expect(&Tok::RParen, "`)`");
         let ret = if self.eat(&Tok::Arrow) { Some(self.ty()) } else { None };
         let body = self.stmt_block();
