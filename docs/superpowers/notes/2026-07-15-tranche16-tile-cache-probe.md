@@ -89,3 +89,33 @@ didn't). So verifying "zero VInt_Lag at 16 px/f" post-optimization means re-runn
 the worst case (and if this schedule won't reliably lag, the pre-sanctioned debug
 scroll-speed knob / a longer sustained run stresses it). The hoist+SR lowers EVERY
 frame's FillRow ~6-8k → more headroom for the crossing spikes regardless.
+
+## Positive control (Fable rider 1) — a reliably-lagging window + a nuance
+
+The rider-3 20-frame window read "VInt_Lag absent" — but that was a **top-14 cutoff
+artifact + averaging**, not a true zero. Re-probed the SAME schedule
+(Camera_Y=$00900000 start, +16px/frame) but read the **FIRST 8 frames** (the cold
+crossings right after scroll-start, before the leftover-budget prefetch warms) with
+**top=40**:
+
+**8-frame window: budget 110.8% (OVER), `VInt_Lag` 451 (0.3%), `total_cycles`
+141805.** `TileCache_FillRow` 60681 (42.8%, crossing-inflated), `Parallax_Update`
+22417, **`TileCache_DecompressBlock` 6121 (4.3%) + `S4LZ_DecompressDict` 5100 (3.6%)
+≈ 11k**, `FindStagedBlock` 4284 (12 calls). Cache Top 2→22 (the cache catching up).
+
+**This is the A/B harness:** schedule = `$00900000` start, +16px/f, `get_profiler_frames(8)`.
+Deterministic (the first-8-frames cold crossings always fire). The optimization is
+proven by re-running THIS and watching budget < 100% + VInt_Lag → 0.
+
+**NUANCE that refines R2 (surface before the FillRow-only path):** R2's "FillRow's
+own loop dominates, NOT architectural" was the WARM 20-frame average — correct for
+STEADY frames (no lag there). But the frames that actually LAG are the cold
+crossings, and on those the **DecompressBlock spike (~11k) is a large component of
+the ~14k overrun**. So the crossing-frame overrun is NOT purely FillRow-own-loop.
+Per the budget-math warning (hoist+SR ≈ 6-8k vs ~11-14k crossing overrun) + the
+return-to-Fable-before-restructure rule, the FillRow hoist+SR is still worth doing
+(cuts steady cost + buys headroom) but is LIKELY to land short of clearing the
+crossing-frame lag — whose real driver (the cold ~5-block crossing decompress, only
+1/frame prefetched) is the architectural amortize/pre-stage lever. The A/B against
+this control will decide; if short, it returns to Fable for the arch discussion,
+NOT a silent FillRow-only conclusion.
