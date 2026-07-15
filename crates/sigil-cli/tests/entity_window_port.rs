@@ -156,9 +156,9 @@ fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
         ("COLLECTED_SLOT_SIZE", "34"),
         ("COLLECTED_PARK_SLOTS", "4"),
         ("COLLECTED_PARK_ENTRY_SIZE", "33"),
-        ("SECTION_SIZE", "$800"),
-        ("SECTION_SIZE_SHIFT", "11"),
-        ("SEC_VOID", "$FF"),
+        // SECTION_SIZE/_SHIFT/SEC_VOID moved to engine_constant_equs() (the
+        // shared twin) at the tranche-15 consolidation — supplied via the
+        // engine_constant_equs() extend below, no longer entity_window-local.
         ("MAX_TRACKED_SECTIONS", "4"),
         ("MAX_LIST_ENTRIES", "128"),
         ("ENTITY_LOAD_BUFFER", "$180"),
