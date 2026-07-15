@@ -287,3 +287,236 @@ fn tile_cache_region_matches_reference() {
 fn tile_cache_debug_region_matches_reference() {
     run(true);
 }
+
+// ============================================================================
+// Two-module link test (tranche 16) — the campaign's FIRST TAIL-CALL flip,
+// proven (not argued by construction). collision_lookup.emp and tile_cache.emp
+// are compiled, placed at their per-shape regions, and linked in ONE
+// resolve_layout + link over the union. UNIDIRECTIONAL flip:
+//   collision_lookup.emp's `jbra Tile_Cache_GetCollision` (a tail-call BRANCH,
+//   twin `bra.w`) → tile_cache.emp's owned `Tile_Cache_GetCollision` — no
+//   synthetic label. Both regions byte-compare against the reference ROM; the
+//   collision_lookup bytes match ONLY when the PC-rel disp lands on tile_cache's
+//   real symbol VMA ($4336 plain / $4F00 debug) — the flip, proven per shape.
+// (entity_window_port::two_module_ownership_flip_* is the bidirectional template.)
+// ============================================================================
+use std::collections::BTreeMap;
+
+/// Parse a .emp file, panicking on parse errors.
+fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
+    let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let (file, pdiags) = parse_str(&src);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} parse errors: {pdiags:?}", path.display()
+    );
+    file
+}
+
+/// Prepend ambient dependency modules' items to `main` (the `use`-target seam).
+fn with_ambient(
+    ambient: Vec<sigil_frontend_emp::ast::File>,
+    main: sigil_frontend_emp::ast::File,
+) -> sigil_frontend_emp::ast::File {
+    let mut items = Vec::new();
+    for d in ambient {
+        items.extend(d.items);
+    }
+    items.extend(main.items.clone());
+    sigil_frontend_emp::ast::File { module: main.module, attrs: main.attrs, items, docs: main.docs }
+}
+
+/// Lower one .emp (ambient deps prepended), place into a single-region map.
+fn lower_and_place(
+    emp_path: &Path,
+    ambient: Vec<sigil_frontend_emp::ast::File>,
+    include_root: PathBuf,
+    region: &str,
+    base: u32,
+    len: usize,
+    debug: bool,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let file = with_ambient(ambient, parse_file(emp_path));
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(include_root),
+        embed_base: None,
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} lower errors: {ldiags:?}", emp_path.display()
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} place errors: {pdiags:?}", emp_path.display()
+    );
+    (sections, module.link_asserts)
+}
+
+/// tile_cache.emp's value seam as name/value pairs (for the union dedup).
+fn tile_cache_value_pairs() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("TILE_CACHE_COLS", "80"), ("TILE_CACHE_ROWS", "60"), ("TILE_CACHE_STRIDE", "80"),
+        ("TILE_CACHE_NT_SIZE", "9600"), ("TILE_CACHE_COLL_ROWS", "30"),
+        ("TILE_CACHE_COLL_SIZE", "2400"), ("TILE_CACHE_COLL_PLANES", "2"),
+        ("TILE_CACHE_MARGIN_H", "20"), ("TILE_CACHE_MARGIN_V", "16"),
+        ("BLOCK_TILE_SIZE", "16"), ("BLOCK_TILE_SHIFT", "4"), ("BLOCK_NT_SIZE", "512"),
+        ("BLOCK_COLL_ROWS", "8"), ("BLOCK_COLL_COLS", "16"), ("BLOCK_COLL_PLANE_SIZE", "128"),
+        ("BLOCK_COLL_SIZE", "256"), ("BLOCK_RAW_SIZE", "768"), ("BLOCK_STAGE_SLOTS", "12"),
+        ("BLOCK_DECOMP_BUDGET", "6"), ("BLOCK_INDEX_SIZE", "1024"), ("VFILL_ROWS_PER_FRAME", "2"),
+        ("Act_sec_grid_ptr", "$00"), ("Act_grid_w", "$04"), ("Act_grid_h", "$06"),
+        ("Sec_sec_block_index", "$00"), ("Sec_sec_block_dict", "$2C"),
+        ("Sec_sec_block_dict_len", "$40"), ("Sec_len", "$42"),
+    ]
+}
+
+/// tile_cache.emp's cross-seam ADDRESS labels for the two-module link — the byte
+/// gate's list MINUS `Tile_Cache_GetCollision` (owned by tile_cache.emp here).
+/// (tile_cache's list never synthesized it — it is internal — so this is just
+/// the same 24 base labels + the 2 debug MDDBG handlers.)
+fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
+    let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
+    let mut v: Vec<(&'static str, u32)> = vec![
+        ("Cache_Left_Col", pick(pins::CACHE_LEFT_COL)),
+        ("Cache_Head_Col", pick(pins::CACHE_HEAD_COL)),
+        ("Cache_Top_Row", pick(pins::CACHE_TOP_ROW)),
+        ("Cache_Bottom_Row", pick(pins::CACHE_BOTTOM_ROW)),
+        ("Cache_Origin_Col", pick(pins::CACHE_ORIGIN_COL)),
+        ("Cache_Origin_Row", pick(pins::CACHE_ORIGIN_ROW)),
+        ("Cache_Fill_Last_Frame", pick(pins::CACHE_FILL_LAST_FRAME)),
+        ("Cache_Fill_Resume_Col", pick(pins::CACHE_FILL_RESUME_COL)),
+        ("Cache_Fill_Resume_Row", pick(pins::CACHE_FILL_RESUME_ROW)),
+        ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROW_RESUME_ROW)),
+        ("Cache_Fill_RowResume_Col", pick(pins::CACHE_FILL_ROW_RESUME_COL)),
+        ("Cache_Fill_Budget", pick(pins::CACHE_FILL_BUDGET)),
+        ("Cache_Fill_Rows_Left", pick(pins::CACHE_FILL_ROWS_LEFT)),
+        ("Cache_Prev_Cam_Row", pick(pins::CACHE_PREV_CAM_ROW)),
+        ("Block_Stage_Keys", pick(pins::BLOCK_STAGE_KEYS)),
+        ("Block_Stage_Next", pick(pins::BLOCK_STAGE_NEXT)),
+        ("Block_Stage_Buffers", pick(pins::BLOCK_STAGE_BUFFERS)),
+        ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
+        ("Tile_Cache_Collision", pick(pins::TILE_CACHE_COLLISION)),
+        ("Camera_X", pick(pins::CAMERA_X)),
+        ("Camera_Y", pick(pins::CAMERA_Y)),
+        ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
+        ("Frame_Counter", pick(pins::FRAME_COUNTER)),
+        ("Section_Plane_Dirty", pick(pins::SECTION_PLANE_DIRTY)),
+        ("S4LZ_DecompressDict", pick(pins::S4_LZ_DECOMPRESS_DICT)),
+    ];
+    if debug {
+        v.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+        v.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
+    }
+    v
+}
+
+fn two_module_flip(debug: bool, rom_name: &str) {
+    let aeon =
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = PathBuf::from(aeon);
+    let Ok(refrom) = std::fs::read(aeon.join(rom_name)) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: {rom_name}");
+        }
+        eprintln!("skip: reference ROM {rom_name} missing");
+        return;
+    };
+
+    let tc_base = region_base(debug);
+    let (mut tc_sections, tc_asserts) = lower_and_place(
+        &aeon.join("engine/level/tile_cache.emp"),
+        vec![],
+        aeon.join("engine/level"),
+        "tile_cache",
+        tc_base,
+        region_len(debug),
+        debug,
+    );
+
+    let cl_base = if debug { pins::COLLISION_LOOKUP.debug_base } else { pins::COLLISION_LOOKUP.plain_base };
+    let (mut cl_sections, cl_asserts) = lower_and_place(
+        &aeon.join("engine/level/collision_lookup.emp"),
+        vec![parse_file(&aeon.join("engine/system/constants.emp"))],
+        aeon.join("engine/level"),
+        "collision_lookup",
+        cl_base,
+        pins::COLLISION_LOOKUP.plain_len,
+        debug,
+    );
+
+    // Union the value seam (dedup, assert consistent).
+    let mut vmap: BTreeMap<&str, &str> = BTreeMap::new();
+    let cl_twin: Vec<(&str, &str)> = sigil_harness::test_support::engine_constant_equs();
+    for (n, v) in tile_cache_value_pairs().into_iter().chain(cl_twin) {
+        if let Some(prev) = vmap.insert(n, v) {
+            assert_eq!(prev, v, "seam value conflict for `{n}`");
+        }
+    }
+    let vpairs: Vec<(&str, &str)> = vmap.into_iter().collect();
+
+    // Union the address labels. collision_lookup's Cache_* are a subset of
+    // tile_cache's; Tile_Cache_GetCollision is DROPPED (now owned by tile_cache).
+    let mut lmap: BTreeMap<&str, u32> = BTreeMap::new();
+    for (n, v) in tile_cache_labels_for_link(debug) {
+        if let Some(prev) = lmap.insert(n, v) {
+            assert_eq!(prev, v, "label VMA conflict for `{n}`: {prev:#x} vs {v:#x}");
+        }
+    }
+
+    let mut sections = Vec::new();
+    sections.append(&mut tc_sections);
+    sections.append(&mut cl_sections);
+    let mut lma = 0x0100_0000u32;
+    let mut equs = sigil_harness::test_support::assemble_equ_pairs(&vpairs);
+    for sec in &mut equs {
+        sec.lma = lma;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.append(&mut equs);
+    lma += 0x10_0000;
+    for (name, vma) in lmap {
+        let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        for mut s in assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS ({name}): {d:?}")).sections.drain(..) {
+            s.lma = lma;
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            sections.push(s);
+        }
+        lma += 0x10_0000;
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+
+    let mut all = tc_asserts;
+    all.extend(cl_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(adiags.iter().all(|d| d.level != sigil_span::Level::Error), "drift guards: {adiags:?}");
+
+    let tr = &refrom[tc_base as usize..tc_base as usize + region_len(debug)];
+    assert_region_matches(&linked.section("tile_cache").expect("tile_cache region").bytes, tr, "tile_cache (two-module flip)");
+    let cr = &refrom[cl_base as usize..cl_base as usize + pins::COLLISION_LOOKUP.plain_len];
+    assert_region_matches(&linked.section("collision_lookup").expect("collision_lookup region").bytes, cr, "collision_lookup (two-module flip)");
+}
+
+#[test]
+fn two_module_tail_call_flip_plain() {
+    two_module_flip(false, "s4.bin");
+}
+
+#[test]
+fn two_module_tail_call_flip_debug() {
+    two_module_flip(true, "s4.debug.bin");
+}
