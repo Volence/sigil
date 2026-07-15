@@ -84,6 +84,10 @@ pub const ENTITY_WINDOW: Region = Region { plain_base: 0x33FC, debug_base: 0x3B5
 /// `Load_Object` .. `Plane_Buffer_Reset` — gate `SIGIL_EMP_LOAD_OBJECT`. tests: load_object_port, entity_window_port
 pub const LOAD_OBJECT: Region = Region { plain_base: 0x3FDC, debug_base: 0x4BA6, plain_len: 0x82, debug_len: 0x82 };
 
+/// `Tile_Cache_GetTile` .. `Collision_GetType` — gate `SIGIL_EMP_TILE_CACHE`. tests: tile_cache_port
+/// SHAPE-VARYING: debug carries +0xB8 from the `.raw_direct` `assert.l`/`assert.w` block.
+pub const TILE_CACHE: Region = Region { plain_base: 0x42FA, debug_base: 0x4EC4, plain_len: 0x924, debug_len: 0x9DC };
+
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
 pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x4C1E, debug_base: 0x58A0, plain_len: 0x24, debug_len: 0x24 };
 
@@ -245,8 +249,32 @@ pub const CACHE_ORIGIN_ROW: Pin = Pin { plain: 0xFFFFA842, debug: 0xFFFFA866 };
 /// `Plane_Buffer_Ptr`. tests: section_port
 pub const PLANE_BUFFER_PTR: Pin = Pin { plain: 0xFFFFA72C, debug: 0xFFFFA750 };
 
-/// `Tile_Cache_Nametable`. tests: section_port
+/// `Tile_Cache_Nametable`. tests: section_port, tile_cache_port
 pub const TILE_CACHE_NAMETABLE: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
+
+/// `Tile_Cache_Collision`. tests: tile_cache_port
+pub const TILE_CACHE_COLLISION: Pin = Pin { plain: 0xFFFF2580, debug: 0xFFFF2580 };
+
+/// `Frame_Counter`. tests: tile_cache_port
+pub const FRAME_COUNTER: Pin = Pin { plain: 0xFFFF8002, debug: 0xFFFF8002 };
+
+/// Block-staging RAM (parallel to `BlockStage_PtrTable`). tests: tile_cache_port
+pub const BLOCK_STAGE_KEYS: Pin = Pin { plain: 0xFFFFA854, debug: 0xFFFFA878 };
+pub const BLOCK_STAGE_NEXT: Pin = Pin { plain: 0xFFFFA884, debug: 0xFFFFA8A8 };
+pub const BLOCK_STAGE_BUFFERS: Pin = Pin { plain: 0xFFFF3842, debug: 0xFFFF3842 };
+
+/// `Cache_Fill_*` per-frame fill trackers + `Cache_Prev_Cam_Row`. tests: tile_cache_port
+pub const CACHE_FILL_LAST_FRAME: Pin = Pin { plain: 0xFFFFA844, debug: 0xFFFFA868 };
+pub const CACHE_FILL_BUDGET: Pin = Pin { plain: 0xFFFFA84A, debug: 0xFFFFA86E };
+pub const CACHE_FILL_RESUME_COL: Pin = Pin { plain: 0xFFFFA846, debug: 0xFFFFA86A };
+pub const CACHE_FILL_RESUME_ROW: Pin = Pin { plain: 0xFFFFA848, debug: 0xFFFFA86C };
+pub const CACHE_FILL_ROWRESUME_ROW: Pin = Pin { plain: 0xFFFFA84C, debug: 0xFFFFA870 };
+pub const CACHE_FILL_ROWRESUME_COL: Pin = Pin { plain: 0xFFFFA84E, debug: 0xFFFFA872 };
+pub const CACHE_FILL_ROWS_LEFT: Pin = Pin { plain: 0xFFFFA850, debug: 0xFFFFA874 };
+pub const CACHE_PREV_CAM_ROW: Pin = Pin { plain: 0xFFFFA852, debug: 0xFFFFA876 };
+
+/// `S4LZ_DecompressDict` (compression, AS-side ROM). tests: tile_cache_port
+pub const S4LZ_DECOMPRESS_DICT: Pin = Pin { plain: 0x231C, debug: 0x23AA };
 
 /// `Player_1`. tests: collision_port, rings_port
 pub const PLAYER_1: Pin = Pin { plain: 0xFFFF89EE, debug: 0xFFFF8A12 };
