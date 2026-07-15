@@ -130,6 +130,13 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("COLLISION_TOUCH", "12"),
         ("ST_IN_AIR", "3"),
         ("ST_ON_OBJECT", "5"),
+        // Section / level geometry (constants.asm) — consolidated into the
+        // engine.constants twin at the tranche-15 section.emp port (its 3rd
+        // consumer of SECTION_SIZE_SHIFT); entity_window + section read them
+        // via `use`, so the seam now supplies the values their guards read.
+        ("SECTION_SIZE", "$0800"),
+        ("SECTION_SIZE_SHIFT", "11"),
+        ("SEC_VOID", "$FF"),
         // Ring geometry/animation (constants.asm:401-403) + VDP sprite-table
         // geometry (truth: engine/objects/sprites.asm:6-8 — kill-list row 17),
         // tranche 8. The GAME-owned ring capacity constants (MAX_RING_BUFFER
@@ -251,14 +258,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_50() {
+    fn engine_constants_blob_assembles_and_defines_all_53() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            50,
-            "the twin guards 50 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2)"
+            53,
+            "the twin guards 53 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3)"
         );
     }
 

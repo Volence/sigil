@@ -207,11 +207,26 @@ fn lower_m68k_instr(
             return;
         }
         _ => {
+            // Two width-PINNED absolute operands (a mem-to-mem move, e.g.
+            // `move.w (A).w, (B).w`) is a single finished encoding with two
+            // fixed-width fixups — no relaxation (both widths are authored).
+            // A bare (relaxable) operand among 2+ would need two-way RelaxAbsSym
+            // (unbuilt) and still diagnoses.
+            if let [
+                CodeOperand::AbsSym { target: s, long: s_long },
+                CodeOperand::AbsSym { target: d, long: d_long },
+            ] = ops
+            {
+                lower_m68k_two_pinned_abs(
+                    m, size, (s, *s_long), (d, *d_long), span, builder, diags,
+                );
+                return;
+            }
             push_err(
                 diags,
                 span,
-                "[lower.abs-sym-operand] two symbolic operands in one instruction is not yet \
-                 supported",
+                "[lower.abs-sym-operand] two symbolic operands are supported only when both \
+                 widths are pinned ((Sym).w/(Sym).l)",
             );
             return;
         }
@@ -824,6 +839,54 @@ fn lower_m68k_imm_link(
         let abs_kind = if long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
         df.fixups.push(Fixup { kind: abs_kind, offset: 2 + imm_field_width, target: abs_target });
     }
+    emit_data_frag(builder, df);
+}
+
+/// Lower a straight-line instruction whose TWO operands are both width-PINNED
+/// symbolic absolutes (`(Sym).w`/`(Sym).l`) — a memory-to-memory move, e.g.
+/// section.asm's `move.w (Cache_Top_Row).w, (Section_Top_Row_Written).w`.
+///
+/// Both widths are authored, so there is ONE finished encoding (no RelaxAbsSym
+/// candidate pair): encode with zeroed abs placeholders, then place two
+/// fixed-width fixups. 68k extension-word order is source-then-destination, so
+/// the source fixup sits right after the opcode word (offset 2) and the
+/// destination fixup after the source's ext field (offset `2 + src_width`).
+/// `move` takes exactly two operands and neither carries an extra ext word, so
+/// no other operand can shift these offsets.
+fn lower_m68k_two_pinned_abs(
+    m: M68kMnemonic,
+    size: M68kSize,
+    src: (&str, bool),
+    dst: (&str, bool),
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let (src_target, src_long) = src;
+    let (dst_target, dst_long) = dst;
+    let abs_op = |long: bool| if long { M68kOperand::AbsL(0) } else { M68kOperand::AbsW(0) };
+    let enc_ops = vec![abs_op(src_long), abs_op(dst_long)];
+    let refined = refine_m68k_mnemonic(m, &enc_ops);
+    let inst = M68kInst { mnemonic: refined, size, ops: enc_ops };
+    let mut df = match M68kBackend.lower_inst(&inst, span) {
+        Ok(df) => df,
+        Err(e) => {
+            push_err(diags, span, e.message);
+            return;
+        }
+    };
+    let abs_kind = |long: bool| if long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
+    let src_width = if src_long { 4 } else { 2 };
+    df.fixups.push(Fixup {
+        kind: abs_kind(src_long),
+        offset: 2,
+        target: Expr::Sym(src_target.to_string()),
+    });
+    df.fixups.push(Fixup {
+        kind: abs_kind(dst_long),
+        offset: 2 + src_width,
+        target: Expr::Sym(dst_target.to_string()),
+    });
     emit_data_frag(builder, df);
 }
 

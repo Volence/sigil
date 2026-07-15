@@ -156,9 +156,9 @@ fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
         ("COLLECTED_SLOT_SIZE", "34"),
         ("COLLECTED_PARK_SLOTS", "4"),
         ("COLLECTED_PARK_ENTRY_SIZE", "33"),
-        ("SECTION_SIZE", "$800"),
-        ("SECTION_SIZE_SHIFT", "11"),
-        ("SEC_VOID", "$FF"),
+        // SECTION_SIZE/_SHIFT/SEC_VOID moved to engine_constant_equs() (the
+        // shared twin) at the tranche-15 consolidation — supplied via the
+        // engine_constant_equs() extend below, no longer entity_window-local.
         ("MAX_TRACKED_SECTIONS", "4"),
         ("MAX_LIST_ENTRIES", "128"),
         ("ENTITY_LOAD_BUFFER", "$180"),
@@ -349,4 +349,207 @@ fn entity_window_region_matches_reference() {
 #[test]
 fn entity_window_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin", 1);
+}
+
+// ============================================================================
+// Two-module link test (tranche 15) — the campaign's FIRST symbol-ownership
+// FLIP, proven (not argued by construction). entity_window.emp and section.emp
+// are compiled, placed at their per-shape regions, and linked in ONE
+// resolve_layout + link over the union. BIDIRECTIONAL flip:
+//   entity_window.emp's `jbsr Section_GetSecPtrXY`/`FlatIDXY` → section.emp,
+//   section.emp's `jsr EntityWindow_Init` → entity_window.emp,
+// each resolving to the OTHER module's owned symbol (no synthetic label).
+// Both regions byte-compare against the reference ROM.
+// ============================================================================
+use std::collections::BTreeMap;
+
+/// section.emp's own mirrored values (engine.constants comes from
+/// entity_window's seam, not re-added). Overlaps (Act_grid_w, Sec_*) dedup in
+/// the union, asserting consistent values.
+fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("VDP_DATA", "$C00000"), ("VDP_CTRL", "$C00004"),
+        ("VRAM_PLANE_A", "$C000"), ("VRAM_PLANE_B_BYTES", "$E000"),
+        ("PLANE_H_CELLS", "64"), ("PLANE_V_CELLS", "64"), ("PLANE_BUFFER_SIZE", "1536"),
+        ("TILE_CACHE_COLS", "80"), ("TILE_CACHE_ROWS", "60"), ("TILE_CACHE_STRIDE", "80"),
+        ("TILE_CACHE_NT_SIZE", "9600"),
+        ("VRAM", "%100001"), ("CRAM", "%101011"), ("VSRAM", "%100101"),
+        ("READ", "%001100"), ("WRITE", "%000111"), ("DMA", "%100111"),
+        ("Act_sec_grid_ptr", "$00"), ("Act_grid_w", "$04"), ("Act_grid_h", "$06"),
+        ("Act_act_bg_layout", "$0E"), ("Sec_sec_bg_layout", "$1C"), ("Sec_len", "$42"),
+    ]
+}
+
+/// section.emp's cross-seam ADDRESS labels, MINUS EntityWindow_Init (owned by
+/// entity_window.emp in the two-module link — the section→entity_window flip).
+fn section_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
+    let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
+    vec![
+        ("Draw_TileColumn", pick(pins::DRAW_TILE_COLUMN)),
+        ("Draw_TileRow_FromCache", pick(pins::DRAW_TILE_ROW_FROM_CACHE)),
+        ("Camera_X", pick(pins::CAMERA_X)),
+        ("Camera_Y", pick(pins::CAMERA_Y)),
+        ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
+        ("Section_Plane_Dirty", pick(pins::SECTION_PLANE_DIRTY)),
+        ("Section_Right_Col_Written", pick(pins::SECTION_RIGHT_COL_WRITTEN)),
+        ("Section_Left_Col_Written", pick(pins::SECTION_LEFT_COL_WRITTEN)),
+        ("Section_Top_Row_Written", pick(pins::SECTION_TOP_ROW_WRITTEN)),
+        ("Section_Bottom_Row_Written", pick(pins::SECTION_BOTTOM_ROW_WRITTEN)),
+        ("Cache_Left_Col", pick(pins::CACHE_LEFT_COL)),
+        ("Cache_Head_Col", pick(pins::CACHE_HEAD_COL)),
+        ("Cache_Top_Row", pick(pins::CACHE_TOP_ROW)),
+        ("Cache_Bottom_Row", pick(pins::CACHE_BOTTOM_ROW)),
+        ("Cache_Origin_Col", pick(pins::CACHE_ORIGIN_COL)),
+        ("Cache_Origin_Row", pick(pins::CACHE_ORIGIN_ROW)),
+        ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
+        ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
+    ]
+}
+
+/// Lower one .emp (ambient deps prepended), place into a single-region map.
+fn lower_and_place(
+    emp_path: &std::path::Path,
+    ambient: Vec<sigil_frontend_emp::ast::File>,
+    include_root: PathBuf,
+    region: &str,
+    base: u32,
+    len: usize,
+    debug: bool,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let file = with_ambient(ambient, parse_file(emp_path));
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(include_root),
+        embed_base: None,
+        defines: vec![("DEBUG".to_string(), if debug { 1 } else { 0 })],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} lower errors: {ldiags:?}", emp_path.display()
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} place errors: {pdiags:?}", emp_path.display()
+    );
+    (sections, module.link_asserts)
+}
+
+fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
+    let aeon = aeon_dir();
+    let Ok(refrom) = std::fs::read(aeon.join(rom_name)) else {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: {rom_name}");
+        }
+        eprintln!("skip: reference ROM {rom_name} missing");
+        return;
+    };
+
+    let sec_base = if debug { pins::SECTION.debug_base } else { pins::SECTION.plain_base };
+    let (mut sec_sections, sec_asserts) = lower_and_place(
+        &aeon.join("engine/level/section.emp"),
+        vec![parse_file(&aeon.join("engine/system/constants.emp"))],
+        aeon.join("engine/level"),
+        "section",
+        sec_base,
+        pins::SECTION.plain_len,
+        debug,
+    );
+    let (mut ew_sections, ew_asserts) = lower_and_place(
+        &aeon.join("engine/objects/entity_window.emp"),
+        vec![
+            parse_file(&aeon.join("engine/system/types.emp")),
+            parse_file(&aeon.join("engine/objects/sst.emp")),
+            parse_file(&aeon.join("engine/system/constants.emp")),
+        ],
+        aeon.join("engine/objects"),
+        "entity_window",
+        shape.base,
+        shape.len,
+        debug,
+    );
+
+    // Union the value seam (dedup, assert consistent).
+    let mut vmap: BTreeMap<&str, &str> = BTreeMap::new();
+    for pairs in [
+        sigil_harness::test_support::sst_field_equs(),
+        sigil_harness::test_support::engine_constant_equs(),
+        entity_window_equs(),
+        section_value_pairs(),
+    ] {
+        for (n, v) in pairs {
+            if let Some(prev) = vmap.insert(n, v) {
+                assert_eq!(prev, v, "seam value conflict for `{n}`");
+            }
+        }
+    }
+    let vpairs: Vec<(&str, &str)> = vmap.into_iter().collect();
+
+    // Union the address labels: entity_window's MINUS the two flipped to
+    // section.emp; section's MINUS EntityWindow_Init (flipped to entity_window).
+    let mut lmap: BTreeMap<&str, u32> = BTreeMap::new();
+    for (n, v) in shape.labels {
+        if *n == "Section_GetSecPtrXY" || *n == "Section_FlatIDXY" { continue; }
+        lmap.insert(n, *v);
+    }
+    for (n, v) in section_labels_for_link(debug) {
+        if let Some(prev) = lmap.insert(n, v) {
+            assert_eq!(prev, v, "label VMA conflict for `{n}`: {prev:#x} vs {v:#x}");
+        }
+    }
+
+    let mut sections = Vec::new();
+    sections.append(&mut sec_sections);
+    sections.append(&mut ew_sections);
+    let mut lma = 0x0100_0000u32;
+    let mut equs = sigil_harness::test_support::assemble_equ_pairs(&vpairs);
+    for sec in &mut equs {
+        sec.lma = lma;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.append(&mut equs);
+    lma += 0x10_0000;
+    for (name, vma) in lmap {
+        let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        for mut s in assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS ({name}): {d:?}")).sections.drain(..) {
+            s.lma = lma;
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            sections.push(s);
+        }
+        lma += 0x10_0000;
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+
+    let mut all = sec_asserts;
+    all.extend(ew_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(adiags.iter().all(|d| d.level != sigil_span::Level::Error), "drift guards: {adiags:?}");
+
+    let sr = &refrom[sec_base as usize..sec_base as usize + pins::SECTION.plain_len];
+    assert_region_matches(&linked.section("section").expect("section region").bytes, sr, "section (two-module flip)");
+    let er = &refrom[shape.base as usize..shape.base as usize + shape.len];
+    assert_region_matches(&linked.section("entity_window").expect("entity_window region").bytes, er, "entity_window (two-module flip)");
+}
+
+#[test]
+fn two_module_ownership_flip_plain() {
+    two_module_flip(&PLAIN, false, "s4.bin");
+}
+
+#[test]
+fn two_module_ownership_flip_debug() {
+    two_module_flip(&DEBUG, true, "s4.debug.bin");
 }

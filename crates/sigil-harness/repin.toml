@@ -144,6 +144,16 @@ gate = "SIGIL_EMP_COLLISION_LOOKUP"
 tests = ["collision_lookup_port"]
 
 [[region]]
+# Tranche 15 — the section-streaming engine (§4). Biggest region yet. End is the
+# next placement: camera.asm's Camera_Init (engine.inc:330; end-is-next-placement,
+# the load_object precedent). Plain $513E..$5528 = $3EA bytes.
+name = "section"
+start = "Section_Init"
+end = "Camera_Init"
+gate = "SIGIL_EMP_SECTION"
+tests = ["section_port"]
+
+[[region]]
 # The one region whose end carries no listing symbol: the include's content ends
 # unlabeled after Sound_FadeIn (next placement is org $10000 / sound_debug.asm).
 # Shape-DEPENDENT length as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
@@ -342,11 +352,75 @@ tests = ["game_loop_port"]
 
 [[symbol]]
 name = "Cache_Left_Col"
-tests = ["collision_lookup_port"]
+tests = ["collision_lookup_port", "section_port"]
 
 [[symbol]]
 name = "Tile_Cache_GetCollision"
 tests = ["collision_lookup_port"]
+
+# section (tranche 15) — cross-seam ROM procs + the RAM symbols section.emp's
+# abs.w operands and two mem-to-mem fixups resolve against.
+[[symbol]]
+name = "Draw_TileColumn"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Draw_TileRow_FromCache"
+tests = ["section_port"]
+
+[[symbol]]
+name = "EntityWindow_Init"
+tests = ["section_port"]
+
+# (Camera_X/Camera_Y/Current_Act_Ptr already pinned below — section_port added
+# to their existing entries rather than duplicated.)
+[[symbol]]
+name = "Section_Plane_Dirty"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Section_Right_Col_Written"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Section_Left_Col_Written"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Section_Top_Row_Written"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Section_Bottom_Row_Written"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Cache_Head_Col"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Cache_Top_Row"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Cache_Bottom_Row"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Cache_Origin_Col"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Cache_Origin_Row"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Plane_Buffer_Ptr"
+tests = ["section_port"]
+
+[[symbol]]
+name = "Tile_Cache_Nametable"
+tests = ["section_port"]
 
 # collision + rings shared RAM
 
@@ -390,11 +464,11 @@ tests = ["rings_port"]
 
 [[symbol]]
 name = "Camera_X"
-tests = ["rings_port"]
+tests = ["rings_port", "section_port"]
 
 [[symbol]]
 name = "Camera_Y"
-tests = ["rings_port"]
+tests = ["rings_port", "section_port"]
 
 # Biased camera RAM cells (A1 camera-bias fold, sprites step-5 follow-up).
 [[symbol]]
@@ -864,7 +938,7 @@ tests = ["entity_window_port"]
 
 [[symbol]]
 name = "Current_Act_Ptr"
-tests = ["entity_window_port"]
+tests = ["entity_window_port", "section_port"]
 
 [[symbol]]
 name = "Entity_Window_Active"
