@@ -1,8 +1,9 @@
 # Tranche 16 — `tile_cache.asm` port: step-0 recon + design note
 
 **Status:** step-0, owed at the Fable gate BEFORE any code.
-**Target:** `aeon/engine/level/tile_cache.asm` (1290 lines, 14 procs) — the 2D
-block-decompression tile cache (§4.7), section.emp's paired streaming sibling.
+**Target:** `aeon/engine/level/tile_cache.asm` (1290 lines, **15 procs + 1 data
+table = 16 top-level labels**) — the 2D block-decompression tile cache (§4.7),
+section.emp's paired streaming sibling.
 **Precedent-setting:** first port whose STEP-5 is the tranche's headline (the
 file is the measured lag driver), not a byte-faithful transcription with an
 optional optimize pass.
@@ -26,15 +27,20 @@ optional optimize pass.
 | `Tile_Cache_Fill` | **per-frame** entry: frame gate, budget, resume ladder | **HOT** |
 | `TileCache_FillColumn` | one column, budget-limited | hot (columns) |
 | `TileCache_FillRow` | one row (NT + collision) | **HOTTEST — the lag lever** |
-| `TileCache_HSlide`/`VSlide`/`VSlideUp` | O(1) circular evicts | hot (cheap) |
+| `TileCache_HSlide`/`VSlide`/`VSlideUp` | O(1) circular evicts (3 labels) | hot (cheap) |
 | `TileCache_Reinit` | recovery re-center+refill | **no callers — feature-dead** |
 
+(14 table rows: `BlockStage_PtrTable` is data; the Slide row groups 3 labels →
+15 procs + 1 data table = 16 top-level labels.)
+
 ### Region (shape-VARYING — DEBUG asserts in the raw-copy path)
-- **plain:** `[Tile_Cache_GetTile $42FA … Collision_GetType)` — `TileCache_Reinit`
-  @ $4BBC; region ≈ **$900**. Exact end pinned at the step-1 build.
-- **debug:** `[$4EC4 … )` — `TileCache_Reinit` @ $583E. Debug carries ≈$B8 extra
-  (the `assert.l`/`assert.w` block at donor :221-224). **Not** shape-invariant
-  (contrast load_object) — byte gate runs BOTH shapes independently.
+Fresh-listing bounds (Fable-verified at the gate):
+- **plain:** `[Tile_Cache_GetTile $42FA … Collision_GetType $4C1E)` = **$924**.
+- **debug:** `[$4EC4 … $58A0)` = **$9DC**. Debug carries **$B8** extra (the
+  `assert.l`/`assert.w` block at donor :221-224) — **not** shape-invariant
+  (contrast load_object); byte gate runs BOTH shapes independently.
+- Resume orgs for the downstream gated collision_lookup: plain $4C42 / debug
+  $58C4 (confirmed).
 - **Placement:** `engine.inc:312`, currently UNGATED, between `plane_buffer`
   (:311) and the already-gated `collision_lookup` (:313, resume org plain
   $4C42 / debug $58C4). Immediately upstream of collision_lookup.emp → the
@@ -96,13 +102,14 @@ shared struct module inside t16.
 bundling the shared-struct unwind (which collapses section + entity_window +
 act_descriptor + tile_cache offset consts in one wave) violates keep-tranches-
 small and tangles four files' re-pins into one branch. The file-local mirror
-is byte-neutral and drift-locked (the guard is the lock). **Action:** strengthen
-row 1051 to "3rd consumer confirmed" — the shared module is now the clear next
-sst-usability batch after t16 merges.
+is byte-neutral and drift-locked (the guard is the lock). **Action (R3
+condition):** amend ledger row 1051 to (a) record **3rd-consumer-confirmed**,
+and (b) name the shared `engine.structs` module as **THE next sst-usability-
+style batch after t16 merges** — a committed next step, not an open-ended
+deferral.
 
-*Flagged for Volence:* this is the one genuine SCOPE call. If you'd rather t16
-force the shared-struct module (it IS the natural forcing point at 3 consumers),
-say so and I'll re-scope — but my recommendation is the small-tranche path.
+*RULED (Fable R3):* file-local mirror, small-tranche path — the shared-struct
+module is the committed post-t16 batch. Not re-litigated.
 
 ### DQ2 — `collSrcRowBase` → file-local comptime-fn (macro-port rule)
 Donor macro body: `lsr.w #1,reg` (tile row → collision row) then `lsl.w #4,reg`
@@ -139,6 +146,15 @@ Mixed-build matrix (both gates independent): the seam symbol must resolve in all
 four combos — {tile_cache AS|emp} × {collision_lookup AS|emp}. `a1`/`d0-d2`/`a0`
 contract across the tail-call is the seam; `d3.b`=layer passes through.
 
+**R5 — flip test spec:** bind to the **`entity_window_port` two-module
+template**. This is the **campaign's first TAIL-CALL flip** (twin `bra.w
+Tile_Cache_GetCollision`, `.emp` `jbra` — a branch, not a `bsr`): the test
+asserts the **resolved displacement both shapes** (the jbra→bra.w relaxation
+must land on tile_cache.emp's pinned `Tile_Cache_GetCollision`). The packet
+**enumerates every row-861 synthetic-VMA update** (the port tests that carry a
+synthetic `Tile_Cache_GetCollision`/`Tile_Cache_Init`/`Tile_Cache_Fill` VMA —
+they flip from synthetic to real-owner as the region pins).
+
 ### DQ4 — `BlockStage_PtrTable` `rept` → step-4 construct candidate
 `rept BLOCK_STAGE_SLOTS { dc.l Block_Stage_Buffers + i*BLOCK_RAW_SIZE }` — an
 arithmetic-progression ROM ptr table. NOT `offsets` (that's `Target-Base`
@@ -158,12 +174,32 @@ Row 1057: `TileCache_FillRow` 48.9k cyc/f (38.2%), row path ~2× column path.
 
 These bases never change across the row — classic invariant-ladder hoist
 (iteration→row scope). Candidate: hoist to row-scoped a-regs (register-pressure
-permitting — the loop already juggles a0-a3; a real analysis at step 5).
-Secondary: the per-cell circular column wrap (`add origin / cmpi / sub`) may be
-strength-reducible. **Behavior-neutral cycle win → LIVE verification required**
-(oracle, OJZScroll vertical 8px/f — the exact t15 profiling scene; lag-frame
-counter is ground truth, not the profiler alone). Detailed per-proc step-5
-interrogation table at step 5; headline recorded here.
+permitting — **a1 is repurposed mid-cell for the plane-B row base** (donor
+:1145), so the hoist analysis is real work, not mechanical; the loop juggles
+a0-a3). Secondary: the per-cell circular column wrap (`add origin / cmpi / sub`)
+may be strength-reducible.
+
+**R2 — the worst-case probe runs NOW (before step-5 design lock), not "at step
+5".** The scope call (invariant-hoist vs architectural amortize/pre-stage) gets
+made WITH DATA, so §6's "deeper restructure OUT" is NOT decided yet — it's
+decided by these numbers:
+- **Scene:** OJZ vertical at **fall-speed 16 px/f (2 rows/frame)** — VInt_Lag
+  already fired at 8 px/f, so 16 is the real worst case. **Pre-sanctioned
+  rider:** if the test scene can't drive 16 px/f yet, add a debug scroll-speed
+  knob to it.
+- **Split `TileCache_FillRow` EXCLUSIVE vs INCLUSIVE.** The 48.9k cyc/f is
+  INCLUSIVE (it calls FindStagedBlock/DecompressBlock). The 3-`lea` hoist is
+  worth tens of cycles/cell = single-digit % alone. **If DecompressBlock/staging
+  dominates the inclusive figure, the real lever is architectural** (amortize /
+  pre-stage), and THAT decision goes to Fable/Volence BEFORE any code.
+- **Numeric target (on record):** 2 rows/frame of fill inside the frame
+  deadline, **zero VInt_Lag**.
+- **Method (genesis-dev):** run the emulator MCP **foreground** (subagents
+  deadlock it); **confirm the loaded ROM is my build first** (hash-compare);
+  lag-frame counter is ground truth, not the profiler alone.
+
+Detailed per-proc step-5 interrogation table at step 5; the probe numbers gate
+the step-5 approach.
 
 ### DQ6 — DEBUG diagnostics (standard, shipped constructs)
 - `if Sec_len<>66 error "…"` → comptime `ensure` (DQ1, drift lock).
@@ -190,7 +226,11 @@ scaffolding dead code → **flag to Volence, never auto-cut** (the
 - **Flip proof:** two-module link test collision_lookup.emp↔tile_cache.emp
   (DQ3) — the gate artifact named in the packet.
 - Mixed-build acceptance (4-combo gate matrix) + negative probes + gate-off
-  neutrality (both shapes rebuild to canonical 11382fa7/36bf0f17).
+  neutrality (both shapes rebuild to canonical **plain 452500/crc32 5a47851a,
+  debug 460521/b0ceca0b** — re-verified on merged master today; supersedes the
+  pre-t15-merge 11382fa7/36bf0f17. Baseline = sigil d030d4d+52b99d7 / aeon
+  6b71dd2; strict = `SIGIL_STRICT_GATE=1 cargo test --workspace`, 193 suites /
+  2248 green).
 - Harness: `tile_cache_port.rs` both shapes; synthetic VMAs per row 861.
 
 ## 5. Probes (binding-class stated — probe-fidelity rule)
@@ -205,7 +245,10 @@ scaffolding dead code → **flag to Volence, never auto-cut** (the
 
 ## 6. Scope
 One file (`tile_cache.emp`) + its gate + `coll_src_row_base` + the flip test +
-the file-local Sec/Act mirror. Shared struct module, BlockStage table construct,
-and any deeper step-5 restructure beyond the invariant hoist are OUT (deferred /
-step-4-decided / measured-first). Keep-tranches-small holds even though this is
-one big file.
+the file-local Sec/Act mirror. Shared struct module and the BlockStage table
+construct are OUT (deferred / step-4-decided). **The step-5 depth is NOT
+pre-scoped (R2):** whether it's the invariant-hoist (bounded) or an architectural
+amortize/pre-stage lever is decided by the worst-case probe numbers (16 px/f,
+FillRow exclusive-vs-inclusive) BEFORE step-5 code — if staging dominates, the
+architectural call goes to Fable/Volence first. Keep-tranches-small holds for
+the transcribe/modernize scope; the optimize scope follows the data.
