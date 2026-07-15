@@ -210,6 +210,16 @@ re-green. No emulator time needed at this step.
   - **Cold-reader test** — trace one frame/call through the file using
     only headers and comments; every point where you must read the
     implementation to know what happens next is a finding.
+  - **Codename-reference audit (2026-07-15 — the noticing clause's
+    first addition, from the corpus back-track)** — a comment may cite
+    a DURABLE anchor (spec §, kill-list row, a named design doc); it
+    may NOT justify by session codename ("item 11", "retro-fix batch
+    2", "finding 3", "A1/A2", "tranche 11") — a cold reader can't
+    resolve those. Replace the codename with the behavioral reason
+    (usually already adjacent in the same comment); history lives in
+    commits and notes. Ratified earlier as the exhibit-comment rule;
+    the 2026-07-15 audit found ~40 sites / 16 files (ledgered,
+    at-next-touch).
   - **Noticing clause (2026-07-15)** — did this file expose a
     reads-wrong CLASS no line above covers? Propose it in the packet;
     ratified lines join this list.
