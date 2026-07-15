@@ -135,7 +135,12 @@ re-green. No emulator time needed at this step.
      comptime-fn / asm-template bodies.
   4. Brace-indent file-wide.
   5. The idiom list walked item-by-item (`Sst.field`, bareword
-     `winptr`/`bankid`, label-in-immediate, typed VDP fns, …) with
+     `winptr`/`bankid`, label-in-immediate, typed VDP fns, contract
+     reglists in movem-RANGE form — `clobbers(d0-d7/a0-a4)`, not comma
+     enumeration, wherever a ≥2 contiguous run exists (C1 item 2
+     grammar; added 2026-07-15 after t15 shipped three enumerated
+     13-register contracts — the form existed in the corpus since
+     sound_api but was never ON this list; Volence's catch), …) with
      explicit not-applicable-because outcomes — "checked against the
      list" is the deliverable, silence is not.
   6. **The noticing clause**: does THIS file suggest a house-format item
