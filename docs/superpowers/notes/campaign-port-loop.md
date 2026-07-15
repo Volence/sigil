@@ -3,6 +3,10 @@
 **CHANGELOG (re-read this doc at each step boundary — it changes
 mid-campaign, and a ruling ratified after your last read still binds
 you):**
+- 2026-07-15 (2nd): step-2 CHECKLIST formalized (was the only judgment
+  step with no enforced list) + the NOTICING clause (step 2 is
+  self-extending per file) + the FEED-FORWARD rule (a shipped feature
+  with a spelling implication adds its step-2 line same-change).
 - 2026-07-15: macro-port rule (a donor macro's .emp counterpart is an
   INTERFACE REDESIGN, not a transliteration — named block before Step 4;
   hooks in Steps 1 and 4; ratifying it obliges a one-time retroactive
@@ -74,6 +78,42 @@ re-green. No emulator time needed at this step.
   the `}`. Formatting-only (bytes unaffected); existing files re-indent
   at their next touch, not as a dedicated wave (a future `sigil fmt`
   would mechanize this — ledgered, zero tooling demand yet).
+
+  **The step-2 checklist (Volence-ratified 2026-07-15 — step 2 previously
+  had NO enforced list, making it the easiest step to declare done on the
+  loudest item; the packet's step-2 section is now the FILLED checklist,
+  same enforcement as steps 3(a)/3(b)/5):**
+  1. Branch conversions (bare Bcc, `jbra`/`jbsr`) INCLUDING the
+     region-shrink/re-pin/twin-lockstep wave they trigger — the packet
+     names the byte delta and where downstream absorbs it (org shield vs
+     re-pin propagation). Checked, not assumed.
+  2. Every structural width-pin carries its site comment naming the
+     exception class — an UNCOMMENTED kept width is a miss even when
+     keeping it is correct (retro-check 2026-07-15: `aabb.emp:62 bpl.s`
+     was the corpus's single uncommented pin; everything else conformed).
+  3. Bare-symbol width-rule spellings complete — including inside
+     comptime-fn / asm-template bodies.
+  4. Brace-indent file-wide.
+  5. The idiom list walked item-by-item (`Sst.field`, bareword
+     `winptr`/`bankid`, label-in-immediate, typed VDP fns, …) with
+     explicit not-applicable-because outcomes — "checked against the
+     list" is the deliverable, silence is not.
+  6. **The noticing clause**: does THIS file suggest a house-format item
+     the list lacks? Step 2 is SELF-EXTENDING — the campaign iterates
+     the format file-by-file, so a spelling this file does awkwardly is
+     a candidate list entry; propose it in the packet, ratified
+     additions join this checklist.
+
+  **The feed-forward rule (Volence-ratified 2026-07-15):** every language
+  feature or construct that ships with a call-site SPELLING implication
+  adds its line to the step-2 checklist IN THE SAME CHANGE — the kill-row
+  same-commit discipline applied to the house format. The feature's
+  shipping packet names the new spelling as house format; future ports
+  convert at port time; prior files join the at-next-touch backlog via
+  the step-6 sweep. (`jbra`/`jbsr`, `assert`, `Sst.field`, and the typed
+  VDP interface all followed this path informally — it is now the rule,
+  so step 3(a)'s discoveries compound into step 2 instead of relying on
+  memory.)
 
 **Step 3 — Retrospect**: three explicit deliverables —
   (a) **language/format asks**: what did this port need that the language
