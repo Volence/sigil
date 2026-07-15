@@ -259,3 +259,35 @@ SEPARATE post-t15 batch, already ledgered, NOT folded in here.)
 **Sweep verdict:** every addition is not-an-instance (1, 2), not-retrofitted-
 with-reason (3), or process/feed-forward (4). No corpus retrofit owed;
 no new ledger row from the sweep. Merge-ready pending the hot-path second look.
+
+## Second look + live probe (Fable)
+
+**Hot-path second look — APPROVED.** The clamp-ladder + Plane_Buffer_Ptr budget
+lines held under a fresh re-walk. The asymmetric buffer reserves (rows reserve
+`4 + PLANE_H_CELLS*2`, columns `8 + PLANE_V_CELLS*2`) verified correct against
+`Draw_TileRow_FromCache`'s ACTUAL emission — rows never seam-split (one entry),
+so the row reserve is right; columns can split at the NT 63/0 seam (two entries),
+so the larger column reserve is right.
+
+**OJZ streaming probe — RUN LIVE (Fable; oracle, worktree s4.debug.bin,
+OJZScroll, 120-frame averages, both axes).** The static bound is superseded by
+measured numbers (do NOT ratify the bound):
+- **Horizontal 8px/f:** `Section_UpdateColumns` = **6,043 cyc/f (4.7%)** inclusive;
+  `Draw_TileColumn` = 5,404 inside it → section's own clamp/scan ≈ **640 cyc/f**.
+  **Zero lag** (VSync idle 21.9%).
+- **Vertical 8px/f:** `Section_UpdateColumns` = **12,679 (9.9%)** incl.
+  `Draw_TileRow_FromCache` 11,707 → own ≈ **970 cyc/f**. Rows ≈ 2× columns
+  (11.7k vs 5.4k) — the per-cell circular-cache arithmetic in the row path.
+- **`Section_FlatIDXY` = 92 cyc/f live** — **R4 keep-repeated-add ratified
+  empirically** (the ≤2-iteration multiply is negligible live).
+- **`EntityWindow_RescanY` = 257 cyc/f (0.2%) — FIRST nonzero ever** (+RescanRings
+  214, TrySpawnRing 161). **The RescanY streaming-profile debt CLOSES** (the
+  churn-packet OJZ row — the profile that stayed at 0% for want of a streaming
+  scene now has live numbers).
+- **Lag driver is NOT section** — VInt_Lag fired under sustained vertical
+  streaming, driven by `TileCache_FillRow` **48,939 cyc/f avg (38.2%)** /
+  `Tile_Cache_Fill` ~40%. Section's own ≈1k is not the driver; the tile_cache
+  domain is (pre-recon ledger jot below).
+
+**Verdict:** section.emp is hot-path-clean; the streaming cost is bounded and
+lag-free for its own work; the lag lever is tile_cache, a separate domain.
