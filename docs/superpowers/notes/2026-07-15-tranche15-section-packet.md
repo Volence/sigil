@@ -209,3 +209,53 @@ recorded, no new construct/optimize triggered. **Retrospect is DRY.**
 ## Small fixes applied this pass (byte-neutral)
 - FillInitial twin header `Clobbers: none` → `Clobbers: d0` (contract audit).
 - Cross-clamp header note on UpdateColumns (cold-reader).
+
+## Step 6 — corpus sweep
+
+Enumeration of this tranche's additions across ALL prior `.emp` files; every
+outcome named. (The retro macro-interface batch — `vram_art` etc. — is a
+SEPARATE post-t15 batch, already ledgered, NOT folded in here.)
+
+1. **Mem-to-mem two-pinned-abs spelling** — **NOT-AN-INSTANCE corpus-wide,
+   structural.** Grepped every ported `.emp` and every ported `.asm` twin for
+   `move.X (sym).w/.l, (sym).w/.l` (two memory-symbolic operands): **zero hits**
+   (section's 2 excluded). The reasoning is structural, not just empirical: a
+   ported file containing the pattern could NOT have reached byte-green before
+   the lowering feature existed — it would have hit the "two symbolic operands"
+   diagnostic — so the ported corpus is provably clean by construction. The 5
+   demand sites are all in UNPORTED files (section ×2 — now converted; vblank ×3
+   — pending vblank.asm's port). No retrofit; no ledger (the vblank sites convert
+   at vblank's port time).
+
+2. **Typed VDP command interface** (`vdp_comm`/`vdp_comm_reg` + VdpTarget/VdpOp)
+   — **NOT-AN-INSTANCE.** section.emp is the SOLE `vdp_comm`/`vdpComm` consumer
+   in the `.emp` corpus (`grep -rl` = section.emp only). Eyeballed the two
+   plausibles: `vdp_init.emp` and `hblank.emp` construct no VDP COMMAND words —
+   their `#$8xxx` writes are VDP REGISTER writes (excluded, not command words),
+   and runtime command-word construction (dma_queue/plane_buffer) isn't ported.
+   Nothing to retrofit; the interface is first-consumer, its shared home
+   ledgered for the 2nd.
+
+3. **bool-typed comptime-fn params** — **NOT-RETROFITTED (reasoning carries).**
+   The instance-shaped site is sprites.emp's flip family (`y_term`/`size_link`/
+   `tile_term`/`x_term`/`emit_piece_loop`, all `xflip/yflip: int`). Call sites
+   pass comptime literal 0/1 (`emit_piece_loop(0, 0)`/`(1, 0)`). Same
+   identical-domain/no-catch-value reasoning as the macro-interface enumeration:
+   xflip/yflip are an unambiguous 0/1 flip selector with NO out-of-vocabulary
+   value a `bool` would catch — a `bool` names intent but adds zero safety, so
+   it's an at-next-touch cosmetic, not a retrofit. (Distinct from section's
+   `clr: bool = true`, where the win was the DEFAULT-PARAM ergonomics at a 3:2
+   dominant call value, not type safety.) NOT-RETROFITTED, at-next-touch.
+
+4. **let-asl-relax twin technique + step-2 format items** — **PROCESS/FORMAT,
+   fed-forward, no code sweep.** The relax-then-write-explicit lockstep method
+   is a process entry (packet step-2 section). The step-2 spelling additions
+   (`jbra`/`jbsr` for direct-label transfers, the typed VDP interface, the
+   mem-to-mem pinned-`.w` spelling) are FEED-FORWARD checklist entries: future
+   ports convert at port time; prior files join the at-next-touch backlog — that
+   IS the sweep channel for format items (per the feed-forward rule), not a
+   this-tranche code rewrite.
+
+**Sweep verdict:** every addition is not-an-instance (1, 2), not-retrofitted-
+with-reason (3), or process/feed-forward (4). No corpus retrofit owed;
+no new ledger row from the sweep. Merge-ready pending the hot-path second look.
