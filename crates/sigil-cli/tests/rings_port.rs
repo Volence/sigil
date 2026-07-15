@@ -264,10 +264,14 @@ fn compile_real_file_with(
     let types = parse_file(&aeon.join("engine/system/types.emp"));
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
+    // objdef.emp is the home of the `vram_art` comptime fn that rings.emp now
+    // imports (`use engine.objects.objdef.{vram_art}` for RING_ART_ATTR) — pull
+    // it into the ambient so the cross-module import resolves.
+    let objdef = parse_file(&aeon.join("engine/objects/objdef.emp"));
     let aabb = parse_file(&aeon.join("engine/objects/aabb.emp"));
     let rings = parse_file(&aeon.join("engine/objects/rings.emp"));
 
-    let file = with_ambient(vec![types, sst, constants, aabb], rings);
+    let file = with_ambient(vec![types, sst, constants, objdef, aabb], rings);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
