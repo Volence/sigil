@@ -97,3 +97,72 @@ fn objdef_compact_layout_offsets() {
         assert_eq!(v, Some(Value::Int(want)), "{probe}");
     }
 }
+
+// ---- the novel path: a struct-typed data item with link-valued fields ----
+// The objdef emitter returns an ObjDef struct VALUE whose code_addr is a
+// link DIFFERENCE (u16 → Value16Be) and whose mappings is a plain symbol
+// (u32 → Abs32Be). No prior .emp data item is struct-typed, so characterize
+// the combination directly before building the emitter on it.
+
+use sigil_ir::FixupKind;
+
+fn lower_inline(src: &str) -> sigil_ir::Module {
+    let (file, diags) = parse_str(src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "parse errors: {diags:?}"
+    );
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: None,
+        embed_base: None,
+        defines: vec![],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "lower errors: {ldiags:?}"
+    );
+    module
+}
+
+/// Section-relative (offset, kind) fixups across a section's Data fragments.
+fn section_fixups(sec: &sigil_ir::Section) -> Vec<(u32, FixupKind)> {
+    let mut out = Vec::new();
+    let mut base = 0u32;
+    for frag in &sec.fragments {
+        if let sigil_ir::Fragment::Data(d) = frag {
+            for f in &d.fixups {
+                out.push((base + f.offset, f.kind));
+            }
+            base += d.bytes.len() as u32;
+        }
+    }
+    out
+}
+
+#[test]
+fn struct_data_item_routes_symbol_and_difference_fields_to_fixups() {
+    let src = "module m\n\
+        struct Rec (size: 6) { a: u16 @ 0, b: u32 @ 2 }\n\
+        data D: Rec = Rec { a: extern(\"Foo\") - extern(\"Base\"), b: extern(\"Bar\") }\n";
+    let module = lower_inline(src);
+    let sec = module
+        .sections
+        .iter()
+        .find(|s| !s.image_bytes().is_empty())
+        .expect("a data section");
+    assert_eq!(sec.image_bytes().len(), 6, "Rec is 6 bytes");
+    let fixups = section_fixups(sec);
+    let at = |off: u32| fixups.iter().find(|(o, _)| *o == off).map(|(_, k)| *k);
+    assert_eq!(
+        at(0),
+        Some(FixupKind::Value16Be),
+        "u16 link-difference field → Value16Be at offset 0; fixups: {fixups:?}"
+    );
+    assert_eq!(
+        at(2),
+        Some(FixupKind::Abs32Be),
+        "u32 plain-symbol field → Abs32Be at offset 2; fixups: {fixups:?}"
+    );
+}
