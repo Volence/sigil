@@ -756,7 +756,12 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   is gitignored; without it the generators fall back to air-baseline collision and the
   ROM diverges 130KB with no error. Ask (aeon-side): build.sh should WARN (or fail under
   a strict flag) when editor data is absent; worktree setup docs should say "copy
-  games/sonic4/data/editor/ in". — OPEN
+  games/sonic4/data/editor/ in". — **CLOSED 2026-07-15 (sst-usability-batch rider):**
+  `aeon tools/seed-worktree.sh <worktree>` copies the WHOLE gitignored artifact set
+  (editor data, generated OJZ, collision/sprite binaries, engine/debug blobs — 342
+  files) then builds the reference ROMs. Third bite (2026-07-12 ×2 + 2026-07-15) →
+  extinguished per the merge-night fragility doctrine. Verified on a fresh worktree:
+  clean build, plain crc 11382fa7 = canonical. Run once after `git worktree add`.
 - [tranche 7, 2026-07-10] **`sigil emp --root` prunes modules unreachable from the
   entry file** — a `pub equ`-only stub module not `use`d by anything never joins the
   link, so its exports can't satisfy externs (bit during smoke-testing; the harness's
