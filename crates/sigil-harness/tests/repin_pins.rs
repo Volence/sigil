@@ -163,9 +163,12 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // items 5 (−8) / 10 (−6) net into the plain base too. Plain 0x5D46 / debug
     // 0x770E. Then −0x6 both shapes (tranche-13 load_object: step-2 `bne.w
     // .alloc_fail` → bne.s −2, step-5 Load_ObjectList redundant a0 save/restore
-    // removed −4; both upstream of sound_api).
-    assert_eq!(pins::SOUND_API.plain_base, 0x5DAA);
-    assert_eq!(pins::SOUND_API.debug_base, 0x76C6);
+    // removed −4; both upstream of sound_api). Then −0x16 both shapes (t13
+    // step-5 second look: Load_Object burst copy movem-pairs → 6× move.l −0x10,
+    // d4 push/pop eliminated −0x4, Load_ObjectList `bsr.w Load_Object` → bsr.s
+    // −0x2 as the −0x14 shrink pulled the backward target into .s range).
+    assert_eq!(pins::SOUND_API.plain_base, 0x5D94);
+    assert_eq!(pins::SOUND_API.debug_base, 0x76B0);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
