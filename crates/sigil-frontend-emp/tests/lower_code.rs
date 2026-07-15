@@ -305,13 +305,81 @@ fn abs_sym_high_target_selects_long() {
 
 #[test]
 fn two_symbolic_operands_diagnose() {
-    // move.w Foo, Bar — two symbolic operands is deferred, must diagnose (no panic).
+    // move.w Foo, Bar — two BARE (relaxable) symbolic operands would need two-way
+    // RelaxAbsSym (unbuilt), so it must diagnose (no panic). The tranche-15 arm
+    // handles only the BOTH-PINNED case; a bare operand among 2+ still diagnoses.
     let (code, ediags) = eval_asm_with(&asm_1("move.w Foo, Bar"), &[]);
     assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
     let (_module, diags) = lower_module_68k(&code);
     assert!(
-        diags.iter().any(|d| d.message.contains("two symbolic")),
-        "expected a two-symbolic-operands diagnostic, got: {diags:?}"
+        diags.iter().any(|d| d.message.contains("both widths are pinned")),
+        "expected the reworded two-symbolic diagnostic naming the supported form, got: {diags:?}"
+    );
+}
+
+// ---- two PINNED absolute-symbol operands (mem-to-mem) — tranche 15 ----------
+// section.asm's `move.w (Cache_Top_Row).w, (Section_Top_Row_Written).w` is a
+// mem-to-mem move: two width-PINNED abs operands, no relaxation. One finished
+// encoding, two fixed-width fixups. Src ext precedes dst ext (68k order).
+
+/// Lower `instr` (both operands pinned abs), seed the named symbols, link, and
+/// return the flat text bytes (empty + diags if lowering diagnosed).
+fn lower_link_pinned(instr: &str, syms: &[(&str, i64)]) -> (Vec<u8>, Vec<sigil_span::Diagnostic>) {
+    let (code, ediags) = eval_asm_with(&asm_1(instr), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let Value::Code(buf) = &code else { panic!("expected Value::Code") };
+    let mut builder = IrBuilder::new();
+    builder.switch_section("text", Cpu::M68000, None);
+    let mut diags = Vec::new();
+    lower_code_buf(buf, Cpu::M68000, false, &mut builder, &mut diags);
+    let (module, _b) = builder.finish();
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return (vec![], diags);
+    }
+    let mut st = SymbolTable::new();
+    for (n, v) in syms {
+        st.define(n, sigil_ir::SymbolValue::Int(*v));
+    }
+    let resolved = sigil_link::resolve_layout(&module.sections, &st, true).expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &st).expect("link");
+    (linked.section("text").unwrap().bytes.clone(), diags)
+}
+
+#[test]
+fn two_pinned_abs_w_move_shape_and_routing() {
+    // move.w (Src).w, (Dst).w → opcode $31F8 + srcExt(2) + dstExt(2) = 6 bytes.
+    // Distinguishable addresses PROVE src→offset 2, dst→offset 4 (not swapped).
+    let (bytes, diags) = lower_link_pinned("move.w (Src).w, (Dst).w", &[("Src", 0x1234), ("Dst", 0x5678)]);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(bytes, vec![0x31, 0xF8, 0x12, 0x34, 0x56, 0x78]);
+}
+
+#[test]
+fn two_pinned_abs_l_move() {
+    // move.w (Src).l, (Dst).l → opcode $33F9 + srcExt(4) + dstExt(4) = 10 bytes.
+    let (bytes, diags) = lower_link_pinned("move.w (Src).l, (Dst).l", &[("Src", 0x00011234), ("Dst", 0x00055678)]);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(bytes, vec![0x33, 0xF9, 0x00, 0x01, 0x12, 0x34, 0x00, 0x05, 0x56, 0x78]);
+}
+
+#[test]
+fn two_pinned_abs_mixed_w_l_move() {
+    // move.w (Src).w, (Dst).l → opcode $33F8 + srcExt(2, abs.w) + dstExt(4, abs.l) = 8 bytes.
+    let (bytes, diags) = lower_link_pinned("move.w (Src).w, (Dst).l", &[("Src", 0x1234), ("Dst", 0x00055678)]);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(bytes, vec![0x33, 0xF8, 0x12, 0x34, 0x00, 0x05, 0x56, 0x78]);
+}
+
+#[test]
+fn pinned_plus_bare_sym_diagnoses() {
+    // move.w (Foo).w, Bar — one pinned + one bare: the bare would still need
+    // two-way relaxation, so a mixed pinned/bare pair diagnoses (no encoding).
+    let (code, ediags) = eval_asm_with(&asm_1("move.w (Foo).w, Bar"), &[]);
+    assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
+    let (_module, diags) = lower_module_68k(&code);
+    assert!(
+        diags.iter().any(|d| d.message.contains("both widths are pinned")),
+        "expected the reworded diagnostic for a bare-among-pinned pair, got: {diags:?}"
     );
 }
 
