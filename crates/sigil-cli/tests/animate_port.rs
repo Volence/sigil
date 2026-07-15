@@ -242,9 +242,10 @@ fn compile_real_file_with(
     let types = parse_file(&aeon.join("engine/system/types.emp"));
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
+    let frames = parse_file(&aeon.join("engine/objects/frames.emp"));
     let animate = parse_file(&aeon.join("engine/objects/animate.emp"));
 
-    let file = with_ambient(vec![types, sst, constants], animate);
+    let file = with_ambient(vec![types, sst, constants, frames], animate);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,

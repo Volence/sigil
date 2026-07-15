@@ -2041,6 +2041,31 @@ impl Parser {
         Operand::Ind { parts, size, span: start.merge(self.prev_span()) }
     }
 
+    /// Re-fold a size suffix directly after a spliced value (`{off}.w`) onto the
+    /// path's last segment, the same `d3.w` → `Path["d3","w"]` shape that
+    /// [`split_size_suffix`] decodes in operand position. A LITERAL `d3.w`
+    /// already arrives folded (path() eats its own dots), but a splice unfolds
+    /// to a bare `Path["off"]` and leaves `.w` dangling — which the indexed-EA
+    /// call-arg loop would reject ("expected `)`, found Dot"). Only fires on a
+    /// single-token-adjacent `.b`/`.w`/`.l` after a Path (so a genuine `.field`
+    /// access, or a spaced `.w`, is untouched); the size means nothing outside
+    /// operand position, where it reads as ordinary field access.
+    fn fold_spliced_index_size(&mut self, e: Expr) -> Expr {
+        let Expr::Path(mut p) = e else { return e };
+        if !self.at(&Tok::Dot) || self.span().start != self.prev_span().end {
+            return Expr::Path(p);
+        }
+        if let Tok::Ident(s) = self.peek2().clone() {
+            if matches!(s.as_str(), "b" | "w" | "l") {
+                self.bump(); // dot
+                self.bump(); // size ident
+                p.span = p.span.merge(self.prev_span());
+                p.segments.push(s);
+            }
+        }
+        Expr::Path(p)
+    }
+
     /// `.w` / `.l` / `.{expr}` if directly adjacent, else None.
     fn trailing_size(&mut self, splices_allowed: bool) -> Option<TextOrSplice> {
         if !self.at(&Tok::Dot) { return None; }
@@ -2684,7 +2709,7 @@ impl Parser {
                 self.bump();
                 let e = self.expr();
                 self.expect(&Tok::RBrace, "`}`");
-                e
+                self.fold_spliced_index_size(e)
             }
             // A `|` where an expression STARTS is a lambda `|p, ...| body`.
             // Infix bit-or `|` only ever follows a primary, so it is reached in

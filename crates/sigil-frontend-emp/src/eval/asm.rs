@@ -1341,16 +1341,29 @@ impl Evaluator<'_> {
         }
         let (xn_expr, xn_size) = &parts[1];
         let reg = self.ind_single_reg(std::slice::from_ref(&parts[0]), span, env)?;
-        let xn = match xn_expr {
+        // The index slot mirrors the base (`ind_single_reg`): a literal register
+        // spelling (`d3`) resolves without evaluating; anything else — a param
+        // naming a Reg (`{off}` lowers to `Path([off])`), a const, an arbitrary
+        // expr — evaluates and must yield a `Reg`. This closes the base/index
+        // asymmetry that blocked spliced-index helpers (frame_piece_count).
+        let literal_xn = match xn_expr {
             ast::Expr::Path(xp) if xp.segments.len() == 1 => reg_from_name(&xp.segments[0]),
             _ => None,
         };
-        let Some(xn) = xn else {
-            self.error(
-                expr_span(xn_expr),
-                "indexed addressing needs a valid index register (d0-d7/a0-a7)".to_string(),
-            );
-            return None;
+        let xn = match literal_xn {
+            Some(r) => r,
+            None => match self.eval_expr(xn_expr, env) {
+                Value::Reg(r) => r,
+                Value::Poison => return None,
+                _ => {
+                    self.error(
+                        expr_span(xn_expr),
+                        "indexed addressing needs a valid index register (d0-d7/a0-a7)"
+                            .to_string(),
+                    );
+                    return None;
+                }
+            },
         };
         let xlong = self.resolve_index_size(xn_size.as_ref(), span, env, "")?;
         // The brief extension word carries a signed 8-bit displacement.
