@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/14/2026 08:53:42 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/14/2026 08:53:40 PM)
-//! [provenance] 20 regions, 159 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche14/s4.lst (07/14/2026 11:19:46 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche14/s4.debug.lst (07/14/2026 11:19:45 PM)
+//! [provenance] 21 regions, 164 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +105,25 @@ pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x30A56, debug_base: 0x3
 /// `OJZ_Act1_Descriptor` .. `OJZ_Sec0_Blocks` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
 pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x14B5E, debug_base: 0x14BC6, plain_len: 0x274, debug_len: 0x274 };
 
+/// `ObjDef_Static` .. `OJZ_Sec0_TypeTable` — gate `SIGIL_EMP_OBJDEFS`. tests: objdef_port
+pub const OBJDEFS: Region = Region { plain_base: 0x11D4A, debug_base: 0x11DB2, plain_len: 0x68, debug_len: 0x68 };
+
 // ── Symbols (manifest order) ──
+
+/// `TestStatic_Main`. tests: objdef_port
+pub const TEST_STATIC_MAIN: Pin = Pin { plain: 0x10C66, debug: 0x10C66 };
+
+/// `TestSolid_Init`. tests: objdef_port
+pub const TEST_SOLID_INIT: Pin = Pin { plain: 0x10F7C, debug: 0x10F7C };
+
+/// `TestEnemy_Init`. tests: objdef_port
+pub const TEST_ENEMY_INIT: Pin = Pin { plain: 0x10F34, debug: 0x10F34 };
+
+/// `TestParent`. tests: objdef_port
+pub const TEST_PARENT: Pin = Pin { plain: 0x110C0, debug: 0x110C0 };
+
+/// `Map_TestObj`. tests: objdef_port
+pub const MAP_TEST_OBJ: Pin = Pin { plain: 0x309B8, debug: 0x30A20 };
 
 /// `EntryPoint`. tests: m1c_vector_table
 pub const ENTRY_POINT: Pin = Pin { plain: 0x200, debug: 0x200 };

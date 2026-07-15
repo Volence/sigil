@@ -252,26 +252,33 @@ fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
     };
     let solid = read_aeon("games/sonic4/objects/test_solid.emp").unwrap();
 
-    // The drift: swap the two adjacent u8 fields `anim` ($18) and `subtype`
-    // ($19) in the twin ONLY — dense layout stays valid, the module compiles,
-    // and consumers would emit wrong displacements... but the twin's own
-    // guards fire first, naming both drifted fields.
+    // The drift: swap the two adjacent RUNTIME u8 fields `prev_frame` ($24)
+    // and `sprite_piece_count` ($25) in the twin ONLY — dense layout stays
+    // valid, the module compiles, and consumers would emit wrong
+    // displacements... but the twin's own extern drift guards fire at link,
+    // naming both drifted fields.
+    //
+    // (These are RUNTIME fields, past ObjDef's $18 template extent, chosen so
+    // this probe isolates the extern link-seam guard: a drift of a TEMPLATE
+    // field — $0A..$21 — is now caught EARLIER, at comptime, by sst.emp's
+    // ObjDef↔Sst burst-copy ensure-chain, which is exercised by objdef_port's
+    // SHIFT-mutation break-test.)
     let doctored = sst
-        .replace("anim: AnimId @ $18,", "subtype: AnimId @ $18,")
-        .replace("subtype: u8 @ $19,", "anim: u8 @ $19,")
+        .replace("prev_frame: FrameId @ $24,", "sprite_piece_count: FrameId @ $24,")
+        .replace("sprite_piece_count: u8 @ $25,", "prev_frame: u8 @ $25,")
         .replace(
-            "ensure(extern(\"SST_anim\") == $18,",
-            "ensure(extern(\"SST_anim\") == $19,",
+            "ensure(extern(\"SST_prev_frame\") == $24,",
+            "ensure(extern(\"SST_prev_frame\") == $25,",
         )
         .replace(
-            "ensure(extern(\"SST_subtype\") == $19,",
-            "ensure(extern(\"SST_subtype\") == $18,",
+            "ensure(extern(\"SST_sprite_piece_count\") == $25,",
+            "ensure(extern(\"SST_sprite_piece_count\") == $24,",
         );
     assert_ne!(doctored, sst, "the doctor must have found its targets");
     let outcome = solid_outcome(&doctored, &solid, vec![]);
     assert!(
-        outcome.assert_errors.iter().any(|m| m.contains("subtype"))
-            && outcome.assert_errors.iter().any(|m| m.contains("anim")),
+        outcome.assert_errors.iter().any(|m| m.contains("sprite_piece_count"))
+            && outcome.assert_errors.iter().any(|m| m.contains("prev_frame")),
         "a drifted twin must be caught by its OWN guards naming the fields: {:?}",
         outcome.assert_errors
     );

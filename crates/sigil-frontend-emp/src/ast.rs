@@ -754,8 +754,12 @@ pub struct ComptimeFnDecl {
     pub public: bool,
     /// The function's name.
     pub name: String,
-    /// Parameters as `(name, type, span)`.
-    pub params: Vec<(String, Type, Span)>,
+    /// Parameters as `(name, type, span, default)`. The `default` expr, when
+    /// present (`name: T = expr`), supplies the argument if the caller omits
+    /// it; a param with no default is required (omission is a `missing
+    /// argument` error). Defaults evaluate in declaration scope — globals
+    /// only, never the caller's locals or sibling params.
+    pub params: Vec<(String, Type, Span, Option<Expr>)>,
     /// Optional explicit return type.
     pub ret: Option<Type>,
     /// The function's comptime statement body.

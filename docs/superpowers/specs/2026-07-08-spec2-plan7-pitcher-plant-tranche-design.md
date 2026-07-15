@@ -75,6 +75,14 @@ Genuinely missing (the tranche's feature work):
   then `name: expr` named args, no positional after named, each param bound exactly once,
   every param bound (NO default values tonight — ledger). Struct literals, label values, enum
   consts all legal as named-arg values (they are just expressions). Recorded decision per the
+  <!-- REVERSED 2026-07-14 (tranche 14): the "NO default values" clause is
+  LIFTED — comptime-fn params now take `name: T = expr` defaults (a param
+  with a default is optional; the default evaluates in a fresh global-only
+  declaration scope; a param with no default stays required = the same
+  `missing argument` error). Demanded by objdef()'s 12 optional params;
+  sigil ab84a2e. The "every param bound" invariant now reads "every param
+  WITHOUT a default bound." -->
+
   §10 headroom rule (call-site syntax, not a statement-leading keyword — non-breaking).
 - **D-PP.5 — field-address operands (b6).** In an instruction MEMORY-operand position,
   `Item.field` — where `Item` is a data item (or other link symbol) of known struct type and
