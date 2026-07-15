@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche15/s4.lst (07/15/2026 12:18:58 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche15/s4.debug.lst (07/15/2026 12:18:57 PM)
-//! [provenance] 22 regions, 179 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche16/s4.lst (07/15/2026 04:10:15 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche16/s4.debug.lst (07/15/2026 04:10:14 PM)
+//! [provenance] 23 regions, 193 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,6 @@ pub const ENTITY_WINDOW: Region = Region { plain_base: 0x33FC, debug_base: 0x3B5
 pub const LOAD_OBJECT: Region = Region { plain_base: 0x3FDC, debug_base: 0x4BA6, plain_len: 0x82, debug_len: 0x82 };
 
 /// `Tile_Cache_GetTile` .. `Collision_GetType` — gate `SIGIL_EMP_TILE_CACHE`. tests: tile_cache_port
-/// SHAPE-VARYING: debug carries +0xB8 from the `.raw_direct` `assert.l`/`assert.w` block.
 pub const TILE_CACHE: Region = Region { plain_base: 0x42FA, debug_base: 0x4EC4, plain_len: 0x924, debug_len: 0x9DC };
 
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
@@ -249,7 +248,7 @@ pub const CACHE_ORIGIN_ROW: Pin = Pin { plain: 0xFFFFA842, debug: 0xFFFFA866 };
 /// `Plane_Buffer_Ptr`. tests: section_port
 pub const PLANE_BUFFER_PTR: Pin = Pin { plain: 0xFFFFA72C, debug: 0xFFFFA750 };
 
-/// `Tile_Cache_Nametable`. tests: section_port, tile_cache_port
+/// `Tile_Cache_Nametable`. tests: section_port
 pub const TILE_CACHE_NAMETABLE: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
 
 /// `Tile_Cache_Collision`. tests: tile_cache_port
@@ -258,23 +257,41 @@ pub const TILE_CACHE_COLLISION: Pin = Pin { plain: 0xFFFF2580, debug: 0xFFFF2580
 /// `Frame_Counter`. tests: tile_cache_port
 pub const FRAME_COUNTER: Pin = Pin { plain: 0xFFFF8002, debug: 0xFFFF8002 };
 
-/// Block-staging RAM (parallel to `BlockStage_PtrTable`). tests: tile_cache_port
+/// `Block_Stage_Keys`. tests: tile_cache_port
 pub const BLOCK_STAGE_KEYS: Pin = Pin { plain: 0xFFFFA854, debug: 0xFFFFA878 };
+
+/// `Block_Stage_Next`. tests: tile_cache_port
 pub const BLOCK_STAGE_NEXT: Pin = Pin { plain: 0xFFFFA884, debug: 0xFFFFA8A8 };
+
+/// `Block_Stage_Buffers`. tests: tile_cache_port
 pub const BLOCK_STAGE_BUFFERS: Pin = Pin { plain: 0xFFFF3842, debug: 0xFFFF3842 };
 
-/// `Cache_Fill_*` per-frame fill trackers + `Cache_Prev_Cam_Row`. tests: tile_cache_port
+/// `Cache_Fill_Last_Frame`. tests: tile_cache_port
 pub const CACHE_FILL_LAST_FRAME: Pin = Pin { plain: 0xFFFFA844, debug: 0xFFFFA868 };
+
+/// `Cache_Fill_Budget`. tests: tile_cache_port
 pub const CACHE_FILL_BUDGET: Pin = Pin { plain: 0xFFFFA84A, debug: 0xFFFFA86E };
+
+/// `Cache_Fill_Resume_Col`. tests: tile_cache_port
 pub const CACHE_FILL_RESUME_COL: Pin = Pin { plain: 0xFFFFA846, debug: 0xFFFFA86A };
+
+/// `Cache_Fill_Resume_Row`. tests: tile_cache_port
 pub const CACHE_FILL_RESUME_ROW: Pin = Pin { plain: 0xFFFFA848, debug: 0xFFFFA86C };
-pub const CACHE_FILL_ROWRESUME_ROW: Pin = Pin { plain: 0xFFFFA84C, debug: 0xFFFFA870 };
-pub const CACHE_FILL_ROWRESUME_COL: Pin = Pin { plain: 0xFFFFA84E, debug: 0xFFFFA872 };
+
+/// `Cache_Fill_RowResume_Row`. tests: tile_cache_port
+pub const CACHE_FILL_ROW_RESUME_ROW: Pin = Pin { plain: 0xFFFFA84C, debug: 0xFFFFA870 };
+
+/// `Cache_Fill_RowResume_Col`. tests: tile_cache_port
+pub const CACHE_FILL_ROW_RESUME_COL: Pin = Pin { plain: 0xFFFFA84E, debug: 0xFFFFA872 };
+
+/// `Cache_Fill_Rows_Left`. tests: tile_cache_port
 pub const CACHE_FILL_ROWS_LEFT: Pin = Pin { plain: 0xFFFFA850, debug: 0xFFFFA874 };
+
+/// `Cache_Prev_Cam_Row`. tests: tile_cache_port
 pub const CACHE_PREV_CAM_ROW: Pin = Pin { plain: 0xFFFFA852, debug: 0xFFFFA876 };
 
-/// `S4LZ_DecompressDict` (compression, AS-side ROM). tests: tile_cache_port
-pub const S4LZ_DECOMPRESS_DICT: Pin = Pin { plain: 0x231C, debug: 0x23AA };
+/// `S4LZ_DecompressDict`. tests: tile_cache_port
+pub const S4_LZ_DECOMPRESS_DICT: Pin = Pin { plain: 0x231C, debug: 0x23AA };
 
 /// `Player_1`. tests: collision_port, rings_port
 pub const PLAYER_1: Pin = Pin { plain: 0xFFFF89EE, debug: 0xFFFF8A12 };

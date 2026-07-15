@@ -135,8 +135,8 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         ("Cache_Fill_Last_Frame", pick(pins::CACHE_FILL_LAST_FRAME)),
         ("Cache_Fill_Resume_Col", pick(pins::CACHE_FILL_RESUME_COL)),
         ("Cache_Fill_Resume_Row", pick(pins::CACHE_FILL_RESUME_ROW)),
-        ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROWRESUME_ROW)),
-        ("Cache_Fill_RowResume_Col", pick(pins::CACHE_FILL_ROWRESUME_COL)),
+        ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROW_RESUME_ROW)),
+        ("Cache_Fill_RowResume_Col", pick(pins::CACHE_FILL_ROW_RESUME_COL)),
         ("Cache_Fill_Budget", pick(pins::CACHE_FILL_BUDGET)),
         ("Cache_Fill_Rows_Left", pick(pins::CACHE_FILL_ROWS_LEFT)),
         ("Cache_Prev_Cam_Row", pick(pins::CACHE_PREV_CAM_ROW)),
@@ -150,7 +150,7 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
         ("Frame_Counter", pick(pins::FRAME_COUNTER)),
         ("Section_Plane_Dirty", pick(pins::SECTION_PLANE_DIRTY)),
-        ("S4LZ_DecompressDict", pick(pins::S4LZ_DECOMPRESS_DICT)),
+        ("S4LZ_DecompressDict", pick(pins::S4_LZ_DECOMPRESS_DICT)),
     ];
     if debug {
         table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
