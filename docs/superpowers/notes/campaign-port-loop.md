@@ -3,6 +3,10 @@
 **CHANGELOG (re-read this doc at each step boundary — it changes
 mid-campaign, and a ruling ratified after your last read still binds
 you):**
+- 2026-07-15: macro-port rule (a donor macro's .emp counterpart is an
+  INTERFACE REDESIGN, not a transliteration — named block before Step 4;
+  hooks in Steps 1 and 4; ratifying it obliges a one-time retroactive
+  enumeration sweep of already-ported macro counterparts, ledgered).
 - 2026-07-12: register-contract convention (`clobbers()` = exhaustive
   license, before Step 4); step-6 pattern-enumeration amendment;
   packet step-5 section = filled per-line checklist (below); step-4
@@ -39,7 +43,11 @@ luck).
 explicit widths, comments carried. Gate + region pin + byte gates both
 shapes + mixed-build acceptance + negative probes + gate-off neutrality.
 Language features the file DEMANDS ship here (the demanded-features law).
-Byte-exactness is proven HERE and only owed here.
+Byte-exactness is proven HERE and only owed here. When the demanded
+feature is the .emp counterpart of a donor MACRO or AS function, its
+interface is designed under the macro-port rule (below) BEFORE it is
+built — the byte gate binds the counterpart's emitted bytes, never its
+signature.
 
 **Step 2 — Modernize**: convert to the complete house format. ALL
 control flow goes new-style — `bra.w`/`bra.s`/`jmp` → `jbra`,
@@ -129,6 +137,42 @@ sound_api language) is NONCONFORMANT and gets rewritten on touch. The
 step-3(b) contract audit checks BOTH directions: the body stays inside
 its license, and header prose doesn't disclaim what the license grants.
 
+**The macro-port rule (Volence-ratified 2026-07-15, from the t15 vdpComm
+gate): a donor macro's .emp counterpart is an INTERFACE REDESIGN, not a
+transliteration.** Applies whenever a port builds the .emp counterpart of
+an AS macro or AS `function` — at step 1 (demanded) or step 4 (build).
+The byte gate binds the counterpart's EMITTED BYTES against the twin's
+expansion; it never binds the signature — for a comptime-fn those are
+independent axes, so the ergonomics are free. Accepting the donor's
+untyped parameter list by default is the trap this rule closes
+("there's a macro that works this way, let's just accept it").
+Precedents: `assert`/`raise_error` replaced the debugger.asm macro tower
+outright; t14 `objdef()` upgraded the macro's RUNTIME priority fatal to
+a COMPILE error via `u8 where 0..7`; t15 `vdpComm`/`vdp_comm_reg` is the
+worked example (typed target/op sum types over raw `%100001`-class int
+consts). Per macro, answer in the design note:
+  - **Wrong-input scan** — what does this interface let a caller get
+    WRONG that types prevent? Closed vocabularies → comptime sum types
+    (exhaustive match to the encodings INSIDE the fn; the donor's int
+    consts become implementation detail, drift-locked against the .asm
+    truth). Ranges → refinements. Unit-bearing ints → newtypes. Bare
+    boolean flags → default parameters or two named fns.
+  - **Guard upgrade** — every expansion-time `if/error` and runtime
+    fatal in the donor macro either becomes a comptime error/`ensure`,
+    or dies because the type design made it unrepresentable; the note
+    names which guards died to types.
+  - **First-consumer duty** — the first port to touch a shared macro
+    designs the interface every later consumer inherits; shipping an
+    int passthrough "for now" and retrofitting at the 2nd consumer is
+    double work in the wrong order. Under schedule pressure the
+    fallback is typed-interface-with-plain-internals, never
+    interface-transliteration.
+  - **Taste gates** — the call site must READ better (adoption over
+    cleverness), not merely differ; don't model restrictions the
+    hardware/domain doesn't have; the AS twin keeps its macro spelling
+    (lockstep is byte-level, not text-level — sprites/animate
+    precedent).
+
 **Step 4 — Construct pass** (Volence-ratified 2026-07-11): the same reflex
 as the demanded-features law, widened from language PRIMITIVES to reusable
 MACROS/CONSTRUCTS — build the toolbox up WHILE live-porting so the corpus
@@ -147,6 +191,8 @@ by default):
       helper / `dispatch` / `table`) → convert here;
   (b) **build** — no construct fits and it's SMALL (a comptime-fn helper,
       `clear_longs`/`rep` class) → build it in-port, minutes, byte-neutral.
+      If the build is the counterpart of a donor macro, the macro-port
+      rule (above) governs its interface.
       Readability ALONE justifies a small helper — "name the idiom" is a
       valid build reason even at 1-2 sites (Volence, 2026-07-11: using
       the language well is the point, not only dedup) — gated by taste:
