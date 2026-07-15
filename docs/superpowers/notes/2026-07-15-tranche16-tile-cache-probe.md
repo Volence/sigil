@@ -119,3 +119,33 @@ crossing-frame lag — whose real driver (the cold ~5-block crossing decompress,
 1/frame prefetched) is the architectural amortize/pre-stage lever. The A/B against
 this control will decide; if short, it returns to Fable for the arch discussion,
 NOT a silent FillRow-only conclusion.
+
+## Wave 1 A/B — FillRow hoist+SR (post-optimization, ROM 8e41c991)
+
+Byte gate 4/4 both shapes + flip (transcription verified); size-neutral (leas MOVED
+loop→setup, -22/+22) so repin --check unchanged, no re-pin wave; full strict 2252/0.
+
+**Steady (warm 20-frame, SAME schedule as rider-3 = variance-controlled A/B):**
+`TileCache_FillRow` **26219 → 23815 (−2404, −9%)**, `Tile_Cache_Fill` 27785 → 25356,
+budget **103.9% → 100.0%**. No regression: `Parallax_Update` 24152 (was 23961),
+`Section_UpdateColumns` 7645 (unchanged), `Draw_TileRow_FromCache` 6710 (unchanged).
+The ~2.4k avg is below the ~4.5k/2-row estimate because the window averages in
+partial-fill/crossing frames; the per-full-2-row-frame saving is higher, smoothed.
+
+**Control (lagging 8-frame f5801df schedule):** budget **110.8% → 107.0%** —
+**LAG PERSISTS (>100%)**, as predicted. The 8-frame FillRow number (22923 vs 60681)
+is dominated by crossing-density window variance (staging state at frame 0 differs
+run-to-run), NOT the optimization — the variance-controlled steady delta above is
+the honest FillRow number.
+
+**Correctness:** leading-edge mid-scroll screenshot CLEAN — coherent trees/ground,
+no stale-tile garbage, no torn seam. Collision-plane correctness holds by
+construction (a5/a6/a2 hold the same bases the per-cell leas computed; byte gate
+proves .emp==twin == the intended transform).
+
+**RESIDUAL (Wave 2's requirement):** the control window is still 107% = ~9k over
+budget. Wave 1 cleared the WARM-window overrun (100.0%) but NOT the crossing overrun
+— that ~9k is the cold-crossing decompress spike (the ~5-block crossing vs 1-block/
+frame prefetch), which Wave 2 (crossing-decompress amortization) owns. Exit criterion
+(budget<100% + VInt_Lag→0 on the control) is NOT met by Wave 1 alone = the declared
+two-wave plan, not a failure.
