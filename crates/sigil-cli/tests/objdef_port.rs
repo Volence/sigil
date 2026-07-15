@@ -252,3 +252,190 @@ fn objdef_priority_over_7_is_a_compile_error() {
         "priority: 8 must be a compile error (0..7 refinement), got: {diags:?}"
     );
 }
+
+// ---- the reference byte gate: test_objects.emp vs s4.bin windows --------
+// Compiles the REAL games/sonic4/data/objdefs/test_objects.emp through the
+// production pipeline, resolves its cross-seam symbols (the four routine
+// labels + Map_TestObj + ObjCodeBase) to their true per-shape VMAs, and
+// asserts the linked objdef records equal the reference ROM window. Both
+// shapes (the objdefs region base + Map_TestObj are shape-dependent game
+// data; the routine labels are shape-invariant bank code).
+
+use sigil_frontend_as::{assemble, Options as AsOptions};
+use sigil_ir::{SectionPlacement, SymbolTable};
+
+/// One synthetic AS-side label phased at `vma`.
+fn as_label_at(name: &str, vma: u32) -> Vec<sigil_ir::Section> {
+    let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    assemble(&asm, &opts)
+        .unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}"))
+        .sections
+}
+
+/// Per-shape true VMAs of the objdef byte gate's cross-seam targets.
+struct ObjShape {
+    region_base: u32,
+    region_len: usize,
+    map_test_obj: u32,
+    rom: &'static str,
+}
+
+fn objdef_reference_gate(shape: &ObjShape) {
+    use sigil_harness::pins;
+    let aeon = aeon_dir();
+    let rom_path = aeon.join(shape.rom);
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: {}", rom_path.display());
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+
+    // Ambient: types + sst (ObjDef) + constants (RF_PRIORITY_SHIFT) + objdef,
+    // prepended to the real consumer.
+    let deps = [
+        parse_file("engine/system/types.emp"),
+        parse_file("engine/objects/sst.emp"),
+        parse_file("engine/system/constants.emp"),
+        parse_file("engine/objects/objdef.emp"),
+    ];
+    let consumer = parse_file("games/sonic4/data/objdefs/test_objects.emp");
+    let (module_hdr, attrs, docs) = (consumer.module.clone(), consumer.attrs.clone(), consumer.docs.clone());
+    let mut items = Vec::new();
+    for d in deps {
+        items.extend(d.items);
+    }
+    items.extend(consumer.items);
+    let file = sigil_frontend_emp::ast::File { module: module_hdr, attrs, items, docs };
+
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: None,
+        embed_base: None,
+        defines: vec![],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "test_objects.emp lower errors: {ldiags:?}"
+    );
+
+    // Pin every section manually (no map): the one byte-emitting data section
+    // at the region base, the empty dep sections at scratch LMAs clear of it.
+    let mut sections: Vec<sigil_ir::Section> = module.sections;
+    let mut scratch = 0x0200_0000u32;
+    let mut found_data = false;
+    for s in sections.iter_mut() {
+        if !s.image_bytes().is_empty() {
+            s.lma = shape.region_base;
+            s.vma_base = Some(shape.region_base);
+            found_data = true;
+        } else {
+            s.lma = scratch;
+            s.vma_base = Some(scratch);
+            scratch += 0x1000;
+        }
+        s.placement = SectionPlacement::Pinned;
+        s.group = None;
+    }
+    assert!(found_data, "test_objects.emp must emit a data section");
+
+    // Synthetic cross-seam definitions at harness-private LMAs (clear of the
+    // objdefs region): ObjCodeBase as a value equ, the rest as phased labels.
+    // Plus the OUTBOUND mixed-build seam: an AS-side spawn-list consumer
+    // (`dc.l ObjDef_Enemy`, the object_test_state.asm shape) with the symbol
+    // UNDEFINED in-unit — it must resolve to the .emp's `pub data` export.
+    let obj_code_base = format!("${:X}", pins::OBJ_CODE_BASE.plain);
+    let mut synth = sigil_harness::test_support::assemble_equ_pairs(&[("ObjCodeBase", obj_code_base.as_str())]);
+    let outbound_asm = "cpu 68000\nObjDefConsumer:\n\tdc.l ObjDef_Enemy\n";
+    let mut outbound = assemble(outbound_asm, &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() })
+        .unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}"))
+        .sections;
+    let mut lma = 0x0100_0000u32;
+    for group in [
+        &mut synth,
+        &mut as_label_at("TestStatic_Main", pins::TEST_STATIC_MAIN.plain),
+        &mut as_label_at("TestSolid_Init", pins::TEST_SOLID_INIT.plain),
+        &mut as_label_at("TestEnemy_Init", pins::TEST_ENEMY_INIT.plain),
+        &mut as_label_at("TestParent", pins::TEST_PARENT.plain),
+        &mut as_label_at("Map_TestObj", shape.map_test_obj),
+        &mut outbound,
+    ] {
+        for sec in group.iter_mut() {
+            sec.lma = lma;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+        }
+        sections.append(group);
+        lma += 0x10_0000;
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+
+    let data = linked
+        .sections
+        .iter()
+        .find(|s| s.lma == shape.region_base)
+        .expect("linked image must carry the objdefs section at the region base");
+    let expected = &refrom[shape.region_base as usize..shape.region_base as usize + shape.region_len];
+    assert_region_matches(&data.bytes, expected, &format!("objdefs vs {}", shape.rom));
+
+    // Outbound seam: the AS `dc.l ObjDef_Enemy` must resolve to the .emp
+    // export's VMA = region base + 2 records (ObjDef_Enemy is the third).
+    let consumer = linked
+        .sections
+        .iter()
+        .find(|s| s.lma == 0x0160_0000)
+        .expect("linked image must carry the outbound consumer");
+    let resolved_enemy = u32::from_be_bytes([consumer.bytes[0], consumer.bytes[1], consumer.bytes[2], consumer.bytes[3]]);
+    assert_eq!(
+        resolved_enemy,
+        shape.region_base + 2 * 26,
+        "AS-side `dc.l ObjDef_Enemy` must resolve to the .emp export ({}=+52)",
+        shape.rom
+    );
+}
+
+/// On mismatch, report the first differing offset with context.
+fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
+    assert_eq!(
+        candidate.len(), expected.len(),
+        "{what}: length mismatch — candidate {} vs expected {}",
+        candidate.len(), expected.len()
+    );
+    if let Some(i) = (0..candidate.len()).find(|&i| candidate[i] != expected[i]) {
+        let lo = i.saturating_sub(4);
+        let hi = (i + 12).min(candidate.len());
+        panic!(
+            "{what}: first diff at region offset {i:#x} (record {}, field-off {:#x})\n  candidate[{lo:#x}..{hi:#x}]: {:02x?}\n  expected [{lo:#x}..{hi:#x}]: {:02x?}",
+            i / 26, i % 26, &candidate[lo..hi], &expected[lo..hi]
+        );
+    }
+}
+
+#[test]
+fn objdefs_match_reference_plain() {
+    use sigil_harness::pins;
+    objdef_reference_gate(&ObjShape {
+        region_base: pins::OBJDEFS.plain_base,
+        region_len: pins::OBJDEFS.plain_len,
+        map_test_obj: pins::MAP_TEST_OBJ.plain,
+        rom: "s4.bin",
+    });
+}
+
+#[test]
+fn objdefs_match_reference_debug() {
+    use sigil_harness::pins;
+    objdef_reference_gate(&ObjShape {
+        region_base: pins::OBJDEFS.debug_base,
+        region_len: pins::OBJDEFS.debug_len,
+        map_test_obj: pins::MAP_TEST_OBJ.debug,
+        rom: "s4.debug.bin",
+    });
+}

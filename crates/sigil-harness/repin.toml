@@ -199,6 +199,40 @@ end = "OJZ_Sec0_Blocks"
 gate = "SIGIL_EMP_ACT_DESCRIPTOR"
 tests = ["act_descriptor_port"]
 
+# The objdef DATA region (t14): the four ObjDef_* archetype templates emitted
+# by games/sonic4/data/objdefs/test_objects.{asm,emp}. End = the first symbol
+# of the next include (entity_data.asm). Distinct gate from the object-CODE
+# bank's SIGIL_EMP_TEST_OBJECTS (test_solid/test_particle).
+[[region]]
+name = "objdefs"
+start = "ObjDef_Static"
+end = "OJZ_Sec0_TypeTable"
+gate = "SIGIL_EMP_OBJDEFS"
+tests = ["objdef_port"]
+
+# objdef byte gate cross-seam symbols: the four routine labels (code_addr =
+# label − ObjCodeBase) + the mappings pointer, resolved to their true VMAs so
+# the .emp records match the reference ROM windows.
+[[symbol]]
+name = "TestStatic_Main"
+tests = ["objdef_port"]
+
+[[symbol]]
+name = "TestSolid_Init"
+tests = ["objdef_port"]
+
+[[symbol]]
+name = "TestEnemy_Init"
+tests = ["objdef_port"]
+
+[[symbol]]
+name = "TestParent"
+tests = ["objdef_port"]
+
+[[symbol]]
+name = "Map_TestObj"
+tests = ["objdef_port"]
+
 # ── Cross-seam symbols ──────────────────────────────────────────────────────
 # m1c_vector_table's exception-stub VMAs (HBlank_Dispatch rides the hblank
 # region above; SYSTEM_STACK is a genuine constants.asm equate, not a pin).
