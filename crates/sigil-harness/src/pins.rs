@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche14/s4.lst (07/14/2026 11:19:46 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche14/s4.debug.lst (07/14/2026 11:19:45 PM)
-//! [provenance] 21 regions, 164 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche15/s4.lst (07/15/2026 09:28:45 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/sigil-emp-tranche15/s4.debug.lst (07/15/2026 09:28:44 AM)
+//! [provenance] 22 regions, 179 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +86,9 @@ pub const LOAD_OBJECT: Region = Region { plain_base: 0x3FDC, debug_base: 0x4BA6,
 
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
 pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x4C1E, debug_base: 0x58A0, plain_len: 0x24, debug_len: 0x24 };
+
+/// `Section_Init` .. `Camera_Init` — gate `SIGIL_EMP_SECTION`. tests: section_port
+pub const SECTION: Region = Region { plain_base: 0x513E, debug_base: 0x5DC0, plain_len: 0x3EA, debug_len: 0x3EA };
 
 /// `Sound_PostByte` .. start + 0x1E4 plain / 0x2DA debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
 pub const SOUND_API: Region = Region { plain_base: 0x5D94, debug_base: 0x76B0, plain_len: 0x1E4, debug_len: 0x2DA };
@@ -194,11 +197,56 @@ pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x5EDA, debug: 0x78EC };
 /// `Game_State`. tests: game_loop_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
 
-/// `Cache_Left_Col`. tests: collision_lookup_port
+/// `Cache_Left_Col`. tests: collision_lookup_port, section_port
 pub const CACHE_LEFT_COL: Pin = Pin { plain: 0xFFFFA838, debug: 0xFFFFA85C };
 
 /// `Tile_Cache_GetCollision`. tests: collision_lookup_port
 pub const TILE_CACHE_GET_COLLISION: Pin = Pin { plain: 0x4336, debug: 0x4F00 };
+
+/// `Draw_TileColumn`. tests: section_port
+pub const DRAW_TILE_COLUMN: Pin = Pin { plain: 0x4066, debug: 0x4C30 };
+
+/// `Draw_TileRow_FromCache`. tests: section_port
+pub const DRAW_TILE_ROW_FROM_CACHE: Pin = Pin { plain: 0x4188, debug: 0x4D52 };
+
+/// `EntityWindow_Init`. tests: section_port
+pub const ENTITY_WINDOW_INIT: Pin = Pin { plain: 0x37C2, debug: 0x429C };
+
+/// `Section_Plane_Dirty`. tests: section_port
+pub const SECTION_PLANE_DIRTY: Pin = Pin { plain: 0xFFFFA88A, debug: 0xFFFFA8AE };
+
+/// `Section_Right_Col_Written`. tests: section_port
+pub const SECTION_RIGHT_COL_WRITTEN: Pin = Pin { plain: 0xFFFFA88C, debug: 0xFFFFA8B0 };
+
+/// `Section_Left_Col_Written`. tests: section_port
+pub const SECTION_LEFT_COL_WRITTEN: Pin = Pin { plain: 0xFFFFA88E, debug: 0xFFFFA8B2 };
+
+/// `Section_Top_Row_Written`. tests: section_port
+pub const SECTION_TOP_ROW_WRITTEN: Pin = Pin { plain: 0xFFFFA886, debug: 0xFFFFA8AA };
+
+/// `Section_Bottom_Row_Written`. tests: section_port
+pub const SECTION_BOTTOM_ROW_WRITTEN: Pin = Pin { plain: 0xFFFFA888, debug: 0xFFFFA8AC };
+
+/// `Cache_Head_Col`. tests: section_port
+pub const CACHE_HEAD_COL: Pin = Pin { plain: 0xFFFFA83A, debug: 0xFFFFA85E };
+
+/// `Cache_Top_Row`. tests: section_port
+pub const CACHE_TOP_ROW: Pin = Pin { plain: 0xFFFFA83C, debug: 0xFFFFA860 };
+
+/// `Cache_Bottom_Row`. tests: section_port
+pub const CACHE_BOTTOM_ROW: Pin = Pin { plain: 0xFFFFA83E, debug: 0xFFFFA862 };
+
+/// `Cache_Origin_Col`. tests: section_port
+pub const CACHE_ORIGIN_COL: Pin = Pin { plain: 0xFFFFA840, debug: 0xFFFFA864 };
+
+/// `Cache_Origin_Row`. tests: section_port
+pub const CACHE_ORIGIN_ROW: Pin = Pin { plain: 0xFFFFA842, debug: 0xFFFFA866 };
+
+/// `Plane_Buffer_Ptr`. tests: section_port
+pub const PLANE_BUFFER_PTR: Pin = Pin { plain: 0xFFFFA72C, debug: 0xFFFFA750 };
+
+/// `Tile_Cache_Nametable`. tests: section_port
+pub const TILE_CACHE_NAMETABLE: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
 
 /// `Player_1`. tests: collision_port, rings_port
 pub const PLAYER_1: Pin = Pin { plain: 0xFFFF89EE, debug: 0xFFFF8A12 };
@@ -227,10 +275,10 @@ pub const RING_ANIM_FRAME: Pin = Pin { plain: 0xFFFFAC66, debug: 0xFFFFAC8A };
 /// `Ring_Anim_Timer`. tests: rings_port
 pub const RING_ANIM_TIMER: Pin = Pin { plain: 0xFFFFAC67, debug: 0xFFFFAC8B };
 
-/// `Camera_X`. tests: rings_port
+/// `Camera_X`. tests: rings_port, section_port
 pub const CAMERA_X: Pin = Pin { plain: 0xFFFFA11E, debug: 0xFFFFA142 };
 
-/// `Camera_Y`. tests: rings_port
+/// `Camera_Y`. tests: rings_port, section_port
 pub const CAMERA_Y: Pin = Pin { plain: 0xFFFFA122, debug: 0xFFFFA146 };
 
 /// `Camera_X_Biased`. tests: sprites_port
@@ -551,7 +599,7 @@ pub const OJZ_SEC8_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
 /// `Camera_Y_Coarse_Prev`. tests: entity_window_port
 pub const CAMERA_Y_COARSE_PREV: Pin = Pin { plain: 0xFFFFAD74, debug: 0xFFFFAD98 };
 
-/// `Current_Act_Ptr`. tests: entity_window_port
+/// `Current_Act_Ptr`. tests: entity_window_port, section_port
 pub const CURRENT_ACT_PTR: Pin = Pin { plain: 0xFFFFAF30, debug: 0xFFFFAF54 };
 
 /// `Entity_Window_Active`. tests: entity_window_port
