@@ -427,6 +427,7 @@ fn disp1_sp(span: Span) -> Operand {
         disp: Expr::Int(1, span),
         inner: Box::new(sp_ind(span)),
         disp_spliced: false,
+        field_size_override: None,
         span,
     }
 }
@@ -441,6 +442,7 @@ fn pcrel(label: &str, span: Span) -> Operand {
             span,
         }),
         disp_spliced: false,
+        field_size_override: None,
         span,
     }
 }

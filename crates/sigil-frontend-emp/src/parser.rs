@@ -1929,6 +1929,7 @@ impl Parser {
                         disp: e,
                         inner: Box::new(inner),
                         disp_spliced: true,
+                        field_size_override: None,
                         span,
                     };
                 }
@@ -1957,6 +1958,7 @@ impl Parser {
                         disp: expr,
                         inner: Box::new(inner),
                         disp_spliced: false,
+                        field_size_override: None,
                         span,
                     };
                 }
@@ -1964,6 +1966,10 @@ impl Parser {
             }
             _ => {
                 let e = self.expr();
+                // A `:b`/`:w`/`:l` sized override binds to a typed field
+                // displacement here (`Sst.prev_anim:l(a1)`) — captured before the
+                // `(...)` so both the Call-form and displacement-form carry it.
+                let field_size_override = self.colon_size_override();
                 // NOTE: `timer(a0)` where `timer` is a bare ident arrives as
                 // Expr::Call via primary_expr — normalize an all-positional
                 // call to displacement-indexed addressing. The `!args.is_empty()`
@@ -1986,6 +1992,7 @@ impl Parser {
                             disp: Expr::Path(callee.clone()),
                             inner: Box::new(Operand::Ind { parts, size, span: ispan }),
                             disp_spliced: false,
+                            field_size_override,
                             span: ispan,
                         };
                     }
@@ -1998,6 +2005,7 @@ impl Parser {
                         disp: e,
                         inner: Box::new(inner),
                         disp_spliced: false,
+                        field_size_override,
                         span,
                     };
                 }
@@ -2067,6 +2075,23 @@ impl Parser {
     }
 
     /// `.w` / `.l` / `.{expr}` if directly adjacent, else None.
+    /// `:b`/`:w`/`:l` sized-override on a field displacement (`Sst.prev_anim:l`).
+    /// The `:` disambiguates from the `.w`/`.l` size suffix (which decodes as a
+    /// path segment / trailing size); `:` binds a declared overlay width to the
+    /// field. Only a bare b/w/l follows — no splice form (an overlay width is a
+    /// literal author assertion).
+    fn colon_size_override(&mut self) -> Option<TextOrSplice> {
+        if !self.at(&Tok::Colon) { return None; }
+        match self.peek2().clone() {
+            Tok::Ident(s) if s == "b" || s == "w" || s == "l" => {
+                self.bump(); // `:`
+                self.bump(); // size ident
+                Some(TextOrSplice::Text(s))
+            }
+            _ => None,
+        }
+    }
+
     fn trailing_size(&mut self, splices_allowed: bool) -> Option<TextOrSplice> {
         if !self.at(&Tok::Dot) { return None; }
         let adjacent = self.span().start == self.prev_span().end;

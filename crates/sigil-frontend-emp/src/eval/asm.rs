@@ -978,7 +978,18 @@ impl Evaluator<'_> {
                 let r = self.inner_ind_reg(inner, env)?;
                 Some(CodeOperand::PostInc(r))
             }
-            Operand::DispInd { disp, inner, disp_spliced, span } => {
+            Operand::DispInd { disp, inner, disp_spliced, field_size_override, span } => {
+                // Decode a `:b`/`:w`/`:l` sized override (overlay-write, only
+                // meaningful on the field-space paths below) to its byte count.
+                let override_bytes: Option<i128> = match field_size_override {
+                    Some(ast::TextOrSplice::Text(s)) => match s.as_str() {
+                        "b" => Some(1),
+                        "w" => Some(2),
+                        "l" => Some(4),
+                        _ => None,
+                    },
+                    _ => None,
+                };
                 // PC-relative EAs: `Sym(pc)` / `Sym(pc,Xn.size)` — 68k `(d16,PC)` /
                 // `(d8,PC,Xn)`. Keyed on the inner base being the LITERAL `pc`
                 // token (never a valid address register, so this can't collide
@@ -1005,7 +1016,15 @@ impl Evaluator<'_> {
                             // Overrun is diagnosed but the operand is emitted anyway
                             // (deliberate error-recovery): the displacement is valid,
                             // so downstream passes still see a well-formed operand.
-                            self.check_field_overrun(field, size, width, *span);
+                            // struct size is only needed for the overlay end-bound
+                            // (override present) — skip the layout query otherwise.
+                            let ssize = if override_bytes.is_some() {
+                                self.layout_of_struct(&base, *span).size as i128
+                            } else { 0 };
+                            self.check_field_overrun(
+                                FieldAccessCheck { field, field_size: size, field_offset: d, struct_size: ssize, override_bytes },
+                                width, *span,
+                            );
                             return Some(CodeOperand::DispInd { disp: d, reg });
                         }
                     }
@@ -1020,8 +1039,21 @@ impl Evaluator<'_> {
                         if let Some(reg) = self.peek_inner_reg(inner) {
                             let (d, size) =
                                 self.resolve_qualified_field(qual, field, expr_span(disp))?;
-                            // Same deliberate error-recovery as the bare form.
-                            self.check_field_overrun(field, size, width, *span);
+                            // Same deliberate error-recovery as the bare form. The
+                            // struct-end bound uses the BASE struct's size (a field
+                            // offset is base-relative even through an overlay window).
+                            let ssize = if override_bytes.is_none() {
+                                0 // end-bound unused without an override; skip the layout query
+                            } else if self.structs.contains_key(qual) {
+                                self.layout_of_struct(qual, *span).size as i128
+                            } else {
+                                let bs = self.overlay_layout(qual, *span).base_struct.clone();
+                                self.layout_of_struct(&bs, *span).size as i128
+                            };
+                            self.check_field_overrun(
+                                FieldAccessCheck { field, field_size: size, field_offset: d, struct_size: ssize, override_bytes },
+                                width, *span,
+                            );
                             return Some(CodeOperand::DispInd { disp: d, reg });
                         }
                     }
@@ -1537,13 +1569,8 @@ impl Evaluator<'_> {
     /// high-byte idiom), no lint. An unsized instruction (no `.b/.w/.l`) carries
     /// no access width here, so the check is skipped — the width is decided later
     /// by the encoder and the field boundary cannot be judged at this seam.
-    fn check_field_overrun(
-        &mut self,
-        field: &str,
-        field_size: i128,
-        width: Option<Width>,
-        span: Span,
-    ) {
+    fn check_field_overrun(&mut self, c: FieldAccessCheck, width: Option<Width>, span: Span) {
+        let FieldAccessCheck { field, field_size, field_offset, struct_size, override_bytes } = c;
         let access = match width {
             Some(Width::B) => 1,
             Some(Width::W) => 2,
@@ -1552,17 +1579,36 @@ impl Evaluator<'_> {
             // and no-suffix means "decided later" — skip in both cases.
             Some(Width::S) | None => return,
         };
-        if access > field_size {
-            // `width` is `Some(_)` here: the `None`/`.s` arms above already
-            // returned, so match it out rather than `unwrap()`.
+        // A `:size` override (`Sst.prev_anim:l`) DECLARES the overlay width the
+        // access is checked against, replacing the field's own size. It is a
+        // STATED width, not a mute switch: `move.l` against a `:w` override still
+        // overruns (4 > 2).
+        let effective = override_bytes.unwrap_or(field_size);
+        if access > effective {
             let Some(w) = width else { return };
+            let target = if override_bytes.is_some() {
+                format!("the :{effective}-byte override on field `{field}`")
+            } else {
+                format!("field `{field}` is {field_size} byte{}", if field_size == 1 { "" } else { "s" })
+            };
             self.error(
                 span,
-                format!(
-                    "[operand.field-overrun] .{w} access reads {access} bytes but field `{field}` is {field_size} byte{}",
-                    if field_size == 1 { "" } else { "s" },
-                ),
+                format!("[operand.field-overrun] .{w} access reads {access} bytes but {target}"),
             );
+            return;
+        }
+        // Struct-end bound (rider): a declared overlay may not run past the end
+        // of the struct it overlays — even if the instruction width fits it.
+        if let Some(ov) = override_bytes {
+            if field_offset + ov > struct_size {
+                self.error(
+                    span,
+                    format!(
+                        "[operand.field-overrun] :{ov}-byte overlay at field `{field}` (offset {field_offset}) runs {} byte(s) past the end of the {struct_size}-byte struct",
+                        field_offset + ov - struct_size,
+                    ),
+                );
+            }
         }
     }
 
@@ -1992,6 +2038,16 @@ fn pc_rel_shape(inner: &Operand) -> Option<PcRelShape<'_>> {
 /// semantics (field names participate only as the ENTIRE displacement).
 /// A path segment that spells a register (`a0`) is NOT a field name; excluding
 /// it keeps `a0(a0)` on the comptime path where it errors as today.
+/// The field-space facts `check_field_overrun` needs, bundled (the field's own
+/// size + offset, the containing struct's size, and any `:size` overlay override).
+struct FieldAccessCheck<'a> {
+    field: &'a str,
+    field_size: i128,
+    field_offset: i128,
+    struct_size: i128,
+    override_bytes: Option<i128>,
+}
+
 fn single_segment_field(disp: &ast::Expr) -> Option<&str> {
     if let ast::Expr::Path(p) = disp {
         if p.segments.len() == 1 && reg_from_name(&p.segments[0]).is_none() {
