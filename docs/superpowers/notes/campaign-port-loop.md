@@ -5,15 +5,23 @@ keeps blurring this; the numbers are NOT a linear sequence):**
 
     0 → 1 → 2 → (3 → 4 → 5)* → 6 → merge
 
-Steps 0/1/2 run ONCE per file. **The loop is 3→4→5**: after step 5, run
-step 3's retrospect again; anything found feeds 4/5 again; repeat until
-a retrospect pass comes up EMPTY (the dry exit). **Step 6 runs ONCE,
-after the loop exits dry — never inside it.** Writing "steps 3-6" as if
-6 were a loop member is the recurring error this box exists to stop.
+Steps 0/1/2 run ONCE per file. **The loop is 3→4→5**, and **DRY means a
+FULL pass comes up empty at ALL THREE steps** (Volence, 2026-07-16):
+step 3 finds nothing, step 4 adopts/builds/asks/deletes nothing, step 5
+takes nothing. An empty step-3 retrospect ALONE is not dry — the steps
+uncover each other's items (a step-5 optimization can create a
+reads-wrong or a construct opportunity; a step-4 helper can open a
+hoist), so the exit requires one whole 3→4→5 circuit with zero findings
+end to end. **Step 6 runs ONCE, after that dry circuit — never inside
+the loop.** Writing "steps 3-6" as if 6 were a loop member is the
+recurring error this box exists to stop.
 
 **CHANGELOG (re-read this doc at each step boundary — it changes
 mid-campaign, and a ruling ratified after your last read still binds
 you):**
+- 2026-07-16 (2nd): DRY refined — the exit is a FULL 3→4→5 pass empty
+  at ALL THREE steps, not an empty step-3 alone (the steps uncover each
+  other's items).
 - 2026-07-16: THE SHAPE box added (loop = 3→4→5 until dry; 6 = one
   final post-loop pass; 0/1/2 once per file).
 - 2026-07-15 (3rd): loop self-extension audit — step-0 TRIP-CHECK (kill
@@ -424,8 +432,10 @@ outcome named in the packet.
   gate — the checklist raises the floor; the second look is the ceiling.
 
 **Loop until dry**: after step 5, retrospect again; anything found →
-construct-pass/optimize again; repeat until a retrospect pass comes up
-EMPTY.
+construct-pass/optimize again. The exit condition is a FULL 3→4→5 pass
+with zero findings at ALL THREE steps (empty retrospect AND empty
+construct pass AND no-changes step 5) — see THE SHAPE box at the top;
+an empty step 3 alone does not exit the loop.
 
 **Step 6 — Corpus sweep** (Volence-ratified 2026-07-11; was the old
 in-loop step-4 back-propagate, pulled OUT to a single final GATED pass —
