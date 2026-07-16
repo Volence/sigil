@@ -157,7 +157,9 @@ re-green. No emulator time needed at this step.
      `Sec.field(aN)` reg-relative displacements / `offsetof(Sec, f)` /
      `offsetof(Act, f)` (the `.field`-in-disp sugar does NOT compose inside
      displacement arithmetic — a sub-field byte reads via a named
-     `offsetof(...)+N` const, the `Act_grid_w_lo` class, row 1068); file-local
+     `offsetof(...)+N` const SHARED in engine.structs: `Act_grid_w_lo` /
+     `Act_grid_h_lo` = `offsetof(Act, grid_*) + 1`, read by all 3 consumers,
+     row 1068); file-local
      Sec/Act offset-const mirrors are EXTINCT — the class the 2026-07-16
      shared-struct-module batch killed (row 1051, the ratifying change).
      TILE_CACHE_{COLS,ROWS,STRIDE,NT_SIZE} come from the shared
