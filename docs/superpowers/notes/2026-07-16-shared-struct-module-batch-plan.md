@@ -94,16 +94,39 @@ DONE (cont.):
   per-tranche assert-count sites (there are 5-ish copies — grep them all). Gate: affected
   port byte gates both shapes + strict + repin.
 
+- **Item 3.2** — section.emp DONE (aeon `96bae91` amended in the shared grid-lo consts /
+  sigil `050b05b`). 6 Act/Sec consts + ensures deleted; `use engine.structs.{Act, Sec,
+  Act_grid_w_lo, Act_grid_h_lo}`; Sec.field/Act.field access; grid_w+1/grid_h+1 → shared
+  consts; Sec_len==66 → sizeof(Sec). Rehomed section_port (prepend structs + act_sec_field_equs)
+  + entity_window_port flip (section ambient gains structs, union gains act_sec_field_equs).
+  Byte-neutral, strict 2257/0.
+
+  **FABLE item-3.2 RULING (Option 2, applied):** `Act_grid_w_lo`/`Act_grid_h_lo` =
+  `offsetof(Act, grid_*) + 1` are **shared pub consts in engine/structs.emp** (next to
+  struct Act), NOT file-local — the field+N enumeration found **10 sites / 3 consumers /
+  2 fields** (grid_w+1 AND grid_h+1), falsifying the single-consumer premise. Rule-1
+  amended: no *consumer-specific* detail in the shared module, but a multi-consumer blessed
+  sub-field view is layout-adjacent and belongs there. entity_window's planned file-local
+  const is SUPERSEDED (shared from birth). Consequent amendments still owed: row 1068
+  (correct enumeration + demand + kill-linkage → RE-JUDGE not auto-respell); loop-doc idiom
+  line (name the shared home + both consts); item-4 test artifact stays as-is.
+
 NEXT (resume here):
-- **Item 3.2** — section.emp (6 Act/Sec consts + ensures die). Test: section_port.rs.
-- **Item 3.3** — tile_cache.emp (7 consts + ensures die). Test: tile_cache_port.rs
-  (also the two_module flip helper's `tile_cache_value_pairs`).
-- **Item 3.4** — entity_window.emp (4 consts + ensures die). The 2 `Act_grid_w+1` sites
-  at :845/:1642 → fallback F const `Act_grid_w_lo = offsetof(Act, grid_w) + 1` (comment:
-  low byte, grid_w ≤ MAX_ACT_SECTIONS < 256, act-constructor-guarded); file-local, NO
-  ensure. Test: entity_window_port.rs.
-- **Item 7** kill-linkage: amend row 1068 so `Act_grid_w_lo` + the 2 sites + the pin test
-  retire as one unit when the `.field`-in-disp ask ships (name it in the ledger row).
+- **Item 3.3** — tile_cache.emp (7 Act/Sec consts + ensures die; 6 grid_w+1/grid_h+1 sites
+  → shared consts; bare fields → `Sec.field`/`Act.field`). ⚠ FABLE FLAG: this is the
+  two-module-flip file (`tile_cache_port.rs` has `two_module_tail_call_flip_*` +
+  `tile_cache_value_pairs` + `tile_cache_labels_for_link`) — if the flip harness resists the
+  recipe, PARK and report. Recipe proven on the entity_window flip (add structs to the owned
+  module's ambient, `act_sec_field_equs` to the union). Also update `tile_cache_value_equs`
+  (the byte-gate seam) + `tile_cache_value_pairs` (the flip seam). tile_cache is compiled by
+  mixed_dac_rom? (verify; section was NOT — if tile_cache IS, add a `structs_ambient_items`
+  arm + `+constants` and bump its assert counts).
+- **Item 3.4** — entity_window.emp (4 consts + ensures die; the 2 `Act_grid_w+1` sites →
+  the SHARED `Act_grid_w_lo`, per the item-3.2 ruling — no file-local const). Test:
+  entity_window_port.rs (`entity_window_equs` sheds its Act/Sec mirrors — but they're already
+  in the union via act_sec_field_equs from 3.2, so just drop them from entity_window_equs).
+- **Item 7** kill-linkage: amend row 1068 (the ruling's consequent amendment — do WITH the
+  ledger enumeration correction).
 - **Item 6** — hoist TILE_CACHE_{COLS,ROWS,STRIDE,NT_SIZE} into engine.constants twin;
   kill section+tile_cache local mirrors; discharge tile_cache.emp:8-12 comment.
 - **Item 5 (LAST)** — SectionId/GridCoord newtypes (row 1054); flag Fable if it balloons.
