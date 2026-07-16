@@ -87,6 +87,54 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+/// The `Act_*` / `Sec_*` struct-field equs (`structs.asm`'s generated layout)
+/// that `engine/structs.emp`'s per-field drift wall reads back through
+/// `extern()`, plus the `Act_len`/`Sec_len` totals. Ordered as the structs
+/// declare them. Act's `$21` pad is anonymous in structs.asm (no equ), covered
+/// by `Act_len`. SOURCE OF TRUTH: `engine/structs.asm`.
+pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
+    vec![
+        // Act (34 bytes / $22)
+        ("Act_sec_grid_ptr", "$00"),
+        ("Act_grid_w", "$04"),
+        ("Act_grid_h", "$06"),
+        ("Act_start_local_x", "$08"),
+        ("Act_start_local_y", "$0A"),
+        ("Act_start_sec_x", "$0C"),
+        ("Act_start_sec_y", "$0D"),
+        ("Act_act_bg_layout", "$0E"),
+        ("Act_act_bg_tiles", "$12"),
+        ("Act_act_parallax_config", "$16"),
+        ("Act_act_art_pool_table", "$1A"),
+        ("Act_act_art_pool_pages", "$1E"),
+        ("Act_edge_mode", "$20"),
+        ("Act_len", "$22"),
+        // Sec (66 bytes / $42)
+        ("Sec_sec_block_index", "$00"),
+        ("Sec_sec_objects", "$04"),
+        ("Sec_sec_rings", "$08"),
+        ("Sec_sec_plc", "$0C"),
+        ("Sec_sec_pal", "$10"),
+        ("Sec_sec_parallax_config", "$14"),
+        ("Sec_sec_raster_table", "$18"),
+        ("Sec_sec_bg_layout", "$1C"),
+        ("Sec_sec_type_table", "$20"),
+        ("Sec_sec_pal_cycle", "$24"),
+        ("Sec_sec_sound_bank", "$28"),
+        ("Sec_sec_block_dict", "$2C"),
+        ("Sec_sec_anim_blocks", "$30"),
+        ("Sec_sec_collision_s4lz", "$34"),
+        ("Sec_sec_flags", "$38"),
+        ("Sec_sec_music", "$3A"),
+        ("Sec_sec_pcfg_pad_3C", "$3C"),
+        ("Sec_sec_camera_lookahead", "$3D"),
+        ("Sec_sec_pcfg_pad_3E", "$3E"),
+        ("Sec_sec_pcfg_pad_3F", "$3F"),
+        ("Sec_sec_block_dict_len", "$40"),
+        ("Sec_len", "$42"),
+    ]
+}
+
 /// The engine-constant equs that `engine.constants`'s 30 drift guards read back
 /// through `extern()`. SOURCE OF TRUTH: `engine/system/constants.asm`.
 ///
@@ -165,6 +213,12 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("FRAME_BBOX_Y_MIN", "2"),
         ("FRAME_BBOX_Y_MAX", "3"),
         ("FRAME_PIECES", "6"),
+        // 2D tile-cache geometry — consolidated into the shared twin at the
+        // shared-struct-module batch (section + tile_cache 2nd-consumer trigger).
+        ("TILE_CACHE_COLS", "80"),
+        ("TILE_CACHE_ROWS", "60"),
+        ("TILE_CACHE_STRIDE", "80"),
+        ("TILE_CACHE_NT_SIZE", "9600"),
     ]
 }
 
@@ -258,14 +312,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_53() {
+    fn engine_constants_blob_assembles_and_defines_all_57() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            53,
-            "the twin guards 53 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3)"
+            57,
+            "the twin guards 57 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4)"
         );
     }
 

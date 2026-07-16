@@ -88,24 +88,19 @@ fn section_value_equs() -> Vec<Section> {
         ("PLANE_H_CELLS", "64"),
         ("PLANE_V_CELLS", "64"),
         ("PLANE_BUFFER_SIZE", "1536"),
-        ("TILE_CACHE_COLS", "80"),
-        ("TILE_CACHE_ROWS", "60"),
-        ("TILE_CACHE_STRIDE", "80"),
-        ("TILE_CACHE_NT_SIZE", "9600"),
+        // TILE_CACHE_COLS/ROWS/STRIDE/NT_SIZE now come from engine_constant_equs()
+        // (hoisted into the shared engine.constants twin).
         ("VRAM", "%100001"),
         ("CRAM", "%101011"),
         ("VSRAM", "%100101"),
         ("READ", "%001100"),
         ("WRITE", "%000111"),
         ("DMA", "%100111"),
-        ("Act_sec_grid_ptr", "$00"),
-        ("Act_grid_w", "$04"),
-        ("Act_grid_h", "$06"),
-        ("Act_act_bg_layout", "$0E"),
-        ("Sec_sec_bg_layout", "$1C"),
-        ("Sec_len", "$42"),
     ];
     pairs.extend(sigil_harness::test_support::engine_constant_equs());
+    // The Act_*/Sec_* field equs + Act_len/Sec_len feed the prepended
+    // engine.structs drift wall (section no longer mirrors Sec/Act offsets).
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -175,10 +170,26 @@ fn compile_real_file(
         cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "constants.emp parse errors: {cdiags:?}"
     );
+    // section.emp also `use`s engine.structs.{Act, Sec, Act_grid_w_lo, Act_grid_h_lo}
+    // — prepend the shared struct module (the Sec/Act layout + drift wall + the
+    // grid-dim low-byte consts).
+    let structs_path = dir.parent().unwrap().join("structs.emp");
+    let structs_src = std::fs::read_to_string(&structs_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", structs_path.display()));
+    let (structs_file, sdiags) = parse_str(&structs_src);
+    assert!(
+        sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "structs.emp parse errors: {sdiags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: file.module.clone(),
         attrs: file.attrs.clone(),
-        items: constants_file.items.into_iter().chain(file.items).collect(),
+        items: constants_file
+            .items
+            .into_iter()
+            .chain(structs_file.items)
+            .chain(file.items)
+            .collect(),
         docs: file.docs.clone(),
     };
 

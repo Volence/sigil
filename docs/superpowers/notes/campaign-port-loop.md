@@ -152,7 +152,19 @@ re-green. No emulator time needed at this step.
      relaxable dest combined with a `#extern(...)` link-immediate source
      — core.emp's 4 kept sites, row 1046 item 2) and keep the t15
      mem-to-mem pinned `.w` spellings; the bare-form rule is for
-     absolute-EA-over-link-base ONLY, …) with
+     absolute-EA-over-link-base ONLY, …
+     Sec/Act ROM-descriptor field access — `use engine.structs` +
+     `Sec.field(aN)` reg-relative displacements / `offsetof(Sec, f)` /
+     `offsetof(Act, f)` (the `.field`-in-disp sugar does NOT compose inside
+     displacement arithmetic — a sub-field byte reads via a named
+     `offsetof(...)+N` const SHARED in engine.structs: `Act_grid_w_lo` /
+     `Act_grid_h_lo` = `offsetof(Act, grid_*) + 1`, read by all 3 consumers,
+     row 1068); file-local
+     Sec/Act offset-const mirrors are EXTINCT — the class the 2026-07-16
+     shared-struct-module batch killed (row 1051, the ratifying change).
+     TILE_CACHE_{COLS,ROWS,STRIDE,NT_SIZE} come from the shared
+     engine.constants twin (`use engine.constants`), never a file-local
+     mirror (same batch, item 6).) with
      explicit not-applicable-because outcomes — "checked against the
      list" is the deliverable, silence is not.
   6. **The noticing clause**: does THIS file suggest a house-format item

@@ -84,11 +84,9 @@ fn map_toml(debug: bool) -> String {
 /// structs.asm) — the values its 27 drift-guard `ensure`s read back through
 /// `extern()`. No engine.constants twin (tile_cache.emp has no `use`).
 fn tile_cache_value_equs() -> Vec<Section> {
-    let pairs: Vec<(&str, &str)> = vec![
-        ("TILE_CACHE_COLS", "80"),
-        ("TILE_CACHE_ROWS", "60"),
-        ("TILE_CACHE_STRIDE", "80"),
-        ("TILE_CACHE_NT_SIZE", "9600"),
+    let mut pairs: Vec<(&str, &str)> = vec![
+        // TILE_CACHE_COLS/ROWS/STRIDE/NT_SIZE now come from engine_constant_equs()
+        // (hoisted into the shared engine.constants twin, prepended above).
         ("TILE_CACHE_COLL_ROWS", "30"),
         ("TILE_CACHE_COLL_SIZE", "2400"),
         ("TILE_CACHE_COLL_PLANES", "2"),
@@ -107,14 +105,12 @@ fn tile_cache_value_equs() -> Vec<Section> {
         ("BLOCK_INDEX_SIZE", "1024"),
         ("VFILL_ROWS_PER_FRAME", "2"),
         ("H_PFX_HYST", "16"),
-        ("Act_sec_grid_ptr", "$00"),
-        ("Act_grid_w", "$04"),
-        ("Act_grid_h", "$06"),
-        ("Sec_sec_block_index", "$00"),
-        ("Sec_sec_block_dict", "$2C"),
-        ("Sec_sec_block_dict_len", "$40"),
-        ("Sec_len", "$42"),
     ];
+    // Act_*/Sec_* field equs feed the prepended engine.structs drift wall;
+    // engine_constant_equs() feeds the prepended engine.constants twin's wall
+    // (incl. the hoisted TILE_CACHE_*).
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
+    pairs.extend(sigil_harness::test_support::engine_constant_equs());
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -195,6 +191,36 @@ fn compile_real_file(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "tile_cache.emp parse errors: {pdiags:?}"
     );
+    // tile_cache.emp `use`s engine.structs.{Act, Sec, Act_grid_w_lo, Act_grid_h_lo}
+    // AND engine.constants.{TILE_CACHE_*} — prepend both (the shared struct module's
+    // Sec/Act layout + drift wall + grid-lo consts, and the engine.constants twin).
+    let structs_path = dir.parent().unwrap().join("structs.emp");
+    let structs_src = std::fs::read_to_string(&structs_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", structs_path.display()));
+    let (structs_file, sdiags) = parse_str(&structs_src);
+    assert!(
+        sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "structs.emp parse errors: {sdiags:?}"
+    );
+    let constants_path = dir.parent().unwrap().join("system/constants.emp");
+    let constants_src = std::fs::read_to_string(&constants_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", constants_path.display()));
+    let (constants_file, cdiags) = parse_str(&constants_src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "constants.emp parse errors: {cdiags:?}"
+    );
+    let file = sigil_frontend_emp::ast::File {
+        module: file.module.clone(),
+        attrs: file.attrs.clone(),
+        items: constants_file
+            .items
+            .into_iter()
+            .chain(structs_file.items)
+            .chain(file.items)
+            .collect(),
+        docs: file.docs.clone(),
+    };
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -372,8 +398,8 @@ fn lower_and_place(
 /// tile_cache.emp's value seam as name/value pairs (for the union dedup).
 fn tile_cache_value_pairs() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("TILE_CACHE_COLS", "80"), ("TILE_CACHE_ROWS", "60"), ("TILE_CACHE_STRIDE", "80"),
-        ("TILE_CACHE_NT_SIZE", "9600"), ("TILE_CACHE_COLL_ROWS", "30"),
+        // TILE_CACHE_COLS/ROWS/STRIDE/NT_SIZE come from engine_constant_equs (cl_twin) in the union.
+        ("TILE_CACHE_COLL_ROWS", "30"),
         ("TILE_CACHE_COLL_SIZE", "2400"), ("TILE_CACHE_COLL_PLANES", "2"),
         ("TILE_CACHE_MARGIN_H", "20"), ("TILE_CACHE_MARGIN_V", "16"),
         ("BLOCK_TILE_SIZE", "16"), ("BLOCK_TILE_SHIFT", "4"), ("BLOCK_NT_SIZE", "512"),
@@ -381,9 +407,7 @@ fn tile_cache_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("BLOCK_COLL_SIZE", "256"), ("BLOCK_RAW_SIZE", "768"), ("BLOCK_STAGE_SLOTS", "16"),
         ("BLOCK_DECOMP_BUDGET", "6"), ("BLOCK_INDEX_SIZE", "1024"), ("VFILL_ROWS_PER_FRAME", "2"),
         ("H_PFX_HYST", "16"),
-        ("Act_sec_grid_ptr", "$00"), ("Act_grid_w", "$04"), ("Act_grid_h", "$06"),
-        ("Sec_sec_block_index", "$00"), ("Sec_sec_block_dict", "$2C"),
-        ("Sec_sec_block_dict_len", "$40"), ("Sec_len", "$42"),
+        // Act_*/Sec_* now come from act_sec_field_equs() in the flip union.
     ]
 }
 
@@ -449,7 +473,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let tc_base = region_base(debug);
     let (mut tc_sections, tc_asserts) = lower_and_place(
         &aeon.join("engine/level/tile_cache.emp"),
-        vec![],
+        vec![
+            parse_file(&aeon.join("engine/structs.emp")),
+            parse_file(&aeon.join("engine/system/constants.emp")),
+        ],
         aeon.join("engine/level"),
         "tile_cache",
         tc_base,
@@ -471,7 +498,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // Union the value seam (dedup, assert consistent).
     let mut vmap: BTreeMap<&str, &str> = BTreeMap::new();
     let cl_twin: Vec<(&str, &str)> = sigil_harness::test_support::engine_constant_equs();
-    for (n, v) in tile_cache_value_pairs().into_iter().chain(cl_twin) {
+    let act_sec: Vec<(&str, &str)> = sigil_harness::test_support::act_sec_field_equs();
+    for (n, v) in tile_cache_value_pairs().into_iter().chain(cl_twin).chain(act_sec) {
         if let Some(prev) = vmap.insert(n, v) {
             assert_eq!(prev, v, "seam value conflict for `{n}`");
         }

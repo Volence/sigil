@@ -189,11 +189,8 @@ fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
         ("EntityScanState_ess_entry_idx", "$17"),
         ("EntityScanState_ess_origin_y", "$18"),
         ("EntityScanState_len", "$1A"),
-        // Sec (ROM section descriptor) + Act fields used here.
-        ("Sec_sec_objects", "$04"),
-        ("Sec_sec_rings", "$08"),
-        ("Sec_sec_type_table", "$20"),
-        ("Act_grid_w", "$04"),
+        // Sec (ROM section descriptor) + Act field equs now come from
+        // act_sec_field_equs() (the prepended engine.structs drift wall).
     ]
 }
 
@@ -202,6 +199,9 @@ fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
 fn as_constant_equs() -> Vec<Section> {
     let mut pairs = sigil_harness::test_support::sst_field_equs();
     pairs.extend(sigil_harness::test_support::engine_constant_equs());
+    // The Act_*/Sec_* field equs feed the prepended engine.structs drift wall
+    // (entity_window's Sec.field access + Act_grid_w_lo).
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
     pairs.extend(entity_window_equs());
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
@@ -238,9 +238,11 @@ fn compile_real_file(
     let types = parse_file(&aeon.join("engine/system/types.emp"));
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
+    let structs = parse_file(&aeon.join("engine/structs.emp"));
     let ew = parse_file(&aeon.join("engine/objects/entity_window.emp"));
 
-    let file = with_ambient(vec![types, sst, constants], ew);
+    // entity_window also `use`s engine.structs.{Sec, Act_grid_w_lo}.
+    let file = with_ambient(vec![types, sst, constants, structs], ew);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -375,8 +377,8 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("TILE_CACHE_NT_SIZE", "9600"),
         ("VRAM", "%100001"), ("CRAM", "%101011"), ("VSRAM", "%100101"),
         ("READ", "%001100"), ("WRITE", "%000111"), ("DMA", "%100111"),
-        ("Act_sec_grid_ptr", "$00"), ("Act_grid_w", "$04"), ("Act_grid_h", "$06"),
-        ("Act_act_bg_layout", "$0E"), ("Sec_sec_bg_layout", "$1C"), ("Sec_len", "$42"),
+        // Act_*/Sec_* now come from act_sec_field_equs() in the union (section
+        // reads them through the prepended engine.structs drift wall).
     ]
 }
 
@@ -454,7 +456,10 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
     let sec_base = if debug { pins::SECTION.debug_base } else { pins::SECTION.plain_base };
     let (mut sec_sections, sec_asserts) = lower_and_place(
         &aeon.join("engine/level/section.emp"),
-        vec![parse_file(&aeon.join("engine/system/constants.emp"))],
+        vec![
+            parse_file(&aeon.join("engine/system/constants.emp")),
+            parse_file(&aeon.join("engine/structs.emp")),
+        ],
         aeon.join("engine/level"),
         "section",
         sec_base,
@@ -467,6 +472,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
             parse_file(&aeon.join("engine/system/types.emp")),
             parse_file(&aeon.join("engine/objects/sst.emp")),
             parse_file(&aeon.join("engine/system/constants.emp")),
+            parse_file(&aeon.join("engine/structs.emp")),
         ],
         aeon.join("engine/objects"),
         "entity_window",
@@ -480,6 +486,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
     for pairs in [
         sigil_harness::test_support::sst_field_equs(),
         sigil_harness::test_support::engine_constant_equs(),
+        sigil_harness::test_support::act_sec_field_equs(),
         entity_window_equs(),
         section_value_pairs(),
     ] {

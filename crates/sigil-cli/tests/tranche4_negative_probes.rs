@@ -356,9 +356,30 @@ fn act_src() -> Option<String> {
     }
 }
 
+fn structs_src() -> String {
+    std::fs::read_to_string(aeon_dir().join("engine/structs.emp"))
+        .expect("engine/structs.emp must exist (set AEON_DIR)")
+}
+
+/// Parse act source with the shared `engine.structs` module prepended (the
+/// `use engine.structs.{Act, Sec}` target — act_descriptor.emp no longer defines
+/// the structs locally, so the single-file lower path needs them ambient).
+fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_emp::ast::File {
+    let (structs, sd) = parse_str(structs_src);
+    assert!(sd.iter().all(|d| d.level != Level::Error), "structs.emp parse errors: {sd:?}");
+    let (act, ad) = parse_str(act_src);
+    assert!(ad.iter().all(|d| d.level != Level::Error), "act parse errors: {ad:?}");
+    let mut items = structs.items;
+    items.extend(act.items);
+    sigil_frontend_emp::ast::File { module: act.module, attrs: act.attrs, items, docs: act.docs }
+}
+
 fn place_act(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
-    let (file, pdiags) = parse_str(src);
-    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    place_act_with(src, &structs_src())
+}
+
+fn place_act_with(act_src: &str, structs_src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let file = parse_act_with_structs(act_src, structs_src);
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
@@ -398,7 +419,10 @@ fn place_act(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
 #[test]
 fn swapped_sec_fields_produce_different_bytes() {
     let Some(src) = act_src() else { return };
-    let doctored = src.replace(
+    // The struct now lives in engine.structs — doctor IT (swap two same-width
+    // Sec fields), then compile act against the doctored twin.
+    let structs = structs_src();
+    let doctored = structs.replace(
         "    sec_objects:         *u8,           // $04",
         "    sec_rings_swapped_probe: *u8,       // $04",
     );
@@ -412,9 +436,9 @@ fn swapped_sec_fields_produce_different_bytes() {
         "    sec_rings_swapped_probe: *u8,       // $04",
         "    sec_rings:           *u8,           // $04",
     );
-    assert_ne!(doctored, src, "precondition: the swap must apply");
+    assert_ne!(doctored, structs, "precondition: the swap must apply");
     // The struct literals are NAMED, so they still compile — the bytes move.
-    let (sections, _asserts) = place_act(&doctored);
+    let (sections, _asserts) = place_act_with(&src, &doctored);
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     // Cross-seam symbols unresolved — compare the SECTION's fixup TARGETS
@@ -454,8 +478,7 @@ fn swapped_sec_fields_produce_different_bytes() {
 #[test]
 fn act_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = act_src() else { return };
-    let (file, pdiags) = parse_str(&src);
-    assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    let file = parse_act_with_structs(&src, &structs_src());
     let (module, ldiags) = lower_module(
         &file,
         &LowerOptions {
