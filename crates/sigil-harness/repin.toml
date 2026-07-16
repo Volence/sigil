@@ -137,6 +137,18 @@ gate = "SIGIL_EMP_LOAD_OBJECT"
 tests = ["load_object_port", "entity_window_port"]
 
 [[region]]
+# Tranche 16 — the 2D block-decompression tile cache (§4.7). Biggest region yet
+# ($924 plain / $9DC debug), section.emp's paired streaming sibling. SHAPE-VARYING:
+# the debug shape carries +$B8 (the .raw_direct assert block). End is the next
+# placement: collision_lookup's Collision_GetType (engine.inc:313; end-is-next-
+# placement, the load_object precedent).
+name = "tile_cache"
+start = "Tile_Cache_GetTile"
+end = "Collision_GetType"
+gate = "SIGIL_EMP_TILE_CACHE"
+tests = ["tile_cache_port"]
+
+[[region]]
 name = "collision_lookup"
 start = "Collision_GetType"
 end = "Collision_ProbeDown"
@@ -421,6 +433,66 @@ tests = ["section_port"]
 [[symbol]]
 name = "Tile_Cache_Nametable"
 tests = ["section_port"]
+
+# tile_cache (tranche 16) — the RAM symbols tile_cache.emp's abs operands + the
+# Block_Stage_Buffers data-table fixup resolve against, plus the S4LZ_DecompressDict
+# cross-seam bsr.w target. (Cache_Left_Col/Head/Top/Bottom/Origin_*, Tile_Cache_
+# Nametable, Camera_X/Y, Current_Act_Ptr, Section_Plane_Dirty already pinned above.)
+[[symbol]]
+name = "Tile_Cache_Collision"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Frame_Counter"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Block_Stage_Keys"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Block_Stage_Next"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Block_Stage_Buffers"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Fill_Last_Frame"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Fill_Budget"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Fill_Resume_Col"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Fill_Resume_Row"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Fill_RowResume_Row"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Fill_RowResume_Col"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Fill_Rows_Left"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Prev_Cam_Row"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "S4LZ_DecompressDict"
+tests = ["tile_cache_port"]
 
 # collision + rings shared RAM
 

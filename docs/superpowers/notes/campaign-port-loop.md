@@ -140,7 +140,19 @@ re-green. No emulator time needed at this step.
      enumeration, wherever a ≥2 contiguous run exists (C1 item 2
      grammar; added 2026-07-15 after t15 shipped three enumerated
      13-register contracts — the form existed in the corpus since
-     sound_api but was never ON this list; Volence's catch), …) with
+     sound_api but was never ON this list; Volence's catch),
+     absolute-EA over a LINK-TIME base spelled BARE `sym + const` — NOT
+     the operand-override `(sym + const).w`/`.l` (added 2026-07-15, t16;
+     the override comptime-folds and can't defer a link base — row 1004,
+     GENUINELY-UNBUILT — so the bare form is the standing spelling and
+     the width rule picks abs.w/.l by the resolved value; section.emp:303
+     is the byte-proven precedent). BOUNDARY — this does NOT touch the
+     explicit-width forms that a DIFFERENT gap requires: keep the
+     explicit `(Sym).w` where `[lower.imm-link]` needs it (a bare
+     relaxable dest combined with a `#extern(...)` link-immediate source
+     — core.emp's 4 kept sites, row 1046 item 2) and keep the t15
+     mem-to-mem pinned `.w` spellings; the bare-form rule is for
+     absolute-EA-over-link-base ONLY, …) with
      explicit not-applicable-because outcomes — "checked against the
      list" is the deliverable, silence is not.
   6. **The noticing clause**: does THIS file suggest a house-format item

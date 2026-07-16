@@ -170,9 +170,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // −0xE both shapes (tranche-15 section.emp step-2: the modernization to bare
     // Bcc / jbra / jbsr relaxed 7-8 of section.asm's conservatively-.w branches
     // to .s at asl's fixpoint, shrinking the section region 0x3EA→0x3DC; section
-    // is upstream of sound_api in the pre-$10000 engine bank).
-    assert_eq!(pins::SOUND_API.plain_base, 0x5D86);
-    assert_eq!(pins::SOUND_API.debug_base, 0x76A2);
+    // is upstream of sound_api in the pre-$10000 engine bank). Then −0xE plain /
+    // −0x6 debug (tranche-16 tile_cache.emp step-2: the same bare-Bcc/jbra/jbsr
+    // modernization relaxed 7 plain / 3 debug of tile_cache.asm's conservative-.w
+    // branches to .s — 4 of them shape-divergent (ifdef __DEBUG__, the assert
+    // block blocks .s in debug), shrinking the tile_cache region 0x924→0x916 /
+    // 0x9DC→0x9D6; tile_cache is upstream of sound_api in the engine bank). Then +0xA both (t16 Wave 2 (i): the crossing-decompress prefetch SCAN replaced the one-block prefetch, growing tile_cache +0xA). Then +0x76 both (t16 Wave 2 (ii): TileCache_WarmupBelowRow cold-start pre-stage proc + the Init bsr.w, growing tile_cache 0x920→0x996 plain / 0x9E0→0xA56 debug).
+    assert_eq!(pins::SOUND_API.plain_base, 0x5DF8);
+    assert_eq!(pins::SOUND_API.debug_base, 0x771C);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
