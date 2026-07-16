@@ -491,6 +491,34 @@ name = "Cache_Prev_Cam_Row"
 tests = ["tile_cache_port"]
 
 [[symbol]]
+name = "Cache_Prev_Cam_X"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_H_Pfx_Dir"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_H_Pfx_Accum"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Pfx_Row_Target"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Pfx_Col_Target"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Pfx_Skip_Armed"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Pfx_Lag_Flag"
+tests = ["tile_cache_port"]
+
+[[symbol]]
 name = "S4LZ_DecompressDict"
 tests = ["tile_cache_port"]
 
