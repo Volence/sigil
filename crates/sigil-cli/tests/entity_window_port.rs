@@ -375,8 +375,8 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("TILE_CACHE_NT_SIZE", "9600"),
         ("VRAM", "%100001"), ("CRAM", "%101011"), ("VSRAM", "%100101"),
         ("READ", "%001100"), ("WRITE", "%000111"), ("DMA", "%100111"),
-        ("Act_sec_grid_ptr", "$00"), ("Act_grid_w", "$04"), ("Act_grid_h", "$06"),
-        ("Act_act_bg_layout", "$0E"), ("Sec_sec_bg_layout", "$1C"), ("Sec_len", "$42"),
+        // Act_*/Sec_* now come from act_sec_field_equs() in the union (section
+        // reads them through the prepended engine.structs drift wall).
     ]
 }
 
@@ -454,7 +454,10 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
     let sec_base = if debug { pins::SECTION.debug_base } else { pins::SECTION.plain_base };
     let (mut sec_sections, sec_asserts) = lower_and_place(
         &aeon.join("engine/level/section.emp"),
-        vec![parse_file(&aeon.join("engine/system/constants.emp"))],
+        vec![
+            parse_file(&aeon.join("engine/system/constants.emp")),
+            parse_file(&aeon.join("engine/structs.emp")),
+        ],
         aeon.join("engine/level"),
         "section",
         sec_base,
@@ -480,6 +483,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
     for pairs in [
         sigil_harness::test_support::sst_field_equs(),
         sigil_harness::test_support::engine_constant_equs(),
+        sigil_harness::test_support::act_sec_field_equs(),
         entity_window_equs(),
         section_value_pairs(),
     ] {
