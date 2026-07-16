@@ -76,21 +76,36 @@ DONE:
   + `structs_module.rs` (wall passes + negative probe). Strict **2257/0** (AEON_DIR at
   worktree), repin clean, byte-neutral. Commits aeon `e1badfe` / sigil `b7ef117`.
 
+DONE (cont.):
+- **Item 3.1** — act_descriptor.emp unwound to `use engine.structs.{Act, Sec}` (local
+  struct defs + sizeof ensures deleted; ojz_sec constructor + defaults + limit mirrors
+  stay). **Module move PROVEN BYTE-NEUTRAL** (act region unchanged, ROMs b335bdc6/
+  827e18c4, repin clean, strict 2257/0). Item-7 rehoming done for act's tests:
+  act_descriptor_port + tranche4_negative_probes (field-swap now doctors structs.emp)
+  + mixed_dac_rom (`structs_ambient_items` + act_descriptor ambient arm, `nth(6)` root;
+  drift counts 5→39). Commits aeon `ba05da9` / sigil `c4e332d`.
+
+  **MECHANISM (reuse for 3.2-3.4):** (a) edit the consumer .emp — delete its Act/Sec
+  offset consts + ensures, add `use engine.structs.{Act, Sec}`; (b) its port test —
+  prepend structs.emp via `with_ambient`, fold `act_sec_field_equs()` into the seam
+  equ blob (ONE assembled `Stub` — don't add a 2nd equ section), update any drift-count
+  assertion; (c) mixed_dac_rom — add the file to the `match` with `structs_ambient_items`
+  (+constants for tile_cache/section which also use engine.constants), bump its
+  per-tranche assert-count sites (there are 5-ish copies — grep them all). Gate: affected
+  port byte gates both shapes + strict + repin.
+
 NEXT (resume here):
-- **Item 3** — unwind consumers. act_descriptor.emp FIRST (`use engine.structs.{Act,
-  Sec}`, delete its local struct defs + sizeof ensures; KEEP `ojz_sec` constructor +
-  defaults + MAX_ACT_SECTIONS/etc.). Then section.emp → tile_cache.emp →
-  entity_window.emp one at a time; delete each file's Act/Sec offset consts + their
-  ensures, `use engine.structs`. entity_window's 2 `Act_grid_w+1` sites → fallback F
-  const `Act_grid_w_lo = offsetof(Act, grid_w) + 1` (comment: low byte, grid_w ≤
-  MAX_ACT_SECTIONS < 256, act-constructor-guarded). Gate each: affected port byte
-  gates both shapes + strict + repin.
-- **Item 7** rides item 3: each consumer's port-test value-equ seam re-homes to
-  `act_sec_field_equs()` (prepend structs.emp as ambient where a consumer `use`s it,
-  the sst.emp/constants.emp `with_ambient` pattern). Kill-linkage: amend row 1068 so
-  const+2 sites+pin retire as one unit when the `.field`-in-disp ask ships.
+- **Item 3.2** — section.emp (6 Act/Sec consts + ensures die). Test: section_port.rs.
+- **Item 3.3** — tile_cache.emp (7 consts + ensures die). Test: tile_cache_port.rs
+  (also the two_module flip helper's `tile_cache_value_pairs`).
+- **Item 3.4** — entity_window.emp (4 consts + ensures die). The 2 `Act_grid_w+1` sites
+  at :845/:1642 → fallback F const `Act_grid_w_lo = offsetof(Act, grid_w) + 1` (comment:
+  low byte, grid_w ≤ MAX_ACT_SECTIONS < 256, act-constructor-guarded); file-local, NO
+  ensure. Test: entity_window_port.rs.
+- **Item 7** kill-linkage: amend row 1068 so `Act_grid_w_lo` + the 2 sites + the pin test
+  retire as one unit when the `.field`-in-disp ask ships (name it in the ledger row).
 - **Item 6** — hoist TILE_CACHE_{COLS,ROWS,STRIDE,NT_SIZE} into engine.constants twin;
-  kill section+tile_cache local mirrors; discharge tile_cache.emp:8-12.
+  kill section+tile_cache local mirrors; discharge tile_cache.emp:8-12 comment.
 - **Item 5 (LAST)** — SectionId/GridCoord newtypes (row 1054); flag Fable if it balloons.
 
 Step-0 note on sigil master `5739388`; plan note here (this branch).
