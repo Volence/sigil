@@ -2067,7 +2067,7 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // The collision_lookup block, pinned explicitly (the port's own
     // 0x24-byte window). Offset 0x1C:
     // `bra.w Tile_Cache_GetCollision` = 6000 + disp16
-    // ($4336 - $4E0A = -$AD4 = $F52C) — the cross-seam pc-relative TAIL
+    // ($4336 - $4E16 = -$AE0 = $F520) — the cross-seam pc-relative TAIL
     // CALL. The target Tile_Cache_GetCollision stays at $4336 (it precedes the
     // insertion points); Collision_GetType's bra moved when unified-prefetch grew
     // tile_cache (H5 slots +$10, then the H1/H2/H3/H4 prefetch tail +$14C), so the
@@ -2080,7 +2080,7 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
         &rom[clbase..clbase + pins::COLLISION_LOOKUP.plain_len],
         &[
             0xE6, 0x48, 0xB0, 0x78, (clc >> 8) as u8, clc as u8, 0x6D, 0x18, 0xB0, 0x78, ((clc + 2) >> 8) as u8, (clc + 2) as u8, 0x6E, 0x12, 0xE6, 0x49,
-            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF5, 0x2C,
+            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF5, 0x20,
             0x70, 0x00, 0x4E, 0x75,
         ][..],
         "collision_lookup block must match the reference bytes exactly (plain)"
@@ -2145,7 +2145,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
         &rom[clbase..clbase + pins::COLLISION_LOOKUP.debug_len],
         &[
             0xE6, 0x48, 0xB0, 0x78, (clc >> 8) as u8, clc as u8, 0x6D, 0x18, 0xB0, 0x78, ((clc + 2) >> 8) as u8, (clc + 2) as u8, 0x6E, 0x12, 0xE6, 0x49,
-            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF4, 0x6C,
+            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF4, 0x60,
             0x70, 0x00, 0x4E, 0x75,
         ][..],
         "collision_lookup block must match the reference bytes exactly (debug)"
