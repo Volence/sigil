@@ -6,8 +6,8 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche17/s4.lst (07/16/2026 04:12:25 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche17/s4.debug.lst (07/16/2026 04:12:24 PM)
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/fix-sprites-pb1-pb2/s4.lst (07/16/2026 06:28:27 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/fix-sprites-pb1-pb2/s4.debug.lst (07/16/2026 06:28:26 PM)
 //! [provenance] 24 regions, 201 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
@@ -474,7 +474,7 @@ pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x60B6, debug: 0x7A8A };
 pub const OBJ_CODE_BASE: Pin = Pin { plain: 0x10000, debug: 0x10000 };
 
 /// `Draw_Sprite`. tests: test_objects_port
-pub const DRAW_SPRITE: Pin = Pin { plain: 0x2AB2, debug: 0x308C };
+pub const DRAW_SPRITE: Pin = Pin { plain: 0x2AAE, debug: 0x3088 };
 
 /// `ObjectMove`. tests: test_objects_port
 pub const OBJECT_MOVE: Pin = Pin { plain: 0x2A64, debug: 0x303E };
