@@ -61,6 +61,13 @@ sustained-max-diagonal ~42% (was ~76%); H4 gate fires. (f) down-only warmup conf
 Final: plain `453087`/`b335bdc6`, debug `461110`/`827e18c4`. Old-t16 A/B baseline:
 debug `460661`/`a48fb0df`.
 
+**INCIDENT + rule (2026-07-16 merge gate):** this packet's first draft quoted SHA1
+prefixes (`sha1sum | cut -c1-16`) instead of CRC32 — the merge gate held on an apparent
+provenance mismatch (b335bdc6 vs e9b3e9fa) that was purely the hash *function* differing,
+not the bytes (SHA1 of Fable's own clean builds reproduced the declared values exactly;
+the drive was oracle-side with no ROM patch). **RULE: provenance is CRC32 + byte size,
+always** — the campaign standard, and what `repin`/`convsym`/every prior packet uses.
+
 ## Pass breakdown (step-3 vs step-5 framing)
 This is not a port tranche (byte-CHANGING throughout), but for parity:
 - **Mechanism/design work (the charter):** H1–H6 + the H4 rework — all new per-frame
