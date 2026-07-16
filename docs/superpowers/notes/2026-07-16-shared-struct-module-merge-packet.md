@@ -103,9 +103,9 @@ was self-consistent (`twin_guards()` derives from its len, auto-adjusting every
   sketch — all on the refactor branch above the merge-base.
 
 ## Merge mechanics
-- aeon `refactor/shared-struct-module` (6 commits) → aeon master; sigil branch (17
-  commits) → sigil master. Both `--no-ff`, pushed TOGETHER (paired-state; coupled
-  masters, no stale window).
+- aeon `refactor/shared-struct-module` (6 commits) → aeon master; sigil branch (the
+  batch commits above the merge-base `5739388`, sigil master's current tip) → sigil
+  master. Both `--no-ff`, pushed TOGETHER (paired-state; coupled masters, no stale window).
 - Post-merge: canonical provenance UNCHANGED (byte-neutral batch) — plain
   453087/b335bdc6, debug 461110/827e18c4 stay the reference.
 - THEN: t17 step 1 begins (plane_buffer.emp transcribe) from the merged master, with
