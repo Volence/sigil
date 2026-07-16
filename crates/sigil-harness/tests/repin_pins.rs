@@ -175,9 +175,9 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // modernization relaxed 7 plain / 3 debug of tile_cache.asm's conservative-.w
     // branches to .s — 4 of them shape-divergent (ifdef __DEBUG__, the assert
     // block blocks .s in debug), shrinking the tile_cache region 0x924→0x916 /
-    // 0x9DC→0x9D6; tile_cache is upstream of sound_api in the engine bank).
-    assert_eq!(pins::SOUND_API.plain_base, 0x5D78);
-    assert_eq!(pins::SOUND_API.debug_base, 0x769C);
+    // 0x9DC→0x9D6; tile_cache is upstream of sound_api in the engine bank). Then +0xA both (t16 Wave 2: the crossing-decompress prefetch SCAN replaced the one-block prefetch, growing tile_cache +0xA).
+    assert_eq!(pins::SOUND_API.plain_base, 0x5D82);
+    assert_eq!(pins::SOUND_API.debug_base, 0x76A6);
     assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
