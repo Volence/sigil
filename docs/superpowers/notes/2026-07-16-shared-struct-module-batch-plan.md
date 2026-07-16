@@ -111,24 +111,41 @@ DONE (cont.):
   (correct enumeration + demand + kill-linkage → RE-JUDGE not auto-respell); loop-doc idiom
   line (name the shared home + both consts); item-4 test artifact stays as-is.
 
+DONE (cont.):
+- **Item 3.3** — tile_cache.emp DONE (aeon `8c84e87` / sigil `949fca2`). 7 consts + 7
+  ensures gone; `use engine.structs.{Act, Sec, Act_grid_w_lo, Act_grid_h_lo}`; bare →
+  `Sec.field`/`Act.field`; 6 grid+N sites → shared consts; Sec_len==66 → sizeof(Sec).
+  **⚠ Fable's flip-flagged file took the recipe with NO resistance** — `two_module_tail_call_flip`
+  passed (structs into tile_cache's ambient, `act_sec_field_equs` into the union;
+  `tile_cache_value_equs` byte seam + `tile_cache_value_pairs` flip seam both shed the 7).
+  TILE_CACHE_* mirrors UNTOUCHED (item 6). Not in mixed_dac_rom. Byte-neutral, strict 2257/0.
+- **Item 3.4** — entity_window.emp DONE (aeon `0cb52c6` / sigil `4acaab0`). 4 consts + 4
+  ensures gone; `use engine.structs.{Sec, Act_grid_w_lo}`; bare Sec → `Sec.field`; the 2
+  `Act_grid_w+1` sites → SHARED `Act_grid_w_lo` (no file-local). EntityScanState twin
+  untouched (row 25). Prepend structs in byte-gate compile + BOTH flip sides;
+  `entity_window_equs` shed its 4; `act_sec_field_equs` into `as_constant_equs`. Byte-neutral.
+  **→ the Sec/Act file-local offset-const mirror class is EXTINCT.**
+- **Item 7** — DONE (sigil `9788738`). Row-1068 CORRECTED (10 sites / 3 consumers / 2 fields;
+  shared consts shipped; kill-linkage = RE-JUDGE not auto-respell). Loop-doc idiom line names
+  the shared home + both consts.
+
 NEXT (resume here):
-- **Item 3.3** — tile_cache.emp (7 Act/Sec consts + ensures die; 6 grid_w+1/grid_h+1 sites
-  → shared consts; bare fields → `Sec.field`/`Act.field`). ⚠ FABLE FLAG: this is the
-  two-module-flip file (`tile_cache_port.rs` has `two_module_tail_call_flip_*` +
-  `tile_cache_value_pairs` + `tile_cache_labels_for_link`) — if the flip harness resists the
-  recipe, PARK and report. Recipe proven on the entity_window flip (add structs to the owned
-  module's ambient, `act_sec_field_equs` to the union). Also update `tile_cache_value_equs`
-  (the byte-gate seam) + `tile_cache_value_pairs` (the flip seam). tile_cache is compiled by
-  mixed_dac_rom? (verify; section was NOT — if tile_cache IS, add a `structs_ambient_items`
-  arm + `+constants` and bump its assert counts).
-- **Item 3.4** — entity_window.emp (4 consts + ensures die; the 2 `Act_grid_w+1` sites →
-  the SHARED `Act_grid_w_lo`, per the item-3.2 ruling — no file-local const). Test:
-  entity_window_port.rs (`entity_window_equs` sheds its Act/Sec mirrors — but they're already
-  in the union via act_sec_field_equs from 3.2, so just drop them from entity_window_equs).
-- **Item 7** kill-linkage: amend row 1068 (the ruling's consequent amendment — do WITH the
-  ledger enumeration correction).
-- **Item 6** — hoist TILE_CACHE_{COLS,ROWS,STRIDE,NT_SIZE} into engine.constants twin;
-  kill section+tile_cache local mirrors; discharge tile_cache.emp:8-12 comment.
-- **Item 5 (LAST)** — SectionId/GridCoord newtypes (row 1054); flag Fable if it balloons.
+- **Item 6** — hoist TILE_CACHE_{COLS,ROWS,STRIDE,NT_SIZE} into the engine.constants twin
+  (`engine/system/constants.emp` — add `pub const`s + drift ensures there); kill the
+  file-local mirrors + their 4 ensures in section.emp (lines ~21-24 + ensures 38-41) AND
+  tile_cache.emp (lines 14-17 + ensures 55-58); both `use engine.constants.{TILE_CACHE_*}`.
+  Discharge tile_cache.emp's deferral comment (the "hoist is deferred to the same wave" at
+  lines ~9-13) — UPDATE it, don't leave a stale claim. Tests: section_port/tile_cache_port
+  `*_value_equs` already SUPPLY these as plain pairs — they can stay (the values don't move,
+  only the .emp home), but `test_support::engine_constant_equs()` GAINS the 4 (constants.emp's
+  new drift guards read them) → add to `engine_constant_equs` + the kill-list/constants twin
+  rows. Verify byte-neutral + strict.
+- **Item 5 (LAST)** — SectionId/GridCoord newtypes (row 1054); seam-level typing
+  (FlatIDXY/GetSecPtrXY + entity_window↔section). FLAG Fable BEFORE building if it balloons
+  past sst-usability size. If ratified, add its seam-spelling line to the port-loop idiom list
+  (Fable's conditional feed-forward from the d83f1ca amendment).
+
+Then: merge packet (sst-usability template — include item-4 finding, the Act_grid_w_lo win,
+the sizeof(Sec) stride-guard upgrade Fable flagged, the trip-check outcomes) → Fable gate → merge.
 
 Step-0 note on sigil master `5739388`; plan note here (this branch).
