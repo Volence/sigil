@@ -243,9 +243,47 @@ below-row), (b) the whole row staged (not k=1), (c) the d6/d7 save/restore works
 corrupted col cursor could not have produced the contiguous 0x40-0x44. So the first downward
 crossing finds these cached → the cold-start +5 transient is pre-staged away at source.
 
-**Still OWED (the wave exit criterion, declared next phase):** the 3-regime A/B cycle-level
-confirmation — cold control (budget <100% + VInt_Lag → 0, measured via a BREAKPOINT ON
-VInt_Lag run free: zero hits = proof by non-event; Fable rider 3), steady-state
-no-regression, and the DIAGONAL lap/thrash run (the slot ruling's real condition). Then
-loop-until-dry (×80 revisit + FillColumn-hoist) → step-6 → merge packet + Fable's FillRow
-line-by-line gate.
+---
+
+## 3-REGIME A/B — DISCHARGED (2026-07-15, ROM a48fb0df verified)
+
+The wave exit criterion. Method = state-counter (ledger 1062): frame delim
+`run_to_scanline(224)`+`wait_for_break`; decompresses = `Block_Stage_Next` (@FFA8A8,
+mod-12) delta; `Block_Stage_Keys` (@FFA878, 12×4B) for the tag timeline; lag = a breakpoint
+at `VInt_Lag` (0x2290). Warmup: reset→start→Game_State=6→`Debug_Scene_Freeze`=1→poke Camera.
+Baseline staging matched the (ii) mechanistic proof exactly (`44 23 24 30 31 32 33 34 40 41
+42 43`, below-row 0x40-0x44 pre-warmed).
+
+**(a) COLD CONTROL — EXIT PROOF, PASS.** Camera_Y=$00900000 +16px/f through the cold-start
+region + a full 0x5x crossing + the 0x6x onset (144→320px, ~11 frames). `breakpoint_list`
+**hits = 0**. Decompresses flat 0-1/frame: the cold-start +5 transient W2(i) showed at
+144-160px is PRE-WARMED AWAY by (ii); 0x5x AND 0x6x staged one-block-per-frame by (i)
+(watched 50→51→52→53→54 build, then 60,61); cache Bottom tracked camera 61→79 continuously.
+Profiler (recovered steady): VInt(lag)=0 cyc, VSync idle 53.8%, work ≈46% of budget, no
+overrun. **PROBE-VALIDATION ARTIFACT (name in packet):** sentinel-invalidation — wrote 0xFF
+to all 12 staging keys → forced a cold crossing → VInt_Lag FIRED (PC=0x2290). Proves the
+detector is live; "zero hits" is a validated NON-EVENT, not a dead probe.
+
+**(b) STEADY — NO REGRESSION.** By construction: Wave 2's per-frame change is (i) row-prefetch
+RETARGETING on leftover budget (Tile_Cache_Fill:991 `beq .fill_return`, row-only) + (ii)
+Init-only warmup — neither touches FillRow's per-cell loop, so steady FillRow = Wave-1's
+23815 unchanged. Measured: no overrun, 53.8% idle headroom.
+
+**(c) DIAGONAL — slot ruling CLOSED; lag is pre-existing H-spike, NOT thrash.** Camera_X+
+Camera_Y both +16px/f: 2 clean lag events, both the same mechanism — a fresh block_x COLUMN
+cold-filled by FillColumn (~5 decompresses in one frame), the horizontal analog of the old
+vertical spike. **In EVERY lag frame the pre-staged V-row tags (60-65,70,71) SURVIVED** — no
+pre-staged tag vanished before consumption, so the Wave-2b escalation trigger (tags-vanish)
+did NOT fire. Code-verified pre-existing + out-of-scope: prefetch row-only + leftover-budget
+after FillColumn's priority (can't starve H-fill or lap live tags); FillColumn/
+CopyBlockColumn untouched by Wave 2; donor had no horizontal prefetch. **Fable ruling
+(2026-07-15): Option 1 — proceed; the H-column spike is LEDGERED (dossier + fix template +
+scheduling trigger), the slot ruling CLOSED empirically (tags-survived), NOT fixed in t16**
+(the symmetric follow-up is its own effort). Packet step-5 records regime (c) as
+NOT-TAKEN-WITH-REASON, never a pass. Both rows in campaign-gap-ledger.md [t16 step-5 Wave 2
+A/B regime (c)].
+
+**Next (declared tail):** loop-until-dry on the reshaped file (×80 revisit, FillColumn 4-lea
+hoist — now on the H-spike hot path so more interesting, but any H-amortization stays
+out-of-scope, hoist analysis only; decompose_block 3rd-site adoption in the warmup) → step-6
+enumerations → merge packet + Fable's FillRow line-by-line gate.
