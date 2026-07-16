@@ -125,6 +125,13 @@ Enumeration of every NEW thing t17 added that prior files could use:
 
 ---
 
+## Cross-seam second-look (Fable — a two-file property no per-file checklist sees)
+**Drop-coordination VERIFIED CORRECT.** section.emp reserves the worst-case entry size BEFORE advancing
+the `Section_*_Written` cursors on all paths, and clamps to cache bounds before looping; plane_buffer's
+internal overflow drops (`bhi .done`) are DEFENSE-IN-DEPTH — a full buffer DEFERS a column/row to the next
+frame, never LOSES it. The copy-then-sequential-drain split is correct: the strided cache walk stays in the
+game loop (Draw_Tile*), the VBlank drain (VInt_DrawLevel) stays sequential.
+
 ## Rulings discharged
 - KEEP both no-caller procs — done; `Draw_BG_TileColumn` (forward-scaffolding) + `Plane_Buffer_Reset` (the
   now-documented act-transition reset hook) ported faithfully. Pre-registered findings (a) header + (b)
