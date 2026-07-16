@@ -107,6 +107,9 @@ value 16 px (2 tile-cols), tunable; A/B regime (d) binds it.
   vertical tags for churn and escalates only on evidence.
 
 ### (H4) Late-frame prefetch gate (the Option-C pull-forward)
+> **CORRECTED at implementation — see §10.** The beam-position premise below is
+> FALSE: `Tile_Cache_Fill` runs inside VBlank at V≈240, so the V-counter can't
+> gauge frame load. H4 shipped as a `Frame_Counter`-delta trailing-lag gate instead.
 "Leftover budget" is counted in SLOTS, not TIME: on a frame where parallax ate
 the CPU but the cache was warm (fill spent 0), the counter still reads 6 and the
 prefetch happily speculates — potentially pushing a ~98% frame over. The
@@ -337,3 +340,77 @@ in regime (c')).
 Escalation forks (checkpoint before deciding unilaterally): regime (c') tag
 laps at 16 slots → 18 slots vs pin-bit (pre-decided: 18 first); regime (f)
 lag → side warmup; regime (d) vertical jump-arc churn → shared hysteresis.
+
+---
+
+## 10. IMPLEMENTATION OUTCOME (2026-07-16) — built, proven, Fable+design-reviewer ruled
+
+Shipped B+ on `feat/unified-prefetch` (aeon + sigil), byte gate 4/4 both shapes,
+strict suite 2252/0, clippy clean. Two design corrections surfaced by the A/B,
+both ruled and executed:
+
+### §3/H4 CORRECTION — the beam-position deadline gate was dead by design
+The A/B (oracle, OJZScroll) found **`Tile_Cache_Fill` runs once per frame INSIDE
+VBlank at V-counter ≈ 240** — it is called from the main-loop scene update, early,
+in its fixed slot, with a full active frame of budget ahead. The §3/H4 premise
+("read the VDP V-counter; if the beam is past line ~200 of 224 active, skip") was
+FALSE: the literal `V >= 200 → skip` fires every frame (240 ≥ 200) and kills all
+prefetch; and because Fill's V-position is ~240 every frame regardless of load, a
+beam read can NEVER gauge frame load here. **H4 was reworked to a trailing-lag
+gate:** `Frame_Counter` ticks once per VBlank on BOTH the normal (VInt_Level) and
+lag (VInt_Lag) paths, so at the frame gate a delta > 1 since the last fill means a
+frame lagged in between (`Cache_Pfx_Lag_Flag`). The tail then skips this frame's
+speculation if the previous frame lagged — bounded to **≤ 1 consecutive skip**
+(`Cache_Pfx_Skip_Armed`) so a sustained-lag run keeps pre-warming and cold columns
+can't cascade back (demand fill is never gated; bounded worst case = pre-prefetch).
+Self-contained in tile_cache (no VInt_Lag edit), release-safe (Lag_Frame_Count is
+DEBUG-only). This constraint is load-bearing for the Phase-2 §7 arbiter: any
+deferred-work gate must use a trailing indicator, not the beam.
+
+### §8 EXIT-CRITERION AMENDMENT (for Volence's countersign at the merge gate)
+Regime (a) as written ("0 VInt_Lag") is recorded **NOT-MET-AS-WRITTEN** and
+re-scoped to: **"zero VInt_Lag attributable to cold-crossing decompresses"**
+(Keys / `Block_Stage_Next` evidence) **+ "no lag regression vs the pre-prefetch
+baseline"** (the A/B). Both hold. The residual is copy/draw-bound, not decompress,
+and worse in the old code (§10 dossier).
+
+### Two DISTINCT lag measurements (never blur them)
+1. **Controlled A/B pair** (hash-verified ROMs, Frame_Counter-anchored, identical
+   scripted drive reset→start×8→start×120→right×180): **OLD t16 44 lag / ≈224
+   VBlanks (19.6%) vs NEW 27 lag / ≈207 VBlanks (13.0%)** — the H prefetch cuts
+   sustained-max-horizontal lag ~40%; implied totals 180+44 and 180+27 are exactly
+   what lag frames predict (internally consistent). Confirms the pre-existing branch.
+2. **Corroborating free-gameplay run** (context only): hold-right 180 frames →
+   22/180 lag at ~14 px/f. Not the controlled comparison; do not quote as such.
+
+### Regime results (state-counter method, all six, none skipped)
+- **(a) H cold control** — PASS (re-scoped). Next-col tags build 1/frame top-to-
+  bottom (block_x=5: 0x05→0x15→0x25→0x35, the 90° analog of the V build); 0
+  decompress-attributable lag; crossing lag is the pre-existing copy/draw residual.
+- **(b) no regression** — PASS via the A/B (NEW 27 < OLD 44).
+- **(c') diagonal / corner** — PASS. Both axes pre-stage (row 0x50 + col block_x=5);
+  the **corner block 0x55 is staged and the corner code path executes** (breakpoint
+  at the corner FindStagedBlock fired on the diagonal); pre-staged warmup tags
+  0x40–0x44 SURVIVED (no vanish); no lag. The 16-slot ruling holds at the unified
+  cadence — no tag lap, so the 18-slot fork does NOT fire.
+- **(d) reversal thrash** — H_PFX_HYST=16 BINDS. The latch flips on a single 16 px
+  reversal frame, but **decompresses = 0** over the whole ±16 px oscillation (both
+  neighbor columns stay warm in the 16 slots → a flip re-probes an already-staged
+  column, ~5 cheap probes, no decompress). No churn signature. Vertical jump-arc
+  oscillation: also 0 decompress churn → the **shared-hysteresis fork does NOT
+  fire**; vertical hysteresis stays not-taken.
+- **(e) sustained max diagonal** — **~42% lag** (8 / 19 diagonal frames, post-
+  prefetch), down from the pre-prefetch DEFERRED_WORK "~76%". The trailing-lag H4
+  gate **demonstrably fires** here (execution hit the skip branch on post-lag
+  diagonal frames — the lesson that killed the original H4, applied to its
+  replacement), bounded ≤1 consecutive by construction.
+- **(f) spawn + instant-max H** — down-only warmup CONFIRMED. The spawn+immediate-
+  +16-px/f-horizontal case (regime a) shows the col prefetch staging fresh side-
+  columns 1/frame with 0 quiet-frame lag; no cold-side-column lag → the
+  WarmupSideColumns fallback does NOT fire.
+- **H6 verify-during-motion** — mid-scroll leading-edge screenshot CLEAN (coherent
+  foliage/ground/objects, no stale-tile garbage, no torn seam).
+
+### Provenance
+plain `453087`/`e9b3e9fa`, debug `461110`/`1e47bf0c` (final, post-H4-rework).
+Old t16 baseline for the A/B: debug `460661`/`1f93a71f`.
