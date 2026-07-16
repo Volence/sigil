@@ -1304,6 +1304,22 @@ fn frames_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item
     file.items
 }
 
+/// The shared `engine.structs` module (`engine/structs.emp`, row 1051): the
+/// zero-byte Act/Sec ROM-descriptor twins + their per-field drift wall,
+/// prepended wherever a module `use`s them (act_descriptor.emp, and the
+/// section/tile_cache/entity_window consumers as they unwind). No `use` of its
+/// own, so no transitive prepend.
+fn structs_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_dir.join("structs.emp"))
+        .unwrap_or_else(|e| panic!("cannot read structs.emp: {e}"));
+    let (file, sdiags) = parse_str(&src);
+    assert!(
+        sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "structs.emp parse errors: {sdiags:?}"
+    );
+    file.items
+}
+
 /// The engine.types domain-type vocabulary (`engine/system/types.emp`,
 /// construct-walk #3): zero-byte pure types (Coord/Velocity/Angle/...),
 /// prepended wherever a module `use`s them (sst.emp, math.emp).
@@ -1359,6 +1375,16 @@ fn placed_module_sections_with_roots(
         "controllers.emp" | "vdp_init.emp" => ambient_items = constants_ambient_items(&dir),
         // math.emp uses engine.types (the Angle param, construct-walk #3).
         "math.emp" => ambient_items = types_ambient_items(&dir),
+        // act_descriptor.emp `use`s the shared engine.structs Act/Sec twins
+        // (row 1051). It lives six levels below the aeon root
+        // (games/sonic4/data/levels/ojz/act1).
+        "act_descriptor.emp" => {
+            let root = dir
+                .ancestors()
+                .nth(6)
+                .expect("games/sonic4/data/levels/ojz/act1 is six levels below the aeon root");
+            ambient_items = structs_ambient_items(&root.join("engine"));
+        }
         "collision_lookup.emp" => {
             ambient_items = constants_ambient_items(
                 &dir.parent().expect("engine/level has a parent").join("system"),
@@ -2202,9 +2228,11 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         // + the ONE trailing align congruence assert (the step-5 rewrite
         // packed the bodies; only the next-table evenness guard remains).
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        // act_descriptor: Act_len/Sec_len twin pins + the two engine-limit
-        // mirrors + EDGE_CLAMP (the comptime grid facts fold before link).
-        ("act_descriptor.emp", &act_asserts, 5),
+        // act_descriptor: 3 engine-limit mirrors (MAX_ACT_SECTIONS/
+        // SECTION_SIZE_SHIFT/EDGE_CLAMP) + the prepended engine.structs drift
+        // wall (34 per-field offsetof + 2 sizeof = 36) = 39. Act_len/Sec_len
+        // moved into structs.emp; the comptime grid facts fold before link.
+        ("act_descriptor.emp", &act_asserts, 39),
     ] {
         assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
@@ -2351,7 +2379,7 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 5),
+        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
         // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
         // checked against the REAL sound_constants.asm / config/sound_ids.asm.
         ("sound_api.emp", &sound_api_asserts, 7),
@@ -2523,7 +2551,7 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 5),
+        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
         ("sound_api.emp", &sound_api_asserts, 7),
         // The object modules' ambient guards: sst.emp's 30 SST_* struct-equ
         // pins ride BOTH modules; test_particle adds engine.constants's 11.
@@ -2688,7 +2716,7 @@ fn build_mixed_tranche7_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 5),
+        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
@@ -2984,7 +3012,7 @@ fn build_mixed_tranche8_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 5),
+        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
@@ -3280,7 +3308,7 @@ fn build_mixed_tranche9_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 5),
+        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),

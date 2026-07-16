@@ -46,10 +46,39 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
+fn aeon_root() -> PathBuf {
+    PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    )
+}
+
 fn act_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("games/sonic4/data/levels/ojz/act1")
+    aeon_root().join("games/sonic4/data/levels/ojz/act1")
+}
+
+fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
+    let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let (file, pdiags) = parse_str(&src);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} parse errors: {pdiags:?}",
+        path.display()
+    );
+    file
+}
+
+/// Prepend ambient dependency modules' items to `main` (the `use`-target seam —
+/// the region test's single-file lower path does not auto-resolve `use`).
+fn with_ambient(
+    ambient: Vec<sigil_frontend_emp::ast::File>,
+    main: sigil_frontend_emp::ast::File,
+) -> sigil_frontend_emp::ast::File {
+    let mut items = Vec::new();
+    for d in ambient {
+        items.extend(d.items);
+    }
+    items.extend(main.items.clone());
+    sigil_frontend_emp::ast::File { module: main.module, attrs: main.attrs, items, docs: main.docs }
 }
 
 fn strict_gate() -> bool {
@@ -134,8 +163,8 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         ("EDGE_CLAMP", pins::EDGE_CLAMP.plain),
         ("MAX_ACT_SECTIONS", pins::MAX_ACT_SECTIONS.plain),
         ("SECTION_SIZE_SHIFT", pins::SECTION_SIZE_SHIFT.plain),
-        ("Act_len", pins::ACT_LEN.plain),
-        ("Sec_len", pins::SEC_LEN.plain),
+        // Act_len/Sec_len + the Act_*/Sec_* field equs now come from
+        // `act_sec_field_equs()` (the shared engine.structs drift wall reads them).
         ("OJZ_SEC0_BLOCK_DICT_LEN", pins::OJZ_SEC0_BLOCK_DICT_LEN.plain),
         ("OJZ_SEC1_BLOCK_DICT_LEN", pins::OJZ_SEC1_BLOCK_DICT_LEN.plain),
         ("OJZ_SEC2_BLOCK_DICT_LEN", pins::OJZ_SEC2_BLOCK_DICT_LEN.plain),
@@ -153,6 +182,11 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
     }
     for (name, v) in VALUES {
         asm.push_str(&format!("{name} = ${v:X}\n"));
+    }
+    // The Act_*/Sec_* field equs + Act_len/Sec_len that the prepended
+    // engine.structs drift wall reads (shape-invariant offsets).
+    for (name, rhs) in sigil_harness::test_support::act_sec_field_equs() {
+        asm.push_str(&format!("{name} = {rhs}\n"));
     }
     asm.push_str("Stub:\n\tdc.w 0\n");
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
@@ -172,13 +206,10 @@ fn compile_real_file(
     debug: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let dir = act_dir();
-    let src = std::fs::read_to_string(dir.join("act_descriptor.emp"))
-        .unwrap_or_else(|e| panic!("cannot read act_descriptor.emp: {e}"));
-    let (file, pdiags) = parse_str(&src);
-    assert!(
-        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "act_descriptor.emp parse errors: {pdiags:?}"
-    );
+    // act_descriptor.emp `use engine.structs.{Act, Sec}` — prepend the shared
+    // struct module (its layout + per-field drift wall) as the `use` target.
+    let structs = parse_file(&aeon_root().join("engine/structs.emp"));
+    let file = with_ambient(vec![structs], parse_file(&dir.join("act_descriptor.emp")));
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -241,7 +272,10 @@ fn assert_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
             })
         })
         .count();
-    assert_eq!(drifted, 5, "Act_len/Sec_len/limits/EDGE_CLAMP drift guards must be captured");
+    // act_descriptor's own 3 limit mirrors (MAX_ACT_SECTIONS/SECTION_SIZE_SHIFT/
+    // EDGE_CLAMP) + the prepended engine.structs drift wall (34 per-field +
+    // 2 sizeof = 36) = 39. The Act_len/Sec_len sizeof guards moved to structs.emp.
+    assert_eq!(drifted, 39, "act limit mirrors + shared struct drift wall must be captured");
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {
