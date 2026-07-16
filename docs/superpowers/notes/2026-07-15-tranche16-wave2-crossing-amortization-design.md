@@ -212,3 +212,40 @@ NOT discharged by this vertical run.
 read a monotonic engine-maintained STATE counter's delta between frame boundaries via
 read_memory, index by Frame_Counter value — immune to the frame-advance non-determinism that
 corrupts profiler-window sampling.
+
+---
+
+## Wave-2 (ii) IMPLEMENTED + MECHANISTIC PROOF (2026-07-15)
+
+Shipped `TileCache_WarmupBelowRow` (aeon 7e11b17 / sigil 8ec4889). Called once from
+`Tile_Cache_Init` after `FillAll`, display OFF; reuses the prefetch down-scroll target +
+scan but stages the WHOLE below-row (no k=1 cap, no budget) and saves d6/d7 across
+`DecompressBlock` (which clobbers d0-d7) since the scan continues past it. Init-only
+(Reinit's scroll direction is unknown). Region grew +$76 both shapes (0x920→0x996 plain /
+0x9E0→0xA56 debug); all downstream gate orgs + pins re-baselined uniformly +$76.
+tile_cache_port gate 4/4, full strict 2252/0, clippy clean. Provenance (branch): plain
+99fd3a55/452638, debug a48fb0df/460661.
+
+**LIVE MECHANISTIC PROOF (oracle, breakpoint at TileCache_WarmupBelowRow on fresh boot):**
+the proc IS called from Init (breakpoint fired), and step_out confirmed it RETURNS cleanly
+(→ Tile_Cache_Init+100, no hang — which also independently proves termination, since a hung
+Init never reaches Game_State 6). Keys diff across the call (Cache: Left_Col=0, Head_Col=79,
+Bottom_Row=61 → target below-row = align(61)+16 = world row 64 = block_y 4, cols 0-4):
+
+```
+entry (post-FillAll):  22 23 24 30 31 32 33 34 13 14 20 21   Next=8
+after WarmupBelowRow:  44 23 24 30 31 32 33 34 40 41 42 43   Next=1
+                       ^^                      ^^ ^^ ^^ ^^
+```
+→ staged EXACTLY the below-row **0x40,0x41,0x42,0x43,0x44** (5 blocks, Next 8→1 mod-12 = 5
+decompresses), round-robin evicting the oldest slots. Confirms: (a) correct target (the
+below-row), (b) the whole row staged (not k=1), (c) the d6/d7 save/restore works — a
+corrupted col cursor could not have produced the contiguous 0x40-0x44. So the first downward
+crossing finds these cached → the cold-start +5 transient is pre-staged away at source.
+
+**Still OWED (the wave exit criterion, declared next phase):** the 3-regime A/B cycle-level
+confirmation — cold control (budget <100% + VInt_Lag → 0, measured via a BREAKPOINT ON
+VInt_Lag run free: zero hits = proof by non-event; Fable rider 3), steady-state
+no-regression, and the DIAGONAL lap/thrash run (the slot ruling's real condition). Then
+loop-until-dry (×80 revisit + FillColumn-hoist) → step-6 → merge packet + Fable's FillRow
+line-by-line gate.
