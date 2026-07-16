@@ -1,8 +1,21 @@
 # The port loop (canonical — Volence-ratified 2026-07-10, supersedes all prior loop descriptions)
 
+**THE SHAPE (Volence-clarified 2026-07-16 — "steps 2-6" / "3-6" phrasing
+keeps blurring this; the numbers are NOT a linear sequence):**
+
+    0 → 1 → 2 → (3 → 4 → 5)* → 6 → merge
+
+Steps 0/1/2 run ONCE per file. **The loop is 3→4→5**: after step 5, run
+step 3's retrospect again; anything found feeds 4/5 again; repeat until
+a retrospect pass comes up EMPTY (the dry exit). **Step 6 runs ONCE,
+after the loop exits dry — never inside it.** Writing "steps 3-6" as if
+6 were a loop member is the recurring error this box exists to stop.
+
 **CHANGELOG (re-read this doc at each step boundary — it changes
 mid-campaign, and a ruling ratified after your last read still binds
 you):**
+- 2026-07-16: THE SHAPE box added (loop = 3→4→5 until dry; 6 = one
+  final post-loop pass; 0/1/2 once per file).
 - 2026-07-15 (3rd): loop self-extension audit — step-0 TRIP-CHECK (kill
   conditions this port trips, not just file-keyed rows) + probe
   BINDING-CLASS rule; step-1 GATE-ARTIFACT discipline (every gate names
