@@ -213,6 +213,12 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("FRAME_BBOX_Y_MIN", "2"),
         ("FRAME_BBOX_Y_MAX", "3"),
         ("FRAME_PIECES", "6"),
+        // 2D tile-cache geometry — consolidated into the shared twin at the
+        // shared-struct-module batch (section + tile_cache 2nd-consumer trigger).
+        ("TILE_CACHE_COLS", "80"),
+        ("TILE_CACHE_ROWS", "60"),
+        ("TILE_CACHE_STRIDE", "80"),
+        ("TILE_CACHE_NT_SIZE", "9600"),
     ]
 }
 
@@ -306,14 +312,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_53() {
+    fn engine_constants_blob_assembles_and_defines_all_57() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            53,
-            "the twin guards 53 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3)"
+            57,
+            "the twin guards 57 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4)"
         );
     }
 

@@ -88,10 +88,8 @@ fn section_value_equs() -> Vec<Section> {
         ("PLANE_H_CELLS", "64"),
         ("PLANE_V_CELLS", "64"),
         ("PLANE_BUFFER_SIZE", "1536"),
-        ("TILE_CACHE_COLS", "80"),
-        ("TILE_CACHE_ROWS", "60"),
-        ("TILE_CACHE_STRIDE", "80"),
-        ("TILE_CACHE_NT_SIZE", "9600"),
+        // TILE_CACHE_COLS/ROWS/STRIDE/NT_SIZE now come from engine_constant_equs()
+        // (hoisted into the shared engine.constants twin).
         ("VRAM", "%100001"),
         ("CRAM", "%101011"),
         ("VSRAM", "%100101"),
