@@ -29,10 +29,16 @@ countersign at the merge gate + Fable's hot-path second look.**
    pre-prefetch baseline." Both hold. **← Volence countersigns this at the gate.**
 
 ## Two DISTINCT lag numbers (do not blur)
-- **Controlled A/B** (hash-verified ROMs, Frame_Counter-anchored, identical scripted
-  drive): **OLD t16 44 lag / ≈224 VBlanks vs NEW 27 / ≈207** → ~40% cut on sustained-
-  max-horizontal. Internally consistent (180+44, 180+27). The comparison of record.
+- **Controlled A/B, RE-ANCHORED on clean builds** (Fable hold cleared): clean t16
+  master `a48fb0df` vs the clean SHIPPED tip `827e18c4` (the trailing-gate ROM),
+  identical scripted drive → **OLD 39 lag / 200 frames vs NEW 24 / 192 (~38% cut)**.
+  The comparison of record. (The earlier 44 vs 27 head-to-head used the INTERIM H4
+  ROM `a4ed3b68` as NEW — same effect, superseded by this clean re-anchor. Run-to-run
+  press-timing variance ±few lag frames; the ~38–40% cut is robust.)
 - **Free-gameplay corroboration** (context only, NOT the comparison): 22/180 at ~14 px/f.
+- **Hash note:** all CRC32 (campaign standard). The drive was purely oracle-side
+  (pokes/reset/press, no ROM patch) — earlier drafts quoted SHA1 prefixes of the same
+  files, which is why they looked to differ from Fable's clean CRC32 build.
 
 ## Regimes (state-counter method; all six, none skipped) — detail in design §10
 (a) PASS re-scoped (next-col tags build 1/frame). (b) PASS via A/B. (c') PASS — corner
@@ -52,8 +58,8 @@ sustained-max-diagonal ~42% (was ~76%); H4 gate fires. (f) down-only warmup conf
   measured ~42% (was stale ~76%). Design note §3/H4 corrected + §10 outcome added.
 
 ## Provenance
-Final: plain `453087`/`e9b3e9fa`, debug `461110`/`1e47bf0c`. Old-t16 A/B baseline:
-debug `460661`/`1f93a71f`.
+Final: plain `453087`/`b335bdc6`, debug `461110`/`827e18c4`. Old-t16 A/B baseline:
+debug `460661`/`a48fb0df`.
 
 ## Pass breakdown (step-3 vs step-5 framing)
 This is not a port tranche (byte-CHANGING throughout), but for parity:

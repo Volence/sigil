@@ -411,6 +411,18 @@ and worse in the old code (§10 dossier).
 - **H6 verify-during-motion** — mid-scroll leading-edge screenshot CLEAN (coherent
   foliage/ground/objects, no stale-tile garbage, no torn seam).
 
-### Provenance
-plain `453087`/`e9b3e9fa`, debug `461110`/`1e47bf0c` (final, post-H4-rework).
-Old t16 baseline for the A/B: debug `460661`/`1f93a71f`.
+### Provenance (CRC32; sizes)
+Final shipped tip: plain `453087`/`b335bdc6`, debug `461110`/`827e18c4`. Old-t16 A/B
+baseline: debug `460661`/`a48fb0df`. (Hashes are CRC32 — the campaign standard;
+earlier drafts of this note quoted SHA1 prefixes of the SAME files.)
+
+### RE-ANCHORED on clean builds (2026-07-16, Fable merge-gate hold cleared)
+The head-to-head A/B above (44 vs 27) used the INTERIM H4 ROM (beam-exclusion,
+CRC32 `a4ed3b68`) as NEW. Re-run on the SHIPPED trailing-gate tip (`827e18c4`) vs
+clean t16 master (`a48fb0df`), identical scripted drive: **OLD 39 lag / 200 frames
+vs NEW 24 / 192 (~38% cut)** — the shipped gate confirmed better, same effect.
+Regime (a) VInt_Lag free-run on the shipped tip: **0 breakpoint hits** on the quiet
+cold-control frames, next-col tags build 1/frame (0x05->0x15->0x25->0x35). Regimes
+(c')/(d)/(e) + the rider-1 skip-branch evidence all ran on `827e18c4`. The drive was
+purely oracle-side (pokes/reset/press, no ROM patch), so the ROMs are the unpatched
+builds — the hashes never differed by content, only by algorithm.
