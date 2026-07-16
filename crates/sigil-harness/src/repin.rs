@@ -249,6 +249,12 @@ pub struct RegionSpec {
 #[derive(Debug)]
 pub struct SymbolSpec {
     pub name: String,
+    /// Override for the emitted const name (default: `upper_snake(name)`). Needed
+    /// when a symbol's snake-upper would collide with a region const — e.g. the
+    /// `Plane_Buffer` RAM base vs the `plane_buffer` region (both → PLANE_BUFFER);
+    /// the base pins as `PLANE_BUFFER_BASE`.
+    #[serde(default)]
+    pub const_name: Option<String>,
     #[serde(default)]
     pub debug_only: bool,
     #[serde(default)]
@@ -520,7 +526,7 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
         };
         symbols.push(SymbolPin {
             name: s.name.clone(),
-            const_name: upper_snake(&s.name),
+            const_name: s.const_name.clone().unwrap_or_else(|| upper_snake(&s.name)),
             tests: s.tests.clone(),
             value,
         });
