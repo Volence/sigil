@@ -143,3 +143,72 @@ it's the simplest and its debt-absorption is already proven, so it's the safety 
 **Open question for the gate:** (i)'s 12-slot tightness — accept BLOCK_STAGE_SLOTS ↑
 (RAM cost: +768 B/slot in `Block_Stage_Buffers`), or add eviction-order awareness, or
 fall back to (i)-with-k=1-and-(iii)-cap as a hybrid. Fable's call before code.
+
+---
+
+## Wave-2 (i) BEHAVIOR VALIDATION — clean A/B, W2(i) half (2026-07-15)
+
+**Method wall cleared.** Two profiler approaches (aggregate window, then per-frame
+`get_profiler_frames(1)`) both failed on frame-advance non-determinism (ledger row: press
+advances 1-2 game frames; profiler `calls` unreliable). The fix (Fable's primary metric):
+read `Block_Stage_Next` ($FFA8A8, word, mod-12 — bumped once per `TileCache_DecompressBlock`
+call, unconditional) and take its **delta between frame boundaries** = decompresses/frame.
+State, not a sample → immune to the timing non-determinism. Frames delimited by
+`run_to_scanline(224)`+wait; every sample indexed by the `Frame_Counter` VALUE read
+(FC delta varied +1/+2 per step — harmless, indexing absorbs it).
+
+**Harness (deterministic, replayable for W1):** reset → press start 8f → press start 120f
+(→ `Game_State`=6 OJZScroll, FC=0x0230, tile cache live) → `Debug_Scene_Freeze`=1 (byte!)
+→ per step: poke `Camera_Y += $00100000` (16 px, 16.16 fixed) → `run_to_scanline(224)` →
+read `Block_Stage_Keys`+`Block_Stage_Next` (one 50-byte read @ $FFA878) + `Frame_Counter`.
+ROM hash-verified W2 debug **2b57bf0c** (reload_rom explicit path) BEFORE measuring.
+
+**W2(i) fingerprint** (2-frame buckets, Camera_Y in px → decompress-count via Next delta):
+```
+144→160  +1     Keys: (boot-staged 24,30-34,40-43,50)
+160→176  +5     ← cold-start catch-up transient (first real motion off the frozen boot)
+176→192  +1     Keys slot2: 24→51   (0x5x row staging begins)
+192→208  +1     Keys slot3: 30→52
+208→224  +1     Keys slot4: 31→53
+224→240  +1     Keys slot5: 32→54   ← 0x5x row now COMPLETE (50,51,52,53,54)
+240→256  +0     (quiet — 0x5x fully staged, camera inside cached window)
+256→272  +0
+272→288  +0
+288→304  +1     Keys slot6: 33→60   (0x6x row staging begins — no spike)
+```
+Total = **11 decompresses over 160 px** (Camera_Y 144→304; Block_Stage_Next 8→7 mod-12).
+That 160 px is **~1.25 block-rows** (a block-row is ~128 px), spanning **two row-onsets**
+(0x5x at ~176, 0x6x at ~288) **plus the cold catch-up** at ~160. (Earlier prose "10 / 144 px
+/ 9 block-rows / ~1 block per row" was wrong arithmetic — the table is authoritative; a
+"row" here is the ~128 px vertical block-row the tags 0x5x/0x6x each represent, NOT a 16 px
+step.)
+
+**Reading:** this IS Fable's predicted "(i) working" fingerprint — **flat, low (0-1/bucket),
+next-row tags accumulating ONE PER QUIET FRAME** (watched 0x5x build 50→51→52→53→54 one
+block per step, then 0x6x start at 60). The Keys array is direct mechanistic evidence: the
+k=1 staged-count-aware scan stages the next row ahead of demand, so row crossings cost 0-1,
+NOT a 5-6 spike. The single +5 is a cold-start transient (first motion off frozen boot), not
+a steady-state spike — no spikes recur at any of the 3 row crossings observed (0x5x, 0x6x
+onsets both smooth). No tags observed vanishing before consumption → no lap/thrash.
+
+**W1 half — DELIBERATELY SKIPPED (Fable ruling, 2026-07-15), not a silent omission.** The
+W2(i) Keys timeline is standalone mechanistic proof (watching the next row build one tag per
+quiet frame is stronger than the spike-contrast inference we originally planned). The
+symmetric W1 run would confirm nothing contestable: the W1 spike is forced **by
+construction** — the old prefetch warms ≤1 block/frame, a row crossing needs ~5-6 blocks, so
+the remainder MUST decompress on demand (arithmetic, already corroborated by the R2 probe +
+positive-control cycle data). Mechanism (i) is CLOSED on the Keys evidence.
+
+The symmetric protocol stays on file (above) in case anyone wants the W1 run later: build W1
+debug ROM (commit 371aedd) in a scratch worktree INSIDE .worktrees/ (seed → rm pre-built
+ROMs → build → hash-verify **8e41c991**), replay the identical warmup+schedule.
+
+**Still OWED (rides the 3-regime A/B on W2+(ii), same Block_Stage_Next/Keys method):** the
+DIAGONAL lap/thrash run — vertical was the easy case; the slot ruling's condition was always
+the diagonal (does a diagonal crossing evict tags before consumption / thrash the 12 slots).
+NOT discharged by this vertical run.
+
+**The state-counter harness is now the campaign's live-measurement template** (Fable):
+read a monotonic engine-maintained STATE counter's delta between frame boundaries via
+read_memory, index by Frame_Counter value — immune to the frame-advance non-determinism that
+corrupts profiler-window sampling.
