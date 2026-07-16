@@ -137,6 +137,18 @@ gate = "SIGIL_EMP_LOAD_OBJECT"
 tests = ["load_object_port", "entity_window_port"]
 
 [[region]]
+# Tranche 17 — the deferred nametable plane buffer (§4.1), the VDP-side DRAW half
+# of the streaming engine (section.emp's paired *draw* sibling). SHAPE-INVARIANT
+# length ($29C both shapes — no asserts, no __DEBUG__). End is the next placement:
+# tile_cache's Tile_Cache_GetTile (engine.inc; end-is-next-placement, the
+# load_object precedent). Plain $405E..$42FA = $29C bytes.
+name = "plane_buffer"
+start = "Plane_Buffer_Reset"
+end = "Tile_Cache_GetTile"
+gate = "SIGIL_EMP_PLANE_BUFFER"
+tests = ["plane_buffer_port"]
+
+[[region]]
 # Tranche 16 — the 2D block-decompression tile cache (§4.7). Biggest region yet
 # ($924 plain / $9DC debug), section.emp's paired streaming sibling. SHAPE-VARYING:
 # the debug shape carries +$B8 (the .raw_direct assert block). End is the next
@@ -429,6 +441,14 @@ tests = ["section_port"]
 [[symbol]]
 name = "Plane_Buffer_Ptr"
 tests = ["section_port"]
+
+# plane_buffer (tranche 17) — the ring-buffer BASE (`ds.b PLANE_BUFFER_SIZE`
+# before Plane_Buffer_Ptr). `const_name` override dodges the PLANE_BUFFER region
+# const collision (plane_buffer.emp's `lea (Plane_Buffer).w` abs base).
+[[symbol]]
+name = "Plane_Buffer"
+const_name = "PLANE_BUFFER_BASE"
+tests = ["plane_buffer_port"]
 
 [[symbol]]
 name = "Tile_Cache_Nametable"

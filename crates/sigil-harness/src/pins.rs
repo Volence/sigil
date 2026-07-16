@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/16/2026 02:32:41 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/16/2026 02:32:40 AM)
-//! [provenance] 23 regions, 200 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche17/s4.lst (07/16/2026 04:12:25 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche17/s4.debug.lst (07/16/2026 04:12:24 PM)
+//! [provenance] 24 regions, 201 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +83,9 @@ pub const ENTITY_WINDOW: Region = Region { plain_base: 0x33FC, debug_base: 0x3B5
 
 /// `Load_Object` .. `Plane_Buffer_Reset` — gate `SIGIL_EMP_LOAD_OBJECT`. tests: load_object_port, entity_window_port
 pub const LOAD_OBJECT: Region = Region { plain_base: 0x3FDC, debug_base: 0x4BA6, plain_len: 0x82, debug_len: 0x82 };
+
+/// `Plane_Buffer_Reset` .. `Tile_Cache_GetTile` — gate `SIGIL_EMP_PLANE_BUFFER`. tests: plane_buffer_port
+pub const PLANE_BUFFER: Region = Region { plain_base: 0x405E, debug_base: 0x4C28, plain_len: 0x29C, debug_len: 0x29C };
 
 /// `Tile_Cache_GetTile` .. `Collision_GetType` — gate `SIGIL_EMP_TILE_CACHE`. tests: tile_cache_port
 pub const TILE_CACHE: Region = Region { plain_base: 0x42FA, debug_base: 0x4EC4, plain_len: 0xB54, debug_len: 0xC14 };
@@ -247,6 +250,9 @@ pub const CACHE_ORIGIN_ROW: Pin = Pin { plain: 0xFFFFA842, debug: 0xFFFFA866 };
 
 /// `Plane_Buffer_Ptr`. tests: section_port
 pub const PLANE_BUFFER_PTR: Pin = Pin { plain: 0xFFFFA72C, debug: 0xFFFFA750 };
+
+/// `Plane_Buffer`. tests: plane_buffer_port
+pub const PLANE_BUFFER_BASE: Pin = Pin { plain: 0xFFFFA12C, debug: 0xFFFFA150 };
 
 /// `Tile_Cache_Nametable`. tests: section_port
 pub const TILE_CACHE_NAMETABLE: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
