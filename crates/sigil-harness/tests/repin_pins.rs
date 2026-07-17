@@ -187,13 +187,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // 0x996->0x9A6 plain / 0xA56->0xA66 debug; tile_cache upstream of sound_api).
     assert_eq!(pins::SOUND_API.plain_base, 0x5FC2);
     assert_eq!(pins::SOUND_API.debug_base, 0x78E6);
-    assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
+    assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
     // byte-IDENTICAL — literal len + debug_len override, no end-symbol shipped).
     // SOUND_PLAY_SFX_OFF became per-shape (PlayMusic's asserts precede Sound_PlaySFX).
-    assert_eq!(pins::SOUND_API.debug_len, 0x2DA);
-    assert_eq!(pins::SOUND_PLAY_SFX_OFF, pins::ShapeOffset { plain: 0x100, debug: 0x1B0 });
+    assert_eq!(pins::SOUND_API.debug_len, 0x2FC);  // +0x22: H-1 PlayMusic repost gate
+    // +0x22 both shapes: H-1 Sound_PlayMusic repost gate precedes Sound_PlaySFX.
+    assert_eq!(pins::SOUND_PLAY_SFX_OFF, pins::ShapeOffset { plain: 0x122, debug: 0x1D2 });
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
     // +0xCC (churn) +0xC (hook guards) both in the debug ROM, like DEBUG_ASSEMBLED_LEN.
