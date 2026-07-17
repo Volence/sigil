@@ -143,7 +143,53 @@ assert, pipeline rule — no hand-transcription) at TWO anchors varying the wrap
 The collision segmentation cut another ~11.9k cy; the two FillRow restructures together cut
 FillRow **~60%** (max-V), freeing ~half the frame to idle. VBlank-Δ = 0 (pure producer).
 
-## Step 1.2 — plane_buffer (b) (Draw_TileRow_FromCache segments) — PENDING
+## Step 1.2 — plane_buffer (b) (Draw_TileRow_FromCache segments) — RESUME BLOCK (next session)
+
+**Scouted 2026-07-17 (start from THIS, don't re-derive). Fresh focused session (park
+ratified — precedent: step-0 parked at the same boundary).**
+
+**Target: `Draw_TileRow_FromCache`** (`engine/level/plane_buffer.emp:226` / `.asm` twin).
+Appends one 64-cell row to `Plane_Buffer` for the VBlank drain (row header bit15=0, then
+`PLANE_H_CELLS`=64 cells, then a `0` terminator; advances `Plane_Buffer_Ptr`). The
+`.row_src_loop` (emp:285) runs 64× with per-cell:
+- **W-cursor walk**: `d0` = world col, starts at `A = R & ~63` (R = `Section_Right_Col_
+  Written` clamped to `Cache_Head_Col`), increments; when `W > R` it wraps `−64` → walks
+  `A, A+1, …, R, then R−63, …, A−1` (the 64 plane cols in NT order). Deterministic.
+- **zero segment**: `W < Cache_Left_Col` → `clr.w (a2)+` (cols behind the streamed window).
+- **data**: physical col = `W + (Cache_Origin_Col − Cache_Left_Col)`, wrap at `TILE_CACHE_
+  COLS`, indexed `move.w (a0,d1.w),(a2)+` from the cache row base (a0, physical col 0).
+
+**Planned restructure (design note §2A(b) + Probe (i)):** decompose the deterministic
+W-walk into contiguous `move.w`/`dbf` runs (the note's "≤5 runs"; the `A..R` and
+`R−63..A−1` legs are each monotonic, split ≤2 more by the physical-col wrap at
+`TILE_CACHE_COLS`) and **DROP the zero segment** — `clr` the `< Cache_Left` cols is WASTE
+(Probe (i) DISCHARGED 2026-07-16: those cells are structurally off-screen ring-back in
+every reachable regime; design note tail). Emit DATA runs only, no trailing zero run.
+~3.4k cy/row (Fable 2nd-review). *producer / V.* `move.l`/unroll is the ledger-1092 rider.
+
+**THREE things to carry (Fable, park):**
+1. **Bar (identity N/A by design — the clamp changes buffer content):** VRAM VISIBLE-
+   WINDOW compare across the whole drive (multiple frames) — NOT a cache-RAM byte-identity
+   (dropping the zero-writes leaves off-screen plane cols with STALE data, not tile 0, so
+   Plane_Buffer content + off-screen VRAM differ by design; the VISIBLE result must be
+   unchanged). Clamp rail MANDATORY: leading-edge mid-scroll screenshots + the up+left
+   drive proving the dropped cells never reach the visible window. Canonical freeze+poke
+   anchors (`Debug_Scene_Freeze` 0xFF8A10 + Camera poke), NOT press-count drives — see the
+   CANONICAL identity bar section above.
+2. **CENTRAL RISK (the step-0 WATCH line):** the clamp leaves STALE cells, not zeros, and
+   Draw_TileRow's left-behind case (`< Cache_Left_Col`) is **MARGIN-based, not ring-back-
+   based** — unlike FillRow's zero region. The leading-edge screenshot criterion re-checks
+   exactly this. Design the segment shapes with the margin case in front of you; if a
+   dropped cell CAN reach the visible window in any regime, the zero segment stays for those
+   cols (clamp only the proven-off-screen tail). Verify with up+left AND leading-edge.
+3. **Discipline from commit one (1.1b-era):** the 5-site RIPPLE SWEEP (pins.rs, engine.inc,
+   mixed_dac_rom.rs, repin_pins.rs, repin.toml) run AFTER repin with failures-first suite
+   counts pasted (`N passed / M failed`, never `grep 'test result' | head`); one candidate
+   group per commit; twin lockstep + byte gate both shapes; 3-regime A/B vs the 45ca85d
+   anchor (producer-Δ + VBlank-Δ, Lag stays 0). Baseline for the A/B: Draw_TileRow_FromCache
+   = 13416 cy / 10.5% max-V (unchanged through 1.1a/1.1b — it's the plane_buffer producer,
+   not tile_cache), 45ca85d anchor row.
+
 ## Step 1.3 — tile_cache #5 (CopyBlockColumn wrap-split) — PENDING
 
 _Each: twin lockstep (.emp + .asm), re-pin, byte gates both shapes, per-group A/B
