@@ -1,0 +1,116 @@
+# Contract-grammar v2 — G1 CHECKPOINT (closure skeleton over the real corpus)
+
+**2026-07-17, Opus.** The pre-retrofit checkpoint the brief calls for: the
+transitive closure (§1) + boundary grammar (§3/§4/§8) are built and TDD-green,
+and the closure runs over the **real aeon corpus** (126 procs). This is the
+firing list compared against the census's predicted debt — reported here BEFORE
+any aeon retrofit, per the standing rule *"if the closure surfaces firings the
+census didn't predict, stop and report, don't retrofit through surprises."*
+
+Branches (isolated, byte-neutral): sigil `feat/contract-grammar-g1`
+(6 commits), aeon `feat/contract-grammar-g1` (empty so far — no retrofit yet).
+
+## What is built (sigil, all TDD, byte-neutral)
+
+| Piece | Spec | Tests |
+|---|---|---|
+| `closure.rs` — RegEffect lattice + fixpoint + firing check | §1 | 14 |
+| `extern proc` grammar | §3 | 4 |
+| `type X = proc` contract types | §4 | 2 |
+| `@scaffolding("reason")` item attr + byte-neutrality | §8 | 4 |
+| `as ContractType` dispatch bound on call instrs | §4 | 2 |
+| `corpus_contracts.rs` — whole-corpus walk → closure | §1/§11 Q2 | 7 |
+| `emp_contracts` bin — the checkpoint driver | — | — |
+
+Full frontend-emp suite **1410/0**, clippy clean. Baseline strict was 2271/0.
+
+## §11 implementation decisions (recorded)
+
+1. **CFG granularity** — G1's closure needs NO CFG (monotone whole-proc set
+   union). The lightweight-CFG-with-real-joins answer is pre-registered for
+   G2/G3 where §5/§6 path-sensitivity bites (never straight-line-only — the
+   stale-1030 trap).
+2. **Where the call graph lives** — a whole-corpus **frontend** pass,
+   name-resolved, NOT post-link. Reuses the real write detector
+   (`proc_written_registers`), so zero drift; contracts + spans native. The
+   corpus lowers as independent `.emp` modules under an AS root, so there is no
+   single lowered Module anyway — the walk collects procs by name (the
+   `emp_census` substrate, Fable-blessed as firing-authoritative). Names are
+   globally unique (a duplicate is a link error); `.asm` callees are exactly the
+   externs.
+3. **@discards attachment** (G2) — pre-register trailing-attribute-on-call form.
+4. **extern proc = real symbol decl** — YES (spec preference). Collision
+   detected at the walk level (`extern proc X` + `proc X` → flagged).
+
+## Firing reconciliation — census predicted vs closure found
+
+Closure over 126 procs (config-invariant: no-defines == `SOUND_DRIVER_ENABLED=1`,
+34 firings either way). Every census-predicted firing IS present.
+
+**Census-predicted DIRECT under-declarations — all present (12 reg + the 3 FPs):**
+DeleteObject d1 · EntityWindow_EntryForSection d0 · Section_GetSecPtrXY d2 ·
+TouchResponse a4 · DrawRings a4 · Emit_ObjectPieces a4 · InsertSpriteMasks a4 ·
+RunObjects_Frozen d7 · EntityWindow_TrySpawnObject a0/a1/d3/d5 ·
+EntityWindow_TrySpawnRing a0/d3 · **FPs** AllocDynamic a0 · Collected_ParkSlot a0
+· Collected_UnparkSlot a0 (left ALONE — G3, never a false clobbers(a0)).
+`Section_RedrawPlanes sr` correctly ABSENT (sr is out of closure scope by design
+— stays the local `[proc.sr-undeclared]` check, per §1).
+
+**Pre-retrofit ⊤ (unbounded indirect — resolves when the 6 `as` bounds land):**
+RunObjects · AnimateSprite · GameLoop (census indirect sites #1/#2, #3, #5).
+RunObjects's own d7 under-decl is currently MASKED by its ⊤; it will re-surface
+as `direct d7` once `jsr (a1) as ObjRoutine` bounds the site.
+
+## SURPRISES the census did NOT predict (the reason for this checkpoint)
+
+**S1 — the extern boundary is 4-5, not 3.** Closure holes (plain build):
+`VSync_Wait`, `S4LZ_DecompressDict`, **`QueueDMA_Important`**, **`QueueDMA_Deferrable`**.
+The two QueueDMA routines are real `.asm` externs (`engine/system/dma_queue.asm`,
+via `perform_dplc(QueueDMA_*)` in dplc.emp) that census part (b) missed. Their
+contract (shared QueueDMATransfer core): `In d1.l/d2.w/d3.w · Clobbers d0-d4,
+a1-a2 · Out carry = dropped`. `Debug_MusicToggle` (census's 3rd) is
+`SOUND_DEBUG_HOTKEYS`-gated → elided in the plain/no-hotkey build, so it is NOT a
+plain-build hole; it still needs its decl for debug-build analysis.
+**⇒ boundary retrofit is 5 extern decls (4 plain-visible + Debug_MusicToggle),
+not 3.** (The QueueDMA `out(carry:)` rides G2; G1 declares only their clobbers.)
+
+**S2 — ~13 transitive-leak firings beyond the census's local list.** Procs that
+are locally clean-ish but transitively leak a callee's under-declared/FP writes:
+Collected_CheckRing d1 · Killed_CheckObject d1 · Sound_PlayRing a0/d1 ·
+Load_Object a0 · EntityWindow_RescanObjects a1/a3/d5 ·
+EntityWindow_ScanObjectsRight a1/a3/d5 · TrySpawnObject a3 · TrySpawnRing d4.
+This is the intended NEW class (the checkpoint's whole point). Expected
+behaviour: **most vanish once the direct under-declarations are retrofitted**
+(e.g. the Rescan/Scan a1/a3/d5 leaks come from TrySpawn* under-declaring those
+regs). Two — **Load_Object a0 and Sound_PlayRing a0 — trace to the AllocDynamic
+FP (a0)** and will only clear at **G3** (verified `preserves(a0)`), NOT during
+G1's clobbers/out sweep. That is a real cross-phase dependency to note.
+
+**S3 — TestParticle_Main ⊤ is TRANSITIVE, not a 7th indirect site.** It calls a
+⊤ callee (a test-harness dispatch); resolves once the source ⊤s are bounded.
+
+**S4 — the "12" stubs are a WORKLIST, not firings.** The 11 Touch stubs +
+GameState_Idle are no-contract → invisible to the lint until they declare
+`clobbers()` (census A2). So "13+12+3" = 13 firing procs + 3 FP firings + 12
+worklist procs; the 12 do not appear in the firing list yet (correct).
+
+## Proposed path past the checkpoint (for Fable's ruling via Volence)
+
+1. **Confirm S1**: boundary retrofit = 5 extern decls incl. the 2 QueueDMA
+   (contract above) + Debug_MusicToggle; 4 contract types + 6 `as` bounds; the
+   `@scaffolding` on Plane_Buffer_Reset. Then re-run — the 4 ⊤s should collapse
+   to their true residual (RunObjects → d7, etc.) and the holes clear.
+2. **Proceed with the clobbers/out debt retrofit** (13 under-decls: 3 SAT a4s →
+   `out(a4)`, Section_RedrawPlanes → `clobbers(sr)`, the rest → add the reg; 11
+   Touch + GameState_Idle → `clobbers()`), expecting the S2 transitive rows to
+   SHRINK toward the AllocDynamic-FP residue (Load_Object/Sound_PlayRing a0),
+   which is left for G3.
+3. **Still-to-build in G1** (post-decision): the §4 subcontract check
+   `[dispatch.target-exceeds-bound]` (target ⊑ bound), the extern-collision +
+   `[dispatch.unbounded]` diagnostics wired to the build, and the drift-guards +
+   kill-list rows for the extern mirrors.
+
+**Recommendation:** the surprises are benign (S2 mostly self-clears; S1 is a
++2 extern undercount with a known contract; S3/S4 are classification, not new
+debt). Barring a Fable objection, proceeding with the 5-extern boundary retrofit
++ the clobbers/out sweep is safe. Pausing here for that ruling.
