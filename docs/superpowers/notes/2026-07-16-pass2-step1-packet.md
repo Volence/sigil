@@ -89,7 +89,42 @@ OLD reconciles with 45ca85d to ~100 cy (validates method+anchor). VBlank-Δ = 0
 untouched). max-H: FillRow doesn't run (FillColumn regime = later step). Win lands
 entirely as freed producer headroom, Lag stays the 0 floor.
 
-## Step 1.1b — tile_cache #1 FillRow COLLISION segments — PENDING
+## Step 1.1b — tile_cache #1 FillRow COLLISION segments — DONE (2026-07-17)
+
+Phase-2's per-cell collision loop → segmented `move.b`×2-plane runs over the SAME valid
+run `[ic_lo, ic_hi)` with the SAME Origin_Col wrap-split. **Additive**: the range+split are
+re-derived independently, so phase 1 (nametable) stays byte-for-byte as 1.1a — a fault here
+can only touch collision (clean bisect). `move.w`/`move.l` byte-pairing deferred to the
+ledgered step-5 rider (row 1092). Twins byte-identical (gate both shapes); region +$56.
+Ripple: pins re-pinned, engine.inc 4 resume orgs, **mixed_dac_rom.rs** Collision_GetType
+`bra` disp (F4CA→F3EC plain / F40A→F32C debug), **repin_pins.rs** SOUND_API base +0xDE.
+Full strict suite 2262/0. ROMs debug e15b6ff7 / plain f7faf57c.
+
+**Identity (canonical Debug_Scene_Freeze method; OLD = baseline b1f82f9a, whose per-cell
+collision output == 1.1a's).** BOTH collision planes full byte-compare (md5 + `wc -c` length
+assert, pipeline rule — no hand-transcription) at TWO anchors varying the wrap-split:
+- A1 Cam(512,640) Left=44 **Origin_Col=44** (run-1 long): plane A md5 `3dab4323…` OLD==NEW.
+- A2 Cam(768,640) Left=76 **Origin_Col=76** (run-1 only 4 cols, run-2 long): plane A md5
+  `05b25a27…` OLD==NEW (different terrain).
+- plane B all-zero both; nametable window byte-identical (phase-1 untouched); geometry matched.
+- **Closes 1.1a plane-B debt**: baseline plane B == 1.1b plane B == 1.1a plane B (same bytes).
+- Resume: budget-out lands at a BLOCK boundary (before `.fr_have_block`), so a collision
+  segment is always atomic — never split mid-segment; both anchor drives were budget-limited
+  (2 rows/f × 5 blocks > BLOCK_DECOMP_BUDGET 6 → mid-row resume) and matched baseline byte-
+  identically, verifying the resumed blocks' collision segments.
+
+**Producer A/B (max-V, same drive all ROMs, 60-frame avg, Lag 0):**
+
+| routine | baseline | 1.1a | 1.1b | Δ vs 1.1a | Δ vs baseline |
+|---|---|---|---|---|---|
+| TileCache_FillRow | 45774 (35.8%) | 29894 (23.4%) | 18023 (14.1%) | −11871 / −39.7% | −27751 / −60.6% |
+| Tile_Cache_Fill (incl) | 53555 (41.8%) | 37675 | 25472 (19.9%) | −12203 | −28083 |
+| VSync_Wait (idle) | 31169 (24.3%) | 47147 | 59339 (46.4%) | +12192 | +28170 |
+| Lag_Frame_Count | 0 | 0 | 0 | 0 | 0 |
+
+The collision segmentation cut another ~11.9k cy; the two FillRow restructures together cut
+FillRow **~60%** (max-V), freeing ~half the frame to idle. VBlank-Δ = 0 (pure producer).
+
 ## Step 1.2 — plane_buffer (b) (Draw_TileRow_FromCache segments) — PENDING
 ## Step 1.3 — tile_cache #5 (CopyBlockColumn wrap-split) — PENDING
 

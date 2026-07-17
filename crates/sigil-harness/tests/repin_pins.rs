@@ -185,8 +185,10 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // (ii) WarmupBelowRow) landed the 0x996/0xA56 above; then +0x10 both
     // (unified-prefetch H5: BlockStage_PtrTable 12->16 slots grew tile_cache
     // 0x996->0x9A6 plain / 0xA56->0xA66 debug; tile_cache upstream of sound_api).
-    assert_eq!(pins::SOUND_API.plain_base, 0x5FC2);
-    assert_eq!(pins::SOUND_API.debug_base, 0x78E6);
+    // Then +0xDE both (pass-2 FillRow segment restructures: 1.1a nametable +0x88,
+    // 1.1b collision +0x56, growing tile_cache; upstream of sound_api).
+    assert_eq!(pins::SOUND_API.plain_base, 0x60A0);
+    assert_eq!(pins::SOUND_API.debug_base, 0x79C4);
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
