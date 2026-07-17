@@ -21,7 +21,8 @@
 //! CCR). `sr`/full-CCR liveness stays S2-D7; this is per-call-site carry def-use
 //! only (§6 scope fence).
 
-use crate::value::{CodeItem, CodeOperand};
+use crate::lower::instr_written_regs;
+use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -202,6 +203,34 @@ impl<'a> Cfg<'a> {
             None => vec![Edge::Abandon],
         }
     }
+
+    /// From the call at `call_idx`, walk the fall-through chain to the first
+    /// branch that tests `cc` (or its negation) and return the item index that
+    /// begins the INVALID edge (where `cc` does NOT hold). `None` when the guard
+    /// is redefined first, the path returns, or an unrelated branch is reached —
+    /// forward machinery bails rather than guess.
+    fn invalid_edge(&self, call_idx: usize, cc: &str) -> Option<usize> {
+        let neg = negate_cc(cc)?;
+        let mut idx = *self.next_instr.get(&call_idx)?;
+        loop {
+            let (mnem, ops) = self.instr(idx)?;
+            if let Some(bc) = branch_cond(mnem) {
+                let taken = branch_target(ops).and_then(|t| self.label_target.get(t)).copied();
+                let fall = self.next_instr.get(&idx).copied();
+                return if bc == cc {
+                    fall // cc holds on the taken edge → fall-through is INVALID
+                } else if bc == neg {
+                    taken // cc holds on the fall-through → the taken edge is INVALID
+                } else {
+                    None // an unrelated branch — bail
+                };
+            }
+            if RETURN_MNEMONICS.contains(&mnem) || writes_carry(mnem) {
+                return None; // guard never tested (returned / CC redefined)
+            }
+            idx = *self.next_instr.get(&idx)?; // fall through to the next instr
+        }
+    }
 }
 
 /// A carry-tracking control-flow edge (see [`Cfg::edges`]).
@@ -256,6 +285,158 @@ pub fn check_flag_unused(
         }
     }
     firings
+}
+
+// ---------------------------------------------------------------------------
+// §6 / G2.4 — [call.result-invalid-path] for out(rN if cc) conditional register
+// results. D2.35's deferred sibling, riding the SAME CFG. A conditional
+// register result `rN` is valid only on the path where the guard `cc` holds;
+// reading `rN` on the other (invalid) path is an error. Forward machinery: no
+// corpus site declares a conditional register result today (like G1's
+// subcontract check — built + TDD'd against synthetic cases, inert on the real
+// corpus until the first such contract appears).
+// ---------------------------------------------------------------------------
+
+/// The condition a `bXX`/`sXX` branch/set tests, stripped of the mnemonic prefix
+/// (`bcc`→`cc`, `bhs`→`cc`, `blo`→`cs`, `beq`→`eq`, …). `None` for a non-branch,
+/// an unconditional `bra`, or `dbf`/`dbra` (Cond::F).
+fn branch_cond(mnem: &str) -> Option<&'static str> {
+    let bare = mnem.strip_prefix('b').or_else(|| mnem.strip_prefix('s'))?;
+    Some(match bare {
+        "cc" | "hs" => "cc",
+        "cs" | "lo" => "cs",
+        "eq" => "eq",
+        "ne" => "ne",
+        "hi" => "hi",
+        "ls" => "ls",
+        "pl" => "pl",
+        "mi" => "mi",
+        "vc" => "vc",
+        "vs" => "vs",
+        "ge" => "ge",
+        "lt" => "lt",
+        "gt" => "gt",
+        "le" => "le",
+        _ => return None,
+    })
+}
+
+/// The negation of a condition code (`cc`↔`cs`, `eq`↔`ne`, …). Canonicalizes the
+/// `hs`/`lo` aliases to `cc`/`cs` first.
+fn negate_cc(cc: &str) -> Option<&'static str> {
+    Some(match cc {
+        "cc" | "hs" => "cs",
+        "cs" | "lo" => "cc",
+        "eq" => "ne",
+        "ne" => "eq",
+        "hi" => "ls",
+        "ls" => "hi",
+        "pl" => "mi",
+        "mi" => "pl",
+        "vc" => "vs",
+        "vs" => "vc",
+        "ge" => "lt",
+        "lt" => "ge",
+        "gt" => "le",
+        "le" => "gt",
+        _ => return None,
+    })
+}
+
+/// Every register a `move`/EA operand list MENTIONS (any position, incl. an
+/// indirect base or index), so `mentioned − written` is the READ set.
+fn regs_mentioned(ops: &[CodeOperand]) -> Vec<Reg> {
+    let mut regs = Vec::new();
+    let mut push = |r: Reg| {
+        if !regs.contains(&r) {
+            regs.push(r);
+        }
+    };
+    for op in ops {
+        match op {
+            CodeOperand::Reg(r)
+            | CodeOperand::Ind(r)
+            | CodeOperand::PreDec(r)
+            | CodeOperand::PostInc(r)
+            | CodeOperand::DispInd { reg: r, .. } => push(*r),
+            CodeOperand::IndIdx { reg, xn, .. } => {
+                push(*reg);
+                push(*xn);
+            }
+            _ => {}
+        }
+    }
+    regs
+}
+
+/// Run `[call.result-invalid-path]` over one proc's CodeBuf. For each call to a
+/// callee declaring `out(rN if cc)` results, find the branch that tests `cc`,
+/// take the INVALID edge (where `cc` does not hold), and fire if `rN` is read
+/// there before it is redefined.
+pub fn check_result_invalid_path(
+    proc_name: &str,
+    items: &[CodeItem],
+    cond_callees: &BTreeMap<String, Vec<(String, String)>>,
+) -> Vec<FlagFiring> {
+    let cfg = Cfg::build(items);
+    let mut firings = Vec::new();
+
+    for (idx, it) in items.iter().enumerate() {
+        let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
+        if !CALL_MNEMONICS.contains(&mnemonic.as_str()) {
+            continue;
+        }
+        let Some(callee) = branch_target(ops) else { continue };
+        let Some(conds) = cond_callees.get(callee) else { continue };
+        for (reg_name, cc) in conds {
+            let Some(reg) = Reg::from_name(reg_name) else { continue };
+            let Some(invalid_start) = cfg.invalid_edge(idx, cc) else { continue };
+            if reads_reg_before_redefine(&cfg, invalid_start, reg) {
+                firings.push(FlagFiring {
+                    proc: proc_name.to_string(),
+                    callee: callee.to_string(),
+                    flag: cc.clone(),
+                    span: *span,
+                    kind: FlagFiringKind::InvalidPathRead {
+                        reg: reg_name.clone(),
+                        cc: cc.clone(),
+                    },
+                });
+            }
+        }
+    }
+    firings
+}
+
+/// Breadth-first: does any path from `start` READ `reg` (as a source / address
+/// base) before `reg` is redefined (written) or the path exits? Visited-set for
+/// joins.
+fn reads_reg_before_redefine(cfg: &Cfg, start: usize, reg: Reg) -> bool {
+    let mut visited: BTreeSet<usize> = BTreeSet::new();
+    let mut queue: VecDeque<usize> = VecDeque::from([start]);
+    while let Some(idx) = queue.pop_front() {
+        if !visited.insert(idx) {
+            continue;
+        }
+        let Some((mnem, ops)) = cfg.instr(idx) else { continue };
+        let written = instr_written_regs(mnem, ops);
+        let mentioned = regs_mentioned(ops);
+        // A READ = mentioned but not (only) written this instruction.
+        if mentioned.contains(&reg) && !written.contains(&reg) {
+            return true;
+        }
+        // A pure redefine kills the invalid result on this path.
+        if written.contains(&reg) {
+            continue;
+        }
+        for e in cfg.edges(idx) {
+            if let Edge::Follow(i) = e {
+                queue.push_back(i);
+            }
+            // Abandon / Defer: the path leaves without a read — safe here.
+        }
+    }
+    false
 }
 
 /// Breadth-first reachability from the successors of the call at `call_idx`: is

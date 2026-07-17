@@ -7,7 +7,9 @@
 
 use sigil_frontend_emp::ast::{AsmStmt, Item};
 use sigil_frontend_emp::eval::eval_proc_body;
-use sigil_frontend_emp::flag_check::{check_flag_unused, FlagFiring};
+use sigil_frontend_emp::flag_check::{
+    check_flag_unused, check_result_invalid_path, FlagFiring, FlagFiringKind,
+};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
@@ -166,6 +168,99 @@ fn discards_suppresses_the_firing() {
     // ...and without the opt-out it DOES fire (proving the span is what matters).
     let without = run(src, "Queue", NONE);
     assert_eq!(without.len(), 1, "same call fires without the discard span");
+}
+
+// ---------------------------------------------------------------------------
+// §6 / G2.4 — [call.result-invalid-path] for out(rN if cc) conditional register
+// results. Reading rN on the path where cc says it is invalid fires. Forward
+// machinery: no corpus site declares a conditional register result today.
+// ---------------------------------------------------------------------------
+
+/// Eval the first proc and run the invalid-path check, with `callee` declared to
+/// return `reg` valid only when `cc` holds.
+fn run_cond(src: &str, callee: &str, reg: &str, cc: &str) -> Vec<FlagFiring> {
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "parse: {diags:?}");
+    let p = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Proc(p) => Some(p),
+            _ => None,
+        })
+        .expect("a proc");
+    let (buf, _d, _n) =
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
+    let buf = buf.expect("codebuf");
+    let mut cc_callees: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    cc_callees.insert(callee.to_string(), vec![(reg.to_string(), cc.to_string())]);
+    check_result_invalid_path(&p.name, &buf.items, &cc_callees)
+}
+
+/// `out(a1 if cc)` — a1 valid only when carry CLEAR. After the call, `bcs .fail`
+/// takes the invalid (carry-set) edge; reading a1 there is a
+/// `[call.result-invalid-path]`.
+#[test]
+fn invalid_path_read_fires() {
+    let f = run_cond(
+        "module m\n\
+         proc P () clobbers(d0-d1/a1) {\n\
+             jbsr Alloc\n\
+             bcs .fail\n\
+             move.w (a1), d0\n\
+             rts\n\
+         .fail:\n\
+             move.w (a1), d1\n\
+             rts\n\
+         }\n",
+        "Alloc",
+        "a1",
+        "cc",
+    );
+    assert_eq!(f.len(), 1, "reading a1 on the carry-set path is invalid: {f:?}");
+    assert!(matches!(f[0].kind, FlagFiringKind::InvalidPathRead { .. }));
+}
+
+/// Reading a1 only on the VALID (carry-clear) path is fine — no firing.
+#[test]
+fn valid_path_read_passes() {
+    let f = run_cond(
+        "module m\n\
+         proc P () clobbers(d0/a1) {\n\
+             jbsr Alloc\n\
+             bcs .fail\n\
+             move.w (a1), d0\n\
+             rts\n\
+         .fail:\n\
+             rts\n\
+         }\n",
+        "Alloc",
+        "a1",
+        "cc",
+    );
+    assert!(f.is_empty(), "a1 read only on the valid path: {f:?}");
+}
+
+/// If the invalid path REDEFINES a1 (a fresh `lea`) before any read, a1 is no
+/// longer the invalid result — no firing.
+#[test]
+fn invalid_path_redefine_before_read_passes() {
+    let f = run_cond(
+        "module m\n\
+         proc P () clobbers(d0/a1) {\n\
+             jbsr Alloc\n\
+             bcs .fail\n\
+             rts\n\
+         .fail:\n\
+             lea Fallback, a1\n\
+             move.w (a1), d0\n\
+             rts\n\
+         }\n",
+        "Alloc",
+        "a1",
+        "cc",
+    );
+    assert!(f.is_empty(), "a1 rebuilt on the invalid path before use: {f:?}");
 }
 
 /// A callee that does NOT declare a flag result is never checked — a plain call
