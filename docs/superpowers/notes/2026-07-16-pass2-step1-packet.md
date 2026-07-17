@@ -114,6 +114,18 @@ assert, pipeline rule — no hand-transcription) at TWO anchors varying the wrap
   `05b25a27…` OLD==NEW (different terrain).
 - plane B all-zero both; nametable window byte-identical (phase-1 untouched); geometry matched.
 - **Closes 1.1a plane-B debt**: baseline plane B == 1.1b plane B == 1.1a plane B (same bytes).
+- **Plane-B sentinel test (Fable rider 2) — PASS.** The 2-anchor plane-B compare above was
+  zero-over-zero (no discriminating power). So: `write_memory 0xEE` across the FULL plane-B
+  dest cache (`0xFF2EE0`+2400 B) on OLD and NEW, controlled fill at the matched anchor
+  (Cam 512→640, FillRow rewrites 16 rows over the sentinel), read back. Result IDENTICAL on
+  both ROMs: the fill wrote `0x00` (this terrain's plane-B data) into exactly the recycled
+  cells, boundaries at **byte 80 (00→EE)** and **byte 1839 (EE→00)** on BOTH — a wrong
+  plane-B dest (a6) would shift these; and the `0xEE` sentinel SURVIVED in the entire
+  un-refilled band (mid-window witness all-EE) — proving the clamp writes NOTHING outside
+  the valid window (the strongest clamp artifact). Boundary md5s 6fee342f / 947a2c49 match.
+  (Tooling note: the full-plane md5-to-file was blocked by the agent's output-token limit on
+  emitting 2400-byte hex — reads are free, large WRITES are not; verified via read-confirmed
+  boundary offsets instead. Reinforces gap-ledger 1091's `emulator_memory_hash` ask.)
 - Resume: budget-out lands at a BLOCK boundary (before `.fr_have_block`), so a collision
   segment is always atomic — never split mid-segment; both anchor drives were budget-limited
   (2 rows/f × 5 blocks > BLOCK_DECOMP_BUDGET 6 → mid-row resume) and matched baseline byte-
