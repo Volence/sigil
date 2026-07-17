@@ -14,8 +14,11 @@ Branches (isolated worktrees, byte-neutral throughout):
 ## Gates (artifacts, not adjectives)
 
 - **Paired strict** `SIGIL_STRICT_GATE=1 AEON_DIR=<aeon-g2> cargo test
-  --workspace` = **204 suites / 2338 / 0** (baseline 202/2305; +33 = the new
-  §6 tests). Failures-first: 0. 1 ignored (pre-existing).
+  --workspace` = **204 suites / 2338 / 0** (baseline 203/2313 from the post-G1
+  merged master these branches fork from; **+25** new `#[test]`s — 2313 + 25 =
+  2338, and +1 suite = the new `flag_check.rs` test binary). Per-file: 9
+  contract_grammar, 12 flag_check, 3 corpus_contracts, 1 corpus pin.
+  Failures-first: 0. 1 ignored (pre-existing).
 - **Byte gates both shapes**: aeon ROMs rebuilt post-retrofit are
   byte-IDENTICAL to canonical — plain **8b71f0c5 / 453519**, debug
   **217224d3 / 461540**. Every G2 change is lint/metadata (grammar + checks emit
@@ -139,6 +142,25 @@ Zero `@discards` — the best retrofit result: the mechanism lands with no opt-o
   proc; local analysis cannot judge it). A tail-callee that drops the flag is not
   caught locally — accepted, no corpus instance.
 
+## Merge — HELD (cross-era, sequenced behind the silent-drop parcel)
+
+The silent-drop parcel's merge is mid-flight (aeon merged locally, sigil ripple
+being completed, **nothing pushed**, uncommitted state in the main checkouts).
+**Do NOT touch the main checkouts until its push report lands.** When it does,
+this merge is CROSS-ERA (these branches fork PRE-silent-drop), per Fable's gate:
+
+a. `--no-ff` both repos, **sigil first**.
+b. Post-merge rebuild must reproduce the THEN-CURRENT canonical EXACTLY — the
+   silent-drop parcel's ROMs: **plain 8984e510 / 453533 · debug c80465dc /
+   461554** (G2 emits nothing; the branch-era 8b71f0c5/217224d3 are NOT the gate
+   anymore).
+c. Strict from merged tips: expect **2338 / 0**, failures-first pasted counts.
+d. **BOTH corpus pins re-run over the merged corpus as prediction checks:**
+   closure residue EXACTLY the same 6 rows, flag firings EXACTLY 0. Any shift =
+   STOP and report — the silent-drop parcel changed `.asm` only, so the `.emp`
+   corpus analysis must be invariant; a shift means something unexpected.
+e. Push together, worktree-before-branch-delete, report.
+
 ## Next
 
 **Pass-3 (object/render contract surgery) is now unblocked** once this packet
@@ -147,4 +169,6 @@ substrate (G4) and G2's flag-result net together are what the adjudication named
 as the gate. G3 (verified `preserves` §5 + `[proc.dead-save]` D1d) emits pass-3's
 dead-save worklist and flips the G1 firing check WARN→ERROR; G4 adds
 `[call.input-undefined]`/`[call.live-clobbered]`. Order G3→G4 swappable per the
-spec if pass-3 wants dead-saves later.
+spec if pass-3 wants dead-saves later. **G3 is next in the grammar sequence, but
+its dispatch is the planning turn's call (Fable) — not started on agent
+initiative.**
