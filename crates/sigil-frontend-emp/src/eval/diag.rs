@@ -465,6 +465,7 @@ fn instr(mnemonic: &str, size: Option<&str>, operands: Vec<Operand>, span: Span)
         size: size.map(|s| TextOrSplice::Text(s.into())),
         operands,
         span,
+        dispatch_bound: None,
     })
 }
 
@@ -475,6 +476,7 @@ fn dc_b(bytes: &[u8], span: Span) -> AsmStmt {
         size: Some(TextOrSplice::Text("b".into())),
         operands: bytes.iter().map(|&b| dc_byte_op(b, span)).collect(),
         span,
+        dispatch_bound: None,
     })
 }
 

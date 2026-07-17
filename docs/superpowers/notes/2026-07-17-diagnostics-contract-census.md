@@ -66,9 +66,18 @@ by deliverable 2's auto-inc/dec fix). Full per-proc table:
 `2026-07-17-contract-census-procs.tsv` (columns: FILE LINE PROC PUB CLOBBERS PRESERVES OUT
 COMPUTED_WRITES CONTRACT).
 
-Contract-attribute usage across the corpus: `preserves(...)` is used by **0** procs; `out(...)`
+Contract-attribute usage across the corpus: `preserves(...)` is used by ~~**0** procs~~; `out(...)`
 by 12 (`collision_lookup`, `section`, `tile_cache`, `dplc`, and the alloc procs). Nearly every
 contract is `clobbers`-only — so the retrofit's surface is overwhelmingly clobbers.
+
+> **ERRATUM (2026-07-17, G1 closure gate, spec §5 amend 8b11a9f):** `preserves(...)`
+> has **SIX adopters** (`HBlank_Dispatch` + five `sound_api` procs incl.
+> `Sound_PlaySFX preserves(d1/a0)`), all movem/`sr`-verified today — not 0. The
+> true row-1030 statement is **zero adopters OF THE INDIVIDUAL-PUSH CLASS** (the
+> `AllocDynamic`/`Collected_Park`/`UnparkSlot` a0 saves that the syntactic slice
+> can't express). The G1 closure subtracts DECLARED+movem-verified `preserves`
+> (the D2.32 fast path is existing proof machinery, not deferred to G3), which is
+> how those six procs' preserved registers stop leaking into their callers.
 
 ### A1 — Every `[proc.*]` firing (16), with adjudication
 

@@ -206,6 +206,50 @@ impl Parser {
         );
     }
 
+    /// Parse ONE `@name(args...)` attribute line (the `@` must be next),
+    /// consuming through the line end. Shared by the module-level attr loop
+    /// (`@as_compat`, `@allow`) and the item-level attr collector.
+    fn parse_one_attr(&mut self) -> Attr {
+        let aspan = self.span();
+        self.bump(); // `@`
+        let name = self.expect_ident("attribute name");
+        let mut args = Vec::new();
+        if self.eat(&Tok::LParen) {
+            // `@attr()` is legal: empty parens mean zero args.
+            if !self.at(&Tok::RParen) {
+                loop {
+                    args.push(self.expr());
+                    if !self.eat(&Tok::Comma) { break; }
+                }
+            }
+            self.expect(&Tok::RParen, "`)`");
+        }
+        // Span computed before the line end so the newline isn't included.
+        let aspan_full = aspan.merge(self.prev_span());
+        self.expect_line_end();
+        Attr { name, args, span: aspan_full }
+    }
+
+    /// Collect any item-level `@`-attributes preceding a declaration (§8). Each
+    /// is validated on the spot — currently only `@scaffolding("reason")`, whose
+    /// single reason string is mandatory (`[scaffolding.reason-required]`).
+    fn item_attrs(&mut self) -> Vec<Attr> {
+        let mut attrs = Vec::new();
+        while self.at(&Tok::At) {
+            let attr = self.parse_one_attr();
+            if attr.name == "scaffolding" && attr.args.len() != 1 {
+                self.diag_at(
+                    attr.span,
+                    "[scaffolding.reason-required] `@scaffolding` needs exactly one reason \
+                     string: `@scaffolding(\"why this zero-caller decl is kept\")`",
+                );
+            }
+            attrs.push(attr);
+            self.skip_newlines();
+        }
+        attrs
+    }
+
     // ---- file ----
     /// Parse a whole file: module header, module-level attributes, then items.
     pub fn file(&mut self) -> File {
@@ -230,24 +274,13 @@ impl Parser {
                 });
             }
             if !self.at(&Tok::At) { break; }
-            let aspan = self.span();
-            self.bump();
-            let name = self.expect_ident("attribute name");
-            let mut args = Vec::new();
-            if self.eat(&Tok::LParen) {
-                // `@attr()` is legal: empty parens mean zero args.
-                if !self.at(&Tok::RParen) {
-                    loop {
-                        args.push(self.expr());
-                        if !self.eat(&Tok::Comma) { break; }
-                    }
-                }
-                self.expect(&Tok::RParen, "`)`");
+            // Only KNOWN module-level attributes are consumed here; an
+            // item-level attr like `@scaffolding` on the FIRST item is left for
+            // the item loop (otherwise this greedy loop would swallow it).
+            if !matches!(self.peek2(), Tok::Ident(s) if s == "as_compat" || s == "allow") {
+                break;
             }
-            // Span computed before the line end so the newline isn't included.
-            let aspan_full = aspan.merge(self.prev_span());
-            self.expect_line_end();
-            attrs.push(Attr { name, args, span: aspan_full });
+            attrs.push(self.parse_one_attr());
         }
         let mut items = Vec::new();
         loop {
@@ -266,8 +299,23 @@ impl Parser {
                 }
                 break;
             }
+            // Item-level `@`-attributes (§8) sit between the docs and the item.
+            let attrs = self.item_attrs();
             match self.item() {
-                Some(item) => {
+                Some(mut item) => {
+                    if !attrs.is_empty() {
+                        match &mut item {
+                            Item::Proc(p) => p.attrs = attrs,
+                            other => {
+                                let sp = item_span(other);
+                                self.diag_at(
+                                    sp,
+                                    "an `@`-attribute here is only supported on a `proc` \
+                                     declaration (contract-grammar v2 §8: `@scaffolding`)",
+                                );
+                            }
+                        }
+                    }
                     if let Some((text, _)) = docs {
                         self.docs.push(DocEntry { item_span: item_span(&item), text });
                     }
@@ -337,7 +385,17 @@ impl Parser {
         if self.at_kw("dispatch") { return Some(Item::Dispatch(self.dispatch_decl(public))); }
         if self.at_kw("vars") { return Some(Item::Vars(self.vars_decl(public))); }
         if self.at_kw("data") { return Some(Item::Data(self.data_decl(public))); }
+        // `extern proc Name ...` (§3) — a two-token opener. `extern` stays an
+        // ordinary name everywhere else (`extern("Sym")` comptime reads live in
+        // expression position, never here), so the guard only fires on the
+        // `extern` + `proc` pair.
+        if self.at_kw("extern") && matches!(self.peek2(), Tok::Ident(s) if s == "proc") {
+            return Some(Item::ExternProc(self.extern_proc_decl(public)));
+        }
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
+        // `type Name = proc (...) ...` (§4) — a contract type. `type` is not a
+        // token elsewhere in the grammar, so this opener is unambiguous.
+        if self.at_kw("type") { return Some(Item::ContractType(self.contract_type_decl(public))); }
         if self.at_kw("script") { return Some(Item::Script(self.script_decl(public))); }
         if self.at_kw("newtype") { return Some(Item::Newtype(self.newtype_decl(public))); }
         // `align N` (D2.29, §4.8) — contextual item opener per the `equ`
@@ -412,10 +470,10 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 20] = ["use", "const", "equ", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 22] = ["use", "const", "equ", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "script", "comptime", "section", "pub",
                                      "newtype", "offsets", "table", "dispatch", "ensure", "ensure_fatal",
-                                     "align"];
+                                     "align", "extern", "type"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -1277,7 +1335,95 @@ impl Parser {
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(/* splices_allowed = */ false);
         self.expect(&Tok::RBrace, "`}`");
-        ProcDecl { public, name, params, clobbers, preserves, out, falls_into, body, span: start.merge(self.prev_span()) }
+        ProcDecl { public, name, params, clobbers, preserves, out, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse a proc SIGNATURE — `(params) [clobbers(...)] [out(...)]
+    /// [preserves(...)]`, clause order free — shared by `extern proc` (§3) and
+    /// `type X = proc` contract types (§4). Unlike [`Parser::proc_decl`] there is
+    /// no `falls_into` (a signature has no physical successor) and no body.
+    fn proc_sig(&mut self) -> ProcSig {
+        let params = self.sig_param_list();
+        let mut clobbers = None;
+        let mut preserves = Vec::new();
+        let mut out = None;
+        loop {
+            if self.eat_kw("clobbers") {
+                self.expect(&Tok::LParen, "`(`");
+                clobbers = Some(self.reg_list());
+            } else if self.eat_kw("out") {
+                self.expect(&Tok::LParen, "`(`");
+                out = Some(self.reg_list());
+            } else if self.eat_kw("preserves") {
+                self.expect(&Tok::LParen, "`(`");
+                preserves = self.reg_list();
+            } else {
+                break;
+            }
+        }
+        ProcSig { params, clobbers, preserves, out }
+    }
+
+    /// Parse a contract-signature param list — like [`Parser::param_list`] but
+    /// the `: type` is OPTIONAL (§2: a bare-register param `(d4)` is a legal
+    /// untyped input). Used only by `extern proc` / `type = proc`, whose params
+    /// are never lowered, so a bare param needs no synthesized `Type`.
+    fn sig_param_list(&mut self) -> Vec<(String, Option<Type>, Span)> {
+        let mut params = Vec::new();
+        self.expect(&Tok::LParen, "`(`");
+        if !self.at(&Tok::RParen) {
+            loop {
+                let pspan = self.span();
+                let pname = self.expect_ident("parameter (register) name");
+                let pty = if self.eat(&Tok::Colon) { Some(self.ty()) } else { None };
+                params.push((pname, pty, pspan));
+                if !self.eat(&Tok::Comma) { break; }
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.expect(&Tok::RParen, "`)`");
+        params
+    }
+
+    /// Parse an `extern proc Name (params) [clobbers(...)] [preserves(...)]
+    /// [out(...)]` boundary declaration (§3). No body, no label — the `.asm`
+    /// header stays the source of truth. The leading `extern` is already
+    /// confirmed by [`Parser::item`]'s two-token peek.
+    fn extern_proc_decl(&mut self, public: bool) -> ExternProcDecl {
+        let start = self.span();
+        self.bump(); // `extern`
+        self.bump(); // `proc`
+        let name = self.expect_ident("extern proc name");
+        let sig = self.proc_sig();
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        ExternProcDecl { public, name, sig, span }
+    }
+
+    /// Parse a `type Name = proc (params) [clobbers(...)] [preserves(...)]
+    /// [out(...)]` contract-type declaration (§4). The RHS must be a `proc`
+    /// contract shape — the only `type` form v2 defines (a general type alias is
+    /// a separate future ask, not a contract-grammar concern).
+    fn contract_type_decl(&mut self, public: bool) -> ContractTypeDecl {
+        let start = self.span();
+        self.bump(); // `type`
+        let name = self.expect_ident("contract type name");
+        self.expect(&Tok::Eq, "`=`");
+        if !self.eat_kw("proc") {
+            let sp = self.span();
+            self.diag_at(
+                sp,
+                "a `type` declaration must name a proc contract: \
+                 `type Name = proc (...) [clobbers(...)] [preserves(...)] [out(...)]`",
+            );
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return ContractTypeDecl { public, name, sig: ProcSig::default(), span };
+        }
+        let sig = self.proc_sig();
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        ContractTypeDecl { public, name, sig, span }
     }
 
     /// Parse a `script name(params) (encoding: E) [shows label] { body }`
@@ -1863,10 +2009,20 @@ impl Parser {
                 if !self.eat(&Tok::Comma) { break; }
             }
         }
+        // Optional `as ContractType` dispatch bound (§4): a trailing `as Name`
+        // after the operands names the contract every installable target of this
+        // (indirect) call must satisfy. `as` is an ordinary ident everywhere
+        // else, so the guard requires it be followed by a type name.
+        let dispatch_bound = if self.at_kw("as") && matches!(self.peek2(), Tok::Ident(_)) {
+            self.bump(); // `as`
+            Some(self.expect_ident("contract type name"))
+        } else {
+            None
+        };
         // Span computed before the line end so the newline isn't included.
         let span = start.merge(self.prev_span());
         self.expect_line_end_or_rbrace();
-        InstrLine { mnemonic, size, operands, span }
+        InstrLine { mnemonic, size, operands, dispatch_bound, span }
     }
 
     /// Like [`Parser::expect_line_end`], but also accepts a directly-following
