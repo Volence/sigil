@@ -95,6 +95,12 @@ pub enum Item {
     Data(DataDecl),
     /// `proc ...` declaration.
     Proc(ProcDecl),
+    /// `extern proc ...` boundary declaration (contract-grammar v2 §3): the
+    /// contract of an `.asm`-defined callee; emits nothing, closure leaf.
+    ExternProc(ExternProcDecl),
+    /// `type X = proc (...) ...` contract-type declaration (contract-grammar v2
+    /// §4): the bound every installable dispatch target must satisfy.
+    ContractType(ContractTypeDecl),
     /// `script ...` declaration (Plan 7 #9b).
     Script(ScriptDecl),
     /// `comptime fn ...` declaration.
@@ -159,6 +165,8 @@ pub fn item_span(item: &Item) -> Span {
         Item::Vars(d) => d.span,
         Item::Data(d) => d.span,
         Item::Proc(d) => d.span,
+        Item::ExternProc(d) => d.span,
+        Item::ContractType(d) => d.span,
         Item::Script(d) => d.span,
         Item::ComptimeFn(d) => d.span,
         Item::Section(d) => d.span,
@@ -664,8 +672,74 @@ pub struct ProcDecl {
     pub out: Option<Vec<(String, Option<String>)>>,
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
+    /// Item-level `@`-attributes preceding the decl — currently only
+    /// `@scaffolding("reason")` (contract-grammar v2 §8): inert metadata that
+    /// marks a ratified zero-caller keep so D7's dead-symbol analysis won't nag
+    /// it. Empty for a plain proc.
+    pub attrs: Vec<Attr>,
     /// The proc's assembly body.
     pub body: Vec<AsmStmt>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// A proc SIGNATURE — the params + register-effect contract clauses shared by a
+/// `proc` body decl, an `extern proc` boundary decl (§3), and a `type X = proc`
+/// contract type (§4). Reglist segments take the movem-reglist grammar
+/// (`clobbers(d0-d3/a1)`), validated at lowering like [`ProcDecl`]'s.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ProcSig {
+    /// Parameters as `(name, optional type, span)` — the declared inputs (§2:
+    /// the param list IS `in()`). The type is OPTIONAL here (unlike a `proc`
+    /// body's params): a bare-register param `(d4)` is a legal untyped input
+    /// (§2's no-ceremony rule), `None`; `(a4: *DictBase)` carries `Some(ty)` for
+    /// the future §7 slot check. These params are never lowered (the decl emits
+    /// nothing), so an untyped one needs no synthesized `Type`.
+    pub params: Vec<(String, Option<Type>, Span)>,
+    /// `clobbers(...)`: `None` = undeclared, `Some(vec![])` = explicit empty.
+    pub clobbers: Option<Vec<(String, Option<String>)>>,
+    /// `preserves(...)` reglist segments (empty = none).
+    pub preserves: Vec<(String, Option<String>)>,
+    /// `out(...)`: `None` = undeclared, `Some(vec![])` = explicit empty.
+    pub out: Option<Vec<(String, Option<String>)>>,
+}
+
+/// An `extern proc Name (params) [clobbers(...)] [preserves(...)] [out(...)]`
+/// declaration (contract-grammar v2 §3): the caller-side statement of a routine
+/// defined in NO `.emp` — a still-`.asm` callee's contract, made checkable where
+/// today there is prose or nothing. Emits NOTHING and defines NO label (the
+/// `.asm` header stays the source of truth, drift-guarded by a comment); it only
+/// registers the contract so the transitive closure (§1) can treat the extern as
+/// a LEAF (`effective == declared clobbers`) instead of a hole. Participates in
+/// module resolution as a real symbol decl (§11 Q4): a name declared both
+/// `extern proc` and `proc` collides loudly.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternProcDecl {
+    /// Whether this extern is re-exported (`pub extern proc`) — the §3
+    /// second-consumer hoist to a shared home.
+    pub public: bool,
+    /// The external routine's link symbol.
+    pub name: String,
+    /// The declared signature (params + contract clauses).
+    pub sig: ProcSig,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// A `type Name = proc (params) [clobbers(...)] [preserves(...)] [out(...)]`
+/// contract-type declaration (contract-grammar v2 §4): names the contract every
+/// installable target of an indirect dispatch must satisfy. Used to BOUND a
+/// `jsr (a1) as Name` site (so the closure uses the bound's clobbers instead of
+/// ⊤) and to check table elements / pointer installs against the subcontract
+/// relation. Emits nothing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContractTypeDecl {
+    /// Whether this contract type is exported (`pub type`).
+    pub public: bool,
+    /// The contract type's name (e.g. `ObjRoutine`, `HBlankHandler`).
+    pub name: String,
+    /// The proc-shaped contract every conforming target must satisfy.
+    pub sig: ProcSig,
     /// Span of the whole declaration.
     pub span: Span,
 }
