@@ -59,9 +59,17 @@ pub struct ContractReport {
     pub contract_type_count: usize,
 }
 
-/// Analyze the parsed corpus: build the proc/extern/contract-type maps, run the
-/// closure, and collect firings + collisions.
+/// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
 pub fn analyze_corpus(files: &[ast::File]) -> ContractReport {
+    analyze_corpus_with(files, &[])
+}
+
+/// Analyze the parsed corpus under the given comptime `-D` defines: build the
+/// proc/extern/contract-type maps, run the closure, and collect firings +
+/// collisions. Comptime-`if` gating is config-sensitive, so the defines choose
+/// which code paths lower (the plain canonical build is `SOUND_DRIVER_ENABLED=1`;
+/// the census — and `analyze_corpus` — use no defines).
+pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> ContractReport {
     let mut nodes: BTreeMap<String, ProcNode> = BTreeMap::new();
     let mut types: BTreeMap<String, RegEffect> = BTreeMap::new();
     let mut extern_names: BTreeSet<String> = BTreeSet::new();
@@ -79,6 +87,7 @@ pub fn analyze_corpus(files: &[ast::File]) -> ContractReport {
             &mut proc_names,
             &mut extern_spans,
             &mut counter,
+            defines,
         );
     }
 
@@ -111,12 +120,13 @@ fn collect_items(
     proc_names: &mut BTreeSet<String>,
     extern_spans: &mut BTreeMap<String, Span>,
     counter: &mut u32,
+    defines: &[(String, i128)],
 ) {
     for item in items {
         match item {
             Item::Proc(p) => {
                 proc_names.insert(p.name.clone());
-                nodes.insert(p.name.clone(), proc_node(p, file, counter));
+                nodes.insert(p.name.clone(), proc_node(p, file, counter, defines));
             }
             Item::ExternProc(e) => {
                 extern_names.insert(e.name.clone());
@@ -127,7 +137,7 @@ fn collect_items(
                 types.insert(t.name.clone(), contract_type_bound(t));
             }
             Item::Section(s) => collect_items(
-                &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter,
+                &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter, defines,
             ),
             _ => {}
         }
@@ -135,9 +145,9 @@ fn collect_items(
 }
 
 /// Build a [`ProcNode`] from a body-bearing `proc` decl.
-fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32) -> ProcNode {
+fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32, defines: &[(String, i128)]) -> ProcNode {
     let (buf, _diags, next) =
-        crate::eval::eval_proc_body(file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, &[]);
+        crate::eval::eval_proc_body(file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines);
     *counter = next;
 
     let mut local_writes = BTreeSet::new();
@@ -220,12 +230,16 @@ fn reg_name(name: &str) -> Option<String> {
     Reg::from_name(name).map(|r| r.to_string())
 }
 
-/// The `Sym` target of a call-shaped instruction, if its sole operand is a bare
-/// symbol (a DIRECT call `jsr Foo`); `None` for an indirect `jsr (aN)` (whose
-/// operand is register-based) or a non-call.
+/// The `Sym` target of a call/tail-shaped instruction, if its sole operand is a
+/// bare GLOBAL symbol (a DIRECT call `jsr Foo` / a tail `jbra Foo`). `None` for
+/// an indirect `jsr (aN)` (register-based operand), a non-call, or a LOCAL-label
+/// target: hygiene mangles local labels as `$module$proc$label`, and a `bra`/
+/// `jbra` to a local label (`.loop`) is intra-proc control flow, never a callee
+/// — the `$` marks it so it is dropped from both the edge set and the
+/// hole/unresolved report (a real proc/extern name never contains `$`).
 fn call_target_sym(ops: &[CodeOperand]) -> Option<String> {
     match ops {
-        [CodeOperand::Sym(name)] => Some(name.clone()),
+        [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.clone()),
         _ => None,
     }
 }
