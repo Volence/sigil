@@ -264,7 +264,7 @@ fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
     } else {
         ("0x63AE8", "0x4518")
     };
-    let hblank_base = if debug { "0x231C" } else { "0x228E" };
+    let hblank_base = if debug { "0x237E" } else { "0x22F0" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -323,9 +323,9 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
     } else {
         ("0x63AE8", "0x4518")
     };
-    let hblank_base = if debug { "0x231C" } else { "0x228E" };
-    let controllers_base = if debug { "0x232E" } else { "0x22A0" };
-    let math_base = if debug { "0x260E" } else { "0x247C" };
+    let hblank_base = if debug { "0x237E" } else { "0x22F0" };
+    let controllers_base = if debug { "0x2390" } else { "0x2302" };
+    let math_base = if debug { "0x2670" } else { "0x24DE" };
     format!(
         "fill = 0x00\n\
          \n\
@@ -446,11 +446,11 @@ fn emp_bank_map_tranche4(debug: bool) -> String {
 }
 
 /// Tranche 5's map: the tranche-4 regions PLUS `game_loop` — back in the
-/// engine block (plain `$22FE` / debug `$238C`, size 0x12: GameLoop's 16
+/// engine block (plain `$2378` / debug `$2406`, size 0x12: GameLoop's 16
 /// bytes + GameState_Idle's rts; content shape-invariant in the (1,0) define
 /// combo both pins carry).
 fn emp_bank_map_tranche5(debug: bool) -> String {
-    let game_loop_base = if debug { "0x23A4" } else { "0x2316" };
+    let game_loop_base = if debug { "0x2406" } else { "0x2378" };
     let sound_api_base =
         if debug { format!("{:#x}", pins::SOUND_API.debug_base) } else { format!("{:#x}", pins::SOUND_API.plain_base) };
     // Shape-DEPENDENT size as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
@@ -1700,7 +1700,7 @@ fn mixed_hblank_rom_matches_assembled_reference() {
     // `movea.l (HBlank_Handler_Ptr).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
     let h = pins::H_BLANK_HANDLER_PTR.plain;
     assert_eq!(
-        &rom[0x228E..0x22A0],
+        &rom[0x22F0..0x2302],
         &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, (h >> 8) as u8, h as u8, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
         "hblank block must match the reference bytes exactly (plain)"
     );
@@ -1741,7 +1741,7 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
     // `movea.l (HBlank_Handler_Ptr).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
     let h = pins::H_BLANK_HANDLER_PTR.debug;
     assert_eq!(
-        &rom[0x231C..0x232E],
+        &rom[0x237E..0x2390],
         &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, (h >> 8) as u8, h as u8, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
         "hblank block must match the reference bytes exactly (debug)"
     );
@@ -1874,7 +1874,7 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
     // The controllers block itself, pinned explicitly (the port's own
     // 0x72-byte window) before the whole-ROM assertion below re-proves it.
     assert_eq!(
-        &rom[0x22A0..0x2316],
+        &rom[0x2302..0x2378],
         &[
             0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
             0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
@@ -1932,7 +1932,7 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
     );
 
     assert_eq!(
-        &rom[0x232E..0x23A4],
+        &rom[0x2390..0x2406],
         &[
             0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
             0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
@@ -2438,11 +2438,11 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // `bsr.w Sound_DrainSfxRing` disp is pin-spliced (target slides when any
     // upstream region resizes — e.g. entity_window's tranche-12 step-2 shrink;
     // gap-ledger "repin can't track inline target BYTES in mixed-test slices").
-    let sdsr = (pins::SOUND_DRAIN_SFX_RING.plain as i64 - 0x231C) as u16;
+    let sdsr = (pins::SOUND_DRAIN_SFX_RING.plain as i64 - 0x237E) as u16;
     // `movea.l (Game_State).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
     let gs = pins::GAME_STATE.plain;
     assert_eq!(
-        &rom[0x2316..0x2328],
+        &rom[0x2378..0x238A],
         &[
             0x61, 0x00, 0xFF, 0x56, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, (gs >> 8) as u8, gs as u8, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75
@@ -2481,11 +2481,11 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche5_rom(&aeon, true);
 
     // pin-spliced disp — see the plain variant's note.
-    let sdsr = (pins::SOUND_DRAIN_SFX_RING.debug as i64 - 0x23AA) as u16;
+    let sdsr = (pins::SOUND_DRAIN_SFX_RING.debug as i64 - 0x240C) as u16;
     // `movea.l (Game_State).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
     let gs = pins::GAME_STATE.debug;
     assert_eq!(
-        &rom[0x23A4..0x23B6],
+        &rom[0x2406..0x2418],
         &[
             0x61, 0x00, 0xFF, 0x52, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, (gs >> 8) as u8, gs as u8, 0x4E,
             0x90, 0x60, 0xF0, 0x4E, 0x75

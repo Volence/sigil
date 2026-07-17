@@ -109,34 +109,44 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // item-11 carry-return grew the engine block +0xC upstream of everything,
     // and dplc item-11 grew +0xC more. animate's OWN plain LEN shrank −8 (item 5:
     // drop both Sound_PlaySFX saves), so its debug LEN is 0x2A8 (was 0x2B0).
-    assert_eq!(pins::ANIMATE.plain_base, 0x2EC6);
-    assert_eq!(pins::ANIMATE.debug_base, 0x34A0);
+    // silent-drop parcel (2026-07-17): the FIRST .asm growth UPSTREAM of ALL
+    // engine regions in campaign history — queueStaticDMA's drop-carry contract
+    // grew buffers' 7 expansions, and load_art's out-of-line drop handler grew
+    // load_art, both ahead of hblank..section in the pre-$10000 bank. Every base
+    // below slides +0x62 BOTH shapes (SOUND_API is +0x6C plain / +0xB6 debug — see
+    // its note; load_art's DEBUG RaiseError vs release drain-retry makes that one
+    // region's shift shape-different). NO region content changed: all lens are
+    // unchanged, and ASSEMBLED_LEN/DEBUG_ASSEMBLED_LEN are UNCHANGED — the engine
+    // growth is absorbed by `org $10000`, __END__ does not move; only the convsym
+    // symbol-table appendix (not pinned) grew.
+    assert_eq!(pins::ANIMATE.plain_base, 0x2F28);  // +0x62 silent-drop
+    assert_eq!(pins::ANIMATE.debug_base, 0x3502);  // +0x62 silent-drop
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x3250);
-    assert_eq!(pins::RINGS.debug_base, 0x3950);
+    assert_eq!(pins::RINGS.plain_base, 0x32B2);  // +0x62 silent-drop
+    assert_eq!(pins::RINGS.debug_base, 0x39B2);  // +0x62 silent-drop
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN unchanged. Bases shifted +0x18 plain (dma_queue +0xC + dplc
     // item-11 +0xC precede core). debug_len 0x6C8 (unchanged — items 5/10/11 are
     // downstream of / plain-only within core).
-    assert_eq!(pins::CORE.plain_base, 0x27B8);
+    assert_eq!(pins::CORE.plain_base, 0x281A);  // +0x62 silent-drop
     assert_eq!(pins::CORE.plain_len, 0x2EE);
-    assert_eq!(pins::CORE.debug_base, 0x294A);
+    assert_eq!(pins::CORE.debug_base, 0x29AC);  // +0x62 silent-drop
     assert_eq!(pins::CORE.debug_len, 0x736);
-    assert_eq!(pins::DPLC.plain_base, 0x2714);  // +0xC: dma_queue item-11 growth precedes dplc
-    assert_eq!(pins::DPLC.debug_base, 0x28A6);
+    assert_eq!(pins::DPLC.plain_base, 0x2776);  // +0x62 silent-drop
+    assert_eq!(pins::DPLC.debug_base, 0x2908);  // +0x62 silent-drop
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x288C, debug: 0x2A1E });
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x28EE, debug: 0x2A80 });  // +0x62 silent-drop (offset within core stable)
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -190,8 +200,15 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // both (pass-2 1.2 Draw_TileRow_FromCache segment restructure, growing
     // plane_buffer; upstream of sound_api). Then +0x3E both (pass-2 1.3
     // CopyBlockColumn wrap-split, growing tile_cache; upstream of sound_api).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6104);
-    assert_eq!(pins::SOUND_API.debug_base, 0x7A28);
+    // Then the silent-drop parcel (2026-07-17): +0x6C plain / +0xB6 debug — the
+    // ONLY shape-different shift of the parcel. site-A (buffers/macro drop-carry,
+    // +0x62 both, upstream of everything) + site-B (load_art's drop handler, which
+    // is between section and sound_api): load_art grows +0xA plain (release
+    // drain-retry) but +0x54 debug (the out-of-line RaiseError expansion), so
+    // sound_api — the one region downstream of load_art — inherits the shape gap.
+    // len unchanged (no sound_api content changed).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6170);  // +0x6C silent-drop
+    assert_eq!(pins::SOUND_API.debug_base, 0x7ADE);  // +0xB6 silent-drop
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
