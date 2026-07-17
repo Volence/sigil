@@ -60,7 +60,13 @@ FillRow's per-tile `.fr_col_loop` → a per-block valid-run `[ic_lo, ic_hi)` +
 COLLISION stays per-cell (phase 2, verbatim; 1.1b segments it). No zero segment —
 FillRow always SKIPPED out-of-range cols (never zeroed), so the clamp is inherent.
 Twins byte-identical (`.emp`/`.asm`), re-pinned (region +$88; engine.inc resume
-orgs bumped), full strict suite + repin --check green. Region grew, ROMs:
+orgs bumped). **CORRECTION (Fable rider 1, reconciled by rebuild): the 1.1a commit's
+tree was NOT strict-clean — `mixed_dac_rom.rs` (mixed_tranche3, both shapes) and
+`repin_pins.rs` (secondary_pin_classes) were RED at 1.1a (their hardcoded pins were
+stale by 0x88), and the original 1.1a report ("full strict suite green") was WRONG:
+the failures were buried by a `grep "test result|…" | head -50` that truncated FAILED
+lines among the passing ones. They were surfaced and FIXED as part of 1.1b's ripple
+work (F442→F3EC etc.). Detection-hole fix in the bar below.** Region grew, ROMs:
 debug 04d352ab / plain bb6f194a (were b1f82f9a / 824d4f2e).
 
 **Identity (Debug_Scene_Freeze=1 + Camera poke → deterministic controlled fill;
@@ -200,6 +206,28 @@ INSIDE a collision segment (not just at a block boundary). **Plane-B debt from 1
 1.1a hashed plane A only (collision was verbatim) — capture 1.1b's OLD baseline on the
 CURRENT NEW-1.1a ROM reading BOTH planes, which retroactively closes plane B for 1.1a at
 zero extra cost.
+
+### Byte-changing RIPPLE SWEEP — MANDATORY per piece (Fable rider 1)
+A byte-changing tile_cache edit ripples past pins.rs into **FIVE** sites. 1.1a touched
+two and nothing flagged the other three — the 1.1a report rode green on a stale hardcoded
+pin. Every piece (1.1b/1.2/1.3/…) MUST, in order:
+1. build DEBUG then plain (repin-trap: build.sh writes s4.bin regardless of DEBUG — build
+   debug first + `cp` to s4.debug.*, plain last), `repin` (writes pins.rs), `repin --check`.
+2. Sweep all five ripple sites, ticking each: **(a) pins.rs** (repin), **(b) engine.inc**
+   resume orgs, **(c) mixed_dac_rom.rs** hardcoded cross-seam disps/pins, **(d) repin_pins.rs**
+   hand-typed baseline, **(e) repin.toml** region start/end symbols (only if a region's
+   boundary symbols changed — usually untouched, but VERIFY, don't assume).
+3. Run the FULL strict suite AFTER repin, and paste the count PER PIECE as
+   `N passed / M failed` — with a **failures-first** command so a red line can NEVER be
+   truncated behind passing lines:
+   `cargo test --workspace 2>&1 | tee suite.log; grep -E 'FAILED|panicked' suite.log;
+    echo passed=$(grep -oE '[0-9]+ passed' suite.log|awk '{s+=$1}END{print s}')
+    failed=$(grep -oE '[0-9]+ failed' suite.log|awk '{s+=$1}END{print s}')`.
+   NEVER `grep "test result" | head -N` (the 1.1a detection hole — it buries FAILED among
+   the ~160 `ok` lines). The packet row records `passed/failed` + the five ticks.
+1.1b sweep (this piece): (a) pins ✓ (b) engine.inc 4 orgs ✓ (c) mixed_dac_rom disp F3EC/F32C ✓
+(d) repin_pins SOUND_API +0xDE ✓ (e) repin.toml unchanged (tile_cache start/end symbols
+stable) ✓ → **2262 passed / 0 failed**.
 
 ### Resume protocol (cache population — still useful)
 The emulator holds probe residue; short boots don't clear it. `reset → start 300 →
