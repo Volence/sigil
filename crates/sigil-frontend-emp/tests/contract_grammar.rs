@@ -118,6 +118,124 @@ fn contract_type_preserves_and_typed_param() {
 }
 
 // ---------------------------------------------------------------------------
+// §6 out(carry: name) flag results + §6 out(rN if cc) conditional register
+// results (G2). A flag result is a status-flag-encoded result the caller MUST
+// consume; a conditional register result is valid only on the `cc` path.
+// ---------------------------------------------------------------------------
+
+/// `extern proc QueueDMA_Important (d1, d2, d3) clobbers(...) out(carry: dropped)`
+/// — the §6 flag result on the extern-proc boundary decl. `carry` is not a
+/// register: it lands in `out_flags`, NOT the `out` reglist (which stays empty).
+#[test]
+fn extern_proc_out_carry_flag_result() {
+    let f = ok("module engine.objects.dplc\n\
+                extern proc QueueDMA_Important (d1, d2, d3) clobbers(d0-d4/a1-a2) out(carry: dropped)\n");
+    let es = externs(&f);
+    assert_eq!(es.len(), 1);
+    assert_eq!(es[0].sig.out_flags.len(), 1);
+    assert_eq!(es[0].sig.out_flags[0].flag, "carry");
+    assert_eq!(es[0].sig.out_flags[0].name, "dropped");
+    // The flag is NOT a register — the out reglist stays empty (the clause was
+    // written, so `Some`, but it declares zero out-REGISTERS).
+    assert_eq!(es[0].sig.out, Some(vec![]));
+    assert!(es[0].sig.out_cond.is_empty());
+}
+
+/// `pub proc RingBuffer_Add () clobbers(d4, a0) out(carry: full)` — the §6 flag
+/// result on an INTERNAL proc (same grammar as extern; the "RingBuffer_Add
+/// class"). It lands in the proc's `out_flags`.
+#[test]
+fn proc_out_carry_flag_result() {
+    let f = ok("module engine.objects.rings\n\
+                pub proc RingBuffer_Add () clobbers(d4, a0) out(carry: full) { rts }\n");
+    let p = first_proc(&f);
+    assert_eq!(p.out_flags.len(), 1);
+    assert_eq!(p.out_flags[0].flag, "carry");
+    assert_eq!(p.out_flags[0].name, "full");
+    assert_eq!(p.out, Some(vec![]));
+}
+
+/// `out(a1 if cc)` — the D2.35 conditional register result: a1 is a real out
+/// register (it joins the `out` reglist, so the closure charges it) AND carries
+/// its `if cc` validity guard in `out_cond`.
+#[test]
+fn proc_out_conditional_register_result() {
+    let f = ok("module engine.level\n\
+                proc AllocDynamic () clobbers(d0) out(a1 if cc) { rts }\n");
+    let p = first_proc(&f);
+    // a1 is a genuine out register — present in the reglist for the closure.
+    assert_eq!(p.out, Some(vec![("a1".to_string(), None)]));
+    // ...and carries its cc guard.
+    assert_eq!(p.out_cond.len(), 1);
+    assert_eq!(p.out_cond[0].reg, "a1");
+    assert_eq!(p.out_cond[0].cc, "cc");
+    assert!(p.out_flags.is_empty());
+}
+
+/// A `proc` may mix a plain out register, a flag result, and a conditional
+/// register result in one `out(...)` clause: `out(d0, a1 if cc, carry: dropped)`.
+#[test]
+fn proc_out_mixed_reg_cond_and_flag() {
+    let f = ok("module m\n\
+                proc P () clobbers(d1) out(d0, a1 if cc, carry: dropped) { rts }\n");
+    let p = first_proc(&f);
+    assert_eq!(
+        p.out,
+        Some(vec![("d0".to_string(), None), ("a1".to_string(), None)])
+    );
+    assert_eq!(p.out_cond.len(), 1);
+    assert_eq!(p.out_cond[0].reg, "a1");
+    assert_eq!(p.out_flags.len(), 1);
+    assert_eq!(p.out_flags[0].name, "dropped");
+}
+
+/// A non-flag name before the colon in `out(...)` is `[proc.out-flag-invalid]`
+/// (register-validity mirrors the clobbers/preserves lowering-time check).
+#[test]
+fn out_flag_invalid_name_is_diagnosed() {
+    let (_f, diags) = parse_str(
+        "module m\nproc P () clobbers() out(nonsense: x) { rts }\n",
+    );
+    let (_m, lerrs) = lower_module(
+        &_f,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+    );
+    let all: Vec<_> = diags.iter().chain(lerrs.iter()).collect();
+    assert!(
+        all.iter().any(|d| d.message.contains("[proc.out-flag-invalid]")),
+        "diagnostics: {all:?}"
+    );
+}
+
+/// A bogus condition code in `out(rN if cc)` is `[proc.out-cond-invalid]`.
+#[test]
+fn out_cond_invalid_cc_is_diagnosed() {
+    let (_f, _diags) = parse_str(
+        "module m\nproc P () clobbers() out(a1 if zzz) { rts }\n",
+    );
+    let (_m, lerrs) = lower_module(
+        &_f,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+    );
+    assert!(
+        lerrs.iter().any(|d| d.message.contains("[proc.out-cond-invalid]")),
+        "diagnostics: {lerrs:?}"
+    );
+}
+
+/// Flag results and conditional register results are byte-neutral — pure
+/// contract metadata, exactly like the G1 boundary grammar.
+#[test]
+fn flag_and_cond_results_are_byte_neutral() {
+    let plain = flatten("module m\nproc P () clobbers(d4, a0) { rts }\n");
+    let flagged = flatten("module m\nproc P () clobbers(d4, a0) out(carry: full) { rts }\n");
+    assert_eq!(flagged, plain, "out(carry:) must not change emitted bytes");
+    let cond = flatten("module m\nproc Q () clobbers(d0) out(a1 if cc) { rts }\n");
+    let plainq = flatten("module m\nproc Q () clobbers(d0) out(a1) { rts }\n");
+    assert_eq!(cond, plainq, "out(rN if cc) must not change emitted bytes");
+}
+
+// ---------------------------------------------------------------------------
 // §8 @scaffolding("reason") — item-level attribute, inert metadata in G1.
 // ---------------------------------------------------------------------------
 

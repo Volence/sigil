@@ -7,6 +7,11 @@ use sigil_span::{Diagnostic, Level, Span};
 /// recursing (guards against stack-overflow aborts on pathological input).
 const MAX_EXPR_DEPTH: u32 = 128;
 
+/// The three products of parsing an `out(...)` clause body (§6): the register
+/// reglist, the `carry: name` flag results, and the `rN if cc` conditional
+/// register results. Returned by [`Parser::out_list`].
+type ParsedOutClause = (Vec<(String, Option<String>)>, Vec<FlagResult>, Vec<CondResult>);
+
 /// A recursive-descent parser over a token stream, collecting diagnostics
 /// instead of failing fast.
 pub struct Parser {
@@ -1297,6 +1302,61 @@ impl Parser {
         list
     }
 
+    /// Parse the `out(...)` clause body — the register reglist PLUS the §6 flag
+    /// results (`carry: name`) and conditional register results (`rN if cc`). The
+    /// opening `(` must already be eaten; consumes the closing `)`. Returns
+    /// `(reglist, flag_results, cond_results)`. Segments separate on `/` or `,`
+    /// like [`Parser::reg_list`]. Per-segment grammar:
+    /// - `<flag> : <name>` → a flag result (§6). `flag`-name validity is a
+    ///   lowering check (`[proc.out-flag-invalid]`), so any ident is accepted
+    ///   here — mirroring `reg_list`'s defer-validity-to-lowering rule.
+    /// - `<reg> if <cc>` → a conditional register result (§6). `reg` STILL joins
+    ///   the reglist (the closure charges it as written); the `cc` guard rides in
+    ///   the returned cond list. cc/reg validity is `[proc.out-cond-invalid]`.
+    /// - `<reg>[-<reg>]` → a plain reglist segment (the existing `out` grammar).
+    fn out_list(&mut self) -> ParsedOutClause {
+        let mut regs = Vec::new();
+        let mut flags = Vec::new();
+        let mut conds = Vec::new();
+        if !self.at(&Tok::RParen) {
+            loop {
+                let seg_start = self.span();
+                let lo = self.expect_ident("register or flag");
+                if self.eat(&Tok::Colon) {
+                    // `flag: name` — a status-flag result. `carry` today; the
+                    // flag name's validity is checked at lowering.
+                    let name = self.expect_ident("flag-result name");
+                    let span = seg_start.merge(self.prev_span());
+                    flags.push(FlagResult { flag: lo, name, span });
+                } else {
+                    let hi = if self.eat(&Tok::Minus) {
+                        Some(self.expect_ident("range-end register"))
+                    } else {
+                        None
+                    };
+                    if hi.is_none() && self.eat_kw("if") {
+                        // `rN if cc` — a conditional register result. The register
+                        // is a genuine out (it joins the reglist); its validity
+                        // guard rides in `conds`.
+                        let cc = self.expect_ident("condition code");
+                        let span = seg_start.merge(self.prev_span());
+                        conds.push(CondResult { reg: lo.clone(), cc, span });
+                        regs.push((lo, None));
+                    } else {
+                        regs.push((lo, hi));
+                    }
+                }
+                // Segments separate on `/` (movem) OR `,` (singles).
+                if !self.eat(&Tok::Slash) && !self.eat(&Tok::Comma) {
+                    break;
+                }
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.expect(&Tok::RParen, "`)`");
+        (regs, flags, conds)
+    }
+
     /// Parse a `proc name(params...) [clobbers(...)] [out(...)] [preserves(...)]
     /// [falls_into name] { body }` declaration. Clause order is free.
     fn proc_decl(&mut self, public: bool) -> ProcDecl {
@@ -1307,6 +1367,8 @@ impl Parser {
         let mut clobbers = None;
         let mut preserves = Vec::new();
         let mut out = None;
+        let mut out_flags = Vec::new();
+        let mut out_cond = Vec::new();
         let mut falls_into = None;
         loop {
             if self.eat_kw("clobbers") {
@@ -1317,10 +1379,15 @@ impl Parser {
                 clobbers = Some(self.reg_list());
             } else if self.eat_kw("out") {
                 // `out(d0-d1/a1)` — the third partition member (S2-D6e), C1
-                // item 2: same reglist grammar as `clobbers`/`preserves`.
-                // `out()` empty is the explicit "returns nothing" contract.
+                // item 2: same reglist grammar as `clobbers`/`preserves`, now
+                // extended with `carry: name` flag results and `rN if cc`
+                // conditional register results (§6). `out()` empty is the
+                // explicit "returns nothing" contract.
                 self.expect(&Tok::LParen, "`(`");
-                out = Some(self.reg_list());
+                let (regs, flags, conds) = self.out_list();
+                out = Some(regs);
+                out_flags = flags;
+                out_cond = conds;
             } else if self.eat_kw("preserves") {
                 // `preserves(d0-d1/a0)` — the movem-style reglist (S2-D6b
                 // syntactic slice), now the shared `clobbers`/`out` grammar.
@@ -1335,7 +1402,7 @@ impl Parser {
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(/* splices_allowed = */ false);
         self.expect(&Tok::RBrace, "`}`");
-        ProcDecl { public, name, params, clobbers, preserves, out, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
+        ProcDecl { public, name, params, clobbers, preserves, out, out_flags, out_cond, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
     }
 
     /// Parse a proc SIGNATURE — `(params) [clobbers(...)] [out(...)]
@@ -1347,13 +1414,18 @@ impl Parser {
         let mut clobbers = None;
         let mut preserves = Vec::new();
         let mut out = None;
+        let mut out_flags = Vec::new();
+        let mut out_cond = Vec::new();
         loop {
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
                 clobbers = Some(self.reg_list());
             } else if self.eat_kw("out") {
                 self.expect(&Tok::LParen, "`(`");
-                out = Some(self.reg_list());
+                let (regs, flags, conds) = self.out_list();
+                out = Some(regs);
+                out_flags = flags;
+                out_cond = conds;
             } else if self.eat_kw("preserves") {
                 self.expect(&Tok::LParen, "`(`");
                 preserves = self.reg_list();
@@ -1361,7 +1433,7 @@ impl Parser {
                 break;
             }
         }
-        ProcSig { params, clobbers, preserves, out }
+        ProcSig { params, clobbers, preserves, out, out_flags, out_cond }
     }
 
     /// Parse a contract-signature param list — like [`Parser::param_list`] but
