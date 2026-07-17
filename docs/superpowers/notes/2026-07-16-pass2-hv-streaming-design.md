@@ -337,3 +337,46 @@ Provisional order — biggest, lowest-risk, behavior-preserving first; b96c861-b
 b96c861 tear invariant re-proven by ANY entry-format change; two-budget attribution
 (producer cy = main loop, drain cy = VBlank) on every A/B; the SHARED edge-commit-site audit
 done ONCE up front (§3).
+
+---
+
+## Probe (i) — zero-fill NECESSITY — DISCHARGED (2026-07-16). RESULT: WASTE → CLAMP.
+
+**R1 first act, run before any segment code (the answer shapes the segment shapes).**
+Geometry: cache = 60 rows (`TILE_CACHE_ROWS`; 28 visible + 16 margin ×2), plane = 64
+(`PLANE_V_CELLS`) → the zero-fill covers plane rows [60,64), the ring's FAR side, ≥16 rows
+from the visible 28-row window whenever the cache covers it. Cols side symmetric
+(`.row_src_zero`, cols < `Cache_Left_Col`).
+
+**Method — sentinel-overwrite (throwaway DEBUG build, reverted):** patched all four zero-fill
+sites (`plane_buffer.asm` `.pA_zero`/`.pB_zfill`/`.pB_az` in Draw_TileColumn + `.row_src_zero`
+in Draw_TileRow_FromCache) `clr.w (a2)+` → `move.w #$E1FF,(a2)+` — a bright priority /
+palette-3 tile ($1FF). If any zeroed cell reaches the visible plane, the sentinel renders as
+an obvious anomaly. ROM hash-loaded into oracle.
+
+**Regimes driven, all CLEAN (no sentinel on screen):**
+1. sustained player-driven down+right (400f) — clean; VRAM read confirms the sentinels are
+   CONFINED to nametable rows 60-63 (`$DE00-$DFFF`), the off-screen ring-back.
+2. reversed player-driven up+left (300f, flips the V-fill direction) — clean.
+3. gross camera-poke overrun (Debug_Scene_Freeze + Camera_Y +80–96 px/f, 5–6× the 2-row/f
+   fill) — clean, but this TRIGGERS RedrawPlanes (full-plane rewrite), which bypasses the
+   incremental zero-fill entirely.
+4. **sustained INCREMENTAL overrun (Camera_Y +40→48 px/f × 6 frames, cache falling ~4–6
+   rows/f behind → >24 rows behind, EXHAUSTING the 16-row margin, staying under the redraw
+   threshold)** — STILL clean: the leading edge shows REAL streamed tiles (the fill
+   prioritizes the leading edge), the zero rows stay behind it, off-screen.
+
+**Conclusion:** the zero-fill cells are structurally off-screen in every reachable regime —
+normal scroll (cache covers visible+margin), gross overrun (redraw bypasses it), and
+sustained incremental overrun (leading edge stays real-tiled; zeros stay on the ring-back).
+The "load-bearing during vertical transitions" hypothesis is DISPROVEN empirically + by
+geometry.
+
+**BINDING on the segment restructures (b, tile_cache #1, #5):** DROP the zero segment —
+**clamp the entry count to the cached rows/cols** (`min(rows, TILE_CACHE_ROWS)` /
+`min(cols, span)`). Real reduction on BOTH budgets: fewer producer word-writes AND fewer
+VBlank drain words per column/row entry, on top of the per-cell→segment copy win. The ≤5-run
+decomposition emits the DATA runs only — no trailing zero run. (Correctness rail for the
+segment code: the clamp must never SHORTEN a run that the visible window can reach — it
+clamps only the proven-off-screen tail; the leading-edge screenshot exit criterion re-checks
+this after the restructure.)
