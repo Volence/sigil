@@ -104,11 +104,16 @@ today there is prose or nothing.
   and the extern decl is deleted in the same commit — the census note's own recommendation).
   There is no mechanical cross-seam verifier for a HEADER COMMENT; this is the one contract
   tier that rests on review, which is why the boundary must stay small (it is: 3).
-- **Closure role:** extern contracts are leaves — `effective(extern P) = declared clobbers`.
-- The three retrofits, verbatim from the census: `VSync_Wait () clobbers(d0)`;
-  `S4LZ_DecompressDict (a4: *DictBase, d4)` with `clobbers(a3, a4)` + advances-a1 modelled as
-  `out(a1)` (in-out cursor, exactly the DrawRings pattern deliverable 2 legalized);
-  `Debug_MusicToggle () clobbers(d0-d2, a0, a1)`.
+- **Closure role:** extern contracts are leaves — `effective(extern P) = declared clobbers ∪ out`.
+- The retrofit contracts (as SHIPPED in G1 — see the errata trail): `VSync_Wait () clobbers(d0)`;
+  `S4LZ_DecompressDict (a0, a1, a4: *DictBase, d4) clobbers(d0-d3/a0/a2-a4) out(a1)`;
+  `Debug_MusicToggle () clobbers(d0-d2, a0, a1)`; `QueueDMA_Important`/`_Deferrable`
+  `(d1, d2, d3) clobbers(d0-d4, a1-a2)` (+ `out(carry: dropped)` at G2).
+  **S4LZ erratum (G1, 2026-07-17):** this spec's v1 sketch (`clobbers(a3, a4)` + `out(a1)`)
+  under-read the `.asm` — it quoted only the dict entry's "Extra:" header lines and missed
+  the SHARED decompress body's `d0-d3/a0/a2-a3`. Same lesson as the census: partial headers
+  ("Extra clobbers:") describe deltas, not totals — an extern decl must state the whole
+  effect, base + delta.
 
 ## 4. Indirect-call contract bounds
 
