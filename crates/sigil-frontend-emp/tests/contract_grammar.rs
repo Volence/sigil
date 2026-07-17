@@ -236,6 +236,39 @@ fn flag_and_cond_results_are_byte_neutral() {
 }
 
 // ---------------------------------------------------------------------------
+// §6 / §11 Q3 — @discards(name) trailing attribute on a call: the explicit,
+// greppable opt-out of the flag-result must-use check.
+// ---------------------------------------------------------------------------
+
+/// `jbsr QueueDMA_Important @discards(dropped)` parses with the call instruction
+/// carrying `discards = Some("dropped")`; a plain call carries `None`.
+#[test]
+fn discards_trailing_attribute_parses() {
+    let f = ok("module engine.x\n\
+                proc P () clobbers(d0-d4/a1-a2) {\n\
+                    jbsr QueueDMA_Important @discards(dropped)\n\
+                    jbsr Other\n\
+                    rts\n\
+                }\n");
+    let p = first_proc(&f);
+    let discards: Vec<Option<String>> = p.body.iter().filter_map(|s| match s {
+        AsmStmt::Instr(i) if i.mnemonic == vec![TextOrSplice::Text("jbsr".into())] =>
+            Some(i.discards.clone()),
+        _ => None,
+    }).collect();
+    assert_eq!(discards, vec![Some("dropped".to_string()), None]);
+}
+
+/// `@discards` is byte-neutral: it emits the same bytes as the plain call (pure
+/// metadata for the flag-result must-use check).
+#[test]
+fn discards_is_byte_neutral() {
+    let plain = flatten("module m\nproc P () clobbers(d0) { bsr Sub\n rts }\nproc Sub () clobbers(d0) { rts }\n");
+    let disc = flatten("module m\nproc P () clobbers(d0) { bsr Sub @discards(dropped)\n rts }\nproc Sub () clobbers(d0) { rts }\n");
+    assert_eq!(disc, plain, "@discards must not change emitted bytes");
+}
+
+// ---------------------------------------------------------------------------
 // §8 @scaffolding("reason") — item-level attribute, inert metadata in G1.
 // ---------------------------------------------------------------------------
 

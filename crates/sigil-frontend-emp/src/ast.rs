@@ -1453,6 +1453,12 @@ pub struct InstrLine {
     /// bound's clobbers instead of ⊤. `None` for an unannotated instruction.
     /// Emits nothing (metadata for the contract closure + subcontract checks).
     pub dispatch_bound: Option<String>,
+    /// A trailing `@discards(name)` attribute on a call (contract-grammar v2 §6 /
+    /// §11 Q3): the explicit, greppable opt-out of the flag-result must-use check
+    /// (`[call.flag-result-unused]`) for a callee declaring `out(carry: name)`.
+    /// `Some(name)` names the discarded flag-result; `None` on an unannotated
+    /// instruction. Emits nothing (metadata for the caller-side check).
+    pub discards: Option<String>,
     /// Span of the whole instruction line.
     pub span: Span,
 }

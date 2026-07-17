@@ -2091,10 +2091,31 @@ impl Parser {
         } else {
             None
         };
+        // Optional trailing `@discards(name)` (§6 / §11 Q3): the explicit opt-out
+        // of the flag-result must-use check for a call to an `out(carry:)` callee.
+        // `@` starts no other instruction-trailing construct, so a bare peek is
+        // enough. Any other `@name(...)` here is a parse error (only `discards`
+        // is a legal instruction attribute).
+        let discards = if self.at(&Tok::At) {
+            self.bump(); // `@`
+            let name = self.expect_ident("attribute name");
+            if name != "discards" {
+                self.diag_at(
+                    self.prev_span(),
+                    format!("`@{name}` is not a valid instruction attribute (only `@discards(name)`)"),
+                );
+            }
+            self.expect(&Tok::LParen, "`(`");
+            let flag_name = self.expect_ident("discarded flag-result name");
+            self.expect(&Tok::RParen, "`)`");
+            Some(flag_name)
+        } else {
+            None
+        };
         // Span computed before the line end so the newline isn't included.
         let span = start.merge(self.prev_span());
         self.expect_line_end_or_rbrace();
-        InstrLine { mnemonic, size, operands, dispatch_bound, span }
+        InstrLine { mnemonic, size, operands, dispatch_bound, discards, span }
     }
 
     /// Like [`Parser::expect_line_end`], but also accepts a directly-following

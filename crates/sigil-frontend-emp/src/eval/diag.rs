@@ -466,6 +466,7 @@ fn instr(mnemonic: &str, size: Option<&str>, operands: Vec<Operand>, span: Span)
         operands,
         span,
         dispatch_bound: None,
+        discards: None,
     })
 }
 
@@ -477,6 +478,7 @@ fn dc_b(bytes: &[u8], span: Span) -> AsmStmt {
         operands: bytes.iter().map(|&b| dc_byte_op(b, span)).collect(),
         span,
         dispatch_bound: None,
+        discards: None,
     })
 }
 

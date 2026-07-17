@@ -526,6 +526,7 @@ impl Desugar<'_> {
                 span,
             }],
             dispatch_bound: None,
+            discards: None,
             span,
         }));
         // The self-resuming yield: store __wf$k's ordinal, exit via epilogue.
@@ -817,6 +818,7 @@ fn yield_store(ordinal: i64, offset: i64, reg: &str, span: Span) -> AsmStmt {
             },
         ],
         dispatch_bound: None,
+        discards: None,
         span,
     })
 }
@@ -829,6 +831,7 @@ fn sized_instr(mnemonic: &str, sz: &str, src: Operand, dst: Operand, span: Span)
         size: Some(TextOrSplice::Text(sz.into())),
         operands: vec![src, dst],
         dispatch_bound: None,
+        discards: None,
         span,
     })
 }
@@ -845,6 +848,7 @@ fn jbra(target: &str, span: Span) -> AsmStmt {
         size: None,
         operands: vec![Operand::Plain { expr: path_expr(target, span), size: None, span }],
         dispatch_bound: None,
+        discards: None,
         span,
     })
 }
