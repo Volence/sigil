@@ -16,7 +16,7 @@ mod proc;
 mod script;
 
 pub use code::lower_code_buf;
-pub use proc::proc_written_registers;
+pub use proc::{expand_reglist_regs, proc_written_registers};
 pub(crate) use code::is_recognized_mnemonic;
 
 use crate::ast;

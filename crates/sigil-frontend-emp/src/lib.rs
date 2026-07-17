@@ -4,6 +4,7 @@
 //! stays Core-free.
 pub mod ast;
 pub mod closure;
+pub mod corpus_contracts;
 pub mod eval;
 pub mod layout;
 pub mod lexer;

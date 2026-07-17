@@ -1036,6 +1036,15 @@ fn reglist_set_quiet(segs: &[(String, Option<String>)]) -> RegSet {
     reglist_expand(segs, |_| {})
 }
 
+/// Expand a `clobbers`/`out`/`preserves` reglist to its canonical register-name
+/// SET (`d0`..`a7`), silently DROPPING `sr` (the transitive closure is
+/// register-file only — `sr` stays the local `[proc.sr-undeclared]` check).
+/// Reused by the corpus contract walk ([`crate::corpus_contracts`]) so its
+/// declared-register sets match `check_clobbers`' exactly.
+pub fn expand_reglist_regs(segs: &[(String, Option<String>)]) -> BTreeSet<String> {
+    reglist_set_quiet(segs).regs.into_iter().collect()
+}
+
 /// Format a canonical movem mask back to its reglist spelling (`d0-d1/a0`) —
 /// consecutive runs collapse to ranges, data registers before address
 /// registers, `a7` spelled `a7`. Diagnostic-only (the inverse of the declared
