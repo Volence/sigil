@@ -188,8 +188,8 @@ tests = ["section_port"]
 # sound_api debug-shape byte change.
 name = "sound_api"
 start = "Sound_PostByte"
-len = 0x1E4
-debug_len = 0x2DA
+len = 0x206       # +0x22: H-1 Sound_PlayMusic repost gate (stopZ80/tst/startZ80/bne)
+debug_len = 0x2FC # +0x22: same gate (shape-invariant code)
 gate = "SIGIL_EMP_SOUND_API"
 tests = ["sound_api_port"]
 

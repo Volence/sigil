@@ -96,6 +96,11 @@ fn pins_rs_is_current() {
 /// the migration), symbol Pins, dotted-local offsets, and the ROM end pins.
 #[test]
 fn generated_pins_match_the_hand_typed_baseline() {
+    // wave-2 bugfix batch (fix/sprites-pb1-pb2): every base below slid +0xC —
+    // B1 VSync_Wait SR-mask grew vblank +8 (shifts hblank onward), C1 controllers
+    // 2nd TH-settle nop grew controllers +4 (shifts controllers onward). Lens
+    // below are unchanged (those regions' content did not change this batch;
+    // controllers' own len grew +4 but no assertion here pins it).
     // animate_port.rs: PLAIN/DEBUG Shape { base, len } — len shape-invariant.
     // Bases slid −4 (t10 core), −8 (t11 sprites), +8 (t11 A1 camera-bias),
     // −2 plain/−4 debug (C-A1 core shrink), +0x22 both (object-pool occupancy
@@ -104,34 +109,34 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // item-11 carry-return grew the engine block +0xC upstream of everything,
     // and dplc item-11 grew +0xC more. animate's OWN plain LEN shrank −8 (item 5:
     // drop both Sound_PlaySFX saves), so its debug LEN is 0x2A8 (was 0x2B0).
-    assert_eq!(pins::ANIMATE.plain_base, 0x2EBA);
-    assert_eq!(pins::ANIMATE.debug_base, 0x3494);
+    assert_eq!(pins::ANIMATE.plain_base, 0x2EC6);
+    assert_eq!(pins::ANIMATE.debug_base, 0x34A0);
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x3244);
-    assert_eq!(pins::RINGS.debug_base, 0x3944);
+    assert_eq!(pins::RINGS.plain_base, 0x3250);
+    assert_eq!(pins::RINGS.debug_base, 0x3950);
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN unchanged. Bases shifted +0x18 plain (dma_queue +0xC + dplc
     // item-11 +0xC precede core). debug_len 0x6C8 (unchanged — items 5/10/11 are
     // downstream of / plain-only within core).
-    assert_eq!(pins::CORE.plain_base, 0x27AC);
+    assert_eq!(pins::CORE.plain_base, 0x27B8);
     assert_eq!(pins::CORE.plain_len, 0x2EE);
-    assert_eq!(pins::CORE.debug_base, 0x293E);
+    assert_eq!(pins::CORE.debug_base, 0x294A);
     assert_eq!(pins::CORE.debug_len, 0x736);
-    assert_eq!(pins::DPLC.plain_base, 0x2708);  // +0xC: dma_queue item-11 growth precedes dplc
-    assert_eq!(pins::DPLC.debug_base, 0x289A);
+    assert_eq!(pins::DPLC.plain_base, 0x2714);  // +0xC: dma_queue item-11 growth precedes dplc
+    assert_eq!(pins::DPLC.debug_base, 0x28A6);
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2880, debug: 0x2A12 });
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x288C, debug: 0x2A1E });
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -180,15 +185,16 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // (ii) WarmupBelowRow) landed the 0x996/0xA56 above; then +0x10 both
     // (unified-prefetch H5: BlockStage_PtrTable 12->16 slots grew tile_cache
     // 0x996->0x9A6 plain / 0xA56->0xA66 debug; tile_cache upstream of sound_api).
-    assert_eq!(pins::SOUND_API.plain_base, 0x5FB6);
-    assert_eq!(pins::SOUND_API.debug_base, 0x78DA);
-    assert_eq!(pins::SOUND_API.plain_len, 0x1E4);
+    assert_eq!(pins::SOUND_API.plain_base, 0x5FC2);
+    assert_eq!(pins::SOUND_API.debug_base, 0x78E6);
+    assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
     // byte-IDENTICAL — literal len + debug_len override, no end-symbol shipped).
     // SOUND_PLAY_SFX_OFF became per-shape (PlayMusic's asserts precede Sound_PlaySFX).
-    assert_eq!(pins::SOUND_API.debug_len, 0x2DA);
-    assert_eq!(pins::SOUND_PLAY_SFX_OFF, pins::ShapeOffset { plain: 0x100, debug: 0x1B0 });
+    assert_eq!(pins::SOUND_API.debug_len, 0x2FC);  // +0x22: H-1 PlayMusic repost gate
+    // +0x22 both shapes: H-1 Sound_PlayMusic repost gate precedes Sound_PlaySFX.
+    assert_eq!(pins::SOUND_PLAY_SFX_OFF, pins::ShapeOffset { plain: 0x122, debug: 0x1D2 });
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
     // +0xCC (churn) +0xC (hook guards) both in the debug ROM, like DEBUG_ASSEMBLED_LEN.
