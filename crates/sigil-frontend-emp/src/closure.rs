@@ -69,6 +69,16 @@ pub struct ProcNode {
     /// Whether the proc declares any clobber contract at all — the firing check
     /// only runs on procs that opted in (mirrors `check_clobbers`' gate).
     pub has_clobber_contract: bool,
+    /// Registers this proc provably PRESERVES — its DECLARED `preserves` set when
+    /// that set passes the D2.32 syntactic (movem-pair) verification. Subtracted
+    /// from `effective` (§1's `− verifiedPreserved(P)`): a register the proc
+    /// writes but saves/restores does not escape it, so it neither fires nor
+    /// propagates. The D2.32 slice is EXISTING proof machinery (§5: "the movem
+    /// pair remains the trivial fast path") — G3 extends the SAME subtraction to
+    /// the individual-push class. A declared-but-UNVERIFIABLE preserves
+    /// contributes NOTHING here (it stays a D2.32 error); `sr` is out of the
+    /// register-file closure's scope.
+    pub verified_preserves: BTreeSet<String>,
 }
 
 /// The result of the closure fixpoint.
@@ -169,7 +179,15 @@ pub fn compute_closure(
                     },
                 }
             }
-            // verifiedPreserved(P) subtraction is G3 (§5) — empty in G1.
+            // − verifiedPreserved(P) (§1): a register the proc writes but
+            // provably preserves (declared + D2.32 movem-verified) does not
+            // escape it. ⊤ stays ⊤ (an unbounded indirect can clobber anything,
+            // including a "preserved" register, so we cannot subtract from ⊤).
+            if !acc.top {
+                for r in &node.verified_preserves {
+                    acc.regs.remove(r);
+                }
+            }
             if effective[name] != acc {
                 effective.insert(name.clone(), acc);
                 changed = true;

@@ -312,3 +312,57 @@ fn unbounded_effective_against_bounded_contract_fires() {
     assert!(f[0].unbounded);
     assert_eq!(f[0].reg, None);
 }
+
+// ---------------------------------------------------------------------------
+// verifiedPreserved subtraction (§1/§5 D2.32 fast path): a register a proc
+// writes but PROVABLY preserves (declared + movem-verified) is subtracted from
+// its effective set — so it neither fires nor propagates to callers.
+// ---------------------------------------------------------------------------
+
+/// A proc that writes d0,d1 but has verified_preserves {d1} has effective {d0}
+/// — the preserved register is subtracted after the union.
+#[test]
+fn verified_preserves_subtracts_from_effective() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "P".to_string(),
+        ProcNode {
+            local_writes: regs(&["d0", "d1"]),
+            verified_preserves: regs(&["d1"]),
+            ..Default::default()
+        },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    assert_eq!(c.effective["P"], eff(&["d0"]));
+}
+
+/// A verified-preserved register does NOT propagate to callers: a caller of a
+/// proc that preserves d1 (even though it writes it) is not charged d1 — this
+/// is what clears Sound_PlayRing (Sound_PlaySFX declares+verifies preserves).
+#[test]
+fn verified_preserves_not_inherited_by_callers() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Caller".to_string(),
+        ProcNode {
+            local_writes: regs(&["d0"]),
+            direct_callees: vec!["Preserver".to_string()],
+            declared_clobbers: regs(&["d0"]),
+            has_clobber_contract: true,
+            ..Default::default()
+        },
+    );
+    procs.insert(
+        "Preserver".to_string(),
+        ProcNode {
+            local_writes: regs(&["d0", "d1", "a0"]),
+            verified_preserves: regs(&["d1", "a0"]),
+            ..Default::default()
+        },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    // Preserver's effective is d0 only (d1/a0 preserved); Caller inherits only d0.
+    assert_eq!(c.effective["Preserver"], eff(&["d0"]));
+    assert_eq!(c.effective["Caller"], eff(&["d0"]));
+    assert!(check_firings(&procs, &c).is_empty(), "no firing — d1/a0 preserved");
+}

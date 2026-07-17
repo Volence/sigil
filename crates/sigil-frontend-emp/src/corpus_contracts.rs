@@ -21,7 +21,7 @@
 
 use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Item, Operand, ProcDecl, ProcSig, TextOrSplice};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
-use crate::lower::{expand_reglist_regs, proc_written_registers};
+use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
 use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
@@ -152,9 +152,12 @@ fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32, defines: &[(Stri
 
     let mut local_writes = BTreeSet::new();
     let mut direct_callees = Vec::new();
+    let mut verified_preserves = BTreeSet::new();
     if let Some(buf) = &buf {
         // Local writes — `a7` filtered as stack discipline (census caveat 5).
         local_writes = proc_written_registers(buf).into_iter().filter(|r| r != "a7").collect();
+        // Provably-preserved registers (declared + D2.32 movem-verified).
+        verified_preserves = verified_preserves_regs(p, buf);
         // Direct-call edges from the resolved CodeBuf (post-comptime accurate).
         for it in &buf.items {
             if let CodeItem::Instr { mnemonic, ops, .. } = it {
@@ -178,6 +181,7 @@ fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32, defines: &[(Stri
         params: param_regs_typed(&p.params),
         out: expand_reglist_regs(p.out.as_deref().unwrap_or(&[])),
         has_clobber_contract: p.clobbers.is_some(),
+        verified_preserves,
     }
 }
 

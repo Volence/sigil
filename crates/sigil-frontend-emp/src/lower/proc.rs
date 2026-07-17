@@ -1045,6 +1045,31 @@ pub fn expand_reglist_regs(segs: &[(String, Option<String>)]) -> BTreeSet<String
     reglist_set_quiet(segs).regs.into_iter().collect()
 }
 
+/// The register set a proc PROVABLY preserves — its declared `preserves` when
+/// that set passes the D2.32 syntactic (movem-pair) verification, else empty.
+/// The contract closure's `verifiedPreserved(P)` (§1): a register the proc
+/// writes but save/restores does not escape it. Reuses [`check_preserves`]
+/// verbatim (runs it against a throwaway diag sink) so the "verified" judgment
+/// can never drift from the lint — a declared-but-UNVERIFIABLE `preserves`
+/// (individual-push, wrong movem) yields the empty set (it stays a D2.32 error
+/// at its own site and subtracts nothing). `sr` is dropped (out of the
+/// register-file closure's scope).
+pub fn verified_preserves_regs(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+) -> BTreeSet<String> {
+    if proc.preserves.is_empty() {
+        return BTreeSet::new();
+    }
+    let mut sink = Vec::new();
+    check_preserves(proc, buf, &mut sink);
+    if sink.iter().any(|d| matches!(d.level, Level::Error)) {
+        BTreeSet::new()
+    } else {
+        expand_reglist_regs(&proc.preserves)
+    }
+}
+
 /// Format a canonical movem mask back to its reglist spelling (`d0-d1/a0`) —
 /// consecutive runs collapse to ranges, data registers before address
 /// registers, `a7` spelled `a7`. Diagnostic-only (the inverse of the declared

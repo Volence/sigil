@@ -132,3 +132,42 @@ fn extern_out_register_charges_callers() {
     // Caller is charged a1 (the extern's out cursor) but declares only d0.
     assert!(fires(&r, "Caller", "a1"), "firings: {:?}", r.firings);
 }
+
+/// Declared + movem-VERIFIED preserves is subtracted (the D2.32 fast path): a
+/// proc that writes a0/a1 but movem-saves/restores them, declaring
+/// preserves(a0/a1), fires nothing — the registers do not escape it.
+#[test]
+fn declared_verified_preserves_subtracts_over_corpus() {
+    let r = analyze(&[
+        "module m\n\
+         proc P () clobbers() preserves(a0/a1) {\n\
+             movem.l a0-a1, -(sp)\n\
+             lea Foo, a0\n\
+             lea Bar, a1\n\
+             movem.l (sp)+, a0-a1\n\
+             rts }\n",
+    ]);
+    assert!(r.firings.is_empty(), "verified preserves must subtract: {:?}", r.firings);
+}
+
+/// Declared but UNVERIFIABLE preserves does NOT subtract: an individual-push
+/// save (no movem pair) leaves the D2.32 slice unable to prove preservation, so
+/// the register stays in `effective` and fires (and the declared preserves is
+/// itself a D2.32 error at its own site — subtracting on an unproven claim would
+/// be unsound). This is the row-1030 individual-push class → G3.
+#[test]
+fn declared_unverifiable_preserves_does_not_subtract() {
+    let r = analyze(&[
+        "module m\n\
+         proc P () clobbers() preserves(a0) {\n\
+             move.l a0, -(sp)\n\
+             lea Foo, a0\n\
+             movea.l (sp)+, a0\n\
+             rts }\n",
+    ]);
+    assert!(
+        fires(&r, "P", "a0"),
+        "individual-push preserves is unverifiable → a0 not subtracted → fires: {:?}",
+        r.firings
+    );
+}
