@@ -1026,3 +1026,128 @@ fn out_is_byte_neutral() {
         "out is metadata — the emitted bytes must be identical"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Auto-inc / -dec write detection ([out-clause, 2026-07-11] gap-ledger row).
+// `(An)+` and `-(An)` MODIFY `An` regardless of operand position or mnemonic;
+// the write set must count them so a scratch pointer scribbled via `(a4)+`
+// warns, and a genuine in-out pointer output can be declared `out(a4)`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn postinc_dest_clobber_undeclared_warns() {
+    // `move.w d0, (a4)+` ADVANCES a4 (post-increment destination). Under
+    // `clobbers(d0)`, a4 is undeclared → `[proc.clobber-undeclared]` naming a4.
+    let src = "module m\nproc p() clobbers(d0) {\n    move.w d0, (a4)+\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("post-increment of a4 is a write of a4");
+    assert_eq!(w.level, Level::Warning);
+    assert!(w.message.contains("a4"), "names the advanced pointer register: {}", w.message);
+}
+
+#[test]
+fn postinc_source_clobber_undeclared_warns() {
+    // `move.w (a4)+, d0` advances a4 even though a4 is the SOURCE operand.
+    // d0 is declared; a4 is not → warns naming a4 (not d0).
+    let src = "module m\nproc p() clobbers(d0) {\n    move.w (a4)+, d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let undeclared: Vec<&str> = diags
+        .iter()
+        .filter(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(undeclared.iter().any(|m| m.contains("`a4`")), "source-position a4 postinc must warn: {diags:?}");
+    assert!(!undeclared.iter().any(|m| m.contains("`d0`")), "declared d0 must not warn: {diags:?}");
+}
+
+#[test]
+fn predec_clobber_undeclared_warns() {
+    // `move.w d0, -(a3)` pre-decrements a3. Under `clobbers(d0)`, a3 warns.
+    let src = "module m\nproc p() clobbers(d0) {\n    move.w d0, -(a3)\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("pre-decrement of a3 is a write of a3");
+    assert!(w.message.contains("a3"), "names the pre-decremented register: {}", w.message);
+}
+
+#[test]
+fn autoinc_on_read_only_mnemonic_warns() {
+    // `tst.w (a2)+` advances a2 even though `tst` is read-only (not a write-form
+    // mnemonic) — the auto-inc effect is on the addressing mode, not the opcode.
+    let src = "module m\nproc p() clobbers() {\n    tst.w (a2)+\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("post-increment on a read-only op still writes a2");
+    assert!(w.message.contains("a2"), "names a2: {}", w.message);
+}
+
+#[test]
+fn declared_autoinc_pointer_is_silent() {
+    // Positive control: declaring `clobbers(d0, a4)` silences the a4 post-increment.
+    let src = "module m\nproc p() clobbers(d0, a4) {\n    move.w d0, (a4)+\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "a declared auto-inc pointer must not warn: {diags:?}"
+    );
+}
+
+#[test]
+fn out_pointer_advanced_via_postinc_is_written() {
+    // The DrawRings case: an in-out pointer output written ONLY via `(a4)+` is a
+    // genuine write of a4, so `out(a4)` must NOT trip `[proc.out-unwritten]`.
+    let src = "module m\nproc p() out(a4) {\n    move.w d0, (a4)+\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-unwritten]"),
+        "an out pointer advanced via postinc is written: {diags:?}"
+    );
+}
+
+#[test]
+fn stack_replacement_pop_into_sp_is_a_clobber() {
+    // `movea.l (sp)+, sp` pops the top of stack INTO sp — stack REPLACEMENT
+    // (loading a new stack pointer), which per the tranche-3 scoping is a
+    // genuine a7 clobber, NOT stack discipline. Under `clobbers(d0)`, a7 is
+    // undeclared → it must warn (the `(sp)+` push/pop exemption must not swallow
+    // a bare-a7 destination write in the same instruction).
+    let src = "module m\nproc p() clobbers(d0) {\n    movea.l (sp)+, sp\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let a7_warn = diags.iter().any(|d| {
+        d.message.contains("[proc.clobber-undeclared]") && d.message.contains("a7")
+    });
+    assert!(a7_warn, "stack replacement `movea.l (sp)+, sp` must warn on a7: {diags:?}");
+}
+
+#[test]
+fn pop_into_dreg_keeps_a7_exempt() {
+    // `movea.l (sp)+, d0` pops into d0 — the `(sp)+` advances a7 (stack
+    // discipline), and a7 is NOT the destination, so a7 stays exempt.
+    let src = "module m\nproc p() clobbers(d0) {\n    movea.l (sp)+, d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let a7_warn = diags.iter().any(|d| {
+        d.message.contains("[proc.clobber-undeclared]") && d.message.contains("a7")
+    });
+    assert!(!a7_warn, "a pop into a data register keeps a7 exempt (stack discipline): {diags:?}");
+}
+
+#[test]
+fn stack_push_pop_is_not_a_clobber() {
+    // `-(sp)` / `(sp)+` push/pop advance a7 but are stack DISCIPLINE, not a
+    // register clobber — the auto-inc detection must stay exempt for a7 (else
+    // every push/pop-balancing proc newly false-positives). `move.l d0, -(sp)`
+    // and `movea.l (sp)+, d0` under `clobbers(d0)` → no a7 warning.
+    let src = "module m\nproc p() clobbers(d0) {\n    move.l d0, -(sp)\n    movea.l (sp)+, d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let a7_warn = diags.iter().any(|d| {
+        d.message.contains("[proc.clobber-undeclared]") && d.message.contains("a7")
+    });
+    assert!(!a7_warn, "stack push/pop must not trip the clobber lint on a7: {diags:?}");
+}
