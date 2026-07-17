@@ -907,12 +907,22 @@ fn check_preserves_sr(
 
 /// True when an a7 write is stack DISCIPLINE (exempt from the clobber lint)
 /// rather than stack REPLACEMENT: either sp arithmetic ([`is_sp_arithmetic`])
-/// or a push/pop that advances a7 via `(sp)+`/`-(sp)` (surfaced by the
-/// auto-inc/dec write detection). Stack replacement (`movea.l x, sp`) matches
-/// neither and stays a genuine clobber.
+/// or a push/pop that advances a7 via `(sp)+`/`-(sp)`. Stack replacement stays a
+/// genuine clobber (tranche-3 scoping) — including `movea.l x, sp` (a bare-a7
+/// destination) AND the subtle `movea.l (sp)+, sp` (pop INTO sp), where the same
+/// instruction both pops (a7 auto-inc, discipline) and loads a new SP (a bare-a7
+/// destination). The auto-inc exemption must therefore NOT fire when a7 is also
+/// the instruction's bare-register destination.
 fn is_sp_discipline(mnemonic: &str, ops: &[CodeOperand]) -> bool {
-    is_sp_arithmetic(mnemonic, ops)
-        || ops
+    if is_sp_arithmetic(mnemonic, ops) {
+        return true;
+    }
+    // A bare-a7 destination is stack REPLACEMENT — not exempt, even alongside a
+    // `(sp)+`/`-(sp)` operand on the same instruction.
+    let a7_is_dest =
+        writes_dest_register(mnemonic) && matches!(ops.last(), Some(CodeOperand::Reg(Reg::A7)));
+    !a7_is_dest
+        && ops
             .iter()
             .any(|op| matches!(op, CodeOperand::PostInc(Reg::A7) | CodeOperand::PreDec(Reg::A7)))
 }

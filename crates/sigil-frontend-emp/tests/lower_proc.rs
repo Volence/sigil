@@ -1112,6 +1112,33 @@ fn out_pointer_advanced_via_postinc_is_written() {
 }
 
 #[test]
+fn stack_replacement_pop_into_sp_is_a_clobber() {
+    // `movea.l (sp)+, sp` pops the top of stack INTO sp — stack REPLACEMENT
+    // (loading a new stack pointer), which per the tranche-3 scoping is a
+    // genuine a7 clobber, NOT stack discipline. Under `clobbers(d0)`, a7 is
+    // undeclared → it must warn (the `(sp)+` push/pop exemption must not swallow
+    // a bare-a7 destination write in the same instruction).
+    let src = "module m\nproc p() clobbers(d0) {\n    movea.l (sp)+, sp\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let a7_warn = diags.iter().any(|d| {
+        d.message.contains("[proc.clobber-undeclared]") && d.message.contains("a7")
+    });
+    assert!(a7_warn, "stack replacement `movea.l (sp)+, sp` must warn on a7: {diags:?}");
+}
+
+#[test]
+fn pop_into_dreg_keeps_a7_exempt() {
+    // `movea.l (sp)+, d0` pops into d0 — the `(sp)+` advances a7 (stack
+    // discipline), and a7 is NOT the destination, so a7 stays exempt.
+    let src = "module m\nproc p() clobbers(d0) {\n    movea.l (sp)+, d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let a7_warn = diags.iter().any(|d| {
+        d.message.contains("[proc.clobber-undeclared]") && d.message.contains("a7")
+    });
+    assert!(!a7_warn, "a pop into a data register keeps a7 exempt (stack discipline): {diags:?}");
+}
+
+#[test]
 fn stack_push_pop_is_not_a_clobber() {
     // `-(sp)` / `(sp)+` push/pop advance a7 but are stack DISCIPLINE, not a
     // register clobber — the auto-inc detection must stay exempt for a7 (else
