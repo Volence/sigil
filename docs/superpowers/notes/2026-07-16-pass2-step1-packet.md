@@ -262,12 +262,90 @@ every reachable regime; design note tail). Emit DATA runs only, no trailing zero
    = 13416 cy / 10.5% max-V (unchanged through 1.1a/1.1b — it's the plane_buffer producer,
    not tile_cache), 45ca85d anchor row.
 
-## Step 1.3 — tile_cache #5 (CopyBlockColumn wrap-split) — PENDING
+## Step 1.3 — tile_cache #5 (CopyBlockColumn wrap-split) — DONE (2026-07-17)
 
-_Each: twin lockstep (.emp + .asm), re-pin, byte gates both shapes, per-group A/B
-(the 3-regime table above re-measured, producer-Δ AND VBlank-Δ per row), resume-
-contract check (#1's budget-out at `.fr_block_loop` head survives intra-block
-segmenting), clamp correctness rail (leading-edge screenshot + up+left drive)._
+CopyBlockColumn is the HORIZONTAL-path producer (max-H regime; 45ca85d anchor 11869/9.3%).
+Its two per-column copy loops (`.copy_nt` nametable, `.copy_coll` collision both-planes)
+each walked DOWN a cache column with a **per-row row-wrap test** (`cmpa/blo/suba` at the
+circular buffer's row-59→0 / coll-row-29→0 boundary). Since one block column is ≤16 rows,
+each run crosses the wrap **at most once** → a 1.1a-class wrap-split: compute rows-until-
+wrap (`COLS - phys_row`), emit ≤2 straight `dbf` runs split there, no per-row branch.
+**BYTE-PRESERVING** by design ⇒ full identity bar. Twins byte-identical both shapes; region
++$42 (CopyBlockColumn $9E→$E0 = 158→224 B). ROMs debug 59157ab2 / plain df2f9b7e (were
+f8ee99d9 / 364b3ed1).
+
+**⚠️ THE IDENTITY BAR CAUGHT A REAL BUG (which the emp==asm byte gate could NOT — both
+twins shared it).** First pass used `movea.l a5,a2` / `movea.l a6,a2` to reset the dest on
+wrap. WRONG: that resets to (phys row 0, **col 0**), but the vertical run must stay in its
+own `cache_col` — the original `suba.w #SIZE,a2` wraps while PRESERVING the column offset
+(a2 was at base+NT_SIZE+cache_col*2 → −NT_SIZE → base+cache_col*2). So seg2 wrote the
+wrapped rows to column 0 and the real columns lost their data. Caught at anchor A2
+Cam(768,512), Origin_Row=46 (which maps content into physical row 0 — the seg2 target):
+OLD-1.2 phys row 0 had content (`5009 5016 4017 583C…`), buggy NEW had zeros + a stray
+`C1E7` at col 0. Fixed to `suba.w #TILE_CACHE_NT_SIZE`/
+`#TILE_CACHE_COLL_SIZE` (both loops) — restores the original's column-preserving wrap.
+Post-fix +$4 (movea.l 2B → suba.w 4B ×2 sites), so the region grew +$3E→+$42; re-pinned.
+
+**Identity (full, cache-RAM byte compare — canonical Debug_Scene_Freeze + Camera-poke;
+metadata byte-identical OLD-1.2≡NEW-1.3 at each anchor since CopyBlockColumn changes no
+metadata).** Anchor **A2 Cam(768,512)** (Origin_Row=46 → content maps to the wrap-seam
+physical rows 0 & 59; settled 360 frames, RowResume + Resume_Col = $FFFF on both):
+- **NT phys row 0** (0xFF0000, the seg2 wrap target, content-bearing): **byte-IDENTICAL**
+  OLD-1.2 vs fixed NEW-1.3 (scripted cell diff, 0 diffs) — proves the column-preserving wrap.
+- **NT phys row 59** (seg1's last pre-wrap row) + **collision row 23** (content): byte-
+  identical. (Row 59 also matched with the BUG present — it's seg1 — which is exactly why
+  the seam-target row 0 was the discriminating read.)
+- Collision-seam-CONTENT compare not forcible here (collision is terrain-sparse; coll rows
+  0/29 were zero at every reachable content anchor). Collision correctness rests on: the NT
+  wrap-seam byte-identity (the bug locus, same wrap code), the IDENTICAL structural fix
+  (`suba.w #TILE_CACHE_COLL_SIZE`), the coll-row-23 content match, and the strict
+  collision_lookup_port / tile_cache_port gates.
+- Resume contract: CopyBlockColumn is atomic per call (budget-out lands at block boundaries,
+  never mid-column); the A2 fills were budget-limited and settled byte-identical.
+
+**Ripple sweep (5 sites) → 2262/0.** (a) pins repin ✓ (b) engine.inc 4 orgs +$42
+(tile_cache $4F9C/$5C26, collision_lookup $4FC0/$5C4A, section $5898/$6522, sound_api
+$630A/$7D24) ✓ (c) **mixed_dac_rom.rs** Collision_GetType bra disp F3EC→**F3AA** plain /
+F32C→**F2EA** debug (tile_cache-INTERNAL growth between the bra target and the bra, the
+1.1b pattern; FAILED first at F3EC, fixed) ✓ (d) repin_pins SOUND_API base +$42
+(0x60C2→0x6104 / 0x79E6→0x7A28) ✓ (e) repin.toml symbols stable ✓.
+
+**Producer A/B (debug, 60f sustained-scroll avg, Lag 0 all regimes):**
+
+| regime | OLD-1.2 | NEW-1.3 | Δ | anchor |
+|---|---|---|---|---|
+| max-H (→) | 11869 (9.3%, 6 calls, 1978/call) | 9829 (7.7%, 7 calls, **1404/call**) | **−29.0%/call** | 45ca85d 11869 (exact) |
+| diagonal (↓→) | 6948 (5.4%, 4 calls, 1737/call) | 5694 (4.4%, 4 calls, 1424/call) | **−1254 / −18.0%** | — |
+| max-V (↓) | — (0 calls) | — (0 calls) | horizontal producer — no run | — |
+
+OLD max-H = 45ca85d anchor 11869 to the cycle. Per-call win scales with rows-copied-per-
+column (max-H stages full-height columns → −29%; diagonal partial → −18%). VBlank-Δ = 0
+(pure producer). Modest vs the FillRow #1 cuts — CopyBlockColumn is #5 — but real, Lag 0.
+
+## R2 HOLD — all four restructures DONE on pass2-hv-streaming (packet to Fable)
+
+**Consolidated producer A/B (debug, 60f sustained-scroll avg, Lag 0 EVERY row/regime;
+each OLD reconciles with the 45ca85d anchor to the cycle):**
+
+| piece | routine | regime | OLD | NEW | Δ |
+|---|---|---|---|---|---|
+| 1.1a | TileCache_FillRow (NT segs) | max-V | 45798 (35.8%) | 29894 (23.4%) | −34.7% |
+| 1.1b | TileCache_FillRow (+coll segs) | max-V | 45774 (baseline) | 18023 (14.1%) | **−60.6% cum** |
+| 1.2 | Draw_TileRow_FromCache (drop-zero segs) | max-V | 13416 (10.5%) | 4188 (3.3%) | **−68.8%** |
+| 1.3 | TileCache_CopyBlockColumn (wrap-split) | max-H | 11869 (9.3%) | 1404/call (9829/7c) | **−29.0%/call** |
+
+Net max-V producer (FillRow+Draw_TileRow): Tile_Cache_Fill 53555→~21k, idle VSync ~24%→~53%.
+
+**R2 checklist:**
+- [ ] **1.2 belt-and-braces (Fable, 1.2 ratification — NOT a 1.2 respin):** a single live
+      **UNFROZEN sustained up+left drive on NEW** with leading-edge screenshots, NEW-only
+      glitch inspection (no A/B matching needed). Verify-during-motion on the shipping code
+      path; makes the R2 packet's rail section self-contained. ~minutes.
+- [x] Completed A/B table across all four restructures (above).
+- **Bar-worked note for Fable:** 1.3's FULL identity bar CAUGHT a real column-preserving-wrap
+      bug the emp==asm byte gate structurally could not (both twins shared it). Vindicates the
+      "byte-preserving ⇒ full identity, not screenshots" framing — the cache-RAM seam compare
+      was the exact instrument that surfaced it.
 
 ---
 
