@@ -53,7 +53,43 @@ screenshot + the up+left drive stay in EVERY after-A/B regime set.
 
 ---
 
-## Step 1.1 — tile_cache #1 (FillColumn + FillRow segments) — PENDING
+## Step 1.1a — tile_cache #1 FillRow NAMETABLE segments — DONE (2026-07-17)
+
+FillRow's per-tile `.fr_col_loop` → a per-block valid-run `[ic_lo, ic_hi)` +
+≤2 `move.w`/`dbf` segment copies for the nametable, split at the Origin_Col wrap.
+COLLISION stays per-cell (phase 2, verbatim; 1.1b segments it). No zero segment —
+FillRow always SKIPPED out-of-range cols (never zeroed), so the clamp is inherent.
+Twins byte-identical (`.emp`/`.asm`), re-pinned (region +$88; engine.inc resume
+orgs bumped), full strict suite + repin --check green. Region grew, ROMs:
+debug 04d352ab / plain bb6f194a (were b1f82f9a / 824d4f2e).
+
+**Identity (Debug_Scene_Freeze=1 + Camera poke → deterministic controlled fill;
+the packet's press-count anchor drive is NON-reproducible, replaced by matched-
+geometry — gap-ledger d57091c).** Anchor Cam(512,640) → Left=44 Top=64
+Origin_Col=44 (**wrap-split exercised**) Origin_Row=2, reached IDENTICALLY OLD+NEW:
+- nametable visible window screenshots PIXEL-IDENTICAL; cache-RAM windows byte-identical.
+- collision plane A (content) md5 IDENTICAL — untouched confirmed.
+- resume contract: budget-limited fills (2 rows/f × 5 blocks > BLOCK_DECOMP_BUDGET 6
+  → 2nd-row budget-out) reached byte-identical settled cache vs OLD; deep scroll
+  settles clean, no orphaned rows.
+
+**Producer A/B (max-V, sustained down-scroll, 60-frame avg, same drive both ROMs):**
+
+| routine | OLD | NEW | Δ | 45ca85d anchor |
+|---|---|---|---|---|
+| TileCache_FillRow | 45798 (35.8%) | 29894 (23.4%) | **−15904 / −34.7%** | 45903 (35.9%) |
+| Tile_Cache_Fill (incl) | 53435 (41.7%) | 37675 (29.4%) | −15760 | 53555 (41.8%) |
+| Draw_TileRow_FromCache | 13416 | 13416 | 0 (untouched) | 13416 |
+| VSync_Wait (idle) | 31373 (24.5%) | 47147 (36.8%) | +15774 freed | 30937 |
+| Lag_Frame_Count | 0 | 0 | 0 | 0 |
+
+OLD reconciles with 45ca85d to ~100 cy (validates method+anchor). VBlank-Δ = 0
+(1.1a is pure producer; VInt_DrawLevel/drain untouched). Diagonal: FillRow reduced
+(17416 vs 20756 anchor), Lag=0 — no shared-budget regression (decompress cap
+untouched). max-H: FillRow doesn't run (FillColumn regime = later step). Win lands
+entirely as freed producer headroom, Lag stays the 0 floor.
+
+## Step 1.1b — tile_cache #1 FillRow COLLISION segments — PENDING
 ## Step 1.2 — plane_buffer (b) (Draw_TileRow_FromCache segments) — PENDING
 ## Step 1.3 — tile_cache #5 (CopyBlockColumn wrap-split) — PENDING
 
