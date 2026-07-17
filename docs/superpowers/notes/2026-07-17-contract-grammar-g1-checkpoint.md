@@ -114,3 +114,67 @@ worklist procs; the 12 do not appear in the firing list yet (correct).
 +2 extern undercount with a known contract; S3/S4 are classification, not new
 debt). Barring a Fable objection, proceeding with the 5-extern boundary retrofit
 + the clobbers/out sweep is safe. Pausing here for that ruling.
+
+---
+
+## Boundary retrofit landed — prediction check (2026-07-17, post-Fable-ruling)
+
+Boundary decls committed (aeon a661db9, sigil kill-list e40c5d9): 5 externs + 4
+types + 6 as-bounds + @scaffolding. **Byte-neutral CONFIRMED**: paired strict
+`SIGIL_STRICT_GATE=1` = **202 suites / 2305 / 0**, ROMs byte-identical (was
+198/2271; +34 = new contract tests). Closure re-run over the retrofitted corpus:
+**131 procs, 5 externs, 4 types, 0 holes, 46 firings**.
+
+Against Fable's four pre-registered predictions:
+
+| # | Prediction | Result |
+|---|---|---|
+| (b) | all extern holes clear | ✅ 4 → 0 |
+| (c) | RunObjects d7 re-surfaces direct | ✅ `RunObjects direct d7` |
+| (a) | 4 ⊤s collapse (RunObjects/AnimateSprite/GameLoop direct, TestParticle transitively) | ⚠️ RunObjects→direct ✅, GameLoop→**gone** (declares the full set the GameState ⊤ bound charges — no firing) ✅, TestParticle→transitive ✅, **AnimateSprite→8 TRANSITIVE rows, NOT direct** ❌ |
+| (d) | no new firing class | ❌ AnimateSprite (8) + TestParticle downstream (7) = 15 transitive rows the clobbers/out sweep will NOT clear |
+
+**The closure is arithmetically CORRECT — NOT a bug.** ObjRoutine bound =
+universe − preserves(a0,d7) = `d0-d6/a1-a6`. AnimateSprite declares
+`clobbers(d0-d2/a1-a2)`. Bound − declared = `d3-d6/a3-a6` = the exact 8 firings.
+TestParticle_Main declares `clobbers(d0-d3/a1-a2)` — authored as the union of its
+callees' DECLARED clobbers (its own comment: "AnimateSprite(d0-d2/a1-a2)"), the
+correct discipline — so it inherits AnimateSprite's EFFECTIVE (not declared) via
+`jbsr AnimateSprite` and fires `d4-d6/a3-a6`.
+
+**Root cause (single):** `animate.emp:210 jsr (a2) as ObjRoutine`. The AF_CALLBACK
+targets are general object routines (census part-c #3: "ObjRoutine offsets baked
+into animation scripts"), so per the ObjRoutine bound the callback MAY clobber
+everything but a0/d7. AnimateSprite's `clobbers(d0-d2/a1-a2)` therefore
+UNDER-DECLARES — a caller relying on d3 surviving an AnimateSprite call would be
+wrong (the callback could trash it). The census missed this because AnimateSprite
+was ⊤-masked (site #3 unbounded). Bounding it revealed real debt.
+
+**This is why the prediction missed — real debt behind the ⊤, not a closure bug.
+Per the ruling, I STOP before the clobbers/out sweep and report.** The decision is
+Fable's:
+
+- **Option A — AnimateSprite genuinely under-declares.** Widen it to
+  `clobbers(d0-d6/a1-a6)` (whatever the AF_CALLBACK bound allows); TestParticle
+  and any other AnimateSprite callers widen in lockstep (they correctly track its
+  declared). The clobbers/out sweep scope GROWS; "exactly 5" residue was an
+  undercount (the census couldn't see behind the ⊤). This is my lean — it is the
+  honest contract for a callback that can run arbitrary object code.
+- **Option B — AF_CALLBACK deserves a tighter contract type than ObjRoutine.**
+  If the animation callbacks are a KNOWN tight set (only d0-d2/a1-a2), define
+  `type AnimCallback = proc (a0: *Sst) clobbers(d0-d2/a1-a2)` and re-annotate
+  site #3; AnimateSprite's contract then holds. Requires the §4 subcontract check
+  to VERIFY every baked-in callback target conforms (that check is still unbuilt —
+  it would be the enforcement). Census part-c #3 gives no evidence the callbacks
+  ARE tight, so this needs a corpus audit of the AF_CALLBACK targets first.
+
+Everything else is on track: the 12 census under-decls + 3 FPs are present and
+ready for the sweep; holes cleared; ⊤s collapsed. Only the AnimateSprite/AF_CALLBACK
+bound blocks the sweep.
+
+**Walk limitation noted:** the Touch dispatch (census site #4, `jsr (a0,d4.w)`)
+lives inside a comptime-fn template spliced into two sites, so the AST-body
+indirect scan does not see it — the `as TouchHandler` annotation is correct but
+INERT for the closure until the walk descends into comptime-fn bodies. Harmless
+here (the 11 Touch_* targets are rts-stubs), and it happens to keep TouchResponse
+free of G3-residue rows. Logged for G1's remaining work / a future walk pass.
