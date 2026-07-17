@@ -941,3 +941,35 @@ unfrozen up+left drive clean.
 - Debug `s4.debug.bin`: **461540 bytes** (`EndOfRom` = `0x6765A`, unchanged), crc32
   **`217224d3`**, sha256
   **`af34cec492527aad3abf25645371e736b34467481efa4169a9f101dbd9e77511`**.
+
+## Re-baseline 2026-07-17 — silent-drop bug-class fix (buffers + load_art) — the current pin
+
+`fix/silent-drop-class` (aeon `223c58d` / sigil `8d9dcf3`): the silent-drop correctness
+class — `Enqueue_Dirty_Buffers` clears `Palette_Dirty`/`Sprite_Table_Dirty` ONLY on a
+successful enqueue (via `queueStaticDMA`'s new drop-carry contract), and `Level_LoadArt`
+consumes `QueueDMA_Critical`'s drop carry (DEBUG-fatal + release drain-retry). Oracle-
+verified: on a full Critical queue the dirty flags survive and the transfer lands the next
+frame instead of staling. This is the FIRST campaign byte-change UPSTREAM of the early
+gated engine regions, so every region base slides **+$62 both shapes** from `hblank`
+through `section`, and **SOUND_API +$6C plain / +$B6 debug** (the one shape-different shift
+— `load_art`'s out-of-line DEBUG `RaiseError` vs release drain-retry). NO region content
+changed: all region LENS are identical, and the assembled `EndOfRom` is UNCHANGED both
+shapes (`0x65B60` plain / `0x6765A` debug — engine growth absorbed by `org $10000`); the
+`.bin` size delta vs the pass-2 pin is purely the convsym symbol appendix reflecting the
+shifted/added labels. Gate maintenance (the standing 5-site ripple; `repin` auto-does only
+`pins.rs` + prints the org table): `pins.rs` re-derived via `repin`; **`engine.inc` 15
+gate-block resume orgs** (the first-ever upstream shift touched the WHOLE gate-org table,
+not the usual downstream few — a tooling-gap ledger row is owed: `repin` should surface the
+full table as the canonical ripple surface); `mixed_dac_rom.rs` 4 lma_bases + 6 rom-windows
++ 2 sdsr PC-anchors (+$62); `repin_pins.rs` ANIMATE/RINGS/CORE/DPLC/DELETE_OBJECT (+$62) +
+SOUND_API (+$6C/$B6) baselines. Full strict suite **2313/0** on the merged masters
+(failures-first); `m1d_rom`/`m1d_debug_rom` byte-identical (sigil==asl, only the 4
+convsym/checksum bytes differ); s4lint clean.
+
+- Aeon repo master: **`223c58d`**; sigil master repin **`8d9dcf3`**.
+- Non-debug `s4.bin`: **453533 bytes** (`EndOfRom` = `0x65B60`, unchanged), crc32
+  **`8984e510`**, sha256
+  **`623db8927d031901dd4698f8dff9c7e976997a08044b596776fd06a575b4cae8`**.
+- Debug `s4.debug.bin`: **461554 bytes** (`EndOfRom` = `0x6765A`, unchanged), crc32
+  **`c80465dc`**, sha256
+  **`77e8436146db4c46b4da0d12c3488efe1b431b6cccd5be07e175051f2a3d7db2`**.
