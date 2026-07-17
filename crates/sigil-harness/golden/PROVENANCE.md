@@ -881,3 +881,30 @@ clippy clean.
   **BYTE-IDENTICAL to the occupancy-A2 baseline above; VERIFIED unchanged by hash, not assumed.**
 - Debug `s4.debug.bin`: **460521 bytes** (`EndOfRom` = `0x6765A`, unchanged), sha256
   **`f71da7272444fa9cd61b83c1cfb60b2fa9122cb94e3df73be3bafa8c5612ceb6`** (md5 `4e89ebd2…`).
+
+## Re-baseline 2026-07-16 — sprites PB1/PB2 + wave-2 bugfix batch — the current pin
+
+`fix/sprites-pb1-pb2`: sprites PB1 (stop clearing Sprites_Rendered → frozen-ghost
+fix) + PB2 (unbias scanline-band index), then the wave-2 batch — B1 (SR-mask
+VSync_Wait's clear/set pair, torn-drain race), H-1 (Sound_PlayMusic repost gate:
+68k spin + byte-neutral Z80 early-clear), C1 (2nd controller TH-settle nop), D1
+(dplc_layout merge cap, tool-only), E1/P1b (mega-act ceiling guards, byte-neutral),
+P1a (parallax zero-deform flat-path, ~14.4k cy/frame, byte-identical HScroll).
+Assembled `EndOfRom` UNCHANGED both shapes (engine-block growth from B1 +8 / C1 +4
+/ H-1 sound_api +0x22 absorbed by `org $10000`; convsym appendix accounts for the
+ROM-size delta vs the 2026-07-13 pin). NOTE: this pin's immediate predecessor was
+the post-t17 master (t14–t17 landed WITHOUT PROVENANCE entries — CRC32 baseline
+`b335bdc6` plain / `827e18c4` debug, which this batch SUPERSEDES); the 2026-07-13
+sha256 pin above is two tranches stale. Gate maintenance: `pins.rs` re-derived via
+`repin` (engine bases +0xC for B1/C1, sound_api symbols +0x22 for H-1; SOUND_API
+`repin.toml` len 0x1E4→0x206 / 0x2DA→0x2FC); `engine.inc` gate-resume orgs;
+`mixed_dac_rom.rs` + `repin_pins.rs` baselines. Full strict suite green on the
+merged masters; `repin --check` clean; clippy delta zero.
+
+- Aeon repo master merge: **`5d96ffe`**; sigil master merge **`8e3d646`**.
+- Non-debug `s4.bin`: **453087 bytes** (`EndOfRom` = `0x65B60`, unchanged), crc32
+  **`824d4f2e`**, sha256
+  **`99fdf6c5a1e90e2b2d42c0569f3f5f37b0a7e84dc32e661335084d61ea16c1c2`**.
+- Debug `s4.debug.bin`: **461110 bytes** (`EndOfRom` = `0x6765A`, unchanged), crc32
+  **`b1f82f9a`**, sha256
+  **`e793267ff154c5494185ec77b44d485724dad828fbfe9b99a57ed73fd6d667ca`**.
