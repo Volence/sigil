@@ -158,10 +158,17 @@ ObjRoutine-dispatched callers keep their d7 guarantee through it.
 
 ## 5. Verified `preserves` (the dataflow upgrade — answers row 1030)
 
-D2.32's syntactic movem-pair slice has **zero corpus adopters** because real preservation in
-this engine is individual pushes, often branch-straddling (`AllocDynamic`,
-`Collected_Park/UnparkSlot` — the census's 3 live FPs). v2 verifies `preserves(rN)` by
-**symbolic stack tracking**, not shape:
+**Erratum (G1 sweep, 2026-07-17):** the census's "zero corpus adopters" claim (repeated in
+this spec's v1) was WRONG — `preserves` has **6 adopters** via the movem/sr fast paths
+(`HBlank_Dispatch` + five sound_api procs, all D2.32/sr-check verified today). The true
+statement, and the one row 1030 needs: **zero procs of the individual-push class** can adopt
+it, because real preservation there is individual pushes, often branch-straddling
+(`AllocDynamic`, `Collected_Park/UnparkSlot` — the census's 3 live FPs). **Consequently
+(G1-residue ruling): the closure subtracts declared+D2.32/sr-VERIFIED preserves already in
+G1** — that is existing proof machinery, not G3's; soundness note: a movem entry-save proc
+that skipped its restore on any exit path would return through a buried return address, so
+working code + the pair check ⇒ preserved on all paths. G3 extends the SAME subtraction to
+the push class. v2 verifies `preserves(rN)` by **symbolic stack tracking**, not shape:
 
 - Per control-flow path from entry, track sp depth and which stack slot holds which register's
   ENTRY value (writes to a register kill its tracked slots' "entry-value" status only for the
