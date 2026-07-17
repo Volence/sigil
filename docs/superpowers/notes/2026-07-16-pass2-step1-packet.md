@@ -271,8 +271,13 @@ circular buffer's row-59→0 / coll-row-29→0 boundary). Since one block column
 each run crosses the wrap **at most once** → a 1.1a-class wrap-split: compute rows-until-
 wrap (`COLS - phys_row`), emit ≤2 straight `dbf` runs split there, no per-row branch.
 **BYTE-PRESERVING** by design ⇒ full identity bar. Twins byte-identical both shapes; region
-+$42 (CopyBlockColumn $9E→$E0 = 158→224 B). ROMs debug 59157ab2 / plain df2f9b7e (were
-f8ee99d9 / 364b3ed1).
++$42 (CopyBlockColumn $9E→$E0 = 158→224 B). ROMs **debug 217224d3 / plain 8b71f0c5**
+(sizes 461540 / 453519; were f8ee99d9 / 364b3ed1).
+_(Provenance note: the pre-final-fix BUGGY build was debug 59157ab2 / plain df2f9b7e —
+same sizes, different bytes; the `movea.l`→`suba.w` wrap fix + re-pin changed the bytes.
+The committed 1.3 code assembles to 217224d3 / 8b71f0c5, verified by fresh rebuild. These
+are the canonical CRCs for the R2 provenance re-baseline and the merge-night rebuild check —
+NOT the buggy 59157ab2/df2f9b7e.)_
 
 **⚠️ THE IDENTITY BAR CAUGHT A REAL BUG (which the emp==asm byte gate could NOT — both
 twins shared it).** First pass used `movea.l a5,a2` / `movea.l a6,a2` to reset the dest on
