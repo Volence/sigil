@@ -127,3 +127,13 @@ mechanism (per ruling).
 G2 (`out(carry:)` must-use + `@discards` + `[call.flag-result-unused]`) — with
 G1 it unblocks pass-3. The residue pin + WARN-tier firing list are the standing
 regression guard; G3 flips them to ERROR and clears the 6-row handoff.
+
+## Corrections (Fable gate)
+
+- **Commit count:** 16 sigil + **3** aeon (a661db9 boundary, 576c283 AnimCallback,
+  669c287 debt sweep) — an earlier hand-off said "4 aeon", which was wrong.
+- **S4LZ §3 erratum (spec master 00dd4e6):** the shipped `extern proc
+  S4LZ_DecompressDict … clobbers(d0-d3/a0/a2-a4) out(a1)` was correct; the spec
+  §3 SKETCH quoted only the dict entry's "Extra:" header lines and missed the
+  shared body's d0-d3/a0/a2-a3. §3 now records the shipped contracts verbatim. No
+  code change — the extern decl already follows s4lz_decompress.asm to the letter.
