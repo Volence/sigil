@@ -342,10 +342,14 @@ each OLD reconciles with the 45ca85d anchor to the cycle):**
 Net max-V producer (FillRow+Draw_TileRow): Tile_Cache_Fill 53555→~21k, idle VSync ~24%→~53%.
 
 **R2 checklist:**
-- [ ] **1.2 belt-and-braces (Fable, 1.2 ratification — NOT a 1.2 respin):** a single live
-      **UNFROZEN sustained up+left drive on NEW** with leading-edge screenshots, NEW-only
-      glitch inspection (no A/B matching needed). Verify-during-motion on the shipping code
-      path; makes the R2 packet's rail section self-contained. ~minutes.
+- [x] **1.2 belt-and-braces — DONE 2026-07-17, CLEAN.** Live UNFROZEN drive on the branch-tip
+      SHIPPING build (plain 8b71f0c5): reset→start→run right (build cache + left-behind
+      columns)→sustained LEFT + up-jumps at speed. 7 leading-edge screenshots
+      (scratchpad/r2drive/drive_1..7.png) across the dirt field, foliage/trunk sections, the
+      canopy top, and a fast-scroll grass line + rings. NEW-only glitch inspection: every
+      frame coherent — no stale-tile flash, no garbage at the left/top leading edges, rings
+      intact. The 1.2 dropped-zero cells never surface under real motion (motion confirmation
+      of the static + structural clamp proof).
 - [x] Completed A/B table across all four restructures (above).
 - **Bar-worked note for Fable:** 1.3's FULL identity bar CAUGHT a real column-preserving-wrap
       bug the emp==asm byte gate structurally could not (both twins shared it). Vindicates the
