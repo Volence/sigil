@@ -178,3 +178,66 @@ indirect scan does not see it — the `as TouchHandler` annotation is correct bu
 INERT for the closure until the walk descends into comptime-fn bodies. Harmless
 here (the 11 Touch_* targets are rts-stubs), and it happens to keep TouchResponse
 free of G3-residue rows. Logged for G1's remaining work / a future walk pass.
+
+---
+
+## Clobbers/out debt sweep — DONE, residue is 8 not 5 (2026-07-17)
+
+Fable pre-authorized the sweep with the falsifiable check "residue EXACTLY 5,
+any other number → stop, report." **Measured residue = 8.** Reporting per the
+protocol. The sweep itself is complete and correct; the 8 residue rows are all
+genuinely G3 (save/restore-preserved), verified by reading each proc — Fable's 5
+undercounted the G3-FP set by 3 d1-preserve rows.
+
+**Sweep applied (aeon 669c287, byte-neutral):**
+- 13 census under-decls: DeleteObject +d1 · RunObjects/_Frozen +d7 ·
+  EntryForSection +d0 · GetSecPtrXY +d2 · TouchResponse +a4 · TrySpawnObject
+  →`d0-d3/d5,a0-a3` · TrySpawnRing →`d0-d4,a0` · the 3 SAT a4s (DrawRings /
+  Emit_ObjectPieces / InsertSpriteMasks) as **out(a4)** · Section_RedrawPlanes
+  **clobbers(sr)**.
+- 12 stubs (11 Touch + GameState_Idle) → `clobbers()`.
+- **+2 GENUINE transitive callers the local census could not see:**
+  EntityWindow_Rescan/ScanObjectsRight → `d0-d5/a0-a3`. Verified genuine, not FP:
+  TrySpawnObject's `movem.l d3/d5/a0-a1/a3,-(sp)` at :1158 is a SPILL frame
+  (values reloaded via `8(sp)`/`12(sp)` into *different* regs at :1177/:1201,
+  never restored to source), so those regs are real scratch; Rescan/Scan don't
+  reload after the loop's `jbsr TrySpawnObject`. This is the transitive closure
+  finding debt the LOCAL census structurally cannot — its whole point.
+
+**The 8-row residue — every one save/restore-preserved (→ G3, never a false
+clobbers):**
+
+| Row | Preservation mechanism | Fable's 5? |
+|---|---|---|
+| AllocDynamic a0 | individual-push `move.l a0,-(sp)`, branch-straddled (row 1030) | ✅ |
+| Collected_ParkSlot a0 | individual-push | ✅ |
+| Collected_UnparkSlot a0 | individual-push | ✅ |
+| Load_Object a0 | inherits AllocDynamic's a0 (Load_Object itself preserves a0) | ✅ |
+| Sound_PlayRing a0 | inherits Sound_PlaySFX's **declared** `preserves(d1/a0)` | ✅ |
+| Sound_PlayRing d1 | inherits Sound_PlaySFX's declared `preserves(d1/a0)` | ❌ MISSED |
+| Collected_CheckRing d1 | undeclared `movem.l d0-d1` save/restore around Collected_FindSlot | ❌ MISSED |
+| Killed_CheckObject d1 | undeclared `movem.l d0-d1` save/restore around Collected_FindSlot | ❌ MISSED |
+
+**Why the miss (the neither-bucket finding that matters):** Fable's "5" counted
+only the `a0` individual-push FPs the census flagged. The closure surfaced 3 more
+G3-FPs of a DIFFERENT sub-class — `d1` preserved by (a) a callee's DECLARED
+`preserves` (Sound_PlaySFX) propagating through a tail call, and (b) an
+UNDECLARED `movem.l` save/restore in the caller (Collected/Killed). Both are
+legitimately G3 (§5 verifiedPreserved), and both would be a FALSE clobbers if
+widened — so they stay. The census's genuine-vs-FP call was `a0`-shaped; the
+closure's transitive view is register-agnostic and caught the `d1` shapes too.
+
+**Open decision for Fable (one, small):** spec §1 phases `verifiedPreserved` to
+G3, so the closure as-built subtracts NOTHING for preserves → residue 8. But the
+DECLARED-and-movem-verified subset is provable NOW via the existing D2.32 slice
+(`check_preserves`). Subtracting DECLARED+verified preserves in G1 would clear
+Sound_PlayRing's 2 rows (Sound_PlaySFX declares `preserves(d1/a0)`), dropping the
+residue to 6 — and it's arguably a G1 completeness fix, not a scope grab (it uses
+existing machinery; only the UNDECLARED individual-push/movem cases wait for G3's
+symbolic stack tracking). Left OUT pending your call: (A) keep §1's phasing,
+residue 8, all 8 clear at G3; or (B) subtract declared+verified preserves in G1,
+residue 6, the 6 individual-push/undeclared-movem cases clear at G3.
+
+Either way: **zero genuine debt remains; the residue is 100% G3-FP.** The G1
+clobbers/out sweep has found and fixed every real under-declaration (15 direct/
+census + 2 transitive-caller the census missed).
