@@ -120,17 +120,60 @@ gap-ledger d57091c):**
   45ca85d anchor. **1.2** keeps its own bar (VRAM visible-window; identity N/A — the
   clamp changes buffer content by design).
 
-**Resume protocol (the stale-session fix — confirmed working):** the emulator holds
-probe residue; short boots don't clear it. **reset → press start 300 → sustained drive
-(≥~200f)** repopulates the cache. Confirm before measuring with one read at
-`Tile_Cache_Nametable` (0xFF0000) = real art_tile words (e.g. `C807 C014…`), NOT zeros.
+### CANONICAL identity bar (Debug_Scene_Freeze matched-geometry — 1.1a/1.1b/1.3)
 
-**Confirmed geometry (anchor A1 = reset→start 300→right 200, canonical b1f82f9a):**
-`Cache_Left_Col=352 Head=431 Top_Row=2 Bottom_Row=61 Origin_Col=32 Origin_Row=0`.
-Cache RAM: `Tile_Cache_Nametable` 0xFF0000 (9600 B), `Tile_Cache_Collision` 0xFF2580
-(plane A 2400 B) + 0xFF2EE0 (plane B 2400 B). VRAM Plane A window 0xC000 (`read_vram`).
-Wrap seam this anchor: physical col 32 (Left maps there), physical row 0.
+The A1–A4 **press-count anchor drive below is DEAD** — reset+press is NOT frame-
+deterministic on this oracle (boot jitter + lag → same input lands at different camera
+positions; observed `Origin_Col` 0/2/74 for identical `start300;right200`; the vertical
+free-camera falls chaotically and won't idle-stabilize). Byte-identity of a streamed
+cache across two ROMs needs a MATCHED camera position, which input cannot deliver.
 
-**Deterministic anchor drive (replay on OLD + NEW):** reset → start 300 → right 200
-[A1: H] → down 90 [A2: V + crossings] → up 60 [A3: direction flip] → down+right 90
-[A4: diagonal]. Capture identity data at A1–A4.
+**The canonical method (proven 1.1a):** `Debug_Scene_Freeze` (`0xFF8A10`, __DEBUG__)
+= 1 makes `GameState_OJZScroll_Update` skip `Camera_Update` + `EntityWindow_Scan`, so a
+poked `Camera_X`/`Camera_Y` PERSISTS while `Tile_Cache_Fill` still runs — the cache
+streams to exactly the poked camera. Identical pokes on OLD and NEW ⇒ identical FillRow/
+FillColumn input ⇒ byte-identical cache. `Camera_X/Y` are LONGs (hi word = px, lo =
+subpixel): poke `.l`, e.g. 512 px = `0x02000000`. Steady cache is a pure fn of position:
+`Origin_Col = Left mod 80`, `Origin_Row = (Top−2) mod 60`, `Left = Cam_X/8 − 20`,
+`Top = Cam_Y/8 − 16`. Recipe: `reset; start 300` → freeze=1 → poke Camera → step
+`mode` (neutral) frames to settle (`RowResume` 0xFFA870 = `$FFFF`); poke Camera_Y DOWN
+in ≤16-row increments (settling between) to exercise FillRow `.v_bottom_fill`.
+
+**Comparison via the pipeline, NOT hand-transcribed hex (gap-ledger row 1091 rule):**
+`emulator_screenshot path=…` writes the PNG to disk (transcription-free) → `cmp` the
+visible plane; collision / off-screen cache via `md5sum` of a `read_memory` dump file
+with a `wc -c` == 2×len assert immediately after each Write; prefer ≤256 B fresh reads
+compared in-context over 4 KB pastes.
+
+**Coverage argument (why one wrap-exercising full fill suffices — an argument, not an
+anecdote).** One deterministic full fill at `Origin_Col ≠ 0` (1.1a used Cam(512,640) →
+Left=44 Top=64 **Origin_Col=44**) crosses EVERY nametable emit path in a single anchor:
+- **pre-wrap-only run** (blocks whose `cache_col + Origin < 80` throughout → run-2 empty),
+- **already-wrapped single run** (a block entered with `phys_start ≥ 80` → the
+  subtract-COLS branch, run-2 empty),
+- **the split** (a block straddling `cache_col = 80 − Origin` → run-1 + run-2), which is
+  guaranteed to occur once per full row because a 60+-row × 80-col fill sweeps the wrap
+  boundary at every row,
+plus the **Left/Head partial blocks** (first block clamped by `ic_lo = Left−B`, last by
+`ic_hi = Head−B+1`) at the cache edges, and BOTH **row parities** (collision on odd rows
+via phase 2, skipped on even). So a single matched anchor is exhaustive path coverage,
+not a shortcut — additional anchors only re-roll the same paths at different offsets.
+
+**1.1b (collision) specifics:** 2–3 poked anchors varying `Origin_Col` AND row parity;
+BOTH planes full byte-compare (md5 + length assert); plus a budget-out resume that lands
+INSIDE a collision segment (not just at a block boundary). **Plane-B debt from 1.1a:**
+1.1a hashed plane A only (collision was verbatim) — capture 1.1b's OLD baseline on the
+CURRENT NEW-1.1a ROM reading BOTH planes, which retroactively closes plane B for 1.1a at
+zero extra cost.
+
+### Resume protocol (cache population — still useful)
+The emulator holds probe residue; short boots don't clear it. `reset → start 300 →
+sustained drive` repopulates the cache; confirm `Tile_Cache_Nametable` (0xFF0000) = real
+art_tile words (e.g. `C807 C014…`), NOT zeros. Cache RAM map: `Tile_Cache_Nametable`
+0xFF0000 (9600 B), `Tile_Cache_Collision` 0xFF2580 (plane A 2400 B) + 0xFF2EE0 (plane B
+2400 B). Note OJZ foreground content is BANDED — deep scroll exits it (empty), Left past
+the H-extent is empty; verify the cache isn't all-zeros before trusting a compare.
+
+### DEAD press-count drive (kept for provenance only — DO NOT USE)
+~~reset → start 300 → right 200 [A1] → down 90 [A2] → up 60 [A3] → down+right 90 [A4]~~
+— non-reproducible (see above); superseded by the canonical method.
