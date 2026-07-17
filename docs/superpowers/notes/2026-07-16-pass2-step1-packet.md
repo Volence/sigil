@@ -61,3 +61,40 @@ _Each: twin lockstep (.emp + .asm), re-pin, byte gates both shapes, per-group A/
 (the 3-regime table above re-measured, producer-Δ AND VBlank-Δ per row), resume-
 contract check (#1's budget-out at `.fr_block_loop` head survives intra-block
 segmenting), clamp correctness rail (leading-edge screenshot + up+left drive)._
+
+---
+
+## Verification setup (Fable's amended bar, 2026-07-17) + resume protocol
+
+**Split ruling:** 1.1a (FillRow NAMETABLE-copy) and 1.1b (FillRow COLLISION-copy) are
+separate commits (bisectable pieces on the riskiest change). Order: 1.1a → 1.1b →
+1.2 → 1.3, R2 HOLD after 1.3.
+
+**Amended identity bar (fitted to oracle's tooling — no memory-hash/dump/set-PC, see
+gap-ledger d57091c):**
+- **Collision (1.1b):** FULL cache-RAM byte compare, BOTH planes (2 reads × 2400 B/ROM
+  per anchor) at 2–3 anchor frames — NON-NEGOTIABLE (collision never reaches VRAM; no
+  screenshot/VRAM compare can see it; player-doesn't-fall-through is too coarse).
+- **Nametable (1.1a/1.3):** `read_vram` visible-window identity across the WHOLE drive
+  at multiple frames (scrolling → transitive coverage) PLUS targeted cache-RAM reads at
+  the WRAP SEAM (`Cache_Origin_Row/Col` ±2) and the leading edge, same anchors. Bounded
+  (few hundred B/anchor, not 14400).
+- All pieces: screenshots both directions + resume-contract artifact (poke
+  `Cache_Fill_Budget` mid-row → identical completion) + 3-regime profiler A/B vs the
+  45ca85d anchor. **1.2** keeps its own bar (VRAM visible-window; identity N/A — the
+  clamp changes buffer content by design).
+
+**Resume protocol (the stale-session fix — confirmed working):** the emulator holds
+probe residue; short boots don't clear it. **reset → press start 300 → sustained drive
+(≥~200f)** repopulates the cache. Confirm before measuring with one read at
+`Tile_Cache_Nametable` (0xFF0000) = real art_tile words (e.g. `C807 C014…`), NOT zeros.
+
+**Confirmed geometry (anchor A1 = reset→start 300→right 200, canonical b1f82f9a):**
+`Cache_Left_Col=352 Head=431 Top_Row=2 Bottom_Row=61 Origin_Col=32 Origin_Row=0`.
+Cache RAM: `Tile_Cache_Nametable` 0xFF0000 (9600 B), `Tile_Cache_Collision` 0xFF2580
+(plane A 2400 B) + 0xFF2EE0 (plane B 2400 B). VRAM Plane A window 0xC000 (`read_vram`).
+Wrap seam this anchor: physical col 32 (Left maps there), physical row 0.
+
+**Deterministic anchor drive (replay on OLD + NEW):** reset → start 300 → right 200
+[A1: H] → down 90 [A2: V + crossings] → up 60 [A3: direction flip] → down+right 90
+[A4: diagonal]. Capture identity data at A1–A4.
