@@ -116,3 +116,90 @@ fn contract_type_preserves_and_typed_param() {
         vec![("a0".to_string(), None), ("d7".to_string(), None)]
     );
 }
+
+// ---------------------------------------------------------------------------
+// §8 @scaffolding("reason") — item-level attribute, inert metadata in G1.
+// ---------------------------------------------------------------------------
+
+fn first_proc(f: &File) -> &ProcDecl {
+    f.items.iter().find_map(|i| match i {
+        Item::Proc(p) => Some(p),
+        _ => None,
+    }).expect("a proc")
+}
+
+/// `@scaffolding("reason")` on a proc parses and attaches to the proc's attrs
+/// with its reason string — the §8 Plane_Buffer_Reset case.
+#[test]
+fn scaffolding_attr_attaches_to_proc() {
+    let f = ok("module engine.render\n\
+                @scaffolding(\"VInt_Lag race fix — forward reset hook\")\n\
+                pub proc Plane_Buffer_Reset () clobbers() { rts }\n");
+    let p = first_proc(&f);
+    assert_eq!(p.attrs.len(), 1);
+    assert_eq!(p.attrs[0].name, "scaffolding");
+    assert_eq!(p.attrs[0].args.len(), 1);
+}
+
+/// `@scaffolding` without a reason string is `[scaffolding.reason-required]` —
+/// the reason is mandatory (§8).
+#[test]
+fn scaffolding_requires_reason() {
+    let (_f, diags) = parse_str(
+        "module engine.render\n@scaffolding()\npub proc P () clobbers() { rts }\n",
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("[scaffolding.reason-required]")),
+        "diagnostics: {diags:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Byte-neutrality: extern proc / contract types / @scaffolding emit NOTHING and
+// never change a real proc's bytes (the G1 invariant — contract text is inert).
+// ---------------------------------------------------------------------------
+
+use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_ir::backend::Cpu;
+use sigil_ir::SymbolTable;
+
+fn flatten(src: &str) -> Vec<u8> {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (module, lerrs) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+    );
+    assert!(
+        !lerrs.iter().any(|d| matches!(d.level, sigil_span::Level::Error)),
+        "lower errors: {lerrs:?}"
+    );
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true).expect("resolve");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+    sigil_link::flatten(&linked, 0x00)
+}
+
+/// `@scaffolding` is inert: the proc's emitted bytes are identical with and
+/// without the attribute (the §8 "inert metadata now" guarantee).
+#[test]
+fn scaffolding_is_byte_neutral() {
+    let without = flatten("module m\nproc P () clobbers() { moveq #0, d0\n rts }\n");
+    let with = flatten(
+        "module m\n@scaffolding(\"kept for the forward reset hook\")\nproc P () clobbers() { moveq #0, d0\n rts }\n",
+    );
+    assert_eq!(with, without, "@scaffolding must not change emitted bytes");
+}
+
+/// `extern proc` and `type = proc` emit no bytes and no label: a module with
+/// them flattens to exactly the same image as one without them.
+#[test]
+fn boundary_decls_emit_nothing() {
+    let bare = flatten("module m\nproc P () clobbers() { rts }\n");
+    let decorated = flatten(
+        "module m\n\
+         extern proc VSync_Wait () clobbers(d0)\n\
+         type ObjRoutine = proc (a0: *Sst) preserves(a0, d7)\n\
+         proc P () clobbers() { rts }\n",
+    );
+    assert_eq!(decorated, bare, "boundary decls must emit nothing");
+}

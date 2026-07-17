@@ -206,6 +206,50 @@ impl Parser {
         );
     }
 
+    /// Parse ONE `@name(args...)` attribute line (the `@` must be next),
+    /// consuming through the line end. Shared by the module-level attr loop
+    /// (`@as_compat`, `@allow`) and the item-level attr collector.
+    fn parse_one_attr(&mut self) -> Attr {
+        let aspan = self.span();
+        self.bump(); // `@`
+        let name = self.expect_ident("attribute name");
+        let mut args = Vec::new();
+        if self.eat(&Tok::LParen) {
+            // `@attr()` is legal: empty parens mean zero args.
+            if !self.at(&Tok::RParen) {
+                loop {
+                    args.push(self.expr());
+                    if !self.eat(&Tok::Comma) { break; }
+                }
+            }
+            self.expect(&Tok::RParen, "`)`");
+        }
+        // Span computed before the line end so the newline isn't included.
+        let aspan_full = aspan.merge(self.prev_span());
+        self.expect_line_end();
+        Attr { name, args, span: aspan_full }
+    }
+
+    /// Collect any item-level `@`-attributes preceding a declaration (§8). Each
+    /// is validated on the spot — currently only `@scaffolding("reason")`, whose
+    /// single reason string is mandatory (`[scaffolding.reason-required]`).
+    fn item_attrs(&mut self) -> Vec<Attr> {
+        let mut attrs = Vec::new();
+        while self.at(&Tok::At) {
+            let attr = self.parse_one_attr();
+            if attr.name == "scaffolding" && attr.args.len() != 1 {
+                self.diag_at(
+                    attr.span,
+                    "[scaffolding.reason-required] `@scaffolding` needs exactly one reason \
+                     string: `@scaffolding(\"why this zero-caller decl is kept\")`",
+                );
+            }
+            attrs.push(attr);
+            self.skip_newlines();
+        }
+        attrs
+    }
+
     // ---- file ----
     /// Parse a whole file: module header, module-level attributes, then items.
     pub fn file(&mut self) -> File {
@@ -230,24 +274,13 @@ impl Parser {
                 });
             }
             if !self.at(&Tok::At) { break; }
-            let aspan = self.span();
-            self.bump();
-            let name = self.expect_ident("attribute name");
-            let mut args = Vec::new();
-            if self.eat(&Tok::LParen) {
-                // `@attr()` is legal: empty parens mean zero args.
-                if !self.at(&Tok::RParen) {
-                    loop {
-                        args.push(self.expr());
-                        if !self.eat(&Tok::Comma) { break; }
-                    }
-                }
-                self.expect(&Tok::RParen, "`)`");
+            // Only KNOWN module-level attributes are consumed here; an
+            // item-level attr like `@scaffolding` on the FIRST item is left for
+            // the item loop (otherwise this greedy loop would swallow it).
+            if !matches!(self.peek2(), Tok::Ident(s) if s == "as_compat" || s == "allow") {
+                break;
             }
-            // Span computed before the line end so the newline isn't included.
-            let aspan_full = aspan.merge(self.prev_span());
-            self.expect_line_end();
-            attrs.push(Attr { name, args, span: aspan_full });
+            attrs.push(self.parse_one_attr());
         }
         let mut items = Vec::new();
         loop {
@@ -266,8 +299,23 @@ impl Parser {
                 }
                 break;
             }
+            // Item-level `@`-attributes (§8) sit between the docs and the item.
+            let attrs = self.item_attrs();
             match self.item() {
-                Some(item) => {
+                Some(mut item) => {
+                    if !attrs.is_empty() {
+                        match &mut item {
+                            Item::Proc(p) => p.attrs = attrs,
+                            other => {
+                                let sp = item_span(other);
+                                self.diag_at(
+                                    sp,
+                                    "an `@`-attribute here is only supported on a `proc` \
+                                     declaration (contract-grammar v2 §8: `@scaffolding`)",
+                                );
+                            }
+                        }
+                    }
                     if let Some((text, _)) = docs {
                         self.docs.push(DocEntry { item_span: item_span(&item), text });
                     }
