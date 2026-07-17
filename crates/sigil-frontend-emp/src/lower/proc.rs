@@ -28,11 +28,11 @@
 
 use crate::ast;
 use crate::eval::eval_proc_body;
-use crate::value::{CodeItem, CodeOperand};
+use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::IrBuilder;
 use sigil_span::{Diagnostic, Level, Span};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// This proc's position among its declaration-order siblings — the context a
 /// declared `falls_into` needs to check physical adjacency (§5.1). Bundling the
@@ -301,13 +301,12 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
 
     for item in &buf.items {
         let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };
-        if !writes_dest_register(mnemonic) {
-            continue;
-        }
         // An SR destination is a machine-state clobber (tranche 5): undeclared
         // unless the contract carries `clobbers(sr)`/`out(sr)` or `preserves(sr)`
-        // (the latter's balance is checked separately).
-        if matches!(ops.last(), Some(CodeOperand::Sr))
+        // (the latter's balance is checked separately). Only a write-form
+        // mnemonic can target SR.
+        if writes_dest_register(mnemonic)
+            && matches!(ops.last(), Some(CodeOperand::Sr))
             && !clob.has_sr
             && !outs.has_sr
             && !proc.preserves.iter().any(|(lo, hi)| lo == "sr" && hi.is_none())
@@ -325,32 +324,33 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
             );
             continue;
         }
-        // The destination is the last operand; only a register destination is a
-        // clobber (a memory-dest form writes memory, not a register). Reuse
-        // `Reg`'s `Display` for the canonical `d0`..`a7` spelling.
-        let Some(CodeOperand::Reg(r)) = ops.last() else { continue };
-        // Stack-pointer ARITHMETIC (`addq.l #2, sp` / `lea N(sp), sp`
-        // cleanup) is stack DISCIPLINE, not a register clobber — every
-        // push/pop-balancing proc adjusts sp, and balanced-stack
-        // verification is S2-D7(b)'s dataflow job. Stack REPLACEMENT
-        // (`movea.l x, sp` — switching stacks) stays a genuine a7 clobber
-        // and is NOT exempt (tranche-3 review scoping).
-        if *r == crate::value::Reg::A7 && is_sp_arithmetic(mnemonic, ops) {
-            continue;
-        }
-        let name = r.to_string();
-        if !allowed.contains(name.as_str()) {
-            push(
-                diags,
-                Level::Warning,
-                *span,
-                format!(
-                    "[proc.clobber-undeclared] `{}` writes `{name}`, which is not in its \
-                     `clobbers(...)` set or parameter list (heuristic lint — full register \
-                     dataflow is deferred to S2-D6)",
-                    proc.name
-                ),
-            );
+        // The written registers (write-form destination + — after the auto-inc
+        // fix — `(An)+`/`-(An)` bases). Reuse `Reg`'s `Display` for the
+        // canonical `d0`..`a7` spelling.
+        for r in instr_written_regs(mnemonic, ops) {
+            // Stack-pointer ARITHMETIC (`addq.l #2, sp` / `lea N(sp), sp`
+            // cleanup) is stack DISCIPLINE, not a register clobber — every
+            // push/pop-balancing proc adjusts sp, and balanced-stack
+            // verification is S2-D7(b)'s dataflow job. Stack REPLACEMENT
+            // (`movea.l x, sp` — switching stacks) stays a genuine a7 clobber
+            // and is NOT exempt (tranche-3 review scoping).
+            if r == crate::value::Reg::A7 && is_sp_arithmetic(mnemonic, ops) {
+                continue;
+            }
+            let name = r.to_string();
+            if !allowed.contains(name.as_str()) {
+                push(
+                    diags,
+                    Level::Warning,
+                    *span,
+                    format!(
+                        "[proc.clobber-undeclared] `{}` writes `{name}`, which is not in its \
+                         `clobbers(...)` set or parameter list (heuristic lint — full register \
+                         dataflow is deferred to S2-D6)",
+                        proc.name
+                    ),
+                );
+            }
         }
     }
 }
@@ -410,6 +410,49 @@ fn writes_dest_register(m: &str) -> bool {
             | "bclr"
             | "tas"
     ) || is_scc(m)
+}
+
+/// Every REGISTER this instruction modifies, per the clobber/out write
+/// heuristic — the single shared detector behind `check_clobbers`,
+/// `check_out`, and the contract census ([`proc_written_registers`]).
+///
+/// **Write-form destination.** For a [`writes_dest_register`] mnemonic whose
+/// LAST operand is a register (`move x, d3` / `lea T, a0`), that register is
+/// written. (An SR/CCR/memory destination is not a register write and is
+/// handled by the callers separately.)
+///
+/// Registers are returned in encounter order; the caller dedups/filters (e.g.
+/// `check_clobbers` exempts `a7` push/pop as stack discipline). Still a
+/// heuristic (this is assembly): the full register-dataflow contract is the
+/// deferred S2-D6 sub-milestone. KNOWN GAP (auto-inc/dec, [out-clause,
+/// 2026-07-11] gap-ledger row) is closed in a dedicated follow-up pass.
+pub(crate) fn instr_written_regs(mnemonic: &str, ops: &[CodeOperand]) -> Vec<Reg> {
+    let mut regs = Vec::new();
+    // Write-form destination register (last operand).
+    if writes_dest_register(mnemonic) {
+        if let Some(CodeOperand::Reg(r)) = ops.last() {
+            regs.push(*r);
+        }
+    }
+    regs
+}
+
+/// The union write set over a resolved body — "the lint's computed write set"
+/// (§5.1). The contract census consumes this verbatim to diff a proc's
+/// declared `clobbers`/`out` against what it actually writes; `check_out`
+/// builds its own `written` set from the same [`instr_written_regs`] detector,
+/// so the two never drift. Register spellings are canonical (`d0`..`a7`,
+/// `sp`→`a7`) and sorted (BTreeSet) for a deterministic report.
+pub fn proc_written_registers(buf: &crate::value::CodeBuf) -> BTreeSet<String> {
+    let mut written = BTreeSet::new();
+    for item in &buf.items {
+        if let CodeItem::Instr { mnemonic, ops, .. } = item {
+            for r in instr_written_regs(mnemonic, ops) {
+                written.insert(r.to_string());
+            }
+        }
+    }
+    written
 }
 
 /// True for the `s<cc>` (set-on-condition) spelling: an `s` prefix followed by a
@@ -767,18 +810,9 @@ fn check_out(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<
     }
 
     // out-unwritten — a declared output never written on any path is a false
-    // claim. Same write detection as check_clobbers: the destination (last
-    // operand) of a write-form mnemonic, when it is a register.
-    let mut written: HashSet<String> = HashSet::new();
-    for item in &buf.items {
-        let CodeItem::Instr { mnemonic, ops, .. } = item else { continue };
-        if !writes_dest_register(mnemonic) {
-            continue;
-        }
-        if let Some(CodeOperand::Reg(r)) = ops.last() {
-            written.insert(r.to_string());
-        }
-    }
+    // claim. Same write detection as check_clobbers (the shared
+    // [`instr_written_regs`] detector via [`proc_written_registers`]).
+    let written = proc_written_registers(buf);
     for name in &valid {
         if !written.contains(name.as_str()) {
             push(
