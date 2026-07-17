@@ -115,11 +115,26 @@ today there is prose or nothing.
 A **contract type** names the contract every installable target of a dispatch must satisfy:
 
 ```
-type ObjRoutine    = proc (a0: *Sst) preserves(a0, d7)     // census sites #1/#2/#3
+type ObjRoutine    = proc (a0: *Sst) preserves(a0, d7)     // census sites #1/#2
+type AnimCallback  = proc (a0: *Sst) preserves(a0) clobbers(d0-d2, a1-a2)  // #3 — see erratum
 type TouchHandler  = proc (a0: *Sst)                        // #4 — caller saves d6-d7/a2-a4
 type GameState     = proc () clobbers(d0-d7/a0-a6)          // #5 — honest ⊤
 type HBlankHandler = proc () clobbers(d0, d1, a0)           // #6 — interrupt context
 ```
+
+**G1-retrofit erratum (2026-07-17): site #3 gets its own type, never ObjRoutine.** The v1
+draft lumped animate's `.evt_callback` (#3) under ObjRoutine; bounding it that wide made
+AnimateSprite transitively under-declared (bound − declared = 8 cascade firings — real
+arithmetic, wrong bound). The census's own prose bound for #3 was `preserves(a0)` with a1
+caller-saved — d7 was never part of it. The corpus audit found the AF_CALLBACK installable
+set is EMPTY (the opcode + dispatch exist; no animation script bakes a target), so the bound
+is a pure DESIGN decision pinned at the cheapest possible moment: `clobbers(d0-d2, a1-a2)` =
+exactly AnimateSprite's own declared set, so the host's contract holds as-is and a callback
+can never widen its host silently. A future callback needing more triggers
+`[dispatch.target-exceeds-bound]` at its definition — widening becomes a conscious two-line
+change (type + AnimateSprite) whose ripple the closure shows. d7 safety needs no explicit
+preserves: d7 ∉ the bound's clobbers, so callbacks cannot touch it, and AnimateSprite's
+ObjRoutine-dispatched callers keep their d7 guarantee through it.
 
 - **Dispatch sites** annotate the call: `jsr (a1) as ObjRoutine` / `jsr (a0, d4.w) as
   TouchHandler`. The closure uses the bound's clobbers for that site (§1); the annotation also
