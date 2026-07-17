@@ -2009,10 +2009,20 @@ impl Parser {
                 if !self.eat(&Tok::Comma) { break; }
             }
         }
+        // Optional `as ContractType` dispatch bound (§4): a trailing `as Name`
+        // after the operands names the contract every installable target of this
+        // (indirect) call must satisfy. `as` is an ordinary ident everywhere
+        // else, so the guard requires it be followed by a type name.
+        let dispatch_bound = if self.at_kw("as") && matches!(self.peek2(), Tok::Ident(_)) {
+            self.bump(); // `as`
+            Some(self.expect_ident("contract type name"))
+        } else {
+            None
+        };
         // Span computed before the line end so the newline isn't included.
         let span = start.merge(self.prev_span());
         self.expect_line_end_or_rbrace();
-        InstrLine { mnemonic, size, operands, span }
+        InstrLine { mnemonic, size, operands, dispatch_bound, span }
     }
 
     /// Like [`Parser::expect_line_end`], but also accepts a directly-following

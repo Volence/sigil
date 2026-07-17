@@ -203,3 +203,35 @@ fn boundary_decls_emit_nothing() {
     );
     assert_eq!(decorated, bare, "boundary decls must emit nothing");
 }
+
+// ---------------------------------------------------------------------------
+// §4 `as ContractType` dispatch-bound annotation on a call instruction.
+// ---------------------------------------------------------------------------
+
+/// `jsr (a1) as ObjRoutine` parses with the instruction carrying its
+/// dispatch bound; a bare `jsr (a1)` carries none.
+#[test]
+fn dispatch_bound_as_annotation_parses() {
+    let f = ok("module engine.core\n\
+                proc RunObjects () clobbers(d0-d7/a0-a6) {\n\
+                    jsr (a1) as ObjRoutine\n\
+                    jsr (a2)\n\
+                    rts\n\
+                }\n");
+    let p = first_proc(&f);
+    let bounds: Vec<Option<String>> = p.body.iter().filter_map(|s| match s {
+        AsmStmt::Instr(i) if i.mnemonic == vec![TextOrSplice::Text("jsr".into())] =>
+            Some(i.dispatch_bound.clone()),
+        _ => None,
+    }).collect();
+    assert_eq!(bounds, vec![Some("ObjRoutine".to_string()), None]);
+}
+
+/// The `as` annotation is byte-neutral: `jsr (a1) as ObjRoutine` emits the same
+/// bytes as `jsr (a1)` (the bound is pure metadata for the closure).
+#[test]
+fn dispatch_bound_is_byte_neutral() {
+    let plain = flatten("module m\nproc P () clobbers(d0-d7/a0-a6) { jsr (a1)\n rts }\n");
+    let bound = flatten("module m\nproc P () clobbers(d0-d7/a0-a6) { jsr (a1) as ObjRoutine\n rts }\n");
+    assert_eq!(bound, plain, "`as` dispatch bound must not change emitted bytes");
+}

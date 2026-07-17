@@ -1398,6 +1398,12 @@ pub struct InstrLine {
     pub size: Option<TextOrSplice>,
     /// The instruction's operands.
     pub operands: Vec<Operand>,
+    /// An `as ContractType` dispatch bound on this instruction (contract-grammar
+    /// v2 §4): `jsr (a1) as ObjRoutine` names the contract every installable
+    /// target of this indirect call must satisfy, so the closure uses that
+    /// bound's clobbers instead of ⊤. `None` for an unannotated instruction.
+    /// Emits nothing (metadata for the contract closure + subcontract checks).
+    pub dispatch_bound: Option<String>,
     /// Span of the whole instruction line.
     pub span: Span,
 }
