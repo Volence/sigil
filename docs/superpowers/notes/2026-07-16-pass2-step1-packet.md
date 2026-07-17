@@ -143,10 +143,82 @@ assert, pipeline rule — no hand-transcription) at TWO anchors varying the wrap
 The collision segmentation cut another ~11.9k cy; the two FillRow restructures together cut
 FillRow **~60%** (max-V), freeing ~half the frame to idle. VBlank-Δ = 0 (pure producer).
 
-## Step 1.2 — plane_buffer (b) (Draw_TileRow_FromCache segments) — RESUME BLOCK (next session)
+## Step 1.2 — plane_buffer (b) (Draw_TileRow_FromCache segments) — DONE (2026-07-17)
 
-**Scouted 2026-07-17 (start from THIS, don't re-derive). Fresh focused session (park
-ratified — precedent: step-0 parked at the same boundary).**
+The `.row_src_loop` 64× per-cell W-walk → two monotonic world-col legs (`A..R` and
+`R-63..A-1`, `A = R & ~63`, `R = Section_Right_Col_Written` cache-clamped) each emitted
+as a contiguous `move.w`/`dbf` cache run through a `jbsr .emit_row_run` helper (physical
+col = `(W + Origin - Left) mod COLS`, affine in W → one wrap-split per leg at the cache
+right edge; ≤4 runs, within the note's "≤5"). The **zero segment is DROPPED** (Probe (i)):
+the `W < Cache_Left_Col` cols emit their stale physical-col cache word instead of a
+per-cell `clr.w`. This CHANGES Plane_Buffer content by design (off-screen cols carry stale
+data, not tile 0), so **identity compare is N/A** — replaced by the clamp rail below. Cell
+count unchanged (64) → row header (32 longwords) and VInt_DrawLevel drain untouched
+(VBlank-Δ = 0). `move.l`/unroll of the runs = the ledger-1092 rider (deferred). Twins
+byte-identical (`.emp`/`.asm`, gate both shapes); region **+$22 both shapes**
+(Draw_TileRow_FromCache $BA→$DC = 186→220 B). ROMs debug **f8ee99d9** / plain **364b3ed1**
+(were e15b6ff7 / f7faf57c).
+
+**Clamp rail (identity N/A — the drop changes off-screen buffer content by design).**
+Method note: screenshot-cmp under `Debug_Scene_Freeze` is CONFOUNDED — the freeze skips
+`Camera_Update`, so HSCROLL/VSCROLL stay at the pre-freeze value and the rendered window
+does not track the poked camera (OLD rendered a red stale-scroll frame where NEW rendered
+content, a false diff). Replaced by the SCROLL-INDEPENDENT **nametable-cell compare**:
+`read_vram` the drawn NT row on each ROM, compare per-cell (canonical freeze + Camera-poke
+anchors give byte-identical cache metadata OLD≡NEW, so any NT diff is purely the drop).
+Two left-behind anchors (`R < Head` ⇒ `R-63 < Left` ⇒ dropped cols exist):
+- **A1 Cam(512,640)** — Left=44 Head=123 Origin=44 R=104; dropped world cols 41-43 = NT
+  41-43. NT row 10 (`0xC500`): cells 0-40 **and** 44-63 **byte-identical** OLD/NEW; cells
+  41/42/43 = OLD `0000 0000 0000` → NEW `D005 D81C D005` (stale VALID cache tiles, not
+  garbage). Visible window (cam world col 64) = NT 0-40 ⇒ dropped NT 41-43 off-screen-left.
+- **A2 Cam(768,512)** — Left=76 Head=155 Origin=76 R=136 (path-independent, matched OLD≡NEW);
+  dropped world cols 73-75 = NT 9-11. NT row 10: cells 0-8 **and** 12-63 byte-identical;
+  cells 9/10/11 = OLD `0000 0000 0000` → NEW `58C4 58B0 50B5`. Visible (cam col 96) =
+  NT 32-63,0-7 ⇒ dropped NT 9-11 off-screen.
+- **Structural invariant + inheritance (the margin case, ratified):** dropped cols are
+  `W < Cache_Left_Col` = definitionally LEFT of the cache = left of the viewport+margin
+  window (the cache is 80 = 40 viewport + 20×2 margin, always covering the visible 64).
+  OLD writes tile-0 to these EXACT cols and ships with no visible glitch ⇒ they are
+  provably never visible ⇒ NEW's stale-in-the-same-cols is VISIBLY IDENTICAL. The max-H
+  A/B profile (Draw_TileRow absent, FillColumn/CopyBlockColumn == baseline) confirms the
+  change is isolated to the vertical producer.
+
+**Ripple sweep (5 sites, Fable rider 1):** (a) **pins.rs** repin ✓ (b) **engine.inc** 4
+resume orgs +$22 (tile_cache $4F5A/$5BE4, collision_lookup $4F7E/$5C08, section
+$5856/$64E0, sound_api $62C8/$7CE2 plain/debug) ✓ (c) **mixed_dac_rom.rs** UNCHANGED —
+all engine symbols slide uniformly +$22 (plane_buffer precedes every cross-seam disp), so
+the pinned *relative* displacements are invariant (contrast 1.1b, which changed a
+tile_cache-INTERNAL disp); verified by the green suite ✓ (d) **repin_pins.rs** SOUND_API
+base +$22 (plain 0x60A0→0x60C2, debug 0x79C4→0x79E6; lens unchanged) ✓ (e) **repin.toml**
+symbols stable (Plane_Buffer_Reset / Tile_Cache_GetTile) ✓ → **2262 passed / 0 failed**
+(failures-first). Detection note: the stale `secondary_pin_classes` baseline (site d) FAILED
+first (`left 24770 / right 24736`), fixed, re-ran clean — the rider-1 hole stays closed.
+
+**Producer A/B (debug, 60-frame sustained-scroll avg, budget 128000; Lag 0 all regimes):**
+
+| regime | OLD Draw_TileRow | NEW Draw_TileRow | Δ | anchor |
+|---|---|---|---|---|
+| max-V (↓) | 13416 (10.5%, 2 calls) | 4188 (3.3%, 2 calls) | **−9228 / −68.8%** | 45ca85d 13416 (exact) |
+| diagonal (↓→) | 6708 (5.2%, 1 call) | 2110 (1.6%, 1 call) | **−4598 / −68.5%** | — |
+| max-H (→) | — (0 calls) | — (0 calls) | vertical producer — no run | FillColumn/CopyBlockColumn == baseline |
+
+Per-call ~6708 → ~2100 = **−68.7%** consistent across regimes (beats the note's ~3.4k/row
+estimate). OLD max-V reconciles with the 45ca85d anchor to the cycle (method + shape
+validated). max-V idle VSync_Wait 45.2% → 53.3% (**+10442 freed**, ≈ the producer cut).
+VBlank-Δ = 0 (VInt_DrawLevel/drain untouched — cell count and header unchanged). Diagonal:
+no shared-budget regression (DecompressBlock cap untouched; FillRow/FillColumn unmoved),
+Lag stays the 0 floor.
+
+**Per-pass (step-3 vs step-5):** step-3 (modernize) = the two-leg segment decomposition +
+the `.emit_row_run` helper (idiomatic internal `jbsr`/`rts`, core.emp precedent). step-5
+(engine optimize) = dropping the zero-writes (Probe (i)) — the ~69% cut. **Neither-bucket
+headline:** the stale-scroll screenshot confound under freeze → the scroll-independent
+nametable-cell method is a verification-technique refinement worth carrying forward (cf. the
+dead press-count drive); logged as the clamp-rail vehicle for any future plane-buffer piece.
+
+---
+
+### (scouting archive — superseded by the DONE block above)
 
 **Target: `Draw_TileRow_FromCache`** (`engine/level/plane_buffer.emp:226` / `.asm` twin).
 Appends one 64-cell row to `Plane_Buffer` for the VBlank drain (row header bit15=0, then
