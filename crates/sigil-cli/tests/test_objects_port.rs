@@ -169,6 +169,13 @@ fn as_constant_equs() -> Vec<Section> {
     pairs.extend(engine_constant_equs());
     let obj_code_base = format!("${:X}", OBJ_CODE_BASE);
     pairs.push(("ObjCodeBase", obj_code_base.as_str()));
+    // The four game-config values test_objects.emp's D11 drift guards check —
+    // each lives in a DIFFERENT AS file (config/constants.asm, engine/
+    // constants.asm, test_enemy.asm) that survives the test_objects.asm twin.
+    pairs.push(("VRAM_TEST_OBJ", "$03E0"));
+    pairs.push(("COLLISION_SOLID", "8"));
+    pairs.push(("COLLISION_HURT", "3"));
+    pairs.push(("ENEMY_PATROL_SPEED", "$100"));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
