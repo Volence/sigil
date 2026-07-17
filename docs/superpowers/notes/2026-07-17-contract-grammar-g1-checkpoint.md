@@ -241,3 +241,22 @@ residue 6, the 6 individual-push/undeclared-movem cases clear at G3.
 Either way: **zero genuine debt remains; the residue is 100% G3-FP.** The G1
 clobbers/out sweep has found and fixed every real under-declaration (15 direct/
 census + 2 transitive-caller the census missed).
+
+---
+
+## Option 2 executed — residue EXACTLY 6 (Fable's prediction held)
+
+Declared+movem-verified `preserves` subtraction landed (sigil 4e1809d, §1
+verifiedPreserved via the D2.32 fast path; census erratum: preserves has 6
+adopters not 0). Closure re-run over the retrofitted corpus:
+
+**Residue = 6** (Fable predicted exactly this): AllocDynamic / Collected_Park /
+Collected_Unpark a0 (individual-push) · Load_Object a0 (inherited) ·
+Collected_CheckRing / Killed_CheckObject d1 (undeclared `movem` save/restore).
+Sound_PlayRing a0/d1 CLEARED — Sound_PlaySFX's declared `preserves(d1/a0)` is now
+subtracted. All 6 are the genuinely-inexpressible-today (row-1030) class → G3.
+
+**Both-direction findings this gate produced (the packet's neither-bucket):** the
+closure found debt the census MISSED (2 genuine transitive callers Rescan/Scan)
+AND a census FACT that was simply WRONG (preserves adopters: 6, not 0). The
+instrument audits its own evidence base.

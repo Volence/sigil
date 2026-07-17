@@ -366,3 +366,42 @@ fn verified_preserves_not_inherited_by_callers() {
     assert_eq!(c.effective["Caller"], eff(&["d0"]));
     assert!(check_firings(&procs, &c).is_empty(), "no firing — d1/a0 preserved");
 }
+
+// ---------------------------------------------------------------------------
+// §4 subcontract relation (target ⊑ bound) — [dispatch.target-exceeds-bound].
+// ---------------------------------------------------------------------------
+
+use sigil_frontend_emp::closure::{subcontract_violations, Contract};
+
+fn contract(clob: &[&str], pres: &[&str], params: &[&str], out: &[&str]) -> Contract {
+    Contract { clobbers: regs(clob), preserves: regs(pres), params: regs(params), out: regs(out) }
+}
+
+/// A target that clobbers MORE than the bound allows violates it (the register
+/// is named). target.clobbers ⊆ bound.clobbers.
+#[test]
+fn target_clobbers_exceeding_bound_violates() {
+    let bound = contract(&["d0", "d1"], &[], &[], &[]);
+    let target = contract(&["d0", "d1", "d2"], &[], &[], &[]);
+    let v = subcontract_violations(&target, &bound);
+    assert!(v.iter().any(|s| s.contains("d2")), "must name the offending clobber: {v:?}");
+}
+
+/// A conforming target (clobbers ⊆, preserves ⊇, params ⊆, out ⊇) has no
+/// violations — the Touch stubs (clobbers()) under TouchHandler(d6-d7/a2-a4).
+#[test]
+fn conforming_target_is_clean() {
+    let bound = contract(&["d6", "d7", "a2", "a3", "a4"], &["a0"], &["a0"], &[]);
+    let target = contract(&[], &["a0", "d7"], &[], &["d0"]); // clobbers⊆, preserves⊇, out⊇
+    assert!(subcontract_violations(&target, &bound).is_empty());
+}
+
+/// A target that fails to preserve what the bound requires violates it
+/// (preserves ⊇). The bound demands a0 preserved; the target doesn't.
+#[test]
+fn target_missing_required_preserve_violates() {
+    let bound = contract(&[], &["a0", "d7"], &[], &[]);
+    let target = contract(&["d0"], &["a0"], &[], &[]); // preserves a0 but not d7
+    let v = subcontract_violations(&target, &bound);
+    assert!(v.iter().any(|s| s.contains("d7")), "must name the un-preserved reg: {v:?}");
+}

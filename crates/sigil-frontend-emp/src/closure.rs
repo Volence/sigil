@@ -233,6 +233,48 @@ pub struct Firing {
     pub unbounded: bool,
 }
 
+/// A proc/contract-type's register partition, for the §4 subcontract relation.
+/// Register-name sets (canonical `d0`..`a7`); `sr` out of scope like the closure.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Contract {
+    /// Registers destroyed (may clobber).
+    pub clobbers: BTreeSet<String>,
+    /// Registers left untouched.
+    pub preserves: BTreeSet<String>,
+    /// Input registers read.
+    pub params: BTreeSet<String>,
+    /// Result registers written for the caller.
+    pub out: BTreeSet<String>,
+}
+
+/// The §4 subcontract relation `target ⊑ bound` — what makes a dispatch target
+/// installable. Returns a human list of violations (empty ⇒ conforming), for
+/// `[dispatch.target-exceeds-bound]`:
+///
+/// - `target.clobbers ⊆ bound.clobbers` — a target may clobber no MORE than the
+///   dispatch site's callers already tolerate;
+/// - `target.preserves ⊇ bound.preserves` — it must preserve everything the
+///   bound promises callers;
+/// - `target.params ⊆ bound.params` — it may READ fewer inputs, never more;
+/// - `target.out ⊇ bound.out` — it must PRODUCE everything the caller may read.
+pub fn subcontract_violations(target: &Contract, bound: &Contract) -> Vec<String> {
+    let mut v = Vec::new();
+    for r in target.clobbers.difference(&bound.clobbers) {
+        v.push(format!("clobbers `{r}`, which the bound does not permit"));
+    }
+    for r in bound.preserves.difference(&target.preserves) {
+        v.push(format!("does not preserve `{r}`, which the bound requires"));
+    }
+    for r in target.params.difference(&bound.params) {
+        v.push(format!("reads input `{r}`, which the bound does not provide"));
+    }
+    for r in bound.out.difference(&target.out) {
+        v.push(format!("does not produce output `{r}`, which the bound promises callers"));
+    }
+    v.sort();
+    v
+}
+
 /// Produce the transitive firing list: for every proc that OPTED IN to a clobber
 /// contract (`has_clobber_contract`, mirroring `check_clobbers`' gate), every
 /// register in its `effective` set outside `declared_clobbers ∪ params ∪ out`
