@@ -83,8 +83,16 @@ fn report(p: &ProcDecl, file: &ast::File, path: &str, map: &SourceMap, counter: 
     *counter = next;
     let computed = match &buf {
         Some(b) => {
-            let regs = proc_written_registers(b);
-            if regs.is_empty() { "(none)".to_string() } else { regs.into_iter().collect::<Vec<_>>().join("/") }
+            // `a7` is dropped from the displayed set: every a7 write in this
+            // corpus is stack push/pop (`-(sp)`/`(sp)+`), which `check_clobbers`
+            // exempts as stack discipline — it is never a clobber/out retrofit
+            // target, and showing it on every push/pop proc would only obscure
+            // the clobber-relevant diff. (A genuine stack REPLACEMENT `movea.l
+            // x, sp` would still surface as a live `[proc.clobber-undeclared]`
+            // firing, which check_clobbers does NOT exempt.)
+            let regs: Vec<String> =
+                proc_written_registers(b).into_iter().filter(|r| r != "a7").collect();
+            if regs.is_empty() { "(none)".to_string() } else { regs.join("/") }
         }
         None => "?".to_string(),
     };

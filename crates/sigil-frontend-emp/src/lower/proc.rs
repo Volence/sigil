@@ -328,13 +328,15 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
         // fix — `(An)+`/`-(An)` bases). Reuse `Reg`'s `Display` for the
         // canonical `d0`..`a7` spelling.
         for r in instr_written_regs(mnemonic, ops) {
-            // Stack-pointer ARITHMETIC (`addq.l #2, sp` / `lea N(sp), sp`
-            // cleanup) is stack DISCIPLINE, not a register clobber — every
+            // Stack DISCIPLINE on a7 is not a register clobber — every
             // push/pop-balancing proc adjusts sp, and balanced-stack
-            // verification is S2-D7(b)'s dataflow job. Stack REPLACEMENT
-            // (`movea.l x, sp` — switching stacks) stays a genuine a7 clobber
-            // and is NOT exempt (tranche-3 review scoping).
-            if r == crate::value::Reg::A7 && is_sp_arithmetic(mnemonic, ops) {
+            // verification is S2-D7(b)'s dataflow job. Two forms: ARITHMETIC
+            // (`addq.l #2, sp` / `lea N(sp), sp` cleanup) and PUSH/POP
+            // (`move.l x, -(sp)` / `(sp)+`, now that auto-inc/dec advances of
+            // a7 are detected). Stack REPLACEMENT (`movea.l x, sp` — switching
+            // stacks) stays a genuine a7 clobber and is NOT exempt (tranche-3
+            // review scoping).
+            if r == crate::value::Reg::A7 && is_sp_discipline(mnemonic, ops) {
                 continue;
             }
             let name = r.to_string();
@@ -414,26 +416,49 @@ fn writes_dest_register(m: &str) -> bool {
 
 /// Every REGISTER this instruction modifies, per the clobber/out write
 /// heuristic — the single shared detector behind `check_clobbers`,
-/// `check_out`, and the contract census ([`proc_written_registers`]).
+/// `check_out`, and the contract census ([`proc_written_registers`]). Two
+/// disjoint effects:
 ///
-/// **Write-form destination.** For a [`writes_dest_register`] mnemonic whose
-/// LAST operand is a register (`move x, d3` / `lea T, a0`), that register is
-/// written. (An SR/CCR/memory destination is not a register write and is
-/// handled by the callers separately.)
+/// 1. **Write-form destination.** For a [`writes_dest_register`] mnemonic whose
+///    LAST operand is a register (`move x, d3` / `lea T, a0`), that register is
+///    written. (An SR/CCR/memory destination is not a register write and is
+///    handled by the callers separately.)
+/// 2. **Auto-increment / -decrement address modification.** `(An)+` and `-(An)`
+///    ADVANCE `An` as a side effect regardless of operand position (source OR
+///    destination) and regardless of the mnemonic — `move.w (a4)+, d0` writes
+///    BOTH `d0` (dest) and `a4` (post-increment); `tst.w (a0)+` writes `a0`
+///    even though `tst` is read-only. This closes the auto-inc/dec
+///    write-analysis gap ([out-clause, 2026-07-11] gap-ledger row): a pointer
+///    result advanced only through `(a4)+` is a genuine write of `a4`, so it
+///    can be declared `out(a4)` without a false `[proc.out-unwritten]`, and a
+///    proc that scribbles `a4` via `(a4)+` no longer escapes
+///    `[proc.clobber-undeclared]`. `a7` via `(sp)+`/`-(sp)` (push/pop) is stack
+///    discipline — reported here for honesty but exempted by `check_clobbers`.
 ///
-/// Registers are returned in encounter order; the caller dedups/filters (e.g.
-/// `check_clobbers` exempts `a7` push/pop as stack discipline). Still a
+/// Registers are returned in encounter order (dest first, then operand order),
+/// DEDUPED (an instruction that advances the same register twice reports it
+/// once, so `check_clobbers` does not double-warn at one span). Still a
 /// heuristic (this is assembly): the full register-dataflow contract is the
-/// deferred S2-D6 sub-milestone. KNOWN GAP (auto-inc/dec, [out-clause,
-/// 2026-07-11] gap-ledger row) is closed in a dedicated follow-up pass.
+/// deferred S2-D6 sub-milestone.
 pub(crate) fn instr_written_regs(mnemonic: &str, ops: &[CodeOperand]) -> Vec<Reg> {
-    let mut regs = Vec::new();
-    // Write-form destination register (last operand).
+    let mut regs: Vec<Reg> = Vec::new();
+    // (1) Write-form destination register (last operand).
     if writes_dest_register(mnemonic) {
         if let Some(CodeOperand::Reg(r)) = ops.last() {
             regs.push(*r);
         }
     }
+    // (2) Auto-inc/dec base registers — ANY operand position, ANY mnemonic.
+    for op in ops {
+        if let CodeOperand::PostInc(r) | CodeOperand::PreDec(r) = op {
+            regs.push(*r);
+        }
+    }
+    // Dedup (order-preserving): one instruction may advance the same register
+    // twice (`move.w (a0)+, (a0)+`) — report it once so `check_clobbers` does
+    // not emit two identical warnings at one span.
+    let mut seen = Vec::new();
+    regs.retain(|r| if seen.contains(r) { false } else { seen.push(*r); true });
     regs
 }
 
@@ -878,6 +903,18 @@ fn check_preserves_sr(
             ),
         );
     }
+}
+
+/// True when an a7 write is stack DISCIPLINE (exempt from the clobber lint)
+/// rather than stack REPLACEMENT: either sp arithmetic ([`is_sp_arithmetic`])
+/// or a push/pop that advances a7 via `(sp)+`/`-(sp)` (surfaced by the
+/// auto-inc/dec write detection). Stack replacement (`movea.l x, sp`) matches
+/// neither and stays a genuine clobber.
+fn is_sp_discipline(mnemonic: &str, ops: &[CodeOperand]) -> bool {
+    is_sp_arithmetic(mnemonic, ops)
+        || ops
+            .iter()
+            .any(|op| matches!(op, CodeOperand::PostInc(Reg::A7) | CodeOperand::PreDec(Reg::A7)))
 }
 
 /// True for an sp-DESTINATION write that is stack arithmetic rather than

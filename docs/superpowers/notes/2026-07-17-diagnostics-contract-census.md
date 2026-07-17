@@ -46,15 +46,23 @@ The census reuses the REAL lint so it can never drift from what the compiler enf
    `dac_samples`, `sfx_bank`) are zero-proc data banks. The clobber lint is 68k-only.
 3. **0 procs eval-bailed** — every body resolved to `Code`, so no write set is unknown (`?`).
 4. **The write set is heuristic** (this is assembly; full register dataflow is deferred
-   S2-D6). Two known blind spots quantified below: individual-push preservation
-   (false-positive firings) and auto-inc/dec (false-negatives — deliverable 2).
+   S2-D6). One known blind spot remains below — individual-push preservation
+   (false-positive firings). The auto-inc/dec blind spot (false-negatives) was CLOSED by
+   deliverable 2; the appendix TSV and the firing counts here are the POST-FIX census.
+5. **`a7` is filtered from the appendix `COMPUTED_WRITES` column.** Post-deliverable-2 the
+   detector counts `-(sp)`/`(sp)+` push/pop as writing a7 (honest — a7 IS advanced), but
+   `check_clobbers` exempts it as stack discipline and it is never a clobber/out retrofit
+   target, so the census display drops it to keep the clobber-relevant diff readable. A
+   genuine stack REPLACEMENT (`movea.l x, sp`) is NOT exempt and would still surface as a
+   live firing. (0 such firings in this corpus — every a7 write is push/pop.)
 
 ---
 
 ## Part (a) — proc contract census
 
 **Totals:** 126 procs · 112 declare a contract (`clobbers`/`preserves`/`out`) · **14 declare
-NONE** · 16 distinct `[proc.*]` firings across 15 procs. Full per-proc table:
+NONE** · **19** distinct `[proc.*]` firings (16 at the deliverable-1 checkpoint + 3 surfaced
+by deliverable 2's auto-inc/dec fix). Full per-proc table:
 `2026-07-17-contract-census-procs.tsv` (columns: FILE LINE PROC PUB CLOBBERS PRESERVES OUT
 COMPUTED_WRITES CONTRACT).
 
@@ -64,8 +72,9 @@ contract is `clobbers`-only — so the retrofit's surface is overwhelmingly clob
 
 ### A1 — Every `[proc.*]` firing (16), with adjudication
 
-Firing counts (occurrences): 42 `clobber-undeclared`, 2 `sr-undeclared`, 1
-`undeclared-fallthrough` = 45 lines → 16 distinct (proc, register) pairs. The
+Firing counts (occurrences, post-deliverable-2): 77 `clobber-undeclared`, 2 `sr-undeclared`,
+1 `undeclared-fallthrough` → 19 distinct (proc, register) pairs (16 at the deliverable-1
+checkpoint were 42 clobber occurrences; deliverable 2 added the a4 SAT-pointer catches). The
 `[out-unwritten]` count is 0 today (no `out()` is currently a false claim — but that check
 is exactly what the auto-inc/dec gap blocks for in-out pointer outputs; see deliverable 2).
 
@@ -80,11 +89,16 @@ is exactly what the auto-inc/dec gap blocks for in-out pointer outputs; see deli
 | `EntityWindow_TrySpawnObject` | a0,a1,d3,d5 | entity_window.emp:1177+ | **under-decl** | four scratch regs written, not declared |
 | `EntityWindow_TrySpawnRing` | a0,d3 | entity_window.emp:966+ | **under-decl** | two scratch regs written, not declared |
 | `Section_RedrawPlanes` | sr | section.emp:277 | **under-decl (sr)** | `move.w #$2700, sr` interrupt-mask; declare `clobbers(sr)` |
+| `DrawRings` | a4 | rings.emp | **under-decl (deliv. 2)** | SAT pointer advanced via `(a4)+`; declares `clobbers(...) out(d5)` — a4 undeclared. Retrofit: `out(a4)` (the gap-ledger's motivating in-out pointer). |
+| `Emit_ObjectPieces` | a4 | sprites.emp | **under-decl (deliv. 2)** | SAT pointer via `(a4)+`, not in `clobbers` |
+| `InsertSpriteMasks` | a4 | sprites.emp | **under-decl (deliv. 2)** | SAT pointer via `(a4)+`, `clobbers(d0,d1)` only |
 | `AllocDynamic` | a0 | core.emp:125 | **FALSE POSITIVE** | individual-push preservation (see below) |
 | `Collected_ParkSlot` | a0 | entity_window.emp:375 | **FALSE POSITIVE** | individual-push preservation |
 | `Collected_UnparkSlot` | a0 | entity_window.emp:430 | **FALSE POSITIVE** | individual-push preservation |
 
-Plus **1 `[proc.undeclared-fallthrough]`** — a proc reaching `}` without a terminator (see
+The 3 `deliv. 2` rows are the auto-inc/dec fix's newly-surfaced correct firings (all a4 SAT
+pointers); the other 130 non-a7 auto-inc/dec sites are on already-declared scratch
+(a0/a1/a2/a3) and produced no new firing. Plus **1 `[proc.undeclared-fallthrough]`** — a proc reaching `}` without a terminator (see
 the TSV / firing sweep; a modernization warning, not a contract gap).
 
 **The individual-push false-positive class (3 firings).** `AllocDynamic`,
@@ -201,12 +215,26 @@ best-effort tier.
 - **individual-push `preserves` extension:** A1's 3 FP firings (re-opens ledger row 1030).
 - **scaffolding annotation:** `Plane_Buffer_Reset` (A2) is the ratified-zero-caller case.
 
-## Deliverable-2 preview (auto-inc/dec write detection)
+## Deliverable-2 result (auto-inc/dec write detection — CLOSED)
 
-The write set MISSES `(An)+`/`-(An)` register modification. Corpus scope: **133 non-a7
-auto-inc/dec operand sites across 11 files** (`(a0)+`×46, `(a2)+`×29, `(a4)+`×26, `(a1)+`×18,
-`(a3)+`×10, `-(a1)`×4; a7 push/pop excluded as stack discipline). Most are copy loops on
-already-declared scratch (a0/a1/a2), but `(a4)+`×26 includes the gap-ledger's in-out pointer
-output (DrawRings SAT pointer). After deliverable 2 lands, re-run `emp_census` — the write sets
-must include these; some will surface NEW (correct) `clobber-undeclared` firings to fold into
-A1, and the DrawRings-style `out(a4)` becomes declarable without a false `[proc.out-unwritten]`.
+The write set previously MISSED `(An)+`/`-(An)` register modification (133 non-a7 auto-inc/dec
+operand sites across 11 files: `(a0)+`×46, `(a2)+`×29, `(a4)+`×26, `(a1)+`×18, `(a3)+`×10,
+`-(a1)`×4). Deliverable 2 (TDD, byte-neutral, gap-ledger `[out-clause, 2026-07-11]` CLOSED)
+made `instr_written_regs` count `(An)+`/`-(An)` in ANY operand position and ANY mnemonic (so
+`tst.w (a0)+` writes a0), with `a7` push/pop exempt as stack discipline.
+
+**Result of the re-census (folded into A1 above):**
+- **3 new correct firings** — `DrawRings` / `Emit_ObjectPieces` / `InsertSpriteMasks`, all
+  advancing the SAT pointer via `(a4)+` without declaring a4. Exactly the in-out pointer case
+  the gap-ledger predicted.
+- **0 spurious firings** — the other 130 non-a7 sites are on already-declared scratch
+  (a0/a1/a2/a3); a7 push/pop stayed exempt (0 a7 firings).
+- **`out(a4)` unblocked** — an in-out pointer advanced only via `(a4)+` is now written, so the
+  DrawRings SAT pointer can be declared `out(a4)` without a false `[proc.out-unwritten]`
+  (regression-guarded by `out_pointer_advanced_via_postinc_is_written` in `tests/lower_proc.rs`).
+
+Tests (both-direction negative vectors) in `crates/sigil-frontend-emp/tests/lower_proc.rs`:
+`postinc_dest_clobber_undeclared_warns`, `postinc_source_clobber_undeclared_warns`,
+`predec_clobber_undeclared_warns`, `autoinc_on_read_only_mnemonic_warns`,
+`declared_autoinc_pointer_is_silent`, `out_pointer_advanced_via_postinc_is_written`,
+`stack_push_pop_is_not_a_clobber`.
