@@ -638,6 +638,42 @@ pub struct DataDecl {
     pub type_only: bool,
 }
 
+/// A flag-encoded result declared via `out(carry: name)` (contract-grammar v2
+/// §6 / D2): the callee returns a status flag the caller MUST consume. `carry`
+/// is the sole corpus demand today (`QueueDMA_*`'s `dropped`, `RingBuffer_Add`'s
+/// `full`); the parser accepts the general flag-name form (`zero`/`negative`/…)
+/// for forward use, with flag-name VALIDITY a lowering-time check
+/// (`[proc.out-flag-invalid]`), mirroring `clobbers`/`out` reg validity. Unlike
+/// an `out` register, a flag is NOT part of the register-file partition — it
+/// lands here, never in the `out` reglist, so the transitive closure (§1) is
+/// unaffected (flag results are pure caller-side must-use metadata, §6).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlagResult {
+    /// The status flag — `carry` today; any flag name the parser accepts.
+    pub flag: String,
+    /// The result's name (`dropped`, `full`, …), used by `@discards(name)`.
+    pub name: String,
+    /// Span of the `flag: name` clause.
+    pub span: Span,
+}
+
+/// A conditional register result declared via `out(rN if cc)` (contract-grammar
+/// v2 §6, D2.35's deferred sibling): register `rN` is a live-out result, but
+/// VALID only on the path where condition `cc` holds. `rN` ALSO joins the `out`
+/// reglist (so the closure charges it as written); this guard rides alongside so
+/// the caller-side check can flag reading `rN` on the invalid path
+/// (`[call.result-invalid-path]`). Register + cc validity are lowering-time
+/// checks (`[proc.out-cond-invalid]`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CondResult {
+    /// The result register (`a1`, …) — also present in the `out` reglist.
+    pub reg: String,
+    /// The condition code under which `reg` is valid (`cc`, `eq`, `cs`, …).
+    pub cc: String,
+    /// Span of the `rN if cc` clause.
+    pub span: Span,
+}
+
 /// A `proc name(params...) { body... }` declaration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcDecl {
@@ -670,6 +706,15 @@ pub struct ProcDecl {
     /// expansion is a lowering-time check (`[proc.out-invalid]`), not a
     /// parse-time one, mirroring `clobbers`/`preserves`.
     pub out: Option<Vec<(String, Option<String>)>>,
+    /// Flag results declared via `out(carry: name)` (contract-grammar v2 §6):
+    /// status-flag-encoded results the caller MUST consume. Empty for a proc with
+    /// no flag result. Separate from `out` because a flag is not a register-file
+    /// member (so the closure ignores it); see [`FlagResult`].
+    pub out_flags: Vec<FlagResult>,
+    /// Conditional register results declared via `out(rN if cc)` (§6): each
+    /// names a register ALSO present in `out`, guarded by a validity condition.
+    /// Empty for a proc with no conditional result; see [`CondResult`].
+    pub out_cond: Vec<CondResult>,
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
     /// Item-level `@`-attributes preceding the decl — currently only
@@ -702,6 +747,10 @@ pub struct ProcSig {
     pub preserves: Vec<(String, Option<String>)>,
     /// `out(...)`: `None` = undeclared, `Some(vec![])` = explicit empty.
     pub out: Option<Vec<(String, Option<String>)>>,
+    /// Flag results (`out(carry: name)`, §6) — see [`FlagResult`].
+    pub out_flags: Vec<FlagResult>,
+    /// Conditional register results (`out(rN if cc)`, §6) — see [`CondResult`].
+    pub out_cond: Vec<CondResult>,
 }
 
 /// An `extern proc Name (params) [clobbers(...)] [preserves(...)] [out(...)]`
@@ -1404,6 +1453,12 @@ pub struct InstrLine {
     /// bound's clobbers instead of ⊤. `None` for an unannotated instruction.
     /// Emits nothing (metadata for the contract closure + subcontract checks).
     pub dispatch_bound: Option<String>,
+    /// A trailing `@discards(name)` attribute on a call (contract-grammar v2 §6 /
+    /// §11 Q3): the explicit, greppable opt-out of the flag-result must-use check
+    /// (`[call.flag-result-unused]`) for a callee declaring `out(carry: name)`.
+    /// `Some(name)` names the discarded flag-result; `None` on an unannotated
+    /// instruction. Emits nothing (metadata for the caller-side check).
+    pub discards: Option<String>,
     /// Span of the whole instruction line.
     pub span: Span,
 }

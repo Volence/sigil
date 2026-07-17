@@ -145,6 +145,72 @@ pub(super) fn lower_proc(
     if proc.out.is_some() {
         check_out(proc, &buf, diags);
     }
+
+    // 7. Flag results (`out(carry: name)`) + conditional register results
+    // (`out(rN if cc)`) — contract-grammar v2 §6. Validity only (the caller-side
+    // must-use check `[call.flag-result-unused]` lives in the whole-corpus walk,
+    // since it needs cross-module contract knowledge). Runs whenever a flag /
+    // conditional result is declared. Not silenced by `@as_compat` — an opt-in
+    // declared contract, like `preserves`/`out`.
+    if !proc.out_flags.is_empty() || !proc.out_cond.is_empty() {
+        check_out_flags_cond(&proc.name, &proc.out_flags, &proc.out_cond, diags);
+    }
+}
+
+/// The status flags a `out(carry: name)` result may name — the 68000 CCR bits.
+/// `carry` is the sole corpus demand; the rest are accepted for forward use.
+const VALID_FLAGS: [&str; 5] = ["carry", "zero", "negative", "overflow", "extend"];
+
+/// The 68000 condition codes a `out(rN if cc)` guard may name (incl. the `hs`/`lo`
+/// aliases of `cc`/`cs`). `t`/`f` are legal cc encodings but nonsensical as a
+/// result guard, so they are NOT accepted here.
+const VALID_CCS: [&str; 16] = [
+    "hi", "ls", "cc", "cs", "ne", "eq", "vc", "vs", "pl", "mi", "ge", "lt", "gt", "le", "hs", "lo",
+];
+
+/// Validate `out(carry: name)` flag results and `out(rN if cc)` conditional
+/// register results (§6): a flag name outside [`VALID_FLAGS`] is
+/// `[proc.out-flag-invalid]`; a condition code outside [`VALID_CCS`] or a
+/// non-register `reg` is `[proc.out-cond-invalid]`. Both error-tier, mirroring
+/// `[proc.out-invalid]`. (The conditional register's `reg` also rides the `out`
+/// reglist, so its register-spelling validity is already covered by
+/// `[proc.out-invalid]`; here we only police the `cc`.)
+fn check_out_flags_cond(
+    proc_name: &str,
+    flags: &[ast::FlagResult],
+    conds: &[ast::CondResult],
+    diags: &mut Vec<Diagnostic>,
+) {
+    for f in flags {
+        if !VALID_FLAGS.contains(&f.flag.as_str()) {
+            push(
+                diags,
+                Level::Error,
+                f.span,
+                format!(
+                    "[proc.out-flag-invalid] `{proc_name}` declares `out({}: …)` — `{}` is not a \
+                     status flag (expected one of {})",
+                    f.flag,
+                    f.flag,
+                    VALID_FLAGS.join(", "),
+                ),
+            );
+        }
+    }
+    for c in conds {
+        if !VALID_CCS.contains(&c.cc.as_str()) {
+            push(
+                diags,
+                Level::Error,
+                c.span,
+                format!(
+                    "[proc.out-cond-invalid] `{proc_name}` declares `out({} if {})` — `{}` is not a \
+                     condition code",
+                    c.reg, c.cc, c.cc,
+                ),
+            );
+        }
+    }
 }
 
 /// `falls_into next` requires `next` to be the item immediately following `proc`

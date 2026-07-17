@@ -83,3 +83,36 @@ fn corpus_closure_residue_is_the_g3_handoff() {
     .collect();
     assert_eq!(got, want, "closure residue drifted from the G3 handoff set");
 }
+
+/// Contract-grammar v2 G2 — the §6 flag-result must-use pin: every `.emp` caller
+/// of a flag-result callee (`out(carry:)`) CONSUMES the carry, so the corpus has
+/// ZERO `[call.flag-result-unused]` / `[call.result-invalid-path]` firings. The
+/// three retrofitted callees (QueueDMA_Important/_Deferrable `dropped`,
+/// RingBuffer_Add `full`) are all consumed via a `bcs` — no `@discards` anywhere.
+/// This pin is the G2 regression guard (mirrors the G1 residue pin); a future
+/// caller that drops a flag result breaks it.
+#[test]
+fn corpus_flag_results_are_all_consumed() {
+    let Ok(aeon) = std::env::var("AEON_DIR") else {
+        eprintln!("skip: AEON_DIR not set");
+        return;
+    };
+    let aeon = PathBuf::from(aeon);
+    let mut paths = Vec::new();
+    emp_files(&aeon.join("engine"), &mut paths);
+    emp_files(&aeon.join("games"), &mut paths);
+    paths.sort();
+    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+
+    let files: Vec<_> = paths
+        .iter()
+        .map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0)
+        .collect();
+    let r = analyze_corpus(&files);
+
+    assert!(
+        r.flag_firings.is_empty(),
+        "unexpected flag-result firings (a dropped carry?): {:?}",
+        r.flag_firings
+    );
+}

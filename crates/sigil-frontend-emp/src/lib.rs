@@ -6,6 +6,7 @@ pub mod ast;
 pub mod closure;
 pub mod corpus_contracts;
 pub mod eval;
+pub mod flag_check;
 pub mod layout;
 pub mod lexer;
 pub mod lower;

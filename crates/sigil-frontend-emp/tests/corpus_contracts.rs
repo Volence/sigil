@@ -35,6 +35,67 @@ fn direct_under_declaration_fires_over_corpus() {
     assert!(!fires(&r, "P", "d0"), "d0 is declared, must not fire");
 }
 
+/// The number of `[call.flag-result-unused]` firings on `proc` calling `callee`.
+fn flag_fires(
+    r: &sigil_frontend_emp::corpus_contracts::ContractReport,
+    proc: &str,
+    callee: &str,
+) -> usize {
+    r.flag_firings.iter().filter(|f| f.proc == proc && f.callee == callee).count()
+}
+
+/// An extern declaring `out(carry: dropped)` whose caller CONSUMES the carry
+/// (`bcs`) produces no flag firing — the wired end-to-end happy path (contract
+/// from a decl, CFG over the caller's evaluated body).
+#[test]
+fn flag_result_consumed_over_corpus_passes() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Queue (d1) clobbers(d0) out(carry: dropped)\n\
+         proc Caller () clobbers(d0-d1) {\n\
+             jbsr Queue\n\
+             bcs .done\n\
+             moveq #0, d0\n\
+         .done:\n\
+             rts\n\
+         }\n",
+    ]);
+    assert_eq!(flag_fires(&r, "Caller", "Queue"), 0, "flag firings: {:?}", r.flag_firings);
+}
+
+/// The same extern whose caller DROPS the carry (overwrites CC and returns)
+/// fires `[call.flag-result-unused]` — the Palette_Dirty / load_art bug class,
+/// caught through the whole-corpus wiring.
+#[test]
+fn flag_result_dropped_over_corpus_fires() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Queue (d1) clobbers(d0) out(carry: dropped)\n\
+         proc Caller () clobbers(d0-d1) {\n\
+             jbsr Queue\n\
+             moveq #0, d0\n\
+             rts\n\
+         }\n",
+    ]);
+    assert_eq!(flag_fires(&r, "Caller", "Queue"), 1, "flag firings: {:?}", r.flag_firings);
+}
+
+/// `@discards(dropped)` on the call is the explicit opt-out — no firing even
+/// though the carry is dropped.
+#[test]
+fn flag_result_discarded_over_corpus_passes() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Queue (d1) clobbers(d0) out(carry: dropped)\n\
+         proc Caller () clobbers(d0-d1) {\n\
+             jbsr Queue @discards(dropped)\n\
+             moveq #0, d0\n\
+             rts\n\
+         }\n",
+    ]);
+    assert_eq!(flag_fires(&r, "Caller", "Queue"), 0, "flag firings: {:?}", r.flag_firings);
+}
+
 /// A caller with a tight contract that CALLS a scribbler is charged the
 /// scribbler's writes transitively (the whole point of §1).
 #[test]

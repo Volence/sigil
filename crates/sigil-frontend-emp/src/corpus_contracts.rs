@@ -21,8 +21,9 @@
 
 use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Item, Operand, ProcDecl, ProcSig, TextOrSplice};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
+use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
 use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
-use crate::value::{CodeItem, CodeOperand, Reg};
+use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet};
@@ -48,6 +49,11 @@ pub struct ContractReport {
     pub closure: Closure,
     /// The transitive under-declaration firings (§9), sorted (proc, reg).
     pub firings: Vec<Firing>,
+    /// The §6 caller-side flag-result firings: `[call.flag-result-unused]` (a
+    /// carry result abandoned on some path) and `[call.result-invalid-path]` (a
+    /// conditional register result read on its invalid path), sorted (proc,
+    /// callee, span).
+    pub flag_firings: Vec<FlagFiring>,
     /// Names declared BOTH `extern proc` and `proc` (§11 Q4) — with the extern's
     /// span (the mirror that should be deleted when the callee ports).
     pub extern_collisions: Vec<(String, Span)>,
@@ -76,6 +82,13 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let mut proc_names: BTreeSet<String> = BTreeSet::new();
     let mut extern_spans: BTreeMap<String, Span> = BTreeMap::new();
     let mut counter: u32 = 0;
+    // §6 flag-result wiring: the flag / conditional-result contracts a callee
+    // declares, keyed by name, plus each proc's evaluated CodeBuf + the call
+    // sites carrying `@discards` (the caller-side check needs cross-module
+    // contract knowledge, so it runs after the whole corpus is walked).
+    let mut flag_callees: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut cond_callees: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let mut proc_bufs: Vec<ProcBuf> = Vec::new();
 
     for file in files {
         collect_items(
@@ -87,6 +100,9 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &mut proc_names,
             &mut extern_spans,
             &mut counter,
+            &mut flag_callees,
+            &mut cond_callees,
+            &mut proc_bufs,
             defines,
         );
     }
@@ -105,7 +121,65 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let closure = compute_closure(&nodes, &types);
     let firings = check_firings(&nodes, &closure);
 
-    ContractReport { closure, firings, extern_collisions, proc_count, extern_count, contract_type_count }
+    // §6 caller-side flag checks, now that every callee's contract is known.
+    let mut flag_firings: Vec<FlagFiring> = Vec::new();
+    for pb in &proc_bufs {
+        flag_firings.extend(check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded));
+        flag_firings.extend(check_result_invalid_path(&pb.name, &pb.buf.items, &cond_callees));
+    }
+    // Deterministic order (proc, callee, flag); spans stay in encounter order
+    // via the stable sort.
+    flag_firings.sort_by(|a, b| {
+        (&a.proc, &a.callee, &a.flag).cmp(&(&b.proc, &b.callee, &b.flag))
+    });
+
+    ContractReport {
+        closure,
+        firings,
+        flag_firings,
+        extern_collisions,
+        proc_count,
+        extern_count,
+        contract_type_count,
+    }
+}
+
+/// A proc's evaluated CodeBuf + the call-site spans carrying `@discards`, held
+/// for the §6 caller-side flag checks (run after the whole corpus is walked so
+/// every callee's flag/conditional contract is known).
+struct ProcBuf {
+    name: String,
+    buf: CodeBuf,
+    discarded: Vec<Span>,
+}
+
+/// The set of status flags a decl's `out(carry: name)` clauses name.
+fn flags_of(out_flags: &[ast::FlagResult]) -> BTreeSet<String> {
+    out_flags.iter().map(|f| f.flag.clone()).collect()
+}
+
+/// The `(reg, cc)` pairs a decl's `out(rN if cc)` clauses name.
+fn conds_of(out_cond: &[ast::CondResult]) -> Vec<(String, String)> {
+    out_cond.iter().map(|c| (c.reg.clone(), c.cc.clone())).collect()
+}
+
+/// The spans of a proc body's call instructions carrying `@discards` (recursing
+/// comptime-`if` branches, like [`collect_indirect_sites`]). A `@discards` inside
+/// a comptime-fn template body is not seen (the AST-body limitation the walk
+/// already carries for indirect sites); no corpus call site discards today.
+fn collect_discarded(body: &[AsmStmt], out: &mut Vec<Span>) {
+    for stmt in body {
+        match stmt {
+            AsmStmt::Instr(i) if i.discards.is_some() => out.push(i.span),
+            AsmStmt::If { then, els, .. } => {
+                collect_discarded(then, out);
+                if let Some(e) = els {
+                    collect_discarded(e, out);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Recurse the item list (into `section {}` blocks), registering every proc /
@@ -120,32 +194,66 @@ fn collect_items(
     proc_names: &mut BTreeSet<String>,
     extern_spans: &mut BTreeMap<String, Span>,
     counter: &mut u32,
+    flag_callees: &mut BTreeMap<String, BTreeSet<String>>,
+    cond_callees: &mut BTreeMap<String, Vec<(String, String)>>,
+    proc_bufs: &mut Vec<ProcBuf>,
     defines: &[(String, i128)],
 ) {
     for item in items {
         match item {
             Item::Proc(p) => {
                 proc_names.insert(p.name.clone());
-                nodes.insert(p.name.clone(), proc_node(p, file, counter, defines));
+                let (node, buf) = proc_node(p, file, counter, defines);
+                nodes.insert(p.name.clone(), node);
+                // §6 flag / conditional contracts this proc exposes to callers.
+                let flags = flags_of(&p.out_flags);
+                if !flags.is_empty() {
+                    flag_callees.insert(p.name.clone(), flags);
+                }
+                let conds = conds_of(&p.out_cond);
+                if !conds.is_empty() {
+                    cond_callees.insert(p.name.clone(), conds);
+                }
+                // Stash the CodeBuf + discard sites for the post-walk checks.
+                if let Some(buf) = buf {
+                    let mut discarded = Vec::new();
+                    collect_discarded(&p.body, &mut discarded);
+                    proc_bufs.push(ProcBuf { name: p.name.clone(), buf, discarded });
+                }
             }
             Item::ExternProc(e) => {
                 extern_names.insert(e.name.clone());
                 extern_spans.insert(e.name.clone(), e.span);
                 nodes.insert(e.name.clone(), extern_node(e));
+                let flags = flags_of(&e.sig.out_flags);
+                if !flags.is_empty() {
+                    flag_callees.insert(e.name.clone(), flags);
+                }
+                let conds = conds_of(&e.sig.out_cond);
+                if !conds.is_empty() {
+                    cond_callees.insert(e.name.clone(), conds);
+                }
             }
             Item::ContractType(t) => {
                 types.insert(t.name.clone(), contract_type_bound(t));
             }
             Item::Section(s) => collect_items(
-                &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter, defines,
+                &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter,
+                flag_callees, cond_callees, proc_bufs, defines,
             ),
             _ => {}
         }
     }
 }
 
-/// Build a [`ProcNode`] from a body-bearing `proc` decl.
-fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32, defines: &[(String, i128)]) -> ProcNode {
+/// Build a [`ProcNode`] from a body-bearing `proc` decl, returning the evaluated
+/// CodeBuf too (for the §6 caller-side flag checks).
+fn proc_node(
+    p: &ProcDecl,
+    file: &ast::File,
+    counter: &mut u32,
+    defines: &[(String, i128)],
+) -> (ProcNode, Option<CodeBuf>) {
     let (buf, _diags, next) =
         crate::eval::eval_proc_body(file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines);
     *counter = next;
@@ -172,7 +280,7 @@ fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32, defines: &[(Stri
         }
     }
 
-    ProcNode {
+    let node = ProcNode {
         local_writes,
         direct_callees,
         indirect_sites: collect_indirect_sites(&p.body),
@@ -182,7 +290,8 @@ fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32, defines: &[(Stri
         out: expand_reglist_regs(p.out.as_deref().unwrap_or(&[])),
         has_clobber_contract: p.clobbers.is_some(),
         verified_preserves,
-    }
+    };
+    (node, buf)
 }
 
 /// Build a leaf [`ProcNode`] from an `extern proc` decl (§3). The leaf's

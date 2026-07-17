@@ -83,4 +83,16 @@ fn main() {
         };
         println!("  {:<28} {kind}", f.proc);
     }
+
+    use sigil_frontend_emp::flag_check::FlagFiringKind;
+    println!("\n-- flag-result firings (§6, {}): --", report.flag_firings.len());
+    for f in &report.flag_firings {
+        let kind = match &f.kind {
+            FlagFiringKind::Unused => format!("[call.flag-result-unused] {} unconsumed", f.flag),
+            FlagFiringKind::InvalidPathRead { reg, cc } => {
+                format!("[call.result-invalid-path] {reg} read where !{cc}")
+            }
+        };
+        println!("  {:<28} calls {:<24} {kind}", f.proc, f.callee);
+    }
 }
