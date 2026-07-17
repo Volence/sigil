@@ -117,3 +117,18 @@ fn extern_proc_collision_flagged() {
         r.extern_collisions
     );
 }
+
+/// An `extern proc` with an `out` register charges that register to its callers
+/// too — an out result is WRITTEN by the callee (the S4LZ in-out cursor case),
+/// so a caller relying on it across the call is wrong. The extern leaf's
+/// effective set is clobbers ∪ out.
+#[test]
+fn extern_out_register_charges_callers() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Decompress (a0, a1) clobbers(d0) out(a1)\n\
+         proc Caller () clobbers(d0) {\n jbsr Decompress\n rts }\n",
+    ]);
+    // Caller is charged a1 (the extern's out cursor) but declares only d0.
+    assert!(fires(&r, "Caller", "a1"), "firings: {:?}", r.firings);
+}

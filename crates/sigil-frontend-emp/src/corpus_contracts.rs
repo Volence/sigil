@@ -181,13 +181,20 @@ fn proc_node(p: &ProcDecl, file: &ast::File, counter: &mut u32, defines: &[(Stri
     }
 }
 
-/// Build a leaf [`ProcNode`] from an `extern proc` decl (§3).
+/// Build a leaf [`ProcNode`] from an `extern proc` decl (§3). The leaf's
+/// effective clobber set is `clobbers ∪ out`: an `out` register is WRITTEN by
+/// the callee (an advanced in-out cursor like S4LZ's `a1`), so a caller relying
+/// on it across the call is wrong and must be charged it — exactly as a
+/// body-bearing proc's `local_writes` already includes its out-register writes.
 fn extern_node(e: &ExternProcDecl) -> ProcNode {
+    let out = expand_reglist_regs(e.sig.out.as_deref().unwrap_or(&[]));
+    let mut effective = sig_clobbers(&e.sig);
+    effective.extend(out.iter().cloned());
     ProcNode {
         is_extern: true,
-        declared_clobbers: sig_clobbers(&e.sig),
+        declared_clobbers: effective,
         params: sig_param_regs(&e.sig),
-        out: expand_reglist_regs(e.sig.out.as_deref().unwrap_or(&[])),
+        out,
         has_clobber_contract: e.sig.clobbers.is_some(),
         ..Default::default()
     }
