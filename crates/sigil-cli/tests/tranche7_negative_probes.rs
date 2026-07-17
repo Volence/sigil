@@ -327,9 +327,10 @@ fn broken_falls_into_stub_chain_fires_fallthrough() {
     // The doctor: remove the `falls_into Touch_Enemy` from the FIRST stub, so
     // `Touch_None` becomes an empty body with no terminator and no falls_into
     // — it will run into whatever follows, which the fallthrough lint flags.
-    let doctored = s
-        .collision
-        .replace("proc Touch_None () falls_into Touch_Enemy {}", "proc Touch_None () {}");
+    let doctored = s.collision.replace(
+        "proc Touch_None () clobbers() falls_into Touch_Enemy {}",
+        "proc Touch_None () clobbers() {}",
+    );
     assert_ne!(doctored, s.collision, "the doctor must have found its target");
 
     let diags = lower_with_ambient(&[&s.types, &s.sst, &s.constants, &s.aabb], &doctored);
