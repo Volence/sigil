@@ -115,6 +115,49 @@ fn movem_between_call_and_bcs_is_transparent() {
     assert!(f.is_empty(), "movem is CC-transparent — carry survives to bcs: {f:?}");
 }
 
+/// An `addx` between the call and a `bcs` REDEFINES carry (it reads X, not the
+/// callee's C, and writes a fresh C) — so the later `bcs` tests the wrong flag
+/// and the callee's result is dropped. Must fire (Fable's G2.6 rider: the
+/// ADDX-class is a carry WRITER, not a consumer, for a carry result).
+#[test]
+fn addx_between_call_and_bcs_redefines_and_fires() {
+    let f = run(
+        "module m\n\
+         proc P () clobbers(d0-d1) {\n\
+             jbsr Queue\n\
+             addx.w d0, d1\n\
+             bcs .done\n\
+             moveq #0, d0\n\
+         .done:\n\
+             rts\n\
+         }\n",
+        "Queue",
+        NONE,
+    );
+    assert_eq!(f.len(), 1, "addx redefines carry before the bcs — must fire: {f:?}");
+}
+
+/// A `move.w #imm, sr` between the call and a `bcs` writes the whole status
+/// register — carry included — so the callee's result is lost. Must fire
+/// (the move-to-ccr/sr redefine, Fable's rider).
+#[test]
+fn move_to_sr_between_call_and_bcs_redefines_and_fires() {
+    let f = run(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             jbsr Queue\n\
+             move.w #$2700, sr\n\
+             bcs .done\n\
+             moveq #0, d0\n\
+         .done:\n\
+             rts\n\
+         }\n",
+        "Queue",
+        NONE,
+    );
+    assert_eq!(f.len(), 1, "move to sr redefines carry before the bcs — must fire: {f:?}");
+}
+
 /// A return without consuming the carry fires (the flag is abandoned in the
 /// frame that must consume it).
 #[test]

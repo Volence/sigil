@@ -60,30 +60,41 @@ const UNCOND_MNEMONICS: [&str; 4] = ["bra", "jbra", "jmp", "jra"];
 const RETURN_MNEMONICS: [&str; 4] = ["rts", "rte", "rtr", "rtd"];
 
 /// Does this resolved mnemonic CONSUME the carry flag — a reader whose presence
-/// discharges the must-use obligation? The carry-testing conditional branches
-/// and their set/dbcc forms (`bcs`/`bcc`/`bhi`/`bls` + the `hs`/`lo` aliases),
-/// plus the ADDX-class extend readers (spec §6). A branch READS the condition
-/// codes without writing them, so a carry-reading branch consumes; a Z-reading
-/// branch (`beq`/`bne`) neither consumes nor redefines carry (it just adds CFG
-/// edges). Checked BEFORE `writes_carry`, so the read+write rotates
-/// (`roxl`/`roxr`) and `negx`/`abcd`/`sbcd` count as consumers.
+/// discharges the must-use obligation? ONLY the carry-testing conditional
+/// branches and their set/dbcc forms (`bcs`/`bcc`/`bhi`/`bls` + the `hs`/`lo`
+/// aliases): a branch READS the condition codes without writing them, so a
+/// carry-reading branch consumes; a Z-reading branch (`beq`/`bne`) neither
+/// consumes nor redefines carry (it just adds CFG edges).
+///
+/// The ADDX-class (`addx`/`subx`/`negx`/`abcd`/`sbcd`/`roxl`/`roxr`) is
+/// DELIBERATELY NOT here (G2.6 Fable rider): those read the EXTEND flag (X), not
+/// the callee's carry (C), and they CLOBBER C — so for a carry result they are
+/// redefines (`writes_carry`), not consumers. (The spec's "ADDX-class consumer"
+/// language is about an `out(extend:)` result; a carry result is discharged only
+/// by a carry-reading branch.)
 fn consumes_carry(mnem: &str) -> bool {
     matches!(
         mnem,
         "bcs" | "bcc" | "bhi" | "bls" | "blo" | "bhs"
             | "scs" | "scc" | "shi" | "sls" | "slo" | "shs"
             | "dbcs" | "dbcc" | "dbhi" | "dbls"
-            | "addx" | "subx" | "negx" | "abcd" | "sbcd" | "roxl" | "roxr"
     )
 }
 
 /// Does this resolved mnemonic REDEFINE (write) the carry flag, ending the
 /// must-use window? A curated ALLOWLIST of CC-writing 68000 data operations plus
 /// the call mnemonics (a subroutine clobbers CC unless it preserves it, which is
-/// not locally provable). NOT here — hence CC-transparent: `movem`/`movea`/`lea`/
-/// `pea`/`adda`/`suba`/`exg`/`swap`?/branches/`nop` and the bit tests
-/// (`btst`/`bset`/`bclr`/`bchg`, which write only Z). `move` writes CC; `movea`
-/// (address-register move) does not — the evaluator spells them distinctly.
+/// not locally provable). Includes the ADDX-class (`addx`/`subx`/`negx`/`abcd`/
+/// `sbcd`/`roxl`/`roxr`): they read X but WRITE C, so an `addx` between a call
+/// and its `bcs` ends the real window (G2.6 rider). Move-to-ccr/move-to-sr are
+/// caught by [`writes_ccr_operand`] (operand-directed, independent of the
+/// mnemonic).
+///
+/// NOT here — hence CC-TRANSPARENT: `movem`/`movea`/`lea`/`pea`/`adda`/`suba`/
+/// `exg`/branches/`nop`, and — DELIBERATELY — the bit tests `btst`/`bset`/
+/// `bclr`/`bchg`, which write ONLY the Z flag and never touch C (do not "fix"
+/// this by adding them). `move` writes CC; `movea` (address-register move) does
+/// not — the evaluator spells them distinctly.
 fn writes_carry(mnem: &str) -> bool {
     if CALL_MNEMONICS.contains(&mnem) {
         // An intervening call clobbers the condition codes: the tracked carry
@@ -96,15 +107,23 @@ fn writes_carry(mnem: &str) -> bool {
     matches!(
         mnem,
         "move" | "moveq" | "clr"
-            | "add" | "addi" | "addq"
-            | "sub" | "subi" | "subq"
+            | "add" | "addi" | "addq" | "addx"
+            | "sub" | "subi" | "subq" | "subx"
             | "cmp" | "cmpi" | "cmpm" | "cmpa"
             | "and" | "andi" | "or" | "ori" | "eor" | "eori" | "not"
-            | "neg" | "muls" | "mulu" | "divs" | "divu"
+            | "neg" | "negx" | "muls" | "mulu" | "divs" | "divu"
             | "tst" | "ext" | "extb" | "swap" | "tas"
-            | "nbcd"
-            | "asl" | "asr" | "lsl" | "lsr" | "rol" | "ror"
+            | "nbcd" | "abcd" | "sbcd"
+            | "asl" | "asr" | "lsl" | "lsr" | "rol" | "ror" | "roxl" | "roxr"
     )
+}
+
+/// A redefine reached through the OPERAND: an instruction whose destination is
+/// CCR or SR writes the carry directly (`move #imm, ccr` / `move #imm, sr` /
+/// `andi/ori/eori #imm, ccr|sr`). Operand-directed so it holds regardless of how
+/// the mnemonic is classified (G2.6 rider — the move-to-ccr/sr forms).
+fn writes_ccr_operand(ops: &[CodeOperand]) -> bool {
+    matches!(ops.last(), Some(CodeOperand::Ccr) | Some(CodeOperand::Sr))
 }
 
 /// The sole `Sym` operand of a branch/tail instruction (its target label), if
@@ -225,7 +244,7 @@ impl<'a> Cfg<'a> {
                     None // an unrelated branch — bail
                 };
             }
-            if RETURN_MNEMONICS.contains(&mnem) || writes_carry(mnem) {
+            if RETURN_MNEMONICS.contains(&mnem) || writes_carry(mnem) || writes_ccr_operand(ops) {
                 return None; // guard never tested (returned / CC redefined)
             }
             idx = *self.next_instr.get(&idx)?; // fall through to the next instr
@@ -461,11 +480,11 @@ fn abandons_flag(cfg: &Cfg, call_idx: usize) -> bool {
         if !visited.insert(idx) {
             continue; // join / back-edge already explored
         }
-        let Some((mnem, _)) = cfg.instr(idx) else { continue };
+        let Some((mnem, ops)) = cfg.instr(idx) else { continue };
         if consumes_carry(mnem) {
             continue; // this path is satisfied
         }
-        if writes_carry(mnem) {
+        if writes_carry(mnem) || writes_ccr_operand(ops) {
             return true; // carry redefined before any consumer
         }
         for e in cfg.edges(idx) {
