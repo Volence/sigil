@@ -56,7 +56,13 @@ effective(P) = localWrites(P)
   graph and transitivity is useless. Therefore **boundary declarations (extern §3 + indirect
   §4) ship IN G1 with the closure, not as a later phase.**
 - Extern callees use their `extern proc` declaration (§3); an undeclared extern call is a hole
-  in the closure — error under strict once G1 lands (census: exactly 3 call sites to declare).
+  in the closure — error under strict once G1 lands. **G1-checkpoint erratum (2026-07-17): the
+  boundary is 5 declarations, not the census's 3** — the closure found `QueueDMA_Important`/
+  `QueueDMA_Deferrable` called via a comptime-fn PARAMETER (`perform_dplc(QueueDMA_*)`,
+  dplc.emp), invisible to the census's textual call scan. Lesson: calls passed as comptime-fn
+  arguments only surface in the lowered closure — the closure, not a text census, is the
+  boundary authority. (`Debug_MusicToggle` is SOUND_DEBUG_HOTKEYS-gated: not a plain-build
+  hole, still declared for debug-shape analysis.)
 - `verifiedPreserved` is subtraction earned by proof (§5): a callee effect the proc provably
   saves/restores around the call does not escape it.
 - Recursion/SCCs: fixpoint from ∅ (monotone union on a finite lattice — terminates).
@@ -209,8 +215,15 @@ retrofits, so D7's first run is clean instead of noisy.
   will surface, from the census: the **13 under-declarations** (retrofit: add the register to
   `clobbers` — except the **3 SAT a4s which are `out(a4)`**, and `Section_RedrawPlanes` which
   is `clobbers(sr)`), the **11 Touch stubs + GameState_Idle** (`clobbers()`), the **3 FPs**
-  (§5 `preserves(a0)`, never false clobbers).
-- **Adoption-requiring (annotation tier):** extern decls (3), contract types + `as` bounds
+  (§5 `preserves(a0)`, never false clobbers). **Tier-timing ruling (G1 checkpoint,
+  2026-07-17): the closure firing check ships WARN-tier through G1/G2 and flips to ERROR as
+  G3's closing act, once the AllocDynamic-FP residue (the 3 direct FPs + the 2 transitive
+  rows they leak into, Load_Object/Sound_PlayRing a0) provably reaches 0 via verified
+  `preserves(a0)`.** Rationale: those 5 firings CANNOT be honestly retrofitted before §5
+  exists (a false `clobbers(a0)` is forbidden), and building a temporary suppression
+  mechanism for a known two-phase window is worse than a documented warn window. The
+  error flip is a one-line tier change with a zero-residue precondition.
+- **Adoption-requiring (annotation tier):** extern decls (5, per the §3 erratum), contract types + `as` bounds
   (6 sites / 4 types), typed slots, `@scaffolding`. Each ships its retrofit sweep in the same
   commit as its mechanism (the standing retro rule).
 - The `.asm` tier mirrors best-effort in s4lint (warning-only, per the W021 pattern): W021
