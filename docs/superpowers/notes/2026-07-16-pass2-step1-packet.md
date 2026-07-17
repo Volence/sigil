@@ -355,6 +355,15 @@ Net max-V producer (FillRow+Draw_TileRow): Tile_Cache_Fill 53555→~21k, idle VS
       bug the emp==asm byte gate structurally could not (both twins shared it). Vindicates the
       "byte-preserving ⇒ full identity, not screenshots" framing — the cache-RAM seam compare
       was the exact instrument that surfaced it.
+- **Neither-bucket (provenance hygiene — how the CRC nearly slipped):** the 1.3 checkpoint
+      cited the PRE-FIX buggy build's CRCs (debug 59157ab2 / plain df2f9b7e). Two things
+      masked it: (1) the buggy and fixed builds had **IDENTICAL byte sizes** (the wrap fix
+      changed bytes, not length), so the size half of the CRC+size pair gave NO signal; and
+      (2) the CRC was hashed at the wrong moment — from a build that predated the fix+re-pin.
+      The gate fired on the ratifier's own numbers (a deviation from the stated expectation),
+      which is the system working. **Standing lesson:** hash a piece AFTER its final re-pin,
+      as the LAST item of its checklist next to the suite count — never from a build that
+      predates any part of its commit. Canonical FIXED CRCs = debug 217224d3 / plain 8b71f0c5.
 
 ---
 

@@ -908,3 +908,36 @@ merged masters; `repin --check` clean; clippy delta zero.
 - Debug `s4.debug.bin`: **461110 bytes** (`EndOfRom` = `0x6765A`, unchanged), crc32
   **`b1f82f9a`**, sha256
   **`e793267ff154c5494185ec77b44d485724dad828fbfe9b99a57ed73fd6d667ca`**.
+
+## Re-baseline 2026-07-17 — pass-2 HV-streaming (FillRow + Draw_TileRow + CopyBlockColumn) — the current pin
+
+`pass2-hv-streaming` (aeon `e08267f` / sigil `56b3509`): four cache-streaming producer
+restructures merged together — 1.1a FillRow nametable segments (−34.7% max-V), 1.1b
++collision segments (−60.6% cum FillRow), 1.2 Draw_TileRow_FromCache drop-zero-write
+segments (−68.8% max-V; buffer-content-CHANGING, clamp-rail + structural/inheritance
+verified), 1.3 CopyBlockColumn wrap-split (byte-preserving, −29%/call max-H; the full
+identity bar caught + fixed a column-preserving-wrap bug the emp==asm gate could not).
+Lag 0 every regime; max-V producer idle ~24%→~53%. Assembled `EndOfRom` UNCHANGED both
+shapes (`0x65B60` plain / `0x6765A` debug — the engine-block growth +$88/$56/$22/$42
+was absorbed by `org $10000`); the `.bin` size delta vs the 2026-07-16 pin is the
+convsym symbol appendix reflecting the shifted/added labels. **PROVENANCE-HYGIENE
+NOTE:** the initial 1.3 checkpoint mis-cited the PRE-FIX BUGGY build (debug `59157ab2`
+/ plain `df2f9b7e`, SAME sizes) — the `movea.l`→`suba.w` wrap fix changed bytes not
+length, so the size half of the pair gave zero signal and the CRC was hashed at the
+wrong moment; the values below are the FIXED committed code, fresh-rebuilt from the
+merged masters. Standing lesson (recorded): hash AFTER the final re-pin of a piece,
+never from a build predating any part of its commit. Gate maintenance: `pins.rs`
+re-derived via `repin` (tile_cache/plane_buffer regions; downstream bases slid
++$88/$56/$22/$42 cumulatively); `engine.inc` 4 gate-resume orgs per piece;
+`mixed_dac_rom.rs` Collision_GetType bra disp (F4CA→F3AA plain / F40A→F2EA debug across
+the four); `repin_pins.rs` SOUND_API base. Full strict suite **2271/0** on the merged
+masters (failures-first); `repin --check` clean; s4lint 410/2-skip; belt-and-braces
+unfrozen up+left drive clean.
+
+- Aeon repo master merge: **`e08267f`**; sigil master merge **`56b3509`**.
+- Non-debug `s4.bin`: **453519 bytes** (`EndOfRom` = `0x65B60`, unchanged), crc32
+  **`8b71f0c5`**, sha256
+  **`542024af3629ad23f158047a767747dd4f7af62b0d297e61785f40dfdc467e6d`**.
+- Debug `s4.debug.bin`: **461540 bytes** (`EndOfRom` = `0x6765A`, unchanged), crc32
+  **`217224d3`**, sha256
+  **`af34cec492527aad3abf25645371e736b34467481efa4169a9f101dbd9e77511`**.
