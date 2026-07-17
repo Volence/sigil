@@ -3,6 +3,7 @@
 //! Core IR / backend crates (D-P4.1); the evaluator (`value`, `eval`, `layout`)
 //! stays Core-free.
 pub mod ast;
+pub mod closure;
 pub mod eval;
 pub mod layout;
 pub mod lexer;
