@@ -254,15 +254,18 @@ fn transitive_leak_fires_as_transitive() {
     );
 }
 
-/// A register that is a param or an `out` result is ALLOWED — not a firing
-/// (the 3 SAT a4s land as `out(a4)`, and params are declarative bindings).
+/// An `out` result register is ALLOWED — a written result the caller reads is
+/// not a firing (the 3 SAT a4s land as `out(a4)`). A param that is only READ (not
+/// written) never enters `effective`, so it never fires either.
 #[test]
-fn params_and_out_are_allowed() {
+fn out_results_and_read_only_params_are_allowed() {
     let mut procs = BTreeMap::new();
     procs.insert(
         "DrawRings".to_string(),
         ProcNode {
-            local_writes: regs(&["a0", "a4", "d5"]),
+            // a4/d5 are written AND declared out; a0 is a READ-ONLY input (not in
+            // local_writes) — so nothing is an undeclared write.
+            local_writes: regs(&["a4", "d5"]),
             params: regs(&["a0"]),
             out: regs(&["a4", "d5"]),
             declared_clobbers: BTreeSet::new(),
@@ -272,6 +275,30 @@ fn params_and_out_are_allowed() {
     );
     let c = compute_closure(&procs, &BTreeMap::new());
     assert_eq!(check_firings(&procs, &c), vec![]);
+}
+
+/// A param is NOT an allowed write: a proc that WRITES its input register (and
+/// does not declare the effect via `clobbers`/`out`/verified `preserves`) FIRES.
+/// This is the soundness the strip fixes — otherwise a proc that trashes its own
+/// input would be invisible to the closure and to D1c.
+#[test]
+fn a_written_param_is_not_excused() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "TrashInput".to_string(),
+        ProcNode {
+            local_writes: regs(&["a0"]),
+            params: regs(&["a0"]),
+            declared_clobbers: BTreeSet::new(),
+            has_clobber_contract: true,
+            ..Default::default()
+        },
+    );
+    let c = compute_closure(&procs, &BTreeMap::new());
+    assert_eq!(
+        check_firings(&procs, &c),
+        vec![Firing { proc: "TrashInput".to_string(), reg: Some("a0".to_string()), transitive: false, unbounded: false }]
+    );
 }
 
 /// A NO-CONTRACT proc fires nothing even if it scribbles — invisible to the

@@ -407,3 +407,97 @@ fn displaced_sp_store_is_unverifiable() {
     );
     assert!(is_unverifiable(&s), "displaced-sp store → Unverifiable, got {s:?}");
 }
+
+// --- §5 linear-delta tracker (address-register arithmetic round-trips) --------
+// preserves(rN) where rN is a POINTER advanced and restored by static arithmetic
+// — the DeleteObject `.clear_slot` idiom (clear_longs advances (a0)+ N times, then
+// `lea -sizeof(Sst)(a0), a0` restores). §5's stack model cannot see this (no save);
+// the linear-delta tracker proves it: preserved iff the net Δ == 0 at every rts and
+// the register is only ever modified by trackable arithmetic.
+
+fn is_not_preserved(s: &PreserveStatus) -> bool {
+    matches!(s, PreserveStatus::NotPreserved)
+}
+
+/// a0 advanced by two `(a0)+` (+4 each) then restored by `lea -8(a0), a0` — net
+/// Δ == 0 → Verified (the DeleteObject shape, straight-line after comptime fold).
+#[test]
+fn pointer_advance_then_restore_verifies() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l d0, (a0)+\n\
+             move.l d0, (a0)+\n\
+             lea -8(a0), a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "advance +8 then lea -8 → Δ=0 → Verified, got {s:?}");
+}
+
+/// The restoring `lea` is MISSING — a0 ends +8 from entry → NotPreserved (a
+/// genuinely-advanced pointer must not be falsely verified).
+#[test]
+fn pointer_advance_without_restore_not_preserved() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l d0, (a0)+\n\
+             move.l d0, (a0)+\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_not_preserved(&s), "Δ=+8 at rts → NotPreserved, got {s:?}");
+}
+
+/// A RUNTIME loop advances a0 a trip-count-dependent number of times — the delta
+/// is not statically known (the loop join reconciles Δ=0 with Δ=+4 → untrackable)
+/// → must NOT be falsely verified.
+#[test]
+fn runtime_loop_advance_is_not_falsely_verified() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0-d1) {\n\
+             moveq #3, d1\n\
+         .loop:\n\
+             move.l d0, (a0)+\n\
+             dbf d1, .loop\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(!is_verified(&s), "runtime-variable Δ must not verify, got {s:?}");
+}
+
+/// adda/suba immediates accumulate too: `adda.w #6, a0` then `suba.w #6, a0` → Δ=0.
+#[test]
+fn adda_suba_immediates_round_trip_verifies() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             adda.w #6, a0\n\
+             move.w d0, (a0)\n\
+             suba.w #6, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "adda +6 then suba -6 → Δ=0 → Verified, got {s:?}");
+}
+
+/// A FRESH load of the register (`movea.l`) makes the delta untrackable — even if
+/// followed by arithmetic that nets zero, the value is no longer entry+Δ.
+#[test]
+fn fresh_load_makes_delta_untrackable() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0/a1) {\n\
+             movea.l a1, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(!is_verified(&s), "a0 loaded from a1 → not its entry value, got {s:?}");
+}
