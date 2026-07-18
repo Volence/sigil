@@ -245,6 +245,32 @@ fn dbf_loop_between_save_and_restore_preserves() {
     assert!(is_verified(&s), "dbf-loop save/restore → Verified, got {s:?}");
 }
 
+/// REGRESSION PIN for the shared-CFG `dbcc dN, label` target resolution (the
+/// checkpoint's finding). `dbcc`'s label is its SECOND operand; if the CFG reads
+/// the FIRST (`ops.first()` — the counter register), the taken edge misresolves
+/// to an external `Defer` and the loop-carried save falsely reports NotPreserved.
+/// Here a0 is preserved ONLY because the `dbcc` back-edge stays local: the pop
+/// after the loop restores it. A first-operand regression flips this to
+/// NotPreserved. (`dbeq`/`dbcc`/`dbf` all share the two-operand shape.)
+#[test]
+fn dbcc_target_is_second_operand() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0, d1, a1) {\n\
+             move.l  a0, -(sp)\n\
+             lea     A, a0\n\
+             moveq   #3, d1\n\
+         .scan:\n\
+             tst.b   (a0)+\n\
+             dbeq    d1, .scan\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "dbcc second-operand target must resolve local, got {s:?}");
+}
+
 // --- soundness bailouts ----------------------------------------------------
 
 /// Computed sp: an `adda.w #n, sp` moves the stack pointer by an amount the slot

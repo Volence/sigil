@@ -23,6 +23,7 @@ use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Ite
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
 use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
+use crate::preserves::{find_dead_saves, DeadSave};
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
@@ -63,6 +64,11 @@ pub struct ContractReport {
     pub extern_count: usize,
     /// How many contract types.
     pub contract_type_count: usize,
+    /// The §6/D1d `[proc.dead-save]` firings: a verified save/restore of a
+    /// register the bracketed callee (per the closure's VERIFIED `effective`
+    /// set) provably preserves — the pass-3 dead-save worklist. Sorted
+    /// (proc, reg, span).
+    pub dead_saves: Vec<DeadSave>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -133,6 +139,16 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         (&a.proc, &a.callee, &a.flag).cmp(&(&b.proc, &b.callee, &b.flag))
     });
 
+    // D1d dead-save worklist: run over every proc's CodeBuf against the closure's
+    // VERIFIED effective sets (never raw declared text — pass-3 cuts code on this).
+    let mut dead_saves: Vec<DeadSave> = Vec::new();
+    for pb in &proc_bufs {
+        dead_saves.extend(find_dead_saves(&pb.name, &pb.buf.items, &closure.effective));
+    }
+    dead_saves.sort_by(|a, b| {
+        (&a.proc, a.reg, a.span.start).cmp(&(&b.proc, b.reg, b.span.start))
+    });
+
     ContractReport {
         closure,
         firings,
@@ -141,6 +157,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         proc_count,
         extern_count,
         contract_type_count,
+        dead_saves,
     }
 }
 

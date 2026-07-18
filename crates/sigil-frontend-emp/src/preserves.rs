@@ -27,10 +27,12 @@
 //! none, the D2.32 principle kept). The movem entry/exit pair is the trivial fast
 //! path of this same analysis — D2.32 subsumed.
 
+use crate::closure::RegEffect;
 use crate::flag_check::{Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg};
-use std::collections::{BTreeMap, VecDeque};
+use sigil_span::Span;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// The proof outcome for one checked register.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -355,6 +357,288 @@ fn join(acc: &mut State, other: &State) -> Result<(), ()> {
     }
     for i in 0..16 {
         acc.entry[i] = acc.entry[i] && other.entry[i];
+    }
+    Ok(())
+}
+
+// ===========================================================================
+// §6 / D1d — [proc.dead-save]: a verified save/restore pair for a register the
+// bracketed callee provably preserves. The pass-3 dead-save worklist.
+// ===========================================================================
+
+/// One dead save: proc `proc` saves `reg` across the call(s) `callees` (all of
+/// which preserve `reg`), so the save/restore is redundant. `span` is the saving
+/// instruction's site (the worklist's file:line).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeadSave {
+    pub proc: String,
+    pub reg: Reg,
+    pub callees: Vec<String>,
+    pub span: Span,
+}
+
+/// A dead-save stack slot: which register's value it holds, the push site, and —
+/// accumulated over the span — whether the register was clobbered (a direct write
+/// or a non-preserving call ⇒ the save is genuinely needed) and which callees it
+/// bracketed.
+#[derive(Clone, PartialEq, Eq)]
+struct DsSlot {
+    reg: Option<Reg>,
+    push_idx: usize,
+    clobbered: bool,
+    callees: BTreeSet<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct DsState {
+    stack: Vec<DsSlot>,
+}
+
+/// Does callee `c` clobber `r`, per the closure's VERIFIED `effective` set? A
+/// callee absent from the map is a hole → conservatively clobbers everything
+/// (never report a dead save across an unknown callee). `⊤` likewise clobbers all.
+fn callee_clobbers(effective: &BTreeMap<String, RegEffect>, c: &str, r: Reg) -> bool {
+    match effective.get(c) {
+        None => true,
+        Some(e) => e.top || e.regs.contains(&reg_name(r)),
+    }
+}
+
+fn reg_name(r: Reg) -> String {
+    r.to_string()
+}
+
+/// A pending dead-save record, merged across every restore site of one push.
+struct DeadRec {
+    callees: BTreeSet<String>,
+    any_clobbered: bool,
+    span: Span,
+}
+
+/// Find every `[proc.dead-save]` in a proc's evaluated CodeBuf: a verified
+/// save/restore of a register that nothing in its span clobbers (every bracketed
+/// call PRESERVES it, per `effective`, and there is no direct scratch write). One
+/// clobbering path anywhere suppresses the firing (the save is needed there).
+pub fn find_dead_saves(
+    proc_name: &str,
+    items: &[CodeItem],
+    effective: &BTreeMap<String, RegEffect>,
+) -> Vec<DeadSave> {
+    let cfg = Cfg::build(items);
+    let Some(entry_idx) = items
+        .iter()
+        .position(|it| matches!(it, CodeItem::Instr { .. }))
+    else {
+        return Vec::new();
+    };
+
+    // Restore sites merge into this map, keyed by (reg, push site).
+    let mut recs: BTreeMap<(Reg, usize), DeadRec> = BTreeMap::new();
+    let mut in_state: BTreeMap<usize, DsState> = BTreeMap::new();
+    in_state.insert(entry_idx, DsState { stack: Vec::new() });
+    let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
+    let mut bailed = false;
+
+    while let Some(idx) = work.pop_front() {
+        let mut st = in_state[&idx].clone();
+        if ds_transfer(&cfg, idx, &mut st, effective, items, &mut recs) {
+            bailed = true;
+            break; // an unmodeled sp op — the stack model is unreliable
+        }
+        for edge in cfg.edges(idx) {
+            if let Edge::Follow(succ) = edge {
+                let changed = match in_state.get(&succ) {
+                    None => {
+                        in_state.insert(succ, st.clone());
+                        true
+                    }
+                    Some(existing) => {
+                        let mut merged = existing.clone();
+                        if ds_join(&mut merged, &st).is_err() {
+                            bailed = true;
+                            false
+                        } else if merged != *existing {
+                            in_state.insert(succ, merged);
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
+                if changed {
+                    work.push_back(succ);
+                }
+            }
+            // Abandon / Defer: a return / external transfer — the save's fate is
+            // decided at its pop, not here.
+        }
+        if bailed {
+            break;
+        }
+    }
+
+    if bailed {
+        return Vec::new();
+    }
+
+    // Fire for saves un-clobbered on EVERY restore path that bracket ≥1 call.
+    let mut out: Vec<DeadSave> = recs
+        .into_iter()
+        .filter(|((_, _), rec)| !rec.any_clobbered && !rec.callees.is_empty())
+        .map(|((reg, _), rec)| DeadSave {
+            proc: proc_name.to_string(),
+            reg,
+            callees: rec.callees.into_iter().collect(),
+            span: rec.span,
+        })
+        .collect();
+    out.sort_by(|a, b| (a.reg, a.span.start).cmp(&(b.reg, b.span.start)));
+    out
+}
+
+/// Apply instruction `idx` to the dead-save state. Returns `true` on a soundness
+/// bailout (unmodeled sp).
+fn ds_transfer(
+    cfg: &Cfg,
+    idx: usize,
+    st: &mut DsState,
+    effective: &BTreeMap<String, RegEffect>,
+    items: &[CodeItem],
+    recs: &mut BTreeMap<(Reg, usize), DeadRec>,
+) -> bool {
+    let Some((mnem, ops)) = cfg.instr(idx) else {
+        return false;
+    };
+
+    // A call: it clobbers every saved register in its effective set (that save is
+    // then needed); it PRESERVES the rest (recorded as a bracketed callee). Nets
+    // zero on the stack.
+    if is_call(mnem) {
+        if let Some(callee) = call_target(ops) {
+            for slot in st.stack.iter_mut() {
+                slot.callees.insert(callee.to_string());
+                if let Some(r) = slot.reg {
+                    if callee_clobbers(effective, callee, r) {
+                        slot.clobbered = true;
+                    }
+                }
+            }
+        } else {
+            // An indirect call — unknown effect; every live save is needed.
+            for slot in st.stack.iter_mut() {
+                slot.clobbered = true;
+            }
+        }
+        return false;
+    }
+
+    if sp_hazard(ops) {
+        return true;
+    }
+
+    // PUSH.
+    if is_push(ops) {
+        if let Some(mask) = reglist_mask(ops) {
+            for r in expand_mask(mask).into_iter().rev() {
+                st.stack.push(DsSlot { reg: Some(r), push_idx: idx, clobbered: false, callees: BTreeSet::new() });
+            }
+        } else {
+            let reg = match ops.first() {
+                Some(CodeOperand::Reg(r)) => Some(*r),
+                _ => None,
+            };
+            st.stack.push(DsSlot { reg, push_idx: idx, clobbered: false, callees: BTreeSet::new() });
+        }
+        return false;
+    }
+
+    // POP — record each clean restore into the dead-save map.
+    if is_pop(ops) {
+        if let Some(mask) = reglist_mask(ops) {
+            for r in expand_mask(mask) {
+                if let Some(slot) = st.stack.pop() {
+                    record_restore(slot, r, items, recs);
+                }
+            }
+        } else if let Some(CodeOperand::Reg(dst)) = ops.last() {
+            if let Some(slot) = st.stack.pop() {
+                record_restore(slot, *dst, items, recs);
+            }
+        } else {
+            st.stack.pop();
+        }
+        return false;
+    }
+
+    // PEEK — restores mid-span without popping; not a clobber.
+    if is_peek(mnem, ops) {
+        return false;
+    }
+
+    // A plain instruction: a direct write to a saved register means it is used as
+    // scratch → the save is needed.
+    for r in instr_written_regs(mnem, ops) {
+        if r == Reg::A7 {
+            continue;
+        }
+        for slot in st.stack.iter_mut() {
+            if slot.reg == Some(r) {
+                slot.clobbered = true;
+            }
+        }
+    }
+    false
+}
+
+/// A clean restore of `r` from `slot` (slot held `r`'s value) merges into the
+/// dead-save record for that (reg, push) pair. A mismatched restore (the slot
+/// held a different register — a deliberate move-through-stack like
+/// load_object's a1→a2) is NOT a preservation and is ignored.
+fn record_restore(
+    slot: DsSlot,
+    r: Reg,
+    items: &[CodeItem],
+    recs: &mut BTreeMap<(Reg, usize), DeadRec>,
+) {
+    if slot.reg != Some(r) {
+        return;
+    }
+    let span = match &items[slot.push_idx] {
+        CodeItem::Instr { span, .. } => *span,
+        _ => return,
+    };
+    let rec = recs.entry((r, slot.push_idx)).or_insert(DeadRec {
+        callees: BTreeSet::new(),
+        any_clobbered: false,
+        span,
+    });
+    rec.callees.extend(slot.callees.iter().cloned());
+    rec.any_clobbered |= slot.clobbered;
+}
+
+/// The call target symbol (the last `Sym` operand), or `None` for an indirect
+/// call.
+fn call_target(ops: &[CodeOperand]) -> Option<&str> {
+    ops.iter().rev().find_map(|o| match o {
+        CodeOperand::Sym(name) => Some(name.as_str()),
+        _ => None,
+    })
+}
+
+/// Join `other` into `acc` for the dead-save dataflow. Differing depth ⇒ bail.
+/// Slots meet: register identity/push-site must agree (else disable the slot);
+/// `clobbered` ORs (needed on either path ⇒ needed) and `callees` unions — both
+/// the SAFE direction for a code-cutting worklist.
+fn ds_join(acc: &mut DsState, other: &DsState) -> Result<(), ()> {
+    if acc.stack.len() != other.stack.len() {
+        return Err(());
+    }
+    for (a, b) in acc.stack.iter_mut().zip(other.stack.iter()) {
+        if a.reg != b.reg || a.push_idx != b.push_idx {
+            a.reg = None;
+        }
+        a.clobbered |= b.clobbered;
+        a.callees.extend(b.callees.iter().cloned());
     }
     Ok(())
 }
