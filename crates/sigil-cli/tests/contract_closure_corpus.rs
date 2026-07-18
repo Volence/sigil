@@ -30,6 +30,39 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// The substrate gate — DROPS ARE LOUD. The contract analysis evaluates each
+/// `.emp` against the whole-corpus TYPE ENVIRONMENT (every struct/const/type
+/// declaration in scope), so no field operand on an imported struct silently
+/// vanishes from an analysis buffer. This pins the count of dropped instructions
+/// to ZERO across the corpus: a silent under-approximation of any downstream
+/// analysis (write set, clobber closure, dead-save, liveness) can no longer
+/// return. It is the load-bearing precondition of every other contract gate —
+/// before the corpus type environment, ~150 instructions across 24 files were
+/// dropping, hiding real register effects beneath the closure/dead-save gates.
+#[test]
+fn corpus_has_zero_dropped_instructions() {
+    let Ok(aeon) = std::env::var("AEON_DIR") else {
+        eprintln!("skip: AEON_DIR not set");
+        return;
+    };
+    let aeon = PathBuf::from(aeon);
+    let mut paths = Vec::new();
+    emp_files(&aeon.join("engine"), &mut paths);
+    emp_files(&aeon.join("games"), &mut paths);
+    paths.sort();
+    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+    let files: Vec<_> = paths
+        .iter()
+        .map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0)
+        .collect();
+    let r = analyze_corpus(&files);
+    assert_eq!(
+        r.dropped_instrs, 0,
+        "instructions dropped from analysis buffers (missing import/type in scope?): {:?}",
+        r.dropped_by_proc
+    );
+}
+
 #[test]
 fn corpus_closure_residue_is_empty_the_error_gate() {
     let Ok(aeon) = std::env::var("AEON_DIR") else {
