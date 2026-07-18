@@ -21,6 +21,7 @@
 //! CCR). `sr`/full-CCR liveness stays S2-D7; this is per-call-site carry def-use
 //! only (§6 scope fence).
 
+use crate::calls::call_unconditional_outs;
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_span::Span;
@@ -402,6 +403,7 @@ pub fn check_result_invalid_path(
     proc_name: &str,
     items: &[CodeItem],
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<FlagFiring> {
     let cfg = Cfg::build(items);
     let mut firings = Vec::new();
@@ -416,7 +418,7 @@ pub fn check_result_invalid_path(
         for (reg_name, cc) in conds {
             let Some(reg) = Reg::from_name(reg_name) else { continue };
             let Some(invalid_start) = cfg.invalid_edge(idx, cc) else { continue };
-            if reads_reg_before_redefine(&cfg, invalid_start, reg) {
+            if reads_reg_before_redefine(&cfg, invalid_start, reg, callee_uncond_out) {
                 firings.push(FlagFiring {
                     proc: proc_name.to_string(),
                     callee: callee.to_string(),
@@ -436,7 +438,12 @@ pub fn check_result_invalid_path(
 /// Breadth-first: does any path from `start` READ `reg` (as a source / address
 /// base) before `reg` is redefined (written) or the path exits? Visited-set for
 /// joins.
-fn reads_reg_before_redefine(cfg: &Cfg, start: usize, reg: Reg) -> bool {
+fn reads_reg_before_redefine(
+    cfg: &Cfg,
+    start: usize,
+    reg: Reg,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+) -> bool {
     let mut visited: BTreeSet<usize> = BTreeSet::new();
     let mut queue: VecDeque<usize> = VecDeque::from([start]);
     while let Some(idx) = queue.pop_front() {
@@ -449,6 +456,17 @@ fn reads_reg_before_redefine(cfg: &Cfg, start: usize, reg: Reg) -> bool {
         // A READ = mentioned but not (only) written this instruction.
         if mentioned.contains(&reg) && !written.contains(&reg) {
             return true;
+        }
+        // A CALL that UNCONDITIONALLY redefines reg kills the conditional taint on
+        // this path (the SAME shared fact must-def credits as a definition): reg
+        // holds a produced value on every return edge, so a downstream read sees
+        // the fresh value, not the invalid-path trash. UNCONDITIONAL only — a
+        // conditional out(rM if cc2) is still trash on its !cc2 edge and must
+        // NOT count as a redefine (else a real invalid-path read ships unflagged).
+        if call_unconditional_outs(mnem, ops, callee_uncond_out)
+            .is_some_and(|outs| outs.contains(&reg.to_string()))
+        {
+            continue;
         }
         // A pure redefine kills the invalid result on this path.
         if written.contains(&reg) {

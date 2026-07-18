@@ -222,6 +222,17 @@ fn discards_suppresses_the_firing() {
 /// Eval the first proc and run the invalid-path check, with `callee` declared to
 /// return `reg` valid only when `cc` holds.
 fn run_cond(src: &str, callee: &str, reg: &str, cc: &str) -> Vec<FlagFiring> {
+    run_invalid(src, &[(callee, reg, cc)], &[])
+}
+
+/// General form: `cond` = conditional-out callees `(callee, reg, cc)`; `uncond` =
+/// callees with UNCONDITIONAL outs `(callee, &[regs])` (which the shared
+/// call-aware primitive treats as taint-killing redefines).
+fn run_invalid(
+    src: &str,
+    cond: &[(&str, &str, &str)],
+    uncond: &[(&str, &[&str])],
+) -> Vec<FlagFiring> {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "parse: {diags:?}");
     let p = file
@@ -236,8 +247,17 @@ fn run_cond(src: &str, callee: &str, reg: &str, cc: &str) -> Vec<FlagFiring> {
         eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
     let buf = buf.expect("codebuf");
     let mut cc_callees: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    cc_callees.insert(callee.to_string(), vec![(reg.to_string(), cc.to_string())]);
-    check_result_invalid_path(&p.name, &buf.items, &cc_callees)
+    for (callee, reg, cc) in cond {
+        cc_callees
+            .entry(callee.to_string())
+            .or_default()
+            .push((reg.to_string(), cc.to_string()));
+    }
+    let mut uncond_out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (callee, regs) in uncond {
+        uncond_out.insert(callee.to_string(), regs.iter().map(|s| s.to_string()).collect());
+    }
+    check_result_invalid_path(&p.name, &buf.items, &cc_callees, &uncond_out)
 }
 
 /// `out(a1 if cc)` — a1 valid only when carry CLEAR. After the call, `bcs .fail`
@@ -321,4 +341,110 @@ fn non_flag_callee_is_never_checked() {
         NONE,
     );
     assert!(f.is_empty(), "PlainSub returns no flag — nothing to consume: {f:?}");
+}
+
+// --- §6 (A): an intervening UNCONDITIONAL out() kills the conditional taint ----
+//
+// FillRow's shape: a conditional-out callee, then a call that unconditionally
+// re-produces the register, then a read on the invalid edge. The intervening
+// unconditional out redefines the register, so the read sees the fresh value —
+// NOT the invalid-path trash. Credited via the SHARED `call_unconditional_outs`
+// primitive (the same fact must-def uses). GUARDRAIL: a CONDITIONAL intervening
+// out must NEVER count as a redefine, or a real invalid-path read ships unflagged.
+
+/// STILL-FIRES: conditional out read on the invalid (!eq) edge with NO intervening
+/// redefine → fires. (The baseline the credit must not blind.)
+#[test]
+fn invalid_path_no_redefine_still_fires() {
+    let f = run_invalid(
+        "module m\n\
+         proc P () clobbers(d0-d1/a1) {\n\
+             jbsr Find\n\
+             beq .have\n\
+             move.w (a1), d1\n\
+             rts\n\
+         .have:\n\
+             move.w (a1), d0\n\
+             rts\n\
+         }\n",
+        &[("Find", "a1", "eq")],
+        &[],
+    );
+    assert_eq!(f.len(), 1, "a1 read on the !eq edge, no redefine → fires: {f:?}");
+    assert!(matches!(f[0].kind, FlagFiringKind::InvalidPathRead { .. }));
+}
+
+/// NOW-CLEARS: FillRow shape — conditional out, then an intervening UNCONDITIONAL
+/// out(a1) (Decomp), then the read → the read sees the fresh a1, no firing.
+#[test]
+fn invalid_path_uncond_out_redefine_clears() {
+    let f = run_invalid(
+        "module m\n\
+         proc P () clobbers(d0-d1/a1) {\n\
+             jbsr Find\n\
+             beq .have\n\
+             jbsr Decomp\n\
+             move.w (a1), d1\n\
+             rts\n\
+         .have:\n\
+             move.w (a1), d0\n\
+             rts\n\
+         }\n",
+        &[("Find", "a1", "eq")],
+        &[("Decomp", &["a1"])],
+    );
+    assert!(f.is_empty(), "Decomp's unconditional out(a1) redefines a1 before the read: {f:?}");
+}
+
+/// TRAP (guardrail 1): conditional out, then a CONDITIONAL out on the SAME reg
+/// (Find2, NOT unconditional), then the read on the invalid edge → must STILL
+/// fire. A conditional out is trash on its own invalid edge and is NEVER a
+/// redefine; crediting it would false-NEGATIVE a real invalid-path read.
+#[test]
+fn invalid_path_conditional_out_does_not_kill_trap() {
+    let f = run_invalid(
+        "module m\n\
+         proc P () clobbers(d0-d1/a1) {\n\
+             jbsr Find\n\
+             beq .have\n\
+             jbsr Find2\n\
+             move.w (a1), d1\n\
+             rts\n\
+         .have:\n\
+             move.w (a1), d0\n\
+             rts\n\
+         }\n",
+        &[("Find", "a1", "eq"), ("Find2", "a1", "ne")],
+        &[], // Find2 is CONDITIONAL — NOT in the unconditional-out map
+    );
+    assert!(
+        f.iter().any(|x| matches!(&x.kind, FlagFiringKind::InvalidPathRead { reg, .. } if reg == "a1")
+            && x.callee == "Find"),
+        "Find2's CONDITIONAL out must NOT kill the taint — Find's invalid-path a1 read still fires: {f:?}"
+    );
+
+    // MUTATION (proves the guardrail is load-bearing, not decorative): if the fix
+    // WRONGLY credited Find2's out as an unconditional redefine, the taint would be
+    // killed and the read would ship unflagged — a false NEGATIVE on a live ERROR
+    // gate. Passing Find2 in the unconditional-out map simulates exactly that bug.
+    let weakened = run_invalid(
+        "module m\n\
+         proc P () clobbers(d0-d1/a1) {\n\
+             jbsr Find\n\
+             beq .have\n\
+             jbsr Find2\n\
+             move.w (a1), d1\n\
+             rts\n\
+         .have:\n\
+             move.w (a1), d0\n\
+             rts\n\
+         }\n",
+        &[("Find", "a1", "eq")],
+        &[("Find2", &["a1"])], // <-- the bug: treat the conditional out as unconditional
+    );
+    assert!(
+        weakened.is_empty(),
+        "mutation check: crediting Find2's out as unconditional silences the read \
+         (this is the false negative the guardrail prevents): {weakened:?}"
+    );
 }

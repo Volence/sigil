@@ -58,6 +58,27 @@ fn direct_target<'a>(mnem: &str, ops: &'a [CodeOperand]) -> Option<&'a str> {
     }
 }
 
+/// SHARED call-aware primitive for the caller-side ERROR gates (D1b must-def §6
+/// invalid-path). If `(mnem, ops)` is a DIRECT CALL to a known callee, its
+/// UNCONDITIONAL `out()` set — the registers it redefines with a produced value
+/// on EVERY return edge. **must-def** credits these as DEFINITIONS; **§6** credits
+/// them as taint-KILLING redefines. Both consume the SAME fact through this one
+/// function so the two gates cannot silently drift on what `out()` means.
+/// UNCONDITIONAL only: a conditional `out(rM if cc)` is trash on its `!cc` edge
+/// and is NEVER a redefine — `callee_uncond_out` must already exclude the
+/// conditional-out registers (the corpus caller subtracts them). Tails do not
+/// return, so calls only.
+pub(crate) fn call_unconditional_outs<'a>(
+    mnem: &str,
+    ops: &[CodeOperand],
+    callee_uncond_out: &'a BTreeMap<String, BTreeSet<String>>,
+) -> Option<&'a BTreeSet<String>> {
+    if !CALL_MNEMONICS.contains(&mnem) {
+        return None;
+    }
+    callee_uncond_out.get(direct_target(mnem, ops)?)
+}
+
 /// The register-name write set of an instruction (canonical `d0`..`a7`
 /// spellings). Combines the shared [`instr_written_regs`] detector (dest register
 /// plus auto-inc/dec bases) with the movem LOAD form. A movem whose register list
@@ -133,13 +154,9 @@ fn must_defined_in(
             // reglist, so the raw `node.out` is NOT safe to credit). Crediting a
             // conditional out would over-approximate must-def = a FALSE NEGATIVE
             // on an ERROR gate; edge-sensitive success-edge crediting is deferred
-            // to spec. Tails do not return into this proc, so calls only.
-            if CALL_MNEMONICS.contains(&mnem) {
-                if let Some(callee) = direct_target(mnem, ops) {
-                    if let Some(outs) = callee_out.get(callee) {
-                        out.extend(outs.iter().cloned());
-                    }
-                }
+            // to spec. Via the SHARED primitive §6 also consumes.
+            if let Some(outs) = call_unconditional_outs(mnem, ops, callee_out) {
+                out.extend(outs.iter().cloned());
             }
         }
         for edge in cfg.edges(idx) {
