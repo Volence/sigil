@@ -409,9 +409,11 @@ fn preserves_matching_movem_pair_ok() {
 }
 
 #[test]
-fn preserves_mask_mismatch_errors() {
-    // Declares d0-d1/a0 but the pair saves/restores d0-d2/a0 — the attribute
-    // is stale (or the movem wrong); name both sides.
+fn preserves_superset_save_verifies_declared_subset() {
+    // §5 upgrade over the D2.32 intersects-must-equal rule: a movem that saves a
+    // SUPERSET of the declared set still preserves the declared subset (each
+    // declared register round-trips). This is the Collected_CheckRing shape
+    // (`movem.l d0-d1` saves both, but only `d1` is declared preserved). No error.
     let src = "module m\n\
                proc h() preserves(d0-d1/a0) {\n\
                \x20   movem.l d0-d2/a0, -(sp)\n\
@@ -419,51 +421,67 @@ fn preserves_mask_mismatch_errors() {
                \x20   rts\n\
                }\n";
     let (_module, diags) = lower(src);
-    let hit = diags.iter().find(|d| d.message.contains("[proc.preserves-mismatch]"));
-    let hit = hit.unwrap_or_else(|| panic!("expected [proc.preserves-mismatch], got: {diags:?}"));
-    assert_eq!(hit.level, Level::Error);
     assert!(
-        hit.message.contains("d0-d1/a0") && hit.message.contains("d0-d2/a0"),
-        "the mismatch must name both the declared and the actual set: {}",
-        hit.message
+        !diags.iter().any(|d| d.message.contains("[proc.preserves")),
+        "a superset save still verifies the declared subset: {diags:?}"
     );
 }
 
 #[test]
-fn preserves_pop_mask_must_match_too() {
-    // Push matches the declaration but the restore differs — an asymmetric
-    // save/restore corrupts registers; still a mismatch error.
+fn preserves_asymmetric_restore_of_clobbered_reg_errors() {
+    // a0 is saved, CLOBBERED, then the restore pops into a1 (a typo/bug) — a0 is
+    // never round-tripped, so its declared preserves is unverifiable.
     let src = "module m\n\
-               proc h() preserves(d0-d1/a0) {\n\
-               \x20   movem.l d0-d1/a0, -(sp)\n\
-               \x20   movem.l (sp)+, d0-d1/a1\n\
+               proc h() clobbers(a1) preserves(a0) {\n\
+               \x20   move.l  a0, -(sp)\n\
+               \x20   lea     X, a0\n\
+               \x20   movea.l (sp)+, a1\n\
                \x20   rts\n\
                }\n";
     let (_module, diags) = lower(src);
     assert!(
-        has_tag(&diags, "[proc.preserves-mismatch]"),
-        "a restore differing from the declared set must be a mismatch: {diags:?}"
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a clobbered reg restored into the WRONG register is unverifiable: {diags:?}"
     );
 }
 
 #[test]
-fn preserves_missing_pair_errors() {
-    // Declares preserves but the body never saves to the stack.
+fn preserves_untouched_regs_are_vacuously_preserved() {
+    // §5's "or never writes it" clause: a proc that never touches the declared
+    // registers preserves them trivially — no save/restore needed, no error.
+    // (The D2.32 slice wrongly demanded a movem pair here.)
     let src = "module m\n\
                proc h() preserves(d0-d1/a0) {\n\
                \x20   nop\n\
                \x20   rts\n\
                }\n";
     let (_module, diags) = lower(src);
-    let hit = diags.iter().find(|d| d.message.contains("[proc.preserves-missing-pair]"));
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[proc.preserves")),
+        "untouched declared registers are vacuously preserved: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_clobber_without_restore_errors() {
+    // A declared register clobbered on the return path with no restore is a false
+    // contract → [proc.preserves-unverifiable].
+    let src = "module m\n\
+               proc h() preserves(d0-d1/a0) {\n\
+               \x20   lea     Somewhere, a0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags.iter().find(|d| d.message.contains("[proc.preserves-unverifiable]"));
     let hit =
-        hit.unwrap_or_else(|| panic!("expected [proc.preserves-missing-pair], got: {diags:?}"));
+        hit.unwrap_or_else(|| panic!("expected [proc.preserves-unverifiable], got: {diags:?}"));
     assert_eq!(hit.level, Level::Error);
 }
 
 #[test]
-fn preserves_pop_only_is_missing_pair() {
-    // A restore with no save is not a pair (order matters: save, then restore).
+fn preserves_pop_only_underflows() {
+    // A restore with no matching save pops past the tracked stack (the caller's
+    // frame / return address) — the model is inconsistent → unverifiable.
     let src = "module m\n\
                proc h() preserves(d0) {\n\
                \x20   movem.l (sp)+, d0\n\
@@ -471,8 +489,8 @@ fn preserves_pop_only_is_missing_pair() {
                }\n";
     let (_module, diags) = lower(src);
     assert!(
-        has_tag(&diags, "[proc.preserves-missing-pair]"),
-        "a pop-only body must be a missing pair: {diags:?}"
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a pop-only body underflows and is unverifiable: {diags:?}"
     );
 }
 
@@ -521,12 +539,12 @@ fn as_compat_does_not_silence_preserves() {
     // contracts (same rule as the falls_into adjacency error).
     let src = "module m\n@as_compat\n\
                proc h() preserves(d0-d1/a0) {\n\
-               \x20   nop\n\
+               \x20   moveq #0, d0\n\
                \x20   rts\n\
                }\n";
     let (_module, diags) = lower(src);
     assert!(
-        has_tag(&diags, "[proc.preserves-missing-pair]"),
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
         "@as_compat must not silence a declared preserves contract: {diags:?}"
     );
 }
@@ -611,8 +629,8 @@ fn preserves_early_exit_wrong_list_pop_is_caught() {
                }\n";
     let (_module, diags) = lower(src);
     assert!(
-        has_tag(&diags, "[proc.preserves-mismatch]"),
-        "the wrong-list early-exit pop must be caught: {diags:?}"
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "the wrong-list early-exit pop underflows and must be caught: {diags:?}"
     );
 }
 

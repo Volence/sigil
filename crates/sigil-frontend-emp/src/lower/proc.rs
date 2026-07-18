@@ -726,81 +726,40 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
         return; // sr-only contract: no movem pair to demand
     }
 
-    // Collect every stack movem (push to / pop from sp), with its size. The
-    // rule: every stack movem whose list INTERSECTS the declared set must
-    // EQUAL it (so a wrong-list early-exit restore is caught, while a
-    // DISJOINT nested save around an inner call stays none of our business),
-    // must be `movem.l` (a `.w` restore SIGN-EXTENDS each word — it does not
-    // preserve anything), and at least one matching save must precede the
-    // last matching restore.
-    let mut matching_push: Option<usize> = None;
-    let mut matching_pop: Option<usize> = None;
-    for (i, item) in buf.items.iter().enumerate() {
-        let CodeItem::Instr { mnemonic, size, ops, span } = item else { continue };
-        if mnemonic != "movem" {
-            continue;
-        }
-        let (mask, is_push) = match ops.as_slice() {
-            [CodeOperand::RegList(m), CodeOperand::PreDec(crate::value::Reg::A7)] => (*m, true),
-            [CodeOperand::PostInc(crate::value::Reg::A7), CodeOperand::RegList(m)] => (*m, false),
-            _ => continue,
-        };
-        if mask & declared == 0 {
-            continue; // disjoint nested save — not part of this contract
-        }
-        if *size != Some(crate::value::Width::L) {
-            push(
-                diags,
-                Level::Error,
-                *span,
-                format!(
-                    "[proc.preserves-word-pair] `{}` declares `preserves({})` but this stack \
-                     movem is not `movem.l` — a word-size restore sign-extends each register \
-                     and preserves nothing; use `movem.l`",
-                    proc.name,
-                    mask_reglist(declared),
-                ),
-            );
-            return;
-        }
-        if mask != declared {
-            push(
-                diags,
-                Level::Error,
-                *span,
-                format!(
-                    "[proc.preserves-mismatch] `{}` declares `preserves({})` but this stack \
-                     movem {} `{}` — every save/restore overlapping the declared set must \
-                     cover exactly that set; update the attribute or the movem",
-                    proc.name,
-                    mask_reglist(declared),
-                    if is_push { "saves" } else { "restores" },
-                    mask_reglist(mask),
-                ),
-            );
-            return;
-        }
-        if is_push {
-            if matching_push.is_none() {
-                matching_push = Some(i);
-            }
-        } else {
-            matching_pop = Some(i);
-        }
-    }
-    let paired = matches!((matching_push, matching_pop), (Some(p), Some(q)) if p < q);
-    if !paired {
+    // §5 verified preserves (the dataflow upgrade — subsumes the D2.32 movem-pair
+    // slice, which becomes its trivial fast path). Every declared register must be
+    // provably preserved by symbolic stack tracking ([`crate::preserves`]): its
+    // ENTRY value restored on every return path (individual push/pop, `(sp)` peek,
+    // mid-body or entry/exit movem, or a superset save), or never written. A
+    // register that is NOT provably preserved — a soundness bailout (computed sp,
+    // sp escape, aliasing store, stack underflow), a `.w` restore (sign-extends),
+    // or a genuine clobber on some exit — is `[proc.preserves-unverifiable]`
+    // (error: a wrong contract is worse than none, the D2.32 principle kept).
+    // `[proc.preserves-missing-pair]`/`-mismatch`/`-word-pair` retire, subsumed.
+    let regs = crate::preserves::expand_mask(declared);
+    let status = crate::preserves::verify_preserved(&buf.items, &regs);
+    let unverifiable: Vec<String> = regs
+        .iter()
+        .filter(|r| {
+            !matches!(status.get(r), Some(crate::preserves::PreserveStatus::Verified))
+        })
+        .map(|r| r.to_string())
+        .collect();
+    if !unverifiable.is_empty() {
         push(
             diags,
             Level::Error,
             proc.span,
             format!(
-                "[proc.preserves-missing-pair] `{}` declares `preserves({})` but its body has \
-                 no `movem.l <list>, -(sp)` … `movem.l (sp)+, <list>` save/restore pair — the \
-                 syntactic slice (S2-D6b) verifies the literal movem pair, so a proc that \
-                 preserves registers another way cannot declare `preserves` yet",
+                "[proc.preserves-unverifiable] `{}` declares `preserves({})` but {} not \
+                 provably preserved — no save/restore round-trips {} entry value on every \
+                 return path (individual push/pop, `movem.l` pair, or `(sp)` peek), an \
+                 unmodeled sp op blocks the proof, or a `.w` restore sign-extends and \
+                 preserves nothing",
                 proc.name,
                 mask_reglist(declared),
+                unverifiable.join(", "),
+                if unverifiable.len() == 1 { "its" } else { "their" },
             ),
         );
     }

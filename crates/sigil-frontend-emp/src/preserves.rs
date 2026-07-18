@@ -30,7 +30,7 @@
 use crate::closure::RegEffect;
 use crate::flag_check::{Cfg, Edge};
 use crate::lower::instr_written_regs;
-use crate::value::{CodeItem, CodeOperand, Reg};
+use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -62,10 +62,18 @@ fn reg_idx(r: Reg) -> usize {
     r as usize
 }
 
+/// The resolved operand size of instruction item `idx`, if any.
+fn instr_size(items: &[CodeItem], idx: usize) -> Option<Width> {
+    match items.get(idx) {
+        Some(CodeItem::Instr { size, .. }) => *size,
+        _ => None,
+    }
+}
+
 /// Expand a `movem` `RegList` bitmask to registers in canonical ASCENDING order
 /// (`bit0=d0`..`bit7=d7`, `bit8=a0`..`bit15=a7` — the `CodeOperand::RegList`
 /// convention shared with `check_preserves`).
-fn expand_mask(mask: u16) -> Vec<Reg> {
+pub(crate) fn expand_mask(mask: u16) -> Vec<Reg> {
     const ORDER: [Reg; 16] = [
         Reg::D0, Reg::D1, Reg::D2, Reg::D3, Reg::D4, Reg::D5, Reg::D6, Reg::D7,
         Reg::A0, Reg::A1, Reg::A2, Reg::A3, Reg::A4, Reg::A5, Reg::A6, Reg::A7,
@@ -98,6 +106,10 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
     // Which registers are ever clobbered (a generic write, or ANY call — a call
     // conservatively clobbers all). Used only to let a NEVER-written register
     // stay Verified even past a bailout (its value cannot change).
+    // A register is "written" if ANY instruction touches it — INCLUDING a pop/peek
+    // (which writes the register, cleanly or, under a bailout like an underflow,
+    // with garbage). Only a register never mentioned as a write anywhere stays
+    // preserved past a bailout (its value is immutable).
     let mut ever_clobbered = [false; 16];
     let mut has_call = false;
     for it in items {
@@ -105,14 +117,19 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
             if is_call(mnemonic) {
                 has_call = true;
             }
-            // Skip the clean restore/peek destination write — that RE-sets the
-            // entry value, it is not a clobber.
-            if is_pop(ops) || is_peek(mnemonic, ops) {
-                continue;
-            }
             for r in instr_written_regs(mnemonic, ops) {
                 if r != Reg::A7 {
                     ever_clobbered[reg_idx(r)] = true;
+                }
+            }
+            // `instr_written_regs` does not expand a movem reglist — a register
+            // that only ever appears in a save/restore movem still participates
+            // in stack traffic, so it is NOT "never written".
+            if let Some(mask) = reglist_mask(ops) {
+                for r in expand_mask(mask) {
+                    if r != Reg::A7 {
+                        ever_clobbered[reg_idx(r)] = true;
+                    }
                 }
             }
         }
@@ -139,7 +156,7 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
     while let Some(idx) = work.pop_front() {
         let mut st = in_state[&idx].clone();
         // Apply the instruction's effect to `st` (in place).
-        if let Some(reason) = transfer(&cfg, idx, &mut st) {
+        if let Some(reason) = transfer(&cfg, idx, &mut st, items) {
             bailed.get_or_insert(reason);
             // A bail corrupts the stack model globally; stop propagating.
             continue;
@@ -181,12 +198,17 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
                     }
                 }
                 Edge::Defer => {
-                    // External tail transfer: the register's final value depends
-                    // on code we cannot see — not locally preservable.
-                    saw_return = true;
-                    for r in check {
-                        *all_returns_preserve.get_mut(r).unwrap() = false;
-                    }
+                    // An external tail transfer (`jmp`/`bra` to a non-local
+                    // symbol) is NOT an `rts` of THIS proc. `preserves(rN)`
+                    // constrains the proc's own return (`rts`/`rte`) paths; a tail
+                    // transfer either diverges (a noreturn `raise_error`/error
+                    // handler — no return obligation at all) or is a real tail
+                    // call whose preservation is a TRANSITIVE property the closure
+                    // accounts for via its tail edge (corpus `TAIL_MNEMONICS`).
+                    // Either way it is not a local counterexample — ignore it.
+                    // (This mirrors D2.32, which verified the movem pair ignoring
+                    // control flow. A proc whose ONLY exit is a tail call verifies
+                    // vacuously here; the closure supplies the transitive truth.)
                 }
             }
         }
@@ -253,8 +275,11 @@ fn sp_hazard(ops: &[CodeOperand]) -> bool {
 
 /// Apply instruction `idx`'s effect to `st`. Returns `Some(reason)` on a
 /// soundness bailout.
-fn transfer(cfg: &Cfg, idx: usize, st: &mut State) -> Option<String> {
+fn transfer(cfg: &Cfg, idx: usize, st: &mut State, items: &[CodeItem]) -> Option<String> {
     let (mnem, ops) = cfg.instr(idx)?;
+    // Only a FULL (`.l`) transfer round-trips an address/data register; a `.w`/`.b`
+    // restore moves or sign-extends a fragment and preserves nothing.
+    let is_long = matches!(instr_size(items, idx), Some(Width::L));
 
     // A call clobbers every register (no local callee contract) but nets zero on
     // the stack (its pushed return address is popped by its own rts).
@@ -287,29 +312,36 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State) -> Option<String> {
         return None;
     }
 
-    // POP — `(sp)+`.
+    // POP — `(sp)+`. Popping more slots than are tracked underflows into the
+    // caller's frame / return address — the model is inconsistent → bail.
     if is_pop(ops) {
-        if let Some(mask) = reglist_mask(ops) {
-            // movem restore: pop in canonical ASCENDING order.
-            for r in expand_mask(mask) {
-                let slot = st.stack.pop().flatten();
-                st.entry[reg_idx(r)] = slot == Some(r);
-            }
-        } else if let Some(CodeOperand::Reg(dst)) = ops.last() {
+        let regs: Vec<Reg> = match reglist_mask(ops) {
+            Some(mask) => expand_mask(mask),
+            None => match ops.last() {
+                Some(CodeOperand::Reg(dst)) => vec![*dst],
+                _ => {
+                    st.stack.pop();
+                    return None;
+                }
+            },
+        };
+        if st.stack.len() < regs.len() {
+            return Some("stack underflow — pop drains more than was pushed".to_string());
+        }
+        // movem restores in canonical ascending order; a single pop is one reg.
+        for r in regs {
             let slot = st.stack.pop().flatten();
-            st.entry[reg_idx(*dst)] = slot == Some(*dst);
-        } else {
-            // `(sp)+` into a non-register destination just drops a slot.
-            st.stack.pop();
+            // A `.w`/`.b` restore does not round-trip the full register.
+            st.entry[reg_idx(r)] = is_long && slot == Some(r);
         }
         return None;
     }
 
-    // PEEK — `(sp)` (no stack change).
+    // PEEK — `(sp)` (no stack change), a full `.l` read of the top slot.
     if is_peek(mnem, ops) {
         if let Some(CodeOperand::Reg(dst)) = ops.last() {
             let top = st.stack.last().copied().flatten();
-            st.entry[reg_idx(*dst)] = top == Some(*dst);
+            st.entry[reg_idx(*dst)] = is_long && top == Some(*dst);
         }
         return None;
     }
@@ -492,7 +524,7 @@ pub fn find_dead_saves(
             span: rec.span,
         })
         .collect();
-    out.sort_by(|a, b| (a.reg, a.span.start).cmp(&(b.reg, b.span.start)));
+    out.sort_by_key(|d| (d.reg, d.span.start));
     out
 }
 

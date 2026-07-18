@@ -217,7 +217,10 @@ fn declared_verified_preserves_subtracts_over_corpus() {
 /// itself a D2.32 error at its own site — subtracting on an unproven claim would
 /// be unsound). This is the row-1030 individual-push class → G3.
 #[test]
-fn declared_unverifiable_preserves_does_not_subtract() {
+fn verified_individual_push_preserves_subtracts() {
+    // The G3 upgrade (§5): individual-push preserves is now VERIFIABLE, so a0 is
+    // subtracted from `effective` and does NOT fire — the AllocDynamic shape. (In
+    // G1/G2 the D2.32 movem-only slice could not verify this; it fired.)
     let r = analyze(&[
         "module m\n\
          proc P () clobbers() preserves(a0) {\n\
@@ -227,8 +230,29 @@ fn declared_unverifiable_preserves_does_not_subtract() {
              rts }\n",
     ]);
     assert!(
+        !fires(&r, "P", "a0"),
+        "individual-push preserves is §5-verified → a0 subtracted → must NOT fire: {:?}",
+        r.firings
+    );
+}
+
+#[test]
+fn genuinely_unverifiable_preserves_does_not_subtract() {
+    // A declared preserves whose proof BAILS (computed sp) is unverifiable → not
+    // subtracted → a0 still fires. (A wrong contract earns [proc.preserves-
+    // unverifiable] at lowering; the closure conservatively keeps a0.)
+    let r = analyze(&[
+        "module m\n\
+         proc P () clobbers() preserves(a0) {\n\
+             move.l a0, -(sp)\n\
+             lea Foo, a0\n\
+             adda.w #4, sp\n\
+             movea.l (sp)+, a0\n\
+             rts }\n",
+    ]);
+    assert!(
         fires(&r, "P", "a0"),
-        "individual-push preserves is unverifiable → a0 not subtracted → fires: {:?}",
+        "an unverifiable (bailed) preserves must NOT subtract → a0 fires: {:?}",
         r.firings
     );
 }

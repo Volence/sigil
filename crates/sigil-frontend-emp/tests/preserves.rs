@@ -273,6 +273,41 @@ fn dbcc_target_is_second_operand() {
 
 // --- soundness bailouts ----------------------------------------------------
 
+/// A `movem.w` restore SIGN-EXTENDS each word into the full 32-bit register — it
+/// does NOT preserve the register. A `.w` save/restore pair must NOT verify (the
+/// tranche-3 word-pair finding, now subsumed by §5's size-awareness).
+#[test]
+fn movem_w_pair_does_not_preserve() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers() {\n\
+             movem.w d0-d1, -(sp)\n\
+             moveq   #5, d0\n\
+             movem.w (sp)+, d0-d1\n\
+             rts\n\
+         }\n",
+        Reg::D1,
+    );
+    assert!(!is_verified(&s), "movem.w pair must not verify (sign-extends), got {s:?}");
+}
+
+/// A pop that drains MORE than was pushed underflows the tracked stack — it reads
+/// the caller's frame / return address, so the model is inconsistent →
+/// Unverifiable. (The wrong-list early-exit pop the tranche-3 slice caught.)
+#[test]
+fn pop_underflow_is_unverifiable() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers() {\n\
+             movem.l d0-d1, -(sp)\n\
+             movem.l (sp)+, d0-d2\n\
+             rts\n\
+         }\n",
+        Reg::D1,
+    );
+    assert!(is_unverifiable(&s), "pop underflow → Unverifiable, got {s:?}");
+}
+
 /// Computed sp: an `adda.w #n, sp` moves the stack pointer by an amount the slot
 /// model cannot track → the path is UNVERIFIABLE (error-tier for a declared
 /// preserves — a wrong contract is worse than none).
