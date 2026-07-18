@@ -401,23 +401,39 @@ fn field_access_is_byte_neutral_with_literal() {
     assert_eq!(proc_bytes(&m_named), proc_bytes(&m_lit), "field name must be byte-neutral");
 }
 
-// ---- 5. no const fallback on a typed register ----------------------------
+// ---- 5. const FALLBACK on a typed register (ruling #1) --------------------
 
 #[test]
-fn field_access_no_const_fallback_on_typed_reg() {
-    // A module-level `const timer` shadows nothing: on a TYPED register the
-    // displacement resolves ONLY in field space. With no overlay in scope and no
-    // direct field `timer`, this is `[operand.unknown-field]` naming `*Sst` — it
-    // must NOT silently use the const's value.
+fn field_access_const_fallback_on_typed_reg() {
+    // Ruling #1: `NAME(reg)` on a typed `reg: *T` resolves (1) field of T, else
+    // (2) in-scope const, else (3) error. `timer` is NOT an Sst field but IS a
+    // module const, so it resolves as the const displacement — NOT dropped. This
+    // makes the typed path a strict SUPERSET of the untyped one (it never loses a
+    // resolution the untyped form had — the byte-view-const idiom
+    // `Act_grid_w_lo(a2)` needs this). Supersedes the tranche-7b "namespace
+    // closure" (a typed register no longer forbids the const fallback).
     let src = format!(
         "module m\n{SST}const timer: u8 = 9\n\
          proc p (a0: *Sst) {{\n    tst.b timer(a0)\n    rts\n}}\n"
     );
     let (_module, errs) = lower_errors(&src);
     assert!(
-        errs.iter().any(|m| m.contains("[operand.unknown-field]") && m.contains("*Sst")),
-        "want [operand.unknown-field] naming *Sst (no const fallback), got: {errs:?}"
+        !errs.iter().any(|m| m.contains("[operand.unknown-field]")),
+        "ruling #1: const `timer` resolves as a displacement, no unknown-field: {errs:?}"
     );
+}
+
+/// A field of T takes PRECEDENCE over a same-named const — the fallback is
+/// tried ONLY when the name is not a field (field-of-type first, ruling #1 (1)).
+#[test]
+fn field_access_field_wins_over_same_named_const() {
+    // `Sst` has a field `render_flags`; a same-named const must NOT shadow it.
+    let src = format!(
+        "module m\n{SST}const render_flags: u8 = 99\n\
+         proc p (a0: *Sst) {{\n    tst.b render_flags(a0)\n    rts\n}}\n"
+    );
+    let (_module, errs) = lower_errors(&src);
+    assert!(errs.is_empty(), "field render_flags resolves; the const does not shadow it: {errs:?}");
 }
 
 // ---- 6. untyped register keeps today's semantics -------------------------
