@@ -300,10 +300,25 @@ fn is_peek(mnem: &str, ops: &[CodeOperand]) -> bool {
         && matches!(ops.last(), Some(CodeOperand::Reg(_)))
 }
 
+/// A SAFE displaced-sp READ: `move`/`movea` with a `d(sp)` SOURCE and a plain
+/// register destination that is NOT a7 — the movem-frame-slot recovery idiom
+/// (`movea.l 8(sp), aN`, e.g. EntityWindow_TrySpawnObject). A load reads the frame
+/// into a register; it cannot alter a tracked slot's contents (only a store could
+/// alias). The displaced analogue of [`is_peek`], it takes the normal
+/// register-write handling. Deliberately NARROW — move/movea only (a `d(sp)` write
+/// target, an rmw / non-move mnemonic, an `(sp,Xn)` indexed form, or a
+/// stack-replacing `d(sp) → sp` all stay hazards).
+fn is_safe_sp_disp_read(mnem: &str, ops: &[CodeOperand]) -> bool {
+    (mnem == "move" || mnem == "movea")
+        && matches!(ops.first(), Some(CodeOperand::DispInd { reg: Reg::A7, .. }))
+        && matches!(ops.last(), Some(CodeOperand::Reg(r)) if *r != Reg::A7)
+}
+
 /// An unmodeled sp hazard → bail: a bare `a7` operand (sp's value used directly —
 /// escapes into address math or a computed `adda #n,sp`), or a displaced/indexed
 /// sp access (`d(sp)` / `(sp,Xn)` — could alias a tracked slot). The clean stack
-/// forms use `PreDec`/`PostInc`/`Ind` of a7, never these.
+/// forms use `PreDec`/`PostInc`/`Ind` of a7, never these; a displaced-sp READ into
+/// a register is exempted by [`is_safe_sp_disp_read`] at the call site.
 fn sp_hazard(ops: &[CodeOperand]) -> bool {
     ops.iter().any(|o| {
         matches!(
@@ -334,8 +349,12 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, items: &[CodeItem]) -> Option
         return None;
     }
 
-    // Unmodeled sp manipulation corrupts the slot model.
-    if sp_hazard(ops) {
+    // Unmodeled sp manipulation corrupts the slot model — EXCEPT a displaced-sp
+    // READ into a plain register (`movea.l d(sp), aN`), the displaced analogue of
+    // the `(sp)` peek: a load cannot alias a tracked slot (only a store could), so
+    // it is safe and takes the normal register-write handling below (§5 grow —
+    // sp_hazard's own "could alias" rationale is write-only).
+    if sp_hazard(ops) && !is_safe_sp_disp_read(mnem, ops) {
         return Some(sp_hazard_reason(ops));
     }
 

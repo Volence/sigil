@@ -501,3 +501,96 @@ fn fresh_load_makes_delta_untrackable() {
     );
     assert!(!is_verified(&s), "a0 loaded from a1 → not its entry value, got {s:?}");
 }
+
+// --- §5 grow: displaced-sp READ is safe (the movem-frame-slot recovery idiom) --
+//
+// `sp_hazard` bailed on ANY `d(sp)` operand, but its own rationale ("could alias
+// a saved slot") is true only for a WRITE. A displaced-sp READ into a plain
+// register (`movea.l 8(sp), aN` — the frame-slot recovery in TrySpawnObject /
+// TrySpawnRing) cannot alter a tracked slot; it is the displaced analogue of the
+// `(sp)` peek and takes the normal register-write handling. The SAFE-LIST is
+// EXACTLY move/movea with a DispInd{a7} SOURCE and a plain non-a7 register dest;
+// everything else keeps bailing.
+
+/// POSITIVE: a movem save/restore of d3 with a displaced-sp frame READ in between
+/// (`movea.l 4(sp), a0`) now VERIFIES d3 preserved — the read no longer poisons
+/// the proof. (Mirrors EntityWindow_TrySpawnObject's `movea.l 8(sp), a0`.)
+#[test]
+fn displaced_sp_read_into_reg_is_safe() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(a0) {\n\
+             movem.l d3/a0, -(sp)\n\
+             movea.l 4(sp), a0\n\
+             moveq #5, d3\n\
+             movem.l (sp)+, d3/a0\n\
+             rts\n\
+         }\n",
+        Reg::D3,
+    );
+    assert!(is_verified(&s), "movem save/restore around a displaced-sp READ → d3 Verified, got {s:?}");
+}
+
+/// NEGATIVE (store): a displaced-sp WRITE target (`move.l d0, 8(sp)`) could alias
+/// a saved slot — keeps bailing.
+#[test]
+fn displaced_sp_write_target_still_bails() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             moveq #5, d3\n\
+             move.l d0, 8(sp)\n\
+             rts\n\
+         }\n",
+        Reg::D3,
+    );
+    assert!(is_unverifiable(&s), "displaced-sp STORE aliases the slot model → Unverifiable, got {s:?}");
+}
+
+/// NEGATIVE (rmw, read-direction): `add.l 8(sp), d0` is not move/movea — the
+/// safe-list is deliberately move/movea only (minimality over cleverness).
+#[test]
+fn displaced_sp_rmw_still_bails() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             moveq #5, d3\n\
+             add.l 8(sp), d0\n\
+             rts\n\
+         }\n",
+        Reg::D3,
+    );
+    assert!(is_unverifiable(&s), "add.l d(sp),dN is not on the move/movea safe-list → Unverifiable, got {s:?}");
+}
+
+/// NEGATIVE (address escape): `pea 8(sp)` computes an effective address, not a
+/// data read — the sp value escapes. Keeps bailing.
+#[test]
+fn pea_displaced_sp_still_bails() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             moveq #5, d3\n\
+             pea 8(sp)\n\
+             rts\n\
+         }\n",
+        Reg::D3,
+    );
+    assert!(is_unverifiable(&s), "pea d(sp) escapes the sp value → Unverifiable, got {s:?}");
+}
+
+/// NEGATIVE (dest is sp): `movea.l 8(sp), sp` is stack replacement, not a
+/// frame-slot recovery — a non-register (a7) destination keeps bailing.
+#[test]
+fn displaced_sp_read_into_sp_still_bails() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             moveq #5, d3\n\
+             movea.l 8(sp), sp\n\
+             rts\n\
+         }\n",
+        Reg::D3,
+    );
+    assert!(is_unverifiable(&s), "movea.l d(sp),sp replaces the stack pointer → Unverifiable, got {s:?}");
+}
