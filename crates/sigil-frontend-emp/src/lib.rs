@@ -11,6 +11,7 @@ pub mod layout;
 pub mod lexer;
 pub mod lower;
 pub mod parser;
+pub mod preserves;
 pub mod resolve;
 pub mod value;
 

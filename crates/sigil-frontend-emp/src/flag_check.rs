@@ -126,17 +126,23 @@ fn writes_ccr_operand(ops: &[CodeOperand]) -> bool {
     matches!(ops.last(), Some(CodeOperand::Ccr) | Some(CodeOperand::Sr))
 }
 
-/// The sole `Sym` operand of a branch/tail instruction (its target label), if
-/// any. `None` for a register-indirect or multi-operand form.
+/// The target label of a branch/tail/call instruction — the LAST `Sym` operand.
+/// For most forms (`bcc label`, `bra label`, `jbsr Callee`) the label is the
+/// sole/first operand; for the `dbcc dN, label` counting-loop form it is the
+/// SECOND (the register comes first), so scanning from the end catches both.
+/// `None` for a register-indirect form (`jsr (a1)`) with no symbolic target.
 fn branch_target(ops: &[CodeOperand]) -> Option<&str> {
-    match ops.first() {
-        Some(CodeOperand::Sym(name)) => Some(name.as_str()),
+    ops.iter().rev().find_map(|o| match o {
+        CodeOperand::Sym(name) => Some(name.as_str()),
         _ => None,
-    }
+    })
 }
 
-/// A resolved per-proc control-flow view over a CodeBuf's items.
-struct Cfg<'a> {
+/// A resolved per-proc control-flow view over a CodeBuf's items. Exposed
+/// `pub(crate)` so the §5 verified-`preserves` dataflow ([`crate::preserves`])
+/// REUSES this exact CFG substrate (spec §11 Q1: extend G2's CFG, do not
+/// duplicate) — same `next_instr`/`label_target`/`edges` joins.
+pub(crate) struct Cfg<'a> {
     items: &'a [CodeItem],
     /// For each item index that is an instruction, the item index of the next
     /// instruction (fall-through), or `None` if it falls off the end.
@@ -146,7 +152,7 @@ struct Cfg<'a> {
 }
 
 impl<'a> Cfg<'a> {
-    fn build(items: &'a [CodeItem]) -> Self {
+    pub(crate) fn build(items: &'a [CodeItem]) -> Self {
         // The instruction item indices, in order.
         let instrs: Vec<usize> = items
             .iter()
@@ -171,7 +177,7 @@ impl<'a> Cfg<'a> {
     }
 
     /// The instruction at item index `idx`, as `(mnemonic, ops)`.
-    fn instr(&self, idx: usize) -> Option<(&str, &[CodeOperand])> {
+    pub(crate) fn instr(&self, idx: usize) -> Option<(&str, &[CodeOperand])> {
         match &self.items[idx] {
             CodeItem::Instr { mnemonic, ops, .. } => Some((mnemonic.as_str(), ops)),
             _ => None,
@@ -184,7 +190,7 @@ impl<'a> Cfg<'a> {
     /// A call/tail transfer to an EXTERNAL target (not a local label) is
     /// `Defer` — the flag flows out of this proc and local analysis cannot judge
     /// it, so it neither follows nor abandons.
-    fn edges(&self, idx: usize) -> Vec<Edge> {
+    pub(crate) fn edges(&self, idx: usize) -> Vec<Edge> {
         let Some((mnem, ops)) = self.instr(idx) else { return vec![] };
         if RETURN_MNEMONICS.contains(&mnem) {
             return vec![Edge::Abandon];
@@ -253,7 +259,7 @@ impl<'a> Cfg<'a> {
 }
 
 /// A carry-tracking control-flow edge (see [`Cfg::edges`]).
-enum Edge {
+pub(crate) enum Edge {
     Follow(usize),
     Abandon,
     Defer,
