@@ -191,6 +191,25 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         nodes.iter().map(|(n, node)| (n.clone(), node.params.clone())).collect();
     let callee_out: BTreeMap<String, BTreeSet<String>> =
         nodes.iter().map(|(n, node)| (n.clone(), node.out.clone())).collect();
+    // The UNCONDITIONAL subset of each callee's outs — `node.out` INCLUDES a
+    // conditional `out(rN if cc)` register (the parser folds it into the reglist,
+    // its cc-guard riding `cond_callees`). D1b's must-def credit may only trust an
+    // out defined on EVERY return edge, so subtract the conditional-out registers:
+    // crediting a conditional out unconditionally would over-approximate must-def
+    // = a false negative on an ERROR gate (Fable ruling #2). D1c/closure keep the
+    // full `callee_out` (a conditional out IS a produced result there).
+    let callee_uncond_out: BTreeMap<String, BTreeSet<String>> = callee_out
+        .iter()
+        .map(|(n, outs)| {
+            let cond: BTreeSet<&String> = cond_callees
+                .get(n)
+                .into_iter()
+                .flatten()
+                .map(|(reg, _)| reg)
+                .collect();
+            (n.clone(), outs.iter().filter(|r| !cond.contains(r)).cloned().collect())
+        })
+        .collect();
     let mut input_firings: Vec<InputFiring> = Vec::new();
     let mut live_clobbered_firings: Vec<LiveClobberFiring> = Vec::new();
     for pb in &proc_bufs {
@@ -201,6 +220,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &caller_params,
             &pb.buf.items,
             &callee_params,
+            &callee_uncond_out,
         ));
         live_clobbered_firings.extend(check_live_clobbered(
             &pb.name,

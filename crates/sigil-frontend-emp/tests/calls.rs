@@ -53,10 +53,23 @@ fn regset(regs: &[&str]) -> BTreeSet<String> {
 
 /// Run the input-undefined check with `callee` declaring `callee_params` inputs.
 fn run_input(src: &str, callee: &str, callee_params: &[&str]) -> Vec<String> {
+    run_input_out(src, callee, callee_params, &[])
+}
+
+/// Run the input-undefined check where `callee` declares `callee_params` inputs
+/// AND `callee_out` unconditional outputs (credited as definitions at each call).
+fn run_input_out(
+    src: &str,
+    callee: &str,
+    callee_params: &[&str],
+    callee_out: &[&str],
+) -> Vec<String> {
     let (name, params, items) = eval_first(src);
-    let mut map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    map.insert(callee.to_string(), regset(callee_params));
-    check_input_undefined(&name, &params, &items, &map)
+    let mut pmap: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    pmap.insert(callee.to_string(), regset(callee_params));
+    let mut omap: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    omap.insert(callee.to_string(), regset(callee_out));
+    check_input_undefined(&name, &params, &items, &pmap, &omap)
         .into_iter()
         .map(|f| f.reg)
         .collect()
@@ -436,4 +449,40 @@ fn top_effective_clobbers_held_value_fires() {
     let outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let f = check_live_clobbered(&name, &params, &items, &eff, &outs);
     assert!(f.iter().any(|x| x.reg == "a0"), "⊤ clobbers a0 held across it: {f:?}");
+}
+
+// --- D1b: a callee's UNCONDITIONAL out() credits a definition (must-def) ------
+//
+// A value produced by one call's plain `out(rN)` and passed to the next call is
+// must-defined — D1b must NOT fire. (A conditional `out(rN if cc)` is excluded
+// from `callee_out` and is NOT credited — the sound half; edge-sensitive
+// success-edge crediting is deferred.)
+#[test]
+fn callee_unconditional_out_credits_definition() {
+    let src = "module m\n\
+        proc P () clobbers(d0) {\n\
+            jbsr Producer\n\
+            jbsr Consumer\n\
+            rts\n\
+        }\n";
+    let (name, params, items) = eval_first(src);
+    let mut pmap: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    pmap.insert("Consumer".to_string(), regset(&["d0"]));
+
+    // WITHOUT Producer's out credited: d0 is undefined at the Consumer call.
+    let empty: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let without: Vec<String> = check_input_undefined(&name, &params, &items, &pmap, &empty)
+        .into_iter()
+        .map(|f| f.reg)
+        .collect();
+    assert_eq!(without, vec!["d0".to_string()], "no out credit → d0 undefined, got {without:?}");
+
+    // WITH Producer's unconditional out(d0): d0 is defined → no firing.
+    let mut omap: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    omap.insert("Producer".to_string(), regset(&["d0"]));
+    let with: Vec<String> = check_input_undefined(&name, &params, &items, &pmap, &omap)
+        .into_iter()
+        .map(|f| f.reg)
+        .collect();
+    assert!(with.is_empty(), "Producer out(d0) credited → no firing, got {with:?}");
 }

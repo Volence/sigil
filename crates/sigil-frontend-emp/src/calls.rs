@@ -115,6 +115,7 @@ fn must_defined_in(
     cfg: &Cfg,
     entry: usize,
     params: &BTreeSet<String>,
+    callee_out: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeMap<usize, BTreeSet<String>> {
     let mut in_def: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
     in_def.insert(entry, params.clone());
@@ -123,6 +124,23 @@ fn must_defined_in(
         let mut out = in_def[&idx].clone();
         if let Some((mnem, ops)) = cfg.instr(idx) {
             out.extend(written_names(mnem, ops));
+            // Credit a CALL's callee UNCONDITIONAL `out()` as a definition: a
+            // plain `out(rN)` guarantees rN holds a produced value on every
+            // return, so it is defined on every edge leaving the call — sound
+            // under must-def's intersection join. `callee_out` here is the
+            // UNCONDITIONAL subset ONLY (the caller subtracts conditional-out
+            // registers — a parser quirk folds `out(rN if cc)`'s rN into the
+            // reglist, so the raw `node.out` is NOT safe to credit). Crediting a
+            // conditional out would over-approximate must-def = a FALSE NEGATIVE
+            // on an ERROR gate; edge-sensitive success-edge crediting is deferred
+            // to spec. Tails do not return into this proc, so calls only.
+            if CALL_MNEMONICS.contains(&mnem) {
+                if let Some(callee) = direct_target(mnem, ops) {
+                    if let Some(outs) = callee_out.get(callee) {
+                        out.extend(outs.iter().cloned());
+                    }
+                }
+            }
         }
         for edge in cfg.edges(idx) {
             let Edge::Follow(succ) = edge else { continue };
@@ -159,10 +177,11 @@ pub fn check_input_undefined(
     params: &BTreeSet<String>,
     items: &[CodeItem],
     callee_params: &BTreeMap<String, BTreeSet<String>>,
+    callee_out: &BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<InputFiring> {
     let Some(entry) = entry_index(items) else { return Vec::new() };
     let cfg = Cfg::build(items);
-    let defined = must_defined_in(&cfg, entry, params);
+    let defined = must_defined_in(&cfg, entry, params, callee_out);
 
     let mut firings = Vec::new();
     for (idx, it) in items.iter().enumerate() {
