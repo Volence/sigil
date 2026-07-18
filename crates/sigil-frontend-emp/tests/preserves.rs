@@ -308,6 +308,49 @@ fn pop_underflow_is_unverifiable() {
     assert!(is_unverifiable(&s), "pop underflow → Unverifiable, got {s:?}");
 }
 
+/// A soundness bailout on a NORETURN path (a `subq #2,sp` before a `jmp` to an
+/// external error handler — the DEBUG `assert`/`raise_error` shape) must NOT
+/// poison the verification of the RETURNING paths. a0 is push/pop-preserved on
+/// the rts path; the bailed path diverges (never returns), so a0 still verifies.
+/// (Path-LOCAL bailout, not global.)
+#[test]
+fn bailout_on_noreturn_path_does_not_poison_returns() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a0, -(sp)\n\
+             lea     X, a0\n\
+             tst.b   d0\n\
+             bne     .raise\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         .raise:\n\
+             subq.w  #2, sp\n\
+             jmp     MDDBG__ErrorHandler\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "bail on the noreturn path must not poison a0, got {s:?}");
+}
+
+/// Companion: a bailout on a RETURNING path DOES make the register unverifiable
+/// (the stack model is untrustworthy where it matters).
+#[test]
+fn bailout_on_returning_path_is_unverifiable() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a0, -(sp)\n\
+             lea     X, a0\n\
+             adda.w  #2, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_unverifiable(&s), "bail on the rts path → Unverifiable, got {s:?}");
+}
+
 /// Computed sp: an `adda.w #n, sp` moves the stack pointer by an amount the slot
 /// model cannot track → the path is UNVERIFIABLE (error-tier for a declared
 /// preserves — a wrong contract is worse than none).

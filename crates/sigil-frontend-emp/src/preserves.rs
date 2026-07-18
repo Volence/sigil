@@ -56,6 +56,10 @@ type Slot = Option<Reg>;
 struct State {
     stack: Vec<Slot>,
     entry: [bool; 16],
+    /// This path hit a soundness bailout (computed sp / escape / aliasing store /
+    /// underflow / unbalanced-depth join). Rides the CFG; only matters if it
+    /// reaches a return.
+    bailed: bool,
 }
 
 fn reg_idx(r: Reg) -> usize {
@@ -142,10 +146,15 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
     let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
     in_state.insert(
         entry_idx,
-        State { stack: Vec::new(), entry: [true; 16] },
+        State { stack: Vec::new(), entry: [true; 16], bailed: false },
     );
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
-    let mut bailed: Option<String> = None;
+    // A bailout is PATH-LOCAL: it taints the state (`State::bailed`) and rides the
+    // CFG. Only a bail that REACHES a return (`rts`/fall-off) makes a written
+    // register unverifiable — a bail on a noreturn/`Defer` path (the DEBUG
+    // `raise_error` `subq #2,sp`→`jmp handler` shape) never constrains a return.
+    let mut bail_reason: Option<String> = None;
+    let mut bailed_reached_return = false;
 
     // For each checked register: does EVERY return path see it at its entry
     // value? Starts true; a return with a clobbered value flips it false.
@@ -155,11 +164,14 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
 
     while let Some(idx) = work.pop_front() {
         let mut st = in_state[&idx].clone();
-        // Apply the instruction's effect to `st` (in place).
-        if let Some(reason) = transfer(&cfg, idx, &mut st, items) {
-            bailed.get_or_insert(reason);
-            // A bail corrupts the stack model globally; stop propagating.
-            continue;
+        // Apply the instruction's effect. A hazard taints this path (bailed) but
+        // does NOT stop the dataflow — the path must still reach its terminator so
+        // we can tell a returning bail from a diverging one.
+        if !st.bailed {
+            if let Some(reason) = transfer(&cfg, idx, &mut st, items) {
+                st.bailed = true;
+                bail_reason.get_or_insert(reason);
+            }
         }
         for edge in cfg.edges(idx) {
             match edge {
@@ -171,12 +183,8 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
                         }
                         Some(existing) => {
                             let mut merged = existing.clone();
-                            if join(&mut merged, &st).is_err() {
-                                bailed.get_or_insert(
-                                    "unbalanced stack at a control-flow join".to_string(),
-                                );
-                                false
-                            } else if merged != *existing {
+                            join(&mut merged, &st); // depth mismatch → merged.bailed
+                            if merged != *existing {
                                 in_state.insert(succ, merged);
                                 true
                             } else {
@@ -191,9 +199,13 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
                 Edge::Abandon => {
                     // A return / fall-off-end: checkpoint every checked register.
                     saw_return = true;
-                    for r in check {
-                        if !st.entry[reg_idx(*r)] {
-                            *all_returns_preserve.get_mut(r).unwrap() = false;
+                    if st.bailed {
+                        bailed_reached_return = true;
+                    } else {
+                        for r in check {
+                            if !st.entry[reg_idx(*r)] {
+                                *all_returns_preserve.get_mut(r).unwrap() = false;
+                            }
                         }
                     }
                 }
@@ -205,10 +217,9 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
                     // handler — no return obligation at all) or is a real tail
                     // call whose preservation is a TRANSITIVE property the closure
                     // accounts for via its tail edge (corpus `TAIL_MNEMONICS`).
-                    // Either way it is not a local counterexample — ignore it.
-                    // (This mirrors D2.32, which verified the movem pair ignoring
-                    // control flow. A proc whose ONLY exit is a tail call verifies
-                    // vacuously here; the closure supplies the transitive truth.)
+                    // Either way it is not a local counterexample — ignore it,
+                    // bailed or not. (This mirrors D2.32, which verified the movem
+                    // pair ignoring control flow.)
                 }
             }
         }
@@ -218,13 +229,14 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
     check
         .iter()
         .map(|r| {
-            let status = if let Some(reason) = &bailed {
-                if ever_clobbered[reg_idx(*r)] {
-                    PreserveStatus::Unverifiable(reason.clone())
-                } else {
-                    // Never written → immutable regardless of the stack model.
-                    PreserveStatus::Verified
-                }
+            let clobbered = ever_clobbered[reg_idx(*r)];
+            let status = if bailed_reached_return && clobbered {
+                // A bail reached a return and this register is written somewhere —
+                // the stack model can't prove the round-trip. (A never-written
+                // register is immutable and stays Verified below.)
+                PreserveStatus::Unverifiable(
+                    bail_reason.clone().unwrap_or_else(|| "unverifiable stack".to_string()),
+                )
             } else if !saw_return || all_returns_preserve[r] {
                 PreserveStatus::Verified
             } else {
@@ -376,11 +388,14 @@ fn sp_hazard_reason(ops: &[CodeOperand]) -> String {
 
 /// Join `other` into `acc` (both on entry to the same node). Entry bits meet by
 /// AND (a register is entry-valued only if BOTH paths agree). Slots meet
-/// pointwise (`Some(r)` iff both agree). Differing stack DEPTHS mean an ambiguous
-/// sp at the merge → `Err` (bail).
-fn join(acc: &mut State, other: &State) -> Result<(), ()> {
+/// pointwise (`Some(r)` iff both agree). `bailed` propagates (OR). Differing stack
+/// DEPTHS mean an ambiguous sp at the merge → taint the merged path `bailed`
+/// (path-local, so a diverging bailed path never poisons a returning one).
+fn join(acc: &mut State, other: &State) {
+    acc.bailed |= other.bailed;
     if acc.stack.len() != other.stack.len() {
-        return Err(());
+        acc.bailed = true;
+        return;
     }
     for (a, b) in acc.stack.iter_mut().zip(other.stack.iter()) {
         if *a != *b {
@@ -390,7 +405,6 @@ fn join(acc: &mut State, other: &State) -> Result<(), ()> {
     for i in 0..16 {
         acc.entry[i] = acc.entry[i] && other.entry[i];
     }
-    Ok(())
 }
 
 // ===========================================================================
