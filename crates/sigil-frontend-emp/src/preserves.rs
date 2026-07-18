@@ -56,6 +56,16 @@ type Slot = Option<Reg>;
 struct State {
     stack: Vec<Slot>,
     entry: [bool; 16],
+    /// Per-register LINEAR DELTA from its entry value (§5 register-arithmetic
+    /// extension): `Some(d)` means the register currently holds `entry + d`,
+    /// tracked through `(rN)+`/`-(rN)`, `lea d(rN), rN`, and `adda/suba #imm, rN`;
+    /// `None` means the value is no longer a static offset of entry (a fresh load,
+    /// a computed write, a call, or a loop-join of conflicting deltas). A register
+    /// is delta-preserved iff `Some(0)` at every `rts`. This proves the
+    /// pointer-walk-and-restore idiom the stack model cannot (a0 advanced by
+    /// `(a0)+` then restored by `lea -N(a0), a0` — DeleteObject's `.clear_slot`).
+    /// `a7` (index 15) is not meaningful here (stack discipline).
+    delta: [Option<i64>; 16],
     /// This path hit a soundness bailout (computed sp / escape / aliasing store /
     /// underflow / unbalanced-depth join). Rides the CFG; only matters if it
     /// reaches a return.
@@ -146,7 +156,7 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
     let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
     in_state.insert(
         entry_idx,
-        State { stack: Vec::new(), entry: [true; 16], bailed: false },
+        State { stack: Vec::new(), entry: [true; 16], delta: [Some(0); 16], bailed: false },
     );
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
     // A bailout is PATH-LOCAL: it taints the state (`State::bailed`) and rides the
@@ -160,6 +170,12 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
     // value? Starts true; a return with a clobbered value flips it false.
     let mut all_returns_preserve: BTreeMap<Reg, bool> =
         check.iter().map(|r| (*r, true)).collect();
+    // Per checked register: is its linear delta `Some(0)` at EVERY return? An
+    // independent POSITIVE proof (the register-arithmetic round-trip), valid even
+    // past a stack bailout (a computed-sp hazard does not touch a register whose
+    // value is a proven static offset of entry). Starts true; flipped false by
+    // any return where delta != Some(0).
+    let mut delta_ok: BTreeMap<Reg, bool> = check.iter().map(|r| (*r, true)).collect();
     let mut saw_return = false;
 
     while let Some(idx) = work.pop_front() {
@@ -199,6 +215,15 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
                 Edge::Abandon => {
                     // A return / fall-off-end: checkpoint every checked register.
                     saw_return = true;
+                    for r in check {
+                        // The linear-delta proof holds on this return iff Δ==0 AND
+                        // the path did NOT bail: a bail FREEZES the transfer, so
+                        // `delta` after it is STALE — it cannot prove anything.
+                        // (A bail on a noreturn path exits via Defer, never here.)
+                        if st.bailed || st.delta[reg_idx(*r)] != Some(0) {
+                            *delta_ok.get_mut(r).unwrap() = false;
+                        }
+                    }
                     if st.bailed {
                         bailed_reached_return = true;
                     } else {
@@ -230,14 +255,20 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
         .iter()
         .map(|r| {
             let clobbered = ever_clobbered[reg_idx(*r)];
-            let status = if bailed_reached_return && clobbered {
-                // A bail reached a return and this register is written somewhere —
-                // the stack model can't prove the round-trip. (A never-written
-                // register is immutable and stays Verified below.)
+            let status = if !saw_return || delta_ok[r] {
+                // No returns (vacuous), OR the linear-delta round-trip proves the
+                // register holds its entry value at EVERY return — a positive proof
+                // that overrides a stack bailout (the hazard is about sp, not this
+                // register's static offset). This is the register-arithmetic
+                // extension: DeleteObject's `(a0)+`…`lea -N(a0), a0` verifies here.
+                PreserveStatus::Verified
+            } else if bailed_reached_return && clobbered {
+                // A bail reached a return and this register is written somewhere,
+                // with no delta proof — the stack model can't prove the round-trip.
                 PreserveStatus::Unverifiable(
                     bail_reason.clone().unwrap_or_else(|| "unverifiable stack".to_string()),
                 )
-            } else if !saw_return || all_returns_preserve[r] {
+            } else if all_returns_preserve[r] {
                 PreserveStatus::Verified
             } else {
                 PreserveStatus::NotPreserved
@@ -294,9 +325,12 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, items: &[CodeItem]) -> Option
     let is_long = matches!(instr_size(items, idx), Some(Width::L));
 
     // A call clobbers every register (no local callee contract) but nets zero on
-    // the stack (its pushed return address is popped by its own rts).
+    // the stack (its pushed return address is popped by its own rts). It also ends
+    // linear-delta tracking for every register — the callee may set them to
+    // anything, so their values are no longer a static offset of entry.
     if is_call(mnem) {
         st.entry = [false; 16];
+        st.delta = [None; 16];
         return None;
     }
 
@@ -345,6 +379,10 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, items: &[CodeItem]) -> Option
             let slot = st.stack.pop().flatten();
             // A `.w`/`.b` restore does not round-trip the full register.
             st.entry[reg_idx(r)] = is_long && slot == Some(r);
+            // A pop LOADS the register from the stack — a fresh value, not a
+            // static offset of entry. The stack/entry-bit model judges it; the
+            // delta tracker gives up on it.
+            st.delta[reg_idx(r)] = None;
         }
         return None;
     }
@@ -354,16 +392,68 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, items: &[CodeItem]) -> Option
         if let Some(CodeOperand::Reg(dst)) = ops.last() {
             let top = st.stack.last().copied().flatten();
             st.entry[reg_idx(*dst)] = is_long && top == Some(*dst);
+            st.delta[reg_idx(*dst)] = None; // a fresh load; entry-bit model judges it
         }
         return None;
     }
 
     // Plain instruction: every generic write (except a7) clears the register's
-    // entry-value bit.
+    // entry-value bit and updates its linear delta. A TRACKABLE arithmetic write
+    // (`(rN)+`/`-(rN)` advance, `lea d(rN), rN`, `adda/suba #imm, rN`) accumulates
+    // the static offset; any other write to a register whose delta is still Some
+    // makes it untrackable (a fresh/computed value).
+    let width = instr_size(items, idx);
     for r in instr_written_regs(mnem, ops) {
-        if r != Reg::A7 {
-            st.entry[reg_idx(r)] = false;
+        if r == Reg::A7 {
+            continue;
         }
+        st.entry[reg_idx(r)] = false;
+        if let Some(d) = st.delta[reg_idx(r)] {
+            st.delta[reg_idx(r)] = linear_write_amount(mnem, ops, width, r).map(|amount| d + amount);
+        }
+    }
+    None
+}
+
+/// If instruction `(mnem, ops)` writes register `r` via a TRACKABLE linear
+/// address-register operation, the static amount `r` advances by; `None` for any
+/// other (untrackable) write of `r`. Trackable forms: an auto-increment `(r)+`
+/// (+width) / auto-decrement `-(r)` (−width); a self-relative `lea d(r), r`
+/// (+d); an immediate `adda #imm, r` (+imm) / `suba #imm, r` (−imm). A `lea`/
+/// `adda`/`suba` whose base or source is not the reg itself (a computed value)
+/// or any other mnemonic is untrackable.
+fn linear_write_amount(mnem: &str, ops: &[CodeOperand], size: Option<Width>, r: Reg) -> Option<i64> {
+    let sz: i64 = match size {
+        Some(Width::L) => 4,
+        Some(Width::W) => 2,
+        Some(Width::B) => 1,
+        _ => 0,
+    };
+    // Auto-inc / auto-dec of r.
+    for op in ops {
+        match op {
+            CodeOperand::PostInc(x) if *x == r => return Some(sz),
+            CodeOperand::PreDec(x) if *x == r => return Some(-sz),
+            _ => {}
+        }
+    }
+    let dest_is_r = matches!(ops.last(), Some(CodeOperand::Reg(x)) if *x == r);
+    // `lea d(r), r` — self-relative displacement.
+    if mnem == "lea" && dest_is_r {
+        if let Some(CodeOperand::DispInd { disp, reg }) = ops.first() {
+            if *reg == r {
+                return Some(*disp as i64);
+            }
+        }
+        return None; // lea from a different base/index → a fresh computed pointer
+    }
+    // `adda #imm, r` / `suba #imm, r`.
+    if (mnem == "adda" || mnem == "suba") && dest_is_r {
+        if let Some(CodeOperand::Imm(v)) = ops.first() {
+            let d = *v as i64;
+            return Some(if mnem == "adda" { d } else { -d });
+        }
+        return None; // adda rM, r → a computed advance
     }
     None
 }
@@ -404,6 +494,12 @@ fn join(acc: &mut State, other: &State) {
     }
     for i in 0..16 {
         acc.entry[i] = acc.entry[i] && other.entry[i];
+        // Delta meets by exact agreement: a register whose incoming deltas differ
+        // (e.g. a loop's Δ=0 initial vs Δ=+4 back-edge) is no longer statically
+        // known → untrackable. Two `None`s stay `None`; equal `Some`s survive.
+        if acc.delta[i] != other.delta[i] {
+            acc.delta[i] = None;
+        }
     }
 }
 

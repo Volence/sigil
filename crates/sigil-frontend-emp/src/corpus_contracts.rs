@@ -78,6 +78,15 @@ pub struct ContractReport {
     /// call and read after it, held in a register the callee EFFECTIVELY
     /// clobbers — pass-3's seatbelt. Sorted (proc, callee, reg, span).
     pub live_clobbered_firings: Vec<LiveClobberFiring>,
+    /// Total instructions DROPPED across the corpus because an operand/mnemonic
+    /// did not resolve during the single-file eval — the substrate hazard the
+    /// cross-file type environment closes. With a complete environment this is
+    /// **0**; the corpus pin asserts it, so a silent under-approximation of any
+    /// analysis buffer can never return.
+    pub dropped_instrs: usize,
+    /// Per-proc drop counts (only procs with `> 0`), sorted by proc name — the
+    /// "per-file reported event": names exactly which proc lost instructions.
+    pub dropped_by_proc: Vec<(String, usize)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -104,7 +113,19 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let mut flag_callees: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut cond_callees: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let mut proc_bufs: Vec<ProcBuf> = Vec::new();
+    let mut dropped_by_proc: Vec<(String, usize)> = Vec::new();
 
+    // PASS 1 — the cross-file TYPE ENVIRONMENT: every declaration item across the
+    // whole corpus (structs / consts / newtypes / …), so PASS 2's per-file eval
+    // resolves field operands on IMPORTED structs instead of silently dropping
+    // them. A general environment (not the resolve pass's `use`-driven per-file
+    // ambient, whose maintenance proved incomplete for this analysis).
+    let mut env: Vec<Item> = Vec::new();
+    for file in files {
+        collect_env(&file.items, &mut env);
+    }
+
+    // PASS 2 — walk every file, evaluating each proc body against `env`.
     for file in files {
         collect_items(
             &file.items,
@@ -119,8 +140,12 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &mut cond_callees,
             &mut proc_bufs,
             defines,
+            &env,
+            &mut dropped_by_proc,
         );
     }
+    dropped_by_proc.sort();
+    let dropped_instrs = dropped_by_proc.iter().map(|(_, n)| n).sum();
 
     // §11 Q4: a name declared both `extern proc` and `proc` collides.
     let mut extern_collisions: Vec<(String, Span)> = extern_names
@@ -203,6 +228,36 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         dead_saves,
         input_firings,
         live_clobbered_firings,
+        dropped_instrs,
+        dropped_by_proc,
+    }
+}
+
+/// PASS 1 of the corpus type environment: clone every DECLARATION item that
+/// [`Evaluator::index_items`](crate::eval) resolves names against — everything
+/// EXCEPT proc/extern/contract-type/script BODIES (indexing a body as ambient
+/// adds nothing and would duplicate it) and the non-declaration directives
+/// (`use`/`ensure`/`align`/comptime tests). Recurses `section { … }` so a
+/// section-nested declaration joins the flat namespace exactly as the evaluator
+/// treats it.
+fn collect_env(items: &[Item], out: &mut Vec<Item>) {
+    for item in items {
+        match item {
+            Item::Const(_)
+            | Item::Equ(_)
+            | Item::Enum(_)
+            | Item::Bitfield(_)
+            | Item::Struct(_)
+            | Item::Offsets(_)
+            | Item::Table(_)
+            | Item::Dispatch(_)
+            | Item::Vars(_)
+            | Item::Data(_)
+            | Item::ComptimeFn(_)
+            | Item::Newtype(_) => out.push(item.clone()),
+            Item::Section(s) => collect_env(&s.items, out),
+            _ => {}
+        }
     }
 }
 
@@ -260,12 +315,17 @@ fn collect_items(
     cond_callees: &mut BTreeMap<String, Vec<(String, String)>>,
     proc_bufs: &mut Vec<ProcBuf>,
     defines: &[(String, i128)],
+    env: &[Item],
+    dropped_by_proc: &mut Vec<(String, usize)>,
 ) {
     for item in items {
         match item {
             Item::Proc(p) => {
                 proc_names.insert(p.name.clone());
-                let (node, buf) = proc_node(p, file, counter, defines);
+                let (node, buf, dropped) = proc_node(p, file, counter, defines, env);
+                if dropped > 0 {
+                    dropped_by_proc.push((p.name.clone(), dropped));
+                }
                 nodes.insert(p.name.clone(), node);
                 // §6 flag / conditional contracts this proc exposes to callers.
                 let flags = flags_of(&p.out_flags);
@@ -301,7 +361,7 @@ fn collect_items(
             }
             Item::Section(s) => collect_items(
                 &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter,
-                flag_callees, cond_callees, proc_bufs, defines,
+                flag_callees, cond_callees, proc_bufs, defines, env, dropped_by_proc,
             ),
             _ => {}
         }
@@ -315,9 +375,11 @@ fn proc_node(
     file: &ast::File,
     counter: &mut u32,
     defines: &[(String, i128)],
-) -> (ProcNode, Option<CodeBuf>) {
-    let (buf, _diags, next) =
-        crate::eval::eval_proc_body(file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines);
+    env: &[Item],
+) -> (ProcNode, Option<CodeBuf>, usize) {
+    let (buf, _diags, next, dropped) = crate::eval::eval_proc_body_env(
+        file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines, env,
+    );
     *counter = next;
 
     let mut local_writes = BTreeSet::new();
@@ -353,7 +415,7 @@ fn proc_node(
         has_clobber_contract: p.clobbers.is_some(),
         verified_preserves,
     };
-    (node, buf)
+    (node, buf, dropped)
 }
 
 /// Build a leaf [`ProcNode`] from an `extern proc` decl (§3). The leaf's

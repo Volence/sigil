@@ -290,15 +290,16 @@ pub fn check_firings(procs: &BTreeMap<String, ProcNode>, closure: &Closure) -> V
             continue;
         }
         let effective = &closure.effective[name];
-        // Allowed = declared clobbers ∪ params ∪ out (all three are "written,
-        // caller must not rely across the call" — params are declarative
-        // bindings, out are results).
-        let allowed: BTreeSet<&String> = node
-            .declared_clobbers
-            .iter()
-            .chain(node.params.iter())
-            .chain(node.out.iter())
-            .collect();
+        // Allowed = declared clobbers ∪ out ONLY. Params are NOT allowed writes:
+        // a param declares an INPUT (a register the proc reads), not a licence to
+        // destroy it. A proc that genuinely trashes its input register must
+        // declare the EFFECT (`clobbers`/`out`, or a verified `preserves` if it
+        // round-trips) — otherwise the closure would be blind to exactly the
+        // clobbered-input class the caller-side D1c exists to catch. (A param that
+        // is only READ never enters `effective`, so it never fires; only a
+        // WRITTEN param does, which is correct.)
+        let allowed: BTreeSet<&String> =
+            node.declared_clobbers.iter().chain(node.out.iter()).collect();
         if effective.top {
             // ⊤ against a bounded contract: one unbounded firing (no single
             // register names the violation).
