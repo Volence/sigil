@@ -532,7 +532,7 @@ pub enum Cc {
 
 /// A comptime register class (§6.2), emp-side. The 68k data (`D0`..`D7`) and
 /// address (`A0`..`A7`) register files.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Reg {
     /// Data register `d0`.
     D0,
