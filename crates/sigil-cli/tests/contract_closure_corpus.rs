@@ -1,9 +1,12 @@
-//! Contract-grammar v2 G1 — the closure's WARN-tier surfacing as a strict-gated
-//! regression pin. Runs the transitive clobber closure ([`analyze_corpus`]) over
-//! the REAL aeon `.emp` corpus and pins its result: zero extern holes, zero
-//! §11 Q4 collisions, and exactly the 6-row row-1030/G3-FP residue (the state
-//! after G1's boundary + clobbers/out + verified-preserves work). When the debt
-//! firing check flips WARN→ERROR at G3, this pin becomes the error gate.
+//! Contract-grammar v2 — THE ERROR GATE (§9 tier-timing flip, G3's closing act).
+//! Runs the transitive clobber closure ([`analyze_corpus`]) over the REAL aeon
+//! `.emp` corpus and pins zero extern holes, zero §11 Q4 collisions, and — now
+//! that the §5 verified-preserves retrofit has landed and the row-1030/G3-FP
+//! residue reached ZERO — an EMPTY firing set. This pin shipped WARN-tier through
+//! G1/G2 (surfacing the 6-row G3 handoff as documented debt); at G3, with the
+//! residue provably 0, it flips to the ERROR gate: under `SIGIL_STRICT_GATE`, ANY
+//! transitive under-declaration is a BUILD ERROR. An undeclared register effect
+//! in `.emp` can no longer ship.
 //!
 //! Gated on `AEON_DIR` (skips green when the tree is absent, like the port gates).
 
@@ -28,7 +31,7 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn corpus_closure_residue_is_the_g3_handoff() {
+fn corpus_closure_residue_is_empty_the_error_gate() {
     let Ok(aeon) = std::env::var("AEON_DIR") else {
         eprintln!("skip: AEON_DIR not set");
         return;
@@ -54,34 +57,23 @@ fn corpus_closure_residue_is_the_g3_handoff() {
     );
     // No name declared both extern proc and proc (§11 Q4).
     assert!(r.extern_collisions.is_empty(), "extern/proc collisions: {:?}", r.extern_collisions);
-    // No unbounded indirect survives (all 6 dispatch sites are `as`-bounded).
-    assert!(
-        !r.firings.iter().any(|f| f.unbounded),
-        "an unbounded indirect leaked: {:?}",
-        r.firings.iter().filter(|f| f.unbounded).collect::<Vec<_>>()
-    );
 
-    // The residue is EXACTLY the 6-row G3 handoff — the genuinely-inexpressible-
-    // today (row-1030) set: individual-push a0 saves + undeclared movem d1 saves.
-    // Every real under-declaration is fixed; nothing here is a false clobbers.
-    let mut got: Vec<(String, String)> = r
+    // THE ERROR GATE (WARN→ERROR flip, §9): the residue is now ZERO. Every real
+    // under-declaration is fixed; the 6-row G3-FP handoff cleared via §5 verified
+    // preserves (5 declared, Load_Object transitively). ANY firing here — an
+    // undeclared transitive register effect, or an unbounded indirect — is a build
+    // error under the strict gate. This is the permanent gate: an undeclared
+    // register effect in `.emp` can no longer ship.
+    let residue: Vec<(String, String)> = r
         .firings
         .iter()
-        .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_default()))
+        .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_else(|| "<unbounded>".into())))
         .collect();
-    got.sort();
-    let want: Vec<(String, String)> = [
-        ("AllocDynamic", "a0"),
-        ("Collected_CheckRing", "d1"),
-        ("Collected_ParkSlot", "a0"),
-        ("Collected_UnparkSlot", "a0"),
-        ("Killed_CheckObject", "d1"),
-        ("Load_Object", "a0"),
-    ]
-    .iter()
-    .map(|(p, r)| (p.to_string(), r.to_string()))
-    .collect();
-    assert_eq!(got, want, "closure residue drifted from the G3 handoff set");
+    assert!(
+        r.firings.is_empty(),
+        "closure firing(s) — an undeclared register effect must be declared or \
+         verified-preserved before it can ship: {residue:?}"
+    );
 }
 
 /// Contract-grammar v2 G2 — the §6 flag-result must-use pin: every `.emp` caller
