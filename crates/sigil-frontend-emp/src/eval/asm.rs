@@ -180,6 +180,21 @@ impl Evaluator<'_> {
                 }
                 if let Some(item) = self.lower_instr_to_item(instr, scope, env) {
                     buf.push(item);
+                } else {
+                    // The instruction did not lower — a mnemonic/size/operand
+                    // failed to resolve, so it was about to vanish from the buffer
+                    // SILENTLY, under-approximating every downstream analysis (the
+                    // substrate hazard). Make it LOUD: count it and report it. A
+                    // more specific operand diagnostic may already have been
+                    // emitted; this is the guaranteed floor so `dropped == 0` is
+                    // pinnable. In a real build nothing drops (the resolve pass
+                    // supplies all imported decls).
+                    self.dropped_instrs += 1;
+                    self.error(
+                        instr.span,
+                        "instruction dropped — a mnemonic, size, or operand did not resolve \
+                         (a missing import or type in scope?)",
+                    );
                 }
             }
             AsmStmt::Call(expr) => {

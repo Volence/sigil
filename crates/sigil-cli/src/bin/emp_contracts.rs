@@ -61,6 +61,11 @@ fn main() {
         report.proc_count, report.extern_count, report.contract_type_count
     );
 
+    println!("\n-- dropped instructions (must be 0): {} --", report.dropped_instrs);
+    for (proc, n) in &report.dropped_by_proc {
+        println!("  DROPPED {n:>3}  {proc}");
+    }
+
     println!("\n-- extern/proc collisions (§11 Q4): {} --", report.extern_collisions.len());
     for (name, _span) in &report.extern_collisions {
         println!("  COLLISION  {name}  (declared both extern proc and proc)");
@@ -94,5 +99,10 @@ fn main() {
             }
         };
         println!("  {:<28} calls {:<24} {kind}", f.proc, f.callee);
+    }
+
+    println!("\n-- dead-saves (D1d worklist, {}): --", report.dead_saves.len());
+    for d in &report.dead_saves {
+        println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));
     }
 }

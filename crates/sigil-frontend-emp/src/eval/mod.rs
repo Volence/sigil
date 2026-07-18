@@ -237,6 +237,17 @@ pub struct Evaluator<'a> {
     /// otherwise mint colliding `$init$loop` / `$asm{k}$wait` symbols. Set from
     /// the file in [`with_file`](Self::with_file).
     module_id: String,
+    /// Count of instructions DROPPED from the emitted buffer because an
+    /// operand/mnemonic/size failed to resolve (the [`lower_instr_to_item`]
+    /// `None` path at the `AsmStmt::Instr` site). A dropped instruction silently
+    /// under-approximates every downstream analysis (write set, clobber closure,
+    /// dead-save, liveness) — the substrate hazard the corpus type-environment
+    /// closes. Exposed so the corpus walk can PIN `dropped == 0`: a silent
+    /// under-approximation must be unable to return. Zero in every real build
+    /// (the resolve pass supplies all imported decls; nothing drops).
+    ///
+    /// [`lower_instr_to_item`]: Self::lower_instr_to_item
+    dropped_instrs: usize,
     /// The VMA the `here()` comptime builtin resolves to (§7.1), or `None` when
     /// no position is known (outside lowering). Set per data-item by the lowering
     /// pass to `vma_origin + current_offset` — the VMA at the START of the item
@@ -408,6 +419,7 @@ impl<'a> Evaluator<'a> {
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
             module_id: String::new(),
+            dropped_instrs: 0,
             here_base: None,
             here_anchor: None,
             here_used: false,
@@ -539,10 +551,27 @@ impl<'a> Evaluator<'a> {
     /// are resolved last-wins by the index build; duplicate diagnosis is not
     /// this task's job.
     pub fn with_file(file: &'a ast::File) -> Self {
+        Self::with_file_and_ambient(file, &[])
+    }
+
+    /// Like [`with_file`](Self::with_file) but ALSO indexes an `ambient` slice of
+    /// declaration items (structs / newtypes / consts / …) drawn from OTHER
+    /// corpus files — a cross-file TYPE ENVIRONMENT. The whole-corpus contract
+    /// walk builds it once (every file's declarations) so a field operand on an
+    /// IMPORTED struct (`Sst.mappings(a0)`, `Sst` `use`d from another module)
+    /// resolves instead of failing and dropping the instruction. Ambient is
+    /// indexed FIRST and the file's own items LAST, so a file-local declaration
+    /// always shadows a same-named corpus one (local resolution is never changed
+    /// — the ambient env only fills the cross-file gaps that were silently
+    /// dropping instructions). This is a general environment, deliberately NOT the
+    /// `use`-driven per-file ambient of the resolve pass (whose per-file
+    /// maintenance is exactly what proved incomplete for this analysis).
+    pub fn with_file_and_ambient(file: &'a ast::File, ambient: &'a [ast::Item]) -> Self {
         let mut ev = Evaluator::new();
         // The module id qualifies hidden label-hygiene locals so they are unique
         // across the whole multi-module program (Plan 7 #4).
         ev.module_id = file.module.path.segments.join(".");
+        ev.index_items(ambient);
         ev.index_items(&file.items);
         ev
     }
@@ -1329,8 +1358,33 @@ pub fn eval_proc_body(
     cpu: sigil_ir::backend::Cpu,
     defines: &[(String, i128)],
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
+    let (buf, diags, counter, _dropped) =
+        eval_proc_body_env(file, name, params, body, span, asm_counter_start, cpu, defines, &[]);
+    (buf, diags, counter)
+}
+
+/// [`eval_proc_body`] with a cross-file `ambient` declaration slice (the corpus
+/// TYPE ENVIRONMENT) and a fourth return element: the count of instructions
+/// DROPPED because a mnemonic/size/operand failed to resolve. The whole-corpus
+/// contract walk uses this so field operands on IMPORTED structs resolve rather
+/// than silently vanishing, and so it can PIN `dropped == 0`. `eval_proc_body`
+/// is exactly this with an empty ambient (real lowering supplies imports via the
+/// resolve pass, so it needs no corpus env and ignores the count — which is
+/// always 0 there).
+#[allow(clippy::too_many_arguments)]
+pub fn eval_proc_body_env(
+    file: &crate::ast::File,
+    name: &str,
+    params: &[(String, ast::Type, Span)],
+    body: &[ast::AsmStmt],
+    span: Span,
+    asm_counter_start: u32,
+    cpu: sigil_ir::backend::Cpu,
+    defines: &[(String, i128)],
+    ambient: &[ast::Item],
+) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, usize) {
     run_on_eval_stack(|| {
-        let mut ev = Evaluator::with_file(file);
+        let mut ev = Evaluator::with_file_and_ambient(file, ambient);
         ev.seed_defines(defines);
         ev.asm_counter = asm_counter_start;
         // The proc's section CPU is known here (unlike a raw `asm {}` template):
@@ -1345,8 +1399,9 @@ pub fn eval_proc_body(
         // does not participate — its own decl-site diagnostics belong elsewhere,
         // and duplicating them here would double-report. So resolve on a scratch
         // evaluator whose diagnostics are discarded — built ONCE per proc (not
-        // once per param): its only job is to run type resolution silently.
-        let mut probe = Evaluator::with_file(file);
+        // once per param): its only job is to run type resolution silently. It
+        // sees the SAME ambient env so a `*ImportedStruct` param resolves too.
+        let mut probe = Evaluator::with_file_and_ambient(file, ambient);
         for (pname, pty, pspan) in params {
             let Some(reg) = crate::value::Reg::from_name(pname) else { continue };
             if let ast::Type::Ptr(inner) = pty {
@@ -1362,7 +1417,7 @@ pub fn eval_proc_body(
             Value::Code(buf) => Some(buf),
             _ => None,
         };
-        (buf, ev.diags, ev.asm_counter)
+        (buf, ev.diags, ev.asm_counter, ev.dropped_instrs)
     })
 }
 
