@@ -20,6 +20,7 @@
 //! `extern proc` and `proc`).
 
 use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Item, Operand, ProcDecl, ProcSig, TextOrSplice};
+use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, LiveClobberFiring};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
 use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
@@ -69,6 +70,14 @@ pub struct ContractReport {
     /// set) provably preserves — the pass-3 dead-save worklist. Sorted
     /// (proc, reg, span).
     pub dead_saves: Vec<DeadSave>,
+    /// The §6/G4 `[call.input-undefined]` (D1b) firings: a callee register-param
+    /// input with no reaching definition on some path at a call site. Sorted
+    /// (proc, callee, reg, span).
+    pub input_firings: Vec<InputFiring>,
+    /// The §6/G4 `[call.live-clobbered]` (D1c) firings: a value defined before a
+    /// call and read after it, held in a register the callee EFFECTIVELY
+    /// clobbers — pass-3's seatbelt. Sorted (proc, callee, reg, span).
+    pub live_clobbered_firings: Vec<LiveClobberFiring>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -149,6 +158,40 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         (&a.proc, a.reg, a.span.start).cmp(&(&b.proc, b.reg, b.span.start))
     });
 
+    // §6/G4 caller-side input + liveness checks. D1b keys off each callee's
+    // declared register-param inputs; D1c keys off the closure's VERIFIED
+    // effective clobber set (minus declared outputs). Both need the whole corpus
+    // walked first (cross-module contract knowledge), like the flag checks.
+    let callee_params: BTreeMap<String, BTreeSet<String>> =
+        nodes.iter().map(|(n, node)| (n.clone(), node.params.clone())).collect();
+    let callee_out: BTreeMap<String, BTreeSet<String>> =
+        nodes.iter().map(|(n, node)| (n.clone(), node.out.clone())).collect();
+    let mut input_firings: Vec<InputFiring> = Vec::new();
+    let mut live_clobbered_firings: Vec<LiveClobberFiring> = Vec::new();
+    for pb in &proc_bufs {
+        let caller_params =
+            nodes.get(&pb.name).map(|n| n.params.clone()).unwrap_or_default();
+        input_firings.extend(check_input_undefined(
+            &pb.name,
+            &caller_params,
+            &pb.buf.items,
+            &callee_params,
+        ));
+        live_clobbered_firings.extend(check_live_clobbered(
+            &pb.name,
+            &caller_params,
+            &pb.buf.items,
+            &closure.effective,
+            &callee_out,
+        ));
+    }
+    input_firings.sort_by(|a, b| {
+        (&a.proc, &a.callee, &a.reg, a.span.start).cmp(&(&b.proc, &b.callee, &b.reg, b.span.start))
+    });
+    live_clobbered_firings.sort_by(|a, b| {
+        (&a.proc, &a.callee, &a.reg, a.span.start).cmp(&(&b.proc, &b.callee, &b.reg, b.span.start))
+    });
+
     ContractReport {
         closure,
         firings,
@@ -158,6 +201,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         extern_count,
         contract_type_count,
         dead_saves,
+        input_firings,
+        live_clobbered_firings,
     }
 }
 
