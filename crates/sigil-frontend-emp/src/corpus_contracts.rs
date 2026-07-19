@@ -20,6 +20,7 @@
 //! `extern proc` and `proc`).
 
 use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Item, Operand, ProcDecl, ProcSig, TextOrSplice};
+use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, LiveClobberFiring};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
 use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
@@ -69,6 +70,14 @@ pub struct ContractReport {
     /// set) provably preserves — the pass-3 dead-save worklist. Sorted
     /// (proc, reg, span).
     pub dead_saves: Vec<DeadSave>,
+    /// The §6/G4 `[call.input-undefined]` (D1b) firings: a callee register-param
+    /// input with no reaching definition on some path at a call site. Sorted
+    /// (proc, callee, reg, span).
+    pub input_firings: Vec<InputFiring>,
+    /// The §6/G4 `[call.live-clobbered]` (D1c) firings: a value defined before a
+    /// call and read after it, held in a register the callee EFFECTIVELY
+    /// clobbers — pass-3's seatbelt. Sorted (proc, callee, reg, span).
+    pub live_clobbered_firings: Vec<LiveClobberFiring>,
     /// Total instructions DROPPED across the corpus because an operand/mnemonic
     /// did not resolve during the single-file eval — the substrate hazard the
     /// cross-file type environment closes. With a complete environment this is
@@ -152,11 +161,44 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let closure = compute_closure(&nodes, &types);
     let firings = check_firings(&nodes, &closure);
 
+    // Callee contract maps shared by the caller-side checks (§6 invalid-path, D1b
+    // must-def, D1c). Built once here, after the whole corpus is walked.
+    let callee_params: BTreeMap<String, BTreeSet<String>> =
+        nodes.iter().map(|(n, node)| (n.clone(), node.params.clone())).collect();
+    let callee_out: BTreeMap<String, BTreeSet<String>> =
+        nodes.iter().map(|(n, node)| (n.clone(), node.out.clone())).collect();
+    // The UNCONDITIONAL subset of each callee's outs — `node.out` INCLUDES a
+    // conditional `out(rN if cc)` register (the parser folds it into the reglist,
+    // its cc-guard riding `cond_callees`). The caller-side ERROR gates may only
+    // treat an out defined on EVERY return edge as a redefine/definition, so
+    // subtract the conditional-out registers: crediting a conditional out
+    // unconditionally would be a FALSE NEGATIVE on a shipping ERROR gate — §6
+    // (invalid-path taint-kill) and D1b (must-def credit) both consume this via
+    // the shared `call_unconditional_outs` primitive. D1c/closure keep the full
+    // `callee_out` (a conditional out IS a produced result there).
+    let callee_uncond_out: BTreeMap<String, BTreeSet<String>> = callee_out
+        .iter()
+        .map(|(n, outs)| {
+            let cond: BTreeSet<&String> = cond_callees
+                .get(n)
+                .into_iter()
+                .flatten()
+                .map(|(reg, _)| reg)
+                .collect();
+            (n.clone(), outs.iter().filter(|r| !cond.contains(r)).cloned().collect())
+        })
+        .collect();
+
     // §6 caller-side flag checks, now that every callee's contract is known.
     let mut flag_firings: Vec<FlagFiring> = Vec::new();
     for pb in &proc_bufs {
         flag_firings.extend(check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded));
-        flag_firings.extend(check_result_invalid_path(&pb.name, &pb.buf.items, &cond_callees));
+        flag_firings.extend(check_result_invalid_path(
+            &pb.name,
+            &pb.buf.items,
+            &cond_callees,
+            &callee_uncond_out,
+        ));
     }
     // Deterministic order (proc, callee, flag); spans stay in encounter order
     // via the stable sort.
@@ -174,6 +216,36 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         (&a.proc, a.reg, a.span.start).cmp(&(&b.proc, b.reg, b.span.start))
     });
 
+    // §6/G4 caller-side input + liveness checks. D1b keys off each callee's
+    // declared register-param inputs; D1c keys off the closure's VERIFIED
+    // effective clobber set (minus declared outputs). Maps built above.
+    let mut input_firings: Vec<InputFiring> = Vec::new();
+    let mut live_clobbered_firings: Vec<LiveClobberFiring> = Vec::new();
+    for pb in &proc_bufs {
+        let caller_params =
+            nodes.get(&pb.name).map(|n| n.params.clone()).unwrap_or_default();
+        input_firings.extend(check_input_undefined(
+            &pb.name,
+            &caller_params,
+            &pb.buf.items,
+            &callee_params,
+            &callee_uncond_out,
+        ));
+        live_clobbered_firings.extend(check_live_clobbered(
+            &pb.name,
+            &caller_params,
+            &pb.buf.items,
+            &closure.effective,
+            &callee_out,
+        ));
+    }
+    input_firings.sort_by(|a, b| {
+        (&a.proc, &a.callee, &a.reg, a.span.start).cmp(&(&b.proc, &b.callee, &b.reg, b.span.start))
+    });
+    live_clobbered_firings.sort_by(|a, b| {
+        (&a.proc, &a.callee, &a.reg, a.span.start).cmp(&(&b.proc, &b.callee, &b.reg, b.span.start))
+    });
+
     ContractReport {
         closure,
         firings,
@@ -183,6 +255,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         extern_count,
         contract_type_count,
         dead_saves,
+        input_firings,
+        live_clobbered_firings,
         dropped_instrs,
         dropped_by_proc,
     }

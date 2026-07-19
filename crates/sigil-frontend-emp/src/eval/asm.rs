@@ -1026,21 +1026,47 @@ impl Evaluator<'_> {
                 if let Some(field) = single_segment_field(disp) {
                     if let Some(reg) = self.peek_inner_reg(inner) {
                         if let Some(base) = self.reg_pointee_struct.get(&reg).cloned() {
-                            let (d, size) =
-                                self.resolve_field_disp(&base, field, expr_span(disp))?;
-                            // Overrun is diagnosed but the operand is emitted anyway
-                            // (deliberate error-recovery): the displacement is valid,
-                            // so downstream passes still see a well-formed operand.
-                            // struct size is only needed for the overlay end-bound
-                            // (override present) — skip the layout query otherwise.
-                            let ssize = if override_bytes.is_some() {
-                                self.layout_of_struct(&base, *span).size as i128
-                            } else { 0 };
-                            self.check_field_overrun(
-                                FieldAccessCheck { field, field_size: size, field_offset: d, struct_size: ssize, override_bytes },
-                                width, *span,
-                            );
-                            return Some(CodeOperand::DispInd { disp: d, reg });
+                            match self.field_disp_silent(&base, field, expr_span(disp)) {
+                                Ok(Some((d, size))) => {
+                                    // Overrun is diagnosed but the operand is emitted anyway
+                                    // (deliberate error-recovery): the displacement is valid,
+                                    // so downstream passes still see a well-formed operand.
+                                    // struct size is only needed for the overlay end-bound
+                                    // (override present) — skip the layout query otherwise.
+                                    let ssize = if override_bytes.is_some() {
+                                        self.layout_of_struct(&base, *span).size as i128
+                                    } else { 0 };
+                                    self.check_field_overrun(
+                                        FieldAccessCheck { field, field_size: size, field_offset: d, struct_size: ssize, override_bytes },
+                                        width, *span,
+                                    );
+                                    return Some(CodeOperand::DispInd { disp: d, reg });
+                                }
+                                // Ruling #1: `field` is NOT a field of `*base`. If it is an
+                                // in-scope CONST, fall THROUGH to the const/comptime path
+                                // below — a typed register is a strict SUPERSET of untyped
+                                // (an imported offset const `Act_grid_w_lo(aN)` resolves as
+                                // that const, not a drop). If it is NEITHER a field NOR a
+                                // const, it is most likely a FIELD TYPO — keep the
+                                // informative `[operand.unknown-field]` naming `*base`. So
+                                // the tranche-7b typo-guard survives for every non-const
+                                // name; only a real field/const NAME collision degrades it,
+                                // and none exists in the corpus.
+                                Ok(None) => {
+                                    if !self.is_const(field) {
+                                        self.error(
+                                            expr_span(disp),
+                                            format!(
+                                                "[operand.unknown-field] `*{base}` has no field or in-scope overlay field `{field}`"
+                                            ),
+                                        );
+                                        return None;
+                                    }
+                                }
+                                // An AMBIGUOUS overlay field is a real error (already
+                                // diagnosed) — drop, never launder to a const.
+                                Err(()) => return None,
+                            }
                         }
                     }
                 }
@@ -1455,16 +1481,22 @@ impl Evaluator<'_> {
     /// overlay-relative offset`. Zero hits → `[operand.unknown-field]` (NO const
     /// fallback on a typed register); ≥2 hits across distinct overlays →
     /// `[operand.ambiguous-field]` listing the qualified candidates.
-    pub(crate) fn resolve_field_disp(
+    /// SILENT field-space lookup (direct field ∪ in-scope overlay fields over
+    /// `base`) with NO not-found diagnostic — the caller decides what a miss
+    /// means. `Ok(Some(hit))` = an unambiguous field; `Ok(None)` = NOT a field of
+    /// `base` (the bare D6.A3 form falls back to const resolution, ruling #1;
+    /// `resolve_field_disp` reports it); `Err(())` = an AMBIGUOUS overlay field, a
+    /// real error emitted here (never laundered to a const).
+    fn field_disp_silent(
         &mut self,
         base: &str,
         field: &str,
         span: Span,
-    ) -> Option<(i128, i128)> {
+    ) -> Result<Option<(i128, i128)>, ()> {
         // Direct field first (a direct field can never be shadowed by an overlay:
         // `[overlay.shadows-field]` rejects that at the overlay decl, D6.A7).
         if let Some(hit) = self.field_in_struct(base, field, span) {
-            return Some(hit);
+            return Ok(Some(hit));
         }
         // Overlay fields: scan every in-scope overlay whose window belongs to
         // `base`. Collect qualified hits so an ambiguity can name them. The
@@ -1483,16 +1515,8 @@ impl Evaluator<'_> {
             }
         }
         match hits.as_slice() {
-            [] => {
-                self.error(
-                    span,
-                    format!(
-                        "[operand.unknown-field] `*{base}` has no field or in-scope overlay field `{field}`"
-                    ),
-                );
-                None
-            }
-            [(_, disp, size)] => Some((*disp, *size)),
+            [] => Ok(None),
+            [(_, disp, size)] => Ok(Some((*disp, *size))),
             many => {
                 let candidates = many
                     .iter()
@@ -1505,8 +1529,29 @@ impl Evaluator<'_> {
                         "[operand.ambiguous-field] field `{field}` is ambiguous across {candidates} — qualify it as `Overlay.{field}`"
                     ),
                 );
+                Err(())
+            }
+        }
+    }
+
+    pub(crate) fn resolve_field_disp(
+        &mut self,
+        base: &str,
+        field: &str,
+        span: Span,
+    ) -> Option<(i128, i128)> {
+        match self.field_disp_silent(base, field, span) {
+            Ok(Some(hit)) => Some(hit),
+            Ok(None) => {
+                self.error(
+                    span,
+                    format!(
+                        "[operand.unknown-field] `*{base}` has no field or in-scope overlay field `{field}`"
+                    ),
+                );
                 None
             }
+            Err(()) => None,
         }
     }
 

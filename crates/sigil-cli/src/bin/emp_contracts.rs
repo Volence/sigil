@@ -101,6 +101,22 @@ fn main() {
         println!("  {:<28} calls {:<24} {kind}", f.proc, f.callee);
     }
 
+    println!(
+        "\n-- [call.input-undefined] firings (D1b, {}): --",
+        report.input_firings.len()
+    );
+    for f in &report.input_firings {
+        println!("  {:<28} calls {:<24} input {} undefined on some path", f.proc, f.callee, f.reg);
+    }
+
+    println!(
+        "\n-- [call.live-clobbered] firings (D1c, {}): --",
+        report.live_clobbered_firings.len()
+    );
+    for f in &report.live_clobbered_firings {
+        println!("  {:<28} calls {:<24} holds {} across clobber", f.proc, f.callee, f.reg);
+    }
+
     println!("\n-- dead-saves (D1d worklist, {}): --", report.dead_saves.len());
     for d in &report.dead_saves {
         println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));

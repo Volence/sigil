@@ -124,22 +124,23 @@ fn let_on_non_register_name_errors() {
     );
 }
 
-// ---- 5. NEGATIVE: namespace closure — a bare const does not resolve (7b) ------
+// ---- 5. const FALLBACK on a `let`-typed register (ruling #1) ------------------
 
 #[test]
-fn let_binding_closes_the_displacement_namespace() {
-    // A module-level `const timer` must NOT shadow field space: on a `let`-typed
-    // register the displacement resolves ONLY in field space. With no overlay/
-    // field `timer` in scope, this is `[operand.unknown-field]` naming `*Sst` —
-    // exactly the tranche-7b closure a param gets, not a silent const fallback.
+fn let_binding_const_fallback_resolves() {
+    // Ruling #1 supersedes the tranche-7b "namespace closure": a `let`-typed
+    // register `a0: *Sst` resolves `NAME(a0)` in order — field of Sst, else
+    // in-scope const, else error. `timer` is a const (not an Sst field), so it
+    // resolves as the const displacement — the typed path is a strict SUPERSET of
+    // the untyped one, same rule params get.
     let src = format!(
         "module m\n{SST}const timer: u8 = 9\n\
          proc p () {{\n    let a0: *Sst\n    tst.b timer(a0)\n    rts\n}}\n"
     );
     let (_module, errs) = lower_errors(&src);
     assert!(
-        errs.iter().any(|m| m.contains("[operand.unknown-field]") && m.contains("*Sst")),
-        "want [operand.unknown-field] naming *Sst (7b closure, no const fallback), got: {errs:?}"
+        !errs.iter().any(|m| m.contains("[operand.unknown-field]")),
+        "ruling #1: const `timer` resolves on the let-typed register, no unknown-field: {errs:?}"
     );
 }
 
