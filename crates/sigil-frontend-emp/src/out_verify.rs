@@ -69,10 +69,11 @@ pub fn check_out(
     items: &[CodeItem],
     uncond: &[Reg],
     cond: &[(Reg, String)],
+    params: &BTreeSet<String>,
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     span: Span,
 ) -> Vec<OutFiring> {
-    verify_out(items, uncond, cond, callee_uncond_out)
+    verify_out(items, uncond, cond, params, callee_uncond_out)
         .into_iter()
         .filter_map(|(r, status)| match status {
             OutStatus::Produced => None,
@@ -177,14 +178,72 @@ fn transfer(
     st.flags = st.flags.after(mnem, ops);
 }
 
+/// The registers READ on some path in the body — mentioned in a source / address
+/// base / index position (not purely as an instruction's write destination). An
+/// auto-inc/dec base (`(a4)+`) counts as a read (its value is used as the
+/// address). Used to gate the in-out param seed: a param∩out register is a
+/// genuine input only if it is read somewhere.
+fn read_registers(items: &[CodeItem]) -> [bool; 16] {
+    let mut read = [false; 16];
+    for it in items {
+        let CodeItem::Instr { mnemonic, ops, .. } = it else { continue };
+        // The single write destination (last-operand register of a write-form) is
+        // NOT a read; everything else mentioned is.
+        let dest = if crate::lower::writes_dest_register(mnemonic) {
+            match ops.last() {
+                Some(CodeOperand::Reg(r)) => Some(*r),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        for r in regs_mentioned(ops) {
+            if Some(r) != dest {
+                read[reg_idx(r)] = true;
+            }
+        }
+    }
+    read
+}
+
+/// Every register a resolved operand list MENTIONS (source, address base, or
+/// index). Mirrors the caller-side `regs_mentioned` conventions.
+fn regs_mentioned(ops: &[CodeOperand]) -> Vec<Reg> {
+    let mut regs = Vec::new();
+    let mut push = |r: Reg| {
+        if !regs.contains(&r) {
+            regs.push(r);
+        }
+    };
+    for op in ops {
+        match op {
+            CodeOperand::Reg(r)
+            | CodeOperand::Ind(r)
+            | CodeOperand::PreDec(r)
+            | CodeOperand::PostInc(r)
+            | CodeOperand::DispInd { reg: r, .. } => push(*r),
+            CodeOperand::IndIdx { reg, xn, .. } => {
+                push(*reg);
+                push(*xn);
+            }
+            _ => {}
+        }
+    }
+    regs
+}
+
 /// Verify each declared output register of a proc over its evaluated CodeBuf.
 /// `uncond` are the unconditional outs; `cond` are `(reg, cc)` conditional outs
 /// (obligated only on the cc-success return paths — an UNKNOWN cc keeps the
-/// obligation).
+/// obligation). `params` are the proc's register params: a register declared
+/// BOTH a param and an out is an IN-OUT accumulator and is seeded produced-at-
+/// entry (its input is a valid output), but ONLY when it is a genuine input
+/// (READ on some path) — a never-read param∩out is a fake param and still fires.
 pub fn verify_out(
     items: &[CodeItem],
     uncond: &[Reg],
     cond: &[(Reg, String)],
+    params: &BTreeSet<String>,
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeMap<Reg, OutStatus> {
     let cfg = Cfg::build(items);
@@ -205,8 +264,19 @@ pub fn verify_out(
         return guard.keys().map(|r| (*r, OutStatus::Produced)).collect();
     };
 
+    // In-out param seed: a checked register that is a param AND read on some path
+    // is credited produced-at-entry (Bucket-3 in-out accumulator). A param∩out
+    // never read is NOT seeded (a fake param → still fires).
+    let read = read_registers(items);
+    let mut entry_produced = [false; 16];
+    for r in guard.keys() {
+        if params.contains(&r.to_string()) && read[reg_idx(*r)] {
+            entry_produced[reg_idx(*r)] = true;
+        }
+    }
+
     let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
-    in_state.insert(entry_idx, State { produced: [false; 16], flags: Flags::TOP });
+    in_state.insert(entry_idx, State { produced: entry_produced, flags: Flags::TOP });
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
 
     // Per checked register: produced on EVERY required return path so far, and

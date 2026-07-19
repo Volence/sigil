@@ -55,7 +55,7 @@ fn status_uncond(
 ) -> OutStatus {
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
-    verify_out(items, &[reg], &[], callee_uncond_out)
+    verify_out(items, &[reg], &[], &BTreeSet::new(), callee_uncond_out)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -182,18 +182,38 @@ fn moveq_is_full_width_production() {
     assert!(is_produced(&s), "moveq writes full 32 bits → Produced, got {s:?}");
 }
 
-// === 3. no-param-seed (Finding 2) =========================================
+// === 3. no-param-seed for a PURE out (Finding 2) ==========================
+// A register declared `out` but NOT a param gets NO seed — production must come
+// from a write on the path. (The param∩out in-out seed is §Bucket-3 below.)
 
-/// A cursor `out(a4)` advanced by `(a4)+` on the main path but early-exiting
-/// BEFORE the advance on the bail path ⇒ FIRES (a param is not a production).
+/// Verify a single UNCONDITIONAL `out(reg)` with the proc's own params passed
+/// (needed for the in-out seed). `params` are register spellings.
+fn status_uncond_params(
+    src: &str,
+    proc: &str,
+    reg: Reg,
+    params: &[Reg],
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+) -> OutStatus {
+    let all = eval_all(src);
+    let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
+    let pset: BTreeSet<String> = params.iter().map(|r| r.to_string()).collect();
+    verify_out(items, &[reg], &[], &pset, callee_uncond_out)
+        .remove(&reg)
+        .expect("status for the checked reg")
+}
+
+/// A PURE cursor `out(a4)` (a4 is NOT a param) produced by `lea` on the main
+/// path but early-exiting BEFORE the write on the bail path ⇒ FIRES (no seed;
+/// production must come from a write). Finding 2, pure-out form.
 #[test]
-fn unadvanced_cursor_param_fires() {
+fn unadvanced_pure_out_cursor_fires() {
     let s = status_uncond(
         "module m\n\
-         proc P (a4: *u8) clobbers(d0) out(a4) {\n\
+         proc P () clobbers(d0) out(a4) {\n\
              tst.b   Flag\n\
              beq     .bail\n\
-             move.b  (a4)+, d0\n\
+             lea     Table, a4\n\
              rts\n\
          .bail:\n\
              rts\n\
@@ -202,29 +222,76 @@ fn unadvanced_cursor_param_fires() {
         Reg::A4,
         &map(&[]),
     );
-    assert!(is_unverified(&s), "a4 un-advanced on the bail path → Unverified, got {s:?}");
+    assert!(is_unverified(&s), "pure out(a4) un-produced on the bail path → Unverified, got {s:?}");
 }
 
-/// The version that advances a4 on EVERY path verifies — the `(a4)+` advance is
-/// the production (an address-register write).
+/// The version that produces a4 on EVERY path verifies — the `lea` write is the
+/// production (an address-register write), no seed involved.
 #[test]
-fn advanced_cursor_on_all_paths_verifies() {
+fn produced_pure_out_cursor_on_all_paths_verifies() {
     let s = status_uncond(
         "module m\n\
-         proc P (a4: *u8) clobbers(d0) out(a4) {\n\
+         proc P () clobbers(d0) out(a4) {\n\
              tst.b   Flag\n\
              beq     .other\n\
-             move.b  (a4)+, d0\n\
+             lea     A, a4\n\
              rts\n\
          .other:\n\
-             move.b  (a4)+, d0\n\
+             lea     B, a4\n\
              rts\n\
          }\n",
         "P",
         Reg::A4,
         &map(&[]),
     );
-    assert!(is_produced(&s), "a4 advanced on every path → Produced, got {s:?}");
+    assert!(is_produced(&s), "a4 lea'd on every path → Produced, got {s:?}");
+}
+
+// === Bucket 3: in-out accumulator seed (param∩out, read on some path) =======
+// A register declared BOTH a param and an out is an IN-OUT accumulator: its
+// INPUT is a valid output (unchanged-on-empty is a valid zero-append; a partial
+// advance like `(a4)+`/`addq.b` preserves the already-full input value). It is
+// seeded produced-at-entry — but ONLY when it is a genuine input (READ on some
+// path). A param∩out register never read is suspect (a fake param) and STILL
+// fires.
+
+/// The InsertSpriteMasks shape: `out(a4, d5)` where BOTH are params, READ +
+/// advanced on the loop, and returned UNCHANGED on the empty (`.done`) path ⇒
+/// VERIFIES (the in-out seed credits the input as a valid output).
+#[test]
+fn inout_param_seed_verifies() {
+    let src = "module m\n\
+        proc P (a4: *u8, d5: u16) clobbers(d0) out(a4, d5) {\n\
+            cmpi.w  #100, d5\n\
+            bge     .done\n\
+            move.w  d0, (a4)+\n\
+            addq.b  #1, d5\n\
+        .done:\n\
+            rts\n\
+        }\n";
+    let a4 = status_uncond_params(src, "P", Reg::A4, &[Reg::A4, Reg::D5], &map(&[]));
+    let d5 = status_uncond_params(src, "P", Reg::D5, &[Reg::A4, Reg::D5], &map(&[]));
+    assert!(is_produced(&a4), "in-out a4 (read+advanced, unchanged on empty) → Produced, got {a4:?}");
+    assert!(is_produced(&d5), "in-out d5 (read+advanced, unchanged on empty) → Produced, got {d5:?}");
+}
+
+/// Trap (guardrail): a param∩out register that is NEVER READ is a fake param —
+/// it is NOT seeded and STILL FIRES. A mutation seeding every param∩out
+/// unconditionally makes this go green (the read-guard is load-bearing).
+#[test]
+fn param_out_never_read_still_fires() {
+    let s = status_uncond_params(
+        "module m\n\
+         proc P (a4: *u8) clobbers(d0) out(a4) {\n\
+             moveq   #0, d0\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A4,
+        &[Reg::A4],
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "param∩out a4 never read → not seeded → Unverified, got {s:?}");
 }
 
 // === 4. Defer (Finding 3) =================================================
@@ -288,7 +355,7 @@ fn status_cond(
 ) -> OutStatus {
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out)
+    verify_out(items, &[], &[(reg, cc.to_string())], &BTreeSet::new(), callee_uncond_out)
         .remove(&reg)
         .expect("status for the checked reg")
 }
