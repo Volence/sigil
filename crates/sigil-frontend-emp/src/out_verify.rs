@@ -184,14 +184,19 @@ pub fn verify_out(
         for edge in cfg.edges(idx) {
             match edge {
                 Edge::Follow(succ) => {
+                    // Branch-split (guardrail 1): along a conditional branch's
+                    // taken / fall-through edges the tested cc is provably TRUE /
+                    // FALSE respectively — refine the propagated flags so a `!cc`
+                    // return reached directly off the branch is classified.
+                    let edge_st = split_flags(&cfg, idx, succ, &st);
                     let changed = match in_state.get(&succ) {
                         None => {
-                            in_state.insert(succ, st.clone());
+                            in_state.insert(succ, edge_st);
                             true
                         }
                         Some(existing) => {
                             let mut merged = existing.clone();
-                            join(&mut merged, &st);
+                            join(&mut merged, &edge_st);
                             if merged != *existing {
                                 in_state.insert(succ, merged);
                                 true
@@ -277,6 +282,62 @@ fn check_return(
     }
 }
 
+/// The propagated state along the `idx → succ` edge, branch-split refined: if
+/// `idx` is a SIMPLE conditional branch (`bXX`), the tested cc is provably TRUE
+/// on the taken edge and FALSE on the fall-through. A `dbcc`, an unconditional
+/// tail, or a composite/unknown cc refines nothing (sound). The degenerate
+/// branch-to-fall-through case cannot be split and stays ⊤-safe.
+fn split_flags(cfg: &Cfg, idx: usize, succ: usize, st: &State) -> State {
+    let Some((mnem, ops)) = cfg.instr(idx) else { return st.clone() };
+    let Some(cc) = simple_branch_cond(mnem) else { return st.clone() };
+    let fallthrough = cfg.next_instr(idx);
+    let taken = ops
+        .iter()
+        .rev()
+        .find_map(|o| match o {
+            CodeOperand::Sym(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .and_then(|t| cfg.label_index(t));
+    // Branch to the fall-through instruction — the two edges coincide, can't
+    // split.
+    if Some(succ) == fallthrough && taken == fallthrough {
+        return st.clone();
+    }
+    let holds = Some(succ) != fallthrough; // the taken edge iff not the fall-through
+    let mut out = st.clone();
+    out.flags = out.flags.refine(cc, holds);
+    out
+}
+
+/// The condition tested by a SIMPLE conditional branch (`bcc`→`cc`, `bhs`→`cc`,
+/// `blo`→`cs`, `bne`→`ne`, …). `None` for a non-branch, an unconditional `bra`,
+/// a `dbcc` counting form, or `Scc` — only a plain `bXX` (3-char, `b`-prefix)
+/// splits.
+fn simple_branch_cond(mnem: &str) -> Option<&'static str> {
+    if !(mnem.starts_with('b') && mnem.len() == 3) {
+        return None;
+    }
+    let bare = mnem.strip_prefix('b')?;
+    Some(match bare {
+        "cc" | "hs" => "cc",
+        "cs" | "lo" => "cs",
+        "eq" => "eq",
+        "ne" => "ne",
+        "hi" => "hi",
+        "ls" => "ls",
+        "pl" => "pl",
+        "mi" => "mi",
+        "vc" => "vc",
+        "vs" => "vs",
+        "ge" => "ge",
+        "lt" => "lt",
+        "gt" => "gt",
+        "le" => "le",
+        _ => return None,
+    })
+}
+
 /// Join `other` into `acc` (both on entry to the same node). `produced` meets by
 /// INTERSECTION (MUST — produced only if BOTH paths produce it); `flags` meet
 /// pointwise.
@@ -346,6 +407,26 @@ impl Flags {
         } else {
             Flags::TOP
         }
+    }
+
+    /// Refine the abstract flags to reflect that condition `cc` evaluates to
+    /// `holds` (the branch-split fact). Only the SINGLE-FLAG conditions pin a
+    /// flag; a composite condition (`hi`/`ls`/`ge`/…) constrains a combination,
+    /// so it refines nothing (sound — less precision, never a wrong known flag).
+    fn refine(&self, cc: &str, holds: bool) -> Flags {
+        let mut f = *self;
+        match cc {
+            "eq" => f.z = Some(holds),
+            "ne" => f.z = Some(!holds),
+            "cs" | "lo" => f.c = Some(holds),
+            "cc" | "hs" => f.c = Some(!holds),
+            "mi" => f.n = Some(holds),
+            "pl" => f.n = Some(!holds),
+            "vs" => f.v = Some(holds),
+            "vc" => f.v = Some(!holds),
+            _ => {} // composite — no single-flag refinement
+        }
+        f
     }
 
     /// Evaluate condition code `cc` against the abstract flags: `Some(true)` /

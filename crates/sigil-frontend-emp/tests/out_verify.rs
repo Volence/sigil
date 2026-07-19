@@ -275,3 +275,146 @@ fn tail_to_external_symbol_fires() {
     );
     assert!(is_unverified(&s), "tail to an external symbol → Unverified, got {s:?}");
 }
+
+// === 5. conditional out(rN if cc) — the FindStagedBlock shape ===============
+
+/// Verify a single CONDITIONAL `out(reg if cc)` on the named proc's body.
+fn status_cond(
+    src: &str,
+    proc: &str,
+    reg: Reg,
+    cc: &str,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+) -> OutStatus {
+    let all = eval_all(src);
+    let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out)
+        .remove(&reg)
+        .expect("status for the checked reg")
+}
+
+/// The FindStagedBlock shape via `moveq`-fold: a1 produced on the hit (eq) path;
+/// the `.miss` path does `moveq #1,d3` (Z clear ⇒ ne) then `rts` — a1 unproduced
+/// but the return is provably `!eq`, so `out(a1 if eq)` VERIFIES.
+#[test]
+fn conditional_out_verifies_via_moveq_fold() {
+    let s = status_cond(
+        "module m\n\
+         proc P (d0: u16) clobbers(d3) out(a1 if eq) {\n\
+             cmp.w   #0, d0\n\
+             bne     .miss\n\
+             lea     Slot, a1\n\
+             moveq   #0, d3\n\
+             rts\n\
+         .miss:\n\
+             moveq   #1, d3\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        "eq",
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "a1 produced on eq, .miss is !eq → Produced, got {s:?}");
+}
+
+/// The SAME body declared UNCONDITIONAL `out(a1)` FIRES — a1 is not produced on
+/// the `.miss` return (the existence-proof regression, both directions).
+#[test]
+fn same_body_unconditional_out_fires() {
+    let s = status_uncond(
+        "module m\n\
+         proc P (d0: u16) clobbers(d3) out(a1) {\n\
+             cmp.w   #0, d0\n\
+             bne     .miss\n\
+             lea     Slot, a1\n\
+             moveq   #0, d3\n\
+             rts\n\
+         .miss:\n\
+             moveq   #1, d3\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "unconditional out(a1) unproduced on .miss → Unverified, got {s:?}");
+}
+
+/// Branch-split (guardrail 4's reusable primitive): a conditional out whose
+/// `!cc` return is reached DIRECTLY after the branch with NO intervening `moveq`
+/// — the taken `bne` edge must classify `.miss` as `!eq`. Verifies only if the
+/// branch-split refinement is applied.
+#[test]
+fn conditional_out_verifies_via_branch_split() {
+    let s = status_cond(
+        "module m\n\
+         proc P (d0: u16) clobbers() out(a1 if eq) {\n\
+             tst.w   d0\n\
+             bne     .miss\n\
+             lea     Slot, a1\n\
+             rts\n\
+         .miss:\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        "eq",
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "branch-split classifies .miss as !eq → Produced, got {s:?}");
+}
+
+// === 6. trap for the ⊤-keeps-obligation conservatism (guardrail 3) ==========
+
+/// A conditional `out(a1 if eq)` whose body does NOT produce a1 on a return
+/// where the cc is ⊤ (clobbered by a non-`moveq` op — `add.w` — before the
+/// `rts`) MUST FIRE: an UNKNOWN cc keeps the obligation. This is the load-bearing
+/// conservatism — a mutation treating ⊤ as provably-`!eq` makes it go green.
+#[test]
+fn conditional_out_unknown_cc_at_return_fires() {
+    let s = status_cond(
+        "module m\n\
+         proc P (d0: u16) clobbers(d3) out(a1 if eq) {\n\
+             cmp.w   #0, d0\n\
+             bne     .miss\n\
+             lea     Slot, a1\n\
+             moveq   #0, d3\n\
+             rts\n\
+         .miss:\n\
+             add.w   #1, d3\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        "eq",
+        &map(&[]),
+    );
+    assert!(
+        is_unverified(&s),
+        "a1 unproduced on .miss where eq is ⊤ (add.w clobbered it) → Unverified, got {s:?}"
+    );
+}
+
+/// Companion: when a1 IS produced on BOTH paths, the conditional out verifies
+/// regardless of the cc state (no obligation is ever unmet).
+#[test]
+fn conditional_out_produced_everywhere_verifies() {
+    let s = status_cond(
+        "module m\n\
+         proc P (d0: u16) clobbers(d3) out(a1 if eq) {\n\
+             cmp.w   #0, d0\n\
+             bne     .other\n\
+             lea     A, a1\n\
+             rts\n\
+         .other:\n\
+             lea     B, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        "eq",
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "a1 produced on every path → Produced, got {s:?}");
+}
