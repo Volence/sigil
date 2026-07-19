@@ -72,3 +72,23 @@ firing is the simple D1c close being edge-blind across loop iterations (`a1` is 
 the prior iteration). This is the anticipated tiny surface — FindStagedBlock `a1` is the only
 register-conditional out. **D1c is observe-only (not gated); this does not break any pin.**
 Item #2's cc-edge precision retires it if it grows.
+
+## Known limitations — flip-blockers
+Two soundness gaps in the verifier itself (distinct from the corpus residue above).
+Neither has a corpus instance today, but both must close before the WARN→ERROR flip —
+they join Bucket 1 (→ #2) and Buckets 2/3 (→ G5) as flip preconditions.
+
+- **Mutual/circular callee-out sourcing** (adversarial Finding 2, theoretical, not in
+  corpus). The callee-out / tail-out credit reads each callee's DECLARED unconditional
+  out, with no verification fixpoint. Two procs that mutually source `out(rN)` from each
+  other — A `out(a1)` credited only from `jbsr B`, B `out(a1)` only from `jbsr A`, neither
+  actually writing `a1` — would each verify against the OTHER's declared label: a
+  self-consistent lie. No corpus instance. Close before the flip via a verified-out
+  fixpoint (credit only VERIFIED callee outs, not merely declared ones) or a
+  proof-of-absence.
+- **Conditional-external-tail `Defer`** (adversarial Finding 3, independently confirmed,
+  not live). A conditional branch to a non-local/unresolved target (`beq SomeExternalProc`)
+  yields an `Edge::Defer` the verifier IGNORES (the `if !is_uncond_tail(mnem)` guard),
+  mirroring `preserves`. For out-honesty that Defer is a REQUIRED return path, so an out
+  left unproduced there would escape the check. **0 corpus instances** (grep-confirmed: no
+  conditional branch to a non-local symbol in the corpus). Close before the flip.
