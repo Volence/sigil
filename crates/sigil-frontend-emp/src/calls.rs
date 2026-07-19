@@ -233,17 +233,24 @@ fn register_universe() -> Vec<String> {
 
 /// Does callee `c` DESTROY a caller's held value in `reg` — `reg` is in its
 /// effective clobber set (post verified-preserves subtraction) and is NOT its
-/// declared output (an output is a produced RESULT, not a clobbered held value)?
-/// An unknown callee (`None`) is not claimed to clobber (holes are gated
-/// elsewhere; never fire across an unknown here).
+/// declared UNCONDITIONAL output? Only an UNCONDITIONAL `out(reg)` excuses the
+/// clobber (it is genuinely the produced result on ALL return edges, so a read
+/// after the call sees that result, not a stale held value). A CONDITIONAL
+/// `out(reg if cc)` does NOT excuse it: `reg` is trash on the `!cc` edge AND the
+/// produced result on the cc edge, so the caller's OLD held value in `reg` is
+/// destroyed on EVERY path — excusing it would be a silent D1c miss (§4, Finding
+/// 4). Hence this reads `callee_uncond_out` (the conditional-out registers
+/// already subtracted), NOT the full `callee_out`. An unknown callee (`None`) is
+/// not claimed to clobber (holes are gated elsewhere; never fire across an
+/// unknown here).
 fn destroys_value(
     effective: &BTreeMap<String, RegEffect>,
-    callee_out: &BTreeMap<String, BTreeSet<String>>,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     c: &str,
     reg: &str,
 ) -> bool {
     let Some(e) = effective.get(c) else { return false };
-    if callee_out.get(c).is_some_and(|o| o.contains(reg)) {
+    if callee_uncond_out.get(c).is_some_and(|o| o.contains(reg)) {
         return false;
     }
     e.top || e.regs.contains(reg)
@@ -407,9 +414,13 @@ pub fn check_live_clobbered(
     items: &[CodeItem],
     effective: &BTreeMap<String, RegEffect>,
     callee_out: &BTreeMap<String, BTreeSet<String>>,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<LiveClobberFiring> {
     let Some(entry) = entry_index(items) else { return Vec::new() };
     let cfg = Cfg::build(items);
+    // may-def keeps the FULL `callee_out` — a conditional out IS a produced value
+    // there, and a may-def over-approximation is firing-safe. Only the FIRE
+    // decision (`destroys_value`) switches to `callee_uncond_out` (Finding 4).
     let defined = may_defined_in(&cfg, entry, params, callee_out);
 
     let mut firings = Vec::new();
@@ -425,8 +436,8 @@ pub fn check_live_clobbered(
         let candidates: Vec<String> =
             if e.top { register_universe() } else { e.regs.iter().cloned().collect() };
         for reg in candidates {
-            if !destroys_value(effective, callee_out, callee, &reg) {
-                continue; // it is a declared output, not a destroyed held value
+            if !destroys_value(effective, callee_uncond_out, callee, &reg) {
+                continue; // it is a declared UNCONDITIONAL output, not a destroyed value
             }
             if here.contains(&reg) && live_after_call(&cfg, effective, idx, &reg) {
                 firings.push(LiveClobberFiring {

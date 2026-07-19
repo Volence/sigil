@@ -194,14 +194,30 @@ fn effect(regs: &[&str]) -> RegEffect {
 }
 
 /// Run the live-clobbered check with `callee` clobbering `clob` (effective) and
-/// producing `out`. Returns the firing register names.
+/// producing `out` (both the full and unconditional out — no conditional out).
+/// Returns the firing register names.
 fn run_live(src: &str, callee: &str, clob: &[&str], out: &[&str]) -> Vec<String> {
+    run_live_split(src, callee, clob, out, out)
+}
+
+/// Like [`run_live`] but with DISTINCT full `callee_out` (for may-def) and
+/// `callee_uncond_out` (for the fire decision — Finding 4): a callee declaring
+/// `out(reg if cc)` has `reg` in `full_out` but NOT in `uncond_out`.
+fn run_live_split(
+    src: &str,
+    callee: &str,
+    clob: &[&str],
+    full_out: &[&str],
+    uncond_out: &[&str],
+) -> Vec<String> {
     let (name, params, items) = eval_first(src);
     let mut eff: BTreeMap<String, RegEffect> = BTreeMap::new();
     eff.insert(callee.to_string(), effect(clob));
     let mut outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    outs.insert(callee.to_string(), regset(out));
-    check_live_clobbered(&name, &params, &items, &eff, &outs)
+    outs.insert(callee.to_string(), regset(full_out));
+    let mut uncond: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    uncond.insert(callee.to_string(), regset(uncond_out));
+    check_live_clobbered(&name, &params, &items, &eff, &outs, &uncond)
         .into_iter()
         .map(|f| f.reg)
         .collect()
@@ -347,7 +363,7 @@ fn intervening_clobbering_call_ends_liveness() {
     eff.insert("First".to_string(), effect(&["a0"]));
     eff.insert("Second".to_string(), effect(&["a0"]));
     let outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let f = check_live_clobbered(&name, &params, &items, &eff, &outs);
+    let f = check_live_clobbered(&name, &params, &items, &eff, &outs, &outs);
     let callees: Vec<&str> = f.iter().map(|x| x.callee.as_str()).collect();
     assert_eq!(callees, vec!["Second"], "only the second (last) clobber before the read fires: {f:?}");
 }
@@ -375,7 +391,7 @@ fn movem_save_restore_around_clobbering_call_passes() {
     let mut eff: BTreeMap<String, RegEffect> = BTreeMap::new();
     eff.insert("Munge".to_string(), effect(&["d5", "d7"]));
     let outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let f = check_live_clobbered(&name, &params, &items, &eff, &outs);
+    let f = check_live_clobbered(&name, &params, &items, &eff, &outs, &outs);
     assert!(f.is_empty(), "d5/d7 saved+restored across Munge — not live-clobbered: {f:?}");
 }
 
@@ -399,7 +415,7 @@ fn partial_movem_save_fires_only_for_the_unsaved_register() {
     let mut eff: BTreeMap<String, RegEffect> = BTreeMap::new();
     eff.insert("Munge".to_string(), effect(&["d5", "d7"]));
     let outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let f = check_live_clobbered(&name, &params, &items, &eff, &outs);
+    let f = check_live_clobbered(&name, &params, &items, &eff, &outs, &outs);
     let regs: Vec<&str> = f.iter().map(|x| x.reg.as_str()).collect();
     assert_eq!(regs, vec!["d7"], "only the unsaved d7 fires (d5 restored): {f:?}");
 }
@@ -426,7 +442,7 @@ fn intervening_out_call_redefines_and_suppresses() {
     eff.insert("FillRow".to_string(), effect(&["d0"])); // FillRow writes d0 ...
     let mut outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     outs.insert("FillRow".to_string(), regset(&["d0"])); // ... as its declared OUTPUT
-    let f = check_live_clobbered(&name, &params, &items, &eff, &outs);
+    let f = check_live_clobbered(&name, &params, &items, &eff, &outs, &outs);
     assert!(f.is_empty(), "FillRow's out(d0) redefines d0 before the read — VSlide must not fire: {f:?}");
 }
 
@@ -447,7 +463,7 @@ fn top_effective_clobbers_held_value_fires() {
     let mut eff: BTreeMap<String, RegEffect> = BTreeMap::new();
     eff.insert("Wild".to_string(), RegEffect { top: true, regs: BTreeSet::new() });
     let outs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let f = check_live_clobbered(&name, &params, &items, &eff, &outs);
+    let f = check_live_clobbered(&name, &params, &items, &eff, &outs, &outs);
     assert!(f.iter().any(|x| x.reg == "a0"), "⊤ clobbers a0 held across it: {f:?}");
 }
 
@@ -485,4 +501,59 @@ fn callee_unconditional_out_credits_definition() {
         .map(|f| f.reg)
         .collect();
     assert!(with.is_empty(), "Producer out(d0) credited → no firing, got {with:?}");
+}
+
+// ===========================================================================
+// [call.live-clobbered] D1c coupled close (§4, Finding 4): a CONDITIONAL
+// out(reg if cc) does NOT excuse a live-clobber — reg is destroyed on every
+// path (trash on !cc, produced-result on cc), so the caller's OLD held value is
+// gone either way. `destroys_value` reads `callee_uncond_out` (conditional-out
+// registers subtracted), so a held-live conditional-out register read after the
+// call NOW fires; an UNCONDITIONAL out still does not.
+// ===========================================================================
+
+/// A value held live in a1 across a callee whose out is CONDITIONAL
+/// (`out(a1 if eq)`: a1 ∈ full callee_out, a1 ∉ callee_uncond_out) and read
+/// after the call ⇒ D1c NOW fires (was suppressed via the full `callee_out`).
+#[test]
+fn conditional_out_does_not_excuse_live_clobber_fires() {
+    let f = run_live_split(
+        "module m\n\
+         proc P () clobbers(d0/a1) {\n\
+             lea Table, a1\n\
+             jbsr Find\n\
+             move.l (a1), d0\n\
+             rts\n\
+         }\n",
+        "Find",
+        &["a1"],  // Find clobbers a1 ...
+        &["a1"],  // ... a1 IS in the full callee_out (conditional out) ...
+        &[],      // ... but NOT unconditional — so it does not excuse the clobber
+    );
+    assert_eq!(
+        f,
+        vec!["a1".to_string()],
+        "conditional out(a1) does not excuse the held-a1 clobber: {f:?}"
+    );
+}
+
+/// The SAME caller across an UNCONDITIONAL-out callee still does NOT fire (a1 is
+/// the produced result on every path — reading it is the result, not a stale
+/// value).
+#[test]
+fn unconditional_out_still_excuses_live_clobber_passes() {
+    let f = run_live_split(
+        "module m\n\
+         proc P () clobbers(d0/a1) {\n\
+             lea Table, a1\n\
+             jbsr Alloc\n\
+             move.l (a1), d0\n\
+             rts\n\
+         }\n",
+        "Alloc",
+        &["a1"],  // Alloc clobbers a1 ...
+        &["a1"],  // ... and a1 is its full out ...
+        &["a1"],  // ... AND unconditional — so it excuses the clobber
+    );
+    assert!(f.is_empty(), "unconditional out(a1) still excuses the clobber: {f:?}");
 }

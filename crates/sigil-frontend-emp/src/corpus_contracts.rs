@@ -237,6 +237,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &pb.buf.items,
             &closure.effective,
             &callee_out,
+            &callee_uncond_out,
         ));
     }
     input_firings.sort_by(|a, b| {
