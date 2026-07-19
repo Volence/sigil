@@ -1,0 +1,108 @@
+# Pre-t18 Roadmap
+
+**Milestone target:** t18 = the **parallax port** (next lag lever, ~18-22%/frame; parallax is still unported `.asm`).
+
+**Current state (2026-07-18):** G4 MERGED+PUSHED. Contract-grammar v2 arc (G1+G2+G3+substrate+G4) fully merged.
+Masters: sigil `41980ec` / aeon `e55d7f1`. Canonical ROMs: plain `8984e510`/`453533`, debug `c80465dc`/`461554` (byte-neutral).
+Strict mode **OFF** — D1b (undefined-input) stays WARN until the flip in Phase 1.
+
+**Guiding principle:** *Contracts go on stable code.* Finish **and verify** the safety net → optimize under it → delete dead code → type the settled register layout → then port parallax.
+
+> **Ordering note that supersedes the original v2 design doc.** The doc says "pass-3 unblocks after G1+G2." That predates the G4 session. G4 made `out()` labels **load-bearing but unverified**, and pass-3's "trust the contract" hoists now depend on those labels being honest (FindStagedBlock was a real mislabel — proof the trust is currently misplaced). So **Phase 1 (verify the contract system) must land before Phase 2 (pass-3).**
+
+This roadmap covers the three output buckets of the 4-wave optimization review — **optimization**, **bugs**, and **language failings** — each is tagged `[opt]` / `[bug]` / `[lang]` below.
+
+---
+
+## Phase 1 — Complete & verify the register-contract system  *(before any optimization)*
+
+1. **out()-verification arc** ("G4.5", new) `[lang]`
+   A checker that verifies `out()` labels are honest: does a proc actually produce what its label claims, on every path? Spec → build.
+   *Why first:* must-def (D1b) + §6 (a live ERROR gate) already trust `out()`; pass-3 will too. **Hard prerequisite for the flip and for pass-3.**
+
+2. **Edge-sensitive conditional-out crediting** `[lang]`
+   Clears the one remaining false alarm — D1b:1, FillColumn→CopyBlockColumn `a1`. Credits a conditional `out(rN if cc)` on its success edge. **Hard prerequisite for the flip.**
+
+3. **S2-D6 checked-clobbers / preserves lint** `[lang]`  *(ledger rows 1023, 1030, 1062)*
+   Same "mechanically verify register contracts" family as #1. `preserves()` can't yet express individual push/pop pairs, so the individual-push-across-a-branch pattern **false-positives** `[proc.clobber-undeclared]` on **≥3 live instances** (`AllocDynamic` a0, `Collected_Park/UnparkSlot` a0), both `.emp` and `.asm` tiers. **Needed before the error-tier flip** — otherwise these FPs get "fixed" with a *false* `clobbers(a0)`. Ask: (a) `preserves()` accepts individual push/pop pairs, or (b) the clobber heuristic tracks individual-push balance across branches. Also unlocks the Tier-C movem deletions in Phase 2.5.
+
+4. **WARN→ERROR flip** (D1b strict) `[lang]`
+   Turn undefined-input from a warning into a build error. Its own clean commit. Blocked on #1–#3.
+   *Why before pass-3:* a WARN net doesn't *catch* bad hoists during surgery — an ERROR net does. Net live before you cut.
+
+---
+
+## Phase 2 — Pass-3: register / object-render optimization  *(under the live net)*
+
+*Design-gate first: run the §C trigger checks, then batch the work.*
+
+5. **Dead-save worklist** `[opt]` — 16 rows, re-issued & verified safe.
+6. **D1c-tagged caller-side-hoist fuel** `[opt]` — register-hoist sites the contract sweep surfaced.
+7. **Step-5 pass-3-adjacent riders** `[opt]` — ledger-1092 `move.l` pairing · W022/W025.
+   *(Note: "D7 deletions" is NOT here — it is its own byte-changing batch, Phase 2.5.)*
+8. **Object/render candidates** `[opt]` — Tier-B; **verify each at the pass design gate before committing.**
+   sprites H1/H2/H3 · rings R2/R3 · entity_window #1/#3/#4 · core #1/#2 · animate A2/A3 · section H1/H3.
+   *(Confirm against the review doc — see References.)*
+9. **Micro-batch riders** `[opt]` — aabb 3-piece split · vdp_init M1 · dplc D3 · VDP shared-module (row 1073, 2nd typed-VDP consumer).
+
+---
+
+## Phase 2.5 — D7 dead-code deletion batch  *(its own gated, byte-CHANGING batch)*
+
+10. **D7 dead-code / dead-symbol deletions** `[opt]`  *(ledger row 1091)*
+    Deletes live RAM symbols / dead writers: `Spawn_Count`, `CROSS_RESET_MAGIC`, dead `ess_*` indices, `Hscroll_Dirty_*`, `Tile_Cache_GetTile` (zero callers), the wave-4 dead-constants list, dead `DEBUG_*` flags.
+    **Byte-changing** (RAM layout shifts / removed stores) → moves the byte gates → needs both-shape lockstep + re-pin + provenance. Cannot ride a byte-neutral pass. Ratified scaffolding (e.g. `Plane_Buffer_Reset`'s reset hook) is **annotated, not deleted**.
+11. **Tier-C movem deletions** `[opt]` — dplc / load_object / AllocDynamic; unblocked once the Phase-1 S2-D6 lint exists (per-caller union proven mechanically).
+
+---
+
+## Phase 3 — G5: type the now-stable register layout
+
+12. **G5 — typed register slots (§7)** `[lang]`  *(ledger rows 1054, 1069)*
+    `GridCoord`/`SectionId` at the FlatIDXY seam: `proc FlatIDXY(d2: GridCoord, d3: GridCoord) out(d0: SectionId)`, checks at the ~4 cross-`jbsr` sites; closes row 1054.
+    *Why last:* G5 types the exact register slots pass-3 reshapes — type the **final** layout, not a moving target. **Byte-neutral**, so it lands on pass-3's settled canonical and proves it changed nothing. Demand step: run the `// In:`/`// Out:` proc-header census (row 1069) once signatures are stable.
+13. **Prelude domain-type pass** `[lang]`  *(sibling / follow-on; "construct walk #3")*
+    Populates G5's typed-register mechanism with the wider newtype family: `Angle` (partly shipped for GetSineCosine), `SoundId`/`SongId`/`SfxId`, `VramTile`, `AnimId`/`FrameId`, `Tile`/`Block`/`Chunk`. Volence-driven design.
+
+---
+
+## C · Trigger-keyed reopens  *(run these checks at the Phase-2 design gate; skip if the trigger doesn't bind)*
+
+- **DMA-drain reopen** `[opt]` — only if the post-pass-2 worst-case VBlank audit still binds.
+- **FindStagedBlock direct-mapped** `[opt]` — only if it's still hot after the pass-2 memoize.
+
+---
+
+## D · Backlog  *(any time; not gating t18)*
+
+- **`Sound_PlayMusic.await_slot` DEBUG watchdog** `[bug]`  *(ledger row 1090)* — the H-1 residual: the spin is correct but *unbounded*; a wedged Z80 hangs the 68k silently in plain. Add a DEBUG-only spin counter + `raise_error` on overrun (self-gates to zero bytes in plain). Do-when-you-next-touch-sound_api.
+- **Optional-param design** `[lang]` — the AnimateSprite `d3` case (conditional/data-dependent input; no cc to hang it on). 1 site, no rush.
+- **Diagnostics-tier remainder** `[lang]` — items beyond G1–G4 (D7 `@scaffolding` annotation, D11 name-linkage, any D5/D6/D8–D10 not folded into G1–G5). Confirm exact scope against the v2 design doc.
+
+---
+
+## Bucket coverage check (the review's three outputs)
+
+| Bucket | Status |
+|---|---|
+| **Optimization** `[opt]` | Tier-A done (pass-1/2); Tier-B = Phase 2; Tier-C = Phase 2.5 (gated on S2-D6); D7 batch = Phase 2.5. ✅ |
+| **Bugs** `[bug]` | All confirmed bugs (sprites PB1/PB2 + wave-2 B1/H-1/C1/D1/E1) fixed+merged; one open rider = await_slot watchdog (§D). ✅ |
+| **Language failings** `[lang]` | out()-verification + edge-sensitive + S2-D6 lint (Phase 1); G5 + domain-type pass (Phase 3); diagnostics remainder (§D). ✅ |
+
+---
+
+## Not a hard dependency
+
+Parallax (t18) is **unported**, so it depends on *none* of Phase 2/2.5/3. If beating frame-lag is the priority, t18 can jump ahead of pass-3 — a deliberate call, not a forced sequence.
+
+## Two spots to confirm before committing  *(summarized from dense notes)*
+
+- **Item 8** — the Tier-B pass-3 candidate list: verify against the review doc.
+- **§D diagnostics remainder** — verify exact scope against the v2 design doc.
+
+## References
+
+- Contract-grammar v2 design doc: `sigil/docs/superpowers/specs/2026-07-17-contract-grammar-v2-design.md` (the G1–G5 table is §"tiers"; G5 = §7).
+- 4-wave optimization review: `aeon/docs/reviews/2026-07-16-emp-port-optimization-review.md`.
+- Gap-ledger (row detail): `sigil/docs/superpowers/notes/campaign-gap-ledger.md` — rows 1023/1030/1062 (S2-D6), 1054/1069 (G5), 1090 (watchdog), 1091 (D7), 1092 (move.l pairing).
+- Campaign log: `spec2-progress.md` (memory; newest at file tail).
