@@ -276,13 +276,11 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         if uncond.is_empty() && cond.is_empty() {
             continue;
         }
-        let params = nodes.get(&pb.name).map(|n| n.params.clone()).unwrap_or_default();
         out_firings.extend(check_out(
             &pb.name,
             &pb.buf.items,
             &uncond,
             &cond,
-            &params,
             &callee_uncond_out,
             pb.span,
         ));
