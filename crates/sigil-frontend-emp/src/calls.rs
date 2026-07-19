@@ -243,6 +243,15 @@ fn register_universe() -> Vec<String> {
 /// already subtracted), NOT the full `callee_out`. An unknown callee (`None`) is
 /// not claimed to clobber (holes are gated elsewhere; never fire across an
 /// unknown here).
+///
+/// KNOWN FALSE POSITIVE (observe-only, documented 2026-07-19): this simple close
+/// is edge-blind, so `TileCache_FillRow @ TileCache_FindStagedBlock :: a1` fires
+/// spuriously — FillRow reads `a1` only on FindStagedBlock's eq-success edge
+/// (where it IS valid) or after an intervening `DecompressBlock` (unconditional
+/// `out(a1)`, which redefines it), never as a stale held value. D1c is
+/// observe-only (not gated), so this breaks nothing; item #2's cc-edge precision
+/// retires it if it grows. FindStagedBlock `a1` is the only register-conditional
+/// out, so the surface is exactly this one site.
 fn destroys_value(
     effective: &BTreeMap<String, RegEffect>,
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
