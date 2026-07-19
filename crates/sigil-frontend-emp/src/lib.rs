@@ -11,6 +11,7 @@ pub mod flag_check;
 pub mod layout;
 pub mod lexer;
 pub mod lower;
+pub mod out_verify;
 pub mod parser;
 pub mod preserves;
 pub mod resolve;

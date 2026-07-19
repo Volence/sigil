@@ -185,6 +185,20 @@ impl<'a> Cfg<'a> {
         }
     }
 
+    /// The fall-through instruction index after `idx` (the textually next
+    /// instruction), or `None` at the end of the body. Exposed for the §G4.5
+    /// out-verifier's branch-split (distinguishing a conditional branch's taken
+    /// edge from its fall-through).
+    pub(crate) fn next_instr(&self, idx: usize) -> Option<usize> {
+        self.next_instr.get(&idx).copied()
+    }
+
+    /// The instruction index a LOCAL label targets, or `None` for a non-local /
+    /// unknown symbol. Exposed for the §G4.5 out-verifier's branch-split.
+    pub(crate) fn label_index(&self, name: &str) -> Option<usize> {
+        self.label_target.get(name).copied()
+    }
+
     /// The successor edges of the instruction at `idx`, for carry-tracking. An
     /// edge is either `Follow(next_idx)` (stay in the proc) or `Abandon` (the
     /// flag is left unconsumed: a return, a fall-off-end, or a redefine reached).

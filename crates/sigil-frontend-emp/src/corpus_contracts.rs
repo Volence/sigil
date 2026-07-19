@@ -24,6 +24,7 @@ use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, Liv
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
 use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
+use crate::out_verify::{check_out, OutFiring};
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
@@ -78,6 +79,11 @@ pub struct ContractReport {
     /// call and read after it, held in a register the callee EFFECTIVELY
     /// clobbers — pass-3's seatbelt. Sorted (proc, callee, reg, span).
     pub live_clobbered_firings: Vec<LiveClobberFiring>,
+    /// The §G4.5 `[proc.out-unverified]` firings: a proc declares `out(rN)` but
+    /// the body does not PRODUCE rN on every required return path (the callee-side
+    /// out-honesty check). Sorted (proc, reg). NOT yet joined to the error gate —
+    /// the checkpoint-B residue is adjudicated before the flip.
+    pub out_firings: Vec<OutFiring>,
     /// Total instructions DROPPED across the corpus because an operand/mnemonic
     /// did not resolve during the single-file eval — the substrate hazard the
     /// cross-file type environment closes. With a complete environment this is
@@ -237,6 +243,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &pb.buf.items,
             &closure.effective,
             &callee_out,
+            &callee_uncond_out,
         ));
     }
     input_firings.sort_by(|a, b| {
@@ -245,6 +252,40 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     live_clobbered_firings.sort_by(|a, b| {
         (&a.proc, &a.callee, &a.reg, a.span.start).cmp(&(&b.proc, &b.callee, &b.reg, b.span.start))
     });
+
+    // §G4.5 callee-side out-honesty: every declared `out(rN)` must be PRODUCED on
+    // every required return path. The unconditional outs come from the SHARED
+    // `callee_uncond_out` map (so callee/tail-target credit reads the same fact
+    // the caller-side gates do); the conditional `(reg, cc)` outs from
+    // `cond_callees`. Collected but NOT yet joined to the error gate — the
+    // checkpoint-B residue is adjudicated first.
+    let mut out_firings: Vec<OutFiring> = Vec::new();
+    for pb in &proc_bufs {
+        let uncond: Vec<Reg> = callee_uncond_out
+            .get(&pb.name)
+            .into_iter()
+            .flatten()
+            .filter_map(|r| Reg::from_name(r))
+            .collect();
+        let cond: Vec<(Reg, String)> = cond_callees
+            .get(&pb.name)
+            .into_iter()
+            .flatten()
+            .filter_map(|(reg, cc)| Reg::from_name(reg).map(|r| (r, cc.clone())))
+            .collect();
+        if uncond.is_empty() && cond.is_empty() {
+            continue;
+        }
+        out_firings.extend(check_out(
+            &pb.name,
+            &pb.buf.items,
+            &uncond,
+            &cond,
+            &callee_uncond_out,
+            pb.span,
+        ));
+    }
+    out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
 
     ContractReport {
         closure,
@@ -257,6 +298,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         dead_saves,
         input_firings,
         live_clobbered_firings,
+        out_firings,
         dropped_instrs,
         dropped_by_proc,
     }
@@ -297,6 +339,7 @@ struct ProcBuf {
     name: String,
     buf: CodeBuf,
     discarded: Vec<Span>,
+    span: Span,
 }
 
 /// The set of status flags a decl's `out(carry: name)` clauses name.
@@ -369,7 +412,7 @@ fn collect_items(
                 if let Some(buf) = buf {
                     let mut discarded = Vec::new();
                     collect_discarded(&p.body, &mut discarded);
-                    proc_bufs.push(ProcBuf { name: p.name.clone(), buf, discarded });
+                    proc_bufs.push(ProcBuf { name: p.name.clone(), buf, discarded, span: p.span });
                 }
             }
             Item::ExternProc(e) => {
