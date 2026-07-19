@@ -418,3 +418,30 @@ fn conditional_out_produced_everywhere_verifies() {
     );
     assert!(is_produced(&s), "a1 produced on every path → Produced, got {s:?}");
 }
+
+/// Adversarial probe (proof Finding 1's moveq-fold is NOT a silent miss): eq is
+/// provably TRUE at the rts (`moveq #0,d3` sets Z) but a1 is NOT produced on that
+/// return ⇒ MUST fire. The moveq-fold only DISCHARGES the obligation on a
+/// cc-provably-FALSE return (where the caller cannot read the register); a
+/// cc-TRUE return still carries the obligation. Guards against a regression where
+/// the fold wrongly discharges a cc-true obligation.
+#[test]
+fn conditional_out_cc_true_at_return_unproduced_fires() {
+    let s = status_cond(
+        "module m\n\
+         proc P (d0: u16) clobbers(d3) out(a1 if eq) {\n\
+             cmp.w   #0, d0\n\
+             bne     .miss\n\
+             moveq   #0, d3\n\
+             rts\n\
+         .miss:\n\
+             moveq   #1, d3\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        "eq",
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "eq TRUE at return but a1 unproduced -> MUST fire, got {s:?}");
+}
