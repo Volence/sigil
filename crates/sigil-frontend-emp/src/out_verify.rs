@@ -38,6 +38,7 @@
 use crate::flag_check::{Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
+use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// The proof outcome for one declared output register.
@@ -47,6 +48,42 @@ pub enum OutStatus {
     Produced,
     /// Some required return path does not produce it (a false `out()` claim).
     Unverified(String),
+}
+
+/// One `[proc.out-unverified]` firing: proc `proc` declares `out(reg)` but the
+/// body does not PRODUCE it on every required return path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutFiring {
+    pub proc: String,
+    pub reg: String,
+    pub reason: String,
+    pub span: Span,
+}
+
+/// Run the `out()` production check for a proc and collect its `[proc.out-
+/// unverified]` firings. `uncond` are the unconditional outs, `cond` the
+/// `(reg, cc)` conditional outs; `callee_uncond_out` is the SHARED map (callee /
+/// tail-target credit).
+pub fn check_out(
+    proc_name: &str,
+    items: &[CodeItem],
+    uncond: &[Reg],
+    cond: &[(Reg, String)],
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    span: Span,
+) -> Vec<OutFiring> {
+    verify_out(items, uncond, cond, callee_uncond_out)
+        .into_iter()
+        .filter_map(|(r, status)| match status {
+            OutStatus::Produced => None,
+            OutStatus::Unverified(reason) => Some(OutFiring {
+                proc: proc_name.to_string(),
+                reg: r.to_string(),
+                reason,
+                span,
+            }),
+        })
+        .collect()
 }
 
 fn reg_idx(r: Reg) -> usize {
