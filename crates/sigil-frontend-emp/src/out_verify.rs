@@ -514,7 +514,14 @@ impl Flags {
 /// it). Everything not listed — including a returning `jsr` (handled separately)
 /// — is treated as a CC clobber (→ ⊤). Deliberately conservative: an unmodeled
 /// mnemonic clobbers rather than silently preserving a stale flag (guardrail 1).
-fn cc_transparent(mnem: &str) -> bool {
+///
+/// **Sound-complete for #2's edge-identification** (`flag_check::Cfg::valid_edge`,
+/// the corrected banner): the Z-only writers `btst`/`bset`/`bclr`/`bchg` are NOT
+/// listed, so they BAIL — unlike `flag_check::writes_carry` (§6's carry-polarity
+/// allowlist), which lets them through as transparent. #2's cc is `eq`(Z), so a
+/// Z-clobber between a conditional-out call and its `beq` guard MUST bail; reusing
+/// `writes_carry` there would credit on a stale-Z edge = a must-def false negative.
+pub(crate) fn cc_transparent(mnem: &str) -> bool {
     matches!(
         mnem,
         "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba"

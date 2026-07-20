@@ -30,7 +30,7 @@
 //! here (§4 site machinery; the object-pointer input is always live).
 
 use crate::closure::RegEffect;
-use crate::flag_check::{Cfg, Edge};
+use crate::flag_check::{conditional_out_edge_credits, Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand};
 use sigil_span::Span;
@@ -137,6 +137,7 @@ fn must_defined_in(
     entry: usize,
     params: &BTreeSet<String>,
     callee_out: &BTreeMap<String, BTreeSet<String>>,
+    edge_credit: &BTreeMap<(usize, usize), BTreeSet<String>>,
 ) -> BTreeMap<usize, BTreeSet<String>> {
     let mut in_def: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
     in_def.insert(entry, params.clone());
@@ -161,13 +162,25 @@ fn must_defined_in(
         }
         for edge in cfg.edges(idx) {
             let Edge::Follow(succ) = edge else { continue };
+            // Edge-sensitive conditional-out credit (item #2): a callee's
+            // `out(rN if cc)` is credited DEFINED only on the caller's
+            // provably-cc-SUCCESS edge (`(idx, succ)` from the shared edge-ID
+            // primitive). Applied as a per-EDGE transfer that re-joins by
+            // intersection at `succ` — NOT a global "rN defined post-call" fact
+            // (§3): at a merge reached from this success edge AND a non-producing
+            // predecessor, the intersection below correctly drops rN.
+            let edge_out = match edge_credit.get(&(idx, succ)) {
+                None => out.clone(),
+                Some(extra) => out.union(extra).cloned().collect(),
+            };
             let changed = match in_def.get(&succ) {
                 None => {
-                    in_def.insert(succ, out.clone());
+                    in_def.insert(succ, edge_out);
                     true
                 }
                 Some(existing) => {
-                    let merged: BTreeSet<String> = existing.intersection(&out).cloned().collect();
+                    let merged: BTreeSet<String> =
+                        existing.intersection(&edge_out).cloned().collect();
                     if merged != *existing {
                         in_def.insert(succ, merged);
                         true
@@ -195,10 +208,17 @@ pub fn check_input_undefined(
     items: &[CodeItem],
     callee_params: &BTreeMap<String, BTreeSet<String>>,
     callee_out: &BTreeMap<String, BTreeSet<String>>,
+    cond_callees: &BTreeMap<String, Vec<(String, String)>>,
 ) -> Vec<InputFiring> {
     let Some(entry) = entry_index(items) else { return Vec::new() };
     let cfg = Cfg::build(items);
-    let defined = must_defined_in(&cfg, entry, params, callee_out);
+    // Item #2: a callee's conditional `out(rN if cc)` is credited as a definition
+    // only on the caller's provably-cc-success edge (the shared edge-ID primitive,
+    // §4). `callee_out` here is the UNCONDITIONAL subset (the corpus subtracts the
+    // conditional-out registers), so must-def's unconditional credit stays sound
+    // and the conditional credit is applied edge-sensitively below.
+    let edge_credit = conditional_out_edge_credits(&cfg, items, cond_callees);
+    let defined = must_defined_in(&cfg, entry, params, callee_out, &edge_credit);
 
     let mut firings = Vec::new();
     for (idx, it) in items.iter().enumerate() {

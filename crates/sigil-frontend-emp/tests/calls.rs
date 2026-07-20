@@ -69,7 +69,34 @@ fn run_input_out(
     pmap.insert(callee.to_string(), regset(callee_params));
     let mut omap: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     omap.insert(callee.to_string(), regset(callee_out));
-    check_input_undefined(&name, &params, &items, &pmap, &omap)
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    check_input_undefined(&name, &params, &items, &pmap, &omap, &no_cond)
+        .into_iter()
+        .map(|f| f.reg)
+        .collect()
+}
+
+/// Run the input-undefined check with fully explicit callee contracts — needed
+/// for the item-#2 edge-credit shapes that mix a conditional-out producer, an
+/// unconditional-out producer, and a param consumer. `params`/`uncond_out` map a
+/// callee to its register-param inputs / UNCONDITIONAL outs; `cond_out` lists
+/// `(callee, reg, cc)` CONDITIONAL outs. Returns the D1b firing registers.
+fn run_input_full(
+    src: &str,
+    params: &[(&str, &[&str])],
+    uncond_out: &[(&str, &[&str])],
+    cond_out: &[(&str, &str, &str)],
+) -> Vec<String> {
+    let (name, caller_params, items) = eval_first(src);
+    let pmap: BTreeMap<String, BTreeSet<String>> =
+        params.iter().map(|(c, rs)| (c.to_string(), regset(rs))).collect();
+    let omap: BTreeMap<String, BTreeSet<String>> =
+        uncond_out.iter().map(|(c, rs)| (c.to_string(), regset(rs))).collect();
+    let mut cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    for (c, reg, cc) in cond_out {
+        cond.entry(c.to_string()).or_default().push((reg.to_string(), cc.to_string()));
+    }
+    check_input_undefined(&name, &caller_params, &items, &pmap, &omap, &cond)
         .into_iter()
         .map(|f| f.reg)
         .collect()
@@ -471,8 +498,8 @@ fn top_effective_clobbers_held_value_fires() {
 //
 // A value produced by one call's plain `out(rN)` and passed to the next call is
 // must-defined — D1b must NOT fire. (A conditional `out(rN if cc)` is excluded
-// from `callee_out` and is NOT credited — the sound half; edge-sensitive
-// success-edge crediting is deferred.)
+// from `callee_out`; it is credited ONLY on the caller's cc-success edge by the
+// item-#2 edge primitive — see the `conditional_out_*` tests below.)
 #[test]
 fn callee_unconditional_out_credits_definition() {
     let src = "module m\n\
@@ -485,22 +512,147 @@ fn callee_unconditional_out_credits_definition() {
     let mut pmap: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     pmap.insert("Consumer".to_string(), regset(&["d0"]));
 
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     // WITHOUT Producer's out credited: d0 is undefined at the Consumer call.
     let empty: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let without: Vec<String> = check_input_undefined(&name, &params, &items, &pmap, &empty)
-        .into_iter()
-        .map(|f| f.reg)
-        .collect();
+    let without: Vec<String> =
+        check_input_undefined(&name, &params, &items, &pmap, &empty, &no_cond)
+            .into_iter()
+            .map(|f| f.reg)
+            .collect();
     assert_eq!(without, vec!["d0".to_string()], "no out credit → d0 undefined, got {without:?}");
 
     // WITH Producer's unconditional out(d0): d0 is defined → no firing.
     let mut omap: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     omap.insert("Producer".to_string(), regset(&["d0"]));
-    let with: Vec<String> = check_input_undefined(&name, &params, &items, &pmap, &omap)
-        .into_iter()
-        .map(|f| f.reg)
-        .collect();
+    let with: Vec<String> =
+        check_input_undefined(&name, &params, &items, &pmap, &omap, &no_cond)
+            .into_iter()
+            .map(|f| f.reg)
+            .collect();
     assert!(with.is_empty(), "Producer out(d0) credited → no firing, got {with:?}");
+}
+
+// ===========================================================================
+// [call.input-undefined] D1b — item #2 edge-sensitive conditional-out crediting.
+// A callee's `out(rN if cc)` is credited as a definition ONLY on the caller's
+// provably-cc-success edge. These exercise the must-def consumer end-to-end.
+// ===========================================================================
+
+/// Test 1 (clears): the FillColumn shape — `Find out(a1 if eq)` on the `beq`
+/// success edge, `Decomp out(a1)` unconditional on the other, merge, then a param
+/// consumer `Copy(a1)`. a1 is defined on BOTH predecessors of the merge → D1b
+/// must NOT fire.
+#[test]
+fn conditional_out_credit_clears_fill_shape() {
+    let f = run_input_full(
+        "module m\n\
+         proc P (d5: u16) clobbers(d0-d7/a0-a6) {\n\
+             jbsr Find\n\
+             beq .have\n\
+             jbsr Decomp\n\
+         .have:\n\
+             jbsr Copy\n\
+             rts\n\
+         }\n",
+        &[("Copy", &["a1"])],
+        &[("Decomp", &["a1"])],
+        &[("Find", "a1", "eq")],
+    );
+    assert!(f.is_empty(), "a1 defined on both merge predecessors → no D1b firing: {f:?}");
+}
+
+/// Test 2 (still-fires, bail): the SAME conditional out but the success edge is
+/// NOT identifiable — an unrelated `bvs` guard (tests V, not the callee's Z) →
+/// `valid_edge` bails → a1 is credited nowhere → the param consumer fires.
+#[test]
+fn conditional_out_unrelated_guard_still_fires() {
+    let f = run_input_full(
+        "module m\n\
+         proc P () clobbers(d0-d7/a0-a6) {\n\
+             jbsr Find\n\
+             bvs .have\n\
+         .have:\n\
+             jbsr Copy\n\
+             rts\n\
+         }\n",
+        &[("Copy", &["a1"])],
+        &[],
+        &[("Find", "a1", "eq")],
+    );
+    assert_eq!(f, vec!["a1".to_string()], "unrelated guard → not credited → fires: {f:?}");
+}
+
+/// Test 3 (Z-clobber bail — the critical trap, Finding 3): a `btst` between the
+/// conditional-out call and its `beq` guard clobbers Z. `valid_edge`'s bail is
+/// `cc_transparent`, which treats `btst` as NON-transparent → BAIL → a1 not
+/// credited on the eq edge → the merge intersection drops a1 → the consumer STILL
+/// fires. MUTATION: swapping the bail predicate to `writes_carry` (which lets
+/// `btst` through as transparent) credits a1 on a stale-Z edge and this test goes
+/// GREEN — proving the sound-complete bail is load-bearing.
+#[test]
+fn conditional_out_z_clobber_before_guard_still_fires() {
+    let f = run_input_full(
+        "module m\n\
+         proc P () clobbers(d0-d7/a0-a6) {\n\
+             jbsr Find\n\
+             btst #0, d0\n\
+             beq .have\n\
+             jbsr Decomp\n\
+         .have:\n\
+             jbsr Copy\n\
+             rts\n\
+         }\n",
+        &[("Copy", &["a1"])],
+        &[("Decomp", &["a1"])],
+        &[("Find", "a1", "eq")],
+    );
+    assert_eq!(f, vec!["a1".to_string()], "Z clobbered before the guard → bail → fires: {f:?}");
+}
+
+/// Test 4 (crediting polarity): the consumer reads a1 on the `!eq` (fall-through)
+/// path, where `Find` did NOT produce it — `beq` sends the SUCCESS (eq) edge to
+/// `.have`, so the fall-through consumer must FIRE. MUTATION: crediting on the
+/// `!cc` edge / all edges / on bail would define a1 here and silence it.
+#[test]
+fn conditional_out_credit_only_on_success_edge_fires_on_other() {
+    let f = run_input_full(
+        "module m\n\
+         proc P () clobbers(d0-d7/a0-a6) {\n\
+             jbsr Find\n\
+             beq .have\n\
+             jbsr Copy\n\
+         .have:\n\
+             rts\n\
+         }\n",
+        &[("Copy", &["a1"])],
+        &[],
+        &[("Find", "a1", "eq")],
+    );
+    assert_eq!(f, vec!["a1".to_string()], "a1 not produced on the !eq path → fires: {f:?}");
+}
+
+/// Test 5 (exact-cc fence, Finding 4): the guard is `bpl` (tests N) while the
+/// callee declares `if eq` (Z) — a correlated-but-different condition. The lexical
+/// cc-identity fence bails → a1 not credited → the consumer STILL fires. MUTATION:
+/// treating correlated conditions as compatible credits a1 and silences it.
+#[test]
+fn conditional_out_correlated_condition_still_fires() {
+    let f = run_input_full(
+        "module m\n\
+         proc P () clobbers(d0-d7/a0-a6) {\n\
+             jbsr Find\n\
+             bpl .have\n\
+             jbsr Decomp\n\
+         .have:\n\
+             jbsr Copy\n\
+             rts\n\
+         }\n",
+        &[("Copy", &["a1"])],
+        &[("Decomp", &["a1"])],
+        &[("Find", "a1", "eq")],
+    );
+    assert_eq!(f, vec!["a1".to_string()], "correlated cc (pl≠eq) → bail → fires: {f:?}");
 }
 
 // ===========================================================================

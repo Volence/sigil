@@ -23,6 +23,7 @@
 
 use crate::calls::call_unconditional_outs;
 use crate::lower::instr_written_regs;
+use crate::out_verify::cc_transparent;
 use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -271,6 +272,100 @@ impl<'a> Cfg<'a> {
             idx = *self.next_instr.get(&idx)?; // fall through to the next instr
         }
     }
+
+    /// From the call at `call_idx`, walk the fall-through chain to the guard branch
+    /// testing `cc` and return `(guard_idx, success_idx)` — the guard instruction
+    /// and the item index that BEGINS the cc-SUCCESS edge (where `cc` provably
+    /// HOLDS). The edge-identification primitive for item #2's conditional-out
+    /// crediting; the MIRROR of [`Self::invalid_edge`] but with the opposite
+    /// conservative default and a SOUND-COMPLETE bail (the corrected spec banner):
+    ///
+    /// - The intervening-clobber bail is [`crate::out_verify::cc_transparent`], NOT
+    ///   [`writes_carry`]: #2's cc is `eq`(Z), so a Z-only writer
+    ///   (`btst`/`bset`/`bclr`/`bchg`) or ANY unmodeled mnemonic between the call
+    ///   and the guard must BAIL. `writes_carry` deliberately treats those as
+    ///   transparent (sound for §6's over-fire polarity, a false negative here).
+    /// - **Exact-cc fence:** credit only when the guard tests the callee's EXACT
+    ///   `cc` (success = the taken edge) or its EXACT negation (success = the
+    ///   fall-through). Any other — even a correlated condition — bails.
+    /// - A return or an unconditional transfer (`bra`/`jmp`/`jra`/`jbra`) before
+    ///   the guard diverts / ends the straight-line path → bail.
+    ///
+    /// `None` on ANY bail. The load-bearing rule (§2): bail → the caller does NOT
+    /// credit → a residual false positive may remain (acceptable), never a silent
+    /// must-def miss. `Scc`/`dbcc` are not guards here — they fall to the
+    /// transparency check and bail (neither is CC-transparent).
+    pub(crate) fn valid_edge(&self, call_idx: usize, cc: &str) -> Option<(usize, usize)> {
+        let neg = negate_cc(cc)?; // canonical negation
+        let cc = negate_cc(neg)?; // canonical cc (double-negate folds hs/lo aliases)
+        let mut idx = *self.next_instr.get(&call_idx)?;
+        loop {
+            let (mnem, ops) = self.instr(idx)?;
+            // A real conditional branch (`bXX`, 3-char) is the candidate guard.
+            if mnem.starts_with('b') && mnem.len() == 3 {
+                let Some(bc) = branch_cond(mnem) else {
+                    return None; // `bra` — unconditional; control diverts before a guard
+                };
+                let taken = branch_target(ops).and_then(|t| self.label_target.get(t)).copied();
+                let fall = self.next_instr.get(&idx).copied();
+                return if bc == cc {
+                    taken.map(|t| (idx, t)) // cc holds on the TAKEN edge → success = taken
+                } else if bc == neg {
+                    fall.map(|f| (idx, f)) // cc holds on the FALL-THROUGH → success = fall
+                } else {
+                    None // an unrelated / correlated-but-different condition — bail
+                };
+            }
+            // Not a guard: to keep walking the straight-line fall-through the
+            // instruction must be PROVABLY CC-transparent and must not return or
+            // divert. UNCOND is checked before the transparency allowlist because
+            // `cc_transparent` treats `jmp`/`jra` as transparent (they don't WRITE
+            // the CC) — but they still divert control off the fall-through.
+            if RETURN_MNEMONICS.contains(&mnem) {
+                return None;
+            }
+            if UNCOND_MNEMONICS.contains(&mnem) {
+                return None; // jmp/jra/jbra divert — the guard is not straight-line-reachable
+            }
+            if !cc_transparent(mnem) {
+                return None; // a Z-clobber (btst/…) or unmodeled mnemonic — sound-complete bail
+            }
+            idx = *self.next_instr.get(&idx)?; // fall through
+        }
+    }
+}
+
+/// For every direct CALL in `items` to a callee declaring conditional outs
+/// (`cond_callees`), identify the caller's cc-SUCCESS edge via
+/// [`Cfg::valid_edge`] and map that edge `(guard_idx, succ_idx)` to the credited
+/// register(s). The SHARED edge-credit primitive (spec §4): must-def (D1b) and
+/// the out-verifier both consume this so they cannot disagree on which edge is
+/// cc-success. Keyed by the EDGE, not the successor node — each consumer applies
+/// these as a per-edge transfer into its OWN forward must-analysis and re-joins
+/// by intersection at merges (§3). A `valid_edge` bail contributes nothing (the
+/// conservative default). Register names are canonicalized to the `d0`..`a7`
+/// spelling the def/produce sets use.
+pub(crate) fn conditional_out_edge_credits(
+    cfg: &Cfg,
+    items: &[CodeItem],
+    cond_callees: &BTreeMap<String, Vec<(String, String)>>,
+) -> BTreeMap<(usize, usize), BTreeSet<String>> {
+    let mut credits: BTreeMap<(usize, usize), BTreeSet<String>> = BTreeMap::new();
+    for (idx, it) in items.iter().enumerate() {
+        let CodeItem::Instr { mnemonic, ops, .. } = it else { continue };
+        if !CALL_MNEMONICS.contains(&mnemonic.as_str()) {
+            continue;
+        }
+        let Some(callee) = branch_target(ops) else { continue };
+        let Some(conds) = cond_callees.get(callee) else { continue };
+        for (reg, cc) in conds {
+            let Some(reg) = Reg::from_name(reg) else { continue };
+            if let Some(edge) = cfg.valid_edge(idx, cc) {
+                credits.entry(edge).or_default().insert(reg.to_string());
+            }
+        }
+    }
+    credits
 }
 
 /// A carry-tracking control-flow edge (see [`Cfg::edges`]).
