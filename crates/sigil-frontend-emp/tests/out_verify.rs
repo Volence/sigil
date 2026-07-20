@@ -55,7 +55,8 @@ fn status_uncond(
 ) -> OutStatus {
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
-    verify_out(items, &[reg], &[], callee_uncond_out)
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -288,7 +289,29 @@ fn status_cond(
 ) -> OutStatus {
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out)
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond)
+        .remove(&reg)
+        .expect("status for the checked reg")
+}
+
+/// Verify a single UNCONDITIONAL `out(reg)` where a CALLEE declares a conditional
+/// `out(cond_reg if cc)` (item #2's edge credit) — the Load_Object←AllocDynamic
+/// cascade shape. `callee_uncond_out` are the callees' unconditional outs.
+fn status_uncond_cond_callee(
+    src: &str,
+    proc: &str,
+    reg: Reg,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    cond_callees: &[(&str, Reg, &str)],
+) -> OutStatus {
+    let all = eval_all(src);
+    let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
+    let mut cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    for (callee, r, cc) in cond_callees {
+        cond.entry(callee.to_string()).or_default().push((r.to_string(), cc.to_string()));
+    }
+    verify_out(items, &[reg], &[], callee_uncond_out, &cond)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -339,6 +362,58 @@ fn same_body_unconditional_out_fires() {
         &map(&[]),
     );
     assert!(is_unverified(&s), "unconditional out(a1) unproduced on .miss → Unverified, got {s:?}");
+}
+
+// === 6. cascade — a proc's out sourced from a CONDITIONAL callee out (item #2) ==
+// The Load_Object←AllocDynamic-relabeled shape: P declares `out(a1)`; on the
+// success path a1 is produced ONLY by AllocDynamic's `out(a1 if eq)` credited on
+// the `bne .fail` fall-through (the eq-success edge); the fail path produces a1
+// itself. Verifies WITH #2's edge credit; the same body WITHOUT it is the
+// pre-relabel regression control (a1 unproduced on the success return).
+
+/// WITH the conditional callee-out edge credit ⇒ a1 produced on both returns ⇒
+/// verifies. This is the cascade that keeps Load_Object honest after the relabel.
+#[test]
+fn cascade_conditional_callee_out_verifies() {
+    let s = status_uncond_cond_callee(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) {\n\
+             jbsr    AllocDynamic\n\
+             bne     .fail\n\
+             rts\n\
+         .fail:\n\
+             movea.w d0, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]), // AllocDynamic has NO unconditional out (it is `out(a1 if eq)`)
+        &[("AllocDynamic", Reg::A1, "eq")],
+    );
+    assert!(is_produced(&s), "a1 produced on eq-success (credit) + fail (movea) → Produced, got {s:?}");
+}
+
+/// WITHOUT the conditional credit (edge-blind only) ⇒ a1 unproduced on the
+/// eq-success return ⇒ FIRES. Proves #2's edge credit is load-bearing for the
+/// cascade — the exact regression a bare AllocDynamic relabel would cause.
+#[test]
+fn cascade_without_conditional_credit_fires() {
+    let s = status_uncond_cond_callee(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) {\n\
+             jbsr    AllocDynamic\n\
+             bne     .fail\n\
+             rts\n\
+         .fail:\n\
+             movea.w d0, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+        &[], // no conditional credit supplied
+    );
+    assert!(is_unverified(&s), "no eq-success credit → a1 unproduced on success → Unverified, got {s:?}");
 }
 
 /// Branch-split (guardrail 4's reusable primitive): a conditional out whose

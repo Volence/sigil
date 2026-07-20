@@ -19,7 +19,11 @@
 //!   where rN is P's own param but is never re-written FIRES (a mislabeled
 //!   `preserves`); a cursor `out(a4)` un-advanced on an early-exit path FIRES.
 //! - **Callee-out credit** at a `jsr`/`jbsr`/`bsr` via the SHARED
-//!   `callee_uncond_out` map — the Load_Object←AllocDynamic shape.
+//!   `callee_uncond_out` map — the Load_Object←AllocDynamic shape. A callee's
+//!   CONDITIONAL `out(rN if cc)` is credited edge-sensitively via the shared
+//!   `conditional_out_edge_credits` primitive (item #2) — only on the caller's
+//!   cc-success edge, so a proc whose out is sourced from a relabeled conditional
+//!   callee (Load_Object←`AllocDynamic out(a1 if eq)`) still verifies.
 //! - **Tail-out credit** at an `Edge::Defer` from an UNCONDITIONAL tail
 //!   (`bra`/`jbra`/`jmp`/`jra`, Finding 3): a tail transfer is a return of P from
 //!   the caller's view, so it is a required return path; if the target is a known
@@ -35,7 +39,7 @@
 //! produces rN then stomps it before `rts` still verifies (the stomp is itself a
 //! production). Value-provenance is out of scope.
 
-use crate::flag_check::{Cfg, Edge};
+use crate::flag_check::{conditional_out_edge_credits, Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
@@ -70,9 +74,10 @@ pub fn check_out(
     uncond: &[Reg],
     cond: &[(Reg, String)],
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    cond_callees: &BTreeMap<String, Vec<(String, String)>>,
     span: Span,
 ) -> Vec<OutFiring> {
-    verify_out(items, uncond, cond, callee_uncond_out)
+    verify_out(items, uncond, cond, callee_uncond_out, cond_callees)
         .into_iter()
         .filter_map(|(r, status)| match status {
             OutStatus::Produced => None,
@@ -186,8 +191,18 @@ pub fn verify_out(
     uncond: &[Reg],
     cond: &[(Reg, String)],
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    cond_callees: &BTreeMap<String, Vec<(String, String)>>,
 ) -> BTreeMap<Reg, OutStatus> {
     let cfg = Cfg::build(items);
+
+    // Item #2: a callee's CONDITIONAL `out(rN if cc)` is credited as PRODUCED
+    // only on the caller's provably-cc-success edge (the shared edge-ID primitive,
+    // §4). The edge-blind `callee_uncond_out` credit in `transfer` covers plain
+    // `out(rN)`; this covers the Load_Object←AllocDynamic-relabeled cascade, where
+    // AllocDynamic's `out(a1 if eq)` produces a1 on Load_Object's `bne .alloc_fail`
+    // fall-through (the eq-success edge). Applied as a per-edge transfer that
+    // re-joins by intersection at merges — NOT a global post-call fact (§3).
+    let edge_credit = conditional_out_edge_credits(&cfg, items, cond_callees);
 
     // The condition guarding each checked register: `None` = unconditional
     // (obligated on every return), `Some(cc)` = conditional (obligated only where
@@ -225,7 +240,16 @@ pub fn verify_out(
                     // taken / fall-through edges the tested cc is provably TRUE /
                     // FALSE respectively — refine the propagated flags so a `!cc`
                     // return reached directly off the branch is classified.
-                    let edge_st = split_flags(&cfg, idx, succ, &st);
+                    let mut edge_st = split_flags(&cfg, idx, succ, &st);
+                    // Item #2: credit a callee's conditional out on THIS success
+                    // edge only (per-edge transfer; the join below re-intersects).
+                    if let Some(regs) = edge_credit.get(&(idx, succ)) {
+                        for name in regs {
+                            if let Some(r) = Reg::from_name(name) {
+                                edge_st.produced[reg_idx(r)] = true;
+                            }
+                        }
+                    }
                     let changed = match in_state.get(&succ) {
                         None => {
                             in_state.insert(succ, edge_st);

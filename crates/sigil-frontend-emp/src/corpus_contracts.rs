@@ -283,6 +283,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &uncond,
             &cond,
             &callee_uncond_out,
+            &cond_callees,
             pb.span,
         ));
     }
