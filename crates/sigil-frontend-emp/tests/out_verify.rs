@@ -416,6 +416,68 @@ fn cascade_without_conditional_credit_fires() {
     assert!(is_unverified(&s), "no eq-success credit → a1 unproduced on success → Unverified, got {s:?}");
 }
 
+// === 7. movem LOAD production (the item-#2 cascade growth) ===================
+// A `movem (sp)+, …aN` restore genuinely PRODUCES its reglist at full width;
+// `produced_regs` now credits it (the Load_Object alloc-fail path). A movem STORE
+// (reglist as SOURCE) must NOT be credited — it reads those regs.
+
+/// A `movem.l (sp)+, d0-d2/a1` LOAD produces a1 at full width ⇒ `out(a1)`
+/// verifies with no other producer. Without the movem-load growth a1 is
+/// unproduced ⇒ this is the load-bearing test for the growth.
+#[test]
+fn movem_load_produces_reglist() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers(d0-d2) out(a1) {\n\
+             movem.l (sp)+, d0-d2/a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "movem-load restores a1 (full-width production) → Produced, got {s:?}");
+}
+
+/// A `movem.w (sp)+, a1` LOAD produces a1 at FULL WIDTH even at `.w` — movem.w
+/// sign-extends each word to 32 bits (unlike a plain `move.w`, which the width
+/// filter drops). So `out(a1)` verifies. Guards guardrail 2 (full-width for both
+/// sizes).
+#[test]
+fn movem_load_word_size_still_full_width() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers() out(a1) {\n\
+             movem.w (sp)+, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "movem.w load is full-width (sign-extended) → Produced, got {s:?}");
+}
+
+/// A movem STORE — `movem.l d0-d2/a1, -(sp)` — has the reglist as the SOURCE
+/// (first operand; `ops.last()` is the `-(sp)` predec, not a `RegList`). It READS
+/// a1, it does NOT produce it ⇒ `out(a1)` FIRES. MUTATION: crediting a movem
+/// store's reglist (dropping the `ops.last() == RegList` load-only guard) makes
+/// this verify — so this asserts the store is NOT a production.
+#[test]
+fn movem_store_does_not_produce_reglist() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers() out(a1) {\n\
+             movem.l d0-d2/a1, -(sp)\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "movem STORE reads a1, does not produce it → Unverified, got {s:?}");
+}
+
 /// Branch-split (guardrail 4's reusable primitive): a conditional out whose
 /// `!cc` return is reached DIRECTLY after the branch with NO intervening `moveq`
 /// — the taken `bne` edge must classify `.miss` as `!eq`. Verifies only if the

@@ -116,7 +116,33 @@ fn is_uncond_tail(mnem: &str) -> bool {
 /// bases), then width-filtered: an address register is always full-width; a data
 /// register only via a `.l` write or a `moveq`. A `.w`/`.b` data write is dropped
 /// (Finding 1).
+///
+/// **movem LOAD (item #2 cascade growth).** A `movem` whose register list is the
+/// DESTINATION — the LAST operand, e.g. `movem.l (sp)+, d0-d2/a1` — writes every
+/// listed register at FULL WIDTH and so PRODUCES each of them, for BOTH sizes:
+/// `movem.l` writes 32 bits and `movem.w` SIGN-EXTENDS each word to 32 bits (all
+/// registers, data and address alike — unlike a plain `move.w`). So the reglist
+/// credit is exempt from the data-reg `.l`/`moveq` width filter. This is the same
+/// growth [`crate::calls`]'s `written_names` already applies for must-def, and it
+/// is what makes a caller's `movem (sp)+, …aN` restore of a saved out-register
+/// verify (the Load_Object alloc-fail path — a1 restored on failure). A movem
+/// STORE (`movem.l d0-d2/a1, -(sp)`, reglist FIRST = source) is NOT a production:
+/// its `ops.last()` is the `-(sp)` predec, not a `RegList`, so it falls through to
+/// the base-advance path exactly as it must (it READS the reglist).
 fn produced_regs(mnem: &str, ops: &[CodeOperand], size: Option<Width>) -> Vec<Reg> {
+    if mnem == "movem" {
+        if let Some(CodeOperand::RegList(mask)) = ops.last() {
+            // Full-width for every listed register (both sizes) — plus the
+            // auto-inc/dec base advance the detector reports for `(aN)+`/`-(aN)`.
+            let mut regs = crate::preserves::expand_mask(*mask);
+            for r in instr_written_regs(mnem, ops) {
+                if !regs.contains(&r) {
+                    regs.push(r);
+                }
+            }
+            return regs;
+        }
+    }
     let data_full_width = size == Some(Width::L) || mnem == "moveq";
     instr_written_regs(mnem, ops)
         .into_iter()
