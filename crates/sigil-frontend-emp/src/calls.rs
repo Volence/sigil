@@ -264,14 +264,22 @@ fn register_universe() -> Vec<String> {
 /// not claimed to clobber (holes are gated elsewhere; never fire across an
 /// unknown here).
 ///
-/// KNOWN FALSE POSITIVE (observe-only, documented 2026-07-19): this simple close
-/// is edge-blind, so `TileCache_FillRow @ TileCache_FindStagedBlock :: a1` fires
-/// spuriously — FillRow reads `a1` only on FindStagedBlock's eq-success edge
-/// (where it IS valid) or after an intervening `DecompressBlock` (unconditional
-/// `out(a1)`, which redefines it), never as a stale held value. D1c is
-/// observe-only (not gated), so this breaks nothing; item #2's cc-edge precision
-/// retires it if it grows. FindStagedBlock `a1` is the only register-conditional
-/// out, so the surface is exactly this one site.
+/// KNOWN FALSE POSITIVES (observe-only, documented 2026-07-19): this simple close
+/// is edge-blind, so a register read that is really a conditional callee's
+/// PRODUCED value on the cc-success edge looks like a destroyed held value. Two
+/// same-class sites, both verified FP (the read is the produced/moved value, not
+/// a stale held one), both on the ungated D1c. (1) `TileCache_FillRow @
+/// TileCache_FindStagedBlock :: a1` — FillRow reads `a1` only on FindStagedBlock's
+/// eq-success edge (valid there) or after an intervening `DecompressBlock`
+/// (unconditional `out(a1)`, a redefine). (2) `Load_Object @ AllocDynamic :: a1` —
+/// new since the item-#2 Bucket-1 relabel made `AllocDynamic out(a1 if eq)`: the
+/// `a1` read after the call is AllocDynamic's produced new-SST pointer; the old
+/// held template was restored into `a2` (`movem.l (sp)+, d0-d2/a2`), not `a1`; the
+/// alloc-fail path restores `a1` and returns without reading it. D1c is
+/// observe-only, so neither breaks a gate. Item #2 deliberately does NOT couple
+/// D1c to its edge primitive (§4, Finding 5): a degrade-to-miss on a `valid_edge`
+/// bail would be worse than the FP. An edge-precise D1c that never degrades on
+/// bail is separate future work.
 fn destroys_value(
     effective: &BTreeMap<String, RegEffect>,
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
