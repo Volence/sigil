@@ -42,8 +42,9 @@ use sigil_link::LinkedImage;
 /// bracketing 68k anchor label `Z80_Sound_Start`.
 pub const REGION_A_LMA: u32 = 0x3EA;
 /// Region B base LMA: the phase-`08000h` Moving-Trucks / SFX engine-table bank.
-/// Provenance: `MovingTrucks_Bank_Start`.
-pub const REGION_B_LMA: u32 = 0x60000;
+/// Provenance: `MovingTrucks_Bank_Start`. Slid `0x60000 → 0x58000` in the
+/// 2026-07-21 Deep-Forest-BG re-baseline (the OJZ BG art ahead of it shrank).
+pub const REGION_B_LMA: u32 = 0x58000;
 
 /// Assemble the full non-debug Aeon ROM from `<aeon>/games/sonic4/main.asm` and
 /// link it, with **no stubs** — the full include tree defines everything. Mirrors

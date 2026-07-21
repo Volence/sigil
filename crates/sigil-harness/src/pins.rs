@@ -6,8 +6,8 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/17/2026 06:10:22 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/17/2026 06:10:20 PM)
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/s4.lst (07/21/2026 07:50:21 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/s4.debug.lst (07/21/2026 07:50:20 PM)
 //! [provenance] 24 regions, 201 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
@@ -39,9 +39,9 @@ pub struct ShapeOffset {
 // ── ROM end (the listing `END` line address, per shape) ──
 
 /// Assembled (pre-convsym) ROM length, plain shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const ASSEMBLED_LEN: usize = 0x65B60;
+pub const ASSEMBLED_LEN: usize = 0x5DB60;
 /// Assembled (pre-convsym) ROM length, `__DEBUG__` shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const DEBUG_ASSEMBLED_LEN: usize = 0x6765A;
+pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F65A;
 
 // ── Regions (manifest order) ──
 
@@ -106,10 +106,10 @@ pub const TEST_SOLID: Region = Region { plain_base: 0x10F7C, debug_base: 0x10F7C
 pub const TEST_PARTICLE: Region = Region { plain_base: 0x10F8A, debug_base: 0x10F8A, plain_len: 0x52, debug_len: 0x52 };
 
 /// `Ani_Sonic` .. `Ani_Sonic_End` — gate `SIGIL_EMP_SONIC_ANIMS`. tests: sonic_anims_port
-pub const SONIC_ANIMS: Region = Region { plain_base: 0x309E8, debug_base: 0x30A50, plain_len: 0x6E, debug_len: 0x6E };
+pub const SONIC_ANIMS: Region = Region { plain_base: 0x25710, debug_base: 0x25778, plain_len: 0x6E, debug_len: 0x6E };
 
 /// `Ani_Particle` .. `Ani_Particle_End` — gate `SIGIL_EMP_PARTICLE_ANIMS`. tests: particle_anims_port, test_objects_port
-pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x30A56, debug_base: 0x30ABE, plain_len: 0x8, debug_len: 0x8 };
+pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x2577E, debug_base: 0x257E6, plain_len: 0x8, debug_len: 0x8 };
 
 /// `OJZ_Act1_Descriptor` .. `OJZ_Sec0_Blocks` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
 pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x14B5E, debug_base: 0x14BC6, plain_len: 0x274, debug_len: 0x274 };
@@ -132,49 +132,49 @@ pub const TEST_ENEMY_INIT: Pin = Pin { plain: 0x10F34, debug: 0x10F34 };
 pub const TEST_PARENT: Pin = Pin { plain: 0x110C0, debug: 0x110C0 };
 
 /// `Map_TestObj`. tests: objdef_port
-pub const MAP_TEST_OBJ: Pin = Pin { plain: 0x309B8, debug: 0x30A20 };
+pub const MAP_TEST_OBJ: Pin = Pin { plain: 0x256E0, debug: 0x25748 };
 
 /// `EntryPoint`. tests: m1c_vector_table
 pub const ENTRY_POINT: Pin = Pin { plain: 0x200, debug: 0x200 };
 
 /// `NullInterrupt`. tests: m1c_vector_table
-pub const NULL_INTERRUPT: Pin = Pin { plain: 0x64AAE, debug: 0x665A8 };
+pub const NULL_INTERRUPT: Pin = Pin { plain: 0x5CAAE, debug: 0x5E5A8 };
 
 /// `BusError`. tests: m1c_vector_table
-pub const BUS_ERROR: Pin = Pin { plain: 0x64AB0, debug: 0x665AA };
+pub const BUS_ERROR: Pin = Pin { plain: 0x5CAB0, debug: 0x5E5AA };
 
 /// `AddressError`. tests: m1c_vector_table
-pub const ADDRESS_ERROR: Pin = Pin { plain: 0x64AC8, debug: 0x665C2 };
+pub const ADDRESS_ERROR: Pin = Pin { plain: 0x5CAC8, debug: 0x5E5C2 };
 
 /// `IllegalInstr`. tests: m1c_vector_table
-pub const ILLEGAL_INSTR: Pin = Pin { plain: 0x64AE4, debug: 0x665DE };
+pub const ILLEGAL_INSTR: Pin = Pin { plain: 0x5CAE4, debug: 0x5E5DE };
 
 /// `ZeroDivide`. tests: m1c_vector_table
-pub const ZERO_DIVIDE: Pin = Pin { plain: 0x64B06, debug: 0x66600 };
+pub const ZERO_DIVIDE: Pin = Pin { plain: 0x5CB06, debug: 0x5E600 };
 
 /// `ChkInstr`. tests: m1c_vector_table
-pub const CHK_INSTR: Pin = Pin { plain: 0x64B20, debug: 0x6661A };
+pub const CHK_INSTR: Pin = Pin { plain: 0x5CB20, debug: 0x5E61A };
 
 /// `TrapvInstr`. tests: m1c_vector_table
-pub const TRAPV_INSTR: Pin = Pin { plain: 0x64B3E, debug: 0x66638 };
+pub const TRAPV_INSTR: Pin = Pin { plain: 0x5CB3E, debug: 0x5E638 };
 
 /// `PrivilegeViol`. tests: m1c_vector_table
-pub const PRIVILEGE_VIOL: Pin = Pin { plain: 0x64B5E, debug: 0x66658 };
+pub const PRIVILEGE_VIOL: Pin = Pin { plain: 0x5CB5E, debug: 0x5E658 };
 
 /// `Trace`. tests: m1c_vector_table
-pub const TRACE: Pin = Pin { plain: 0x64B80, debug: 0x6667A };
+pub const TRACE: Pin = Pin { plain: 0x5CB80, debug: 0x5E67A };
 
 /// `Line1010Emu`. tests: m1c_vector_table
-pub const LINE1010_EMU: Pin = Pin { plain: 0x64B94, debug: 0x6668E };
+pub const LINE1010_EMU: Pin = Pin { plain: 0x5CB94, debug: 0x5E68E };
 
 /// `Line1111Emu`. tests: m1c_vector_table
-pub const LINE1111_EMU: Pin = Pin { plain: 0x64BB4, debug: 0x666AE };
+pub const LINE1111_EMU: Pin = Pin { plain: 0x5CBB4, debug: 0x5E6AE };
 
 /// `ErrorExcept`. tests: m1c_vector_table
-pub const ERROR_EXCEPT: Pin = Pin { plain: 0x64BD4, debug: 0x666CE };
+pub const ERROR_EXCEPT: Pin = Pin { plain: 0x5CBD4, debug: 0x5E6CE };
 
 /// `ErrorTrap`. tests: m1c_vector_table
-pub const ERROR_TRAP: Pin = Pin { plain: 0x64BF2, debug: 0x666EC };
+pub const ERROR_TRAP: Pin = Pin { plain: 0x5CBF2, debug: 0x5E6EC };
 
 /// `VBlank_Handler`. tests: m1c_vector_table
 pub const V_BLANK_HANDLER: Pin = Pin { plain: 0x21C0, debug: 0x2246 };
@@ -372,10 +372,10 @@ pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x36F4, debug: 0x4116 };
 pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6328, debug: 0x7D8C };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER: u32 = 0x66704;
+pub const MDDBG_ERROR_HANDLER: u32 = 0x5E704;
 
 /// `MDDBG__ErrorHandler_PagesController` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x674CA;
+pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F4CA;
 
 /// `QueueDMA_Important`. tests: dplc_port
 pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1D84, debug: 0x1E06 };
@@ -492,10 +492,10 @@ pub const SFX_RING_WR: Pin = Pin { plain: 0xFFFFAF5C, debug: 0xFFFFAF80 };
 pub const SFX_RING_RD: Pin = Pin { plain: 0xFFFFAF5D, debug: 0xFFFFAF81 };
 
 /// `SongTable`. tests: sound_api_port
-pub const SONG_TABLE: Pin = Pin { plain: 0x63AE0, debug: 0x65522 };
+pub const SONG_TABLE: Pin = Pin { plain: 0x5BAE0, debug: 0x5D522 };
 
 /// `SongPatchTable`. tests: sound_api_port
-pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0x63AE4, debug: 0x6552E };
+pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0x5BAE4, debug: 0x5D52E };
 
 /// `OJZ_Palette`. tests: act_descriptor_port
 pub const OJZ_PALETTE: Pin = Pin { plain: 0x1FE5C, debug: 0x1FEC4 };

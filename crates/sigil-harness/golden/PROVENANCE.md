@@ -18,7 +18,7 @@ region_b.bin,sigil_a.bin,sigil_b.bin}`, the `regen` bin, and the
 
 M0 acceptance is now the `m0_regions` gate
 (`crates/sigil-harness/tests/m0_regions.rs`): it runs the full non-debug build
-(no stubs), locates the linked sections at LMA `0x3EA` (Region A) and `0x60000`
+(no stubs), locates the linked sections at LMA `0x3EA` (Region A) and `0x58000`
 (Region B), and asserts each is byte-identical to the corresponding window of the
 **live** `aeon/s4.bin`. Region lengths are read from the live sections (not
 pinned), so the gate tracks driver growth automatically. It is reference-gated
@@ -973,3 +973,29 @@ convsym/checksum bytes differ); s4lint clean.
 - Debug `s4.debug.bin`: **461554 bytes** (`EndOfRom` = `0x6765A`, unchanged), crc32
   **`c80465dc`**, sha256
   **`77e8436146db4c46b4da0d12c3488efe1b431b6cccd5be07e175051f2a3d7db2`**.
+
+
+## 2026-07-21 re-baseline — Deep-Forest-BG art parcel (BYTE-CHANGING)
+
+The ChatGPT Deep Forest background lands as the shipped OJZ Plane B BG (aeon
+`art/ojz-chatgpt-bg` merge): `editor_bg_override.json` (forest conversion) is now
+tracked, so prebuild's `inject_editor_bg.py` rewrites the generated `zone_bg`/
+`bg_tiles` in every build. The new BG art is 0x8010 bytes smaller than the generated
+art it replaces, so everything from the DAC banks to `EndOfRom` slides **−0x8000**
+(bank-aligned): DAC banks `$50000/$58000 → $48000/$50000`, MT bank (`Region B`)
+`$60000 → $58000` (`Song_MovingTrucks` `$60607 → $58607`), SFX/interrupt/MDDBG tail
+all −0x8000; `MAP_TEST_OBJ`/`SONIC_ANIMS`/`PARTICLE_ANIMS` slide **−0xB2D8** (they sit
+directly after the shrunken art). Gate maintenance (standing 5-site ripple): `pins.rs`
+via `repin`; **aeon `games/sonic4/main.asm`** gate resume orgs (sonic/particle anims
+−0xB2D8; DAC/MT/SFX sound-gate orgs −0x8000 — engine.inc untouched, all its gates
+precede the art seam); `mixed_dac_rom.rs` lma_bases/windows −0x8000 + anims −0xB2D8;
+`repin_pins.rs` ASSEMBLED_LEN/DEBUG_ASSEMBLED_LEN + MDDBG literals; `mt_port.rs`/
+`sfx_port.rs` reference windows + synthetic `phase $58000` bank labels;
+`REGION_B_LMA 0x60000 → 0x58000` (src/lib.rs). Full strict **2434/0/1** from the
+merged masters (failures-first). Hashes taken from the final post-merge build.
+
+- Aeon repo master: **`2d8b067`** (art merge; G4.5 item #2 merge `3eba8fb` precedes it).
+- Non-debug `s4.bin`: **420749 bytes** (`EndOfRom` = `0x5DB60`), crc32 **`3aa43cb6`**,
+  sha256 **`560b348633f81ecadce2edf022bfe87c955800614de2dc2339f8b7475f65b27c`**.
+- Debug `s4.debug.bin`: **428768 bytes** (`EndOfRom` = `0x5F65A`), crc32 **`ce0e83a6`**,
+  sha256 **`556c7b5aab4b9fc95386897e1c68bc1e4dfd670fef6fdcd8e4f3e576da47a213`**.

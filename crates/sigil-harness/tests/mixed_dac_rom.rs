@@ -38,12 +38,12 @@
 //! between the blip bank's end ($50B40) and $58000, and between the drums' end
 //! ($5F8BC) and $60000 are produced by asl `align $8000`. In the mixed build
 //! those become INTER-SECTION gaps produced by the flatten fill. `xxd` of the
-//! reference `aeon/s4.bin` at all three ranges (0x4FFF0, 0x57FF0, 0x5FFF0, and
-//! the two bank tails 0x50B40 / 0x5F8C0) shows the pad byte is `0x00`
+//! reference `aeon/s4.bin` at all three ranges (0x47FF0, 0x4FFF0, 0x57FF0, and
+//! the two bank tails 0x48B40 / 0x578C0) shows the pad byte is `0x00`
 //! throughout — matching `sigil.map.toml`'s `fill = 0x00` (which `emit_rom` uses
 //! for every gap). The pre-DAC content ends at $4867A (Art_Sonic's `align 2`
 //! tail, per s4.lst); the blip bank REALLY starts at $50000 in the reference
-//! (verified: 0x4FFFx is all-zero, 0x50000 is the first blip byte `80 A6 …`), so
+//! (verified: 0x4FFFx is all-zero, 0x48000 is the first blip byte `80 A6 …`), so
 //! nothing lives in $4867A..$50000 except align pad — exactly the gap the
 //! flatten fill reproduces. The `org` skip drops ONLY the two BINCLUDE banks +
 //! comments + equates from `dac_samples.asm`; the byte-identity assertion below
@@ -177,18 +177,18 @@ fn emp_bank_map() -> &'static str {
      \n\
      [[region]]\n\
      name = \"dac_blip_bank\"\n\
-     lma_base = 0x50000\n\
+     lma_base = 0x48000\n\
      size = 0x8000\n\
      kind = \"rom\"\n\
      \n\
      [[region]]\n\
      name = \"dac_shared_bank\"\n\
-     lma_base = 0x58000\n\
+     lma_base = 0x50000\n\
      size = 0x8000\n\
      kind = \"rom\"\n"
 }
 
-/// T2/T3's map: `emp_bank_map`'s three regions PLUS `mt_bank` @ `0x60607` size
+/// T2/T3's map: `emp_bank_map`'s three regions PLUS `mt_bank` @ `0x58607` size
 /// `0x79F9` (mt_port.rs's R7 region, to the `$68000` bank top) PLUS the T3
 /// `sfx_bank` region — the FIRST shape-dependent region base (R7), so this map
 /// is a `fn of debug` where it was a const: plain `$63AE8`/`$4518`, debug
@@ -209,9 +209,9 @@ fn emp_bank_map() -> &'static str {
 /// the placed sections, not the map regions.
 fn emp_bank_map_with_mt(debug: bool) -> String {
     let (sfx_base, sfx_size) = if debug {
-        ("0x6553A", "0x2AC6")
+        ("0x5D53A", "0x2AC6")
     } else {
-        ("0x63AE8", "0x4518")
+        ("0x5BAE8", "0x4518")
     };
     format!(
         "fill = 0x00\n\
@@ -224,19 +224,19 @@ fn emp_bank_map_with_mt(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"dac_blip_bank\"\n\
-         lma_base = 0x50000\n\
+         lma_base = 0x48000\n\
          size = 0x8000\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"dac_shared_bank\"\n\
-         lma_base = 0x58000\n\
+         lma_base = 0x50000\n\
          size = 0x8000\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"mt_bank\"\n\
-         lma_base = 0x60607\n\
+         lma_base = 0x58607\n\
          size = 0x79F9\n\
          kind = \"rom\"\n\
          \n\
@@ -260,9 +260,9 @@ fn emp_bank_map_with_mt(debug: bool) -> String {
 /// this module, kept for map parity with the sound modules.
 fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
     let (sfx_base, sfx_size) = if debug {
-        ("0x6553A", "0x2AC6")
+        ("0x5D53A", "0x2AC6")
     } else {
-        ("0x63AE8", "0x4518")
+        ("0x5BAE8", "0x4518")
     };
     let hblank_base = if debug { "0x237E" } else { "0x22F0" };
     format!(
@@ -282,19 +282,19 @@ fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"dac_blip_bank\"\n\
-         lma_base = 0x50000\n\
+         lma_base = 0x48000\n\
          size = 0x8000\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"dac_shared_bank\"\n\
-         lma_base = 0x58000\n\
+         lma_base = 0x50000\n\
          size = 0x8000\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"mt_bank\"\n\
-         lma_base = 0x60607\n\
+         lma_base = 0x58607\n\
          size = 0x79F9\n\
          kind = \"rom\"\n\
          \n\
@@ -319,9 +319,9 @@ fn emp_bank_map_with_mt_hblank(debug: bool) -> String {
 /// for both, kept for map parity with the sound/hblank modules.
 fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
     let (sfx_base, sfx_size) = if debug {
-        ("0x6553A", "0x2AC6")
+        ("0x5D53A", "0x2AC6")
     } else {
-        ("0x63AE8", "0x4518")
+        ("0x5BAE8", "0x4518")
     };
     let hblank_base = if debug { "0x237E" } else { "0x22F0" };
     let controllers_base = if debug { "0x2390" } else { "0x2302" };
@@ -355,19 +355,19 @@ fn emp_bank_map_with_mt_hblank_tranche2(debug: bool) -> String {
          \n\
          [[region]]\n\
          name = \"dac_blip_bank\"\n\
-         lma_base = 0x50000\n\
+         lma_base = 0x48000\n\
          size = 0x8000\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"dac_shared_bank\"\n\
-         lma_base = 0x58000\n\
+         lma_base = 0x50000\n\
          size = 0x8000\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"mt_bank\"\n\
-         lma_base = 0x60607\n\
+         lma_base = 0x58607\n\
          size = 0x79F9\n\
          kind = \"rom\"\n\
          \n\
@@ -419,8 +419,8 @@ fn emp_bank_map_tranche3(debug: bool) -> String {
 /// word + 5-byte inline body + the `align 2` pad; content shape-invariant).
 fn emp_bank_map_tranche4(debug: bool) -> String {
     let act_base = if debug { "0x14BC6" } else { "0x14B5E" };
-    let sonic_base = if debug { "0x30A50" } else { "0x309E8" };
-    let particle_base = if debug { "0x30ABE" } else { "0x30A56" };
+    let sonic_base = if debug { "0x25778" } else { "0x25710" };
+    let particle_base = if debug { "0x257E6" } else { "0x2577E" };
     format!(
         "{}\
          \n\
@@ -2269,7 +2269,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x30A56..0x30A5E],
+        &rom[0x2577E..0x25786],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -2277,7 +2277,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The sonic_anims table head: eleven self-relative words starting at
     // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
     assert_eq!(
-        &rom[0x309E8..0x309F0],
+        &rom[0x25710..0x25718],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (plain)"
     );
@@ -2315,13 +2315,13 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche4_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x30ABE..0x30AC6],
+        &rom[0x257E6..0x257EE],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (debug)"
     );
 
     assert_eq!(
-        &rom[0x30A50..0x30A58],
+        &rom[0x25778..0x25780],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (debug)"
     );
@@ -3527,7 +3527,7 @@ fn mixed_sfx_rom_matches_assembled_reference() {
     // (`partial_fold`). The full-ROM assert below re-proves it against the
     // reference; this pin makes the seam's payload explicit.
     assert_eq!(
-        &rom[0x6045F..0x60461],
+        &rom[0x5845F..0x58461],
         &[0xE8, 0xBA],
         "SfxBlobWinTab[0] = sfx_winptr(Sfx_33) must resolve to $BAE8 (LE `E8 BA`) via the joint link"
     );

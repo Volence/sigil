@@ -152,8 +152,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x65B60);       // +0xCC churn
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x6765A); // +0xCC churn +0xC hook guards
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DB60);       // +0xCC churn
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F65A); // +0xCC churn +0xC hook guards
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
@@ -220,8 +220,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
     // +0xCC (churn) +0xC (hook guards) both in the debug ROM, like DEBUG_ASSEMBLED_LEN.
-    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x6_6704);
-    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x6_74CA);
+    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x5_E704);
+    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x5_F4CA);
 
     // collision_port.rs: sign-extended RAM labels truncated to u32. debug +0x2:
     // Debug_Scene_Freeze's RAM byte+pad shifts every __DEBUG__-block-downstream

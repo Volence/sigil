@@ -19,7 +19,7 @@
 //! label is bank-aligned). So the ONLY external symbol this test must supply
 //! is `MovingTrucks_Bank_Start` — proven via the T0 `ports.rs::probe_b`
 //! technique: a synthetic AS unit that `phase`s a label to the exact VMA the
-//! real `.asm` head pins it at ($60000, main.asm:129's `align $8000`), placed
+//! real `.asm` head pins it at ($58000, main.asm:129's `align $8000`), placed
 //! at a harness-private LMA that cannot collide with the `mt_bank`/`text`
 //! map regions, then concatenated with the `.emp` sections before ONE
 //! `resolve_layout` + `link` + `check_link_asserts` pass — mirroring exactly
@@ -27,8 +27,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (`DEBUG=0`): `s4.bin[0x60607..0x63AE8]` (13,537 bytes).
-//! Debug (`DEBUG=1`): `s4.debug.bin[0x60607..0x6553A]` (20,275 bytes).
+//! Plain (`DEBUG=0`): `s4.bin[0x58607..0x5BAE8]` (13,537 bytes).
+//! Debug (`DEBUG=1`): `s4.debug.bin[0x58607..0x5D53A]` (20,275 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -65,7 +65,7 @@ fn strict_gate() -> bool {
 /// TWO such carriers land here, one before and one after `mt_bank` in
 /// declaration order, both zero bytes, sharing the region cumulatively per
 /// P5/R7) and the real `mt_bank` region pinned at the R7 LMA, sized to the
-/// bank top ($68000).
+/// bank top ($60000).
 fn map_toml() -> &'static str {
     "fill = 0x00\n\
      \n\
@@ -77,13 +77,13 @@ fn map_toml() -> &'static str {
      \n\
      [[region]]\n\
      name = \"mt_bank\"\n\
-     lma_base = 0x60607\n\
+     lma_base = 0x58607\n\
      size = 0x79F9\n\
      kind = \"rom\"\n"
 }
 
 /// The synthetic AS-side cross-seam unit: a label `phase`d to the exact VMA
-/// the real `.asm` pins `MovingTrucks_Bank_Start` at ($60000) — the T0
+/// the real `.asm` pins `MovingTrucks_Bank_Start` at ($58000) — the T0
 /// `probe_b` idiom (`ports.rs`), which proved a `bankid("Name")` ensure
 /// resolves against a label defined this way exactly as it would against the
 /// real cross-source symbol.
@@ -94,7 +94,7 @@ fn as_bank_start_label(debug: i128) -> Vec<Section> {
     // plain), matching sound_ids.asm's `ifdef __DEBUG__`.
     let song_count = if debug != 0 { 3 } else { 1 };
     let asm = format!(
-        "cpu 68000\nphase $60000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
+        "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
     );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
@@ -142,8 +142,8 @@ fn compile_real_file(
     );
 
     // Append the cross-seam label section at a harness-private LMA — well
-    // clear of both `text` ($0..$10) and `mt_bank` ($60607..$68000) — so it
-    // cannot collide with either map region. Its VMA ($60000, from `phase`)
+    // clear of both `text` ($0..$10) and `mt_bank` ($58607..$60000) — so it
+    // cannot collide with either map region. Its VMA ($58000, from `phase`)
     // is what the `bankid()` ensures actually read; its LMA placement here is
     // an inert harness bookkeeping detail, exactly as in `probe_b`.
     let mut cross_seam = as_bank_start_label(debug);
@@ -192,7 +192,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x60607..0x63AE8]`.
+/// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x58607..0x5BAE8]`.
 #[test]
 fn mt_bank_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -216,13 +216,13 @@ fn mt_bank_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x60607..0x63AE8];
+    let expected = &refrom[0x58607..0x5BAE8];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=0) vs s4.bin[0x60607..0x63AE8]");
+    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=0) vs s4.bin[0x58607..0x5BAE8]");
 }
 
 /// (DEBUG=1) The `mt_bank` section's linked bytes equal
-/// `s4.debug.bin[0x60607..0x6553A]`.
+/// `s4.debug.bin[0x58607..0x5D53A]`.
 #[test]
 fn mt_bank_debug_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -246,7 +246,7 @@ fn mt_bank_debug_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x60607..0x6553A];
+    let expected = &refrom[0x58607..0x5D53A];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=1) vs s4.debug.bin[0x60607..0x6553A]");
+    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=1) vs s4.debug.bin[0x58607..0x5D53A]");
 }
