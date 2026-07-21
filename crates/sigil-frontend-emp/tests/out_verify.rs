@@ -55,7 +55,8 @@ fn status_uncond(
 ) -> OutStatus {
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
-    verify_out(items, &[reg], &[], callee_uncond_out)
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -288,7 +289,29 @@ fn status_cond(
 ) -> OutStatus {
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out)
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond)
+        .remove(&reg)
+        .expect("status for the checked reg")
+}
+
+/// Verify a single UNCONDITIONAL `out(reg)` where a CALLEE declares a conditional
+/// `out(cond_reg if cc)` (item #2's edge credit) — the Load_Object←AllocDynamic
+/// cascade shape. `callee_uncond_out` are the callees' unconditional outs.
+fn status_uncond_cond_callee(
+    src: &str,
+    proc: &str,
+    reg: Reg,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    cond_callees: &[(&str, Reg, &str)],
+) -> OutStatus {
+    let all = eval_all(src);
+    let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
+    let mut cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    for (callee, r, cc) in cond_callees {
+        cond.entry(callee.to_string()).or_default().push((r.to_string(), cc.to_string()));
+    }
+    verify_out(items, &[reg], &[], callee_uncond_out, &cond)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -339,6 +362,120 @@ fn same_body_unconditional_out_fires() {
         &map(&[]),
     );
     assert!(is_unverified(&s), "unconditional out(a1) unproduced on .miss → Unverified, got {s:?}");
+}
+
+// === 6. cascade — a proc's out sourced from a CONDITIONAL callee out (item #2) ==
+// The Load_Object←AllocDynamic-relabeled shape: P declares `out(a1)`; on the
+// success path a1 is produced ONLY by AllocDynamic's `out(a1 if eq)` credited on
+// the `bne .fail` fall-through (the eq-success edge); the fail path produces a1
+// itself. Verifies WITH #2's edge credit; the same body WITHOUT it is the
+// pre-relabel regression control (a1 unproduced on the success return).
+
+/// WITH the conditional callee-out edge credit ⇒ a1 produced on both returns ⇒
+/// verifies. This is the cascade that keeps Load_Object honest after the relabel.
+#[test]
+fn cascade_conditional_callee_out_verifies() {
+    let s = status_uncond_cond_callee(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) {\n\
+             jbsr    AllocDynamic\n\
+             bne     .fail\n\
+             rts\n\
+         .fail:\n\
+             movea.w d0, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]), // AllocDynamic has NO unconditional out (it is `out(a1 if eq)`)
+        &[("AllocDynamic", Reg::A1, "eq")],
+    );
+    assert!(is_produced(&s), "a1 produced on eq-success (credit) + fail (movea) → Produced, got {s:?}");
+}
+
+/// WITHOUT the conditional credit (edge-blind only) ⇒ a1 unproduced on the
+/// eq-success return ⇒ FIRES. Proves #2's edge credit is load-bearing for the
+/// cascade — the exact regression a bare AllocDynamic relabel would cause.
+#[test]
+fn cascade_without_conditional_credit_fires() {
+    let s = status_uncond_cond_callee(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) {\n\
+             jbsr    AllocDynamic\n\
+             bne     .fail\n\
+             rts\n\
+         .fail:\n\
+             movea.w d0, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+        &[], // no conditional credit supplied
+    );
+    assert!(is_unverified(&s), "no eq-success credit → a1 unproduced on success → Unverified, got {s:?}");
+}
+
+// === 7. movem LOAD production (the item-#2 cascade growth) ===================
+// A `movem (sp)+, …aN` restore genuinely PRODUCES its reglist at full width;
+// `produced_regs` now credits it (the Load_Object alloc-fail path). A movem STORE
+// (reglist as SOURCE) must NOT be credited — it reads those regs.
+
+/// A `movem.l (sp)+, d0-d2/a1` LOAD produces a1 at full width ⇒ `out(a1)`
+/// verifies with no other producer. Without the movem-load growth a1 is
+/// unproduced ⇒ this is the load-bearing test for the growth.
+#[test]
+fn movem_load_produces_reglist() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers(d0-d2) out(a1) {\n\
+             movem.l (sp)+, d0-d2/a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "movem-load restores a1 (full-width production) → Produced, got {s:?}");
+}
+
+/// A `movem.w (sp)+, a1` LOAD produces a1 at FULL WIDTH even at `.w` — movem.w
+/// sign-extends each word to 32 bits (unlike a plain `move.w`, which the width
+/// filter drops). So `out(a1)` verifies. Guards guardrail 2 (full-width for both
+/// sizes).
+#[test]
+fn movem_load_word_size_still_full_width() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers() out(a1) {\n\
+             movem.w (sp)+, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "movem.w load is full-width (sign-extended) → Produced, got {s:?}");
+}
+
+/// A movem STORE — `movem.l d0-d2/a1, -(sp)` — has the reglist as the SOURCE
+/// (first operand; `ops.last()` is the `-(sp)` predec, not a `RegList`). It READS
+/// a1, it does NOT produce it ⇒ `out(a1)` FIRES. MUTATION: crediting a movem
+/// store's reglist (dropping the `ops.last() == RegList` load-only guard) makes
+/// this verify — so this asserts the store is NOT a production.
+#[test]
+fn movem_store_does_not_produce_reglist() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers() out(a1) {\n\
+             movem.l d0-d2/a1, -(sp)\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "movem STORE reads a1, does not produce it → Unverified, got {s:?}");
 }
 
 /// Branch-split (guardrail 4's reusable primitive): a conditional out whose
