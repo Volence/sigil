@@ -295,11 +295,28 @@ impl<'a> Cfg<'a> {
     /// credit → a residual false positive may remain (acceptable), never a silent
     /// must-def miss. `Scc`/`dbcc` are not guards here — they fall to the
     /// transparency check and bail (neither is CC-transparent).
+    ///
+    /// **Label bail (Fable review 2026-07-21).** A LABEL anywhere between the
+    /// call and the guard (inclusive of one immediately before the guard) is a
+    /// potential JOIN: a bypass path can enter the chain there without having
+    /// executed the call, so the guard's cc no longer implies the callee ran —
+    /// crediting the guard's success edge would hand the bypass path the credit
+    /// (a must-def FALSE NEGATIVE, the §3-forbidden polarity). `next_instr`
+    /// chains instruction items and steps over labels invisibly, so the walk
+    /// checks the RAW item range between consecutive steps and bails on any
+    /// `CodeItem::Label` — even a currently-unreferenced local one (a referrer
+    /// added later must not silently create the hole). NOTE the asymmetry:
+    /// §6's [`Self::invalid_edge`] keeps the label-skip deliberately — its
+    /// over-fire polarity makes a join harmless there; do not "unify" them.
     pub(crate) fn valid_edge(&self, call_idx: usize, cc: &str) -> Option<(usize, usize)> {
         let neg = negate_cc(cc)?; // canonical negation
         let cc = negate_cc(neg)?; // canonical cc (double-negate folds hs/lo aliases)
+        let mut prev = call_idx;
         let mut idx = *self.next_instr.get(&call_idx)?;
         loop {
+            if self.items[prev + 1..idx].iter().any(|it| matches!(it, CodeItem::Label { .. })) {
+                return None; // a join point between call and guard — bypass paths would inherit the credit
+            }
             let (mnem, ops) = self.instr(idx)?;
             // A real conditional branch (`bXX`, 3-char) is the candidate guard.
             if mnem.starts_with('b') && mnem.len() == 3 {
@@ -330,6 +347,7 @@ impl<'a> Cfg<'a> {
             if !cc_transparent(mnem) {
                 return None; // a Z-clobber (btst/…) or unmodeled mnemonic — sound-complete bail
             }
+            prev = idx;
             idx = *self.next_instr.get(&idx)?; // fall through
         }
     }

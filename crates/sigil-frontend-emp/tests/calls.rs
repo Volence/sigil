@@ -655,6 +655,69 @@ fn conditional_out_correlated_condition_still_fires() {
     assert_eq!(f, vec!["a1".to_string()], "correlated cc (pl≠eq) → bail → fires: {f:?}");
 }
 
+/// Test 6 (label bail — Fable review 2026-07-21, PROVEN hole pre-fix): a
+/// jump-target label BETWEEN the call and the guard is a JOIN — the `beq .merge`
+/// bypass path enters the chain at `.merge` WITHOUT calling Find, then takes the
+/// same eq-success edge. Crediting that edge would hand the bypass path a1 (a
+/// must-def false negative, the §3-forbidden polarity). `valid_edge` must BAIL
+/// on the intervening label → a1 credited nowhere → the consumer FIRES.
+/// MUTATION: the pre-fix walk (`next_instr` steps over labels invisibly)
+/// credited the edge and this test returned [] — the empirically-proven hole.
+#[test]
+fn conditional_out_label_join_between_call_and_guard_still_fires() {
+    let f = run_input_full(
+        "module m\n\
+         proc P () clobbers(d0-d7/a0-a6) {\n\
+             tst.b d1\n\
+             beq .merge\n\
+             jbsr Find\n\
+         .merge:\n\
+             beq .have\n\
+             rts\n\
+         .have:\n\
+             jbsr Copy\n\
+             rts\n\
+         }\n",
+        &[("Copy", &["a1"])],
+        &[],
+        &[("Find", "a1", "eq")],
+    );
+    assert_eq!(
+        f,
+        vec!["a1".to_string()],
+        "bypass path reaches the eq edge without the call → must fire: {f:?}"
+    );
+}
+
+/// Test 6b (label bail is deliberately referrer-blind): even a label with NO
+/// current referrer between the call and the guard bails — a referrer added
+/// later must not silently open the join hole. Conservative false positive we
+/// keep (same doctrine as every other `valid_edge` bail): a1 not credited →
+/// the consumer FIRES despite the eq edge being genuinely call-fed today.
+#[test]
+fn conditional_out_unreferenced_label_before_guard_still_fires() {
+    let f = run_input_full(
+        "module m\n\
+         proc P () clobbers(d0-d7/a0-a6) {\n\
+             jbsr Find\n\
+         .here:\n\
+             beq .have\n\
+             rts\n\
+         .have:\n\
+             jbsr Copy\n\
+             rts\n\
+         }\n",
+        &[("Copy", &["a1"])],
+        &[],
+        &[("Find", "a1", "eq")],
+    );
+    assert_eq!(
+        f,
+        vec!["a1".to_string()],
+        "any intervening label bails (referrer-blind by design): {f:?}"
+    );
+}
+
 // ===========================================================================
 // [call.live-clobbered] D1c coupled close (§4, Finding 4): a CONDITIONAL
 // out(reg if cc) does NOT excuse a live-clobber — reg is destroyed on every

@@ -169,3 +169,21 @@ identified). If the cascade does NOT clear cleanly, STOP and report — do not f
 - Machinery: `flag_check.rs:252` (`invalid_edge`), `calls.rs:135` (`must_defined_in`),
   `out_verify.rs` (`transfer` call-credit), `corpus_contracts.rs:179` (`callee_uncond_out`).
 - Roadmap: `docs/superpowers/notes/pre-t18-roadmap.md` Phase-1 item #2.
+
+---
+
+## Addendum (Fable post-build review, 2026-07-21): Finding 7 — label-join bail
+
+The as-built `valid_edge` walked `next_instr`, which chains instruction items and steps
+over LABELS invisibly — so a jump-target label between the call and the guard (a JOIN:
+a bypass path can enter there without executing the call) did not bail, and the guard's
+success edge was credited for the bypass path too = a must-def FALSE NEGATIVE (the
+§3-forbidden polarity). Proven empirically pre-fix (probe returned `[]` where `a1` must
+fire); dormant in the live corpus (both real sites are call-adjacent-guard) and D1b is
+WARN, but flip-blocker-class. FIX: bail on ANY `CodeItem::Label` in the raw item range
+between consecutive walk steps — referrer-blind by design (a referrer added later must
+not silently open the hole). One fix in the shared primitive covers both consumers.
+Regression tests: `conditional_out_label_join_between_call_and_guard_still_fires` (the
+proven hole) + `conditional_out_unreferenced_label_before_guard_still_fires` (the
+deliberate conservatism). NOTE the asymmetry: §6's `invalid_edge` KEEPS its label-skip —
+over-fire polarity makes a join harmless there (same shape as the `writes_carry` split).
