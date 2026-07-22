@@ -93,9 +93,28 @@ pub(crate) fn call_unconditional_outs<'a>(
 /// makes a save/restore around a call correctly NOT fire (the corpus tile_cache/
 /// sprites pattern). `a7` is left in — the def/live sets that consume this never
 /// contain `a7`.
+///
+/// **must-write vs may-write (S2-D6):** [`instr_written_regs`] counts EVERY
+/// `db<cc>` counter as a may-write (correct for the clobber lint — a `dbeq`
+/// MIGHT decrement dN on its cc-false path). But this feeds a MUST-write /
+/// redefine analysis (D1b definitions, production collection, D1c redefine): a
+/// CONDITIONAL `dbeq/dbne/…` does NOT decrement dN on its cc-satisfied exit, so it
+/// does NOT DEFINE dN on every path, and `dbt` never decrements at all. Crediting
+/// those as a definition is the spec-§3-forbidden over-credit on the flip-bound
+/// D1b. Only `dbf`/`dbra` (condition F — always decrements) unconditionally write
+/// their counter, so the conditional family's counter is stripped back here.
 fn written_names(mnem: &str, ops: &[CodeOperand]) -> BTreeSet<String> {
     let mut regs: BTreeSet<String> =
         instr_written_regs(mnem, ops).into_iter().map(|r| r.to_string()).collect();
+    // Strip the may-write dbcc counter for the CONDITIONAL family (everything but
+    // the unconditional `dbf`/`dbra`): its first-operand counter is not a
+    // must-definition. The counter is a dbcc's ONLY register write, so removing
+    // `ops.first()` cannot drop another effect's contribution.
+    if mnem.starts_with("db") && mnem != "dbf" && mnem != "dbra" {
+        if let Some(CodeOperand::Reg(r)) = ops.first() {
+            regs.remove(&r.to_string());
+        }
+    }
     // A `movem` load writes its reglist when the reglist is the DESTINATION (last
     // operand); a `movem` STORE (`movem d5/d7,-(sp)`, reglist first) reads them.
     if let Some(CodeOperand::RegList(mask)) = ops.last() {
