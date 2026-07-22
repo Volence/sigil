@@ -262,6 +262,79 @@ fn memory_destination_does_not_warn() {
 }
 
 #[test]
+fn dbcc_counter_undeclared_warns() {
+    // S2-D6 effect (3): `dbf d7, .loop` DECREMENTS d7 (its first operand). Under
+    // `clobbers(d0)`, d7 is undeclared → `[proc.clobber-undeclared]` naming d7.
+    // Mutation trap: dropping the dbcc arm from `instr_written_regs` makes this
+    // go green (no d7 write detected) — proving the arm load-bearing.
+    let src = "module m\nproc p() clobbers(d0) {\n    moveq #3, d0\n.loop:\n    nop\n    dbf d0, .loop\n    dbf d7, .loop\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("expected a clobber-undeclared diagnostic for the dbf counter");
+    assert_eq!(w.level, Level::Warning);
+    assert!(w.message.contains("d7"), "names the dbf counter register: {}", w.message);
+}
+
+#[test]
+fn dbcc_counter_declared_does_not_warn() {
+    // Companion: a `dbf d0` whose counter d0 IS declared clobbers → silent (the
+    // real-corpus shape — every counter is declared or moveq-initialized).
+    let src = "module m\nproc p() clobbers(d0) {\n    moveq #3, d0\n.loop:\n    nop\n    dbf d0, .loop\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "a declared dbf counter must not trip the clobber lint: {diags:?}"
+    );
+}
+
+#[test]
+fn nonstack_movem_load_reglist_undeclared_warns() {
+    // S2-D6 effect (4): a NON-stack `movem.l (a0)+, d0-d1` LOADS d0/d1 with fresh
+    // values (a real clobber — the tile_cache DecompressBlock burst shape). Under
+    // `clobbers(a0)`, d0/d1 are undeclared → clobber-undeclared naming both.
+    let src = "module m\nproc p() clobbers(a0) {\n    movem.l (a0)+, d0-d1\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let named: Vec<&str> = diags
+        .iter()
+        .filter(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(named.iter().any(|m| m.contains("`d0`")), "movem-load target d0 must warn: {diags:?}");
+    assert!(named.iter().any(|m| m.contains("`d1`")), "movem-load target d1 must warn: {diags:?}");
+}
+
+#[test]
+fn stack_movem_restore_over_save_does_not_warn_the_rider2_trap() {
+    // RIDER 2 (the (sp)+ exemption trap): a defensive over-save that pushes d0-d7
+    // but only modifies d0-d3 declares `clobbers(d0-d3)`. The `movem.l (sp)+, d0-d7`
+    // RESTORE is preserve-discipline — d4-d7 are saved+restored, NOT clobbered — so
+    // it must NOT fire on d4-d7. An implementation that counts stack restores as
+    // writes (drops the `(sp)+` exemption in effect (4)) breaks this test.
+    let src = "module m\nproc p() clobbers(d0-d3) {\n\
+               \x20   movem.l d0-d7, -(sp)\n\
+               \x20   moveq #0, d0\n\
+               \x20   moveq #0, d1\n\
+               \x20   moveq #0, d2\n\
+               \x20   moveq #0, d3\n\
+               \x20   movem.l (sp)+, d0-d7\n\
+               \x20   rts\n}\n";
+    let (_module, diags) = lower(src);
+    let named: Vec<&str> = diags
+        .iter()
+        .filter(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .map(|d| d.message.as_str())
+        .collect();
+    for r in ["d4", "d5", "d6", "d7"] {
+        assert!(
+            !named.iter().any(|m| m.contains(&format!("`{r}`"))),
+            "a (sp)+ movem restore must NOT clobber-fire {r} (preserve-discipline): {diags:?}"
+        );
+    }
+}
+
+#[test]
 fn declared_clobber_does_not_warn() {
     // Companion: writing only a declared clobber (`d0`) → no clobber diagnostic.
     let src = "module m\nproc p() clobbers(d0, d1) {\n    moveq #0, d0\n    rts\n}\n";

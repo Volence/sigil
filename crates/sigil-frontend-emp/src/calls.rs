@@ -83,13 +83,16 @@ pub(crate) fn call_unconditional_outs<'a>(
 /// spellings). Combines the shared [`instr_written_regs`] detector (dest register
 /// plus auto-inc/dec bases) with the movem LOAD form. A movem whose register list
 /// is the DESTINATION (the last operand, e.g. `movem.l (sp)+, d5/d7`) writes every
-/// listed register. [`instr_written_regs`] deliberately does not expand movem
-/// reglists (its callers only want the base advance), so a caller's movem-restore
-/// of a saved register would otherwise look like a read-after-the-call without a
-/// redefine — a false live-clobber. Crediting the reglist load as a write makes a
-/// save/restore around a call correctly NOT fire (the corpus tile_cache/sprites
-/// pattern). `a7` is left in — the def/live sets that consume this never contain
-/// `a7`.
+/// listed register. [`instr_written_regs`] expands only NON-stack movem-load
+/// reglists (it exempts `(sp)+` restores as clobber-lint preserve-discipline), so
+/// a caller's movem-RESTORE of a saved register would otherwise look like a
+/// read-after-the-call without a redefine — a false live-clobber. This must-def /
+/// live-clobber analysis needs the ISA-true set (a restore DOES redefine), so it
+/// mask-expands every movem reglist itself (idempotent with the detector for
+/// non-stack loads; the BTreeSet dedupes). Crediting the reglist load as a write
+/// makes a save/restore around a call correctly NOT fire (the corpus tile_cache/
+/// sprites pattern). `a7` is left in — the def/live sets that consume this never
+/// contain `a7`.
 fn written_names(mnem: &str, ops: &[CodeOperand]) -> BTreeSet<String> {
     let mut regs: BTreeSet<String> =
         instr_written_regs(mnem, ops).into_iter().map(|r| r.to_string()).collect();

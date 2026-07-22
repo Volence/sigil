@@ -582,3 +582,28 @@ fn conditional_out_cc_true_at_return_unproduced_fires() {
     );
     assert!(is_unverified(&s), "eq TRUE at return but a1 unproduced -> MUST fire, got {s:?}");
 }
+
+/// RIDER 3 (S2-D6 shared-detector guard): a `dbf dN, .loop` DECREMENTS dN (now
+/// counted by `instr_written_regs` effect (3)), but a `.w` counter decrement is
+/// NOT a full-width production — the `produced_regs` width filter drops it. So a
+/// proc declaring `out(d7)` whose only touch of d7 is the loop counter (loaded by
+/// a `.w` move, never a `.l`/`moveq`) must STILL fire `[proc.out-unverified]`.
+/// If a future edit lets the dbcc counter satisfy an out obligation (dropping the
+/// width filter for it), this test breaks — proving the filter load-bearing.
+#[test]
+fn dbf_counter_does_not_satisfy_out() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () out(d7) {\n\
+             move.w  #5, d7\n\
+         .loop:\n\
+             nop\n\
+             dbf     d7, .loop\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::D7,
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "a dbf .w counter must NOT produce out(d7), got {s:?}");
+}
