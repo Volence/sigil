@@ -4,7 +4,7 @@
 
 **Current state (2026-07-21):** Phase-1 items **#1 (out()-verification, "G4.5") and #2
 (edge-sensitive conditional-out crediting) MERGED+PUSHED** — contract-grammar v2 arc is
-G1+G2+G3+substrate+G4+G4.5(#1+#2). Masters: sigil `32fbc9e` / aeon `ae1de4d`.
+G1+G2+G3+substrate+G4+G4.5(#1+#2). Masters: sigil `ad357ed`+ / aeon `ae1de4d`. Phase-1 #3 ALSO DONE (merged `3f333d2`) — #4 (the flip) is the ONLY Phase-1 item left.
 Canonical ROMs **RE-BASELINED 2026-07-21** (Deep-Forest-BG art parcel, byte-CHANGING):
 plain **`3aa43cb6`/`420749`**, debug **`ce0e83a6`/`428768`** (supersede `8984e510`/`453533` ·
 `c80465dc`/`461554`; see `golden/PROVENANCE.md`).
@@ -47,7 +47,7 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
    deferred to its Phase-2.5 Tier-C consumer (gap-ledger). D1a transitivity stayed out of scope.
    Snapshot: closure 0 / D1b 0 / D1c 2 / dead-saves 15 / out-verify 15; strict 2445/0/1.
 
-4. **WARN→ERROR flip** (D1b strict) `[lang]` ← **NEXT.**
+4. **WARN→ERROR flip** (D1b strict) `[lang]` ← **NEXT. Build from the overseer brief: `2026-07-21-d1b-flip-spec-brief.md` (Stage-0 residue-consumer map first; verified-out fixpoint; flip commit LAST).**
    Turn undefined-input from a warning into a build error. Its own clean commit. Blocked on #3
    plus the #1 residue list: **Buckets 2/3** (clean fix = G5 width-typed outs + in-out markers —
    decide at flip time: pull that G5 slice forward, or flip with both documented observe-only) ·
@@ -61,7 +61,7 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 *Design-gate first: run the §C trigger checks, then batch the work.*
 
-5. **Dead-save worklist** `[opt]` — 16 rows, re-issued & verified safe.
+5. **Dead-save worklist** `[opt]` — **15 rows** (was 16: item #3's detector fix exposed the `WarmupBelowRow` d6 row as a FALSE dead-save — deleting it would have corrupted d6; see the s2d6 packet).
 6. **D1c-tagged caller-side-hoist fuel** `[opt]` — register-hoist sites the contract sweep surfaced.
 7. **Step-5 pass-3-adjacent riders** `[opt]` — ledger-1092 `move.l` pairing · W022/W025.
    *(Note: "D7 deletions" is NOT here — it is its own byte-changing batch, Phase 2.5.)*
