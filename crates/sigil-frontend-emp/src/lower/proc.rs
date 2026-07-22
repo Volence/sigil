@@ -364,6 +364,18 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
     // `out`'s own validation runs in `check_out`, so expand it quietly here.
     let outs = reglist_set_quiet(proc.out.as_deref().unwrap_or(&[]));
     allowed.extend(outs.regs);
+    // §5 VERIFIED preserves are allowed writes too (S2-D6 FP-kill): a register the
+    // proc writes but provably SAVE/RESTORES round-trips to its entry value — it is
+    // preserved, not clobbered, so it must not fire `[proc.clobber-undeclared]`.
+    // This is the SAME subtraction the transitive closure already trusts
+    // (`closure.rs`'s `− verifiedPreserved(P)`); aligning the local WARN lint with
+    // it removes the dishonest-`clobbers()`-pressure FP class (AllocDynamic a0,
+    // Collected_Park/UnparkSlot a0, EntityWindow_TrySpawn* d3/d5 — all honestly
+    // `preserves(...)`-declared, §5-verified). `verified_preserves_regs` returns
+    // ONLY the declared set that PASSES §5 (∅ on any preserves error), so a
+    // declared-but-UNVERIFIABLE preserves subtracts nothing and the register still
+    // fires — the lint keeps its teeth against a lying `preserves`.
+    allowed.extend(verified_preserves_regs(proc, buf));
 
     for item in &buf.items {
         let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };

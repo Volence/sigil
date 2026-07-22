@@ -358,6 +358,69 @@ fn param_register_write_is_not_an_undeclared_clobber() {
     );
 }
 
+#[test]
+fn verified_preserves_is_not_an_undeclared_clobber() {
+    // S2-D6 FP-kill (commit B): a proc that WRITES a0 (`lea`) but SAVE/RESTORES it
+    // by individual push/pop declares `preserves(a0)`; §5 verifies it, so a0 is a
+    // preserved write, NOT an undeclared clobber. Before B the local lint fired a0
+    // here even though the register is honestly `preserves`-declared (the
+    // AllocDynamic/Collected_*/TrySpawn* shape — 25 corpus FPs). Now silent.
+    let src = "module m\nproc p() clobbers() preserves(a0) {\n\
+               \x20   move.l a0, -(sp)\n\
+               \x20   lea Foo, a0\n\
+               \x20   movea.l (sp)+, a0\n\
+               \x20   rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "a §5-verified preserved register must not fire clobber-undeclared: {diags:?}"
+    );
+}
+
+#[test]
+fn unverifiable_preserves_still_fires_clobber_undeclared_the_rider1_trap() {
+    // RIDER 1 (the verified-only trap): a DECLARED but UNVERIFIABLE `preserves(a0)`
+    // (push, corrupt sp, never a clean restore of a0's entry value) must STILL fire
+    // `[proc.clobber-undeclared]` on a0 — subtracting a merely-DECLARED preserves
+    // would let the lint inherit the exact dishonesty pressure it exists to kill.
+    // (`verified_preserves_regs` returns ∅ on the §5 error, so a0 is not allowed.)
+    let src = "module m\nproc p() clobbers() preserves(a0) {\n\
+               \x20   move.l a0, -(sp)\n\
+               \x20   lea Foo, a0\n\
+               \x20   adda.w #4, sp\n\
+               \x20   movea.l (sp)+, a0\n\
+               \x20   rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message.contains("[proc.clobber-undeclared]") && d.message.contains("a0")),
+        "an unverifiable preserves must NOT subtract → a0 still fires: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_restore_into_different_register_still_fires() {
+    // Mutation-resistant companion: a proc that saves a0 but "restores" into a1
+    // (a1 gets a FRESH value, a0 is never restored) — `preserves(a0)` is
+    // unverifiable (a0 not round-tripped), so a0 STILL fires, and the freshly
+    // written a1 fires too. A balance-only heuristic (push count == pop count)
+    // would wrongly clear a0; §5's entry-value tracking does not.
+    let src = "module m\nproc p() clobbers() preserves(a0) {\n\
+               \x20   move.l a0, -(sp)\n\
+               \x20   lea Foo, a0\n\
+               \x20   movea.l (sp)+, a1\n\
+               \x20   rts\n}\n";
+    let (_module, diags) = lower(src);
+    let named: Vec<&str> = diags
+        .iter()
+        .filter(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(named.iter().any(|m| m.contains("`a0`")), "a0 (not round-tripped) must fire: {diags:?}");
+    assert!(named.iter().any(|m| m.contains("`a1`")), "a1 (fresh restore target) must fire: {diags:?}");
+}
+
 // ---- Plan 7 #8: jbra/jbsr fallthrough-terminator recognition (D2.18) --------
 
 #[test]
