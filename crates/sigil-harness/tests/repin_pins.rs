@@ -220,8 +220,13 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // Then +0x1C BOTH shapes (pass-3 8b move.l rider #1, NT segment copy): the
     // FillRow nametable copy loop becomes move.l pairs + a per-run odd-word tail,
     // growing tile_cache +0x1C; sound_api and every downstream region slide +0x1C.
-    assert_eq!(pins::SOUND_API.plain_base, 0x620C);  // +0x1C 8b NT move.l rider
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B7A);  // +0x1C 8b NT move.l rider
+    // Then +0x1C BOTH shapes (pass-3 8b move.l rider #2, plane_buffer drain): the
+    // Draw_TileRow_FromCache .emit_row_run copy becomes move.l pairs + a per-run
+    // odd-word tail, growing plane_buffer +0x1C; plane_buffer is upstream of the
+    // whole level+sound block, so tile_cache/collision_lookup/section/sound_api
+    // bases each slide +0x1C (their LENs unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6228);  // +0x1C 8b plane_buffer move.l rider
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B96);  // +0x1C 8b plane_buffer move.l rider
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
