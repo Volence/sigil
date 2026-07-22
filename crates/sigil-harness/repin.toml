@@ -538,6 +538,43 @@ tests = ["tile_cache_port"]
 name = "Cache_Pfx_Lag_Flag"
 tests = ["tile_cache_port"]
 
+# Prefetch scan memoize (RAM tail) — generation word + per-axis keyed memos.
+[[symbol]]
+name = "Block_Stage_Gen"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Pfx_Memo_Row"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Pfx_Memo_L"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Pfx_Memo_H"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Pfx_Memo_Gen"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cs_Memo_Col"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cs_Memo_T"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cs_Memo_B"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cs_Memo_Gen"
+tests = ["tile_cache_port"]
+
 [[symbol]]
 name = "S4LZ_DecompressDict"
 tests = ["tile_cache_port"]

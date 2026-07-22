@@ -1,5 +1,10 @@
 # Parcel 8b — FindStagedBlock scan memoize (design gate)
 
+> **CLOSED 2026-07-22.** Memoize + 2 move.l riders + F2 census MERGED: aeon `5c975af`,
+> sigil 8b merge. Overseer delta-attack PASS zero findings. New canonical plain
+> `00222415`/421134 · debug `fffc0179`/429151 (PROVENANCE re-baselined). Collision rider
+> adjudicated-skip; ledger-1092 move.l-pairing row closed. Strict 2457/0/1.
+
 Branch `pass3-8b-memoize` (worktree `aeon-8b`, off master `57d5e19`, seeded canonical
 748ca5ba/d5d8e163). One parcel: the memoize + the folded `move.l`-pairing riders (from
 dissolved Parcel C), one 5-site ripple + PROVENANCE re-baseline, attack-the-diff pre-merge.
@@ -121,3 +126,118 @@ Approved to build. Rider rulings folded in:
    (so gen bumps on demand stages too — it should; verify no direct-stage bypass).
 4. Collision-run `move.b`→wider pairing: verify collision cells are contiguous + alignment (finding
    #1's collision segment note said they are, but re-verify at 1608-1619).
+
+## Implementation progress (2026-07-22)
+
+**Memoize (steps 1–6) DONE + verified.** Commits: sigil `pass3-8b-memoize` (R3 guard
+`92f94a9`, ripple `5be9353`); aeon `pass3-8b-memoize` `8146ba5`. Region grows +0x90
+both shapes; NEW debug 428968 (OLD canonical 428768).
+- R3: `Block_Stage_Keys` 3-toucher guard — passes untouched, proven to fire on an
+  injected 4th toucher.
+- R1/R2 satisfied: bounds-compare documented load-bearing at both check sites; the
+  `.row_done`/`.col_done` joins reload every live value from memory (corner targets
+  written before the skip, budget untouched on the all-hits path) — no register/CC
+  flows from the skipped walk.
+- Byte gate `tile_cache_port` PASS both shapes + two-module flip. Full paired strict
+  **2457/0/1** (baseline 2456 + R3). Ripple: pins (repin), engine.inc orgs (+0x90),
+  mixed_dac_rom collision_lookup tail-call disp F3AA→F31A / F2EA→F25A, repin_pins
+  SOUND_API base +0x90.
+- **A/B PASS (oracle, OJZ scroll, DEBUG shape, controller-driven frame-anchored).**
+  OLD (canonical d5d8e163) vs NEW: after an identical `press(right,40)` (cache slid
+  cols 70–149, real staging) all 5 sampled windows + bounds byte-identical; after an
+  identical diagonal `press(right,24)+press(right,down,20)` (cache slid cols 66–145 ×
+  rows 26–85 — row scan + col scan + corner) bounds + 2 windows byte-identical.
+  Note: `Debug_Scene_Freeze`+camera-poke does NOT slide the cache window (the slide
+  lives in the skipped Camera_Update); the working method is controller input +
+  frame-anchoring, cache slides naturally.
+
+**Remaining:** step 7 move.l riders (own bisectable commits, per-run evenness + wrap-
+crossing A/B), step 8 final ripple + PROVENANCE re-baseline, then HOLD for overseer
+attack-the-diff before merge.
+
+## Step-7 move.l rider analysis (R4 alignment audit, pre-implementation)
+
+Current line numbers (post-memoize): NT copy `tile_cache.emp:1587/1596`
+(`.fr_nt_run1/2`), collision `tile_cache.emp:1672-1684` (`.fr_ci_run1/2`),
+plane_buffer drain `plane_buffer.emp:334/340` (`.err_run1/2`). All three share the
+SAME shape: a wrap-split copy of `n_total` cells into a circular buffer, split into
+run-1 (`n1`) + run-2 (`n2`) at the physical wrap — n1/n2 are individually arbitrary
+(odd or even), n_total even or odd. So every candidate needs PER-RUN odd-tail
+handling (`n>>1` move.l + `n&1` move.w), never a whole-run pairing (R4).
+
+- **NT (1587/1596): move.l-SAFE.** Words; dest `= (a4, (row_off+phys_start)*2)` and
+  src `a0` staging — both word-aligned (the ×2 makes dest even). move.l on a word-
+  aligned (not necessarily long-aligned) EA is legal on 68000. Big-endian long copy
+  preserves the two-word order byte-for-byte. → implement with per-run odd tail.
+- **plane_buffer (334/340): move.l-SAFE pending a2 check.** Words; src `a1 = (a0,
+  phys*2)` word-aligned. Must confirm dest `a2` (Plane_Buffer write ptr) is word-
+  aligned at entry AND re-test the `$E000` Plane-B edge-vector case (ledger row 1078)
+  — the design's named alignment trap. → implement + that specific wrap-crossing A/B.
+- **Collision (1672-1684): move.l-UNSAFE — SKIP (design's "where alignment permits"
+  carve-out).** BYTE copies whose dest index `= coll_row_offset + phys_col` is
+  arbitrary → an odd phys_col makes move.w/move.l a MISALIGNED access (68000 address
+  error), and the loop interleaves plane-A (a1) and plane-B (a4) one byte each so
+  consecutive same-stream bytes aren't even adjacent in the emission. Leave as move.b;
+  document the skip (kill-list style) so it isn't silently dropped.
+
+Each byte-changing rider = full cycle (twin .emp+.asm edit → build both shapes →
+repin → engine.inc/mixed_dac_rom/repin_pins hand-edit → byte gate → wrap-crossing
+A/B both ROMs). They share ONE final PROVENANCE re-baseline with the memoize.
+
+## Step-7 riders IMPLEMENTED + F2 census (2026-07-22, fresh continuation)
+
+Both move.l riders built, byte-gated, and A/B-proven behaviour-preserving. Collision
+rider stays SKIPPED (byte-packed, arbitrary phys_col → misaligned move.w/l — design's
+"where alignment permits" carve-out). Commits: aeon NT `f27ce77` + PB `afe3eac`;
+sigil F2 `b4a8da7`, NT ripple `d484486`, PB ripple `452af3f`.
+
+- **F2 (R3 census extension):** the `Block_Stage_Keys` toucher census now scans the
+  `.asm`/`.inc` corpus too (column-0 label attribution, `;`-comment strip, `ram.asm`
+  declaration allowlisted). Proven to fire on an injected 4th `.asm` toucher and on a
+  re-declaration outside `ram.asm`. A future 4th toucher in either language now fails loud.
+- **Rider #1 (NT, `tile_cache` FillRow phase-1):** `.fr_nt_run1/2` → move.l pairs + per-run
+  move.w odd tail. Both src/dest word-aligned (intra_col*2 src, *2 dest offset). Region +0x1C.
+- **Rider #2 (PB, `plane_buffer` `.emit_row_run`):** same transform. a2 word-aligned proven
+  (Plane_Buffer 0xFFA150 even + 132-byte ptr stride + 4-byte header; every write +2), a1
+  even (cache base + phys*2; wrap resets to even a0). Region +0x1C (upstream of the
+  level+sound block). The ledger-1078 $E000 edge-vector is the SEPARATE unbuilt VDP
+  column-drain item — not this RAM→RAM producer copy.
+
+**A/B METHOD (deterministic):** the input-driven A/B is INVALID for these riders — they
+change copy throughput, which shifts lag frames, so any press-count anchor diverges (proved:
+same ROM + same input → different camera). Use `Debug_Scene_Freeze`(0xFF8A10)=1 + camera-poke
+(`Camera_X/Y`) + settle: Camera_Update is skipped (poke stays put) but `Tile_Cache_Fill` +
+Section streaming run, so the cache/plane fill deterministically to a history-independent
+fixed point (reproducibility verified: fresh reload → identical bounds). NT observable =
+`Tile_Cache_Nametable` RAM (settles ~230f); PB observable = plane-A VRAM $C000 (settles
+LATER — the VDP drain has a per-frame budget, so allow ~950f to fully converge).
+
+**A/B RESULTS (PASS):**
+- NT: settled cache RAM byte-identical OLD vs NEW at Origin_Col 28 and 35 (distinct wrap
+  phases) — all sampled windows incl. rich FillRow-written tile data + bounds + staging gen.
+- PB: plane-A VRAM byte-identical OLD vs NEW at Origin_Col 35 (converged @250f) and 28
+  (a transient frame-250 drain-lag difference that RESOLVED to byte-identical @950f — the
+  decisive datapoint: even where throughput-shift created a transient VRAM delta, full
+  convergence is identical).
+
+**Ripple:** each rider = own bisectable aeon+sigil commit pair; repin +0x1C both shapes;
+engine.inc 5 gate orgs (PB rider) / 4 (NT rider); repin_pins SOUND_API base + F1 comment
+CORRECTED (memoize +0x90 alone, each rider +0x1C separately — the riders were NEVER in the
++0x90). mixed_dac disp: NT rider F31A→F2FE/F25A→F23E (tile_cache-internal growth between bra
+target and bra); PB rider UNCHANGED (both bra and target downstream of plane_buffer, shift
+together). Full paired strict **2457/0/1**, zero new clippy.
+
+**Interim ROMs (pre-PROVENANCE):** plain `00222415`/421134 · debug `fffc0179`/429151.
+NOT canonical until the overseer delta-attack → ONE PROVENANCE re-baseline → merge.
+
+## Ledger: 16-bit gen-wrap ABA (overseer, 2026-07-22 — no code change)
+
+A memo that survives EXACTLY 2^16 claims and whose (target, bounds) then
+coincidentally re-match would false-hit (the gen word aliases back to the recorded
+value). Consequence is bounded: it skips a PREFETCH only — the cold-crossing DEMAND
+fill still claims and its gen-bump kills the memo — so the worst case is a one-frame
+producer spike, never cache corruption. Accepted as-is (astronomically unlikely + a
+real claim in the interval already kills the memo). Parked wrap-immune simplification:
+write `$FFFF` directly to the axis memo_gen AT the claim site (retiring the generation
+counter entirely) — revisit only if the R3 3-toucher guard ever trips. See
+[[twin-scaffolding-kill-list]]-style tracking in campaign-gap-ledger.md.

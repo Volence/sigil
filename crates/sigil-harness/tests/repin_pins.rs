@@ -212,8 +212,21 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // region downstream of entity_window — including sound_api — slides −0x10 in
     // both shapes. (EndOfRom itself is unchanged: the −16 is re-absorbed by padding
     // before the ROM end, so ASSEMBLED_LEN below stays put; sound_api len unchanged.)
-    assert_eq!(pins::SOUND_API.plain_base, 0x6160);  // −0x10 pass-3 Parcel A
-    assert_eq!(pins::SOUND_API.debug_base, 0x7ACE);  // −0x10 pass-3 Parcel A
+    // Then +0x90 BOTH shapes (pass-3 8b prefetch scan memoize, 2026-07-22): the
+    // generation-word check/record alone grows tile_cache +0x90; every engine-bank
+    // region downstream — including sound_api — slides +0x90 in both shapes.
+    // (ASSEMBLED_LEN + the END-line MDDBG pins are unchanged: the +0x90 is
+    // re-absorbed by engine-bank padding before the fixed high-address banks.)
+    // Then +0x1C BOTH shapes (pass-3 8b move.l rider #1, NT segment copy): the
+    // FillRow nametable copy loop becomes move.l pairs + a per-run odd-word tail,
+    // growing tile_cache +0x1C; sound_api and every downstream region slide +0x1C.
+    // Then +0x1C BOTH shapes (pass-3 8b move.l rider #2, plane_buffer drain): the
+    // Draw_TileRow_FromCache .emit_row_run copy becomes move.l pairs + a per-run
+    // odd-word tail, growing plane_buffer +0x1C; plane_buffer is upstream of the
+    // whole level+sound block, so tile_cache/collision_lookup/section/sound_api
+    // bases each slide +0x1C (their LENs unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6228);  // +0x1C 8b plane_buffer move.l rider
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B96);  // +0x1C 8b plane_buffer move.l rider
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
