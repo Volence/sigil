@@ -93,11 +93,21 @@ fn movem_restore_mask(mnem: &str, ops: &[CodeOperand]) -> Option<u16> {
 
 #[test]
 fn every_stack_movem_restore_has_a_matching_save() {
-    let Ok(aeon) = std::env::var("AEON_DIR") else {
-        eprintln!("skip: AEON_DIR not set");
+    // House reference-gate pattern (repin_pins/mt_port): default the sibling
+    // aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
+    // failure — a permanent guard that silently skips in the standard strict
+    // invocation (`SIGIL_STRICT_GATE=1 cargo test --workspace`, no AEON_DIR)
+    // would be prose with extra steps.
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
-    };
-    let aeon = PathBuf::from(aeon);
+    }
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
