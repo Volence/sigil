@@ -164,6 +164,14 @@ fn every_stack_movem_restore_has_a_matching_save() {
         violations.len(),
         violations.join("\n")
     );
-    // Sanity: the corpus actually exercises the guarded form (not a vacuous pass).
-    assert!(restore_count > 0, "no `movem (sp)+, …` restores found — guard is vacuous");
+    // NON-VACUOUS: the corpus must actually exercise the guarded form. The live
+    // aeon tree has 26 `movem (sp)+, …` restores (the Stage-0 census figure); a
+    // floor of 20 tolerates minor churn while catching a sweep that silently stops
+    // visiting the guarded instructions (an eval/walker regression that would make
+    // this pass emptily).
+    assert!(
+        restore_count >= 20,
+        "expected ~26 `movem (sp)+, …` restores in the corpus, visited only {restore_count} — \
+         the guard has gone (near-)vacuous"
+    );
 }
