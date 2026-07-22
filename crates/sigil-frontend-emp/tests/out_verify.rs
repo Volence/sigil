@@ -13,7 +13,7 @@
 
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;
-use sigil_frontend_emp::out_verify::{verify_out, OutStatus};
+use sigil_frontend_emp::out_verify::{compute_verified_outs, verify_out, OutStatus};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::{CodeItem, Reg};
 use sigil_ir::backend::Cpu;
@@ -581,6 +581,100 @@ fn conditional_out_cc_true_at_return_unproduced_fires() {
         &map(&[]),
     );
     assert!(is_unverified(&s), "eq TRUE at return but a1 unproduced -> MUST fire, got {s:?}");
+}
+
+// === 8. the VERIFIED-out FIXPOINT (the D1b-flip foundation) =================
+// `compute_verified_outs` grounds each proc's declared outs against ONLY
+// already-verified callee/tail credit (extern outs seed verified as §3 axioms).
+
+/// Run the fixpoint over `src` (body procs) plus a hand-built declared map.
+/// `declared` are the UNCONDITIONAL outs of EVERY proc incl externs; `externs`
+/// names the extern-proc leaves (seeded verified). Returns the verified-uncond
+/// map.
+fn fixpoint_uncond(
+    src: &str,
+    declared: &[(&str, &[Reg])],
+    externs: &[&str],
+) -> BTreeMap<String, BTreeSet<String>> {
+    let all = eval_all(src);
+    let proc_items: BTreeMap<String, &[CodeItem]> =
+        all.iter().map(|(n, v)| (n.clone(), v.as_slice())).collect();
+    let declared_uncond = map(declared);
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let extern_names: BTreeSet<String> = externs.iter().map(|s| s.to_string()).collect();
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names).0
+}
+
+fn verified(m: &BTreeMap<String, BTreeSet<String>>, proc: &str, reg: Reg) -> bool {
+    m.get(proc).is_some_and(|s| s.contains(&reg.to_string()))
+}
+
+/// FIXPOINT CYCLE (brief §2.1): A↔B each declare `out(a1)` sourced ONLY from the
+/// other (mutual tail transfers), neither writing a1 itself → NEITHER grounds in a
+/// local production → both stay UNVERIFIED. The self-consistent lie Finding 2
+/// warned of; the fixpoint refuses to bless it. (MUTATION control: drawing credit
+/// from DECLARED outs — the pre-fixpoint state — would verify both; the companion
+/// `callee_sourced_out_verifies` proves declared-credit blesses a single hop.)
+#[test]
+fn fixpoint_mutual_cycle_stays_unverified() {
+    let m = fixpoint_uncond(
+        "module m\n\
+         proc A () clobbers() out(a1) { jbra B }\n\
+         proc B () clobbers() out(a1) { jbra A }\n",
+        &[("A", &[Reg::A1]), ("B", &[Reg::A1])],
+        &[],
+    );
+    assert!(!verified(&m, "A", Reg::A1), "A's out(a1) grounds only in B (unverified) → Unverified");
+    assert!(!verified(&m, "B", Reg::A1), "B's out(a1) grounds only in A (unverified) → Unverified");
+}
+
+/// CHAIN GROUNDING (brief §2.3): A←B←C where C produces a1 LOCALLY, B's out is
+/// sourced from C, A's from B. The least-fixpoint grounds C (round 1), then B,
+/// then A — so ALL THREE verify. Guards against an over-conservative one-pass
+/// implementation that credits only leaves and never propagates up the chain.
+#[test]
+fn fixpoint_chain_grounds_through_local_producer() {
+    let m = fixpoint_uncond(
+        "module m\n\
+         proc A () clobbers() out(a1) { jbra B }\n\
+         proc B () clobbers() out(a1) { jbra C }\n\
+         proc C () clobbers() out(a1) { lea Slot, a1\n rts }\n",
+        &[("A", &[Reg::A1]), ("B", &[Reg::A1]), ("C", &[Reg::A1])],
+        &[],
+    );
+    assert!(verified(&m, "C", Reg::A1), "C produces a1 locally → Verified");
+    assert!(verified(&m, "B", Reg::A1), "B sourced from verified C → Verified");
+    assert!(verified(&m, "A", Reg::A1), "A sourced from verified B → Verified (multi-round grounding)");
+}
+
+/// EXTERN SEED (rider 2a): an extern `out(a1)` seeds the fixpoint VERIFIED (a §3
+/// boundary axiom — no body to check), so a body proc P sourcing `out(a1)` ONLY
+/// from a `jbsr` to that extern VERIFIES.
+#[test]
+fn fixpoint_extern_out_seeds_verified() {
+    let m = fixpoint_uncond(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) { jbsr E\n rts }\n",
+        &[("P", &[Reg::A1]), ("E", &[Reg::A1])],
+        &["E"], // E is an extern leaf
+    );
+    assert!(verified(&m, "P", Reg::A1), "P's a1 from the extern-axiom E out(a1) → Verified");
+}
+
+/// EXTERN-SEED MUTATION (rider 2a): the SAME body with E NOT seeded as an extern
+/// (a mutant that drops extern-out axioms — E then has no body, is never
+/// processed, and stays unverified) → P's `out(a1)` FIRES. This is the failure
+/// `S4LZ_DecompressDict::out(a1)` would hit corpus-wide without the seed (the
+/// scratch-experiment's own bug, promoted to a permanent guard).
+#[test]
+fn fixpoint_without_extern_seed_fires() {
+    let m = fixpoint_uncond(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) { jbsr E\n rts }\n",
+        &[("P", &[Reg::A1]), ("E", &[Reg::A1])],
+        &[], // E NOT declared extern → seed dropped → E never verified
+    );
+    assert!(!verified(&m, "P", Reg::A1), "no extern seed → E unverified → P's a1 Unverified");
 }
 
 /// RIDER 3 (S2-D6 shared-detector guard): a `dbf dN, .loop` DECREMENTS dN (now

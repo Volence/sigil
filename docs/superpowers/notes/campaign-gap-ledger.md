@@ -1120,3 +1120,21 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   consumes it, rather than guessing now. Census + adjudication: `docs/superpowers/notes/
   2026-07-21-s2d6-stage0-census.md` §(d). — OPEN (per-callee clobber-union export; lands with
   the Phase-2.5 Tier-C movem-deletion batch, which owns the consumer contract).
+
+- [Phase-1 item #4, D1b flip, 2026-07-21] **§6 invalid-path keeps DECLARED out-credit — the
+  per-lie-class credit is owed.** The D1b flip established the define-vs-redefine dividing line:
+  D1b must-def credits an out as a *definition* ⇒ VERIFIED-out fixpoint (an out is trusted only
+  once proven produced), while §6 result-invalid-path and D1c held-value credit an out as a
+  *redefine/kill* ⇒ DECLARED (a width-unverified out still redefines its register — low word
+  fresh; switching D1c to verified adds 11 narrow-width FPs, measured 2→13). But §6 retains the
+  SAME existence-lie exposure D1b just closed: a declared-but-never-produced `out(rN)` would
+  falsely KILL a §6 invalid-path taint (a §6 false negative on a shipping ERROR gate). It has 0
+  corpus firings today and is guarded by the `corpus_flag_results_declared_vs_verified_credit_
+  agree` TRIPWIRE (fails the day declared and verified §6 diverge). The real fix is a
+  PER-LIE-CLASS credit: distinguish *width-unverified* (redefines, so §6/D1c should credit it)
+  from *existence-unverified* (does not produce on some path, so §6/D1c should NOT) — the
+  current fixpoint conflates both into one "unverified" bit. When that split lands, §6/D1c
+  credit existence-verified-but-width-unverified outs and drop existence-lies, closing §6's hole
+  without the D1c FP flood. Design context: this parcel's design note + the dividing-line table
+  in `2026-07-19-out-verification-residue.md`. — OPEN (per-lie-class out credit; closes §6's
+  existence-lie exposure; tripwire-guarded until then).

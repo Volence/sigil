@@ -23,11 +23,19 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 #[test]
 fn dump_out_unverified_residue() {
-    let Ok(aeon) = std::env::var("AEON_DIR") else {
-        eprintln!("skip: AEON_DIR not set");
+    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
+    // sibling aeon tree; under SIGIL_STRICT_GATE a missing reference hard-fails so
+    // the residue dump actually runs under the standard strict invocation.
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
-    };
-    let aeon = PathBuf::from(aeon);
+    }
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);

@@ -45,6 +45,13 @@ use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+/// Proc name → its set of UNCONDITIONAL out registers (canonical `d0`..`a7`
+/// spellings). Used for both the DECLARED map and the fixpoint's VERIFIED map.
+pub type UncondOutMap = BTreeMap<String, BTreeSet<String>>;
+/// Proc name → its `(reg, cc)` CONDITIONAL outs. Used for both the DECLARED map
+/// and the fixpoint's VERIFIED map.
+pub type CondOutMap = BTreeMap<String, Vec<(String, String)>>;
+
 /// The proof outcome for one declared output register.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OutStatus {
@@ -341,6 +348,122 @@ pub fn verify_out(
             (*r, status)
         })
         .collect()
+}
+
+/// The VERIFIED-out fixpoint (contract-grammar v2 §G4.5, the D1b-flip foundation).
+///
+/// A proc's `out(rN)` is VERIFIED iff [`verify_out`] proves rN PRODUCED on every
+/// required return path when callee/tail credit is drawn ONLY from
+/// already-VERIFIED outs. Computed as a least-fixpoint: extern procs seed VERIFIED
+/// (their declared outs are §3 boundary AXIOMS — there is no body to check, and
+/// the verifier deliberately does not reach across the `.asm` link seam; an
+/// extern's out-honesty is its twin's contract, gated elsewhere); body procs start
+/// ⊥ (nothing verified) and grow until stable.
+///
+/// **Monotone ⇒ terminates.** More verified credit can only turn an out
+/// Unverified→Produced (the credit only adds `produced` bits in
+/// [`verify_out`]'s `transfer`), never the reverse — so each proc's verified set
+/// grows monotonically, bounded by its declared outs (finite). A round that adds
+/// nothing ends the loop; a hard round-cap `assert!` turns any monotonicity
+/// regression into a loud panic rather than a hang.
+///
+/// A mutual/circular out-dependency that never grounds in a LOCAL production stays
+/// UNVERIFIED — the correct conservative answer (Finding 2), not an error.
+///
+/// Returns `(verified_uncond, verified_cond)` — the maps the caller-side
+/// DEFINITION gates must credit INSTEAD of the raw DECLARED maps: D1b must-def (an
+/// out is a reaching definition of a callee param) and the out-verify residue
+/// surface. An out is trusted as a definition only once PROVEN honest, so the
+/// FindStagedBlock existence-lie can no longer silently satisfy a must-def input.
+/// REDEFINE-excuse consumers (§6 taint-kill, D1c held-value) keep the DECLARED
+/// maps — a width-unverified out genuinely redefines its register.
+pub fn compute_verified_outs(
+    proc_items: &BTreeMap<String, &[CodeItem]>,
+    declared_uncond: &UncondOutMap,
+    declared_cond: &CondOutMap,
+    extern_names: &BTreeSet<String>,
+) -> (UncondOutMap, CondOutMap) {
+    // SEED: externs verified by axiom; every other proc empty.
+    let mut v_uncond: BTreeMap<String, BTreeSet<String>> = declared_uncond
+        .iter()
+        .map(|(name, outs)| {
+            let seed = if extern_names.contains(name) { outs.clone() } else { BTreeSet::new() };
+            (name.clone(), seed)
+        })
+        .collect();
+    let mut v_cond: BTreeMap<String, Vec<(String, String)>> = declared_cond
+        .iter()
+        .filter(|(name, _)| extern_names.contains(*name))
+        .map(|(name, conds)| (name.clone(), conds.clone()))
+        .collect();
+
+    // Round-cap (R1): each round that CHANGES the maps adds ≥1 verified fact
+    // (monotone growth); a stable round ends the loop. So the total declared-fact
+    // count + 2 is a strict upper bound on rounds — exceeding it is a
+    // monotonicity regression, not a tuning knob.
+    let total_facts: usize = declared_uncond.values().map(|s| s.len()).sum::<usize>()
+        + declared_cond.values().map(|c| c.len()).sum::<usize>();
+    let cap = total_facts + 2;
+
+    let mut round = 0usize;
+    loop {
+        let mut changed = false;
+        for (name, items) in proc_items {
+            let uncond: Vec<Reg> = declared_uncond
+                .get(name)
+                .into_iter()
+                .flatten()
+                .filter_map(|r| Reg::from_name(r))
+                .collect();
+            let cond: Vec<(Reg, String)> = declared_cond
+                .get(name)
+                .into_iter()
+                .flatten()
+                .filter_map(|(r, cc)| Reg::from_name(r).map(|x| (x, cc.clone())))
+                .collect();
+            if uncond.is_empty() && cond.is_empty() {
+                continue;
+            }
+            let statuses = verify_out(items, &uncond, &cond, &v_uncond, &v_cond);
+            let unver: BTreeSet<String> = statuses
+                .iter()
+                .filter(|(_, s)| matches!(s, OutStatus::Unverified(_)))
+                .map(|(r, _)| r.to_string())
+                .collect();
+            let new_u: BTreeSet<String> =
+                uncond.iter().map(|r| r.to_string()).filter(|r| !unver.contains(r)).collect();
+            if v_uncond.get(name) != Some(&new_u) {
+                v_uncond.insert(name.clone(), new_u);
+                changed = true;
+            }
+            let new_c: Vec<(String, String)> = cond
+                .iter()
+                .filter(|(r, _)| !unver.contains(&r.to_string()))
+                .map(|(r, cc)| (r.to_string(), cc.clone()))
+                .collect();
+            // Compare against absent≡empty (the scratch-experiment bug: `None !=
+            // Some(&empty)` flips `changed` every round for a proc with no cond
+            // outs → non-termination).
+            let prev_c = v_cond.get(name).cloned().unwrap_or_default();
+            if prev_c != new_c {
+                if new_c.is_empty() {
+                    v_cond.remove(name);
+                } else {
+                    v_cond.insert(name.clone(), new_c);
+                }
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+        round += 1;
+        assert!(
+            round <= cap,
+            "verified-out fixpoint did not stabilize in {cap} rounds — monotonicity regression"
+        );
+    }
+    (v_uncond, v_cond)
 }
 
 /// At one return, charge every checked register whose obligation applies here but

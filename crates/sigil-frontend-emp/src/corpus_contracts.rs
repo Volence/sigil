@@ -24,7 +24,7 @@ use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, Liv
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
 use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
-use crate::out_verify::{check_out, OutFiring};
+use crate::out_verify::{check_out, compute_verified_outs, CondOutMap, OutFiring, UncondOutMap};
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
@@ -57,6 +57,13 @@ pub struct ContractReport {
     /// conditional register result read on its invalid path), sorted (proc,
     /// callee, span).
     pub flag_firings: Vec<FlagFiring>,
+    /// The §6 flag firings RECOMPUTED with the VERIFIED-out credit maps (vs
+    /// `flag_firings`, which uses the DECLARED maps). §6 deliberately keeps declared
+    /// credit (redefine-kill semantics); this is the honest-residual TRIPWIRE — it
+    /// must EQUAL `flag_firings` today. The day a corpus change makes them diverge,
+    /// declared credit is suppressing a real §6 firing on a shipping ERROR gate, and
+    /// the tripwire test fails loudly instead of the firing silently vanishing.
+    pub flag_firings_verified_credit: Vec<FlagFiring>,
     /// Names declared BOTH `extern proc` and `proc` (§11 Q4) — with the extern's
     /// span (the mirror that should be deleted when the callee ports).
     pub extern_collisions: Vec<(String, Span)>,
@@ -84,6 +91,15 @@ pub struct ContractReport {
     /// out-honesty check). Sorted (proc, reg). NOT yet joined to the error gate —
     /// the checkpoint-B residue is adjudicated before the flip.
     pub out_firings: Vec<OutFiring>,
+    /// The verified-out FIXPOINT result — each proc's UNCONDITIONAL outs PROVEN
+    /// produced (extern outs seeded verified). The DEFINITION credit source for D1b
+    /// must-def and the `out_firings` residue surface; exposed so the consistency
+    /// test can assert the residue is exactly the complement of this map (the two
+    /// surfaces read ONE source and cannot drift).
+    pub verified_uncond_out: UncondOutMap,
+    /// The verified-out fixpoint's CONDITIONAL outs (the dual of
+    /// `verified_uncond_out` for `out(rN if cc)`).
+    pub verified_cond_out: CondOutMap,
     /// Total instructions DROPPED across the corpus because an operand/mnemonic
     /// did not resolve during the single-file eval — the substrate hazard the
     /// cross-file type environment closes. With a complete environment this is
@@ -195,22 +211,54 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         })
         .collect();
 
-    // §6 caller-side flag checks, now that every callee's contract is known.
+    // The VERIFIED-out FIXPOINT (contract-grammar v2 §G4.5). An out is credited as
+    // a reaching DEFINITION only once PROVEN produced on every required return path
+    // (extern outs seed verified — §3 boundary axioms). The DEFINITION gates below
+    // — D1b must-def and the out-verify residue surface — credit THESE maps instead
+    // of the raw DECLARED `callee_uncond_out`/`cond_callees`, so the FindStagedBlock
+    // existence-lie can no longer silently satisfy a must-def input. The
+    // REDEFINE-excuse consumers (§6 taint-kill, D1c held-value) KEEP the declared
+    // maps: a width-unverified out genuinely redefines its register (low word
+    // fresh), so it still kills taint / is a produced result — see the dividing-line
+    // table in the residue note.
+    let proc_items: BTreeMap<String, &[CodeItem]> =
+        proc_bufs.iter().map(|pb| (pb.name.clone(), pb.buf.items.as_slice())).collect();
+    let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
+        compute_verified_outs(&proc_items, &callee_uncond_out, &cond_callees, &extern_names);
+
+    // §6 caller-side flag checks, now that every callee's contract is known. §6
+    // keeps the DECLARED credit (redefine-kill semantics). `flag_firings_verified`
+    // recomputes the invalid-path check against the VERIFIED credit — the honest-
+    // residual tripwire: it must EQUAL `flag_firings` today, so the day a corpus
+    // change makes declared-credit SUPPRESS a §6 firing the verified credit would
+    // show, the tripwire fails loudly instead of a real firing silently vanishing
+    // on a shipping ERROR gate.
     let mut flag_firings: Vec<FlagFiring> = Vec::new();
+    let mut flag_firings_verified: Vec<FlagFiring> = Vec::new();
     for pb in &proc_bufs {
-        flag_firings.extend(check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded));
+        let unused = check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded);
+        flag_firings_verified.extend(unused.iter().cloned());
+        flag_firings.extend(unused);
         flag_firings.extend(check_result_invalid_path(
             &pb.name,
             &pb.buf.items,
             &cond_callees,
             &callee_uncond_out,
         ));
+        flag_firings_verified.extend(check_result_invalid_path(
+            &pb.name,
+            &pb.buf.items,
+            &verified_cond_out,
+            &verified_uncond_out,
+        ));
     }
     // Deterministic order (proc, callee, flag); spans stay in encounter order
     // via the stable sort.
-    flag_firings.sort_by(|a, b| {
+    let flag_sort = |a: &FlagFiring, b: &FlagFiring| {
         (&a.proc, &a.callee, &a.flag).cmp(&(&b.proc, &b.callee, &b.flag))
-    });
+    };
+    flag_firings.sort_by(flag_sort);
+    flag_firings_verified.sort_by(flag_sort);
 
     // D1d dead-save worklist: run over every proc's CodeBuf against the closure's
     // VERIFIED effective sets (never raw declared text — pass-3 cuts code on this).
@@ -230,13 +278,14 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     for pb in &proc_bufs {
         let caller_params =
             nodes.get(&pb.name).map(|n| n.params.clone()).unwrap_or_default();
+        // D1b credits an out as a DEFINITION ⇒ VERIFIED maps (the flip foundation).
         input_firings.extend(check_input_undefined(
             &pb.name,
             &caller_params,
             &pb.buf.items,
             &callee_params,
-            &callee_uncond_out,
-            &cond_callees,
+            &verified_uncond_out,
+            &verified_cond_out,
         ));
         live_clobbered_firings.extend(check_live_clobbered(
             &pb.name,
@@ -255,11 +304,13 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     });
 
     // §G4.5 callee-side out-honesty: every declared `out(rN)` must be PRODUCED on
-    // every required return path. The unconditional outs come from the SHARED
-    // `callee_uncond_out` map (so callee/tail-target credit reads the same fact
-    // the caller-side gates do); the conditional `(reg, cc)` outs from
-    // `cond_callees`. Collected but NOT yet joined to the error gate — the
-    // checkpoint-B residue is adjudicated first.
+    // every required return path. The registers CHECKED are each proc's DECLARED
+    // outs; the callee/tail-target CREDIT is drawn from the VERIFIED maps (ruling 3
+    // — the out-verify residue surface reports the SAME fact D1b's must-def credits,
+    // so the WARN residue and the ERROR gate can never disagree on whether an out is
+    // honest). This is the fixpoint's own residue: a proc whose out grounds only in
+    // an unverified callee out (Collision_GetType ← the narrow-width
+    // Tile_Cache_GetCollision) now correctly appears here.
     let mut out_firings: Vec<OutFiring> = Vec::new();
     for pb in &proc_bufs {
         let uncond: Vec<Reg> = callee_uncond_out
@@ -282,8 +333,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &pb.buf.items,
             &uncond,
             &cond,
-            &callee_uncond_out,
-            &cond_callees,
+            &verified_uncond_out,
+            &verified_cond_out,
             pb.span,
         ));
     }
@@ -293,6 +344,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         closure,
         firings,
         flag_firings,
+        flag_firings_verified_credit: flag_firings_verified,
         extern_collisions,
         proc_count,
         extern_count,
@@ -301,6 +353,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         input_firings,
         live_clobbered_firings,
         out_firings,
+        verified_uncond_out,
+        verified_cond_out,
         dropped_instrs,
         dropped_by_proc,
     }

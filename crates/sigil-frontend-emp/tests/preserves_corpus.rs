@@ -9,7 +9,9 @@
 //! subtraction, not local preservation). A local NotPreserved for Load_Object is
 //! therefore CORRECT, not a failure — exactly the nuance the checkpoint surfaces.
 //!
-//! Gated on `AEON_DIR` (skips green when the tree is absent, like the port gates).
+//! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`).
+//! Under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS so this checkpoint pin runs
+//! in the standard strict invocation, not silently skip.
 
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;
@@ -41,11 +43,19 @@ fn residue_status(aeon: &PathBuf, file_rel: &str, proc: &str, reg: Reg) -> Prese
 
 #[test]
 fn residue_procs_verify_as_predicted() {
-    let Ok(aeon) = std::env::var("AEON_DIR") else {
-        eprintln!("skip: AEON_DIR not set");
+    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
+    // sibling aeon tree; under SIGIL_STRICT_GATE a missing reference hard-fails so
+    // this checkpoint pin actually runs under the standard strict invocation.
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
-    };
-    let aeon = PathBuf::from(aeon);
+    }
 
     // (file, proc, residue reg, expected LOCAL status)
     let cases: &[(&str, &str, Reg, PreserveStatus)] = &[
