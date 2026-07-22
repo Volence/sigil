@@ -120,7 +120,7 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 - **`Sound_PlayMusic.await_slot` DEBUG watchdog** `[bug]`  *(ledger row 1090)* — the H-1 residual: the spin is correct but *unbounded*; a wedged Z80 hangs the 68k silently in plain. Add a DEBUG-only spin counter + `raise_error` on overrun (self-gates to zero bytes in plain). Do-when-you-next-touch-sound_api.
 - **Optional-param design** `[lang]` — the AnimateSprite `d3` case (conditional/data-dependent input; no cc to hang it on). 1 site, no rush.
-- **Diagnostics-tier remainder** `[lang]` — items beyond G1–G4 (D7 `@scaffolding` annotation, D11 name-linkage, any D5/D6/D8–D10 not folded into G1–G5). Confirm exact scope against the v2 design doc.
+- **Diagnostics-tier remainder** `[lang]` — items beyond G1–G4 (D7 `@scaffolding` annotation, D11 name-linkage, any D5/D6/D8–D10 not folded into G1–G5). Confirm exact scope against the v2 design doc. **Now includes the s4lint absorption list** (`2026-07-22-s4lint-absorption-census.md`): Tier-B ranked absorb candidates — #1 Z80-bus machine-state contract (E006/E007/E011, a crash class, builds on the shared Cfg), #2 W026 width-discipline dataflow (pairs with G5 width typing), #3 E010 SR coverage via §5, #4 debug-seam checks, then perf/peephole WARN tiers. End-state: the last .asm port retires s4lint entirely — one tool, one truth.
 
 ---
 
