@@ -185,6 +185,86 @@ pub fn parse_listing(text: &str) -> Result<Listing, String> {
     Ok(Listing { symbols, end_addr, stamp })
 }
 
+/// Parse a listing CODE line into `(rom_offset, emitted_bytes)`, or `None` for
+/// non-code lines (labels, `ifdef` markers, blank, symbol-table). The shape is
+/// `[(N)]  LINENO/  HHHH : BB BB ..  MNEMONIC ...` — the address is the hex after
+/// the last `/` before the first `:`, the bytes are the leading pure-hex tokens
+/// after the `:` (stopping at the mnemonic). Conservative: anything that does not
+/// cleanly match yields `None` (skipped, never a false mismatch).
+fn parse_code_line(line: &str) -> Option<(u32, Vec<u8>)> {
+    let (left, right) = line.split_once(':')?;
+    let addr_tok = left.rsplit('/').next()?.trim();
+    if addr_tok.is_empty() || !addr_tok.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let addr = u32::from_str_radix(addr_tok, 16).ok()?;
+    let mut bytes = Vec::new();
+    for tok in right.split_whitespace() {
+        // Leading pure-hex, even-length tokens are emitted bytes; the first
+        // non-hex token is the mnemonic — stop there.
+        if tok.len() % 2 == 0 && !tok.is_empty() && tok.chars().all(|c| c.is_ascii_hexdigit()) {
+            for pair in tok.as_bytes().chunks(2) {
+                bytes.push(u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?);
+            }
+        } else {
+            break;
+        }
+    }
+    if bytes.is_empty() {
+        return None;
+    }
+    Some((addr, bytes))
+}
+
+/// Prove a parsed listing describes the SAME ROM as its built `.bin`: every clean
+/// code line's emitted bytes must equal the ROM at that offset. Skips the header
+/// region (`< 0x400`, where `fixheader` patches the checksum at `$18E`) and any
+/// offset at/after the assembled length (convsym append). A stale listing (built
+/// before the current `.bin`, e.g. a `.lst` copy missed by the build recipe) has
+/// downstream code at pre-shift addresses → the fresh ROM disagrees there → this
+/// hard-errors instead of silently repinning to phantom addresses.
+pub fn assert_listing_matches_rom(text: &str, rom: &[u8], end_addr: u32, shape: &str) -> Result<(), String> {
+    let mut checked = 0usize;
+    for line in text.lines() {
+        if line.trim() == "Symbol Table (* = unused):" {
+            break;
+        }
+        let Some((addr, bytes)) = parse_code_line(line) else { continue };
+        // Only the 68k main-code window [0x2000, 0x8000): below 0x2000 the listing
+        // interleaves Z80-driver disasm at Z80-LOCAL addresses (0x0..0x1FFF) that
+        // collide with 68k ROM offsets, and 0x8000+ is the Z80 bank window (`phase
+        // $8000`) — both have addresses that are NOT ROM offsets. Every dead-save
+        // / pass-3 shift lands in this window (entity_window..sound_api), so it is
+        // sufficient to catch a stale listing while excluding both Z80 spaces.
+        if !(0x2000..0x8000).contains(&addr) || addr as usize + bytes.len() > end_addr as usize {
+            continue;
+        }
+        let (a, n) = (addr as usize, bytes.len());
+        if a + n > rom.len() {
+            return Err(format!(
+                "{shape}: listing address {addr:#x} is past the ROM end {:#x} — listing/ROM mismatch",
+                rom.len()
+            ));
+        }
+        if rom[a..a + n] != bytes[..] {
+            return Err(format!(
+                "{shape} listing is STALE relative to the .bin: at {addr:#x} the listing emits \
+                 {bytes:02X?} but the ROM has {:02X?}. Regenerate the listing (the build recipe \
+                 must copy s4.lst alongside s4.bin) and re-run repin.",
+                &rom[a..a + n]
+            ));
+        }
+        checked += 1;
+    }
+    if checked < 64 {
+        return Err(format!(
+            "{shape}: only {checked} code lines cross-checked against the ROM (expected many) — \
+             the listing parser or its shape changed; investigate before trusting the pins"
+        ));
+    }
+    Ok(())
+}
+
 // ── The manifest (`repin.toml`, D-T10.2) ────────────────────────────────────
 
 /// The declarative pin manifest. Order is load-bearing: pins.rs emits in
@@ -809,6 +889,57 @@ pub fn diff_pins(old_text: &str, new_text: &str) -> Vec<PinChange> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_code_line_extracts_addr_and_bytes() {
+        assert_eq!(
+            parse_code_line("(2)  202/     39A : 6100 6AA8                   bsr.w   Foo"),
+            Some((0x39A, vec![0x61, 0x00, 0x6A, 0xA8]))
+        );
+        // Z80 byte-pair bytes.
+        assert_eq!(
+            parse_code_line("(3)  440/     18D : DD CB 0A 4E                 bit     x"),
+            Some((0x18D, vec![0xDD, 0xCB, 0x0A, 0x4E]))
+        );
+        // `dc.w 0` — one word; `dc.w` (has a dot) is the mnemonic, stops there.
+        assert_eq!(parse_code_line("(1)   81/     18E : 0000   dc.w  0"), Some((0x18E, vec![0x00, 0x00])));
+        // Non-code lines yield None (never a false mismatch).
+        assert_eq!(parse_code_line("(2)  199/     39A : =>DEFINED   ifdef __DEBUG__"), None);
+        assert_eq!(parse_code_line("Camera_X: FFFFA11E"), None);
+        assert_eq!(parse_code_line("(2)   23/     346A :                     Foo:"), None);
+    }
+
+    #[test]
+    fn freshness_check_passes_fresh_hard_errors_stale() {
+        // 100 contiguous 2-byte code lines from 0x2000 (inside the 68k window).
+        let mut lst = String::new();
+        let end = 0x2000 + 200u32;
+        let mut rom = vec![0u8; end as usize + 16];
+        for i in 0..100u32 {
+            let addr = 0x2000 + i * 2;
+            let (b0, b1) = (0x40 + (i as u8 & 0xf), i as u8);
+            lst.push_str(&format!("(2)  {i}/     {addr:X} : {b0:02X}{b1:02X}       nop\n"));
+            rom[addr as usize] = b0;
+            rom[addr as usize + 1] = b1;
+        }
+        lst.push_str("Symbol Table (* = unused):\n");
+
+        // Fresh: every code line matches the ROM.
+        assert!(assert_listing_matches_rom(&lst, &rom, end, "test").is_ok());
+
+        // Stale: the ROM moved under the listing (one byte differs) → hard error.
+        let mut stale = rom.clone();
+        stale[0x2000 + 50] ^= 0xFF;
+        let e = assert_listing_matches_rom(&lst, &stale, end, "test").unwrap_err();
+        assert!(e.contains("STALE"), "expected STALE error, got: {e}");
+
+        // Parser sanity floor: too few checked lines is itself an error.
+        let short = "(2)  0/     2000 : 4E71   nop\nSymbol Table (* = unused):\n";
+        let mut r2 = vec![0u8; 0x2020];
+        r2[0x2000] = 0x4E;
+        r2[0x2001] = 0x71;
+        assert!(assert_listing_matches_rom(short, &r2, 0x2010, "test").unwrap_err().contains("code lines"));
+    }
 
     /// A vendored excerpt of the real `s4.lst` shape: the END line, the table
     /// header, a page-header INTERRUPTION mid-table, a `*`-prefixed (unused)

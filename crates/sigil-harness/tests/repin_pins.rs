@@ -207,8 +207,13 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // drain-retry) but +0x54 debug (the out-of-line RaiseError expansion), so
     // sound_api — the one region downstream of load_art — inherits the shape gap.
     // len unchanged (no sound_api content changed).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6170);  // +0x6C silent-drop
-    assert_eq!(pins::SOUND_API.debug_base, 0x7ADE);  // +0xB6 silent-drop
+    // Then −0x10 BOTH shapes (pass-3 Parcel A dead-save deletions, 2026-07-22):
+    // entity_window loses two full movem-pairs (−16 bytes); every engine-bank
+    // region downstream of entity_window — including sound_api — slides −0x10 in
+    // both shapes. (EndOfRom itself is unchanged: the −16 is re-absorbed by padding
+    // before the ROM end, so ASSEMBLED_LEN below stays put; sound_api len unchanged.)
+    assert_eq!(pins::SOUND_API.plain_base, 0x6160);  // −0x10 pass-3 Parcel A
+    assert_eq!(pins::SOUND_API.debug_base, 0x7ACE);  // −0x10 pass-3 Parcel A
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM

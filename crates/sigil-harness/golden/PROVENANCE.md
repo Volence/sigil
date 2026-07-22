@@ -999,3 +999,30 @@ merged masters (failures-first). Hashes taken from the final post-merge build.
   sha256 **`560b348633f81ecadce2edf022bfe87c955800614de2dc2339f8b7475f65b27c`**.
 - Debug `s4.debug.bin`: **428768 bytes** (`EndOfRom` = `0x5F65A`), crc32 **`ce0e83a6`**,
   sha256 **`556c7b5aab4b9fc95386897e1c68bc1e4dfd670fef6fdcd8e4f3e576da47a213`**.
+
+## 2026-07-22 re-baseline — pass-3 Parcel A dead-save deletions (BYTE-CHANGING) — the current pin
+
+Phase-2 pass-3 Parcel A removes 15 dead register saves across dplc / load_object /
+entity_window / section / tile_cache (9 rows via length-preserving `movem`-reglist
+narrows; 6 rows via 2 full `movem`-pair removals in entity_window). Net **−16 bytes**
+of engine code, absorbed by padding before `EndOfRom` (size and `EndOfRom` both
+UNCHANGED — 420749/0x5DB60 plain, 428768/0x5F65A debug); only internal region
+positions downstream of entity_window shift **−0x10 in BOTH shapes**. The default
+asl build is what ships; all pins/gate-orgs below are the swap-build byte-gate
+surface. Standing ripple (this parcel): `pins.rs` via `repin` (16 pins −0x10, both
+shapes); **aeon `engine/engine.inc`** 7 gate resume orgs, BOTH arms −0x10
+(entity_window/load_object/plane_buffer/tile_cache/collision_lookup/section/sound_api).
+`mixed_dac_rom.rs`/`repin_pins.rs`/`main.asm` sound-gate orgs: **NOT touched** — the
+sound/DAC region sits past the padding-absorb boundary and does not move; all 24
+mixed_dac tranche gates pass unchanged. **Hardening (this parcel): `repin` now proves
+listing freshness** (byte cross-check of each `.lst` against its `.bin` in the 68k
+window + mtime-skew warning) — a stale `s4.debug.lst` (the build recipe copied the
+`.bin` but not the `.lst`) had silently repinned to phantom addresses; it now
+hard-errors. Hashes taken from the final build (both shapes, DEBUG→cp→plain, with the
+`.lst` copied alongside the `.bin`).
+
+- Aeon repo master: **`39faa02`** (merge of `pass3-parcelA-dead-saves`).
+- Non-debug `s4.bin`: **420749 bytes** (`EndOfRom` = `0x5DB60`), crc32 **`748ca5ba`**,
+  sha256 **`db0eb03d767a751b348f10a87ab0176e1e33adb8b9164c3e1ad5a7f43d080ab2`**.
+- Debug `s4.debug.bin`: **428768 bytes** (`EndOfRom` = `0x5F65A`), crc32 **`d5d8e163`**,
+  sha256 **`b7a0df49dd2be67eba99ede1c98749e7795c53e33ece9cf48b85ab50f9b296a1`**.

@@ -21,7 +21,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use sigil_harness::repin::{
-    diff_pins, load_manifest, parse_listing, render, resolve, strip_provenance, Provenance,
+    assert_listing_matches_rom, diff_pins, load_manifest, parse_listing, render, resolve,
+    strip_provenance, Provenance,
 };
 
 const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/repin.toml");
@@ -71,6 +72,38 @@ fn main() -> ExitCode {
         Ok(l) => l,
         Err(e) => return fail(&format!("{}: {e}", debug_path.display())),
     };
+
+    // ── Listing freshness proof (D-T10.x hardening) ──
+    // repin derives every pin from the .lst; a .lst that is STALE relative to its
+    // .bin (e.g. the build recipe refreshed s4.debug.bin but not s4.debug.lst)
+    // silently repins to phantom addresses. Cross-check each listing's emitted
+    // bytes against its ROM before trusting the pins; warn first on mtime skew.
+    for (lst_path, bin_name, txt, end_addr, shape) in [
+        (&plain_path, "s4.bin", &plain_txt, plain.end_addr, "plain"),
+        (&debug_path, "s4.debug.bin", &debug_txt, debug.end_addr, "debug"),
+    ] {
+        let bin_path = aeon.join(bin_name);
+        let rom = match std::fs::read(&bin_path) {
+            Ok(r) => r,
+            Err(e) => return fail(&format!("cannot read {} for freshness check: {e}", bin_path.display())),
+        };
+        if let (Ok(lm), Ok(bm)) = (
+            std::fs::metadata(lst_path).and_then(|m| m.modified()),
+            std::fs::metadata(&bin_path).and_then(|m| m.modified()),
+        ) {
+            if lm < bm {
+                eprintln!(
+                    "warning: {} is older than {} — the listing may be stale (build recipe must \
+                     copy the .lst alongside the .bin); verifying bytes…",
+                    lst_path.display(),
+                    bin_path.display()
+                );
+            }
+        }
+        if let Err(e) = assert_listing_matches_rom(txt, &rom, end_addr, shape) {
+            return fail(&e);
+        }
+    }
 
     let manifest_src = match std::fs::read_to_string(MANIFEST_PATH) {
         Ok(s) => s,
