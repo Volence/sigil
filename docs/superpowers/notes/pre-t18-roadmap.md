@@ -79,7 +79,7 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 *Design-gate first: run the §C trigger checks, then batch the work.*
 
-5. **Dead-save worklist** `[opt]` — **15 rows** (was 16: item #3's detector fix exposed the `WarmupBelowRow` d6 row as a FALSE dead-save — deleting it would have corrupted d6; see the s2d6 packet).
+5. **Dead-save worklist** `[opt]` ✅ **DONE — Parcel A, merged aeon `39faa02` / sigil `015f76e` (2026-07-22, BYTE-CHANGING).** All 15 rows removed (9 length-preserving movem narrows + 2 full movem-pair removals, −16 bytes); attack-the-diff PASSED. NEW canonical plain `748ca5ba`/420749 · debug `d5d8e163`/428768 (EndOfRom unchanged). Merge-phase catch: a stale `s4.debug.lst` mis-repinned debug → shipped a `repin` listing-freshness hard-check as a hardening rider. (was 16: item #3's detector fix exposed the `WarmupBelowRow` d6 row as a FALSE dead-save — deleting it would have corrupted d6; see the s2d6 packet.)
 6. **D1c-tagged caller-side-hoist fuel** `[opt]` — register-hoist sites the contract sweep surfaced.
 7. **Step-5 pass-3-adjacent riders** `[opt]` — ledger-1092 `move.l` pairing · W022/W025.
    *(Note: "D7 deletions" is NOT here — it is its own byte-changing batch, Phase 2.5.)*
