@@ -111,8 +111,17 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 ## C · Trigger-keyed reopens  *(run these checks at the Phase-2 design gate; skip if the trigger doesn't bind)*
 
+> **CHECKED 2026-07-21, overseer-CONFIRMED 2026-07-21 (oracle profiler, 3 regimes; outcomes + method in `2026-07-21-phase2-design-gate.md`).** Both triggers resolve to **skip**; the finding-#3 memoize is sanctioned as net-new item **8b** (keyed + per-axis; before Tier-B).
+
 - **DMA-drain reopen** `[opt]` — only if the post-pass-2 worst-case VBlank audit still binds.
+  → **DOES NOT FIRE.** Worst VBlank CPU = ~55% of the ~18.5k window (max-H); drain itself 1.1%;
+  main loop ≥35% idle every regime. VBlank never binds. (The lag that occurs is the cold-crossing
+  *producer* decompress spike, not VBlank.)
 - **FindStagedBlock direct-mapped** `[opt]` — only if it's still hot after the pass-2 memoize.
+  → **DOES NOT FIRE (direct-mapped).** Stale premise: the memoize **was never built** (no commit
+  in aeon history). FindStagedBlock is at full pre-memoize cost (5.2% / 19 calls, max-V). Direct-
+  mapped stays skipped (thrash risk + A/B, low value vs idle). **Net-new candidate surfaced: the
+  behavior-preserving finding-#3 memoize** (safe, no thrash) → design-gate note item 8b.
 
 ---
 
