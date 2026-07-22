@@ -1138,3 +1138,17 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   without the D1c FP flood. Design context: this parcel's design note + the dividing-line table
   in `2026-07-19-out-verification-residue.md`. — OPEN (per-lie-class out credit; closes §6's
   existence-lie exposure; tripwire-guarded until then).
+
+- [Parcel A review, 2026-07-22] **Over-declared clobbers are silent — the `[proc.out-unwritten]`
+  dual for clobbers is missing.** `check_clobbers` is one-directional: writes outside
+  clobbers ∪ params ∪ outs ∪ §5-verified-preserves fire `[proc.clobber-undeclared]` (WARN locally,
+  transitive closure ERROR-gated since G3), but a declared clobber the proc never exercises is
+  checked by nothing — found live when Volence caught `Load_Object` declaring `clobbers(d2)` while
+  its only d2 uses are reads (stale from the pre-port header comment; every caller-side analysis —
+  dead-save, D1c held-value, Parcel-B hoist fuel — consumes the DECLARED set, so over-broad callee
+  contracts pessimize callers). Candidate: `[proc.clobber-unexercised]`, WARN/observe-only (over-
+  declaration is occasionally deliberate license-reserving), computed as declared − (own write-set ∪
+  transitive callee clobbers) from the existing S2-D6 written_names machinery. Natural slot: the
+  Phase-2.5 Tier-C window (it shares the per-callee clobber-union export machinery) or the s4lint-
+  absorption tier list. — OPEN (contract-honesty family's last unchecked corner; `Load_Object` d2
+  itself = Parcel-B rider, tightened by hand).
