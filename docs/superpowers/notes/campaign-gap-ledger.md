@@ -1172,3 +1172,22 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `$FFFF` to the axis memo_gen directly at the DecompressBlock claim site (per-axis kill) instead of
   bumping a counter. Not built — revisit only if the R3 `Block_Stage_Keys` 3-toucher guard ever trips.
   Design note: 2026-07-22-8b-memoize-design.md.
+
+- **RunObjects `.culled_loop` `declared∖effective` clobber sweep** (banked 2026-07-22, core #1 gate
+  DISSOLVED-STAGE-0). The dynamic-dispatch loop (`core.emp:.culled_loop`) is a candidate for the same
+  byte-neutral `declared∖effective` tightening that Parcel B applied elsewhere (`ProcNode.declared_clobbers
+  − Closure.effective.regs`, non-`out()` remainder = over-declared). NOT run standalone — no ceremony for
+  a byte-neutral parcel of one hot loop. **Rides a future `core.emp` touch** (any elected RunObjects edit
+  runs the sweep in the same commit). Reference: 2026-07-22-core1-runobjects-design.md §6. — OPEN.
+
+- **RunObjects cull-math branchless-abs** (banked 2026-07-22, core #1 gate DISSOLVED-STAGE-0). Replace the
+  two `bpl/neg.w` conditional-abs sequences in the X/Y cull distance checks (`core.emp:504-519`) with
+  branchless abs — removes 2 predicted branches per checked/dispatched dynamic slot. **Value ceiling
+  ≤0.5% of frame** (measured: dispatch machinery self ≈5.75% of a 54%-idle plain-shape frame; census
+  34.8% was DEBUG *inclusive*). Byte- AND length-changing → full 5-site ripple + PROVENANCE re-baseline +
+  attack-the-diff. **One load-bearing correctness pin:** the `$8000`/INT16_MIN cull boundary — `neg.w
+  $8000 = $8000` (overflow) must be proven to agree with the branchless `eor/sub` form (dx is a wrapping
+  16-bit subtract). A/B = ObjectTest/Churn, frame-anchored on `Frame_Counter`, compare `Object_RAM` +
+  `Sprite_Table` at N=60/180/300 + a `dx==$8000` boundary frame; **record the lag-frame counter both
+  sides** (standing bar B). NOT worth the ceremony for the value; parked until an elected ceremony or a
+  reopen. Reference: 2026-07-22-core1-runobjects-design.md §2/§3. — OPEN.

@@ -93,6 +93,30 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 8. **Object/render candidates** `[opt]` — Tier-B; **verify each at the pass design gate before committing.**
    sprites H1/H2/H3 · rings R2/R3 · entity_window #1/#3/#4 · core #1/#2 · animate A2/A3 · section H1/H3.
    *(Confirm against the review doc — see References.)*
+   - **8b DONE** (FindStagedBlock memoize + 2 move.l riders + F2 census; aeon `5c975af`/sigil `4993b0b`).
+   - **core #1 (RunObjects) ⊘ DISSOLVED-STAGE-0 (2026-07-22, dissolution #4 — hotness-measurement
+     artifact).** Census "34.8%" was DEBUG *inclusive*; addressable machinery self ≈**5.75%** in a
+     **54%-idle** plain frame. No parcel cut (byte-changing AND byte-neutral both declined). Two surfaces
+     banked to the gap-ledger (`.culled_loop` declared∖effective sweep · branchless-abs cull math w/ `$8000`
+     pin). **Reopen = a real-scene lag report** (54%-idle is churn-stressor-relative). Note:
+     `2026-07-22-core1-runobjects-design.md`.
+   - **QUEUE PROVISIONALLY RE-RANKED SPRITES-FIRST.** The original "hotness-descending, core #1 first"
+     order was set on *inclusive* census numbers — inadmissible under standing bar A below. **Next gate =
+     sprites H1/H2/H3** (its stage-0 must fully decompose `Render_Sprites`/`Emit_ObjectPieces` self-time;
+     the ≈8.5-12% is a first-pass subtraction — confirm or refute before any design; refute ⇒ re-rank
+     again). Then entity_window #1/#3/#4 · section H1/H3 · animate A2/A3, each re-measured under bar A.
+   - **PARKS STAND but are census-based → hold until re-measured under bar A:** core #2 (delete-storm gate,
+     census 1.9%) · rings R2/R3 (no ring population). Their evidence conditions are inclusive/census, so
+     they are provisional the same way core #1 was.
+
+   > **STANDING BAR A (ratified at the core #1 gate, 2026-07-22).** Every remaining D-parcel stage-0 MUST
+   > present **fresh PLAIN-SHAPE addressable SELF-time** (inclusive − children, decomposition shown).
+   > **Census inclusive/DEBUG numbers are INADMISSIBLE as hotness evidence** — the whole D census is
+   > suspect the way core #1 was. Applies to survivors AND parks.
+   >
+   > **STANDING BAR B (ratified 2026-07-22).** When the idle-margin frame-anchored A/B method is used, the
+   > run MUST **record the lag-frame counter on both sides** — "no lag frame" is measured evidence, not an
+   > assumption.
 9. **Micro-batch riders** `[opt]` — aabb 3-piece split · vdp_init M1 · dplc D3 · VDP shared-module (row 1073, 2nd typed-VDP consumer).
 
 ---
