@@ -1018,8 +1018,11 @@ mixed_dac tranche gates pass unchanged. **Hardening (this parcel): `repin` now p
 listing freshness** (byte cross-check of each `.lst` against its `.bin` in the 68k
 window + mtime-skew warning) — a stale `s4.debug.lst` (the build recipe copied the
 `.bin` but not the `.lst`) had silently repinned to phantom addresses; it now
-hard-errors. Hashes taken from the final build (both shapes, DEBUG→cp→plain, with the
-`.lst` copied alongside the `.bin`).
+hard-errors. Hashes taken from the final build, both shapes — `./build.sh` (plain) and
+`DEBUG=1 ./build.sh` (debug). *(Follow-on toolchain parcel: `build.sh` now suffixes
+`ROM_NAME` under DEBUG, emitting `s4.debug.*` natively — the manual `cp s4.bin
+s4.debug.bin` / `cp s4.lst s4.debug.lst` step that caused the stale listing is gone;
+the repin freshness gate above stays the mechanical guard.)*
 
 - Aeon repo master: **`39faa02`** (merge of `pass3-parcelA-dead-saves`).
 - Non-debug `s4.bin`: **420749 bytes** (`EndOfRom` = `0x5DB60`), crc32 **`748ca5ba`**,
