@@ -72,6 +72,46 @@ Own bisectable commit(s), even-word-alignment verified, sharing 8b's ripple:
   copy-primitive swap). Even-word-alignment asserted at each site.
 - Byte-CHANGING parcel → 5-site repin ripple + PROVENANCE re-baseline (native artifact flow, no cp).
 
+## Build readiness (overseer-approved 2026-07-22, 4 riders)
+
+Approved to build. Rider rulings folded in:
+- **R1 — bounds-compare is LOAD-BEARING, not belt-and-braces.** `Head/Left` (and `Top/Bottom`) move
+  WITHOUT a claim on a prefetch-success fill (`Head_Col` commits at `tile_cache.emp:795`, all-hits,
+  zero decompress, gen unchanged) — the bounds fields are then the ONLY memo-killer. Comment it as
+  load-bearing; never simplify it away.
+- **R2 — skip must be ARCHITECTURALLY equivalent at `.row_done`/`.col_done`**, not just cache-RAM
+  equivalent: explicitly verify no live register / CC flows from the walk body into the join consumers
+  (the A/B checks cache RAM; a liveness bug corrupts elsewhere). Trace the join's live-in set.
+- **R3 — hook EXACTLY the 2 proven gen sites** (DecompressBlock claim + InvalidateStaging; overseer
+  verified `Block_Stage_Keys` has exactly 3 touchers: FindStagedBlock read-only, InvalidateStaging
+  sentinel-write, DecompressBlock sole claim/record). Add a regression test asserting the 3-toucher
+  property so a future 4th toucher fails loudly.
+- **R4 — move.l riders:** prove per-RUN evenness (wrap-split run-1/run-2 can be individually odd with
+  an even TOTAL) or handle odd tails; the A/B MUST include wrap-crossing positions (the 1.3
+  column-preserving-wrap lesson — full identity bar, byte gate can't catch a shared-twin bug).
+
+**RAM home (decided):** append the gen word + the two memo triples at the RAM end, after
+`Dynamic_Live_Pending_Count` (`engine/ram.asm:474`) in the release-pad region — shifts only
+`Engine_RAM_End` + game RAM (Object_RAM at `:222` is fixed and unaffected) = narrowest ripple.
+9 words: `Block_Stage_Gen` + `Pfx_Memo_{Row,L,H,Gen}` + `Cs_Memo_{Col,T,B,Gen}` (even-aligned).
+
+**Turnkey implementation sequence:**
+1. R3 test first (guards the parcel) — assert `Block_Stage_Keys` 3-toucher property.
+2. RAM append (9 words, end, minimal ripple) + init memo gens to a sentinel (Tile_Cache_Init +
+   InvalidateStaging) so frame 1 always scans.
+3. Gen-bump hooks: `addq.w #1, Block_Stage_Gen` after `DecompressBlock:270` and in
+   `InvalidateStaging:240`.
+4. `.pfx_scan` check (at `.pfx_go` entry) + record (at the `:1114` all-hits exit only) — R1 bounds
+   compare (Row+L+H+Gen), R2 liveness trace of `.row_done` live-in.
+5. `.cs_scan` check (at `.cs_have_col`) + record (at `:1206` all-hits exit) — same, Col+T+B+Gen,
+   R2 liveness of `.col_done` live-in.
+6. Build both shapes → diagonal A/B in OJZ scroll (cache-RAM byte-identity, Debug_Scene_Freeze +
+   Camera-poke) + idle/re-probe-cost drop check.
+7. R4 move.l riders (tile_cache 1523/1532/1608-1619 + plane_buffer 334/340) — own bisectable
+   commits, per-run evenness proven, wrap-crossing A/B.
+8. 5-site ripple (RAM shift is game-RAM-only) + PROVENANCE re-baseline (native flow) → attack-the-diff
+   → merge.
+
 ## Open items for implementation
 1. RAM allocation for `Block_Stage_Gen` + the 8 memo words (find a home in the tile_cache RAM block;
    even-align).
