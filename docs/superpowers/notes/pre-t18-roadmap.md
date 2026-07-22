@@ -100,14 +100,24 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
      banked to the gap-ledger (`.culled_loop` declared∖effective sweep · branchless-abs cull math w/ `$8000`
      pin). **Reopen = a real-scene lag report** (54%-idle is churn-stressor-relative). Note:
      `2026-07-22-core1-runobjects-design.md`.
-   - **QUEUE PROVISIONALLY RE-RANKED SPRITES-FIRST.** The original "hotness-descending, core #1 first"
-     order was set on *inclusive* census numbers — inadmissible under standing bar A below. **Next gate =
-     sprites H1/H2/H3** (its stage-0 must fully decompose `Render_Sprites`/`Emit_ObjectPieces` self-time;
-     the ≈8.5-12% is a first-pass subtraction — confirm or refute before any design; refute ⇒ re-rank
-     again). Then entity_window #1/#3/#4 · section H1/H3 · animate A2/A3, each re-measured under bar A.
-   - **PARKS STAND but are census-based → hold until re-measured under bar A:** core #2 (delete-storm gate,
-     census 1.9%) · rings R2/R3 (no ring population). Their evidence conditions are inclusive/census, so
-     they are provisional the same way core #1 was.
+   - **sprites H1/H2/H3 ⊘ DISSOLVED-STAGE-0 (2026-07-22, dissolution #5 — value-vs-ceremony).** Ranking
+     CONFIRMED (Render_Sprites self **8.9%** > RunObjects 5.75%) but no cut: scene-bias is **per-path** —
+     churn over-counts H1's per-object lever (40/40 ≥ gameplay), so H1's **~0.5-1% is a CEILING**; no lag
+     (54.3% idle), no paid ripple to ride → core-#1 branchless-abs shape. H2 evaporated (already
+     comptime-unrolled); H3 non-binding VBlank DMA (PB1 satisfied). Three surfaces banked to gap-ledger.
+     Reopen = real-scene lag OR elected headroom pass; H1's reopen first-gate = corpus-wide
+     `mapping_frame`-drift writer sweep. Note: `2026-07-22-sprites-h1h2h3-design.md`.
+   - **NEXT = BAR-A CENSUS SWEEP (one session, NO design work, no ceremony).** Measure plain-shape
+     addressable SELF-time (inclusive − children, symbols mapped vs `s4.lst`, same rigor) for EVERY
+     remaining D row — entity_window #1/#3/#4 · section H1/H3 · animate A2/A3 — **AND** re-measure the
+     census-based parks under bar A: **core #2** (delete-storm — provoke via churn, the right scene) ·
+     **rings R2/R3** (needs a ringed scene — state which scene/flip and why it exercises the lever).
+     Argue scene-bias direction **PER LEVER** (per the sprites correction). Deliverable = **one table**
+     back to this gate: row · scene · self-time · plausible-transform value ceiling · survives/dissolves.
+     Anything clearing the bar returns as a full design gate; the rest close with numbers.
+   - *Expected shape:* the Phase-2 D queue likely closes early — pass-2/prefetch/free-lunch arcs already
+     ate the lag. If so, that is the system working; milestone checkpoint (next-arc options: t18 parallax
+     · H-streaming charter rows 1066/1074 · VDP shared-module row 1073) goes to Volence after the table.
 
    > **STANDING BAR A (ratified at the core #1 gate, 2026-07-22).** Every remaining D-parcel stage-0 MUST
    > present **fresh PLAIN-SHAPE addressable SELF-time** (inclusive − children, decomposition shown).

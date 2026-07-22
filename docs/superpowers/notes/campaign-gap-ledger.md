@@ -1173,6 +1173,41 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   bumping a counter. Not built — revisit only if the R3 `Block_Stage_Keys` 3-toucher guard ever trips.
   Design note: 2026-07-22-8b-memoize-design.md.
 
+- **Sprites H1 — resolve-once** (banked 2026-07-22, sprites gate DISSOLVED-STAGE-0 #5). The
+  `(mapping_frame → frame-data ptr)` resolution runs **twice per on-screen single-sprite object per
+  frame** — `Draw_Sprite` `sprites.emp:79-84` (bbox cull) + `Render_Sprites:275-285` (emit), identical
+  5-instr sequence. Cache the resolved pointer in a per-SST render-scratch field during `Draw_Sprite`;
+  `Render_Sprites` reads it (precedent: `Sst.sprite_piece_count`). Value **≈0.5-1% CEILING** (churn
+  40/40 ≥ gameplay object counts → over-counts this per-object lever; no lag lever, 54.3% idle) →
+  survival bar not cleared standalone. **FIRST GATE ITEM ON REOPEN: the R1 `mapping_frame`-drift
+  trace as a CORPUS-WIDE writer sweep** (both `.emp`/`.asm` twins + game object code, NOT a reasoning
+  argument) — a cross-object writer that mutates `mapping_frame`/`mappings` between `Draw_Sprite`
+  (RunObjects dispatch) and `Render_Sprites` (post-dispatch) makes resolve-once
+  non-behavior-preserving, and the frame-anchored churn SAT A/B **cannot see it** (it only compares the
+  output, not the drift). Also trace the **deleted-mid-frame guard interaction** (`Render_Sprites:270-273`
+  skips slots zeroed after `Draw_Sprite` — a cached pointer must not resurrect a deleted object).
+  Multi-sprite children carve-out (`Draw_Sprite` skips them; `Render_Sprites` resolves child via
+  PARENT's `mapping_frame`). R4 loud guard = DEBUG re-resolve + `assert.l eq`. RAM-layout-changing →
+  full ripple + PROVENANCE. Reference: 2026-07-22-sprites-h1h2h3-design.md §2. — OPEN (reopen-gated).
+
+- **Sprites H2 — emit_piece_loop residual** (banked 2026-07-22, sprites gate DISSOLVED-STAGE-0 #5).
+  **EVAPORATED:** `emit_piece_loop` (`sprites.emp:594`) is already comptime-unrolled per flip-variant,
+  **zero JSR/piece**, `MAX_VDP_SPRITES` cap folded into the `dbeq` — the review-doc target
+  (`~1-1.9k/f @ 50-80 pieces`) was against the pre-unroll loop. Only residual = the 4-way flip-dispatch
+  prologue (`Emit_ObjectPieces:637-643`, 3 `cmpi/beq` per *call*) → jump table, **≈0.2%** (per-call not
+  per-piece). Not worth standalone; rides H1's ripple (same file) if H1 is ever cut. Reference:
+  2026-07-22-sprites-h1h2h3-design.md §3. — OPEN (low residual).
+
+- **Sprites H3 — Critical-SAT-DMA length shrink** (banked 2026-07-22, sprites gate DISSOLVED-STAGE-0
+  #5). `system/buffers.asm:67-72` DMAs a **fixed 640-byte** SAT to VRAM every frame; shrink to
+  `Sprites_Rendered`×8 (up to ~480B saved). **VBlank DMA-bandwidth, NOT CPU self-time** — the profiler
+  can't measure it; census VBlank ≤55% = **not binding** → zero current lag benefit. **PB1 dependency
+  CONFIRMED SATISFIED** (had-sprites→none edge terminator `sprites.emp:440-453` + `Sprites_Rendered`
+  persistence `:38` in current code, PB1 shipped wave-2). **File under the standing pass-2 Q2
+  DMA-drain trigger: reopen iff a worst-case VBlank audit binds.** Edge care: must still DMA ≥8B on the
+  had-sprites→none frame; `Static_Sprite_DMA` entry becomes dynamically length-patched (byte-changing).
+  Reference: 2026-07-22-sprites-h1h2h3-design.md §4. — OPEN (trigger-gated on VBlank binding).
+
 - **RunObjects `.culled_loop` `declared∖effective` clobber sweep** (banked 2026-07-22, core #1 gate
   DISSOLVED-STAGE-0). The dynamic-dispatch loop (`core.emp:.culled_loop`) is a candidate for the same
   byte-neutral `declared∖effective` tightening that Parcel B applied elsewhere (`ProcNode.declared_clobbers
