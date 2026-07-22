@@ -256,3 +256,70 @@ fn genuinely_unverifiable_preserves_does_not_subtract() {
         r.firings
     );
 }
+
+// === D1b WARN→ERROR flip — the gate's teeth, hermetic ======================
+
+/// A `[call.input-undefined]` firing on `(proc, callee, reg)` is present.
+fn input_fires(
+    r: &sigil_frontend_emp::corpus_contracts::ContractReport,
+    proc: &str,
+    callee: &str,
+    reg: &str,
+) -> bool {
+    r.input_firings
+        .iter()
+        .any(|f| f.proc == proc && f.callee == callee && f.reg == reg)
+}
+
+/// FLIP-GATE RED-TEST (brief §2.6): a caller invoking a callee whose register
+/// param is UNDEFINED on the path produces a `[call.input-undefined]` firing — so
+/// the ERROR gate (`input_firings` empty) would REJECT it. This is the synthetic
+/// undefined-input the corpus gate is a permanent absence-of.
+#[test]
+fn flip_gate_rejects_undefined_input() {
+    let r = analyze(&[
+        "module m\n\
+         proc Callee (d0: u16) clobbers() { rts }\n\
+         proc Caller () clobbers() {\n\
+             jbsr Callee\n\
+             rts }\n",
+    ]);
+    assert!(
+        input_fires(&r, "Caller", "Callee", "d0"),
+        "d0 is Callee's param, undefined in Caller → D1b must fire: {:?}",
+        r.input_firings
+    );
+}
+
+/// VERIFIED-CREDIT IS LOAD-BEARING (brief §2.2, the FindStagedBlock shape as a
+/// permanent regression): `Liar` DECLARES `out(d0)` but only produces d0 on one
+/// return (the `.skip` path leaves it unproduced — an existence-lie). `Consumer`
+/// relies on that out to define d0 for a later `jbsr NeedsD0`. Under VERIFIED
+/// credit the lie is NOT credited ⇒ d0 undefined at NeedsD0 ⇒ D1b FIRES. MUTATION:
+/// reverting D1b to DECLARED credit (crediting the unverified out) suppresses this
+/// firing — so it pins the flip's whole point.
+#[test]
+fn flip_gate_verified_credit_is_load_bearing() {
+    let r = analyze(&[
+        "module m\n\
+         proc Liar (d1: u16) clobbers(d3) out(d0) {\n\
+             cmp.w #0, d1\n\
+             beq .skip\n\
+             move.l d1, d0\n\
+             rts\n\
+         .skip:\n\
+             rts }\n\
+         proc NeedsD0 (d0: u16) clobbers() { rts }\n\
+         proc Consumer () clobbers(d1/d3) {\n\
+             moveq #0, d1\n\
+             jbsr Liar\n\
+             jbsr NeedsD0\n\
+             rts }\n",
+    ]);
+    assert!(
+        input_fires(&r, "Consumer", "NeedsD0", "d0"),
+        "Liar's out(d0) is an existence-lie (unproduced on .skip) → verified credit \
+         withholds it → d0 undefined at NeedsD0 → D1b fires: {:?}",
+        r.input_firings
+    );
+}

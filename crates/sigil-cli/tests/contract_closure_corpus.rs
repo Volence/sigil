@@ -201,6 +201,28 @@ fn corpus_report() -> Option<sigil_frontend_emp::corpus_contracts::ContractRepor
     Some(analyze_corpus(&files))
 }
 
+/// THE D1b ERROR GATE (Phase-1 item #4 flip). Every register param of every
+/// callee has a reaching definition on EVERY path at each `.emp` call site — the
+/// corpus has ZERO `[call.input-undefined]` firings. This shipped WARN through G4;
+/// now, with the credit source switched to the VERIFIED-out fixpoint (an out is a
+/// definition only once PROVEN honest — the FindStagedBlock existence-lie can no
+/// longer silently satisfy an input), it is the permanent ERROR gate: under the
+/// strict invocation, ANY call passing an undefined register input is a build error
+/// — the exact mistake a pass-3 contract-trusting register hoist could make.
+#[test]
+fn corpus_input_undefined_is_empty_the_error_gate() {
+    let Some(r) = corpus_report() else { return };
+    assert!(
+        r.input_firings.is_empty(),
+        "[call.input-undefined] (D1b): a callee register-param input has no reaching \
+         definition on some path — it must be defined before the call: {:?}",
+        r.input_firings
+            .iter()
+            .map(|f| (f.proc.as_str(), f.callee.as_str(), f.reg.as_str()))
+            .collect::<Vec<_>>()
+    );
+}
+
 /// §6 divergence TRIPWIRE (the honest-residual guard for keeping §6 on DECLARED
 /// credit). §6 result-invalid-path uses the declared out maps (redefine-kill
 /// semantics — a width-unverified out still redefines its register). This asserts
