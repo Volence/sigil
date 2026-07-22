@@ -17,13 +17,23 @@
 //! trusted. It is intentionally independent of `Block_Stage_Gen` existing, so it
 //! holds on the pre-memoize tree too.
 //!
+//! The census is CORPUS-WIDE: it scans the `.emp` source AND the `.asm`/`.inc`
+//! twins/hand-written engine, so a 4th toucher written in either language fails.
+//! The `.emp` scan attributes each occurrence to its enclosing `proc`; the
+//! `.asm`/`.inc` scan attributes to the enclosing column-0 label. Both must name
+//! exactly the three audited routines. The one non-proc `.asm` occurrence — the
+//! `Block_Stage_Keys:` RAM declaration in `engine/ram.asm` — is the allowlisted
+//! declaration site (asserted to live only there).
+//!
 //! ```text
 //! AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test parcel_8b_stage_gen_touchers
 //! ```
 
 use std::path::{Path, PathBuf};
 
-fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
+/// Collect every file under `dir` (recursively, skipping `.worktrees`) whose
+/// extension is in `exts`.
+fn files_with_ext(dir: &Path, exts: &[&str], out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let p = e.path();
@@ -31,17 +41,18 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
             if p.file_name().is_some_and(|n| n == ".worktrees") {
                 continue;
             }
-            emp_files(&p, out);
-        } else if p.extension().is_some_and(|x| x == "emp") {
+            files_with_ext(&p, exts, out);
+        } else if p.extension().is_some_and(|x| exts.iter().any(|e| x == *e)) {
             out.push(p);
         }
     }
 }
 
-/// Strip a `//` line comment (there are no string literals bearing `//` in the
-/// scanned corpus, so a first-occurrence cut is exact).
-fn strip_comment(line: &str) -> &str {
-    match line.find("//") {
+/// Strip a line comment introduced by `marker` (`//` for `.emp`, `;` for asm).
+/// No string literal in the scanned corpus bears the marker, so a first-
+/// occurrence cut is exact.
+fn strip_marker<'a>(line: &'a str, marker: &str) -> &'a str {
+    match line.find(marker) {
         Some(i) => &line[..i],
         None => line,
     }
@@ -84,7 +95,7 @@ fn touchers_in_file(src: &str, sym: &str) -> Vec<Option<String>> {
     let mut current: Option<String> = None;
     let mut depth: i32 = 0;
     for raw in src.lines() {
-        let code = strip_comment(raw);
+        let code = strip_marker(raw, "//");
         if depth == 0 {
             if let Some(name) = proc_header_name(code) {
                 current = Some(name);
@@ -103,6 +114,34 @@ fn touchers_in_file(src: &str, sym: &str) -> Vec<Option<String>> {
     out
 }
 
+/// Attribute every whole-token occurrence of `sym` in one `.asm`/`.inc` file to
+/// its enclosing top-level label — a symbol that begins in column 0 with an
+/// identifier char. Local labels (`.probe`), indented instructions, and comment
+/// lines do not change the enclosing label. The symbol's own definition line
+/// (`Block_Stage_Keys:  ds.l …`) attributes to `sym` itself; the caller treats
+/// that as the allowlisted RAM declaration site.
+fn asm_touchers_in_file(src: &str, sym: &str) -> Vec<Option<String>> {
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut out = Vec::new();
+    let mut current: Option<String> = None;
+    for raw in src.lines() {
+        let code = strip_marker(raw, ";");
+        // A top-level label or symbol assignment starts in column 0 with a
+        // letter or `_` (a leading `.` is a local label; whitespace is a
+        // continuation/instruction line) — either updates the enclosing scope.
+        if code.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+            let name: String = code.chars().take_while(|c| is_ident(*c)).collect();
+            if !name.is_empty() {
+                current = Some(name);
+            }
+        }
+        if has_token(code, sym) {
+            out.push(current.clone());
+        }
+    }
+    out
+}
+
 #[test]
 fn block_stage_keys_has_exactly_three_touchers() {
     let aeon = PathBuf::from(
@@ -116,40 +155,86 @@ fn block_stage_keys_has_exactly_three_touchers() {
         return;
     }
 
-    let mut paths = Vec::new();
-    emp_files(&aeon.join("engine"), &mut paths);
-    emp_files(&aeon.join("games"), &mut paths);
-    paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
-
     const SYM: &str = "Block_Stage_Keys";
     let expected: [&str; 3] =
         ["TileCache_FindStagedBlock", "TileCache_InvalidateStaging", "TileCache_DecompressBlock"];
+    let mut want: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+    want.sort();
 
-    // Collect (file, proc) for every occurrence across the corpus.
-    let mut touchers: Vec<(String, Option<String>)> = Vec::new();
-    for p in &paths {
+    // --- .emp census: attribute each occurrence to its enclosing `proc`. ---
+    let mut emp_paths = Vec::new();
+    files_with_ext(&aeon.join("engine"), &["emp"], &mut emp_paths);
+    files_with_ext(&aeon.join("games"), &["emp"], &mut emp_paths);
+    emp_paths.sort();
+    assert!(!emp_paths.is_empty(), "no .emp files under {}", aeon.display());
+
+    let mut emp_touchers: Vec<(String, Option<String>)> = Vec::new();
+    for p in &emp_paths {
         let src = std::fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
         for proc in touchers_in_file(&src, SYM) {
-            touchers.push((p.display().to_string(), proc));
+            emp_touchers.push((p.display().to_string(), proc));
         }
     }
 
-    // No occurrence may sit outside a proc (an unscoped write we can't audit).
-    let orphans: Vec<&String> =
-        touchers.iter().filter(|(_, p)| p.is_none()).map(|(f, _)| f).collect();
-    assert!(orphans.is_empty(), "{SYM} referenced outside any proc in: {orphans:?}");
+    // No .emp occurrence may sit outside a proc (an unscoped write we can't audit).
+    let emp_orphans: Vec<&String> =
+        emp_touchers.iter().filter(|(_, p)| p.is_none()).map(|(f, _)| f).collect();
+    assert!(emp_orphans.is_empty(), "{SYM} referenced outside any .emp proc in: {emp_orphans:?}");
 
-    // The set of touching procs must be EXACTLY the three audited ones.
-    let mut got: Vec<String> = touchers.iter().filter_map(|(_, p)| p.clone()).collect();
-    got.sort();
-    got.dedup();
-    let mut want: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
-    want.sort();
+    let mut emp_got: Vec<String> = emp_touchers.iter().filter_map(|(_, p)| p.clone()).collect();
+    emp_got.sort();
+    emp_got.dedup();
     assert_eq!(
-        got, want,
-        "\n{SYM} toucher set changed — the memoize gen-bump audit must be redone.\n  \
-         expected exactly: {want:?}\n  found:            {got:?}\n  \
+        emp_got, want,
+        "\n{SYM} .emp toucher set changed — the memoize gen-bump audit must be redone.\n  \
+         expected exactly: {want:?}\n  found:            {emp_got:?}\n  \
+         A new toucher is a staging-claim path; every claim MUST bump Block_Stage_Gen \
+         or the Pfx/Cs memos become unsound."
+    );
+
+    // --- .asm/.inc census: attribute each occurrence to its enclosing column-0
+    // label. The `Block_Stage_Keys:` RAM declaration attributes to SYM itself and
+    // is the sole allowlisted non-proc site — asserted to live only in ram.asm. ---
+    let mut asm_paths = Vec::new();
+    files_with_ext(&aeon.join("engine"), &["asm", "inc"], &mut asm_paths);
+    files_with_ext(&aeon.join("games"), &["asm", "inc"], &mut asm_paths);
+    asm_paths.sort();
+    assert!(!asm_paths.is_empty(), "no .asm/.inc files under {}", aeon.display());
+
+    let mut asm_touchers: Vec<(String, Option<String>)> = Vec::new();
+    for p in &asm_paths {
+        let src = std::fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+        for lbl in asm_touchers_in_file(&src, SYM) {
+            asm_touchers.push((p.display().to_string(), lbl));
+        }
+    }
+
+    // No .asm occurrence may sit before any label (an unscoped write we can't audit).
+    let asm_orphans: Vec<&String> =
+        asm_touchers.iter().filter(|(_, l)| l.is_none()).map(|(f, _)| f).collect();
+    assert!(asm_orphans.is_empty(), "{SYM} referenced outside any .asm label in: {asm_orphans:?}");
+
+    // The declaration site (`Block_Stage_Keys:`, enclosing label == SYM) must live
+    // only in ram.asm — a re-declaration elsewhere is a second definition to audit.
+    for (file, lbl) in &asm_touchers {
+        if lbl.as_deref() == Some(SYM) {
+            assert!(
+                file.ends_with("ram.asm"),
+                "{SYM} declared outside engine/ram.asm: {file}"
+            );
+        }
+    }
+
+    // The touching labels (excluding the allowlisted declaration) must be EXACTLY
+    // the three audited routines — same set the .emp scan proves.
+    let mut asm_got: Vec<String> =
+        asm_touchers.iter().filter_map(|(_, l)| l.clone()).filter(|l| l != SYM).collect();
+    asm_got.sort();
+    asm_got.dedup();
+    assert_eq!(
+        asm_got, want,
+        "\n{SYM} .asm/.inc toucher set changed — the memoize gen-bump audit must be redone.\n  \
+         expected exactly: {want:?}\n  found:            {asm_got:?}\n  \
          A new toucher is a staging-claim path; every claim MUST bump Block_Stage_Gen \
          or the Pfx/Cs memos become unsound."
     );
