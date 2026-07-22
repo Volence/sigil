@@ -30,17 +30,24 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
    label-join bail (review-proven `valid_edge` hole, fixed pre-merge). D1c FPs now 2,
    documented, deliberately not edge-coupled.
 
-3. **S2-D6 checked-clobbers / preserves lint** `[lang]` ← **NEXT.**
-   **Build from the overseer brief: `2026-07-21-s2d6-clobbers-preserves-lint-spec-brief.md`
-   (sigil `32fbc9e`) — NOT from this paragraph's earlier text, which was written pre-G3 and
-   is stale:** the individual-push FP trio (`AllocDynamic`/`Collected_Park/UnparkSlot` a0)
-   was already declared+§5-verified in G3 (row 1030 CLOSED; verified preserves subtract,
-   `corpus_contracts.rs:211`). The brief mandates a Stage-0 firing re-census, then adjudicates
-   the residual gaps: dbcc counter-write blind spot (false-negative class), movem-pair
-   residual, s4lint W021 `.asm` tier, per-callee proven clobber union (the Tier-C unlock).
-   D1a transitivity out of scope. **Still needed before the error-tier flip.**
+3. **S2-D6 checked-clobbers / preserves lint** `[lang]` ✅ **DONE — merged sigil `3f333d2`
+   (2026-07-21, byte-neutral; aeon `ae1de4d` untouched, pure-sigil).** Stage-0 re-census
+   confirmed the brief's hypothesis: the transitive `[proc.clobber-undeclared]` residue was
+   already 0 (error-gated since G3), the individual-push FP trio retired. Re-scoped to the two
+   real defects Stage 0 surfaced — **A** write-detector completeness (dbcc counter + non-stack
+   movem-LOAD reglist; the `(sp)+` restore exempt as preserve-discipline) and **B** the local
+   `check_clobbers` FP-kill (subtract §5-verified preserves; cleared 25 firings on honestly-
+   `preserves()`-declared registers). **Headline catch: A removed a FALSE dead-save
+   (`WarmupBelowRow` d6 bracketing `DecompressBlock`) — the dead-save worklist is now 15 rows,
+   not 16; d6 is clobbered ONLY by the `movem.l (a0)+, d0-d6/a2` burst the detector was missing,
+   so pass-3 would have wrongly deleted a necessary save (see packet
+   `2026-07-21-s2d6-packet.md`).** Two attack-diff findings fixed (written_names conditional-dbcc
+   over-credit; tripwire gate-compliance). Gaps adjudicated: dbcc → closed (A); movem-pair →
+   already closed (substrate §5); s4lint W021 → moot (not a live tool); per-callee union (d) →
+   deferred to its Phase-2.5 Tier-C consumer (gap-ledger). D1a transitivity stayed out of scope.
+   Snapshot: closure 0 / D1b 0 / D1c 2 / dead-saves 15 / out-verify 15; strict 2445/0/1.
 
-4. **WARN→ERROR flip** (D1b strict) `[lang]`
+4. **WARN→ERROR flip** (D1b strict) `[lang]` ← **NEXT.**
    Turn undefined-input from a warning into a build error. Its own clean commit. Blocked on #3
    plus the #1 residue list: **Buckets 2/3** (clean fix = G5 width-typed outs + in-out markers —
    decide at flip time: pull that G5 slice forward, or flip with both documented observe-only) ·
