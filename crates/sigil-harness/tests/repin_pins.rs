@@ -212,8 +212,13 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // region downstream of entity_window — including sound_api — slides −0x10 in
     // both shapes. (EndOfRom itself is unchanged: the −16 is re-absorbed by padding
     // before the ROM end, so ASSEMBLED_LEN below stays put; sound_api len unchanged.)
-    assert_eq!(pins::SOUND_API.plain_base, 0x6160);  // −0x10 pass-3 Parcel A
-    assert_eq!(pins::SOUND_API.debug_base, 0x7ACE);  // −0x10 pass-3 Parcel A
+    // Then +0x90 BOTH shapes (pass-3 8b prefetch scan memoize, 2026-07-22): the
+    // generation-word check/record + move.l riders grow tile_cache +0x90; every
+    // engine-bank region downstream — including sound_api — slides +0x90 in both
+    // shapes. (ASSEMBLED_LEN + the END-line MDDBG pins are unchanged: the +0x90 is
+    // re-absorbed by engine-bank padding before the fixed high-address banks.)
+    assert_eq!(pins::SOUND_API.plain_base, 0x61F0);  // +0x90 pass-3 8b memoize
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B5E);  // +0x90 pass-3 8b memoize
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM

@@ -2097,9 +2097,9 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
     // CALL. The target Tile_Cache_GetCollision stays put (it precedes the
     // insertion points); Collision_GetType's bra moved when unified-prefetch grew
     // tile_cache, then again in pass-2 (1.1a FillRow nametable segments +$88,
-    // 1.1b FillRow collision segments +$56, 1.3 CopyBlockColumn wrap-split +$42 —
-    // all tile_cache-internal, between the bra target and the bra), so the backward
-    // disp grew accordingly (now $F3AA plain, $F2EA debug).
+    // 1.1b FillRow collision segments +$56, 1.3 CopyBlockColumn wrap-split +$42,
+    // 8b prefetch scan memoize +$90 — all tile_cache-internal, between the bra target
+    // and the bra), so the backward disp grew accordingly (now $F31A plain, $F25A debug).
     let clbase = pins::COLLISION_LOOKUP.plain_base as usize;
     // Four consecutive Tile_Cache viewport-bound abs.w targets (Cache_Left_Col
     // + 0/2/4/6), pin-spliced so they track the pin (tranche-12).
@@ -2108,7 +2108,7 @@ fn mixed_tranche3_rom_matches_assembled_reference() {
         &rom[clbase..clbase + pins::COLLISION_LOOKUP.plain_len],
         &[
             0xE6, 0x48, 0xB0, 0x78, (clc >> 8) as u8, clc as u8, 0x6D, 0x18, 0xB0, 0x78, ((clc + 2) >> 8) as u8, (clc + 2) as u8, 0x6E, 0x12, 0xE6, 0x49,
-            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF3, 0xAA,
+            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF3, 0x1A,
             0x70, 0x00, 0x4E, 0x75,
         ][..],
         "collision_lookup block must match the reference bytes exactly (plain)"
@@ -2173,7 +2173,7 @@ fn mixed_tranche3_debug_rom_matches_assembled_reference() {
         &rom[clbase..clbase + pins::COLLISION_LOOKUP.debug_len],
         &[
             0xE6, 0x48, 0xB0, 0x78, (clc >> 8) as u8, clc as u8, 0x6D, 0x18, 0xB0, 0x78, ((clc + 2) >> 8) as u8, (clc + 2) as u8, 0x6E, 0x12, 0xE6, 0x49,
-            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF2, 0xEA,
+            0xB2, 0x78, ((clc + 4) >> 8) as u8, (clc + 4) as u8, 0x6D, 0x0A, 0xB2, 0x78, ((clc + 6) >> 8) as u8, (clc + 6) as u8, 0x6E, 0x04, 0x60, 0x00, 0xF2, 0x5A,
             0x70, 0x00, 0x4E, 0x75,
         ][..],
         "collision_lookup block must match the reference bytes exactly (debug)"
