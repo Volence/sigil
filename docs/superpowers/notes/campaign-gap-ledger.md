@@ -1152,3 +1152,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   Phase-2.5 Tier-C window (it shares the per-callee clobber-union export machinery) or the s4lint-
   absorption tier list. — OPEN (contract-honesty family's last unchecked corner; `Load_Object` d2
   itself = Parcel-B rider, tightened by hand).
+  — **METHOD + REGRESSION SEED banked 2026-07-22 (Parcel B).** The mechanical sweep is `declared ∖
+  effective`: for each proc, `ProcNode.declared_clobbers − Closure.effective[proc].regs` (the closure's
+  transitive effective set already subtracts §5-verified preserves); a non-empty, non-`out()` remainder
+  is an unexercised (over-declared) clobber. Ran it whole-corpus for Parcel B; the D1c-derived set gave
+  **4 confirmed firings** = the future lint's regression-seed corpus: `Load_Object` **d2** (read-only),
+  `EntityWindow_RescanObjects` **d5** + `EntityWindow_ScanObjectsRight` **d5** (reach it only via
+  `TrySpawnObject`, now `preserves`), `EntityWindow_Scan` **a5** (never in effective). All 4 tightened
+  by hand in Parcel B (byte-neutral). Deliberate-over-declaration exemptions to preserve when the lint
+  lands: `Collision_GetType` d3 (sensor-register convention, site-commented) + the row-1023 license
+  cases. Lint NOT built here — the Phase-2.5 slot stands; Parcel B was the D1c-derived set only, no
+  corpus-wide tidy (that is the lint's structured job).
