@@ -1029,3 +1029,37 @@ the repin freshness gate above stays the mechanical guard.)*
   sha256 **`db0eb03d767a751b348f10a87ab0176e1e33adb8b9164c3e1ad5a7f43d080ab2`**.
 - Debug `s4.debug.bin`: **428768 bytes** (`EndOfRom` = `0x5F65A`), crc32 **`d5d8e163`**,
   sha256 **`b7a0df49dd2be67eba99ede1c98749e7795c53e33ece9cf48b85ab50f9b296a1`**.
+
+## 2026-07-22 re-baseline — pass-3 8b FindStagedBlock scan memoize + move.l riders (BYTE-CHANGING) — the current pin
+
+Phase-2 pass-3 parcel 8b, three behaviour-preserving optimizations under the live
+diagnostics net:
+- **FindStagedBlock scan memoize** — `Block_Stage_Gen` generation word (bumped on every
+  DecompressBlock claim + InvalidateStaging) + per-axis keyed memos (`Pfx_Memo_*` row /
+  `Cs_Memo_*` col). `.pfx_scan`/`.cs_scan` skip the all-hits FindStagedBlock re-probe walk
+  on a provably-warm prefetch line. **+0x90 tile_cache.**
+- **move.l rider #1 (NT FillRow phase-1 copy)** — `.fr_nt_run1/2` drain as move.l long-pairs
+  + a per-run move.w odd-word tail. **+0x1C tile_cache.**
+- **move.l rider #2 (plane_buffer drain copy)** — `Draw_TileRow_FromCache .emit_row_run`,
+  same transform. **+0x1C plane_buffer** (upstream of the level+sound block).
+
+All three A/B-proven byte-identical via the deterministic `Debug_Scene_Freeze`+camera-poke
+settled-fixed-point method (input-anchored A/B is INVALID for throughput-changing edits —
+banked as the standing tool for fill/drain observables). Collision `move.b` run left as-is
+(byte-packed, arbitrary phys_col → misaligned — adjudicated skip). **Standing ripple:**
+`pins.rs` via `repin` (PLANE_BUFFER len +0x1C base unchanged; TILE_CACHE base +0x1C **and**
+len +0x1C from the memoize/NT; downstream engine-bank regions incl. sound_api slide, bases
+only). **aeon `engine/engine.inc`** gate resume orgs mirror the pins (5 arms touched by the
+PB rider, 4 by the NT rider, both shapes). `mixed_dac_rom.rs` collision_lookup tail-call
+disp: NT rider `$F31A→$F2FE` plain / `$F25A→$F23E` debug (tile_cache-internal growth between
+the bra target and the bra); PB rider UNCHANGED (bra + `Tile_Cache_GetCollision` target both
+downstream of plane_buffer, shift together). `repin_pins.rs` SOUND_API base + F1 attribution
+fix (memoize `+0x90` alone; each rider `+0x1C` separately — the riders were never part of the
+`+0x90`). Hashes taken from the final post-merge build, both shapes — `./build.sh` (plain)
+and `DEBUG=1 ./build.sh` (debug), rebuilt in the master checkout.
+
+- Aeon repo master: **`5c975af`** (merge of `pass3-8b-memoize`).
+- Non-debug `s4.bin`: **421134 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`00222415`**,
+  sha256 **`cd005304fa2bd5dabd0cf534237fa38c85138ba87cea219dc81e72ac05364246`**.
+- Debug `s4.debug.bin`: **429151 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`fffc0179`**,
+  sha256 **`05d08c4646161561dd62ee8602fb0d961ef57a1a185225deda9d823f29375fa2`**.

@@ -1,5 +1,10 @@
 # Parcel 8b — FindStagedBlock scan memoize (design gate)
 
+> **CLOSED 2026-07-22.** Memoize + 2 move.l riders + F2 census MERGED: aeon `5c975af`,
+> sigil 8b merge. Overseer delta-attack PASS zero findings. New canonical plain
+> `00222415`/421134 · debug `fffc0179`/429151 (PROVENANCE re-baselined). Collision rider
+> adjudicated-skip; ledger-1092 move.l-pairing row closed. Strict 2457/0/1.
+
 Branch `pass3-8b-memoize` (worktree `aeon-8b`, off master `57d5e19`, seeded canonical
 748ca5ba/d5d8e163). One parcel: the memoize + the folded `move.l`-pairing riders (from
 dissolved Parcel C), one 5-site ripple + PROVENANCE re-baseline, attack-the-diff pre-merge.
