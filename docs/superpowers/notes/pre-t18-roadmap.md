@@ -2,13 +2,18 @@
 
 **Milestone target:** t18 = the **parallax port** (next lag lever, ~18-22%/frame; parallax is still unported `.asm`).
 
-**Current state (2026-07-21):** Phase-1 items **#1 (out()-verification, "G4.5") and #2
-(edge-sensitive conditional-out crediting) MERGED+PUSHED** — contract-grammar v2 arc is
-G1+G2+G3+substrate+G4+G4.5(#1+#2). Masters: sigil `ad357ed`+ / aeon `ae1de4d`. Phase-1 #3 ALSO DONE (merged `3f333d2`) — #4 (the flip) is the ONLY Phase-1 item left.
+**Current state (2026-07-21):** **PHASE 1 COMPLETE.** All four Phase-1 items merged —
+contract-grammar v2 arc is G1+G2+G3+substrate+G4+G4.5(#1–#4). Masters: sigil `871ec7d` /
+aeon `ae1de4d` (aeon untouched since #2; #3 and #4 were both pure-sigil, byte-neutral).
+Item **#4 (the D1b WARN→ERROR flip) MERGED `871ec7d`** — the verified-out fixpoint is live
+and the net is an ERROR gate before pass-3 opens. **Phase 2 (pass-3) is now OPEN.**
 Canonical ROMs **RE-BASELINED 2026-07-21** (Deep-Forest-BG art parcel, byte-CHANGING):
 plain **`3aa43cb6`/`420749`**, debug **`ce0e83a6`/`428768`** (supersede `8984e510`/`453533` ·
 `c80465dc`/`461554`; see `golden/PROVENANCE.md`).
-Strict mode **OFF** — D1b (undefined-input) stays WARN until the flip in Phase 1.
+Strict mode **ON for D1b** — `[call.input-undefined]` is now a live ERROR gate under
+`SIGIL_STRICT_GATE`, resting on the VERIFIED-out fixpoint (an out() is credited as a
+definition only once proven honest). D1c stays observe-only; the out-verify residue (16)
+stays WARN.
 
 **Guiding principle:** *Contracts go on stable code.* Finish **and verify** the safety net → optimize under it → delete dead code → type the settled register layout → then port parallax.
 
@@ -18,7 +23,7 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 ---
 
-## Phase 1 — Complete & verify the register-contract system  *(before any optimization)*
+## Phase 1 — Complete & verify the register-contract system  *(before any optimization)* — ✅ **COMPLETE (all 4 items merged; D1b is a live ERROR gate)**
 
 1. ~~**out()-verification arc** ("G4.5") `[lang]`~~ — **DONE, merged 2026-07-19** (sigil
    `cd10321`). Caught 2 real allocator mislabels. Residue: Buckets 2/3 (→G5), mutual-callee-out
@@ -47,17 +52,30 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
    deferred to its Phase-2.5 Tier-C consumer (gap-ledger). D1a transitivity stayed out of scope.
    Snapshot: closure 0 / D1b 0 / D1c 2 / dead-saves 15 / out-verify 15; strict 2445/0/1.
 
-4. **WARN→ERROR flip** (D1b strict) `[lang]` ← **NEXT. Build from the overseer brief: `2026-07-21-d1b-flip-spec-brief.md` (Stage-0 residue-consumer map first; verified-out fixpoint; flip commit LAST).**
-   Turn undefined-input from a warning into a build error. Its own clean commit. Blocked on #3
-   plus the #1 residue list: **Buckets 2/3** (clean fix = G5 width-typed outs + in-out markers —
-   decide at flip time: pull that G5 slice forward, or flip with both documented observe-only) ·
-   **mutual/circular callee-out** (needs a verified-out fixpoint) · **conditional-external-tail**
-   (currently grep-proven-absent; keep the guard).
-   *Why before pass-3:* a WARN net doesn't *catch* bad hoists during surgery — an ERROR net does. Net live before you cut.
+4. **WARN→ERROR flip** (D1b strict) `[lang]` ✅ **DONE — merged sigil `871ec7d` (2026-07-21,
+   byte-neutral; aeon `ae1de4d` untouched, pure-sigil).** `[call.input-undefined]` is now a
+   HARD ERROR gate, and the credits it rests on are VERIFIED, not declared. Built from the
+   overseer brief. **Stage-0a settled it:** predicted new-D1b-firing set = EMPTY at the
+   aggressive 17-out bound (every unverified out is in-out — defined upstream, must-def never
+   kills — or a pure-out read-consumed / `.asm`-only), so the flip needed **NO G5 pull-forward**;
+   Buckets 2/3 stay WARN residue. **Mechanism:** verified-out fixpoint (`compute_verified_outs`
+   — extern outs seed verified as §3 axioms; monotone; round-cap panic) grounds the credit; the
+   DEFINITION surfaces (D1b must-def + out-verify residue) switch to verified credit, the
+   REDEFINE-EXCUSE surfaces (§6 taint-kill, D1c held-value) keep declared — the **define-vs-
+   redefine dividing line**, empirically proven (switching D1c would add 11 narrow-width FPs).
+   Also awakened four AEON_DIR-gated corpus tests (incl. three shipping ERROR gates) that
+   silently skipped under the standard strict invocation. Residue moved 15→16 (fixpoint chain-
+   grounding surfaces `Collision_GetType::out(d0)`). Mutual/circular callee-out CLOSED (fixpoint,
+   no corpus instance); conditional-external-tail re-confirmed grep-absent, guard stands. §6
+   existence-lie exposure deferred to the per-lie-class-credit gap-ledger row, tripwire-guarded.
+   Snapshot: closure 0 / D1b 0 (**ERROR**) / D1c 2 / dead-saves 15 / out-verify 16; strict
+   2454/0/1. Packet + dividing-line table: `2026-07-19-out-verification-residue.md` (2026-07-21
+   addendum).
+   *Why before pass-3:* a WARN net doesn't *catch* bad hoists during surgery — an ERROR net does. Net live before you cut. ✅ **The net is live before the cut.**
 
 ---
 
-## Phase 2 — Pass-3: register / object-render optimization  *(under the live net)*
+## Phase 2 — Pass-3: register / object-render optimization  *(under the live net)* — 🟢 **OPEN (the net is live; Phase 1 complete)**
 
 *Design-gate first: run the §C trigger checks, then batch the work.*
 
