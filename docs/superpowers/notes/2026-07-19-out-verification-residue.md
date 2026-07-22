@@ -10,6 +10,64 @@ Corpus run: **17 `[proc.out-unverified]` firings** across 12 procs, **1 `[call.l
 clobbered]` D1c firing**. Every firing was verified against the proc body; nothing was
 self-cleared, no label was lied. Four classes, all observe-only:
 
+---
+
+## 2026-07-21 — THE FLIP (Phase-1 item #4): verified-out fixpoint + the dividing line
+
+D1b is now an ERROR gate. The credits it rests on are **verified, not declared** — a
+least-fixpoint (`out_verify::compute_verified_outs`) proves each `out(rN)` produced on
+every required return path, crediting a callee/tail out only once THAT out is itself
+verified; **extern outs seed verified** (§3 boundary axioms — no body to check; the
+verifier deliberately stops at the `.asm` link seam, an extern's out-honesty is its
+twin's contract). A mutual/circular out that never grounds in a local production stays
+UNVERIFIED. Post-#2 the residue is **16 firings / 10 procs** (the AllocDynamic/AllocEffect
+`out(a1)` relabels are now `if eq` and verify).
+
+**The define-vs-redefine dividing line** (the architecture this arc produced — which
+surfaces switch to verified credit and which keep declared):
+
+| Surface | Credit question | Source | Δ at the flip |
+|---|---|---|---|
+| **D1b must-def** (`check_input_undefined`) | is the callee's param *defined* here? — needs a **guaranteed** production | **verified** (fixpoint) | 0 firings |
+| **out-verify residue** (`out_firings`) | which outs are honest? — IS the out-verify surface | **verified** (ruling 3) | 15→**16** (adds `Collision_GetType`) |
+| §6 invalid-path (`check_result_invalid_path`) | does an uncond out *redefine / kill taint*? — a **narrow** out still redefines | **declared** | 0 either way (tripwire-guarded) |
+| D1c live-clobbered (`destroys_value`) | is reg a *produced result* vs a *held value*? — a narrow out IS a result | **declared** | verified would add **11 FPs** (2→13) |
+| closure / dead-save / may-def | (do not credit out-as-definition) | unchanged | — |
+
+The line: **verified-out is right for DEFINE semantics (D1b + the out-verify surface),
+wrong for REDEFINE-EXCUSE semantics (§6/D1c).** A width-unverified out (Bucket 2)
+genuinely *redefines* a register (low word fresh) — so §6/D1c keep declared — but does
+not *guarantee a full definition* and might be an existence-lie (the FindStagedBlock
+shape) — so D1b conservatively drops it (firing-safe; empirically adds 0). §6 retains the
+existence-lie exposure D1b closed; it is 0-firing today and guarded by the
+`corpus_flag_results_declared_vs_verified_credit_agree` tripwire. The per-lie-class credit
+that closes §6 cleanly is a gap-ledger row (`campaign-gap-ledger.md`, 2026-07-21).
+
+**New residue entry — `Collision_GetType::out(d0)`** (fixpoint chain-grounding, not a new
+bug). It verified under DECLARED credit only via `jbra Tile_Cache_GetCollision`
+(collision_lookup.emp:36, a tail-out credit) ∩ the local `.cgt_air moveq`. Since
+`Tile_Cache_GetCollision::out(d0)` is a Bucket-2 `.b` narrow-width production (unverified),
+the fixpoint correctly withdraws the tail credit → `Collision_GetType` flips unverified.
+`d0` is in-out (param∩out) → **no D1b/§6 consequence** (must-def never kills a register
+already defined as the call's own input). Chain-grounding in an unverified leaf, **not a
+cycle** — Finding-2 mutual/circular out-sourcing remains grep-absent in the corpus.
+
+**Flip-blockers — all closed:**
+- *Bucket 1* (→ item #2): CLOSED — the relabels verify.
+- *Buckets 2/3* (was → G5): **flip needs NO G5** (overseer ruling, Stage-0a). Predicted new
+  D1b firings under verified-only crediting = **0** at the aggressive 17-out bound: every
+  unverified out is either in-out (defined upstream; must-def never kills) or a pure-out
+  read-consumed / `.asm`-only (never threaded as a fresh `.emp` callee param). They stay
+  WARN-tier residue, adjudicated below.
+- *Mutual/circular callee-out* (Finding 2): CLOSED by the verified-out fixpoint (credit only
+  VERIFIED outs); no corpus instance.
+- *Conditional-external-tail* (Finding 3): re-confirmed grep-absent (the sole conditional
+  branch-to-global, `bne RunObjects_Frozen`, resolves to a known proc in an out-less caller);
+  the `is_uncond_tail` Defer-guard stands.
+
+The four observe-only classes below remain the documented WARN residue (now computed against
+the verified fixpoint, consistent with the D1b ERROR gate):
+
 ## Bucket 1 — should-be-conditional (real, → item #2)
 A declared UNCONDITIONAL `out(a1)` where `a1` is produced only on the success return and
 left unproduced on the failure (pool-exhausted) return. Same class as the FindStagedBlock
