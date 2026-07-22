@@ -2,8 +2,12 @@
 
 **Milestone target:** t18 = the **parallax port** (next lag lever, ~18-22%/frame; parallax is still unported `.asm`).
 
-**Current state (2026-07-18):** G4 MERGED+PUSHED. Contract-grammar v2 arc (G1+G2+G3+substrate+G4) fully merged.
-Masters: sigil `41980ec` / aeon `e55d7f1`. Canonical ROMs: plain `8984e510`/`453533`, debug `c80465dc`/`461554` (byte-neutral).
+**Current state (2026-07-21):** Phase-1 items **#1 (out()-verification, "G4.5") and #2
+(edge-sensitive conditional-out crediting) MERGED+PUSHED** — contract-grammar v2 arc is
+G1+G2+G3+substrate+G4+G4.5(#1+#2). Masters: sigil `32fbc9e` / aeon `ae1de4d`.
+Canonical ROMs **RE-BASELINED 2026-07-21** (Deep-Forest-BG art parcel, byte-CHANGING):
+plain **`3aa43cb6`/`420749`**, debug **`ce0e83a6`/`428768`** (supersede `8984e510`/`453533` ·
+`c80465dc`/`461554`; see `golden/PROVENANCE.md`).
 Strict mode **OFF** — D1b (undefined-input) stays WARN until the flip in Phase 1.
 
 **Guiding principle:** *Contracts go on stable code.* Finish **and verify** the safety net → optimize under it → delete dead code → type the settled register layout → then port parallax.
@@ -16,18 +20,32 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 ## Phase 1 — Complete & verify the register-contract system  *(before any optimization)*
 
-1. **out()-verification arc** ("G4.5", new) `[lang]`
-   A checker that verifies `out()` labels are honest: does a proc actually produce what its label claims, on every path? Spec → build.
-   *Why first:* must-def (D1b) + §6 (a live ERROR gate) already trust `out()`; pass-3 will too. **Hard prerequisite for the flip and for pass-3.**
+1. ~~**out()-verification arc** ("G4.5") `[lang]`~~ — **DONE, merged 2026-07-19** (sigil
+   `cd10321`). Caught 2 real allocator mislabels. Residue: Buckets 2/3 (→G5), mutual-callee-out
+   fixpoint, conditional-external-tail (grep-proven-absent) — all on the #4 blocker list.
 
-2. **Edge-sensitive conditional-out crediting** `[lang]`
-   Clears the one remaining false alarm — D1b:1, FillColumn→CopyBlockColumn `a1`. Credits a conditional `out(rN if cc)` on its success edge. **Hard prerequisite for the flip.**
+2. ~~**Edge-sensitive conditional-out crediting** `[lang]`~~ — **DONE, merged 2026-07-21**
+   (sigil `0d4b529` / aeon `3eba8fb`). Bucket 1 CLEARED (AllocDynamic/AllocEffect honest
+   `out(a1 if eq)` + Load_Object cascade), FillColumn D1b FP CLEARED. Includes the Finding-7
+   label-join bail (review-proven `valid_edge` hole, fixed pre-merge). D1c FPs now 2,
+   documented, deliberately not edge-coupled.
 
-3. **S2-D6 checked-clobbers / preserves lint** `[lang]`  *(ledger rows 1023, 1030, 1062)*
-   Same "mechanically verify register contracts" family as #1. `preserves()` can't yet express individual push/pop pairs, so the individual-push-across-a-branch pattern **false-positives** `[proc.clobber-undeclared]` on **≥3 live instances** (`AllocDynamic` a0, `Collected_Park/UnparkSlot` a0), both `.emp` and `.asm` tiers. **Needed before the error-tier flip** — otherwise these FPs get "fixed" with a *false* `clobbers(a0)`. Ask: (a) `preserves()` accepts individual push/pop pairs, or (b) the clobber heuristic tracks individual-push balance across branches. Also unlocks the Tier-C movem deletions in Phase 2.5.
+3. **S2-D6 checked-clobbers / preserves lint** `[lang]` ← **NEXT.**
+   **Build from the overseer brief: `2026-07-21-s2d6-clobbers-preserves-lint-spec-brief.md`
+   (sigil `32fbc9e`) — NOT from this paragraph's earlier text, which was written pre-G3 and
+   is stale:** the individual-push FP trio (`AllocDynamic`/`Collected_Park/UnparkSlot` a0)
+   was already declared+§5-verified in G3 (row 1030 CLOSED; verified preserves subtract,
+   `corpus_contracts.rs:211`). The brief mandates a Stage-0 firing re-census, then adjudicates
+   the residual gaps: dbcc counter-write blind spot (false-negative class), movem-pair
+   residual, s4lint W021 `.asm` tier, per-callee proven clobber union (the Tier-C unlock).
+   D1a transitivity out of scope. **Still needed before the error-tier flip.**
 
 4. **WARN→ERROR flip** (D1b strict) `[lang]`
-   Turn undefined-input from a warning into a build error. Its own clean commit. Blocked on #1–#3.
+   Turn undefined-input from a warning into a build error. Its own clean commit. Blocked on #3
+   plus the #1 residue list: **Buckets 2/3** (clean fix = G5 width-typed outs + in-out markers —
+   decide at flip time: pull that G5 slice forward, or flip with both documented observe-only) ·
+   **mutual/circular callee-out** (needs a verified-out fixpoint) · **conditional-external-tail**
+   (currently grep-proven-absent; keep the guard).
    *Why before pass-3:* a WARN net doesn't *catch* bad hoists during surgery — an ERROR net does. Net live before you cut.
 
 ---
