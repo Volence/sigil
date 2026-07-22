@@ -1107,3 +1107,16 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   parcel (−0xB2D8 anims tier, −0x8000 bank-aligned tail), so a blanket shift is unsafe.
   Candidate: repin emits the full ripple manifest (every file+literal it knows is
   canonical-address-bearing) so a re-baseline is a checklist, not an archaeology dig.
+
+- [S2-D6 item #3 Stage 0, 2026-07-21 (overseer ruling: A+B only)] **Per-callee clobber-union
+  export (Phase-2.5 Tier-C unlock) — DEFERRED to its consumer.** Item #3's gap (d) — expose
+  each callee's proven clobber union (`declared clobbers ∪ NOT-verified-preserved writes ∪
+  callee effects`) so the Tier-C movem-deletion batch can mechanically justify dropping a
+  caller-side save frame. The union ALREADY EXISTS as each proc's `closure.effective[name]`
+  (`closure.rs::compute_closure`); the export is a thin accessor over existing facts, not new
+  analysis. Deferred because it has NO live consumer until Phase-2.5 — and per the ruling, the
+  Tier-C batch should define the accessor's exact consumer contract (shape, spelling, whether
+  it wants the raw `effective` set or a caller-relative "survives this call" query) when it
+  consumes it, rather than guessing now. Census + adjudication: `docs/superpowers/notes/
+  2026-07-21-s2d6-stage0-census.md` §(d). — OPEN (per-callee clobber-union export; lands with
+  the Phase-2.5 Tier-C movem-deletion batch, which owns the consumer contract).

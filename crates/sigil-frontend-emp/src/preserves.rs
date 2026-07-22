@@ -136,9 +136,12 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
                     ever_clobbered[reg_idx(r)] = true;
                 }
             }
-            // `instr_written_regs` does not expand a movem reglist — a register
-            // that only ever appears in a save/restore movem still participates
-            // in stack traffic, so it is NOT "never written".
+            // `instr_written_regs` expands only NON-stack movem-load reglists
+            // (it exempts `(sp)+` restores as preserve-discipline); this pass
+            // needs the ISA-true set — a register that only ever appears in a
+            // save/restore movem still participates in stack traffic, so it is
+            // NOT "never written". Mask-expand every movem reglist ourselves
+            // (idempotent with effect (4) for non-stack loads).
             if let Some(mask) = reglist_mask(ops) {
                 for r in expand_mask(mask) {
                     if r != Reg::A7 {

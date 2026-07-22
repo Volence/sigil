@@ -364,6 +364,18 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
     // `out`'s own validation runs in `check_out`, so expand it quietly here.
     let outs = reglist_set_quiet(proc.out.as_deref().unwrap_or(&[]));
     allowed.extend(outs.regs);
+    // §5 VERIFIED preserves are allowed writes too (S2-D6 FP-kill): a register the
+    // proc writes but provably SAVE/RESTORES round-trips to its entry value — it is
+    // preserved, not clobbered, so it must not fire `[proc.clobber-undeclared]`.
+    // This is the SAME subtraction the transitive closure already trusts
+    // (`closure.rs`'s `− verifiedPreserved(P)`); aligning the local WARN lint with
+    // it removes the dishonest-`clobbers()`-pressure FP class (AllocDynamic a0,
+    // Collected_Park/UnparkSlot a0, EntityWindow_TrySpawn* d3/d5 — all honestly
+    // `preserves(...)`-declared, §5-verified). `verified_preserves_regs` returns
+    // ONLY the declared set that PASSES §5 (∅ on any preserves error), so a
+    // declared-but-UNVERIFIABLE preserves subtracts nothing and the register still
+    // fires — the lint keeps its teeth against a lying `preserves`.
+    allowed.extend(verified_preserves_regs(proc, buf));
 
     for item in &buf.items {
         let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };
@@ -429,11 +441,10 @@ fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut
 /// `btst`, `bra`, `bsr`, `jmp`, `jsr`, `pea`, `nop`, `rts`…) are absent by
 /// design so they never trip the lint.
 ///
-/// KNOWN, DELIBERATE BLIND SPOT: `dbcc`/`dbra`/`dbf` decrement their FIRST
-/// operand, not the last — the "destination is the last operand" model does not
-/// hold for them, and encoding a per-mnemonic destination position is genuinely
-/// S2-D6 territory, so they are intentionally NOT flagged here.
-/// TODO(S2-D6): give the lint a per-mnemonic dest-position notion and cover dbcc.
+/// `dbcc`/`dbra`/`dbf` decrement their FIRST operand, not the last, so the
+/// "destination is the last operand" model does not hold for them — they are
+/// covered by [`instr_written_regs`] effect (3) directly, NOT via this
+/// last-operand list (S2-D6, closing the tranche-4 dbcc blind spot).
 ///
 /// This is a PARALLEL string list the compiler cannot keep honest against the
 /// ISA `Mnemonic` set: a newly-supported write-form (`bchg`, `roxl`, …) will
@@ -500,6 +511,30 @@ fn writes_dest_register(m: &str) -> bool {
 ///    proc that scribbles `a4` via `(a4)+` no longer escapes
 ///    `[proc.clobber-undeclared]`. `a7` via `(sp)+`/`-(sp)` (push/pop) is stack
 ///    discipline — reported here for honesty but exempted by `check_clobbers`.
+/// 3. **`dbcc`-family loop counter (S2-D6).** `dbf`/`dbra`/`dbeq`/… `dN, <label>`
+///    DECREMENTS its first-operand data register `dN`; the "destination is the
+///    last operand" model (effect 1) does not hold for it, so it is handled
+///    explicitly. Closes the tranche-4 "dbcc clobber-lint blind spot": the write
+///    set the closure's `local_writes` trusts no longer misses a counter register.
+///    (Live corpus impact 0 — every `dbf` counter is `moveq`-initialized first,
+///    already counted — but a completeness hole in an ERROR gate's input.)
+/// 4. **`movem`-LOAD register list (S2-D6).** `movem <ea>, <reglist>` (reglist =
+///    LAST operand = destination, e.g. `movem.l (a0)+, d0-d6/a2`) WRITES every
+///    listed register (fresh values). **CLOBBER-LINT POLARITY — read before
+///    touching:** a `(sp)+` stack RESTORE (`movem.l (sp)+, d0-d7`) is EXEMPTED
+///    (its reglist is preserve-discipline, the direct parallel of the `a7`
+///    push/pop exemption in effect 2 — counting a restored reglist would
+///    false-positive a defensive over-save `movem d0-d7,-(sp)…(sp)+,d0-d7
+///    clobbers(d0-d3)` into a d4-d7 clobber). So this detector is NOT ISA-true
+///    for a `(sp)+` movem — it deliberately omits the restored reglist. **Any
+///    consumer needing ISA-true movem-load semantics must mask-expand the reglist
+///    ITSELF and not rely on this function.** The current such consumers already
+///    do exactly that (and dedupe against this): `out_verify::produced_regs`,
+///    `calls::written_names`, `preserves::ever_clobbered`, and
+///    `preserves::transfer` (whose `is_pop` early-return handles the stack case
+///    before it ever reaches this detector). The polarity lives here (not in a
+///    caller) because `check_clobbers` consumes this directly for per-span
+///    diagnostics and cannot route through `proc_written_registers`.
 ///
 /// Registers are returned in encounter order (dest first, then operand order),
 /// DEDUPED (an instruction that advances the same register twice reports it
@@ -518,6 +553,22 @@ pub(crate) fn instr_written_regs(mnemonic: &str, ops: &[CodeOperand]) -> Vec<Reg
     for op in ops {
         if let CodeOperand::PostInc(r) | CodeOperand::PreDec(r) = op {
             regs.push(*r);
+        }
+    }
+    // (3) dbcc-family counter (first operand, a data register). `db<cc>` is the
+    // only mnemonic family spelled `db*`, and the push is further gated on the
+    // first operand being a register — matching the `starts_with("db")`
+    // convention `flag_check`/`out_verify` already use.
+    if mnemonic.starts_with("db") {
+        if let Some(CodeOperand::Reg(r)) = ops.first() {
+            regs.push(*r);
+        }
+    }
+    // (4) movem-LOAD reglist (last operand = RegList destination), EXCEPT a
+    // `(sp)+` stack restore (preserve-discipline exemption — see the doc above).
+    if let Some(CodeOperand::RegList(mask)) = ops.last() {
+        if !matches!(ops.first(), Some(CodeOperand::PostInc(Reg::A7))) {
+            regs.extend(crate::preserves::expand_mask(*mask));
         }
     }
     // Dedup (order-preserving): one instruction may advance the same register

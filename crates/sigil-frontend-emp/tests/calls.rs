@@ -119,6 +119,50 @@ fn undefined_input_fires() {
     assert_eq!(f, vec!["d3".to_string()], "d3 never defined before the call: {f:?}");
 }
 
+/// FINDING 1 (must-write vs may-write): a CONDITIONAL `dbeq d3, .loop` does NOT
+/// define d3 on its cc-satisfied exit, so it must NOT count as a definition for
+/// must-def. With d3 touched ONLY by the conditional dbeq before a call that reads
+/// it, `[call.input-undefined]` MUST fire on d3. An implementation that credits the
+/// conditional dbcc family (inheriting the clobber-lint's may-write) goes green —
+/// the spec-§3-forbidden over-credit this test pins shut.
+#[test]
+fn conditional_dbcc_counter_is_not_a_must_definition() {
+    let f = run_input(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+         .loop:\n\
+             nop\n\
+             dbeq d3, .loop\n\
+             jbsr Anim\n\
+             rts\n\
+         }\n",
+        "Anim",
+        &["d3"],
+    );
+    assert_eq!(f, vec!["d3".to_string()], "conditional dbeq must NOT define d3: {f:?}");
+}
+
+/// Companion: the UNCONDITIONAL `dbf d3, .loop` (condition F — always decrements)
+/// DOES write d3 on every path, so it IS a must-definition → no firing. This is
+/// the other half of Finding 1 (dbf/dbra stay credited; only the conditional
+/// family is stripped).
+#[test]
+fn unconditional_dbf_counter_is_a_must_definition() {
+    let f = run_input(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+         .loop:\n\
+             nop\n\
+             dbf d3, .loop\n\
+             jbsr Anim\n\
+             rts\n\
+         }\n",
+        "Anim",
+        &["d3"],
+    );
+    assert!(f.is_empty(), "unconditional dbf defines d3 → no input-undefined firing: {f:?}");
+}
+
 /// The input is written before the call on the only path — defined, no firing.
 #[test]
 fn input_defined_before_call_passes() {
