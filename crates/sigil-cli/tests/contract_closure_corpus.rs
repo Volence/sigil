@@ -176,3 +176,79 @@ fn corpus_flag_results_are_all_consumed() {
         r.flag_firings
     );
 }
+
+/// Load the aeon corpus + run the contract analysis, or `None` (skip) when the
+/// reference tree is absent — hard-failing under `SIGIL_STRICT_GATE` (the house
+/// reference-gate pattern). Shared by the D1b-flip gates below.
+fn corpus_report() -> Option<sigil_frontend_emp::corpus_contracts::ContractReport> {
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
+        return None;
+    }
+    let mut paths = Vec::new();
+    emp_files(&aeon.join("engine"), &mut paths);
+    emp_files(&aeon.join("games"), &mut paths);
+    paths.sort();
+    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+    let files: Vec<_> =
+        paths.iter().map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0).collect();
+    Some(analyze_corpus(&files))
+}
+
+/// §6 divergence TRIPWIRE (the honest-residual guard for keeping §6 on DECLARED
+/// credit). §6 result-invalid-path uses the declared out maps (redefine-kill
+/// semantics — a width-unverified out still redefines its register). This asserts
+/// the §6 firings computed with DECLARED credit EQUAL those under VERIFIED credit
+/// TODAY. The day a corpus change makes them diverge, declared credit is
+/// suppressing a real firing that verified credit would surface on this ERROR gate
+/// — the test fails and forces adjudication (move §6 to verified, or a per-lie-class
+/// credit) at the moment it matters, instead of a silent miss. See the gap-ledger
+/// row + the dividing-line table in the residue note.
+#[test]
+fn corpus_flag_results_declared_vs_verified_credit_agree() {
+    let Some(r) = corpus_report() else { return };
+    assert_eq!(
+        r.flag_firings, r.flag_firings_verified_credit,
+        "§6 invalid-path DIVERGES between declared and verified out-credit — declared \
+         credit is suppressing a firing verified credit would show on the ERROR gate. \
+         Adjudicate (the define-vs-redefine boundary may need §6 moved to verified). \
+         declared={:?} verified={:?}",
+        r.flag_firings, r.flag_firings_verified_credit
+    );
+}
+
+/// CONSISTENCY (brief §2.6): the out-verify residue surface and D1b must-def read
+/// ONE fixpoint source, so they cannot disagree on whether an out is honest.
+/// (1) every residue firing names an out ABSENT from the verified map (the residue
+/// IS the verified complement); (2) a corpus witness that the residue-reporting
+/// switch actually landed — `Collision_GetType::out(d0)`, which grounds ONLY in the
+/// narrow-width (unverified) `Tile_Cache_GetCollision::out(d0)`, appears here (it
+/// would NOT under the pre-switch declared credit). If someone re-points the residue
+/// surface back at the declared map, the witness fails.
+#[test]
+fn corpus_out_residue_is_the_verified_complement() {
+    let Some(r) = corpus_report() else { return };
+    for f in &r.out_firings {
+        let marked_verified =
+            r.verified_uncond_out.get(&f.proc).is_some_and(|s| s.contains(&f.reg));
+        assert!(
+            !marked_verified,
+            "{}::out({}) is in the out-verify residue yet marked VERIFIED — the residue \
+             surface and must-def credit have drifted apart",
+            f.proc, f.reg
+        );
+    }
+    assert!(
+        r.out_firings.iter().any(|f| f.proc == "Collision_GetType" && f.reg == "d0"),
+        "expected Collision_GetType::out(d0) in the fixpoint residue (chain-grounding \
+         through the unverified Tile_Cache_GetCollision) — the residue-reporting switch \
+         to verified credit did not land. got: {:?}",
+        r.out_firings.iter().map(|f| (f.proc.as_str(), f.reg.as_str())).collect::<Vec<_>>()
+    );
+}
