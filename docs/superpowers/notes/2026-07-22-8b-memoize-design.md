@@ -178,3 +178,15 @@ handling (`n>>1` move.l + `n&1` move.w), never a whole-run pairing (R4).
 Each byte-changing rider = full cycle (twin .emp+.asm edit → build both shapes →
 repin → engine.inc/mixed_dac_rom/repin_pins hand-edit → byte gate → wrap-crossing
 A/B both ROMs). They share ONE final PROVENANCE re-baseline with the memoize.
+
+## Ledger: 16-bit gen-wrap ABA (overseer, 2026-07-22 — no code change)
+
+A memo that survives EXACTLY 2^16 claims and whose (target, bounds) then
+coincidentally re-match would false-hit (the gen word aliases back to the recorded
+value). Consequence is bounded: it skips a PREFETCH only — the cold-crossing DEMAND
+fill still claims and its gen-bump kills the memo — so the worst case is a one-frame
+producer spike, never cache corruption. Accepted as-is (astronomically unlikely + a
+real claim in the interval already kills the memo). Parked wrap-immune simplification:
+write `$FFFF` directly to the axis memo_gen AT the claim site (retiring the generation
+counter entirely) — revisit only if the R3 3-toucher guard ever trips. See
+[[twin-scaffolding-kill-list]]-style tracking in campaign-gap-ledger.md.

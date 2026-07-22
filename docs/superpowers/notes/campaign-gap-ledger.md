@@ -1163,3 +1163,12 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   lands: `Collision_GetType` d3 (sensor-register convention, site-commented) + the row-1023 license
   cases. Lint NOT built here — the Phase-2.5 slot stands; Parcel B was the D1c-derived set only, no
   corpus-wide tidy (that is the lint's structured job).
+
+- **8b prefetch-memo gen-wrap ABA → direct-$FFFF-kill simplification** (overseer-parked 2026-07-22).
+  The 8b scan memoize keys on a 16-bit `Block_Stage_Gen` bumped per staging claim + invalidate. A
+  memo surviving EXACTLY 2^16 claims to coincidentally-matching (target, bounds) false-hits; bounded
+  consequence = a skipped PREFETCH (the demand fill still claims + gen-kills it) = one-frame producer
+  spike, NOT corruption. Wrap-immune future simplification that could RETIRE the gen word: write
+  `$FFFF` to the axis memo_gen directly at the DecompressBlock claim site (per-axis kill) instead of
+  bumping a counter. Not built — revisit only if the R3 `Block_Stage_Keys` 3-toucher guard ever trips.
+  Design note: 2026-07-22-8b-memoize-design.md.
