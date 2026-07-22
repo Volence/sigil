@@ -1208,6 +1208,34 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   had-sprites→none frame; `Static_Sprite_DMA` entry becomes dynamically length-patched (byte-changing).
   Reference: 2026-07-22-sprites-h1h2h3-design.md §4. — OPEN (trigger-gated on VBlank binding).
 
+- **Parcel-D CLOSED-EARLY: 10 dissolved object-render/scroll-path surfaces** (banked 2026-07-22, Bar-A
+  census sweep RULED-ACCEPTED — all self-times plain-shape, inclusive−children, `s4.lst`-mapped; note
+  `2026-07-22-barA-census-sweep.md`). Every census "hot" number was **inclusive**; addressable self is
+  sub-2% queue-wide. Default reopen = real-scene lag report OR elected headroom pass, except where noted.
+  - **section H1** — `Section_UpdateColumns` idle early-out :481 (`$57FC`). Self **1092c / 0.85%** (6.3%
+    incl was Draw_TileColumn `$40C4` 6944c fill, untouched by H1). Ceiling ~450-550c idle-frame subset.
+  - **section H3** — `Section_UpdateColumns` clamp :507. **~50c** structural. No H1 ripple to ride.
+  - **entity_window #1** — `EntityWindow_Scan` :901 scan loop (`$3892`). Self **849c / 0.66%** (2.9% incl
+    was the whole window subsystem: −DeriveWindow148 −ScanRingsRight574 −ScanObjectsRight527
+    −DespawnRings1597). Ceiling ~500-650c.
+  - **entity_window #3** — `DespawnRings` hoist :1385 (`$3B34`). **≤1.2%** (hoist removes a fraction).
+    Anchor #1 dissolved → no ripple to ride.
+  - **entity_window #4** — `DespawnObjects` :1500 (`$3BC0`). **<0.5%**, cold (no in-window despawns).
+  - **core #2** — `DeleteObject` O(1) backpointer :250 (`$28EE`, LEAF, `.dyn_zero_scan` O(count) loop).
+    Self **1.9%** (2370c/3calls) — the closest call, but measured **in its own delete-storm vehicle**
+    (churn ~3 deletes/f sustained → gameplay ≤ this). Reused-capture acceptance: churn is
+    deterministic-from-reset, no input, byte-identical canonical → reproducible; dissolve robust to
+    ±0.5%. **REOPEN = observed sustained >4 deletes/frame.**
+  - **animate A2** — `.set_frame` dirty-check `animate.emp:111` (`AnimateSprite $2F28`). **~60c**
+    structural (skip re-emit when frame unchanged).
+  - **animate A3** — `.set_frame` jbsr+rts → jbra :113. **~24c** structural (tail-call).
+  - **rings R2** — `DrawRings` fold :178 (`$3338`). **0.7% self @ 13 rings**; fold removes a fraction;
+    structural ceiling ~2% only at ~32-ring buffer saturation. **CLOSED (harness-vs-close ruled close).**
+  - **rings R3** — `RingCollision` loop-invariant hoist :285 (`$33C8`). **0.8% self @ 13 rings**; hoist
+    removes a fraction; structural ceiling ~2.3% only at 128 on-screen rings (not a real gameplay
+    condition). **CLOSED.** **rings REOPEN = ring-heavy content approaching buffer saturation; the
+    X=0-mask-after-conversion hazard rider travels with any rings reopen.**
+
 - **RunObjects `.culled_loop` `declared∖effective` clobber sweep** (banked 2026-07-22, core #1 gate
   DISSOLVED-STAGE-0). The dynamic-dispatch loop (`core.emp:.culled_loop`) is a candidate for the same
   byte-neutral `declared∖effective` tightening that Parcel B applied elsewhere (`ProcNode.declared_clobbers

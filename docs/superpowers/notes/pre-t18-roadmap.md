@@ -90,9 +90,16 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
    *Third net-conversion of anticipated byte-surgery into already-done/evaporated (after S2-D6 #3 stage-0
    + Parcel B hoists).*
    *(Note: "D7 deletions" is NOT here — it is its own byte-changing batch, Phase 2.5.)*
-8. **Object/render candidates** `[opt]` — Tier-B; **verify each at the pass design gate before committing.**
+8. **Object/render candidates** `[opt]` — Tier-B — ⊘ **CLOSED-EARLY (2026-07-22): ZERO CUTS AFTER 8b.**
    sprites H1/H2/H3 · rings R2/R3 · entity_window #1/#3/#4 · core #1/#2 · animate A2/A3 · section H1/H3.
-   *(Confirm against the review doc — see References.)*
+   > **HEADLINE:** the entire Tier-B census hotness was an **inclusive-artifact, queue-wide** — every
+   > "hot" number (RunObjects 34.8%, section 6.3%, ew 2.9%, …) was inclusive of dispatched/fill/walker
+   > work the proposed transforms don't touch; measured **plain-shape addressable SELF-time is sub-2%
+   > for all 13 items**. And there is **no lag to relieve**: the pass-2 / unified-prefetch / free-lunch
+   > arcs already ate it (VSync idle **48.8% max-H, 54.3% churn; Lag=0 all regimes**). Closed via 3 mini
+   > design gates (core #1 #4, sprites #5) + one Bar-A census sweep (the remaining 10 rows); all surfaces
+   > banked to the gap-ledger with reopen conditions. Notes: `2026-07-22-{core1-runobjects,sprites-h1h2h3,
+   > barA-census-sweep}-design.md`.
    - **8b DONE** (FindStagedBlock memoize + 2 move.l riders + F2 census; aeon `5c975af`/sigil `4993b0b`).
    - **core #1 (RunObjects) ⊘ DISSOLVED-STAGE-0 (2026-07-22, dissolution #4 — hotness-measurement
      artifact).** Census "34.8%" was DEBUG *inclusive*; addressable machinery self ≈**5.75%** in a
@@ -107,17 +114,16 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
      comptime-unrolled); H3 non-binding VBlank DMA (PB1 satisfied). Three surfaces banked to gap-ledger.
      Reopen = real-scene lag OR elected headroom pass; H1's reopen first-gate = corpus-wide
      `mapping_frame`-drift writer sweep. Note: `2026-07-22-sprites-h1h2h3-design.md`.
-   - **NEXT = BAR-A CENSUS SWEEP (one session, NO design work, no ceremony).** Measure plain-shape
-     addressable SELF-time (inclusive − children, symbols mapped vs `s4.lst`, same rigor) for EVERY
-     remaining D row — entity_window #1/#3/#4 · section H1/H3 · animate A2/A3 — **AND** re-measure the
-     census-based parks under bar A: **core #2** (delete-storm — provoke via churn, the right scene) ·
-     **rings R2/R3** (needs a ringed scene — state which scene/flip and why it exercises the lever).
-     Argue scene-bias direction **PER LEVER** (per the sprites correction). Deliverable = **one table**
-     back to this gate: row · scene · self-time · plausible-transform value ceiling · survives/dissolves.
-     Anything clearing the bar returns as a full design gate; the rest close with numbers.
-   - *Expected shape:* the Phase-2 D queue likely closes early — pass-2/prefetch/free-lunch arcs already
-     ate the lag. If so, that is the system working; milestone checkpoint (next-arc options: t18 parallax
-     · H-streaming charter rows 1066/1074 · VDP shared-module row 1073) goes to Volence after the table.
+   - **BAR-A CENSUS SWEEP — DONE, RULED-ACCEPTED (2026-07-22).** All 10 remaining rows measured
+     plain-shape self-time and DISSOLVED (section H1 0.85% · ew #1 0.66% · core #2 1.9% in its own
+     delete-storm vehicle · animate A2/A3 ~60c/~24c structural · rings R2/R3 0.7%/0.8% @ 13 rings). Rings
+     harness-vs-close ruled **CLOSE both** (no realistic ring-saturation scene). Reopen conditions banked
+     per row (core #2 = >4 deletes/f; rings = ring-heavy content + X=0-mask rider; rest = real-scene lag /
+     elected headroom). Table: `2026-07-22-barA-census-sweep.md`.
+   - **MILESTONE CHECKPOINT → Volence** (next-arc options): **t18 parallax port (overseer-recommended
+     next)** · **VDP shared-module row 1073** (optional warm-up) · **H-streaming successor charter (rows
+     1066/1074) — PARKED, and REQUIRES ITS OWN BAR-A STAGE-0 before any charter** (census numbers are
+     inadmissible there too — same inclusive-artifact risk). The next arc opens on Volence's pick.
 
    > **STANDING BAR A (ratified at the core #1 gate, 2026-07-22).** Every remaining D-parcel stage-0 MUST
    > present **fresh PLAIN-SHAPE addressable SELF-time** (inclusive − children, decomposition shown).
