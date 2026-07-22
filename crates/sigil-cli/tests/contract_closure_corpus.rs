@@ -8,7 +8,9 @@
 //! transitive under-declaration is a BUILD ERROR. An undeclared register effect
 //! in `.emp` can no longer ship.
 //!
-//! Gated on `AEON_DIR` (skips green when the tree is absent, like the port gates).
+//! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`).
+//! Under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS — these are shipping ERROR
+//! gates and must run in the standard strict invocation, not silently skip.
 
 use sigil_frontend_emp::corpus_contracts::analyze_corpus;
 use sigil_frontend_emp::parse_str;
@@ -41,11 +43,22 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// dropping, hiding real register effects beneath the closure/dead-save gates.
 #[test]
 fn corpus_has_zero_dropped_instructions() {
-    let Ok(aeon) = std::env::var("AEON_DIR") else {
-        eprintln!("skip: AEON_DIR not set");
+    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
+    // sibling aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
+    // failure. A shipping ERROR gate that silently skips whenever AEON_DIR is unset
+    // — as the standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test
+    // --workspace`, no AEON_DIR) leaves it — never actually runs in the gate it
+    // exists for.
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
-    };
-    let aeon = PathBuf::from(aeon);
+    }
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
@@ -65,11 +78,22 @@ fn corpus_has_zero_dropped_instructions() {
 
 #[test]
 fn corpus_closure_residue_is_empty_the_error_gate() {
-    let Ok(aeon) = std::env::var("AEON_DIR") else {
-        eprintln!("skip: AEON_DIR not set");
+    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
+    // sibling aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
+    // failure. A shipping ERROR gate that silently skips whenever AEON_DIR is unset
+    // — as the standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test
+    // --workspace`, no AEON_DIR) leaves it — never actually runs in the gate it
+    // exists for.
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
-    };
-    let aeon = PathBuf::from(aeon);
+    }
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
@@ -118,11 +142,22 @@ fn corpus_closure_residue_is_empty_the_error_gate() {
 /// caller that drops a flag result breaks it.
 #[test]
 fn corpus_flag_results_are_all_consumed() {
-    let Ok(aeon) = std::env::var("AEON_DIR") else {
-        eprintln!("skip: AEON_DIR not set");
+    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
+    // sibling aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
+    // failure. A shipping ERROR gate that silently skips whenever AEON_DIR is unset
+    // — as the standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test
+    // --workspace`, no AEON_DIR) leaves it — never actually runs in the gate it
+    // exists for.
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
-    };
-    let aeon = PathBuf::from(aeon);
+    }
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);

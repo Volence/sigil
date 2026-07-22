@@ -3,7 +3,9 @@
 //! callees for every firing. The checkpoint measurement (does the lint find the
 //! review's named customers — dplc, load_object, children — and what beyond).
 //!
-//! Gated on `AEON_DIR`.
+//! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`);
+//! under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS so the dump runs in the
+//! standard strict invocation.
 
 use sigil_frontend_emp::corpus_contracts::analyze_corpus;
 use sigil_frontend_emp::parse_str;
@@ -26,11 +28,19 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 #[test]
 fn dead_save_worklist_over_corpus() {
-    let Ok(aeon) = std::env::var("AEON_DIR") else {
-        eprintln!("skip: AEON_DIR not set");
+    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
+    // sibling aeon tree; under SIGIL_STRICT_GATE a missing reference hard-fails so
+    // the worklist dump actually runs under the standard strict invocation.
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
-    };
-    let aeon = PathBuf::from(aeon);
+    }
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
