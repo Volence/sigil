@@ -93,6 +93,14 @@ Proposed parcel order (each its own merge; smallest-blast-radius first):
   gave callers VERIFIED register freedom across those calls; hoist loads out of loops / across
   the now-trusted calls. Pairs naturally with the 2 documented D1c FP sites (FillRow@FindStagedBlock,
   Load_Object@AllocDynamic — observe-only, do NOT "fix" by weakening; leave as-is).
+  - **RIDER (Volence catch, 2026-07-22): `Load_Object` over-declares `clobbers(d0-d3, a2, a3)`
+    but never WRITES d2** — its only d2 uses are reads (`move.b d2, Sst.subtype(a1)`,
+    `move.w d2, d3`; the mutation lands in d3), and `AllocDynamic` is `clobbers(d0)`. Tighten to
+    `clobbers(d0-d1/d3, a2, a3)` (drop d2). **Declaration-only, byte-neutral**; the S2-D6 checked-
+    clobbers gate verifies it. Update the `; Clobbers:` header comment in lockstep in BOTH twins,
+    same edit both shapes. This is caller-freedom fuel — callers of Load_Object can now rely on d2
+    surviving the call. Verified sound 2026-07-22 (d2 read-only in the body). **Explicitly NOT in
+    Parcel A's merge.**
 - **Parcel C — step-5 pass-3-adjacent riders (item 7).** ledger-1092 `move.l` pairing · W022 /
   W025. Small, mechanical.
 - **Parcel D — object/render Tier-B (item 8).** EV-ranked from the review §"Consolidated"
