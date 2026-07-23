@@ -1616,19 +1616,19 @@ fn build_mixed_sfx_rom(
 /// placed sections (dac + mt + sfx + hblank), and run ONE joint
 /// `resolve_layout` + `link`.
 ///
-/// This is where the port #1 cross-seam reads prove out END-TO-END:
-/// `vectors.asm`'s `dc.l HBlank_Dispatch` (an Abs32 fixup deferral) and
-/// `boot.asm`'s `move.l #HBlank_Null, (HBlank_Handler_Ptr).w` (the
-/// `try_defer_long_imm` abs-dest extension's Value32Be fixup) both resolve
-/// against `hblank.emp`'s BARE `pub proc` symbols through this shared table —
-/// the same joint-link mechanism as `sound_api.asm`'s `movea.l #SongTable`
-/// (T2) and the win-tab `dw sfx_winptr` deferral (T3), now proven for a
-/// register-absent `move.l #imm, (abs).w` immediate fixup too.
+/// This is where the port #1 trampoline cross-seam proves out END-TO-END: the
+/// hblank `.emp` region (`HBlank_Install`/`HBlank_Uninstall`) writes the
+/// AS-side RAM symbols `HBlank_Vector_Slot`, `VDP_Shadow_Table` and
+/// `VDP_Dirty_Mask` (abs.w INBOUND reads resolved through this shared table),
+/// while the IRQ4 `$70` vector's `dc.l HBlank_Vector_Slot` and boot's `move.l
+/// #$4E734E73, (HBlank_Vector_Slot).w` are now AS-side-only (RAM symbol +
+/// constant — no `.emp` proc consumer). The whole-ROM assertion re-proves the
+/// spliced region in context.
 ///
 /// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags)` — the caller pins
 /// both asserts-bearing modules' `check_link_asserts` (mt == 5, sfx == 1) and
-/// asserts every diagnostic is non-Error. `hblank.emp` carries no link
-/// asserts of its own (no `ensure`/`extern`), so it contributes none here.
+/// asserts every diagnostic is non-Error. `hblank.emp` carries only drift-lock
+/// `ensure`s (the two `VDP_Shadow_*` field offsets), no cross-seam asserts.
 fn build_mixed_hblank_rom(
     aeon: &Path,
     debug: bool,
@@ -1695,14 +1695,15 @@ fn mixed_hblank_rom_matches_assembled_reference() {
         "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
     );
 
-    // The hblank block itself, pinned explicitly (the port's own 18-byte
-    // window) before the whole-ROM assertion below re-proves it in context.
-    // `movea.l (HBlank_Handler_Ptr).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
-    let h = pins::H_BLANK_HANDLER_PTR.plain;
+    // The hblank block itself (the trampoline: HBlank_Install +
+    // HBlank_Uninstall, with the RAM-slot / VDP-shadow cross-seam splices),
+    // pinned explicitly as a named sub-window against the reference before the
+    // whole-ROM assertion below re-proves it in context.
+    let base = pins::HBLANK.plain_base as usize;
     assert_eq!(
-        &rom[0x22E8..0x22FA],
-        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, (h >> 8) as u8, h as u8, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
-        "hblank block must match the reference bytes exactly (plain)"
+        &rom[base..base + pins::HBLANK.plain_len],
+        &refrom[base..base + pins::HBLANK.plain_len],
+        "hblank block (mixed .emp splice) must match the reference bytes exactly (plain)"
     );
 
     assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed HBLANK");
@@ -1738,12 +1739,13 @@ fn mixed_hblank_debug_rom_matches_assembled_reference() {
         "sfx_bank.emp's cross-seam co-residency ensure must PASS (link succeeded): {sfx_diags:?}"
     );
 
-    // `movea.l (HBlank_Handler_Ptr).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
-    let h = pins::H_BLANK_HANDLER_PTR.debug;
+    // The hblank trampoline block, pinned as a named sub-window against the
+    // reference before the whole-ROM assertion below re-proves it in context.
+    let base = pins::HBLANK.debug_base as usize;
     assert_eq!(
-        &rom[0x2376..0x2388],
-        &[0x48, 0xE7, 0xC0, 0x80, 0x20, 0x78, (h >> 8) as u8, h as u8, 0x4E, 0x90, 0x4C, 0xDF, 0x01, 0x03, 0x4E, 0x73, 0x4E, 0x75],
-        "hblank block must match the reference bytes exactly (debug)"
+        &rom[base..base + pins::HBLANK.debug_len],
+        &refrom[base..base + pins::HBLANK.debug_len],
+        "hblank block (mixed .emp splice) must match the reference bytes exactly (debug)"
     );
 
     assert_rom_matches_convsym(
@@ -1871,21 +1873,13 @@ fn mixed_tranche2_rom_matches_assembled_reference() {
         "engine.constants's eight drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
-    // The controllers block itself, pinned explicitly (the port's own
-    // 0x72-byte window) before the whole-ROM assertion below re-proves it.
+    // The controllers block, pinned as a named sub-window against the reference
+    // before the whole-ROM assertion below re-proves it in context.
+    let cbase = pins::CONTROLLERS.plain_base as usize;
     assert_eq!(
-        &rom[0x22FA..0x2370],
-        &[
-            0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
-            0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
-            0x12, 0x38, 0x80, 0x2E, 0x11, 0xC0, 0x80, 0x2E, 0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x31,
-            0x4E, 0x75, 0x10, 0xBC, 0x00, 0x40, 0x4E, 0x71, 0x4E, 0x71, 0x10, 0x10, 0x10, 0xBC, 0x00, 0x00,
-            0x4E, 0x71, 0x4E, 0x71, 0x12, 0x10, 0x02, 0x00, 0x00, 0x3F, 0x02, 0x01, 0x00, 0x30, 0xE5, 0x09,
-            0x80, 0x01, 0x46, 0x00, 0x12, 0x00, 0x02, 0x01, 0x00, 0x0C, 0x0C, 0x01, 0x00, 0x0C, 0x66, 0x04,
-            0x02, 0x00, 0x00, 0xF3, 0x12, 0x00, 0x02, 0x01, 0x00, 0x03, 0x0C, 0x01, 0x00, 0x03, 0x66, 0x04,
-            0x02, 0x00, 0x00, 0xFC, 0x4E, 0x75,
-        ][..],
-        "controllers block must match the reference bytes exactly (plain)"
+        &rom[cbase..cbase + pins::CONTROLLERS.plain_len],
+        &refrom[cbase..cbase + pins::CONTROLLERS.plain_len],
+        "controllers block (mixed .emp splice) must match the reference bytes exactly (plain)"
     );
 
     assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "DSM.9 STOP: mixed tranche2");
@@ -1931,19 +1925,11 @@ fn mixed_tranche2_debug_rom_matches_assembled_reference() {
         "engine.constants's eight drift-guard ensures must all PASS (link succeeded): {controllers_diags:?}"
     );
 
+    let cbase = pins::CONTROLLERS.debug_base as usize;
     assert_eq!(
-        &rom[0x2388..0x23FE],
-        &[
-            0x41, 0xF9, 0x00, 0xA1, 0x00, 0x03, 0x61, 0x2A, 0x12, 0x38, 0x80, 0x2C, 0x11, 0xC0, 0x80, 0x2C,
-            0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x30, 0x41, 0xF9, 0x00, 0xA1, 0x00, 0x05, 0x61, 0x12,
-            0x12, 0x38, 0x80, 0x2E, 0x11, 0xC0, 0x80, 0x2E, 0xB1, 0x01, 0xC2, 0x00, 0x83, 0x38, 0x80, 0x31,
-            0x4E, 0x75, 0x10, 0xBC, 0x00, 0x40, 0x4E, 0x71, 0x4E, 0x71, 0x10, 0x10, 0x10, 0xBC, 0x00, 0x00,
-            0x4E, 0x71, 0x4E, 0x71, 0x12, 0x10, 0x02, 0x00, 0x00, 0x3F, 0x02, 0x01, 0x00, 0x30, 0xE5, 0x09,
-            0x80, 0x01, 0x46, 0x00, 0x12, 0x00, 0x02, 0x01, 0x00, 0x0C, 0x0C, 0x01, 0x00, 0x0C, 0x66, 0x04,
-            0x02, 0x00, 0x00, 0xF3, 0x12, 0x00, 0x02, 0x01, 0x00, 0x03, 0x0C, 0x01, 0x00, 0x03, 0x66, 0x04,
-            0x02, 0x00, 0x00, 0xFC, 0x4E, 0x75,
-        ][..],
-        "controllers block must match the reference bytes exactly (debug)"
+        &rom[cbase..cbase + pins::CONTROLLERS.debug_len],
+        &refrom[cbase..cbase + pins::CONTROLLERS.debug_len],
+        "controllers block (mixed .emp splice) must match the reference bytes exactly (debug)"
     );
 
     assert_rom_matches_convsym(
@@ -2436,19 +2422,14 @@ fn mixed_tranche5_rom_matches_assembled_reference() {
     // (Game_State).w,a0, jsr (a0),
     // bra.s GameLoop, then GameState_Idle's rts — the (1,0) combo,
     // gameDebugTick contributing zero bytes.
-    // `bsr.w Sound_DrainSfxRing` disp is pin-spliced (target slides when any
-    // upstream region resizes — e.g. entity_window's tranche-12 step-2 shrink;
-    // gap-ledger "repin can't track inline target BYTES in mixed-test slices").
-    let sdsr = (pins::SOUND_DRAIN_SFX_RING.plain as i64 - 0x2376) as u16;
-    // `movea.l (Game_State).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
-    let gs = pins::GAME_STATE.plain;
+    // The game_loop block (its bsr.w disps + Game_State abs.w are all region
+    // splices), pinned as a named sub-window against the reference before the
+    // whole-ROM assertion below re-proves it in context.
+    let glbase = pins::GAME_LOOP.plain_base as usize;
     assert_eq!(
-        &rom[0x2370..0x2382],
-        &[
-            0x61, 0x00, 0xFF, 0x56, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, (gs >> 8) as u8, gs as u8, 0x4E,
-            0x90, 0x60, 0xF0, 0x4E, 0x75
-        ][..],
-        "game_loop block must match the reference bytes exactly (plain)"
+        &rom[glbase..glbase + pins::GAME_LOOP.plain_len],
+        &refrom[glbase..glbase + pins::GAME_LOOP.plain_len],
+        "game_loop block (mixed .emp splice) must match the reference bytes exactly (plain)"
     );
 
     // Sound_PostByte's head: move.w sr,-(sp) / move.w #$2700,sr / the stopZ80
@@ -2481,17 +2462,12 @@ fn mixed_tranche5_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche5_rom(&aeon, true);
 
-    // pin-spliced disp — see the plain variant's note.
-    let sdsr = (pins::SOUND_DRAIN_SFX_RING.debug as i64 - 0x2404) as u16;
-    // `movea.l (Game_State).w,a0` — abs.w RAM target, pin-spliced (tranche-12).
-    let gs = pins::GAME_STATE.debug;
+    // The game_loop block, pinned as a named sub-window — see the plain variant.
+    let glbase = pins::GAME_LOOP.debug_base as usize;
     assert_eq!(
-        &rom[0x23FE..0x2410],
-        &[
-            0x61, 0x00, 0xFF, 0x52, 0x61, 0x00, (sdsr >> 8) as u8, sdsr as u8, 0x20, 0x78, (gs >> 8) as u8, gs as u8, 0x4E,
-            0x90, 0x60, 0xF0, 0x4E, 0x75
-        ][..],
-        "game_loop block must match the reference bytes exactly (debug)"
+        &rom[glbase..glbase + pins::GAME_LOOP.debug_len],
+        &refrom[glbase..glbase + pins::GAME_LOOP.debug_len],
+        "game_loop block (mixed .emp splice) must match the reference bytes exactly (debug)"
     );
 
     let sabase = pins::SOUND_API.debug_base as usize;

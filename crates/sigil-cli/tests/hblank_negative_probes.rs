@@ -16,25 +16,22 @@
 //!
 //! ## Probes
 //!
-//! (a) genuineness — a doctored COPY of the emp source (`jsr (a0)` →
-//!     `jsr (a1)`) produces DIFFERENT linked bytes than the reference, proving
+//! (a) genuineness — a doctored COPY of the emp source (`move.l a0, ...` →
+//!     `move.l a1, ...` in the slot-patch, a 1-bit register-field change)
+//!     produces DIFFERENT linked bytes than the reference, proving
 //!     `hblank_port.rs`'s byte-diff actually fires rather than trivially
 //!     matching by construction.
 //! (b) standalone-compile diagnostic — compile the real `hblank.emp` WITHOUT
-//!     the synthetic `HBlank_Handler_Ptr` cross-seam section: `resolve_layout`
-//!     fails LOUD. `hblank.emp` carries no `ensure`/`extern` link-assert (only
-//!     a plain operand reference), so the firing diagnostic is `relax.rs`'s
-//!     `RelaxAbsSym` guard, which as of Task 5 both names the symbol AND
-//!     shares the `check_link_asserts` Item-C "references symbol(s) ... not
-//!     defined in this link — expected when compiling a cross-seam module
-//!     standalone" wording (still a distinct code path — this module has no
-//!     `ensure`/`extern` condition to route through `check_link_asserts`
-//!     itself — but the PROSE now matches). This probe pins the improved
-//!     wording; see the campaign gap ledger for the before/after.
-//! (c) placement genuineness — a wrong-base map (base+2) places the section at
-//!     the wrong address, so its bytes no longer match the reference window —
-//!     proving the byte-diff is a real placement check, not an echo of the
-//!     reference back at itself.
+//!     the synthetic RAM cross-seam sections: `resolve_layout` fails LOUD. The
+//!     trampoline's cross-seam references are plain abs-sym operands
+//!     (`HBlank_Vector_Slot`, `VDP_Shadow_Table`, `VDP_Dirty_Mask`), so the
+//!     firing diagnostic is `relax.rs`'s `RelaxAbsSym` guard, which names the
+//!     first missing symbol (`HBlank_Vector_Slot`) with the Item-C
+//!     cross-seam-standalone framing ("references symbol(s) ... not defined in
+//!     this link — expected when compiling a cross-seam module standalone").
+//! (c) placement genuineness — a wrong-base map places the section at the wrong
+//!     address, so its bytes no longer match the reference window — proving the
+//!     byte-diff is a real placement check, not an echo of the reference.
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
@@ -85,17 +82,36 @@ fn map_toml(base: &str) -> String {
          [[region]]\n\
          name = \"hblank\"\n\
          lma_base = {base}\n\
-         size = 0x12\n\
-         kind = \"rom\"\n"
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        size = pins::HBLANK.plain_len
     )
 }
 
-/// The synthetic AS-side `HBlank_Handler_Ptr` cross-seam label, `phase`d to
-/// `$FFFF8022` — `hblank_port.rs::as_handler_ptr_label` verbatim.
-fn as_handler_ptr_label() -> Vec<Section> {
-    let asm = "cpu 68000\nphase $FFFF8022\nHBlank_Handler_Ptr:\n\tdc.l 0\n";
+/// The synthetic AS-side RAM cross-seam labels the trampoline writes/reads
+/// (`HBlank_Vector_Slot` at the RAM tail, `VDP_Shadow_Table`, `VDP_Dirty_Mask`),
+/// each `phase`d to its true plain VMA — `hblank_port.rs::cross_seam_labels`.
+fn cross_seam_labels() -> Vec<Section> {
+    let labels: [(&str, u32); 3] = [
+        ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain),
+        ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
+        ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain),
+    ];
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
+    let mut out = Vec::new();
+    for (i, (name, vma)) in labels.iter().enumerate() {
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        for mut s in assemble(&asm, &opts)
+            .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+            .sections
+        {
+            s.lma = 0x0100_0000 + (i as u32) * 0x1_0000;
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            out.push(s);
+        }
+    }
+    out
 }
 
 /// Compile `src` (either the real file or a doctored copy) through parse ->
@@ -140,8 +156,11 @@ fn place_hblank(src: &str, base: &str) -> Vec<Section> {
 #[test]
 fn doctored_jsr_register_produces_different_bytes_than_genuine() {
     let Some(src) = real_hblank_src() else { return };
-    assert!(src.contains("jsr     (a0)"), "precondition: the real file spells `jsr     (a0)`");
-    let doctored = src.replacen("jsr     (a0)", "jsr     (a1)", 1);
+    assert!(
+        src.contains("move.l  a0, HBlank_Vector_Slot"),
+        "precondition: the real file spells the slot patch `move.l  a0, HBlank_Vector_Slot`"
+    );
+    let doctored = src.replacen("move.l  a0, HBlank_Vector_Slot", "move.l  a1, HBlank_Vector_Slot", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
     let genuine_sections = place_hblank(&src, &format!("{:#x}", pins::HBLANK.plain_base));
@@ -154,22 +173,15 @@ fn doctored_jsr_register_produces_different_bytes_than_genuine() {
     let doctored_bytes = &doctored_linked.section("hblank").expect("hblank section").bytes;
     assert_ne!(
         genuine_bytes, doctored_bytes,
-        "a doctored `jsr (a1)` must emit different bytes than the genuine `jsr (a0)` — \
+        "a doctored `move.l a1, ...` must emit different bytes than the genuine `move.l a0, ...` — \
          else the byte gate could never catch this transcription class"
     );
 }
 
-/// Link `sections` plus the synthetic `HBlank_Handler_Ptr` cross-seam label
-/// (both probes (a)/(c) need `HBlank_Dispatch`'s `movea.l HBlank_Handler_Ptr`
-/// operand to resolve to compile at all).
+/// Link `sections` plus the synthetic RAM cross-seam labels (probes (a)/(c) need
+/// the trampoline's `HBlank_Vector_Slot`/`VDP_*` abs operands to resolve).
 fn link_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImage {
-    let mut cross_seam = as_handler_ptr_label();
-    for sec in &mut cross_seam {
-        sec.lma = 0x0100_0000;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    sections.extend(cross_seam);
+    sections.extend(cross_seam_labels());
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     sigil_link::link(&resolved, &SymbolTable::new()).unwrap_or_else(|d| panic!("link: {d:?}"))
@@ -205,9 +217,9 @@ fn link_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImage {
 fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() {
     let Some(src) = real_hblank_src() else { return };
     let sections = place_hblank(&src, &format!("{:#x}", pins::HBLANK.plain_base));
-    // NO cross-seam label appended — `HBlank_Handler_Ptr` is genuinely absent.
+    // NO cross-seam labels appended — `HBlank_Vector_Slot` is genuinely absent.
     let err = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true).expect_err(
-        "compiling hblank.emp standalone (no HBlank_Handler_Ptr cross-seam section) \
+        "compiling hblank.emp standalone (no RAM cross-seam sections) \
          must be a loud resolve_layout error, not a silent/panicking one",
     );
     assert!(
@@ -215,10 +227,10 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
             d.level == Level::Error
                 && d.message.contains("unresolved symbolic absolute operand")
                 && d.message.contains("hblank")
-                && d.message.contains("HBlank_Handler_Ptr")
+                && d.message.contains("HBlank_Vector_Slot")
                 && d.message.contains("not defined in this link")
         }),
-        "expected the RelaxAbsSym diagnostic to name `HBlank_Handler_Ptr` with the Item-C \
+        "expected the RelaxAbsSym diagnostic to name `HBlank_Vector_Slot` with the Item-C \
          cross-seam-standalone framing, got: {err:?}"
     );
 }
@@ -232,23 +244,19 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
 // ===========================================================================
 
 /// Place the real `hblank.emp` at a WRONG base (`$2280` instead of the real
-/// plain `$227A`) and prove the placed section's bytes, while internally
-/// self-consistent (same content, 18 bytes), land at a DIFFERENT VMA than the
-/// reference expects — so a byte-diff against the FIXED reference window
-/// `s4.bin[0x227A..0x228C]` would fail on a naive same-length compare done at
-/// the wrong offset. Concretely: this probe recompiles at `$2280` and shows
-/// the resulting section's `vma`/`lma` differ from the real port's `$227A`,
-/// which is what would make `hblank_port.rs`'s fixed-offset reference slice
-/// wrong if `hblank_port.rs`'s own map ever silently drifted — i.e., the
-/// placement step genuinely determines the address, it isn't hardcoded/an
-/// echo of the expected value.
+/// plain `pins::HBLANK.plain_base`) and prove the placed section's bytes, while
+/// internally self-consistent (same content, same length), land at a DIFFERENT
+/// VMA than the reference expects — so a byte-diff against the FIXED reference
+/// window would fail on a naive same-length compare done at the wrong offset.
+/// This proves the placement step genuinely determines the address; it isn't
+/// hardcoded/an echo of the expected value.
 ///
 /// FALSIFIED (restore-real-value): re-ran with the base restored to the real
-/// `0x227A` — the placed section's `lma` equals `0x227A` (matching the
-/// reference base exactly), so `assert_ne!` against the wrong-base result
-/// would panic on equal values; confirmed by temporarily placing at the real
-/// base twice and observing the (trivially) equal `lma`s, then reverting to
-/// the doctored `0x2280` comparison below.
+/// plain base — the placed section's `lma` equals it (matching the reference
+/// base), so `assert_ne!` against the wrong-base result would panic on equal
+/// values; confirmed by temporarily placing at the real base twice and
+/// observing the (trivially) equal `lma`s, then reverting to the `0x2280`
+/// comparison below.
 #[test]
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_hblank_src() else { return };
@@ -259,7 +267,7 @@ fn wrong_base_map_places_the_section_at_a_different_address() {
     let real_hblank = real_sections.iter().find(|s| s.name == "hblank").expect("real hblank section");
     let wrong_hblank = wrong_sections.iter().find(|s| s.name == "hblank").expect("wrong hblank section");
 
-    assert_eq!(real_hblank.lma, pins::HBLANK.plain_base, "the real map must place hblank at $227A");
+    assert_eq!(real_hblank.lma, pins::HBLANK.plain_base, "the real map must place hblank at the plain base");
     assert_eq!(wrong_hblank.lma, 0x2280, "the doctored map must place hblank at $2280");
     assert_ne!(
         real_hblank.lma, wrong_hblank.lma,
