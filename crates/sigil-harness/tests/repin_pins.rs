@@ -238,8 +238,12 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // which is upstream of EVERY gated engine region (vdp_init onward), so all engine
     // bases — sound_api included — slide another −0xA both shapes (LENs unchanged; no
     // RAM shift, the CROSS_RESET equates are fixed-addr `=`).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6216);  // −0xA c5 boot store removal upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B84);  // −0xA c5 boot store removal upstream
+    // Then −0x8 BOTH shapes (pass-3 phase2.5 c6 ess_*_left_idx, 2026-07-22): the two
+    // dead EntityScanState left-edge ratchet fields are cut mid-struct (len $1A→$16),
+    // dropping their two `clr.w` inits from EntityWindow_InitSection (−0x8 code); every
+    // region downstream of entity_window — sound_api included — slides −0x8 both shapes.
+    assert_eq!(pins::SOUND_API.plain_base, 0x620E);  // −0x8 c6 entity_window clr removal upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B7C);  // −0x8 c6 entity_window clr removal upstream
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
