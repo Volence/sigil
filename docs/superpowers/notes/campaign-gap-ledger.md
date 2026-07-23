@@ -1321,3 +1321,13 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   preserves-verifier touch — extend the verifier to recognize a conditional individual save/restore whose
   restore post-dominates every path that took the save, then tighten GetSecPtrXY to `clobbers(d1)` and
   type `FlatIDXY.d2 = GridX`. Byte-neutral both. — OPEN.
+
+- **G5 body-typing + arithmetic-preservation follow-ons** (banked 2026-07-23, G5 gate — Q1/Q4 rulings).
+  G5 shipped signature-boundary typing + the `as`-bless escape hatch only. Two extensions were banked to
+  **item-13** (prelude domain-type pass, Volence-driven): (a) **A4-ii body-level `let rN: Type`** — a
+  per-statement register blessing at a construction site, revisit if `as`-ceremony proves awkward in the
+  domain pass; (b) **A4-i arithmetic preservation + declared coercions** — let the reaching-def slice keep
+  a newtype across type-preserving arithmetic (e.g. `GridX + offset` stays a `GridX`) and honor §7's
+  coercion clause, so a producer need not re-`as` after every add. Both are the natural unblocks once a
+  SECOND domain-typed consumer appears (G5 was the one-seam pilot; item-13 is the corpus rollout).
+  REOPEN: item-13 design, or when the seam retrofit surface widens past the FlatIDXY/GetSecPtrXY pair. — OPEN.
