@@ -342,3 +342,13 @@ indirect `(a4)` VDP writes (s4lint.py:1133 caveat, documented). FIRST-CORPUS-RUN
 shapes over the c1/c2-fixed corpus): **0 `[bus.*]` AND 0 `[branch.condition-constant]`** (was 2 → both
 fixed). Teeth sentinel-proven (injected double-stop into `Sound_PostByte`'s real `stop_z80()`
 expansion → fires). Full close in `2026-07-23-sectionD-backlog-arc-close-packet.md`. HELD for overseer.
+
+### MERGED 2026-07-23 (attack-the-diff PASS)
+
+Masters: aeon **`c39f308`** / sigil **`0c27746`** (--no-ff, sigil gap-ledger conflict resolved
+keep-both). Dual rebuild from merged aeon master confirmed NEW CANONICAL plain **`ab787bd1`/421122** ·
+debug **`6a19669f`/429165**; full paired strict on merged masters **2484/0/1**; PROVENANCE master rows
+match. Pre-merge doc fixes applied (debug CRC `05537ebf`→`6a19669f`; the animate_port "red" corrected to
+a self-inflicted AEON_DIR invocation error — phantom drift from a pinned harness on a stale-main tree,
+evaporates at merge by construction). Branches + worktrees swept. Arc merges FIRST; t18 daytime dispatch
+re-cuts on the fresh masters.

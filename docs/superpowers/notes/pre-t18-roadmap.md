@@ -181,7 +181,7 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 ---
 
-## D · Backlog  *(any time; not gating t18)* — ✅ **ARC RUN 2026-07-23 (stage-0 gate + close packet `2026-07-23-sectionD-backlog-arc-close-packet.md`); merges FIRST, before t18)**
+## D · Backlog  *(any time; not gating t18)* — ✅ **ARC MERGED 2026-07-23 (attack-the-diff PASS; masters aeon `c39f308` / sigil `0c27746`; NEW CANONICAL plain `ab787bd1`/421122 · debug `6a19669f`/429165; paired strict 2484/0/1; close packet `2026-07-23-sectionD-backlog-arc-close-packet.md`)**
 
 - ✅ **`Sound_PlayMusic.await_slot` DEBUG watchdog** `[bug]`  *(ledger row 1090)* — **DONE + reframed.** Stage-0 surfaced the real bug behind it: the H-1 repost gate never iterated (`startZ80`'s `move #$0000` clobbered the `tst` flag before the `bne` — the constant-flag-clobber class), and `[branch.condition-constant]` (item-4 rider) found a SECOND identical bug in `Sound_Init.wait_alive`. Fixed as capture-then-test (aeon **c1** `c0db661`, both twins) + the DEBUG bounded-spin watchdog on both spins (aeon **c2** `4b5a2c0`, `SPIN_WATCHDOG_LIMIT=$8000`). The now-working spin was live-single-step-proven (the `d4` watchdog counted `$8000→$7C64` before the slot cleared — the loop iterates). Plain + debug re-baselined (sigil `32bc836`).
 - ✅ **Optional-param design** `[lang]` — **DESIGN-ONLY, ruled.** `AnimateSprite d3`: Option A (`?`-optional marker) ships *when animate is next touched*; Option D (type the animation-script duration byte — the enforcing successor) gated behind the item-13 domain-type family. No implementation this arc. (Stage-0 gate item 5.)
