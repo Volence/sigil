@@ -96,17 +96,40 @@ gap-ledger 2026-07-12: flush on reload). Sized here, not yet cut.
 
 ---
 
-## 4. THE SCOPING CALL FOR THE GATE
+## 4. THE SCOPING CALL — COUNTERSIGNED (gate, 2026-07-23): ONE post-merge parcel
 
 B1/B2/B3 all fail Q2(ii) for the same reason the window-slide rider does — they
 need a **section-boundary crossing with a config change**, which the static test
-scene can't drive and which the gate just routed to a **post-merge follow-up**
-(bundled with the window-slide rider, driving the scroll target, ~20-30 min,
-wedge-avoiding). **Recommendation: fold B1/B2/B3 into that SAME post-merge
-follow-up parcel** — one boundary-crossing oracle capability closes the
-window-slide observation AND live-verifies the B3 lerp fix / B1 cancel / B2 mode
-contract. This keeps t18's in-tranche remaining work to step-5 (Fill_PerLine
-perf, live-verifiable now) → dry-panel → merge. Gate to countersign the bundle.
+scene can't drive. **Additional grounds (gate):** B1/B2/B3 are *faithfully-ported
+shipped behavior* — a behavior fix rides its own gated parcel with its own live
+proof, NEVER a port merge. t18 ports the behavior as-is; the fixes are follow-on.
 
-**Next in-tranche:** step-5 Fill_PerLine interrogation (live A/B) → dry-panel
-debut (A1+B1+C1+C2+C3, C3 active). Ledger rows for B1/B2/B3 + d6 appended.
+**RATIFIED PARCEL STRUCTURE (post-merge, one gated parcel):** build the
+crossing-drive capability ONCE (drive the scroll target / Game_Entry soak,
+wedge-avoiding), then in this ORDER:
+1. **Window-slide observation** — close the carried rider (the capability's first
+   use; a null result is still logged).
+2. **B2 mode-contract FIRST** — it *defines the transition state machine* that B1
+   and B3's fixes land inside (defer-mode-to-completion vs build-intermediate-to-
+   -match-mode is the structural decision; B1/B3 are shaped by it).
+3. **B3 frames-remaining ramp** — inside B2's ratified state machine.
+4. **B1 cancel branch** — inside B2's ratified state machine.
+
+Each behavior fix = its own byte-changing commit + full ripple + its own live
+proof (boundary-crossing A/B). t18's in-tranche remaining work is ONLY step-5
+(Fill_PerLine perf, live-verifiable now).
+
+**Next in-tranche:** step-5 Fill_PerLine interrogation (profiler-first, numbers
+decide) → dry-panel debut (A1+B1+C1+C2+C3, C3 active). Ledger rows for
+B1/B2/B3 + d6 appended.
+
+## 5. STEP-5 Fill_PerLine — interrogation rule (gate, 2026-07-23)
+
+Bounded, numbers decide (NOT skipped, NOT a marathon). Oracle profiler on the
+current bg scene FIRST (mind the reload-flush fix, gap-ledger 2026-07-12).
+**Decision rule:** a candidate projecting **≥ ~1k cyc/frame** → design + cut +
+live A/B (own byte-changing commit, full ripple); candidates all projecting micro
+(**< ~500 cyc/frame**) → log-and-skip each *with its number* (logged-decision
+doctrine). **H2/H3/M1-M5 each get a STATED VERDICT** either way — the panel's C1
+lens re-audits, so the skip-log is the evidence. Volence has flagged parallax
+perf as a want (recent bg change) — raises the interest, not the threshold.
