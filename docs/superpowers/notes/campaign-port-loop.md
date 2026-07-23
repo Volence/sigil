@@ -188,7 +188,20 @@ re-green. No emulator time needed at this step.
      mirror (same batch, item 6).) with
      explicit not-applicable-because outcomes — "checked against the
      list" is the deliverable, silence is not.
-  6. **The noticing clause**: does THIS file suggest a house-format item
+  6. **The type-layer walk (Volence-ratified 2026-07-23, post-G5):**
+     registers/params/outs carrying DOMAIN values — ids, indices, axes,
+     coordinates, anything where two same-width values could swap or mix
+     silently. Adopt existing newtypes (`types.emp` family: GridX/GridY/
+     SectionId, Coord/Velocity, ObjRoutine; growing via item-13) at proc
+     signatures (`(d2: GridX)`, `out(d0: SectionId)`) and `as`-bless the
+     true construction sites. The value-flow test: values that are MOVED
+     and COMPARED type cheaply under the strict-degrade lattice; values
+     that live in shift/add chains wait for arithmetic-preservation
+     (A4-i) — LEDGER those as candidates instead of forcing ceremony.
+     An untyped domain value in a modernized file is a MISS unless the
+     packet logs why (compute-heavy · cross-.asm seam · verifier gap,
+     e.g. the FlatIDXY.d2 conditional-save pattern).
+  7. **The noticing clause**: does THIS file suggest a house-format item
      the list lacks? Step 2 is SELF-EXTENDING — the campaign iterates
      the format file-by-file, so a spelling this file does awkwardly is
      a candidate list entry; propose it in the packet, ratified
@@ -328,7 +341,12 @@ compounds instead of re-hand-rolling shapes. Step 3(a)'s interrogation
 finds LANGUAGE-level opportunity (ceremony, escape hatches, types); this
 pass finds the CONSTRUCT/macro level — code that WORKS but is repetitive
 or patterned emits no pain signal, so the looking is made un-skippable
-here too. **Every twin mirror this pass creates (a comptime-fn whose AS
+here too. **Typed signatures are part of the construct toolbox
+(2026-07-23, post-G5): a new comptime fn / macro / construct whose
+params or results are domain values takes and returns the NEWTYPE, not
+the raw width — building an untyped construct over a typed domain
+re-opens the mix-up class the type closed. If the domain has no newtype
+yet, that's an item-13 candidate to ledger, not a reason to ship raw.** **Every twin mirror this pass creates (a comptime-fn whose AS
 twin spells the shape inline, a mirrored const block, any scaffolding
 seam) adds its twin-scaffolding kill-list row IN THE SAME COMMIT — a
 mirror without a kill condition is unfinished (made explicit 2026-07-12
@@ -394,7 +412,13 @@ good? Algorithmic/cycle-level, not assembler spelling. Behavior-affecting
 changes live here and need LIVE verification (oracle) on top of the
 lockstep + re-pin mechanics. "No changes, recorded why" is a valid
 outcome — but only AFTER the interrogation below, with each line's
-outcome named in the packet.
+outcome named in the packet. **Type-layer rider (2026-07-23, post-G5):
+an optimization that reshapes register flows RE-CHECKS the blessings it
+moves (an `as`-bless belongs on the new producing instruction, and a
+reshuffle that routes a domain value through scratch arithmetic degrades
+its type — re-bless or re-route); and a mix-up class the optimization
+newly exposes (two same-width domain values now adjacent in registers)
+is a newtype candidate to adopt or ledger, same bar as step 2 item 6.**
 
   **The step-5 interrogation** (added 2026-07-11 after the t11 sprites
   review: a second look found real items behind a "no changes" verdict.
