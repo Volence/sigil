@@ -18,6 +18,7 @@ pub mod preserves;
 pub mod resolve;
 pub mod type_slice;
 pub mod value;
+pub mod z80_bus;
 
 use sigil_span::{Diagnostic, SourceId};
 

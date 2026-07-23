@@ -27,6 +27,7 @@ use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserv
 use crate::out_verify::{check_out, compute_verified_outs, CondOutMap, OutFiring, UncondOutMap};
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
+use crate::z80_bus::{check_bus_state, BusFiring};
 use crate::type_slice::{check_slot_types, SlotTypeMismatch};
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
@@ -121,6 +122,11 @@ pub struct ContractReport {
     /// statically determined (dead code / a clobbered condition — the
     /// `Sound_PlayMusic.await_slot` bug). Sorted (proc, span). The item-4 rider.
     pub branch_const_firings: Vec<BranchConstFiring>,
+    /// The `[bus.*]` Z80-bus machine-state firings (item-4 core): a double-stop,
+    /// unpaired start, stopped-at-return, or VDP write while the bus is provably
+    /// running — the sigil-native absorption of s4lint E006/E007/E008/E011.
+    /// Sorted (proc, span). Byte-neutral (corpus-only).
+    pub bus_firings: Vec<BusFiring>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -400,6 +406,13 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     }
     branch_const_firings.sort_by(|a, b| (&a.proc, a.span.start).cmp(&(&b.proc, b.span.start)));
 
+    // [bus.*] — the item-4 core Z80-bus machine-state lint (byte-neutral).
+    let mut bus_firings: Vec<BusFiring> = Vec::new();
+    for pb in &proc_bufs {
+        bus_firings.extend(check_bus_state(&pb.name, &pb.buf.items));
+    }
+    bus_firings.sort_by(|a, b| (&a.proc, a.span.start).cmp(&(&b.proc, b.span.start)));
+
     ContractReport {
         closure,
         firings,
@@ -419,6 +432,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         dropped_by_proc,
         slot_firings,
         branch_const_firings,
+        bus_firings,
     }
 }
 
