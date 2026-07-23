@@ -33,10 +33,13 @@ port loop (campaign-port-loop.md AT CURRENT MASTER — it gained the type-layer 
 
 ## OVERNIGHT AUTONOMY RULES (this run is unattended — these are hard)
 
-- **Authorized: loop steps 0 → 4 in full**, plus step-5 INTERROGATION + design notes, plus
-  any step-5 cut that needs NO live verification. Steps 0/1 proceed WITHOUT the usual live
-  overseer gate — but every gate ARTIFACT is still produced (step-0 design note, step-1
-  verifier evidence, per-step packet sections) so the morning review can retro-gate.
+- **Authorized: port-loop steps 0, 1, 2 in full, then the 3→4→5 inner cycle** — with step 5
+  restricted each cycle to INTERROGATION + design notes + any cut that needs NO live
+  verification. Because live-verified step-5 cuts are deferred, the cycle CANNOT be declared
+  DRY overnight — so step 6 (corpus sweep) and the merge ceremony are morning-gate work by
+  construction, not overnight items. Steps 0/1 proceed WITHOUT the usual live overseer
+  gate — but every gate ARTIFACT is still produced (step-0 design note, step-1 verifier
+  evidence, per-step packet sections) so the morning review can retro-gate.
 - **NOT authorized overnight:** any behavior-affecting cut whose verification needs the
   emulator (oracle) — that includes the trampoline's raster-timing check and H2/H3 cuts.
   Implement + statically verify + byte-gate them if the design is clean; the LIVE check is
