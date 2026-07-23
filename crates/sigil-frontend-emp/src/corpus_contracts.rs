@@ -26,6 +26,7 @@ use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring
 use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
 use crate::out_verify::{check_out, compute_verified_outs, CondOutMap, OutFiring, UncondOutMap};
 use crate::preserves::{find_dead_saves, DeadSave};
+use crate::type_slice::{check_slot_types, SlotTypeMismatch};
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
@@ -109,6 +110,11 @@ pub struct ContractReport {
     /// Per-proc drop counts (only procs with `> 0`), sorted by proc name — the
     /// "per-file reported event": names exactly which proc lost instructions.
     pub dropped_by_proc: Vec<(String, usize)>,
+    /// The G5 §7 `[call.slot-type-mismatch]` firings: a domain-newtype-typed
+    /// callee param slot (`Section_FlatIDXY (d2: GridX, …)`) reached at a call
+    /// site by an untyped or wrong-newtype value. Sorted (proc, callee, reg,
+    /// span). ERROR-tier — the sec_x/sec_y swap class.
+    pub slot_firings: Vec<SlotTypeMismatch>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -340,6 +346,46 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
 
+    // G5 §7 tier 5 — the caller-side domain-newtype slot check. The corpus's
+    // newtype names gate which param/out slots are DOMAIN-typed (a plain `u8`/`*Act`
+    // param is not a slot the check engages — §7 no-ceremony); `typed_params` /
+    // `typed_out` map each such slot to its register index + newtype. `effective`
+    // (the transitive clobber closure) + `callee_out` model the post-call degrade.
+    let newtype_names = collect_newtype_names(files);
+    let (typed_params, typed_out) = collect_typed_slots(files, &newtype_names);
+    // The caller-facing degrade contract: each callee's DECLARED clobbers (the
+    // S2-D6 ERROR gate proves declared ⊇ actual-minus-preserved, so declared is
+    // the sound over-approximation to reason a caller's type across a call). A
+    // callee that declares NO clobber contract maps to `None` — clobber-all.
+    let callee_clobbers: BTreeMap<String, Option<BTreeSet<String>>> = nodes
+        .iter()
+        .map(|(n, node)| {
+            let decl = if node.has_clobber_contract || node.is_extern {
+                Some(node.declared_clobbers.clone())
+            } else {
+                None
+            };
+            (n.clone(), decl)
+        })
+        .collect();
+    let mut slot_firings: Vec<SlotTypeMismatch> = Vec::new();
+    for pb in &proc_bufs {
+        let own = typed_params.get(&pb.name).cloned().unwrap_or_default();
+        slot_firings.extend(check_slot_types(
+            &pb.name,
+            &pb.buf.items,
+            &typed_params,
+            &typed_out,
+            &callee_out,
+            &callee_clobbers,
+            &newtype_names,
+            &own,
+        ));
+    }
+    slot_firings.sort_by(|a, b| {
+        (&a.proc, &a.callee, &a.reg, a.span.start).cmp(&(&b.proc, &b.callee, &b.reg, b.span.start))
+    });
+
     ContractReport {
         closure,
         firings,
@@ -357,7 +403,100 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         verified_cond_out,
         dropped_instrs,
         dropped_by_proc,
+        slot_firings,
     }
+}
+
+/// The leaf-segment name of a `Type` when it is a domain NEWTYPE — the payload of
+/// a G5 typed slot. A `u8`/`u16`/`fixed<…>` primitive, a `*Ptr`, or any type
+/// whose leaf is not a declared newtype yields `None` (that slot checks nothing).
+fn newtype_of(ty: &ast::Type, newtypes: &BTreeSet<String>) -> Option<String> {
+    if let ast::Type::Named(path) = ty {
+        if let Some(leaf) = path.segments.last() {
+            if newtypes.contains(leaf) {
+                return Some(leaf.clone());
+            }
+        }
+    }
+    None
+}
+
+/// The register-file index (`d0`..`d7` = 0..7, `a0`..`a7` = 8..15) of a slot's
+/// register spelling.
+fn slot_reg_idx(name: &str) -> Option<usize> {
+    Reg::from_name(name).map(|r| r as usize)
+}
+
+/// Collect every declared newtype NAME across the corpus (recursing sections).
+/// The set that gates which param/out slots are domain-typed.
+fn collect_newtype_names(files: &[ast::File]) -> BTreeSet<String> {
+    fn walk(items: &[Item], out: &mut BTreeSet<String>) {
+        for item in items {
+            match item {
+                Item::Newtype(n) => {
+                    out.insert(n.name.clone());
+                }
+                Item::Section(s) => walk(&s.items, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = BTreeSet::new();
+    for file in files {
+        walk(&file.items, &mut out);
+    }
+    out
+}
+
+/// Build the per-callee typed-slot maps: `typed_params[name]` = the proc's
+/// newtype-typed param slots `(reg_idx, newtype)`; `typed_out[name]` = its
+/// `out(dN: Type)` slots. A proc with no domain-typed slot is absent from both.
+#[allow(clippy::type_complexity)]
+fn collect_typed_slots(
+    files: &[ast::File],
+    newtypes: &BTreeSet<String>,
+) -> (BTreeMap<String, Vec<(usize, String)>>, BTreeMap<String, Vec<(usize, String)>>) {
+    fn walk(
+        items: &[Item],
+        newtypes: &BTreeSet<String>,
+        params: &mut BTreeMap<String, Vec<(usize, String)>>,
+        outs: &mut BTreeMap<String, Vec<(usize, String)>>,
+    ) {
+        for item in items {
+            match item {
+                Item::Proc(p) => {
+                    let mut ps = Vec::new();
+                    for (reg, ty, _) in &p.params {
+                        if let (Some(idx), Some(nt)) = (slot_reg_idx(reg), newtype_of(ty, newtypes))
+                        {
+                            ps.push((idx, nt));
+                        }
+                    }
+                    if !ps.is_empty() {
+                        params.insert(p.name.clone(), ps);
+                    }
+                    let mut os = Vec::new();
+                    for (reg, ty, _) in &p.out_types {
+                        if let (Some(idx), Some(nt)) = (slot_reg_idx(reg), newtype_of(ty, newtypes))
+                        {
+                            os.push((idx, nt));
+                        }
+                    }
+                    if !os.is_empty() {
+                        outs.insert(p.name.clone(), os);
+                    }
+                }
+                Item::Section(s) => walk(&s.items, newtypes, params, outs),
+                _ => {}
+            }
+        }
+    }
+    let mut params = BTreeMap::new();
+    let mut outs = BTreeMap::new();
+    for file in files {
+        walk(&file.items, newtypes, &mut params, &mut outs);
+    }
+    (params, outs)
 }
 
 /// PASS 1 of the corpus type environment: clone every DECLARATION item that

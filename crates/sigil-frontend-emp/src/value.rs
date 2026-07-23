@@ -339,6 +339,12 @@ pub enum CodeItem {
         ops: Vec<CodeOperand>,
         /// The instruction's span.
         span: Span,
+        /// The trailing `as Type` annotation (G5 §7 tier 5), if any — carried
+        /// verbatim from `InstrLine.dispatch_bound`. On a producing instruction
+        /// (`move.w d3, d2 as GridX`) the type-slice pass reads it to bless the
+        /// destination register with a domain newtype; on an indirect call it is
+        /// the dispatch bound (consumed separately via the AST). Emits NOTHING.
+        as_type: Option<String>,
     },
     /// A [`DataBuf`] spliced into a code stream (§6.2) — a `Data` value inlined
     /// between instructions. Produced today by `dc.b`/`dc.w`/`dc.l` statements

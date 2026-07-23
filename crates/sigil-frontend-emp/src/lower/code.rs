@@ -63,7 +63,7 @@ pub fn lower_code_buf(
                 diags.append(&mut ds);
                 builder.emit_data(&bytes, fixups, *span);
             }
-            CodeItem::Instr { mnemonic, size, ops, span } => {
+            CodeItem::Instr { mnemonic, size, ops, span, as_type: _ } => {
                 // `jbra`/`jbsr` are emp-ONLY mnemonic-position words (D2.18): they
                 // must NOT enter sigil-isa's shared mnemonic table (the AS
                 // front-end keeps rejecting them). Recognize them HERE, before the

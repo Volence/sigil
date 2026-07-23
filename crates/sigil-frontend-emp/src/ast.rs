@@ -715,6 +715,13 @@ pub struct ProcDecl {
     /// names a register ALSO present in `out`, guarded by a validity condition.
     /// Empty for a proc with no conditional result; see [`CondResult`].
     pub out_cond: Vec<CondResult>,
+    /// Typed data-register results declared via `out(dN: Type)` (G5, §7 tier 5):
+    /// a domain newtype (`out(d0: SectionId)`) on an output register — the
+    /// data-register analogue of the `out(carry: name)` flag result. The
+    /// register ALSO joins `out` (so out-verify still checks it is written); the
+    /// type is metadata the caller-side slot-type slice checks. `(reg, ty, span)`.
+    /// Empty for a proc with no typed output.
+    pub out_types: Vec<(String, Type, Span)>,
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
     /// Item-level `@`-attributes preceding the decl — currently only
@@ -751,6 +758,9 @@ pub struct ProcSig {
     pub out_flags: Vec<FlagResult>,
     /// Conditional register results (`out(rN if cc)`, §6) — see [`CondResult`].
     pub out_cond: Vec<CondResult>,
+    /// Typed data-register results (`out(dN: Type)`, G5 §7 tier 5) — see the
+    /// same field on [`ProcDecl`]. `(reg, ty, span)`; empty = none.
+    pub out_types: Vec<(String, Type, Span)>,
 }
 
 /// An `extern proc Name (params) [clobbers(...)] [preserves(...)] [out(...)]`

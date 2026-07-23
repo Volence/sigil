@@ -299,6 +299,7 @@ impl Evaluator<'_> {
                     size: None,
                     ops: vec![],
                     span: *span,
+                    as_type: None,
                 });
             }
             AsmStmt::If { cond, then, els, span: _ } => {
@@ -694,13 +695,25 @@ impl Evaluator<'_> {
         }
         if mnemonic == "movem" {
             let ops = self.map_movem_operands(instr, scope, env, size)?;
-            return Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span });
+            return Some(CodeItem::Instr {
+                mnemonic,
+                size,
+                ops,
+                span: instr.span,
+                as_type: instr.dispatch_bound.clone(),
+            });
         }
         let mut ops = Vec::with_capacity(instr.operands.len());
         for op in &instr.operands {
             ops.push(self.map_operand(op, scope, env, size)?);
         }
-        Some(CodeItem::Instr { mnemonic, size, ops, span: instr.span })
+        Some(CodeItem::Instr {
+            mnemonic,
+            size,
+            ops,
+            span: instr.span,
+            as_type: instr.dispatch_bound.clone(),
+        })
     }
 
     /// `dc.b`/`dc.w`/`dc.l` — code-embedded constant data (tranche 8, the

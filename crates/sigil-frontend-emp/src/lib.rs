@@ -15,6 +15,7 @@ pub mod out_verify;
 pub mod parser;
 pub mod preserves;
 pub mod resolve;
+pub mod type_slice;
 pub mod value;
 
 use sigil_span::{Diagnostic, SourceId};

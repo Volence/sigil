@@ -239,3 +239,121 @@ class-closure pin, `struct_field_disp_plus_n.rs` precedent). Byte-neutral HARD b
 dual-invocation builds (`./build.sh` AND `DEBUG=1 ./build.sh`) reproduce plain
 `406c773b`/421122 · debug `5752c2e3`/429107 EXACTLY; full paired strict green; repin zero
 drift. Overseer gate at close: own builds + seam-diff review + the swap-pin test demonstrated.
+
+---
+
+## IMPLEMENTATION FREEZE (2026-07-23, Opus) — plan + 3 honesty deviations
+
+**Worktrees:** sigil `sigil-g5` / aeon `aeon-g5` (seeded, baseline rebuilt = plain `406c773b`/421122 ·
+debug `5752c2e3`/429107 EXACT). Branch `phase3-g5-typed-register-slots` both repos.
+
+### Three deviations from the literal rulings — all within the granted "smallest honest set" latitude
+
+1. **`Section_GetSecPtrXY` clobbers `d1-d2` → `d1`.** Body trace: d2 (sec_x) is preserved on EVERY
+   path — early out-of-range (untouched), sec_y==0 `.gxy_add_x` (untouched), multiply path
+   (`move d2,-(sp)` … `move (sp)+,d2`). The declared `d2` clobber over-declares. Site 744's
+   `FlatIDXY` consumes d2 as a grid coord immediately after the 741 `GetSecPtrXY` call, so the
+   caller-side `GridX` type is wiped by the declared clobber unless tightened. Honest + byte-neutral
+   + a genuine contract improvement (port-loop "better not same").
+2. **`GetSecPtrXY` `out(d0)` stays UNTYPED, not `SectionId`.** d0 at its `rts` is a found-boolean
+   (`moveq #1,d0` / `moveq #0,d0`), load-bearing for the caller's `beq`. Typing it `SectionId` is a
+   lie against the body (and byte-neutrality forbids making it actually return the id). Only
+   `FlatIDXY`'s `out(d0)` is a genuine SectionId. This contradicts the literal same-commit-set text
+   ("GetSecPtrXY → out(d0: SectionId)") but honors its "smallest honest set" clause and G5's point.
+3. **Census correction — a 5th typed call site.** `section.emp:354` (`Section_RedrawPlanes` →
+   `GetSecPtrXY`) is a typed call the spec's "4 sites" missed. It gets blessed too (or it fires).
+
+### Blessing map (the smallest honest set)
+- **741/744 shared block** (`.entry_loop`, entity_window.emp): d2 last producer `add.b d0, d2`
+  → `add.b d0, d2 as GridX`; d3 `add.b d1, d3` → `as GridY`. GetSecPtrXY clobbers-fix (dev #1)
+  lets d2:GridX survive 741→744.
+- **832** (entity_window): `asr.w d0, d2 as GridX` / `asr.w d0, d3 as GridY`.
+- **1630** (entity_window): `move.w d4, d2 as GridX` / `move.w d5, d3 as GridY` (Q3's canonical form).
+- **354** (section.emp Section_RedrawPlanes): bless its d2/d3 producers (TBD at edit — read the block).
+
+### Sigil mechanism (byte-neutral; check runs in corpus tests, NOT the ROM build path)
+- **AST** (`ast.rs`): `ProcDecl`/`ProcSig` gain `out_types: Vec<(String, Type, Span)>` (reg→newtype),
+  mirroring `out_flags`. `CodeItem::Instr` (`value.rs`) gains `as_type: Option<String>`.
+- **Parser** (`parser.rs` `out_list` ~1325): the colon branch splits on `is_register(lo)` —
+  register ⇒ parse `self.ty()` into out_types + push `(lo,None)` to regs (out-verify still checks
+  the write); flag ⇒ existing `out(carry: name)`. `ParsedOutClause` alias + both consumers updated.
+  The `as`-bless needs NO parser change: `move … as GridX` already parses into `InstrLine.dispatch_bound`
+  (currently ignored for non-calls).
+- **Lowering** (`eval/asm.rs` `lower_instr_to_item`): carry `instr.dispatch_bound.clone()` →
+  `CodeItem::Instr.as_type` (3 constructions); `lower/code.rs:66` destructure += field (emits nothing).
+- **New pass** `type_slice.rs` (mirror `out_verify.rs`): forward MUST dataflow over `flag_check::Cfg`;
+  per-reg state `[Option<TypeId>;16]`; join = meet (equal→keep, disagree→Untyped). Transfer:
+  plain reg-copy `move/movea rX→rY` propagates; `as`-bless on a producing instr sets dest; any other
+  write degrades to Untyped. At a direct call to a proc with typed params: CHECK each typed slot
+  (untyped-or-mismatched newtype ⇒ `[call.slot-type-mismatch]` ERROR); UPDATE via callee
+  clobbers→Untyped / out_types→typed / preserved→keep. Entry seeds the proc's own typed params.
+- **Wire** (`corpus_contracts.rs`): build `callee_typed_params` + `callee_effect` maps in
+  `collect_items`; add `slot_firings` to `ContractReport`; run per proc_buf. Render `[call.slot-type-mismatch]`
+  in `emp_contracts.rs`.
+
+### Tests + acceptance
+- Unit (`type_slice` tests): GridX-into-GridY-slot fires; untyped-into-typed fires; `as` accepted;
+  out-born accepted; copy propagates; arithmetic degrades; join disagreement degrades; untyped slots free.
+- Corpus: real-aeon `slot_firings == 0` (add to a corpus test, `contract_closure_corpus.rs` pattern);
+  NEGATIVE probe (doctored copy: swap d2/d3 at one site ⇒ build fails naming that site).
+- Byte-neutral HARD bar: `./build.sh` + `DEBUG=1 ./build.sh` in aeon-g5 reproduce `406c773b`/`5752c2e3`
+  EXACTLY; full paired strict green; repin zero-drift. Overseer gate at close (own builds + seam diff +
+  swap-pin demo).
+
+---
+
+## FINAL IMPLEMENTATION (2026-07-23, Opus) — what shipped vs the freeze
+
+Implemented, verified, committed on branch `phase3-g5-typed-register-slots` (sigil + aeon). The
+mechanism landed as planned; the SEAM SCOPE changed during implementation on a discovered constraint.
+
+### The discovered constraint (the load-bearing finding)
+`Section_GetSecPtrXY` reuses **d2** as its multiply counter (`move.w d0, d2`), saving/restoring the
+sec_x input around the loop. That save/restore is CONDITIONAL (only the multiply path) and
+individual-word — **not verifier-recognized as a preserve** (the D2.32 slice only proves movem-pairs /
+unconditional individual pushes). So the S2-D6 closure ERROR gate treats d2 as an effect that must be
+DECLARED clobbered. Consequence, proven empirically (exactly ONE firing): at
+`EntityWindow_BuildEntries` (site 744) `Section_FlatIDXY` is called IMMEDIATELY after
+`Section_GetSecPtrXY` on the same d2/d3 — and a typed `GridX` in d2 cannot survive the intervening
+clobber byte-neutrally. Two gates conflict irreconcilably: tightening GetSecPtrXY to `clobbers(d1)`
+(so d2's type survives) makes the CLOSURE gate fire (`d2` undeclared/unverified-preserve);
+`preserves(d2)` is rejected (unverifiable); `out(d2: GridX)` fails out-verify (d2 not produced on the
+untouched paths). Making d2 verified-preserved would need a preserves-verifier extension (conditional
+individual save/restore) — a corpus-wide-blast-radius change, out of a byte-neutral pilot's scope.
+
+### Final seam scope (the smallest honest green set)
+- **DEV #1 DROPPED.** `Section_GetSecPtrXY` keeps its original `clobbers(d1-d2)` (the honest declared
+  contract — d2 IS its scratch). No tightening.
+- **DEV #2 STANDS (gate-confirmed 2026-07-23).** `GetSecPtrXY out(d0, a0)` — d0 is a found-BOOLEAN,
+  left untyped (typing it `SectionId` would lie against `moveq #1/#0, d0`). **This body-section's earlier
+  A3/RULINGS text ("GetSecPtrXY → out(d0: SectionId)") was the SPEC'S ERROR** — the census read the
+  `out(d0)` register without checking what d0 semantically holds at the `rts`. The honest retrofit leaves
+  it untyped; only `Section_FlatIDXY`'s `out(d0)` is a genuine `SectionId`.
+- **`Section_GetSecPtrXY (d2: GridX, d3: GridY, a2: *Act)`** — BOTH axes typed (its call sites 741/354
+  carry a fresh bless; no survival issue). Full swap catch at both.
+- **`Section_FlatIDXY (d2: u8, d3: GridY, a2: *Act) out(d0: SectionId)`** — **d2 left `u8`** (the
+  constraint above), d3 typed, out typed. BANKED: type d2 GridX once GetSecPtrXY's d2-preserve is
+  verifier-recognized or it stops reusing d2 as scratch. Documented at the proc.
+- **Swap class fully closed regardless:** every call site catches an axis swap — GetSecPtrXY (741/354)
+  on both axes; FlatIDXY (744/832/1630) on d3:GridY (a swap always mistypes the GridY slot). The
+  negative corpus probe swaps d3's bless at 1630 → build fails naming the site (found GridX).
+- Blesses: d2 `as GridX` + d3 `as GridY` at the shared 741/744 block (d2 for GetSecPtrXY.741) and at
+  354; d3 `as GridY` only at the FlatIDXY-only sites 832/1630 (d2 there is unchecked → not blessed,
+  honest-not-decorative). Census correction (5th site, section.emp:354) handled.
+- `.asm` twins UNTOUCHED (asl-truth; the domain types live in the checked `.emp`; the generic
+  `; In:` comments aren't wrong). Twin-comment parity deferred (noted).
+
+### Acceptance — ALL GREEN
+- Full paired strict `2471/0/1` (was 2457; +14: 12 `type_slice` unit + 2 `slot_type_corpus`).
+- Byte gate (sigil compiles retrofitted `.emp` == `s4.bin`) green BOTH shapes.
+- Dual-invocation ASL build reproduces **plain `406c773b`/421122 · debug `5752c2e3`/429107 EXACTLY**.
+- repin **zero drift** (pins.rs unchanged). Zero new clippy.
+- Mechanism: `out(dN: Type)` grammar; `as`-bless carried via `CodeItem.as_type`; `type_slice.rs`
+  strict-degrade reaching-def slice; `[call.slot-type-mismatch]` ERROR-tier; wired into
+  `analyze_corpus` (runs in corpus tests, not the ROM build path — matches the input/out-verify
+  family). All 8 spec lattice rules unit-pinned + copy/join/clobber-degrade/preserve extras.
+
+### For the overseer gate
+Attack surface: (1) the d2-can't-be-typed constraint — is `FlatIDXY.d2 = u8` the right call, or should
+the preserves-verifier be extended (bigger scope)? (2) dev #2 (GetSecPtrXY.d0 untyped) — confirm honest.
+(3) the swap-class-closed-via-d3 argument. Demonstrated: own-build CRCs, seam diff, swap-pin negative test.

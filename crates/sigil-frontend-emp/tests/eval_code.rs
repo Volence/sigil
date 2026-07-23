@@ -89,6 +89,7 @@ fn instr_with_operands_survives_concat_and_displays() {
         size: Some(Width::W),
         ops: vec![CodeOperand::Imm(1), CodeOperand::Reg(Reg::D0)],
         span: dummy_span(),
+        as_type: None,
     });
     let joined = CodeBuf::concat(b.clone(), label("done"));
     assert_eq!(joined.items.len(), 2);
