@@ -102,6 +102,13 @@ fn plane_buffer_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("PLANE_H_CELLS", "64"),
         ("PLANE_V_CELLS", "64"),
         ("PLANE_BUFFER_SIZE", "1536"),
+        // engine.vdp's target_bits/op_bits drift-lock ensures read these six
+        ("VRAM", "%100001"),
+        ("CRAM", "%101011"),
+        ("VSRAM", "%100101"),
+        ("READ", "%001100"),
+        ("WRITE", "%000111"),
+        ("DMA", "%100111"),
     ];
     if let Some((name, val)) = doctor {
         for p in pairs.iter_mut() {
@@ -174,10 +181,12 @@ fn compile_real_file(
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let dir = level_dir();
     let main = parse_file(&dir.join("plane_buffer.emp"));
-    // plane_buffer.emp `use`s engine.constants.{TILE_CACHE_*} + engine.structs.{Act, Sec}
-    // — prepend the engine.constants twin and the shared struct module.
+    // plane_buffer.emp `use`s engine.constants.{TILE_CACHE_*}, engine.structs.{Act,
+    // Sec}, and engine.vdp.{VdpTarget, VdpOp, vdp_comm_reg} — prepend the
+    // engine.constants twin, the shared struct module, and the shared VDP module.
     let constants_file = parse_file(&dir.parent().unwrap().join("system/constants.emp"));
     let structs_file = parse_file(&dir.parent().unwrap().join("structs.emp"));
+    let vdp_file = parse_file(&dir.parent().unwrap().join("vdp.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -185,6 +194,7 @@ fn compile_real_file(
             .items
             .into_iter()
             .chain(structs_file.items)
+            .chain(vdp_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
@@ -450,6 +460,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         vec![
             parse_file(&aeon.join("engine/structs.emp")),
             parse_file(&aeon.join("engine/system/constants.emp")),
+            parse_file(&aeon.join("engine/vdp.emp")),
         ],
         aeon.join("engine/level"),
         "plane_buffer",
@@ -464,6 +475,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         vec![
             parse_file(&aeon.join("engine/structs.emp")),
             parse_file(&aeon.join("engine/system/constants.emp")),
+            parse_file(&aeon.join("engine/vdp.emp")),
         ],
         aeon.join("engine/level"),
         "section",

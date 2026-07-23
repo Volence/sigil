@@ -39,8 +39,10 @@ use sigil_link::LinkedImage;
 
 /// Region A base LMA in the assembled ROM: the resident phase-0 Z80 driver.
 /// Provenance: the retired `golden/windows.toml`, `regen`-derived from the
-/// bracketing 68k anchor label `Z80_Sound_Start`.
-pub const REGION_A_LMA: u32 = 0x3EA;
+/// bracketing 68k anchor label `Z80_Sound_Start`. Slid `0x3EA → 0x3E0` in
+/// phase2.5 c5 (the dead Cold_Boot CROSS_RESET store removed upstream −0xA;
+/// the Z80 blob content is byte-identical, only its ROM position shifts).
+pub const REGION_A_LMA: u32 = 0x3E0;
 /// Region B base LMA: the phase-`08000h` Moving-Trucks / SFX engine-table bank.
 /// Provenance: `MovingTrucks_Bank_Start`. Slid `0x60000 → 0x58000` in the
 /// 2026-07-21 Deep-Forest-BG re-baseline (the OJZ BG art ahead of it shrank).

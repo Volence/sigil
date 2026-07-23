@@ -10,7 +10,7 @@
 //!
 //! Like every code port so far, `vdp_init.emp` carries no `DEBUG` member:
 //! the block's CONTENT is byte-identical plain and debug (0x48 bytes in
-//! both) — only its BASE address shifts (plain `$1C14`, debug `$1C96`), so
+//! both) — only its BASE address shifts (plain `$1C0A`, debug `$1C8C`), so
 //! the shape lives entirely in the MAP. `lower_module` runs with an EMPTY
 //! `defines` vec for both shapes.
 //!
@@ -22,7 +22,7 @@
 //! - **Cross-seam pc-relative EA** — `lea.l BootData_VDPRegs(pc), a0`
 //!   targets an AS-side ROM label (`engine/system/boot.asm`), so the
 //!   `PcRelDisp16` fixup resolves against a link-supplied symbol at its true
-//!   per-shape VMA (plain `$3CE`, debug `$3D2`) — tranche 2 proved the
+//!   per-shape VMA (plain `$3C4`, debug `$3C8`) — tranche 2 proved the
 //!   pc-rel machinery cross-SECTION; this is the first cross-SEAM consumer.
 //! - **`dbf` + `btst Dn,Dn` + dual-postinc `move.b (a0)+, (a1)+`** in a real
 //!   ported body.
@@ -53,13 +53,13 @@
 //! (`bsr.w VDP_Shadow_Init`) and `Flush_VDP_Shadow` from the VBlank path —
 //! this test builds a synthetic AS-side consumer with BOTH `bsr.w` forms and
 //! asserts each fixup resolves to the correct per-shape address (plain
-//! `$1C14`/`$1C2A`, debug `$1C96`/`$1CAC`), proving both `pub proc` names
+//! `$1C0A`/`$1C20`, debug `$1C8C`/`$1CA2`), proving both `pub proc` names
 //! surface as bare link symbols cross-seam.
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$1C14`): `s4.bin[0x1C14..0x1C5C]` (0x48 bytes).
-//! Debug (map base `$1C96`): `s4.debug.bin[0x1C96..0x1CDE]` (0x48 bytes).
+//! Plain (map base `$1C0A`): `s4.bin[0x1C0A..0x1C52]` (0x48 bytes).
+//! Debug (map base `$1C8C`): `s4.debug.bin[0x1C8C..0x1CD4]` (0x48 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -100,7 +100,7 @@ fn twin_guards() -> usize {
 
 /// The map: a `text` region for `vdp_init.emp`'s zero-byte default-section
 /// carrier, and the real `vdp_init` region pinned at the per-shape reference
-/// base, sized to the 0x48-byte block (plain `$1C14`, debug `$1C96`).
+/// base, sized to the 0x48-byte block (plain `$1C0A`, debug `$1C8C`).
 fn map_toml(debug: bool) -> String {
     // Base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
     let base = if debug { pins::VDP_INIT.debug_base } else { pins::VDP_INIT.plain_base };
@@ -155,14 +155,14 @@ fn as_vdp_ram_labels() -> Vec<Section> {
 }
 
 /// The synthetic AS-side cross-seam unit supplying `BootData_VDPRegs` at its
-/// TRUE per-shape VMA (plain `$3CE`, debug `$3D2` — `engine/system/boot.asm`,
+/// TRUE per-shape VMA (plain `$3C4`, debug `$3C8` — `engine/system/boot.asm`,
 /// read from the shape's symbol table). Unlike the abs-widthed RAM labels,
 /// this one is a PC-RELATIVE target (`lea.l BootData_VDPRegs(pc), a0`), so
 /// the label's absolute position is load-bearing: the `PcRelDisp16` fixup
 /// resolves to `target_vma - (site_vma + 2)` and the reference bytes only
 /// match when the label sits where the real boot.asm put it.
 fn as_bootdata_label(debug: bool) -> Vec<Section> {
-    let base = if debug { "$3D2" } else { "$3CE" };
+    let base = if debug { "$3C8" } else { "$3C4" };
     let asm = format!(
         "cpu 68000\n\
          phase {base}\n\
@@ -345,7 +345,7 @@ fn assert_outbound_consumer(linked: &sigil_link::LinkedImage, init: i64, flush: 
 }
 
 /// (plain) The `vdp_init` section's linked bytes equal
-/// `s4.bin[0x1C14..0x1C5C]`, AND both outbound `bsr.w` fixups resolve to the
+/// `s4.bin[0x1C0A..0x1C52]`, AND both outbound `bsr.w` fixups resolve to the
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_region_matches_reference() {
@@ -365,13 +365,13 @@ fn vdp_init_region_matches_reference() {
     let base = pins::VDP_INIT.plain_base as usize;
     let expected = &refrom[base..base + pins::VDP_INIT.plain_len];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
-    assert_region_matches(&section.bytes, expected, "vdp_init (plain) vs s4.bin[0x1C14..0x1C5C]");
+    assert_region_matches(&section.bytes, expected, "vdp_init (plain) vs s4.bin[0x1C0A..0x1C52]");
 
     assert_outbound_consumer(&linked, base as i64, (base + pins::FLUSH_VDP_SHADOW_OFF) as i64, "plain");
 }
 
 /// (debug) The `vdp_init` section's linked bytes equal
-/// `s4.debug.bin[0x1C96..0x1CDE]`, AND both outbound fixups resolve to the
+/// `s4.debug.bin[0x1C8C..0x1CD4]`, AND both outbound fixups resolve to the
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_debug_region_matches_reference() {
@@ -391,7 +391,7 @@ fn vdp_init_debug_region_matches_reference() {
     let base = pins::VDP_INIT.debug_base as usize;
     let expected = &refrom[base..base + pins::VDP_INIT.debug_len];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
-    assert_region_matches(&section.bytes, expected, "vdp_init (debug) vs s4.debug.bin[0x1C96..0x1CDE]");
+    assert_region_matches(&section.bytes, expected, "vdp_init (debug) vs s4.debug.bin[0x1C8C..0x1CD4]");
 
     assert_outbound_consumer(&linked, base as i64, (base + pins::FLUSH_VDP_SHADOW_OFF) as i64, "debug");
 }

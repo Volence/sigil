@@ -176,19 +176,17 @@ fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
         ("OEF_TYPE_MASK", "$1F"),
         ("OBJ_ENTRY_SIZE", "6"),
         ("RING_BUFFER_ENTRY_SIZE", "6"),
-        // EntityScanState struct (engine/structs.asm), $1A bytes.
+        // EntityScanState struct (engine/structs.asm), $16 bytes.
         ("EntityScanState_ess_ring_right_idx", "$00"),
-        ("EntityScanState_ess_ring_left_idx", "$02"),
-        ("EntityScanState_ess_obj_right_idx", "$04"),
-        ("EntityScanState_ess_obj_left_idx", "$06"),
-        ("EntityScanState_ess_rom_ring_ptr", "$08"),
-        ("EntityScanState_ess_rom_obj_ptr", "$0C"),
-        ("EntityScanState_ess_rom_type_tbl_ptr", "$10"),
-        ("EntityScanState_ess_origin_x", "$14"),
-        ("EntityScanState_ess_section_id", "$16"),
-        ("EntityScanState_ess_entry_idx", "$17"),
-        ("EntityScanState_ess_origin_y", "$18"),
-        ("EntityScanState_len", "$1A"),
+        ("EntityScanState_ess_obj_right_idx", "$02"),
+        ("EntityScanState_ess_rom_ring_ptr", "$04"),
+        ("EntityScanState_ess_rom_obj_ptr", "$08"),
+        ("EntityScanState_ess_rom_type_tbl_ptr", "$0C"),
+        ("EntityScanState_ess_origin_x", "$10"),
+        ("EntityScanState_ess_section_id", "$12"),
+        ("EntityScanState_ess_entry_idx", "$13"),
+        ("EntityScanState_ess_origin_y", "$14"),
+        ("EntityScanState_len", "$16"),
         // Sec (ROM section descriptor) + Act field equs now come from
         // act_sec_field_equs() (the prepended engine.structs drift wall).
     ]
@@ -459,6 +457,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
         vec![
             parse_file(&aeon.join("engine/system/constants.emp")),
             parse_file(&aeon.join("engine/structs.emp")),
+            parse_file(&aeon.join("engine/vdp.emp")),
         ],
         aeon.join("engine/level"),
         "section",

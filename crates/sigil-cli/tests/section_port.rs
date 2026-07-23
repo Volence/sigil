@@ -181,6 +181,16 @@ fn compile_real_file(
         sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "structs.emp parse errors: {sdiags:?}"
     );
+    // section.emp also `use`s engine.vdp.{VdpTarget, VdpOp, vdp_comm, vdp_comm_reg}
+    // — prepend the shared VDP module (the typed command interface + its drift wall).
+    let vdp_path = dir.parent().unwrap().join("vdp.emp");
+    let vdp_src = std::fs::read_to_string(&vdp_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", vdp_path.display()));
+    let (vdp_file, vdiags) = parse_str(&vdp_src);
+    assert!(
+        vdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "vdp.emp parse errors: {vdiags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: file.module.clone(),
         attrs: file.attrs.clone(),
@@ -188,6 +198,7 @@ fn compile_real_file(
             .items
             .into_iter()
             .chain(structs_file.items)
+            .chain(vdp_file.items)
             .chain(file.items)
             .collect(),
         docs: file.docs.clone(),

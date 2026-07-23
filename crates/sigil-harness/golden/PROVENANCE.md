@@ -1063,3 +1063,52 @@ and `DEBUG=1 ./build.sh` (debug), rebuilt in the master checkout.
   sha256 **`cd005304fa2bd5dabd0cf534237fa38c85138ba87cea219dc81e72ac05364246`**.
 - Debug `s4.debug.bin`: **429151 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`fffc0179`**,
   sha256 **`05d08c4646161561dd62ee8602fb0d961ef57a1a185225deda9d823f29375fa2`**.
+
+## 2026-07-22 re-baseline — phase2.5 c1–c6 (D7 dead-code + item-9 riders) — the current pin (BRANCH TIP, pre-merge)
+
+Phase-2.5 combined arc on `pass3-phase25-item9`, six commits (c1–c6). **This entry
+is the BRANCH-TIP baseline — the arc is HELD for overseer attack-the-diff before
+merge, so no master hash yet.** Branch tips: aeon **`1b8774a`** / sigil **`9a589c4`**.
+
+- **c1** (`7ccb791`) byte-NEUTRAL D7 purge: unreferenced consts + DEBUG_* flag block
+  (byte-identical, no re-pin). `PHYS_ROLL_FRICTION` EXCLUDED (live tuning value).
+- **c2** (`c076bcf`/`3bb09dd`) + **c3** (`214c245`/`e74ef67`): the item-9 anchor
+  (engine.vdp module register + vdp_init M1 Flush_VDP_Shadow early-exit, +0x2).
+- **c4** (`d78fb14`/`0b4d102`) delete dead `Spawn_Count` RAM cell + 2 stores + the
+  now-dead `moveq #0,d0` (first RAM deletion, −2 word RAM shift; CORE len −0xA).
+  The RunObjects `.culled_loop` `declared∖effective` clobber sweep RAN with no
+  over-declared remainder (ObjRoutine `preserves(a0,d7)` forces the full set).
+- **c5** (`e0e94de`/`f96c29e`) delete the dead CROSS_RESET soft-reset scaffolding
+  (store −0xA, upstream of ALL engine regions → every engine base −0xA, no RAM
+  shift — equates are fixed-addr).
+- **c6** (`1b8774a`/`9a589c4`) delete the two dead `ess_*_left_idx` fields mid-struct
+  (EntityScanState `$1A`→`$16`; RAM array −$10; region len −0x8).
+
+Net RAM: −2 (Spawn_Count) −$10 (EntityScanState ×4 entries) = −$12; ASSEMBLED_LEN
+UNCHANGED both shapes (org $10000 absorbs the engine-code shrink). Standing ripple
+per byte-changing commit: `pins.rs` via `repin`; aeon `engine/engine.inc` gate
+resume orgs; `repin_pins.rs` / `entity_window_port.rs` offset seams; c5 also swept
+`mixed_dac_rom.rs` (5 map bases → `pins::`, verification windows + bsr disp refs
+−0xA), `vdp_init_port.rs` (BootData_VDPRegs VMA), `src/lib.rs` (REGION_A_LMA, Z80
+blob). Full paired strict byte gate **2457/0/1** both shapes from clean tips.
+**Runtime boot BOTH shapes (oracle, OJZ scroll + dynamic-object churn):** no
+address error, no debug-assert failure (Debug_AssertObjLoop a0/d7 + EntityScanState
+asserts pass), `Cache_Pfx_Lag_Flag`=0 (no lag), EntityScanState populated correctly
+in the `$16` layout. Hashes from the final c6-tip build, both shapes.
+
+**POST-CLEAR CORRECTNESS FIX (byte-changing, length-preserving) folded in:** overseer
+attack-the-diff cleared the arc pending a "$1A→$16 comment fix"; auditing that comment
+surfaced a REAL bug the byte gate could not catch — `EntityWindow_MigrateMasks` hand-computes
+the EntityScanState entry stride via a shift decomposition (`×16+×8+×2 = ×26 = $1A`, both twins
+identical) that `sizeof` does NOT auto-adjust, so post-c6 it indexed entry d≥1's `ess_section_id`
+4 bytes too far → wrong mask migration on window slides (SILENT — not a crash, so the boot missed
+it too). Fix: `lsl.w #3`→`lsl.w #2` in both twins (`×26`→`×22 = $16`), one instruction, same
+2 bytes → NO layout shift (pins.rs/engine.inc/repin_pins ALL unchanged; only the ROM CRC moves).
+Verified in the emitted disassembly (`$3C38 E749→E549`, read `$3C46` = `Entity_Scan_State+$12 +
+d×$16`), gate 2457/0/1 both shapes. **These are the corrected FINAL canonical bytes.**
+
+- Aeon branch tip: **`04ff7e5`** (`pass3-phase25-item9`, pre-merge — overseer RE-clear HOLD on the byte-changing fix).
+- Non-debug `s4.bin`: **421122 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`406c773b`**,
+  sha256 **`b49757dad2ef18420055eb5d1cf09fc68c543d6b94cae8027d63df37d6bbf37f`**.
+- Debug `s4.debug.bin`: **429107 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`5752c2e3`**,
+  sha256 **`9303409b0f44dfe1aa268578fe20c47394921eed49f415f26f82168899684e6e`**.

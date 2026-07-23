@@ -1082,7 +1082,7 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 **NAMED PROBES for the pass:** (i) zero-fill NECESSITY — sentinel-overwrite test (load-bearing stale-clear vs waste; if waste, clamp entry counts to cached rows); (ii) Probe-B-style A/B on real UNFROZEN max-H AND max-V drives (the frozen Probe A can't lag).
 **CONSTRAINTS (binding):** twin lockstep + re-pin per the loop; the **b96c861 invariant** (VInt_Lag never drains; terminator/order semantics load-bearing) re-proven by ANY format change; two-budget attribution (producer cycles = main loop, drain cycles = VBlank). — RECORDED (Probe A split + the full pass charter, Fable second-review adjudicated: (a) wrap-split+unroll, (b) row segment-restructure [TOP, ~3.4k cy], (c) move.l column-drain [$E000 edge vector], (d) ready-command-in-header [re-prove b96c861], (e) DMA-drain measure-first, (f) micros; probes + constraints).
 - [tranche 17 plane_buffer §4.2, 2026-07-16] **Store the act/sec Plane-B (BG) layouts COLUMN-MAJOR at build time when BG streaming wires up.** Draw_BG_TileColumn (§4.2, currently UNWIRED forward-scaffolding — no callers) copies a 32-row Plane-B column strip with a strided `move.w (a1),(a2)+ / adda.w #128,a1` loop (source is row-major 64×32, stride 128). If the OJZ build emitted the BG layouts COLUMN-MAJOR instead, the strip copy becomes SEQUENTIAL (`move.w (a1)+` / burst) — ~3× the strip copy. **NOT actionable now** — Draw_BG_TileColumn is unwired scaffolding; this is a build-tooling + data-layout decision that lands WHEN Plane-B streaming is wired (the proc's first real caller). Separate from the row-1074 H+V draw-path pass (that's Plane A). — RECORDED (build-time column-major BG layout; deferred to Plane-B streaming wire-up).
-- [sprites bugfix batch, 2026-07-16] **emp-port optimization review = the master unapplied-finding list; mine it on each file's next step-5 optimize pass.** `aeon/docs/reviews/2026-07-16-emp-port-optimization-review.md` (committed this batch) holds 13 per-file deep reviews + a cross-file priority order (its §"Cross-file priority order"). Only the two correctness bugs it surfaced were applied here (sprites PB1/PB2). Everything else is UNAPPLIED step-5 optimization work, ranked by expected value — headliners: tile_cache #1 (FillRow per-tile loop → precomputed contiguous segments, ~10–25k cy/vertical-scroll frame — the historical lag path), tile_cache #2 (per-slot staging pointer: empty→shared-zero-ROM, raw→ROM-direct), plane_buffer #1/#4 (same segment restructure) + #2/#3 (move.l column drain, producer-precomputed VDP command words), collision_lookup #1–3 fused rewrite (~30%/sensor), sprites H1/H2/H3 (cached SST frame offset, stream-order emit + size|link merge, `Sprites_Rendered*8` DMA length), rings R2/R3 + animate A2/A3, entity_window High #1 (trigger cache reusing the two dead `ess_*_left_idx` fields), core #1 (register-cached camera + branchless cull). Each lands as its own byte-CHANGING commit re-gated against a rebuilt ROM per the tranche loop's step-5 rule; twin lockstep + re-pin; cycle figures are un-profiled estimates — verify with the lag counter first. — OPEN (master step-5 backlog; pull per-file at next touch).
+- [sprites bugfix batch, 2026-07-16] **emp-port optimization review = the master unapplied-finding list; mine it on each file's next step-5 optimize pass.** `aeon/docs/reviews/2026-07-16-emp-port-optimization-review.md` (committed this batch) holds 13 per-file deep reviews + a cross-file priority order (its §"Cross-file priority order"). Only the two correctness bugs it surfaced were applied here (sprites PB1/PB2). Everything else is UNAPPLIED step-5 optimization work, ranked by expected value — headliners: tile_cache #1 (FillRow per-tile loop → precomputed contiguous segments, ~10–25k cy/vertical-scroll frame — the historical lag path), tile_cache #2 (per-slot staging pointer: empty→shared-zero-ROM, raw→ROM-direct), plane_buffer #1/#4 (same segment restructure) + #2/#3 (move.l column drain, producer-precomputed VDP command words), collision_lookup #1–3 fused rewrite (~30%/sensor), sprites H1/H2/H3 (cached SST frame offset, stream-order emit + size|link merge, `Sprites_Rendered*8` DMA length), rings R2/R3 + animate A2/A3, entity_window High #1 (trigger cache — re-adds its OWN scratch; the two `ess_*_left_idx` fields it once planned to reuse were DELETED in phase2.5 c6, so a reopened ew#1 must add fresh EntityScanState fields, not hunt for the gone pair), core #1 (register-cached camera + branchless cull). Each lands as its own byte-CHANGING commit re-gated against a rebuilt ROM per the tranche loop's step-5 rule; twin lockstep + re-pin; cycle figures are un-profiled estimates — verify with the lag counter first. — OPEN (master step-5 backlog; pull per-file at next touch).
 - [sprites bugfix batch, 2026-07-16] **PB3 — `sprSize` w/h swap in `engine/macros.asm:21` (latent).** The review CONFIRMED the standing stray-fixes swap is still present in the `sprSize` macro (`engine/macros.asm:21`): it emits width/height in the wrong nibble order vs the VDP SAT size code. `sprites.emp` does NOT inherit it — `SPRITE_MASK_SIZE` (`:16`) and `CellOffsets_XFlip` (the flip-width LUT) use hand-coded constants with the correct hardware interpretation, and every current `sprSize` caller is SQUARE (w==h → swap is a no-op). Latent until the first non-square `sprSize` use, which would place a mis-shaped sprite. NOT fixed here (out of the PB1/PB2 scope; a macro touch on gate-off code with its own twin implications). — OPEN (at-next-touch of macros.asm / first non-square sprSize; fix the nibble order + add a note).
 - [sprites bugfix batch, 2026-07-16] **PB4 — residual sprites.emp comment nits.** The `:319` "screen-relative Y" comment was fixed by PB2 (now labels the biased value + the unbias). Two remain: (i) `:27` — the band-count clear comment's "padded to even = 8 bytes" pad wording (the array is 7 live bytes + 1 pad; wording reads as if the pad is load-bearing); (ii) the `.band_limit_pop` note names only `DrawRings` as skipped on the cap-path jump to `.done`, but sprite-mask insertion (`InsertSpriteMasks`) is ALSO skipped on that path (currently harmless — masks are rare and the cap path is a hard overflow stop). Cosmetic; bundle with the next sprites.emp edit (H1/H2 are the natural carriers). — OPEN (at-next-touch of sprites.emp; comment-only, byte-neutral).
 - [wave-2 bugfix batch, 2026-07-16] **HBlank dispatch → RAM-jmp trampoline — RATIFIED (Fable, 2026-07-16); executes at t18 parallax step-0/1 as the first-consumer design.** Current `HBlank_Dispatch` (hblank.emp:17-23) wraps every scanline in a ~116-140 cy movem/jsr/rte shell; with per-line HInt for parallax that is ~26k cy/frame of PURE WRAPPER. Ratified target: ROM HInt vector → a fixed RAM slot holding a patched `jmp`; the handler owns its own save/restore + rte (S3K pattern); an install helper patches the jmp target; HInt is disabled when no handler is installed. **DECIDED NOW because ZERO handlers exist** — from this date no code may be written against the current "handler may clobber d0-d1/a0" dispatch contract; t18's step-0 note inherits this ruling as binding. Kill: t18 ships the trampoline (hblank.emp + twin + boot HInt vector + install sites; byte-changing → re-pin; raster-timing live-verify). — RATIFIED / SCHEDULED (t18 parallax step-0/1).
@@ -1217,7 +1217,10 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   - **section H3** — `Section_UpdateColumns` clamp :507. **~50c** structural. No H1 ripple to ride.
   - **entity_window #1** — `EntityWindow_Scan` :901 scan loop (`$3892`). Self **849c / 0.66%** (2.9% incl
     was the whole window subsystem: −DeriveWindow148 −ScanRingsRight574 −ScanObjectsRight527
-    −DespawnRings1597). Ceiling ~500-650c.
+    −DespawnRings1597). Ceiling ~500-650c. **CROSS-NOTE (phase2.5 c6):** ew#1's old plan to reuse the
+    two dead `ess_*_left_idx` EntityScanState fields is void — those fields were deleted in c6
+    (struct `$1A`→`$16`). A reopened ew#1 re-adds its own trigger-cache scratch fields; do not expect
+    the `_left_idx` pair to still exist. (Mirrors the row-1085 headliner reword.)
   - **entity_window #3** — `DespawnRings` hoist :1385 (`$3B34`). **≤1.2%** (hoist removes a fraction).
     Anchor #1 dissolved → no ripple to ride.
   - **entity_window #4** — `DespawnObjects` :1500 (`$3BC0`). **<0.5%**, cold (no in-window despawns).
@@ -1241,7 +1244,55 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   byte-neutral `declared∖effective` tightening that Parcel B applied elsewhere (`ProcNode.declared_clobbers
   − Closure.effective.regs`, non-`out()` remainder = over-declared). NOT run standalone — no ceremony for
   a byte-neutral parcel of one hot loop. **Rides a future `core.emp` touch** (any elected RunObjects edit
-  runs the sweep in the same commit). Reference: 2026-07-22-core1-runobjects-design.md §6. — OPEN.
+  runs the sweep in the same commit). Reference: 2026-07-22-core1-runobjects-design.md §6.
+  — **RAN + CLOSED (phase2.5 c4, 2026-07-22, on the Spawn_Count `core.emp` touch).** No over-declared
+  remainder: RunObjects dispatches object code as `ObjRoutine = proc (a0) preserves(a0, d7)` (core.emp:21),
+  whose permitted clobber set is therefore `d0-d6/a1-a6` (everything but the two preserved regs); RunObjects
+  itself clobbers `d7` (the loop counter) and `a0` (the slot cursor). The transitive effective set is thus
+  `d0-d7/a0-a6` — **identical to the declared `clobbers(d0-d7/a0-a6)`**. The declaration is forced-full by
+  the dispatch contract, so the tightening is a byte-neutral no-op (a legitimate "no tidy" outcome, mirroring
+  the Parcel-B procs whose effective set already equalled declared). CompactDynamicLive/DrainDynamicPending
+  callee clobbers are subsets. Nothing to change. — CLOSED.
+
+- **Upstream-of-engine byte-changes ripple ALL engine-address fixtures, not just the symbol's pins**
+  (learned phase2.5 c5, 2026-07-22). c5 removed the dead Cold_Boot `CROSS_RESET_MAGIC` store — `boot.asm`
+  sits upstream of EVERY gated engine region, so all engine bases slid −0xA and the byte gate surfaced
+  sigil fixtures the design-gate census did NOT flag (it listed only lexer/repin fixtures): `vdp_init_port`'s
+  `BootData_VDPRegs` cross-seam label VMA (a pc-rel `lea` target), `sigil-harness/src/lib.rs` `REGION_A_LMA`
+  (the Z80 driver blob's `Z80_Sound_Start` anchor — blob content byte-identical, position −0xA), and
+  `mixed_dac_rom`'s hardcoded engine map bases + verification-window slices + the two `bsr.w Sound_DrainSfxRing`
+  displacement reference addresses. **BAR for any future byte-change UPSTREAM of the engine bank:** sweep every
+  hardcoded engine-address fixture (grep the shifted `[boot, $10000)` range across `crates/`), not just the
+  edited symbol's direct pins. **Migration candidate:** the remaining `mixed_dac_rom` hardcoded verification
+  windows + bsr disp refs should follow the map bases to `pins::`-derived expressions (c5 migrated the five
+  map bases: hblank/controllers/math/vdp_init/game_loop). — OPEN (migration).
+
+- **Fresh `git worktree add` silently builds a ~130 KB-divergent air-baseline ROM without `seed-worktree.sh`**
+  (learned/re-confirmed phase2.5, 2026-07-22). A new worktree does NOT check out the git-IGNORED generated
+  artifacts a build needs (editor per-section working data, generated OJZ `entity_data.asm`, collision/sprite
+  binaries, engine/debug blobs). Without them `build.sh` either hard-errors (`cannot include .../entity_data.asm`)
+  or — WORSE, SILENTLY — falls back to air-baseline collision and builds a ROM diverging ~130 KB **with no
+  error**, which would poison every byte-gate and PROVENANCE hash downstream. **Fix (mechanical):**
+  `aeon/tools/seed-worktree.sh <worktree-path>` (tracked, commit `923ba5d`) copies the whole gitignored
+  artifact set from a known-good tree and builds both shapes — run ONCE right after `git worktree add`, never
+  re-seed a reused worktree. **BAR:** any campaign step that spins up a fresh aeon/sigil worktree seeds it
+  before the first build and verifies the seeded ROM's crc/size against the current PROVENANCE pin. — RECORDED.
+
+- **Hand-computed struct strides are a BYTE-GATE BLIND SPOT — a struct-size change must sweep them, not just
+  `sizeof`/`offsetof` sites** (learned phase2.5 c6 post-clear, 2026-07-22). `EntityWindow_MigrateMasks`
+  indexes `Entity_Scan_State[d]` by a SHIFT DECOMPOSITION of the entry stride (`lsl#4 + lsl#3 + ×2 =
+  ×26 = $1A`) instead of `sizeof(EntityScanState)`. The c6 cut ($1A→$16) auto-adjusted every
+  `sizeof(...)*N + offsetof(...)` site but NOT the literal shift-multiply, so it silently indexed entry
+  d≥1's `ess_section_id` 4 bytes too far → wrong mask migration on window slides. **The byte gate CANNOT
+  catch this** — both `.emp` and `.asm` twins carried the identical wrong `×26`, so sigil==asl held (the
+  gate proves twin-agreement, not correctness). The runtime boot missed it too (wrong mask ≠ crash;
+  silent logic error). Caught only by hand-auditing the "stale $1A comment" the overseer flagged. Fix:
+  `lsl#3`→`lsl#2` (`×26`→`×22`) both twins, length-preserving (one 2-byte instr, no layout shift). **BAR:
+  any struct field-count/size change greps the module for hand-computed strides (shift decompositions,
+  `mulu #k`, literal `#stride`), not only symbolic `sizeof`/`offsetof`. Modernization candidate: such
+  runtime `index × struct_len` sites should derive their shift decomposition from `sizeof` at comptime
+  (or accept a `mulu` on cold paths) so a size change can't leave a literal stale.** — RECORDED (fix
+  shipped; comptime-stride-derivation modernization OPEN).
 
 - **RunObjects cull-math branchless-abs** (banked 2026-07-22, core #1 gate DISSOLVED-STAGE-0). Replace the
   two `bpl/neg.w` conditional-abs sequences in the X/Y cull distance checks (`core.emp:504-519`) with

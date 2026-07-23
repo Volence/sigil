@@ -119,34 +119,38 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // unchanged, and ASSEMBLED_LEN/DEBUG_ASSEMBLED_LEN are UNCHANGED — the engine
     // growth is absorbed by `org $10000`, __END__ does not move; only the convsym
     // symbol-table appendix (not pinned) grew.
-    assert_eq!(pins::ANIMATE.plain_base, 0x2F28);  // +0x62 silent-drop
-    assert_eq!(pins::ANIMATE.debug_base, 0x3502);  // +0x62 silent-drop
+    // phase2.5 c3 (vdp_init M1 early-exit): Flush_VDP_Shadow grew +2 (btst/dbf →
+    // lsr/tst/dbeq) — the FIRST gated engine region — so every base below takes a
+    // further +2 BOTH shapes (the "+0x62" tags below are +0x64 cumulative);
+    // ASSEMBLED_LEN still unchanged (absorbed by `org $10000`).
+    assert_eq!(pins::ANIMATE.plain_base, 0x2F16);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::ANIMATE.debug_base, 0x34F0);  // −0xA c5 boot store removal upstream
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x32B2);  // +0x62 silent-drop
-    assert_eq!(pins::RINGS.debug_base, 0x39B2);  // +0x62 silent-drop
+    assert_eq!(pins::RINGS.plain_base, 0x32A0);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::RINGS.debug_base, 0x39A0);  // −0xA c5 boot store removal upstream
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
-    // core LEN unchanged. Bases shifted +0x18 plain (dma_queue +0xC + dplc
-    // item-11 +0xC precede core). debug_len 0x6C8 (unchanged — items 5/10/11 are
-    // downstream of / plain-only within core).
-    assert_eq!(pins::CORE.plain_base, 0x281A);  // +0x62 silent-drop
-    assert_eq!(pins::CORE.plain_len, 0x2EE);
-    assert_eq!(pins::CORE.debug_base, 0x29AC);  // +0x62 silent-drop
-    assert_eq!(pins::CORE.debug_len, 0x736);
-    assert_eq!(pins::DPLC.plain_base, 0x2776);  // +0x62 silent-drop
-    assert_eq!(pins::DPLC.debug_base, 0x2908);  // +0x62 silent-drop
+    // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
+    // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
+    // upstream of dplc/core, so core's base slides with everything downstream of boot).
+    assert_eq!(pins::CORE.plain_base, 0x2812);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::CORE.plain_len, 0x2E4);    // −0xA c4 Spawn_Count store removals
+    assert_eq!(pins::CORE.debug_base, 0x29A4);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::CORE.debug_len, 0x72C);    // −0xA c4 Spawn_Count store removals
+    assert_eq!(pins::DPLC.plain_base, 0x276E);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::DPLC.debug_base, 0x2900);  // −0xA c5 boot store removal upstream
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x28EE, debug: 0x2A80 });  // +0x62 silent-drop (offset within core stable)
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x28E2, debug: 0x2A74 });  // −0xA c5 boot store removal upstream (DeleteObject's offset within core is stable)
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -225,8 +229,21 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // odd-word tail, growing plane_buffer +0x1C; plane_buffer is upstream of the
     // whole level+sound block, so tile_cache/collision_lookup/section/sound_api
     // bases each slide +0x1C (their LENs unchanged).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6228);  // +0x1C 8b plane_buffer move.l rider
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B96);  // +0x1C 8b plane_buffer move.l rider
+    // Then −0xA BOTH shapes (pass-3 phase2.5 c4 Spawn_Count, 2026-07-22): core
+    // loses 3 instructions (InitObjectRAM store −4, RunObjects moveq+store −6);
+    // core is upstream of the whole engine bank, so sound_api and every region
+    // downstream of core slide −0xA both shapes (their LENs unchanged).
+    // Then −0xA BOTH shapes (pass-3 phase2.5 c5 CROSS_RESET_MAGIC, 2026-07-22): the
+    // dead Cold_Boot `move.l #'INIT',(addr).l` store (−0xA) is removed from boot.asm,
+    // which is upstream of EVERY gated engine region (vdp_init onward), so all engine
+    // bases — sound_api included — slide another −0xA both shapes (LENs unchanged; no
+    // RAM shift, the CROSS_RESET equates are fixed-addr `=`).
+    // Then −0x8 BOTH shapes (pass-3 phase2.5 c6 ess_*_left_idx, 2026-07-22): the two
+    // dead EntityScanState left-edge ratchet fields are cut mid-struct (len $1A→$16),
+    // dropping their two `clr.w` inits from EntityWindow_InitSection (−0x8 code); every
+    // region downstream of entity_window — sound_api included — slides −0x8 both shapes.
+    assert_eq!(pins::SOUND_API.plain_base, 0x620E);  // −0x8 c6 entity_window clr removal upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B7C);  // −0x8 c6 entity_window clr removal upstream
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
