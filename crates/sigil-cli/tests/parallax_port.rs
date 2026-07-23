@@ -174,7 +174,9 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         ("Hscroll_Buffer", 0xFFFF_850A, 0xFFFF_850A),
         ("VDP_Shadow_Table", 0xFFFF_800A, 0xFFFF_800A),
         ("VDP_Dirty_Mask", 0xFFFF_801E, 0xFFFF_801E),
-        ("Section_GetSecPtrXY", 0x0000_560C, 0x0000_6296),
+        // ROM transfer target — sourced from pins (shifts with the engine bank;
+        // t18 trampoline moved it +0x36). RAM symbols above are tail/pad-stable.
+        ("Section_GetSecPtrXY", pins::SECTION_GET_SEC_PTR_XY.plain, pins::SECTION_GET_SEC_PTR_XY.debug),
     ];
     let mut out = Vec::new();
     for (i, (name, plain, dbg)) in table.iter().enumerate() {

@@ -37,10 +37,10 @@ tests = ["vdp_init_port"]
 
 [[region]]
 name = "hblank"
-start = "HBlank_Dispatch"
+start = "HBlank_Install"
 end = "Read_Controllers"
 gate = "SIGIL_EMP_HBLANK"
-# m1c_vector_table stubs HBlank_Dispatch (= this region's base).
+# m1c_vector_table pins the IRQ4 vector target (now HBlank_Vector_Slot, RAM).
 tests = ["hblank_port", "m1c_vector_table"]
 
 [[region]]
@@ -279,8 +279,9 @@ name = "Map_TestObj"
 tests = ["objdef_port"]
 
 # ── Cross-seam symbols ──────────────────────────────────────────────────────
-# m1c_vector_table's exception-stub VMAs (HBlank_Dispatch rides the hblank
-# region above; SYSTEM_STACK is a genuine constants.asm equate, not a pin).
+# m1c_vector_table's exception-stub VMAs (the IRQ4 $70 target is now
+# HBlank_Vector_Slot, a RAM pin below; SYSTEM_STACK is a genuine constants.asm
+# equate, not a pin).
 
 [[symbol]]
 name = "EntryPoint"
@@ -343,10 +344,14 @@ name = "VBlank_Handler"
 tests = ["m1c_vector_table"]
 
 # hblank (port #1)
+# The IRQ4 vector points DIRECTLY at this RAM slot (the trampoline target);
+# hblank_port checks the outbound `dc.l HBlank_Vector_Slot` and m1c_vector_table
+# checks the $70 entry resolves to it. Per-shape address (the __DEBUG__ RAM block
+# precedes the tail, so the debug slot sits higher).
 
 [[symbol]]
-name = "HBlank_Handler_Ptr"
-tests = ["hblank_port"]
+name = "HBlank_Vector_Slot"
+tests = ["hblank_port", "m1c_vector_table"]
 
 # vdp_init (tranche 3)
 
@@ -1228,9 +1233,10 @@ sym = "Flush_VDP_Shadow"
 region = "vdp_init"
 tests = ["vdp_init_port"]
 
+# HBlank_Uninstall offset within the hblank region — the second proc, checked by
+# hblank_port to anchor the region's two-proc layout.
 [[offset]]
-# The consumer's `move.l #HBlank_Null` imm32 target.
-name = "HBLANK_NULL_OFF"
-sym = "HBlank_Null"
+name = "HBLANK_UNINSTALL_OFF"
+sym = "HBlank_Uninstall"
 region = "hblank"
 tests = ["hblank_port"]

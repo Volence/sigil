@@ -123,34 +123,41 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // lsr/tst/dbeq) — the FIRST gated engine region — so every base below takes a
     // further +2 BOTH shapes (the "+0x62" tags below are +0x64 cumulative);
     // ASSEMBLED_LEN still unchanged (absorbed by `org $10000`).
-    assert_eq!(pins::ANIMATE.plain_base, 0x2F16);  // −0xA c5 boot store removal upstream
-    assert_eq!(pins::ANIMATE.debug_base, 0x34F0);  // −0xA c5 boot store removal upstream
+    // Then +0x36 BOTH shapes (t18 HBlank RAM-jmp trampoline, 2026-07-23): the
+    // hblank region grows 0x12→0x48 (HBlank_Dispatch/HBlank_Null ROM dispatch →
+    // HBlank_Install/HBlank_Uninstall + the RAM-slot patch/shadow writes); hblank
+    // is upstream of every gated engine region, so every base below slides +0x36
+    // both shapes (LENs unchanged). Boot stays byte-neutral (8-byte move.l slot
+    // init) so vdp_init and above do not move; the slot lives at the RAM TAIL, so
+    // PLAYER_1/DYNAMIC_SLOTS below are unchanged (zero existing-RAM churn).
+    assert_eq!(pins::ANIMATE.plain_base, 0x2F4C);  // +0x36 t18 trampoline upstream
+    assert_eq!(pins::ANIMATE.debug_base, 0x3526);  // +0x36 t18 trampoline upstream
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x32A0);  // −0xA c5 boot store removal upstream
-    assert_eq!(pins::RINGS.debug_base, 0x39A0);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::RINGS.plain_base, 0x32D6);  // +0x36 t18 trampoline upstream
+    assert_eq!(pins::RINGS.debug_base, 0x39D6);  // +0x36 t18 trampoline upstream
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2812);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::CORE.plain_base, 0x2848);  // +0x36 t18 trampoline upstream
     assert_eq!(pins::CORE.plain_len, 0x2E4);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::CORE.debug_base, 0x29A4);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::CORE.debug_base, 0x29DA);  // +0x36 t18 trampoline upstream
     assert_eq!(pins::CORE.debug_len, 0x72C);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::DPLC.plain_base, 0x276E);  // −0xA c5 boot store removal upstream
-    assert_eq!(pins::DPLC.debug_base, 0x2900);  // −0xA c5 boot store removal upstream
+    assert_eq!(pins::DPLC.plain_base, 0x27A4);  // +0x36 t18 trampoline upstream
+    assert_eq!(pins::DPLC.debug_base, 0x2936);  // +0x36 t18 trampoline upstream
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x28E2, debug: 0x2A74 });  // −0xA c5 boot store removal upstream (DeleteObject's offset within core is stable)
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2918, debug: 0x2AAA });  // −0xA c5 boot store removal upstream (DeleteObject's offset within core is stable)
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -248,8 +255,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // engine bank, so sound_api and every downstream region slide −0x18 both shapes.
     // (No RAM shift: the two RAM symbols become a same-size 2-byte reserved pad, so
     // PLAYER_1/DYNAMIC_SLOTS below are unchanged.)
-    assert_eq!(pins::SOUND_API.plain_base, 0x61EA);  // −0xC t18 branch modernization (6 conservative-.w→.s) upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B58);  // −0xC t18 branch modernization (6 conservative-.w→.s) upstream
+    assert_eq!(pins::SOUND_API.plain_base, 0x6220);  // +0x36 t18 trampoline upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B8E);  // +0x36 t18 trampoline upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

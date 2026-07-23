@@ -6,37 +6,34 @@
 //! asserts the `hblank` section's flattened bytes equal the reference ROM
 //! window at the pinned addresses, in BOTH build shapes.
 //!
-//! ## No shape define
+//! ## The trampoline (t18)
 //!
-//! `hblank.emp` carries no `DEBUG` member and needs none: the block's CONTENT
-//! is byte-identical plain and debug (18 bytes in both) — only its BASE
-//! address shifts (plain `$227A`, debug `$2308`), so the shape lives entirely
-//! in the MAP (per-shape `map_toml(debug)` region base), exactly like
-//! `sfx_port.rs`. `lower_module` runs with an EMPTY `defines` vec for both
-//! shapes.
+//! The region is now the HBlank RAM jmp-slot trampoline: `HBlank_Install`
+//! (arm the RAM slot + enable HInt) and `HBlank_Uninstall` (disarm + disable),
+//! replacing the old `HBlank_Dispatch`/`HBlank_Null` ROM dispatch pair. The
+//! block's CONTENT is byte-identical plain and debug (`$48` bytes in both);
+//! only its BASE address shifts (plain `pins::HBLANK.plain_base`, debug
+//! `.debug_base`), so the shape lives entirely in the MAP. `lower_module` runs
+//! with an EMPTY `defines` vec for both shapes.
 //!
 //! ## The cross-seam symbols
 //!
 //! Two directions:
 //!
-//! - INBOUND: `HBlank_Dispatch`'s body reads `HBlank_Handler_Ptr`, an AS-side
-//!   RAM label (`engine/ram.asm:72`, `$FFFF8022`, same value both shapes).
-//!   Supplied here by a synthetic AS unit that `phase`s a label to that exact
-//!   VMA — the `sfx_port.rs::as_bank_start_label` technique verbatim.
-//! - OUTBOUND (THE BARE-NAME PROOF): `vectors.asm:36` (`dc.l HBlank_Dispatch`)
-//!   and `boot.asm:185` (`move.l #HBlank_Null, (HBlank_Handler_Ptr).w`) are
-//!   real AS-side consumers of the two `pub proc` names. This test builds a
-//!   SYNTHETIC stand-in for both consumer shapes (through the AS front-end,
-//!   like the SFX template's synthetic consumers) and asserts the linked
-//!   bytes carry the correct per-shape address — proving `pub proc` names
-//!   surface as BARE link symbols cross-seam (mirroring `pub data`, proven by
-//!   the sound ports' `dc.l`/`dc.w` consumers). This was the one open risk
-//!   flagged in the port's fact base (T3 risk note) — settled here.
-//!
-//! ## Reference windows
-//!
-//! Plain (map base `$227A`): `s4.bin[0x227A..0x228C]` (18 bytes).
-//! Debug (map base `$2308`): `s4.debug.bin[0x2308..0x231A]` (18 bytes).
+//! - INBOUND (AS-side RAM the `.emp` reads/writes): `HBlank_Vector_Slot` (the
+//!   patched slot at the RAM tail — per-shape VMA, `pins::H_BLANK_VECTOR_SLOT`),
+//!   `VDP_Shadow_Table` and `VDP_Dirty_Mask` (the shadow write-through). Each is
+//!   supplied by a `phase`d one-byte carrier at its true VMA — the
+//!   `parallax_port.rs`/`sfx_port.rs` idiom. The two `VDP_Shadow_*` struct-field
+//!   offsets the `.emp` reads back through `extern()` (its drift-lock ensures)
+//!   are supplied as `equ` pairs.
+//! - OUTBOUND (THE BARE-NAME PROOF): both `pub proc`s must surface as BARE link
+//!   symbols. No shipped code calls them yet (the trampoline is preemptive
+//!   infra + oracle-driven live-verify), so this synthetic `jsr HBlank_Install`
+//!   / `jsr HBlank_Uninstall` consumer — assembled through the AS front-end — is
+//!   the proof surface: if the names do not export, the fixups fail to resolve
+//!   (or resolve wrong). Install must land at the region base, Uninstall at
+//!   `base + HBLANK_UNINSTALL_OFF`.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -68,14 +65,10 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// The map: a `text` region for the module's zero-byte default-section carrier
-/// (opened by the module's top-level items, if any — `place_sections` requires
-/// a home for it regardless), and the real `hblank` region pinned at the
-/// per-shape reference base, sized to the 18-byte block. Only the region base
-/// differs from `sfx_port.rs`'s map shape: plain `$227A`, debug `$2308`, both
-/// size `$12`.
+/// The map: a `text` region for the module's zero-byte default-section carrier,
+/// and the real `hblank` region pinned at the per-shape reference base, sized to
+/// the block. Base/size sourced from `pins` (regenerate via `repin`).
 fn map_toml(debug: bool) -> String {
-    // Base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
     let base = if debug { pins::HBLANK.debug_base } else { pins::HBLANK.plain_base };
     let size = pins::HBLANK.plain_len;
     format!(
@@ -95,38 +88,66 @@ fn map_toml(debug: bool) -> String {
     )
 }
 
-/// The synthetic AS-side cross-seam unit: a label `phase`d to the exact VMA
-/// the real `ram.asm` pins `HBlank_Handler_Ptr` at (`$FFFF8022`, same value
-/// both shapes) — the `sfx_port.rs::as_bank_start_label` idiom verbatim.
-fn as_handler_ptr_label() -> Vec<Section> {
-    let asm = "cpu 68000\nphase $FFFF8022\nHBlank_Handler_Ptr:\n\tdc.l 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
+/// The two `VDP_Shadow` struct-field offsets `hblank.emp` reads back through
+/// `extern()` in its drift-lock ensures (`VDP_MODE1_OFF`/`VDP_HINT_OFF`),
+/// supplied as `equ` pairs (parallax_port.rs's `VDP_Shadow_vdp_mode3` idiom).
+fn hblank_value_equs() -> Vec<Section> {
+    let pairs = [
+        ("VDP_Shadow_vdp_mode1", "$00"),
+        ("VDP_Shadow_vdp_hint_rate", "$0A"),
+    ];
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
-/// The synthetic AS-side OUTBOUND consumer — THE BARE-NAME PROOF. Mirrors the
-/// real `vectors.asm:36` (`dc.l HBlank_Dispatch`, an Abs32 fixup in a vector
-/// table) and `boot.asm:185` (`move.l #HBlank_Null, (HBlank_Handler_Ptr).w`,
-/// an imm32 fixup) shapes, assembled through the AS front-end exactly like a
-/// real consumer would be. If `HBlank_Dispatch`/`HBlank_Null` do not surface
-/// as BARE link symbols from the `.emp` module, these two fixups fail to
-/// resolve at `link` time (or resolve to the wrong address), so this section's
-/// bytes are the proof surface.
+/// The INBOUND cross-seam RAM labels (abs.w operands the `.emp` writes/reads),
+/// each a `phase`d one-byte carrier at its true per-shape VMA. Only the slot
+/// differs by shape (it lives at the RAM tail, past the `__DEBUG__` block).
+fn cross_seam_labels(debug: bool) -> Vec<Section> {
+    let slot = if debug { pins::H_BLANK_VECTOR_SLOT.debug } else { pins::H_BLANK_VECTOR_SLOT.plain };
+    let labels: [(&str, u32); 3] = [
+        ("HBlank_Vector_Slot", slot),
+        ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
+        ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain),
+    ];
+    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let mut out = Vec::new();
+    for (i, (name, vma)) in labels.iter().enumerate() {
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        let secs = assemble(&asm, &opts)
+            .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+            .sections;
+        for mut s in secs {
+            // Distinct harness-private LMA per carrier (the phased VMA is only
+            // for symbol resolution). Clear of the consumer (0x0200_0000) and
+            // equs (0x0300_0000).
+            s.lma = 0x0400_0000 + (i as u32) * 0x1_0000;
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            out.push(s);
+        }
+    }
+    out
+}
+
+/// The synthetic AS-side OUTBOUND consumer — THE BARE-NAME PROOF. A `dc.l` to
+/// each `pub proc` (Abs32, width-independent): `dc.l HBlank_Install` at [0..4),
+/// `dc.l HBlank_Uninstall` at [4..8). If the names do not surface as BARE link
+/// symbols from the `.emp` module, these fixups fail to resolve (or resolve
+/// wrong).
 fn as_outbound_consumer() -> Vec<Section> {
     let asm = "cpu 68000\n\
                Consumer:\n\
-               \tdc.l HBlank_Dispatch\n\
-               \tmove.l #HBlank_Null, ($FFF0).w\n";
+               \tdc.l HBlank_Install\n\
+               \tdc.l HBlank_Uninstall\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 
-/// Parse -> lower (with the module-dir include_root, NO defines) -> place the
-/// `.emp` sections into the per-shape map -> append the synthetic cross-seam
-/// sections (inbound RAM label + outbound consumer) at harness-private LMAs
-/// (clear of both map regions) -> ONE `resolve_layout` -> `link`. Returns the
-/// placed+resolved `.emp` sections and the linked image.
-fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
+/// Parse -> lower (module-dir include_root, NO defines) -> place the `.emp`
+/// sections into the per-shape map -> append the field equs + inbound RAM
+/// carriers + outbound consumer at harness-private LMAs -> ONE `resolve_layout`
+/// -> `link`. Returns the linked image.
+fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
     let dir = hblank_dir();
     let emp_path = dir.join("hblank.emp");
     let src = std::fs::read_to_string(&emp_path)
@@ -138,7 +159,6 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
         "parse errors: {pdiags:?}"
     );
 
-    // NO defines: the hblank block is shape-invariant; the shape lives in the map.
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
@@ -159,36 +179,37 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
         "place_sections errors (region-per-section): {pdiags:?}"
     );
 
-    // Append BOTH synthetic cross-seam sections at harness-private LMAs — well
-    // clear of `text` ($0..$10) and `hblank` — so neither collides with either
-    // map region. The inbound label's VMA ($FFFF8022, from `phase`) is what
-    // `movea.l HBlank_Handler_Ptr, a0` reads; the outbound consumer's LMA here
-    // is inert (its own fixups target `.emp`-defined VMAs, not its own address).
-    let mut cross_seam = as_handler_ptr_label();
-    for sec in &mut cross_seam {
-        sec.lma = 0x0100_0000;
+    // Field-offset equs (comptime, no placement needed) + inbound RAM carriers
+    // (their own `phase`d VMAs) + outbound consumer, all at harness-private LMAs
+    // clear of both map regions.
+    let mut equs = hblank_value_equs();
+    for sec in &mut equs {
+        sec.lma = 0x0300_0000;
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }
-    sections.extend(cross_seam);
+    sections.extend(equs);
+
+    sections.extend(cross_seam_labels(debug));
 
     let mut consumer = as_outbound_consumer();
     for sec in &mut consumer {
         sec.lma = 0x0200_0000;
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
+        // Distinct name — the equ/carrier units also emit an unphased `sec0`.
+        sec.name = "outbound".to_string();
     }
     sections.extend(consumer);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
-    (resolved, linked)
+    sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"))
 }
 
-/// On mismatch, report the first differing offset plus 8 bytes of context on
-/// each side (`sfx_port.rs` style byte-diff reporting).
+/// On mismatch, report the first differing offset plus context (`sfx_port.rs`
+/// byte-diff style).
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     assert_eq!(
         candidate.len(),
@@ -208,9 +229,28 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (plain) The `hblank` section's linked bytes equal `s4.bin[0x227A..0x228C]`,
-/// AND the outbound consumer's fixups resolve to the correct per-shape
-/// addresses (`$0000227A`/`$0000228A`) — the bare-name proof.
+/// Assert the outbound consumer's two `jsr` Abs32 holes resolve to the region
+/// base (Install) and `base + HBLANK_UNINSTALL_OFF` (Uninstall) — the bare-name
+/// export proof.
+fn assert_outbound(linked: &sigil_link::LinkedImage, base: u32) {
+    let install = base;
+    let uninstall = base + pins::HBLANK_UNINSTALL_OFF as u32;
+    let consumer = linked.section("outbound").expect("linked image must carry the outbound consumer");
+    assert_eq!(
+        &consumer.bytes[0..4],
+        &install.to_be_bytes(),
+        "bare-name proof: `dc.l HBlank_Install` must resolve to the region base {install:#010x}"
+    );
+    assert_eq!(
+        &consumer.bytes[4..8],
+        &uninstall.to_be_bytes(),
+        "bare-name proof: `dc.l HBlank_Uninstall` must resolve to base+{:#x} = {uninstall:#010x}",
+        pins::HBLANK_UNINSTALL_OFF
+    );
+}
+
+/// (plain) The `hblank` section's linked bytes equal the plain reference window,
+/// AND both `pub proc` names export at the correct per-shape addresses.
 #[test]
 fn hblank_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -223,36 +263,17 @@ fn hblank_region_matches_reference() {
         return;
     };
 
-    let (_resolved, linked) = compile_real_file(false);
+    let linked = compile_real_file(false);
 
     let base = pins::HBLANK.plain_base as usize;
     let expected = &refrom[base..base + pins::HBLANK.plain_len];
     let section = linked.section("hblank").expect("linked image must carry hblank");
-    assert_region_matches(&section.bytes, expected, "hblank (plain) vs s4.bin[0x227A..0x228C]");
-
-    // The bare-name proof: `dc.l HBlank_Dispatch` = $0000227A at bytes [0..4);
-    // `move.l #HBlank_Null, ($FFF0).w` follows at [4..12) — opcode word
-    // [4..6), the imm32 fixup hole at [6..10) resolving to $0000228A
-    // (HBlank_Null is the SECOND proc, right after the 16-byte
-    // HBlank_Dispatch body), then the abs.w dest ext word at [10..12).
-    let dispatch = pins::HBLANK.plain_base;
-    let null = pins::HBLANK.plain_base + pins::HBLANK_NULL_OFF as u32;
-    let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
-    assert_eq!(
-        &consumer.bytes[0..4],
-        &dispatch.to_be_bytes(),
-        "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $0000227A (plain)"
-    );
-    assert_eq!(
-        &consumer.bytes[6..10],
-        &null.to_be_bytes(),
-        "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $0000228A (plain)"
-    );
+    assert_region_matches(&section.bytes, expected, "hblank (plain) vs reference window");
+    assert_outbound(&linked, pins::HBLANK.plain_base);
 }
 
-/// (debug) The `hblank` section's linked bytes equal
-/// `s4.debug.bin[0x2308..0x231A]`, AND the outbound consumer's fixups resolve
-/// to the correct per-shape addresses (`$00002308`/`$00002318`).
+/// (debug) The `hblank` section's linked bytes equal the debug reference window,
+/// AND both `pub proc` names export at the correct per-shape addresses.
 #[test]
 fn hblank_debug_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -265,25 +286,11 @@ fn hblank_debug_region_matches_reference() {
         return;
     };
 
-    let (_resolved, linked) = compile_real_file(true);
+    let linked = compile_real_file(true);
 
     let base = pins::HBLANK.debug_base as usize;
     let expected = &refrom[base..base + pins::HBLANK.debug_len];
     let section = linked.section("hblank").expect("linked image must carry hblank");
-    assert_region_matches(&section.bytes, expected, "hblank (debug) vs s4.debug.bin[0x2308..0x231A]");
-
-    let dispatch = pins::HBLANK.debug_base;
-    let null = pins::HBLANK.debug_base + pins::HBLANK_NULL_OFF as u32;
-    let consumer = linked.section("sec0").expect("linked image must carry the outbound consumer");
-    assert_eq!(
-        &consumer.bytes[0..4],
-        &dispatch.to_be_bytes(),
-        "bare-name proof: `dc.l HBlank_Dispatch` must resolve to $00002308 (debug)"
-    );
-    assert_eq!(
-        &consumer.bytes[6..10],
-        &null.to_be_bytes(),
-        "bare-name proof: `move.l #HBlank_Null` imm32 must resolve to $00002318 (debug)"
-    );
+    assert_region_matches(&section.bytes, expected, "hblank (debug) vs reference window");
+    assert_outbound(&linked, pins::HBLANK.debug_base);
 }
-

@@ -40,7 +40,8 @@ fn strict_gate() -> bool {
 // VBlank_Handler 0x2156→0x2152; every $64xxx exception target in the
 // object-code bank held, as at every prior re-baseline).
 // Plain-shape stub VMAs sourced from `sigil_harness::pins` (regenerate via
-// `repin`); HBlank_Dispatch rides the hblank region base.
+// `repin`); the IRQ4 $70 entry now targets HBlank_Vector_Slot (the RAM
+// trampoline slot at the RAM tail), not a ROM proc.
 use sigil_harness::pins;
 const STUBS: &[(&str, i64)] = &[
     ("EntryPoint", pins::ENTRY_POINT.plain as i64),
@@ -56,7 +57,7 @@ const STUBS: &[(&str, i64)] = &[
     ("Line1111Emu", pins::LINE1111_EMU.plain as i64),
     ("ErrorExcept", pins::ERROR_EXCEPT.plain as i64),
     ("NullInterrupt", pins::NULL_INTERRUPT.plain as i64),
-    ("HBlank_Dispatch", pins::HBLANK.plain_base as i64),
+    ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain as i64),
     ("VBlank_Handler", pins::V_BLANK_HANDLER.plain as i64),
     ("ErrorTrap", pins::ERROR_TRAP.plain as i64),
 ];
