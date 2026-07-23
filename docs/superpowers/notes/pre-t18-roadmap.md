@@ -158,8 +158,7 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 ## Phase 3 — G5: type the now-stable register layout
 
-12. **G5 — typed register slots (§7)** `[lang]`  *(ledger rows 1054, 1069)*
-    `GridCoord`/`SectionId` at the FlatIDXY seam: `proc FlatIDXY(d2: GridCoord, d3: GridCoord) out(d0: SectionId)`, checks at the ~4 cross-`jbsr` sites; closes row 1054.
+12. **G5 — typed register slots (§7)** `[lang]`  *(ledger rows 1054, 1069)* — ✅ **DONE 2026-07-23** (merged; byte-neutral, canonical 406c773b/5752c2e3 UNCHANGED = the Phase-3 landing proof). Axis-split `GridX`/`GridY` + `SectionId` at the FlatIDXY/GetSecPtrXY seam; `out(dN: Type)` grammar + `as`-bless + the `[call.slot-type-mismatch]` strict-degrade reaching-def slice; swap class closed at every seam site. `FlatIDXY.d2` banked u8 (preserves-verifier limit — new ledger row). Spec+addendum: `2026-07-23-g5-typed-register-slots-spec.md`.
     *Why last:* G5 types the exact register slots pass-3 reshapes — type the **final** layout, not a moving target. **Byte-neutral**, so it lands on pass-3's settled canonical and proves it changed nothing. Demand step: run the `// In:`/`// Out:` proc-header census (row 1069) once signatures are stable.
 13. **Prelude domain-type pass** `[lang]`  *(sibling / follow-on; "construct walk #3")*
     Populates G5's typed-register mechanism with the wider newtype family: `Angle` (partly shipped for GetSineCosine), `SoundId`/`SongId`/`SfxId`, `VramTile`, `AnimId`/`FrameId`, `Tile`/`Block`/`Chunk`. Volence-driven design.

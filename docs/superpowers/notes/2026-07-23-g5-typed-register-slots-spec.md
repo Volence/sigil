@@ -324,8 +324,11 @@ individual save/restore) — a corpus-wide-blast-radius change, out of a byte-ne
 ### Final seam scope (the smallest honest green set)
 - **DEV #1 DROPPED.** `Section_GetSecPtrXY` keeps its original `clobbers(d1-d2)` (the honest declared
   contract — d2 IS its scratch). No tightening.
-- **DEV #2 STANDS.** `GetSecPtrXY out(d0, a0)` — d0 is a found-BOOLEAN, left untyped (typing it
-  `SectionId` would lie against `moveq #1/#0, d0`).
+- **DEV #2 STANDS (gate-confirmed 2026-07-23).** `GetSecPtrXY out(d0, a0)` — d0 is a found-BOOLEAN,
+  left untyped (typing it `SectionId` would lie against `moveq #1/#0, d0`). **This body-section's earlier
+  A3/RULINGS text ("GetSecPtrXY → out(d0: SectionId)") was the SPEC'S ERROR** — the census read the
+  `out(d0)` register without checking what d0 semantically holds at the `rts`. The honest retrofit leaves
+  it untyped; only `Section_FlatIDXY`'s `out(d0)` is a genuine `SectionId`.
 - **`Section_GetSecPtrXY (d2: GridX, d3: GridY, a2: *Act)`** — BOTH axes typed (its call sites 741/354
   carry a fresh bless; no survival issue). Full swap catch at both.
 - **`Section_FlatIDXY (d2: u8, d3: GridY, a2: *Act) out(d0: SectionId)`** — **d2 left `u8`** (the

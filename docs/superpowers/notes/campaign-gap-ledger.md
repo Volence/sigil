@@ -1305,3 +1305,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `Sprite_Table` at N=60/180/300 + a `dx==$8000` boundary frame; **record the lag-frame counter both
   sides** (standing bar B). NOT worth the ceremony for the value; parked until an elected ceremony or a
   reopen. Reference: 2026-07-22-core1-runobjects-design.md §2/§3. — OPEN.
+
+- **preserves-verifier: recognize CONDITIONAL individual save/restore pairs** (banked 2026-07-23, G5 gate
+  PASS — ruling 1). The D2.32 preserves verifier proves a register preserved only via a movem-pair or an
+  UNCONDITIONAL individual push/pop. `Section_GetSecPtrXY` save/restores its sec_x input in **d2**
+  (`move.w d2,-(sp)` … `move.w (sp)+,d2`) but CONDITIONALLY — only on the multiply path (skipped when
+  sec_y=0). The verifier's refusal is CORRECT (the save doesn't dominate every path), so `clobbers(d1-d2)`
+  is the honest contract and the closure ERROR gate rightly demands d2 declared-clobbered. Consequence:
+  a caller cannot carry a typed `GridX` in d2 across `GetSecPtrXY`, so **`Section_FlatIDXY.d2` is banked
+  `u8`** (it is called immediately after GetSecPtrXY on the same d2 at `EntityWindow_BuildEntries`,
+  site 744). **The swap class is NOT weakened by this:** GetSecPtrXY types BOTH axes (guards its 741/354
+  sites); FlatIDXY's `d3: GridY` guards its 744/832/1630 sites — a sec_x/sec_y swap ALWAYS mistypes the
+  GridY slot, so it fires regardless of d2's type (swap-closed-via-d3, ratified at the gate). **REOPEN:**
+  when item-13 (prelude domain-type pass) needs a typed GridX carried across a multiply, OR at the next
+  preserves-verifier touch — extend the verifier to recognize a conditional individual save/restore whose
+  restore post-dominates every path that took the save, then tighten GetSecPtrXY to `clobbers(d1)` and
+  type `FlatIDXY.d2 = GridX`. Byte-neutral both. — OPEN.
