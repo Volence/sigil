@@ -324,5 +324,52 @@ re-baselining tranche; the byte-neutral discipline of G5/§D does not apply.
 ---
 
 **Deliverables produced this step:** branch tips both repos (aeon-t18 `c39f308` /
-sigil-t18 `93a48dc`), seeded worktrees (aeon seed in flight), this design note.
-**Awaiting gate ruling on Q1–Q3 before step 1.**
+sigil-t18 `93a48dc`), seeded worktrees (aeon seed built canonical `ab787bd1`/421122
+EXACT), this design note.
+
+---
+
+## 11. GATE RULINGS (overseer, 2026-07-23 — PASS; step 1 authorized)
+
+**Q1 → (a) RATIFIED.** Build the trampoline in t18 + synthetic-handler live-verify.
+Constraints (all BINDING):
+1. **No shipped test code.** Preferred: oracle-inject the synthetic handler (poke
+   handler bytes into free RAM, drive/emulate `HBlank_Install`, restore after).
+   Fallback: DEBUG-gated handler, provably zero bytes in plain. State which in packet.
+2. **Live-verify success criteria (all five, evidence in packet):** (i) HInt fires
+   at the programmed scanline (run_to_scanline / HV counter); (ii) entry via the
+   RAM-slot `jmp` (breakpoint at handler); (iii) clean `rte` — execution resumes,
+   registers intact; (iv) uninstall → slot reads `$4E73`, IE1 off, no further HInts;
+   (v) human-visible raster artifact (mid-screen CRAM split) — screenshot.
+3. **BINDING — VDP shadow coherence.** Install/uninstall touch reg $00 (IE1) + $0A
+   (counter). These MUST keep `VDP_Shadow_Table` coherent — a direct-only control-port
+   write leaves stale shadow that a later `Flush_VDP_Shadow` reverts (silent IE1
+   flip). Update shadow + mark dirty, OR update shadow + write direct (my call which),
+   but shadow must never disagree with hardware on $00/$0A.
+4. **Boot ordering invariant:** the slot holds `$4E73` BEFORE interrupts unmask
+   (RAM-clear leaves `$0000` — not a legal idle). Stated as invariant.
+
+**Q2 → confirmed + split rule PRE-RULED.** Surface + size B1/B2/B3 at step-3(b). A
+B-fix lands in-tranche (own gated commit) ONLY if (i) locally provable, (ii)
+live-verifiable in this tranche's oracle session, (iii) doesn't restructure the
+transition state machine. Failing any one → follow-on parcel (ledger row + design
+sketch, no code). B3 smells bounded; B1/B2 smell like the design pass — the 3(b)
+sizing decides, not the smell.
+
+**Q3 → confirmed with a CORRECTION.** rte-terminated: yes. Delete
+`HBlank_Dispatch`+`HBlank_Null`, idle = in-RAM `$4E73`, vector $70 → slot: yes.
+**Correction: the contract is INTERRUPT-TRANSPARENCY, not "full-save"** — the handler
+saves/restores exactly the registers it touches (observable clobbers = ∅), rte. A
+mandatory blanket `movem` would reinstate the wrapper cost row 1088 kills. The
+note's wording ("owns its save/restore; clobbers() = whatever it doesn't preserve")
+is canonical. `HBlankHandler` bless → install helper's target argument: approved.
+
+**Also approved as scoped:** Hscroll_Dirty pair-only deletion (do NOT widen into D7);
+GridX/GridY bless at CheckBoundary (**if the bless carries a typed value across a
+multiply, the FlatIDXY preserves-verifier ledger-row reopen condition triggers —
+surface it, don't absorb it**); "~410 cyc" comment fixed present-tense on touch;
+t18 = PROVENANCE re-baselining (full 5-site ripple per commit; **pin strict-harness
+AEON_DIR to the BRANCH tree** — the §D phantom-red lesson).
+
+**Dry-panel (far end):** floor A1+B1+C1+C2; parallax triggers **C3** (hardware-timing
+lens) — the trampoline + IE1 work is exactly C3 territory.
