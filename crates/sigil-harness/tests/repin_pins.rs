@@ -255,8 +255,12 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // engine bank, so sound_api and every downstream region slide −0x18 both shapes.
     // (No RAM shift: the two RAM symbols become a same-size 2-byte reserved pad, so
     // PLAYER_1/DYNAMIC_SLOTS below are unchanged.)
-    assert_eq!(pins::SOUND_API.plain_base, 0x6220);  // +0x36 t18 trampoline upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B8E);  // +0x36 t18 trampoline upstream
+    // Then +0x10 BOTH shapes (t18 step-5 H2, 2026-07-23): the flat-fill 8x unroll
+    // in Parallax_Fill_PerLine grows parallax +0x10 (lsr + 7 extra move.l);
+    // parallax is upstream of sound_api, so sound_api's base slides +0x10 both
+    // shapes (LENs unchanged — sound_api's own content is untouched).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6230);  // +0x10 t18 H2 parallax unroll upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B9E);  // +0x10 t18 H2 parallax unroll upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
