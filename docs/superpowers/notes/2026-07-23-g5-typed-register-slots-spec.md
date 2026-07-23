@@ -357,3 +357,13 @@ individual save/restore) — a corpus-wide-blast-radius change, out of a byte-ne
 Attack surface: (1) the d2-can't-be-typed constraint — is `FlatIDXY.d2 = u8` the right call, or should
 the preserves-verifier be extended (bigger scope)? (2) dev #2 (GetSecPtrXY.d0 untyped) — confirm honest.
 (3) the swap-class-closed-via-d3 argument. Demonstrated: own-build CRCs, seam diff, swap-pin negative test.
+
+### Close-packet: step-2 feed-forward (2026-07-23, post-gate)
+G5 ships a call-site SPELLING implication — a typed register slot is now spelled `(d2: GridX)` at the proc
+signature, `out(d0: SectionId)` at the boundary, and the producing instruction blesses with `… as GridX`.
+Per the step-2 feed-forward rule ("any construct that ships with a call-site spelling implication adds its
+line to the step-2 checklist in the same change"), this spelling is now HOUSE FORMAT for future ports:
+see `campaign-port-loop.md` @ `5f242ff` — the **type-layer walk (step-2 checklist item 6)**, the **step-4
+typed-construct rule**, and the **step-5 blessing rider** (an optimization that reshapes register flows
+re-checks the blessings it crosses). Future ports adopt-or-ledger a typed slot the same as any step-2
+idiom.

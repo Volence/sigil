@@ -1331,3 +1331,23 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   coercion clause, so a producer need not re-`as` after every add. Both are the natural unblocks once a
   SECOND domain-typed consumer appears (G5 was the one-seam pilot; item-13 is the corpus rollout).
   REOPEN: item-13 design, or when the seam retrofit surface widens past the FlatIDXY/GetSecPtrXY pair. — OPEN.
+
+- **item-13 first-wave domain-type candidates** (seeded 2026-07-23, post-G5-close; Volence-driven
+  construct-walk — these are CANDIDATES, not scheduled work). **Parent value-flow rule (ratified at the
+  G5 gate):** a register slot EARNS a domain newtype when its value is **MOVED and COMPARED** (born, copied,
+  passed, tested — the reaching-def slice tracks it with today's mechanism at near-zero ceremony); a value
+  that flows through a **shift/add arithmetic chain** WAITS FOR A4-i (arithmetic preservation) before it is
+  worth typing, else every producer needs a re-`as` after each op — see [[G5 body-typing + arithmetic-
+  preservation follow-ons]]. First wave (MOVED+COMPARED, pay now):
+  - **MusicId / SfxId** — const-born at the `SONG_*` / `SFX_*` definitions, flow to the sound-API call
+    slots. Near-zero ceremony (born typed at the const), closes the wrong-sound class, and reinforces the
+    H-1-hardened sound-API seam. Highest-value / lowest-cost of the wave.
+  - **AnimId + MappingFrame** — the SST-adjacent swap class through the animate/sprite seam (an anim
+    script id vs a mapping-frame cursor are bit-identical and adjacent in the SST — the same axis-swap
+    family G5 closed for grid coords). `AnimId`/`FrameId` newtypes already exist in engine.types.
+  - **VramTile / VramAddr** — `vram_bytes()` (tile index ×32) is the BLESSED converter between them (the
+    `as`-cast analogue for a units conversion); types the tile-index-vs-byte-address confusion class.
+  **A4-i-GATED (wait, do NOT type until arithmetic preservation ships):** Tile/Block/Chunk and
+  Coord/Velocity enforcement — these live in shift/add/multiply chains (block = chunk×N, coord arithmetic),
+  so typing them pre-A4-i pays the re-`as`-every-op tax. Cross-linked to [[G5 body-typing + arithmetic-
+  preservation follow-ons]] (the A4-i banked row). — OPEN (item-13 design, Volence-scheduled).
