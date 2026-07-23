@@ -13,7 +13,7 @@ implement newtypes.
 **Baseline pins.** Canonical (pre-arc) plain `406c773b`/`421122` · debug
 `5752c2e3`/`429107`. **After c1/c2 (re-baselined, sigil `32bc836`):** plain
 `ab787bd1`/`421122` (length-neutral — absorbed at `org $10000`) · debug
-`05537ebf`/`429165` (+58, the DEBUG watchdog blobs). Item-4 core (`93a309f`) is
+`6a19669f`/`429165` (+58, the DEBUG watchdog blobs). Item-4 core (`93a309f`) is
 **byte-NEUTRAL** — a corpus-only lint, never on the ROM build path; pins unchanged
 from `32bc836`.
 
@@ -220,18 +220,31 @@ same discipline:
 
 ---
 
-## Known pre-existing red (NOT this arc — flagged for the attack-the-diff)
+## The animate_port "red" was a phantom — AEON_DIR invocation discipline
 
-`cargo test -p sigil-cli --test animate_port` has **2 failing reference gates**
-(`animate_region_matches_reference`, `animate_debug_region_matches_reference`):
-a single 4-byte `bsr`-displacement drift (region-relative `0x133`, `32ec` vs
-`32e8`). **Proven pre-existing** on the worktree HEAD (`32bc836`) by stash-and-
-retest WITHOUT any item-4 change. The gate reads the **MAIN** aeon checkout
-(`AEON_DIR` default `/home/volence/sonic_hacks/aeon`, at `bd9ddf2` — lacks c1/c2)
-and compares against that checkout's `s4.bin`, so it is **independent of this
-branch** — a stale reference-ROM / stale VMA-pin condition in the main checkout, not
-an item-4 regression and not touched by c1/c2 (which only altered `sound_api`, not
-`animate`). Flagged for visibility; out of scope to fix here.
+An earlier draft of this packet flagged 2 failing `animate_port` reference gates
+(a 4-byte `bsr`-displacement drift, region-relative `0x133`, `32ec` vs `32e8`) as a
+"pre-existing red". **That was a self-inflicted invocation error, not a defect
+anywhere.** The failure came from running `cargo test -p sigil-cli --test
+animate_port` with the DEFAULT `AEON_DIR` — the **MAIN** aeon checkout (at
+`bd9ddf2`, PRE-c1/c2, a pre-fix ROM layout) — while the sigil branch carries the
+POST-c1/c2 re-baselined pins. A pinned harness pointed at a differently-pinned tree
+produces exactly this phantom drift: the pins expect the post-fix layout, the tree
+supplies the pre-fix bytes.
+
+Pointing the harness at the BRANCH tree (matching pins) is clean:
+`AEON_DIR=…/aeon/.worktrees/sectionD-backlog cargo test -p sigil-cli --test
+animate_port` → **4/4 green** (confirmed). The overseer's own paired strict against
+the branch aeon tree is **2484/0/1, INCLUDING animate_port**. The mismatch
+**evaporates at merge by construction** — once aeon master carries c1/c2, the main
+checkout's layout matches the pins again. No main-checkout rebuild and no re-pin are
+needed.
+
+**Lesson (banked):** AEON_DIR invocation discipline — always point a pinned harness
+at a tree pinned to the SAME baseline. Running the default (main-checkout) AEON_DIR
+after a branch re-baseline cross-contaminates pins-vs-bytes and manufactures phantom
+drift. Strict gates for a re-baselined branch must set `AEON_DIR` to the branch
+worktree.
 
 ---
 
