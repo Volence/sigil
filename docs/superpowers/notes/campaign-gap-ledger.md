@@ -1267,6 +1267,17 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   windows + bsr disp refs should follow the map bases to `pins::`-derived expressions (c5 migrated the five
   map bases: hblank/controllers/math/vdp_init/game_loop). — OPEN (migration).
 
+- **Fresh `git worktree add` silently builds a ~130 KB-divergent air-baseline ROM without `seed-worktree.sh`**
+  (learned/re-confirmed phase2.5, 2026-07-22). A new worktree does NOT check out the git-IGNORED generated
+  artifacts a build needs (editor per-section working data, generated OJZ `entity_data.asm`, collision/sprite
+  binaries, engine/debug blobs). Without them `build.sh` either hard-errors (`cannot include .../entity_data.asm`)
+  or — WORSE, SILENTLY — falls back to air-baseline collision and builds a ROM diverging ~130 KB **with no
+  error**, which would poison every byte-gate and PROVENANCE hash downstream. **Fix (mechanical):**
+  `aeon/tools/seed-worktree.sh <worktree-path>` (tracked, commit `923ba5d`) copies the whole gitignored
+  artifact set from a known-good tree and builds both shapes — run ONCE right after `git worktree add`, never
+  re-seed a reused worktree. **BAR:** any campaign step that spins up a fresh aeon/sigil worktree seeds it
+  before the first build and verifies the seeded ROM's crc/size against the current PROVENANCE pin. — RECORDED.
+
 - **RunObjects cull-math branchless-abs** (banked 2026-07-22, core #1 gate DISSOLVED-STAGE-0). Replace the
   two `bpl/neg.w` conditional-abs sequences in the X/Y cull distance checks (`core.emp:504-519`) with
   branchless abs — removes 2 predicted branches per checked/dispatched dynamic slot. **Value ceiling

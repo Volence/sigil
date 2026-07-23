@@ -1063,3 +1063,41 @@ and `DEBUG=1 ./build.sh` (debug), rebuilt in the master checkout.
   sha256 **`cd005304fa2bd5dabd0cf534237fa38c85138ba87cea219dc81e72ac05364246`**.
 - Debug `s4.debug.bin`: **429151 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`fffc0179`**,
   sha256 **`05d08c4646161561dd62ee8602fb0d961ef57a1a185225deda9d823f29375fa2`**.
+
+## 2026-07-22 re-baseline — phase2.5 c1–c6 (D7 dead-code + item-9 riders) — the current pin (BRANCH TIP, pre-merge)
+
+Phase-2.5 combined arc on `pass3-phase25-item9`, six commits (c1–c6). **This entry
+is the BRANCH-TIP baseline — the arc is HELD for overseer attack-the-diff before
+merge, so no master hash yet.** Branch tips: aeon **`1b8774a`** / sigil **`9a589c4`**.
+
+- **c1** (`7ccb791`) byte-NEUTRAL D7 purge: unreferenced consts + DEBUG_* flag block
+  (byte-identical, no re-pin). `PHYS_ROLL_FRICTION` EXCLUDED (live tuning value).
+- **c2** (`c076bcf`/`3bb09dd`) + **c3** (`214c245`/`e74ef67`): the item-9 anchor
+  (engine.vdp module register + vdp_init M1 Flush_VDP_Shadow early-exit, +0x2).
+- **c4** (`d78fb14`/`0b4d102`) delete dead `Spawn_Count` RAM cell + 2 stores + the
+  now-dead `moveq #0,d0` (first RAM deletion, −2 word RAM shift; CORE len −0xA).
+  The RunObjects `.culled_loop` `declared∖effective` clobber sweep RAN with no
+  over-declared remainder (ObjRoutine `preserves(a0,d7)` forces the full set).
+- **c5** (`e0e94de`/`f96c29e`) delete the dead CROSS_RESET soft-reset scaffolding
+  (store −0xA, upstream of ALL engine regions → every engine base −0xA, no RAM
+  shift — equates are fixed-addr).
+- **c6** (`1b8774a`/`9a589c4`) delete the two dead `ess_*_left_idx` fields mid-struct
+  (EntityScanState `$1A`→`$16`; RAM array −$10; region len −0x8).
+
+Net RAM: −2 (Spawn_Count) −$10 (EntityScanState ×4 entries) = −$12; ASSEMBLED_LEN
+UNCHANGED both shapes (org $10000 absorbs the engine-code shrink). Standing ripple
+per byte-changing commit: `pins.rs` via `repin`; aeon `engine/engine.inc` gate
+resume orgs; `repin_pins.rs` / `entity_window_port.rs` offset seams; c5 also swept
+`mixed_dac_rom.rs` (5 map bases → `pins::`, verification windows + bsr disp refs
+−0xA), `vdp_init_port.rs` (BootData_VDPRegs VMA), `src/lib.rs` (REGION_A_LMA, Z80
+blob). Full paired strict byte gate **2457/0/1** both shapes from clean tips.
+**Runtime boot BOTH shapes (oracle, OJZ scroll + dynamic-object churn):** no
+address error, no debug-assert failure (Debug_AssertObjLoop a0/d7 + EntityScanState
+asserts pass), `Cache_Pfx_Lag_Flag`=0 (no lag), EntityScanState populated correctly
+in the `$16` layout. Hashes from the final c6-tip build, both shapes.
+
+- Aeon branch tip: **`1b8774a`** (`pass3-phase25-item9`, pre-merge — overseer HOLD).
+- Non-debug `s4.bin`: **421122 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`4daf3788`**,
+  sha256 **`e6f5f86e196e95e57ae4b89532f44c4bcb1166dbe3064c75e1ff32b30a5829f1`**.
+- Debug `s4.debug.bin`: **429107 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`d772880b`**,
+  sha256 **`d68dc33202b3c7d51afb8a9a4b93d8c5cea7251c1be7564a9b6fae4637297092`**.
