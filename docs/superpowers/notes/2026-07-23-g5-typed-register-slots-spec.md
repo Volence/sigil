@@ -171,3 +171,71 @@ existing `Section_GetSecPtrXY` unsigned range check already guards out-of-grid a
 
 **Byte-neutral, bounded (2 procs + 4 sites + 2 newtypes + 1 grammar add). No code until the gate rules
 1–6 — and 3/4/5 wait on Volence's taste calls, separated here from the mechanical 1/2/6.**
+
+---
+
+## GATE + VOLENCE RULINGS (2026-07-23) — SPEC RATIFIED, IMPLEMENTATION AUTHORIZED
+
+All six questions ruled. Volence's taste answers were taken directly at the gate (four
+option-sets, all resolved); mechanical rulings are the overseer's. This section is the
+authoritative delta over the sections above where they differ.
+
+**Q1 (mechanical) — RULED, with one shape change.** `out(dN: Type)` grammar ships (flag-out
+`out(carry: …)` is the precedent; this is the first DATA-register out-typing, flipping the
+construct-walk #3 ledgered ruling as pre-planned there). The CALL-SITE CHECK SHIPS NOW — not
+banked: it reuses the existing reaching-definition infrastructure (D1b/out-verify) as a
+**strict-degrade slice**, which IS the "slice before full dataflow" shape Q1 wanted:
+- Per-register type state: `Untyped | T`. A plain register copy (`move`/`movea` rX→rY)
+  propagates `T`. ANY other write — arithmetic, logic, shifts, memory loads — degrades to
+  `Untyped` (re-bless with `as` where the result is semantically still a `T`). Control-flow
+  join: both edges same `T` → `T`; disagreement → `Untyped`.
+- BANKED for a future consumer (A4-i): arithmetic preservation, declared coercions (§7's
+  coercion clause ships NO syntax in G5). A4-ii `let rN: Type` is ALSO banked — see Q4.
+- New diagnostic: `[call.slot-type-mismatch]`, ERROR tier from day one (Volence ruling below);
+  message names call site, slot, expected newtype, found state, and producing site.
+
+**Q2 (mechanical) — minimal scope RATIFIED, with the newtype set corrected to THREE.**
+Volence ruled AXIS-SPLIT coordinates: `pub newtype GridX = u8` / `pub newtype GridY = u8` /
+`pub newtype SectionId = u16` (in `engine/system/types.emp`, beside Coord/Velocity). Two axis
+types close the x/y argument-swap class at compile time — the same silent-wrong-answer family
+as the MigrateMasks stride bug. The wider family (MusicId/SfxId, Tile/Block/Chunk, VramTile,
+PaletteLine, Coord/Velocity out-typing retrofits) is the item-13 prelude domain-type pass
+(Volence-driven), which now has its enforcement surface.
+
+**Q6 (mechanical) — RATIFIED.** W026 width-discipline stays §D backlog (domain-typing ≠
+width-discipline; a GridX is still byte-width).
+
+**Q3 (Volence) — `as`-cast on the producing instruction.** `move.w d3, d2 as GridX` — reuses
+the existing `as` precedent (`jsr (a1) as ObjRoutine`). Constructor-call form rejected
+(operands are addressing modes, not expressions); inferred coercion rejected (raw→domain
+crossings must be visible). The NORMAL path is born-typed via out slots; `as` is the boundary
+escape hatch.
+
+**Q4 (Volence + cost) — signature-boundary + `as` ONLY in G5.** Body-level `let rN: Type`
+(A4-ii) is BANKED to item-13: one blessing syntax at debut; revisit if `as` ceremony proves
+awkward in the domain pass. Ledger the banked row.
+
+**Q5 (Volence) — plain newtype.** No runtime `where 0..grid_w` refinement (GetSecPtrXY's
+existing unsigned range guard stands; Volence chose plain nominal newtypes over refinement
+style generally — refinements remain the separate vram_art-style param-refinement track).
+
+**Strictness (Volence) — ERROR from day one.** Untyped/base value into a typed slot = ERROR;
+mismatched newtype = ERROR; untyped slots check NOTHING (no ceremony tax, §7 verbatim). No
+warn window — the seam's producers retrofit in the same commit (standing retro rule).
+
+**Same-commit retrofit set:** the three newtypes in types.emp; `Section_FlatIDXY` →
+`(d2: GridX, d3: GridY, a2: *Act) clobbers(d1) out(d0: SectionId)`; `Section_GetSecPtrXY` →
+typed d2/d3 params + `out(d0: SectionId, a0)`; the 4 entity_window.emp call sites' producers
+`as`-blessed (or upstream out-typed where a producer genuinely returns a grid coord —
+implementer's judgment, smallest honest set); SectionId consumers (ess_section_id stores,
+compares) get NO ceremony — struct fields are not slots (typed fields = frontier).
+The game-side `.asm` caller (ojz_scroll_test) is outside the net — s4lint mirror stays §D.
+
+**Tests + acceptance floor:** unit — GridX-into-GridY-slot fires (the swap pin); untyped-into-
+typed fires; `as` accepted; out-born accepted; copy propagates; arithmetic degrades; join
+disagreement degrades; untyped slots free. Corpus — retrofitted seam green under strict, PLUS
+an injected NEGATIVE test (swap d2/d3 at one call site → build fails naming that site; the
+class-closure pin, `struct_field_disp_plus_n.rs` precedent). Byte-neutral HARD bar —
+dual-invocation builds (`./build.sh` AND `DEBUG=1 ./build.sh`) reproduce plain
+`406c773b`/421122 · debug `5752c2e3`/429107 EXACTLY; full paired strict green; repin zero
+drift. Overseer gate at close: own builds + seam-diff review + the swap-pin test demonstrated.
