@@ -7,10 +7,25 @@ use sigil_span::{Diagnostic, Level, Span};
 /// recursing (guards against stack-overflow aborts on pathological input).
 const MAX_EXPR_DEPTH: u32 = 128;
 
-/// The three products of parsing an `out(...)` clause body (§6): the register
-/// reglist, the `carry: name` flag results, and the `rN if cc` conditional
-/// register results. Returned by [`Parser::out_list`].
-type ParsedOutClause = (Vec<(String, Option<String>)>, Vec<FlagResult>, Vec<CondResult>);
+/// The products of parsing an `out(...)` clause body: the register reglist, the
+/// `carry: name` flag results (§6), the `rN if cc` conditional register results
+/// (§6), and the `dN: Type` typed data-register results (G5 §7). Returned by
+/// [`Parser::out_list`].
+type ParsedOutClause =
+    (Vec<(String, Option<String>)>, Vec<FlagResult>, Vec<CondResult>, Vec<(String, Type, Span)>);
+
+/// A 68k data/address register spelling (`d0`-`d7`, `a0`-`a7`, `sp`). Used in
+/// `out(...)` parsing to distinguish a typed data-register result `out(dN: Type)`
+/// (G5 §7) from a flag result `out(carry: name)` (§6) — both are `ident : …`,
+/// split on whether the leading ident is a register. Register/type validity is
+/// still deferred to lowering; this is a parse-time SHAPE test only.
+fn is_register_name(s: &str) -> bool {
+    matches!(
+        s,
+        "d0" | "d1" | "d2" | "d3" | "d4" | "d5" | "d6" | "d7"
+            | "a0" | "a1" | "a2" | "a3" | "a4" | "a5" | "a6" | "a7" | "sp"
+    )
+}
 
 /// A recursive-descent parser over a token stream, collecting diagnostics
 /// instead of failing fast.
@@ -1318,16 +1333,30 @@ impl Parser {
         let mut regs = Vec::new();
         let mut flags = Vec::new();
         let mut conds = Vec::new();
+        let mut types = Vec::new();
         if !self.at(&Tok::RParen) {
             loop {
                 let seg_start = self.span();
                 let lo = self.expect_ident("register or flag");
                 if self.eat(&Tok::Colon) {
-                    // `flag: name` — a status-flag result. `carry` today; the
-                    // flag name's validity is checked at lowering.
-                    let name = self.expect_ident("flag-result name");
-                    let span = seg_start.merge(self.prev_span());
-                    flags.push(FlagResult { flag: lo, name, span });
+                    if is_register_name(&lo) {
+                        // `dN: Type` — a typed data-register result (G5 §7 tier
+                        // 5). The register STILL joins the reglist (out-verify
+                        // checks it is written); the domain newtype rides in
+                        // `types` for the caller-side slot-type slice. The flag
+                        // form below is distinguished by `lo` being a flag name
+                        // (`carry`), not a register.
+                        let ty = self.ty();
+                        let span = seg_start.merge(self.prev_span());
+                        types.push((lo.clone(), ty, span));
+                        regs.push((lo, None));
+                    } else {
+                        // `flag: name` — a status-flag result. `carry` today; the
+                        // flag name's validity is checked at lowering.
+                        let name = self.expect_ident("flag-result name");
+                        let span = seg_start.merge(self.prev_span());
+                        flags.push(FlagResult { flag: lo, name, span });
+                    }
                 } else {
                     let hi = if self.eat(&Tok::Minus) {
                         Some(self.expect_ident("range-end register"))
@@ -1354,7 +1383,7 @@ impl Parser {
             }
         }
         self.expect(&Tok::RParen, "`)`");
-        (regs, flags, conds)
+        (regs, flags, conds, types)
     }
 
     /// Parse a `proc name(params...) [clobbers(...)] [out(...)] [preserves(...)]
@@ -1369,6 +1398,7 @@ impl Parser {
         let mut out = None;
         let mut out_flags = Vec::new();
         let mut out_cond = Vec::new();
+        let mut out_types = Vec::new();
         let mut falls_into = None;
         loop {
             if self.eat_kw("clobbers") {
@@ -1384,10 +1414,11 @@ impl Parser {
                 // conditional register results (§6). `out()` empty is the
                 // explicit "returns nothing" contract.
                 self.expect(&Tok::LParen, "`(`");
-                let (regs, flags, conds) = self.out_list();
+                let (regs, flags, conds, types) = self.out_list();
                 out = Some(regs);
                 out_flags = flags;
                 out_cond = conds;
+                out_types = types;
             } else if self.eat_kw("preserves") {
                 // `preserves(d0-d1/a0)` — the movem-style reglist (S2-D6b
                 // syntactic slice), now the shared `clobbers`/`out` grammar.
@@ -1402,7 +1433,7 @@ impl Parser {
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(/* splices_allowed = */ false);
         self.expect(&Tok::RBrace, "`}`");
-        ProcDecl { public, name, params, clobbers, preserves, out, out_flags, out_cond, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
+        ProcDecl { public, name, params, clobbers, preserves, out, out_flags, out_cond, out_types, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
     }
 
     /// Parse a proc SIGNATURE — `(params) [clobbers(...)] [out(...)]
@@ -1416,16 +1447,18 @@ impl Parser {
         let mut out = None;
         let mut out_flags = Vec::new();
         let mut out_cond = Vec::new();
+        let mut out_types = Vec::new();
         loop {
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
                 clobbers = Some(self.reg_list());
             } else if self.eat_kw("out") {
                 self.expect(&Tok::LParen, "`(`");
-                let (regs, flags, conds) = self.out_list();
+                let (regs, flags, conds, types) = self.out_list();
                 out = Some(regs);
                 out_flags = flags;
                 out_cond = conds;
+                out_types = types;
             } else if self.eat_kw("preserves") {
                 self.expect(&Tok::LParen, "`(`");
                 preserves = self.reg_list();
@@ -1433,7 +1466,7 @@ impl Parser {
                 break;
             }
         }
-        ProcSig { params, clobbers, preserves, out, out_flags, out_cond }
+        ProcSig { params, clobbers, preserves, out, out_flags, out_cond, out_types }
     }
 
     /// Parse a contract-signature param list — like [`Parser::param_list`] but

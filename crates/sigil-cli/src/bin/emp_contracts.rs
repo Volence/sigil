@@ -121,4 +121,16 @@ fn main() {
     for d in &report.dead_saves {
         println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));
     }
+
+    println!(
+        "\n-- [call.slot-type-mismatch] firings (G5, {}): --",
+        report.slot_firings.len()
+    );
+    for f in &report.slot_firings {
+        let found = f.found.as_deref().unwrap_or("an untyped value");
+        println!(
+            "  {:<28} calls {:<24} slot {} expects {} but found {}",
+            f.proc, f.callee, f.reg, f.expected, found
+        );
+    }
 }

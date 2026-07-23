@@ -1,0 +1,242 @@
+//! G5 §7 tier 5 — the `[call.slot-type-mismatch]` domain-newtype slot check,
+//! end to end over synthetic `.emp` corpora. Each test pins one lattice rule from
+//! the ratified spec's acceptance list: the swap pin, untyped-into-typed,
+//! `as`-blessing, out-born, copy propagation, arithmetic degrade, join-disagree
+//! degrade, and the no-ceremony rule (untyped / primitive slots check nothing).
+
+use sigil_frontend_emp::corpus_contracts::{analyze_corpus, ContractReport};
+use sigil_frontend_emp::parse_str;
+
+fn analyze(src: &str) -> ContractReport {
+    let (f, diags) = parse_str(src);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:?}");
+    analyze_corpus(&[f])
+}
+
+/// Count `[call.slot-type-mismatch]` firings for `proc` (any callee/slot).
+fn slot_count(r: &ContractReport, proc: &str) -> usize {
+    r.slot_firings.iter().filter(|f| f.proc == proc).count()
+}
+
+/// A firing exists for `(proc, callee, reg)` with the given expected newtype.
+fn slot_fires(r: &ContractReport, proc: &str, callee: &str, reg: &str, expected: &str) -> bool {
+    r.slot_firings
+        .iter()
+        .any(|f| f.proc == proc && f.callee == callee && f.reg == reg && f.expected == expected)
+}
+
+/// Shared preamble: the three axis newtypes + a `GridX`-param callee (`TakeX`), a
+/// two-axis callee mirroring the seam (`FlatIDXY`), a `SectionId` producer/consumer.
+const PRE: &str = "module m\n\
+     pub newtype GridX = u8\n\
+     pub newtype GridY = u8\n\
+     pub newtype SectionId = u16\n\
+     pub proc TakeX (d2: GridX) clobbers() { rts }\n\
+     pub proc FlatIDXY (d2: GridX, d3: GridY) clobbers(d1) out(d0: SectionId) {\n\
+         moveq #0, d0\n\
+         rts\n\
+     }\n\
+     pub proc MakeId () clobbers() out(d0: SectionId) {\n\
+         moveq #0, d0\n\
+         rts\n\
+     }\n\
+     pub proc Consume (d0: SectionId) clobbers() { rts }\n";
+
+fn prog(caller: &str) -> String {
+    format!("{PRE}{caller}")
+}
+
+#[test]
+fn untyped_into_typed_fires() {
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d3) {\n\
+             moveq #5, d2\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "TakeX", "d2", "GridX"), "{:?}", r.slot_firings);
+    assert_eq!(slot_count(&r, "C"), 1);
+}
+
+#[test]
+fn as_bless_accepted() {
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d5) {\n\
+             move.l d4, d2 as GridX\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "as-blessed GridX must satisfy the slot: {:?}", r.slot_firings);
+}
+
+#[test]
+fn swap_pin_fires_both_axes() {
+    // The class-closure pin: GridX/GridY swapped at the two-axis call.
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d5) {\n\
+             move.l d4, d2 as GridY\n\
+             move.l d5, d3 as GridX\n\
+             jbsr FlatIDXY\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "FlatIDXY", "d2", "GridX"), "d2 expects GridX: {:?}", r.slot_firings);
+    assert!(slot_fires(&r, "C", "FlatIDXY", "d3", "GridY"), "d3 expects GridY: {:?}", r.slot_firings);
+    assert_eq!(slot_count(&r, "C"), 2);
+}
+
+#[test]
+fn correctly_typed_two_axis_passes() {
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d5) {\n\
+             move.l d4, d2 as GridX\n\
+             move.l d5, d3 as GridY\n\
+             jbsr FlatIDXY\n\
+             rts\n\
+         }\n",
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "{:?}", r.slot_firings);
+}
+
+#[test]
+fn out_born_sectionid_accepted() {
+    // d0 born as SectionId via MakeId's out, flows into Consume's SectionId slot.
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0) {\n\
+             jbsr MakeId\n\
+             jbsr Consume\n\
+             rts\n\
+         }\n",
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "out-born SectionId must satisfy the slot: {:?}", r.slot_firings);
+}
+
+#[test]
+fn copy_propagates_type() {
+    // A plain reg copy carries GridX from d5 into d2; the control (no copy) fires.
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d5) {\n\
+             move.l d4, d5 as GridX\n\
+             move.l d5, d2\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "copy must propagate GridX: {:?}", r.slot_firings);
+}
+
+#[test]
+fn arithmetic_degrades_type() {
+    // A blessed GridX in d2, then an arithmetic write, degrades to Untyped → fires.
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d5) {\n\
+             move.l d4, d2 as GridX\n\
+             add.l d1, d2\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "TakeX", "d2", "GridX"), "arithmetic must degrade: {:?}", r.slot_firings);
+}
+
+#[test]
+fn join_disagreement_degrades() {
+    // One edge blesses d2 GridX, the other leaves it untyped; at the merge the
+    // meet is Untyped → the call fires.
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d5) {\n\
+             tst.b d0\n\
+             beq .other\n\
+             move.l d4, d2 as GridX\n\
+             bra .join\n\
+         .other:\n\
+             moveq #0, d2\n\
+         .join:\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "TakeX", "d2", "GridX"), "join-disagree must degrade: {:?}", r.slot_firings);
+}
+
+#[test]
+fn join_agreement_passes() {
+    // Both edges bless d2 GridX → the meet keeps GridX → no firing.
+    let r = analyze(&prog(
+        "pub proc C () clobbers(d0-d5) {\n\
+             tst.b d0\n\
+             beq .other\n\
+             move.l d4, d2 as GridX\n\
+             bra .join\n\
+         .other:\n\
+             move.l d5, d2 as GridX\n\
+         .join:\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "agreeing join must keep GridX: {:?}", r.slot_firings);
+}
+
+#[test]
+fn primitive_and_no_param_slots_check_nothing() {
+    // A primitive-typed (`u8`) callee and a no-param callee engage NO check — the
+    // §7 no-ceremony rule (only domain newtypes are slots). A `proc` body param is
+    // always typed, so the "untyped slot" for a body proc IS the primitive case;
+    // the bare-register untyped form lives on `extern proc`/`ProcSig` (checked
+    // there via the same map, absent from `typed_params`).
+    let r = analyze(
+        "module m\n\
+         pub newtype GridX = u8\n\
+         pub proc Prim (d2: u8) clobbers() { rts }\n\
+         pub proc NoParam () clobbers() { rts }\n\
+         pub proc C () clobbers(d2) {\n\
+             moveq #5, d2\n\
+             jbsr Prim\n\
+             jbsr NoParam\n\
+             rts\n\
+         }\n",
+    );
+    assert_eq!(slot_count(&r, "C"), 0, "primitive/no-param slots must not fire: {:?}", r.slot_firings);
+}
+
+#[test]
+fn clobber_across_call_degrades() {
+    // A callee that clobbers d2 wipes a GridX held across it: the SECOND call to
+    // TakeX must fire because the first (clobbering) call degraded d2.
+    let r = analyze(
+        "module m\n\
+         pub newtype GridX = u8\n\
+         pub proc TakeX (d2: GridX) clobbers() { rts }\n\
+         pub proc Wipe () clobbers(d2) { rts }\n\
+         pub proc C () clobbers(d0-d5) {\n\
+             move.l d4, d2 as GridX\n\
+             jbsr TakeX\n\
+             jbsr Wipe\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    );
+    // First TakeX: d2 is GridX → ok. Wipe clobbers d2. Second TakeX: d2 untyped → fires.
+    assert_eq!(slot_count(&r, "C"), 1, "exactly the post-clobber call fires: {:?}", r.slot_firings);
+}
+
+#[test]
+fn preserved_across_call_keeps_type() {
+    // A callee that does NOT clobber d2 preserves the GridX across it.
+    let r = analyze(
+        "module m\n\
+         pub newtype GridX = u8\n\
+         pub proc TakeX (d2: GridX) clobbers() { rts }\n\
+         pub proc Keep () clobbers(d1) { rts }\n\
+         pub proc C () clobbers(d0-d5) {\n\
+             move.l d4, d2 as GridX\n\
+             jbsr Keep\n\
+             jbsr TakeX\n\
+             rts\n\
+         }\n",
+    );
+    assert_eq!(slot_count(&r, "C"), 0, "d2 preserved across Keep: {:?}", r.slot_firings);
+}
