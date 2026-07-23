@@ -125,11 +125,37 @@ B1/B2/B3 + d6 appended.
 
 ## 5. STEP-5 Fill_PerLine — interrogation rule (gate, 2026-07-23)
 
-Bounded, numbers decide (NOT skipped, NOT a marathon). Oracle profiler on the
-current bg scene FIRST (mind the reload-flush fix, gap-ledger 2026-07-12).
-**Decision rule:** a candidate projecting **≥ ~1k cyc/frame** → design + cut +
-live A/B (own byte-changing commit, full ripple); candidates all projecting micro
-(**< ~500 cyc/frame**) → log-and-skip each *with its number* (logged-decision
-doctrine). **H2/H3/M1-M5 each get a STATED VERDICT** either way — the panel's C1
-lens re-audits, so the skip-log is the evidence. Volence has flagged parallax
-perf as a want (recent bg change) — raises the interest, not the threshold.
+Bounded, numbers decide. Oracle profiler on the current bg scene FIRST
+(reload-flush fix honored).
+
+**PROFILER BASELINE (120-frame avg, OJZ bg scene, plain):** Parallax_Fill_PerLine
+= 5832 cyc/frame (4.6%); Parallax_Update = 9170 (7.2%); Decode_Factor_B = 400
+(4 calls). H1's ~16k win is REALIZED — the fill is on the FLAT path (deformShiftDefault=15
+shipped in the production configs, confirmed step-0), NOT the 21k sampling path.
+
+**VERDICTS (each stated; H2 CUT, rest log-and-skip with number):**
+- **H2 — flat-fill 8x unroll: CUT + LIVE-CONFIRMED.** Band spans are ×8-guaranteed
+  (verified: Step4a rebases tops as CELL values, `lsl #3` → lines, in BOTH the
+  config-own and shadow-view paths; last band = 224 = 28×8), so `span>>3` is exact.
+  8x unroll: 22→~13 cyc/line. **Live A/B: Fill_PerLine 5832 → 3908 = −1924 cyc/frame
+  (−33%, 1.5% of budget)** — matches the 8.6 cyc/line × 224 projection exactly.
+  Byte-identical fill output, no visual change (screenshot). aeon `a7c1080`.
+- **H3 — whole-buffer skip: SKIP (design item, not a step-5 micro-opt).** Above
+  threshold on IDLE frames only (~5832 + DMA when nothing moved), but 0 on a real
+  scrolling game, and it adds a NEW frame-coherence skip mechanism (compare camX/
+  vscroll/phases/transition-state) — a caching-design item, not a bounded loop opt.
+  The dead-dirty-write half was already retired in step-2. Belongs with the
+  streaming/coherence design, not parallax step-5. Logged, not cut.
+- **M1 — inline Decode_Factor_A/B: SKIP, <~400.** Decode_Factor_B measured 400
+  cyc/frame TOTAL (4 calls, incl. useful work); A is below the top-25 (<400). Inlining
+  saves only the call+stack-scratch overhead (a fraction of 400) → below the ~500 floor.
+- **M2 — sampling line loops: SKIP, ~0 on production.** `.lb_line`/`.lg_line` don't run
+  post-H1 (production takes `.lp_flat`). The review's ~9,400 is on a path this scene never hits.
+- **M3 — Step 4a shadow rebuild: SKIP, ~400-500** (running-pointer reset vs per-band
+  recompute). On the production path but below the ~1k bar.
+- **M4 — Vscroll_Write a5-direct: SKIP, ~80 VBlank micro.**
+- **M5 — Fill_PerCell count+dbf: SKIP, ~0 on production** (per-line forced; Fill_PerCell
+  doesn't run).
+
+Net step-5: one ≥1k cut taken and live-proven (H2, −1924); six candidates
+skip-logged with numbers per the logged-decision doctrine (C1 lens re-audits).
