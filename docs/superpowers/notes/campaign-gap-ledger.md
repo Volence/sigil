@@ -1351,3 +1351,31 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   Coord/Velocity enforcement — these live in shift/add/multiply chains (block = chunk×N, coord arithmetic),
   so typing them pre-A4-i pays the re-`as`-every-op tax. Cross-linked to [[G5 body-typing + arithmetic-
   preservation follow-ons]] (the A4-i banked row). — OPEN (item-13 design, Volence-scheduled).
+
+- **SAT-emit shared construct** (dry-panel calibration, 2026-07-23 — the run's top actionable). The
+  VDP SAT 8-byte entry-emit primitive is inlined in BOTH sprites.emp (Emit_ObjectPieces :507-585,
+  :684-689) and rings.emp (DrawRings :218-231) with two verbatim sub-clauses: the `addq.b #1,d5 /
+  move.b d5,(a4)+` link protocol and the X=0-avoidance `bne .x_ok / moveq #1` clause. Promote to a
+  shared splice-style construct (emit_piece_loop precedent) both consume — byte-neutral when the
+  emitted bytes are identical (prove per-site). The engine's one hardware-format primitive should
+  have one spelling. Rides the next sprites/rings touch or a small construct batch. — OPEN.
+- **sprites.emp stride-hardening cluster** (dry-panel calibration, 2026-07-23; overseer-confirmed).
+  Gate-blind latent strides: `lsl.w #6` :147/:225 hardcodes SPRITES_PER_BAND*2 · the two 8-byte
+  init clears hardcode PRIORITY_BANDS / SCANLINE_BANDS+pad sizes (and their "pad byte" comments
+  contradict ram.asm's "no pad needed") · `lsr.w #5` :325 hardcodes SCREEN_HEIGHT/SCANLINE_BANDS ·
+  SPRITE_MASK_SIZE/HEIGHT literal agreement. Fix = ensure() drift-locks + comment corrections,
+  byte-neutral rider on any sprites touch. — OPEN.
+- **Records over streaming cursors** (dry-panel calibration, 2026-07-23 — language ask). The SAT
+  entry and mapping piece are documented field-by-field but accessed as raw offset walks with magic
+  back-offsets (-5(a4)/-6(a3)) because .emp structs serve base+disp, not post-increment cursor
+  walks. Ask: record/field naming usable against a streaming (aN)+ cursor. Language track; no
+  stopgap. — OPEN.
+- **Sprite_Cycle_Counter low-byte named const** (dry-panel calibration, 2026-07-23). `btst #0,
+  Sprite_Cycle_Counter+1` reaches the low byte by literal +1 + comment; the row-1068 shared-const
+  precedent (`..._lo = sym + 1`) applies directly. Tiny; buildable on any sprites touch. — OPEN.
+- **VdpY/ScreenY newtype pair** (dry-panel calibration C3-2 resolution, 2026-07-23 — item-13
+  orbit). SpriteMask_Y's contract is VDP-Y (screen+128), enforced today only by a declaration
+  comment (zero writers exist yet). The +128-bias confusion class has already shipped one bug
+  (PB2: biased d3 treated as raw). When mask producers or other Y-seams appear, a VdpY/ScreenY
+  distinct pair makes the bias a type fact. Wave-2-adjacent (values are moved+compared at seams,
+  computed in render loops — split the seam surface from the loop internals at design). — OPEN.
