@@ -2,6 +2,8 @@
 
 **Milestone target:** t18 = the **parallax port** (next lag lever, ~18-22%/frame; parallax is still unported `.asm`).
 
+> **✅ t18 MERGED 2026-07-23** — parallax.emp fresh port (11 procs, full 0→5 loop) + HBlank RAM-jmp trampoline (row 1088) + Hscroll_Dirty PAD + demanded `[lower.abs-sym-operand]` feature. Masters **aeon `6261c29` / sigil `8ab53f8`** (`port-tranche18` --no-ff). **NEW CANONICAL plain `00f609a5`/421089 · debug `80d14183`/429134** (byte-changing re-baseline). Full paired strict on merged masters **2488/0**. Oracle trampoline live-verify 5/5; H2 flat-fill unroll −1924 cyc/f live A/B. **DRY-PANEL DEBUT** (campaign first): caught B6 (gate-blind CC-clobber → post-merge parcel), refuted 1 false positive, 3 folds, ledger rows. Close packet `2026-07-23-t18-close-packet.md`. **Post-merge queue:** item-13 impl brief (7b9afa6) + the boundary-crossing transition parcel (window-slide close + B6/B3/B1/B2, B2-design-first).
+
 **Current state (2026-07-21):** **PHASE 1 COMPLETE.** All four Phase-1 items merged —
 contract-grammar v2 arc is G1+G2+G3+substrate+G4+G4.5(#1–#4). Masters: sigil `871ec7d` /
 aeon `ae1de4d` (aeon untouched since #2; #3 and #4 were both pure-sigil, byte-neutral).
