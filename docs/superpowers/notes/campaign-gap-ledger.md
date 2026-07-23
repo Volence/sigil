@@ -1278,6 +1278,22 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   re-seed a reused worktree. **BAR:** any campaign step that spins up a fresh aeon/sigil worktree seeds it
   before the first build and verifies the seeded ROM's crc/size against the current PROVENANCE pin. — RECORDED.
 
+- **Hand-computed struct strides are a BYTE-GATE BLIND SPOT — a struct-size change must sweep them, not just
+  `sizeof`/`offsetof` sites** (learned phase2.5 c6 post-clear, 2026-07-22). `EntityWindow_MigrateMasks`
+  indexes `Entity_Scan_State[d]` by a SHIFT DECOMPOSITION of the entry stride (`lsl#4 + lsl#3 + ×2 =
+  ×26 = $1A`) instead of `sizeof(EntityScanState)`. The c6 cut ($1A→$16) auto-adjusted every
+  `sizeof(...)*N + offsetof(...)` site but NOT the literal shift-multiply, so it silently indexed entry
+  d≥1's `ess_section_id` 4 bytes too far → wrong mask migration on window slides. **The byte gate CANNOT
+  catch this** — both `.emp` and `.asm` twins carried the identical wrong `×26`, so sigil==asl held (the
+  gate proves twin-agreement, not correctness). The runtime boot missed it too (wrong mask ≠ crash;
+  silent logic error). Caught only by hand-auditing the "stale $1A comment" the overseer flagged. Fix:
+  `lsl#3`→`lsl#2` (`×26`→`×22`) both twins, length-preserving (one 2-byte instr, no layout shift). **BAR:
+  any struct field-count/size change greps the module for hand-computed strides (shift decompositions,
+  `mulu #k`, literal `#stride`), not only symbolic `sizeof`/`offsetof`. Modernization candidate: such
+  runtime `index × struct_len` sites should derive their shift decomposition from `sizeof` at comptime
+  (or accept a `mulu` on cold paths) so a size change can't leave a literal stale.** — RECORDED (fix
+  shipped; comptime-stride-derivation modernization OPEN).
+
 - **RunObjects cull-math branchless-abs** (banked 2026-07-22, core #1 gate DISSOLVED-STAGE-0). Replace the
   two `bpl/neg.w` conditional-abs sequences in the X/Y cull distance checks (`core.emp:504-519`) with
   branchless abs — removes 2 predicted branches per checked/dispatched dynamic slot. **Value ceiling

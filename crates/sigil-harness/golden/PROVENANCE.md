@@ -1096,8 +1096,19 @@ address error, no debug-assert failure (Debug_AssertObjLoop a0/d7 + EntityScanSt
 asserts pass), `Cache_Pfx_Lag_Flag`=0 (no lag), EntityScanState populated correctly
 in the `$16` layout. Hashes from the final c6-tip build, both shapes.
 
-- Aeon branch tip: **`1b8774a`** (`pass3-phase25-item9`, pre-merge — overseer HOLD).
-- Non-debug `s4.bin`: **421122 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`4daf3788`**,
-  sha256 **`e6f5f86e196e95e57ae4b89532f44c4bcb1166dbe3064c75e1ff32b30a5829f1`**.
-- Debug `s4.debug.bin`: **429107 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`d772880b`**,
-  sha256 **`d68dc33202b3c7d51afb8a9a4b93d8c5cea7251c1be7564a9b6fae4637297092`**.
+**POST-CLEAR CORRECTNESS FIX (byte-changing, length-preserving) folded in:** overseer
+attack-the-diff cleared the arc pending a "$1A→$16 comment fix"; auditing that comment
+surfaced a REAL bug the byte gate could not catch — `EntityWindow_MigrateMasks` hand-computes
+the EntityScanState entry stride via a shift decomposition (`×16+×8+×2 = ×26 = $1A`, both twins
+identical) that `sizeof` does NOT auto-adjust, so post-c6 it indexed entry d≥1's `ess_section_id`
+4 bytes too far → wrong mask migration on window slides (SILENT — not a crash, so the boot missed
+it too). Fix: `lsl.w #3`→`lsl.w #2` in both twins (`×26`→`×22 = $16`), one instruction, same
+2 bytes → NO layout shift (pins.rs/engine.inc/repin_pins ALL unchanged; only the ROM CRC moves).
+Verified in the emitted disassembly (`$3C38 E749→E549`, read `$3C46` = `Entity_Scan_State+$12 +
+d×$16`), gate 2457/0/1 both shapes. **These are the corrected FINAL canonical bytes.**
+
+- Aeon branch tip: **`04ff7e5`** (`pass3-phase25-item9`, pre-merge — overseer RE-clear HOLD on the byte-changing fix).
+- Non-debug `s4.bin`: **421122 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`406c773b`**,
+  sha256 **`b49757dad2ef18420055eb5d1cf09fc68c543d6b94cae8027d63df37d6bbf37f`**.
+- Debug `s4.debug.bin`: **429107 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`5752c2e3`**,
+  sha256 **`9303409b0f44dfe1aa268578fe20c47394921eed49f415f26f82168899684e6e`**.
