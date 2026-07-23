@@ -936,16 +936,21 @@ fn lower_m68k_abs_sym(
     // tranche 3): emit ONE finished candidate with a fixed-width fixup
     // instead of the RelaxAbsSym pair.
     let mut pinned: Option<bool> = None;
+    // Index of the symbolic (abs) operand in the candidate op lists — used to
+    // locate its ext field when a pinned abs is followed by an ext-word operand.
+    let mut abs_index: Option<usize> = None;
     for op in ops {
         match op {
             CodeOperand::Sym(n) => {
                 target = Some(Expr::Sym(n.clone()));
+                abs_index = Some(short_ops.len());
                 short_ops.push(M68kOperand::AbsW(0));
                 long_ops.push(M68kOperand::AbsL(0));
             }
             CodeOperand::AbsSym { target: n, long } => {
                 target = Some(Expr::Sym(n.clone()));
                 pinned = Some(*long);
+                abs_index = Some(short_ops.len());
                 short_ops.push(M68kOperand::AbsW(0));
                 long_ops.push(M68kOperand::AbsL(0));
             }
@@ -957,14 +962,17 @@ fn lower_m68k_abs_sym(
                     // Core `Expr::Int` is `i64`, so narrow the `i128` offset.
                     rhs: Box::new(Expr::Int(*off as i64)),
                 });
+                abs_index = Some(short_ops.len());
                 short_ops.push(M68kOperand::AbsW(0));
                 long_ops.push(M68kOperand::AbsL(0));
             }
-            other if operand_has_ext_words(other) && target.is_some() => {
-                // Ext words AFTER the sym operand would land BEHIND the abs
-                // field and move the fixup offset — still deferred. (BEFORE
-                // it they precede the abs field, which stays last — allowed
-                // since tranche 5.)
+            other if operand_has_ext_words(other) && target.is_some() && pinned.is_none() => {
+                // RELAXABLE abs: an ext-word operand AFTER it would land BEHIND a
+                // VARIABLE-width abs field and move the fixup offset — the
+                // append-only RelaxAbsSym model can't express it, so reject.
+                // (Ext words BEFORE the abs precede its field, which stays last —
+                // allowed since tranche 5. A PINNED abs has a FIXED-width field,
+                // so a trailing ext-word operand IS encodable — handled below.)
                 push_err(
                     diags,
                     span,
@@ -1026,21 +1034,52 @@ fn lower_m68k_abs_sym(
         );
         return;
     }
-    let offset = (short_bytes.len() - 2) as u32;
-    // Author-pinned width: no relaxation — one finished encoding, one
-    // fixed-width fixup (the same `offset` works for both: the long
-    // candidate is the short plus 2 ext bytes, so `short.len()-2` ==
-    // `long.len()-4`, i.e. the ext field's start either way).
+    // Author-pinned width: no relaxation — one finished encoding with a
+    // fixed-width fixup. The abs field's byte offset is located by re-lowering
+    // with a SENTINEL abs value and taking the first differing byte: exact
+    // whether the abs is LAST (ext words only precede it — `len - abs_width`)
+    // OR is followed by a `(d16,An)` operand (t18 parallax
+    // `move.l (Sym).w, -4(a5)`), where `len - abs_width` would wrongly land on
+    // the trailing disp. Nothing but the abs field changes between the two
+    // lowerings, so the first divergence is exactly the abs field start.
     if let Some(long) = pinned {
-        let (bytes, kind) = if long {
-            (long_bytes, FixupKind::Abs32Be)
+        let ai = abs_index.expect("a pinned abs implies a symbolic operand");
+        let (bytes, kind, base_ops) = if long {
+            (long_bytes, FixupKind::Abs32Be, &long_inst.ops)
         } else {
-            (short_bytes, FixupKind::Abs16Be)
+            (short_bytes, FixupKind::Abs16Be, &short_inst.ops)
         };
-        let df = DataFragment { bytes, fixups: vec![Fixup { kind, offset, target }], span };
+        let mut probe_ops = base_ops.clone();
+        probe_ops[ai] =
+            if long { M68kOperand::AbsL(0x0100_0000) } else { M68kOperand::AbsW(0x0100) };
+        let probe = M68kInst { mnemonic: refined, size, ops: probe_ops };
+        let offset = match M68kBackend.lower_inst(&probe, span) {
+            Ok(df) => bytes.iter().zip(df.bytes.iter()).position(|(a, b)| a != b),
+            Err(e) => {
+                push_err(diags, span, e.message);
+                return;
+            }
+        };
+        let Some(offset) = offset else {
+            push_err(
+                diags,
+                span,
+                "[lower.abs-sym-operand] internal: could not locate the abs ext field",
+            );
+            return;
+        };
+        let df = DataFragment {
+            bytes,
+            fixups: vec![Fixup { kind, offset: offset as u32, target }],
+            span,
+        };
         emit_data_frag(builder, df);
         return;
     }
+    // Relaxable path: the abs operand is guaranteed LAST (the reject arm above
+    // fences a trailing ext-word operand for the relaxable case), so its ext
+    // field is the final 2 bytes of the abs.w candidate.
+    let offset = (short_bytes.len() - 2) as u32;
     let advance = short_bytes.len() as u32; // baseline (abs.w) cursor advance
     let frag = Fragment::RelaxAbsSym {
         short: RelaxCandidate {

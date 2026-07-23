@@ -864,15 +864,34 @@ fn pinned_abs_l_btst_immediate_defers() {
 }
 
 #[test]
-fn abs_sym_followed_by_ext_word_operand_still_deferred() {
-    // The other order stays fenced: `move.w (Foo).l, $10(a0)` would put the
-    // d16 ext word BEHIND the abs field, moving the fixup offset.
-    let (code, ediags) = eval_asm_with(&asm_1("move.w (Foo).l, $10(a0)"), &[]);
+fn pinned_abs_w_followed_by_disp_operand() {
+    // t18 parallax Vscroll_Write: `move.l (Foo).w, -4(a5)` — a PINNED abs
+    // (fixed width, NO relaxation) MAY be followed by a `(d16,An)` operand.
+    // The abs field's byte position is fixed, so the fixup offset is computed
+    // from encoding-order operand positions (the abs word at 2, the d16 word
+    // trailing at 4) — NOT `len-minus-abs-width`, which would land on the disp.
+    // opcode 2B78 (move.l (abs).w, -4(a5)) + abs hole 0000 + d16 FFFC.
+    assert_pinned_abs(
+        &asm_1("move.l (Foo).w, -4(a5)"),
+        "Foo",
+        &[0x2B, 0x78, 0x00, 0x00, 0xFF, 0xFC],
+        sigil_ir::FixupKind::Abs16Be,
+        2,
+    );
+}
+
+#[test]
+fn relaxable_abs_followed_by_ext_word_operand_still_deferred() {
+    // The RELAXABLE form stays fenced: a bare `Foo` (width picked by the
+    // relaxation ladder) followed by `$10(a0)` would put the d16 ext word
+    // BEHIND a variable-width abs field, moving the fixup offset — the
+    // append-only RelaxAbsSym model can't express it, so it must reject.
+    let (code, ediags) = eval_asm_with(&asm_1("move.w Foo, $10(a0)"), &[]);
     assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
     let (_module, diags) = lower_module_68k(&code);
     assert!(
         diags.iter().any(|d| d.message.contains("[lower.abs-sym-operand]")),
-        "expected the abs-sym-followed-by-ext fence, got: {diags:?}"
+        "expected the relaxable-abs-followed-by-ext fence, got: {diags:?}"
     );
 }
 
