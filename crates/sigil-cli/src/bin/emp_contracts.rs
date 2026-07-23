@@ -133,4 +133,16 @@ fn main() {
             f.proc, f.callee, f.reg, f.expected, found
         );
     }
+
+    println!(
+        "\n-- [branch.condition-constant] firings (item-4 rider, {}): --",
+        report.branch_const_firings.len()
+    );
+    for f in &report.branch_const_firings {
+        let dir = if f.always_taken { "ALWAYS taken" } else { "NEVER taken" };
+        println!(
+            "  {:<28} b{:<3} statically decided ({dir}) @ {}..{}",
+            f.proc, f.cc, f.span.start, f.span.end
+        );
+    }
 }
