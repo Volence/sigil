@@ -1152,3 +1152,38 @@ fixed successor); `mixed_dac_rom.rs` UNCHANGED (no sound refs). Full paired stri
   sha256 **`a8d1365aaa4bf5b4668e9f843645b2e32a8aa765326f60e042f594ef8e3403e6`**.
 - Debug `s4.debug.bin`: **429165 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`6a19669f`**,
   sha256 **`33a0a75f7bc968bc78796e12107850ad414a2dcd346e7cd5f0632424369afad4`**.
+
+## 2026-07-23 re-baseline — t18 parallax port + HBlank RAM-jmp trampoline (BYTE-CHANGING) — the current pin
+
+Two byte-changing workstreams landed in the t18 merge (supersedes the §D pin above):
+
+- **HBlank RAM-jmp trampoline (row 1088).** `HBlank_Dispatch`/`HBlank_Null` ROM dispatch → a 6-byte
+  executable RAM slot `HBlank_Vector_Slot` (RAM tail, idle `rte` / armed `jmp handler.l`) +
+  `HBlank_Install`/`HBlank_Uninstall` (VDP shadow write-through). The hblank region grows `0x12→0x48`
+  (**+0x36**); every gated engine region below (controllers..sound_api) slides **+0x36** both shapes;
+  boot stays byte-neutral (8-byte `move.l` slot init) so vdp_init and above are unmoved. Oracle
+  synthetic-handler live-verify 5/5.
+- **parallax.emp step-5 H2** — `Parallax_Fill_PerLine` flat-fill 8x unroll (band spans are ×8-guaranteed);
+  parallax grows **+0x10**, sound_api + downstream slide **+0x10**. Live A/B: Fill_PerLine 5832→3908 cyc/f
+  (−1924). Also folded in this tranche: Hscroll_Dirty PAD deletion, GridX/GridY type bless, the demanded
+  `[lower.abs-sym-operand]` feature, dry-panel byte-neutral contract folds.
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` are UNCHANGED (plain `0x5DB60`, debug `0x5F65A`) —
+the hblank +0x36 and parallax +0x10 growth absorbs in the padding before `org $10000`
+(`repin_pins.rs` ASSEMBLED_LEN/DEBUG_ASSEMBLED_LEN assertions green). The **file sizes shrank** (plain
+421122→421089 = −33, debug 429165→429134 = −31) = the post-assembly `convsym` symbol-table appendix delta
+(the HBlank symbol-set rename: `HBlank_Dispatch`/`HBlank_Null`/`HBlank_Handler_Ptr` →
+`HBlank_Install`/`HBlank_Uninstall`/`HBlank_Vector_Slot`), NOT a body-length change.
+
+**Standing ripple:** `repin` → `pins.rs` (HBLANK region + H_BLANK_VECTOR_SLOT new RAM pin + HBLANK_UNINSTALL_OFF;
+PARALLAX len; controllers..sound_api bases). `repin.toml` hblank start/symbol/offset re-keyed. `engine.inc`
+36 hblank-downstream resume orgs +0x36 + 2 parallax/sound_api orgs +0x10 (HAND, repin-printed). `repin_pins.rs`
+baselines updated. Harness: hblank_port / hblank_negative_probes / m1c_vector_table+m1c_root retargeted;
+mixed_dac_rom block pins → reference-window equality; parallax_port Section_GetSecPtrXY from pins. Full
+paired strict **2488/0** on merged masters.
+
+- Aeon repo master: **`6261c29`** (merge of `port-tranche18`; sigil master **`8ab53f8`**).
+- Non-debug `s4.bin`: **421089 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`00f609a5`**,
+  sha256 **`8d58593a714fb78a105fae26410847392967c1c809abf61da2c5807866d4486f`**.
+- Debug `s4.debug.bin`: **429134 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`80d14183`**,
+  sha256 **`65efb331dbe4138aac877cc2e1032e236e1c9c6bcea1f47b6ece3a47735a566c`**.
