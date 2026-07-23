@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/sectionD-backlog/s4.lst (07/23/2026 09:23:48 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/sectionD-backlog/s4.debug.lst (07/23/2026 09:33:08 AM)
-//! [provenance] 24 regions, 209 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon-t18/s4.lst (07/23/2026 12:00:13 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon-t18/s4.debug.lst (07/23/2026 12:00:12 PM)
+//! [provenance] 25 regions, 209 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +95,9 @@ pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x509C, debug_base: 0x
 
 /// `Section_Init` .. `Camera_Init` — gate `SIGIL_EMP_SECTION`. tests: section_port
 pub const SECTION: Region = Region { plain_base: 0x55BC, debug_base: 0x6246, plain_len: 0x3DC, debug_len: 0x3DC };
+
+/// `Parallax_Init` .. `Art_Decompress` — gate `SIGIL_EMP_PARALLAX`. tests: parallax_port
+pub const PARALLAX: Region = Region { plain_base: 0x5B02, debug_base: 0x678C, plain_len: 0x556, debug_len: 0x556 };
 
 /// `Sound_PostByte` .. start + 0x20A plain / 0x3B4 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
 pub const SOUND_API: Region = Region { plain_base: 0x620E, debug_base: 0x7B7C, plain_len: 0x20A, debug_len: 0x3B4 };

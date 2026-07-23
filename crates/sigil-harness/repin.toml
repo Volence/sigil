@@ -178,6 +178,17 @@ gate = "SIGIL_EMP_SECTION"
 tests = ["section_port"]
 
 [[region]]
+# Tranche 18 — the §4.6 parallax pipeline (per-cell/per-line HScroll + whole-plane/
+# per-column Vscroll builder). End is the next placement: load_art.asm's
+# Art_Decompress (engine.inc; end-is-next-placement, the load_object precedent).
+# Plain $5B02..$6058 = $556 bytes.
+name = "parallax"
+start = "Parallax_Init"
+end = "Art_Decompress"
+gate = "SIGIL_EMP_PARALLAX"
+tests = ["parallax_port"]
+
+[[region]]
 # The one region whose end carries no listing symbol: the include's content ends
 # unlabeled after Sound_FadeIn (next placement is org $10000 / sound_debug.asm).
 # Shape-DEPENDENT length as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
