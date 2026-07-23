@@ -330,3 +330,15 @@ correctness-hardening dividend.)
 
 **NEXT (meanwhile-authorized):** build item-4 core (E006/E007/E008/E011 Z80-bus machine-state
 lint) on the same branch (byte-neutral). c1/c2 aeon fixes held for the Sound_Init triage.
+
+### ITEM-4 CORE — BUILT (sigil `93a309f`) + ARC CLOSED
+
+`[bus.*]` Z80-bus machine-state lint shipped: `[bus.double-stop]`/`[bus.start-without-stop]`/
+`[bus.stopped-at-return]`/`[bus.vdp-write-unstopped]` (E011/E008/E007/E006) over `flag_check::Cfg`;
+3-point MUST lattice `{Stopped, Running, Unknown}`, zero-FP (Unknown entry seed). 8 TDD tests
+RED-witnessed; frontend-emp green (110); zero new clippy. Gate rulings honored: E008 included (4a);
+expanded-operand recognition (4b, keys off resolved `Z80_BUS_REQUEST`/VDP-port operands); E006 punts
+indirect `(a4)` VDP writes (s4lint.py:1133 caveat, documented). FIRST-CORPUS-RUN (126 procs, both
+shapes over the c1/c2-fixed corpus): **0 `[bus.*]` AND 0 `[branch.condition-constant]`** (was 2 → both
+fixed). Teeth sentinel-proven (injected double-stop into `Sound_PostByte`'s real `stop_z80()`
+expansion → fires). Full close in `2026-07-23-sectionD-backlog-arc-close-packet.md`. HELD for overseer.
