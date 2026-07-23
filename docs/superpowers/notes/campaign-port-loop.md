@@ -464,15 +464,24 @@ an empty step 3 alone does not exit the loop.
   **The dry-panel rule (Volence-ratified 2026-07-23; first tranche =
   t18):** DRY is no longer self-declared. When the porting agent's own
   full pass comes up empty, it dispatches a PANEL of 2-4 FRESH read-only
-  subagents, each running ONE lens over the ported file + packet:
-  **Lens A** (step-3 flavored) — cold reader for ceremony pain and
-  language asks the porter has gone blind to; **Lens B** (step-4
-  flavored) — corpus-pattern matcher, BOTH directions (does this file
-  re-hand-roll an existing construct; does the corpus re-hand-roll this
-  file's new shapes — the t17 step-6 vdp-dup class); **Lens C** (step-5
-  flavored) — perf/hazard skeptic: hot-path cycle audit + the gate-blind
-  checklist (hand-computed strides · CC-clobber between test and Bcc ·
-  loop-backs provably fire · conditional save/restore reliance).
+  subagents, each running ONE lens over the ported file + packet.
+  **Composition is WEIGHTED toward step 5 (Volence-ratified same day):
+  A×1 · B×1-2 · C×2-3** — the campaign's gate-blind bugs all lived in
+  step-5 territory, so that lens family gets the most independent eyes:
+  **Lens A ×1** (step-3 flavored) — cold reader for ceremony pain and
+  language asks the porter has gone blind to. **Lens B ×1-2** (step-4
+  flavored) — corpus-pattern matcher; at ×2 split the two directions
+  (B1: does this file re-hand-roll an existing construct; B2: does the
+  corpus re-hand-roll this file's new shapes — the t17 step-6 vdp-dup
+  class). **Lens C ×2-3** (step-5 flavored), ALWAYS ≥2, with distinct
+  sub-lenses: **C1** cycle/perf auditor (hot-path costs, budget fit,
+  cheaper addressing/table forms); **C2** correctness-hazard hunter
+  (the gate-blind checklist: hand-computed strides · CC-clobber between
+  test and Bcc · loop-backs provably fire · conditional save/restore
+  reliance); **C3** (when the file touches VDP/DMA/interrupts/bus)
+  hardware-timing lens — VBlank budget, bus contention, IRQ ordering,
+  the "math checks out but timing doesn't" class. Scale within the
+  ranges by file size and heat; the floor is A1+B1+C1+C2.
   Panel findings land in the packet and are ADJUDICATED AT THE GATE;
   any real finding re-opens the cycle. **DRY = a panel round returning
   nothing new.** One panel round per dry claim (cost-bounded, not
