@@ -276,3 +276,69 @@ this arc.**
 
 Items 2 (evaporated) and the ledger/roadmap bookkeeping land at close; nothing byte-changing
 or lint-shipping is cut until this note is ruled.
+
+---
+
+## ADDENDUM — GATE RULED (2026-07-23) + `[branch.condition-constant]` built + FIRST-CORPUS-RUN
+
+**All 7 questions ruled** (overseer code-verified the headline first). Reframe accepted
+(c1 plain fix + c2 debug watchdog, cut-on-branch, merge HELD behind t18's morning merge);
+capture-then-test confirmed (branch-before-release is structurally unavailable — held-bus
+deadlock); D11 retirement + item-5 (Option A now / Option D successor, no impl this arc)
+ratified; item-4 first cut includes E008; expanded-operand recognition approved.
+
+**Ruling 3 — the lint formulation, RATIFIED + PROMOTED to an item-4 rider (not a ledger
+row):** `[branch.condition-constant]` — a conditional branch whose reaching CCR-writer is a
+compile-time-**constant** source (`move #imm` / `moveq #imm` / `clr`), making the outcome
+statically decided. No intent inference (sound). Overseer soundness riders folded in:
+`dbf`/`dbra` never consume CCR (untouched); `Bcc` on C/V after a MOVE is also decided (MOVE
+clears both — fire it); the realistic FP surface is comptime-template instantiations going
+constant under one parameter (`@allow`, mandatory reason). Guard-rails: **(a)** size-capped —
+if the rider outgrows a small bounded effort or first-run FPs outgrow the `@allow` story,
+demote to a ledger row and ship item-4 core alone (honest call, reported either way); **(b)**
+FIRST-CORPUS-RUN REPORT REQUIRED — every firing beyond `await_slot` is a potential shipped bug
+for gate triage, nothing silently fixed/allowed. Coverage: `.emp` corpus only.
+
+### `[branch.condition-constant]` — BUILT (sigil branch `sectionD-backlog`, commit `a184ac6`)
+
+Sound constant-fold dataflow over `flag_check::Cfg`: a 3-point lattice `Top ⊒ Const{z,n} ⊒
+Dyn`, join = meet, degrade-on-anything-not-provably-CC-transparent (the OPPOSITE polarity to
+`flag_check`'s false-negative-leaning carry analysis — this must not false-fire). 5 TDD tests
+(RED-witnessed): the `await_slot` shape fires, the legitimate `btst`/`cmp` spins do NOT, a
+`moveq`-fed branch fires, meet-disagreeing constants do NOT. Zero new clippy; frontend-emp
+suite green (102+ unchanged). `emp_contracts` bin prints the new firing list.
+
+### FIRST-CORPUS-RUN — 131 procs, both shapes: EXACTLY 2 FIRINGS, BOTH REAL BUGS
+
+Both are the same `startZ80`-clobbers-the-flag class (a `cmp`/`tst` under bus-hold, then
+`start_z80` = `move.w #$0000, Z80_BUS_REQUEST` forcing `Z=1`, then a conditional branch
+reading the clobber → the branch is statically NEVER taken → the spin never iterates):
+
+1. **`Sound_PlayMusic.await_slot`** (`sound_api.emp:187-191`) — the known bug; **c1 target.**
+2. **`Sound_Init.wait_alive`** (`sound_api.emp:132-142`) — **NEW.** `move.w #$2700,sr /
+   stop_z80 / cmp.b #SND_ALIVE_MARKER, ALIVE_SLOT / start_z80 / bne .wait_alive`. The 68k's
+   "block until the Z80 driver posts STAT_ALIVE before touching sound" boot handshake **never
+   actually blocks** — it probes `ALIVE_SLOT` once and proceeds regardless of whether the
+   driver finished init. Same corroboration (`Sound_DrainSfxRing` branches before `startZ80`);
+   same fix (capture-then-test).
+
+**GATE TRIAGE (Sound_Init):** same defect class, same file, same fix as `await_slot` — I
+recommend **folding Sound_Init's fix into c1** (one commit closes both the same way).
+Awaiting the triage ruling before cutting c1's final scope; `Sound_Init` is NOT fixed until
+ruled. (The lint paying for itself on run #1 — a second silent shipped bug — is the intended
+correctness-hardening dividend.)
+
+**NEXT (meanwhile-authorized):** build item-4 core (E006/E007/E008/E011 Z80-bus machine-state
+lint) on the same branch (byte-neutral). c1/c2 aeon fixes held for the Sound_Init triage.
+
+### ITEM-4 CORE — BUILT (sigil `93a309f`) + ARC CLOSED
+
+`[bus.*]` Z80-bus machine-state lint shipped: `[bus.double-stop]`/`[bus.start-without-stop]`/
+`[bus.stopped-at-return]`/`[bus.vdp-write-unstopped]` (E011/E008/E007/E006) over `flag_check::Cfg`;
+3-point MUST lattice `{Stopped, Running, Unknown}`, zero-FP (Unknown entry seed). 8 TDD tests
+RED-witnessed; frontend-emp green (110); zero new clippy. Gate rulings honored: E008 included (4a);
+expanded-operand recognition (4b, keys off resolved `Z80_BUS_REQUEST`/VDP-port operands); E006 punts
+indirect `(a4)` VDP writes (s4lint.py:1133 caveat, documented). FIRST-CORPUS-RUN (126 procs, both
+shapes over the c1/c2-fixed corpus): **0 `[bus.*]` AND 0 `[branch.condition-constant]`** (was 2 → both
+fixed). Teeth sentinel-proven (injected double-stop into `Sound_PostByte`'s real `stop_z80()`
+expansion → fires). Full close in `2026-07-23-sectionD-backlog-arc-close-packet.md`. HELD for overseer.

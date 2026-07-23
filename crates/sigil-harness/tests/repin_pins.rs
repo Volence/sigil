@@ -244,14 +244,15 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // region downstream of entity_window — sound_api included — slides −0x8 both shapes.
     assert_eq!(pins::SOUND_API.plain_base, 0x620E);  // −0x8 c6 entity_window clr removal upstream
     assert_eq!(pins::SOUND_API.debug_base, 0x7B7C);  // −0x8 c6 entity_window clr removal upstream
-    assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
-    // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
-    // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM
-    // byte-IDENTICAL — literal len + debug_len override, no end-symbol shipped).
-    // SOUND_PLAY_SFX_OFF became per-shape (PlayMusic's asserts precede Sound_PlaySFX).
-    assert_eq!(pins::SOUND_API.debug_len, 0x2FC);  // +0x22: H-1 PlayMusic repost gate
-    // +0x22 both shapes: H-1 Sound_PlayMusic repost gate precedes Sound_PlaySFX.
-    assert_eq!(pins::SOUND_PLAY_SFX_OFF, pins::ShapeOffset { plain: 0x122, debug: 0x1D2 });
+    // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
+    // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
+    // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
+    // (+0x4); debug_len 0x2FC -> 0x3B4 (+0xB8 = +0x4 fix + +0xB4 watchdogs). The two
+    // watchdogs + their raise_error blobs precede Sound_PlaySFX, so SOUND_PLAY_SFX_OFF
+    // grows the same +0x4 plain / +0xB8 debug.
+    assert_eq!(pins::SOUND_API.plain_len, 0x20A);
+    assert_eq!(pins::SOUND_API.debug_len, 0x3B4);
+    assert_eq!(pins::SOUND_PLAY_SFX_OFF, pins::ShapeOffset { plain: 0x126, debug: 0x28A });
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
     // +0xCC (churn) +0xC (hook guards) both in the debug ROM, like DEBUG_ASSEMBLED_LEN.

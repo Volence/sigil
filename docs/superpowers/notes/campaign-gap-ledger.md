@@ -1379,3 +1379,25 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   (PB2: biased d3 treated as raw). When mask producers or other Y-seams appear, a VdpY/ScreenY
   distinct pair makes the bias a type fact. Wave-2-adjacent (values are moved+compared at seams,
   computed in render loops — split the seam surface from the loop internals at design). — OPEN.
+- **Oracle live-single-step protocol — reusable technique + 3 failure modes** (banked 2026-07-23,
+  §D backlog await_slot live-proof). Proving a spin-loop *now iterates* (the c1 constant-flag-clobber
+  fix) required single-stepping the `bne` under a forced-nonzero `MUSIC_SLOT` and reading the DEBUG
+  watchdog counter (`d4`) drain — the successful protocol observed `$8000→$7C64` (the loop ran ~924
+  iterations before the slot cleared, vs the pre-fix "exactly once"). Three attempts wedged first, each
+  now a reusable caution:
+  - **Seed-worktree re-fire** — the oracle had a STALE ROM/symbols loaded (`0x6272` decoded to
+    `moveq #1,d0/rts`, not `Sound_PlayMusic`); every address was wrong until the fresh build was
+    reloaded AND symbols re-derived from the new `.lst`. *Always hash-compare the loaded ROM against the
+    just-built file and reload symbols before trusting any address* (the genesis-dev "verify the artifact
+    before debugging it" rule, paid again).
+  - **Fail-loud build guard** — a background watcher/daemon can rebuild underneath the live session,
+    swapping the ROM mid-proof. Consider a tiny fail-loud guard (build-stamp check) *only if it's
+    genuinely small* — honest call: for a one-shot proof, the manual hash-compare above is usually
+    cheaper than standing infrastructure. Logged as an idea, not a mandate.
+  - **reset→0xFFFF wedge** — poking `MUSIC_SLOT` then `reset`ting the core cleared the poke (reset
+    re-inits Z80 RAM); the slot read back `0xFFFF`-ish garbage and the branch tested trash. *Poke AFTER
+    the reset + run-to, never before* — set up state at the breakpoint, not across a reset.
+  - **press-onto-breakpoint terminal wedge** — issuing an input `press` while the core sat ON a
+    breakpoint deadlocked the step engine (the press never delivered; the session hung). *Release/resume
+    past the breakpoint before pressing, or drive state via memory pokes instead of input* when
+    single-stepping. — CLOSED (protocol captured; rows are cautions for the next live proof).

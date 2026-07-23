@@ -133,4 +133,31 @@ fn main() {
             f.proc, f.callee, f.reg, f.expected, found
         );
     }
+
+    println!(
+        "\n-- [branch.condition-constant] firings (item-4 rider, {}): --",
+        report.branch_const_firings.len()
+    );
+    for f in &report.branch_const_firings {
+        let dir = if f.always_taken { "ALWAYS taken" } else { "NEVER taken" };
+        println!(
+            "  {:<28} b{:<3} statically decided ({dir}) @ {}..{}",
+            f.proc, f.cc, f.span.start, f.span.end
+        );
+    }
+
+    println!(
+        "\n-- [bus.*] Z80-bus machine-state firings (item-4 core, {}): --",
+        report.bus_firings.len()
+    );
+    for f in &report.bus_firings {
+        use sigil_frontend_emp::z80_bus::BusFiringKind::*;
+        let code = match f.kind {
+            DoubleStop => "[bus.double-stop]      (E011)",
+            StartWithoutStop => "[bus.start-without-stop] (E008)",
+            StoppedAtReturn => "[bus.stopped-at-return]  (E007)",
+            VdpWriteUnstopped => "[bus.vdp-write-unstopped](E006)",
+        };
+        println!("  {:<28} {code} @ {}..{}", f.proc, f.span.start, f.span.end);
+    }
 }

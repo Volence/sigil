@@ -188,8 +188,8 @@ tests = ["section_port"]
 # sound_api debug-shape byte change.
 name = "sound_api"
 start = "Sound_PostByte"
-len = 0x206       # +0x22: H-1 Sound_PlayMusic repost gate (stopZ80/tst/startZ80/bne)
-debug_len = 0x2FC # +0x22: same gate (shape-invariant code)
+len = 0x20A       # plain: the twelve Sound_* procs, incl. both capture-then-test Z80-handshake spins
+debug_len = 0x3B4 # debug: + the two SPIN_WATCHDOG_LIMIT bounded-spin rails (raise_error blobs), DEBUG-only
 gate = "SIGIL_EMP_SOUND_API"
 tests = ["sound_api_port"]
 

@@ -1117,3 +1117,38 @@ full paired strict on merged masters **2457/0/1**. These are the new canonical p
   sha256 **`b49757dad2ef18420055eb5d1cf09fc68c543d6b94cae8027d63df37d6bbf37f`**.
 - Debug `s4.debug.bin`: **429107 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`5752c2e3`**,
   sha256 **`9303409b0f44dfe1aa268578fe20c47394921eed49f415f26f82168899684e6e`**.
+
+## 2026-07-23 re-baseline — §D backlog c1 (constant-flag spin fix) + c2 (DEBUG watchdogs) — the current pin (BRANCH TIP, pre-merge)
+
+§D backlog arc, sound_api only. **This entry is the BRANCH-TIP baseline** — held for the
+overseer's attack-the-diff before merge. Branch tips: aeon **`4b5a2c0`** / sigil `sectionD-backlog`.
+
+- **c1** (aeon `c0db661`, both twins) — the constant-flag spin-class fix. `Sound_PlayMusic.await_slot`
+  and `Sound_Init.wait_alive` both put `startZ80` (`move.w #$0000, Z80_BUS_REQUEST`, forces `Z=1`)
+  between a `tst`/`cmp` and the conditional branch, so the branch read the clobbered flag and the
+  spin never iterated (the repost gate never gated; the driver-boot handshake never blocked). Fix:
+  capture the slot/marker byte under the bus hold, test AFTER `startZ80`. Both surfaced by the
+  `[branch.condition-constant]` lint (item-4 rider); both gate-blind (identical twins) + boot-invisible.
+  **BYTE-CHANGING plain: +0x4** (each spin +0x2), absorbed at `org $10000` → `ASSEMBLED_LEN` unchanged.
+- **c2** (aeon `4b5a2c0`, both twins) — DEBUG-only bounded-spin watchdog on both spins (shared
+  `SPIN_WATCHDOG_LIMIT = $8000`; `if DEBUG==1 { counter + raise_error }`). **Plain byte-IDENTICAL to c1**
+  (self-gates to zero bytes). Debug **+0xB4** over c1. DEBUG asl ripple: `Sound_Ping`/`Sound_PlaySample`
+  `bra Sound_PostByte` → `.w` in DEBUG (`ifdef`; the `.emp` `jbra` auto-relaxes) — the watchdog pushes
+  them past `.s` range.
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` are UNCHANGED (plain `0x5DB60`, debug `0x5F65A`) —
+the sound_api growth (+0x4 plain / +0xB8 debug) absorbs in the padding before `org $10000`. Plain file
+size unchanged (421122). **Debug file grew +58 B (429107 → 429165) = the post-assembly `convsym` symbol
+append** (the new DEBUG-only `.alive_go`/`.await_go` locals), NOT a body-length change.
+
+**Standing ripple:** `repin` → `pins.rs` (SOUND_API len 0x206→0x20A / debug_len 0x2FC→0x3B4; SOUND_PLAY_SFX
+/ SOUND_DRAIN_SFX_RING / SOUND_PLAY_RING / SOUND_PLAY_SFX_OFF bases). `repin.toml` sound_api literal
+`len`/`debug_len` HAND-updated (byte-changing region). `repin_pins.rs` hand-typed baseline updated
+(+ delta-chain note). `engine.inc` gate resume org UNCHANGED (`$7E78`/`$6414` — growth absorbs before a
+fixed successor); `mixed_dac_rom.rs` UNCHANGED (no sound refs). Full paired strict **2476/0**.
+
+- Aeon repo branch tip: **`4b5a2c0`** (branch `sectionD-backlog`).
+- Non-debug `s4.bin`: **421122 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`ab787bd1`**,
+  sha256 **`a8d1365aaa4bf5b4668e9f843645b2e32a8aa765326f60e042f594ef8e3403e6`**.
+- Debug `s4.debug.bin`: **429165 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`6a19669f`**,
+  sha256 **`33a0a75f7bc968bc78796e12107850ad414a2dcd346e7cd5f0632424369afad4`**.

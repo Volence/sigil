@@ -453,7 +453,7 @@ pub fn check_flag_unused(
 /// The condition a `bXX`/`sXX` branch/set tests, stripped of the mnemonic prefix
 /// (`bcc`→`cc`, `bhs`→`cc`, `blo`→`cs`, `beq`→`eq`, …). `None` for a non-branch,
 /// an unconditional `bra`, or `dbf`/`dbra` (Cond::F).
-fn branch_cond(mnem: &str) -> Option<&'static str> {
+pub(crate) fn branch_cond(mnem: &str) -> Option<&'static str> {
     let bare = mnem.strip_prefix('b').or_else(|| mnem.strip_prefix('s'))?;
     Some(match bare {
         "cc" | "hs" => "cc",
