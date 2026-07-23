@@ -1251,6 +1251,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   the Parcel-B procs whose effective set already equalled declared). CompactDynamicLive/DrainDynamicPending
   callee clobbers are subsets. Nothing to change. — CLOSED.
 
+- **Upstream-of-engine byte-changes ripple ALL engine-address fixtures, not just the symbol's pins**
+  (learned phase2.5 c5, 2026-07-22). c5 removed the dead Cold_Boot `CROSS_RESET_MAGIC` store — `boot.asm`
+  sits upstream of EVERY gated engine region, so all engine bases slid −0xA and the byte gate surfaced
+  sigil fixtures the design-gate census did NOT flag (it listed only lexer/repin fixtures): `vdp_init_port`'s
+  `BootData_VDPRegs` cross-seam label VMA (a pc-rel `lea` target), `sigil-harness/src/lib.rs` `REGION_A_LMA`
+  (the Z80 driver blob's `Z80_Sound_Start` anchor — blob content byte-identical, position −0xA), and
+  `mixed_dac_rom`'s hardcoded engine map bases + verification-window slices + the two `bsr.w Sound_DrainSfxRing`
+  displacement reference addresses. **BAR for any future byte-change UPSTREAM of the engine bank:** sweep every
+  hardcoded engine-address fixture (grep the shifted `[boot, $10000)` range across `crates/`), not just the
+  edited symbol's direct pins. **Migration candidate:** the remaining `mixed_dac_rom` hardcoded verification
+  windows + bsr disp refs should follow the map bases to `pins::`-derived expressions (c5 migrated the five
+  map bases: hblank/controllers/math/vdp_init/game_loop). — OPEN (migration).
+
 - **RunObjects cull-math branchless-abs** (banked 2026-07-22, core #1 gate DISSOLVED-STAGE-0). Replace the
   two `bpl/neg.w` conditional-abs sequences in the X/Y cull distance checks (`core.emp:504-519`) with
   branchless abs — removes 2 predicted branches per checked/dispatched dynamic slot. **Value ceiling
