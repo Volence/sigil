@@ -459,6 +459,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
         vec![
             parse_file(&aeon.join("engine/system/constants.emp")),
             parse_file(&aeon.join("engine/structs.emp")),
+            parse_file(&aeon.join("engine/vdp.emp")),
         ],
         aeon.join("engine/level"),
         "section",
