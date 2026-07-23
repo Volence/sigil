@@ -242,8 +242,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // dead EntityScanState left-edge ratchet fields are cut mid-struct (len $1A→$16),
     // dropping their two `clr.w` inits from EntityWindow_InitSection (−0x8 code); every
     // region downstream of entity_window — sound_api included — slides −0x8 both shapes.
-    assert_eq!(pins::SOUND_API.plain_base, 0x620E);  // −0x8 c6 entity_window clr removal upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B7C);  // −0x8 c6 entity_window clr removal upstream
+    // Then −0x18 BOTH shapes (t18 parallax step-2 Hscroll_Dirty pad cut, 2026-07-23):
+    // the 4 dead `move.b #imm,(Hscroll_Dirty_*).w` stores are removed from
+    // Parallax_Step4_Fill (−0x18 code); parallax is upstream of sound_api in the
+    // engine bank, so sound_api and every downstream region slide −0x18 both shapes.
+    // (No RAM shift: the two RAM symbols become a same-size 2-byte reserved pad, so
+    // PLAYER_1/DYNAMIC_SLOTS below are unchanged.)
+    assert_eq!(pins::SOUND_API.plain_base, 0x61F6);  // −0x18 t18 Hscroll_Dirty store removal upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B64);  // −0x18 t18 Hscroll_Dirty store removal upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

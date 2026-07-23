@@ -148,7 +148,7 @@ fn parallax_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
 fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // (name, plain VMA, debug VMA) — RAM mostly shape-invariant; Camera_*/
     // Current_Act_Ptr live in a debug-shifted RAM region; Section_GetSecPtrXY is ROM.
-    let table: [(&str, u32, u32); 28] = [
+    let table: [(&str, u32, u32); 26] = [
         ("Parallax_State", 0xFFFF_8890, 0xFFFF_8890),
         ("Parallax_State_End", 0xFFFF_8984, 0xFFFF_8984),
         ("Parallax_Current_Config", 0xFFFF_88B8, 0xFFFF_88B8),
@@ -172,8 +172,6 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         ("Current_Act_Ptr", 0xFFFF_AF3C, 0xFFFF_AF60),
         ("Vscroll_Factor", 0xFFFF_888C, 0xFFFF_888C),
         ("Hscroll_Buffer", 0xFFFF_850A, 0xFFFF_850A),
-        ("Hscroll_Dirty_Start", 0xFFFF_888A, 0xFFFF_888A),
-        ("Hscroll_Dirty_End", 0xFFFF_888B, 0xFFFF_888B),
         ("VDP_Shadow_Table", 0xFFFF_800A, 0xFFFF_800A),
         ("VDP_Dirty_Mask", 0xFFFF_801E, 0xFFFF_801E),
         ("Section_GetSecPtrXY", 0x0000_560C, 0x0000_6296),
