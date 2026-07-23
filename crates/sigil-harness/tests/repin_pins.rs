@@ -123,26 +123,26 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // lsr/tst/dbeq) — the FIRST gated engine region — so every base below takes a
     // further +2 BOTH shapes (the "+0x62" tags below are +0x64 cumulative);
     // ASSEMBLED_LEN still unchanged (absorbed by `org $10000`).
-    assert_eq!(pins::ANIMATE.plain_base, 0x2F2A);  // +0x62 silent-drop
-    assert_eq!(pins::ANIMATE.debug_base, 0x3504);  // +0x62 silent-drop
+    assert_eq!(pins::ANIMATE.plain_base, 0x2F20);  // −0xA c4 core shrink upstream
+    assert_eq!(pins::ANIMATE.debug_base, 0x34FA);  // −0xA c4 core shrink upstream
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x32B4);  // +0x62 silent-drop
-    assert_eq!(pins::RINGS.debug_base, 0x39B4);  // +0x62 silent-drop
+    assert_eq!(pins::RINGS.plain_base, 0x32AA);  // −0xA c4 core shrink upstream
+    assert_eq!(pins::RINGS.debug_base, 0x39AA);  // −0xA c4 core shrink upstream
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
-    // core LEN unchanged. Bases shifted +0x18 plain (dma_queue +0xC + dplc
-    // item-11 +0xC precede core). debug_len 0x6C8 (unchanged — items 5/10/11 are
-    // downstream of / plain-only within core).
-    assert_eq!(pins::CORE.plain_base, 0x281C);  // +0x62 silent-drop
-    assert_eq!(pins::CORE.plain_len, 0x2EE);
-    assert_eq!(pins::CORE.debug_base, 0x29AE);  // +0x62 silent-drop
-    assert_eq!(pins::CORE.debug_len, 0x736);
+    // core LEN shrank −0xA BOTH shapes (c4 Spawn_Count: InitObjectRAM store −4 +
+    // RunObjects moveq+store −6). Bases unchanged — dplc precedes core and is
+    // upstream of the removals, so core's base holds.
+    assert_eq!(pins::CORE.plain_base, 0x281C);
+    assert_eq!(pins::CORE.plain_len, 0x2E4);   // −0xA c4 Spawn_Count store removals
+    assert_eq!(pins::CORE.debug_base, 0x29AE);
+    assert_eq!(pins::CORE.debug_len, 0x72C);   // −0xA c4 Spawn_Count store removals
     assert_eq!(pins::DPLC.plain_base, 0x2778);  // +0x62 silent-drop
     assert_eq!(pins::DPLC.debug_base, 0x290A);  // +0x62 silent-drop
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
@@ -150,7 +150,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x28F0, debug: 0x2A82 });  // +0x62 silent-drop +2 c3 vdp_init (offset within core stable)
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x28EC, debug: 0x2A7E });  // −0x4 c4: InitObjectRAM store (−4) precedes DeleteObject within core; RunObjects (−6) is downstream
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -229,8 +229,12 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // odd-word tail, growing plane_buffer +0x1C; plane_buffer is upstream of the
     // whole level+sound block, so tile_cache/collision_lookup/section/sound_api
     // bases each slide +0x1C (their LENs unchanged).
-    assert_eq!(pins::SOUND_API.plain_base, 0x622A);  // +0x1C 8b plane_buffer move.l rider
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B98);  // +0x1C 8b plane_buffer move.l rider
+    // Then −0xA BOTH shapes (pass-3 phase2.5 c4 Spawn_Count, 2026-07-22): core
+    // loses 3 instructions (InitObjectRAM store −4, RunObjects moveq+store −6);
+    // core is upstream of the whole engine bank, so sound_api and every region
+    // downstream of core slide −0xA both shapes (their LENs unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6220);  // −0xA c4 core shrink upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B8E);  // −0xA c4 core shrink upstream
     assert_eq!(pins::SOUND_API.plain_len, 0x206);  // +0x22: H-1 PlayMusic repost gate
     // debug_len grew 0x1E4 -> 0x2DA (retro-fix batch 2: the PlayMusic song-id +
     // PlaySFX ring-full DEBUG asserts, +0xF6); plain unchanged (release ROM

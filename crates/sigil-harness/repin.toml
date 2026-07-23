@@ -692,10 +692,6 @@ name = "Effect_Slots"
 tests = ["core_port"]
 
 [[symbol]]
-name = "Spawn_Count"
-tests = ["core_port"]
-
-[[symbol]]
 name = "Game_Paused"
 tests = ["core_port"]
 

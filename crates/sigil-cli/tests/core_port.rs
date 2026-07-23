@@ -22,7 +22,7 @@
 //!   `if DEBUG == 1 {}`).
 //! - **The largest cross-seam RAM surface of the campaign** — Object_RAM,
 //!   Dynamic/System/Effect_Slots, Dynamic/Effect_Free_{Stack,SP},
-//!   Object_RAM_End, Spawn_Count, Game_Paused, Camera_X/Y (bare abs.w EAs) +
+//!   Object_RAM_End, Game_Paused, Camera_X/Y (bare abs.w EAs) +
 //!   the proc seams Draw_Sprite / MDDBG__* (debug).
 //! - **`#(extern("A")-extern("B"))/4-1` link-time symbol-difference /division**
 //!   as a `.w` immediate (the clear-loop count).
@@ -92,7 +92,6 @@ const PLAIN: Shape = Shape {
         ("Effect_Free_Stack", pins::EFFECT_FREE_STACK.plain),
         ("Effect_Free_SP", pins::EFFECT_FREE_SP.plain),
         ("Player_1", pins::PLAYER_1.plain),
-        ("Spawn_Count", pins::SPAWN_COUNT.plain),
         ("Game_Paused", pins::GAME_PAUSED.plain),
         ("Camera_X", pins::CAMERA_X.plain),
         ("Camera_Y", pins::CAMERA_Y.plain),
@@ -120,7 +119,6 @@ const DEBUG: Shape = Shape {
         ("Effect_Free_Stack", pins::EFFECT_FREE_STACK.debug),
         ("Effect_Free_SP", pins::EFFECT_FREE_SP.debug),
         ("Player_1", pins::PLAYER_1.debug),
-        ("Spawn_Count", pins::SPAWN_COUNT.debug),
         ("Game_Paused", pins::GAME_PAUSED.debug),
         ("Camera_X", pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.debug),

@@ -1241,7 +1241,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   byte-neutral `declared∖effective` tightening that Parcel B applied elsewhere (`ProcNode.declared_clobbers
   − Closure.effective.regs`, non-`out()` remainder = over-declared). NOT run standalone — no ceremony for
   a byte-neutral parcel of one hot loop. **Rides a future `core.emp` touch** (any elected RunObjects edit
-  runs the sweep in the same commit). Reference: 2026-07-22-core1-runobjects-design.md §6. — OPEN.
+  runs the sweep in the same commit). Reference: 2026-07-22-core1-runobjects-design.md §6.
+  — **RAN + CLOSED (phase2.5 c4, 2026-07-22, on the Spawn_Count `core.emp` touch).** No over-declared
+  remainder: RunObjects dispatches object code as `ObjRoutine = proc (a0) preserves(a0, d7)` (core.emp:21),
+  whose permitted clobber set is therefore `d0-d6/a1-a6` (everything but the two preserved regs); RunObjects
+  itself clobbers `d7` (the loop counter) and `a0` (the slot cursor). The transitive effective set is thus
+  `d0-d7/a0-a6` — **identical to the declared `clobbers(d0-d7/a0-a6)`**. The declaration is forced-full by
+  the dispatch contract, so the tightening is a byte-neutral no-op (a legitimate "no tidy" outcome, mirroring
+  the Parcel-B procs whose effective set already equalled declared). CompactDynamicLive/DrainDynamicPending
+  callee clobbers are subsets. Nothing to change. — CLOSED.
 
 - **RunObjects cull-math branchless-abs** (banked 2026-07-22, core #1 gate DISSOLVED-STAGE-0). Replace the
   two `bpl/neg.w` conditional-abs sequences in the X/Y cull distance checks (`core.emp:504-519`) with

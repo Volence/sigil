@@ -55,7 +55,6 @@ const PLAIN_LABELS: &[(&str, u32)] = &[
     ("Effect_Free_Stack", pins::EFFECT_FREE_STACK.plain),
     ("Effect_Free_SP", pins::EFFECT_FREE_SP.plain),
     ("Player_1", pins::PLAYER_1.plain),
-    ("Spawn_Count", pins::SPAWN_COUNT.plain),
     ("Game_Paused", pins::GAME_PAUSED.plain),
     ("Camera_X", pins::CAMERA_X.plain),
     ("Camera_Y", pins::CAMERA_Y.plain),
