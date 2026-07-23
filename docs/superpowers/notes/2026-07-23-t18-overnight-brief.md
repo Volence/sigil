@@ -1,4 +1,16 @@
-# t18 — parallax port: OVERNIGHT RUN BRIEF (overseer-authored, ready to dispatch)
+# t18 — parallax port: RUN BRIEF (overseer-authored)
+
+> **MODE CHANGE 2026-07-23 (day 2): DAYTIME RUN — the "overnight autonomy rules" section
+> below is SUPERSEDED.** t18 runs as a NORMAL tranche: full port loop with live overseer
+> gates (step-0 design note TO THE GATE before cutting; step-1 verifier artifacts; live
+> oracle work allowed, foreground; the 3→4→5 cycle closes ONLY via the DRY-PANEL rule —
+> campaign-port-loop.md at master, weighted composition A×1/B×1-2/C×2-3 with C3 active
+> since parallax is VDP/HInt-heavy; then step 6 and the merge ceremony at the gate).
+> Masters at dispatch: **aeon c39f308 / sigil 48ffe9f**; NEW canonical **ab787bd1/421122 ·
+> 6a19669f/429165** (§D arc merged — sound_api changed; re-verify at start, fetch-first).
+> Everything else below — the inherited obligations, worktree/seed discipline, per-commit
+> ripple, honest-stop conditions — stands unchanged. The [bus.*] and
+> [branch.condition-constant] lints are now LIVE on the corpus your port joins.
 
 > **STATUS: READY.** Volence pastes the dispatch block (campaign log / overseer message) when
 > the §D backlog arc has closed or checkpointed cleanly. This note is the durable copy — the
