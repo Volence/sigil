@@ -461,6 +461,27 @@ with zero findings at ALL THREE steps (empty retrospect AND empty
 construct pass AND no-changes step 5) — see THE SHAPE box at the top;
 an empty step 3 alone does not exit the loop.
 
+  **The dry-panel rule (Volence-ratified 2026-07-23; first tranche =
+  t18):** DRY is no longer self-declared. When the porting agent's own
+  full pass comes up empty, it dispatches a PANEL of 2-4 FRESH read-only
+  subagents, each running ONE lens over the ported file + packet:
+  **Lens A** (step-3 flavored) — cold reader for ceremony pain and
+  language asks the porter has gone blind to; **Lens B** (step-4
+  flavored) — corpus-pattern matcher, BOTH directions (does this file
+  re-hand-roll an existing construct; does the corpus re-hand-roll this
+  file's new shapes — the t17 step-6 vdp-dup class); **Lens C** (step-5
+  flavored) — perf/hazard skeptic: hot-path cycle audit + the gate-blind
+  checklist (hand-computed strides · CC-clobber between test and Bcc ·
+  loop-backs provably fire · conditional save/restore reliance).
+  Panel findings land in the packet and are ADJUDICATED AT THE GATE;
+  any real finding re-opens the cycle. **DRY = a panel round returning
+  nothing new.** One panel round per dry claim (cost-bounded, not
+  continuous); panel agents are read-only analysts — they report, never
+  edit. Rationale: the second-reviewer sweep went 7/7 on bugs the porter
+  walked past, and t17's own step-6 caught the agent's own duplicate —
+  an agent cannot see its own blind spots by looking harder; a fresh
+  lens is structural, not optional.
+
 **Step 6 — Corpus sweep** (Volence-ratified 2026-07-11; was the old
 in-loop step-4 back-propagate, pulled OUT to a single final GATED pass —
 "one combined wave, not two", stated plainly): ANY new addition this
