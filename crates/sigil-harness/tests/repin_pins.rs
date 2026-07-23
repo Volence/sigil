@@ -248,8 +248,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // engine bank, so sound_api and every downstream region slide −0x18 both shapes.
     // (No RAM shift: the two RAM symbols become a same-size 2-byte reserved pad, so
     // PLAYER_1/DYNAMIC_SLOTS below are unchanged.)
-    assert_eq!(pins::SOUND_API.plain_base, 0x61F6);  // −0x18 t18 Hscroll_Dirty store removal upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B64);  // −0x18 t18 Hscroll_Dirty store removal upstream
+    assert_eq!(pins::SOUND_API.plain_base, 0x61EA);  // −0xC t18 branch modernization (6 conservative-.w→.s) upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7B58);  // −0xC t18 branch modernization (6 conservative-.w→.s) upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
