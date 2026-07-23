@@ -1107,7 +1107,12 @@ it too). Fix: `lsl.w #3`→`lsl.w #2` in both twins (`×26`→`×22 = $16`), one
 Verified in the emitted disassembly (`$3C38 E749→E549`, read `$3C46` = `Entity_Scan_State+$12 +
 d×$16`), gate 2457/0/1 both shapes. **These are the corrected FINAL canonical bytes.**
 
-- Aeon branch tip: **`04ff7e5`** (`pass3-phase25-item9`, pre-merge — overseer RE-clear HOLD on the byte-changing fix).
+**MERGED (overseer re-attack-the-diff PASS on the corrected bytes):** aeon master
+**`033865f`** (merge of `pass3-phase25-item9` --no-ff) / sigil master **`9b89d67`**.
+Merged aeon master rebuilds the canonical bytes below EXACTLY (both invocations);
+full paired strict on merged masters **2457/0/1**. These are the new canonical pin.
+
+- Aeon repo master: **`033865f`** (merge of `pass3-phase25-item9`; branch tip was `04ff7e5`).
 - Non-debug `s4.bin`: **421122 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`406c773b`**,
   sha256 **`b49757dad2ef18420055eb5d1cf09fc68c543d6b94cae8027d63df37d6bbf37f`**.
 - Debug `s4.debug.bin`: **429107 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`5752c2e3`**,

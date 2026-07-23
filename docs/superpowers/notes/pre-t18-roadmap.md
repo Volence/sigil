@@ -139,6 +139,16 @@ This roadmap covers the three output buckets of the 4-wave optimization review �
 
 ## Phase 2.5 — D7 dead-code deletion batch  *(its own gated, byte-CHANGING batch)*
 
+> **✅ CLOSED-MERGED 2026-07-22** — combined item-9 + Phase-2.5 arc (c1–c6 + MigrateMasks fix)
+> merged: **aeon master `033865f` / sigil master `9b89d67`** (`pass3-phase25-item9` --no-ff).
+> NEW CANONICAL: plain **`406c773b`**/421122 · debug **`5752c2e3`**/429107 (ASSEMBLED_LEN unchanged).
+> Full paired strict on merged masters **2457/0/1**; overseer attack-the-diff PASS + re-attack PASS.
+> **Cut:** Spawn_Count · CROSS_RESET (whole dead mechanism) · ess_*_left_idx (mid-struct) + the
+> byte-neutral D7 const/flag purge. **PARKED (gate rulings, gap-ledger reopen conditions):**
+> Hscroll_Dirty_* → t18 (parallax retires it free) · Tier-C movem (item 11, children.asm port
+> adjudicates) · Tile_Cache_GetTile (next tile_cache byte-changing edit) · aabb#1 · dplc D3.
+> **Caught:** a silent, byte-gate+boot-invisible MigrateMasks hand-stride bug (ledger blind-spot row).
+
 10. **D7 dead-code / dead-symbol deletions** `[opt]`  *(ledger row 1091)*
     Deletes live RAM symbols / dead writers: `Spawn_Count`, `CROSS_RESET_MAGIC`, dead `ess_*` indices, `Hscroll_Dirty_*`, `Tile_Cache_GetTile` (zero callers), the wave-4 dead-constants list, dead `DEBUG_*` flags.
     **Byte-changing** (RAM layout shifts / removed stores) → moves the byte gates → needs both-shape lockstep + re-pin + provenance. Cannot ride a byte-neutral pass. Ratified scaffolding (e.g. `Plane_Buffer_Reset`'s reset hook) is **annotated, not deleted**.
