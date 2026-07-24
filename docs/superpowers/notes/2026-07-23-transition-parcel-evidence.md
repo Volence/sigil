@@ -207,4 +207,40 @@ the promote `.snap_b` moves nothing — no pop. Convergence-by-frame-0 proven.
 
 **Gate:** full paired strict **2490/0** (= 2488 + the 2 new divs/divu encode tests).
 
-## B1 — re-cross cancel branch — (pending; inside B2's state machine)
+## B1 — re-cross cancel branch — CLOSED
+
+Inside B2's contract (active config reverts to current the instant frames→0, so
+every mode/length/stride consumer follows it back). `Parallax_StartTransition`'s
+`a0 == Current_Config → .no_change` unconditional no-op becomes `.recross_current`:
+if a transition is staged (`Transition_Frames > 0`) CANCEL it — clear Target +
+frames, set Snap_Pending (snap bands back to current), and `jbra .update_mode`
+(a0 == current → restore current's mode bits). With nothing staged it is the
+genuine no-op as before. parallax.emp/.asm StartTransition.
+
+**Scope class:** byte+length-changing (+0x1C parallax: the cancel branch). Ripple:
+`repin` → pins.rs (PARALLAX len +0x1C, SOUND_API base +0x1C, 3 SOUND_* pins);
+engine.inc 2 resume orgs +0x1C (HAND); repin_pins.rs SOUND_API-base delta-chain
+(HAND); mixed_dac/repin.toml unchanged. `.emp`/`.asm` branch sizing matched
+(`beq.s`/`bra.s`, ~86 B forward — in `.s` range). EndOfRom `0x5DB60` unchanged.
+New canonical: plain **`0bfa5b79`**/421161 · debug **`9d962703`**/429204.
+
+**Rig A/B (re-cross via the real CheckBoundary path).** Faithful trigger, no
+register-write tool needed: staged a mid-transition (Current=OJZ_Default = A,
+Target = a second config pointer, Frames=8), then poked `Parallax_Prev_Sec_X`=$FF
+so the next frame's `Parallax_CheckBoundary` sees a section change under the
+(frozen, sec-0) camera → resolves sec 0's config (all OJZ sections = act default =
+OJZ_Default = A) → `StartTransition(A)`. Confirmed firing: `Prev_Sec_X` committed
+to 0, and on the AFTER ROM a0=`0x11428` (= Current) verified at the StartTransition
+breakpoint. Identical poked state on both ROMs — the ROM is the only variable; the
+staged-Target identity is immaterial to the `a0==Current` cancel path.
+
+| after re-cross into current's own section | Target_Config | Frames | Snap_Pending | outcome |
+|---|---|---|---|---|
+| **before** (B2 `8ecbf24e`, pre-B1 no-op) | unchanged (staged ptr) | 7 | 0 | transition **CONTINUES** (would complete at B) |
+| **after** (B1 `9d962703`) | **0 (cleared)** | **0** | **1** | transition **CANCELED**, stays on current (A) |
+
+Before: `StartTransition(A)` no-ops, the staged transition survives and keeps
+counting down. After: it cancels — Target/frames cleared, bands snapped back to
+current, current's mode restored. Re-cross cancel proven.
+
+**Gate:** full paired strict **2490/0**.

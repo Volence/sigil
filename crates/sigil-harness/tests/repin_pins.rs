@@ -268,8 +268,12 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // the band-loop lerp `asr.w #shift` (2 B) becomes `ext.l + moveq + move.b + divs.w`
     // (10 B) for exact convergence-by-frame-0 — parallax grows +0x8; sound_api's base
     // slides +0x8 both shapes (LENs unchanged).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6248);  // +0x8 B3 frames-remaining ramp upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7BB6);  // +0x8 B3 frames-remaining ramp upstream
+    // Then +0x1C BOTH shapes (transition parcel B1 re-cross cancel branch, 2026-07-23):
+    // StartTransition's a0==current no-op becomes a cancel branch (tst frames + clear
+    // target/frames + snap-pending + mode-restore) — parallax grows +0x1C; sound_api's
+    // base slides +0x1C both shapes (LENs unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6264);  // +0x1C B1 re-cross cancel upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7BD2);  // +0x1C B1 re-cross cancel upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
