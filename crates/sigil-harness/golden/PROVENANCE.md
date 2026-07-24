@@ -1267,3 +1267,44 @@ masters (2499 + camera_port 5 + bg_port 3 + bg_anim_port 2).
   sha256 **`d7892efc2b57cf1cdbc2e478fa1c1e5b01e5d9b806f6aae327b25647f7167c25`**.
 - Debug `s4.debug.bin`: **429204 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`f1c1aa12`**,
   sha256 **`51bd4745a0a56766e5c4acf0af09cbd9cdc298fbcb2d429c1a3cbfe4544e7a51`**.
+
+## 2026-07-24 re-baseline — tranche 20 dma_queue/load_art conversion (BYTE-CHANGING) — the current pin
+
+The dma_queue/load_art `.emp` conversion pair (supersedes the t19 pin above).
+Step-1 transcriptions proven byte-identical against the prior canonical
+(dma_queue on FIRST compile both shapes, incl. the movep-interleaved queue
+format and the stride-locked jump table; load_art's `raise_error` expansion
+byte-matched the twin's RaiseError macro blob). Deltas:
+
+- **dma_queue steps 1-2** — ZERO bytes (every twin width already minimal;
+  10 conditionals + 4 tails converted with no delta; the two structural
+  `bra.w` classes kept with site comments — jump-table slot stride +
+  slot-0 head).
+- **load_art step-2** — two `bsr.w`→`.s` relaxations (**−0x4** both shapes),
+  twin lockstepped.
+- **debug file** — 429204→**429190** (−14 = −4 code + convsym appendix
+  symbol-digit shift).
+- The QueueDMA ownership flip is byte-neutral by construction (same bytes,
+  new owner): dplc.emp + bg_anim.emp extern decls deleted, resolution
+  proven by the four two-module link tests.
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` UNCHANGED (plain
+`0x5DB60`, debug `0x5F65A`) — deltas absorb pre-`org $10000`. Plain size
+UNCHANGED 421159 (code region byte-stable; appendix stable).
+
+**Standing ripple:** `repin` → `pins.rs` (DMA_QUEUE/LOAD_ART regions +
+S4LZ/ZX0/VSync_Wait/QueueDMA/BG_Init symbol rows; LOAD_ART len + downstream
+bases −0x4). `engine.inc` t20 gates (SIGIL_EMP_DMA_QUEUE/LOAD_ART) + org
+slides (HAND). `repin_pins.rs` changelog rows. `mixed_dac_rom.rs` NEW
+independent tranche20 arm (full-ROM splice, both shapes). Sigil-side
+semantics: width-4 link value cells now take the signed∪unsigned union
+`[-2^31, 2^32)` (asl 32-bit fold parity; widths 1-2 stay strict — ledgered).
+New ISA/frontend surface: `CodeOperand::DispSymInd` (label-as-d16(An)) +
+movep-aware field-access widths. Full paired strict **2531/0** on merged
+masters (2509 + 22 t20).
+
+- Aeon repo master: **`236f959`** (merge of `port-tranche20`; sigil master **`ff0fd30`**).
+- Non-debug `s4.bin`: **421159 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`f3e333d3`**,
+  sha256 **`6a668170c01632c94f0e980a70d1f79d421d8112dd2e1f0c18d2d284deff9430`**.
+- Debug `s4.debug.bin`: **429190 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`20a1fe4b`**,
+  sha256 **`b1d8ae39d294efe6d519c6065c219e82670ab8eff45a2736cb396218974d0bc7`**.
