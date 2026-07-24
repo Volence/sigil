@@ -1398,11 +1398,13 @@ fn placed_module_sections_with_roots(
     let mut ambient_items: Vec<sigil_frontend_emp::ast::Item> = Vec::new();
     match module_file {
         "controllers.emp" | "vdp_init.emp" => ambient_items = constants_ambient_items(&dir),
-        // sound_api.emp uses engine.z80_bus (t19 step-6 hoist; z80_bus.emp is
-        // at the engine root, one level above engine/sound).
+        // sound_api.emp uses engine.z80_bus (t19 step-6 hoist) + engine.irq
+        // (sr_masked, t21 step-6 sweep); both live at the engine root, one
+        // level above engine/sound.
         "sound_api.emp" => {
-            ambient_items =
-                z80_bus_ambient_items(dir.parent().expect("engine/sound has a parent"));
+            let root = dir.parent().expect("engine/sound has a parent");
+            ambient_items = z80_bus_ambient_items(root);
+            ambient_items.extend(irq_ambient_items(root));
         }
         // math.emp uses engine.types (the Angle param, construct-walk #3).
         "math.emp" => ambient_items = types_ambient_items(&dir),
