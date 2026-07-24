@@ -304,3 +304,63 @@ fn sfxid_bless_satisfies_playsfx() {
     ));
     assert_eq!(slot_count(&r, "C"), 0, "as-blessed SfxId must satisfy PlaySFX: {:?}", r.slot_firings);
 }
+
+// ---------------------------------------------------------------------------
+// item-13 wave-1, FAMILY 2 — AnimId / AnimFrame / MappingFrame (the anim-frame
+// swap class). In the CORPUS these values live in SST memory (accessed via
+// `a0: *Sst`), so no register call-slot carries them today and the check does
+// not engage — the field types are meaning-carrying, and the slice enforces the
+// moment such a value crosses a typed register param. This pin proves the slice
+// DOES distinguish AnimFrame from MappingFrame (the highest-risk pair) when they
+// reach a slot — so the day a frame value is passed in a register, the swap
+// fires. See the field-store domain-check ledger row.
+// ---------------------------------------------------------------------------
+const FRAME_PRE: &str = "module m\n\
+     pub newtype AnimFrame = u8\n\
+     pub newtype MappingFrame = u8\n\
+     pub proc TakeAnimFrame (d0: AnimFrame) clobbers() { rts }\n\
+     pub proc TakeMappingFrame (d0: MappingFrame) clobbers() { rts }\n";
+
+#[test]
+fn animframe_into_mappingframe_slot_fires() {
+    // The ratification's required swap pin: a script CURSOR (AnimFrame) flowing
+    // into a mapping-frame slot is the highest-risk mix — it must fire.
+    let r = analyze(&format!(
+        "{FRAME_PRE}pub proc C () clobbers(d0-d1) {{\n\
+             move.b d1, d0 as AnimFrame\n\
+             jbsr TakeMappingFrame\n\
+             rts\n\
+         }}\n"
+    ));
+    assert!(slot_fires(&r, "C", "TakeMappingFrame", "d0", "MappingFrame"), "AnimFrame in MappingFrame slot must fire: {:?}", r.slot_firings);
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("AnimFrame"));
+}
+
+#[test]
+fn mappingframe_into_animframe_slot_fires() {
+    // The symmetric direction — a MappingFrame into an AnimFrame (cursor) slot.
+    let r = analyze(&format!(
+        "{FRAME_PRE}pub proc C () clobbers(d0-d1) {{\n\
+             move.b d1, d0 as MappingFrame\n\
+             jbsr TakeAnimFrame\n\
+             rts\n\
+         }}\n"
+    ));
+    assert!(slot_fires(&r, "C", "TakeAnimFrame", "d0", "AnimFrame"), "MappingFrame in AnimFrame slot must fire: {:?}", r.slot_firings);
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("MappingFrame"));
+}
+
+#[test]
+fn matching_frame_type_satisfies_slot() {
+    // The positive control: the correctly-typed frame value satisfies its slot.
+    let r = analyze(&format!(
+        "{FRAME_PRE}pub proc C () clobbers(d0-d1) {{\n\
+             move.b d1, d0 as MappingFrame\n\
+             jbsr TakeMappingFrame\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "matching MappingFrame must satisfy the slot: {:?}", r.slot_firings);
+}
