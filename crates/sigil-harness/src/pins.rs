@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche19/s4.lst (07/24/2026 02:38:59 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche19/s4.debug.lst (07/24/2026 02:39:00 AM)
-//! [provenance] 28 regions, 214 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.lst (07/24/2026 02:59:04 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.debug.lst (07/24/2026 02:59:09 AM)
+//! [provenance] 30 regions, 226 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +47,9 @@ pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F65A;
 
 /// `VDP_Shadow_Init` .. `Init_DMA_Queue` — gate `SIGIL_EMP_VDP_INIT`. tests: vdp_init_port
 pub const VDP_INIT: Region = Region { plain_base: 0x1C0A, debug_base: 0x1C8C, plain_len: 0x4A, debug_len: 0x4A };
+
+/// `Init_DMA_Queue` .. `Init_SpriteTable` — gate `SIGIL_EMP_DMA_QUEUE`. tests: dma_queue_port
+pub const DMA_QUEUE: Region = Region { plain_base: 0x1C54, debug_base: 0x1CD6, plain_len: 0x302, debug_len: 0x306 };
 
 /// `HBlank_Install` .. `Read_Controllers` — gate `SIGIL_EMP_HBLANK`. tests: hblank_port, m1c_vector_table
 pub const HBLANK: Region = Region { plain_base: 0x22E8, debug_base: 0x2376, plain_len: 0x48, debug_len: 0x48 };
@@ -101,6 +104,9 @@ pub const CAMERA: Region = Region { plain_base: 0x59CE, debug_base: 0x6658, plai
 
 /// `Parallax_Init` .. `Art_Decompress` — gate `SIGIL_EMP_PARALLAX`. tests: parallax_port
 pub const PARALLAX: Region = Region { plain_base: 0x5B32, debug_base: 0x67BC, plain_len: 0x576, debug_len: 0x576 };
+
+/// `Art_Decompress` .. `BG_Init` — gate `SIGIL_EMP_LOAD_ART`. tests: load_art_port
+pub const LOAD_ART: Region = Region { plain_base: 0x60A8, debug_base: 0x6D32, plain_len: 0x68, debug_len: 0xB2 };
 
 /// `BG_Init` .. `BgAnim_Init` — gate `SIGIL_EMP_BG`. tests: bg_port
 pub const BG: Region = Region { plain_base: 0x6110, debug_base: 0x6DE4, plain_len: 0xAE, debug_len: 0xAE };
@@ -430,6 +436,42 @@ pub const MDDBG_ERROR_HANDLER: u32 = 0x5E704;
 
 /// `MDDBG__ErrorHandler_PagesController` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F4CA;
+
+/// `DMA_Critical`. tests: dma_queue_port
+pub const DMA_CRITICAL: Pin = Pin { plain: 0xFFFF803C, debug: 0xFFFF803C };
+
+/// `DMA_Critical_End`. tests: dma_queue_port
+pub const DMA_CRITICAL_END: Pin = Pin { plain: 0xFFFF80AC, debug: 0xFFFF80AC };
+
+/// `DMA_Important`. tests: dma_queue_port
+pub const DMA_IMPORTANT: Pin = Pin { plain: 0xFFFF80AC, debug: 0xFFFF80AC };
+
+/// `DMA_Important_End`. tests: dma_queue_port
+pub const DMA_IMPORTANT_END: Pin = Pin { plain: 0xFFFF8154, debug: 0xFFFF8154 };
+
+/// `DMA_Deferrable`. tests: dma_queue_port
+pub const DMA_DEFERRABLE: Pin = Pin { plain: 0xFFFF8154, debug: 0xFFFF8154 };
+
+/// `DMA_Deferrable_End`. tests: dma_queue_port
+pub const DMA_DEFERRABLE_END: Pin = Pin { plain: 0xFFFF81FC, debug: 0xFFFF81FC };
+
+/// `DMA_Critical_Slot`. tests: dma_queue_port
+pub const DMA_CRITICAL_SLOT: Pin = Pin { plain: 0xFFFF81FC, debug: 0xFFFF81FC };
+
+/// `DMA_Important_Slot`. tests: dma_queue_port
+pub const DMA_IMPORTANT_SLOT: Pin = Pin { plain: 0xFFFF81FE, debug: 0xFFFF81FE };
+
+/// `DMA_Deferrable_Slot`. tests: dma_queue_port
+pub const DMA_DEFERRABLE_SLOT: Pin = Pin { plain: 0xFFFF8200, debug: 0xFFFF8200 };
+
+/// `DMA_Budget_Remaining`. tests: dma_queue_port
+pub const DMA_BUDGET_REMAINING: Pin = Pin { plain: 0xFFFF8204, debug: 0xFFFF8204 };
+
+/// `DMA_Overflow_Count` — debug-shape consumer only (`debug_only`). tests: dma_queue_port
+pub const DMA_OVERFLOW_COUNT: u32 = 0xFFFF89F6;
+
+/// `Art_Staging_Buffer`. tests: load_art_port
+pub const ART_STAGING_BUFFER: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
 
 /// `QueueDMA_Important`. tests: dplc_port
 pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1D7C, debug: 0x1DFE };

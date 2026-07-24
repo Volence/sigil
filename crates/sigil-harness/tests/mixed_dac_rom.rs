@@ -2241,7 +2241,7 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         // SECTION_SIZE_SHIFT/EDGE_CLAMP) + the prepended engine.structs drift
         // wall (34 per-field offsetof + 2 sizeof = 36) = 39. Act_len/Sec_len
         // moved into structs.emp; the comptime grid facts fold before link.
-        ("act_descriptor.emp", &act_asserts, 39),
+        ("act_descriptor.emp", &act_asserts, 51),
     ] {
         assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
@@ -2388,7 +2388,7 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
+        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
         // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
         // checked against the REAL sound_constants.asm / config/sound_ids.asm.
         ("sound_api.emp", &sound_api_asserts, 7),
@@ -2550,7 +2550,7 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
+        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
         ("sound_api.emp", &sound_api_asserts, 7),
         // The object modules' ambient guards: sst.emp's 30 SST_* struct-equ
         // pins ride BOTH modules; test_particle adds engine.constants's 11.
@@ -2715,7 +2715,7 @@ fn build_mixed_tranche7_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
+        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
@@ -3011,7 +3011,7 @@ fn build_mixed_tranche8_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
+        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
@@ -3307,7 +3307,7 @@ fn build_mixed_tranche9_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 39), // 3 limit mirrors + engine.structs wall (34+2)
+        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),

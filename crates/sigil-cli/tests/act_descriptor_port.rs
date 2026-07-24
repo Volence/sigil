@@ -273,9 +273,10 @@ fn assert_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
         })
         .count();
     // act_descriptor's own 3 limit mirrors (MAX_ACT_SECTIONS/SECTION_SIZE_SHIFT/
-    // EDGE_CLAMP) + the prepended engine.structs drift wall (34 per-field +
-    // 2 sizeof = 36) = 39. The Act_len/Sec_len sizeof guards moved to structs.emp.
-    assert_eq!(drifted, 39, "act limit mirrors + shared struct drift wall must be captured");
+    // EDGE_CLAMP) + the prepended engine.structs drift wall (45 per-field —
+    // 34 Act/Sec + 11 DMAEntry, tranche 20 — + 3 sizeof = 48) = 51. The
+    // Act_len/Sec_len/DMAEntry_len sizeof guards live in structs.emp.
+    assert_eq!(drifted, 51, "act limit mirrors + shared struct drift wall must be captured");
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {

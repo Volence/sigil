@@ -132,6 +132,20 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("Sec_sec_pcfg_pad_3F", "$3F"),
         ("Sec_sec_block_dict_len", "$40"),
         ("Sec_len", "$42"),
+        // DMAEntry (the 14-byte DMA-queue entry twin, tranche 20) — the
+        // structs.emp per-field wall reads these like the Act/Sec walls.
+        ("DMAEntry_Reg94", "0"),
+        ("DMAEntry_SizeH", "1"),
+        ("DMAEntry_Reg93", "2"),
+        ("DMAEntry_SizeL", "3"),
+        ("DMAEntry_Reg97", "4"),
+        ("DMAEntry_SrcH", "5"),
+        ("DMAEntry_Reg96", "6"),
+        ("DMAEntry_SrcM", "7"),
+        ("DMAEntry_Reg95", "8"),
+        ("DMAEntry_SrcL", "9"),
+        ("DMAEntry_Command", "10"),
+        ("DMAEntry_len", "14"),
     ]
 }
 
@@ -219,8 +233,21 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("TILE_CACHE_ROWS", "60"),
         ("TILE_CACHE_STRIDE", "80"),
         ("TILE_CACHE_NT_SIZE", "9600"),
+        // DMA-queue geometry + art-pool paging / compressed-art wrapper
+        // (constants.asm — first consumed at the tranche-20 dma_queue/load_art
+        // ports; the engine.constants twin's ensures read these).
+        ("DMA_CRITICAL_SLOTS", "8"),
+        ("DMA_IMPORTANT_SLOTS", "12"),
+        ("DMA_DEFERRABLE_SLOTS", "12"),
+        ("DMA_TOTAL_SLOTS", "32"),
+        ("ART_POOL_PAGE_TILES", "256"),
+        ("ART_HDR_VERSION", "3"),
+        ("ART_HDR_SIZE", "4"),
+        ("ART_VER_S4LZ", "1"),
+        ("ART_VER_ZX0", "2"),
     ]
 }
+
 
 /// Assemble a list of `(name, rhs)` equ pairs into `Vec<Section>`, appending a
 /// `Stub:` label + `dc.w 0` so the equs (defined before any section) flush via
@@ -318,8 +345,8 @@ mod tests {
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            57,
-            "the twin guards 57 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4)"
+            66,
+            "the twin guards 66 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4 + tranche-20 DMA/ART block of 9)"
         );
     }
 
