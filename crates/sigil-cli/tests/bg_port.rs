@@ -129,6 +129,7 @@ fn compile_real_file(
     let main = parse_file(&dir.join("bg.emp"));
     let structs_file = parse_file(&dir.parent().unwrap().join("structs.emp"));
     let vdp_file = parse_file(&dir.parent().unwrap().join("vdp.emp"));
+    let z80_bus_file = parse_file(&dir.parent().unwrap().join("z80_bus.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -136,6 +137,7 @@ fn compile_real_file(
             .items
             .into_iter()
             .chain(vdp_file.items)
+            .chain(z80_bus_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
