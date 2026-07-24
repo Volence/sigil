@@ -1227,3 +1227,43 @@ strict **2490/0** on merged masters (from main checkouts).
   sha256 **`ceb80df8214bc85d9fbba7d9beeb4c58cf6494a9f836edeb005ac160dd980db8`**.
 - Debug `s4.debug.bin`: **429204 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`9d962703`**,
   sha256 **`196374c5a09bc07885b65f2d7fe5a1b3480008f80848a7ba0ca4d5e0628dce72`**.
+
+## 2026-07-24 re-baseline — tranche 19 camera/bg/bg_anim conversion (BYTE-CHANGING) — the current pin
+
+The camera/bg/bg_anim `.emp` conversion trio (supersedes the transition-parcel
+pin above). Step-1 transcription proven byte-identical against the prior
+canonical; subsequent deltas are step-2 modernization + DEBUG diagnostics:
+
+- **camera step-2** — bare-Bcc conversion relaxed 3 twin `.w`→`.s` branches
+  (**−0x6** both shapes).
+- **bg_anim step-2** — bare `beq .exit` relaxed (**−0x2** both shapes);
+  `jsr`→`jbsr` size-neutral.
+- **band-count assert** + **piece-1-length assert** (BgAnim_Update) — plain
+  ZERO bytes (asserts self-gate); debug **+0xBA** net across two waves. The
+  twin carries the campaign's first `ifdef __DEBUG__` shape-dependent branch
+  widths (two spanning branches widen only when the assert blob is present);
+  the `.emp` stays bare and relaxes per shape.
+- **`Sst.y_vel(a0)` encoding** (camera jump-lock) — same-length, content-only.
+- **convsym appendix** — symbol renames/additions (`.x_done`, z80_bus/vdp
+  consolidation) move file size without touching code bytes.
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` UNCHANGED (plain
+`0x5DB60`, debug `0x5F65A`) — all t19 deltas absorb in the padding before
+`org $10000`. File sizes: plain 421161→**421159** (−2 = code −8 + appendix +6);
+debug 429204→**429204** (unchanged net).
+
+**Standing ripple:** `repin` → `pins.rs` (CAMERA/BG/BG_ANIM new regions +
+downstream bases + 3 sound pins). `repin.toml` BG_ANIM literal-length region,
+now shape-DEPENDENT ($9E plain / $158 debug). `engine.inc` t19 gates
+(SIGIL_EMP_CAMERA/BG/BG_ANIM) + org slides (HAND, repin-printed).
+`repin_pins.rs` delta-chain rows per wave. `mixed_dac_rom.rs` ambient arm
+prepends engine.z80_bus (sound_api retrofit). sound_api_port synthetic
+consumer moved $8000→$9000 (debug region end crossed $8000 — pinned-collision
+class, caught by resolve_layout). Full paired strict **2509/0** on merged
+masters (2499 + camera_port 5 + bg_port 3 + bg_anim_port 2).
+
+- Aeon repo master: **`3938250`** (merge of `port-tranche19`; sigil master **`f2c4361`**).
+- Non-debug `s4.bin`: **421159 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`eab19b3f`**,
+  sha256 **`d7892efc2b57cf1cdbc2e478fa1c1e5b01e5d9b806f6aae327b25647f7167c25`**.
+- Debug `s4.debug.bin`: **429204 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`f1c1aa12`**,
+  sha256 **`51bd4745a0a56766e5c4acf0af09cbd9cdc298fbcb2d429c1a3cbfe4544e7a51`**.
