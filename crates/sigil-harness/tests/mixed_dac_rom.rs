@@ -1400,6 +1400,12 @@ fn placed_module_sections_with_roots(
     let mut ambient_items: Vec<sigil_frontend_emp::ast::Item> = Vec::new();
     match module_file {
         "controllers.emp" | "vdp_init.emp" => ambient_items = constants_ambient_items(&dir),
+        // hblank.emp uses engine.vdp (the VDP_Shadow offset twin consts —
+        // hoisted there when boot became the 2nd offset-mirroring file).
+        "hblank.emp" => {
+            ambient_items =
+                vdp_ambient_items(&dir.parent().expect("engine/system has a parent"))
+        }
         // sound_api.emp uses engine.z80_bus (t19 step-6 hoist) + engine.irq
         // (sr_masked, t21 step-6 sweep); both live at the engine root, one
         // level above engine/sound.

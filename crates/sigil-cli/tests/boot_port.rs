@@ -24,10 +24,10 @@
 //!   `(Sym).w` dests (row-109/row-1046 class).
 //! - **Comptime shape arms**: both canonical shapes carry
 //!   `SOUND_DRIVER_ENABLED=1`, `SOUND_DEBUG_HOTKEYS=0`; the debug shape adds
-//!   the `bsr.w CompressionSelfTest` (+4). The sound-OFF arm
-//!   (`moveq #Z80_IDLE_SIZE-1`) is BLOCKED pending the P3 moveq-link-imm8
-//!   adjudication — the sound-off twin-parity arms land with that ruling
-//!   (see the t23 step-0 design note's probe table).
+//!   the `bsr.w CompressionSelfTest` (+4). The off-canonical shapes are
+//!   twin-parity arms below: sound-OFF (the `moveq #Z80_IDLE_SIZE-1`
+//!   ImmSigned8 deferral) and the hotkeys (1,1) shape (the gameBootHook
+//!   drift matrix against the REAL game.asm expansion).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
@@ -104,9 +104,12 @@ fn value_equs(aeon: &Path, debug: bool, doctor: Option<(&str, &str)>) -> Vec<Sec
         ("READ", "%001100"),
         ("WRITE", "%000111"),
         ("DMA", "%100111"),
-        // boot.emp's own mirrors (engine/constants.asm + engine/structs.asm)
+        // VDP_Shadow offset twins (engine.vdp shadow-offset block)
+        ("VDP_Shadow_vdp_mode1", "$00"),
+        ("VDP_Shadow_vdp_mode2", "$01"),
+        ("VDP_Shadow_vdp_hint_rate", "$0A"),
+        // boot.emp's own mirror (engine/constants.asm)
         ("PSG_PORT", "$C00011"),
-        ("VDP_Shadow_vdp_mode2", "1"),
         // z80_bus template's bus register
         ("Z80_BUS_REQUEST", "$A11100"),
         // bare link-resolved hardware ports (engine/constants.asm)
@@ -493,7 +496,9 @@ fn run_twin_parity(debug: bool, sound: bool, hotkeys: bool, what: &str) {
         "WRITE",
         "DMA",
         "PSG_PORT",
+        "VDP_Shadow_vdp_mode1",
         "VDP_Shadow_vdp_mode2",
+        "VDP_Shadow_vdp_hint_rate",
         "Z80_BUS_REQUEST",
         "HW_PORT_A_CTRL_FULL",
         "HW_EXPANSION_CTRL_FULL",

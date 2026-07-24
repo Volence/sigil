@@ -98,6 +98,10 @@ fn parallax_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("READ", "%001100"),
         ("WRITE", "%000111"),
         ("DMA", "%100111"),
+        // VDP_Shadow offset twins (engine.vdp shadow-offset block)
+        ("VDP_Shadow_vdp_mode1", "$00"),
+        ("VDP_Shadow_vdp_mode2", "$01"),
+        ("VDP_Shadow_vdp_hint_rate", "$0A"),
         // band_entry struct (10 bytes) — the .emp's per-field drift wall
         ("band_entry_len", "10"),
         ("band_entry_band_top_cell", "0"),

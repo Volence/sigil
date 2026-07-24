@@ -91,6 +91,10 @@ fn value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("READ", "%001100"),
         ("WRITE", "%000111"),
         ("DMA", "%100111"),
+        // VDP_Shadow offset twins (engine.vdp shadow-offset block)
+        ("VDP_Shadow_vdp_mode1", "$00"),
+        ("VDP_Shadow_vdp_mode2", "$01"),
+        ("VDP_Shadow_vdp_hint_rate", "$0A"),
     ];
     pairs.extend(sigil_harness::test_support::engine_constant_equs());
     pairs.extend(sigil_harness::test_support::act_sec_field_equs());
