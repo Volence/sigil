@@ -117,7 +117,7 @@ use sigil_harness::{
     assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side,
     assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side,
     assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
-    assemble_mixed_tranche20_as_side, assert_rom_matches_convsym,
+    assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side, assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -3734,4 +3734,150 @@ fn mixed_tranche20_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche20_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche20 mixed debug");
+}
+
+/// Lower one tranche-21 module with its ambient twins and comptime shape,
+/// place into a two-region map (`text` carrier + its own pinned window),
+/// return sections + link asserts. (t20_lower_and_place with a defines
+/// parameter — vblank.emp needs the SOUND_DRIVER_ENABLED/SOUND_DBG_MIRROR
+/// arms pinned to the canonical shape.)
+fn t21_lower_and_place(
+    aeon: &Path,
+    emp_rel: &str,
+    ambient: Vec<Vec<sigil_frontend_emp::ast::Item>>,
+    region: &str,
+    base: u32,
+    len: usize,
+    defines: Vec<(String, i128)>,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let src = std::fs::read_to_string(aeon.join(emp_rel))
+        .unwrap_or_else(|e| panic!("cannot read {emp_rel}: {e}"));
+    let (main, mdiags) = parse_str(&src);
+    assert!(
+        mdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} parse errors: {mdiags:?}"
+    );
+    let mut items = Vec::new();
+    for a in ambient {
+        items.extend(a);
+    }
+    items.extend(main.items);
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(aeon.join(std::path::Path::new(emp_rel).parent().unwrap())),
+        embed_base: None,
+        defines,
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} lower errors: {ldiags:?}"
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} place_sections errors: {pdiags:?}"
+    );
+    (sections, module.link_asserts)
+}
+
+fn build_mixed_tranche21_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche21_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    let engine_dir = aeon.join("engine");
+    let system_dir = engine_dir.join("system");
+    let dbg = i128::from(debug);
+
+    let bu = if debug { (pins::BUFFERS.debug_base, pins::BUFFERS.debug_len) } else { (pins::BUFFERS.plain_base, pins::BUFFERS.plain_len) };
+    let (bu_sections, bu_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/system/buffers.emp",
+        vec![
+            structs_ambient_items(&engine_dir),
+            constants_ambient_items(&system_dir),
+            vdp_ambient_items(&engine_dir),
+        ],
+        "buffers",
+        bu.0,
+        bu.1,
+        vec![("DEBUG".to_string(), dbg)],
+    );
+
+    let vb = if debug { (pins::VBLANK.debug_base, pins::VBLANK.debug_len) } else { (pins::VBLANK.plain_base, pins::VBLANK.plain_len) };
+    let (vb_sections, vb_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/system/vblank.emp",
+        vec![z80_bus_ambient_items(&engine_dir)],
+        "vblank",
+        vb.0,
+        vb.1,
+        vec![
+            ("DEBUG".to_string(), dbg),
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("SOUND_DBG_MIRROR".to_string(), 0),
+        ],
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(bu_sections);
+    sections.extend(vb_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche21 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche21 mixed link failed: {d:?}"));
+
+    // The prepended twins' drift walls must genuinely run against the REAL
+    // AS-side symbols and pass.
+    let mut all = bu_asserts;
+    all.extend(vb_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche21 mixed drift guards: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_tranche21_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche21_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche21 mixed");
+}
+
+#[test]
+fn mixed_tranche21_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche21_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche21 mixed debug");
 }

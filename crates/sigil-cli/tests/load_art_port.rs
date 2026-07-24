@@ -274,3 +274,196 @@ fn doctored_art_ver_zx0_fires_its_guard() {
         "the guard must NAME the constant: {fired:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tranche-21 ownership flip (kill-list row 29): `VSync_Wait` moved from an
+// extern decl to the .emp-owned `engine.vblank` proc. This persisted
+// two-module link test compiles load_art.emp + vblank.emp TOGETHER — the
+// extern decl is GONE from load_art.emp (its register-discipline block relies
+// on the carried `clobbers(d0)` license), the two calls resolve
+// module-to-module, and BOTH regions byte-match the shipped reference ROM.
+// ---------------------------------------------------------------------------
+
+fn flip_lower(
+    main: sigil_frontend_emp::ast::File,
+    ambient: Vec<sigil_frontend_emp::ast::File>,
+    include_root: PathBuf,
+    region: &str,
+    base: u32,
+    len: usize,
+    defines: Vec<(String, i128)>,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let mut items = Vec::new();
+    for a in ambient {
+        items.extend(a.items);
+    }
+    items.extend(main.items);
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(include_root),
+        embed_base: None,
+        defines,
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "flip lower errors ({region}): {ldiags:?}"
+    );
+    let map_toml = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&map_toml).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "flip place_sections errors ({region}): {pdiags:?}"
+    );
+    (sections, module.link_asserts)
+}
+
+fn two_module_flip(debug: bool, rom_name: &str) {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join(rom_name);
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: {}", rom_path.display());
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+
+    let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
+    let la_base = region_base(debug);
+    let la_len = region_len(debug);
+    let vb_base = if debug { pins::VBLANK.debug_base } else { pins::VBLANK.plain_base };
+    let vb_len = if debug { pins::VBLANK.debug_len } else { pins::VBLANK.plain_len };
+
+    let dbg = i128::from(debug);
+    let (mut sections, mut asserts) = flip_lower(
+        parse_file(&aeon.join("engine/level/load_art.emp")),
+        vec![
+            parse_file(&aeon.join("engine/structs.emp")),
+            parse_file(&aeon.join("engine/system/constants.emp")),
+        ],
+        aeon.join("engine/level"),
+        "load_art",
+        la_base,
+        la_len,
+        vec![("DEBUG".to_string(), dbg)],
+    );
+    let (vb_sections, vb_asserts) = flip_lower(
+        parse_file(&aeon.join("engine/system/vblank.emp")),
+        vec![parse_file(&aeon.join("engine/z80_bus.emp"))],
+        aeon.join("engine/system"),
+        "vblank",
+        vb_base,
+        vb_len,
+        vec![
+            ("DEBUG".to_string(), dbg),
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("SOUND_DBG_MIRROR".to_string(), 0),
+        ],
+    );
+    sections.extend(vb_sections);
+    asserts.extend(vb_asserts);
+
+    // Value seam: ONE combined equ blob (a second assemble_equ_pairs call
+    // would redefine its `Stub:` carrier label).
+    let mut pairs: Vec<(&str, &str)> = vec![
+        ("SND_Z80_BASE", "$A00000"),
+        ("SND_CTRL_DMA_ACTIVE", "$1F04"),
+        ("Z80_BUS_REQUEST", "$A11100"),
+    ];
+    pairs.extend(sigil_harness::test_support::engine_constant_equs());
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
+    sections.extend(sigil_harness::test_support::assemble_equ_pairs(&pairs));
+
+    // Address seam — NO VSync_Wait carrier (the flip: the name resolves to
+    // vblank.emp's proc; a stale carrier would be the §11 Q4 collision).
+    let mut table: Vec<(&str, u32)> = vec![
+        ("Art_Staging_Buffer", pick(pins::ART_STAGING_BUFFER)),
+        ("S4LZ_Decompress", pick(pins::S4_LZ_DECOMPRESS)),
+        ("ZX0_Decompress", pick(pins::ZX0_DECOMPRESS)),
+        ("QueueDMA_Critical", pick(pins::QUEUE_DMA_CRITICAL)),
+        ("BG_Init", pick(pins::BG_INIT)),
+        ("VBlank_Ready", pick(pins::V_BLANK_READY)),
+        ("VBlank_Flag", pick(pins::V_BLANK_FLAG)),
+        ("VInt_Ptr", pick(pins::V_INT_PTR)),
+        ("Frame_Counter", pick(pins::FRAME_COUNTER)),
+        ("Ctrl_1_Press", pick(pins::CTRL_1_PRESS)),
+        ("Ctrl_1_Press_Accum", pick(pins::CTRL_1_PRESS_ACCUM)),
+        ("Ctrl_2_Press", pick(pins::CTRL_2_PRESS)),
+        ("Ctrl_2_Press_Accum", pick(pins::CTRL_2_PRESS_ACCUM)),
+        ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
+        ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        ("Flush_VDP_Shadow", pick(pins::FLUSH_VDP_SHADOW)),
+        ("Enqueue_Dirty_Buffers", pick(pins::ENQUEUE_DIRTY_BUFFERS)),
+        ("VInt_DrawLevel", pick(pins::V_INT_DRAW_LEVEL)),
+        ("Process_DMA_Critical", pick(pins::PROCESS_DMA_CRITICAL)),
+        ("Process_DMA_Important", pick(pins::PROCESS_DMA_IMPORTANT)),
+        ("Process_DMA_Deferrable", pick(pins::PROCESS_DMA_DEFERRABLE)),
+        ("Vscroll_Write", pick(pins::VSCROLL_WRITE)),
+        ("Read_Controllers", pick(pins::READ_CONTROLLERS)),
+    ];
+    if debug {
+        table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+        table.push((
+            "MDDBG__ErrorHandler_PagesController",
+            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+        ));
+        table.push(("Lag_Frame_Count", pins::LAG_FRAME_COUNT));
+        table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
+    }
+    for (i, (name, vma)) in table.iter().enumerate() {
+        let vma = *vma;
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let mut secs = assemble(&asm, &opts)
+            .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+            .sections;
+        for mut s in secs.drain(..) {
+            s.lma = 0x0300_0000 + (i as u32) * 0x1_0000;
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            sections.push(s);
+        }
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("flip resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("flip link failed: {d:?}"));
+
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "flip drift guards: {adiags:?}"
+    );
+
+    let shape = if debug { "debug" } else { "plain" };
+    let la = linked.section("load_art").expect("load_art region");
+    let lr = &refrom[la_base as usize..la_base as usize + la_len];
+    assert_eq!(la.bytes.len(), lr.len(), "load_art ({shape} flip): length");
+    assert_eq!(la.bytes, lr, "load_art ({shape} flip): bytes must match the reference");
+    let vb = linked.section("vblank").expect("vblank region");
+    let vr = &refrom[vb_base as usize..vb_base as usize + vb_len];
+    assert_eq!(vb.bytes.len(), vr.len(), "vblank ({shape} flip): length");
+    assert_eq!(vb.bytes, vr, "vblank ({shape} flip): bytes must match the reference");
+}
+
+#[test]
+fn two_module_ownership_flip_plain() {
+    two_module_flip(false, "s4.bin");
+}
+
+#[test]
+fn two_module_ownership_flip_debug() {
+    two_module_flip(true, "s4.debug.bin");
+}
