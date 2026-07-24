@@ -83,17 +83,23 @@ fn map_toml(debug: bool) -> String {
 /// the DMA-queue enqueue — each a `phase`d one-byte carrier at its pinned
 /// per-shape VMA.
 fn bg_anim_addr_labels(debug: bool) -> Vec<Section> {
-    let table: [(&str, pins::Pin); 6] = [
-        ("BgAnim_LastStep", pins::BG_ANIM_LAST_STEP),
-        ("Frame_Counter", pins::FRAME_COUNTER),
-        ("Camera_X", pins::CAMERA_X),
-        ("Camera_Y", pins::CAMERA_Y),
-        ("BgAnim_Table", pins::BG_ANIM_TABLE),
-        ("QueueDMA_Deferrable", pins::QUEUE_DMA_DEFERRABLE),
+    let mut table: Vec<(&str, u32)> = vec![
+        ("BgAnim_LastStep", if debug { pins::BG_ANIM_LAST_STEP.debug } else { pins::BG_ANIM_LAST_STEP.plain }),
+        ("Frame_Counter", if debug { pins::FRAME_COUNTER.debug } else { pins::FRAME_COUNTER.plain }),
+        ("Camera_X", if debug { pins::CAMERA_X.debug } else { pins::CAMERA_X.plain }),
+        ("Camera_Y", if debug { pins::CAMERA_Y.debug } else { pins::CAMERA_Y.plain }),
+        ("BgAnim_Table", if debug { pins::BG_ANIM_TABLE.debug } else { pins::BG_ANIM_TABLE.plain }),
+        ("QueueDMA_Deferrable", if debug { pins::QUEUE_DMA_DEFERRABLE.debug } else { pins::QUEUE_DMA_DEFERRABLE.plain }),
     ];
+    if debug {
+        // Debug shape only: the assert construct's error-handler entry points
+        // (the rings_port precedent).
+        table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+        table.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
+    }
     let mut out = Vec::new();
-    for (i, (name, pin)) in table.iter().enumerate() {
-        let vma = if debug { pin.debug } else { pin.plain };
+    for (i, (name, vma)) in table.iter().enumerate() {
+        let vma = *vma;
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
         let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)

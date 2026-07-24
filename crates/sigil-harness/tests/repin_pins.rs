@@ -283,8 +283,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // shrunk in lockstep; the two jsr→jbsr sites re-emit as bsr.w, size-neutral
     // against the abs.w jsr they replace) — bg_anim shrinks $A0→$9E; sound_api's
     // base slides −0x2 both shapes (LEN unchanged).
+    // Then +0x62 DEBUG ONLY (t19 pass-1 step-4 band-count assert, 2026-07-24):
+    // BgAnim_Update gains `assert.w d7, ls, #BGANIM_MAX_BANDS` (defense-in-depth
+    // against a table wider than BgAnim_LastStep); the assert self-gates to zero
+    // bytes in the plain shape (rings/core precedent), so only the debug bases
+    // downstream of bg_anim slide (+the assert code + its message blob = +0x62;
+    // bg_anim debug_len $9E → $100, now shape-DEPENDENT).
     assert_eq!(pins::SOUND_API.plain_base, 0x625C);  // −0x2 bg_anim step-2 upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7BCA);  // −0x2 bg_anim step-2 upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7C2C);  // +0x62 bg_anim debug assert upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
