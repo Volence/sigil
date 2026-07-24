@@ -1187,3 +1187,43 @@ paired strict **2488/0** on merged masters.
   sha256 **`8d58593a714fb78a105fae26410847392967c1c809abf61da2c5807866d4486f`**.
 - Debug `s4.debug.bin`: **429134 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`80d14183`**,
   sha256 **`65efb331dbe4138aac877cc2e1032e236e1c9c6bcea1f47b6ece3a47735a566c`**.
+
+## 2026-07-24 re-baseline — boundary-crossing transition parcel (BYTE-CHANGING) — the current pin
+
+Five behavior fixes to the section-boundary parallax transition state machine
+(supersedes the t18 pin above). All latent in shipped data (no transition fires —
+every OJZ section shares config 0; all configs share render mode) — mechanism-
+hardening, shipped-invariance proven per fix; each proven with crossing-drive rig
+A/B. Also adds `divs.w`/`divu.w` to the sigil ISA (B3's frames-remaining ramp
+demanded it; own sigil-core commit before the consuming aeon commit).
+
+- **B6** — promote-frame CC-clobber (rebuild skip). Length-NEUTRAL reorder (`move.l
+  d0,Current` last → restores `.config_resolved` Z-from-d0). Zero region-slide.
+- **B2** — active-config mode contract. New `Parallax_Active_Config` accessor;
+  routed the HScroll DMA-length select (`buffers.asm`) + `Vscroll_Write` through it
+  (parallax **+0x10**).
+- **B3** — frames-remaining `divs.w` ramp (exact convergence, no promote-frame pop;
+  parallax **+0x8**).
+- **B1** — re-cross cancel branch in `StartTransition` (parallax **+0x1C**).
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` UNCHANGED (plain `0x5DB60`,
+debug `0x5F65A`) — the parallax growth (net **+0x34** across B2/B3/B1; B6 neutral)
+absorbs in the padding before `org $10000`. File sizes grew +72 B (plain
+421089→421161) / +70 B (debug 429134→429204) = body growth pre-padding + the
+`convsym` symbol appendix delta (new `Parallax_Active_Config` / `.recross_current`
+symbols), NOT past `EndOfRom`.
+
+**Standing ripple:** `repin` → `pins.rs` (PARALLAX len +0x34, SOUND_API base +0x34,
+SOUND_PLAY_SFX / SOUND_PLAY_RING / SOUND_DRAIN_SFX_RING pins). `repin_pins.rs`
+SOUND_API-base delta-chain (three rows: B2 +0x10, B3 +0x8, B1 +0x1C). `engine.inc`
+parallax + sound_api gate resume orgs (parallax debug `$6D38` / plain `$60AE`;
+sound_api debug `$7F86` / plain `$646E`; HAND, repin-printed). `mixed_dac_rom.rs`
+UNCHANGED (no sound-content ref); `repin.toml` UNCHANGED (no region added). New
+sigil ISA `divs`/`divu` = own commit + 2 asl-verified encode tests. Full paired
+strict **2490/0** on merged masters (from main checkouts).
+
+- Aeon repo master: **`aa354fa`** (merge of `parallax-transition-parcel`; sigil master **`4028bc8`**).
+- Non-debug `s4.bin`: **421161 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`0bfa5b79`**,
+  sha256 **`ceb80df8214bc85d9fbba7d9beeb4c58cf6494a9f836edeb005ac160dd980db8`**.
+- Debug `s4.debug.bin`: **429204 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`9d962703`**,
+  sha256 **`196374c5a09bc07885b65f2d7fe5a1b3480008f80848a7ba0ca4d5e0628dce72`**.
