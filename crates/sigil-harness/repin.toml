@@ -66,7 +66,7 @@ name = "game_loop"
 start = "GameLoop"
 end = "S4LZ_DecompressDict"
 gate = "SIGIL_EMP_GAME_LOOP"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 [[region]]
 name = "math"
@@ -438,15 +438,15 @@ tests = ["controllers_port"]
 
 [[symbol]]
 name = "VSync_Wait"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 [[symbol]]
 name = "Sound_DrainSfxRing"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 [[symbol]]
 name = "Game_State"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 # collision_lookup (tranche 3; Cache_Head_Col/Top/Bottom derive +2/+4/+6)
 
@@ -819,9 +819,27 @@ name = "DMA_Overflow_Count"
 debug_only = true
 tests = ["dma_queue_port"]
 
-# Level art loader (tranche 20 — load_art_port carriers).
+# Level art loader (tranche 20 — load_art_port carriers: the staging buffer,
+# the two blocking decompressors, the Critical enqueue, and BG_Init — the
+# region-end neighbor load_art tail-hands the act pointer to).
 [[symbol]]
 name = "Art_Staging_Buffer"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "S4LZ_Decompress"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "ZX0_Decompress"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "QueueDMA_Critical"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "BG_Init"
 tests = ["load_art_port"]
 
 [[symbol]]

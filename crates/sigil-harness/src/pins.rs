@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.lst (07/24/2026 02:59:04 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.debug.lst (07/24/2026 02:59:09 AM)
-//! [provenance] 30 regions, 226 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.lst (07/24/2026 03:33:57 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.debug.lst (07/24/2026 03:33:58 AM)
+//! [provenance] 30 regions, 230 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +57,7 @@ pub const HBLANK: Region = Region { plain_base: 0x22E8, debug_base: 0x2376, plai
 /// `Read_Controllers` .. `GameLoop` — gate `SIGIL_EMP_CONTROLLERS`. tests: controllers_port
 pub const CONTROLLERS: Region = Region { plain_base: 0x2330, debug_base: 0x23BE, plain_len: 0x76, debug_len: 0x76 };
 
-/// `GameLoop` .. `S4LZ_DecompressDict` — gate `SIGIL_EMP_GAME_LOOP`. tests: game_loop_port
+/// `GameLoop` .. `S4LZ_DecompressDict` — gate `SIGIL_EMP_GAME_LOOP`. tests: game_loop_port, load_art_port
 pub const GAME_LOOP: Region = Region { plain_base: 0x23A6, debug_base: 0x2434, plain_len: 0x12, debug_len: 0x12 };
 
 /// `GetSineCosine` .. `Perform_DPLC` — gate `SIGIL_EMP_MATH`. tests: math_port
@@ -212,13 +212,13 @@ pub const BOOT_DATA_VDP_REGS: Pin = Pin { plain: 0x3C4, debug: 0x3C8 };
 /// `Ctrl_1_Held`. tests: controllers_port
 pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
 
-/// `VSync_Wait`. tests: game_loop_port
+/// `VSync_Wait`. tests: game_loop_port, load_art_port
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x22C8, debug: 0x2352 };
 
-/// `Sound_DrainSfxRing`. tests: game_loop_port
+/// `Sound_DrainSfxRing`. tests: game_loop_port, load_art_port
 pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x63C8, debug: 0x7F9A };
 
-/// `Game_State`. tests: game_loop_port
+/// `Game_State`. tests: game_loop_port, load_art_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
 
 /// `Cache_Left_Col`. tests: collision_lookup_port, section_port
@@ -472,6 +472,18 @@ pub const DMA_OVERFLOW_COUNT: u32 = 0xFFFF89F6;
 
 /// `Art_Staging_Buffer`. tests: load_art_port
 pub const ART_STAGING_BUFFER: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
+
+/// `S4LZ_Decompress`. tests: load_art_port
+pub const S4_LZ_DECOMPRESS: Pin = Pin { plain: 0x23BC, debug: 0x249E };
+
+/// `ZX0_Decompress`. tests: load_art_port
+pub const ZX0_DECOMPRESS: Pin = Pin { plain: 0x24B4, debug: 0x2646 };
+
+/// `QueueDMA_Critical`. tests: load_art_port
+pub const QUEUE_DMA_CRITICAL: Pin = Pin { plain: 0x1D72, debug: 0x1DF4 };
+
+/// `BG_Init`. tests: load_art_port
+pub const BG_INIT: Pin = Pin { plain: 0x6110, debug: 0x6DE4 };
 
 /// `QueueDMA_Important`. tests: dplc_port
 pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1D7C, debug: 0x1DFE };

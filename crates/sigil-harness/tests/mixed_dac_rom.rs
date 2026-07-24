@@ -117,7 +117,7 @@ use sigil_harness::{
     assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side,
     assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side,
     assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
-    assert_rom_matches_convsym,
+    assemble_mixed_tranche20_as_side, assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -3572,3 +3572,166 @@ fn mixed_sfx_debug_rom_matches_assembled_reference() {
 /// parity asserts that now also ride module.link_asserts. Shared idiom in
 /// `sigil_harness::test_support`.
 use sigil_harness::test_support::guard_assert_count;
+
+// ===========================================================================
+// Tranche 20 — the dma_queue + load_art mixed arm. INDEPENDENT of the
+// sound/hblank ladder (the gates compose freely, R6): the AS side assembles
+// the real full ROM with ONLY `SIGIL_EMP_DMA_QUEUE` + `SIGIL_EMP_LOAD_ART`
+// on, the .emp side supplies exactly those two windows, and the union must
+// reproduce the SHIPPED per-shape ROM (modulo the derived convsym bytes).
+// ===========================================================================
+
+/// Lower one tranche-20 module with its ambient twins, place into a
+/// two-region map (`text` carrier + its own pinned window), return sections
+/// + link asserts.
+fn t20_lower_and_place(
+    aeon: &Path,
+    emp_rel: &str,
+    ambient: Vec<Vec<sigil_frontend_emp::ast::Item>>,
+    region: &str,
+    base: u32,
+    len: usize,
+    debug: bool,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let src = std::fs::read_to_string(aeon.join(emp_rel))
+        .unwrap_or_else(|e| panic!("cannot read {emp_rel}: {e}"));
+    let (main, mdiags) = parse_str(&src);
+    assert!(
+        mdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} parse errors: {mdiags:?}"
+    );
+    let mut items = Vec::new();
+    for a in ambient {
+        items.extend(a);
+    }
+    items.extend(main.items);
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(aeon.join(std::path::Path::new(emp_rel).parent().unwrap())),
+        embed_base: None,
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} lower errors: {ldiags:?}"
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} place errors: {pdiags:?}"
+    );
+    (sections, module.link_asserts)
+}
+
+/// `engine.vdp`'s items (the typed VDP command vocabulary + vdp_comm_reg —
+/// dma_queue.emp is the ladder's first vdp_comm_reg consumer).
+fn vdp_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_dir.join("vdp.emp"))
+        .unwrap_or_else(|e| panic!("cannot read vdp.emp: {e}"));
+    let (file, vdiags) = parse_str(&src);
+    assert!(
+        vdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "vdp.emp parse errors: {vdiags:?}"
+    );
+    file.items
+}
+
+fn build_mixed_tranche20_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche20_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    let engine_dir = aeon.join("engine");
+    let system_dir = engine_dir.join("system");
+
+    let dq = if debug { (pins::DMA_QUEUE.debug_base, pins::DMA_QUEUE.debug_len) } else { (pins::DMA_QUEUE.plain_base, pins::DMA_QUEUE.plain_len) };
+    let (dq_sections, dq_asserts) = t20_lower_and_place(
+        aeon,
+        "engine/system/dma_queue.emp",
+        vec![
+            structs_ambient_items(&engine_dir),
+            constants_ambient_items(&system_dir),
+            vdp_ambient_items(&engine_dir),
+        ],
+        "dma_queue",
+        dq.0,
+        dq.1,
+        debug,
+    );
+
+    let la = if debug { (pins::LOAD_ART.debug_base, pins::LOAD_ART.debug_len) } else { (pins::LOAD_ART.plain_base, pins::LOAD_ART.plain_len) };
+    let (la_sections, la_asserts) = t20_lower_and_place(
+        aeon,
+        "engine/level/load_art.emp",
+        vec![
+            structs_ambient_items(&engine_dir),
+            constants_ambient_items(&system_dir),
+        ],
+        "load_art",
+        la.0,
+        la.1,
+        debug,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(dq_sections);
+    sections.extend(la_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche20 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche20 mixed link failed: {d:?}"));
+
+    // The prepended twins' drift walls must genuinely run against the REAL
+    // AS-side symbols and pass.
+    let mut all = dq_asserts;
+    all.extend(la_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche20 mixed drift guards: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_tranche20_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche20_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche20 mixed");
+}
+
+#[test]
+fn mixed_tranche20_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche20_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche20 mixed debug");
+}
