@@ -272,8 +272,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // StartTransition's a0==current no-op becomes a cancel branch (tst frames + clear
     // target/frames + snap-pending + mode-restore) — parallax grows +0x1C; sound_api's
     // base slides +0x1C both shapes (LENs unchanged).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6264);  // +0x1C B1 re-cross cancel upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7BD2);  // +0x1C B1 re-cross cancel upstream
+    // Then −0x6 BOTH shapes (t19 camera step-2 branch modernization, 2026-07-24):
+    // camera.emp goes bare-Bcc/jbra and the asl fixpoint relaxes the twin's three
+    // conservative `.w` branches (bra.w .no_move / bne.w .clamp_y / bra.w .clamp_y,
+    // in-range at 74/108/40) to `.s` — camera shrinks $16A→$164; camera is upstream
+    // of parallax/bg/bg_anim/sound_api in the engine bank, so each base slides
+    // −0x6 both shapes (LENs unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x625E);  // −0x6 camera step-2 upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7BCC);  // −0x6 camera step-2 upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
