@@ -147,7 +147,13 @@ re-green. No emulator time needed at this step.
   1. Branch conversions (bare Bcc, `jbra`/`jbsr`) INCLUDING the
      region-shrink/re-pin/twin-lockstep wave they trigger — the packet
      names the byte delta and where downstream absorbs it (org shield vs
-     re-pin propagation). Checked, not assumed.
+     re-pin propagation). Checked, not assumed. SHAPE-DIVERGENT
+     relaxations (a span that relaxes in one shape only — typically
+     crossing a debug-only assert blob or a comptime arm) ride TWIN
+     `ifdef` widths: the .emp stays bare, the twin carries the per-shape
+     spelling with its site comment (t19 bg_anim · t21 vblank sound-off ·
+     t22 s4lz; overseer-ratified 2026-07-24 from the t22 noticing,
+     Volence override open).
   2. Every structural width-pin carries its site comment naming the
      exception class — an UNCOMMENTED kept width is a miss even when
      keeping it is correct (retro-check 2026-07-15: `aabb.emp:62 bpl.s`

@@ -1348,3 +1348,46 @@ Section_GetSecPtrXY, Load_Object + first `@discards`). Full paired strict
   sha256 **`d0f4c9df16748189d173338fec9798409053520910086ecb7af05a4b443ff342`**.
 - Debug `s4.debug.bin`: **429202 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`0b7c4804`**,
   sha256 **`a16ab658d9ba11c5fae1e6e0448a01fa65c0c52ee7e3a85d12099e788adf2f79`**.
+
+## 2026-07-24 re-baseline — tranche 22 compression cluster conversion (BYTE-CHANGING) — the current pin
+
+The s4lz/zx0/compression_selftest `.emp` conversion trio (supersedes the t21
+pin above). Step-1 transcription proven byte-identical against the prior
+canonical (FIRST compile, all three files); deltas are step-2 modernization:
+
+- **s4lz step-2** — bare-Bcc relaxed 2 branches PLAIN-ONLY (**−4 plain**,
+  $FC→$F8; both spans cross the debug dict-hit assert blob so debug keeps
+  `.w` — twin rides ifdef widths, the now-ratified checklist-item-1 rule).
+- **zx0 steps 1-2** — fully byte-neutral (12-site modernization, every
+  target short).
+- **selftest step-2** — **−0x10 DEBUG-ONLY** ($228→$218; 3 `bsr.s` + 5
+  `CSelf_*` abs.w relaxations; twin lockstep). The region is the campaign's
+  FIRST debug-only region (plain shape emits nothing — proven at full-ROM
+  scale by the mixed plain arm).
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` UNCHANGED (plain
+`0x5DB60`, debug `0x5F65A`) — deltas absorb pre-`org $10000`. File sizes
+UNCHANGED (plain 421157, debug 429202).
+
+**Standing ripple:** `repin` → `pins.rs` (S4LZ/ZX0/SELFTEST regions; 45
+plain pins −4; 10 debug pins −0x10). `repin.toml` +3 regions incl. the NEW
+`debug_only` + `plain_anchor` region class (TDD'd this tranche).
+`engine.inc` t22 gates (SIGIL_EMP_S4LZ/ZX0/SELFTEST) + shape-split selftest
+arm (HAND). `repin_pins.rs` changelog rows. `mixed_dac_rom.rs` NEW
+tranche22 arms (the plain arm doubles as the debug-only-emits-nothing
+proof; the debug arm carries boot's `bsr.w CompressionSelfTest` .asm→.emp
++ the reverse data seam — .emp consuming AS-side generated CSelf_* at
+link). Sigil-side semantics: **assert/raise_error diag-label mint now
+module-scoped** (t22's mixed arm caught a REAL latent cross-module
+`$diagN$` collision — first assert-bearing .emp module pair in one link).
+THREE ownership flips (kill rows 30/38/39): load_art.emp now carries ZERO
+extern decls. New surface exercised: `falls_into` pub-pair, bare
+link-immediate arithmetic, `struct DictBase { }` marker type, the CSelf
+`< $8000` fit-lock ensure. Full paired strict **2573/0** on merged masters
+(2553 + 20 t22, from main checkouts).
+
+- Aeon repo master: **`7c97070`** (merge of `port-tranche22`; sigil master **`54e52ed`**).
+- Non-debug `s4.bin`: **421157 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`06290799`**,
+  sha256 **`eca79b92493779bd963bfdfedbc646ccddc5809edc2137204e76a3dd4a8ce77b`**.
+- Debug `s4.debug.bin`: **429202 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`e280a49b`**,
+  sha256 **`fc3e8c24bd226587229e54470b0ef4fd5602d011d029389c9fd1a8817e8c298f`**.
