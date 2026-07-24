@@ -765,3 +765,34 @@ pub fn assemble_mixed_tranche21_as_side(aeon: &Path, debug: bool) -> Result<Modu
         format!("assemble (mixed tranche21 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
+
+/// Assemble the AS side of the TRANCHE-22 mixed `.asm`+`.emp` build:
+/// `SIGIL_EMP_S4LZ`, `SIGIL_EMP_ZX0` and `SIGIL_EMP_COMPRESSION_SELFTEST`
+/// defined so engine.inc's three blocks are each REPLACED by an `org` resume
+/// — the selftest block is the campaign's first DEBUG-ONLY region (the twin
+/// is whole-file `ifdef __DEBUG__`): its gated arm emits NOTHING in the
+/// plain shape and, in debug, orgs past the .emp code window and keeps the
+/// generated golden-vector data (`engine/debug/generated/vectors.asm`)
+/// AS-side.
+///
+/// Cross-seam headline: tile_cache.asm's `bsr.w S4LZ_DecompressDict`,
+/// load_art.asm's `bra.w S4LZ_Decompress` / `bra.w ZX0_Decompress`, boot.asm's
+/// debug `bsr.w CompressionSelfTest` (.asm→.emp), and the REVERSE data seam —
+/// the .emp selftest consuming the AS-side `CSelf_*` labels and generated
+/// `CSELF_*` equ values at link.
+pub fn assemble_mixed_tranche22_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_S4LZ".to_string(), 1),
+        ("SIGIL_EMP_ZX0".to_string(), 1),
+        ("SIGIL_EMP_COMPRESSION_SELFTEST".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche22 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}

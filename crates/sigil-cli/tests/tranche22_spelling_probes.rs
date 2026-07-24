@@ -320,3 +320,49 @@ fn linkimm_bare_name_arith_vs_extern_form() {
     let rom = link_with_cs(EMP_LINKIMM_EXTERN_ARITH);
     assert_eq!(&rom[0x400..0x404], &[0x32, 0x3C, 0x01, 0x73], "move.w #extern(CS)/2-1");
 }
+
+// ---------------------------------------------------------------------------
+// P6 (found at the t22 mixed arm) — assert diag-label hygiene ACROSS modules:
+// two separately-lowered modules each minting low-numbered `$diagN$` labels
+// must link together without symbol redefinition (the mint carries the
+// module id, like every other hidden-local symbol).
+// ---------------------------------------------------------------------------
+
+const EMP_ASSERT_MOD_A: &str = "\
+module a in amod
+pub proc PA () clobbers(d0) {
+        if DEBUG == 1 {
+            moveq   #0, d0
+            assert.w d0, eq
+        }
+        rts
+}
+";
+
+const EMP_ASSERT_MOD_B: &str = "\
+module b in bmod
+pub proc PB () clobbers(d0) {
+        if DEBUG == 1 {
+            moveq   #1, d0
+            assert.w d0, ne
+        }
+        rts
+}
+";
+
+#[test]
+fn assert_diag_labels_unique_across_modules() {
+    let mut sections = pin_at(emp_sections(EMP_ASSERT_MOD_A, &[("DEBUG", 1)]), 0x400);
+    sections.extend(pin_at(emp_sections(EMP_ASSERT_MOD_B, &[("DEBUG", 1)]), 0x800));
+    sections.extend(sigil_harness::test_support::assemble_equ_pairs(&[
+        ("MDDBG__ErrorHandler", "$BE00"),
+        ("MDDBG__ErrorHandler_PagesController", "$BE40"),
+    ]));
+    let empty = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&sections, &empty, true)
+        .unwrap_or_else(|d| panic!("two-module assert resolve failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &empty)
+        .unwrap_or_else(|d| panic!("two-module assert link failed (diag-label collision?): {d:?}"));
+    let rom = sigil_link::flatten(&linked, 0x00);
+    assert!(rom.len() > 0x800, "both modules must place");
+}

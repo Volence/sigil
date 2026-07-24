@@ -391,6 +391,13 @@ impl Evaluator<'_> {
         }
     }
 
+    /// The diag-label module scope: `"$<module_id>"` so separately-lowered
+    /// modules never mint colliding `$diag{n}$…` symbols at link; empty in the
+    /// no-file mode (unit-test expansions keep their historical names).
+    fn diag_label_scope(&self) -> String {
+        if self.module_id.is_empty() { String::new() } else { format!("${}", self.module_id) }
+    }
+
     /// The 16 Bcc condition codes an `assert` accepts (spec §3/§5), lowercase.
     /// The `b<cond>.w` branch mnemonic is formed directly from the spelling, so
     /// this is the ONE membership gate (an unknown cond is caught at parse time,
@@ -453,7 +460,8 @@ impl Evaluator<'_> {
 
         let n = self.asm_counter;
         self.asm_counter += 1;
-        let stmts = crate::eval::diag::build_assert_expansion(n, p, span);
+        let diag_scope = self.diag_label_scope();
+        let stmts = crate::eval::diag::build_assert_expansion(n, &diag_scope, p, span);
         for stmt in &stmts {
             self.lower_asm_stmt(stmt, scope, buf, env);
         }
@@ -499,7 +507,14 @@ impl Evaluator<'_> {
         }
         let n = self.asm_counter;
         self.asm_counter += 1;
-        let stmts = crate::eval::diag::build_raise_error_expansion(n, &encoded.bytes, arg_pushes, span);
+        let diag_scope = self.diag_label_scope();
+        let stmts = crate::eval::diag::build_raise_error_expansion(
+            n,
+            &diag_scope,
+            &encoded.bytes,
+            arg_pushes,
+            span,
+        );
         for stmt in &stmts {
             self.lower_asm_stmt(stmt, scope, buf, env);
         }

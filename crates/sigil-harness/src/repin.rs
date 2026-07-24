@@ -319,6 +319,17 @@ pub struct RegionSpec {
     pub gate: Option<String>,
     #[serde(default)]
     pub tests: Vec<String>,
+    /// Region that exists ONLY in the debug shape (the twin is whole-file
+    /// `ifdef __DEBUG__` — compression_selftest): `start`/`end` resolve
+    /// against the DEBUG listing only; plain_len = 0; plain_base = the plain
+    /// address of `plain_anchor` (the next placement — keeps the emitted
+    /// `Region` shape unchanged for every consumer). Requires `plain_anchor`.
+    #[serde(default)]
+    pub debug_only: bool,
+    /// The plain-listing symbol whose address becomes a `debug_only` region's
+    /// plain_base (the next placement). Only valid with `debug_only`.
+    #[serde(default)]
+    pub plain_anchor: Option<String>,
 }
 
 /// `[[symbol]]` — a bare cross-seam name (RAM cell, call target, equ-like
@@ -382,6 +393,18 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
                 r.name
             ));
         }
+        if r.debug_only && r.plain_anchor.is_none() {
+            return Err(format!(
+                "region `{}`: `debug_only` needs `plain_anchor` (the plain-listing symbol of the next placement — a debug-only region's start never appears in the plain listing)",
+                r.name
+            ));
+        }
+        if r.plain_anchor.is_some() && !r.debug_only {
+            return Err(format!(
+                "region `{}`: `plain_anchor` is only meaningful with `debug_only = true`",
+                r.name
+            ));
+        }
     }
     Ok(m)
 }
@@ -394,6 +417,9 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
 pub struct RegionPin {
     pub name: String,
     pub const_name: String,
+    /// Debug-only region (plain shape empty; gate block prints only the
+    /// `ifdef __DEBUG__` resume arm).
+    pub debug_only: bool,
     pub start: String,
     pub end_desc: String,
     pub gate: Option<String>,
@@ -477,6 +503,7 @@ impl Resolved {
                     gate: g.clone(),
                     region: r.name.clone(),
                     const_name: r.const_name.clone(),
+                    debug_only: r.debug_only,
                     plain_end: r.plain_base + r.plain_len,
                     debug_end: r.debug_base + r.debug_len,
                 })
@@ -491,6 +518,8 @@ pub struct GateBlock {
     pub gate: String,
     pub region: String,
     pub const_name: String,
+    /// Debug-only region: only the `ifdef __DEBUG__` resume arm exists.
+    pub debug_only: bool,
     pub plain_end: u32,
     pub debug_end: u32,
 }
@@ -499,6 +528,16 @@ impl GateBlock {
     /// The ready-to-paste else-arm block. Shape-invariant windows (the
     /// object-bank regions) collapse to a single `org`.
     pub fn render(&self) -> String {
+        if self.debug_only {
+            return format!(
+                "; {} — gate {} resume org (debug-only region; the plain shape emits nothing and needs no org)
+    ifdef __DEBUG__
+        org     ${:X}
+    endif
+",
+                self.region, self.gate, self.debug_end
+            );
+        }
         if self.plain_end == self.debug_end {
             format!(
                 "; {} — gate {} resume org (shape-invariant window)\n        org     ${:X}\n",
@@ -556,6 +595,49 @@ pub fn upper_snake(name: &str) -> String {
 pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolved, String> {
     let mut regions = Vec::new();
     for r in &m.regions {
+        if r.debug_only {
+            // Debug-only region (whole-file `ifdef __DEBUG__` twin): the
+            // debug listing carries start/end; the plain shape has ZERO bytes
+            // at plain_anchor's address.
+            let anchor = r.plain_anchor.as_ref().expect("load_manifest validated plain_anchor");
+            let plain_base = plain
+                .get(anchor)
+                .map_err(|e| format!("region `{}` plain_anchor: {e}", r.name))?;
+            let debug_base =
+                debug.get(&r.start).map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
+            let (debug_len, end_desc) = match (&r.end, r.len) {
+                (Some(end), None) => {
+                    let de = debug
+                        .get(end)
+                        .map_err(|e| format!("region `{}` end (debug): {e}", r.name))?;
+                    if de < debug_base {
+                        return Err(format!(
+                            "region `{}`: end `{end}` precedes start `{}` ({de:#X} < {debug_base:#X})",
+                            r.name, r.start
+                        ));
+                    }
+                    (de - debug_base, format!("`{end}` (debug-only region; plain empty at `{anchor}`)"))
+                }
+                (None, Some(len)) => {
+                    (len, format!("start + {len:#X} (debug-only literal; plain empty at `{anchor}`)"))
+                }
+                _ => unreachable!("load_manifest validates end/len exclusivity"),
+            };
+            regions.push(RegionPin {
+                name: r.name.clone(),
+                const_name: upper_snake(&r.name),
+                debug_only: true,
+                start: r.start.clone(),
+                end_desc,
+                gate: r.gate.clone(),
+                tests: r.tests.clone(),
+                plain_base,
+                debug_base,
+                plain_len: 0,
+                debug_len,
+            });
+            continue;
+        }
         let plain_base = plain.get(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
         let debug_base = debug.get(&r.start).map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
         let (plain_len, debug_len, end_desc) = match (&r.end, r.len) {
@@ -581,6 +663,7 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
         regions.push(RegionPin {
             name: r.name.clone(),
             const_name: upper_snake(&r.name),
+            debug_only: false,
             start: r.start.clone(),
             end_desc,
             gate: r.gate.clone(),
@@ -1122,6 +1205,78 @@ tests = ["animate_port"]
         assert!(block.contains("SIGIL_EMP_ANIMATE"));
         assert!(block.contains("org     $2E7C"), "{block}");
         assert!(block.contains("org     $2E8C"), "{block}");
+    }
+
+    /// A region that exists ONLY in the debug shape (the twin is whole-file
+    /// `ifdef __DEBUG__` — compression_selftest): `debug_only = true` resolves
+    /// start/end against the DEBUG listing only; plain_len = 0; plain_base =
+    /// `plain_anchor`'s plain address (the next placement); the gate block
+    /// prints ONLY the debug resume org.
+    #[test]
+    fn debug_only_region_resolves_debug_listing_only() {
+        let debug_excerpt = EXCERPT.replace("658B4", "673A2").replace(
+            " GAME_CONSOLE :",
+            " SelfTest :                    6FDC C |  SelfTest.done :               7204 C |\n GAME_CONSOLE :",
+        );
+        let plain = parse_listing(EXCERPT).unwrap();
+        let debug = parse_listing(&debug_excerpt).unwrap();
+        assert!(plain.get("SelfTest").is_err(), "premise: SelfTest absent from plain");
+        let manifest = load_manifest(
+            r#"
+[rom]
+end_symbol = "__END__"
+
+[[region]]
+name = "selftest"
+start = "SelfTest"
+end = "SelfTest.done"
+debug_only = true
+plain_anchor = "AnimateSprite"
+gate = "SIGIL_EMP_SELFTEST"
+tests = ["selftest_port"]
+"#,
+        )
+        .unwrap();
+        let resolved = resolve(&manifest, &plain, &debug).unwrap();
+        let reg = &resolved.regions[0];
+        assert_eq!((reg.plain_base, reg.debug_base), (0x2D78, 0x6FDC));
+        assert_eq!((reg.plain_len, reg.debug_len), (0, 0x228));
+        let block = resolved.gate_blocks()[0].render();
+        assert!(block.contains("debug-only"), "block names the class: {block}");
+        assert!(block.contains("org     $7204"), "{block}");
+        assert!(!block.contains("$2D78"), "no plain arm for a debug-only region: {block}");
+
+        // A debug_only region WITHOUT plain_anchor is a manifest error.
+        let err = load_manifest(
+            r#"
+[rom]
+end_symbol = "__END__"
+
+[[region]]
+name = "selftest"
+start = "SelfTest"
+end = "SelfTest.done"
+debug_only = true
+"#,
+        )
+        .unwrap_err();
+        assert!(err.contains("plain_anchor"), "error names the missing key: {err}");
+
+        // plain_anchor WITHOUT debug_only is a manifest error too.
+        let err = load_manifest(
+            r#"
+[rom]
+end_symbol = "__END__"
+
+[[region]]
+name = "selftest"
+start = "AnimateSprite"
+end = "AnimateSprite.cc_delete"
+plain_anchor = "AnimateSprite"
+"#,
+        )
+        .unwrap_err();
+        assert!(err.contains("debug_only"), "error names the missing flag: {err}");
     }
 
     #[test]

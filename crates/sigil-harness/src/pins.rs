@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.lst (07/24/2026 11:43:27 AM)
 //! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.debug.lst (07/24/2026 11:43:28 AM)
-//! [provenance] 34 regions, 259 symbols, 7 offsets
+//! [provenance] 35 regions, 264 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +125,9 @@ pub const BG: Region = Region { plain_base: 0x60FE, debug_base: 0x6DD6, plain_le
 
 /// `BgAnim_Init` .. start + 0x9E plain / 0x158 debug (literal — no end symbol) — gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
 pub const BG_ANIM: Region = Region { plain_base: 0x61AC, debug_base: 0x6E84, plain_len: 0x9E, debug_len: 0x158 };
+
+/// `CompressionSelfTest` .. `CSelf_S4LZ_Plain` (debug-only region; plain empty at `Sound_PostByte`) — gate `SIGIL_EMP_COMPRESSION_SELFTEST`. tests: compression_selftest_port
+pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x624A, debug_base: 0x6FDC, plain_len: 0x0, debug_len: 0x228 };
 
 /// `Sound_PostByte` .. start + 0x20A plain / 0x3B4 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
 pub const SOUND_API: Region = Region { plain_base: 0x624A, debug_base: 0x7C76, plain_len: 0x20A, debug_len: 0x3B4 };
@@ -442,6 +445,21 @@ pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x370A, debug: 0x4130 };
 
 /// `Sound_PlayRing`. tests: rings_port
 pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6406, debug: 0x7FDC };
+
+/// `CSelf_S4LZ_Plain` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
+pub const C_SELF_S4_LZ_PLAIN: u32 = 0x7204;
+
+/// `CSelf_S4LZ_Dict` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
+pub const C_SELF_S4_LZ_DICT: u32 = 0x7486;
+
+/// `CSelf_Dict_Blob` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
+pub const C_SELF_DICT_BLOB: u32 = 0x766C;
+
+/// `CSelf_ZX0` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
+pub const C_SELF_ZX0: u32 = 0x776C;
+
+/// `CSelf_Expected` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
+pub const C_SELF_EXPECTED: u32 = 0x798E;
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x5E704;

@@ -292,6 +292,23 @@ gate = "SIGIL_EMP_BG_ANIM"
 tests = ["bg_anim_port"]
 
 [[region]]
+# Tranche 22 — the DEBUG-only compression self-test (the twin is whole-file
+# `ifdef __DEBUG__`): the region exists ONLY in the debug shape. The .emp
+# covers the CODE ([CompressionSelfTest, CSelf_S4LZ_Plain)); the generated
+# golden-vector data (CSelf_*/CSELF_*, tools/gen_compression_vectors.py)
+# stays AS-side — the gate's else arm orgs past the code and includes
+# engine/debug/generated/vectors.asm. plain_anchor = Sound_PostByte (the next
+# placement — sound_api's region start; plain_base only — zero plain bytes,
+# no plain org arm).
+name = "compression_selftest"
+start = "CompressionSelfTest"
+end = "CSelf_S4LZ_Plain"
+debug_only = true
+plain_anchor = "Sound_PostByte"
+gate = "SIGIL_EMP_COMPRESSION_SELFTEST"
+tests = ["compression_selftest_port"]
+
+[[region]]
 # The one region whose end carries no listing symbol: the include's content ends
 # unlabeled after Sound_FadeIn (next placement is org $10000 / sound_debug.asm).
 # Shape-DEPENDENT length as of retro-fix batch 2 (the DEBUG song-id + SFX-ring
@@ -798,6 +815,34 @@ tests = ["rings_port"]
 # rings' debug-shape error-handler entries. debug_only: the sole consumer is
 # the DEBUG shape's assert transliteration (the plain listing also carries
 # these names, but no test reads the plain values).
+
+# t22 compression_selftest: the generated golden-vector data labels (AS-side,
+# debug shape only — the .emp consumes them cross-seam; the port test feeds
+# them as carriers).
+[[symbol]]
+name = "CSelf_S4LZ_Plain"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_S4LZ_Dict"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_Dict_Blob"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_ZX0"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_Expected"
+debug_only = true
+tests = ["compression_selftest_port"]
 
 [[symbol]]
 name = "MDDBG__ErrorHandler"
