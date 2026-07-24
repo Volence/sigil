@@ -663,10 +663,14 @@ fn lower_m68k_movem(
 /// the folded value to the unsigned 16-bit window at link, so a negative or
 /// oversize difference is loud, not wrapped.
 ///
-/// Fenced to the proven shapes: `.w`/`.l` sizes only (a `.b` symbolic imm has
-/// no deferral yet — the remaining width of the ledgered extension gap,
-/// consumer-gated), the imm FIRST, and no other symbolic operand (their
-/// fixups would collide).
+/// The `.b` width's demand site is boot's game-contract id store (tranche 23:
+/// `move.b #GAME_ENTRY_ID, (Game_State_ID).w` — a game-side equ read from
+/// engine .emp). A byte immediate still spends a full extension word, so the
+/// deferral hole is the ext word's LOW byte (offset 3); `Value8` range-checks
+/// the folded value to the unsigned 8-bit window at link.
+///
+/// Fenced to the proven shapes: the imm FIRST, and no other symbolic operand
+/// (their fixups would collide).
 fn lower_m68k_imm_link(
     m: M68kMnemonic,
     size: M68kSize,
@@ -675,13 +679,11 @@ fn lower_m68k_imm_link(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    if !matches!(size, M68kSize::L | M68kSize::W) {
+    if !matches!(size, M68kSize::L | M68kSize::W | M68kSize::B) {
         push_err(
             diags,
             span,
-            "[lower.imm-link] a link-time immediate needs `.w` or `.l` size — a `.b` symbolic \
-             immediate has no deferral yet (mirror the value into a comptime const, or \
-             extend the imm-deferral family)",
+            "[lower.imm-link] a link-time immediate needs an explicit `.b`/`.w`/`.l` size",
         );
         return;
     }
@@ -817,10 +819,18 @@ fn lower_m68k_imm_link(
     // `Abs16Be` rejects the `[0x8000, 0xFFFF]` upper-unsigned half (a valid
     // objroutine offset). `.l` stays a verbatim `Value32Be` (a full 32-bit
     // address fits without truncation).
-    let (kind, min_len) = match size {
-        M68kSize::L => (FixupKind::Value32Be, 6),
-        M68kSize::W => (FixupKind::ImmWord16Be, 4),
-        _ => unreachable!("guarded at entry: imm-link size is .w or .l"),
+    // A `.b` link-time immediate lives in the LOW byte of its one extension
+    // word (68k byte immediates still occupy a full ext word; the high byte is
+    // the encoder's zero placeholder). `Value8` is the honest kind: an
+    // UNSIGNED-window check (`0 ≤ v < 2^8`) — the demand site is a game-state
+    // id (`move.b #GAME_ENTRY_ID, (Game_State_ID).w`, tranche 23); a future
+    // site needing AS's signed-extension union mints its own ImmByte kind, the
+    // ImmWord16Be precedent.
+    let (kind, imm_offset, min_len) = match size {
+        M68kSize::L => (FixupKind::Value32Be, 2, 6),
+        M68kSize::W => (FixupKind::ImmWord16Be, 2, 4),
+        M68kSize::B => (FixupKind::Value8, 3, 4),
+        _ => unreachable!("guarded at entry: imm-link size is .b, .w or .l"),
     };
     if df.bytes.len() < min_len {
         push_err(
@@ -833,17 +843,18 @@ fn lower_m68k_imm_link(
         return;
     }
     let mut df = df;
-    df.fixups.push(Fixup { kind, offset: 2, target });
+    df.fixups.push(Fixup { kind, offset: imm_offset, target });
     // The pinned-absolute destination is a SECOND, independent fixup at a
     // distinct offset. The imm is the SOURCE, so ITS ext words come first —
     // the abs ext word follows the opcode word (2) + the imm field
     // (`imm_field_width`). Byte-exact for core's `move.w #imm, (abs).w` (imm
-    // @2, abs.w @4) and its `.l`/abs.l relatives.
+    // @2, abs.w @4) and its `.b`/`.l` relatives (a `.b` imm still spends a
+    // full ext word, so its abs field sits at 4 too).
     if let Some((abs_target, long)) = abs {
         let imm_field_width = match size {
-            M68kSize::W => 2,
+            M68kSize::B | M68kSize::W => 2,
             M68kSize::L => 4,
-            _ => unreachable!("guarded at entry: imm-link size is .w or .l"),
+            _ => unreachable!("guarded at entry: imm-link size is .b, .w or .l"),
         };
         let abs_kind = if long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
         df.fixups.push(Fixup { kind: abs_kind, offset: 2 + imm_field_width, target: abs_target });
