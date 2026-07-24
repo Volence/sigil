@@ -6,8 +6,8 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.lst (07/24/2026 03:33:57 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.debug.lst (07/24/2026 03:33:58 AM)
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.lst (07/24/2026 03:49:41 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.debug.lst (07/24/2026 03:49:42 AM)
 //! [provenance] 30 regions, 230 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
@@ -106,16 +106,16 @@ pub const CAMERA: Region = Region { plain_base: 0x59CE, debug_base: 0x6658, plai
 pub const PARALLAX: Region = Region { plain_base: 0x5B32, debug_base: 0x67BC, plain_len: 0x576, debug_len: 0x576 };
 
 /// `Art_Decompress` .. `BG_Init` — gate `SIGIL_EMP_LOAD_ART`. tests: load_art_port
-pub const LOAD_ART: Region = Region { plain_base: 0x60A8, debug_base: 0x6D32, plain_len: 0x68, debug_len: 0xB2 };
+pub const LOAD_ART: Region = Region { plain_base: 0x60A8, debug_base: 0x6D32, plain_len: 0x64, debug_len: 0xAE };
 
 /// `BG_Init` .. `BgAnim_Init` — gate `SIGIL_EMP_BG`. tests: bg_port
-pub const BG: Region = Region { plain_base: 0x6110, debug_base: 0x6DE4, plain_len: 0xAE, debug_len: 0xAE };
+pub const BG: Region = Region { plain_base: 0x610C, debug_base: 0x6DE0, plain_len: 0xAE, debug_len: 0xAE };
 
 /// `BgAnim_Init` .. start + 0x9E plain / 0x158 debug (literal — no end symbol) — gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
-pub const BG_ANIM: Region = Region { plain_base: 0x61BE, debug_base: 0x6E92, plain_len: 0x9E, debug_len: 0x158 };
+pub const BG_ANIM: Region = Region { plain_base: 0x61BA, debug_base: 0x6E8E, plain_len: 0x9E, debug_len: 0x158 };
 
 /// `Sound_PostByte` .. start + 0x20A plain / 0x3B4 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
-pub const SOUND_API: Region = Region { plain_base: 0x625C, debug_base: 0x7C84, plain_len: 0x20A, debug_len: 0x3B4 };
+pub const SOUND_API: Region = Region { plain_base: 0x6258, debug_base: 0x7C80, plain_len: 0x20A, debug_len: 0x3B4 };
 
 /// `TestSolid_Init` .. `TestParticle` — gate `SIGIL_EMP_TEST_OBJECTS`. tests: test_objects_port
 pub const TEST_SOLID: Region = Region { plain_base: 0x10F7C, debug_base: 0x10F7C, plain_len: 0xE, debug_len: 0xE };
@@ -216,7 +216,7 @@ pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x22C8, debug: 0x2352 };
 
 /// `Sound_DrainSfxRing`. tests: game_loop_port, load_art_port
-pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x63C8, debug: 0x7F9A };
+pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x63C4, debug: 0x7F96 };
 
 /// `Game_State`. tests: game_loop_port, load_art_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
@@ -429,7 +429,7 @@ pub const ENTITY_WINDOW_ENTRY_FOR_SECTION: Pin = Pin { plain: 0x372C, debug: 0x4
 pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3718, debug: 0x413A };
 
 /// `Sound_PlayRing`. tests: rings_port
-pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6418, debug: 0x7FEA };
+pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6414, debug: 0x7FE6 };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x5E704;
@@ -483,7 +483,7 @@ pub const ZX0_DECOMPRESS: Pin = Pin { plain: 0x24B4, debug: 0x2646 };
 pub const QUEUE_DMA_CRITICAL: Pin = Pin { plain: 0x1D72, debug: 0x1DF4 };
 
 /// `BG_Init`. tests: load_art_port
-pub const BG_INIT: Pin = Pin { plain: 0x6110, debug: 0x6DE4 };
+pub const BG_INIT: Pin = Pin { plain: 0x610C, debug: 0x6DE0 };
 
 /// `QueueDMA_Important`. tests: dplc_port
 pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1D7C, debug: 0x1DFE };
@@ -573,7 +573,7 @@ pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA112, debug: 0xFFFFA1
 pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA114, debug: 0xFFFFA138 };
 
 /// `Sound_PlaySFX`. tests: animate_port
-pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x6382, debug: 0x7F0E };
+pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x637E, debug: 0x7F0A };
 
 /// `ObjCodeBase`. tests: test_objects_port
 pub const OBJ_CODE_BASE: Pin = Pin { plain: 0x10000, debug: 0x10000 };
