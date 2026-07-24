@@ -327,7 +327,8 @@ fn regs_mentioned(ops: &[CodeOperand]) -> BTreeSet<String> {
             | CodeOperand::Ind(r)
             | CodeOperand::PreDec(r)
             | CodeOperand::PostInc(r)
-            | CodeOperand::DispInd { reg: r, .. } => {
+            | CodeOperand::DispInd { reg: r, .. }
+            | CodeOperand::DispSymInd { reg: r, .. } => {
                 regs.insert(r.to_string());
             }
             CodeOperand::IndIdx { reg, xn, .. } => {
