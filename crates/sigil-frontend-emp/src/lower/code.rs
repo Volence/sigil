@@ -719,14 +719,51 @@ fn lower_m68k_imm_link(
         );
         return;
     }
-    // Opcode-embedded-immediate families (quick forms, shift counts, moveq)
-    // have no 32-bit imm field to defer into — steer BEFORE the backend sees
-    // the zero placeholder (which would otherwise leak into its range error:
+    // moveq: the immediate embeds in the OPCODE WORD's low byte and
+    // sign-extends to 32 bits — a link-time value rides the dedicated
+    // SIGNED-8 fixup at offset 1 (`ImmSigned8`, window [-128, 127]; demand:
+    // boot's sound-off `moveq #Z80_IDLE_SIZE-1` + the gameBootHook mirror's
+    // `moveq #SONG_MOVINGTRUCKS`, tranche 23). The quick/shift families
+    // below stay refused — zero demand sites.
+    if matches!(m, M68kMnemonic::Moveq) {
+        let (target, reg_op) = match ops {
+            [CodeOperand::ImmLink { target }, reg] => {
+                let r = match m68k_operand(reg) {
+                    Ok(o @ M68kOperand::Dn(_)) => o,
+                    _ => {
+                        push_err(diags, span, "[lower.imm-link] moveq needs `#imm, dN`");
+                        return;
+                    }
+                };
+                (target.clone(), r)
+            }
+            _ => {
+                push_err(diags, span, "[lower.imm-link] moveq needs `#imm, dN`");
+                return;
+            }
+        };
+        let inst = M68kInst {
+            mnemonic: M68kMnemonic::Moveq,
+            size,
+            ops: vec![M68kOperand::Imm(0), reg_op],
+        };
+        match M68kBackend.lower_inst(&inst, span) {
+            Ok(mut df) => {
+                debug_assert_eq!(df.bytes.len(), 2, "moveq is a single opcode word");
+                df.fixups.push(Fixup { kind: FixupKind::ImmSigned8, offset: 1, target });
+                emit_data_frag(builder, df);
+            }
+            Err(e) => push_err(diags, span, e.message),
+        }
+        return;
+    }
+    // Opcode-embedded-immediate families (quick forms, shift counts) have no
+    // imm field to defer into — steer BEFORE the backend sees the zero
+    // placeholder (which would otherwise leak into its range error:
     // "Addq data must be 1..=8, got 0").
     if matches!(
         m,
-        M68kMnemonic::Moveq
-            | M68kMnemonic::Addq
+        M68kMnemonic::Addq
             | M68kMnemonic::Subq
             | M68kMnemonic::Lsl
             | M68kMnemonic::Lsr
@@ -739,7 +776,7 @@ fn lower_m68k_imm_link(
             diags,
             span,
             "[lower.imm-link] this instruction embeds its immediate in the opcode word \
-             (moveq/quick/shift-count forms) — no link-time deferral; mirror the value \
+             (quick/shift-count forms) — no link-time deferral; mirror the value \
              into a comptime const instead",
         );
         return;
@@ -860,7 +897,7 @@ fn lower_m68k_imm_link(
             diags,
             span,
             "[lower.imm-link] this instruction embeds its immediate in the opcode word \
-             (moveq/quick/shift-count forms) — no link-time deferral; mirror the value \
+             (quick/shift-count forms) — no link-time deferral; mirror the value \
              into a comptime const instead",
         );
         return;

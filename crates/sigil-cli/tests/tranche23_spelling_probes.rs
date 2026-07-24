@@ -10,11 +10,11 @@
 //!   window; vdp_init.emp:27 proved the backward direction).
 //! - P2 `move.w #Z80_SOUND_SIZE-1, d1` — link-time imm16 EXPRESSION over a bare
 //!   cross-seam value symbol (the t22 P4 class at boot's real width/value).
-//! - P3 `moveq #Z80_IDLE_SIZE-1, d1` — link-fed imm8 inside moveq. This probe
-//!   PINS THE CURRENT REFUSAL (`[lower.imm-link]`: opcode-embedded immediates
-//!   have no deferral field) as the overseer-adjudication EVIDENCE — it is the
-//!   P3 record, NOT a ratified ruling. The same refusal class covers the
-//!   gameBootHook mirror's `moveq #SONG_MOVINGTRUCKS, d0` (hotkeys arm).
+//! - P3 `moveq #Z80_IDLE_SIZE-1, d1` — link-fed imm8 inside moveq. RULED
+//!   demanded-feature at checkpoint (a) (overseer ruling 1) and SHIPPED:
+//!   the dedicated SIGNED-8 `ImmSigned8` fixup (opcode-word low byte,
+//!   window [-128, 127]); the gameBootHook mirror's
+//!   `moveq #SONG_MOVINGTRUCKS, d0` rides the same path (hotkeys arm).
 //! - P4 imm32 SYMBOL immediates with an absolute destination — the row-109
 //!   shipped class at boot's two real sites (`move.l #VInt_Level, (VInt_Ptr).w`
 //!   / `move.l #Game_Entry, (Game_State).w`) — plus the imm8 sibling
@@ -52,28 +52,6 @@ fn emp_sections(emp: &str, defines: &[(&str, i128)]) -> Vec<Section> {
         ldiags.iter().filter(|d| d.level == Level::Error).map(|d| &d.message).collect::<Vec<_>>()
     );
     module.sections
-}
-
-/// Lower an `.emp` source EXPECTING lower errors; return their messages.
-fn emp_lower_errors(emp: &str, defines: &[(&str, i128)]) -> Vec<String> {
-    let (file, pdiags) = parse_str(emp);
-    assert!(
-        !pdiags.iter().any(|d| d.level == Level::Error),
-        "emp parse errors: {:?}",
-        pdiags.iter().map(|d| &d.message).collect::<Vec<_>>()
-    );
-    let opts = LowerOptions {
-        initial_cpu: Cpu::M68000,
-        include_root: None,
-        embed_base: None,
-        defines: defines.iter().map(|(n, v)| (n.to_string(), *v)).collect(),
-    };
-    let (_module, ldiags) = lower_module(&file, &opts);
-    ldiags
-        .into_iter()
-        .filter(|d| d.level == Level::Error)
-        .map(|d| d.message)
-        .collect()
 }
 
 fn pin_at(mut secs: Vec<Section>, lma: u32) -> Vec<Section> {
@@ -163,12 +141,13 @@ fn linkimm_word_bare_arith_at_boot_value() {
 
 // ---------------------------------------------------------------------------
 // P3 — link-fed imm8 inside moveq: `moveq #Z80_IDLE_SIZE-1, d1` (the twin's
-// sound-OFF arm). PINS THE CURRENT REFUSAL as adjudication evidence: moveq is
-// on the opcode-embedded-immediate no-deferral list (lower/code.rs), so a
-// link-time value cannot reach it today. The overseer adjudicates
-// demanded-feature (link-folded imm8 with a link-time range check) vs the
-// alternative comptime-mirror spelling — this test is the probe RECORD and
-// changes with that ruling, not before it.
+// sound-OFF arm; the gameBootHook mirror's `moveq #SONG_MOVINGTRUCKS` is the
+// same class). RULED demanded-feature (overseer, checkpoint (a)): moveq's
+// immediate embeds in the OPCODE WORD's low byte and sign-extends to 32
+// bits, so it rides its own SIGNED-8 fixup (`ImmSigned8`, offset 1, window
+// [-128, 127]) — deliberately DISTINCT from the unsigned `Value8` ext-word
+// class (a shared [-128, 255] union would silently mis-assemble). The
+// quick/shift opcode-embedded families stay refused (zero demand sites).
 // ---------------------------------------------------------------------------
 
 const EMP_MOVEQ_LINK: &str = "\
@@ -179,12 +158,32 @@ pub proc P () clobbers(d1) {
 }
 ";
 
+fn link_moveq_probe(idle_size: &str) -> Result<Vec<u8>, String> {
+    let mut sections = pin_at(emp_sections(EMP_MOVEQ_LINK, &[]), 0x400);
+    sections
+        .extend(sigil_harness::test_support::assemble_equ_pairs(&[("Z80_IDLE_SIZE", idle_size)]));
+    let empty = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&sections, &empty, true)
+        .map_err(|d| format!("resolve: {d:?}"))?;
+    let linked = sigil_link::link(&resolved, &empty).map_err(|d| format!("{d:?}"))?;
+    Ok(sigil_link::flatten(&linked, 0x00))
+}
+
 #[test]
-fn moveq_link_folded_imm8_is_refused_today() {
-    let errors = emp_lower_errors(EMP_MOVEQ_LINK, &[]);
+fn moveq_link_folded_imm8_in_window_lowers() {
+    // moveq #$25, d1 = 7225 (idle size $26 − 1); rts = 4E75.
+    let rom = link_moveq_probe("$26").expect("in-window moveq link imm must link");
+    assert_eq!(&rom[0x400..0x404], &[0x72, 0x25, 0x4E, 0x75], "moveq #Z80_IDLE_SIZE-1, d1");
+}
+
+#[test]
+fn moveq_link_imm8_out_of_window_is_loud() {
+    // 201 − 1 = 200 > 127: outside moveq's signed-8 window — the link must
+    // FAIL naming the instruction-specific window, never wrap to a negative.
+    let err = link_moveq_probe("201").expect_err("moveq #200 must fail the signed-8 range check");
     assert!(
-        errors.iter().any(|m| m.contains("[lower.imm-link]") && m.contains("moveq")),
-        "expected the [lower.imm-link] opcode-embedded-immediate refusal; got: {errors:?}"
+        err.contains("moveq") && (err.contains("-128") || err.contains("signed")),
+        "expected the moveq signed-8 window diagnostic, got: {err}"
     );
 }
 

@@ -361,3 +361,240 @@ fn doctored_psg_port_fires_its_guard() {
     });
     assert!(fired, "the doctored PSG_PORT truth must fire its ensure: {diags:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Off-canonical shape arms — the sound-OFF fence (`moveq #Z80_IDLE_SIZE-1`
+// through the ImmSigned8 moveq deferral) and the HOTKEYS shape (the
+// gameBootHook macro-mirror arm LIVE: ping + autoplay + Dbg_Music_On, its
+// AS oracle the REAL games/sonic4/config/game.asm macro expansion) have NO
+// reference ROM, so the gate is TWIN-PARITY: the full AS-side ROM assembled
+// at the same defines is the oracle, the region located by its own
+// EntryPoint/BootData labels, and every cross-seam symbol fed to the .emp
+// side from the SAME AS module's label/equ world — one self-consistent
+// world per shape (the t21 vblank run_twin_parity class). NB the boot code
+// region is SHAPE-DIVERGENT here (sound-off: moveq is 2 bytes shorter than
+// move.w #imm), which is exactly why these arms derive base/len from the
+// oracle, never from the canonical pins.
+// ---------------------------------------------------------------------------
+
+/// Assemble the FULL AS-side ROM with the given defines (no gate).
+fn as_full_module(aeon: &Path, debug: bool, sound: bool, hotkeys: bool) -> sigil_ir::Module {
+    use sigil_frontend_as::assemble_root;
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines: Vec<(String, i64)> = Vec::new();
+    if sound {
+        defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
+    }
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    if hotkeys {
+        defines.push(("SOUND_DEBUG_HOTKEYS".to_string(), 1));
+    }
+    let opts =
+        AsOptions { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).unwrap_or_else(|d| {
+        panic!("full AS assemble failed: {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
+/// Look a symbol up in the RESOLVED oracle sections: labels at their phased
+/// VMA, `equ` symbols at their folded value (resolve_layout folds every equ
+/// to a constant) — one uniform value source for the parity world.
+fn oracle_value(resolved: &[Section], name: &str) -> i64 {
+    for sec in resolved {
+        for l in &sec.labels {
+            if l.name == name {
+                return (sec.vma_origin() + l.offset) as i64;
+            }
+        }
+    }
+    for sec in resolved {
+        for eq in &sec.equ_syms {
+            if eq.name == name {
+                if let sigil_ir::Expr::Int(v) = eq.expr {
+                    return v;
+                }
+                panic!("oracle equ `{name}` not folded to a constant");
+            }
+        }
+    }
+    panic!("symbol {name} not found in the oracle world");
+}
+
+/// Twin-parity gate at an off-canonical shape.
+fn run_twin_parity(debug: bool, sound: bool, hotkeys: bool, what: &str) {
+    let aeon = aeon_dir();
+    if !strict_gate() && !aeon.join("s4.bin").exists() {
+        eprintln!("skip: aeon tree not present");
+        return;
+    }
+
+    // The oracle world: full AS assembly at the shape's defines.
+    let as_module = as_full_module(&aeon, debug, sound, hotkeys);
+    let stubs = SymbolTable::new();
+    let oracle = sigil_link::resolve_layout(&as_module.sections, &stubs, true)
+        .unwrap_or_else(|d| panic!("{what}: AS resolve failed: {d:?}"));
+    let linked = sigil_link::link(&oracle, &stubs)
+        .unwrap_or_else(|d| panic!("{what}: AS link failed: {d:?}"));
+    let rom = sigil_link::flatten(&linked, 0x00);
+
+    let base = oracle_value(&oracle, "EntryPoint") as u32;
+    let end = oracle_value(&oracle, "BootData") as u32;
+    let expected = &rom[base as usize..end as usize];
+
+    // The .emp side at the same comptime shape, placed at the oracle's own
+    // region window.
+    let dir = aeon.join("engine/system");
+    let main = parse_file(&dir.join("boot.emp"));
+    let vdp_file = parse_file(&aeon.join("engine/vdp.emp"));
+    let z80_file = parse_file(&aeon.join("engine/z80_bus.emp"));
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items: vdp_file.items.into_iter().chain(z80_file.items).chain(main.items).collect(),
+        docs: main.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(dir),
+        embed_base: None,
+        defines: vec![
+            ("DEBUG".to_string(), i128::from(debug)),
+            ("SOUND_DRIVER_ENABLED".to_string(), i128::from(sound)),
+            ("SOUND_DEBUG_HOTKEYS".to_string(), i128::from(hotkeys)),
+        ],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{what}: boot.emp lower errors: {ldiags:?}"
+    );
+    let map_toml = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"boot\"\nlma_base = {base:#x}\nsize = {:#x}\nkind = \"rom\"\n",
+        end - base
+    );
+    let map = sigil_link::load_map(&map_toml).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{what}: place_sections errors: {pdiags:?}"
+    );
+
+    // Cross-seam values from the oracle world (uniform label/equ lookup).
+    let mut value_names: Vec<&str> = vec![
+        "VDP_DATA",
+        "VDP_CTRL",
+        "VRAM",
+        "CRAM",
+        "VSRAM",
+        "READ",
+        "WRITE",
+        "DMA",
+        "PSG_PORT",
+        "VDP_Shadow_vdp_mode2",
+        "Z80_BUS_REQUEST",
+        "HW_PORT_A_CTRL_FULL",
+        "HW_EXPANSION_CTRL_FULL",
+        "HW_VERSION",
+        "TMSS_REGISTER",
+        "HW_PORT_1_CTRL",
+        "HW_PORT_2_CTRL",
+        "HW_EXPANSION_CTRL",
+        "HW_PORT_1_DATA",
+        "HW_PORT_2_DATA",
+        "HW_PORT_EXP_DATA",
+        "YM2612_A0",
+        "NTSC_TIMING_STEP",
+        "PAL_TIMING_STEP",
+        "DMA_BUDGET_NTSC",
+        "DMA_BUDGET_PAL",
+        "GAME_ENTRY_ID",
+        "Game_Entry",
+    ];
+    value_names.push(if sound { "Z80_SOUND_SIZE" } else { "Z80_IDLE_SIZE" });
+    if hotkeys {
+        value_names.push("SONG_MOVINGTRUCKS");
+    }
+    let value_pairs: Vec<(&str, String)> = value_names
+        .iter()
+        .map(|n| (*n, format!("{}", oracle_value(&oracle, n))))
+        .collect();
+    sections.extend(sigil_harness::test_support::assemble_owned_equ_pairs(&value_pairs));
+
+    // Cross-seam address carriers at the oracle world's own VMAs.
+    let mut addr_names: Vec<&str> = vec![
+        "BootData",
+        "VDP_Shadow_Init",
+        "Init_DMA_Queue",
+        "Init_SpriteTable",
+        "BuildStaticDMA",
+        "Flush_VDP_Shadow",
+        "GameLoop",
+        "VInt_Level",
+        "VInt_Ptr",
+        "Game_State",
+        "Game_State_ID",
+        "Game_State_Init",
+        "Hardware_Region",
+        "Region_Flags",
+        "Timing_Step",
+        "Frame_Accumulator",
+        "DMA_Budget_Default",
+        "HBlank_Vector_Slot",
+        "RAM_Start",
+        "VDP_Shadow_Table",
+        "VDP_Dirty_Mask",
+    ];
+    if sound {
+        addr_names.push("Sound_Init");
+    }
+    if debug {
+        addr_names.push("CompressionSelfTest");
+    }
+    if hotkeys {
+        addr_names.push("Sound_Ping");
+        addr_names.push("Sound_PlayMusic");
+        addr_names.push("Dbg_Music_On");
+    }
+    for (i, name) in addr_names.iter().enumerate() {
+        let vma = oracle_value(&oracle, name) as u32;
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        let aopts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let mut secs = assemble(&asm, &aopts)
+            .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+            .sections;
+        for mut s in secs.drain(..) {
+            s.lma = 0x0300_0000 + (i as u32) * 0x1_0000;
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            sections.push(s);
+        }
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("{what}: emp resolve failed: {d:?}"));
+    let linked_emp = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("{what}: emp link failed: {d:?}"));
+    let section = linked_emp.section("boot").expect("linked image must carry boot");
+    assert_region_matches(&section.bytes, expected, what);
+}
+
+#[test]
+fn boot_sound_off_twin_parity_plain() {
+    run_twin_parity(false, false, false, "boot (sound-off plain)");
+}
+
+#[test]
+fn boot_sound_off_twin_parity_debug() {
+    run_twin_parity(true, false, false, "boot (sound-off debug)");
+}
+
+/// The gameBootHook drift matrix's LIVE combo: the (1,1) shape assembles the
+/// REAL macro body from games/sonic4/config/game.asm inside the oracle —
+/// a macro-body edit the .emp mirror doesn't follow fails this parity.
+#[test]
+fn boot_hotkeys_shape_twin_parity() {
+    run_twin_parity(true, true, true, "boot (hotkeys shape)");
+}

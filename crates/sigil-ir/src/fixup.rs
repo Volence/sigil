@@ -46,6 +46,15 @@ pub enum FixupKind {
     /// [`BankPtr16Le`](Self::BankPtr16Le) *masks*) — a value cell inherits neither
     /// semantics. Byte order is irrelevant at width 1. Any CPU.
     Value8,
+    /// A link-time `#imm8` embedded in an OPCODE WORD's low byte, SIGNED
+    /// window (`-128 ≤ v ≤ 127`) — the 68k `moveq` immediate, which
+    /// sign-extends to 32 bits at execution (demand: boot's sound-off
+    /// `moveq #Z80_IDLE_SIZE-1`, tranche 23). Deliberately DISTINCT from
+    /// [`Value8`](Self::Value8) (unsigned ext-word value cell): a shared
+    /// width-1 union window would silently mis-assemble `moveq #200`.
+    /// Writes the low 8 bits verbatim; out-of-window is an error naming the
+    /// moveq window. Byte order is irrelevant at width 1.
+    ImmSigned8,
     /// A general link-expr data VALUE, width 2, big-endian (68k sections).
     /// Unsigned-window range check (`0 ≤ v < 2^16`), then the folded integer is
     /// written verbatim big-endian.
@@ -90,7 +99,7 @@ impl FixupKind {
             FixupKind::PcRelDisp16 | FixupKind::HeaderChecksum => 2,
             FixupKind::Z80JrRel8 | FixupKind::PcRel8 | FixupKind::PcRelDisp8 => 1,
             FixupKind::Abs32Be => 4,
-            FixupKind::Value8 => 1,
+            FixupKind::Value8 | FixupKind::ImmSigned8 => 1,
             FixupKind::Value16Be | FixupKind::Value16Le => 2,
             FixupKind::Value32Be | FixupKind::Value32Le => 4,
         }
