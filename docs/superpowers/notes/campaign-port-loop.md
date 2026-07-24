@@ -420,6 +420,20 @@ its type — re-bless or re-route); and a mix-up class the optimization
 newly exposes (two same-width domain values now adjacent in registers)
 is a newtype candidate to adopt or ledger, same bar as step 2 item 6.**
 
+**LEAN AMENDMENT (2026-07-24, Volence-directed):** for the remainder of the
+conversion campaign, step 5's default output is **profile + interrogate + LOG
+— not cut**. The interrogation below still runs in full (its lines catch
+correctness hazards, not just cycles — the counter/cache and guard-coverage
+audits have found real bugs), but byte-changing optimization cuts are taken
+only when the win is **user-visible or large** (order of the t18 H2 cut,
+≥~1k cyc/frame steady-state) AND the gate approves; everything else lands as
+a numbered row in the optimization backlog (the emp-port optimization review
+list). Rationale: during the twin-lockstep era every byte-changing cut costs
+double (both twins + re-pin/re-baseline ceremony); the same cut after asl
+retires costs one file and no ceremony. The deferred sweep runs
+post-conversion off the logged backlog with full profiler context.
+"Logged, deferred to the sweep" is now the default healthy step-5 verdict.
+
   **The step-5 interrogation** (added 2026-07-11 after the t11 sprites
   review: a second look found real items behind a "no changes" verdict.
   "Looks hand-optimized" is ANCHORING, not analysis; "no profiler" blocks

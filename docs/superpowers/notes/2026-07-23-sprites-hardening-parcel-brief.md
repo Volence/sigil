@@ -1,5 +1,13 @@
 # PARCEL BRIEF — sprites structural-hardening (dry-panel calibration yield)
 
+> **STATUS: PARKED — runs AFTER the conversion campaign completes (Volence,
+> 2026-07-24).** Nothing here expires: the ledger rows it graduates (1355/1362/
+> 1373) stay open, the files it touches (sprites.emp/rings.emp) are ported-and-
+> stable with no remaining port scheduled against them, and the work is
+> byte-neutral so it costs the same later. Natural slot: alongside or just
+> before the post-asl-retirement optimization sweep (same files, same session
+> economy). Do not dispatch before then without a fresh gate word.
+
 **Source:** 2026-07-23 sprites.emp calibration run (6 lenses @ aeon bd9ddf2), triaged
 at sigil c9c1552; graduates ledger rows ~1355 (SAT-emit shared construct), ~1362
 (stride-hardening cluster), ~1373 (Sprite_Cycle_Counter low-byte const).
