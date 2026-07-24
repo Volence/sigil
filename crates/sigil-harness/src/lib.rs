@@ -737,3 +737,31 @@ pub fn assemble_mixed_tranche20_as_side(aeon: &Path, debug: bool) -> Result<Modu
         format!("assemble (mixed tranche20 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
+
+/// Assemble the AS side of the TRANCHE-21 mixed `.asm`+`.emp` build:
+/// `SIGIL_EMP_BUFFERS` and `SIGIL_EMP_VBLANK` defined so engine.inc's two
+/// `ifndef` blocks (which normally include `engine/system/buffers.asm` /
+/// `engine/system/vblank.asm`) are each REPLACED by an `org` resume, leaving
+/// the two windows for the `.emp` side's sections to supply.
+///
+/// Cross-seam headline: this arm carries the campaign's FIRST `.asm` data
+/// directive and immediate-operand references to `.emp`-exported procs —
+/// vectors.asm's `dc.l VBlank_Handler` (the IRQ6 vector) and boot.asm's /
+/// ojz_scroll_test.asm's `move.l #VInt_Level, (VInt_Ptr).w` — plus the
+/// exercised bsr/jsr classes (boot's Init_SpriteTable/BuildStaticDMA, the
+/// game states' `jsr Init_SpriteTable`, game_loop.asm's `bsr.w VSync_Wait`).
+pub fn assemble_mixed_tranche21_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_BUFFERS".to_string(), 1),
+        ("SIGIL_EMP_VBLANK".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche21 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}

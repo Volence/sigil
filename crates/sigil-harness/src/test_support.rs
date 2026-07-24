@@ -145,6 +145,22 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("DMAEntry_Reg95", "8"),
         ("DMAEntry_SrcL", "9"),
         ("DMAEntry_Command", "10"),
+        // parallax_config (28 bytes / $1C) — moved to engine.structs at the
+        // tranche-21 buffers port (2nd .emp consumer).
+        ("parallax_config_len", "$1C"),
+        ("parallax_config_pcfg_band_count", "0"),
+        ("parallax_config_pcfg_v_factor_bg", "1"),
+        ("parallax_config_pcfg_layer_mask", "3"),
+        ("parallax_config_pcfg_v_center_y", "4"),
+        ("parallax_config_pcfg_v_offset", "6"),
+        ("parallax_config_pcfg_transition", "8"),
+        ("parallax_config_pcfg_deform_speed_fg", "9"),
+        ("parallax_config_pcfg_deform_speed_bg", "10"),
+        ("parallax_config_pcfg_deform_table_fg", "12"),
+        ("parallax_config_pcfg_deform_table_bg", "16"),
+        ("parallax_config_pcfg_v_deform_table_bg", "20"),
+        ("parallax_config_pcfg_v_deform_speed_bg", "24"),
+        ("parallax_config_pcfg_v_deform_shift_bg", "25"),
         ("DMAEntry_len", "14"),
     ]
 }
@@ -245,6 +261,10 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("ART_HDR_SIZE", "4"),
         ("ART_VER_S4LZ", "1"),
         ("ART_VER_ZX0", "2"),
+        // VRAM fixed regions + plane geometry (tranche 21 — buffers.emp).
+        ("VRAM_SPRITE_TABLE", "$B800"),
+        ("VRAM_HSCROLL_TABLE", "$BC00"),
+        ("PLANE_H_CELLS", "64"),
     ]
 }
 
@@ -345,8 +365,8 @@ mod tests {
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            66,
-            "the twin guards 66 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4 + tranche-20 DMA/ART block of 9)"
+            69,
+            "the twin guards 69 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4 + tranche-20 DMA/ART block of 9 + tranche-21 VRAM/plane block of 3)"
         );
     }
 

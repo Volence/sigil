@@ -79,9 +79,9 @@ fn map_toml(debug: bool) -> String {
 /// offsets ride the prepended structs twin via `act_sec_field_equs`.
 fn bg_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
     let mut pairs: Vec<(&str, &str)> = vec![
-        // bg.emp local mirrors (truth: engine/constants.asm)
+        // bg.emp local mirrors (truth: engine/constants.asm).
+        // VRAM_SPRITE_TABLE moved to engine_constant_equs at the t21 hoist.
         ("BG_TILE_BASE_VRAM", "$8000"),
-        ("VRAM_SPRITE_TABLE", "$B800"),
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
         // bare link-resolved hardware address (stop_z80/start_z80 templates)
@@ -94,6 +94,12 @@ fn bg_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("WRITE", "%000111"),
         ("DMA", "%100111"),
     ];
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
+    // The prepended constants.emp twin (t21: VRAM_SPRITE_TABLE hoisted there)
+    // brings its full drift wall — supply the whole shared truth blob. The
+    // doctor runs AFTER the extends so the negative probe can doctor shared
+    // pairs too (VRAM_SPRITE_TABLE now lives in engine_constant_equs).
+    pairs.extend(sigil_harness::test_support::engine_constant_equs());
     if let Some((name, val)) = doctor {
         for p in pairs.iter_mut() {
             if p.0 == name {
@@ -101,7 +107,6 @@ fn bg_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
             }
         }
     }
-    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -130,6 +135,9 @@ fn compile_real_file(
     let structs_file = parse_file(&dir.parent().unwrap().join("structs.emp"));
     let vdp_file = parse_file(&dir.parent().unwrap().join("vdp.emp"));
     let z80_bus_file = parse_file(&dir.parent().unwrap().join("z80_bus.emp"));
+    // engine.constants: VRAM_SPRITE_TABLE hoisted to the shared twin at the
+    // t21 buffers port (bg was its file-local first consumer).
+    let consts_file = parse_file(&dir.parent().unwrap().join("system/constants.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -138,6 +146,7 @@ fn compile_real_file(
             .into_iter()
             .chain(vdp_file.items)
             .chain(z80_bus_file.items)
+            .chain(consts_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),

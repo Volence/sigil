@@ -99,7 +99,8 @@ fn plane_buffer_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("VRAM_PLANE_B_BYTES", "$E000"),
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
-        ("PLANE_H_CELLS", "64"),
+        // PLANE_H_CELLS now comes from engine_constant_equs() (hoisted into
+        // the shared engine.constants twin at the tranche-21 buffers port).
         ("PLANE_V_CELLS", "64"),
         ("PLANE_BUFFER_SIZE", "1536"),
         // engine.vdp's target_bits/op_bits drift-lock ensures read these six
@@ -390,7 +391,8 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("VDP_CTRL", "$C00004"),
         ("VRAM_PLANE_A", "$C000"),
         ("VRAM_PLANE_B_BYTES", "$E000"),
-        ("PLANE_H_CELLS", "64"),
+        // PLANE_H_CELLS now comes from engine_constant_equs() (hoisted into
+        // the shared engine.constants twin at the tranche-21 buffers port).
         ("PLANE_V_CELLS", "64"),
         ("PLANE_BUFFER_SIZE", "1536"),
         ("VRAM", "%100001"),
@@ -409,7 +411,8 @@ fn plane_buffer_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("VRAM_PLANE_B_BYTES", "$E000"),
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
-        ("PLANE_H_CELLS", "64"),
+        // PLANE_H_CELLS now comes from engine_constant_equs() (hoisted into
+        // the shared engine.constants twin at the tranche-21 buffers port).
         ("PLANE_V_CELLS", "64"),
         ("PLANE_BUFFER_SIZE", "1536"),
     ]

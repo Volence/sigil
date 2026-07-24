@@ -117,7 +117,7 @@ use sigil_harness::{
     assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side,
     assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side,
     assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
-    assemble_mixed_tranche20_as_side, assert_rom_matches_convsym,
+    assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side, assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -1235,6 +1235,17 @@ fn constants_ambient_items(controllers_dir: &Path) -> Vec<sigil_frontend_emp::as
 /// `engine.z80_bus`'s items (the shared stop_z80/start_z80 templates —
 /// t19 step-6 hoisted them out of sound_api.emp; `engine/z80_bus.emp` lives
 /// at the engine root).
+fn irq_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_dir.join("irq.emp"))
+        .unwrap_or_else(|e| panic!("cannot read irq.emp: {e}"));
+    let (file, idiags) = parse_str(&src);
+    assert!(
+        idiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "irq.emp parse errors: {idiags:?}"
+    );
+    file.items
+}
+
 fn z80_bus_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
     let src = std::fs::read_to_string(engine_dir.join("z80_bus.emp"))
         .unwrap_or_else(|e| panic!("cannot read z80_bus.emp: {e}"));
@@ -1387,11 +1398,13 @@ fn placed_module_sections_with_roots(
     let mut ambient_items: Vec<sigil_frontend_emp::ast::Item> = Vec::new();
     match module_file {
         "controllers.emp" | "vdp_init.emp" => ambient_items = constants_ambient_items(&dir),
-        // sound_api.emp uses engine.z80_bus (t19 step-6 hoist; z80_bus.emp is
-        // at the engine root, one level above engine/sound).
+        // sound_api.emp uses engine.z80_bus (t19 step-6 hoist) + engine.irq
+        // (sr_masked, t21 step-6 sweep); both live at the engine root, one
+        // level above engine/sound.
         "sound_api.emp" => {
-            ambient_items =
-                z80_bus_ambient_items(dir.parent().expect("engine/sound has a parent"));
+            let root = dir.parent().expect("engine/sound has a parent");
+            ambient_items = z80_bus_ambient_items(root);
+            ambient_items.extend(irq_ambient_items(root));
         }
         // math.emp uses engine.types (the Angle param, construct-walk #3).
         "math.emp" => ambient_items = types_ambient_items(&dir),
@@ -2241,7 +2254,7 @@ fn build_mixed_tranche4_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         // SECTION_SIZE_SHIFT/EDGE_CLAMP) + the prepended engine.structs drift
         // wall (34 per-field offsetof + 2 sizeof = 36) = 39. Act_len/Sec_len
         // moved into structs.emp; the comptime grid facts fold before link.
-        ("act_descriptor.emp", &act_asserts, 51),
+        ("act_descriptor.emp", &act_asserts, 65),
     ] {
         assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
@@ -2388,7 +2401,7 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
+        ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
         // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
         // checked against the REAL sound_constants.asm / config/sound_ids.asm.
         ("sound_api.emp", &sound_api_asserts, 7),
@@ -2550,7 +2563,7 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
+        ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
         ("sound_api.emp", &sound_api_asserts, 7),
         // The object modules' ambient guards: sst.emp's 30 SST_* struct-equ
         // pins ride BOTH modules; test_particle adds engine.constants's 11.
@@ -2715,7 +2728,7 @@ fn build_mixed_tranche7_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
+        ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
@@ -3011,7 +3024,7 @@ fn build_mixed_tranche8_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
+        ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
@@ -3307,7 +3320,7 @@ fn build_mixed_tranche9_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("collision_lookup.emp", &collision_lookup_asserts, twin_guards()),
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
-        ("act_descriptor.emp", &act_asserts, 51), // 3 limit mirrors + engine.structs wall (45+3, incl. DMAEntry t20)
+        ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
         ("sound_api.emp", &sound_api_asserts, 7),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
@@ -3734,4 +3747,150 @@ fn mixed_tranche20_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche20_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche20 mixed debug");
+}
+
+/// Lower one tranche-21 module with its ambient twins and comptime shape,
+/// place into a two-region map (`text` carrier + its own pinned window),
+/// return sections + link asserts. (t20_lower_and_place with a defines
+/// parameter — vblank.emp needs the SOUND_DRIVER_ENABLED/SOUND_DBG_MIRROR
+/// arms pinned to the canonical shape.)
+fn t21_lower_and_place(
+    aeon: &Path,
+    emp_rel: &str,
+    ambient: Vec<Vec<sigil_frontend_emp::ast::Item>>,
+    region: &str,
+    base: u32,
+    len: usize,
+    defines: Vec<(String, i128)>,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let src = std::fs::read_to_string(aeon.join(emp_rel))
+        .unwrap_or_else(|e| panic!("cannot read {emp_rel}: {e}"));
+    let (main, mdiags) = parse_str(&src);
+    assert!(
+        mdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} parse errors: {mdiags:?}"
+    );
+    let mut items = Vec::new();
+    for a in ambient {
+        items.extend(a);
+    }
+    items.extend(main.items);
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(aeon.join(std::path::Path::new(emp_rel).parent().unwrap())),
+        embed_base: None,
+        defines,
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} lower errors: {ldiags:?}"
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} place_sections errors: {pdiags:?}"
+    );
+    (sections, module.link_asserts)
+}
+
+fn build_mixed_tranche21_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche21_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    let engine_dir = aeon.join("engine");
+    let system_dir = engine_dir.join("system");
+    let dbg = i128::from(debug);
+
+    let bu = if debug { (pins::BUFFERS.debug_base, pins::BUFFERS.debug_len) } else { (pins::BUFFERS.plain_base, pins::BUFFERS.plain_len) };
+    let (bu_sections, bu_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/system/buffers.emp",
+        vec![
+            structs_ambient_items(&engine_dir),
+            constants_ambient_items(&system_dir),
+            vdp_ambient_items(&engine_dir),
+        ],
+        "buffers",
+        bu.0,
+        bu.1,
+        vec![("DEBUG".to_string(), dbg)],
+    );
+
+    let vb = if debug { (pins::VBLANK.debug_base, pins::VBLANK.debug_len) } else { (pins::VBLANK.plain_base, pins::VBLANK.plain_len) };
+    let (vb_sections, vb_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/system/vblank.emp",
+        vec![z80_bus_ambient_items(&engine_dir), irq_ambient_items(&engine_dir)],
+        "vblank",
+        vb.0,
+        vb.1,
+        vec![
+            ("DEBUG".to_string(), dbg),
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("SOUND_DBG_MIRROR".to_string(), 0),
+        ],
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(bu_sections);
+    sections.extend(vb_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche21 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche21 mixed link failed: {d:?}"));
+
+    // The prepended twins' drift walls must genuinely run against the REAL
+    // AS-side symbols and pass.
+    let mut all = bu_asserts;
+    all.extend(vb_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche21 mixed drift guards: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_tranche21_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche21_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche21 mixed");
+}
+
+#[test]
+fn mixed_tranche21_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche21_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche21 mixed debug");
 }

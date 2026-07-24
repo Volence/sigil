@@ -47,6 +47,27 @@ gate = "SIGIL_EMP_DMA_QUEUE"
 tests = ["dma_queue_port"]
 
 [[region]]
+# Tranche 21 — buffer init, static DMA entries, plane utilities. End is the
+# next placement: vblank.asm's VBlank_Handler. Shape-INVARIANT length
+# (buffers.asm has no ifdef arms).
+name = "buffers"
+start = "Init_SpriteTable"
+end = "VBlank_Handler"
+gate = "SIGIL_EMP_BUFFERS"
+tests = ["buffers_port"]
+
+[[region]]
+# Tranche 21 — VBlank handler family (VBlank_Handler/VInt_Level/VInt_Lag/
+# VSync_Wait). End is the next placement: hblank.asm's HBlank_Install.
+# Shape-DEPENDENT length: debug +8 = VInt_Lag's Lag_Frame_Count bump (+4) +
+# VSync_Wait's DMA_Bytes_ThisFrame clear (+4).
+name = "vblank"
+start = "VBlank_Handler"
+end = "HBlank_Install"
+gate = "SIGIL_EMP_VBLANK"
+tests = ["vblank_port"]
+
+[[region]]
 name = "hblank"
 start = "HBlank_Install"
 end = "Read_Controllers"
@@ -1398,3 +1419,123 @@ name = "HBLANK_UNINSTALL_OFF"
 sym = "HBlank_Uninstall"
 region = "hblank"
 tests = ["hblank_port"]
+
+# ── Tranche 21 cross-seam symbols (buffers_port / vblank_port) ──────────────
+
+[[symbol]]
+name = "Palette_Buffer"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Hscroll_Buffer"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Static_Pal_Line0"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Static_Pal_Line1"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Static_Pal_Line2"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Static_Pal_Line3"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Static_Sprite_DMA"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Static_Hscroll_Cell"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Static_Hscroll_Line"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Palette_Dirty"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "Parallax_Active_Config"
+tests = ["buffers_port"]
+
+[[symbol]]
+name = "VBlank_Ready"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "VBlank_Flag"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "VInt_Ptr"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_1_Press"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_1_Press_Accum"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_2_Press"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_2_Press_Accum"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "DMA_Budget_Default"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Lag_Frame_Count"
+debug_only = true
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "DMA_Bytes_ThisFrame"
+debug_only = true
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Flush_VDP_Shadow"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "VInt_DrawLevel"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Vscroll_Write"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Read_Controllers"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Process_DMA_Critical"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Process_DMA_Important"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Process_DMA_Deferrable"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Enqueue_Dirty_Buffers"
+tests = ["vblank_port"]

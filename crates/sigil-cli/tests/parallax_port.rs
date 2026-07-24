@@ -110,21 +110,8 @@ fn parallax_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("band_entry_band_deform_shift_a", "7"),
         ("band_entry_band_deform_shift_b", "8"),
         ("band_entry_band_phase_offset", "9"),
-        // parallax_config struct (28 bytes / $1C header)
-        ("parallax_config_len", "$1C"),
-        ("parallax_config_pcfg_band_count", "$00"),
-        ("parallax_config_pcfg_v_factor_bg", "$01"),
-        ("parallax_config_pcfg_layer_mask", "$03"),
-        ("parallax_config_pcfg_v_center_y", "$04"),
-        ("parallax_config_pcfg_v_offset", "$06"),
-        ("parallax_config_pcfg_transition", "$08"),
-        ("parallax_config_pcfg_deform_speed_fg", "$09"),
-        ("parallax_config_pcfg_deform_speed_bg", "$0A"),
-        ("parallax_config_pcfg_deform_table_fg", "$0C"),
-        ("parallax_config_pcfg_deform_table_bg", "$10"),
-        ("parallax_config_pcfg_v_deform_table_bg", "$14"),
-        ("parallax_config_pcfg_v_deform_speed_bg", "$18"),
-        ("parallax_config_pcfg_v_deform_shift_bg", "$19"),
+        // parallax_config pairs come from act_sec_field_equs (the struct moved
+        // to engine.structs at the tranche-21 buffers port — 2nd consumer).
     ];
     if let Some((name, val)) = doctor {
         for p in pairs.iter_mut() {

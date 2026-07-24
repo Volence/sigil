@@ -217,10 +217,15 @@ fn lower_sound_api(
         .expect("z80_bus.emp must exist beside sound_api.emp");
     let (z80_file, zdiags) = parse_str(&z80_src);
     assert!(zdiags.iter().all(|d| d.level != Level::Error), "z80_bus parse: {zdiags:?}");
+    // + engine.irq (sr_masked adopted at the t21 step-6 sweep).
+    let irq_src = std::fs::read_to_string(aeon_dir().join("engine/irq.emp"))
+        .expect("irq.emp must exist at the engine root");
+    let (irq_file, idiags) = parse_str(&irq_src);
+    assert!(idiags.iter().all(|d| d.level != Level::Error), "irq parse: {idiags:?}");
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: z80_file.items.into_iter().chain(main.items).collect(),
+        items: z80_file.items.into_iter().chain(irq_file.items).chain(main.items).collect(),
         docs: main.docs.clone(),
     };
     let (module, diags) = lower_module(

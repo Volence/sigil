@@ -175,10 +175,19 @@ fn compile_real_file(
         zdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "z80_bus.emp parse errors: {zdiags:?}"
     );
+    // + the engine.irq bracket template (sr_masked adopted at the t21 step-6
+    // sweep for the two paired label-free SR brackets).
+    let irq_src = std::fs::read_to_string(aeon_dir().join("engine/irq.emp"))
+        .unwrap_or_else(|e| panic!("cannot read irq.emp: {e}"));
+    let (irq_file, idiags) = parse_str(&irq_src);
+    assert!(
+        idiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "irq.emp parse errors: {idiags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: z80_file.items.into_iter().chain(main.items).collect(),
+        items: z80_file.items.into_iter().chain(irq_file.items).chain(main.items).collect(),
         docs: main.docs.clone(),
     };
 
