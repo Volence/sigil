@@ -84,14 +84,15 @@ fn value_equs(aeon: &Path, doctor: Option<(&str, &str)>) -> Vec<Section> {
 }
 
 /// The cross-seam ADDRESS symbols, each a `phase`d one-byte carrier.
-fn addr_labels() -> Vec<Section> {
+/// `expected_at` overrides CSelf_Expected's VMA (the fit-lock negative probe).
+fn addr_labels(expected_at: u32) -> Vec<Section> {
     let table: Vec<(&str, u32)> = vec![
         ("Art_Staging_Buffer", pins::ART_STAGING_BUFFER.debug),
         ("CSelf_S4LZ_Plain", pins::C_SELF_S4_LZ_PLAIN),
         ("CSelf_S4LZ_Dict", pins::C_SELF_S4_LZ_DICT),
         ("CSelf_Dict_Blob", pins::C_SELF_DICT_BLOB),
         ("CSelf_ZX0", pins::C_SELF_ZX0),
-        ("CSelf_Expected", pins::C_SELF_EXPECTED),
+        ("CSelf_Expected", expected_at),
         ("S4LZ_DecompressDict", pins::S4_LZ_DECOMPRESS_DICT.debug),
         // Art_Decompress = the load_art region's start symbol.
         ("Art_Decompress", pins::LOAD_ART.debug_base),
@@ -132,6 +133,15 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
 /// Lower the real `compression_selftest.emp` at DEBUG=1 (the only shape the
 /// module exists in), place at the debug window, link with the seams.
 fn compile_real_file(doctor: Option<(&str, &str)>) -> sigil_link::LinkedImage {
+    compile_real_file_at(doctor, pins::C_SELF_EXPECTED).1
+}
+
+/// Full pipeline with a controllable CSelf_Expected VMA; returns the resolved
+/// sections + linked image + the module's link asserts (the abs.w fit-lock).
+fn compile_real_file_at(
+    doctor: Option<(&str, &str)>,
+    expected_at: u32,
+) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let aeon = aeon_dir();
     let dir = aeon.join("engine/debug");
     let file = parse_file(&dir.join("compression_selftest.emp"));
@@ -147,6 +157,7 @@ fn compile_real_file(doctor: Option<(&str, &str)>) -> sigil_link::LinkedImage {
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "compression_selftest.emp lower errors: {ldiags:?}"
     );
+    let link_asserts = module.link_asserts.clone();
 
     let base = pins::COMPRESSION_SELFTEST.debug_base;
     let len = pins::COMPRESSION_SELFTEST.debug_len;
@@ -162,12 +173,13 @@ fn compile_real_file(doctor: Option<(&str, &str)>) -> sigil_link::LinkedImage {
     );
 
     sections.extend(value_equs(&aeon, doctor));
-    sections.extend(addr_labels());
+    sections.extend(addr_labels(expected_at));
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
-    sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("link failed: {d:?}"))
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+    (resolved, linked, link_asserts)
 }
 
 /// The debug-shape byte gate: the .emp code region vs the shipped
@@ -184,7 +196,13 @@ fn compression_selftest_debug_region_matches_reference() {
         return;
     };
 
-    let linked = compile_real_file(None);
+    let (resolved, linked, link_asserts) =
+        compile_real_file_at(None, pins::C_SELF_EXPECTED);
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "the abs.w fit-lock must PASS at the real addresses: {diags:?}"
+    );
     let base = pins::COMPRESSION_SELFTEST.debug_base as usize;
     let len = pins::COMPRESSION_SELFTEST.debug_len;
     let expected = &refrom[base..base + len];
@@ -233,5 +251,24 @@ fn doctored_cself_sum_diverges_from_reference() {
     assert_ne!(
         section.bytes, expected,
         "a doctored CSELF_PAYLOAD_SUM must change the emitted bytes — the value seam is dead if this matches"
+    );
+}
+
+/// Negative probe for the abs.w FIT-LOCK: a CSelf_Expected pushed past $8000
+/// must FIRE the ensure NAMING the failure — the loud arbitration the file
+/// header promises for generated-data growth.
+#[test]
+fn fit_lock_fires_when_vectors_cross_abs_w() {
+    if !strict_gate() && !aeon_dir().join("s4.debug.bin").exists() {
+        eprintln!("skip: reference ROM missing");
+        return;
+    }
+    let (resolved, _, link_asserts) = compile_real_file_at(None, 0x8100);
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+    assert!(!fired.is_empty(), "the fit-lock must fire past $8000");
+    assert!(
+        fired.iter().any(|d| d.message.contains("abs.w")),
+        "the guard must NAME the window: {fired:?}"
     );
 }
