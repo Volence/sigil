@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.lst (07/24/2026 12:03:49 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.debug.lst (07/24/2026 12:03:33 PM)
-//! [provenance] 35 regions, 264 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche23/s4.lst (07/24/2026 01:45:27 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche23/s4.debug.lst (07/24/2026 01:45:03 PM)
+//! [provenance] 36 regions, 275 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +44,9 @@ pub const ASSEMBLED_LEN: usize = 0x5DB60;
 pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F65A;
 
 // ── Regions (manifest order) ──
+
+/// `EntryPoint` .. `BootData` — gate `SIGIL_EMP_BOOT`. tests: boot_port
+pub const BOOT: Region = Region { plain_base: 0x200, debug_base: 0x200, plain_len: 0x1AA, debug_len: 0x1AE };
 
 /// `VDP_Shadow_Init` .. `Init_DMA_Queue` — gate `SIGIL_EMP_VDP_INIT`. tests: vdp_init_port
 pub const VDP_INIT: Region = Region { plain_base: 0x1C0A, debug_base: 0x1C8C, plain_len: 0x4A, debug_len: 0x4A };
@@ -943,6 +946,39 @@ pub const PROCESS_DMA_DEFERRABLE: Pin = Pin { plain: 0x1F06, debug: 0x1F8C };
 
 /// `Enqueue_Dirty_Buffers`. tests: vblank_port
 pub const ENQUEUE_DIRTY_BUFFERS: Pin = Pin { plain: 0x2050, debug: 0x20D6 };
+
+/// `BootData`. tests: boot_port
+pub const BOOT_DATA: Pin = Pin { plain: 0x3AA, debug: 0x3AE };
+
+/// `VInt_Level`. tests: boot_port
+pub const V_INT_LEVEL: Pin = Pin { plain: 0x21D0, debug: 0x2256 };
+
+/// `BuildStaticDMA`. tests: boot_port
+pub const BUILD_STATIC_DMA: Pin = Pin { plain: 0x1F78, debug: 0x1FFE };
+
+/// `Sound_Init`. tests: boot_port
+pub const SOUND_INIT: Pin = Pin { plain: 0x6270, debug: 0x7C8C };
+
+/// `Hardware_Region`. tests: boot_port
+pub const HARDWARE_REGION: Pin = Pin { plain: 0xFFFF8026, debug: 0xFFFF8026 };
+
+/// `Region_Flags`. tests: boot_port
+pub const REGION_FLAGS: Pin = Pin { plain: 0xFFFF8027, debug: 0xFFFF8027 };
+
+/// `Timing_Step`. tests: boot_port
+pub const TIMING_STEP: Pin = Pin { plain: 0xFFFF8028, debug: 0xFFFF8028 };
+
+/// `Frame_Accumulator`. tests: boot_port
+pub const FRAME_ACCUMULATOR: Pin = Pin { plain: 0xFFFF802A, debug: 0xFFFF802A };
+
+/// `Game_State_ID`. tests: boot_port
+pub const GAME_STATE_ID: Pin = Pin { plain: 0xFFFF8008, debug: 0xFFFF8008 };
+
+/// `Game_State_Init`. tests: boot_port
+pub const GAME_STATE_INIT: Pin = Pin { plain: 0xFFFF8009, debug: 0xFFFF8009 };
+
+/// `RAM_Start`. tests: boot_port
+pub const RAM_START: Pin = Pin { plain: 0xFFFF8000, debug: 0xFFFF8000 };
 
 // ── Region-relative offsets (manifest order) ──
 

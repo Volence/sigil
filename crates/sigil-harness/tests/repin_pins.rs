@@ -143,6 +143,16 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // rides ifdef widths, the t19 bg_anim precedent). s4lz shrinks $FC→$F8 plain
     // ($200 debug unchanged); every plain base downstream slides −4, debug bases
     // unchanged. ASSEMBLED_LEN unchanged (absorbed by `org $10000`).
+    // boot_port.rs (tranche 23): the FIRST region in the engine chain —
+    // [EntryPoint $200, BootData). Debug len +4 = the `__DEBUG__`
+    // bsr.w CompressionSelfTest. BOOT_DATA is the data-tail head (the .emp's
+    // forward `lea BootData(pc)` target), NOT inside the region.
+    assert_eq!(pins::BOOT.plain_base, 0x200);
+    assert_eq!(pins::BOOT.debug_base, 0x200);
+    assert_eq!(pins::BOOT.plain_len, 0x1AA);
+    assert_eq!(pins::BOOT.debug_len, 0x1AE);
+    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x3AA, debug: 0x3AE });
+
     assert_eq!(pins::ANIMATE.plain_base, 0x2f3e);  // −4 t22 s4lz step-2 upstream
     assert_eq!(pins::ANIMATE.debug_base, 0x351c);  // −0xA t21 buffers step-2 upstream
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)

@@ -631,6 +631,29 @@ fn lower_m68k_movem(
             return;
         }
     };
+    // A width-PINNED symbolic absolute memory EA — `movem.l (RAM_Start).w,
+    // d0-a6` (boot's regs-from-cleared-RAM zeroing, tranche 23). movem lowers
+    // on its own path, so the general abs-sym seam can't route it: encode with
+    // a zeroed abs placeholder and ONE address fixup at the EA ext field —
+    // offset 4, after the opcode word (2) and the register-mask word (2),
+    // whichever direction the transfer runs. RELAXABLE bare-Sym forms stay
+    // refused below (their abs.w/abs.l width selection would need a movem
+    // RelaxAbsSym shape — ledgered, no consumer yet).
+    if let CodeOperand::AbsSym { target: n, long } = mem_op {
+        let abs_op = if *long { M68kOperand::AbsL(0) } else { M68kOperand::AbsW(0) };
+        let list_op = M68kOperand::RegList(mask);
+        let ops = if list_first { vec![list_op, abs_op] } else { vec![abs_op, list_op] };
+        let inst = M68kInst { mnemonic: M68kMnemonic::Movem, size, ops };
+        match M68kBackend.lower_inst(&inst, span) {
+            Ok(mut df) => {
+                let kind = if *long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
+                df.fixups.push(Fixup { kind, offset: 4, target: Expr::Sym(n.clone()) });
+                emit_data_frag(builder, df);
+            }
+            Err(e) => push_err(diags, span, e.message),
+        }
+        return;
+    }
     let mut mem_op = match m68k_operand(mem_op) {
         Ok(o) => o,
         Err(msg) => {

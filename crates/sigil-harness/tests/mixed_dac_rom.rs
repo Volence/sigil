@@ -118,7 +118,8 @@ use sigil_harness::{
     assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side,
     assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
     assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side,
-    assemble_mixed_tranche22_as_side, assert_rom_matches_convsym,
+    assemble_mixed_tranche22_as_side, assemble_mixed_tranche23_as_side,
+    assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -3998,4 +3999,113 @@ fn mixed_tranche22_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche22_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche22 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// Tranche 23 — the boot arm: `SIGIL_EMP_BOOT` on, the FIRST engine region
+// ([EntryPoint $200, BootData)) .emp-side, the BootData table AS-side in both
+// arms (boot_data.asm — the org-resume target). P5's named proofs ride here:
+// the reset vector `dc.l EntryPoint` (vectors.asm:9) resolves against the
+// .emp-owned symbol (the t21 IRQ6 class at the RESET slot), and the AS-side
+// org-resume lands BootData at its canonical per-shape address.
+// ---------------------------------------------------------------------------
+
+fn build_mixed_tranche23_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche23_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // P5 org-resume proof: the AS side (gate ON, boot.asm code skipped) must
+    // still carry BootData at the canonical per-shape address.
+    let boot_data_expect = if debug { pins::BOOT_DATA.debug } else { pins::BOOT_DATA.plain };
+    let mut boot_data_found = None;
+    for sec in &as_module.sections {
+        for l in &sec.labels {
+            if l.name == "BootData" {
+                boot_data_found = Some(sec.vma_origin().wrapping_add(l.offset));
+            }
+        }
+    }
+    assert_eq!(
+        boot_data_found,
+        Some(boot_data_expect),
+        "org-resume must land boot_data.asm's BootData at the canonical address"
+    );
+
+    let dbg = i128::from(debug);
+    let engine_dir = aeon.join("engine");
+
+    let bo = if debug {
+        (pins::BOOT.debug_base, pins::BOOT.debug_len)
+    } else {
+        (pins::BOOT.plain_base, pins::BOOT.plain_len)
+    };
+    let (bo_sections, bo_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/system/boot.emp",
+        vec![vdp_ambient_items(&engine_dir), z80_bus_ambient_items(&engine_dir)],
+        "boot",
+        bo.0,
+        bo.1,
+        vec![
+            ("DEBUG".to_string(), dbg),
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("SOUND_DEBUG_HOTKEYS".to_string(), 0),
+        ],
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(bo_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche23 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche23 mixed link failed: {d:?}"));
+
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &bo_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche23 mixed drift guards: {adiags:?}"
+    );
+
+    let rom = sigil_link::flatten(&linked, 0x00);
+    // P5 reset-vector proof, named: offset $04 (Reset PC) holds the .emp
+    // EntryPoint's address — the ONLY definition of EntryPoint in this link
+    // is the .emp module's export.
+    let entry = if debug { pins::BOOT.debug_base } else { pins::BOOT.plain_base };
+    assert_eq!(
+        &rom[4..8],
+        entry.to_be_bytes().as_slice(),
+        "reset vector must resolve to the .emp-owned EntryPoint"
+    );
+    rom
+}
+
+#[test]
+fn mixed_tranche23_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche23_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche23 mixed");
+}
+
+#[test]
+fn mixed_tranche23_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche23_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche23 mixed debug");
 }

@@ -1153,17 +1153,29 @@ fn imm_link_plus_relaxable_sym_still_refused() {
 }
 
 #[test]
-fn imm_link_byte_size_is_refused_with_steering() {
-    // A `.b` symbolic immediate has no deferral yet (the remaining width of
-    // the ledgered extension gap) — steer, don't guess.
+fn imm_link_byte_size_defers_value8_fixup() {
+    // A `.b` symbolic immediate joined the deferral family at tranche 23
+    // (demand site: boot's `move.b #GAME_ENTRY_ID, (Game_State_ID).w`). A
+    // byte immediate still spends a full extension word, so the hole is the
+    // ext word's LOW byte — `Value8` at offset 3 (unsigned-8 link range
+    // check; the out-of-range negative lives in
+    // `tranche23_spelling_probes::imm8_link_value_out_of_range_is_loud`).
+    use sigil_ir::{Expr, Fragment};
     let (code, ediags) = eval_asm_with(&asm_1("move.b #extern(\"Tbl\"), d0"), &[]);
     assert!(ediags.is_empty(), "unexpected eval diagnostics: {ediags:?}");
-    let (_module, diags) = lower_module_68k(&code);
-    assert!(
-        diags.iter().any(|d| d.message.contains("[lower.imm-link]")
-            && d.message.contains("`.w` or `.l` size")),
-        "expected the .b imm-link steering, got: {diags:?}"
-    );
+    let (module, diags) = lower_module_68k(&code);
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    match &module.sections[0].fragments[0] {
+        Fragment::Data(df) => {
+            // move.b #0, d0 placeholder = 103C 0000.
+            assert_eq!(df.bytes, vec![0x10, 0x3C, 0x00, 0x00]);
+            assert_eq!(df.fixups.len(), 1);
+            assert_eq!(df.fixups[0].kind, sigil_ir::FixupKind::Value8);
+            assert_eq!(df.fixups[0].offset, 3);
+            assert_eq!(df.fixups[0].target, Expr::Sym("Tbl".into()));
+        }
+        other => panic!("expected Fragment::Data, got {other:?}"),
+    }
 }
 
 #[test]

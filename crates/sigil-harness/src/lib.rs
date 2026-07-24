@@ -796,3 +796,29 @@ pub fn assemble_mixed_tranche22_as_side(aeon: &Path, debug: bool) -> Result<Modu
         format!("assemble (mixed tranche22 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
+
+/// Tranche 23 (boot): the full AS-side game with `SIGIL_EMP_BOOT` on — the
+/// engine.inc arm skips boot.asm's code and org-resumes at the per-shape
+/// BootData address, keeping the DATA TAIL (boot_data.asm — movem preloads,
+/// VDP reg bytes, Z80 blob include, PSG bytes, post-DMA commands) AS-side in
+/// both arms, so no splice window crosses the nested Z80 source include.
+///
+/// Cross-seam headline: vectors.asm's reset `dc.l EntryPoint` resolving
+/// against the .emp-owned symbol (the t21 IRQ6 class, now at the RESET
+/// vector), the .emp's forward `lea BootData(pc)` into the AS-side table,
+/// and the link-time value seam (`Z80_SOUND_SIZE` imm16 arithmetic +
+/// `GAME_ENTRY_ID` through the tranche-23 `.b` deferral).
+pub fn assemble_mixed_tranche23_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_BOOT".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche23 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}

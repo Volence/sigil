@@ -242,6 +242,38 @@ fn imm32_and_imm8_symbol_sources_with_absw_dest() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// P7 (found at the boot step-1 compile, demanded-feature law) — movem with a
+// width-PINNED symbolic absolute memory EA: `movem.l (RAM_Start).w, d0-a6`
+// (boot's regs-from-cleared-RAM zeroing). movem lowers on its own path, so
+// the general abs-sym seam never saw it. The pinned `.w` spelling ships; the
+// RELAXABLE bare-name form for movem stays a ledgered ask.
+// ---------------------------------------------------------------------------
+
+const EMP_MOVEM_ABS: &str = "\
+module m in bootprobe
+pub proc P () clobbers(d0-d7/a0-a6) {
+        movem.l (RAM_Start).w, d0-a6
+        rts
+}
+";
+
+#[test]
+fn movem_pinned_absw_source_lowers() {
+    let mut sections = pin_at(emp_sections(EMP_MOVEM_ABS, &[]), 0x400);
+    sections.extend(sigil_harness::test_support::assemble_equ_pairs(&[(
+        "RAM_Start",
+        "$FFFF8000",
+    )]));
+    let rom = link_flatten(sections);
+    // movem.l (xxx).w, d0-a6 = 4CF8 7FFF 8000 (mask excludes a7); rts = 4E75.
+    assert_eq!(
+        &rom[0x400..0x408],
+        &[0x4C, 0xF8, 0x7F, 0xFF, 0x80, 0x00, 0x4E, 0x75],
+        "movem.l (RAM_Start).w, d0-a6"
+    );
+}
+
 /// The `.b` deferral's soundness half: a link value outside the unsigned
 /// 8-bit window must FAIL the link (`Value8` range check), never truncate.
 #[test]
