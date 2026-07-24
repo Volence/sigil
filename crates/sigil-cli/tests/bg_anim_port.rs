@@ -128,14 +128,21 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
-/// Lower the real `bg_anim.emp` (self-contained — no shared-module prepend),
-/// place into the per-shape map, append the cross-seam address labels, one
-/// `resolve_layout` -> `link`.
+/// Lower the real `bg_anim.emp` (prepend `engine.types` — the `bganim_band`
+/// record's `vram_dest: VramAddr` vocabulary), place into the per-shape map,
+/// append the cross-seam address labels, one `resolve_layout` -> `link`.
 fn compile_real_file(
     debug: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let dir = level_dir();
-    let file = parse_file(&dir.join("bg_anim.emp"));
+    let main = parse_file(&dir.join("bg_anim.emp"));
+    let types_file = parse_file(&dir.parent().unwrap().join("system/types.emp"));
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items: types_file.items.into_iter().chain(main.items).collect(),
+        docs: main.docs.clone(),
+    };
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
