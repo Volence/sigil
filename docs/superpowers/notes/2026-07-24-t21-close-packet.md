@@ -1,16 +1,25 @@
-# t21 — TRANCHE CLOSE PACKET (buffers / vblank conversion) — DRAFT (panel pending)
+# t21 — TRANCHE CLOSE PACKET (buffers / vblank conversion)
 
 **Third tranche under the corrected LEAN amendment.** Scope:
 `engine/system/buffers.asm` → `buffers.emp` (FIRST), then
 `engine/system/vblank.asm` → `vblank.emp` (the VSync_Wait ownership flip),
 full loop `0 → 1 → 2 → (3→4→5)* → 6`.
 
-Branch tips at close: **aeon-t21 `TBD` / sigil-t21 `TBD` (+ this packet)**.
+Branch tips at close: **aeon-t21 `fda4921` / sigil-t21 `95d7d5c` (incl. this
+packet; the aeon tip's final commit is the overseer's byte-neutral
+whitespace fix on the `.hs_done` jbra, CRC-verified)**. Merged as **aeon
+`0a17462` / sigil `258308a`** (`port-tranche21` --no-ff).
 Branch ROMs at close: **plain `4745cbc3`/421157 · debug `0b7c4804`/429202**
-(PROVENANCE re-baseline at merge; byte-delta table below).
-Full paired strict at every byte-changing commit; final: **TBD**
+(PROVENANCE re-baselined at merge; byte-delta table below).
+Full paired strict at every byte-changing commit; final: **2553/0**
 (baseline 2531 + 8 spelling probes + 3 buffers_port + 5 vblank_port +
-4 flip tests + 2 mixed_tranche21 + step-6 additions).
+4 flip tests + 2 mixed_tranche21 + step-6 additions; overseer-countersigned
+from both branch tips AND merged masters).
+Overseer P-O1 probe (merge-gate oracle session, 120-frame ambient OJZ avg):
+VInt_Level inclusive **6836 cyc/f (5.3%)** (Process_DMA_Critical 4103 of it)
+· Enqueue_Dirty_Buffers **766 (0.6%)** · VSync_Wait 100563 = parked idle
+spin (headroom, not cost) · **VInt_Lag absent = zero lag frames** — P-O2's
+condition never arose. Banked as budget-parcel input.
 
 ## Scoreboard
 

@@ -1308,3 +1308,43 @@ masters (2509 + 22 t20).
   sha256 **`6a668170c01632c94f0e980a70d1f79d421d8112dd2e1f0c18d2d284deff9430`**.
 - Debug `s4.debug.bin`: **429190 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`20a1fe4b`**,
   sha256 **`b1d8ae39d294efe6d519c6065c219e82670ab8eff45a2736cb396218974d0bc7`**.
+
+## 2026-07-24 re-baseline — tranche 21 buffers/vblank conversion (BYTE-CHANGING) — the current pin
+
+The buffers/vblank `.emp` conversion pair (supersedes the t20 pin above).
+Step-1 transcription proven byte-identical against the prior canonical;
+subsequent deltas are step-2 modernization + a panel-accepted label rename:
+
+- **buffers step-2** — 5 of 6 `bsr.w .build_entry` relaxed to `.s` (first
+  stays `.w` at 132-byte reach); `jsr`→`bsr.w Parallax_Active_Config`
+  length-neutral (**−0xA** both shapes, twin lockstep).
+- **vblank steps 1-2** — canonical shapes byte-stable (the sound-OFF shape's
+  `VInt_Lag` call relaxes to `bsr.s` behind twin ifdef widths — no reference
+  ROM ships that shape; proven by the AS-side twin-parity gates).
+- **`.no_hscroll`→`.hs_done` rename** (panel A1) — convsym appendix only
+  (**−2 bytes file size** both shapes; code bytes identical, `repin --check`
+  clean).
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` UNCHANGED (plain
+`0x5DB60`, debug `0x5F65A`) — the −0xA absorbs in the padding before
+`org $10000`. File sizes: plain 421159→**421157**; debug 429190→**429202**
+(+14 = t21 debug arms + convsym appendix, then −2 appendix at the rename).
+
+**Standing ripple:** `repin` → `pins.rs` (BUFFERS/VBLANK new regions +
+downstream bases −0xA + 11 symbol rows). `engine.inc` t21 gates
+(SIGIL_EMP_BUFFERS/VBLANK) + org slides (HAND, repin-printed).
+`repin_pins.rs` changelog rows. `repin.toml` +2 regions/+29 symbols.
+`mixed_dac_rom.rs` NEW tranche21 arm — the campaign's FIRST `.asm`
+data-directive (`dc.l VBlank_Handler`, the real IRQ6 vector) and immediate
+(`move.l #VInt_Level`) references to `.emp` procs at full-ROM scale, both
+shapes. ZERO demanded features (all seven step-0 probes passed as-found).
+New constructs: `engine/irq.emp` `sr_masked(code)` (paired-use-only) +
+`out(zero:)` flag-result contracts (Parallax_Active_Config,
+Section_GetSecPtrXY, Load_Object + first `@discards`). Full paired strict
+**2553/0** on merged masters (2531 + 22 t21, from main checkouts).
+
+- Aeon repo master: **`0a17462`** (merge of `port-tranche21`; sigil master **`258308a`**).
+- Non-debug `s4.bin`: **421157 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`4745cbc3`**,
+  sha256 **`d0f4c9df16748189d173338fec9798409053520910086ecb7af05a4b443ff342`**.
+- Debug `s4.debug.bin`: **429202 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`0b7c4804`**,
+  sha256 **`a16ab658d9ba11c5fae1e6e0448a01fa65c0c52ee7e3a85d12099e788adf2f79`**.
