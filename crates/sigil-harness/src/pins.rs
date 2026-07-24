@@ -6,8 +6,8 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.lst (07/24/2026 11:43:27 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.debug.lst (07/24/2026 11:43:28 AM)
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.lst (07/24/2026 12:03:49 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.debug.lst (07/24/2026 12:03:33 PM)
 //! [provenance] 35 regions, 264 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
@@ -127,10 +127,10 @@ pub const BG: Region = Region { plain_base: 0x60FE, debug_base: 0x6DD6, plain_le
 pub const BG_ANIM: Region = Region { plain_base: 0x61AC, debug_base: 0x6E84, plain_len: 0x9E, debug_len: 0x158 };
 
 /// `CompressionSelfTest` .. `CSelf_S4LZ_Plain` (debug-only region; plain empty at `Sound_PostByte`) — gate `SIGIL_EMP_COMPRESSION_SELFTEST`. tests: compression_selftest_port
-pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x624A, debug_base: 0x6FDC, plain_len: 0x0, debug_len: 0x228 };
+pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x624A, debug_base: 0x6FDC, plain_len: 0x0, debug_len: 0x218 };
 
 /// `Sound_PostByte` .. start + 0x20A plain / 0x3B4 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
-pub const SOUND_API: Region = Region { plain_base: 0x624A, debug_base: 0x7C76, plain_len: 0x20A, debug_len: 0x3B4 };
+pub const SOUND_API: Region = Region { plain_base: 0x624A, debug_base: 0x7C66, plain_len: 0x20A, debug_len: 0x3B4 };
 
 /// `TestSolid_Init` .. `TestParticle` — gate `SIGIL_EMP_TEST_OBJECTS`. tests: test_objects_port
 pub const TEST_SOLID: Region = Region { plain_base: 0x10F7C, debug_base: 0x10F7C, plain_len: 0xE, debug_len: 0xE };
@@ -231,7 +231,7 @@ pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x22BE, debug: 0x2348 };
 
 /// `Sound_DrainSfxRing`. tests: game_loop_port, load_art_port
-pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x63B6, debug: 0x7F8C };
+pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x63B6, debug: 0x7F7C };
 
 /// `Game_State`. tests: game_loop_port, load_art_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
@@ -444,22 +444,22 @@ pub const ENTITY_WINDOW_ENTRY_FOR_SECTION: Pin = Pin { plain: 0x371E, debug: 0x4
 pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x370A, debug: 0x4130 };
 
 /// `Sound_PlayRing`. tests: rings_port
-pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6406, debug: 0x7FDC };
+pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6406, debug: 0x7FCC };
 
 /// `CSelf_S4LZ_Plain` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_S4_LZ_PLAIN: u32 = 0x7204;
+pub const C_SELF_S4_LZ_PLAIN: u32 = 0x71F4;
 
 /// `CSelf_S4LZ_Dict` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_S4_LZ_DICT: u32 = 0x7486;
+pub const C_SELF_S4_LZ_DICT: u32 = 0x7476;
 
 /// `CSelf_Dict_Blob` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_DICT_BLOB: u32 = 0x766C;
+pub const C_SELF_DICT_BLOB: u32 = 0x765C;
 
 /// `CSelf_ZX0` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_ZX0: u32 = 0x776C;
+pub const C_SELF_ZX0: u32 = 0x775C;
 
 /// `CSelf_Expected` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_EXPECTED: u32 = 0x798E;
+pub const C_SELF_EXPECTED: u32 = 0x797E;
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x5E704;
@@ -603,7 +603,7 @@ pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA112, debug: 0xFFFFA1
 pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA114, debug: 0xFFFFA138 };
 
 /// `Sound_PlaySFX`. tests: animate_port
-pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x6370, debug: 0x7F00 };
+pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x6370, debug: 0x7EF0 };
 
 /// `ObjCodeBase`. tests: test_objects_port
 pub const OBJ_CODE_BASE: Pin = Pin { plain: 0x10000, debug: 0x10000 };

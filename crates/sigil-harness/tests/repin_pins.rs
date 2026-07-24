@@ -315,7 +315,7 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // $B2→$AE debug; bg/bg_anim/sound_api bases slide −0x4 both shapes (LENs
     // unchanged).
     assert_eq!(pins::SOUND_API.plain_base, 0x624a);  // −4 t22 s4lz step-2 upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7c76);  // −0xA t21 buffers step-2 upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7c66);  // −0x10 t22 selftest step-2 upstream (debug-only slide: 3 bsr relaxations + 5 CSelf abs.w leas)
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
