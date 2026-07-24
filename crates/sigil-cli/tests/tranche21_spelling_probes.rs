@@ -471,3 +471,51 @@ fn linkexpr_shift_mask_over_extern_matches_as() {
     let bytes = sigil_link::flatten(&linked, 0x00);
     assert_byte_identical(&reference, &bytes[..reference.len()].to_vec(), "dmaSource link expr");
 }
+
+// ---------------------------------------------------------------------------
+// P9 (loop pass 1, step 4) — sr_masked: a comptime fn taking a Code ARGUMENT
+// (the skeleton-with-holes class inverted: the hole is the parameter). The
+// bracket construct is only buildable if a `Code`-typed fn param evaluates
+// and concatenates; byte parity vs the hand-spelled AS bracket.
+// ---------------------------------------------------------------------------
+
+const EMP_SRMASK: &str = "\
+module m
+equ FLAG  = $FFFF8000
+equ READY = $FFFF8001
+comptime fn sr_masked(code: Code) -> Code {
+    return asm {
+        move.w  sr, -(sp)
+        move.w  #$2700, sr
+    } ++ code ++ asm {
+        move.w  (sp)+, sr
+    }
+}
+pub proc Probe () clobbers(d0) preserves(sr) {
+        moveq   #0, d0
+        sr_masked(asm {
+            move.b  d0, FLAG
+            move.b  #1, READY
+        })
+        rts
+}
+";
+
+const ASM_SRMASK: &str = "\
+cpu 68000
+FLAG  = $FFFF8000
+READY = $FFFF8001
+Probe:
+        moveq   #0, d0
+        move.w  sr, -(sp)
+        move.w  #$2700, sr
+        move.b  d0, (FLAG).w
+        move.b  #1, (READY).w
+        move.w  (sp)+, sr
+        rts
+";
+
+#[test]
+fn sr_masked_code_argument_matches_as() {
+    assert_byte_identical(&as_reference(ASM_SRMASK), &emp_candidate(EMP_SRMASK), "sr_masked");
+}

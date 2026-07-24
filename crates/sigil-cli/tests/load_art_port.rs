@@ -360,7 +360,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     );
     let (vb_sections, vb_asserts) = flip_lower(
         parse_file(&aeon.join("engine/system/vblank.emp")),
-        vec![parse_file(&aeon.join("engine/z80_bus.emp"))],
+        vec![
+            parse_file(&aeon.join("engine/z80_bus.emp")),
+            parse_file(&aeon.join("engine/irq.emp")),
+        ],
         aeon.join("engine/system"),
         "vblank",
         vb_base,

@@ -138,10 +138,11 @@ fn lower_vblank(
     let dir = aeon.join("engine/system");
     let main = parse_file(&dir.join("vblank.emp"));
     let z80_file = parse_file(&aeon.join("engine/z80_bus.emp"));
+    let irq_file = parse_file(&aeon.join("engine/irq.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: z80_file.items.into_iter().chain(main.items).collect(),
+        items: z80_file.items.into_iter().chain(irq_file.items).chain(main.items).collect(),
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {

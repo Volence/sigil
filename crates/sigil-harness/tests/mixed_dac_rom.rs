@@ -1235,6 +1235,17 @@ fn constants_ambient_items(controllers_dir: &Path) -> Vec<sigil_frontend_emp::as
 /// `engine.z80_bus`'s items (the shared stop_z80/start_z80 templates —
 /// t19 step-6 hoisted them out of sound_api.emp; `engine/z80_bus.emp` lives
 /// at the engine root).
+fn irq_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_dir.join("irq.emp"))
+        .unwrap_or_else(|e| panic!("cannot read irq.emp: {e}"));
+    let (file, idiags) = parse_str(&src);
+    assert!(
+        idiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "irq.emp parse errors: {idiags:?}"
+    );
+    file.items
+}
+
 fn z80_bus_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
     let src = std::fs::read_to_string(engine_dir.join("z80_bus.emp"))
         .unwrap_or_else(|e| panic!("cannot read z80_bus.emp: {e}"));
@@ -3819,7 +3830,7 @@ fn build_mixed_tranche21_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let (vb_sections, vb_asserts) = t21_lower_and_place(
         aeon,
         "engine/system/vblank.emp",
-        vec![z80_bus_ambient_items(&engine_dir)],
+        vec![z80_bus_ambient_items(&engine_dir), irq_ambient_items(&engine_dir)],
         "vblank",
         vb.0,
         vb.1,

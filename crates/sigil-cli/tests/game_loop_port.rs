@@ -499,7 +499,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     );
     sections.extend(flip_lower(
         flip_parse(&aeon.join("engine/system/vblank.emp")),
-        vec![flip_parse(&aeon.join("engine/z80_bus.emp"))],
+        vec![
+            flip_parse(&aeon.join("engine/z80_bus.emp")),
+            flip_parse(&aeon.join("engine/irq.emp")),
+        ],
         aeon.join("engine/system"),
         "vblank",
         vb_base,
