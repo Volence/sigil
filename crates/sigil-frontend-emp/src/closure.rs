@@ -125,6 +125,25 @@ impl RegEffect {
     }
 }
 
+/// Resolve a callee NAME to its proc-map key. A plain proc name maps to
+/// itself; an `Owner.label` exported-label target (§5.2 — a tail branch INTO
+/// a proc's body, e.g. `bra QueueDMA_Deferrable.transfer`, the shared-core
+/// idiom) maps to `Owner` when `Owner` is a known proc. Attributing the WHOLE
+/// owner's effect to a mid-body entry is a sound over-approximation: the
+/// label's tail is a subset of the body whose writes the closure already
+/// unions. An unknown owner falls through unchanged and surfaces as a hole.
+fn resolve_callee_key<'a>(procs: &BTreeMap<String, ProcNode>, callee: &'a str) -> &'a str {
+    if procs.contains_key(callee) {
+        return callee;
+    }
+    if let Some((owner, _label)) = callee.split_once('.') {
+        if procs.contains_key(owner) {
+            return owner;
+        }
+    }
+    callee
+}
+
 /// Compute the transitive `effective` clobber set for every proc (§1). A
 /// monotone union fixpoint from ∅; terminates on the finite register lattice.
 pub fn compute_closure(
@@ -154,7 +173,7 @@ pub fn compute_closure(
             let mut acc = RegEffect::bottom();
             acc.union_regs(&node.local_writes);
             for callee in &node.direct_callees {
-                if let Some(ce) = effective.get(callee) {
+                if let Some(ce) = effective.get(resolve_callee_key(procs, callee)) {
                     acc.union_with(ce);
                 }
                 // A callee absent from the proc map is a hole — collected
@@ -199,11 +218,12 @@ pub fn compute_closure(
     }
 
     // Collect holes: direct callees named by some proc that are neither a proc
-    // nor an extern in the map.
+    // nor an extern in the map (nor an exported label of one — see
+    // `resolve_callee_key`).
     let mut unresolved_callees = BTreeSet::new();
     for node in procs.values() {
         for callee in &node.direct_callees {
-            if !procs.contains_key(callee) {
+            if !procs.contains_key(resolve_callee_key(procs, callee)) {
                 unresolved_callees.insert(callee.clone());
             }
         }

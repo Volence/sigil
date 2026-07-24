@@ -604,11 +604,16 @@ fn apply_fixup(
     }
 }
 
-/// Write a general link-expr VALUE (S2-D13f / R7m.4): range-check `value`
-/// against the UNSIGNED window `0 ≤ value < 2^(8·width)`, then write its low
-/// `width` bytes in the requested byte order (`little` = Z80). A fold outside
-/// the window (including negative) is an Error naming the section, the folded
-/// value, and the window — NOT a silent truncation or sign-extension.
+/// Write a general link-expr VALUE (S2-D13f / R7m.4): range-check `value`,
+/// then write its low `width` bytes in the requested byte order (`little` =
+/// Z80). Widths 1-2 use the UNSIGNED window `0 ≤ value < 2^(8·width)`. Width
+/// 4 uses the signed∪unsigned UNION `[-2^31, 2^32)` — the `ImmWord16Be`
+/// rationale one width up: a 32-bit cell holds the low 32 bits of a value
+/// whose high bits must be a consistent extension, and a sign-extended RAM
+/// address (`#Art_Staging_Buffer` = `$FFFF0000` folded through a signed
+/// symbol value) is exactly the all-ones case asl accepts for `move.l
+/// #Sym`/`dc.l Sym`. A fold outside the window is an Error naming the
+/// section, the folded value, and the window — NOT a silent truncation.
 #[allow(clippy::too_many_arguments)]
 fn write_value(
     bytes: &mut [u8],
@@ -628,14 +633,16 @@ fn write_value(
         ));
         return;
     }
-    // Unsigned window: `2^64` overflows i64, so bound width-8 separately — but a
-    // value cell is never wider than 4, so `1 << (8·width)` is always in range.
+    // A value cell is never wider than 4, so `1 << (8·width)` is always in
+    // range. Width 4 takes the signed∪unsigned union (see the fn doc); the
+    // narrower cells stay strictly unsigned.
     let limit: i128 = 1i128 << (8 * w as u32);
+    let low: i128 = if w == 4 { -(1i128 << 31) } else { 0 };
     let v = value as i128;
-    if v < 0 || v >= limit {
+    if v < low || v >= limit {
         diags.push(diag(
             format!(
-                "[value.out-of-range] link-expr value {v} does not fit an unsigned {}-bit cell (0..{}) in section {section}",
+                "[value.out-of-range] link-expr value {v} does not fit a {}-bit cell ({low}..{}) in section {section}",
                 8 * w,
                 limit - 1
             ),

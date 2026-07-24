@@ -295,8 +295,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // spanning branches take ifdef-__DEBUG__ `.w` widths (the .emp side stays bare,
     // relaxing per shape). Plain self-gates to zero bytes; bg_anim debug_len
     // $100 → $158; debug bases downstream slide +0x58.
-    assert_eq!(pins::SOUND_API.plain_base, 0x625C);  // −0x2 bg_anim step-2 upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7C84);  // +0x58 bg_anim piece-assert upstream
+    // Then −0x4 BOTH shapes (t20 load_art step-2 branch modernization, 2026-07-24):
+    // load_art.emp goes bare-Bcc/jbra-jbsr and two conservative `bsr.w` calls relax
+    // to `.s` (Art_Decompress — an in-region backward reach — and BG_Init — the
+    // next placement; twin shrunk in lockstep) — load_art shrinks $68→$64 plain /
+    // $B2→$AE debug; bg/bg_anim/sound_api bases slide −0x4 both shapes (LENs
+    // unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6258);  // −0x4 load_art step-2 upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7C80);  // −0x4 load_art step-2 upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

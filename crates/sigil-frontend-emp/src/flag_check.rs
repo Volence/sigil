@@ -511,7 +511,8 @@ fn regs_mentioned(ops: &[CodeOperand]) -> Vec<Reg> {
             | CodeOperand::Ind(r)
             | CodeOperand::PreDec(r)
             | CodeOperand::PostInc(r)
-            | CodeOperand::DispInd { reg: r, .. } => push(*r),
+            | CodeOperand::DispInd { reg: r, .. }
+            | CodeOperand::DispSymInd { reg: r, .. } => push(*r),
             CodeOperand::IndIdx { reg, xn, .. } => {
                 push(*reg);
                 push(*xn);

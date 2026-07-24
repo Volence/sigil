@@ -705,3 +705,35 @@ pub fn assert_rom_matches(
         );
     }
 }
+
+/// Assemble the AS side of the TRANCHE-20 mixed `.asm`+`.emp` build:
+/// `SIGIL_EMP_DMA_QUEUE` and `SIGIL_EMP_LOAD_ART` defined so engine.inc's two
+/// `ifndef` blocks (which normally include `engine/system/dma_queue.asm` /
+/// `engine/level/load_art.asm`) are each REPLACED by an `org` resume — per
+/// shape, dma_queue `$1F56` (plain) / `$1FDC` (`__DEBUG__`), load_art `$6110`
+/// / `$6DE4` — leaving the two windows for the `.emp` side's sections to
+/// supply. The gates are INDEPENDENT of the sound/hblank ladder (R6), so this
+/// arm carries only the two tranche-20 gates: it proves the two new regions
+/// splice into the REAL full ROM, not just their standalone windows.
+///
+/// Cross-seam: vblank.asm's `bsr.w Process_DMA_*`, boot.asm's
+/// `bsr.w Init_DMA_Queue`, dplc.asm's `bsr.w QueueDMA_*` and the game states'
+/// `jsr QueueDMA_Critical` are unconditional AS-side consumers of the `.emp`
+/// modules' `pub proc` names (the `JmpJsrSym` / branch deferrals); all queue
+/// RAM labels are unconditional in engine/ram.asm, so no synthetic symbol
+/// injection is needed.
+pub fn assemble_mixed_tranche20_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DMA_QUEUE".to_string(), 1),
+        ("SIGIL_EMP_LOAD_ART".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche20 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}

@@ -365,3 +365,180 @@ fn dplc_matches_as_twin() {
     let expected = as_twin_bytes();
     assert_region_matches(&section.bytes, &expected, "dplc vs AS twin");
 }
+
+// ===========================================================================
+// Tranche 20 — the QueueDMA ownership FLIP (proof-mechanism feed-forward):
+// dplc.emp's `jbsr QueueDMA_{Important,Deferrable}` re-resolve from the old
+// .asm owner to the newly-ported engine.dma_queue module. Both modules compile
+// together — NO QueueDMA address carriers, NO extern decls (deleted this
+// tranche; kill-list rows 31/32) — and BOTH regions must still byte-match the
+// reference ROM. The t15 section/entity_window two-module test is the template.
+// ===========================================================================
+
+fn flip_value_equs() -> Vec<Section> {
+    // Union of dplc's seam (SST + engine constants) and dma_queue's
+    // (engine.vdp bits/ports + the structs/constants twin truths) — ONE equ
+    // carrier (assemble_equ_pairs emits a `Stub` label; two groups collide).
+    let mut pairs: Vec<(&str, &str)> = vec![
+        ("VDP_DATA", "$C00000"),
+        ("VDP_CTRL", "$C00004"),
+        ("VRAM", "%100001"),
+        ("CRAM", "%101011"),
+        ("VSRAM", "%100101"),
+        ("READ", "%001100"),
+        ("WRITE", "%000111"),
+        ("DMA", "%100111"),
+    ];
+    pairs.extend(sigil_harness::test_support::sst_field_equs());
+    pairs.extend(sigil_harness::test_support::engine_constant_equs());
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
+}
+
+fn flip_lower_and_place(
+    emp_path: &std::path::Path,
+    ambient: Vec<sigil_frontend_emp::ast::File>,
+    include_root: PathBuf,
+    region: &str,
+    base: u32,
+    len: usize,
+    debug: bool,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let main = parse_file(emp_path);
+    let file = with_ambient(ambient, main);
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(include_root),
+        embed_base: None,
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} lower errors: {ldiags:?}",
+        emp_path.display()
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} place errors: {pdiags:?}",
+        emp_path.display()
+    );
+    (sections, module.link_asserts)
+}
+
+fn two_module_flip(debug: bool, rom_name: &str) {
+    let aeon = aeon_dir();
+    let Ok(refrom) = std::fs::read(aeon.join(rom_name)) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: {rom_name}");
+        }
+        eprintln!("skip: reference ROM {rom_name} missing");
+        return;
+    };
+
+    let dplc_base = if debug { pins::DPLC.debug_base } else { pins::DPLC.plain_base };
+    let (mut dplc_sections, dplc_asserts) = flip_lower_and_place(
+        &aeon.join("engine/objects/dplc.emp"),
+        vec![
+            parse_file(&aeon.join("engine/system/types.emp")),
+            parse_file(&aeon.join("engine/objects/sst.emp")),
+        ],
+        aeon.join("engine/objects"),
+        "dplc",
+        dplc_base,
+        pins::DPLC.plain_len,
+        debug,
+    );
+
+    let dq_base = if debug { pins::DMA_QUEUE.debug_base } else { pins::DMA_QUEUE.plain_base };
+    let dq_len = if debug { pins::DMA_QUEUE.debug_len } else { pins::DMA_QUEUE.plain_len };
+    let (mut dq_sections, dq_asserts) = flip_lower_and_place(
+        &aeon.join("engine/system/dma_queue.emp"),
+        vec![
+            parse_file(&aeon.join("engine/structs.emp")),
+            parse_file(&aeon.join("engine/system/constants.emp")),
+            parse_file(&aeon.join("engine/vdp.emp")),
+        ],
+        aeon.join("engine/system"),
+        "dma_queue",
+        dq_base,
+        dq_len,
+        debug,
+    );
+
+    let mut sections = Vec::new();
+    sections.append(&mut dplc_sections);
+    sections.append(&mut dq_sections);
+
+    let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
+    let mut labels: Vec<(&str, u32)> = vec![
+        ("DMA_Queue", pick(pins::DMA_CRITICAL)),
+        ("DMA_Critical", pick(pins::DMA_CRITICAL)),
+        ("DMA_Critical_End", pick(pins::DMA_CRITICAL_END)),
+        ("DMA_Important", pick(pins::DMA_IMPORTANT)),
+        ("DMA_Important_End", pick(pins::DMA_IMPORTANT_END)),
+        ("DMA_Deferrable", pick(pins::DMA_DEFERRABLE)),
+        ("DMA_Deferrable_End", pick(pins::DMA_DEFERRABLE_END)),
+        ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
+        ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
+        ("DMA_Deferrable_Slot", pick(pins::DMA_DEFERRABLE_SLOT)),
+        ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+    ];
+    if debug {
+        labels.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
+    }
+
+    let mut lma = 0x0100_0000u32;
+    let mut groups: Vec<Vec<Section>> = vec![flip_value_equs()];
+    for (name, vma) in labels {
+        groups.push(as_label_at(name, vma));
+    }
+    for group in &mut groups {
+        for sec in group.iter_mut() {
+            sec.lma = lma;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+        }
+        sections.append(group);
+        lma += 0x10_0000;
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+
+    let mut all = dplc_asserts;
+    all.extend(dq_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "drift guards: {adiags:?}"
+    );
+
+    let shape = if debug { "debug" } else { "plain" };
+    let dr = &refrom[dplc_base as usize..dplc_base as usize + pins::DPLC.plain_len];
+    let dsec = linked.section("dplc").expect("dplc region").bytes.clone();
+    assert_eq!(dsec.len(), dr.len(), "dplc ({shape} flip): length");
+    assert_eq!(dsec, dr, "dplc ({shape} flip): bytes must match the reference");
+    let qr = &refrom[dq_base as usize..dq_base as usize + dq_len];
+    let qsec = linked.section("dma_queue").expect("dma_queue region").bytes.clone();
+    assert_eq!(qsec.len(), qr.len(), "dma_queue ({shape} flip): length");
+    assert_eq!(qsec, qr, "dma_queue ({shape} flip): bytes must match the reference");
+}
+
+#[test]
+fn two_module_ownership_flip_plain() {
+    two_module_flip(false, "s4.bin");
+}
+
+#[test]
+fn two_module_ownership_flip_debug() {
+    two_module_flip(true, "s4.debug.bin");
+}

@@ -36,6 +36,17 @@ gate = "SIGIL_EMP_VDP_INIT"
 tests = ["vdp_init_port"]
 
 [[region]]
+# Tranche 20 — the 3-priority DMA queue (Init/QueueDMA_*/Process_DMA_*/
+# Drain_Budgeted_Queue). End is the next placement: buffers.asm's
+# Init_SpriteTable. Shape-DEPENDENT length: the debug surplus is the
+# `ifdef __DEBUG__` overflow-count bump in the enqueue's .full arm (+4).
+name = "dma_queue"
+start = "Init_DMA_Queue"
+end = "Init_SpriteTable"
+gate = "SIGIL_EMP_DMA_QUEUE"
+tests = ["dma_queue_port"]
+
+[[region]]
 name = "hblank"
 start = "HBlank_Install"
 end = "Read_Controllers"
@@ -55,7 +66,7 @@ name = "game_loop"
 start = "GameLoop"
 end = "S4LZ_DecompressDict"
 gate = "SIGIL_EMP_GAME_LOOP"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 [[region]]
 name = "math"
@@ -197,6 +208,17 @@ start = "Parallax_Init"
 end = "Art_Decompress"
 gate = "SIGIL_EMP_PARALLAX"
 tests = ["parallax_port"]
+
+[[region]]
+# Tranche 20 — level art loader (Art_Decompress version dispatch +
+# Level_LoadArt paged pool load). End is the next placement: bg.asm's
+# BG_Init. Shape-DEPENDENT length: the debug surplus is the .drop_page
+# RaiseError expansion (release arm is the 6-byte drain-and-retry).
+name = "load_art"
+start = "Art_Decompress"
+end = "BG_Init"
+gate = "SIGIL_EMP_LOAD_ART"
+tests = ["load_art_port"]
 
 [[region]]
 # Tranche 19 — Plane B background load (BG_Init, §2 A.5). End is the next
@@ -416,15 +438,15 @@ tests = ["controllers_port"]
 
 [[symbol]]
 name = "VSync_Wait"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 [[symbol]]
 name = "Sound_DrainSfxRing"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 [[symbol]]
 name = "Game_State"
-tests = ["game_loop_port"]
+tests = ["game_loop_port", "load_art_port"]
 
 # collision_lookup (tranche 3; Cache_Head_Col/Top/Bottom derive +2/+4/+6)
 
@@ -745,6 +767,80 @@ debug_only = true
 tests = ["rings_port"]
 
 # dplc (tranche 10)
+
+# DMA queue RAM (tranche 20 — dma_queue_port carriers; the sub-queue bases,
+# their end sentinels, the slot vars, the frame budget, and the debug-only
+# overflow counter).
+# (`DMA_Queue` — the block base — is the SAME VMA as `DMA_Critical`; the
+# region const `dma_queue` owns that name in pins.rs, so the test emits the
+# DMA_Queue label as an alias of the DMA_Critical pin instead.)
+[[symbol]]
+name = "DMA_Critical"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Critical_End"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Important"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Important_End"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Deferrable"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Deferrable_End"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Critical_Slot"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Important_Slot"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Deferrable_Slot"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Budget_Remaining"
+tests = ["dma_queue_port"]
+
+[[symbol]]
+name = "DMA_Overflow_Count"
+debug_only = true
+tests = ["dma_queue_port"]
+
+# Level art loader (tranche 20 — load_art_port carriers: the staging buffer,
+# the two blocking decompressors, the Critical enqueue, and BG_Init — the
+# region-end neighbor load_art tail-hands the act pointer to).
+[[symbol]]
+name = "Art_Staging_Buffer"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "S4LZ_Decompress"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "ZX0_Decompress"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "QueueDMA_Critical"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "BG_Init"
+tests = ["load_art_port"]
 
 [[symbol]]
 name = "QueueDMA_Important"

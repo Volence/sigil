@@ -230,3 +230,206 @@ fn bg_anim_region_matches_reference() {
 fn bg_anim_debug_region_matches_reference() {
     run(true);
 }
+
+// ===========================================================================
+// Tranche 20 — the QueueDMA_Deferrable ownership FLIP (proof-mechanism
+// feed-forward): bg_anim.emp's two `jbsr QueueDMA_Deferrable` re-resolve from
+// the old .asm owner to the newly-ported engine.dma_queue module. Both modules
+// compile together — NO QueueDMA_Deferrable address carrier, NO extern decl
+// (deleted this tranche; kill-list row 32) — and BOTH regions must still
+// byte-match the reference ROM.
+// ===========================================================================
+
+fn flip_lower_and_place(
+    emp_path: &Path,
+    ambient: Vec<sigil_frontend_emp::ast::File>,
+    include_root: PathBuf,
+    region: &str,
+    base: u32,
+    len: usize,
+    debug: bool,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let main = parse_file(emp_path);
+    let mut items = Vec::new();
+    for d in ambient {
+        items.extend(d.items);
+    }
+    items.extend(main.items);
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(include_root),
+        embed_base: None,
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} lower errors: {ldiags:?}",
+        emp_path.display()
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} place errors: {pdiags:?}",
+        emp_path.display()
+    );
+    (sections, module.link_asserts)
+}
+
+fn flip_value_equs() -> Vec<Section> {
+    let mut pairs: Vec<(&str, &str)> = vec![
+        ("VDP_DATA", "$C00000"),
+        ("VDP_CTRL", "$C00004"),
+        ("VRAM", "%100001"),
+        ("CRAM", "%101011"),
+        ("VSRAM", "%100101"),
+        ("READ", "%001100"),
+        ("WRITE", "%000111"),
+        ("DMA", "%100111"),
+    ];
+    pairs.extend(sigil_harness::test_support::engine_constant_equs());
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
+}
+
+fn two_module_flip(debug: bool, rom_name: &str) {
+    let aeon = aeon_dir();
+    let Ok(refrom) = std::fs::read(aeon.join(rom_name)) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: {rom_name}");
+        }
+        eprintln!("skip: reference ROM {rom_name} missing");
+        return;
+    };
+
+    let ba_base = region_base(debug);
+    let ba_len = region_len(debug);
+    let (mut ba_sections, ba_asserts) = flip_lower_and_place(
+        &level_dir().join("bg_anim.emp"),
+        vec![parse_file(&level_dir().parent().unwrap().join("system/types.emp"))],
+        level_dir(),
+        "bg_anim",
+        ba_base,
+        ba_len,
+        debug,
+    );
+
+    let dq_base = if debug { pins::DMA_QUEUE.debug_base } else { pins::DMA_QUEUE.plain_base };
+    let dq_len = if debug { pins::DMA_QUEUE.debug_len } else { pins::DMA_QUEUE.plain_len };
+    let (mut dq_sections, dq_asserts) = flip_lower_and_place(
+        &aeon.join("engine/system/dma_queue.emp"),
+        vec![
+            parse_file(&aeon.join("engine/structs.emp")),
+            parse_file(&aeon.join("engine/system/constants.emp")),
+            parse_file(&aeon.join("engine/vdp.emp")),
+        ],
+        aeon.join("engine/system"),
+        "dma_queue",
+        dq_base,
+        dq_len,
+        debug,
+    );
+
+    let mut sections = Vec::new();
+    sections.append(&mut ba_sections);
+    sections.append(&mut dq_sections);
+
+    // bg_anim's address seam MINUS QueueDMA_Deferrable (the flip), PLUS the
+    // dma_queue RAM family.
+    let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
+    let mut labels: Vec<(&str, u32)> = vec![
+        ("BgAnim_LastStep", pick(pins::BG_ANIM_LAST_STEP)),
+        ("Frame_Counter", pick(pins::FRAME_COUNTER)),
+        ("Camera_X", pick(pins::CAMERA_X)),
+        ("Camera_Y", pick(pins::CAMERA_Y)),
+        ("BgAnim_Table", pick(pins::BG_ANIM_TABLE)),
+        ("DMA_Queue", pick(pins::DMA_CRITICAL)),
+        ("DMA_Critical", pick(pins::DMA_CRITICAL)),
+        ("DMA_Critical_End", pick(pins::DMA_CRITICAL_END)),
+        ("DMA_Important", pick(pins::DMA_IMPORTANT)),
+        ("DMA_Important_End", pick(pins::DMA_IMPORTANT_END)),
+        ("DMA_Deferrable", pick(pins::DMA_DEFERRABLE)),
+        ("DMA_Deferrable_End", pick(pins::DMA_DEFERRABLE_END)),
+        ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
+        ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
+        ("DMA_Deferrable_Slot", pick(pins::DMA_DEFERRABLE_SLOT)),
+        ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+    ];
+    if debug {
+        labels.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
+        labels.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+        labels.push((
+            "MDDBG__ErrorHandler_PagesController",
+            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+        ));
+    }
+
+    let mut lma = 0x0100_0000u32;
+    let mut groups: Vec<Vec<Section>> = vec![flip_value_equs()];
+    for (name, vma) in labels {
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        groups.push(
+            assemble(&asm, &opts)
+                .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+                .sections,
+        );
+    }
+    for group in &mut groups {
+        for sec in group.iter_mut() {
+            sec.lma = lma;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+        }
+        sections.append(group);
+        lma += 0x10_0000;
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+
+    let mut all = ba_asserts;
+    all.extend(dq_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "drift guards: {adiags:?}"
+    );
+
+    let shape = if debug { "debug" } else { "plain" };
+    let br = &refrom[ba_base as usize..ba_base as usize + ba_len];
+    assert_region_matches(
+        &linked.section("bg_anim").expect("bg_anim region").bytes,
+        br,
+        &format!("bg_anim ({shape} flip)"),
+    );
+    let qr = &refrom[dq_base as usize..dq_base as usize + dq_len];
+    assert_region_matches(
+        &linked.section("dma_queue").expect("dma_queue region").bytes,
+        qr,
+        &format!("dma_queue ({shape} flip)"),
+    );
+}
+
+#[test]
+fn two_module_ownership_flip_plain() {
+    two_module_flip(false, "s4.bin");
+}
+
+#[test]
+fn two_module_ownership_flip_debug() {
+    two_module_flip(true, "s4.debug.bin");
+}

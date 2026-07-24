@@ -703,9 +703,17 @@ impl Evaluator<'_> {
                 as_type: instr.dispatch_bound.clone(),
             });
         }
+        // `movep` transfers ALTERNATE bytes (d, d+2[, d+4, d+6]) — each touched
+        // byte is byte-sized, and the bytes past the named field land on OTHER
+        // fields BY DESIGN (the interleaved DMA-queue-entry layout is the whole
+        // point of the instruction). Mapping its operands with the instruction's
+        // `.w`/`.l` width would mis-fire the field-overrun lint on a 1-byte
+        // field (`movep.w Ent.SizeH(a0), d1`), so the EFFECTIVE access width for
+        // operand mapping is `.b`; the emitted CodeItem keeps the true size.
+        let op_width = if mnemonic == "movep" { Some(Width::B) } else { size };
         let mut ops = Vec::with_capacity(instr.operands.len());
         for op in &instr.operands {
-            ops.push(self.map_operand(op, scope, env, size)?);
+            ops.push(self.map_operand(op, scope, env, op_width)?);
         }
         Some(CodeItem::Instr {
             mnemonic,
@@ -1028,6 +1036,22 @@ impl Evaluator<'_> {
                 // `Sym(pc,d0.w)` fail as "unknown name" today).
                 if let Some(shape) = pc_rel_shape(inner) {
                     return self.map_pcrel_operand(disp, shape, scope, env, *span);
+                }
+                // A LOCAL-LABEL displacement over An (`jmp .jump_table(a1)` —
+                // the jump-table dispatch idiom: the table's abs.w-reachable
+                // ADDRESS rides the d16 field, the base register carries a
+                // byte offset into the table). The parser spells a `.local`
+                // operand as a single-segment Path whose segment keeps the
+                // leading dot; resolve it through the label scope (hygiene)
+                // to the emitted symbol and defer the address to link as a
+                // symbolic d16. Must run BEFORE the eager `eval_expr` below —
+                // a label is a link symbol, not a comptime displacement.
+                if let ast::Expr::Path(p) = disp {
+                    if p.segments.len() == 1 && p.segments[0].starts_with('.') {
+                        let target = scope.resolve_ref(&p.segments[0]);
+                        let r = self.inner_ind_reg(inner, env)?;
+                        return Some(CodeOperand::DispSymInd { target, reg: r });
+                    }
                 }
                 // D6.A3: a BARE single-segment displacement `f(aN)` on a register
                 // whose declared param type bottoms out at `*S` resolves ONLY in

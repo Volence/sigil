@@ -397,6 +397,21 @@ pub enum CodeOperand {
         /// The field's byte offset within the item's struct.
         off: i128,
     },
+    /// A SYMBOLIC d16 displacement over An: `.jump_table(a1)` — the
+    /// jump-table dispatch idiom (`jmp .jump_table(a1)`), where the table's
+    /// abs.w-reachable ADDRESS rides the d16 field and the base register
+    /// carries a byte offset into the table. The displacement is a link-time
+    /// symbol, so it lowers as a FIXED-width `Disp16An` encoding with one
+    /// `Abs16Be` fixup on the extension word (signed-window range check — the
+    /// address must fit i16, exactly asl's constraint for the same spelling).
+    /// Distinct from [`DispInd`](CodeOperand::DispInd) (comptime displacement)
+    /// and from [`PcRel`](CodeOperand::PcRel) (relative displacement).
+    DispSymInd {
+        /// The hygiene-resolved link symbol whose ADDRESS fills the d16 field.
+        target: String,
+        /// The base address register.
+        reg: Reg,
+    },
     /// Register indirect: `(a0)`.
     Ind(Reg),
     /// Pre-decrement indirect: `-(a7)`.

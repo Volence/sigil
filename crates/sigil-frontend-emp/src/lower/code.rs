@@ -191,6 +191,15 @@ fn lower_m68k_instr(
         lower_m68k_imm_link(m, size, ops, span, builder, diags);
         return;
     }
+    // A symbolic d16 displacement (`jmp .jump_table(a1)`) is a FIXED-width
+    // encoding (the d16 field is always one ext word) with one `Abs16Be`
+    // fixup — no relaxation. Routed before the abs-sym seam so the two
+    // symbolic-operand classes never mix in one instruction (mixing is
+    // rejected inside, loudly).
+    if ops.iter().any(|o| matches!(o, CodeOperand::DispSymInd { .. })) {
+        lower_m68k_disp_sym(m, size, ops, span, builder, diags);
+        return;
+    }
     let sym_count = ops
         .iter()
         .filter(|o| {
@@ -914,6 +923,114 @@ fn lower_m68k_two_pinned_abs(
 /// (movem's mask word, branches, pc-rel) is routed away before this fn. The
 /// pre-emission length check below is NOT that proof — it is
 /// defense-in-depth against a broken backend / unexpected multi-word opcode.
+/// Lower an instruction carrying ONE symbolic d16 displacement
+/// (`jmp .jump_table(a1)` — the jump-table dispatch idiom). The d16 field is a
+/// FIXED one-word extension holding the target's ADDRESS, so the encoding is
+/// finished at lowering with one `Abs16Be` fixup (signed-window range check —
+/// the address must fit i16, asl's constraint for the same spelling). The ext
+/// word's byte offset is located by the sentinel-probe technique
+/// (`lower_m68k_abs_sym`'s pinned arm): re-lower with a sentinel displacement
+/// and take the first differing byte — exact regardless of surrounding
+/// extension words, since nothing else changes between the two lowerings.
+fn lower_m68k_disp_sym(
+    m: M68kMnemonic,
+    size: M68kSize,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let mut mops = Vec::with_capacity(ops.len());
+    let mut target: Option<Expr> = None;
+    let mut ds_index: Option<usize> = None;
+    let mut ds_reg: u8 = 0;
+    for op in ops {
+        match op {
+            CodeOperand::DispSymInd { target: t, reg } => {
+                if target.is_some() {
+                    push_err(
+                        diags,
+                        span,
+                        "[lower.disp-sym-operand] at most one symbolic d16 displacement per \
+                         instruction",
+                    );
+                    return;
+                }
+                let (is_a, n) = reg_kind(*reg);
+                if !is_a {
+                    push_err(
+                        diags,
+                        span,
+                        "[lower.disp-sym-operand] a symbolic d16 displacement needs an ADDRESS \
+                         register base (`.label(aN)`)",
+                    );
+                    return;
+                }
+                target = Some(Expr::Sym(t.clone()));
+                ds_index = Some(mops.len());
+                ds_reg = n;
+                mops.push(M68kOperand::Disp16An(0, n));
+            }
+            CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. } => {
+                push_err(
+                    diags,
+                    span,
+                    "[lower.disp-sym-operand] a symbolic d16 displacement combined with a \
+                     symbolic absolute operand is not supported",
+                );
+                return;
+            }
+            other => match m68k_operand(other) {
+                Ok(mut o) => {
+                    collapse_zero_disp(&mut o);
+                    mops.push(o);
+                }
+                Err(msg) => {
+                    push_err(diags, span, msg);
+                    return;
+                }
+            },
+        }
+    }
+    let target = target.expect("caller guarantees a DispSymInd operand");
+    let ds_index = ds_index.expect("set alongside target");
+    let refined = refine_m68k_mnemonic(m, &mops);
+    let inst = M68kInst { mnemonic: refined, size, ops: mops.clone() };
+    let bytes = match M68kBackend.lower_inst(&inst, span) {
+        Ok(df) => df.bytes,
+        Err(e) => {
+            push_err(diags, span, e.message);
+            return;
+        }
+    };
+    // Sentinel probe: relocate the d16 field by re-lowering with a nonzero
+    // displacement; the first differing byte is the field's start.
+    let mut probe_ops = mops;
+    probe_ops[ds_index] = M68kOperand::Disp16An(0x0100, ds_reg);
+    let probe = M68kInst { mnemonic: refined, size, ops: probe_ops };
+    let offset = match M68kBackend.lower_inst(&probe, span) {
+        Ok(df) => bytes.iter().zip(df.bytes.iter()).position(|(a, b)| a != b),
+        Err(e) => {
+            push_err(diags, span, e.message);
+            return;
+        }
+    };
+    let Some(offset) = offset else {
+        push_err(
+            diags,
+            span,
+            "[lower.disp-sym-operand] internal: could not locate the d16 ext field",
+        );
+        return;
+    };
+    let df = DataFragment {
+        bytes,
+        fixups: vec![Fixup { kind: FixupKind::Abs16Be, offset: offset as u32, target }],
+        span,
+    };
+    emit_data_frag(builder, df);
+}
+
 fn lower_m68k_abs_sym(
     m: M68kMnemonic,
     size: M68kSize,
@@ -1107,6 +1224,7 @@ fn operand_has_ext_words(op: &CodeOperand) -> bool {
         op,
         CodeOperand::Imm(_)
             | CodeOperand::DispInd { .. }
+            | CodeOperand::DispSymInd { .. }
             | CodeOperand::IndIdx { .. }
             | CodeOperand::AbsInt { .. }
     )
@@ -1213,6 +1331,12 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         CodeOperand::Sym(name) => Err(format!(
             "symbolic operand `{name}` in a straight-line instruction is not yet supported \
              (only branch / jmp / jsr targets defer to the linker)"
+        )),
+        // Always routed through `lower_m68k_disp_sym` before the generic path;
+        // reaching here means an unsupported combination.
+        CodeOperand::DispSymInd { target, .. } => Err(format!(
+            "[lower.disp-sym-operand] symbolic d16 displacement `{target}` is not supported \
+             in this operand combination"
         )),
         // A `SymOff` (D-PP.5 field-address operand) is always routed through
         // `lower_m68k_abs_sym` by the sym-count dispatch, exactly like `Sym`, so
