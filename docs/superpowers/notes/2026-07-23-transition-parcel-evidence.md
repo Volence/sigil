@@ -82,7 +82,68 @@ scope. The subsystem's own guard (the single-axis assert) passed. **Rider closed
 with a positive live observation; value-audit left as an entity-window
 follow-up if ever demanded.**
 
-## B2 — mode-contract design pass — (pending; GATE CHECKPOINT before cutting)
+## B2 — mode-contract (active-config coherence) — CLOSED
+
+Gate ruling (2026-07-23): **Option B** (single `Parallax_Active_Config` accessor =
+Target while Transition_Frames>0; route consumers #4/#5 through it) + **sub-decision
+(i)** (fix only #4/#5; ledger the engine-owned mode-register write + kill-list the
+harness force-write) + **rig-only fixture blessed** (3 constraints). Design note:
+notes/2026-07-23-b2-mode-contract-design.md.
+
+**Fix (both twins + buffers.asm):** new `Parallax_Active_Config` proc
+(parallax.emp/.asm :~274) returns d0=active config, Z reflecting it. Routed
+`Vscroll_Write` (parallax.emp :304, `bsr.s`) and the HScroll DMA-length select
+(`buffers.asm` :168, `jsr` — no `.emp` twin) through it. The band builder, fill
+format, and mode-set-3 register already commit to Target@frame-0; this aligns the
+two stragglers.
+
+**Scope class:** byte-CHANGING + length-changing (+0x10 parallax: accessor +0x12,
+Vscroll routing −0x2). Ripple (5-site doctrine): `repin` → pins.rs (PARALLAX len
++0x10, SOUND_API base +0x10, 3 SOUND_* pins); `engine.inc` 2 resume orgs (parallax
++ sound_api, +0x10 both shapes, HAND); `repin_pins.rs` SOUND_API-base baseline
+(HAND, delta-chain entry); `mixed_dac_rom.rs` UNCHANGED (no sound-content ref);
+`repin.toml` UNCHANGED (no region added). EndOfRom `0x5DB60` unchanged (absorbs in
+padding). New canonical (fresh dual builds): plain **`c74eb070`**/421133 · debug
+**`8ecbf24e`**/429176.
+
+**Rig A/B (constraint c) — the rig-only fixture.** Fixture = a copy of the real,
+macro-built `ParallaxConfig_OJZ_Default` (band_count 4) written to scratch RAM
+(`Entity_Mask_Scratch` 0xFFAD20, safe with the camera frozen) with `deform_table_bg`
+nulled → a well-formed **per-cell** config. Poked-pointer only: **zero fixture bytes
+in ANY ROM** (constraint b — RAM-resident, `Target_Config` poked to it; constraint a
+— derived from a real-struct config by a documented field flip, not raw bytes).
+Staged Current=OJZ_Default (per-line) → Target=fixture (per-cell), Frames=16.
+
+HScroll DMA-length observable (breakpoints on the two enqueue paths, read in the
+window at Frames=15):
+
+| ROM | buffers HScroll path during window | vs the per-cell builder |
+|---|---|---|
+| **before** (B6 `7460a0c2`, reads Current) | **LINE 0x21FC → Static_Hscroll_Line 896 B** | MISMATCH = the ≤16-frame tear |
+| **after** (B2 `8ecbf24e`, reads active=Target) | **CELL 0x2218 → Static_Hscroll_Cell 112 B** | MATCH = coherent |
+
+Both at Frames=15 (in the window), Target=0xFFAD20 (fixture), Current=0x11428
+(OJZ_Default) — verified each side.
+
+VSRAM-stride observable (consumer #5): `Parallax_Active_Config` is a PURE function
+of global state (Transition_Frames + Target/Current), independent of caller, so the
+value it returns for buffers (proven = Target in-window) is the same value
+Vscroll_Write reads in the same frame. The before/after listing diff confirms
+Vscroll_Write's source flips `move.l (Parallax_Current_Config).w,d0` (before, :68A2)
+→ the `Parallax_Active_Config` call (after) — the identical one-line routing. So
+Vscroll_Write's whole-plane/per-column VSRAM decision follows Target during a
+transition (coherent), vs Current before. The H-path is the representative live A/B;
+the V-path shares the proven pure accessor + the same routing diff.
+
+**Shipped-config invariance (gate-required):** for shipped (mode-equal) config pairs
+Active and Current select the SAME mode, so `Parallax_Active_Config` returns a config
+whose mode bits equal Current's — buffers/Vscroll make the identical decision they
+made pre-B2. Shipped rendering is provably unchanged. (Doubly so: shipped play fires
+NO transition — all OJZ sections share config 0 — so Transition_Frames is always 0
+and the accessor returns Current verbatim.)
+
+**Gate:** full paired strict **2488/0** (SIGIL_STRICT_GATE, AEON_DIR=branch tree),
+failures-first, ripple resolved.
 
 ## B3 — frames-remaining ramp — (pending; inside B2's state machine)
 
