@@ -161,11 +161,26 @@ fn compile_real_file(
     let dir = aeon_dir().join("engine/sound");
     let src = std::fs::read_to_string(dir.join("sound_api.emp"))
         .unwrap_or_else(|e| panic!("cannot read sound_api.emp: {e}"));
-    let (file, pdiags) = parse_str(&src);
+    let (main, pdiags) = parse_str(&src);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sound_api.emp parse errors: {pdiags:?}"
     );
+    // Prepend the shared engine.z80_bus templates (stop_z80/start_z80 moved
+    // there at the t19 step-6 sweep).
+    let z80_src = std::fs::read_to_string(aeon_dir().join("engine/z80_bus.emp"))
+        .unwrap_or_else(|e| panic!("cannot read z80_bus.emp: {e}"));
+    let (z80_file, zdiags) = parse_str(&z80_src);
+    assert!(
+        zdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "z80_bus.emp parse errors: {zdiags:?}"
+    );
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items: z80_file.items.into_iter().chain(main.items).collect(),
+        docs: main.docs.clone(),
+    };
 
     // findings 1/2's asserts are DEBUG-shape-only: DEBUG must always be DEFINED
     // (house convention — the debug shape is explicit), 0 in plain (elides the

@@ -209,8 +209,20 @@ fn sound_api_src() -> Option<String> {
 fn lower_sound_api(
     src: &str,
 ) -> (sigil_ir::Module, Vec<sigil_ir::LinkAssert>, Vec<sigil_span::Diagnostic>) {
-    let (file, pdiags) = parse_str(src);
+    let (main, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse: {pdiags:?}");
+    // Prepend the shared engine.z80_bus templates (stop_z80/start_z80 moved
+    // there at the t19 step-6 sweep) — sound_api no longer lowers standalone.
+    let z80_src = std::fs::read_to_string(aeon_dir().join("engine/z80_bus.emp"))
+        .expect("z80_bus.emp must exist beside sound_api.emp");
+    let (z80_file, zdiags) = parse_str(&z80_src);
+    assert!(zdiags.iter().all(|d| d.level != Level::Error), "z80_bus parse: {zdiags:?}");
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items: z80_file.items.into_iter().chain(main.items).collect(),
+        docs: main.docs.clone(),
+    };
     let (module, diags) = lower_module(
         &file,
         &LowerOptions {
