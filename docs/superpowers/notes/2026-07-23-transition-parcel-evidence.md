@@ -145,6 +145,66 @@ and the accessor returns Current verbatim.)
 **Gate:** full paired strict **2488/0** (SIGIL_STRICT_GATE, AEON_DIR=branch tree),
 failures-first, ripple resolved.
 
-## B3 — frames-remaining ramp — (pending; inside B2's state machine)
+## B3 — frames-remaining ramp — CLOSED (+ demanded/built the sigil `divs` instruction)
+
+Inside B2's contract (the promote frame is structurally inert under Option B, so B3
+is pure Plane-B-scroll math). Replaces the fixed `asr.w #PARALLAX_LERP_SHIFT` (÷16)
+geometric lerp — `(15/16)^16 ≈ 0.356` residual that snaps at the promote frame —
+with a frames-remaining LINEAR ramp: `step = (target − current) / frames_remaining`,
+converging EXACTLY by the last window frame (frames_remaining reaches 1 → step = the
+whole residual; the promote-frame `.snap_b` becomes a no-op).
+
+**Toolchain: demanded + built `divs`/`divu` in sigil (gate-ratified Option A).** The
+natural instruction is `divs.w`; asl assembles it but sigil's `Mnemonic` enum had
+`Muls/Mulu` only. Implemented `Divs/Divu` mirroring `muls` (encode base `0b1000` vs
+`0b1100`, same EA machinery, opmode 111 signed / 011 unsigned, word-only). Six sites:
+ISA enum + encode arm (sigil-isa/m68k.rs), frontend-as dispatch (eval.rs — the `.asm`
+corpus hits it), both `.emp` lowerer maps (code.rs + proc.rs). TDD RED-first,
+asl-verified byte-exact encode tests (`m68k_divs_word_encodes` / `m68k_divu_word_encodes`
+in eval.rs): `divs.w d4,d2`=85C4, `#10,d2`=85FC000A, `d0,d1`=83C0, `($1234).w,d0`=81F812​34,
+`divu.w d4,d2`=84C4, `d3,d5`=8AC3 (all confirmed against tools/asl). Own sigil-core
+commit lands BEFORE the B3 aeon commit (abs-sym pattern). Zero new clippy.
+
+**Invariant (constraint 2/3, stated as a present-tense contract in both twins):** the
+divide path is reached only past `tst.b Transition_Frames / beq .snap_b`, so
+frames_remaining is 1..PARALLAX_TRANS_DEFAULT — never 0 → divide-by-zero structurally
+unreachable (no DEBUG assert added: the `beq` above is the guarantee, and `divs`-by-0
+traps rather than corrupting — logged decision). The gap is `ext.l`'d to a 32-bit
+dividend; `|quotient| = |gap|/frames_remaining ≤ |gap| ≤ $7FFF` fits a word → `divs`
+never overflows.
+
+**Perf acceptance (constraint 4, on record):** `divs.w` ≈ 120-158 cyc worst case ×
+band_count, but ONLY on the lerp path — reached solely during a transition window
+(`Transition_Frames > 0`). Outside transitions the band loop takes `.snap_b` (no
+divide). Transitions are rare (never in shipped play — all sections share config 0),
+so the cost is transient and bounded. Gate-accepted.
+
+**Scope note (constraint 5):** the overseer's correction stands — pc-relative indexed
+`(d8,PC,Xn)` EXISTS in frontend-as (eval.rs:5036 test) AND in `.emp` lowering
+(value.rs `PcRelIdx`, code.rs:519). So a reciprocal-table workaround would have been
+feasible; `divs` was chosen as the clean instruction. **No ledger row needed** (no
+emp-side gap). `divs`/`divu` is the ONLY ISA addition riding this parcel.
+
+**Scope class:** byte+length-changing (+0x8 parallax: `asr.w` 2 B → `ext.l`+`moveq`+
+`move.b`+`divs.w` 10 B). Ripple: `repin` → pins.rs (PARALLAX len +0x8, SOUND_API base
++0x8, 3 SOUND_* pins); engine.inc 2 resume orgs +0x8 (HAND); repin_pins.rs SOUND_API-
+base delta-chain (HAND); mixed_dac/repin.toml unchanged. EndOfRom `0x5DB60` unchanged.
+New canonical: plain **`531330fc`**/421133 · debug **`d9c06630`**/429176.
+
+**Rig A/B (convergence-by-frame-0):** engineered 256px gap (Scroll_B[0] poked −768,
+Target=OJZ_Default −512, camX 1024, frozen), 4-frame window, read Scroll_B[0] each frame:
+
+| frames_remaining | before (B2 `8ecbf24e`, `>>4`) | after (B3 `d9c06630`, ramp) |
+|---|---|---|
+| 3 | −752 (step +16) | −683 (step +85 = 256/3) |
+| 2 | −737 | −598 |
+| **1** (last lerp) | **−723 → residual 211 px** | **−512 → converged** |
+| **0** (promote) | **snaps −723→−512 = 211 px POP** | **−512 (no-op, no pop)** |
+
+Before: the geometric lerp leaves a 211 px residual that snaps in one frame at the
+promote. After: linear convergence lands current on target by frames_remaining=1, so
+the promote `.snap_b` moves nothing — no pop. Convergence-by-frame-0 proven.
+
+**Gate:** full paired strict **2490/0** (= 2488 + the 2 new divs/divu encode tests).
 
 ## B1 — re-cross cancel branch — (pending; inside B2's state machine)
