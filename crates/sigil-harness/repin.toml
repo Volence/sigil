@@ -178,6 +178,16 @@ gate = "SIGIL_EMP_SECTION"
 tests = ["section_port"]
 
 [[region]]
+# Tranche 19 — the §4 camera (Camera_Init + Camera_Update). End is the next
+# placement: parallax.asm's Parallax_Init (engine.inc; end-is-next-placement,
+# the load_object precedent). Shape-invariant length.
+name = "camera"
+start = "Camera_Init"
+end = "Parallax_Init"
+gate = "SIGIL_EMP_CAMERA"
+tests = ["camera_port"]
+
+[[region]]
 # Tranche 18 — the §4.6 parallax pipeline (per-cell/per-line HScroll + whole-plane/
 # per-column Vscroll builder). End is the next placement: load_art.asm's
 # Art_Decompress (engine.inc; end-is-next-placement, the load_object precedent).
@@ -187,6 +197,30 @@ start = "Parallax_Init"
 end = "Art_Decompress"
 gate = "SIGIL_EMP_PARALLAX"
 tests = ["parallax_port"]
+
+[[region]]
+# Tranche 19 — Plane B background load (BG_Init, §2 A.5). End is the next
+# placement: bg_anim.asm's BgAnim_Init. Shape-invariant length.
+name = "bg"
+start = "BG_Init"
+end = "BgAnim_Init"
+gate = "SIGIL_EMP_BG"
+tests = ["bg_port"]
+
+[[region]]
+# Tranche 19 — driver-keyed BG tile-band animation (BgAnim_Init/BgAnim_Update).
+# The next placement is compression_selftest.asm, whose ONLY label
+# (CompressionSelfTest) is `ifdef __DEBUG__` — absent from the plain symbol
+# table — so this region carries a literal length (the sound_api precedent).
+# Shape-invariant $A0 (BgAnim_Update's rts .. CompressionSelfTest in the
+# debug listing; plain confirmed against Sound_PostByte at $6264). Re-derive
+# from `repin --verbose` on any bg_anim byte change.
+name = "bg_anim"
+start = "BgAnim_Init"
+len = 0xA0
+debug_len = 0xA0
+gate = "SIGIL_EMP_BG_ANIM"
+tests = ["bg_anim_port"]
 
 [[region]]
 # The one region whose end carries no listing symbol: the include's content ends
@@ -637,11 +671,35 @@ tests = ["rings_port"]
 
 [[symbol]]
 name = "Camera_X"
-tests = ["rings_port", "section_port"]
+tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
 
 [[symbol]]
 name = "Camera_Y"
-tests = ["rings_port", "section_port"]
+tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
+
+# Camera-follow state RAM (tranche 19 — camera_port cross-seam carriers).
+[[symbol]]
+name = "Camera_Deadzone_Base"
+tests = ["camera_port"]
+
+[[symbol]]
+name = "Camera_Pan_Offset"
+tests = ["camera_port"]
+
+[[symbol]]
+name = "Camera_Hold_Frames"
+tests = ["camera_port"]
+
+# BG tile-band animation state + table (tranche 19 — bg_anim_port carriers).
+# BgAnim_Table is GAME DATA (gameDataIncludes) — it shifts with the data
+# region, so it must ride the pin table, never a hand-typed VMA.
+[[symbol]]
+name = "BgAnim_LastStep"
+tests = ["bg_anim_port"]
+
+[[symbol]]
+name = "BgAnim_Table"
+tests = ["bg_anim_port"]
 
 # Biased camera RAM cells (A1 camera-bias fold, sprites step-5 follow-up).
 [[symbol]]
