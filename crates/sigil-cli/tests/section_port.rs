@@ -85,7 +85,8 @@ fn section_value_equs() -> Vec<Section> {
         ("VDP_CTRL", "$C00004"),
         ("VRAM_PLANE_A", "$C000"),
         ("VRAM_PLANE_B_BYTES", "$E000"),
-        ("PLANE_H_CELLS", "64"),
+        // PLANE_H_CELLS now comes from engine_constant_equs() (hoisted into
+        // the shared engine.constants twin at the tranche-21 buffers port).
         ("PLANE_V_CELLS", "64"),
         ("PLANE_BUFFER_SIZE", "1536"),
         // TILE_CACHE_COLS/ROWS/STRIDE/NT_SIZE now come from engine_constant_equs()

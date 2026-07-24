@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.lst (07/24/2026 03:49:41 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche20/s4.debug.lst (07/24/2026 03:49:42 AM)
-//! [provenance] 30 regions, 230 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche21/s4.lst (07/24/2026 09:27:43 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche21/s4.debug.lst (07/24/2026 09:27:48 AM)
+//! [provenance] 32 regions, 259 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +50,12 @@ pub const VDP_INIT: Region = Region { plain_base: 0x1C0A, debug_base: 0x1C8C, pl
 
 /// `Init_DMA_Queue` .. `Init_SpriteTable` — gate `SIGIL_EMP_DMA_QUEUE`. tests: dma_queue_port
 pub const DMA_QUEUE: Region = Region { plain_base: 0x1C54, debug_base: 0x1CD6, plain_len: 0x302, debug_len: 0x306 };
+
+/// `Init_SpriteTable` .. `VBlank_Handler` — gate `SIGIL_EMP_BUFFERS`. tests: buffers_port
+pub const BUFFERS: Region = Region { plain_base: 0x1F56, debug_base: 0x1FDC, plain_len: 0x262, debug_len: 0x262 };
+
+/// `VBlank_Handler` .. `HBlank_Install` — gate `SIGIL_EMP_VBLANK`. tests: vblank_port
+pub const VBLANK: Region = Region { plain_base: 0x21B8, debug_base: 0x223E, plain_len: 0x130, debug_len: 0x138 };
 
 /// `HBlank_Install` .. `Read_Controllers` — gate `SIGIL_EMP_HBLANK`. tests: hblank_port, m1c_vector_table
 pub const HBLANK: Region = Region { plain_base: 0x22E8, debug_base: 0x2376, plain_len: 0x48, debug_len: 0x48 };
@@ -826,6 +832,93 @@ pub const SECTION_FLAT_IDXY: Pin = Pin { plain: 0x5628, debug: 0x62B2 };
 
 /// `AllocDynamic`. tests: load_object_port
 pub const ALLOC_DYNAMIC: Pin = Pin { plain: 0x289A, debug: 0x2A2C };
+
+/// `Palette_Buffer`. tests: buffers_port
+pub const PALETTE_BUFFER: Pin = Pin { plain: 0xFFFF8206, debug: 0xFFFF8206 };
+
+/// `Hscroll_Buffer`. tests: buffers_port
+pub const HSCROLL_BUFFER: Pin = Pin { plain: 0xFFFF850A, debug: 0xFFFF850A };
+
+/// `Static_Pal_Line0`. tests: buffers_port
+pub const STATIC_PAL_LINE0: Pin = Pin { plain: 0xFFFF898C, debug: 0xFFFF898C };
+
+/// `Static_Pal_Line1`. tests: buffers_port
+pub const STATIC_PAL_LINE1: Pin = Pin { plain: 0xFFFF899A, debug: 0xFFFF899A };
+
+/// `Static_Pal_Line2`. tests: buffers_port
+pub const STATIC_PAL_LINE2: Pin = Pin { plain: 0xFFFF89A8, debug: 0xFFFF89A8 };
+
+/// `Static_Pal_Line3`. tests: buffers_port
+pub const STATIC_PAL_LINE3: Pin = Pin { plain: 0xFFFF89B6, debug: 0xFFFF89B6 };
+
+/// `Static_Sprite_DMA`. tests: buffers_port
+pub const STATIC_SPRITE_DMA: Pin = Pin { plain: 0xFFFF89C4, debug: 0xFFFF89C4 };
+
+/// `Static_Hscroll_Cell`. tests: buffers_port
+pub const STATIC_HSCROLL_CELL: Pin = Pin { plain: 0xFFFF89D2, debug: 0xFFFF89D2 };
+
+/// `Static_Hscroll_Line`. tests: buffers_port
+pub const STATIC_HSCROLL_LINE: Pin = Pin { plain: 0xFFFF89E0, debug: 0xFFFF89E0 };
+
+/// `Palette_Dirty`. tests: buffers_port
+pub const PALETTE_DIRTY: Pin = Pin { plain: 0xFFFF8286, debug: 0xFFFF8286 };
+
+/// `Parallax_Active_Config`. tests: buffers_port
+pub const PARALLAX_ACTIVE_CONFIG: Pin = Pin { plain: 0x5C22, debug: 0x68AC };
+
+/// `VBlank_Ready`. tests: vblank_port
+pub const V_BLANK_READY: Pin = Pin { plain: 0xFFFF803A, debug: 0xFFFF803A };
+
+/// `VBlank_Flag`. tests: vblank_port
+pub const V_BLANK_FLAG: Pin = Pin { plain: 0xFFFF8000, debug: 0xFFFF8000 };
+
+/// `VInt_Ptr`. tests: vblank_port
+pub const V_INT_PTR: Pin = Pin { plain: 0xFFFF8036, debug: 0xFFFF8036 };
+
+/// `Ctrl_1_Press`. tests: vblank_port
+pub const CTRL_1_PRESS: Pin = Pin { plain: 0xFFFF802D, debug: 0xFFFF802D };
+
+/// `Ctrl_1_Press_Accum`. tests: vblank_port
+pub const CTRL_1_PRESS_ACCUM: Pin = Pin { plain: 0xFFFF8030, debug: 0xFFFF8030 };
+
+/// `Ctrl_2_Press`. tests: vblank_port
+pub const CTRL_2_PRESS: Pin = Pin { plain: 0xFFFF802F, debug: 0xFFFF802F };
+
+/// `Ctrl_2_Press_Accum`. tests: vblank_port
+pub const CTRL_2_PRESS_ACCUM: Pin = Pin { plain: 0xFFFF8031, debug: 0xFFFF8031 };
+
+/// `DMA_Budget_Default`. tests: vblank_port
+pub const DMA_BUDGET_DEFAULT: Pin = Pin { plain: 0xFFFF8202, debug: 0xFFFF8202 };
+
+/// `Lag_Frame_Count` — debug-shape consumer only (`debug_only`). tests: vblank_port
+pub const LAG_FRAME_COUNT: u32 = 0xFFFF89F8;
+
+/// `DMA_Bytes_ThisFrame` — debug-shape consumer only (`debug_only`). tests: vblank_port
+pub const DMA_BYTES_THIS_FRAME: u32 = 0xFFFF89EE;
+
+/// `Flush_VDP_Shadow`. tests: vblank_port
+pub const FLUSH_VDP_SHADOW: Pin = Pin { plain: 0x1C20, debug: 0x1CA2 };
+
+/// `VInt_DrawLevel`. tests: vblank_port
+pub const V_INT_DRAW_LEVEL: Pin = Pin { plain: 0x4358, debug: 0x4F22 };
+
+/// `Vscroll_Write`. tests: vblank_port
+pub const VSCROLL_WRITE: Pin = Pin { plain: 0x5C34, debug: 0x68BE };
+
+/// `Read_Controllers`. tests: vblank_port
+pub const READ_CONTROLLERS: Pin = Pin { plain: 0x2330, debug: 0x23BE };
+
+/// `Process_DMA_Critical`. tests: vblank_port
+pub const PROCESS_DMA_CRITICAL: Pin = Pin { plain: 0x1E24, debug: 0x1EAA };
+
+/// `Process_DMA_Important`. tests: vblank_port
+pub const PROCESS_DMA_IMPORTANT: Pin = Pin { plain: 0x1EF2, debug: 0x1F78 };
+
+/// `Process_DMA_Deferrable`. tests: vblank_port
+pub const PROCESS_DMA_DEFERRABLE: Pin = Pin { plain: 0x1F06, debug: 0x1F8C };
+
+/// `Enqueue_Dirty_Buffers`. tests: vblank_port
+pub const ENQUEUE_DIRTY_BUFFERS: Pin = Pin { plain: 0x205A, debug: 0x20E0 };
 
 // ── Region-relative offsets (manifest order) ──
 

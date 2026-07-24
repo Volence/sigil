@@ -1,0 +1,290 @@
+//! Tranche 21 (file 1) — the REAL `buffers.emp` port, region-level byte gate.
+//!
+//! Compiles the ACTUAL ported file from aeon's tree —
+//! `engine/system/buffers.emp` — through the production parse -> lower ->
+//! place -> resolve -> link pipeline, and asserts the `buffers` section's
+//! flattened bytes equal the reference ROM window at the pinned addresses, in
+//! BOTH build shapes.
+//!
+//! ## What this port exercises
+//!
+//! - **The DMAEntry struct adoption** (`.build_entry` writes the entry via
+//!   `DMAEntry.field(a0)` displacements incl. both movep widths — the t20
+//!   ledger ride retired here).
+//! - **queue_static_dma** — the .emp counterpart of macros.asm's
+//!   `queueStaticDMA` (entry-only, Critical-bound interface; spliced CCR
+//!   carry result consumed by caller-side bcs — probe-pinned in
+//!   `tranche21_spelling_probes`).
+//! - **The dmaSource link-time arm** — `equ SRC_* = (extern(sym) >> 1) &
+//!   $7FFFFF` over RAM labels (the row-1004 comptime/link boundary).
+//! - **engine.vdp derivation fns** (`vdp_comm`, `vdp_comm_delta`,
+//!   `plane_loc`, `dma_length`) folding into immediates.
+//! - **The shared parallax_config struct twin** (moved to engine.structs at
+//!   this port — 2nd .emp consumer).
+//! - Region length is shape-INVARIANT (buffers.asm has no ifdef arms).
+//!
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
+//! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
+//! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
+//!
+//! ```text
+//! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test buffers_port
+//! ```
+
+use sigil_frontend_as::{assemble, Options as AsOptions};
+use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::parse_str;
+use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
+use sigil_ir::backend::Cpu;
+use sigil_ir::{Section, SectionPlacement, SymbolTable};
+use std::path::{Path, PathBuf};
+
+fn region_base(debug: bool) -> u32 {
+    if debug { pins::BUFFERS.debug_base } else { pins::BUFFERS.plain_base }
+}
+
+fn region_len(debug: bool) -> usize {
+    if debug { pins::BUFFERS.debug_len } else { pins::BUFFERS.plain_len }
+}
+
+fn aeon_dir() -> PathBuf {
+    let aeon =
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    PathBuf::from(aeon)
+}
+
+fn strict_gate() -> bool {
+    std::env::var("SIGIL_STRICT_GATE").is_ok()
+}
+
+fn map_toml(debug: bool) -> String {
+    let base = region_base(debug);
+    let len = region_len(debug);
+    format!(
+        "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"buffers\"\n\
+         lma_base = {base:#x}\n\
+         size = {len:#x}\n\
+         kind = \"rom\"\n"
+    )
+}
+
+/// The VALUE seam: the prepended twins' drift-lock truths. `doctor` overrides
+/// ONE pair (the negative probe).
+fn value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
+    let mut pairs: Vec<(&str, &str)> = vec![
+        // engine.vdp port addresses + target/op bit vocabulary (its ensures)
+        ("VDP_DATA", "$C00000"),
+        ("VDP_CTRL", "$C00004"),
+        ("VRAM", "%100001"),
+        ("CRAM", "%101011"),
+        ("VSRAM", "%100101"),
+        ("READ", "%001100"),
+        ("WRITE", "%000111"),
+        ("DMA", "%100111"),
+    ];
+    pairs.extend(sigil_harness::test_support::engine_constant_equs());
+    pairs.extend(sigil_harness::test_support::act_sec_field_equs());
+    if let Some((name, val)) = doctor {
+        let mut hit = false;
+        for p in pairs.iter_mut() {
+            if p.0 == name {
+                p.1 = val;
+                hit = true;
+            }
+        }
+        assert!(hit, "doctor target `{name}` not in the value seam");
+    }
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
+}
+
+/// The cross-seam ADDRESS symbols, each a `phase`d one-byte carrier at its
+/// pinned per-shape VMA.
+fn addr_labels(debug: bool) -> Vec<Section> {
+    let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
+    let table: Vec<(&str, u32)> = vec![
+        ("Palette_Buffer", pick(pins::PALETTE_BUFFER)),
+        ("Sprite_Table_Buffer", pick(pins::SPRITE_TABLE_BUFFER)),
+        ("Hscroll_Buffer", pick(pins::HSCROLL_BUFFER)),
+        ("Static_Pal_Line0", pick(pins::STATIC_PAL_LINE0)),
+        ("Static_Pal_Line1", pick(pins::STATIC_PAL_LINE1)),
+        ("Static_Pal_Line2", pick(pins::STATIC_PAL_LINE2)),
+        ("Static_Pal_Line3", pick(pins::STATIC_PAL_LINE3)),
+        ("Static_Sprite_DMA", pick(pins::STATIC_SPRITE_DMA)),
+        ("Static_Hscroll_Cell", pick(pins::STATIC_HSCROLL_CELL)),
+        ("Static_Hscroll_Line", pick(pins::STATIC_HSCROLL_LINE)),
+        ("Palette_Dirty", pick(pins::PALETTE_DIRTY)),
+        ("Sprite_Table_Dirty", pick(pins::SPRITE_TABLE_DIRTY)),
+        ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
+        ("DMA_Critical_End", pick(pins::DMA_CRITICAL_END)),
+        ("Parallax_Active_Config", pick(pins::PARALLAX_ACTIVE_CONFIG)),
+    ];
+    let mut out = Vec::new();
+    for (i, (name, vma)) in table.iter().enumerate() {
+        let vma = *vma;
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let mut secs = assemble(&asm, &opts)
+            .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+            .sections;
+        for mut s in secs.drain(..) {
+            s.lma = 0x0200_0000 + (i as u32) * 0x1_0000;
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            out.push(s);
+        }
+    }
+    out
+}
+
+/// Parse a .emp file, panicking on parse errors.
+fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
+    let src = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let (file, pdiags) = parse_str(&src);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} parse errors: {pdiags:?}",
+        path.display()
+    );
+    file
+}
+
+/// Lower the real `buffers.emp` (prepend the engine.structs, engine.constants
+/// and engine.vdp twins its `use` lines read), place into the per-shape map,
+/// append the value equs + address labels, one `resolve_layout` -> `link`.
+fn compile_real_file(
+    debug: bool,
+    doctor: Option<(&str, &str)>,
+) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
+    let aeon = aeon_dir();
+    let dir = aeon.join("engine/system");
+    let main = parse_file(&dir.join("buffers.emp"));
+    let structs_file = parse_file(&aeon.join("engine/structs.emp"));
+    let consts_file = parse_file(&aeon.join("engine/system/constants.emp"));
+    let vdp_file = parse_file(&aeon.join("engine/vdp.emp"));
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items: structs_file
+            .items
+            .into_iter()
+            .chain(consts_file.items)
+            .chain(vdp_file.items)
+            .chain(main.items)
+            .collect(),
+        docs: main.docs.clone(),
+    };
+
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(dir.clone()),
+        embed_base: None,
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "buffers.emp lower errors: {ldiags:?}"
+    );
+    let link_asserts = module.link_asserts;
+
+    let map = sigil_link::load_map(&map_toml(debug)).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "place_sections errors: {pdiags:?}"
+    );
+
+    sections.extend(value_equs(doctor));
+    sections.extend(addr_labels(debug));
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link failed: {d:?}"));
+    (resolved, linked, link_asserts)
+}
+
+fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
+    assert_eq!(
+        candidate.len(),
+        expected.len(),
+        "{what}: length mismatch — candidate {} bytes, expected {} bytes",
+        candidate.len(),
+        expected.len()
+    );
+    if let Some(i) = (0..candidate.len()).find(|&i| candidate[i] != expected[i]) {
+        let lo = i.saturating_sub(8);
+        let hi = (i + 16).min(candidate.len());
+        panic!(
+            "{what}: first diff at offset {i:#x} (region-relative)\n  candidate[{lo:#x}..{hi:#x}]: {:02x?}\n  expected[{lo:#x}..{hi:#x}]:  {:02x?}",
+            &candidate[lo..hi],
+            &expected[lo..hi]
+        );
+    }
+}
+
+fn run(debug: bool) {
+    let aeon = aeon_dir();
+    let rom_name = if debug { "s4.debug.bin" } else { "s4.bin" };
+    let rom_path = aeon.join(rom_name);
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: {}", rom_path.display());
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+
+    let (resolved, linked, link_asserts) = compile_real_file(debug, None);
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "buffers.emp drift guards must all PASS: {diags:?}"
+    );
+
+    let base = region_base(debug) as usize;
+    let expected = &refrom[base..base + region_len(debug)];
+    let section = linked.section("buffers").expect("linked image must carry buffers");
+    let shape = if debug { "debug" } else { "plain" };
+    assert_region_matches(&section.bytes, expected, &format!("buffers ({shape})"));
+}
+
+#[test]
+fn buffers_region_matches_reference() {
+    run(false);
+}
+
+#[test]
+fn buffers_debug_region_matches_reference() {
+    run(true);
+}
+
+/// Negative probe: a DOCTORED `VRAM_SPRITE_TABLE` truth ($D800 AS-side while
+/// the twin says $B800) must FIRE the engine.constants drift guard, naming
+/// the constant — proof the value seam is guarded, not decorative.
+#[test]
+fn doctored_vram_sprite_table_fires_its_guard() {
+    if !strict_gate() && !aeon_dir().join("s4.bin").exists() {
+        eprintln!("skip: aeon tree not present");
+        return;
+    }
+    let (resolved, _linked, link_asserts) =
+        compile_real_file(false, Some(("VRAM_SPRITE_TABLE", "$D800")));
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    let fired = diags.iter().any(|d| {
+        d.level == sigil_span::Level::Error && d.message.contains("VRAM_SPRITE_TABLE")
+    });
+    assert!(fired, "the doctored VRAM_SPRITE_TABLE truth must fire its ensure: {diags:?}");
+}
