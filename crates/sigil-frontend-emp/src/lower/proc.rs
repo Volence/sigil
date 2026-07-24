@@ -479,6 +479,8 @@ fn writes_dest_register(m: &str) -> bool {
             | "ext"
             | "muls"
             | "mulu"
+            | "divs"
+            | "divu"
             | "asl"
             | "asr"
             | "lsl"

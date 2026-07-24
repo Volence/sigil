@@ -4258,6 +4258,8 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "cmpa" => Cmpa,
         "muls" => Muls,
         "mulu" => Mulu,
+        "divs" => Divs,
+        "divu" => Divu,
         "addi" => Addi,
         "subi" => Subi,
         "andi" => Andi,
@@ -5049,6 +5051,42 @@ mod tests {
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
         let bytes = sigil_link::flatten(&linked, 0x00);
         assert_eq!(bytes, vec![0x32, 0x3B, 0x00, 0x06]);
+    }
+
+    #[test]
+    fn m68k_divs_word_encodes() {
+        // Signed word divide `<ea>,Dn`. Same EA machinery as muls, base 0b1000
+        // (muls is 0b1100), opmode 111 (signed). asl-verified (tools/asl):
+        //   divs.w d4,d2      = 85 C4
+        //   divs.w #10,d2     = 85 FC 00 0A
+        //   divs.w d0,d1      = 83 C0
+        //   divs.w ($1234).w,d0 = 81 F8 12 34
+        let src = "    cpu 68000\n    divs.w d4,d2\n    divs.w #10,d2\n    divs.w d0,d1\n    divs.w ($1234).w,d0\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        assert_eq!(
+            bytes,
+            vec![0x85, 0xC4, 0x85, 0xFC, 0x00, 0x0A, 0x83, 0xC0, 0x81, 0xF8, 0x12, 0x34]
+        );
+    }
+
+    #[test]
+    fn m68k_divu_word_encodes() {
+        // Unsigned word divide — opmode 011 (unsigned), base 0b1000. asl-verified:
+        //   divu.w d4,d2 = 84 C4
+        //   divu.w d3,d5 = 8A C3
+        let src = "    cpu 68000\n    divu.w d4,d2\n    divu.w d3,d5\n";
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let m = run(src, &opts).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        let bytes = sigil_link::flatten(&linked, 0x00);
+        assert_eq!(bytes, vec![0x84, 0xC4, 0x8A, 0xC3]);
     }
 
     #[test]

@@ -30,7 +30,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mnemonic {
     Move, Movea,
-    Add, Adda, Sub, Suba, And, Or, Eor, Cmp, Cmpa, Muls, Mulu,
+    Add, Adda, Sub, Suba, And, Or, Eor, Cmp, Cmpa, Muls, Mulu, Divs, Divu,
     Addi, Subi, Andi, Ori, Eori, Cmpi,
     Moveq, Addq, Subq,
     Asl, Asr, Lsl, Lsr, Rol, Ror,
@@ -137,7 +137,8 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Add | Mnemonic::Sub | Mnemonic::And | Mnemonic::Or
         | Mnemonic::Cmp | Mnemonic::Eor
         | Mnemonic::Cmpa | Mnemonic::Adda | Mnemonic::Suba
-        | Mnemonic::Muls | Mnemonic::Mulu => encode_alu_ea(inst),
+        | Mnemonic::Muls | Mnemonic::Mulu
+        | Mnemonic::Divs | Mnemonic::Divu => encode_alu_ea(inst),
         Mnemonic::Addi | Mnemonic::Subi | Mnemonic::Andi
         | Mnemonic::Ori | Mnemonic::Eori | Mnemonic::Cmpi => encode_alu_imm(inst),
         Mnemonic::Moveq | Mnemonic::Addq | Mnemonic::Subq => encode_quick(inst),
@@ -238,6 +239,25 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 return Err(IsaError::UnsupportedForm(format!("{name} is word only")));
             }
             (0b1100, dn, if signed { 0b111 } else { 0b011 }, src)
+        }
+        // Word divide: reg = Dn destination (32-bit dividend / 16-bit EA divisor
+        // → quotient:remainder in Dn). Same shape as muls but base 0b1000; divs
+        // opmode 111 (signed), divu 011 (unsigned). Word only on the 68000.
+        Mnemonic::Divs | Mnemonic::Divu => {
+            let signed = inst.mnemonic == Mnemonic::Divs;
+            let name = if signed { "divs" } else { "divu" };
+            let dn = match dst {
+                Operand::Dn(n) => n & 0b111,
+                other => {
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "{name} requires Dn destination, got {other:?}"
+                    )))
+                }
+            };
+            if inst.size != Size::W {
+                return Err(IsaError::UnsupportedForm(format!("{name} is word only")));
+            }
+            (0b1000, dn, if signed { 0b111 } else { 0b011 }, src)
         }
         // `<ea>,Dn` only: reg = Dn destination.
         Mnemonic::Cmp => {

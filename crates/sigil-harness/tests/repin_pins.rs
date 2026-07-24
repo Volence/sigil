@@ -259,8 +259,21 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // in Parallax_Fill_PerLine grows parallax +0x10 (lsr + 7 extra move.l);
     // parallax is upstream of sound_api, so sound_api's base slides +0x10 both
     // shapes (LENs unchanged — sound_api's own content is untouched).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6230);  // +0x10 t18 H2 parallax unroll upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7B9E);  // +0x10 t18 H2 parallax unroll upstream
+    // Then +0x10 BOTH shapes (transition parcel B2 mode-contract, 2026-07-23): the
+    // new Parallax_Active_Config accessor proc (+0x12) minus the Vscroll_Write
+    // bsr.s routing that replaced a move.l (−0x2) grows parallax +0x10; parallax
+    // is upstream of sound_api, so sound_api's base slides +0x10 both shapes
+    // (LENs unchanged — sound_api's own content is untouched).
+    // Then +0x8 BOTH shapes (transition parcel B3 frames-remaining ramp, 2026-07-23):
+    // the band-loop lerp `asr.w #shift` (2 B) becomes `ext.l + moveq + move.b + divs.w`
+    // (10 B) for exact convergence-by-frame-0 — parallax grows +0x8; sound_api's base
+    // slides +0x8 both shapes (LENs unchanged).
+    // Then +0x1C BOTH shapes (transition parcel B1 re-cross cancel branch, 2026-07-23):
+    // StartTransition's a0==current no-op becomes a cancel branch (tst frames + clear
+    // target/frames + snap-pending + mode-restore) — parallax grows +0x1C; sound_api's
+    // base slides +0x1C both shapes (LENs unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6264);  // +0x1C B1 re-cross cancel upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7BD2);  // +0x1C B1 re-cross cancel upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

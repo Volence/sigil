@@ -1310,6 +1310,8 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "cmpa" => Cmpa,
         "muls" => Muls,
         "mulu" => Mulu,
+        "divs" => Divs,
+        "divu" => Divu,
         "addi" => Addi,
         "subi" => Subi,
         "andi" => Andi,
