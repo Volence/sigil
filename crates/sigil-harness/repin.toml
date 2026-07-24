@@ -215,13 +215,14 @@ tests = ["bg_port"]
 # Shape-invariant $A0 (BgAnim_Update's rts .. CompressionSelfTest in the
 # debug listing; plain confirmed against Sound_PostByte). Re-derive from
 # `repin --verbose` on any bg_anim byte change. (t19 step-2: $A0 → $9E — the
-# bare `beq .exit` relaxed to `.s`, twin shrunk in lockstep. t19 step-4:
-# shape-DEPENDENT — the DEBUG band-count assert + its message blob grow the
-# debug shape +$62, plain self-gates to zero bytes.)
+# bare `beq .exit` relaxed to `.s`, twin shrunk in lockstep. t19 step-4 +
+# panel adjudication: shape-DEPENDENT — the DEBUG band-count + piece-length
+# asserts (+ their message blobs + the twin's two ifdef-widened spanning
+# branches) grow the debug shape; plain self-gates to zero bytes.)
 name = "bg_anim"
 start = "BgAnim_Init"
 len = 0x9E
-debug_len = 0x100
+debug_len = 0x158
 gate = "SIGIL_EMP_BG_ANIM"
 tests = ["bg_anim_port"]
 

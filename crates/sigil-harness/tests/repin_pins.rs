@@ -289,8 +289,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // bytes in the plain shape (rings/core precedent), so only the debug bases
     // downstream of bg_anim slide (+the assert code + its message blob = +0x62;
     // bg_anim debug_len $9E → $100, now shape-DEPENDENT).
+    // Then +0x58 DEBUG ONLY (t19 dry-panel adjudication, 2026-07-24): BgAnim_Update
+    // gains `assert.w d3, gt, #0` (piece-1 length — a drifted table row would send
+    // QueueDMA length <= 0 = a 128KB VRAM spray; lens-C2 catch) + the twin's two
+    // spanning branches take ifdef-__DEBUG__ `.w` widths (the .emp side stays bare,
+    // relaxing per shape). Plain self-gates to zero bytes; bg_anim debug_len
+    // $100 → $158; debug bases downstream slide +0x58.
     assert_eq!(pins::SOUND_API.plain_base, 0x625C);  // −0x2 bg_anim step-2 upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7C2C);  // +0x62 bg_anim debug assert upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7C84);  // +0x58 bg_anim piece-assert upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
