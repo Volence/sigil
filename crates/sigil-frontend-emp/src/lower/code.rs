@@ -631,6 +631,29 @@ fn lower_m68k_movem(
             return;
         }
     };
+    // A width-PINNED symbolic absolute memory EA — `movem.l (RAM_Start).w,
+    // d0-a6` (boot's regs-from-cleared-RAM zeroing, tranche 23). movem lowers
+    // on its own path, so the general abs-sym seam can't route it: encode with
+    // a zeroed abs placeholder and ONE address fixup at the EA ext field —
+    // offset 4, after the opcode word (2) and the register-mask word (2),
+    // whichever direction the transfer runs. RELAXABLE bare-Sym forms stay
+    // refused below (their abs.w/abs.l width selection would need a movem
+    // RelaxAbsSym shape — ledgered, no consumer yet).
+    if let CodeOperand::AbsSym { target: n, long } = mem_op {
+        let abs_op = if *long { M68kOperand::AbsL(0) } else { M68kOperand::AbsW(0) };
+        let list_op = M68kOperand::RegList(mask);
+        let ops = if list_first { vec![list_op, abs_op] } else { vec![abs_op, list_op] };
+        let inst = M68kInst { mnemonic: M68kMnemonic::Movem, size, ops };
+        match M68kBackend.lower_inst(&inst, span) {
+            Ok(mut df) => {
+                let kind = if *long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
+                df.fixups.push(Fixup { kind, offset: 4, target: Expr::Sym(n.clone()) });
+                emit_data_frag(builder, df);
+            }
+            Err(e) => push_err(diags, span, e.message),
+        }
+        return;
+    }
     let mut mem_op = match m68k_operand(mem_op) {
         Ok(o) => o,
         Err(msg) => {
@@ -663,10 +686,14 @@ fn lower_m68k_movem(
 /// the folded value to the unsigned 16-bit window at link, so a negative or
 /// oversize difference is loud, not wrapped.
 ///
-/// Fenced to the proven shapes: `.w`/`.l` sizes only (a `.b` symbolic imm has
-/// no deferral yet — the remaining width of the ledgered extension gap,
-/// consumer-gated), the imm FIRST, and no other symbolic operand (their
-/// fixups would collide).
+/// The `.b` width's demand site is boot's game-contract id store (tranche 23:
+/// `move.b #GAME_ENTRY_ID, (Game_State_ID).w` — a game-side equ read from
+/// engine .emp). A byte immediate still spends a full extension word, so the
+/// deferral hole is the ext word's LOW byte (offset 3); `Value8` range-checks
+/// the folded value to the unsigned 8-bit window at link.
+///
+/// Fenced to the proven shapes: the imm FIRST, and no other symbolic operand
+/// (their fixups would collide).
 fn lower_m68k_imm_link(
     m: M68kMnemonic,
     size: M68kSize,
@@ -675,13 +702,11 @@ fn lower_m68k_imm_link(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    if !matches!(size, M68kSize::L | M68kSize::W) {
+    if !matches!(size, M68kSize::L | M68kSize::W | M68kSize::B) {
         push_err(
             diags,
             span,
-            "[lower.imm-link] a link-time immediate needs `.w` or `.l` size — a `.b` symbolic \
-             immediate has no deferral yet (mirror the value into a comptime const, or \
-             extend the imm-deferral family)",
+            "[lower.imm-link] a link-time immediate needs an explicit `.b`/`.w`/`.l` size",
         );
         return;
     }
@@ -694,14 +719,51 @@ fn lower_m68k_imm_link(
         );
         return;
     }
-    // Opcode-embedded-immediate families (quick forms, shift counts, moveq)
-    // have no 32-bit imm field to defer into — steer BEFORE the backend sees
-    // the zero placeholder (which would otherwise leak into its range error:
+    // moveq: the immediate embeds in the OPCODE WORD's low byte and
+    // sign-extends to 32 bits — a link-time value rides the dedicated
+    // SIGNED-8 fixup at offset 1 (`ImmSigned8`, window [-128, 127]; demand:
+    // boot's sound-off `moveq #Z80_IDLE_SIZE-1` + the gameBootHook mirror's
+    // `moveq #SONG_MOVINGTRUCKS`, tranche 23). The quick/shift families
+    // below stay refused — zero demand sites.
+    if matches!(m, M68kMnemonic::Moveq) {
+        let (target, reg_op) = match ops {
+            [CodeOperand::ImmLink { target }, reg] => {
+                let r = match m68k_operand(reg) {
+                    Ok(o @ M68kOperand::Dn(_)) => o,
+                    _ => {
+                        push_err(diags, span, "[lower.imm-link] moveq needs `#imm, dN`");
+                        return;
+                    }
+                };
+                (target.clone(), r)
+            }
+            _ => {
+                push_err(diags, span, "[lower.imm-link] moveq needs `#imm, dN`");
+                return;
+            }
+        };
+        let inst = M68kInst {
+            mnemonic: M68kMnemonic::Moveq,
+            size,
+            ops: vec![M68kOperand::Imm(0), reg_op],
+        };
+        match M68kBackend.lower_inst(&inst, span) {
+            Ok(mut df) => {
+                debug_assert_eq!(df.bytes.len(), 2, "moveq is a single opcode word");
+                df.fixups.push(Fixup { kind: FixupKind::ImmSigned8, offset: 1, target });
+                emit_data_frag(builder, df);
+            }
+            Err(e) => push_err(diags, span, e.message),
+        }
+        return;
+    }
+    // Opcode-embedded-immediate families (quick forms, shift counts) have no
+    // imm field to defer into — steer BEFORE the backend sees the zero
+    // placeholder (which would otherwise leak into its range error:
     // "Addq data must be 1..=8, got 0").
     if matches!(
         m,
-        M68kMnemonic::Moveq
-            | M68kMnemonic::Addq
+        M68kMnemonic::Addq
             | M68kMnemonic::Subq
             | M68kMnemonic::Lsl
             | M68kMnemonic::Lsr
@@ -714,7 +776,7 @@ fn lower_m68k_imm_link(
             diags,
             span,
             "[lower.imm-link] this instruction embeds its immediate in the opcode word \
-             (moveq/quick/shift-count forms) — no link-time deferral; mirror the value \
+             (quick/shift-count forms) — no link-time deferral; mirror the value \
              into a comptime const instead",
         );
         return;
@@ -817,33 +879,42 @@ fn lower_m68k_imm_link(
     // `Abs16Be` rejects the `[0x8000, 0xFFFF]` upper-unsigned half (a valid
     // objroutine offset). `.l` stays a verbatim `Value32Be` (a full 32-bit
     // address fits without truncation).
-    let (kind, min_len) = match size {
-        M68kSize::L => (FixupKind::Value32Be, 6),
-        M68kSize::W => (FixupKind::ImmWord16Be, 4),
-        _ => unreachable!("guarded at entry: imm-link size is .w or .l"),
+    // A `.b` link-time immediate lives in the LOW byte of its one extension
+    // word (68k byte immediates still occupy a full ext word; the high byte is
+    // the encoder's zero placeholder). `Value8` is the honest kind: an
+    // UNSIGNED-window check (`0 ≤ v < 2^8`) — the demand site is a game-state
+    // id (`move.b #GAME_ENTRY_ID, (Game_State_ID).w`, tranche 23); a future
+    // site needing AS's signed-extension union mints its own ImmByte kind, the
+    // ImmWord16Be precedent.
+    let (kind, imm_offset, min_len) = match size {
+        M68kSize::L => (FixupKind::Value32Be, 2, 6),
+        M68kSize::W => (FixupKind::ImmWord16Be, 2, 4),
+        M68kSize::B => (FixupKind::Value8, 3, 4),
+        _ => unreachable!("guarded at entry: imm-link size is .b, .w or .l"),
     };
     if df.bytes.len() < min_len {
         push_err(
             diags,
             span,
             "[lower.imm-link] this instruction embeds its immediate in the opcode word \
-             (moveq/quick/shift-count forms) — no link-time deferral; mirror the value \
+             (quick/shift-count forms) — no link-time deferral; mirror the value \
              into a comptime const instead",
         );
         return;
     }
     let mut df = df;
-    df.fixups.push(Fixup { kind, offset: 2, target });
+    df.fixups.push(Fixup { kind, offset: imm_offset, target });
     // The pinned-absolute destination is a SECOND, independent fixup at a
     // distinct offset. The imm is the SOURCE, so ITS ext words come first —
     // the abs ext word follows the opcode word (2) + the imm field
     // (`imm_field_width`). Byte-exact for core's `move.w #imm, (abs).w` (imm
-    // @2, abs.w @4) and its `.l`/abs.l relatives.
+    // @2, abs.w @4) and its `.b`/`.l` relatives (a `.b` imm still spends a
+    // full ext word, so its abs field sits at 4 too).
     if let Some((abs_target, long)) = abs {
         let imm_field_width = match size {
-            M68kSize::W => 2,
+            M68kSize::B | M68kSize::W => 2,
             M68kSize::L => 4,
-            _ => unreachable!("guarded at entry: imm-link size is .w or .l"),
+            _ => unreachable!("guarded at entry: imm-link size is .b, .w or .l"),
         };
         let abs_kind = if long { FixupKind::Abs32Be } else { FixupKind::Abs16Be };
         df.fixups.push(Fixup { kind: abs_kind, offset: 2 + imm_field_width, target: abs_target });

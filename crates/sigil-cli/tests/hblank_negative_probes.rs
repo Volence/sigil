@@ -119,8 +119,22 @@ fn cross_seam_labels() -> Vec<Section> {
 /// Returns the placed sections (pre-resolve) for the caller to feed into
 /// `resolve_layout` itself, so each probe controls exactly what's appended.
 fn place_hblank(src: &str, base: &str) -> Vec<Section> {
-    let (file, pdiags) = parse_str(src);
+    let (main, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
+    // hblank.emp uses engine.vdp (the VDP_Shadow offset twin consts) —
+    // prepend its items so the doctored copies lower like the real file.
+    let vdp_path =
+        hblank_dir().parent().expect("engine/system has a parent").join("vdp.emp");
+    let vdp_src = std::fs::read_to_string(&vdp_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", vdp_path.display()));
+    let (vdp_file, vdiags) = parse_str(&vdp_src);
+    assert!(vdiags.iter().all(|d| d.level != Level::Error), "vdp.emp parse errors: {vdiags:?}");
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items: vdp_file.items.into_iter().chain(main.items).collect(),
+        docs: main.docs.clone(),
+    };
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(hblank_dir()),

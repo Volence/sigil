@@ -110,6 +110,11 @@ fn plane_buffer_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("READ", "%001100"),
         ("WRITE", "%000111"),
         ("DMA", "%100111"),
+        // VDP_Shadow offset twins (engine.vdp shadow-offset block)
+        ("VDP_Shadow_vdp_mode1", "$00"),
+        ("VDP_Shadow_vdp_mode2", "$01"),
+        ("VDP_Shadow_vdp_mode3", "$0B"),
+        ("VDP_Shadow_vdp_hint_rate", "$0A"),
     ];
     if let Some((name, val)) = doctor {
         for p in pairs.iter_mut() {
@@ -401,6 +406,11 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("READ", "%001100"),
         ("WRITE", "%000111"),
         ("DMA", "%100111"),
+        // VDP_Shadow offset twins (engine.vdp shadow-offset block)
+        ("VDP_Shadow_vdp_mode1", "$00"),
+        ("VDP_Shadow_vdp_mode2", "$01"),
+        ("VDP_Shadow_vdp_mode3", "$0B"),
+        ("VDP_Shadow_vdp_hint_rate", "$0A"),
     ]
 }
 

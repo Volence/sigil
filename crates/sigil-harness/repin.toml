@@ -29,6 +29,19 @@ tests = ["m1d_rom", "m1d_debug_rom", "mixed_dac_rom"]
 # ── Gated regions, engine.inc ladder order ──────────────────────────────────
 
 [[region]]
+# Tranche 23 — the boot sequence (EntryPoint/Warm/Cold fall-through chain).
+# End is the data tail's head: boot_data.asm's BootData table (the .emp
+# reaches it cross-seam via `lea BootData(pc)`). FIRST region in the engine
+# chain — every downstream base slides with any boot byte-change (gap-ledger
+# row 1257 bar: batched wave, one re-pin, full fixture sweep). Shape-DEPENDENT
+# length: debug +4 (the `__DEBUG__` bsr.w CompressionSelfTest).
+name = "boot"
+start = "EntryPoint"
+end = "BootData"
+gate = "SIGIL_EMP_BOOT"
+tests = ["boot_port"]
+
+[[region]]
 name = "vdp_init"
 start = "VDP_Shadow_Init"
 end = "Init_DMA_Queue"
@@ -1606,3 +1619,52 @@ tests = ["vblank_port"]
 [[symbol]]
 name = "Enqueue_Dirty_Buffers"
 tests = ["vblank_port"]
+
+# boot (tranche 23) — cross-seam carriers for boot_port. BootData is the
+# `lea BootData(pc)` forward target (the data tail's head); the RAM cells are
+# boot's init stores; VInt_Level/BuildStaticDMA/Sound_Init are bsr callees
+# without region-base pins of their own.
+
+[[symbol]]
+name = "BootData"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "VInt_Level"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "BuildStaticDMA"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "Sound_Init"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "Hardware_Region"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "Region_Flags"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "Timing_Step"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "Frame_Accumulator"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "Game_State_ID"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "Game_State_Init"
+tests = ["boot_port"]
+
+[[symbol]]
+name = "RAM_Start"
+tests = ["boot_port"]

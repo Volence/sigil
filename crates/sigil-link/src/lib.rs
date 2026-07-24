@@ -596,6 +596,22 @@ fn apply_fixup(
         // the window. Endianness is the kind's own (68k=Be, Z80=Le); width 1 is
         // order-neutral. Deliberately NOT an address range check (no sign
         // extension, no masking) — that is the address kinds' job.
+        FixupKind::ImmSigned8 => {
+            // moveq's opcode-embedded immediate: SIGNED-8 window (the value
+            // sign-extends to 32 bits at execution). Distinct from Value8's
+            // unsigned window — see the kind's doc.
+            if !(-128..=127).contains(&value) {
+                diags.push(diag(
+                    format!(
+                        "moveq immediate{target_name} out of the signed-8 window \
+                         [-128, 127] (folded value {value}) in section {section}"
+                    ),
+                    span,
+                ));
+                return;
+            }
+            bytes[site_abs as usize] = value as i8 as u8;
+        }
         FixupKind::Value8 => write_value(bytes, site_abs, value, 1, false, section, span, diags),
         FixupKind::Value16Be => write_value(bytes, site_abs, value, 2, false, section, span, diags),
         FixupKind::Value16Le => write_value(bytes, site_abs, value, 2, true, section, span, diags),

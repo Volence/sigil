@@ -22,7 +22,7 @@
 //! - **Cross-seam pc-relative EA** — `lea.l BootData_VDPRegs(pc), a0`
 //!   targets an AS-side ROM label (`engine/system/boot.asm`), so the
 //!   `PcRelDisp16` fixup resolves against a link-supplied symbol at its true
-//!   per-shape VMA (plain `$3C4`, debug `$3C8`) — tranche 2 proved the
+//!   per-shape VMA (pins::BOOT_DATA_VDP_REGS) — tranche 2 proved the
 //!   pc-rel machinery cross-SECTION; this is the first cross-SEAM consumer.
 //! - **`dbf` + `btst Dn,Dn` + dual-postinc `move.b (a0)+, (a1)+`** in a real
 //!   ported body.
@@ -155,14 +155,15 @@ fn as_vdp_ram_labels() -> Vec<Section> {
 }
 
 /// The synthetic AS-side cross-seam unit supplying `BootData_VDPRegs` at its
-/// TRUE per-shape VMA (plain `$3C4`, debug `$3C8` — `engine/system/boot.asm`,
-/// read from the shape's symbol table). Unlike the abs-widthed RAM labels,
+/// TRUE per-shape VMA (pins::BOOT_DATA_VDP_REGS — boot sits upstream of every
+/// engine region, so this carrier follows the pin, never a hardcoded value). Unlike the abs-widthed RAM labels,
 /// this one is a PC-RELATIVE target (`lea.l BootData_VDPRegs(pc), a0`), so
 /// the label's absolute position is load-bearing: the `PcRelDisp16` fixup
 /// resolves to `target_vma - (site_vma + 2)` and the reference bytes only
 /// match when the label sits where the real boot.asm put it.
 fn as_bootdata_label(debug: bool) -> Vec<Section> {
-    let base = if debug { "$3C8" } else { "$3C4" };
+    let pin = if debug { sigil_harness::pins::BOOT_DATA_VDP_REGS.debug } else { sigil_harness::pins::BOOT_DATA_VDP_REGS.plain };
+    let base = format!("${pin:X}");
     let asm = format!(
         "cpu 68000\n\
          phase {base}\n\

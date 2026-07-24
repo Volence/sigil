@@ -40,9 +40,10 @@ use sigil_link::LinkedImage;
 /// Region A base LMA in the assembled ROM: the resident phase-0 Z80 driver.
 /// Provenance: the retired `golden/windows.toml`, `regen`-derived from the
 /// bracketing 68k anchor label `Z80_Sound_Start`. Slid `0x3EA → 0x3E0` in
-/// phase2.5 c5 (the dead Cold_Boot CROSS_RESET store removed upstream −0xA;
-/// the Z80 blob content is byte-identical, only its ROM position shifts).
-pub const REGION_A_LMA: u32 = 0x3E0;
+/// phase2.5 c5 (the dead Cold_Boot CROSS_RESET store removed upstream −0xA),
+/// then `0x3E0 → 0x3DE` in the t23 boot clr.w wave (−2 upstream; the Z80
+/// blob content is byte-identical, only its ROM position shifts).
+pub const REGION_A_LMA: u32 = 0x3DE;
 /// Region B base LMA: the phase-`08000h` Moving-Trucks / SFX engine-table bank.
 /// Provenance: `MovingTrucks_Bank_Start`. Slid `0x60000 → 0x58000` in the
 /// 2026-07-21 Deep-Forest-BG re-baseline (the OJZ BG art ahead of it shrank).
@@ -794,5 +795,31 @@ pub fn assemble_mixed_tranche22_as_side(aeon: &Path, debug: bool) -> Result<Modu
     let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
     assemble_root(&root, &opts).map_err(|d| {
         format!("assemble (mixed tranche22 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
+/// Tranche 23 (boot): the full AS-side game with `SIGIL_EMP_BOOT` on — the
+/// engine.inc arm skips boot.asm's code and org-resumes at the per-shape
+/// BootData address, keeping the DATA TAIL (boot_data.asm — movem preloads,
+/// VDP reg bytes, Z80 blob include, PSG bytes, post-DMA commands) AS-side in
+/// both arms, so no splice window crosses the nested Z80 source include.
+///
+/// Cross-seam headline: vectors.asm's reset `dc.l EntryPoint` resolving
+/// against the .emp-owned symbol (the t21 IRQ6 class, now at the RESET
+/// vector), the .emp's forward `lea BootData(pc)` into the AS-side table,
+/// and the link-time value seam (`Z80_SOUND_SIZE` imm16 arithmetic +
+/// `GAME_ENTRY_ID` through the tranche-23 `.b` deferral).
+pub fn assemble_mixed_tranche23_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_BOOT".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche23 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
