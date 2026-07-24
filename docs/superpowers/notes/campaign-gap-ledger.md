@@ -1350,7 +1350,43 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   **A4-i-GATED (wait, do NOT type until arithmetic preservation ships):** Tile/Block/Chunk and
   Coord/Velocity enforcement — these live in shift/add/multiply chains (block = chunk×N, coord arithmetic),
   so typing them pre-A4-i pays the re-`as`-every-op tax. Cross-linked to [[G5 body-typing + arithmetic-
-  preservation follow-ons]] (the A4-i banked row). — OPEN (item-13 design, Volence-scheduled).
+  preservation follow-ons]] (the A4-i banked row).
+  — **IMPLEMENTED 2026-07-24 (branch item13-wave1, byte-neutral; canonical 0bfa5b79/9d962703 UNCHANGED).**
+  All three families ratified names shipped: **SongId/SfxId** (types.emp; the `SONG_*`/`SFXID_*` const defs +
+  `Sound_PlayMusic(d0:SongId)`/`Sound_PlaySFX(d0:SfxId)` + as-blessed construction sites), **AnimId/AnimFrame/
+  MappingFrame** (FrameId RENAMED→MappingFrame; anim_frame u8→AnimFrame), **VramTile/VramAddr** (vram_art
+  takes VramTile with the $1FFF field-bound preserved; VRAM_RING_PLACEHOLDER/VRAM_TEST_OBJ born VramTile).
+  **ENFORCEMENT-TIER FINDING (surfaced at the family-1 gate):** the G5 slice bites only at REGISTER CALL
+  SLOTS, so only **F1 has live enforcement** (Sound_PlayRing→Sound_PlaySFX; negative pin fires). **F2 is
+  documentary** — anim/frame values are SST-memory-resident (via a0), no register call-slot carries them and
+  no field-store domain-check exists; the swap pins are synthetic unit tests proving the slice DISTINGUISHES
+  AnimFrame/MappingFrame for when a frame value crosses a register param. **F3 is documentary** — comptime-fn
+  params are loosely bound (only Reg/Label classes checked), so vram_art's VramTile arg + the typed consts
+  carry meaning, not a check (the surviving comptime check is vram_art's `where`-bound, pinned). REOPEN
+  markers below.
+
+- **item-13 substrate-extension reopen markers** (opened 2026-07-24 by the item13-wave1 close — the mechanisms
+  that would give F2/F3 live enforcement):
+  - **F2 field-store domain-check** — a store `move.b dN, Sst.mapping_frame(a0)` where the field is typed
+    MappingFrame and dN holds a different domain newtype should fire. Would make the AnimFrame/MappingFrame
+    and AnimId typing on the SST fields ENFORCED instead of documentary (the values live in memory, not
+    register call-slots, so the register slice cannot reach them). Byte-neutral. REOPEN: when the field-store
+    domain-check is designed, or when an anim/frame value is next passed in a register param (either gives the
+    F2 types teeth). — OPEN.
+  - **F3 comptime-arg newtype-check** — extend `check_arg_class` (today only Reg/Label) so a comptime-fn param
+    typed with a domain newtype rejects a wrong-newtype / bare-int arg (`vram_art(some_VramAddr)` should fail).
+    Makes vram_art's VramTile arg + the VRAM_* const typing ENFORCED. REOPEN: comptime-arg newtype-check
+    design. — OPEN.
+  - **F3 vram_bytes + VramAddr users** — `vram_bytes()` (tile index ×32 → VramAddr) does NOT exist in aeon and
+    has no tile→address call site, so it was ledgered not created (stage-0). VRAM_PLANE_A/_B_BYTES are byte
+    ADDRESSES in address ARITHMETIC (addi.l/.w), A4-i-gated (shift/add-chain waits). Both are VramAddr's
+    intended wave-1 users; VramAddr ships as the vocabulary contrast until they land. REOPEN: the first
+    tile→address conversion call site (creates vram_bytes), or A4-i (types the plane consts VramAddr). — OPEN.
+  - **item-13 §D optional-param (Option A `?`-marker)** — the rider was LOG-AND-SPLIT (exceeds the size cap):
+    `AnimateSprite (a0: *Sst, d3?: u8)` needs new grammar (`?`-param) + AST field + D1b `[call.input-undefined]`
+    suppression across parser/ast/calls (sigil SRC, none of item13-wave1's open files) and is all-or-nothing
+    (adding the param without the `?`-suppression would CREATE a D1b firing at test_particle.emp:53). Its own
+    small byte-neutral parcel; Option D (typed duration byte) remains the enforcing successor. — OPEN.
 
 - **SAT-emit shared construct** (dry-panel calibration, 2026-07-23 — the run's top actionable). The
   VDP SAT 8-byte entry-emit primitive is inlined in BOTH sprites.emp (Emit_ObjectPieces :507-585,

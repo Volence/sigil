@@ -240,3 +240,127 @@ fn preserved_across_call_keeps_type() {
     );
     assert_eq!(slot_count(&r, "C"), 0, "d2 preserved across Keep: {:?}", r.slot_firings);
 }
+
+// ---------------------------------------------------------------------------
+// item-13 wave-1, FAMILY 1 — SongId / SfxId (the sound-id swap class). The real
+// corpus enforces SfxId at Sound_PlaySFX's d0 slot (animate `.evt_sound`,
+// Sound_PlayRing); there is no `.emp` Sound_PlayMusic caller, so the
+// SfxId-into-SongId direction (the ratification's required negative pin) is
+// pinned here synthetically. Mirrors the sound API's shape: a SongId-slot
+// callee (PlayMusic) and an SfxId-slot callee (PlaySFX), both u8 but DISTINCT.
+// ---------------------------------------------------------------------------
+const SOUND_PRE: &str = "module m\n\
+     pub newtype SongId = u8\n\
+     pub newtype SfxId = u8\n\
+     pub proc PlayMusic (d0: SongId) clobbers() { rts }\n\
+     pub proc PlaySFX (d0: SfxId) clobbers() { rts }\n";
+
+fn sound_prog(caller: &str) -> String {
+    format!("{SOUND_PRE}{caller}")
+}
+
+#[test]
+fn sfxid_into_songid_slot_fires() {
+    // The ratification's required negative pin: an SfxId flowing into PlayMusic's
+    // SongId slot is the wrong-sound class — it must fire naming d0/SongId.
+    let r = analyze(&sound_prog(
+        "pub proc C () clobbers(d0-d1) {\n\
+             move.b d1, d0 as SfxId\n\
+             jbsr PlayMusic\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "PlayMusic", "d0", "SongId"), "SfxId in SongId slot must fire: {:?}", r.slot_firings);
+    // The found state is the WRONG newtype (SfxId), not merely untyped — a swap,
+    // not a missing bless.
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C" && f.callee == "PlayMusic").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("SfxId"));
+}
+
+#[test]
+fn songid_into_sfxid_slot_fires() {
+    // The symmetric direction — a SongId into PlaySFX's SfxId slot.
+    let r = analyze(&sound_prog(
+        "pub proc C () clobbers(d0-d1) {\n\
+             move.b d1, d0 as SongId\n\
+             jbsr PlaySFX\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "PlaySFX", "d0", "SfxId"), "SongId in SfxId slot must fire: {:?}", r.slot_firings);
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C" && f.callee == "PlaySFX").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("SongId"));
+}
+
+#[test]
+fn sfxid_bless_satisfies_playsfx() {
+    // The positive: the real corpus idiom — a moveq of an sfx-id const blessed
+    // `as SfxId` (Sound_PlayRing) satisfies PlaySFX's slot with zero ceremony.
+    let r = analyze(&sound_prog(
+        "pub proc C () clobbers(d0) {\n\
+             moveq #$33, d0 as SfxId\n\
+             jbra PlaySFX\n\
+         }\n",
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "as-blessed SfxId must satisfy PlaySFX: {:?}", r.slot_firings);
+}
+
+// ---------------------------------------------------------------------------
+// item-13 wave-1, FAMILY 2 — AnimId / AnimFrame / MappingFrame (the anim-frame
+// swap class). In the CORPUS these values live in SST memory (accessed via
+// `a0: *Sst`), so no register call-slot carries them today and the check does
+// not engage — the field types are meaning-carrying, and the slice enforces the
+// moment such a value crosses a typed register param. This pin proves the slice
+// DOES distinguish AnimFrame from MappingFrame (the highest-risk pair) when they
+// reach a slot — so the day a frame value is passed in a register, the swap
+// fires. See the field-store domain-check ledger row.
+// ---------------------------------------------------------------------------
+const FRAME_PRE: &str = "module m\n\
+     pub newtype AnimFrame = u8\n\
+     pub newtype MappingFrame = u8\n\
+     pub proc TakeAnimFrame (d0: AnimFrame) clobbers() { rts }\n\
+     pub proc TakeMappingFrame (d0: MappingFrame) clobbers() { rts }\n";
+
+#[test]
+fn animframe_into_mappingframe_slot_fires() {
+    // The ratification's required swap pin: a script CURSOR (AnimFrame) flowing
+    // into a mapping-frame slot is the highest-risk mix — it must fire.
+    let r = analyze(&format!(
+        "{FRAME_PRE}pub proc C () clobbers(d0-d1) {{\n\
+             move.b d1, d0 as AnimFrame\n\
+             jbsr TakeMappingFrame\n\
+             rts\n\
+         }}\n"
+    ));
+    assert!(slot_fires(&r, "C", "TakeMappingFrame", "d0", "MappingFrame"), "AnimFrame in MappingFrame slot must fire: {:?}", r.slot_firings);
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("AnimFrame"));
+}
+
+#[test]
+fn mappingframe_into_animframe_slot_fires() {
+    // The symmetric direction — a MappingFrame into an AnimFrame (cursor) slot.
+    let r = analyze(&format!(
+        "{FRAME_PRE}pub proc C () clobbers(d0-d1) {{\n\
+             move.b d1, d0 as MappingFrame\n\
+             jbsr TakeAnimFrame\n\
+             rts\n\
+         }}\n"
+    ));
+    assert!(slot_fires(&r, "C", "TakeAnimFrame", "d0", "AnimFrame"), "MappingFrame in AnimFrame slot must fire: {:?}", r.slot_firings);
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("MappingFrame"));
+}
+
+#[test]
+fn matching_frame_type_satisfies_slot() {
+    // The positive control: the correctly-typed frame value satisfies its slot.
+    let r = analyze(&format!(
+        "{FRAME_PRE}pub proc C () clobbers(d0-d1) {{\n\
+             move.b d1, d0 as MappingFrame\n\
+             jbsr TakeMappingFrame\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "matching MappingFrame must satisfy the slot: {:?}", r.slot_firings);
+}

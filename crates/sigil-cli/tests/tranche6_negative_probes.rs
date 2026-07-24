@@ -264,7 +264,7 @@ fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
     // ObjDef↔Sst burst-copy ensure-chain, which is exercised by objdef_port's
     // SHIFT-mutation break-test.)
     let doctored = sst
-        .replace("prev_frame: FrameId @ $24,", "sprite_piece_count: FrameId @ $24,")
+        .replace("prev_frame: MappingFrame @ $24,", "sprite_piece_count: MappingFrame @ $24,")
         .replace("sprite_piece_count: u8 @ $25,", "prev_frame: u8 @ $25,")
         .replace(
             "ensure(extern(\"SST_prev_frame\") == $24,",

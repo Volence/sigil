@@ -65,9 +65,8 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     }).collect())
 }
 
-fn analyze_sources(srcs: &[(PathBuf, String)]) -> ContractReport {
-    let files: Vec<_> = srcs
-        .iter()
+fn parse_all(srcs: &[(PathBuf, String)]) -> Vec<sigil_frontend_emp::ast::File> {
+    srcs.iter()
         .map(|(p, s)| {
             let (f, d) = parse_str(s);
             assert!(
@@ -77,8 +76,11 @@ fn analyze_sources(srcs: &[(PathBuf, String)]) -> ContractReport {
             );
             f
         })
-        .collect();
-    analyze_corpus(&files)
+        .collect()
+}
+
+fn analyze_sources(srcs: &[(PathBuf, String)]) -> ContractReport {
+    analyze_corpus(&parse_all(srcs))
 }
 
 /// POSITIVE: the retrofitted corpus fires ZERO slot-type mismatches.
@@ -128,4 +130,39 @@ fn swapped_axis_bless_fires_naming_the_site() {
     // The found state must be the WRONG axis (GridX), not merely untyped — the
     // check proves it caught a swap, not a missing bless.
     assert_eq!(hit.unwrap().found.as_deref(), Some("GridX"));
+}
+
+/// NEGATIVE (item-13 wave-1, FAMILY 1): doctor `Sound_PlayRing`'s first bless
+/// from `as SfxId` to `as SongId` — a SongId reaching `Sound_PlaySFX`'s SfxId
+/// slot at the (ungated) `jbra Sound_PlaySFX` tail-call. The wrong-sound class
+/// the split is FOR; the build must fail naming that site with the wrong newtype
+/// (SongId), not merely "untyped".
+#[test]
+fn sound_id_swap_fires_naming_the_site() {
+    let Some(mut srcs) = corpus_sources() else { return };
+
+    let mut doctored = false;
+    for (p, s) in &mut srcs {
+        if p.file_name().is_some_and(|n| n == "sound_api.emp") {
+            let needle = "moveq   #SFXID_RING_RIGHT, d0 as SfxId";
+            let swap = "moveq   #SFXID_RING_RIGHT, d0 as SongId";
+            assert!(s.contains(needle), "negative probe anchor not found in {}", p.display());
+            *s = s.replacen(needle, swap, 1);
+            doctored = true;
+        }
+    }
+    assert!(doctored, "sound_api.emp not found in the corpus");
+
+    let r = analyze_sources(&srcs);
+    let hit = r
+        .slot_firings
+        .iter()
+        .find(|f| f.callee == "Sound_PlaySFX" && f.reg == "d0" && f.expected == "SfxId");
+    assert!(
+        hit.is_some(),
+        "the swapped bless must fire [call.slot-type-mismatch] on d0/SfxId; firings: {:#?}",
+        r.slot_firings
+    );
+    // Caught a swap (SongId), not merely a missing bless.
+    assert_eq!(hit.unwrap().found.as_deref(), Some("SongId"));
 }
