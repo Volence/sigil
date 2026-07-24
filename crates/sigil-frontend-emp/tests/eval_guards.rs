@@ -234,3 +234,39 @@ fn max_size_accepts_newtype_wrapped_int() {
     );
     assert!(d.is_empty(), "a newtype-wrapped fitting bound must be silent, got {d:?}");
 }
+
+// ---- item-13 wave-1, FAMILY 3: newtype-typed param keeps its where-bound -----
+// vram_art's `tile: int where 0..$1FFF` became `tile: VramTile where 0..$1FFF`.
+// A `where` refinement on a NEWTYPE base must still bound the arg exactly as it
+// did on `int` — the field-width check ($1FFF = the 13-bit art-word tile field)
+// is not dropped by naming the type. These pin that the retype is a strict
+// no-loss (the only comptime check in family 3; the newtype itself is
+// vocabulary, loosely bound at call per §7 no-ceremony).
+
+#[test]
+fn vramtile_where_bound_passes_in_range() {
+    let src = "module m\nnewtype VramTile = u16\n\
+        comptime fn art(tile: VramTile where 0..$1FFF) -> u16 { return tile }\n\
+        const R = art(VramTile($3E8))\n";
+    let (v, diags) = eval(src, "R");
+    assert!(diags.is_empty(), "in-range must be silent, got {diags:?}");
+    // The value erases to its stored int ($3E8) whether returned bare or as a
+    // `Typed` VramTile (§8.3).
+    assert_eq!(
+        v.as_ref().and_then(|x| x.as_stored_int()),
+        Some(0x3E8),
+        "an in-range VramTile must bind to $3E8, got {v:?}"
+    );
+}
+
+#[test]
+fn vramtile_where_bound_fires_out_of_range() {
+    let src = "module m\nnewtype VramTile = u16\n\
+        comptime fn art(tile: VramTile where 0..$1FFF) -> u16 { return tile }\n\
+        const R = art(VramTile($2000))\n";
+    let (_, diags) = eval(src, "R");
+    assert!(
+        has_exact(&diags, "parameter `tile`: 8192 not in 0..8191"),
+        "the field-width bound must survive the newtype retype, got {diags:?}"
+    );
+}
