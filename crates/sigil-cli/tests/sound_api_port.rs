@@ -161,11 +161,26 @@ fn compile_real_file(
     let dir = aeon_dir().join("engine/sound");
     let src = std::fs::read_to_string(dir.join("sound_api.emp"))
         .unwrap_or_else(|e| panic!("cannot read sound_api.emp: {e}"));
-    let (file, pdiags) = parse_str(&src);
+    let (main, pdiags) = parse_str(&src);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sound_api.emp parse errors: {pdiags:?}"
     );
+    // Prepend the shared engine.z80_bus templates (stop_z80/start_z80 moved
+    // there at the t19 step-6 sweep).
+    let z80_src = std::fs::read_to_string(aeon_dir().join("engine/z80_bus.emp"))
+        .unwrap_or_else(|e| panic!("cannot read z80_bus.emp: {e}"));
+    let (z80_file, zdiags) = parse_str(&z80_src);
+    assert!(
+        zdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "z80_bus.emp parse errors: {zdiags:?}"
+    );
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items: z80_file.items.into_iter().chain(main.items).collect(),
+        docs: main.docs.clone(),
+    };
 
     // findings 1/2's asserts are DEBUG-shape-only: DEBUG must always be DEFINED
     // (house convention — the debug shape is explicit), 0 in plain (elides the
@@ -247,13 +262,14 @@ fn compile_real_file(
     }
 
     // Outbound bare-name proof: a real caller's `bsr.w Sound_PlaySFX`. The
-    // consumer is PHASED at $8000 — inside bsr.w's ±32K of both shapes'
+    // consumer is PHASED at $9000 — inside bsr.w's ±32K of both shapes'
     // targets, so the asserted displacement is a real reachable one (an
     // unphased far carrier would only "pass" mod 2^16; sigil-link's missing
     // pc-rel16 range check is gap-ledgered, and port #1's review caught
-    // exactly this vacuity).
+    // exactly this vacuity). ($8000 originally; the t19 bg_anim debug assert
+    // slid sound_api's debug region end past $8000 and collided.)
     let asm = "cpu 68000\n\
-               phase $8000\n\
+               phase $9000\n\
                Consumer:\n\
                \tbsr.w   Sound_PlaySFX\n\
                \trts\n";
@@ -262,7 +278,7 @@ fn compile_real_file(
         .unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}"))
         .sections;
     for sec in &mut consumer {
-        sec.lma = 0x8000;
+        sec.lma = 0x9000;
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }
@@ -335,7 +351,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let consumer = linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x8000)
+        .find(|s| s.lma == 0x9000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
     let target = shape.base as i64 + shape.play_sfx_off as i64;

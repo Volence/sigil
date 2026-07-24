@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/parallax-transition-parcel/s4.lst (07/23/2026 11:50:09 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/parallax-transition-parcel/s4.debug.lst (07/23/2026 11:50:11 PM)
-//! [provenance] 25 regions, 209 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche19/s4.lst (07/24/2026 02:38:59 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche19/s4.debug.lst (07/24/2026 02:39:00 AM)
+//! [provenance] 28 regions, 214 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,11 +96,20 @@ pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x50D2, debug_base: 0x
 /// `Section_Init` .. `Camera_Init` — gate `SIGIL_EMP_SECTION`. tests: section_port
 pub const SECTION: Region = Region { plain_base: 0x55F2, debug_base: 0x627C, plain_len: 0x3DC, debug_len: 0x3DC };
 
+/// `Camera_Init` .. `Parallax_Init` — gate `SIGIL_EMP_CAMERA`. tests: camera_port
+pub const CAMERA: Region = Region { plain_base: 0x59CE, debug_base: 0x6658, plain_len: 0x164, debug_len: 0x164 };
+
 /// `Parallax_Init` .. `Art_Decompress` — gate `SIGIL_EMP_PARALLAX`. tests: parallax_port
-pub const PARALLAX: Region = Region { plain_base: 0x5B38, debug_base: 0x67C2, plain_len: 0x576, debug_len: 0x576 };
+pub const PARALLAX: Region = Region { plain_base: 0x5B32, debug_base: 0x67BC, plain_len: 0x576, debug_len: 0x576 };
+
+/// `BG_Init` .. `BgAnim_Init` — gate `SIGIL_EMP_BG`. tests: bg_port
+pub const BG: Region = Region { plain_base: 0x6110, debug_base: 0x6DE4, plain_len: 0xAE, debug_len: 0xAE };
+
+/// `BgAnim_Init` .. start + 0x9E plain / 0x158 debug (literal — no end symbol) — gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
+pub const BG_ANIM: Region = Region { plain_base: 0x61BE, debug_base: 0x6E92, plain_len: 0x9E, debug_len: 0x158 };
 
 /// `Sound_PostByte` .. start + 0x20A plain / 0x3B4 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
-pub const SOUND_API: Region = Region { plain_base: 0x6264, debug_base: 0x7BD2, plain_len: 0x20A, debug_len: 0x3B4 };
+pub const SOUND_API: Region = Region { plain_base: 0x625C, debug_base: 0x7C84, plain_len: 0x20A, debug_len: 0x3B4 };
 
 /// `TestSolid_Init` .. `TestParticle` — gate `SIGIL_EMP_TEST_OBJECTS`. tests: test_objects_port
 pub const TEST_SOLID: Region = Region { plain_base: 0x10F7C, debug_base: 0x10F7C, plain_len: 0xE, debug_len: 0xE };
@@ -201,7 +210,7 @@ pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x22C8, debug: 0x2352 };
 
 /// `Sound_DrainSfxRing`. tests: game_loop_port
-pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x63D0, debug: 0x7EE8 };
+pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x63C8, debug: 0x7F9A };
 
 /// `Game_State`. tests: game_loop_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
@@ -377,11 +386,26 @@ pub const RING_ANIM_FRAME: Pin = Pin { plain: 0xFFFFAC72, debug: 0xFFFFAC96 };
 /// `Ring_Anim_Timer`. tests: rings_port
 pub const RING_ANIM_TIMER: Pin = Pin { plain: 0xFFFFAC73, debug: 0xFFFFAC97 };
 
-/// `Camera_X`. tests: rings_port, section_port
+/// `Camera_X`. tests: rings_port, section_port, camera_port, bg_anim_port
 pub const CAMERA_X: Pin = Pin { plain: 0xFFFFA11C, debug: 0xFFFFA140 };
 
-/// `Camera_Y`. tests: rings_port, section_port
+/// `Camera_Y`. tests: rings_port, section_port, camera_port, bg_anim_port
 pub const CAMERA_Y: Pin = Pin { plain: 0xFFFFA120, debug: 0xFFFFA144 };
+
+/// `Camera_Deadzone_Base`. tests: camera_port
+pub const CAMERA_DEADZONE_BASE: Pin = Pin { plain: 0xFFFFA82E, debug: 0xFFFFA852 };
+
+/// `Camera_Pan_Offset`. tests: camera_port
+pub const CAMERA_PAN_OFFSET: Pin = Pin { plain: 0xFFFFA832, debug: 0xFFFFA856 };
+
+/// `Camera_Hold_Frames`. tests: camera_port
+pub const CAMERA_HOLD_FRAMES: Pin = Pin { plain: 0xFFFFA834, debug: 0xFFFFA858 };
+
+/// `BgAnim_LastStep`. tests: bg_anim_port
+pub const BG_ANIM_LAST_STEP: Pin = Pin { plain: 0xFFFF8984, debug: 0xFFFF8984 };
+
+/// `BgAnim_Table`. tests: bg_anim_port
+pub const BG_ANIM_TABLE: Pin = Pin { plain: 0x256DE, debug: 0x25746 };
 
 /// `Camera_X_Biased`. tests: sprites_port
 pub const CAMERA_X_BIASED: Pin = Pin { plain: 0xFFFFA124, debug: 0xFFFFA148 };
@@ -399,7 +423,7 @@ pub const ENTITY_WINDOW_ENTRY_FOR_SECTION: Pin = Pin { plain: 0x372C, debug: 0x4
 pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3718, debug: 0x413A };
 
 /// `Sound_PlayRing`. tests: rings_port
-pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6420, debug: 0x7F38 };
+pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x6418, debug: 0x7FEA };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x5E704;
@@ -495,7 +519,7 @@ pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA112, debug: 0xFFFFA1
 pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA114, debug: 0xFFFFA138 };
 
 /// `Sound_PlaySFX`. tests: animate_port
-pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x638A, debug: 0x7E5C };
+pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x6382, debug: 0x7F0E };
 
 /// `ObjCodeBase`. tests: test_objects_port
 pub const OBJ_CODE_BASE: Pin = Pin { plain: 0x10000, debug: 0x10000 };

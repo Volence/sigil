@@ -1232,6 +1232,20 @@ fn constants_ambient_items(controllers_dir: &Path) -> Vec<sigil_frontend_emp::as
     file.items
 }
 
+/// `engine.z80_bus`'s items (the shared stop_z80/start_z80 templates —
+/// t19 step-6 hoisted them out of sound_api.emp; `engine/z80_bus.emp` lives
+/// at the engine root).
+fn z80_bus_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_dir.join("z80_bus.emp"))
+        .unwrap_or_else(|e| panic!("cannot read z80_bus.emp: {e}"));
+    let (file, zdiags) = parse_str(&src);
+    assert!(
+        zdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "z80_bus.emp parse errors: {zdiags:?}"
+    );
+    file.items
+}
+
 /// `engine.objects.sst`'s items (the type-only `pub struct Sst` plus its 30
 /// drift-guard `ensure`s), read from `engine/objects/`. Tranche 6's object
 /// modules `use` this twin for typed `Sst.field(a0)` access; the same
@@ -1373,6 +1387,12 @@ fn placed_module_sections_with_roots(
     let mut ambient_items: Vec<sigil_frontend_emp::ast::Item> = Vec::new();
     match module_file {
         "controllers.emp" | "vdp_init.emp" => ambient_items = constants_ambient_items(&dir),
+        // sound_api.emp uses engine.z80_bus (t19 step-6 hoist; z80_bus.emp is
+        // at the engine root, one level above engine/sound).
+        "sound_api.emp" => {
+            ambient_items =
+                z80_bus_ambient_items(dir.parent().expect("engine/sound has a parent"));
+        }
         // math.emp uses engine.types (the Angle param, construct-walk #3).
         "math.emp" => ambient_items = types_ambient_items(&dir),
         // act_descriptor.emp `use`s the shared engine.structs Act/Sec twins
