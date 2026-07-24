@@ -240,3 +240,67 @@ fn preserved_across_call_keeps_type() {
     );
     assert_eq!(slot_count(&r, "C"), 0, "d2 preserved across Keep: {:?}", r.slot_firings);
 }
+
+// ---------------------------------------------------------------------------
+// item-13 wave-1, FAMILY 1 — SongId / SfxId (the sound-id swap class). The real
+// corpus enforces SfxId at Sound_PlaySFX's d0 slot (animate `.evt_sound`,
+// Sound_PlayRing); there is no `.emp` Sound_PlayMusic caller, so the
+// SfxId-into-SongId direction (the ratification's required negative pin) is
+// pinned here synthetically. Mirrors the sound API's shape: a SongId-slot
+// callee (PlayMusic) and an SfxId-slot callee (PlaySFX), both u8 but DISTINCT.
+// ---------------------------------------------------------------------------
+const SOUND_PRE: &str = "module m\n\
+     pub newtype SongId = u8\n\
+     pub newtype SfxId = u8\n\
+     pub proc PlayMusic (d0: SongId) clobbers() { rts }\n\
+     pub proc PlaySFX (d0: SfxId) clobbers() { rts }\n";
+
+fn sound_prog(caller: &str) -> String {
+    format!("{SOUND_PRE}{caller}")
+}
+
+#[test]
+fn sfxid_into_songid_slot_fires() {
+    // The ratification's required negative pin: an SfxId flowing into PlayMusic's
+    // SongId slot is the wrong-sound class — it must fire naming d0/SongId.
+    let r = analyze(&sound_prog(
+        "pub proc C () clobbers(d0-d1) {\n\
+             move.b d1, d0 as SfxId\n\
+             jbsr PlayMusic\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "PlayMusic", "d0", "SongId"), "SfxId in SongId slot must fire: {:?}", r.slot_firings);
+    // The found state is the WRONG newtype (SfxId), not merely untyped — a swap,
+    // not a missing bless.
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C" && f.callee == "PlayMusic").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("SfxId"));
+}
+
+#[test]
+fn songid_into_sfxid_slot_fires() {
+    // The symmetric direction — a SongId into PlaySFX's SfxId slot.
+    let r = analyze(&sound_prog(
+        "pub proc C () clobbers(d0-d1) {\n\
+             move.b d1, d0 as SongId\n\
+             jbsr PlaySFX\n\
+             rts\n\
+         }\n",
+    ));
+    assert!(slot_fires(&r, "C", "PlaySFX", "d0", "SfxId"), "SongId in SfxId slot must fire: {:?}", r.slot_firings);
+    let hit = r.slot_firings.iter().find(|f| f.proc == "C" && f.callee == "PlaySFX").unwrap();
+    assert_eq!(hit.found.as_deref(), Some("SongId"));
+}
+
+#[test]
+fn sfxid_bless_satisfies_playsfx() {
+    // The positive: the real corpus idiom — a moveq of an sfx-id const blessed
+    // `as SfxId` (Sound_PlayRing) satisfies PlaySFX's slot with zero ceremony.
+    let r = analyze(&sound_prog(
+        "pub proc C () clobbers(d0) {\n\
+             moveq #$33, d0 as SfxId\n\
+             jbra PlaySFX\n\
+         }\n",
+    ));
+    assert_eq!(slot_count(&r, "C"), 0, "as-blessed SfxId must satisfy PlaySFX: {:?}", r.slot_firings);
+}
