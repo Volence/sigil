@@ -278,8 +278,13 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // in-range at 74/108/40) to `.s` — camera shrinks $16A→$164; camera is upstream
     // of parallax/bg/bg_anim/sound_api in the engine bank, so each base slides
     // −0x6 both shapes (LENs unchanged).
-    assert_eq!(pins::SOUND_API.plain_base, 0x625E);  // −0x6 camera step-2 upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7BCC);  // −0x6 camera step-2 upstream
+    // Then −0x2 BOTH shapes (t19 bg_anim step-2 branch modernization, 2026-07-24):
+    // bg_anim.emp goes bare-Bcc/jbra — the bare `beq .exit` relaxes to `.s` (twin
+    // shrunk in lockstep; the two jsr→jbsr sites re-emit as bsr.w, size-neutral
+    // against the abs.w jsr they replace) — bg_anim shrinks $A0→$9E; sound_api's
+    // base slides −0x2 both shapes (LEN unchanged).
+    assert_eq!(pins::SOUND_API.plain_base, 0x625C);  // −0x2 bg_anim step-2 upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7BCA);  // −0x2 bg_anim step-2 upstream
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

@@ -213,12 +213,13 @@ tests = ["bg_port"]
 # (CompressionSelfTest) is `ifdef __DEBUG__` — absent from the plain symbol
 # table — so this region carries a literal length (the sound_api precedent).
 # Shape-invariant $A0 (BgAnim_Update's rts .. CompressionSelfTest in the
-# debug listing; plain confirmed against Sound_PostByte at $6264). Re-derive
-# from `repin --verbose` on any bg_anim byte change.
+# debug listing; plain confirmed against Sound_PostByte). Re-derive from
+# `repin --verbose` on any bg_anim byte change. (t19 step-2: $A0 → $9E — the
+# bare `beq .exit` relaxed to `.s`, twin shrunk in lockstep.)
 name = "bg_anim"
 start = "BgAnim_Init"
-len = 0xA0
-debug_len = 0xA0
+len = 0x9E
+debug_len = 0x9E
 gate = "SIGIL_EMP_BG_ANIM"
 tests = ["bg_anim_port"]
 
