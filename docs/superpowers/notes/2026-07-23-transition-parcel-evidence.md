@@ -45,7 +45,42 @@ orgs, repin all unchanged). New canonical (fresh dual builds): plain
 
 ---
 
-## Window-slide mask-migration observation — (pending)
+## Window-slide mask-migration observation — CLOSED (observed; value-audit deferred)
+
+The carried Phase-2.5 rider: observe one real `EntityWindow_Slide` +
+`Entity_Loaded_Masks` migration live. Driven per the row-1408 binding technique
+(scroll-target, not held-input, not freeze — `Debug_Scene_Freeze` skips
+`EntityWindow_Scan`).
+
+**Drive:** OJZ scene UNFROZEN; poked the scroll target (`Player_1` x_pos
+`0xFF8A14` forward) so `Camera_Update` chases the camera across the sec-0→1 X
+boundary; breakpoint on `EntityWindow_Slide` (`0x4824`). Note: the 2×2 window
+(`MAX_TRACKED_SECTIONS=4`, Active `0x0F`) on the 3-wide grid does NOT slide in X
+until the camera CENTER reaches sec 2 — a crossing into sec 1 alone keeps the
+2×2 corner at 0. Pushed the camera center toward sec 2 to trigger it.
+
+**Observed (real slide fired):**
+- Anchor **(0,0) → (1,0)** — single-axis (X moved, Y unchanged). The DEBUG
+  single-axis-invariant `assert.w` (BuildEntries→MigrateMasks) did **NOT** fire
+  → invariant holds live.
+- Snapshot (`Entity_Mask_Scratch`): old entry ids = sections `{00,01,03,04}`
+  (old 2×2), old ring masks `{7F,01,3F,01}`.
+- New window (anchor (1,0)) entries → sections `{01,02,04,05}` (read from
+  `Entity_Scan_State` ess_section_id, stride 0x16, +0x12); new ring masks
+  `{3F, 01, F00F, 00}`. Active preserved `0x0F`. Migration ran; block
+  reorganized coherently (4 slots, valid mask preserved).
+
+**Value-audit deferred (NOT a finding).** The camera was driven as a
+discontinuous teleport (poked Camera_X + Player across a ~3800px jump), so
+PopulateSectionRings/despawn ran on artificial intermediate frames — the
+per-section loaded-bit VALUES reflect the poked motion, not natural play (e.g.
+new sec1 = 0x3F is plausibly sec1's own rings loading as the camera entered it;
+small ring counts alias by coincidence with the evicted sec3's 0x3F). Cleanly
+judging migration value-correctness needs a natural 16px/frame continuous scroll
+(~120 frames) — a deeper entity-window audit, out of this parallax parcel's
+scope. The subsystem's own guard (the single-axis assert) passed. **Rider closed
+with a positive live observation; value-audit left as an entity-window
+follow-up if ever demanded.**
 
 ## B2 — mode-contract design pass — (pending; GATE CHECKPOINT before cutting)
 
