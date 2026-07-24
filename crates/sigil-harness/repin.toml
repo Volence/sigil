@@ -90,6 +90,28 @@ gate = "SIGIL_EMP_GAME_LOOP"
 tests = ["game_loop_port", "load_art_port"]
 
 [[region]]
+# Tranche 22 — the S4LZ v3 blocking decompressor (S4LZ_DecompressDict +
+# S4LZ_Decompress shared-body fall-through entries + internal TileDelta_Undo).
+# End is the next placement: zx0_decompress.asm's ZX0_Decompress.
+# Shape-DEPENDENT length: the debug surplus (+$104) is the three `ifdebug`
+# assert blocks (dict-even + version-byte + dict-range) with message blobs.
+name = "s4lz"
+start = "S4LZ_DecompressDict"
+end = "ZX0_Decompress"
+gate = "SIGIL_EMP_S4LZ"
+tests = ["s4lz_port"]
+
+[[region]]
+# Tranche 22 — the ZX0 (modern/V2) blocking decompressor. End is the next
+# placement: math.asm's GetSineCosine. Shape-INVARIANT $58 (the file has no
+# ifdef arms).
+name = "zx0"
+start = "ZX0_Decompress"
+end = "GetSineCosine"
+gate = "SIGIL_EMP_ZX0"
+tests = ["zx0_port"]
+
+[[region]]
 name = "math"
 start = "GetSineCosine"
 end = "Perform_DPLC"

@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche21/s4.lst (07/24/2026 09:55:06 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche21/s4.debug.lst (07/24/2026 09:55:08 AM)
-//! [provenance] 32 regions, 259 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.lst (07/24/2026 11:24:44 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche22/s4.debug.lst (07/24/2026 11:24:50 AM)
+//! [provenance] 34 regions, 259 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +65,12 @@ pub const CONTROLLERS: Region = Region { plain_base: 0x2326, debug_base: 0x23B4,
 
 /// `GameLoop` .. `S4LZ_DecompressDict` — gate `SIGIL_EMP_GAME_LOOP`. tests: game_loop_port, load_art_port
 pub const GAME_LOOP: Region = Region { plain_base: 0x239C, debug_base: 0x242A, plain_len: 0x12, debug_len: 0x12 };
+
+/// `S4LZ_DecompressDict` .. `ZX0_Decompress` — gate `SIGIL_EMP_S4LZ`. tests: s4lz_port
+pub const S4LZ: Region = Region { plain_base: 0x23AE, debug_base: 0x243C, plain_len: 0xFC, debug_len: 0x200 };
+
+/// `ZX0_Decompress` .. `GetSineCosine` — gate `SIGIL_EMP_ZX0`. tests: zx0_port
+pub const ZX0: Region = Region { plain_base: 0x24AA, debug_base: 0x263C, plain_len: 0x58, debug_len: 0x58 };
 
 /// `GetSineCosine` .. `Perform_DPLC` — gate `SIGIL_EMP_MATH`. tests: math_port
 pub const MATH: Region = Region { plain_base: 0x2502, debug_base: 0x2694, plain_len: 0x298, debug_len: 0x298 };
