@@ -107,6 +107,7 @@ fn value_equs(aeon: &Path, debug: bool, doctor: Option<(&str, &str)>) -> Vec<Sec
         // VDP_Shadow offset twins (engine.vdp shadow-offset block)
         ("VDP_Shadow_vdp_mode1", "$00"),
         ("VDP_Shadow_vdp_mode2", "$01"),
+        ("VDP_Shadow_vdp_mode3", "$0B"),
         ("VDP_Shadow_vdp_hint_rate", "$0A"),
         // boot.emp's own mirror (engine/constants.asm)
         ("PSG_PORT", "$C00011"),
@@ -498,6 +499,7 @@ fn run_twin_parity(debug: bool, sound: bool, hotkeys: bool, what: &str) {
         "PSG_PORT",
         "VDP_Shadow_vdp_mode1",
         "VDP_Shadow_vdp_mode2",
+        "VDP_Shadow_vdp_mode3",
         "VDP_Shadow_vdp_hint_rate",
         "Z80_BUS_REQUEST",
         "HW_PORT_A_CTRL_FULL",

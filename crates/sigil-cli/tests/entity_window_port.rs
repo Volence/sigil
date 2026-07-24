@@ -376,7 +376,7 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("VRAM", "%100001"), ("CRAM", "%101011"), ("VSRAM", "%100101"),
         ("READ", "%001100"), ("WRITE", "%000111"), ("DMA", "%100111"),
         // VDP_Shadow offset twins (engine.vdp shadow-offset block)
-        ("VDP_Shadow_vdp_mode1", "$00"), ("VDP_Shadow_vdp_mode2", "$01"), ("VDP_Shadow_vdp_hint_rate", "$0A"),
+        ("VDP_Shadow_vdp_mode1", "$00"), ("VDP_Shadow_vdp_mode2", "$01"), ("VDP_Shadow_vdp_mode3", "$0B"), ("VDP_Shadow_vdp_hint_rate", "$0A"),
         // Act_*/Sec_* now come from act_sec_field_equs() in the union (section
         // reads them through the prepended engine.structs drift wall).
     ]
