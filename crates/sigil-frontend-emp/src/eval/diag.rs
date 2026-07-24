@@ -592,15 +592,18 @@ pub struct AssertParts {
 /// Build the full `assert` DEBUG-shape expansion (§4.2, 11 steps IN ORDER).
 ///
 /// `n` is a fresh instantiation id (from the evaluator's counter) that makes the
-/// `.skip`/`.raise` symbols unique — two asserts in one proc get distinct
-/// `$diag{n}$…` labels. `p` carries the ALREADY-PARSED operands (cloned from the
+/// `.skip`/`.raise` symbols unique WITHIN one lowering — two asserts in one
+/// proc get distinct `$diag{n}$…` labels. `scope` carries the module id
+/// (`"$a.b"`, empty in the no-file mode) so two SEPARATELY-LOWERED modules
+/// whose counters restart never mint colliding symbols at link (the same
+/// multi-module rule every hidden hygiene local follows). `p` carries the ALREADY-PARSED operands (cloned from the
 /// AST) so their exact addressing shape rides through unchanged; `p.src` is also
 /// pushed for the handler to display. The message bytes come from
 /// [`assert_message`] over the source spellings.
 #[allow(dead_code)] // driven by the `Assert` arm in eval/asm.rs
-pub fn build_assert_expansion(n: u32, p: &AssertParts, span: Span) -> Vec<AsmStmt> {
-    let skip = format!("$diag{n}$skip");
-    let raise = format!("$diag{n}$raise");
+pub fn build_assert_expansion(n: u32, scope: &str, p: &AssertParts, span: Span) -> Vec<AsmStmt> {
+    let skip = format!("$diag{n}{scope}$skip");
+    let raise = format!("$diag{n}{scope}$raise");
     let wsfx = p.width.suffix();
     let mut out = Vec::new();
 
@@ -640,11 +643,12 @@ pub fn build_assert_expansion(n: u32, p: &AssertParts, span: Span) -> Vec<AsmStm
 #[allow(dead_code)] // driven by the `RaiseError` arm in eval/asm.rs
 pub fn build_raise_error_expansion(
     n: u32,
+    scope: &str,
     message: &[u8],
     arg_pushes: Vec<AsmStmt>,
     span: Span,
 ) -> Vec<AsmStmt> {
-    let raise = format!("$diag{n}$raise");
+    let raise = format!("$diag{n}{scope}$raise");
     raise_tail(&raise, message, arg_pushes, span)
 }
 
@@ -979,7 +983,7 @@ mod tests {
     /// the STRUCTURE — mnemonics, the pinned branch width, hygienic label names.)
     #[test]
     fn assert_expansion_structure_cmp_form() {
-        let stmts = build_assert_expansion(7, &parts(Width::B, "d4", "eq", Some("#0")), sp());
+        let stmts = build_assert_expansion(7, "", &parts(Width::B, "d4", "eq", Some("#0")), sp());
         // 1: move.w sr,-(sp)
         assert!(matches!(&stmts[0], AsmStmt::Instr(i) if i.mnemonic == vec![TextOrSplice::Text("move".into())]));
         // 2: cmp.b (cmp form, not tst)
@@ -1002,7 +1006,7 @@ mod tests {
     /// The tst form emits `tst.<w>` (one operand), NOT `cmp` — and no dest.
     #[test]
     fn assert_expansion_structure_tst_form() {
-        let stmts = build_assert_expansion(0, &parts(Width::W, "d1", "eq", None), sp());
+        let stmts = build_assert_expansion(0, "", &parts(Width::W, "d1", "eq", None), sp());
         let AsmStmt::Instr(op) = &stmts[1] else { panic!() };
         assert_eq!(op.mnemonic, vec![TextOrSplice::Text("tst".into())]);
         assert_eq!(op.size, Some(TextOrSplice::Text("w".into())));
@@ -1012,8 +1016,8 @@ mod tests {
     /// Two expansions with distinct ids never share a label symbol (hygiene).
     #[test]
     fn fresh_labels_per_instantiation() {
-        let a = build_assert_expansion(1, &parts(Width::B, "d4", "eq", Some("#0")), sp());
-        let b = build_assert_expansion(2, &parts(Width::B, "d4", "eq", Some("#0")), sp());
+        let a = build_assert_expansion(1, "", &parts(Width::B, "d4", "eq", Some("#0")), sp());
+        let b = build_assert_expansion(2, "", &parts(Width::B, "d4", "eq", Some("#0")), sp());
         let names = |v: &[AsmStmt]| -> Vec<String> {
             v.iter().filter_map(|s| if let AsmStmt::Label { name, .. } = s { Some(name.clone()) } else { None }).collect()
         };
@@ -1027,7 +1031,7 @@ mod tests {
     #[test]
     fn raise_error_expansion_is_bare_tail() {
         let enc = encode_fstring("boom%<endl>Got: %<.b d0>").unwrap();
-        let stmts = build_raise_error_expansion(3, &enc.bytes, vec![], sp());
+        let stmts = build_raise_error_expansion(3, "", &enc.bytes, vec![], sp());
         // First stmt is the raise label; second is `pea self(pc)`.
         assert!(matches!(&stmts[0], AsmStmt::Label { name, .. } if name == "$diag3$raise"));
         let AsmStmt::Instr(pea) = &stmts[1] else { panic!() };

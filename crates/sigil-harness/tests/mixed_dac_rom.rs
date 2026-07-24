@@ -117,7 +117,8 @@ use sigil_harness::{
     assemble_mixed_tranche4_as_side, assemble_mixed_tranche5_as_side,
     assemble_mixed_tranche6_as_side, assemble_mixed_tranche7_as_side,
     assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
-    assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side, assert_rom_matches_convsym,
+    assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side,
+    assemble_mixed_tranche22_as_side, assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SymbolTable};
@@ -3893,4 +3894,108 @@ fn mixed_tranche21_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche21_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche21 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// Tranche 22 — s4lz + zx0 + compression_selftest at full-ROM scale. The
+// selftest region is the campaign's first DEBUG-ONLY region: the plain arm
+// places only the two decompressor modules (the gated AS side emits nothing
+// for the selftest and the full plain ROM must still byte-match); the debug
+// arm adds compression_selftest.emp, whose CSelf_*/CSELF_* references
+// resolve against the AS side's REAL generated vectors.asm (the reverse
+// .emp→.asm data seam).
+// ---------------------------------------------------------------------------
+
+fn build_mixed_tranche22_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche22_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    let dbg = i128::from(debug);
+
+    let s4 = if debug { (pins::S4LZ.debug_base, pins::S4LZ.debug_len) } else { (pins::S4LZ.plain_base, pins::S4LZ.plain_len) };
+    let (s4_sections, s4_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/compression/s4lz_decompress.emp",
+        vec![],
+        "s4lz",
+        s4.0,
+        s4.1,
+        vec![("DEBUG".to_string(), dbg)],
+    );
+
+    let zx = if debug { (pins::ZX0.debug_base, pins::ZX0.debug_len) } else { (pins::ZX0.plain_base, pins::ZX0.plain_len) };
+    let (zx_sections, zx_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/compression/zx0_decompress.emp",
+        vec![],
+        "zx0",
+        zx.0,
+        zx.1,
+        vec![("DEBUG".to_string(), dbg)],
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(s4_sections);
+    sections.extend(zx_sections);
+    let mut all = s4_asserts;
+    all.extend(zx_asserts);
+
+    if debug {
+        // The DEBUG-ONLY module: exists in this shape alone.
+        let cs = (pins::COMPRESSION_SELFTEST.debug_base, pins::COMPRESSION_SELFTEST.debug_len);
+        let (cs_sections, cs_asserts) = t21_lower_and_place(
+            aeon,
+            "engine/debug/compression_selftest.emp",
+            vec![],
+            "compression_selftest",
+            cs.0,
+            cs.1,
+            vec![("DEBUG".to_string(), 1)],
+        );
+        sections.extend(cs_sections);
+        all.extend(cs_asserts);
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche22 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche22 mixed link failed: {d:?}"));
+
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche22 mixed drift guards: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_tranche22_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche22_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche22 mixed");
+}
+
+#[test]
+fn mixed_tranche22_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche22_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche22 mixed debug");
 }

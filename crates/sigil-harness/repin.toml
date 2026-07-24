@@ -90,6 +90,28 @@ gate = "SIGIL_EMP_GAME_LOOP"
 tests = ["game_loop_port", "load_art_port"]
 
 [[region]]
+# Tranche 22 — the S4LZ v3 blocking decompressor (S4LZ_DecompressDict +
+# S4LZ_Decompress shared-body fall-through entries + internal TileDelta_Undo).
+# End is the next placement: zx0_decompress.asm's ZX0_Decompress.
+# Shape-DEPENDENT length: the debug surplus (+$104) is the three `ifdebug`
+# assert blocks (dict-even + version-byte + dict-range) with message blobs.
+name = "s4lz"
+start = "S4LZ_DecompressDict"
+end = "ZX0_Decompress"
+gate = "SIGIL_EMP_S4LZ"
+tests = ["s4lz_port"]
+
+[[region]]
+# Tranche 22 — the ZX0 (modern/V2) blocking decompressor. End is the next
+# placement: math.asm's GetSineCosine. Shape-INVARIANT $58 (the file has no
+# ifdef arms).
+name = "zx0"
+start = "ZX0_Decompress"
+end = "GetSineCosine"
+gate = "SIGIL_EMP_ZX0"
+tests = ["zx0_port"]
+
+[[region]]
 name = "math"
 start = "GetSineCosine"
 end = "Perform_DPLC"
@@ -268,6 +290,23 @@ len = 0x9E
 debug_len = 0x158
 gate = "SIGIL_EMP_BG_ANIM"
 tests = ["bg_anim_port"]
+
+[[region]]
+# Tranche 22 — the DEBUG-only compression self-test (the twin is whole-file
+# `ifdef __DEBUG__`): the region exists ONLY in the debug shape. The .emp
+# covers the CODE ([CompressionSelfTest, CSelf_S4LZ_Plain)); the generated
+# golden-vector data (CSelf_*/CSELF_*, tools/gen_compression_vectors.py)
+# stays AS-side — the gate's else arm orgs past the code and includes
+# engine/debug/generated/vectors.asm. plain_anchor = Sound_PostByte (the next
+# placement — sound_api's region start; plain_base only — zero plain bytes,
+# no plain org arm).
+name = "compression_selftest"
+start = "CompressionSelfTest"
+end = "CSelf_S4LZ_Plain"
+debug_only = true
+plain_anchor = "Sound_PostByte"
+gate = "SIGIL_EMP_COMPRESSION_SELFTEST"
+tests = ["compression_selftest_port"]
 
 [[region]]
 # The one region whose end carries no listing symbol: the include's content ends
@@ -776,6 +815,34 @@ tests = ["rings_port"]
 # rings' debug-shape error-handler entries. debug_only: the sole consumer is
 # the DEBUG shape's assert transliteration (the plain listing also carries
 # these names, but no test reads the plain values).
+
+# t22 compression_selftest: the generated golden-vector data labels (AS-side,
+# debug shape only — the .emp consumes them cross-seam; the port test feeds
+# them as carriers).
+[[symbol]]
+name = "CSelf_S4LZ_Plain"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_S4LZ_Dict"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_Dict_Blob"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_ZX0"
+debug_only = true
+tests = ["compression_selftest_port"]
+
+[[symbol]]
+name = "CSelf_Expected"
+debug_only = true
+tests = ["compression_selftest_port"]
 
 [[symbol]]
 name = "MDDBG__ErrorHandler"

@@ -276,12 +276,15 @@ fn doctored_art_ver_zx0_fires_its_guard() {
 }
 
 // ---------------------------------------------------------------------------
-// Tranche-21 ownership flip (kill-list row 29): `VSync_Wait` moved from an
-// extern decl to the .emp-owned `engine.vblank` proc. This persisted
-// two-module link test compiles load_art.emp + vblank.emp TOGETHER — the
-// extern decl is GONE from load_art.emp (its register-discipline block relies
-// on the carried `clobbers(d0)` license), the two calls resolve
-// module-to-module, and BOTH regions byte-match the shipped reference ROM.
+// Ownership flips (kill-list rows 29 + 38): `VSync_Wait` (t21, engine.vblank)
+// and `S4LZ_Decompress` (t22, engine.s4lz) both moved from extern decls to
+// .emp-owned procs. This persisted link test compiles load_art.emp +
+// vblank.emp + s4lz_decompress.emp TOGETHER — both extern decls are GONE from
+// load_art.emp (its register-discipline block relies on the carried
+// `clobbers(d0)` / `clobbers(d0-d3/a2-a3)` licenses), the calls resolve
+// module-to-module, and ALL FOUR regions byte-match the shipped reference
+// ROM. `ZX0_Decompress` (row 39, t22) rides the same world: zx0_decompress.emp
+// compiles in too, and load_art.emp carries ZERO extern decls.
 // ---------------------------------------------------------------------------
 
 fn flip_lower(
@@ -377,23 +380,51 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     sections.extend(vb_sections);
     asserts.extend(vb_asserts);
 
+    let s4_base = if debug { pins::S4LZ.debug_base } else { pins::S4LZ.plain_base };
+    let s4_len = if debug { pins::S4LZ.debug_len } else { pins::S4LZ.plain_len };
+    let (s4_sections, s4_asserts) = flip_lower(
+        parse_file(&aeon.join("engine/compression/s4lz_decompress.emp")),
+        vec![],
+        aeon.join("engine/compression"),
+        "s4lz",
+        s4_base,
+        s4_len,
+        vec![("DEBUG".to_string(), dbg)],
+    );
+    sections.extend(s4_sections);
+    asserts.extend(s4_asserts);
+
+    let zx_base = if debug { pins::ZX0.debug_base } else { pins::ZX0.plain_base };
+    let zx_len = if debug { pins::ZX0.debug_len } else { pins::ZX0.plain_len };
+    let (zx_sections, zx_asserts) = flip_lower(
+        parse_file(&aeon.join("engine/compression/zx0_decompress.emp")),
+        vec![],
+        aeon.join("engine/compression"),
+        "zx0",
+        zx_base,
+        zx_len,
+        vec![("DEBUG".to_string(), dbg)],
+    );
+    sections.extend(zx_sections);
+    asserts.extend(zx_asserts);
+
     // Value seam: ONE combined equ blob (a second assemble_equ_pairs call
     // would redefine its `Stub:` carrier label).
     let mut pairs: Vec<(&str, &str)> = vec![
         ("SND_Z80_BASE", "$A00000"),
         ("SND_CTRL_DMA_ACTIVE", "$1F04"),
         ("Z80_BUS_REQUEST", "$A11100"),
+        ("TILE_SIZE", "32"),
     ];
     pairs.extend(sigil_harness::test_support::engine_constant_equs());
     pairs.extend(sigil_harness::test_support::act_sec_field_equs());
     sections.extend(sigil_harness::test_support::assemble_equ_pairs(&pairs));
 
-    // Address seam — NO VSync_Wait carrier (the flip: the name resolves to
-    // vblank.emp's proc; a stale carrier would be the §11 Q4 collision).
+    // Address seam — NO VSync_Wait / S4LZ_Decompress / ZX0_Decompress
+    // carriers (the flips: those names resolve to the .emp owner modules
+    // compiled above; a stale carrier would be the §11 Q4 collision).
     let mut table: Vec<(&str, u32)> = vec![
         ("Art_Staging_Buffer", pick(pins::ART_STAGING_BUFFER)),
-        ("S4LZ_Decompress", pick(pins::S4_LZ_DECOMPRESS)),
-        ("ZX0_Decompress", pick(pins::ZX0_DECOMPRESS)),
         ("QueueDMA_Critical", pick(pins::QUEUE_DMA_CRITICAL)),
         ("BG_Init", pick(pins::BG_INIT)),
         ("VBlank_Ready", pick(pins::V_BLANK_READY)),
@@ -459,6 +490,14 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let vr = &refrom[vb_base as usize..vb_base as usize + vb_len];
     assert_eq!(vb.bytes.len(), vr.len(), "vblank ({shape} flip): length");
     assert_eq!(vb.bytes, vr, "vblank ({shape} flip): bytes must match the reference");
+    let s4 = linked.section("s4lz").expect("s4lz region");
+    let sr = &refrom[s4_base as usize..s4_base as usize + s4_len];
+    assert_eq!(s4.bytes.len(), sr.len(), "s4lz ({shape} flip): length");
+    assert_eq!(s4.bytes, sr, "s4lz ({shape} flip): bytes must match the reference");
+    let zx = linked.section("zx0").expect("zx0 region");
+    let zr = &refrom[zx_base as usize..zx_base as usize + zx_len];
+    assert_eq!(zx.bytes.len(), zr.len(), "zx0 ({shape} flip): length");
+    assert_eq!(zx.bytes, zr, "zx0 ({shape} flip): bytes must match the reference");
 }
 
 #[test]

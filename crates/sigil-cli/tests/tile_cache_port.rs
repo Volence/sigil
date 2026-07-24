@@ -467,7 +467,9 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
         ("Frame_Counter", pick(pins::FRAME_COUNTER)),
         ("Section_Plane_Dirty", pick(pins::SECTION_PLANE_DIRTY)),
-        ("S4LZ_DecompressDict", pick(pins::S4_LZ_DECOMPRESS_DICT)),
+        // NO S4LZ_DecompressDict carrier — the t22 flip (kill row 30): the
+        // name resolves to s4lz_decompress.emp's proc compiled into this same
+        // link; a stale carrier would be the §11 Q4 collision.
     ];
     if debug {
         v.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
@@ -513,11 +515,26 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         debug,
     );
 
+    // t22 flip (kill row 30): S4LZ_DecompressDict's owner compiles into the
+    // same link — tile_cache's jbsr resolves module-to-module.
+    let s4_base = if debug { pins::S4LZ.debug_base } else { pins::S4LZ.plain_base };
+    let s4_len = if debug { pins::S4LZ.debug_len } else { pins::S4LZ.plain_len };
+    let (mut s4_sections, s4_asserts) = lower_and_place(
+        &aeon.join("engine/compression/s4lz_decompress.emp"),
+        vec![],
+        aeon.join("engine/compression"),
+        "s4lz",
+        s4_base,
+        s4_len,
+        debug,
+    );
+
     // Union the value seam (dedup, assert consistent).
     let mut vmap: BTreeMap<&str, &str> = BTreeMap::new();
     let cl_twin: Vec<(&str, &str)> = sigil_harness::test_support::engine_constant_equs();
     let act_sec: Vec<(&str, &str)> = sigil_harness::test_support::act_sec_field_equs();
-    for (n, v) in tile_cache_value_pairs().into_iter().chain(cl_twin).chain(act_sec) {
+    let s4_twin: Vec<(&str, &str)> = vec![("TILE_SIZE", "32")];
+    for (n, v) in tile_cache_value_pairs().into_iter().chain(cl_twin).chain(act_sec).chain(s4_twin) {
         if let Some(prev) = vmap.insert(n, v) {
             assert_eq!(prev, v, "seam value conflict for `{n}`");
         }
@@ -536,6 +553,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let mut sections = Vec::new();
     sections.append(&mut tc_sections);
     sections.append(&mut cl_sections);
+    sections.append(&mut s4_sections);
     let mut lma = 0x0100_0000u32;
     let mut equs = sigil_harness::test_support::assemble_equ_pairs(&vpairs);
     for sec in &mut equs {
@@ -564,6 +582,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
 
     let mut all = tc_asserts;
     all.extend(cl_asserts);
+    all.extend(s4_asserts);
     let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all);
     assert!(adiags.iter().all(|d| d.level != sigil_span::Level::Error), "drift guards: {adiags:?}");
 
@@ -571,6 +590,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     assert_region_matches(&linked.section("tile_cache").expect("tile_cache region").bytes, tr, "tile_cache (two-module flip)");
     let cr = &refrom[cl_base as usize..cl_base as usize + pins::COLLISION_LOOKUP.plain_len];
     assert_region_matches(&linked.section("collision_lookup").expect("collision_lookup region").bytes, cr, "collision_lookup (two-module flip)");
+    let sr = &refrom[s4_base as usize..s4_base as usize + s4_len];
+    assert_region_matches(&linked.section("s4lz").expect("s4lz region").bytes, sr, "s4lz (flip)");
 }
 
 #[test]

@@ -136,7 +136,14 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // lockstep; `jsr Parallax_Active_Config` → bsr.w is length-neutral. buffers
     // shrinks $262→$258 both shapes; every base downstream of buffers slides −0xA
     // (LENs unchanged). ASSEMBLED_LEN unchanged (absorbed by `org $10000`).
-    assert_eq!(pins::ANIMATE.plain_base, 0x2f42);  // −0xA t21 buffers step-2 upstream
+    // Then −4 PLAIN ONLY (t22 s4lz step-2 branch modernization, 2026-07-24):
+    // s4lz_decompress.emp goes bare-Bcc/jbra-jbsr and TWO branches relax to `.s`
+    // in the plain shape only (`beq .lit_extended` + `jbra .no_literals` — both
+    // spans cross the debug dict-hit assert blob, so debug keeps `.w`; the twin
+    // rides ifdef widths, the t19 bg_anim precedent). s4lz shrinks $FC→$F8 plain
+    // ($200 debug unchanged); every plain base downstream slides −4, debug bases
+    // unchanged. ASSEMBLED_LEN unchanged (absorbed by `org $10000`).
+    assert_eq!(pins::ANIMATE.plain_base, 0x2f3e);  // −4 t22 s4lz step-2 upstream
     assert_eq!(pins::ANIMATE.debug_base, 0x351c);  // −0xA t21 buffers step-2 upstream
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
@@ -144,7 +151,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x32cc);  // −0xA t21 buffers step-2 upstream
+    assert_eq!(pins::RINGS.plain_base, 0x32c8);  // −4 t22 s4lz step-2 upstream
     assert_eq!(pins::RINGS.debug_base, 0x39cc);  // −0xA t21 buffers step-2 upstream
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
@@ -152,18 +159,18 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x283e);  // −0xA t21 buffers step-2 upstream
+    assert_eq!(pins::CORE.plain_base, 0x283a);  // −4 t22 s4lz step-2 upstream
     assert_eq!(pins::CORE.plain_len, 0x2E4);    // −0xA c4 Spawn_Count store removals
     assert_eq!(pins::CORE.debug_base, 0x29d0);  // −0xA t21 buffers step-2 upstream
     assert_eq!(pins::CORE.debug_len, 0x72C);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::DPLC.plain_base, 0x279a);  // −0xA t21 buffers step-2 upstream
+    assert_eq!(pins::DPLC.plain_base, 0x2796);  // −4 t22 s4lz step-2 upstream
     assert_eq!(pins::DPLC.debug_base, 0x292c);  // −0xA t21 buffers step-2 upstream
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x290E, debug: 0x2AA0 });  // −0xA t21 buffers step-2 upstream (DeleteObject's offset within core is stable)
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x290A, debug: 0x2AA0 });  // −4 t22 s4lz step-2 upstream
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -307,8 +314,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // next placement; twin shrunk in lockstep) — load_art shrinks $68→$64 plain /
     // $B2→$AE debug; bg/bg_anim/sound_api bases slide −0x4 both shapes (LENs
     // unchanged).
-    assert_eq!(pins::SOUND_API.plain_base, 0x624e);  // −0xA t21 buffers step-2 upstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x7c76);  // −0xA t21 buffers step-2 upstream
+    assert_eq!(pins::SOUND_API.plain_base, 0x624a);  // −4 t22 s4lz step-2 upstream
+    assert_eq!(pins::SOUND_API.debug_base, 0x7c66);  // −0x10 t22 selftest step-2 upstream (debug-only slide: 3 bsr relaxations + 5 CSelf abs.w leas)
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
