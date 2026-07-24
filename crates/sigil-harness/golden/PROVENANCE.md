@@ -1391,3 +1391,48 @@ link-immediate arithmetic, `struct DictBase { }` marker type, the CSelf
   sha256 **`eca79b92493779bd963bfdfedbc646ccddc5809edc2137204e76a3dd4a8ce77b`**.
 - Debug `s4.debug.bin`: **429202 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`e280a49b`**,
   sha256 **`fc3e8c24bd226587229e54470b0ef4fd5602d011d029389c9fd1a8817e8c298f`**.
+
+## 2026-07-24 — t23 re-baseline (boot conversion + the BootData seam)
+
+**TRANCHE 23 MERGED** — `engine/system/boot.asm` → SPLIT (`boot.asm` code +
+NEW `boot_data.asm` data tail; the ruled .asm-data-tail seam — the BootData
+table incl. the inline `cpu z80/phase 0` sound-driver source stays AS-side
+in BOTH build arms; no splice crosses the nested source include) →
+`boot.emp` (single pub proc `EntryPoint`, ⊤ contract incl. `sr`). The
+cursor-contract assert wall in boot_data.asm (movem head 26 / blob +54 /
+evenness / total lock) runs in both assemblers.
+
+**Byte movement:** ONE wave (overseer ruling 2, sole item): `move.w #0,
+(Frame_Accumulator).w` → `clr.w` — **−2 BOTH shapes at the FIRST region**,
+sliding every engine base −2 (77 pins, 30 engine.inc resume orgs,
+`REGION_A_LMA` $3E0→$3DE). The row-1257 sweep ran live for the first time
+and MIGRATED two stale fixture classes to pins-derived expressions
+(vdp_init_port carrier; mixed_tranche3 windows). C1: clr.w is EXACTLY
+cycle-equal (16 = 16) — smaller, not slower.
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` UNCHANGED (plain
+`0x5DB60`, debug `0x5F65A`) — the −2 absorbs pre-`org $10000`. Plain file
+size UNCHANGED (421157); debug TOTAL +30 (429202→429232) is the convsym
+symbol-table appendix re-encoding only.
+
+**Sigil-side semantics:** the imm-deferral family is now WIDTH-COMPLETE
+with distinct semantic windows — NEW `ImmSigned8` (moveq's opcode-embedded
+signed byte, [-128,127], out-of-window fails the LINK naming the window;
+overseer ruling 1, quick/shift refusals stand) + `Value8` unsigned `.b`
+ext-word deferral + movem pinned-abs seam (Abs16/32Be at offset 4; movem
+lowers on its own path and had never seen an abs-sym operand). Kill row
+10's kill condition TRIPPED (split retirement plan recorded). NEW `boot`
+region = the FIRST region ($200; len $1A8 plain / $1AC debug). Off-canonical
+gates: the oracle-fed twin-parity class grew its first SHAPE-DIVERGENT
+variant (boot region 2 bytes shorter at sound-off). Kill rows 45-48 born;
+VDP_Shadow offsets consolidated into engine.vdp (boot+hblank+parallax —
+panel B1 completed the hoist with the stranded MODE3). ZERO ownership
+flips (boot inherits a pure-callee world — engine/system code files are
+now ALL .emp). Full paired strict **2588/0** on merged masters (2573 + 15
+net t23, from main checkouts).
+
+- Aeon repo master: **`1470af2`** (merge of `port-tranche23`; sigil master **`d129d54`**).
+- Non-debug `s4.bin`: **421157 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`01832b1a`**,
+  sha256 **`d9d684c4df5f8b99c1f648f10e3c8df4a12b776192b09322387d3dcbef889e2c`**.
+- Debug `s4.debug.bin`: **429232 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`154076f8`**,
+  sha256 **`557d5371972a66dd3bc9ea0f7d76aa0e0d508dee7dced4410df914e77950099b`**.
