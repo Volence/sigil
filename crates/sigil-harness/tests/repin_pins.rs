@@ -353,8 +353,17 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // widened the player code's `jsr (Sym).w` call sites to abs.l and slid the
     // whole DEBUG object bank +0xC — breaking every harness fixture that
     // assumes the two banks coincide.
-    assert_eq!(pins::SOUND_API.plain_base, 0x61D6);  // −0x6C t24 step-5 wave
-    assert_eq!(pins::SOUND_API.debug_base, 0x7ca4);  // +0x46 t24 step-5 wave
+    // Then the t24 PANEL/RULING wave (2026-07-24): +0x3C plain / +0x94 debug on
+    // children. Adds: the masked render_flags inherit (band + coordmode) at six
+    // creators, the CreateChild_Linked parent_ptr assert (debug only), minus the
+    // two deleted effect parent_ptr writes, minus the branchless flip mask
+    // (−4 bytes), minus DeleteChildren's movem→move.l park (−4). $8000 BAR
+    // CHECKED LIVE at this wave: TEST_STATIC_MAIN/TEST_PARENT plain == debug,
+    // so no engine symbol consumed by object-bank code crossed the boundary and
+    // the game bank did not slide (contrast the earlier five-assert cut, which
+    // did move it +0xC).
+    assert_eq!(pins::SOUND_API.plain_base, 0x6212);  // +0x3C t24 ruling wave
+    assert_eq!(pins::SOUND_API.debug_base, 0x7d38);  // +0x94 t24 ruling wave
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

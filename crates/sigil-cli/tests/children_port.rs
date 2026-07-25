@@ -259,13 +259,15 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
     );
 }
 
-/// (plain) the `children` region == `s4.bin[0x3D38..0x4040]` — DEBUG=0.
+/// (plain) the `children` region == the `s4.bin` window at `pins::CHILDREN`'s
+/// plain base/len — DEBUG=0.
 #[test]
 fn children_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", 0);
 }
 
-/// (debug) the `children` region == `s4.debug.bin[0x4906..0x4C0E]` — DEBUG=1
+/// (debug) the `children` region == the `s4.debug.bin` window at
+/// `pins::CHILDREN`'s debug base/len — DEBUG=1
 /// (byte-identical to plain: no DEBUG-conditional code in the file).
 #[test]
 fn children_debug_region_matches_reference() {
