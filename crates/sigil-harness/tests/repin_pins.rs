@@ -362,8 +362,14 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // so no engine symbol consumed by object-bank code crossed the boundary and
     // the game bank did not slide (contrast the earlier five-assert cut, which
     // did move it +0xC).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6212);  // +0x3C t24 ruling wave
-    assert_eq!(pins::SOUND_API.debug_base, 0x7d38);  // +0x94 t24 ruling wave
+    // Then the t24 RE-PANEL corrections: the band half of the render_flags
+    // inherit REVERTED (a 3-bit band cannot be or-ed — see the gap-ledger row),
+    // the surviving COORDMODE read+mask HOISTED out of five of the six creator
+    // loops (byte-neutral, −20 cycles/child), and PopulateSpawnedPieceCount's
+    // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
+    // which also restored the plain-shape branch margin the wave had consumed).
+    assert_eq!(pins::SOUND_API.plain_base, 0x620A);  // +0x34 net, t24
+    assert_eq!(pins::SOUND_API.debug_base, 0x7d30);  // +0x8C net, t24
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
