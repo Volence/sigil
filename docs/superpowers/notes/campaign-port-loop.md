@@ -104,6 +104,19 @@ signature.
   a claim, not a gate; checklist rows describe what was EXECUTED, never
   what the plan intended.
 
+  **Negative probes need a POSITIVE CONTROL in the same file (ratified
+  2026-07-24, t24 — the class was invisible to every gate the campaign
+  runs):** an `assert_ne!`-shaped probe ("a doctored X must NOT match the
+  reference") only means something if the UNDOCTORED compile through the SAME
+  path DOES match. Where that claim lives in prose, the probe's fixtures rot
+  silently: `tranche3_negative_probes.rs` spent several re-pins comparing a
+  0x24-byte section against a 0x1A8-byte reference slice through hardcoded
+  addresses, so both its probes were trivially true and could not fail. Every
+  negative-probe file therefore carries an executable positive control
+  (`*_undoctored_compile_equals_the_reference_window`), and its fixtures are
+  PINS-DERIVED so a re-pin cannot re-stale them. Verify a new probe BOTH ways:
+  it must fail when doctored and pass when not.
+
   **Proof-mechanism feed-forward (2026-07-15, same shape as step 2's
   feed-forward rule):** when a port creates a NEW seam-configuration
   class and builds its proof, that proof becomes REQUIRED for every
@@ -467,6 +480,17 @@ full profiler context.
     (cascade-down under overflow, a skipped call that's coincidentally
     equivalent, unconditional fairness cycling) gets a site comment
     saying it is CHOSEN — an uncommented compromise is a finding.
+  - **Debug-growth boundary check (2026-07-24, t24)** — any change that
+    grows the DEBUG shape (asserts, `if DEBUG == 1` blocks, message blobs)
+    checks whether it pushed an engine symbol consumed by OBJECT-BANK code
+    across `$8000`: the AS width rule then widens the bank's
+    `jsr (Sym).w` call sites to `abs.l` (+2 each) and slides the whole debug
+    object bank, which breaks every fixture that assumes the two banks
+    coincide. Cheapest check: an object-bank symbol's plain and debug pins
+    coincide iff the bank did not slide. Full bar + the four fixture families
+    in the gap-ledger ("the $8000 abs.w/abs.l bar"). Assert blobs are budgeted
+    accordingly — an assert on a zero-caller proc can never fire and still
+    spends the bytes.
   - **Noticing clause (2026-07-15)** — did this file expose an
     optimization or hazard CLASS no line above covers? Propose it in
     the packet; ratified lines join this list.

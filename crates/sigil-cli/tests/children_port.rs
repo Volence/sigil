@@ -6,7 +6,7 @@
 //! the pinned addresses, in BOTH build shapes.
 //!
 //! Shape-DEPENDENT since the step-5 chain-contract asserts: the debug shape
-//! carries five `assert.w` sites + message blobs (and the twin's one
+//! carries TWO `assert.w` sites + their message blobs (and the twin's one
 //! `ifdef __DEBUG__` branch width they push out of `.s` reach); the plain
 //! shape self-gates them to ZERO bytes. Cross-region link refs:
 //! `AllocDynamic`/`AllocEffect`/`DeleteObject` (all `core.emp`-owned) plus,
@@ -335,7 +335,7 @@ fn children_region_pins_share_both_anchors() {
         "debug: children must end exactly where load_object begins (shared Load_Object anchor)"
     );
     // Shape-DEPENDENT length since the chain-contract asserts landed: the
-    // debug shape carries five `assert.w` sites plus their message blobs, and
+    // debug shape carries two `assert.w` sites plus their message blobs, and
     // the plain shape self-gates them to ZERO bytes (rings/core precedent).
     assert!(
         pins::CHILDREN.debug_len > pins::CHILDREN.plain_len,

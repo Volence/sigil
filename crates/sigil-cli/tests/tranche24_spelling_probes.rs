@@ -348,3 +348,50 @@ fn struct_field_displacement_over_spliced_base_matches_as() {
         "P6 Struct.field({splice}) inside a comptime-fn template",
     );
 }
+
+// ---------------------------------------------------------------------------
+// P7 — engine/coords.emp is a TYPE/TEMPLATE-ONLY module: it must emit ZERO
+// bytes anywhere (no section, no placement), the sst.emp / frames.emp /
+// aabb.emp precedent. A new module that emits even one byte needs the full
+// region + gate + pin treatment, so this is checked mechanically rather than
+// argued from the module header.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coords_module_emits_zero_bytes() {
+    let aeon = std::path::PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    let path = aeon.join("engine/coords.emp");
+    let Ok(src) = std::fs::read_to_string(&path) else {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but {} missing", path.display());
+        }
+        eprintln!("skip: {} not found (set AEON_DIR)", path.display());
+        return;
+    };
+    let (file, pdiags) = parse_str(&src);
+    assert!(
+        !pdiags.iter().any(|d| d.level == Level::Error),
+        "coords.emp parse errors: {pdiags:?}"
+    );
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: None,
+        embed_base: None,
+        defines: Vec::new(),
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        !ldiags.iter().any(|d| d.level == Level::Error),
+        "coords.emp lower errors: {ldiags:?}"
+    );
+    let bytes: usize = module.sections.iter().map(|s| s.fragments.len()).sum();
+    assert_eq!(
+        module.sections.len(),
+        0,
+        "engine.coords must open NO section (it emitted {} section(s), {bytes} fragment(s)) — \
+         a module that emits bytes needs a region, a gate and a pin",
+        module.sections.len()
+    );
+}
