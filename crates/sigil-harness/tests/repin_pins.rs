@@ -338,8 +338,23 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // the engine bank, so every base below slides −0x6 both shapes (LENs
     // unchanged). ASSEMBLED_LEN is UNCHANGED: the engine block's shrink is
     // absorbed by the `org $10000` ObjCodeBase shield.
-    assert_eq!(pins::SOUND_API.plain_base, 0x6242);  // −6 t24 children wave
-    assert_eq!(pins::SOUND_API.debug_base, 0x7c5e);  // −6 t24 children wave
+    // Then the t24 step-5 wave (2026-07-24), which is SHAPE-SPLIT — the first
+    // region to move in OPPOSITE directions per shape. PLAIN −0x6C: the six
+    // alloc oversaves collapse to a single `move.l a1,-(sp)` (or nothing),
+    // the five dead fail-path descriptor skip-walks are deleted, the chain-head
+    // write hoists out of three loops, DeleteChildren's per-child movem pair
+    // becomes one for the whole cascade, and `move.w #0` → `clr.w`. DEBUG
+    // +0x46: the same −0x6C plus the TWO chain-contract `assert.w` sites and
+    // their message blobs (which also push one `bsr` out of `.s` reach in the
+    // debug shape only — the twin carries that width under `ifdef __DEBUG__`).
+    // children is upstream of everything below, so plain bases slide −0x6C and
+    // debug bases +0x46. The assert count is load-bearing: an earlier
+    // five-assert version (+0x14E) pushed engine symbols across $8000, which
+    // widened the player code's `jsr (Sym).w` call sites to abs.l and slid the
+    // whole DEBUG object bank +0xC — breaking every harness fixture that
+    // assumes the two banks coincide.
+    assert_eq!(pins::SOUND_API.plain_base, 0x61D6);  // −0x6C t24 step-5 wave
+    assert_eq!(pins::SOUND_API.debug_base, 0x7ca4);  // +0x46 t24 step-5 wave
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

@@ -97,10 +97,6 @@ fn twin_guards() -> usize {
 
 /// Bank geometry — SHAPE-INVARIANT (sourced from `sigil_harness::pins` —
 /// regenerate via repin; both listings agree).
-const SOLID_BASE: u32 = pins::TEST_SOLID.plain_base;
-const SOLID_LEN: usize = pins::TEST_SOLID.plain_len;
-const PARTICLE_BASE: u32 = pins::TEST_PARTICLE.plain_base;
-const PARTICLE_LEN: usize = pins::TEST_PARTICLE.plain_len;
 const OBJ_CODE_BASE: u32 = pins::OBJ_CODE_BASE.plain;
 
 /// Per-shape TRUE VMAs of the cross-seam targets (listing symbol tables).
@@ -109,6 +105,15 @@ struct Shape {
     object_move: u32,
     animate_sprite: u32,
     ani_particle: u32,
+    // The object-bank windows are SHAPE-DEPENDENT: a debug-only engine growth
+    // that pushes an engine symbol across $8000 widens the player code's
+    // `jsr (Sym).w` call sites to abs.l, sliding the whole bank (+0xC at t24).
+    // Taking `.plain_base` in both arms was latent-correct only while the two
+    // banks coincided.
+    solid_base: u32,
+    solid_len: usize,
+    particle_base: u32,
+    particle_len: usize,
 }
 
 const PLAIN: Shape = Shape {
@@ -116,12 +121,20 @@ const PLAIN: Shape = Shape {
     object_move: pins::OBJECT_MOVE.plain,
     animate_sprite: pins::ANIMATE.plain_base,
     ani_particle: pins::PARTICLE_ANIMS.plain_base,
+    solid_base: pins::TEST_SOLID.plain_base,
+    solid_len: pins::TEST_SOLID.plain_len,
+    particle_base: pins::TEST_PARTICLE.plain_base,
+    particle_len: pins::TEST_PARTICLE.plain_len,
 };
 const DEBUG: Shape = Shape {
     draw_sprite: pins::DRAW_SPRITE.debug,
     object_move: pins::OBJECT_MOVE.debug,
     animate_sprite: pins::ANIMATE.debug_base,
     ani_particle: pins::PARTICLE_ANIMS.debug_base,
+    solid_base: pins::TEST_SOLID.debug_base,
+    solid_len: pins::TEST_SOLID.debug_len,
+    particle_base: pins::TEST_PARTICLE.debug_base,
+    particle_len: pins::TEST_PARTICLE.debug_len,
 };
 
 /// Parse one `.emp` file to an AST, failing loudly on parse errors.
@@ -206,7 +219,9 @@ fn as_outbound_consumer() -> Vec<Section> {
 }
 
 /// Both regions sized exactly; sections carry only their emitted bytes.
-fn map_toml() -> String {
+fn map_toml(shape: &Shape) -> String {
+    let (solid_base, solid_len) = (shape.solid_base, shape.solid_len);
+    let (particle_base, particle_len) = (shape.particle_base, shape.particle_len);
     format!(
         "fill = 0x00\n\
          \n\
@@ -218,14 +233,14 @@ fn map_toml() -> String {
          \n\
          [[region]]\n\
          name = \"test_solid\"\n\
-         lma_base = {SOLID_BASE:#x}\n\
-         size = {SOLID_LEN:#x}\n\
+         lma_base = {solid_base:#x}\n\
+         size = {solid_len:#x}\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"test_particle\"\n\
-         lma_base = {PARTICLE_BASE:#x}\n\
-         size = {PARTICLE_LEN:#x}\n\
+         lma_base = {particle_base:#x}\n\
+         size = {particle_len:#x}\n\
          kind = \"rom\"\n"
     )
 }
@@ -266,7 +281,7 @@ fn compile_real_files(
         link_asserts.extend(module.link_asserts);
     }
 
-    let map = sigil_link::load_map(&map_toml()).expect("map must load");
+    let map = sigil_link::load_map(&map_toml(shape)).expect("map must load");
     let pdiags = place_sections(&mut sections, &map);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -353,8 +368,8 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     assert_drift_guards(&resolved, &link_asserts);
 
     for (name, base, len) in [
-        ("test_solid", SOLID_BASE as usize, SOLID_LEN),
-        ("test_particle", PARTICLE_BASE as usize, PARTICLE_LEN),
+        ("test_solid", shape.solid_base as usize, shape.solid_len),
+        ("test_particle", shape.particle_base as usize, shape.particle_len),
     ] {
         let section = linked
             .section(name)
@@ -378,12 +393,12 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let particle_word = u16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
     assert_eq!(
         solid_word,
-        (SOLID_BASE - OBJ_CODE_BASE) as u16,
+        (shape.solid_base - OBJ_CODE_BASE) as u16,
         "objdef's `dc.w objroutine(TestSolid_Init)` must resolve to the bank offset"
     );
     assert_eq!(
         particle_word,
-        (PARTICLE_BASE - OBJ_CODE_BASE) as u16,
+        (shape.particle_base - OBJ_CODE_BASE) as u16,
         "the emitters' `dc.w objroutine(TestParticle)` must resolve to the bank offset"
     );
 }

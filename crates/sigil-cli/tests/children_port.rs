@@ -5,10 +5,12 @@
 //! the `children` region's flattened bytes equal the reference ROM window at
 //! the pinned addresses, in BOTH build shapes.
 //!
-//! Shape-INVARIANT: NO `assert`, NO `if DEBUG == 1 {}`, so the length is $30E
-//! in both shapes and the two shapes are byte-identical (only relative
-//! branches, register EAs, and three absolute-word link refs —
-//! `AllocDynamic`/`AllocEffect`/`DeleteObject`, all `core.emp`-owned).
+//! Shape-DEPENDENT since the step-5 chain-contract asserts: the debug shape
+//! carries five `assert.w` sites + message blobs (and the twin's one
+//! `ifdef __DEBUG__` branch width they push out of `.s` reach); the plain
+//! shape self-gates them to ZERO bytes. Cross-region link refs:
+//! `AllocDynamic`/`AllocEffect`/`DeleteObject` (all `core.emp`-owned) plus,
+//! in the debug shape, the assert construct's error-handler tail.
 //!
 //! Cross-seam INBOUND: sst.emp's SST_* struct equs + the engine constants twin
 //! (`FRAME_PIECE_COUNT`, `RF_XFLIP`). The six internal
@@ -65,6 +67,9 @@ const DEBUG: Shape = Shape {
         ("AllocDynamic", pins::ALLOC_DYNAMIC.debug),
         ("AllocEffect", pins::ALLOC_EFFECT.debug),
         ("DeleteObject", pins::DELETE_OBJECT.debug),
+        // The chain-contract asserts' error-handler tail (debug shape only).
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ],
 };
 
@@ -329,10 +334,13 @@ fn children_region_pins_share_both_anchors() {
         pins::LOAD_OBJECT.debug_base,
         "debug: children must end exactly where load_object begins (shared Load_Object anchor)"
     );
-    // Shape-INVARIANT length (no asserts, no __DEBUG__ in the file).
-    assert_eq!(
-        pins::CHILDREN.plain_len,
+    // Shape-DEPENDENT length since the chain-contract asserts landed: the
+    // debug shape carries five `assert.w` sites plus their message blobs, and
+    // the plain shape self-gates them to ZERO bytes (rings/core precedent).
+    assert!(
+        pins::CHILDREN.debug_len > pins::CHILDREN.plain_len,
+        "the debug shape must carry the chain-contract assert blobs (debug {:#x} vs plain {:#x})",
         pins::CHILDREN.debug_len,
-        "children is shape-invariant: the two shapes must have equal length"
+        pins::CHILDREN.plain_len
     );
 }

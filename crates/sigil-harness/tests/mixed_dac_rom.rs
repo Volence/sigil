@@ -421,9 +421,14 @@ fn emp_bank_map_tranche3(debug: bool) -> String {
 /// drift cannot move it: plain `$309DE` / debug `$30A46`, size 8 (table
 /// word + 5-byte inline body + the `align 2` pad; content shape-invariant).
 fn emp_bank_map_tranche4(debug: bool) -> String {
-    let act_base = if debug { "0x14BC6" } else { "0x14B5E" };
-    let sonic_base = if debug { "0x25778" } else { "0x25710" };
-    let particle_base = if debug { "0x257E6" } else { "0x2577E" };
+    // PINS-DERIVED (t24): these are OBJECT-BANK / data-bank bases, and the
+    // debug bank slides whenever a debug-only engine growth pushes an engine
+    // symbol across $8000 (the player code's `jsr (Sym).w` call sites widen to
+    // abs.l). Hardcoding them made every debug arm here collide with the AS
+    // side's own bank the first time that happened.
+    let act_base = format!("{:#x}", if debug { pins::ACT_DESCRIPTOR.debug_base } else { pins::ACT_DESCRIPTOR.plain_base });
+    let sonic_base = format!("{:#x}", if debug { pins::SONIC_ANIMS.debug_base } else { pins::SONIC_ANIMS.plain_base });
+    let particle_base = format!("{:#x}", if debug { pins::PARTICLE_ANIMS.debug_base } else { pins::PARTICLE_ANIMS.plain_base });
     format!(
         "{}\
          \n\
@@ -488,19 +493,25 @@ fn emp_bank_map_tranche5(debug: bool) -> String {
 /// `AnimateSprite` targets and the `Ani_Particle` imm32 are link-resolved
 /// per shape.
 fn emp_bank_map_tranche6(debug: bool) -> String {
+    // PINS-DERIVED (t24): object-bank bases move per shape — see the note in
+    // emp_bank_map_tranche4.
+    let solid_base = format!("{:#x}", if debug { pins::TEST_SOLID.debug_base } else { pins::TEST_SOLID.plain_base });
+    let solid_len = format!("{:#x}", if debug { pins::TEST_SOLID.debug_len } else { pins::TEST_SOLID.plain_len });
+    let particle_base = format!("{:#x}", if debug { pins::TEST_PARTICLE.debug_base } else { pins::TEST_PARTICLE.plain_base });
+    let particle_len = format!("{:#x}", if debug { pins::TEST_PARTICLE.debug_len } else { pins::TEST_PARTICLE.plain_len });
     format!(
         "{}\
          \n\
          [[region]]\n\
          name = \"test_solid\"\n\
-         lma_base = 0x10F7C\n\
-         size = 0xE\n\
+         lma_base = {solid_base}\n\
+         size = {solid_len}\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"test_particle\"\n\
-         lma_base = 0x10F8A\n\
-         size = 0x52\n\
+         lma_base = {particle_base}\n\
+         size = {particle_len}\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche5(debug)
     )
@@ -2365,22 +2376,26 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche4_rom(&aeon, true);
 
+    // Pins-derived windows (t24): the data bank slides per shape.
+    let pa = pins::PARTICLE_ANIMS.debug_base as usize;
     assert_eq!(
-        &rom[0x257E6..0x257EE],
+        &rom[pa..pa + 8],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (debug)"
     );
 
+    let sa = pins::SONIC_ANIMS.debug_base as usize;
     assert_eq!(
-        &rom[0x25778..0x25780],
+        &rom[sa..sa + 8],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (debug)"
     );
 
     // act_descriptor sec_grid_ptr — abs.l self-pointer (base + 0x22), pin-spliced (t12).
     let ad = pins::ACT_DESCRIPTOR.debug_base + 0x22;
+    let adb = pins::ACT_DESCRIPTOR.debug_base as usize;
     assert_eq!(
-        &rom[0x14BC6..0x14BCE],
+        &rom[adb..adb + 8],
         &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (debug)"
     );

@@ -299,6 +299,16 @@ struct ObjShape {
     region_base: u32,
     region_len: usize,
     map_test_obj: u32,
+    // The object-bank code labels every objdef record points at. These are
+    // SHAPE-DEPENDENT: the debug object bank sits later than the plain one
+    // whenever a debug-only engine growth pushes an engine symbol across
+    // $8000, because the player code's `jsr (Sym).w` call sites widen to
+    // abs.l (+2 each). Taking `.plain` in both arms was latent-correct only
+    // while the two banks happened to coincide (they diverged at t24).
+    test_static_main: u32,
+    test_solid_init: u32,
+    test_enemy_init: u32,
+    test_parent: u32,
     rom: &'static str,
 }
 
@@ -377,10 +387,10 @@ fn objdef_reference_gate(shape: &ObjShape) {
     let mut lma = 0x0100_0000u32;
     for group in [
         &mut synth,
-        &mut as_label_at("TestStatic_Main", pins::TEST_STATIC_MAIN.plain),
-        &mut as_label_at("TestSolid_Init", pins::TEST_SOLID_INIT.plain),
-        &mut as_label_at("TestEnemy_Init", pins::TEST_ENEMY_INIT.plain),
-        &mut as_label_at("TestParent", pins::TEST_PARENT.plain),
+        &mut as_label_at("TestStatic_Main", shape.test_static_main),
+        &mut as_label_at("TestSolid_Init", shape.test_solid_init),
+        &mut as_label_at("TestEnemy_Init", shape.test_enemy_init),
+        &mut as_label_at("TestParent", shape.test_parent),
         &mut as_label_at("Map_TestObj", shape.map_test_obj),
         &mut outbound,
     ] {
@@ -446,6 +456,10 @@ fn objdefs_match_reference_plain() {
         region_base: pins::OBJDEFS.plain_base,
         region_len: pins::OBJDEFS.plain_len,
         map_test_obj: pins::MAP_TEST_OBJ.plain,
+        test_static_main: pins::TEST_STATIC_MAIN.plain,
+        test_solid_init: pins::TEST_SOLID_INIT.plain,
+        test_enemy_init: pins::TEST_ENEMY_INIT.plain,
+        test_parent: pins::TEST_PARENT.plain,
         rom: "s4.bin",
     });
 }
@@ -457,6 +471,10 @@ fn objdefs_match_reference_debug() {
         region_base: pins::OBJDEFS.debug_base,
         region_len: pins::OBJDEFS.debug_len,
         map_test_obj: pins::MAP_TEST_OBJ.debug,
+        test_static_main: pins::TEST_STATIC_MAIN.debug,
+        test_solid_init: pins::TEST_SOLID_INIT.debug,
+        test_enemy_init: pins::TEST_ENEMY_INIT.debug,
+        test_parent: pins::TEST_PARENT.debug,
         rom: "s4.debug.bin",
     });
 }

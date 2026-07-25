@@ -192,8 +192,12 @@ tests = ["entity_window_port"]
 
 [[region]]
 # Tranche 24 — data-driven parent/child + effect spawning (8 entry points over
-# the 4-byte and 14-byte descriptor formats). Shape-INVARIANT length ($30E both
-# shapes — no asserts, no __DEBUG__). SHARED ANCHORS both ends: the start
+# the 4-byte and 14-byte descriptor formats). Shape-DEPENDENT length since the
+# step-5 wave ($29C plain / $456 debug): the debug surplus is the five
+# chain-contract `assert.w` sites + their message blobs (plain self-gates them
+# to zero bytes), which also push one `bsr` out of `.s` reach in the debug
+# shape only — the twin carries that width under `ifdef __DEBUG__`, the .emp
+# stays bare. SHARED ANCHORS both ends: the start
 # symbol `PopulateSpawnedPieceCount` is simultaneously entity_window's END
 # anchor, and the end symbol `Load_Object` is simultaneously load_object's
 # START (end-is-next-placement, the load_object precedent). The descriptor
