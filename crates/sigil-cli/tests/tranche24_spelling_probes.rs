@@ -18,6 +18,14 @@
 //!   sides (the parent→child mappings/art_tile inheritance, 8 sites).
 //! - P4 indexed EAs: zero-displacement `(a0,d0.w)` and comptime-symbolic
 //!   `FRAME_PIECE_COUNT(a0,d0.w)` (PopulateSpawnedPieceCount's frame walk).
+//! - P6 (DEMANDED FEATURE, shipped in the loop's step-4 construct pass) — a
+//!   struct-field displacement over a SPLICED base register inside a
+//!   comptime-fn template (`Sst.field({sst})`). The sibling of the spliced
+//!   INDEX-register gap: `peek_inner_reg` resolved the base register only from
+//!   a LITERAL path, so both field-displacement forms (bare `f(aN)` and
+//!   qualified `S.f(aN)`) fell through to comptime eval and died as "unknown
+//!   name `Struct.field`" — which blocked every multi-instruction template that
+//!   touches a typed record.
 //! - P5 address-register word traffic: `move.w a0, parent_ptr(a2)`,
 //!   `move.w a2, d3`, `movea.w d1, a1` (the sibling-chain link pointers,
 //!   which live in the sign-extending $FFFFxxxx RAM window).
@@ -294,5 +302,49 @@ fn address_register_word_links_match_as() {
         &as_reference(ASM_AREG_WORD),
         &emp_image(EMP_AREG_WORD),
         "P5 An-source word stores + movea.w Dn,An",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P6 — DEMANDED FEATURE: struct-field displacement over a SPLICED base
+// register inside a comptime-fn template. Byte-identical to the same
+// instructions written with a literal register (the twin spelling).
+// ---------------------------------------------------------------------------
+
+const EMP_FIELD_OVER_SPLICED_BASE: &str = "\
+module m in p6
+pub struct Rec (size: 8) {
+    lo: u16,
+    pad: u16 @ $02,
+    hi: u32 @ $04,
+}
+pub comptime fn touch(rec: Reg, scratch: Reg) -> Code {
+    return asm {
+        move.w  Rec.lo({rec}), {scratch}
+        move.l  Rec.hi({rec}), {scratch}
+        move.w  {scratch}, Rec.lo({rec})
+    }
+}
+pub proc P (a2: *u8) clobbers(d0) {
+        touch(a2, d0)
+        rts
+}
+";
+
+const ASM_FIELD_OVER_SPLICED_BASE: &str = "\
+cpu 68000
+P:
+        move.w  $00(a2), d0
+        move.l  $04(a2), d0
+        move.w  d0, $00(a2)
+        rts
+";
+
+#[test]
+fn struct_field_displacement_over_spliced_base_matches_as() {
+    assert_byte_identical(
+        &as_reference(ASM_FIELD_OVER_SPLICED_BASE),
+        &emp_image(EMP_FIELD_OVER_SPLICED_BASE),
+        "P6 Struct.field({splice}) inside a comptime-fn template",
     );
 }

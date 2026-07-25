@@ -154,9 +154,11 @@ fn compile_with_seam(
     let types = parse_file(&aeon.join("engine/system/types.emp"));
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
+    let coords = parse_file(&aeon.join("engine/coords.emp"));
+    let frames = parse_file(&aeon.join("engine/objects/frames.emp"));
     let ch = parse_file(&aeon.join("engine/objects/children.emp"));
 
-    let file = with_ambient(vec![types, sst, constants], ch);
+    let file = with_ambient(vec![types, sst, constants, coords, frames], ch);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,

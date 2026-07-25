@@ -1332,6 +1332,20 @@ fn frames_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item
     file.items
 }
 
+/// The shared `engine.coords` module (`engine/coords.emp`, t24): the
+/// `pixels_to_coord` 16.16 promotion template. Zero bytes of its own —
+/// prepended wherever a module `use`s it.
+fn coords_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_dir.join("coords.emp"))
+        .unwrap_or_else(|e| panic!("cannot read coords.emp: {e}"));
+    let (file, cdiags) = parse_str(&src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "coords.emp parse errors: {cdiags:?}"
+    );
+    file.items
+}
+
 /// The shared `engine.structs` module (`engine/structs.emp`, row 1051): the
 /// zero-byte Act/Sec ROM-descriptor twins + their per-field drift wall,
 /// prepended wherever a module `use`s them (act_descriptor.emp, and the
@@ -4179,7 +4193,12 @@ fn build_mixed_tranche24_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let (ch_sections, ch_asserts) = t21_lower_and_place(
         aeon,
         "engine/objects/children.emp",
-        vec![sst_ambient_items(&objects_dir), constants_ambient_items(&system_dir)],
+        vec![
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            coords_ambient_items(&engine_dir),
+            frames_ambient_items(&objects_dir),
+        ],
         "children",
         ch.0,
         ch.1,
