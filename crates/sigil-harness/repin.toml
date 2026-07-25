@@ -191,10 +191,28 @@ gate = "SIGIL_EMP_ENTITY_WINDOW"
 tests = ["entity_window_port"]
 
 [[region]]
+# Tranche 24 — data-driven parent/child + effect spawning (8 entry points over
+# the 4-byte and 14-byte descriptor formats). Shape-DEPENDENT length since the
+# step-5 wave ($29C plain / $34E debug): the debug surplus is the TWO
+# chain-contract `assert.w` sites + their message blobs (plain self-gates them
+# to zero bytes), which also push one `bsr` out of `.s` reach in the debug
+# shape only — the twin carries that width under `ifdef __DEBUG__`, the .emp
+# stays bare. SHARED ANCHORS both ends: the start
+# symbol `PopulateSpawnedPieceCount` is simultaneously entity_window's END
+# anchor, and the end symbol `Load_Object` is simultaneously load_object's
+# START (end-is-next-placement, the load_object precedent). The descriptor
+# TABLES stay game-side (.asm) — this region is code only.
+name = "children"
+start = "PopulateSpawnedPieceCount"
+end = "Load_Object"
+gate = "SIGIL_EMP_CHILDREN"
+tests = ["children_port"]
+
+[[region]]
 # Shape-INVARIANT length ($9E both shapes — no asserts, no __DEBUG__; the
 # cleanest region since dplc). The spawn-seam callee of entity_window's
 # TrySpawnObject and the sole consumer of AllocDynamic here. Sits after
-# children.asm (unported) and before plane_buffer.asm; its start doubles as the
+# children (tranche 24) and before plane_buffer.asm; its start doubles as the
 # `Load_Object` symbol that entity_window_port pins (via LOAD_OBJECT.plain_base,
 # the RingBuffer_Add/RINGS precedent).
 name = "load_object"
@@ -1025,7 +1043,7 @@ tests = ["core_port"]
 
 [[symbol]]
 name = "DeleteObject"
-tests = ["animate_port"]
+tests = ["animate_port", "children_port"]
 
 # sprites (tranche 11) — the one outbound cross-region call: Render_Sprites
 # tail-calls DrawRings (rings region). Render_Sprites/InitSpriteSystem are
@@ -1435,7 +1453,13 @@ tests = ["entity_window_port"]
 # The `jsr AllocDynamic` target in load_object.emp (the sole inbound extern);
 # the AllocDynamic latch/live-list owner lives in core.emp.
 name = "AllocDynamic"
-tests = ["load_object_port"]
+tests = ["load_object_port", "children_port"]
+
+[[symbol]]
+# The `jsr AllocEffect` target in children.emp (the effect-pool sibling of
+# AllocDynamic; owner lives in core.emp).
+name = "AllocEffect"
+tests = ["children_port"]
 
 # ── Region-relative offsets ─────────────────────────────────────────────────
 

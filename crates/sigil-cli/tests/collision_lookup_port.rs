@@ -54,8 +54,8 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$4A76`): `s4.bin[0x4A76..0x4A9A]` (0x24 bytes).
-//! Debug (map base `$529A`): `s4.debug.bin[0x529A..0x52BE]` (0x24 bytes).
+//! Plain: the `s4.bin` window at `pins::COLLISION_LOOKUP`'s plain base/len.
+//! Debug: the `s4.debug.bin` window at `pins::COLLISION_LOOKUP`'s debug base/len.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -326,7 +326,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 }
 
 /// (plain) The `collision_lookup` section's linked bytes equal
-/// `s4.bin[0x4A76..0x4A9A]`, AND the outbound `bsr.w` consumer's fixup
+/// the pinned plain window, AND the outbound `bsr.w` consumer's fixup
 /// resolves to the correct per-shape address ($4C02) — the bare-name proof.
 #[test]
 fn collision_lookup_region_matches_reference() {
@@ -350,7 +350,7 @@ fn collision_lookup_region_matches_reference() {
     assert_region_matches(
         &section.bytes,
         expected,
-        "collision_lookup (plain) vs s4.bin[0x4A76..0x4A9A]",
+        "collision_lookup (plain) vs the pinned plain window",
     );
 
     let consumer = linked
@@ -367,7 +367,7 @@ fn collision_lookup_region_matches_reference() {
 }
 
 /// (debug) The `collision_lookup` section's linked bytes equal
-/// `s4.debug.bin[0x529A..0x52BE]`, AND the outbound consumer's fixup
+/// the pinned debug window, AND the outbound consumer's fixup
 /// resolves to the correct per-shape address ($5426).
 #[test]
 fn collision_lookup_debug_region_matches_reference() {
@@ -391,7 +391,7 @@ fn collision_lookup_debug_region_matches_reference() {
     assert_region_matches(
         &section.bytes,
         expected,
-        "collision_lookup (debug) vs s4.debug.bin[0x529A..0x52BE]",
+        "collision_lookup (debug) vs the pinned debug window",
     );
 
     let consumer = linked

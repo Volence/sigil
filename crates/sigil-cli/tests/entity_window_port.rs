@@ -344,7 +344,8 @@ fn entity_window_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", 0);
 }
 
-/// (debug) the `entity_window` region == `s4.debug.bin[0x3838..0x457C]` — DEBUG=1,
+/// (debug) the `entity_window` region == the `s4.debug.bin` window at
+/// `pins::ENTITY_WINDOW`'s debug base/len — DEBUG=1,
 /// including the 11 asserts + 3 __DEBUG__ blocks and their FSTRING dc.b data.
 #[test]
 fn entity_window_debug_region_matches_reference() {

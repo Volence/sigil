@@ -119,6 +119,7 @@ use sigil_harness::{
     assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
     assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side,
     assemble_mixed_tranche22_as_side, assemble_mixed_tranche23_as_side,
+    assemble_mixed_tranche24_as_side,
     assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
@@ -420,9 +421,14 @@ fn emp_bank_map_tranche3(debug: bool) -> String {
 /// drift cannot move it: plain `$309DE` / debug `$30A46`, size 8 (table
 /// word + 5-byte inline body + the `align 2` pad; content shape-invariant).
 fn emp_bank_map_tranche4(debug: bool) -> String {
-    let act_base = if debug { "0x14BC6" } else { "0x14B5E" };
-    let sonic_base = if debug { "0x25778" } else { "0x25710" };
-    let particle_base = if debug { "0x257E6" } else { "0x2577E" };
+    // PINS-DERIVED (t24): these are OBJECT-BANK / data-bank bases, and the
+    // debug bank slides whenever a debug-only engine growth pushes an engine
+    // symbol across $8000 (the player code's `jsr (Sym).w` call sites widen to
+    // abs.l). Hardcoding them made every debug arm here collide with the AS
+    // side's own bank the first time that happened.
+    let act_base = format!("{:#x}", if debug { pins::ACT_DESCRIPTOR.debug_base } else { pins::ACT_DESCRIPTOR.plain_base });
+    let sonic_base = format!("{:#x}", if debug { pins::SONIC_ANIMS.debug_base } else { pins::SONIC_ANIMS.plain_base });
+    let particle_base = format!("{:#x}", if debug { pins::PARTICLE_ANIMS.debug_base } else { pins::PARTICLE_ANIMS.plain_base });
     format!(
         "{}\
          \n\
@@ -487,19 +493,25 @@ fn emp_bank_map_tranche5(debug: bool) -> String {
 /// `AnimateSprite` targets and the `Ani_Particle` imm32 are link-resolved
 /// per shape.
 fn emp_bank_map_tranche6(debug: bool) -> String {
+    // PINS-DERIVED (t24): object-bank bases move per shape — see the note in
+    // emp_bank_map_tranche4.
+    let solid_base = format!("{:#x}", if debug { pins::TEST_SOLID.debug_base } else { pins::TEST_SOLID.plain_base });
+    let solid_len = format!("{:#x}", if debug { pins::TEST_SOLID.debug_len } else { pins::TEST_SOLID.plain_len });
+    let particle_base = format!("{:#x}", if debug { pins::TEST_PARTICLE.debug_base } else { pins::TEST_PARTICLE.plain_base });
+    let particle_len = format!("{:#x}", if debug { pins::TEST_PARTICLE.debug_len } else { pins::TEST_PARTICLE.plain_len });
     format!(
         "{}\
          \n\
          [[region]]\n\
          name = \"test_solid\"\n\
-         lma_base = 0x10F7C\n\
-         size = 0xE\n\
+         lma_base = {solid_base}\n\
+         size = {solid_len}\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"test_particle\"\n\
-         lma_base = 0x10F8A\n\
-         size = 0x52\n\
+         lma_base = {particle_base}\n\
+         size = {particle_len}\n\
          kind = \"rom\"\n",
         emp_bank_map_tranche5(debug)
     )
@@ -1327,6 +1339,20 @@ fn frames_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item
     assert!(
         fdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "frames.emp parse errors: {fdiags:?}"
+    );
+    file.items
+}
+
+/// The shared `engine.coords` module (`engine/coords.emp`, t24): the
+/// `pixels_to_coord` 16.16 promotion template. Zero bytes of its own —
+/// prepended wherever a module `use`s it.
+fn coords_ambient_items(engine_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_dir.join("coords.emp"))
+        .unwrap_or_else(|e| panic!("cannot read coords.emp: {e}"));
+    let (file, cdiags) = parse_str(&src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "coords.emp parse errors: {cdiags:?}"
     );
     file.items
 }
@@ -2350,22 +2376,26 @@ fn mixed_tranche4_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche4_rom(&aeon, true);
 
+    // Pins-derived windows (t24): the data bank slides per shape.
+    let pa = pins::PARTICLE_ANIMS.debug_base as usize;
     assert_eq!(
-        &rom[0x257E6..0x257EE],
+        &rom[pa..pa + 8],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (debug)"
     );
 
+    let sa = pins::SONIC_ANIMS.debug_base as usize;
     assert_eq!(
-        &rom[0x25778..0x25780],
+        &rom[sa..sa + 8],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (debug)"
     );
 
     // act_descriptor sec_grid_ptr — abs.l self-pointer (base + 0x22), pin-spliced (t12).
     let ad = pins::ACT_DESCRIPTOR.debug_base + 0x22;
+    let adb = pins::ACT_DESCRIPTOR.debug_base as usize;
     assert_eq!(
-        &rom[0x14BC6..0x14BCE],
+        &rom[adb..adb + 8],
         &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (debug)"
     );
@@ -4122,4 +4152,152 @@ fn mixed_tranche23_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche23_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche23 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 24 — children.emp inside the full ROM. `SIGIL_EMP_CHILDREN` gates
+// children.asm out of engine.inc; the `children` region ([PopulateSpawnedPieceCount,
+// Load_Object)) comes from the .emp side, everything else stays AS.
+//
+// The arm's two NAMED proofs:
+//  (1) SHARED ANCHORS — the gate's start symbol is entity_window's END anchor
+//      and its end symbol is load_object's START, so with children.asm gated
+//      out the AS side must still land `Load_Object` at the canonical
+//      per-shape address (an org-resume error would slide every later region).
+//  (2) `.asm → .emp` CALLER RESOLUTION — the four game-side test objects call
+//      INTO the newly .emp-owned procs. In this build the AS side carries NO
+//      definition of them, so `jsr CreateChild_Normal` (test_parent.asm:138)
+//      and `jsr DeleteChildren` (:165) can only resolve against the .emp
+//      exports; the encoded abs.w operands are checked against the .emp's own
+//      placed label addresses.
+// ---------------------------------------------------------------------------
+
+fn build_mixed_tranche24_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche24_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof (1): org-resume must land load_object.asm's `Load_Object` at the
+    // canonical per-shape address with children.asm's include gated out.
+    let load_object_expect =
+        if debug { pins::LOAD_OBJECT.debug_base } else { pins::LOAD_OBJECT.plain_base };
+    let mut load_object_found = None;
+    for sec in &as_module.sections {
+        for l in &sec.labels {
+            if l.name == "Load_Object" {
+                load_object_found = Some(sec.vma_origin().wrapping_add(l.offset));
+            }
+        }
+    }
+    assert_eq!(
+        load_object_found,
+        Some(load_object_expect),
+        "org-resume must land load_object.asm's Load_Object at the canonical address \
+         (the shared end anchor)"
+    );
+
+    let dbg = i128::from(debug);
+    let engine_dir = aeon.join("engine");
+    let objects_dir = engine_dir.join("objects");
+    let system_dir = engine_dir.join("system");
+
+    let ch = if debug {
+        (pins::CHILDREN.debug_base, pins::CHILDREN.debug_len)
+    } else {
+        (pins::CHILDREN.plain_base, pins::CHILDREN.plain_len)
+    };
+    let (ch_sections, ch_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/objects/children.emp",
+        vec![
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            coords_ambient_items(&engine_dir),
+            frames_ambient_items(&objects_dir),
+        ],
+        "children",
+        ch.0,
+        ch.1,
+        vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(ch_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche24 mixed resolve_layout failed: {d:?}"));
+
+    // The .emp side's own placed addresses for the two caller-visible entries
+    // (proof 2's expected operands — derived from the RESOLVED .emp labels,
+    // never hardcoded; pre-resolve offsets would be the unrelaxed ones).
+    let emp_label = |want: &str| -> u32 {
+        for sec in &resolved {
+            if sec.name != "children" {
+                continue;
+            }
+            for l in &sec.labels {
+                if l.name == want {
+                    return sec.vma_origin().wrapping_add(l.offset);
+                }
+            }
+        }
+        panic!("children.emp must export {want}");
+    };
+    let create_child_normal = emp_label("CreateChild_Normal");
+    let delete_children = emp_label("DeleteChildren");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche24 mixed link failed: {d:?}"));
+
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &ch_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche24 mixed drift guards: {adiags:?}"
+    );
+
+    let rom = sigil_link::flatten(&linked, 0x00);
+
+    // Proof (2): the game-side `jsr` sites resolved against the .emp exports.
+    // `jsr <abs.w>` = 4E B8 <addr16>; both targets live below $8000.
+    for (name, addr) in
+        [("CreateChild_Normal", create_child_normal), ("DeleteChildren", delete_children)]
+    {
+        let pattern = [0x4E, 0xB8, (addr >> 8) as u8, addr as u8];
+        let hits = rom.windows(4).filter(|w| *w == pattern).count();
+        assert!(
+            hits > 0,
+            "the game-side `jsr {name}` must resolve to the .emp-owned symbol at {addr:#x} \
+             (no AS definition exists in this build)"
+        );
+    }
+
+    rom
+}
+
+#[test]
+fn mixed_tranche24_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche24_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche24 mixed");
+}
+
+#[test]
+fn mixed_tranche24_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche24_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche24 mixed debug");
 }

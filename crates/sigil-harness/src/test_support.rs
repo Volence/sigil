@@ -183,6 +183,7 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("VDP_Shadow_len", "19"),
         ("RF_COORDMODE", "3"),
         ("RF_PRIORITY_SHIFT", "5"),
+        ("RF_PRIORITY_MASK", "$E0"),
         // Animation block (tranche 9 — AF_* truth re-homed from animate.asm to
         // engine/constants.asm at the animate port so script data files survive
         // the SIGIL_EMP_ANIMATE gate; consumed-only mirroring, kill-list row 2).
@@ -359,14 +360,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_57() {
+    fn engine_constants_blob_assembles_and_defines_all_70() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            69,
-            "the twin guards 69 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4 + tranche-20 DMA/ART block of 9 + tranche-21 VRAM/plane block of 3)"
+            70,
+            "the twin guards 70 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4 + tranche-20 DMA/ART block of 9 + tranche-21 VRAM/plane block of 3 + tranche-24 RF_PRIORITY_MASK)"
         );
     }
 

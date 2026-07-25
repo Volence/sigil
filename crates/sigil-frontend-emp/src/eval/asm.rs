@@ -1076,7 +1076,7 @@ impl Evaluator<'_> {
                 // is diagnosed on the shared path below, preserving today's
                 // diagnostics); only the field-space case diverges.
                 if let Some(field) = single_segment_field(disp) {
-                    if let Some(reg) = self.peek_inner_reg(inner) {
+                    if let Some(reg) = self.peek_inner_reg(inner, env) {
                         if let Some(base) = self.reg_pointee_struct.get(&reg).cloned() {
                             match self.field_disp_silent(&base, field, expr_span(disp)) {
                                 Ok(Some((d, size))) => {
@@ -1129,7 +1129,7 @@ impl Evaluator<'_> {
                 // ordinal `T.B`) fall through to comptime eval unchanged.
                 if let Some((qual, field)) = two_segment_field(disp) {
                     if self.overlays.contains_key(qual) || self.structs.contains_key(qual) {
-                        if let Some(reg) = self.peek_inner_reg(inner) {
+                        if let Some(reg) = self.peek_inner_reg(inner, env) {
                             let (d, size) =
                                 self.resolve_qualified_field(qual, field, expr_span(disp))?;
                             // Same deliberate error-recovery as the bare form. The
@@ -1513,14 +1513,29 @@ impl Evaluator<'_> {
     /// (`a0`) in the AST and never evaluates — an evaluated or aliased base (e.g.
     /// a `{splice}` or a const naming a register) yields `None` here and falls
     /// through to the shared [`inner_ind_reg`](Self::inner_ind_reg) path.
-    fn peek_inner_reg(&self, inner: &Operand) -> Option<Reg> {
+    fn peek_inner_reg(&self, inner: &Operand, env: &Env) -> Option<Reg> {
         let Operand::Ind { parts, .. } = inner else { return None };
         if parts.len() != 1 {
             return None;
         }
         if let ast::Expr::Path(p) = &parts[0].0 {
             if p.segments.len() == 1 {
-                return reg_from_name(&p.segments[0]);
+                if let Some(r) = reg_from_name(&p.segments[0]) {
+                    return Some(r);
+                }
+                // A SPLICED base register (`Sst.field({sst})` inside a
+                // comptime-fn template): the splice lowers to a one-segment
+                // path bound to a `Value::Reg` in the template's env. Field
+                // space is exactly as well-defined over it as over a literal
+                // register, so resolve it here — otherwise a field
+                // displacement silently falls through to comptime eval and
+                // dies as "unknown name `Struct.field`". The lookup is a
+                // BINDING read, never an eval: this peek must stay silent
+                // (its callers own the diagnostics), and no other expression
+                // shape can name a register without evaluation.
+                if let Some(Value::Reg(r)) = env.lookup(&p.segments[0]) {
+                    return Some(*r);
+                }
             }
         }
         None

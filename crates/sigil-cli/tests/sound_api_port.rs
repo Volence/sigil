@@ -31,8 +31,8 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$5DB0`): `s4.bin[0x5DB0..0x5F94]` (0x1E4 bytes).
-//! Debug (map base `$76CC`): `s4.debug.bin[0x76CC..0x79A0]` (0x2D4 bytes —
+//! Plain: the `s4.bin` window at `pins::SOUND_API`'s plain base/len.
+//! Debug: the `s4.debug.bin` window at `pins::SOUND_API`'s debug base/len (—
 //! per-shape as of retro-fix batch 2; the debug song-id + SFX-ring asserts).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
@@ -371,13 +371,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) `sound_api` bytes == `s4.bin[0x5BE6..0x5DCA]`.
+/// (plain) `sound_api` bytes == the pinned plain window.
 #[test]
 fn sound_api_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) `sound_api` bytes == `s4.debug.bin[0x70A4..0x7288]`.
+/// (debug) `sound_api` bytes == the pinned debug window.
 #[test]
 fn sound_api_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

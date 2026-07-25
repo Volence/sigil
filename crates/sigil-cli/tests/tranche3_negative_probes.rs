@@ -33,6 +33,7 @@
 //! written to; every probe doctors a COPY.
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
+use sigil_harness::pins;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
@@ -147,23 +148,30 @@ fn as_sections(asm: &str, lma: u32) -> Vec<Section> {
 /// The four cache-window RAM labels at the PLAIN base (probes run plain-shape
 /// only — the shape axis is the port gates' job).
 fn cache_ram_labels() -> Vec<Section> {
+    // Pins-derived: the four labels are consecutive words from Cache_Left_Col
+    // (repin.toml's own +2/+4/+6 derivation). A hardcoded base here silently
+    // de-genuines every probe in this file — RAM layout moves whenever a
+    // preceding cell is added.
+    let base = pins::CACHE_LEFT_COL.plain;
     as_sections(
-        "cpu 68000\n\
-         phase $FFFFA834\n\
-         Cache_Left_Col:\n\
-         \tdc.w 0\n\
-         Cache_Head_Col:\n\
-         \tdc.w 0\n\
-         Cache_Top_Row:\n\
-         \tdc.w 0\n\
-         Cache_Bottom_Row:\n\
-         \tdc.w 0\n",
+        &format!(
+            "cpu 68000\n\
+             phase ${base:X}\n\
+             Cache_Left_Col:\n\
+             \tdc.w 0\n\
+             Cache_Head_Col:\n\
+             \tdc.w 0\n\
+             Cache_Top_Row:\n\
+             \tdc.w 0\n\
+             Cache_Bottom_Row:\n\
+             \tdc.w 0\n"
+        ),
         0x0200_0000,
     )
 }
 
 /// `Tile_Cache_GetCollision` phased at `vma` — the genuine plain VMA is
-/// `$418E`; probe (d) supplies a WRONG one.
+/// the pinned `TILE_CACHE_GET_COLLISION` position; probe (d) supplies a WRONG one.
 fn tile_cache_label(vma: &str) -> Vec<Section> {
     as_sections(
         &format!(
@@ -185,21 +193,25 @@ fn vdp_cross_seam() -> Vec<Section> {
          \tdc.w 0\n",
         0x0100_0000,
     );
+    let shadow = pins::VDP_SHADOW_TABLE.plain;
+    let pad = pins::VDP_DIRTY_MASK.plain - shadow - 1; // table bytes between the two labels
     s.extend(as_sections(
-        "cpu 68000\n\
-         phase $FFFF800A\n\
-         VDP_Shadow_Table:\n\
-         \tdc.b 0\n\
-         \tds.b 19\n\
-         VDP_Dirty_Mask:\n\
-         \tdc.l 0\n",
+        &format!(
+            "cpu 68000\n\
+             phase ${shadow:X}\n\
+             VDP_Shadow_Table:\n\
+             \tdc.b 0\n\
+             \tds.b {pad}\n\
+             VDP_Dirty_Mask:\n\
+             \tdc.l 0\n"
+        ),
         0x0200_0000,
     ));
     s
 }
 
-/// `BootData_VDPRegs` phased at `vma` — the genuine plain VMA is `$3CE`;
-/// probe (d) supplies a WRONG one.
+/// `BootData_VDPRegs` phased at `vma` — the genuine plain VMA is the pinned
+/// `BOOT_DATA_VDP_REGS` position; probe (d) supplies a WRONG one.
 fn bootdata_label(vma: &str) -> Vec<Section> {
     as_sections(
         &format!(
@@ -221,15 +233,53 @@ fn link_all(sections: Vec<Section>) -> sigil_link::LinkedImage {
 /// Full plain-shape collision_lookup link with the given twin source and
 /// tile-cache VMA.
 fn link_collision(src: &str, twin: &str, tile_cache_vma: &str) -> sigil_link::LinkedImage {
-    let mut sections = place_module(src, twin, "collision_lookup", "0x4A76", "0x24");
+    let mut sections = place_module(
+        src,
+        twin,
+        "collision_lookup",
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_base),
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_len),
+    );
     sections.extend(cache_ram_labels());
     sections.extend(tile_cache_label(tile_cache_vma));
     link_all(sections)
 }
 
+/// The reference window these probes compare against — pins-derived, so a
+/// re-pin cannot leave a probe comparing against a stale (and wrongly SIZED)
+/// slice, which would make its `assert_ne!` trivially true.
+fn collision_ref_window(refrom: &[u8]) -> &[u8] {
+    let base = pins::COLLISION_LOOKUP.plain_base as usize;
+    &refrom[base..base + pins::COLLISION_LOOKUP.plain_len]
+}
+
+/// The genuine plain-shape `Tile_Cache_GetCollision` position, as the AS
+/// `phase` argument the probes doctor away from.
+fn genuine_tile_cache_vma() -> String {
+    format!("${:X}", pins::TILE_CACHE_GET_COLLISION.plain)
+}
+
+/// The vdp_init reference window — pins-derived, same rule as
+/// [`collision_ref_window`].
+fn vdp_init_ref_window(refrom: &[u8]) -> &[u8] {
+    let base = pins::VDP_INIT.plain_base as usize;
+    &refrom[base..base + pins::VDP_INIT.plain_len]
+}
+
+/// The genuine plain-shape `BootData_VDPRegs` position.
+fn genuine_bootdata_vma() -> String {
+    format!("${:X}", pins::BOOT_DATA_VDP_REGS.plain)
+}
+
 /// Full plain-shape vdp_init link with the given twin source and bootdata VMA.
 fn link_vdp_init(src: &str, twin: &str, bootdata_vma: &str) -> sigil_link::LinkedImage {
-    let mut sections = place_module(src, twin, "vdp_init", "0x1C14", "0x48");
+    let mut sections = place_module(
+        src,
+        twin,
+        "vdp_init",
+        &format!("{:#x}", pins::VDP_INIT.plain_base),
+        &format!("{:#x}", pins::VDP_INIT.plain_len),
+    );
     sections.extend(vdp_cross_seam());
     sections.extend(bootdata_label(bootdata_vma));
     link_all(sections)
@@ -259,11 +309,11 @@ fn collision_lookup_doctored_ctype_air_twin_produces_different_bytes() {
         "precondition: the twin spells `pub const CTYPE_AIR = 0`"
     );
     let doctored = twin.replace("pub const CTYPE_AIR = 0", "pub const CTYPE_AIR = 1");
-    let linked = link_collision(&src, &doctored, "$418E");
+    let linked = link_collision(&src, &doctored, &genuine_tile_cache_vma());
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
-        &refrom[0x4A76..0x4C1E],
+        collision_ref_window(&refrom),
         "a drifted CTYPE_AIR twin must NOT byte-match the reference"
     );
 }
@@ -284,11 +334,11 @@ fn vdp_init_doctored_shadow_len_twin_produces_different_bytes() {
         "precondition: the twin spells `pub const VDP_Shadow_len = 19`"
     );
     let doctored = twin.replace("pub const VDP_Shadow_len = 19", "pub const VDP_Shadow_len = 18");
-    let linked = link_vdp_init(&src, &doctored, "$3CE");
+    let linked = link_vdp_init(&src, &doctored, &genuine_bootdata_vma());
     let section = linked.section("vdp_init").expect("vdp_init section");
     assert_ne!(
         section.bytes,
-        &refrom[0x1C14..0x1C5C],
+        vdp_init_ref_window(&refrom),
         "a drifted VDP_Shadow_len twin must NOT byte-match the reference"
     );
 }
@@ -305,7 +355,13 @@ fn vdp_init_doctored_shadow_len_twin_produces_different_bytes() {
 fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "collision_lookup", "0x4A76", "0x24");
+    let sections = place_module(
+        &src,
+        &twin,
+        "collision_lookup",
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_base),
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_len),
+    );
     let result = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .and_then(|resolved| sigil_link::link(&resolved, &SymbolTable::new()));
     let err = result.expect_err(
@@ -334,7 +390,13 @@ fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
 fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "vdp_init", "0x1C14", "0x48");
+    let sections = place_module(
+        &src,
+        &twin,
+        "vdp_init",
+        &format!("{:#x}", pins::VDP_INIT.plain_base),
+        &format!("{:#x}", pins::VDP_INIT.plain_len),
+    );
     let result = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .and_then(|resolved| sigil_link::link(&resolved, &SymbolTable::new()));
     let err = result.expect_err(
@@ -353,37 +415,55 @@ fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
 // Probe (c) — PLACEMENT GENUINENESS
 // ===========================================================================
 
-/// Place the real `collision_lookup.emp` at a WRONG base (`$4C0A` instead of
-/// the real plain `$4C08`) and prove the placed LMA tracks the map.
+/// Place the real `collision_lookup.emp` at a WRONG base (the pinned plain
+/// base + 2) and prove the placed LMA tracks the map.
 ///
-/// FALSIFIED (restore-real-value): placing at the real `0x4A76` yields
-/// `lma == 0x4A76` (the port gate's compile path).
+/// FALSIFIED (restore-real-value): placing at the pinned base yields
+/// `lma == COLLISION_LOOKUP.plain_base` (the port gate's compile path).
 #[test]
 fn collision_lookup_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "collision_lookup", "0x4C0A", "0x24");
+    let doctored_base = pins::COLLISION_LOOKUP.plain_base + 2;
+    let sections = place_module(
+        &src,
+        &twin,
+        "collision_lookup",
+        &format!("{doctored_base:#x}"),
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_len),
+    );
     let sec = sections
         .iter()
         .find(|s| s.name == "collision_lookup")
         .expect("placed collision_lookup section");
-    assert_eq!(sec.lma, 0x4C0A, "the placed LMA must track the (doctored) map base");
-    assert_ne!(sec.lma, 0x4A76, "…and therefore differ from the true pin");
+    assert_eq!(sec.lma, doctored_base, "the placed LMA must track the (doctored) map base");
+    assert_ne!(
+        sec.lma,
+        pins::COLLISION_LOOKUP.plain_base,
+        "…and therefore differ from the true pin"
+    );
 }
 
 /// Place the real `vdp_init.emp` at a WRONG base (`$1C16` instead of the
 /// real plain `$1C14`) and prove the placed LMA tracks the map.
 ///
-/// FALSIFIED (restore-real-value): placing at the real `0x1C14` yields
-/// `lma == 0x1C14` (the port gate's compile path).
+/// FALSIFIED (restore-real-value): placing at the pinned base yields
+/// `lma == VDP_INIT.plain_base` (the port gate's compile path).
 #[test]
 fn vdp_init_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "vdp_init", "0x1C16", "0x48");
+    let doctored_base = pins::VDP_INIT.plain_base + 2;
+    let sections = place_module(
+        &src,
+        &twin,
+        "vdp_init",
+        &format!("{doctored_base:#x}"),
+        &format!("{:#x}", pins::VDP_INIT.plain_len),
+    );
     let sec = sections.iter().find(|s| s.name == "vdp_init").expect("placed vdp_init section");
-    assert_eq!(sec.lma, 0x1C16, "the placed LMA must track the (doctored) map base");
-    assert_ne!(sec.lma, 0x1C14, "…and therefore differ from the true pin");
+    assert_eq!(sec.lma, doctored_base, "the placed LMA must track the (doctored) map base");
+    assert_ne!(sec.lma, pins::VDP_INIT.plain_base, "…and therefore differ from the true pin");
 }
 
 // ===========================================================================
@@ -391,11 +471,11 @@ fn vdp_init_wrong_base_map_places_the_section_at_a_different_address() {
 // ===========================================================================
 
 /// Re-link the real `collision_lookup.emp` with `Tile_Cache_GetCollision`
-/// phased at a WRONG VMA (`$4312`, +4 from the genuine `$418E`): the
+/// phased at a WRONG VMA (`$4312`, away from the pinned position): the
 /// tail-call `bra.w`'s displacement bytes must CHANGE — the cross-seam pc-relative
 /// distance is genuinely computed from the supplied symbol position.
 ///
-/// FALSIFIED (restore-real-value): with the genuine `$418E` the linked bytes
+/// FALSIFIED (restore-real-value): with the pinned position the linked bytes
 /// equal the reference window (the port gate).
 #[test]
 fn collision_lookup_wrong_tile_cache_vma_changes_the_bra_bytes() {
@@ -406,7 +486,7 @@ fn collision_lookup_wrong_tile_cache_vma_changes_the_bra_bytes() {
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
-        &refrom[0x4A76..0x4C1E],
+        collision_ref_window(&refrom),
         "a moved Tile_Cache_GetCollision must change the bra.w displacement bytes"
     );
 }
@@ -416,7 +496,7 @@ fn collision_lookup_wrong_tile_cache_vma_changes_the_bra_bytes() {
 /// most realistic wrong-shape mixup): the `lea.l (pc)` displacement bytes
 /// must CHANGE relative to the plain reference.
 ///
-/// FALSIFIED (restore-real-value): with the genuine plain `$3CE` the linked
+/// FALSIFIED (restore-real-value): with the pinned position the linked
 /// bytes equal the reference window (the port gate).
 #[test]
 fn vdp_init_wrong_bootdata_vma_changes_the_pcrel_lea_bytes() {
@@ -427,7 +507,54 @@ fn vdp_init_wrong_bootdata_vma_changes_the_pcrel_lea_bytes() {
     let section = linked.section("vdp_init").expect("vdp_init section");
     assert_ne!(
         section.bytes,
-        &refrom[0x1C14..0x1C5C],
+        vdp_init_ref_window(&refrom),
         "a moved BootData_VDPRegs must change the lea (pc) displacement bytes"
+    );
+}
+
+// ===========================================================================
+// Probe (e) — FIXTURE GENUINENESS (the positive controls)
+//
+// Every `assert_ne!` above is only meaningful if the UNDOCTORED compile
+// through the SAME path reproduces the reference window byte-for-byte. That
+// claim used to live in prose ("FALSIFIED (restore-real-value): …") while the
+// fixtures — the Cache_* RAM base, the vdp_init window, the cross-seam label
+// positions — were hardcoded and silently went stale: the whole file spent
+// several re-pins comparing a WRONG-SIZED slice against a compile that could
+// not have matched anyway, so no probe here could fail. These two tests make
+// the claim executable: they fail the moment a fixture drifts from the pins.
+// ===========================================================================
+
+/// The undoctored collision_lookup compile MUST equal the reference window —
+/// the positive control every `assert_ne!` in probe (a)/(d) depends on.
+#[test]
+fn collision_lookup_undoctored_compile_equals_the_reference_window() {
+    let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
+    let Some(twin) = twin_src() else { return };
+    let Some(refrom) = read_reference("s4.bin") else { return };
+    let linked = link_collision(&src, &twin, &genuine_tile_cache_vma());
+    let section = linked.section("collision_lookup").expect("collision_lookup section");
+    assert_eq!(
+        section.bytes,
+        collision_ref_window(&refrom),
+        "the genuine fixtures must reproduce the reference window — otherwise every \
+         assert_ne! probe in this file passes for the wrong reason"
+    );
+}
+
+/// The undoctored vdp_init compile MUST equal the reference window — the
+/// positive control for the vdp_init probes.
+#[test]
+fn vdp_init_undoctored_compile_equals_the_reference_window() {
+    let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
+    let Some(twin) = twin_src() else { return };
+    let Some(refrom) = read_reference("s4.bin") else { return };
+    let linked = link_vdp_init(&src, &twin, &genuine_bootdata_vma());
+    let section = linked.section("vdp_init").expect("vdp_init section");
+    assert_eq!(
+        section.bytes,
+        vdp_init_ref_window(&refrom),
+        "the genuine fixtures must reproduce the reference window — otherwise every \
+         assert_ne! probe in this file passes for the wrong reason"
     );
 }

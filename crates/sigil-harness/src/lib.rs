@@ -823,3 +823,31 @@ pub fn assemble_mixed_tranche23_as_side(aeon: &Path, debug: bool) -> Result<Modu
         format!("assemble (mixed tranche23 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
+
+/// Tranche 24 (children): the full AS-side game with `SIGIL_EMP_CHILDREN` on —
+/// the engine.inc arm skips children.asm and org-resumes at the per-shape
+/// `Load_Object` address. The descriptor TABLES stay game-side in both arms
+/// (they live in `games/sonic4/objects/test_parent.asm`, never in the region).
+///
+/// Cross-seam headline: the SHARED ANCHORS. `PopulateSpawnedPieceCount` is the
+/// gate's start and entity_window's end; `Load_Object` is the gate's end and
+/// load_object's start — with children.asm's include gated out, the AS side
+/// must still land `Load_Object` exactly at its canonical address. Plus the
+/// `.asm → .emp` caller class at four game-side objects: test_parent's
+/// `jsr CreateChild_Normal` / `jsr DeleteChildren`, test_emitter's and
+/// test_stress_emitter's `jsr CreateEffect_Normal`, and test_churn's
+/// `jsr PopulateSpawnedPieceCount` all resolve against the .emp exports.
+pub fn assemble_mixed_tranche24_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_CHILDREN".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche24 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
