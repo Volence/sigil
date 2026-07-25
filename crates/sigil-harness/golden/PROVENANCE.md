@@ -1436,3 +1436,65 @@ net t23, from main checkouts).
   sha256 **`d9d684c4df5f8b99c1f648f10e3c8df4a12b776192b09322387d3dcbef889e2c`**.
 - Debug `s4.debug.bin`: **429232 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`154076f8`**,
   sha256 **`557d5371972a66dd3bc9ea0f7d76aa0e0d508dee7dced4410df914e77950099b`**.
+
+## Tranche 24 re-baseline (children.asm → children.emp; three behaviour fixes)
+
+`engine/objects/children.asm` → `children.emp` — the last engine 68k file
+outside the debug trio, and a pure-callee port (AllocDynamic/AllocEffect/
+DeleteObject were already `.emp`-owned; ZERO ownership flips). NEW region
+`children` = `PopulateSpawnedPieceCount` .. `Load_Object`, the hole between
+two already-pinned regions, so it SHARES both anchors with its neighbours
+(entity_window's end, load_object's start) — proved by
+`children_port::children_region_pins_share_both_anchors` in both shapes.
+
+**Byte movement:** four waves, batched to one re-pin each — step-2 modernize
+−6 both shapes; the §19 review wave (M1-M5 save-set/hoist/dead-path cuts,
+two chain-contract asserts) −0x6C plain / **+0x46 debug**, the first
+SHAPE-SPLIT region in the campaign (the two shapes move in opposite
+directions); the ruling wave (+0x3C / +0x94); the re-panel revert + margin
+fix (−0xA both). NET region `$30E` → **`$2D0` plain / `$3DA` debug**.
+
+**ASSEMBLED_LEN resolution:** BOTH shapes' `EndOfRom` UNCHANGED (plain
+`0x5DB60`, debug `0x5F65A`) — the engine deltas are absorbed by the
+`org $10000` ObjCodeBase shield. **The ROM FILES each shrink 90 bytes and NO
+byte table accounts for it: the entire −90 is the convsym symbol-table
+appendix** (file−image goes 37317→37227 plain, 38486→38396 debug), almost
+certainly the five fail-skip label sets deleted by the dead-path cut. Same
+class as t23's "+30 = appendix re-encoding"; recorded here so a future
+re-baseline does not read it as image shrink.
+
+**Behaviour changes (Volence-ruled, live-verified on oracle before merge —
+the byte gates are structurally blind to all three):** (1) effects no longer
+get a `parent_ptr` dead store — verified A/B at the same slot, canonical
+`$8CBE` → merged `0000`, every other SST byte identical; this also stops
+`Draw_Sprite`'s child-skip guard from misfiring on effects (the latent
+"effect spawned by an RF_MULTISPRITE parent is never rendered" bug) and drops
+~30 cyc per live effect per frame. (2) children inherit the parent's
+COORDMODE at spawn — verified by breaking the instant `CreateChild_Normal`
+returns: canonical child `render_flags = $00`, merged `$08`, closing a
+one-frame world-space pop. (3) chain-contract DEBUG asserts (partial rail by
+design; re-arm condition recorded in-file). **Priority-band inheritance was
+implemented, caught as a regression by the focused re-panel, and REVERTED** —
+a band is a 3-bit value and cannot be or-ed (the `$08` above confirms bits
+5-7 stay zero in the shipped build). Deferred to the POST-TWIN-RETIREMENT
+bucket per Volence.
+
+**Sigil-side:** two constructs (`pixels_to_coord` in the new zero-emitting
+`engine/coords.emp`, proved section-less by `coords_module_emits_zero_bytes`;
+`refresh_piece_count` in `frames.emp`, adopted by children AND animate) plus
+the demanded feature they exposed — struct-field displacement over a SPLICED
+base register inside a comptime-fn template. **Two standing bars born:** the
+`$8000` bank-shift bar (a DEBUG-only engine growth can widen the object
+bank's `jsr (Sym).w` to abs.l and slide the whole debug bank; first live run
+PASSED at the ruling wave) and the positive-control rule for negative probes
+(`tranche3_negative_probes.rs` had been comparing a 36-byte section against a
+424-byte slice through stale hardcoded fixtures — both probes were trivially
+true and COULD NOT FAIL; migrated to pins + two executable positive
+controls, falsification verified). Full paired strict **2604/0** on merged
+masters, from main checkouts.
+
+- Aeon repo master: **`6dc5a55`** (merge of `port-tranche24`; sigil master **`d4995e6`**).
+- Non-debug `s4.bin`: **421041 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`c51342d0`**,
+  sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`**.
+- Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
+  sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`**.
