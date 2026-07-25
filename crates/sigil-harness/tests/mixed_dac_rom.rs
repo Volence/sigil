@@ -4186,11 +4186,20 @@ fn build_mixed_tranche24_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
     );
 
+    let mut sections = as_module.sections;
+    sections.extend(ch_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche24 mixed resolve_layout failed: {d:?}"));
+
     // The .emp side's own placed addresses for the two caller-visible entries
-    // (proof 2's expected operands — derived from the .emp labels, never
-    // hardcoded).
+    // (proof 2's expected operands — derived from the RESOLVED .emp labels,
+    // never hardcoded; pre-resolve offsets would be the unrelaxed ones).
     let emp_label = |want: &str| -> u32 {
-        for sec in &ch_sections {
+        for sec in &resolved {
+            if sec.name != "children" {
+                continue;
+            }
             for l in &sec.labels {
                 if l.name == want {
                     return sec.vma_origin().wrapping_add(l.offset);
@@ -4201,12 +4210,6 @@ fn build_mixed_tranche24_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     };
     let create_child_normal = emp_label("CreateChild_Normal");
     let delete_children = emp_label("DeleteChildren");
-
-    let mut sections = as_module.sections;
-    sections.extend(ch_sections.clone());
-
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("tranche24 mixed resolve_layout failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("tranche24 mixed link failed: {d:?}"));
 

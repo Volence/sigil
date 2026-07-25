@@ -33,6 +33,7 @@
 //! written to; every probe doctors a COPY.
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
+use sigil_harness::pins;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
@@ -163,7 +164,7 @@ fn cache_ram_labels() -> Vec<Section> {
 }
 
 /// `Tile_Cache_GetCollision` phased at `vma` — the genuine plain VMA is
-/// `$418E`; probe (d) supplies a WRONG one.
+/// the pinned `TILE_CACHE_GET_COLLISION` position; probe (d) supplies a WRONG one.
 fn tile_cache_label(vma: &str) -> Vec<Section> {
     as_sections(
         &format!(
@@ -221,10 +222,30 @@ fn link_all(sections: Vec<Section>) -> sigil_link::LinkedImage {
 /// Full plain-shape collision_lookup link with the given twin source and
 /// tile-cache VMA.
 fn link_collision(src: &str, twin: &str, tile_cache_vma: &str) -> sigil_link::LinkedImage {
-    let mut sections = place_module(src, twin, "collision_lookup", "0x4A76", "0x24");
+    let mut sections = place_module(
+        src,
+        twin,
+        "collision_lookup",
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_base),
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_len),
+    );
     sections.extend(cache_ram_labels());
     sections.extend(tile_cache_label(tile_cache_vma));
     link_all(sections)
+}
+
+/// The reference window these probes compare against — pins-derived, so a
+/// re-pin cannot leave a probe comparing against a stale (and wrongly SIZED)
+/// slice, which would make its `assert_ne!` trivially true.
+fn collision_ref_window(refrom: &[u8]) -> &[u8] {
+    let base = pins::COLLISION_LOOKUP.plain_base as usize;
+    &refrom[base..base + pins::COLLISION_LOOKUP.plain_len]
+}
+
+/// The genuine plain-shape `Tile_Cache_GetCollision` position, as the AS
+/// `phase` argument the probes doctor away from.
+fn genuine_tile_cache_vma() -> String {
+    format!("${:X}", pins::TILE_CACHE_GET_COLLISION.plain)
 }
 
 /// Full plain-shape vdp_init link with the given twin source and bootdata VMA.
@@ -259,11 +280,11 @@ fn collision_lookup_doctored_ctype_air_twin_produces_different_bytes() {
         "precondition: the twin spells `pub const CTYPE_AIR = 0`"
     );
     let doctored = twin.replace("pub const CTYPE_AIR = 0", "pub const CTYPE_AIR = 1");
-    let linked = link_collision(&src, &doctored, "$418E");
+    let linked = link_collision(&src, &doctored, &genuine_tile_cache_vma());
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
-        &refrom[0x4A76..0x4C1E],
+        collision_ref_window(&refrom),
         "a drifted CTYPE_AIR twin must NOT byte-match the reference"
     );
 }
@@ -305,7 +326,13 @@ fn vdp_init_doctored_shadow_len_twin_produces_different_bytes() {
 fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "collision_lookup", "0x4A76", "0x24");
+    let sections = place_module(
+        &src,
+        &twin,
+        "collision_lookup",
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_base),
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_len),
+    );
     let result = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .and_then(|resolved| sigil_link::link(&resolved, &SymbolTable::new()));
     let err = result.expect_err(
@@ -353,22 +380,33 @@ fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
 // Probe (c) — PLACEMENT GENUINENESS
 // ===========================================================================
 
-/// Place the real `collision_lookup.emp` at a WRONG base (`$4C0A` instead of
-/// the real plain `$4C08`) and prove the placed LMA tracks the map.
+/// Place the real `collision_lookup.emp` at a WRONG base (the pinned plain
+/// base + 2) and prove the placed LMA tracks the map.
 ///
-/// FALSIFIED (restore-real-value): placing at the real `0x4A76` yields
-/// `lma == 0x4A76` (the port gate's compile path).
+/// FALSIFIED (restore-real-value): placing at the pinned base yields
+/// `lma == COLLISION_LOOKUP.plain_base` (the port gate's compile path).
 #[test]
 fn collision_lookup_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
-    let sections = place_module(&src, &twin, "collision_lookup", "0x4C0A", "0x24");
+    let doctored_base = pins::COLLISION_LOOKUP.plain_base + 2;
+    let sections = place_module(
+        &src,
+        &twin,
+        "collision_lookup",
+        &format!("{doctored_base:#x}"),
+        &format!("{:#x}", pins::COLLISION_LOOKUP.plain_len),
+    );
     let sec = sections
         .iter()
         .find(|s| s.name == "collision_lookup")
         .expect("placed collision_lookup section");
-    assert_eq!(sec.lma, 0x4C0A, "the placed LMA must track the (doctored) map base");
-    assert_ne!(sec.lma, 0x4A76, "…and therefore differ from the true pin");
+    assert_eq!(sec.lma, doctored_base, "the placed LMA must track the (doctored) map base");
+    assert_ne!(
+        sec.lma,
+        pins::COLLISION_LOOKUP.plain_base,
+        "…and therefore differ from the true pin"
+    );
 }
 
 /// Place the real `vdp_init.emp` at a WRONG base (`$1C16` instead of the
@@ -391,11 +429,11 @@ fn vdp_init_wrong_base_map_places_the_section_at_a_different_address() {
 // ===========================================================================
 
 /// Re-link the real `collision_lookup.emp` with `Tile_Cache_GetCollision`
-/// phased at a WRONG VMA (`$4312`, +4 from the genuine `$418E`): the
+/// phased at a WRONG VMA (`$4312`, away from the pinned position): the
 /// tail-call `bra.w`'s displacement bytes must CHANGE — the cross-seam pc-relative
 /// distance is genuinely computed from the supplied symbol position.
 ///
-/// FALSIFIED (restore-real-value): with the genuine `$418E` the linked bytes
+/// FALSIFIED (restore-real-value): with the pinned position the linked bytes
 /// equal the reference window (the port gate).
 #[test]
 fn collision_lookup_wrong_tile_cache_vma_changes_the_bra_bytes() {
@@ -406,7 +444,7 @@ fn collision_lookup_wrong_tile_cache_vma_changes_the_bra_bytes() {
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
-        &refrom[0x4A76..0x4C1E],
+        collision_ref_window(&refrom),
         "a moved Tile_Cache_GetCollision must change the bra.w displacement bytes"
     );
 }

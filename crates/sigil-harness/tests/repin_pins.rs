@@ -329,8 +329,17 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // next placement; twin shrunk in lockstep) — load_art shrinks $68→$64 plain /
     // $B2→$AE debug; bg/bg_anim/sound_api bases slide −0x4 both shapes (LENs
     // unchanged).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6248);  // −2 t23 boot wave
-    assert_eq!(pins::SOUND_API.debug_base, 0x7c64);  // −2 t23 boot wave
+    // Then −0x6 BOTH shapes (t24 children step-2 branch modernization, 2026-07-24):
+    // children.emp goes bare-Bcc/jbra-jbsr; the asl fixpoint relaxes the twin's
+    // three in-reach `.w` branches (bsr.w PopulateSpawnedPieceCount at −124,
+    // beq.w .done at +126, bne.w .alloc_fail at +124) to `.s`, and the seven
+    // jsr→bsr.w call conversions are size-neutral — children shrinks $30E→$308.
+    // children is upstream of load_object/plane_buffer/tile_cache/…/sound_api in
+    // the engine bank, so every base below slides −0x6 both shapes (LENs
+    // unchanged). ASSEMBLED_LEN is UNCHANGED: the engine block's shrink is
+    // absorbed by the `org $10000` ObjCodeBase shield.
+    assert_eq!(pins::SOUND_API.plain_base, 0x6242);  // −6 t24 children wave
+    assert_eq!(pins::SOUND_API.debug_base, 0x7c5e);  // −6 t24 children wave
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

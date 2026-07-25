@@ -225,13 +225,13 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
     );
 }
 
-/// (plain) the `load_object` region == `s4.bin[0x3FDC..0x407A]` — DEBUG=0.
+/// (plain) the `load_object` region == `s4.bin[0x4040..0x40C2]` — DEBUG=0.
 #[test]
 fn load_object_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", 0);
 }
 
-/// (debug) the `load_object` region == `s4.debug.bin[0x4BA6..0x4C44]` — DEBUG=1
+/// (debug) the `load_object` region == `s4.debug.bin[0x4C0E..0x4C90]` — DEBUG=1
 /// (byte-identical to plain: no DEBUG-conditional code in the file).
 #[test]
 fn load_object_debug_region_matches_reference() {
