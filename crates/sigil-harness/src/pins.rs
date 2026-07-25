@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche23/s4.lst (07/24/2026 02:26:23 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche23/s4.debug.lst (07/24/2026 02:26:24 PM)
-//! [provenance] 36 regions, 275 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche24/s4.lst (07/24/2026 09:26:04 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche24/s4.debug.lst (07/24/2026 09:26:10 PM)
+//! [provenance] 37 regions, 276 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +98,9 @@ pub const RINGS: Region = Region { plain_base: 0x32C6, debug_base: 0x39CA, plain
 
 /// `Collected_Init` .. `PopulateSpawnedPieceCount` — gate `SIGIL_EMP_ENTITY_WINDOW`. tests: entity_window_port
 pub const ENTITY_WINDOW: Region = Region { plain_base: 0x347E, debug_base: 0x3BDE, plain_len: 0x8BA, debug_len: 0xD28 };
+
+/// `PopulateSpawnedPieceCount` .. `Load_Object` — gate `SIGIL_EMP_CHILDREN`. tests: children_port
+pub const CHILDREN: Region = Region { plain_base: 0x3D38, debug_base: 0x4906, plain_len: 0x30E, debug_len: 0x30E };
 
 /// `Load_Object` .. `Plane_Buffer_Reset` — gate `SIGIL_EMP_LOAD_OBJECT`. tests: load_object_port, entity_window_port
 pub const LOAD_OBJECT: Region = Region { plain_base: 0x4046, debug_base: 0x4C14, plain_len: 0x82, debug_len: 0x82 };
@@ -569,7 +572,7 @@ pub const DYNAMIC_LIVE_PENDING: Pin = Pin { plain: 0xFFFFB050, debug: 0xFFFFB074
 /// `Dynamic_Live_Pending_Count`. tests: core_port
 pub const DYNAMIC_LIVE_PENDING_COUNT: Pin = Pin { plain: 0xFFFFB060, debug: 0xFFFFB084 };
 
-/// `DeleteObject`. tests: animate_port
+/// `DeleteObject`. tests: animate_port, children_port
 pub const DELETE_OBJECT: Pin = Pin { plain: 0x2908, debug: 0x2A9E };
 
 /// `DrawRings`. tests: sprites_port
@@ -857,8 +860,11 @@ pub const SECTION_GET_SEC_PTR_XY: Pin = Pin { plain: 0x5632, debug: 0x62C0 };
 /// `Section_FlatIDXY`. tests: entity_window_port
 pub const SECTION_FLAT_IDXY: Pin = Pin { plain: 0x5618, debug: 0x62A6 };
 
-/// `AllocDynamic`. tests: load_object_port
+/// `AllocDynamic`. tests: load_object_port, children_port
 pub const ALLOC_DYNAMIC: Pin = Pin { plain: 0x288A, debug: 0x2A20 };
+
+/// `AllocEffect`. tests: children_port
+pub const ALLOC_EFFECT: Pin = Pin { plain: 0x28EE, debug: 0x2A84 };
 
 /// `Palette_Buffer`. tests: buffers_port
 pub const PALETTE_BUFFER: Pin = Pin { plain: 0xFFFF8206, debug: 0xFFFF8206 };

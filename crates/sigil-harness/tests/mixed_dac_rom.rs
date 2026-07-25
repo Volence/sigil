@@ -119,6 +119,7 @@ use sigil_harness::{
     assemble_mixed_tranche8_as_side, assemble_mixed_tranche9_as_side,
     assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side,
     assemble_mixed_tranche22_as_side, assemble_mixed_tranche23_as_side,
+    assemble_mixed_tranche24_as_side,
     assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
@@ -4122,4 +4123,144 @@ fn mixed_tranche23_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche23_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche23 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 24 — children.emp inside the full ROM. `SIGIL_EMP_CHILDREN` gates
+// children.asm out of engine.inc; the `children` region ([PopulateSpawnedPieceCount,
+// Load_Object)) comes from the .emp side, everything else stays AS.
+//
+// The arm's two NAMED proofs:
+//  (1) SHARED ANCHORS — the gate's start symbol is entity_window's END anchor
+//      and its end symbol is load_object's START, so with children.asm gated
+//      out the AS side must still land `Load_Object` at the canonical
+//      per-shape address (an org-resume error would slide every later region).
+//  (2) `.asm → .emp` CALLER RESOLUTION — the four game-side test objects call
+//      INTO the newly .emp-owned procs. In this build the AS side carries NO
+//      definition of them, so `jsr CreateChild_Normal` (test_parent.asm:138)
+//      and `jsr DeleteChildren` (:165) can only resolve against the .emp
+//      exports; the encoded abs.w operands are checked against the .emp's own
+//      placed label addresses.
+// ---------------------------------------------------------------------------
+
+fn build_mixed_tranche24_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche24_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof (1): org-resume must land load_object.asm's `Load_Object` at the
+    // canonical per-shape address with children.asm's include gated out.
+    let load_object_expect =
+        if debug { pins::LOAD_OBJECT.debug_base } else { pins::LOAD_OBJECT.plain_base };
+    let mut load_object_found = None;
+    for sec in &as_module.sections {
+        for l in &sec.labels {
+            if l.name == "Load_Object" {
+                load_object_found = Some(sec.vma_origin().wrapping_add(l.offset));
+            }
+        }
+    }
+    assert_eq!(
+        load_object_found,
+        Some(load_object_expect),
+        "org-resume must land load_object.asm's Load_Object at the canonical address \
+         (the shared end anchor)"
+    );
+
+    let dbg = i128::from(debug);
+    let engine_dir = aeon.join("engine");
+    let objects_dir = engine_dir.join("objects");
+    let system_dir = engine_dir.join("system");
+
+    let ch = if debug {
+        (pins::CHILDREN.debug_base, pins::CHILDREN.debug_len)
+    } else {
+        (pins::CHILDREN.plain_base, pins::CHILDREN.plain_len)
+    };
+    let (ch_sections, ch_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/objects/children.emp",
+        vec![sst_ambient_items(&objects_dir), constants_ambient_items(&system_dir)],
+        "children",
+        ch.0,
+        ch.1,
+        vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
+    );
+
+    // The .emp side's own placed addresses for the two caller-visible entries
+    // (proof 2's expected operands — derived from the .emp labels, never
+    // hardcoded).
+    let emp_label = |want: &str| -> u32 {
+        for sec in &ch_sections {
+            for l in &sec.labels {
+                if l.name == want {
+                    return sec.vma_origin().wrapping_add(l.offset);
+                }
+            }
+        }
+        panic!("children.emp must export {want}");
+    };
+    let create_child_normal = emp_label("CreateChild_Normal");
+    let delete_children = emp_label("DeleteChildren");
+
+    let mut sections = as_module.sections;
+    sections.extend(ch_sections.clone());
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche24 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche24 mixed link failed: {d:?}"));
+
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &ch_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche24 mixed drift guards: {adiags:?}"
+    );
+
+    let rom = sigil_link::flatten(&linked, 0x00);
+
+    // Proof (2): the game-side `jsr` sites resolved against the .emp exports.
+    // `jsr <abs.w>` = 4E B8 <addr16>; both targets live below $8000.
+    for (name, addr) in
+        [("CreateChild_Normal", create_child_normal), ("DeleteChildren", delete_children)]
+    {
+        let pattern = [0x4E, 0xB8, (addr >> 8) as u8, addr as u8];
+        let hits = rom.windows(4).filter(|w| *w == pattern).count();
+        assert!(
+            hits > 0,
+            "the game-side `jsr {name}` must resolve to the .emp-owned symbol at {addr:#x} \
+             (no AS definition exists in this build)"
+        );
+    }
+
+    rom
+}
+
+#[test]
+fn mixed_tranche24_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche24_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche24 mixed");
+}
+
+#[test]
+fn mixed_tranche24_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche24_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche24 mixed debug");
 }
