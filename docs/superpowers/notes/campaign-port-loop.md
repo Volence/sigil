@@ -19,6 +19,19 @@ recurring error this box exists to stop.
 **CHANGELOG (re-read this doc at each step boundary — it changes
 mid-campaign, and a ruling ratified after your last read still binds
 you):**
+- 2026-07-29 (2nd): NINE already-practiced rules codified (Volence-ratified,
+  overseer-dispatched — the game-side conversion arc t24→t34 ran them as
+  precedent; text closes the drift channel the abs-EA catch exposed). Into
+  the step-2 checklist as items 7-10: module-header requirements (C3's audit
+  surface), the symbol-resolution ladder (`import` → bare link → `extern()`
+  const+guard → `-D`; `extern proc` prohibited bar a die-at-port boundary
+  decl), honest-contract derivation (over-claim clobbers is SAFE; never an
+  unverifiable `preserves`), `as`-bless placement (on the producer). Into the
+  loop text: oracle A/B for byte-gate-blind changes (step 5); the
+  standing-patterns registry + the wave-ripple checklist (new subsections);
+  panel-activation rules (C3-on-hardware-claims / C1-flagged-call, dry-panel);
+  forced-spelling site comments generalized (step 2). Noticing clause renumbered
+  7→11.
 - 2026-07-16 (2nd): DRY refined — the exit is a FULL 3→4→5 pass empty
   at ALL THREE steps, not an empty step-3 alone (the steps uncover each
   other's items).
@@ -301,11 +314,62 @@ re-green. No emulator time needed at this step.
      An untyped domain value in a modernized file is a MISS unless the
      packet logs why (compute-heavy · cross-.asm seam · verifier gap,
      e.g. the FlatIDXY.d2 conditional-save pattern).
-  7. **The noticing clause**: does THIS file suggest a house-format item
+  7. **Module-header requirements (codified 2026-07-29).** A module header
+     states (a) its ROLE, (b) gate + canonical-emission status, (c) EVERY
+     hardware/bank/timing contract the code relies on — this is C3's audit
+     surface, so the claims must be PRESENT and CHECKABLE, and (d) any layout
+     the code hard-codes. A header making NO checkable claim on a
+     hardware-touching file is itself a miss. Precedents: the
+     sound_debug.emp / seq_opcode_tab.emp / dac_sample_tab.emp headers; C3's
+     t33 catch (a DAC-loop timing claim carried verbatim from the `.asm`
+     that no longer held — a header claim rots exactly like any other
+     comment-claim, so step-3(b)'s comment-claim audit runs the header too).
+  8. **The symbol-resolution ladder (codified 2026-07-29).** Re-home every AS
+     symbol reference in PREFERENCE ORDER: module-to-module `import` → bare
+     link symbol → `extern()` const WITH its drift guard + kill row → `-D`
+     define carrier. `extern proc` is PROHIBITED — its opaque-leaf trust HIDES
+     transitive clobbers (the whole point of porting the body is to verify the
+     closure, item 9) — the ONE exception is a boundary decl to a
+     not-yet-ported callee, which carries a DIE-AT-PORT kill row. Precedents:
+     the t26 extern census (the corpus drops to a single honest leaf); the t28
+     zero-`extern proc` headline; t34's `Player_AtLedgeEdge` (the surviving
+     player_sensors callee — the corpus's SOLE `extern proc`, its die-at-port
+     row satisfied at P4).
+  9. **Honest-contract derivation (codified 2026-07-29).** `clobbers` =
+     callee-union ∪ locally-written, VERIFIED by the closure gate (not
+     hand-declared). THE DIRECTION RULE: over-claiming `clobbers` is the SAFE
+     direction (callers assume worse, so a superset never breaks a caller);
+     NEVER declare a `preserves` the checker cannot verify — an unverifiable
+     `preserves` is a manual-honor claim, worse epistemics than a conservative
+     over-claim. Precedents: t26's extern-hid-clobber catch (`Debug_MusicToggle`
+     trusted the twin's hand comment → d3/d4/a0 leaked transitively via
+     Sound_PlayMusic until the ported body closed the union); the t33
+     Fm_ReparkDac ruling (KEEP conservative `clobbers(af)` + a site comment —
+     `f` in fact survives, but the checker doesn't track flag writes, so a lone
+     `preserves(f)` would be unverifiable manual-honor; the six psg/fm header
+     over-claims the checker caught were ALL in the safe direction).
+  10. **`as`-bless placement (codified 2026-07-29).** `as Type` goes on the
+     value-PRODUCING instruction, not the consuming call site; when a wave
+     changes the producer, the bless RE-HOMES with it. Precedent: t31's
+     `andi.w #$FF, d0` cut re-homed the `as Angle` bless onto
+     `addq.b #CHILD_ORBIT_SPEED, d0 as Angle` (the byte add wraps mod 256 →
+     it is now the instruction that produces the value flowing to
+     GetSineCosine's typed `Angle` param).
+  11. **The noticing clause**: does THIS file suggest a house-format item
      the list lacks? Step 2 is SELF-EXTENDING — the campaign iterates
      the format file-by-file, so a spelling this file does awkwardly is
      a candidate list entry; propose it in the packet, ratified
      additions join this checklist.
+
+  **Forced-spelling site comments (codified 2026-07-29 — generalizes the
+  per-instance entries in item 5).** Any spelling FORCED by a ledgered
+  frontend/parser limitation carries a site comment NAMING the ledger row, so
+  the workaround is greppable and DIES when the row does. Instances: the
+  COMMUTED `<const> + .local` immediate (t27, row 1610 — now optional, the fix
+  landed) and the parenthesized `(ix+(field+k))` compound displacement (t32 —
+  the flat-form parser fix is deferred, so this is still load-bearing). The
+  rule outlives any one instance: the next parser sharp-edge worked around
+  byte-identically inherits the same name-the-row discipline.
 
   **The feed-forward rule (Volence-ratified 2026-07-15):** every language
   feature or construct that ships with a call-site SPELLING implication
@@ -528,6 +592,20 @@ its type — re-bless or re-route); and a mix-up class the optimization
 newly exposes (two same-width domain values now adjacent in registers)
 is a newtype candidate to adopt or ledger, same bar as step 2 item 6.**
 
+  **Oracle A/B for byte-gate-blind changes (codified 2026-07-29).** Any edit
+  whose effect a byte gate CANNOT see — a behavior fix, a runtime-state claim,
+  an inherited-flag change, a lifecycle change — requires an emulator A/B with
+  NAMED, frame-anchored observations in the packet, not a bare "verified on
+  oracle". The byte gate is doubly blind on a faithful-but-wrong port: both
+  twins agree, so identity proves nothing about correctness. Precedents:
+  t24's three oracle-verified children fixes (the effect `parent_ptr` dead
+  store gone at the same slot; the COORDMODE inherit measured `render_flags`
+  `$00→$08` the instant the creator returns; the chain-contract asserts); the
+  fix-test-parent-lifecycle A/B (the `DeleteChildren` cascade FIRES — 3 parents
+  + children expire ~3 s, dynamic slots reclaimed, scene healthy — a
+  behavior fix the gate could not see because the twin carried the same dead
+  self-destruct path).
+
 **PARCEL-SCOPE AMENDMENT (2026-07-24, Volence-directed; corrected same
 day):** in-tranche step 5 runs FULL — the interrogation below plus
 threshold-ruled cuts (the t18 H2 pattern: profile first, cut ≥~1k cyc/frame
@@ -624,6 +702,18 @@ an empty step 3 alone does not exit the loop.
   an agent cannot see its own blind spots by looking harder; a fresh
   lens is structural, not optional.
 
+  **Panel-activation rules (codified 2026-07-29):** **C3 ACTIVATES whenever
+  ported PROSE makes hardware claims** — not only when the code touches the
+  bus. A header carried from the `.asm` asserting a timing/bank/contention
+  fact is a hardware claim, so C3 audits it (the t27 ruling: overseer-activated
+  C3 verified 10/10 header claims against the resident tree; the t33 payoff:
+  C3 caught the one stale DAC-loop timing claim the port inherited). **A C1
+  decision is a FLAGGED CALL, never silent** — when the porter rules C1
+  inactive (e.g. a change is on a debug/human-timescale path, not the hot
+  path), it NAMES the sites and logs the ruling in the packet for gate review,
+  it does not quietly skip the cycle lens (t29 onward — a named-basis C1-inactive
+  ruling, reversible at the gate, is the standing form).
+
 **Step 6 — Corpus sweep** (Volence-ratified 2026-07-11; was the old
 in-loop step-4 back-propagate, pulled OUT to a single final GATED pass —
 "one combined wave, not two", stated plainly): ANY new addition this
@@ -649,6 +739,58 @@ ADDITION, whenever/however it ships.
   `VDP_SPRITE_._OFFSET` for the A1 fold) and name EVERY site's outcome
   (retrofitted / ledgered / not-an-instance) in the packet. "I updated
   the file at hand" is a file-scoped fix, not a sweep.
+
+**Standing patterns (codified 2026-07-29 — the game-side arc's reusable
+mechanics, so a new tranche inherits the shape instead of re-deriving it):**
+
+  **The standing-patterns registry.**
+  - **Multi-file tranche scaffolding (t29):** PER-FILE gates
+    (`SIGIL_EMP_<OBJ>` each — cleaner per-lane region pins), ONE shared test
+    file per tranche (`test_g1_objects_port.rs`), ONE mixed-build fn per
+    tranche (`build_mixed_tranche29_rom` + its assemble-AS-side sibling). The
+    combined-gate template (one gate / two files) is SUPERSEDED for multi-file
+    tranches.
+  - **The INTERNAL-gate keystone (t34):** a KEYSTONE file whose zero-byte
+    header (equates / a `vars` overlay / macros) feeds SURVIVING AS consumers
+    gets an INTERNAL gate — a gate boundary inside the file with a gate-off
+    code twin + an else-`org` resume arm — not a whole-file gate, so the
+    header's definitions stay visible to those AS consumers in BOTH build
+    shapes (player_common: the PlayerV overlay + `_pl_*`/`PPHYS_*` equates +
+    4 macros feeding player_ground/air/sensors; else-org `$10452→$10448`).
+  - **The guarded-vs-unguarded overlay decision:** guard EXACTLY the overlay
+    fields that a surviving AS file still reads (t29 DplcV — the row-61 class:
+    drift guards resolve against the real AS tree); ZERO guards for a
+    single-consumer overlay with no surviving AS reader (t31 TParentV/TOrbitChildV
+    — the row-66 class; a grep of the whole AS `games/` tree finding no reader
+    is the license, and a shadowing rename like `angle`→`orbit_angle` carries no
+    guard either).
+
+  **The wave-ripple checklist (t34 census — the canonical instance every
+  byte-moving game wave inherits; suite-green is the completeness proof):**
+  1. reference REBUILD both shapes (plain + DEBUG=1); repin.
+  2. EVERY org-resume arm — the main.asm gate-resume orgs AND the
+     act_descriptor SELF-GATE class: a FIXED `org $` that RE-DOES the slide for
+     everything after it until updated (it lives in a DATA file, not main.asm,
+     and was the arm that broke tranche4-9 mixed builds). Sweep every `org $`
+     in ALL game `.asm`, not just main.asm.
+  3. the row-1257 downstream-slide sweep (the whole object-bank + data run
+     shifts by the shrink amount; repin regenerates the pins, the arms below
+     are HAND-checked).
+  4. the 5-site hand-check: engine.inc (`org $10000` unaffected unless an
+     engine region slid) · mixed_dac_rom.rs (hardcoded reference-ROM read
+     windows + any self-relative objroutine LITERAL that slid) · repin_pins.rs
+     · repin.toml (only if a region was added) · test-port doc-comment addresses.
+  5. the $8000 bar (a DEBUG-shape growth that pushes an object-bank-consumed
+     engine symbol past `$8000` widens the bank's `jsr (Sym).w` to abs.l and
+     slides the whole debug bank — check plain==debug object-bank bases still
+     coincide).
+  6. ALL neighbour/prior-tranche gates run as CANARIES (a coincidental
+     pre-slide byte match is a latent spurious pass the slide exposes — assert
+     the real stored word, e.g. `TestAnimated_Main` not `TestAnimated`).
+  7. a per-region delta table in the packet.
+  8. **Rebuild the worktree ROMs after ANY rebase** (the t32 stale-artifact
+     lesson): a rebased branch's on-disk ROMs are stale until rebuilt — verify
+     CRCs against a fresh dual rebuild before trusting any gate.
 
 **Merge**: only after a dry retrospect + the corpus sweep — checkpoint
 packet to Volence, his gate, then --no-ff merge both sides + push. Every
