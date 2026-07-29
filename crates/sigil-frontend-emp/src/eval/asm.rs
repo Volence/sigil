@@ -1345,8 +1345,28 @@ impl Evaluator<'_> {
             return Some(CodeOperand::Sym(scope.resolve_ref(&p.segments.join("."))));
         }
         // A bare integer literal (`ld a, 5`, `ld (hl), 0E9h`) or a comptime int
-        // expr → a CPU-neutral immediate.
-        let v = self.eval_expr(expr, env);
+        // expr folds to a CPU-neutral immediate; a symbol-bearing expression
+        // that CANNOT fold (`Label+1`, `CONST-Label-1` — z80_init's clear-count
+        // and self-patch lines) defers to a link-time `ImmLink`, the Z80 analog
+        // of the 68k `#(Label+1)` deferral in `map_operand`'s `Imm` arm.
+        // `in_imm_link_ctx` enables the label-arithmetic fallback; the Z80
+        // lowering (`lower_z80_abs16_sym`) turns the `ImmLink` into the SAME
+        // `Value16Le` fixup a bare label takes, now carrying the residual Expr.
+        // A comptime bareword outside this context keeps its loud `unknown name`.
+        let v = self.in_imm_link_ctx(|this| this.eval_expr(expr, env));
+        if matches!(v, Value::Poison) {
+            return None;
+        }
+        if let Value::Label(n) = &v {
+            return Some(CodeOperand::Sym(n.clone()));
+        }
+        if let Value::LinkExpr(e) = &v {
+            if !crate::eval::expr::expr_carries_bank_mask(e) {
+                return Some(CodeOperand::ImmLink { target: e.clone() });
+            }
+            self.reject_if_provisional(&v, expr_span(expr));
+            return None;
+        }
         self.classify_operand_splice(v, expr_span(expr))
     }
 

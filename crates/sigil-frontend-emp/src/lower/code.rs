@@ -1708,11 +1708,12 @@ fn lower_z80_instr(
         }
         return;
     }
-    // A symbolic 16-bit absolute immediate (`ld rr, Label` / `jp`/`call Label`,
-    // §4): a label operand cannot fold at eval, so defer it to link as a 2-byte
-    // LE hole. Detected before the comptime mapper because a `Sym` has no
-    // comptime `Z80Operand`.
-    if ops.iter().any(|o| matches!(o, CodeOperand::Sym(_))) {
+    // A symbolic 16-bit absolute immediate (`ld rr, Label[±k]` / `jp`/`call
+    // Label[±k]`, §4): a label (bare `Sym`) or a symbol-bearing expression
+    // (`ImmLink`, t27) cannot fold at eval, so defer it to link as a 2-byte LE
+    // hole. Detected before the comptime mapper because neither has a comptime
+    // `Z80Operand`.
+    if ops.iter().any(|o| matches!(o, CodeOperand::Sym(_) | CodeOperand::ImmLink { .. })) {
         lower_z80_abs16_sym(m, ops, span, builder, diags);
         return;
     }
@@ -1747,19 +1748,28 @@ fn lower_z80_abs16_sym(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let (zops, name): (Vec<Z80Operand>, &str) = match (m, ops) {
+    // The residual is either a bare label (`Sym` → `Expr::Sym`) or a
+    // symbol-bearing expression (`ImmLink` → its residual `Expr`, t27). Both
+    // land as ONE `Value16Le` fixup carrying that Expr.
+    let (zops, target): (Vec<Z80Operand>, Expr) = match (m, ops) {
         (Z80Mnemonic::Ld, [CodeOperand::Z80Pair(rr), CodeOperand::Sym(name)]) => {
-            (vec![Z80Operand::Pair(map_z80_pair(*rr)), Z80Operand::Imm16(0)], name)
+            (vec![Z80Operand::Pair(map_z80_pair(*rr)), Z80Operand::Imm16(0)], Expr::Sym(name.clone()))
+        }
+        (Z80Mnemonic::Ld, [CodeOperand::Z80Pair(rr), CodeOperand::ImmLink { target }]) => {
+            (vec![Z80Operand::Pair(map_z80_pair(*rr)), Z80Operand::Imm16(0)], target.clone())
         }
         (Z80Mnemonic::Jp | Z80Mnemonic::Call, [CodeOperand::Sym(name)]) => {
-            (vec![Z80Operand::Imm16(0)], name)
+            (vec![Z80Operand::Imm16(0)], Expr::Sym(name.clone()))
+        }
+        (Z80Mnemonic::Jp | Z80Mnemonic::Call, [CodeOperand::ImmLink { target }]) => {
+            (vec![Z80Operand::Imm16(0)], target.clone())
         }
         _ => {
             push_err(
                 diags,
                 span,
                 "[lower.z80-unsupported] a symbolic operand is only supported as the 16-bit \
-                 immediate of `ld rr, Label` / `jp Label` / `call Label`"
+                 immediate of `ld rr, Label[±k]` / `jp Label[±k]` / `call Label[±k]`"
                     .to_string(),
             );
             return;
@@ -1782,7 +1792,7 @@ fn lower_z80_abs16_sym(
     df.fixups.push(Fixup {
         kind: FixupKind::Value16Le,
         offset: (n - 2) as u32,
-        target: Expr::Sym(name.to_string()),
+        target,
     });
     emit_data_frag(builder, df);
 }
