@@ -747,3 +747,91 @@ a fresh, unhurried pass):
 Corpus demand for item 2 is real (design §1 table: `sound_psg.asm:120` `out(carry)`), so it
 is in rung-2 scope — but it is the ONE remaining ladder item, and the psg/fm ports (item 9)
 are the acceptance gate for the whole rung.
+
+### 13.4 IMPLEMENTATION — item 2 LANDED (finisher pass, four sub-part commits)
+
+All four §13.3 sub-parts landed; suite **2713 → 2729** (0 failed, 1 ignored), frozen-68k
+bar held throughout. Commits (one per sub-part):
+
+- **2.1 `e633772` — `Z80Cc` eval producer.** `eval/asm.rs` `lower_instr_to_item`: under a
+  Z80 `jr`/`jp`/`call`/`ret`, a bare condition word in the FIRST operand position becomes a
+  `CodeOperand::Z80Cc` (helpers `is_z80_control_flow` / `z80_cc_operand`). Lowering
+  (`lower/code.rs`) grows a conditional `jr cc` rung, `ret cc` via the comptime encode path,
+  and `jp/call cc, Label` via the symbolic-abs16 path. Flips the former bounded-scope
+  negative (`ret nz`) to a positive; adds the `ld a, c` positive control (t24).
+- **2.2 `d4d340b` — additive Z80 arms in `flag_check`** (§9-F). `consumes_carry` /
+  `writes_carry` gain a `cpu` param + a leading `if cpu == Cpu::Z80 { return z80_… }` guard;
+  new `z80_reads_carry` / `z80_writes_carry` helpers; new `Cfg::z80_edges` method;
+  `check_flag_unused` / `abandons_flag` gain `cpu`; `is_call_site` recognizes the Z80 `call`.
+- **2.3 `00f230f` — corpus routing** (§4.1). A SEPARATE `Cpu::Z80` flag pass
+  (`collect_z80_flag_procs`) in `analyze_corpus_with` routes Z80 procs' flag callees + bodies
+  into `check_flag_unused`; the 68k closure stays Z80-free.
+- **2.4 `69ff308` — conditional `jr cc` ladder** (§5). `lower_jr_jp_cc_candidates` (encoder-
+  sourced opcodes) upgrades the sub-part-1 plain form to the grow-only `jr cc → jp cc` ladder.
+
+**13.4-A — the `c`/carry ambiguity resolved (§13.3 item 1).** As the handoff specified:
+`control_flow && i == 0 ⇒ cc`. Under `jr`/`jp`/`call`/`ret`, position 0 is a condition; every
+other position and mnemonic reads `c` as the C register. VERIFIED against the encoder
+(`z80.rs`): `ret cc` (`C0|cc<<3`), `jp cc, nn` (`C2|cc<<3`), `call cc, nn` (`C4|cc<<3`),
+`jr cc, e` (`20|cc<<3`, `cc < 4`) all encode — the rule is sound, NO STOP. The positive
+control `ld a, c → 79` (register, unchanged) fences it.
+
+**13.4-B — DISCREPANCY (tree wins): the producer seam is EVAL, not `map_z80_operands`.**
+§13.3 item 1 named `map_z80_operands` (a LOWERING function `CodeOperand → Z80Operand`) as the
+seam. The tree requires the EVAL layer (`lower_instr_to_item`, `CodeOperand`-producing)
+instead, because item 2's flag analysis reads the `CodeItem::Instr` `ops` stream — the cc must
+be a `Z80Cc` IN THE CODEITEM (so `consumes_carry`/`z80_edges` see it), not merely
+reinterpreted at encoding. Reinterpreting only at `map_z80_operands` would leave the CodeItem
+carrying `Z80Reg8(C)` / a mangled `Sym("nz")` (post-`resolve_ref`), which the flag walk cannot
+read. Producing `Z80Cc` at eval feeds BOTH consumers cleanly (the T1 `Z80Cc → Z80Operand::Cc`
+lowering arm already exists). No behavior gap — the obligation is discharged; only the seam
+differs from the handoff's sketch.
+
+**13.4-C — additivity proof for sub-part 2 (the item-2 hard bar).** The 68k allowlists are
+byte-unchanged: `consumes_carry` / `writes_carry` reach their original `matches!(…)` /
+`CALL_MNEMONICS` allowlists via the SAME path for 68k (the Z80 branch is an early
+`if cpu == Cpu::Z80 { return }` guard placed BEFORE them), and `Cfg::edges` is untouched (Z80
+uses a NEW `z80_edges` method). Proof: the full suite — every prior `flag_check` + corpus
+test — stays green (2724/0 at the sub-part-2 commit), and the 3 landed Z80 modules (which
+declare no `out(carry:)`) produce zero Z80 flag firings on the real corpus (firing-neutral).
+68k callers pass `Cpu::M68000` (mechanical plumbing, the anticipated churn). Additivity did
+NOT fail — no STOP.
+
+**13.4-D — corpus routing needs MODULE-level `(cpu: z80)`.** `module_is_z80` reads
+`file.module.attrs`, so the §4.1 flag pass routes only when the CPU is on the MODULE header
+(`module m (cpu: z80)`), as the real corpus declares it (`module engine.z80_init (cpu: z80)`).
+A section-only `(cpu: z80)` would leave the 68k PASS-2 to (mis)handle the procs. Not a change —
+a constraint the synthetic tests must honor (and do).
+
+**13.4-E — STANDING FINDING (out of item-2 scope; flagged, not fixed): `z80_preserves`
+(item 5) is UNSOUND for conditional branches.** Its `z80_edges` (`z80_preserves.rs:369`)
+treats every `jr`/`jp` as UNCONDITIONAL (`branch_sym` → the target, one `Follow` edge), so a
+conditional `jr cc, L` DROPS its fall-through edge — the dataflow never visits the
+straight-line successor, and a register clobbered only on that path is missed. A `preserves`
+declared over such a proof is then WRONGLY verified. This gap PRE-DATES item 2 (a conditional
+`jr` produced a mangled `Sym` cc before, treated identically as unconditional), but item-1
+makes conditional `jr cc` a first-class, lowering, testable form — so the gap is now
+exercisable. REPRODUCER (confirmed empirically this pass — a throwaway probe returned
+`PROBE DIAGS: []`, i.e. NO firing, then removed):
+
+```
+module m (cpu: z80)
+section s (cpu: z80, vma: $0) {
+  proc P () preserves(a) {
+      jr z, .skip
+      ld a, 5          // clobbers `a` ONLY on the z-false fall-through
+  .skip:
+      ret
+  }
+}
+```
+
+A sound proof must fire `[proc.preserves-unverifiable]` here; it does not. The FIX is the
+exact two-way conditional split this pass wrote for the flag check's `Cfg::z80_edges`
+(sub-part 2): a leading-`Z80Cc` `jr`/`jp` contributes BOTH the taken and the fall-through
+edge. It is localized and additive, but it edits item-5's countersigned `z80_preserves.rs` and
+is outside the item-2 fence — so it is FLAGGED here for the overseer to route, not silently
+folded in. (The flag check itself is UNAFFECTED — `Cfg::z80_edges` already does the two-way
+split; only `z80_preserves`' own private edge builder is stale.)
+
+**Rung-2 sigil-side is now COMPLETE except item 9 (the psg/fm byte-locked ports).**
