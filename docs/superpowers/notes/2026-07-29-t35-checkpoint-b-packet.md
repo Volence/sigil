@@ -85,7 +85,7 @@ Player_SetState tail-clobber union `d0-d2/a1-a2`; no unverifiable preserves).
   then have to supply the new physics externs (`PHYS_ROLL_START_MIN` etc.) or its drift-
   guard ensures fail to resolve. RULING: DEFER to a dedicated cross-suite parcel AFTER
   t35 (never inside it); file-local mirrors stay (the 1st-consumer rung). Kill-list
-  row 80 records it. No new twin mirror created this loop.
+  row 81 records it. No new twin mirror created this loop.
 - step-5: interrogation run per hot proc (see panel C1). NO byte-changing cuts taken
   in-tranche — oracle A/B is unavailable this tranche (dispatch constraint), so behavior-
   affecting optimizations DEFER to the master step-5 backlog (gap-ledger §17 / the
@@ -107,7 +107,7 @@ One round, 4 read-only lenses over the 3 files. Adjudication:
   empty PState_Air + the honest-contract widenings. Nothing to act on — the port is faithful.
 - **A1 + B1 (independent) both ranked `abs_w` #1** — B1 refuted the deferral cost objection
   with the mask_opposing_lr/dist_to_fix precedent. → **BUILT** (step-4, byte-neutral, 9 sites;
-  kill row 81). This RE-OPENED and was addressed in-loop.
+  kill row 82). This RE-OPENED and was addressed in-loop.
 - **C1 (perf): no byte-neutral in-tranche cut exists** (byte-gated port + oracle A/B down —
   every cycle win is byte-changing → master step-5 backlog; 10/12 duplicate §17). One item
   ELEVATED: **G9** — the byte-loaded-`d7`-used-as-word latent hazard, benign under current
@@ -125,13 +125,13 @@ the overseer's call at gate (c).
 
 ## Duties
 
-- Kill rows 78/79/80 written (correction commit 77a8eb8 — the same-commit miss at the
+- Kill rows 79/80/81 written (renumbered at the overseer rebase: t36 merged first and holds row 78; the abs_w row is 82) (correction commit 77a8eb8 — the same-commit miss at the
   step-1 commit is logged here as a corrections row).
 - Census amendment: **P2+P3 PORTED** (all 7 PState_* are real .emp defs; the offsets-
   construct adoption for the Player_States table stays ledgered to P4). NEXT on the game
   front: P4 player_sensors (retires the 7 extern-proc rows + the 5 PlayerV guards + the
   file-local mirrors' P4 arm), then the 3 objects + T1.
-- Gap-ledger sweep: no new gaps beyond the logged step-3(a) asks + the hoist (row 80) +
+- Gap-ledger sweep: no new gaps beyond the logged step-3(a) asks + the hoist (row 81) +
   the step-5 backlog (§17, pre-existing).
 
 ## Corrections
