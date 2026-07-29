@@ -1856,3 +1856,25 @@ fm 5/5 canaries by name.
 - Aeon repo master: **`656115d`** (merge of `port-tranche36`; sigil master **`12fd111`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`37dd2bb2`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`bbb822f6`** — UNCHANGED.
+
+## t35 (P2/P3) re-baseline (2026-07-29) — the player state machines + the −0x20 wave
+
+`player_ground` / `player_air` / `player_spindash` ported byte-exact (full mixed
+whole-ROM identity BOTH shapes — the first tranche proven at full strength under the
+combined-link fix), then the step-2 control-flow wave: 16 shrink sites = −0x20
+(ground −0xC, air −0x10, spindash −0x4), pad-absorbed. TWIN-WIDTH FINDING on record:
+sigil's AS frontend pins branch width (no relaxation), so the AS twins carry EXPLICIT
+widths hand-matched to the asl listing. All 7 PState_* dispatch targets are real
+`.emp` definitions; 4 sensor `extern proc` boundary decls (7 sites) die at P4;
+`abs_w` comptime fn built + swept (12 folds; 6 engine sites ledgered pending the
+engine-hoist parcel); the G9 d7 word-use latent hazard ledgered with an oracle-A/B
+rider (byte-gate-blind shared-twin class). Kill rows 79-82.
+
+Full paired strict **2827/0 (1 ignored)** on merged masters; p2 12 + p1 8 + sequencer
+6 canaries by name.
+
+- Aeon repo master: **`1cbd4fd`** (merge of `port-tranche35`; sigil master **`37abcac`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`**, sha256
+  **`45e7a268f41cc6bc106d5a65fb604ead414ee81fb0e0b8e9761d34a8046d48a3`** — NEW.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`**, sha256
+  **`e73be3323400c0e73b201c0daad721886593d74721e9e64e020e883e9fae4bc1`** — NEW.
