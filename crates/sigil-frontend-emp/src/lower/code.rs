@@ -16,11 +16,12 @@
 //! (§5.4); under `@as_compat` it stays the `[branch.missing-size]` error (a
 //! faithful AS port pins every branch width).
 //!
-//! 68k is complete; Z80 is wired STRUCTURALLY (dispatch routes to
-//! [`Z80Backend::lower`] / [`Z80Backend::lower_rel`]) but thin — the emp
-//! operand-class model ([`Reg`] = `d0`..`a7`) is 68k-only, so Z80 register /
-//! immediate operands aren't representable yet (a T1 model extension); those
-//! forms diagnose rather than mis-encode.
+//! Both CPUs carry a full operand model. The Z80 forms (`value.rs` §2.1) map to
+//! [`Z80Operand`]s and encode via the asl-golden `z80::encode`; symbolic targets
+//! defer as a `Z80JrRel8` (relative) or `Value16Le` (absolute imm16) fixup. A
+//! form the operand model does not (yet) reach — a CB bit number, a condition
+//! code — is the `[lower.z80-unsupported]` diagnostic (bounded scope), never
+//! silent bytes.
 
 use crate::value::{
     CodeBuf, CodeItem, CodeOperand, Reg, Width, Z80Cond, Z80Index, Z80Pair, Z80Reg8,
