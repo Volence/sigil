@@ -6,6 +6,15 @@ defaulting M68000 no-warn · corpus-scoped wiring, enum defined whole). Implemen
 authorized on branch `z80-t1-operand-model`, TDD ladder §7 items 1-5; item 6
 (the satellite ports) is rung 1 of the Z80 ladder, a separate tranche.
 
+**IMPLEMENTED 2026-07-28/29, overseer-countersigned (branch tip `48fb85f`, 23 tests,
+own strict-paired full suite 2643/0 — the frozen-68k bar proven at whole-ROM scale).**
+Queued behind t26 in the merge queue. §9 naming call: `Value16Le` reused (BankPtr16Le
+masks into the window; a new Abs16Le would duplicate identical range semantics).
+**RUNG-2 TEST OBLIGATION (carried from item 5):** the `Value::Z80Reg`-in-a-68k-section
+splice-kind error is implemented but has no source producer until Z80 proc register
+params land — the rung-2 tranche that adds them MUST add the source-level test for
+that direction (today only the 68k-reg-in-Z80-section direction is source-tested).
+
 Status: **DRAFT design** (overseer session, 2026-07-28). Sibling to the recon
 `2026-07-28-z80-recon-emp-design.md` — this note fills in §4.1 (the operand model)
 and the rung-1 acceptance context (§5 rung 1). RULED context: the recon's §5
