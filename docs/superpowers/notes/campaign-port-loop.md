@@ -179,7 +179,26 @@ re-green. No emulator time needed at this step.
      symbol pointer in raw `dc` position (t25 — vector/jump table entries;
      register-class words stay loud), `raise_exception "<msg>" [, <flag>]` for a
      CPU exception/trap vector handler (t25 — the frame-less `__ErrorMessage`
-     shape, sibling to `raise_error`), typed VDP fns, contract
+     shape, sibling to `raise_error`),
+     a trailing LOCAL label (`.code_end:`) for an END-OF-CODE / end-of-table
+     marker inside a proc body (t27 — no global-label-in-proc-body form parses;
+     the local resolves to the same address as the AS-side global and, absent an
+     external consumer, needs no export; z80_init's precedent),
+     OMIT the register contract entirely — never write empty `clobbers()` — on a
+     proc whose CPU has NO contract model yet (t27 — `(cpu: z80)` procs are
+     skipped by the 68k clobber closure until rung 2; empty `clobbers()` reads as
+     the "verified: touches nothing" LICENSE, a FALSE claim for a code proc that
+     clobbers registers, whereas an omitted clause is `clobbers=None` = "no
+     contract declared", honest until the CPU's contract model lands; a PURE-DATA
+     proc that genuinely writes no register KEEPS the honest empty `clobbers()` —
+     seq_opcode_tab/dac_sample_tab vs z80_init's idle code),
+     the COMMUTED `<const> + .local` immediate spelling (constant FIRST) wherever
+     a leading-`.` local label would otherwise START an immediate expression
+     (t27 — `ld de, 1 + .code_end`, NOT `.code_end + 1`; a leftmost `.local` in an
+     immediate expr is parsed raw/unmangled → a dangling-symbol link bug, so
+     commute — `+` is commutative, byte-identical — with a site comment, until the
+     leftmost-local-label parser fix lands; gap-ledgered, CPU-agnostic),
+     typed VDP fns, contract
      reglists in movem-RANGE form — `clobbers(d0-d7/a0-a4)`, not comma
      enumeration, wherever a ≥2 contiguous run exists (C1 item 2
      grammar; added 2026-07-15 after t15 shipped three enumerated

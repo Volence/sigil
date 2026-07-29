@@ -14,7 +14,8 @@
 //! | 68000, width 2                   | `Abs16Be`                              |
 //! | Z80, windowed (`winptr`)         | `BankPtr16Le`                          |
 //! | 68000, windowed (`winptr`)       | `BankPtr16Be` (T6, D-P4.7)             |
-//! | Z80, un-windowed 68k pointer     | ERROR `[cross-cpu.unwindowed-pointer]` |
+//! | Z80, width-2 local ref (`dc.w`)  | `Value16Le` (t27 — resident Z80 addr)  |
+//! | Z80, un-windowed 68k pointer (w4)| ERROR `[cross-cpu.unwindowed-pointer]` |
 //!
 //! `BankPtr16Be` (a 68k reference to a Z80 bank pointer) was added in T6 (D-P4.7)
 //! alongside its Core [`FixupKind`] variant — the big-endian counterpart of
@@ -163,9 +164,18 @@ fn fixup_kind(
         (Cpu::M68000, 2, true) => Some(FixupKind::BankPtr16Be),
         // A Z80 windowed bank pointer: little-endian 16-bit window offset.
         (Cpu::Z80, 2, true) => Some(FixupKind::BankPtr16Le),
-        // A 68k-address constant in Z80 data is an error unless explicitly
-        // windowed via `winptr(sym)` — the convsym z-filter class is
-        // unrepresentable (§7.2).
+        // A width-2 Z80-LOCAL reference (`dc.w <resident-Z80-label>`, e.g.
+        // seq_opcode_tab's `Seq_Op_*` handler addresses): the resident phase-0
+        // Z80 address written as a little-endian 16-bit VALUE. Reuse `Value16Le`
+        // (the §9/T1 naming call — an `Abs16Le` would duplicate identical range
+        // semantics). The linker's UNSIGNED u16 window check then catches a
+        // genuine 68k address (> $FFFF) that reached here without `winptr` as a
+        // link-time `[value.out-of-range]` — so the cross-cpu guard's protection
+        // survives, now width-split as the data.rs comment anticipated.
+        (Cpu::Z80, 2, false) => Some(FixupKind::Value16Le),
+        // A wider (68k-address, width-4) un-windowed pointer in Z80 data is an
+        // error unless explicitly windowed via `winptr(sym)` — the convsym
+        // z-filter class is unrepresentable (§7.2).
         (Cpu::Z80, _, false) => {
             diags.push(err(
                 span,
@@ -177,12 +187,11 @@ fn fixup_kind(
             None
         }
         // Totality guard: every (width, cpu, windowed) shape T2 actually
-        // produces is matched above, so this arm is currently unreachable. It
-        // is NOT the Z80-local `dc.w` case — a width-2 un-windowed Z80 ref
-        // matches `(Cpu::Z80, _, false)` above and yields
-        // `[cross-cpu.unwindowed-pointer]`. Supporting a genuine Z80-local
-        // 16-bit label ref (an `Abs16Le` that does not yet exist) will require
-        // T6 to SPLIT the `(Z80, _, false)` arm by width, not to route here.
+        // produces is matched above, so this arm is currently unreachable. The
+        // Z80-local width-2 `dc.w <resident-label>` case is now the
+        // `(Cpu::Z80, 2, false) => Value16Le` arm above (t27); a width-4 Z80
+        // un-windowed pointer still falls to the `(Cpu::Z80, _, false)`
+        // cross-cpu error, not here.
         _ => {
             diags.push(err(
                 span,
