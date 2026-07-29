@@ -101,3 +101,38 @@ fn move_l_imm_label_past_grown_cross_seam_jsr_is_not_stale() {
         "move.l #Label immediate past a width-grown cross-seam jsr must resolve to the shifted label ($1000E)"
     );
 }
+
+/// A label-referencing EQU (`HandlerPtr = Handler`) whose value is a label that a
+/// grown cross-seam jsr shifts — the t34 debug-build dominator (`dc.l
+/// DEBUGGER__EXTENSIONS__BTN_A_DEBUGGER`). A `dc.l` / `jsr` through such an equ
+/// must resolve to the SHIFTED label. `Const` is a pure-constant equ (the t24
+/// control): it must STILL bake and byte-match, unaffected by the fix.
+const EQU_SRC: &str = "\
+        cpu 68000
+        phase $10000
+        jsr     External
+Handler:
+        rts
+HandlerPtr:     equ     Handler
+Const:          equ     $1234
+        dc.l    HandlerPtr
+        dc.l    Const
+";
+
+#[test]
+fn dc_l_through_label_referencing_equ_past_grown_jsr_is_not_stale() {
+    let bytes = assemble_link_flatten(EQU_SRC);
+    // Grown layout: jsr(6) @0, Handler=rts(2) @6 = $10006, dc.l HandlerPtr @8,
+    // dc.l Const @12. HandlerPtr = Handler must resolve to the GROWN VMA $10006.
+    assert_eq!(
+        &bytes[8..12],
+        &[0x00, 0x01, 0x00, 0x06],
+        "dc.l through a label-referencing equ past a grown jsr must resolve to the shifted label ($10006)"
+    );
+    // t24 control: a pure-constant equ is unaffected — still the baked $1234.
+    assert_eq!(
+        &bytes[12..16],
+        &[0x00, 0x00, 0x12, 0x34],
+        "a pure-constant equ must still bake its value byte-for-byte"
+    );
+}

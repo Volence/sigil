@@ -55,6 +55,9 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     // branch/jump target that names a label is recognized as a label (kept
     // symbolic in `fixup_target`) before its definition line executes.
     let mut labels: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Label-referencing equ names known from the previous pass — same forward-
+    // reference role as `labels`, for the debugger's `DEBUGGER__* = <label>` table.
+    let mut label_ref_equs: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut prev = seed.clone();
     // Every equ-sym name any pass exports, in first-seen order. An
     // `ifndef`-guarded definition block executes (and exports) on pass 0,
@@ -74,7 +77,8 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
             diags,
             poison,
             labels: pass_labels,
-        } = one_pass(src, opts, &seed, &macros, &functions, &labels);
+            label_ref_equs: pass_label_ref_equs,
+        } = one_pass(src, opts, &seed, &macros, &functions, &labels, &label_ref_equs);
         for sec in &module.sections {
             for eq in &sec.equ_syms {
                 if ever_exported_names.insert(eq.name.clone()) {
@@ -108,8 +112,16 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
                     Ok(module)
                 };
             }
-            let bonus =
-                one_pass_with_defer(src, opts, &seed, &macros, &functions, &pass_labels, true);
+            let bonus = one_pass_with_defer(
+                src,
+                opts,
+                &seed,
+                &macros,
+                &functions,
+                &pass_labels,
+                &pass_label_ref_equs,
+                true,
+            );
             let mut diags = bonus.diags;
             for (name, span) in bonus.poison {
                 diags.push(Diagnostic {
@@ -131,6 +143,7 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
         macros = m;
         functions = f;
         labels = pass_labels;
+        label_ref_equs = pass_label_ref_equs;
     }
     Err(vec![Diagnostic {
         level: Level::Error,
@@ -158,6 +171,9 @@ struct PassOutput {
     /// Threaded into the next pass so a forward-referenced label is known before
     /// its definition line — see [`Asm::known_labels`].
     labels: std::collections::HashSet<String>,
+    /// Every label-referencing `equ`/`=` name defined this pass — see
+    /// [`Asm::label_ref_equs`]. Threaded into the next pass.
+    label_ref_equs: std::collections::HashSet<String>,
 }
 
 /// Re-attach equ exports the CONVERGED pass lost to a guard-skipped block
@@ -204,8 +220,11 @@ fn one_pass(
     seed_macros: &MacroTable,
     seed_functions: &FunctionTable,
     seed_labels: &std::collections::HashSet<String>,
+    seed_label_ref_equs: &std::collections::HashSet<String>,
 ) -> PassOutput {
-    one_pass_with_defer(src, opts, seed_env, seed_macros, seed_functions, seed_labels, false)
+    one_pass_with_defer(
+        src, opts, seed_env, seed_macros, seed_functions, seed_labels, seed_label_ref_equs, false,
+    )
 }
 
 /// Like [`one_pass`], but also threads [`Asm::defer_unresolved_jsr_jmp`] —
@@ -218,6 +237,7 @@ fn one_pass_with_defer(
     seed_macros: &MacroTable,
     seed_functions: &FunctionTable,
     seed_labels: &std::collections::HashSet<String>,
+    seed_label_ref_equs: &std::collections::HashSet<String>,
     defer_unresolved_jsr_jmp: bool,
 ) -> PassOutput {
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
@@ -225,6 +245,7 @@ fn one_pass_with_defer(
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
     asm.known_labels = seed_labels.clone();
+    asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.process(src);
     // Task B1 (seam re-eval): a source consisting ONLY of `equ`s (no section
     // ever opens) would otherwise strand `pending_equ_syms` — force a carrier
@@ -243,6 +264,7 @@ fn one_pass_with_defer(
         diags,
         poison: asm.poison_refs,
         labels: asm.known_labels,
+        label_ref_equs: asm.label_ref_equs,
     }
 }
 
@@ -361,6 +383,17 @@ struct Asm {
     /// see. Labels vs. `equ`s are indistinguishable in `env` (both hold an
     /// `Int`), so this dedicated name set is the discriminator.
     known_labels: std::collections::HashSet<String>,
+    /// Every `equ`/`=` name whose VALUE derives from a section LABEL
+    /// (`HandlerPtr = Handler`, `X = Label+4`, or a chain `X = Y` onto another
+    /// such equ) — the debugger's `DEBUGGER__*` handler-address table is the
+    /// canonical shape. Such an equ's folded `Int` value shifts when a
+    /// width-grown `JmpJsrSym` moves its underlying label, so on the deferral
+    /// pass it is exported to the linker as a SYMBOLIC `equ_sym` (the linker
+    /// folds it post-relax) and a `dc.l`/`jsr`/... through it is treated like a
+    /// label reference (kept symbolic). A pure-constant equ never enters this
+    /// set and keeps baking. Threaded across passes so a forward reference
+    /// through such an equ is recognized before its definition line.
+    label_ref_equs: std::collections::HashSet<String>,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -402,6 +435,7 @@ impl Asm {
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
             known_labels: std::collections::HashSet::new(),
+            label_ref_equs: std::collections::HashSet::new(),
         }
     }
 
@@ -2103,6 +2137,29 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.env.define(&q, SymbolValue::Int(v));
+            // A label-referencing equate (`HandlerPtr = Handler`, the debugger's
+            // `DEBUGGER__*` table): on the deferral pass its VALUE is a
+            // relaxation-shiftable label address, so export it to the linker as a
+            // SYMBOLIC equ_sym (folded post-relax) and register the name so a
+            // `dc.l`/`jsr` through it is kept symbolic too. `relax_safe_fold`
+            // still bakes any env-only subterm, so `X = Label + CONST` ships
+            // `Sym(Label) + Int(CONST)`. A pure-constant equ (no label leaf) or
+            // an ordinary pass falls through to the unchanged `Int(v)` export.
+            let sym_rhs = if self.keep_labels_symbolic() {
+                crate::expr::parse_expr(&self.expand_calls(rest, 0))
+                    .and_then(|(e, tail)| tail.is_empty().then_some(e))
+                    .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
+                    .filter(|e| self.expr_refs_label(e))
+            } else {
+                None
+            };
+            let equ_expr = match &sym_rhs {
+                Some(e) => {
+                    self.label_ref_equs.insert(q.clone());
+                    self.relax_safe_fold(e)
+                }
+                None => Expr::Int(v),
+            };
             // Task B1 (seam re-eval): export the int equate to the module's
             // link-level `equ_syms` so `.emp` code can read it via `extern()`.
             // AS equates today live ONLY in `self.env` (front-end-private), so
@@ -2134,9 +2191,9 @@ impl Asm {
             // flush into the next section that actually opens, WITHOUT
             // side-effecting `in_section`/`phys_base` here.
             if self.in_section {
-                self.builder.add_equ_sym(EquSym { name: q, expr: Expr::Int(v), span });
+                self.builder.add_equ_sym(EquSym { name: q, expr: equ_expr, span });
             } else {
-                self.pending_equ_syms.push(EquSym { name: q, expr: Expr::Int(v), span });
+                self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
             }
         }
     }
@@ -3726,13 +3783,17 @@ impl Asm {
         self.defer_unresolved_jsr_jmp
     }
 
-    /// Does `e` reference at least one section LABEL known to this pass? (A
-    /// `$`-derived `Int`, an env-only `equ`/`set`, or an unresolved cross-seam
-    /// external all answer `false` — only a defined label the linker's
-    /// section-label table can resolve counts.)
+    /// Does `e` reference at least one section LABEL — directly, or through a
+    /// label-referencing `equ` (`dc.l HandlerPtr` where `HandlerPtr = Handler`)?
+    /// A `$`-derived `Int`, a pure-constant `equ`/`set`, or an unresolved
+    /// cross-seam external all answer `false` — only a name the linker resolves
+    /// to a RELAXATION-SHIFTABLE address (a section label, or an equ_sym that
+    /// folds onto one) counts.
     fn expr_refs_label(&self, e: &Expr) -> bool {
         match e {
-            Expr::Sym(name) => self.known_labels.contains(name),
+            Expr::Sym(name) => {
+                self.known_labels.contains(name) || self.label_ref_equs.contains(name)
+            }
             Expr::Binary { lhs, rhs, .. } => {
                 self.expr_refs_label(lhs) || self.expr_refs_label(rhs)
             }
