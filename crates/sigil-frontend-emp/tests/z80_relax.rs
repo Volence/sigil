@@ -63,6 +63,55 @@ fn out_of_reach_jr_relaxes_to_jp() {
     assert_eq!(section_bytes(&module, "code").unwrap(), vec![0xC3, 0x00, 0x02, 0xC9]);
 }
 
+// ---- rung-2 §13.3 item 4: the conditional jr cc → jp cc ladder -------------
+
+/// An in-reach conditional `jr cc` selects the 2-byte `jr cc, e` rung — asl's
+/// in-reach choice, byte-identical to the sub-part-1 plain conditional form. `P`
+/// is `jr z, Q` (2 B) + `ret`; `Q` at offset 3 sits +1 from the post-instruction
+/// PC, so `jr z, +1` = `28 01`.
+#[test]
+fn in_reach_jr_cc_stays_two_bytes() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 proc P() { jr z, Q\n ret }\n\
+                 proc Q() { ret }\n\
+               }\n";
+    let module = lower(src);
+    assert_eq!(section_bytes(&module, "s").unwrap(), vec![0x28, 0x01, 0xC9, 0xC9]);
+}
+
+/// A genuinely out-of-reach conditional `jr cc` relaxes to the 3-byte `jp cc, nn`
+/// rung — proving the conditional ladder wires. `jp z` = `CA` (`C2 | 1<<3`), so
+/// `P` becomes `jp z, $0200` = `CA 00 02` + `ret`.
+#[test]
+fn out_of_reach_jr_cc_relaxes_to_jp_cc() {
+    let src = "module m\n\
+               section code (cpu: z80, vma: $0) {\n\
+                 proc P() { jr z, Far\n ret }\n\
+               }\n\
+               section tgt (cpu: z80, vma: $0200) {\n\
+                 proc Far() { ret }\n\
+               }\n";
+    let module = lower(src);
+    assert_eq!(section_bytes(&module, "code").unwrap(), vec![0xCA, 0x00, 0x02, 0xC9]);
+}
+
+/// `jr c` uses the carry cc — its opcode differs (`38`), and an out-of-reach
+/// carry conditional relaxes to `jp c` (`DA` = `C2 | 3<<3`), proving the cc
+/// rides the ladder opcodes, not a fixed one.
+#[test]
+fn out_of_reach_jr_c_relaxes_to_jp_c() {
+    let src = "module m\n\
+               section code (cpu: z80, vma: $0) {\n\
+                 proc P() { jr c, Far\n ret }\n\
+               }\n\
+               section tgt (cpu: z80, vma: $0200) {\n\
+                 proc Far() { ret }\n\
+               }\n";
+    let module = lower(src);
+    assert_eq!(section_bytes(&module, "code").unwrap(), vec![0xDA, 0x00, 0x02, 0xC9]);
+}
+
 /// `djnz` is short-only — never a ladder. An out-of-range `djnz` stays a hard
 /// error (a real code-structure problem, matching asl), NOT a silent relax to a
 /// non-existent long form.

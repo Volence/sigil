@@ -1714,16 +1714,29 @@ fn lower_z80_instr(
             return;
         }
     }
-    // A conditional symbolic `jr cc, Label` (rung-2 §13.3): a RELATIVE
-    // conditional jump. Emitted as a plain 2-byte `Z80JrRel8` conditional fixup
-    // — asl's choice for an in-reach target, which every psg/fm `jr cc` is. The
-    // latent `jr cc → jp cc` ladder (§5) upgrades a genuinely out-of-reach
-    // target; this is the byte-neutral in-reach rung. Detected before the
-    // symbolic-abs16 path below because a `jr` target is relative, not absolute.
+    // A conditional symbolic `jr cc, Label` (rung-2 §13.3 item 4): sizes ITSELF
+    // over the latent `jr cc → jp cc` ladder (§5), exactly like the unconditional
+    // `jr` above — a two-rung `RelaxLadder` (`jr cc, e` 2 B → `jp cc, nn` 3 B)
+    // the linker width-selects. Byte-neutral: an in-reach target keeps the 2-byte
+    // `jr cc` rung (asl's choice, which every psg/fm `jr cc` takes); a genuinely
+    // out-of-reach target grows to `jp cc`. Detected before the symbolic-abs16
+    // path below because a `jr` target is relative, not absolute.
     if matches!(m, Z80Mnemonic::Jr) {
         if let [CodeOperand::Z80Cc(cc), CodeOperand::Sym(name)] = ops {
-            match Z80Backend.lower_rel(m, Some(map_z80_cond(*cc)), Expr::Sym(name.clone()), span) {
-                Ok(df) => emit_data_frag(builder, df),
+            match Z80Backend.lower_jr_jp_cc_candidates(
+                map_z80_cond(*cc),
+                Expr::Sym(name.clone()),
+                span,
+            ) {
+                Ok(candidates) => {
+                    let advance = candidates[0].bytes.len() as u32;
+                    let frag = Fragment::RelaxLadder {
+                        candidates,
+                        target: Expr::Sym(name.clone()),
+                        span,
+                    };
+                    builder.emit_fragment(frag, advance);
+                }
                 Err(e) => push_err(diags, span, e.message),
             }
             return;

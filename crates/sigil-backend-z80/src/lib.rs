@@ -120,6 +120,51 @@ impl Z80Backend {
             },
         ]
     }
+
+    /// The two rungs of the CONDITIONAL `jr cc → jp cc` ladder (rung-2 §5 / §13.3
+    /// item 4) for a symbolic `jr cc, Label`, smallest → largest:
+    ///
+    /// - rung 0 (2 B): `jr cc, e` — `Z80JrRel8` disp at offset 1;
+    /// - rung 1 (3 B): `jp cc, nn` — `Value16Le` LE absolute at offset 1.
+    ///
+    /// The cc-adjusted opcodes are drawn from the encoder (a zero-operand encode
+    /// for the opcode byte, exactly as [`Self::lower_rel`] does) rather than
+    /// hardcoded — so the `jr cc` cond-field (`nz`/`z`/`nc`/`c` only) and the
+    /// `jp cc` cond-field stay the ISA's single source of truth. A cc the short
+    /// `jr` cannot encode (`po`/`pe`/`p`/`m`) surfaces the encoder's own
+    /// `jr condition must be nz, z, nc, or c` as a `LowerError` — never a panic,
+    /// never a silent narrowing. The linker selects the smallest reaching rung
+    /// (an in-reach `jr cc` stays 2 B — asl's choice; every psg/fm `jr cc`
+    /// reaches), so the ladder is byte-neutral latent capacity.
+    pub fn lower_jr_jp_cc_candidates(
+        &self,
+        cc: Cond,
+        target: Expr,
+        _span: Span,
+    ) -> Result<Vec<RelaxCandidate>, LowerError> {
+        let jr = z80::encode(&Instruction {
+            mnemonic: Mnemonic::Jr,
+            ops: vec![Operand::Cc(cc), Operand::Rel(0)],
+        })
+        .map_err(|e| LowerError { message: e.to_string() })?;
+        let jp = z80::encode(&Instruction {
+            mnemonic: Mnemonic::Jp,
+            ops: vec![Operand::Cc(cc), Operand::Imm16(0)],
+        })
+        .map_err(|e| LowerError { message: e.to_string() })?;
+        Ok(vec![
+            // rung 0: jr cc, e (2 bytes) — opcode from the encoder, disp placeholder.
+            RelaxCandidate {
+                bytes: vec![jr[0], 0x00],
+                fixup: Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target: target.clone() },
+            },
+            // rung 1: jp cc, nn (3 bytes) — opcode from the encoder, LE absolute.
+            RelaxCandidate {
+                bytes: vec![jp[0], 0x00, 0x00],
+                fixup: Fixup { kind: FixupKind::Value16Le, offset: 1, target },
+            },
+        ])
+    }
 }
 
 #[cfg(test)]
