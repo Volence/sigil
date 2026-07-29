@@ -366,20 +366,51 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State) -> Option<String> {
 /// shared `Cfg::edges` is 68k-terminator-aware (`rts`/`bra`/…); the Z80 proof
 /// needs `ret`/`jp`/`jr`/`djnz`/`call` semantics, so it computes edges itself from
 /// the shared `Cfg`'s `instr`/`next_instr`/`label_index` primitives.
+///
+/// A CONDITIONAL form (a leading `Z80Cc`) is a genuine two-way split — it
+/// contributes BOTH its taken edge and its fall-through. A `preserves` proof
+/// that dropped the fall-through of a `jr cc`/`jp cc`/`ret cc` would MISS a
+/// register clobbered only on that path and wrongly verify the preserve (the
+/// §13.4-E soundness gap). This mirrors the flag check's `Cfg::z80_edges`
+/// (`flag_check.rs`) — the same conditional split, one edge model.
 fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
     let Some((mnem, ops)) = cfg.instr(idx) else { return vec![] };
-    if is_return(mnem) {
+    let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
+    // Unconditional return.
+    if is_return(mnem) && !leads_cc {
         return vec![Edge::Abandon];
+    }
+    // Conditional `ret cc`: the taken edge returns (abandon); the fall-through
+    // stays in the proc.
+    if is_return(mnem) && leads_cc {
+        return match cfg.next_instr(idx) {
+            Some(f) => vec![Edge::Abandon, Edge::Follow(f)],
+            None => vec![Edge::Abandon, Edge::Abandon],
+        };
     }
     // Unconditional tail transfer: `jp`/`jr` to a LOCAL label follows it; to an
     // external symbol (or a computed `jp (hl)`) it defers out of the proc.
-    if matches!(mnem, "jp" | "jr") {
+    if matches!(mnem, "jp" | "jr") && !leads_cc {
         return match branch_sym(ops).and_then(|t| cfg.label_index(t)) {
             Some(tgt) => vec![Edge::Follow(tgt)],
             None => vec![Edge::Defer],
         };
     }
-    // `djnz` (and any conditional form) branches AND falls through.
+    // Conditional `jr cc`/`jp cc`: the taken edge (local → follow, external →
+    // defer) PLUS the fall-through.
+    if matches!(mnem, "jp" | "jr") && leads_cc {
+        let mut v = Vec::new();
+        match branch_sym(ops).and_then(|t| cfg.label_index(t)) {
+            Some(tgt) => v.push(Edge::Follow(tgt)),
+            None => v.push(Edge::Defer),
+        }
+        match cfg.next_instr(idx) {
+            Some(f) => v.push(Edge::Follow(f)),
+            None => v.push(Edge::Abandon),
+        }
+        return v;
+    }
+    // `djnz` branches AND falls through.
     if mnem == "djnz" {
         let mut v = Vec::new();
         if let Some(tgt) = branch_sym(ops).and_then(|t| cfg.label_index(t)) {

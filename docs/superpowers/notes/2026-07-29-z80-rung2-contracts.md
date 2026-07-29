@@ -803,35 +803,23 @@ NOT fail — no STOP.
 A section-only `(cpu: z80)` would leave the 68k PASS-2 to (mis)handle the procs. Not a change —
 a constraint the synthetic tests must honor (and do).
 
-**13.4-E — STANDING FINDING (out of item-2 scope; flagged, not fixed): `z80_preserves`
-(item 5) is UNSOUND for conditional branches.** Its `z80_edges` (`z80_preserves.rs:369`)
-treats every `jr`/`jp` as UNCONDITIONAL (`branch_sym` → the target, one `Follow` edge), so a
-conditional `jr cc, L` DROPS its fall-through edge — the dataflow never visits the
-straight-line successor, and a register clobbered only on that path is missed. A `preserves`
-declared over such a proof is then WRONGLY verified. This gap PRE-DATES item 2 (a conditional
-`jr` produced a mangled `Sym` cc before, treated identically as unconditional), but item-1
-makes conditional `jr cc` a first-class, lowering, testable form — so the gap is now
-exercisable. REPRODUCER (confirmed empirically this pass — a throwaway probe returned
-`PROBE DIAGS: []`, i.e. NO firing, then removed):
+**13.4-E — SOUNDNESS FIX (overseer-authorized this pass): `z80_preserves` conditional-branch
+edges.** `z80_preserves`' private `z80_edges` (`z80_preserves.rs`) now treats a CONDITIONAL
+form (a leading `Z80Cc`) as a genuine two-way split: `jr cc`/`jp cc` contribute BOTH the taken
+edge and the fall-through; `ret cc` contributes the return (abandon) AND the fall-through.
+Unconditional `jr`/`jp`/`ret` stay single-edge. This mirrors the flag check's `Cfg::z80_edges`
+(`flag_check.rs`) — one conditional-split edge model across both Z80 dataflows.
 
-```
-module m (cpu: z80)
-section s (cpu: z80, vma: $0) {
-  proc P () preserves(a) {
-      jr z, .skip
-      ld a, 5          // clobbers `a` ONLY on the z-false fall-through
-  .skip:
-      ret
-  }
-}
-```
-
-A sound proof must fire `[proc.preserves-unverifiable]` here; it does not. The FIX is the
-exact two-way conditional split this pass wrote for the flag check's `Cfg::z80_edges`
-(sub-part 2): a leading-`Z80Cc` `jr`/`jp` contributes BOTH the taken and the fall-through
-edge. It is localized and additive, but it edits item-5's countersigned `z80_preserves.rs` and
-is outside the item-2 fence — so it is FLAGGED here for the overseer to route, not silently
-folded in. (The flag check itself is UNAFFECTED — `Cfg::z80_edges` already does the two-way
-split; only `z80_preserves`' own private edge builder is stale.)
+The bug it closes: the prior `z80_edges` treated EVERY `jr`/`jp` as unconditional (one
+`Follow` to the target), DROPPING a `jr cc` fall-through — so a register clobbered only on
+that path was missed and a `preserves` over it was WRONGLY verified (a `preserves` that lies
+is worse than no proof). The gap pre-dated item 2 but item-1 makes conditional `jr cc` a
+first-class lowering form, so it became exercisable. PERMANENT reproducer +
+positive control now in the proof's test set:
+`z80_conditional_jr_fallthrough_clobber_fires` (a clobber on the `jr z` fall-through fires
+`[proc.preserves-unverifiable]`) and the t24 `z80_unconditional_jr_keeps_single_edge` (an
+unconditional `jr .skip` stays single-edge, so the dead `ld a, 5` it jumps over does NOT
+false-fire — the guard against a phantom fall-through leaking onto unconditional branches).
+`preserves.rs` (the 68k proof) stays byte-untouched.
 
 **Rung-2 sigil-side is now COMPLETE except item 9 (the psg/fm byte-locked ports).**

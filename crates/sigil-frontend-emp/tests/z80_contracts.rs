@@ -264,6 +264,50 @@ fn z80_sp_hazard_bails_declared_preserve() {
     );
 }
 
+/// (e) SOUNDNESS (§13.4-E): a register clobbered ONLY on a conditional branch's
+/// FALL-THROUGH path must NOT be verified preserved. `jr z, .skip` skips the
+/// `ld a, 5` on the z-TRUE edge but FALLS THROUGH to it on the z-FALSE edge, so
+/// `a` is clobbered on some path — a caller cannot rely on it, and
+/// `preserves(a)` MUST fire. (Before the conditional two-way split, `z80_edges`
+/// treated `jr cc` as unconditional and dropped the fall-through, wrongly
+/// verifying the preserve — the empirical reproducer this pass recorded.)
+#[test]
+fn z80_conditional_jr_fallthrough_clobber_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(a) {\n\
+                 jr z, .skip\n\
+                 ld a, 5\n\
+               .skip:\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a clobber on the jr-z FALL-THROUGH must fire preserves(a), got: {diags:?}"
+    );
+}
+
+/// (e′) t24 POSITIVE control: an UNCONDITIONAL `jr .skip` stays SINGLE-edge — the
+/// `ld a, 5` it jumps over is DEAD (nothing branches into it), so `a` is NOT
+/// clobbered and `preserves(a)` HOLDS. Guards against the conditional two-way
+/// split leaking a PHANTOM fall-through onto unconditional branches (which would
+/// re-reach the dead `ld a, 5` and false-fire).
+#[test]
+fn z80_unconditional_jr_keeps_single_edge() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(a) {\n\
+                 jr .skip\n\
+                 ld a, 5\n\
+               .skip:\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "unconditional jr skips the dead `ld a, 5` — preserves(a) must hold, got: {diags:?}"
+    );
+}
+
 // ---- ladder item 6 (§3.2): module invariant(ix) INHERITANCE proof -------------
 
 /// (a) POSITIVE control: `invariant: preserves(ix)` is inherited onto a proc with
