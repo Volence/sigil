@@ -1683,3 +1683,34 @@ Full paired strict **2691/0 (1 ignored)** on merged masters (2685 + 6 net t29).
   **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`992d9e7d`**, sha256
   **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
+
+## t30 + rung-2 re-baseline (2026-07-29) — the effect trio + the Z80 contract system
+
+Tranche 30 ported the G2 effect/child-lifecycle trio (test_emitter/test_stress_emitter/
+test_churn — byte-identical both shapes, windowed + whole-ROM) and grew THREE
+capabilities on demand: the **callee-preserves oracle** (test_churn = the first object
+Main that WRITES a0; verify_preserved now credits verified callee contracts via the
+same closure.effective convention find_dead_saves reads, per-file defers with the
+corpus closure as final authority — the player cluster's prerequisite), the Value16Be
+word-immediate link-deferral (the move.w #objroutine() spawn idiom; census: 2 live
+consumers, blast radius proven), and the EffectSpawn1 typed-struct link-expr carrier.
+Panel dry; C1 declined with named sites; the byte gate caught a census anchor error
+(TestChildPart not TestParent, 84-vs-228 bytes).
+
+The z80-rung2-contracts branch then merged (rebased onto the oracle with a semantic
+ProcBuf resolution): the full Z80 rung-2 contract system — CPU-parametric reglists,
+module invariant(ix) with inheritance, the z80_preserves sibling proof (conditional
+two-way edges after the §13.4-E soundness fix, found empirically by the item-2
+finisher's probe), Z80 proc register params (T1 §0 splice obligation discharged),
+bit/set/res, additive flag-result arms + Z80Cc, and the latent jr→jp ladder.
+68k frozen throughout — preserves.rs byte-untouched on the rung-2 branch.
+
+Byte-neutral end to end — seventh consecutive byte-neutral landing.
+Full paired strict **2757/0 (1 ignored)** on merged masters (2711 t30 + 46 rung-2).
+
+- Aeon repo master: **`b381a83`** (merge of `port-tranche30`); sigil master **`1c08ea7`**
+  (t30 merge `12818ec` + rung-2 merge `1c08ea7`).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`c51342d0`**, sha256
+  **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`992d9e7d`**, sha256
+  **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
