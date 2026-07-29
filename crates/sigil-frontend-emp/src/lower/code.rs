@@ -1714,6 +1714,21 @@ fn lower_z80_instr(
             return;
         }
     }
+    // A conditional symbolic `jr cc, Label` (rung-2 §13.3): a RELATIVE
+    // conditional jump. Emitted as a plain 2-byte `Z80JrRel8` conditional fixup
+    // — asl's choice for an in-reach target, which every psg/fm `jr cc` is. The
+    // latent `jr cc → jp cc` ladder (§5) upgrades a genuinely out-of-reach
+    // target; this is the byte-neutral in-reach rung. Detected before the
+    // symbolic-abs16 path below because a `jr` target is relative, not absolute.
+    if matches!(m, Z80Mnemonic::Jr) {
+        if let [CodeOperand::Z80Cc(cc), CodeOperand::Sym(name)] = ops {
+            match Z80Backend.lower_rel(m, Some(map_z80_cond(*cc)), Expr::Sym(name.clone()), span) {
+                Ok(df) => emit_data_frag(builder, df),
+                Err(e) => push_err(diags, span, e.message),
+            }
+            return;
+        }
+    }
     // No-operand fixed forms encode directly.
     if ops.is_empty() {
         let empty: [Z80Operand; 0] = [];
@@ -1779,6 +1794,22 @@ fn lower_z80_abs16_sym(
         (Z80Mnemonic::Jp | Z80Mnemonic::Call, [CodeOperand::ImmLink { target }]) => {
             (vec![Z80Operand::Imm16(0)], target.clone())
         }
+        // Conditional `jp cc, Label` / `call cc, Label` (rung-2 §13.3): the cc
+        // is the leading operand, the imm16 the trailing two bytes.
+        (
+            Z80Mnemonic::Jp | Z80Mnemonic::Call,
+            [CodeOperand::Z80Cc(cc), CodeOperand::Sym(name)],
+        ) => (
+            vec![Z80Operand::Cc(map_z80_cond(*cc)), Z80Operand::Imm16(0)],
+            Expr::Sym(name.clone()),
+        ),
+        (
+            Z80Mnemonic::Jp | Z80Mnemonic::Call,
+            [CodeOperand::Z80Cc(cc), CodeOperand::ImmLink { target }],
+        ) => (
+            vec![Z80Operand::Cc(map_z80_cond(*cc)), Z80Operand::Imm16(0)],
+            target.clone(),
+        ),
         _ => {
             push_err(
                 diags,

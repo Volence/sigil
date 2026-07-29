@@ -324,18 +324,73 @@ fn indexed_disp_128_is_i8_range_error() {
     );
 }
 
-/// The bounded-scope negative control (moved off `bit`/(ix+d), which item 3
-/// wires): a condition-code control-flow form (`ret nz`) is a real Z80 shape the
-/// rung-2 eval mapper does not yet produce a `Z80Cc` operand for, so it still
-/// reports `[lower.z80-unsupported]` — proving the wired scope stays BOUNDED,
-/// never silently accepting un-oracled bytes.
+// ---- rung-2 §13.3 item 1: the Z80Cc eval producer --------------------------
+
+/// `ret nz` — a condition-code control-flow form, now produced as a `Z80Cc`
+/// (the rung-2 §13.3 producer flips the former bounded-scope negative). `nz`
+/// (cond code 0) → `C0`, then the wrapper's `ret` → `C9`.
 #[test]
-fn unwired_condition_code_is_z80_unsupported() {
-    let diags = z80_body_diags("ret nz");
-    assert!(
-        diags.iter().any(|d| d.message.contains("[lower.z80-unsupported]")),
-        "expected [lower.z80-unsupported] for the unwired condition-code form, got: {diags:?}"
-    );
+fn ret_condition_code() {
+    assert_eq!(z80_body("ret nz"), vec![0xC0, 0xC9]);
+}
+
+/// `ret c` — the c/carry disambiguation: under a control-flow mnemonic the
+/// leading `c` is the CARRY condition (cond code 3 → `D8`), NOT the C register.
+#[test]
+fn ret_carry_is_condition_not_register() {
+    assert_eq!(z80_body("ret c"), vec![0xD8, 0xC9]);
+}
+
+/// The positive control for the ambiguity (t24 rule): OUTSIDE control-flow
+/// position, `c` is the C register — `ld a, c` = `79` (reg→reg move), never a
+/// cc. This is the exact case the `control_flow && i == 0` rule leaves alone.
+#[test]
+fn ld_a_c_reads_c_as_register() {
+    assert_eq!(z80_body("ld a, c"), vec![0x79, 0xC9]);
+}
+
+/// A conditional relative `jr z, Label` — a plain 2-byte `Z80JrRel8` (asl's
+/// in-reach choice). `jr z` (opcode `28`) to `Q` at offset 3 = disp +1.
+#[test]
+fn jr_z_conditional_relative() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 proc P() { jr z, Q\n ret }\n\
+                 proc Q() { ret }\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0x28, 0x01, 0xC9, 0xC9]);
+}
+
+/// `jr c, Label` — the carry-cc conditional relative (opcode `38`). Proves `c`
+/// leads as the carry cc in a `jr` too, and the byte differs from `jr z`.
+#[test]
+fn jr_c_conditional_relative() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 proc P() { jr c, Q\n ret }\n\
+                 proc Q() { ret }\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0x38, 0x01, 0xC9, 0xC9]);
+}
+
+/// A conditional absolute `jp z, Label` / `call nz, Label` — the leading cc, a
+/// 16-bit LE absolute target. `jp z` = `CA`, `call nz` = `C4`; `Q` at VMA $0.
+#[test]
+fn jp_call_conditional_absolute() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 proc P() { jp z, Q\n ret }\n\
+                 proc Q() { ret }\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    // P = `jp z, Q` (3 B) + `ret` (1 B) = 4 B, so Q is at offset 4:
+    // jp z, Q → CA 04 00, ret P → C9, ret Q → C9.
+    assert_eq!(section_bytes(&module, "s"), vec![0xCA, 0x04, 0x00, 0xC9, 0xC9]);
 }
 
 // ---- rung-2 item 3: bit/set/res + Z80Bit operand wiring (§1.6) --------------

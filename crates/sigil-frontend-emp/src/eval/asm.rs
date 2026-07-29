@@ -25,7 +25,8 @@ use crate::ast::{self, AsmStmt, BinOp, InstrLine, Operand, TextOrSplice};
 use crate::lower::hygiene::{LabelScope, Owner};
 use crate::parser::expr_span;
 use crate::value::{
-    CodeBuf, CodeItem, CodeOperand, Reg, Value, Width, Z80Index, Z80Pair, Z80Reg8, Z80RegClass,
+    CodeBuf, CodeItem, CodeOperand, Reg, Value, Width, Z80Cond, Z80Index, Z80Pair, Z80Reg8,
+    Z80RegClass,
 };
 use sigil_span::{Level, Span};
 
@@ -745,8 +746,23 @@ impl Evaluator<'_> {
         // field (`movep.w Ent.SizeH(a0), d1`), so the EFFECTIVE access width for
         // operand mapping is `.b`; the emitted CodeItem keeps the true size.
         let op_width = if mnemonic == "movep" { Some(Width::B) } else { size };
+        // Z80 condition codes (rung-2 §13.3): under a control-flow mnemonic
+        // (`jr`/`jp`/`call`/`ret`), a bare condition word in the FIRST operand
+        // position is a `Z80Cc`, not an ordinary operand. This is the AS
+        // front-end's `control_flow && i == 0` rule — the only place `c` (the
+        // carry cc) is disambiguated from `c` (the C register): under jr/jp/
+        // call/ret, position 0 is a cc. Every other position, and every other
+        // mnemonic, reads `c` as the register (the `map_operand` path below).
+        let z80_control_flow =
+            self.cpu == Some(sigil_ir::backend::Cpu::Z80) && is_z80_control_flow(&mnemonic);
         let mut ops = Vec::with_capacity(instr.operands.len());
-        for op in &instr.operands {
+        for (i, op) in instr.operands.iter().enumerate() {
+            if z80_control_flow && i == 0 {
+                if let Some(cc) = z80_cc_operand(op) {
+                    ops.push(CodeOperand::Z80Cc(cc));
+                    continue;
+                }
+            }
             ops.push(self.map_operand(op, scope, env, op_width)?);
         }
         Some(CodeItem::Instr {
@@ -2298,6 +2314,28 @@ fn width_from_text(t: &str) -> Option<Width> {
 /// call sites' brevity.
 fn reg_from_name(name: &str) -> Option<Reg> {
     Reg::from_name(name)
+}
+
+/// The Z80 control-flow mnemonics whose FIRST operand may be a condition code
+/// (`jr z, …` / `jp nz, …` / `call c, …` / `ret nc`). The AS front-end's
+/// `control_flow` set for the `i == 0 ⇒ cc` disambiguation (rung-2 §13.3).
+fn is_z80_control_flow(mnemonic: &str) -> bool {
+    matches!(mnemonic, "jr" | "jp" | "call" | "ret")
+}
+
+/// The [`Z80Cond`] a control-flow operand names, or `None` if it is not a bare
+/// single-segment condition word (`nz`/`z`/`nc`/`c`/`po`/`pe`/`p`/`m`). A
+/// `(hl)` indirect (`jp (hl)`), an address expression (`jp Label`), or a
+/// comptime relative (`jr 5`) is NOT a bare cond path — those stay ordinary
+/// operands. Only reached for the leading operand of a control-flow mnemonic,
+/// so `c` here is unambiguously the carry cc (the C register never leads a
+/// control-flow form).
+fn z80_cc_operand(op: &Operand) -> Option<Z80Cond> {
+    let Operand::Plain { expr: ast::Expr::Path(p), .. } = op else { return None };
+    if p.segments.len() != 1 {
+        return None;
+    }
+    Z80Cond::from_name(p.segments[0].as_str())
 }
 
 /// The bare-symbol operand a single-segment path denotes: a name that is NOT a
