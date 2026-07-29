@@ -1492,6 +1492,7 @@ mod tests {
             module: ModuleDecl {
                 path: Path { segments: vec!["m".into()], span },
                 in_section: None,
+                attrs: vec![],
                 span,
             },
             attrs: vec![],

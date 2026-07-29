@@ -24,7 +24,9 @@ use super::{Env, Evaluator};
 use crate::ast::{self, AsmStmt, BinOp, InstrLine, Operand, TextOrSplice};
 use crate::lower::hygiene::{LabelScope, Owner};
 use crate::parser::expr_span;
-use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg, Value, Width};
+use crate::value::{
+    CodeBuf, CodeItem, CodeOperand, Reg, Value, Width, Z80Index, Z80Pair, Z80Reg8, Z80RegClass,
+};
 use sigil_span::{Level, Span};
 
 /// Collect every source-label definition in `body`, RECURSIVELY through
@@ -1000,6 +1002,15 @@ impl Evaluator<'_> {
         env: &mut Env,
         width: Option<Width>,
     ) -> Option<CodeOperand> {
+        // T1 (§3): under a Z80 section the operand grammar reads through a
+        // CPU-aware mapper — a bare register word is a Z80 register, `(hl)` /
+        // `(ix+d)` are Z80 indirects, a bare int is a Z80 immediate. The parser
+        // stays CPU-neutral (`ast.rs`); only this classification differs. The 68k
+        // path below is UNTOUCHED (byte-frozen). `width` steers the 68k
+        // field-overrun lint only, so Z80 mapping ignores it.
+        if self.cpu == Some(sigil_ir::backend::Cpu::Z80) {
+            return self.map_operand_z80(op, scope, env);
+        }
         match op {
             Operand::Imm(e) => {
                 // C1 item 1: an immediate is the third and last deferral
@@ -1241,6 +1252,205 @@ impl Evaluator<'_> {
                 self.classify_operand_splice(v, expr_span(e))
             }
         }
+    }
+
+    /// Map one parsed [`ast::Operand`] to a [`CodeOperand`] under a Z80 section
+    /// (T1, §3). The image of `z80.rs`'s operand surface, one abstraction layer
+    /// up: a bare register/pair/`i`/`r`/`af'` word resolves to its Z80 operand,
+    /// `(hl)`/`(bc)`/`(de)` to the register indirects, `(ix±d)` to the indexed
+    /// form (i8-range-checked), `(nn)` to a comptime absolute address, a bare
+    /// int / `#n` to a CPU-neutral [`CodeOperand::Imm`] (the Z80 lowering picks
+    /// imm8 vs imm16 by form), and any other bareword to a link `Sym` (a label
+    /// operand → symbolic imm16, §4). Forms with no Z80 meaning
+    /// (`-(reg)`/`(reg)+`/`d(reg)`) are `[lower.z80-unsupported]`.
+    fn map_operand_z80(
+        &mut self,
+        op: &Operand,
+        scope: &LabelScope,
+        env: &mut Env,
+    ) -> Option<CodeOperand> {
+        match op {
+            // `#n` — the 68k-style immediate spelling. Rare on Z80 (bare `n` is
+            // the usual form, handled by the `Plain` arm) but accepted.
+            Operand::Imm(e) => {
+                let v = self.eval_expr(e, env);
+                match v.as_stored_int() {
+                    Some(n) => Some(CodeOperand::Imm(n)),
+                    None => {
+                        self.error(
+                            expr_span(e),
+                            format!("immediate must be an integer, got {}", v.type_name()),
+                        );
+                        None
+                    }
+                }
+            }
+            Operand::Plain { expr, .. } => self.map_plain_z80(expr, scope, env),
+            Operand::Ind { parts, size, span } => {
+                if size.is_some() {
+                    self.error(
+                        *span,
+                        "[lower.z80-unsupported] a size-suffixed indirect is not a Z80 operand form"
+                            .to_string(),
+                    );
+                    return None;
+                }
+                self.map_ind_z80(parts, *span, env)
+            }
+            Operand::Splice(e) => {
+                let v = self.eval_expr(e, env);
+                self.classify_operand_splice(v, expr_span(e))
+            }
+            Operand::PreDec(_) | Operand::PostInc(_) | Operand::DispInd { .. } => {
+                self.error(
+                    operand_span(op),
+                    "[lower.z80-unsupported] this addressing form has no Z80 operand encoding"
+                        .to_string(),
+                );
+                None
+            }
+        }
+    }
+
+    /// The Z80 branch of [`Self::map_plain`] (§3): a single-segment path is a
+    /// Z80 register class (`a`..`l` / a pair / `i` / `r` / `af'`), else a link
+    /// symbol (a label operand); a bare int / comptime expr is a [`Value::Int`]
+    /// → [`CodeOperand::Imm`].
+    fn map_plain_z80(
+        &mut self,
+        expr: &ast::Expr,
+        scope: &LabelScope,
+        env: &mut Env,
+    ) -> Option<CodeOperand> {
+        if let ast::Expr::Path(p) = expr {
+            if p.segments.len() == 1 {
+                let seg = p.segments[0].as_str();
+                if let Some(r) = Z80Reg8::from_name(seg) {
+                    return Some(CodeOperand::Z80Reg8(r));
+                }
+                if let Some(pr) = Z80Pair::from_name(seg) {
+                    return Some(CodeOperand::Z80Pair(pr));
+                }
+                match seg {
+                    "af'" => return Some(CodeOperand::Z80AfShadow),
+                    "i" => return Some(CodeOperand::Z80RegI),
+                    "r" => return Some(CodeOperand::Z80RegR),
+                    _ => {}
+                }
+                // Not a register word: a link symbol (a label in operand
+                // position → the symbolic imm16 of §4, or a `jp`/`call` target).
+                return Some(CodeOperand::Sym(scope.resolve_ref(seg)));
+            }
+            // Multi-segment: an exported cross-body label (`Owner.label`).
+            return Some(CodeOperand::Sym(scope.resolve_ref(&p.segments.join("."))));
+        }
+        // A bare integer literal (`ld a, 5`, `ld (hl), 0E9h`) or a comptime int
+        // expr → a CPU-neutral immediate.
+        let v = self.eval_expr(expr, env);
+        self.classify_operand_splice(v, expr_span(expr))
+    }
+
+    /// The Z80 branch of [`Operand::Ind`] mapping (§3): a single-part paren is
+    /// `(hl)`/`(bc)`/`(de)` (a register), `(ix±d)`/`(iy±d)` (an index register ±
+    /// comptime displacement, i8-range-checked), or `(nn)` (a comptime absolute
+    /// address). The i8 check REUSES the same `i8::MIN..=i8::MAX` window the 68k
+    /// brief-extension disp8 path runs (`map_an_indexed`), the one shared
+    /// invariant "(ix+d) disp is i8".
+    fn map_ind_z80(
+        &mut self,
+        parts: &[(ast::Expr, Option<TextOrSplice>)],
+        span: Span,
+        env: &mut Env,
+    ) -> Option<CodeOperand> {
+        if parts.len() != 1 {
+            self.error(
+                span,
+                "[lower.z80-unsupported] a multi-part indirect is not a Z80 operand form"
+                    .to_string(),
+            );
+            return None;
+        }
+        let (e, psize) = &parts[0];
+        if psize.is_some() {
+            self.error(
+                span,
+                "[lower.z80-unsupported] a size-suffixed indirect is not a Z80 operand form"
+                    .to_string(),
+            );
+            return None;
+        }
+        // `(hl)`/`(bc)`/`(de)`.
+        if let ast::Expr::Path(p) = e {
+            if p.segments.len() == 1 {
+                match p.segments[0].as_str() {
+                    "hl" => return Some(CodeOperand::Z80IndHl),
+                    "bc" => return Some(CodeOperand::Z80IndBc),
+                    "de" => return Some(CodeOperand::Z80IndDe),
+                    _ => {}
+                }
+            }
+        }
+        // `(ix±d)` / `(iy±d)`.
+        if let Some((reg, disp)) = self.z80_index_disp(e, env) {
+            if disp < i8::MIN as i128 || disp > i8::MAX as i128 {
+                self.error(
+                    span,
+                    format!(
+                        "(ix+d)/(iy+d) displacement must fit the 8-bit signed field \
+                         (-128..=127), got {disp}"
+                    ),
+                );
+                return None;
+            }
+            return Some(CodeOperand::Z80Indexed { reg, disp });
+        }
+        // `(nn)` — a comptime absolute address.
+        let v = self.eval_expr(e, env);
+        match v.as_stored_int() {
+            Some(addr) => Some(CodeOperand::Z80Mem { addr }),
+            None => {
+                self.error(
+                    expr_span(e),
+                    format!(
+                        "[lower.z80-unsupported] a Z80 indirect base must be `hl`/`bc`/`de`, an \
+                         index register `(ix±d)`, or a comptime address `(nn)`, got {}",
+                        v.type_name()
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    /// Match `ix`/`iy`, optionally `± <comptime int>`, for the `(ix±d)` indexed
+    /// form. Returns the index register and its (signed) displacement, or `None`
+    /// if the inner expression does not name an index register.
+    fn z80_index_disp(
+        &mut self,
+        e: &ast::Expr,
+        env: &mut Env,
+    ) -> Option<(Z80Index, i128)> {
+        if let ast::Expr::Path(p) = e {
+            if p.segments.len() == 1 {
+                if let Some(idx) = Z80Index::from_name(&p.segments[0]) {
+                    return Some((idx, 0));
+                }
+            }
+        }
+        if let ast::Expr::Binary { op, lhs, rhs, .. } = e {
+            if matches!(op, ast::BinOp::Add | ast::BinOp::Sub) {
+                if let ast::Expr::Path(p) = &**lhs {
+                    if p.segments.len() == 1 {
+                        if let Some(idx) = Z80Index::from_name(&p.segments[0]) {
+                            let d = self.eval_expr(rhs, env).as_stored_int()?;
+                            let d = if matches!(op, ast::BinOp::Sub) { -d } else { d };
+                            return Some((idx, d));
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Resolve a `Sym(pc)` / `Sym(pc,Xn[.size])` operand (a [`PcRelShape`]
@@ -1976,9 +2186,39 @@ impl Evaluator<'_> {
     /// classes are decided (used by both `{splice}` operands and evaluated
     /// non-path `Plain` operands).
     fn classify_operand_splice(&mut self, v: Value, span: Span) -> Option<CodeOperand> {
+        let is_z80 = self.cpu == Some(sigil_ir::backend::Cpu::Z80);
         match v {
             Value::Poison => None,
-            Value::Reg(r) => Some(CodeOperand::Reg(r)),
+            // CPU/kind agreement (T1, §2.2): a 68k register spliced into a Z80
+            // section is a loud `[asm.splice-kind]` error — the free correctness
+            // win the single-CPU-per-section fact hands us. In a 68k section it
+            // is the ordinary register operand (byte-frozen path).
+            Value::Reg(r) => {
+                if is_z80 {
+                    self.splice_kind_err(span, "a Z80 operand (this is a Z80 section)", &Value::Reg(r));
+                    None
+                } else {
+                    Some(CodeOperand::Reg(r))
+                }
+            }
+            // The mirror: a Z80 register (`{r}` in a Z80 template, §3.1) maps to
+            // its Z80 operand in a Z80 section; the SAME value in a 68k section
+            // is the `[asm.splice-kind]` error. (The producer — a Z80 proc
+            // register param — arrives with the rung-2 files; this arm is wired
+            // now so it is a one-line addition then, and the 68k-section guard
+            // is defense-in-depth today.)
+            Value::Z80Reg(rc) => {
+                if is_z80 {
+                    Some(z80_regclass_operand(rc))
+                } else {
+                    self.splice_kind_err(
+                        span,
+                        "a 68k operand (this is a 68000 section)",
+                        &Value::Z80Reg(rc),
+                    );
+                    None
+                }
+            }
             // A Label param spliced into an operand position (`jsr {p}`,
             // `lea {p}, a1`) produces the same symbol operand as the string form
             // (D-PP.3) — a link-time reference, byte-identical to `jsr {t}` with
@@ -2006,6 +2246,19 @@ impl Evaluator<'_> {
             span,
             format!("[asm.splice-kind] expected {expected}, got {}", got.type_name()),
         );
+    }
+}
+
+/// Map a comptime Z80 register class (a `{r}` splice value) to its operand
+/// (§3.1). An index register alone in operand position is its 16-bit pair
+/// spelling (`ix`/`iy`); `(ix+d)` indexing is a distinct operand shape, not a
+/// bare splice.
+fn z80_regclass_operand(rc: Z80RegClass) -> CodeOperand {
+    match rc {
+        Z80RegClass::R8(r) => CodeOperand::Z80Reg8(r),
+        Z80RegClass::Pair(p) => CodeOperand::Z80Pair(p),
+        Z80RegClass::Index(Z80Index::Ix) => CodeOperand::Z80Pair(Z80Pair::Ix),
+        Z80RegClass::Index(Z80Index::Iy) => CodeOperand::Z80Pair(Z80Pair::Iy),
     }
 }
 

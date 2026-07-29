@@ -153,6 +153,19 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // (keyed by section name) can route the module's bytes to its map region.
     let default_name = file.module.in_section.as_deref().unwrap_or("text");
 
+    // The module's DEFAULT-section CPU (T1, §5). A `module m (cpu: z80)`
+    // attribute makes this module's top-level code lower as Z80; absent the
+    // attribute the caller's `initial_cpu` (M68000 for every current caller)
+    // stands — so the omitted case defaults M68000 with NO warn (the safe CPU;
+    // the unsafe direction — Z80 mnemonics under a defaulted M68000 — is already
+    // loud, failing mnemonic recognition). This flips row-196-201's safety: a
+    // Z80 module can no longer silently ride a caller's default. `module_cpu` is
+    // `Some` ONLY when the attribute is present, gating the section-coherence
+    // check below (a defaulted module keeps opening mixed-CPU sections freely,
+    // the pre-T1 behavior).
+    let module_cpu = module_declared_cpu(&file.module, &mut diags);
+    let initial_cpu = module_cpu.unwrap_or(opts.initial_cpu);
+
     // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
     // overlay's layout, and each per-item evaluator is fresh (own memo) — so an
@@ -186,14 +199,14 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     for (index, item) in file.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 // Default section: vma_origin == lma == `next_lma` (VMA base
                 // `None`, so origin == lma == its physical start).
                 lower_data_item(
                     file,
                     decl,
                     &Placement {
-                        cpu: opts.initial_cpu,
+                        cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
@@ -206,24 +219,24 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 );
             }
             ast::Item::Proc(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 proc::lower_proc(
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: opts.initial_cpu, as_compat, defines: &opts.defines },
+                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
                 );
             }
             ast::Item::Offsets(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 lower_offsets_item(
                     file,
                     decl,
                     &Placement {
-                        cpu: opts.initial_cpu,
+                        cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
@@ -236,12 +249,12 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 );
             }
             ast::Item::Table(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 lower_table_item(
                     file,
                     decl,
                     &Placement {
-                        cpu: opts.initial_cpu,
+                        cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
@@ -256,12 +269,12 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 );
             }
             ast::Item::Dispatch(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 lower_dispatch_item(
                     file,
                     decl,
                     &Placement {
-                        cpu: opts.initial_cpu,
+                        cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
@@ -275,7 +288,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 );
             }
             ast::Item::Ensure(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 // Default section: VMA == LMA == `next_lma`, so the current
                 // position VMA is `next_lma + current_offset()` — the same
                 // `here_base` a data item at this position would see.
@@ -301,6 +314,30 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 default_open = false;
                 let (cpu, vma, bank, byte_access) =
                     section_attrs(file, sec, &opts.defines, &mut diags);
+                // Section-vs-module coherence (T1, §5): a module that EXPLICITLY
+                // declares its CPU asserts agreement with every section it opens.
+                // The section still carries the authoritative CPU for its own
+                // instruction lowering (a section is one CPU); this only catches
+                // a `(cpu: z80)` module opening a section that resolves to a
+                // different CPU. Gated on `module_cpu.is_some()` so a
+                // caller-defaulted module keeps opening mixed-CPU sections freely.
+                if let Some(mcpu) = module_cpu {
+                    if cpu != mcpu {
+                        err(
+                            &mut diags,
+                            sec.span,
+                            format!(
+                                "[module.cpu-mismatch] module `{}` declares `(cpu: {})` but opens \
+                                 section `{}` as `{}` — a module and the sections it opens must \
+                                 agree on CPU",
+                                file.module.path.segments.join("."),
+                                cpu_name(mcpu),
+                                sec.name,
+                                cpu_name(cpu),
+                            ),
+                        );
+                    }
+                }
                 builder.switch_section_lma(&sec.name, cpu, vma, next_lma);
                 builder.set_section_bank(bank);
                 // R7p.5: an explicit `vma:` is a pin (labels resolve from that
@@ -350,12 +387,12 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
             // body (lower/script.rs), same placement/argument sources as the
             // adjacent Dispatch arm.
             ast::Item::Script(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 script::lower_script_item(
                     file,
                     decl,
                     &Placement {
-                        cpu: opts.initial_cpu,
+                        cpu: initial_cpu,
                         origin: next_lma,
                         byte_access: false,
                         include_root: opts.include_root.as_deref(),
@@ -374,7 +411,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
             // label; only a deferred symbol. `ensure_default` opens the carrier
             // so `add_equ_sym` has an open section to target.
             ast::Item::Equ(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 lower_equ_item(
                     file,
                     decl,
@@ -386,7 +423,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
             }
             // `align N` (D2.29): pad the default section's current position.
             ast::Item::Align(decl) => {
-                ensure_default(&mut builder, &mut next_lma, &mut default_open, opts.initial_cpu, default_name);
+                ensure_default(&mut builder, &mut next_lma, &mut default_open, initial_cpu, default_name);
                 lower_align_item(
                     file,
                     decl,
@@ -1425,6 +1462,34 @@ fn section_attrs(
         );
     }
     (cpu, vma, bank, byte_access)
+}
+
+/// The module's DECLARED CPU (T1, §5), or `None` when the `module` header
+/// carries no `(cpu:)` attribute (the default-M68000, no-warn case). An unknown
+/// module attribute is a loud error here (the module attribute list is otherwise
+/// forward-compatible for a later rung's `invariant`, so an unrecognized key
+/// today is a typo, not silent tolerance).
+fn module_declared_cpu(module: &ast::ModuleDecl, diags: &mut Vec<Diagnostic>) -> Option<Cpu> {
+    let mut cpu = None;
+    for (name, expr) in &module.attrs {
+        match name.as_str() {
+            "cpu" => cpu = Some(attr_cpu(expr)),
+            other => err(
+                diags,
+                module.span,
+                format!("module `{}` has unknown attribute `{other}`", module.path.segments.join(".")),
+            ),
+        }
+    }
+    cpu
+}
+
+/// A [`Cpu`] to its `.emp` spelling, for diagnostics.
+fn cpu_name(cpu: Cpu) -> &'static str {
+    match cpu {
+        Cpu::M68000 => "m68000",
+        Cpu::Z80 => "z80",
+    }
 }
 
 /// Resolve a `cpu:` attribute expression to a [`Cpu`]: `z80` (case-insensitive)
