@@ -172,6 +172,107 @@ fn error_handler_debug_region_matches_reference() {
     reference_gate(&DEBUG);
 }
 
+/// The 12 exception-vector labels flip to `.emp` ownership. vectors.asm (stays
+/// `.asm`, out of scope) references all 12 via `dc.l`; with error_handler.asm
+/// gated out, those references must resolve to the `.emp`-owned stub labels. This
+/// proves the ownership flip in isolation: assemble a synthetic vector table
+/// (`dc.l BusError, AddressError, …`) on the AS side, link it against the placed
+/// error_handler.emp, and confirm every entry resolves to the `.emp` label's VMA.
+/// (Bare-symbol references resolve — unlike the derived-equ table above.)
+#[test]
+fn vector_labels_resolve_to_emp_ownership() {
+    let aeon = aeon_dir();
+    if !strict_gate() && !aeon.join("s4.bin").exists() {
+        eprintln!("skip: aeon tree not present");
+        return;
+    }
+    const STUBS: &[&str] = &[
+        "BusError", "AddressError", "IllegalInstr", "ZeroDivide", "ChkInstr", "TrapvInstr",
+        "PrivilegeViol", "Trace", "Line1010Emu", "Line1111Emu", "ErrorExcept", "ErrorTrap",
+    ];
+    // Lower + place error_handler.emp at the plain base (the flip is shape-
+    // independent — vectors.asm spells the same symbols in both shapes).
+    let src = std::fs::read_to_string(aeon.join("engine/debug/error_handler.emp"))
+        .unwrap_or_else(|e| panic!("read error_handler.emp: {e}"));
+    let (file, _) = parse_str(&src);
+    let (module, _) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: Some(aeon.join("engine/debug")),
+            embed_base: None,
+            defines: vec![("DEBUG".to_string(), 0), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
+        },
+    );
+    let map = sigil_link::load_map(&map_toml(PLAIN.base, REGION_LEN)).expect("map loads");
+    let mut sections = module.sections;
+    place_sections(&mut sections, &map);
+
+    // Synthetic vector table (the vectors.asm dc.l class) referencing the 12
+    // stub labels as externs — the AS side that must resolve against the .emp.
+    let vec_src = format!(
+        "cpu 68000\nphase $1000000\nVecTable:\n\tdc.l {}\n",
+        STUBS.join(", ")
+    );
+    let mut vec_secs = assemble(&vec_src, &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() })
+        .unwrap_or_else(|d| panic!("assemble vectors: {d:?}"))
+        .sections;
+    for s in vec_secs.iter_mut() {
+        s.lma = 0x0200_0000;
+        s.placement = SectionPlacement::Pinned;
+        s.group = None;
+    }
+    let vec_name = vec_secs[0].name.clone();
+    sections.append(&mut vec_secs);
+
+    // The synthetic handler entry points the stubs' raise_exception jsr/jmp need.
+    let eh = PLAIN.base + STUB_TABLE_LEN;
+    let mut extra = vec![
+        as_label_at("MDDBG__ErrorHandler", eh),
+        as_label_at("MDDBG__ErrorHandler_PagesController", eh + PAGES_OFFSET),
+        as_label_at("MDDBG__Debugger_AddressRegisters", eh + 0xE6C),
+        as_label_at("MDDBG__Debugger_Backtrace", eh + 0xEB8),
+    ];
+    let mut lma = 0x0300_0000u32;
+    for group in &mut extra {
+        for sec in group.iter_mut() {
+            sec.lma = lma;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+        }
+        sections.append(group);
+        lma += 0x10_0000;
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("flip resolve failed: {d:?}"));
+    // The .emp stub label VMAs (the expected resolutions).
+    let emp_vma = |want: &str| -> u32 {
+        for sec in &resolved {
+            if sec.name != "error_handler" {
+                continue;
+            }
+            for l in &sec.labels {
+                if l.name == want {
+                    return sec.vma_origin().wrapping_add(l.offset);
+                }
+            }
+        }
+        panic!("error_handler.emp must export {want}");
+    };
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("flip link failed: {d:?}"));
+    let vt = linked.section(&vec_name).expect("linked image carries the vector table");
+    for (i, name) in STUBS.iter().enumerate() {
+        let got = u32::from_be_bytes(vt.bytes[i * 4..i * 4 + 4].try_into().unwrap());
+        assert_eq!(
+            got,
+            emp_vma(name),
+            "vector entry {i} (dc.l {name}) must resolve to the .emp-owned label"
+        );
+    }
+}
+
 /// THE t25 INTEGRATION FINDING, made executable: sigil does NOT resolve an
 /// AS-side `X: equ ExternalSym + const` at link — the derived symbol `X` stays
 /// UNRESOLVED even when `ExternalSym` is provided by another module. This blocks
