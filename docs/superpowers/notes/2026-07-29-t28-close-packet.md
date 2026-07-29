@@ -162,6 +162,39 @@ logic change). **4/4 useful.**
 | P2 "extern in a lea displacement" | the WRAPPED-PAREN `(disp)(An)` form (extern incidental) | brief/ledger framing |
 | (new) the sound_debug draft's `{stop_z80()}` splice | invalid in a proc body (masked by the t25 hang) | genuine new find (credited) |
 
+## STEP-6 CORPUS SWEEPS (merge-gate, overseer-ordered — enumeration with evidence)
+
+1. **Extern-proc census — ZERO real decls (evidence).** `grep -rnE '^\s*extern proc ' --include='*.emp'`
+   → **0 hits** (the one `grep 'extern proc'` hit is a COMMENT in game_debug.emp:74, "NO extern proc
+   decl here"). Confirmed by the `contract_closure_corpus` gate (no unresolved extern hole) + the
+   `mixed_combined_config_a` whole-ROM gate (the last extern's call resolves). **The corpus has zero
+   `extern proc` decls — the t26 census's final member (Sound_DebugMirror) closed at kill row 42.**
+2. **Splice-vs-statement census — zero body-position misuses.** `grep -rnE '\{[a-z_]+\(\)\}'` → the
+   only live `{fn()}` splice sites are sound_api.emp:112/114/250/262 (`{stop_z80()}`/`{start_z80()}`),
+   ALL inside `sr_masked(asm {...})` — a splices-allowed `asm {}` template context (VALID). sound_debug.emp
+   uses the bare `stop_z80()` statement form. (sprites.emp:590 is a comment.) **Zero body-position splice
+   misuses remain.** The parser's error for the misuse (`expected an instruction, found LBrace`) IS
+   cryptic and contributed to the t25 draft's multi-day stall → **diagnostics ledger row jotted** (steer
+   to `fn()` at proc-body position / `asm{}` for splices).
+3. **Const-mirror class census — all drift-guarded + kill-rowed.** The link-extern-can't-size file-local
+   mirrors: TILE_SIZE (s4lz, row 44), BUTTON_*/SONG_*/SFXID_* (game_debug, row 54), SEQ_CHANNEL_LEN/
+   SND_SEQ_TRACE_LEN (sound_debug, row 59) — each carries an `ensure(extern("X") == const)` drift guard
+   (grep-confirmed) and its kill row. The shared-module mirror class (constants.emp, sst.emp, act_descriptor,
+   entity_window, tile_cache, section, rings, sound_api, mt/sfx_bank, vdp) is the row-1/7/11/22/25 shared-
+   twin class, all drift-guarded + kill-rowed (constants.asm/structs.asm-flip kill condition). No
+   un-guarded or un-kill-rowed mirror corpus-wide.
+4. **Gate-arm numeric-pin class — all kill-listed with the repin kill condition.** The t28 pins:
+   main.asm:33 `org $6408` (game_debug), engine.inc `org $827C` (sound_debug), boot_data.asm:67 `org $3FE`
+   + the NEW numeric SIZE pin `Z80_IDLE_SIZE = $3FE-$3D8` (z80_init) — all in kill row 58. The general
+   per-shape resume-org pins (~20 SIGIL_EMP_* arms across engine.inc/main.asm) are kill row 6; the t25
+   numeric ErrorHandler equ is kill row 52. Every gate-arm numeric org/size pin carries the Spec-5 /
+   repin-on-rebaseline kill condition. `Z80_IDLE_SIZE` is a new SIZE-pin sub-class (row 58 captures it;
+   it also feeds boot_data.asm's own `if (Z80_IDLE_SIZE & 1)` / total-length asserts, which stay valid).
+
+Two ledger rows born from the sweeps: the **sec0-collision harness limitation** (the flip-harness can't
+combine two separately-lowered `.emp` modules — the kill-row-42 deviation's root, overseer-ordered) and
+the **cryptic body-position splice error** (diagnostics polish, demand 1).
+
 ## OPEN AT MERGE (ledger duties done)
 
 Kill row 42 KILLED (last extern); rows 55 amended (ruling 2), 58 (off-canonical org pins) + 59
