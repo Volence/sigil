@@ -134,6 +134,17 @@ pub fn analyze_corpus(files: &[ast::File]) -> ContractReport {
     analyze_corpus_with(files, &[])
 }
 
+/// Whether a module declares `(cpu: z80)` — its procs are OUTSIDE the 68k
+/// register-contract closure (a mirror of `attr_cpu` in `lower/mod.rs`, kept
+/// local so `corpus_contracts` needs no lowering import).
+fn module_is_z80(module: &ast::ModuleDecl) -> bool {
+    module.attrs.iter().any(|(name, expr)| {
+        name == "cpu"
+            && matches!(expr, ast::Expr::Path(p)
+                if p.segments.last().is_some_and(|s| s.eq_ignore_ascii_case("z80")))
+    })
+}
+
 /// Analyze the parsed corpus under the given comptime `-D` defines: build the
 /// proc/extern/contract-type maps, run the closure, and collect firings +
 /// collisions. Comptime-`if` gating is config-sensitive, so the defines choose
@@ -165,8 +176,17 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         collect_env(&file.items, &mut env);
     }
 
-    // PASS 2 — walk every file, evaluating each proc body against `env`.
+    // PASS 2 — walk every file, evaluating each proc body against `env`. A
+    // `(cpu: z80)` module is SKIPPED: the transitive clobber/write-set closure is
+    // the 68k register-contract model, and a Z80 proc's instructions carry no 68k
+    // effect — analyzing them would "drop" every Z80 mnemonic as unrecognized
+    // (a false under-approximation). Z80 contract analysis (push/pop preserves,
+    // shadow sets, di/ei) is its own rung-2 class. The module's consts/types
+    // stay visible (PASS 1 collected them).
     for file in files {
+        if module_is_z80(&file.module) {
+            continue;
+        }
         collect_items(
             &file.items,
             file,
