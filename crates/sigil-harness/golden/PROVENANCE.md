@@ -1812,3 +1812,25 @@ Full paired strict **2796/0 (3 ignored)** on merged masters (2788 + 8 net t34).
   **`5444bd3f5a103af1c767e2fb0e2de7071a6cff8762bb095fba940f65f01f4d3a`** — NEW.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`b5f76eee`**, sha256
   **`c2605f27b939a4e44f27fc246a06bf8fa7649b51b7433de327d751f501b36c34`** — NEW.
+
+## fix-test-parent-lifecycle re-baseline (2026-07-29) — the Volence-ruled cascade fix
+
+The t31-confirmed latent defect (test_parent's self-destruct + DeleteChildren cascade
+unreachable — life_timer doubled as the swing-phase counter and was reset before the
+floor) FIXED per Volence's ruling: TParentV gains swing_phase (u16 @2 — word-based
+signed swing compares preserved exactly, frames 1-179 pixel-identical), life_timer
+becomes a pure countdown, and the cascade FIRES for the first time. Oracle A/B on the
+ObjectTest scene: pre-fix all 3 parents oscillate indefinitely; post-fix all 3 expire
+at ~3s, DeleteChildren frees every child, slots reclaimed, scene healthy (soak note on
+record: the parent/child lifecycle is now a one-shot demo). Lockstep both twins;
++0xA at test_parent, downstream pad-absorbed; the full t34 wave-ripple checklist run
+(9 main.asm orgs + 2 act_descriptor self-gates + 53 pins + 3 windows); the un-ignored
+t34 mixed whole-ROM gates green against the fixed ROM.
+
+Full paired strict **2803/0 (1 ignored)** on merged masters.
+
+- Aeon repo master: **`3d0337e`** (merge of `fix-test-parent-lifecycle`; sigil master **`83c4f47`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`37dd2bb2`**, sha256
+  **`67923e8db0a3fea71bcf00d50c53ba0a03ebdfec1e6002e3c8cb72ea969fb210`** — NEW.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`bbb822f6`**, sha256
+  **`e8ac4c8c98b67d6a627af766df739c00556d966b41651df14785a8af00fea508`** — NEW.
