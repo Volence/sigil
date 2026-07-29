@@ -1714,3 +1714,31 @@ Full paired strict **2757/0 (1 ignored)** on merged masters (2711 t30 + 46 rung-
   **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`992d9e7d`**, sha256
   **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
+
+## t31 re-baseline (2026-07-29) — G3 test_parent + THE FIRST GAME-SIDE BYTE-MOVING WAVE
+
+Tranche 31 ported test_parent.emp (the first game-side struct-overlay twins,
+TParentV/TOrbitChildV over one sst_custom region, zero drift guards — single-consumer
+class; objvarsCheck subsumed by [overlay.window-overflow]) and executed the pre-ruled
+SpawnDesc hoist (children.emp = the format owner; the G2 EffectSpawn1 pair replaced,
+G2 gates proving byte-identity). The step-5 wave took two provably-dead instructions
+on the child-orbit path — the dead movem around GetSineCosine (proven by the
+callee-preserves oracle: its FIRST optimization use) and the dead andi (the callee
+masks internally, C2-confirmed at math.emp:22) — **THE FIRST CANONICAL CHANGE SINCE
+t24**: −12 B/shape at TEST_PARENT, downstream slid −0xC pad-absorbed (SIZES
+UNCHANGED), full ripple hand-checked (1 re-pin, 11 org arms, 3 hardcoded windows).
+Step-6 census: the dead-save class is SPARSE — the wave's site is the sole confirmed
+member; the t24-suspected 6 alloc sites are LIVE (out(a1 if eq) makes them
+contract-necessary). Panel A1 CONFIRMED a latent defect: test_parent's self-destruct/
+DeleteChildren cascade is UNREACHABLE (life_timer doubles as the swing-phase counter,
+reset before the floor) — faithful to both twins; comments corrected byte-neutrally,
+the behavior fix is a NAMED VOLENCE OVERRIDE flag with the full trace. First
+slot-gate-demanded `as Angle` bless. Kill rows 67/68/69/65b.
+
+Full paired strict **2763/0 (1 ignored)** on merged masters (2757 + 6 net t31).
+
+- Aeon repo master: **`0b283ef`** (merge of `port-tranche31`; sigil master **`2050a7e`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`85111814`**, sha256
+  **`1efc59601bf1a13cafa21984596a795fe5b1939c44a67f213229fbd4f2b6d72b`** — NEW.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`eb5e94be`**, sha256
+  **`7f06c23850843cc807b2c57c14ddd0b3d0ec08429a8cc5276de8a7d60f03032c`** — NEW.
