@@ -1596,3 +1596,37 @@ masters (2620 + 11 net t26, from main checkouts).
   sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`**.
 - Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
   sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`**.
+
+## t27 re-baseline (2026-07-29) — Z80 ladder rung 0+1: the satellite ports
+
+Tranche 27 landed the campaign's first Z80 `.emp` modules: `z80_init.emp` (the
+FIRST Z80 CODE port and first live `module (cpu: z80)`), `seq_opcode_tab.emp`,
+and `dac_sample_tab.emp` — all proven at scale (1) WINDOWED oracles
+(`z80_init_port` 38 B / `seq_opcode_tab_port` 64 B / `dac_sample_tab_port` 90 B,
+each byte-identical to its AS twin, each with t24 positive controls). The
+`.asm` twins stay canonical: nothing is wired into either build shape, so the
+tranche is byte-neutral BY CONSTRUCTION (kill rows 55/56/57 carry the gates).
+
+Three T1-deferred sigil capabilities shipped on demand (porter-1's step-0
+probes caught the T1 note's over-claims): the Z80 expression symbolic-imm16
+defer (`ld rr, Label±k` → `Value16Le` + Expr residual), the trailing-local
+end-of-code label spelling (no sigil change needed), and the resident-Z80
+width-2 value cell (the `(Z80,2,false)` fixup split the data.rs comment
+anticipated; the width-4 cross-cpu guard survives). Plus the `(cpu: z80)`
+corpus-contract skip (module-keyed; census-verified to cover exactly the three
+Z80 modules). The scale-(2) whole-ROM canonical banked-head placement was
+analyzed and STOPped (four blockers; lead = the 30 address-derived `SND_*`
+constants' comptime-source circularity, converging with the generated-file/DSL
+row — its third convergence). Soundness catch gap-ledgered: a leftmost
+local-label leaf in an immediate expression escapes mangling (corpus census:
+ZERO live instances; loud-fail class; commuted-spelling workaround is now a
+house spelling).
+
+Full paired strict **2675/0** on merged masters (2654 + 21 net t27, from main
+checkouts; overseer's own runs at every gate).
+
+- Aeon repo master: **`20f1136`** (merge of `port-tranche27`; sigil master **`8b28946`**).
+- Non-debug `s4.bin`: **421041 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`c51342d0`**,
+  sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
+  sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
