@@ -932,6 +932,32 @@ pub fn assemble_mixed_tranche31_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 34 (P1 player keystone): the full AS-side game with BOTH
+/// `SIGIL_EMP_PLAYER_COMMON` and `SIGIL_EMP_SONIC` on. player_common.asm's internal
+/// gate keeps its zero-byte header (PlayerV struct / _pl_* equates / macros) —
+/// which the surviving player_ground/air/spindash still read — and org-resumes at
+/// PState_Ground; the sonic.asm arm org-resumes at TestStatic_Main. The two arms
+/// gate out TOGETHER, so player_common.asm's `lea PhysTable_Sonic` reference does
+/// not dangle (both AS bodies vanish; the .emp side owns them). PhysTable_Sonic /
+/// Sonic_InitAssets / Sonic_LoadArt become unresolved externs here — sonic.emp
+/// owns them (the ownership flip); Player_States' PState_* targets stay AS
+/// (surviving state files).
+pub fn assemble_mixed_tranche34_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_PLAYER_COMMON".to_string(), 1),
+        ("SIGIL_EMP_SONIC".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche34 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included

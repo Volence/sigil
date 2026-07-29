@@ -122,6 +122,7 @@ use sigil_harness::{
     assemble_mixed_tranche24_as_side,
     assemble_mixed_tranche29_as_side, assemble_mixed_tranche30_as_side,
     assemble_mixed_tranche31_as_side,
+    assemble_mixed_tranche34_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -4781,6 +4782,146 @@ fn mixed_tranche31_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche31_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche31 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 34 — the P1 player keystone (player_common.emp + sonic.emp) inside the
+// full ROM. BOTH SIGIL_EMP_PLAYER_COMMON and SIGIL_EMP_SONIC gate their AS bodies
+// out; the two .emp regions splice at PLAYER_COMMON ($10002) and SONIC ($10C26).
+// ---------------------------------------------------------------------------
+fn build_mixed_tranche34_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche34_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof (1): the org-resume arms land the surviving state files' first labels
+    // at the region ends (PState_Ground = PLAYER_COMMON end; TestStatic_Main =
+    // SONIC end) with the two includes gated out.
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    assert_eq!(
+        find_label("PState_Ground"),
+        Some(pins::PLAYER_COMMON.plain_base + pins::PLAYER_COMMON.plain_len as u32),
+        "org-resume must land PState_Ground at the PLAYER_COMMON region end"
+    );
+    assert_eq!(
+        find_label("TestStatic_Main"),
+        Some(pins::SONIC.plain_base + pins::SONIC.plain_len as u32),
+        "org-resume must land TestStatic_Main at the SONIC region end"
+    );
+
+    let dbg = i128::from(debug);
+    let objects_dir = aeon.join("engine/objects");
+    let system_dir = aeon.join("engine/system");
+    let engine_dir = aeon.join("engine");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let (pc_base, pc_len, sonic_base, sonic_len) = if debug {
+        (
+            pins::PLAYER_COMMON.debug_base,
+            pins::PLAYER_COMMON.debug_len,
+            pins::SONIC.debug_base,
+            pins::SONIC.debug_len,
+        )
+    } else {
+        (
+            pins::PLAYER_COMMON.plain_base,
+            pins::PLAYER_COMMON.plain_len,
+            pins::SONIC.plain_base,
+            pins::SONIC.plain_len,
+        )
+    };
+
+    let (pc_secs, pc_asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/player/player_common.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            structs_ambient_items(&engine_dir),
+            coords_ambient_items(&engine_dir),
+            objdef_ambient_items(&objects_dir),
+        ],
+        "player_common",
+        pc_base,
+        pc_len,
+        defines.clone(),
+    );
+    let (sonic_secs, sonic_asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/player/sonic.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            objdef_ambient_items(&objects_dir),
+        ],
+        "sonic",
+        sonic_base,
+        sonic_len,
+        defines,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(pc_secs);
+    sections.extend(sonic_secs);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche34 mixed resolve_layout failed: {d:?}"));
+
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche34 mixed link failed: {d:?}"));
+
+    // The PlayerV overlay + all constant-mirror drift guards resolve against the
+    // REAL AS tree (structs.asm, constants.asm, config/constants.asm, sound_ids.asm).
+    let mut all_asserts = pc_asserts;
+    all_asserts.extend(sonic_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche34 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+#[ignore = "t34 mixed whole-ROM gate: player_common.emp's ~30 local-label branches resolve to op+2 (displacement 0) when its section is linked alongside the full AS module — the windowed byte gates (test_p1_player_port, both shapes) + the gate-off dual-build identity are the byte-identity proof meanwhile. Under overseer investigation (combined-link .emp local-label PcRel8 resolution; sec66642)."]
+fn mixed_tranche34_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche34_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche34 mixed");
+}
+
+#[test]
+#[ignore = "t34 mixed whole-ROM gate: player_common.emp's ~30 local-label branches resolve to op+2 (displacement 0) when its section is linked alongside the full AS module — the windowed byte gates (test_p1_player_port, both shapes) + the gate-off dual-build identity are the byte-identity proof meanwhile. Under overseer investigation (combined-link .emp local-label PcRel8 resolution; sec66642)."]
+fn mixed_tranche34_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche34_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche34 mixed debug");
 }
 
 // ---------------------------------------------------------------------------

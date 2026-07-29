@@ -430,7 +430,7 @@ const PC_DEBUG: PcShape = PcShape {
     len: pins::PLAYER_COMMON.debug_len,
 };
 
-fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, usize) {
+fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, Vec<Section>, Vec<sigil_ir::LinkAssert>, usize) {
     let aeon = aeon_dir();
     let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
@@ -457,6 +457,7 @@ fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, usize) {
         "player_common lower errors: {ldiags:?}"
     );
     let guards = sigil_harness::test_support::guard_assert_count(&module.link_asserts);
+    let asserts = module.link_asserts.clone();
     let mut sections = module.sections;
 
     let map = sigil_link::load_map(&map_toml("player_common", shape.base, shape.len)).expect("map");
@@ -508,7 +509,7 @@ fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, usize) {
         .unwrap_or_else(|d| panic!("player_common resolve_layout failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("player_common link failed: {d:?}"));
-    (linked, guards)
+    (linked, resolved, asserts, guards)
 }
 
 fn pc_region_bytes(linked: &sigil_link::LinkedImage) -> Vec<u8> {
@@ -517,7 +518,7 @@ fn pc_region_bytes(linked: &sigil_link::LinkedImage) -> Vec<u8> {
 
 #[test]
 fn p1_player_common_region_matches_reference() {
-    let (linked, _g) = compile_player_common(&PC_PLAIN);
+    let (linked, _r, _a, _g) = compile_player_common(&PC_PLAIN);
     let got = pc_region_bytes(&linked);
     if let Some(want) = ref_window("s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
         assert_region_matches(&got, &want, "player_common (plain)");
@@ -526,9 +527,60 @@ fn p1_player_common_region_matches_reference() {
 
 #[test]
 fn p1_player_common_debug_region_matches_reference() {
-    let (linked, _g) = compile_player_common(&PC_DEBUG);
+    let (linked, _r, _a, _g) = compile_player_common(&PC_DEBUG);
     let got = pc_region_bytes(&linked);
     if let Some(want) = ref_window("s4.debug.bin", PC_DEBUG.base, PC_DEBUG.len) {
         assert_region_matches(&got, &want, "player_common (debug)");
     }
+}
+
+// ── guard gate + t24 positive control / negative probe ───────────────────────
+
+/// The drift guards (PlayerV 5 + ~40 constant mirrors + sst/constants ambient)
+/// all resolve and PASS against the AS-side equ seam.
+#[test]
+fn p1_drift_guards_all_pass() {
+    let (_linked, resolved, asserts, guards) = compile_player_common(&PC_PLAIN);
+    assert!(guards > 40, "player_common must capture its overlay + mirror drift guards (got {guards})");
+    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "the drift guards must all PASS: {diags:?}"
+    );
+}
+
+/// POSITIVE CONTROL (t24 rule): the UNDOCTORED compile equals the reference
+/// window exactly. If this fails, the negative probe below proves nothing.
+#[test]
+fn p1_undoctored_compile_equals_the_reference_window() {
+    let (linked, _r, _a, _g) = compile_player_common(&PC_PLAIN);
+    let got = pc_region_bytes(&linked);
+    if let Some(want) = ref_window("s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
+        assert_eq!(got, want, "undoctored player_common must match the reference window");
+    }
+}
+
+/// NEGATIVE PROBE (t24 rule): a doctored reference window must NOT match the
+/// compiled bytes — the gate can actually fail. Doctors a pins-derived offset.
+#[test]
+fn p1_doctored_reference_diverges() {
+    let (linked, _r, _a, _g) = compile_player_common(&PC_PLAIN);
+    let got = pc_region_bytes(&linked);
+    let Some(mut want) = ref_window("s4.bin", PC_PLAIN.base, PC_PLAIN.len) else {
+        return;
+    };
+    want[0] ^= 0xFF; // flip the first opcode byte
+    assert_ne!(got, want, "a doctored reference must diverge from the compiled bytes");
+}
+
+/// NEGATIVE PROBE (sonic region): a doctored reference window must NOT match.
+#[test]
+fn p1_sonic_doctored_reference_diverges() {
+    let (linked, _g) = compile_sonic(&SONIC_PLAIN);
+    let got = sonic_region_bytes(&linked);
+    let Some(mut want) = ref_window("s4.bin", SONIC_PLAIN.base, SONIC_PLAIN.len) else {
+        return;
+    };
+    want[0] ^= 0xFF;
+    assert_ne!(got, want, "a doctored sonic reference must diverge from the compiled bytes");
 }
