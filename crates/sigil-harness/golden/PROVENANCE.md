@@ -1742,3 +1742,27 @@ Full paired strict **2763/0 (1 ignored)** on merged masters (2757 + 6 net t31).
   **`1efc59601bf1a13cafa21984596a795fe5b1939c44a67f213229fbd4f2b6d72b`** — NEW.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`eb5e94be`**, sha256
   **`7f06c23850843cc807b2c57c14ddd0b3d0ec08429a8cc5276de8a7d60f03032c`** — NEW.
+
+## t32 re-baseline (2026-07-29) — sound_psg: the first fully-contracted Z80 module
+
+Tranche 32 ported engine/sound/sound_psg.asm (526 L, 15 procs) to sound_psg.emp at
+scale (1) — windowed oracles at BOTH shapes (444 B each; plain window $1660 / debug
+$16DE — the blob base is shape-variant, psg's layout is not) — and ran the rung-2
+contract system against its own acceptance corpus. Verdict: **63 firings → 0** after
+the acceptance caught two implementation gaps (clobbers/out never plumbed to the Z80
+recognizer; the Z80 preserve sibling lacked the t30 callee-oracle), one soundness
+hole + a self-catch (the vacuous tail-jp pass; local end-labels mis-read as external
+tails), and THREE 15-year-old header over-claims now machine-corrected. The full
+contract set is LIVE: module invariant(ix) on all 15 procs, out(a)/out(hl, carry:),
+honest clobbers/preserves, 3 verified-against-header extern trusts. One demanded
+operand feature (bare comptime symbol in Z80 imm8) and one parser sharp-edge
+((ix+field+k) → parenthesize) shipped/ledgered en route. Panel A1+B1+C2+C3 dry —
+C3 verified every hardware-prose claim against the resident tree. The .asm stays
+canonical (scale 2 = the resident-blob seam sub-tranche; kill row 70).
+
+Byte-neutral vs the t31 canonical. Full paired strict **2783/0 (1 ignored)** on
+merged masters (2763 + 20 net t32 incl. the contract-system fixes).
+
+- Aeon repo master: **`a4008ca`** (merge of `port-tranche32`; sigil master **`30cb42e`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`85111814`** — UNCHANGED from t31.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`eb5e94be`** — UNCHANGED from t31.
