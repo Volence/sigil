@@ -1813,3 +1813,90 @@ tests = ["boot_port"]
 [[symbol]]
 name = "RAM_Start"
 tests = ["boot_port"]
+
+# ── P1 (t34): the player keystone ───────────────────────────────────────────
+# player_common is the object-bank FIRST code region (base = Player_Init, just
+# past ObjCodeBase's safety rts + __BUDGET_OBJBANK); its end anchor is
+# player_ground.asm's first emitted label PState_Ground (the surviving state
+# file). player_common.asm uses an INTERNAL gate: its zero-byte header (PlayerV
+# struct / _pl_* + PPHYS_* equates / the macros) stays ALWAYS-EMITTED so the
+# surviving ground/air/spindash still resolve it; only the code span
+# (Player_Init..Player_DebugMove) sits under SIGIL_EMP_PLAYER_COMMON. sonic is
+# the last player file before test_static. Bank windows shape-invariant.
+[[region]]
+name = "player_common"
+start = "Player_Init"
+end = "PState_Ground"
+gate = "SIGIL_EMP_PLAYER_COMMON"
+tests = ["test_p1_player_port"]
+
+[[region]]
+name = "sonic"
+start = "Sonic_InitAssets"
+end = "TestStatic_Main"
+gate = "SIGIL_EMP_SONIC"
+tests = ["test_p1_player_port"]
+
+# P1 cross-seam call targets + RAM/data pins. Draw_Sprite/Sound_PlaySFX/
+# Map_TestObj/ObjCodeBase/Ctrl_1_Press/Ctrl_1_Held/Current_Act_Ptr/Map_Sonic/
+# DPLC_Sonic/Art_Sonic already pinned; Perform_DPLC=DPLC base, AnimateSprite=
+# ANIMATE base, Ani_Sonic=SONIC_ANIMS base. The Player_States offset table
+# targets (surviving player_ground/air/spindash) + player_sensors primitives +
+# sonic.emp's interior exports + the player RAM block:
+[[symbol]]
+name = "PState_Ground"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_Roll"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_Spindash"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_Air"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_Jump"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_RollJump"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_AirBall"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_SensorFloor"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_AtLedgeEdge"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Sonic_LoadArt"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PhysTable_Sonic"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Phys"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Phys_End"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Quadrant"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_JumpBuffer"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Ring_Index"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Pos_Ring"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Stat_Ring"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Death_Pending"
+tests = ["test_p1_player_port"]

@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche31/s4.lst (07/29/2026 07:48:57 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche31/s4.debug.lst (07/29/2026 07:48:58 AM)
-//! [provenance] 45 regions, 283 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche34/s4.lst (07/29/2026 08:54:54 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche34/s4.debug.lst (07/29/2026 08:55:05 AM)
+//! [provenance] 47 regions, 302 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -179,6 +179,12 @@ pub const OBJDEFS: Region = Region { plain_base: 0x11D3E, debug_base: 0x11DA6, p
 
 /// `BusError` .. `EndOfRom` — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
 pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CAB0, debug_base: 0x5E5AA, plain_len: 0x10B0, debug_len: 0x10B0 };
+
+/// `Player_Init` .. `PState_Ground` — gate `SIGIL_EMP_PLAYER_COMMON`. tests: test_p1_player_port
+pub const PLAYER_COMMON: Region = Region { plain_base: 0x10002, debug_base: 0x10002, plain_len: 0x450, debug_len: 0x450 };
+
+/// `Sonic_InitAssets` .. `TestStatic_Main` — gate `SIGIL_EMP_SONIC`. tests: test_p1_player_port
+pub const SONIC: Region = Region { plain_base: 0x10C26, debug_base: 0x10C26, plain_len: 0x40, debug_len: 0x40 };
 
 // ── Symbols (manifest order) ──
 
@@ -1030,6 +1036,63 @@ pub const GAME_STATE_INIT: Pin = Pin { plain: 0xFFFF8009, debug: 0xFFFF8009 };
 
 /// `RAM_Start`. tests: boot_port
 pub const RAM_START: Pin = Pin { plain: 0xFFFF8000, debug: 0xFFFF8000 };
+
+/// `PState_Ground`. tests: test_p1_player_port
+pub const P_STATE_GROUND: Pin = Pin { plain: 0x10452, debug: 0x10452 };
+
+/// `PState_Roll`. tests: test_p1_player_port
+pub const P_STATE_ROLL: Pin = Pin { plain: 0x105B0, debug: 0x105B0 };
+
+/// `PState_Spindash`. tests: test_p1_player_port
+pub const P_STATE_SPINDASH: Pin = Pin { plain: 0x10B86, debug: 0x10B86 };
+
+/// `PState_Air`. tests: test_p1_player_port
+pub const P_STATE_AIR: Pin = Pin { plain: 0x108AC, debug: 0x108AC };
+
+/// `PState_Jump`. tests: test_p1_player_port
+pub const P_STATE_JUMP: Pin = Pin { plain: 0x108B4, debug: 0x108B4 };
+
+/// `PState_RollJump`. tests: test_p1_player_port
+pub const P_STATE_ROLL_JUMP: Pin = Pin { plain: 0x108B0, debug: 0x108B0 };
+
+/// `PState_AirBall`. tests: test_p1_player_port
+pub const P_STATE_AIR_BALL: Pin = Pin { plain: 0x108AC, debug: 0x108AC };
+
+/// `Player_SensorFloor`. tests: test_p1_player_port
+pub const PLAYER_SENSOR_FLOOR: Pin = Pin { plain: 0x5414, debug: 0x61AC };
+
+/// `Player_AtLedgeEdge`. tests: test_p1_player_port
+pub const PLAYER_AT_LEDGE_EDGE: Pin = Pin { plain: 0x552E, debug: 0x62C6 };
+
+/// `Sonic_LoadArt`. tests: test_p1_player_port
+pub const SONIC_LOAD_ART: Pin = Pin { plain: 0x10C3E, debug: 0x10C3E };
+
+/// `PhysTable_Sonic`. tests: test_p1_player_port
+pub const PHYS_TABLE_SONIC: Pin = Pin { plain: 0x10C56, debug: 0x10C56 };
+
+/// `Player_Phys`. tests: test_p1_player_port
+pub const PLAYER_PHYS: Pin = Pin { plain: 0xFFFFB07A, debug: 0xFFFFB0A2 };
+
+/// `Player_Phys_End`. tests: test_p1_player_port
+pub const PLAYER_PHYS_END: Pin = Pin { plain: 0xFFFFB08A, debug: 0xFFFFB0B2 };
+
+/// `Player_Quadrant`. tests: test_p1_player_port
+pub const PLAYER_QUADRANT: Pin = Pin { plain: 0xFFFFB08A, debug: 0xFFFFB0B2 };
+
+/// `Player_JumpBuffer`. tests: test_p1_player_port
+pub const PLAYER_JUMP_BUFFER: Pin = Pin { plain: 0xFFFFB08B, debug: 0xFFFFB0B3 };
+
+/// `Player_Ring_Index`. tests: test_p1_player_port
+pub const PLAYER_RING_INDEX: Pin = Pin { plain: 0xFFFFB400, debug: 0xFFFFB400 };
+
+/// `Player_Pos_Ring`. tests: test_p1_player_port
+pub const PLAYER_POS_RING: Pin = Pin { plain: 0xFFFFB200, debug: 0xFFFFB200 };
+
+/// `Player_Stat_Ring`. tests: test_p1_player_port
+pub const PLAYER_STAT_RING: Pin = Pin { plain: 0xFFFFB300, debug: 0xFFFFB300 };
+
+/// `Player_Death_Pending`. tests: test_p1_player_port
+pub const PLAYER_DEATH_PENDING: Pin = Pin { plain: 0xFFFFB08C, debug: 0xFFFFB0B4 };
 
 // ── Region-relative offsets (manifest order) ──
 
