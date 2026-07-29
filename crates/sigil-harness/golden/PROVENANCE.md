@@ -1552,3 +1552,47 @@ masters (2604 + 16 net t25, from main checkouts).
   sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`**.
 - Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
   sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`**.
+
+## Tranche 26 re-baseline (vectors.emp + game_debug.emp; BYTE-NEUTRAL)
+
+Second consecutive byte-neutral tranche: both canonical ROMs BYTE-IDENTICAL to
+the t24 baseline (CRC32/sha256/EndOfRom unchanged below).
+
+**What shipped:** `engine/system/vectors.asm` → `vectors.emp` (the 64-entry
+68k vector table, org 0, fixed 256-byte region `[0,$100)`, gate
+`SIGIL_EMP_VECTORS`; the FIRST .emp→.emp vector reference — its 12 exception
+entries resolve module-to-module against error_handler.emp; the P-A1 probe
+retired the lane's one candidate demanded feature: `dc.l` label comma-lists
+were ALREADY supported) and `games/sonic4/debug/game_debug.asm` →
+`game_debug.emp` (the FIRST game-side .emp CODE module: Debug_MusicToggle +
+Dbg_SfxIdTable; canonically EMPTY both shapes — SOUND_DEBUG_HOTKEYS defaults
+off — so proven by the off-canonical hotkeys-shape twin-parity oracle plus
+canonical-emptiness gates; kill row 33 KILLED, the game_loop.emp extern decl
+deleted for module-to-module resolution; kill row 54 born for the 16-const
+game-contract mirror, drift-guarded).
+
+**The headline catch (the tranche's most generalizable):** the extern decl
+HID a transitive clobber under-declaration — game_loop.emp trusted the twin's
+hand comment `clobbers(d0-d2/a0/a1)`, but Sound_PlayMusic clobbers d0-d4, so
+d3/d4 leaked through Debug_MusicToggle unseen. Porting the body made the
+contract closure verify it; the honest closure is `d0-d4/a0-a1` (C2 re-derived
+it exact). The step-6 census then checked EVERY remaining `extern proc` in the
+corpus — exactly one survives (Sound_DebugMirror, vblank.emp:19), verified
+HONEST as a leaf, and its .asm twin's stale hand comment (missing d1) was
+fixed in lockstep. No extern under-declares today. Separately, the type layer
+demanded SongId/SfxId blesses at step 1 (`slot_type_corpus` fired on raw d0
+into typed params — not deferrable). The panel's A1/B1-convergent
+"should vectors be a `data` array?" question was settled BY PROBE (bareword
+cells rejected; typed array element unresolvable at decl site) — form kept,
+frictions attached to the typed/label data-table language ask.
+
+Panel A1+B1+C2 (C1/C3 inactive-recorded); dry stood after one round (two
+comment-only fixes applied; re-panel ruled not warranted — the t24 re-panel
+precedent is for code changes). Full paired strict **2631/0** on merged
+masters (2620 + 11 net t26, from main checkouts).
+
+- Aeon repo master: **`6e25b6e`** (merge of `port-tranche26`; sigil master **`981cb4d`**).
+- Non-debug `s4.bin`: **421041 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`c51342d0`**,
+  sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`**.
+- Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
+  sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`**.
