@@ -1659,8 +1659,21 @@ impl Parser {
         loop {
             self.skip_newlines();
             if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
+            let before = self.pos;
             if let Some(stmt) = self.asm_stmt(splices_allowed) {
                 out.push(stmt);
+            }
+            // Progress guard (robustness): if the statement parse consumed NOTHING
+            // and we are not at a block terminator, force-advance so a recovery
+            // path that neither produces a statement nor advances can never spin
+            // the parser. A front-end must error loudly, never hang. (t25: an
+            // `extern(...)` in a `lea` displacement expression tripped exactly
+            // this loop in the sound_debug body — see
+            // `parser_recovery_hang.rs`.)
+            if self.pos == before {
+                let sp = self.span();
+                self.diag_at(sp, format!("unexpected token in statement position: {:?}", self.peek()));
+                self.bump();
             }
         }
         self.splice_ctx = saved_splice_ctx;
