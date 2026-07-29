@@ -54,3 +54,78 @@ fn probe_ld_a_imm8() {
     // `ld a, 5` = 3E 05 (z80.rs golden `ld r,n`), then `ret` = C9.
     assert_eq!(z80_body("ld a, 5"), vec![0x3E, 0x05, 0xC9]);
 }
+
+// ---- item 2: one test per §1.1 operand-form row (bytes from the golden) -----
+
+#[test]
+fn ld_sp_hl() {
+    // pair ← pair: F9.
+    assert_eq!(z80_body("ld sp, hl"), vec![0xF9, 0xC9]);
+}
+
+#[test]
+fn ld_indhl_reg() {
+    // (hl) ← reg: 77.
+    assert_eq!(z80_body("ld (hl), a"), vec![0x77, 0xC9]);
+}
+
+#[test]
+fn ld_indhl_imm8() {
+    // (hl) ← imm8 ($E9 = 233, the asl `0E9h`): 36 E9.
+    assert_eq!(z80_body("ld (hl), $E9"), vec![0x36, 0xE9, 0xC9]);
+}
+
+#[test]
+fn pop_ix() {
+    // index pair pop: DD E1.
+    assert_eq!(z80_body("pop ix"), vec![0xDD, 0xE1, 0xC9]);
+}
+
+#[test]
+fn pop_de() {
+    // plain pair pop: D1.
+    assert_eq!(z80_body("pop de"), vec![0xD1, 0xC9]);
+}
+
+#[test]
+fn ld_i_a() {
+    // RegI ← A: ED 47.
+    assert_eq!(z80_body("ld i, a"), vec![0xED, 0x47, 0xC9]);
+}
+
+#[test]
+fn ld_r_a() {
+    // RegR ← A: ED 4F.
+    assert_eq!(z80_body("ld r, a"), vec![0xED, 0x4F, 0xC9]);
+}
+
+#[test]
+fn ex_af_afshadow() {
+    // shadow swap: 08.
+    assert_eq!(z80_body("ex af, af'"), vec![0x08, 0xC9]);
+}
+
+#[test]
+fn im_1() {
+    // mode-1 imm: ED 56.
+    assert_eq!(z80_body("im 1"), vec![0xED, 0x56, 0xC9]);
+}
+
+#[test]
+fn jp_indhl() {
+    // jump (hl): E9.
+    assert_eq!(z80_body("jp (hl)"), vec![0xE9, 0xC9]);
+}
+
+#[test]
+fn xor_a() {
+    // one-op ALU, reg A (A's code is 7, so AF, not A8): AF.
+    assert_eq!(z80_body("xor a"), vec![0xAF, 0xC9]);
+}
+
+#[test]
+fn ld_bc_imm16_comptime() {
+    // pair ← comptime imm16 ($1234): 01 34 12 (little-endian). Proves the
+    // form-directed imm8-vs-imm16 split (a pair destination forces imm16).
+    assert_eq!(z80_body("ld bc, $1234"), vec![0x01, 0x34, 0x12, 0xC9]);
+}
