@@ -1834,3 +1834,25 @@ Full paired strict **2803/0 (1 ignored)** on merged masters.
   **`67923e8db0a3fea71bcf00d50c53ba0a03ebdfec1e6002e3c8cb72ea969fb210`** — NEW.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`bbb822f6`**, sha256
   **`e8ac4c8c98b67d6a627af766df739c00556d966b41651df14785a8af00fea508`** — NEW.
+
+## t36 (rung-3a) — sound_sequencer port (2026-07-29) — canonical UNCHANGED
+
+The Z80 interpreter (`sound_sequencer.asm`, 2091 L / 51 labels / ~46 code procs) ported
+to `sound_sequencer.emp` byte-identically in BOTH shapes (windowed oracle
+`sound_sequencer_port`: plain $0565–$0CD7 = 1906 B, debug $0565–$0D55 = 2032 B; the
++$7E delta = the 16 internal `__DEBUG__` blocks — the FIRST Z80 `.emp` carrying
+`if DEBUG == 1` bodies). Byte movement ZERO — the `.asm` stays canonical (kill row 78,
+seam-sub-tranche condition). The extern trust surface reaches ZERO (Mod_ReArm /
+Mod_Advance become checked definitions; the t32 §5.2 table closes). The `ex (sp),hl`
+trampoline feature landed with the overseer verdict tightening (credit past a bail =
+never-written-locally ∧ module-invariant only; RED-test proven). The extern-decl-vs-def
+silent drift hazard is machine-confirmed and ledgered (kill = seam sub-tranche), with
+one live instance caught and fixed by the panel (Snd_ChanClass under-declared
+`out(carry: music)`).
+
+Full paired strict **2813/0 (1 ignored)** on merged masters; sequencer 6/6 + psg 5/5 +
+fm 5/5 canaries by name.
+
+- Aeon repo master: **`656115d`** (merge of `port-tranche36`; sigil master **`12fd111`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`37dd2bb2`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`bbb822f6`** — UNCHANGED.
