@@ -4,7 +4,7 @@
 //! `jr`/`djnz` emit `[opcode, 0x00]` + a `Z80JrRel8` fixup for the linker.
 
 use sigil_ir::backend::{Backend, Cpu, LowerError};
-use sigil_ir::{DataFragment, Expr, Fixup, FixupKind};
+use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, RelaxCandidate};
 use sigil_isa::z80::{Cond, Instruction, Mnemonic, Operand};
 use sigil_span::Span;
 
@@ -92,6 +92,33 @@ impl Z80Backend {
             fixups: vec![Fixup { kind: FixupKind::BankPtr16Le, offset: off, target }],
             span,
         })
+    }
+
+    /// The two rungs of the `jr → jp` relaxation ladder (rung-2 §5) for an
+    /// UNCONDITIONAL symbolic `jr Label`, smallest → largest:
+    ///
+    /// - rung 0 (2 B): `jr e` — `[0x18, 0x00]`, `Z80JrRel8` disp at offset 1;
+    /// - rung 1 (3 B): `jp nn` — `[0xC3, 0x00, 0x00]`, `Value16Le` LE absolute at
+    ///   offset 1 (byte-identical to an explicit `jp Label` via
+    ///   [`lower_z80_abs16_sym`](../../sigil_frontend_emp/index.html)).
+    ///
+    /// The linker's `resolve_layout` selects the smallest reaching rung, so an
+    /// in-reach target stays `jr` (2 B, asl's choice) and only a genuinely
+    /// out-of-reach target grows to `jp`. `djnz` (short-only, no long form) and
+    /// `call` (long-only, no short form) are NEVER laddered — see the design §5.
+    pub fn lower_jr_jp_candidates(&self, target: Expr, _span: Span) -> Vec<RelaxCandidate> {
+        vec![
+            // rung 0: jr e (2 bytes) — the opcode 0x18 is `jr` (unconditional).
+            RelaxCandidate {
+                bytes: vec![0x18, 0x00],
+                fixup: Fixup { kind: FixupKind::Z80JrRel8, offset: 1, target: target.clone() },
+            },
+            // rung 1: jp nn (3 bytes) — opcode 0xC3, little-endian absolute.
+            RelaxCandidate {
+                bytes: vec![0xC3, 0x00, 0x00],
+                fixup: Fixup { kind: FixupKind::Value16Le, offset: 1, target },
+            },
+        ]
     }
 }
 

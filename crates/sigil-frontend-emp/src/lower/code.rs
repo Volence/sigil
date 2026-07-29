@@ -1689,8 +1689,23 @@ fn lower_z80_instr(
         push_err(diags, span, format!("`{mnemonic}` is not a recognized Z80 mnemonic"));
         return;
     };
-    // Relative branch to a symbolic target → linker-resolved Z80JrRel8 fixup.
-    if matches!(m, Z80Mnemonic::Jr | Z80Mnemonic::Djnz) {
+    // An unconditional symbolic `jr Label` sizes ITSELF over the latent `jr → jp`
+    // ladder (rung-2 §5): emit a two-rung `RelaxLadder` (`jr e` 2 B → `jp nn`
+    // 3 B) the linker width-selects. Byte-neutral — an in-reach target keeps the
+    // 2-byte `jr` rung (asl's choice); a genuinely out-of-reach target grows to
+    // `jp` rather than the old hard error. `djnz` (short-only) is never laddered:
+    // it stays a hard `Z80JrRel8` fixup so an out-of-range `djnz` is the real
+    // `[branch.out-of-reach]` code-structure error, matching asl (§5).
+    if matches!(m, Z80Mnemonic::Jr) {
+        if let [CodeOperand::Sym(name)] = ops {
+            let candidates = Z80Backend.lower_jr_jp_candidates(Expr::Sym(name.clone()), span);
+            let advance = candidates[0].bytes.len() as u32;
+            let frag = Fragment::RelaxLadder { candidates, target: Expr::Sym(name.clone()), span };
+            builder.emit_fragment(frag, advance);
+            return;
+        }
+    }
+    if matches!(m, Z80Mnemonic::Djnz) {
         if let [CodeOperand::Sym(name)] = ops {
             match Z80Backend.lower_rel(m, None, Expr::Sym(name.clone()), span) {
                 Ok(df) => emit_data_frag(builder, df),

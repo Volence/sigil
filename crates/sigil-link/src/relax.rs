@@ -497,10 +497,22 @@ fn rung_reaches(
         FixupKind::Abs16Be => Ok(asl_width_rule(target, dash_a) == AbsWidth::W),
         // jmp/jsr abs.l reaches any 32-bit address.
         FixupKind::Abs32Be => Ok(true),
+        // Z80 `jr e` (the low rung of the `jr → jp` ladder, §5): the disp byte is
+        // at `site_vma`, measured from the post-fetch PC (`site_vma + 1`). Reaches
+        // iff it fits the signed 8-bit field — and unlike the 68k `.s` byte, disp
+        // 0 IS encodable on Z80 (there is no word-form escape), so no non-zero
+        // exclusion.
+        FixupKind::Z80JrRel8 => {
+            let disp = target - (site_vma + 1);
+            Ok((-128..=127).contains(&disp))
+        }
+        // Z80 `jp nn` (the high rung): a 16-bit little-endian absolute reaches any
+        // address in the Z80's 64 KB space — always.
+        FixupKind::Value16Le => Ok(true),
         other => Err(Diagnostic {
             level: Level::Error,
             message: format!(
-                "internal: RelaxLadder candidate carries unsupported fixup kind {other:?} in section {section} — a ladder rung's reach must be one of PcRel8/PcRelDisp16/Abs16Be/Abs32Be (construction-contract violation)"
+                "internal: RelaxLadder candidate carries unsupported fixup kind {other:?} in section {section} — a ladder rung's reach must be one of PcRel8/PcRelDisp16/Abs16Be/Abs32Be/Z80JrRel8/Value16Le (construction-contract violation)"
             ),
             primary: span,
         }),
