@@ -22,13 +22,18 @@
 //! immediate operands aren't representable yet (a T1 model extension); those
 //! forms diagnose rather than mis-encode.
 
-use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg, Width};
+use crate::value::{
+    CodeBuf, CodeItem, CodeOperand, Reg, Width, Z80Cond, Z80Index, Z80Pair, Z80Reg8,
+};
 use sigil_backend_m68k::m68k::{
     Cond as M68kCond, Instruction as M68kInst, Mnemonic as M68kMnemonic, Operand as M68kOperand,
     Size as M68kSize, Xn as M68kXn,
 };
 use sigil_backend_m68k::M68kBackend;
-use sigil_backend_z80::z80::{Mnemonic as Z80Mnemonic, Operand as Z80Operand};
+use sigil_backend_z80::z80::{
+    Cond as Z80IsaCond, IndexReg as Z80IsaIndex, Mnemonic as Z80Mnemonic, Operand as Z80Operand,
+    Reg16 as Z80IsaPair, Reg8 as Z80IsaReg8,
+};
 use sigil_backend_z80::Z80Backend;
 use sigil_ir::backend::{Backend, Cpu, IrStreamer};
 use sigil_ir::{DataFragment, Expr, Fixup, FixupKind, Fragment, IrBuilder, RelaxCandidate};
@@ -1430,6 +1435,24 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         CodeOperand::PcRel { .. } | CodeOperand::PcRelIdx { .. } => Err(
             "internal: a PC-relative operand reached the generic operand mapper".to_string(),
         ),
+        // Z80 operand forms (T1, §2). A Z80 operand is produced ONLY by the Z80
+        // mapper, which runs ONLY in a Z80 section, so one reaching the 68k
+        // operand mapper is structurally impossible — this arm is a
+        // defense-in-depth diagnostic, never a reachable path (Option A, §2).
+        CodeOperand::Z80Reg8(_)
+        | CodeOperand::Z80Pair(_)
+        | CodeOperand::Z80IndHl
+        | CodeOperand::Z80IndBc
+        | CodeOperand::Z80IndDe
+        | CodeOperand::Z80Indexed { .. }
+        | CodeOperand::Z80Mem { .. }
+        | CodeOperand::Z80AfShadow
+        | CodeOperand::Z80RegI
+        | CodeOperand::Z80RegR
+        | CodeOperand::Z80Cc(_)
+        | CodeOperand::Z80Bit(_) => {
+            Err("internal: a Z80 operand reached the 68000 operand mapper".to_string())
+        }
     }
 }
 
@@ -1644,12 +1667,15 @@ fn is_mem_dest(op: &M68kOperand) -> bool {
     )
 }
 
-// ---- Z80 (structural, thin — see module doc) ---------------------------
+// ---- Z80 (T1 operand model — see module doc) ---------------------------
 
-/// Lower one Z80 instruction. STRUCTURAL only: the emp operand-class model is
-/// 68k-only, so only no-operand forms and symbolic `jr`/`djnz` are representable;
-/// anything with register/immediate operands diagnoses (a T1 model extension is
-/// needed before Z80 gains real operand depth).
+/// Lower one Z80 instruction (T1). The emp operand model now carries the Z80
+/// forms (`value.rs` §2.1), so: symbolic `jr`/`djnz` defer as a `Z80JrRel8`
+/// fixup; symbolic `ld rr,nn` / `jp`/`call nn` defer as a 2-byte LE
+/// `Value16Le` fixup (§4); every other form maps its resolved [`CodeOperand`]s
+/// to [`Z80Operand`]s and encodes via the asl-golden `z80::encode`. A form the
+/// operand model does not (yet) reach — a CB bit number, a condition code — is
+/// the `[lower.z80-unsupported]` diagnostic (bounded scope, never silent bytes).
 fn lower_z80_instr(
     mnemonic: &str,
     _size: Option<Width>,
@@ -1681,31 +1707,245 @@ fn lower_z80_instr(
         }
         return;
     }
-    push_err(
-        diags,
-        span,
-        format!(
-            "[lower.z80-unsupported] Z80 operand form for `{mnemonic}` is not yet supported \
-             (the emp operand-class model is 68k-only pending a T1 extension)"
-        ),
-    );
+    // A symbolic 16-bit absolute immediate (`ld rr, Label` / `jp`/`call Label`,
+    // §4): a label operand cannot fold at eval, so defer it to link as a 2-byte
+    // LE hole. Detected before the comptime mapper because a `Sym` has no
+    // comptime `Z80Operand`.
+    if ops.iter().any(|o| matches!(o, CodeOperand::Sym(_))) {
+        lower_z80_abs16_sym(m, ops, span, builder, diags);
+        return;
+    }
+    // Comptime forms: map each CodeOperand → Z80Operand, then encode. An
+    // encoder "unsupported form" (a shape the operand model can name but the
+    // ISA does not encode) is re-tagged `[lower.z80-unsupported]`.
+    match map_z80_operands(m, ops) {
+        Ok(zops) => match Z80Backend.lower(m, &zops, span) {
+            Ok(df) => emit_data_frag(builder, df),
+            Err(e) => push_err(diags, span, format!("[lower.z80-unsupported] {}", e.message)),
+        },
+        Err(msg) => push_err(diags, span, msg),
+    }
 }
 
-/// A small Z80 mnemonic table for the structurally-wired forms.
+/// Lower a symbolic 16-bit absolute immediate form (§4): `ld rr, Label`,
+/// `jp Label`, or `call Label`. The immediate is always the LAST two bytes of
+/// the encoding, so encode with an `Imm16(0)` placeholder, then reserve those
+/// two bytes as a `Value16Le` fixup hole.
+///
+/// §9 naming call — `Value16Le` (NOT a new `Abs16Le`, NOT `BankPtr16Le`): the
+/// linker ALREADY dispatches `Value16Le` for a 2-byte little-endian VALUE
+/// (`lower/data.rs::value_fixup_kind`), writing the folded target verbatim after
+/// an unsigned u16 window check — exactly the semantics a Z80 absolute address
+/// in a `vma:0` phase-0 section needs. `BankPtr16Le` would MASK the address into
+/// the `$8000` window (wrong here); `Abs16Le` does not exist and its range
+/// semantics would be identical, so no new kind is warranted.
+fn lower_z80_abs16_sym(
+    m: Z80Mnemonic,
+    ops: &[CodeOperand],
+    span: Span,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let (zops, name): (Vec<Z80Operand>, &str) = match (m, ops) {
+        (Z80Mnemonic::Ld, [CodeOperand::Z80Pair(rr), CodeOperand::Sym(name)]) => {
+            (vec![Z80Operand::Pair(map_z80_pair(*rr)), Z80Operand::Imm16(0)], name)
+        }
+        (Z80Mnemonic::Jp | Z80Mnemonic::Call, [CodeOperand::Sym(name)]) => {
+            (vec![Z80Operand::Imm16(0)], name)
+        }
+        _ => {
+            push_err(
+                diags,
+                span,
+                "[lower.z80-unsupported] a symbolic operand is only supported as the 16-bit \
+                 immediate of `ld rr, Label` / `jp Label` / `call Label`"
+                    .to_string(),
+            );
+            return;
+        }
+    };
+    let mut df = match Z80Backend.lower(m, &zops, span) {
+        Ok(df) => df,
+        Err(e) => {
+            push_err(diags, span, format!("[lower.z80-unsupported] {}", e.message));
+            return;
+        }
+    };
+    let n = df.bytes.len();
+    if n < 2 {
+        push_err(diags, span, "[lower.z80-unsupported] symbolic imm16 form shorter than 2 bytes".to_string());
+        return;
+    }
+    df.bytes[n - 2] = 0x00;
+    df.bytes[n - 1] = 0x00;
+    df.fixups.push(Fixup {
+        kind: FixupKind::Value16Le,
+        offset: (n - 2) as u32,
+        target: Expr::Sym(name.to_string()),
+    });
+    emit_data_frag(builder, df);
+}
+
+/// Map every comptime [`CodeOperand`] to a [`Z80Operand`] for `z80::encode`. The
+/// immediate width (imm8 vs imm16) is form-directed, mirroring how `z80::encode`
+/// splits `Imm8`/`Imm16`: `jp`/`call` targets and any instruction carrying a
+/// 16-bit register pair take imm16; everything else takes imm8.
+fn map_z80_operands(m: Z80Mnemonic, ops: &[CodeOperand]) -> Result<Vec<Z80Operand>, String> {
+    let wants_imm16 = matches!(m, Z80Mnemonic::Jp | Z80Mnemonic::Call)
+        || ops.iter().any(|o| matches!(o, CodeOperand::Z80Pair(_)));
+    ops.iter().map(|op| map_z80_operand(op, wants_imm16)).collect()
+}
+
+/// Map one comptime [`CodeOperand`] to a [`Z80Operand`]. A `[lower.z80-unsupported]`
+/// error names any operand the Z80 model does not (yet) encode — a 68k operand,
+/// a bare `Sym` (routed via [`lower_z80_abs16_sym`] earlier), or an out-of-range
+/// immediate/displacement.
+fn map_z80_operand(op: &CodeOperand, wants_imm16: bool) -> Result<Z80Operand, String> {
+    Ok(match op {
+        CodeOperand::Z80Reg8(r) => Z80Operand::Reg(map_z80_reg8(*r)),
+        CodeOperand::Z80Pair(p) => Z80Operand::Pair(map_z80_pair(*p)),
+        CodeOperand::Z80IndHl => Z80Operand::IndHl,
+        CodeOperand::Z80IndBc => Z80Operand::IndBc,
+        CodeOperand::Z80IndDe => Z80Operand::IndDe,
+        CodeOperand::Z80Indexed { reg, disp } => {
+            // Defense-in-depth: the operand mapper (`map_ind_z80`) already checked
+            // the i8 window; re-check at this byte-exactness seam.
+            if *disp < i8::MIN as i128 || *disp > i8::MAX as i128 {
+                return Err(format!(
+                    "[lower.z80-unsupported] (ix+d) displacement {disp} out of i8 range"
+                ));
+            }
+            Z80Operand::Indexed { reg: map_z80_index(*reg), disp: *disp as i8 }
+        }
+        CodeOperand::Z80Mem { addr } => {
+            if *addr < 0 || *addr > u16::MAX as i128 {
+                return Err(format!(
+                    "[lower.z80-unsupported] (nn) address {addr} out of u16 range"
+                ));
+            }
+            Z80Operand::Mem(*addr as u16)
+        }
+        CodeOperand::Z80AfShadow => Z80Operand::AfShadow,
+        CodeOperand::Z80RegI => Z80Operand::RegI,
+        CodeOperand::Z80RegR => Z80Operand::RegR,
+        CodeOperand::Z80Cc(cc) => Z80Operand::Cc(map_z80_cond(*cc)),
+        CodeOperand::Z80Bit(b) => Z80Operand::Bit(*b),
+        CodeOperand::Imm(n) => {
+            let n = *n;
+            if wants_imm16 {
+                if n < i16::MIN as i128 || n > u16::MAX as i128 {
+                    return Err(format!(
+                        "[lower.z80-unsupported] 16-bit immediate {n} out of range"
+                    ));
+                }
+                Z80Operand::Imm16(n as u16)
+            } else {
+                if n < i8::MIN as i128 || n > u8::MAX as i128 {
+                    return Err(format!(
+                        "[lower.z80-unsupported] 8-bit immediate {n} out of range"
+                    ));
+                }
+                Z80Operand::Imm8(n as u8)
+            }
+        }
+        other => {
+            Err(format!("[lower.z80-unsupported] operand `{other:?}` has no Z80 encoding"))?
+        }
+    })
+}
+
+/// The emp-side Z80 8-bit register to its ISA [`Z80IsaReg8`].
+fn map_z80_reg8(r: Z80Reg8) -> Z80IsaReg8 {
+    match r {
+        Z80Reg8::A => Z80IsaReg8::A,
+        Z80Reg8::B => Z80IsaReg8::B,
+        Z80Reg8::C => Z80IsaReg8::C,
+        Z80Reg8::D => Z80IsaReg8::D,
+        Z80Reg8::E => Z80IsaReg8::E,
+        Z80Reg8::H => Z80IsaReg8::H,
+        Z80Reg8::L => Z80IsaReg8::L,
+    }
+}
+
+/// The emp-side Z80 register pair to its ISA [`Z80IsaPair`].
+fn map_z80_pair(p: Z80Pair) -> Z80IsaPair {
+    match p {
+        Z80Pair::Bc => Z80IsaPair::Bc,
+        Z80Pair::De => Z80IsaPair::De,
+        Z80Pair::Hl => Z80IsaPair::Hl,
+        Z80Pair::Sp => Z80IsaPair::Sp,
+        Z80Pair::Af => Z80IsaPair::Af,
+        Z80Pair::Ix => Z80IsaPair::Ix,
+        Z80Pair::Iy => Z80IsaPair::Iy,
+    }
+}
+
+/// The emp-side Z80 index register to its ISA [`Z80IsaIndex`].
+fn map_z80_index(i: Z80Index) -> Z80IsaIndex {
+    match i {
+        Z80Index::Ix => Z80IsaIndex::Ix,
+        Z80Index::Iy => Z80IsaIndex::Iy,
+    }
+}
+
+/// The emp-side Z80 condition code to its ISA [`Z80IsaCond`].
+fn map_z80_cond(c: Z80Cond) -> Z80IsaCond {
+    match c {
+        Z80Cond::Nz => Z80IsaCond::Nz,
+        Z80Cond::Z => Z80IsaCond::Z,
+        Z80Cond::Nc => Z80IsaCond::Nc,
+        Z80Cond::C => Z80IsaCond::C,
+        Z80Cond::Po => Z80IsaCond::Po,
+        Z80Cond::Pe => Z80IsaCond::Pe,
+        Z80Cond::P => Z80IsaCond::P,
+        Z80Cond::M => Z80IsaCond::M,
+    }
+}
+
+/// The Z80 mnemonic table. Recognizing a mnemonic is not the same as encoding a
+/// form: a recognized mnemonic whose operand shape the model does not reach is
+/// `[lower.z80-unsupported]` (bounded scope), never a "not recognized" error.
 fn z80_mnemonic(base: &str) -> Option<Z80Mnemonic> {
     use Z80Mnemonic::*;
     Some(match base {
         "nop" => Nop,
-        "ret" => Ret,
+        "ld" => Ld,
+        "add" => Add,
+        "adc" => Adc,
+        "sub" => Sub,
+        "sbc" => Sbc,
+        "and" => And,
+        "or" => Or,
+        "xor" => Xor,
+        "cp" => Cp,
+        "inc" => Inc,
+        "dec" => Dec,
+        "push" => Push,
+        "pop" => Pop,
+        "ex" => Ex,
         "exx" => Exx,
+        "ret" => Ret,
+        "jr" => Jr,
+        "jp" => Jp,
+        "call" => Call,
+        "djnz" => Djnz,
         "rrca" => Rrca,
         "scf" => Scf,
         "ei" => Ei,
         "di" => Di,
-        "ldir" => Ldir,
+        "bit" => Bit,
+        "res" => Res,
+        "set" => Set,
+        "srl" => Srl,
+        "rr" => Rr,
+        "sla" => Sla,
+        "rlc" => Rlc,
+        "rrc" => Rrc,
+        "rl" => Rl,
+        "sra" => Sra,
         "neg" => Neg,
-        "jr" => Jr,
-        "djnz" => Djnz,
+        "im" => Im,
+        "ldir" => Ldir,
         _ => return None,
     })
 }

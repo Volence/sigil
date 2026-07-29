@@ -112,6 +112,16 @@ pub enum Value {
     /// A comptime register class (`d0`..`a7`) — the value a `{reg}` operand
     /// splice resolves to (§6.2). Emp-side; carries no ISA.
     Reg(Reg),
+    /// A comptime Z80 register class — the value a `{r}` splice resolves to in a
+    /// Z80 section (T1, §2.2). Reg8/Pair/Index share this one value; cc/bit are
+    /// separate splice kinds (added with the rung that demands them). Sibling to
+    /// [`Reg`](Value::Reg), NOT a widening of it: 68k `Reg` (`d0`..`a7`) is a
+    /// disjoint universe from Z80's `a/hl/ix/…`, so widening `Reg` would churn
+    /// the frozen 68k splice path. The section CPU and the value kind must AGREE
+    /// — a `Value::Z80Reg` classified in a 68k section (or a `Value::Reg` in a
+    /// Z80 section) is a loud `[asm.splice-kind]` error, a free correctness win
+    /// the single-CPU-per-section fact hands us.
+    Z80Reg(Z80RegClass),
     /// A first-class LABEL VALUE (D-PP.3): a reference to a named link symbol — a
     /// `proc` or `data` item, module-local / imported / prelude. Produced when a
     /// bareword (or dotted path) in comptime VALUE position resolves to nothing
@@ -497,6 +507,47 @@ pub enum CodeOperand {
         /// the AS-matching default when unsuffixed).
         xlong: bool,
     },
+    // ---- Z80 operand forms (T1, §2.1) — the emp-side image of `z80.rs`'s
+    // `Operand`, one comptime abstraction layer up (no ISA import). A Z80
+    // variant is only ever PRODUCED by the Z80 operand mapper (which runs only
+    // in a Z80 section) and only ever CONSUMED by the Z80 lowering, so a Z80
+    // variant reaching `lower_m68k_instr` is structurally impossible — the 68k
+    // consumption matches acknowledge these with `unreachable!()`/diagnostic
+    // arms, never a production arm. Immediates reuse the CPU-neutral
+    // `Imm(i128)`; the Z80 lowering picks imm8 vs imm16 by instruction form.
+    // Symbolic 16-bit immediates reuse `Sym` (link-time; §4).
+    /// A Z80 8-bit register: `a b c d e h l` (z80.rs `Reg8`).
+    Z80Reg8(Z80Reg8),
+    /// A Z80 16-bit register pair: `bc de hl sp af ix iy` (z80.rs `Reg16`).
+    Z80Pair(Z80Pair),
+    /// `(hl)` — also the `jp (hl)` target.
+    Z80IndHl,
+    /// `(bc)` — rung 3.
+    Z80IndBc,
+    /// `(de)` — rung 3.
+    Z80IndDe,
+    /// `(ix+d)` / `(iy+d)`, `disp` range-checked to i8 at map time (§3) — rung 2.
+    Z80Indexed {
+        /// The index register.
+        reg: Z80Index,
+        /// The displacement (already checked to fit i8).
+        disp: i128,
+    },
+    /// `(nn)` — a comptime absolute memory address — rung 2/3.
+    Z80Mem {
+        /// The comptime address.
+        addr: i128,
+    },
+    /// `af'` (only in `ex af,af'`).
+    Z80AfShadow,
+    /// `i` (only in `ld i,a`).
+    Z80RegI,
+    /// `r` (only in `ld r,a`).
+    Z80RegR,
+    /// A Z80 condition code — rung 2 (§6).
+    Z80Cc(Z80Cond),
+    /// A bit number `0..=7` for a CB group op — rung 2 (§6).
+    Z80Bit(u8),
 }
 
 /// A comptime operand-size class (§6.2), emp-side (no ISA import). Modeled on
@@ -700,6 +751,219 @@ impl fmt::Display for Reg {
     }
 }
 
+/// A Z80 8-bit register class (T1, §2.1), emp-side — the image of `z80.rs`'s
+/// `Reg8` without importing it (same rule that keeps [`Reg`] ISA-free). `(hl)`
+/// is NOT a member here (it is [`CodeOperand::Z80IndHl`]), matching the ISA.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Z80Reg8 {
+    /// `a`.
+    A,
+    /// `b`.
+    B,
+    /// `c`.
+    C,
+    /// `d`.
+    D,
+    /// `e`.
+    E,
+    /// `h`.
+    H,
+    /// `l`.
+    L,
+}
+
+impl Z80Reg8 {
+    /// Parse a Z80 8-bit register name (`a`..`l`), else `None`. Inverse of
+    /// [`Display`](fmt::Display).
+    pub fn from_name(name: &str) -> Option<Z80Reg8> {
+        Some(match name {
+            "a" => Z80Reg8::A,
+            "b" => Z80Reg8::B,
+            "c" => Z80Reg8::C,
+            "d" => Z80Reg8::D,
+            "e" => Z80Reg8::E,
+            "h" => Z80Reg8::H,
+            "l" => Z80Reg8::L,
+            _ => return None,
+        })
+    }
+}
+
+impl fmt::Display for Z80Reg8 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Z80Reg8::A => "a",
+            Z80Reg8::B => "b",
+            Z80Reg8::C => "c",
+            Z80Reg8::D => "d",
+            Z80Reg8::E => "e",
+            Z80Reg8::H => "h",
+            Z80Reg8::L => "l",
+        })
+    }
+}
+
+/// A Z80 16-bit register pair (T1, §2.1), emp-side — the image of `z80.rs`'s
+/// `Reg16`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Z80Pair {
+    /// `bc`.
+    Bc,
+    /// `de`.
+    De,
+    /// `hl`.
+    Hl,
+    /// `sp`.
+    Sp,
+    /// `af`.
+    Af,
+    /// `ix`.
+    Ix,
+    /// `iy`.
+    Iy,
+}
+
+impl Z80Pair {
+    /// Parse a Z80 register-pair name (`bc`..`iy`), else `None`. Inverse of
+    /// [`Display`](fmt::Display).
+    pub fn from_name(name: &str) -> Option<Z80Pair> {
+        Some(match name {
+            "bc" => Z80Pair::Bc,
+            "de" => Z80Pair::De,
+            "hl" => Z80Pair::Hl,
+            "sp" => Z80Pair::Sp,
+            "af" => Z80Pair::Af,
+            "ix" => Z80Pair::Ix,
+            "iy" => Z80Pair::Iy,
+            _ => return None,
+        })
+    }
+}
+
+impl fmt::Display for Z80Pair {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Z80Pair::Bc => "bc",
+            Z80Pair::De => "de",
+            Z80Pair::Hl => "hl",
+            Z80Pair::Sp => "sp",
+            Z80Pair::Af => "af",
+            Z80Pair::Ix => "ix",
+            Z80Pair::Iy => "iy",
+        })
+    }
+}
+
+/// A Z80 index register for `(ix+d)`/`(iy+d)` (T1, §2.1), emp-side — the image
+/// of `z80.rs`'s `IndexReg`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Z80Index {
+    /// `ix`.
+    Ix,
+    /// `iy`.
+    Iy,
+}
+
+impl Z80Index {
+    /// Parse a Z80 index-register name (`ix`/`iy`), else `None`. Inverse of
+    /// [`Display`](fmt::Display).
+    pub fn from_name(name: &str) -> Option<Z80Index> {
+        Some(match name {
+            "ix" => Z80Index::Ix,
+            "iy" => Z80Index::Iy,
+            _ => return None,
+        })
+    }
+}
+
+impl fmt::Display for Z80Index {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Z80Index::Ix => "ix",
+            Z80Index::Iy => "iy",
+        })
+    }
+}
+
+/// A Z80 condition code (T1, §2.1), emp-side — the image of `z80.rs`'s `Cond`.
+/// Defined whole; wired with the rung-2 file that first spells a `jp cc,nn` /
+/// `ret cc` form (§6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Z80Cond {
+    /// `nz` — not zero.
+    Nz,
+    /// `z` — zero.
+    Z,
+    /// `nc` — no carry.
+    Nc,
+    /// `c` — carry.
+    C,
+    /// `po` — parity odd.
+    Po,
+    /// `pe` — parity even.
+    Pe,
+    /// `p` — sign positive.
+    P,
+    /// `m` — sign negative.
+    M,
+}
+
+impl Z80Cond {
+    /// Parse a Z80 condition-code name (`nz`..`m`), else `None`. Inverse of
+    /// [`Display`](fmt::Display).
+    pub fn from_name(name: &str) -> Option<Z80Cond> {
+        Some(match name {
+            "nz" => Z80Cond::Nz,
+            "z" => Z80Cond::Z,
+            "nc" => Z80Cond::Nc,
+            "c" => Z80Cond::C,
+            "po" => Z80Cond::Po,
+            "pe" => Z80Cond::Pe,
+            "p" => Z80Cond::P,
+            "m" => Z80Cond::M,
+            _ => return None,
+        })
+    }
+}
+
+impl fmt::Display for Z80Cond {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Z80Cond::Nz => "nz",
+            Z80Cond::Z => "z",
+            Z80Cond::Nc => "nc",
+            Z80Cond::C => "c",
+            Z80Cond::Po => "po",
+            Z80Cond::Pe => "pe",
+            Z80Cond::P => "p",
+            Z80Cond::M => "m",
+        })
+    }
+}
+
+/// The comptime Z80 register class a `{r}` splice resolves to (T1, §2.2): a
+/// Reg8, a pair, or an index register share this ONE value. `cc`/bit are
+/// separate splice kinds, added with the rung that demands them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Z80RegClass {
+    /// An 8-bit register (`a`..`l`).
+    R8(Z80Reg8),
+    /// A 16-bit register pair (`bc`..`iy`).
+    Pair(Z80Pair),
+    /// An index register (`ix`/`iy`).
+    Index(Z80Index),
+}
+
+impl fmt::Display for Z80RegClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Z80RegClass::R8(r) => write!(f, "{r}"),
+            Z80RegClass::Pair(p) => write!(f, "{p}"),
+            Z80RegClass::Index(i) => write!(f, "{i}"),
+        }
+    }
+}
+
 impl Value {
     /// A short, stable type name for use in type-mismatch diagnostics.
     ///
@@ -728,6 +992,7 @@ impl Value {
             Value::Width(_) => "width",
             Value::Cc(_) => "cc",
             Value::Reg(_) => "reg",
+            Value::Z80Reg(_) => "z80-reg",
             Value::Label(_) => "label",
             Value::LinkExpr(_) => "link-expr",
             Value::Poison => "poison",
@@ -822,6 +1087,7 @@ impl fmt::Display for Value {
             Value::Width(w) => write!(f, "{w}"),
             Value::Cc(c) => write!(f, "{c}"),
             Value::Reg(r) => write!(f, "{r}"),
+            Value::Z80Reg(rc) => write!(f, "{rc}"),
             // A label renders as its bare symbol name (no quotes — it is not a
             // string): `<label init>` distinguishes it in diagnostics.
             Value::Label(n) => write!(f, "<label {n}>"),
