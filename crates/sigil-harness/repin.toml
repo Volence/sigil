@@ -498,6 +498,26 @@ end = "OJZ_Sec0_TypeTable"
 gate = "SIGIL_EMP_OBJDEFS"
 tests = ["objdef_port"]
 
+# t41 — the T1 harness states (the LAST game-side code before main/config). Both
+# gameStatesIncludes files, SHAPE-DEPENDENT (distinct plain/debug lengths — the
+# DEBUG profiling block / the two Debug_Scene_Freeze skips). object_test_state ends
+# where ojz begins; ojz ends at NullInterrupt (main.asm's post-gameStates stub, the
+# next placement — a 2-byte NullInterrupt:rte sits between ojz's PlayerMarkerTile
+# tail and error_handler's BusError).
+[[region]]
+name = "object_test_state"
+start = "GameState_ObjectTest_Init"
+end = "GameState_OJZScroll_Init"
+gate = "SIGIL_EMP_OBJECT_TEST_STATE"
+tests = ["test_t1_harness_states_port"]
+
+[[region]]
+name = "ojz_scroll_test"
+start = "GameState_OJZScroll_Init"
+end = "NullInterrupt"
+gate = "SIGIL_EMP_OJZ_SCROLL_TEST"
+tests = ["test_t1_harness_states_port"]
+
 # Tranche 25 — the error_handler region (the ROM TAIL): the 12 CPU
 # exception-vector stubs (raise_exception) + the vendored MD Debugger blob. Length
 # 0x10B0 BOTH shapes (stub table 0x15A + blob 0xF56) — same size, different base,
