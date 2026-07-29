@@ -51,6 +51,13 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
     }
     let mut macros = MacroTable::new();
     let mut functions = FunctionTable::new();
+    // Label names known from the previous pass — seeds each pass so a FORWARD
+    // branch/jump target that names a label is recognized as a label (kept
+    // symbolic in `fixup_target`) before its definition line executes.
+    let mut labels: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Label-referencing equ names known from the previous pass — same forward-
+    // reference role as `labels`, for the debugger's `DEBUGGER__* = <label>` table.
+    let mut label_ref_equs: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut prev = seed.clone();
     // Every equ-sym name any pass exports, in first-seen order. An
     // `ifndef`-guarded definition block executes (and exports) on pass 0,
@@ -69,7 +76,9 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
             functions: f,
             diags,
             poison,
-        } = one_pass(src, opts, &seed, &macros, &functions);
+            labels: pass_labels,
+            label_ref_equs: pass_label_ref_equs,
+        } = one_pass(src, opts, &seed, &macros, &functions, &labels, &label_ref_equs);
         for sec in &module.sections {
             for eq in &sec.equ_syms {
                 if ever_exported_names.insert(eq.name.clone()) {
@@ -103,7 +112,16 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
                     Ok(module)
                 };
             }
-            let bonus = one_pass_with_defer(src, opts, &seed, &macros, &functions, true);
+            let bonus = one_pass_with_defer(
+                src,
+                opts,
+                &seed,
+                &macros,
+                &functions,
+                &pass_labels,
+                &pass_label_ref_equs,
+                true,
+            );
             let mut diags = bonus.diags;
             for (name, span) in bonus.poison {
                 diags.push(Diagnostic {
@@ -124,6 +142,8 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
         seed = env;
         macros = m;
         functions = f;
+        labels = pass_labels;
+        label_ref_equs = pass_label_ref_equs;
     }
     Err(vec![Diagnostic {
         level: Level::Error,
@@ -147,6 +167,13 @@ struct PassOutput {
     diags: Vec<Diagnostic>,
     /// Operand symbols that folded to Poison this pass (name + site span).
     poison: Vec<(String, Span)>,
+    /// Every fully-qualified label name defined this pass (grown from the seed).
+    /// Threaded into the next pass so a forward-referenced label is known before
+    /// its definition line — see [`Asm::known_labels`].
+    labels: std::collections::HashSet<String>,
+    /// Every label-referencing `equ`/`=` name defined this pass — see
+    /// [`Asm::label_ref_equs`]. Threaded into the next pass.
+    label_ref_equs: std::collections::HashSet<String>,
 }
 
 /// Re-attach equ exports the CONVERGED pass lost to a guard-skipped block
@@ -192,8 +219,12 @@ fn one_pass(
     seed_env: &SymbolTable,
     seed_macros: &MacroTable,
     seed_functions: &FunctionTable,
+    seed_labels: &std::collections::HashSet<String>,
+    seed_label_ref_equs: &std::collections::HashSet<String>,
 ) -> PassOutput {
-    one_pass_with_defer(src, opts, seed_env, seed_macros, seed_functions, false)
+    one_pass_with_defer(
+        src, opts, seed_env, seed_macros, seed_functions, seed_labels, seed_label_ref_equs, false,
+    )
 }
 
 /// Like [`one_pass`], but also threads [`Asm::defer_unresolved_jsr_jmp`] —
@@ -205,12 +236,16 @@ fn one_pass_with_defer(
     seed_env: &SymbolTable,
     seed_macros: &MacroTable,
     seed_functions: &FunctionTable,
+    seed_labels: &std::collections::HashSet<String>,
+    seed_label_ref_equs: &std::collections::HashSet<String>,
     defer_unresolved_jsr_jmp: bool,
 ) -> PassOutput {
     let mut asm = Asm::new_with_defer(opts, defer_unresolved_jsr_jmp);
     asm.env = seed_env.clone();
     asm.macros = seed_macros.clone();
     asm.functions = seed_functions.clone();
+    asm.known_labels = seed_labels.clone();
+    asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.process(src);
     // Task B1 (seam re-eval): a source consisting ONLY of `equ`s (no section
     // ever opens) would otherwise strand `pending_equ_syms` — force a carrier
@@ -228,6 +263,8 @@ fn one_pass_with_defer(
         functions: asm.functions,
         diags,
         poison: asm.poison_refs,
+        labels: asm.known_labels,
+        label_ref_equs: asm.label_ref_equs,
     }
 }
 
@@ -334,6 +371,29 @@ struct Asm {
     /// joined only at LINK time) is not an error here — it becomes one only
     /// if `resolve_layout`/`link` can't find it either.
     defer_unresolved_jsr_jmp: bool,
+    /// Every fully-qualified LABEL name known to this pass — seeded from the
+    /// previous pass (so a FORWARD-referenced label is already present) and
+    /// grown as `define_label` sees each definition. `fixup_target` consults
+    /// this to keep a branch/jump target that names a label SYMBOLIC rather than
+    /// baking its this-pass VMA into an `Expr::Int`: the linker resolves a label
+    /// against its own (relaxation-shifted) section-label table, so a symbolic
+    /// target stays correct when `resolve_layout` GROWS a length-variable
+    /// `JmpJsrSym` between the branch and its target (a cross-seam mixed build).
+    /// Baking is kept only for env-only `equ`/`set` targets the linker cannot
+    /// see. Labels vs. `equ`s are indistinguishable in `env` (both hold an
+    /// `Int`), so this dedicated name set is the discriminator.
+    known_labels: std::collections::HashSet<String>,
+    /// Every `equ`/`=` name whose VALUE derives from a section LABEL
+    /// (`HandlerPtr = Handler`, `X = Label+4`, or a chain `X = Y` onto another
+    /// such equ) — the debugger's `DEBUGGER__*` handler-address table is the
+    /// canonical shape. Such an equ's folded `Int` value shifts when a
+    /// width-grown `JmpJsrSym` moves its underlying label, so on the deferral
+    /// pass it is exported to the linker as a SYMBOLIC `equ_sym` (the linker
+    /// folds it post-relax) and a `dc.l`/`jsr`/... through it is treated like a
+    /// label reference (kept symbolic). A pure-constant equ never enters this
+    /// set and keeps baking. Threaded across passes so a forward reference
+    /// through such an equ is recognized before its definition line.
+    label_ref_equs: std::collections::HashSet<String>,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -374,6 +434,8 @@ impl Asm {
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
+            known_labels: std::collections::HashSet::new(),
+            label_ref_equs: std::collections::HashSet::new(),
         }
     }
 
@@ -1918,6 +1980,7 @@ impl Asm {
             name.to_string()
         };
         self.env.define(&qualified, SymbolValue::Int(value));
+        self.known_labels.insert(qualified.clone());
         self.builder.define_label(&qualified);
     }
 
@@ -2074,6 +2137,36 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.env.define(&q, SymbolValue::Int(v));
+            // A label-referencing equate (`HandlerPtr = Handler`, the debugger's
+            // `DEBUGGER__* = MDDBG__* = ErrorHandler + N` chain): its VALUE is a
+            // relaxation-shiftable label address. DETECT and register such a name
+            // on EVERY pass — the detection is byte-neutral (it only feeds
+            // `expr_refs_label`, whose consumer sites are all `keep_labels_symbolic`-
+            // gated, inert off the deferral pass) and MUST run on the ordinary
+            // passes so the threaded set carries a producer equ (defined LATE, e.g.
+            // mddbg_symbols.asm) to a consumer equ (defined EARLY, debugger.asm)
+            // that references it. The env value stays `Int(v)`, so convergence is
+            // unaffected. On the deferral pass ONLY, a registered name is EXPORTED
+            // to the linker as a SYMBOLIC equ_sym (`relax_safe_fold` keeps section
+            // labels / chained label-ref equs symbolic and bakes env-only
+            // subterms — `X = Label + CONST` ships `Sym(Label) + Int(CONST)`); the
+            // linker folds it post-relax onto the shifted label. A pure-constant
+            // equ never matches and keeps baking `Int(v)`.
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+                .and_then(|(e, tail)| tail.is_empty().then_some(e))
+                .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
+                .filter(|e| self.expr_refs_label(e));
+            let equ_expr = match &sym_rhs {
+                Some(e) => {
+                    self.label_ref_equs.insert(q.clone());
+                    if self.keep_labels_symbolic() {
+                        self.relax_safe_fold(e)
+                    } else {
+                        Expr::Int(v)
+                    }
+                }
+                None => Expr::Int(v),
+            };
             // Task B1 (seam re-eval): export the int equate to the module's
             // link-level `equ_syms` so `.emp` code can read it via `extern()`.
             // AS equates today live ONLY in `self.env` (front-end-private), so
@@ -2105,9 +2198,9 @@ impl Asm {
             // flush into the next section that actually opens, WITHOUT
             // side-effecting `in_section`/`phys_base` here.
             if self.in_section {
-                self.builder.add_equ_sym(EquSym { name: q, expr: Expr::Int(v), span });
+                self.builder.add_equ_sym(EquSym { name: q, expr: equ_expr, span });
             } else {
-                self.pending_equ_syms.push(EquSym { name: q, expr: Expr::Int(v), span });
+                self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
             }
         }
     }
@@ -2312,6 +2405,21 @@ impl Asm {
                 }
             };
             let qe = self.qualify_expr(&e);
+            // On the deferral pass, a `dc.w` whose value references a section
+            // label (an offset-table row `Target-Base`, or a truncated address)
+            // must carry the label(s) SYMBOLICALLY — a width-grown `JmpJsrSym`
+            // shifts them and a baked word would go stale. `Value16Be` matches
+            // the resolved path's `v as u16` low-16 truncation. See
+            // `keep_labels_symbolic`.
+            let qed = self.resolve_dollar(&qe);
+            if self.keep_labels_symbolic() && self.expr_refs_label(&qed) {
+                self.emit(
+                    &[0x00, 0x00],
+                    vec![Fixup { kind: FixupKind::Value16Be, offset: 0, target: self.relax_safe_fold(&qed) }],
+                    span,
+                );
+                continue;
+            }
             match self.fold(&qe) {
                 Fold::Value(v) => {
                     let w = (v as u16).to_be_bytes();
@@ -2360,7 +2468,19 @@ impl Asm {
                     continue;
                 }
             };
-            let qe = self.qualify_expr(&e);
+            let qe = self.resolve_dollar(&self.qualify_expr(&e));
+            // On the deferral pass, a `dc.l` whose value references a section
+            // label must carry that label SYMBOLICALLY (an `Abs32Be` fixup),
+            // not its this-pass VMA — a width-grown `JmpJsrSym` shifts the label
+            // and a baked long would go stale. See `keep_labels_symbolic`.
+            if self.keep_labels_symbolic() && self.expr_refs_label(&qe) {
+                self.emit(
+                    &[0x00, 0x00, 0x00, 0x00],
+                    vec![Fixup { kind: FixupKind::Abs32Be, offset: 0, target: self.relax_safe_fold(&qe) }],
+                    span,
+                );
+                continue;
+            }
             match self.fold(&qe) {
                 Fold::Value(v) => {
                     let l = (v as u32).to_be_bytes();
@@ -2600,7 +2720,19 @@ impl Asm {
                     return;
                 }
                 let (width, fixup_target) = match self.fold(&target) {
-                    Fold::Value(v) => (asl_width_rule(v, false), Expr::Int(v)),
+                    Fold::Value(v) => {
+                        // asl-faithful width from the resolved value; but on the
+                        // deferral pass keep a section-label target SYMBOLIC so a
+                        // later `JmpJsrSym` width growth (which shifts the target
+                        // label) resolves correctly at link, not against a stale
+                        // baked address. See `keep_labels_symbolic`.
+                        let ft = if self.keep_labels_symbolic() && self.expr_refs_label(&target) {
+                            self.relax_safe_fold(&target)
+                        } else {
+                            Expr::Int(v)
+                        };
+                        (asl_width_rule(v, false), ft)
+                    }
                     Fold::Poison => {
                         for name in self.unresolved_names(&target) {
                             self.poison_refs.push((name, span));
@@ -2611,6 +2743,37 @@ impl Asm {
                 let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, fixup_target, width, span);
                 self.emit_frag(Ok(frag), span);
                 return;
+            }
+            // `jmp`/`jsr (abs).w/.l` (an EXPLICIT-width absolute-EA target — the
+            // debugger's `jsr (MDDBG__ErrorHandler).l` in __ErrorMessage): the
+            // generic path bakes the folded address, which a width-grown
+            // `JmpJsrSym` shifts out from under. On the deferral pass, if the
+            // address references a section label (directly or through a
+            // label-ref equ), emit the SAME opcode + a symbolic `Abs16Be`/
+            // `Abs32Be` fixup so the linker fills it post-relax. The `.w`/`.l`
+            // suffix PINS the width (no relaxation, so no width-boundary
+            // hazard); the abs hole sits at offset 2 (jmp/jsr take no other
+            // extension words). A resolved non-label / ordinary pass falls
+            // through to the generic (baked) path unchanged.
+            if let [OperandAtom::M68kAbs { addr, long }] = atoms.as_slice() {
+                let qualified = self.resolve_dollar(&self.qualify_expr(addr));
+                if self.keep_labels_symbolic() && self.expr_refs_label(&qualified) {
+                    let inst = M68kInstruction {
+                        mnemonic,
+                        size: M68kSize::L,
+                        ops: vec![if *long { M68kOperand::AbsL(0) } else { M68kOperand::AbsW(0) }],
+                    };
+                    if let Ok(mut frag) = self.m68k.lower_inst(&inst, span) {
+                        debug_assert!(frag.bytes.len() >= if *long { 6 } else { 4 });
+                        frag.fixups.push(Fixup {
+                            kind: if *long { FixupKind::Abs32Be } else { FixupKind::Abs16Be },
+                            offset: 2,
+                            target: self.relax_safe_fold(&qualified),
+                        });
+                        self.emit_frag(Ok(frag), span);
+                        return;
+                    }
+                }
             }
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
         }
@@ -2877,9 +3040,16 @@ impl Asm {
             _ => return None,
         };
         let qualified = self.qualify_expr(imm_expr);
-        // Only unresolved (Poison) exprs defer — a resolved value takes the
-        // existing eager path (fall through to `None`), byte-identical.
-        if !matches!(self.fold(&qualified), Fold::Poison) {
+        // Unresolved (Poison) exprs ALWAYS defer. A RESOLVED immediate that names
+        // a section LABEL also defers on the deferral pass (`keep_labels_symbolic`):
+        // `move.l #Label` bakes the label's VMA, which a width-grown `JmpJsrSym`
+        // would shift out from under — so carry the label symbolically and let
+        // the linker fill it post-relax. A resolved NON-label immediate takes the
+        // existing eager path (byte-identical), and on every ordinary pass this is
+        // exactly the pre-existing Poison-only rule.
+        let is_poison = matches!(self.fold(&qualified), Fold::Poison);
+        let refs_label = self.keep_labels_symbolic() && self.expr_refs_label(&qualified);
+        if !is_poison && !refs_label {
             return None;
         }
         let inst = M68kInstruction {
@@ -2906,8 +3076,14 @@ impl Asm {
             offset: 2,
             // Bake env-resolvable subterms; defer only the true cross-seam leaf
             // (mirrors the `db`/`dw` deferral — a compound imm32 with an
-            // env-only equ subterm must not ship that equ as a `Sym`).
-            target: self.partial_fold(&qualified),
+            // env-only equ subterm must not ship that equ as a `Sym`). On the
+            // deferral pass a section-LABEL subterm ALSO stays symbolic
+            // (`relax_safe_fold`) so a width-growth shift is honored at link.
+            target: if refs_label {
+                self.relax_safe_fold(&qualified)
+            } else {
+                self.partial_fold(&qualified)
+            },
         });
         Some(frag)
     }
@@ -3611,9 +3787,85 @@ impl Asm {
     /// branch width is fixed, so the placeholder never perturbs layout.
     fn fixup_target(&self, e: &Expr) -> Expr {
         let qualified = self.resolve_dollar(&self.qualify_expr(e));
+        // On the deferral (bonus) pass, keep any subterm that names a section
+        // LABEL symbolic instead of baking its this-pass VMA — see
+        // `keep_labels_symbolic` / `relax_safe_fold`. This is what makes a
+        // PC-relative branch whose target sits past a width-grown `JmpJsrSym`
+        // resolve correctly in the combined link.
+        if self.keep_labels_symbolic() && self.expr_refs_label(&qualified) {
+            return self.relax_safe_fold(&qualified);
+        }
         match self.fold(&qualified) {
             Fold::Value(v) => Expr::Int(v),
             Fold::Poison => qualified,
+        }
+    }
+
+    /// Whether label references in a fixup target must be kept SYMBOLIC rather
+    /// than baked to their this-pass VMA. True ONLY on `run`'s deferral (bonus)
+    /// pass — the ONE pass that emits a length-variable `Fragment::JmpJsrSym`
+    /// (an unresolved cross-seam `jsr`/`jmp`, deferred to the linker's
+    /// relaxation ladder). When `resolve_layout` later GROWS such a fragment
+    /// abs.w→abs.l, it SHIFTS every following section label — but a baked
+    /// absolute constant in a fixup target does not move, so a branch/`dc.l`/
+    /// `dc.w`/`jsr` whose target sits past the grown fragment would resolve to a
+    /// stale (pre-growth) address. Keeping labels symbolic lets the linker
+    /// resolve them against its own relaxation-shifted section-label table.
+    ///
+    /// On EVERY ordinary pass this is `false`, so baking — and thus byte output
+    /// — is UNCHANGED: a non-deferral module has no length-variable AS-side
+    /// fragment, so its front-end label VMAs already equal the link-time ones
+    /// (the `stale_fold_repro` T3 invariant). The whole behavior change is
+    /// scoped to the mixed cross-seam builds that actually relax.
+    fn keep_labels_symbolic(&self) -> bool {
+        self.defer_unresolved_jsr_jmp
+    }
+
+    /// Does `e` reference at least one section LABEL — directly, or through a
+    /// label-referencing `equ` (`dc.l HandlerPtr` where `HandlerPtr = Handler`)?
+    /// A `$`-derived `Int`, a pure-constant `equ`/`set`, or an unresolved
+    /// cross-seam external all answer `false` — only a name the linker resolves
+    /// to a RELAXATION-SHIFTABLE address (a section label, or an equ_sym that
+    /// folds onto one) counts.
+    fn expr_refs_label(&self, e: &Expr) -> bool {
+        match e {
+            Expr::Sym(name) => {
+                self.known_labels.contains(name) || self.label_ref_equs.contains(name)
+            }
+            Expr::Binary { lhs, rhs, .. } => {
+                self.expr_refs_label(lhs) || self.expr_refs_label(rhs)
+            }
+            Expr::Unary { operand, .. } => self.expr_refs_label(operand),
+            Expr::Int(_) => false,
+        }
+    }
+
+    /// Partially fold a fixup target while keeping every section-LABEL reference
+    /// symbolic, so the linker resolves it against its relaxation-shifted table
+    /// (see `keep_labels_symbolic`). A subtree that references NO label is baked
+    /// whole to `Expr::Int` (env-only `equ`/`set`/`$` values the linker cannot
+    /// see — captured HERE, exactly as `partial_fold` does); a subtree that DOES
+    /// reference a label is descended, folding only its label-free branches and
+    /// leaving each label `Sym` in place. `$` must already be resolved out (call
+    /// on a `resolve_dollar`-ed expression) — `$` is not a label, so it would
+    /// otherwise survive as an unresolvable `Sym`.
+    fn relax_safe_fold(&self, e: &Expr) -> Expr {
+        if !self.expr_refs_label(e) {
+            if let Fold::Value(v) = self.fold(e) {
+                return Expr::Int(v);
+            }
+        }
+        match e {
+            Expr::Binary { op, lhs, rhs } => Expr::Binary {
+                op: *op,
+                lhs: Box::new(self.relax_safe_fold(lhs)),
+                rhs: Box::new(self.relax_safe_fold(rhs)),
+            },
+            Expr::Unary { op, operand } => Expr::Unary {
+                op: *op,
+                operand: Box::new(self.relax_safe_fold(operand)),
+            },
+            other => other.clone(),
         }
     }
 
