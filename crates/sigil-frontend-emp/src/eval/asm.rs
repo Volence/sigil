@@ -837,7 +837,14 @@ impl Evaluator<'_> {
                 // `Cell::SymRef` of the element width, resolved at link — the
                 // absolute-pointer form a vector/jump table needs. Mirrors
                 // `lower_ptr`'s `Cell::SymRef` (a `*u8` field), here in raw `dc`
-                // position rather than a typed `data` field.
+                // position rather than a typed `data` field. A REGISTER name is
+                // not a valid `dc` element (a register has no data reading) —
+                // keep it the loud `unknown name` error the corpus pins, not a
+                // silent SymRef.
+                Value::Label(name) if reg_from_name(&name).is_some() || name == "sp" || name == "pc" => {
+                    self.error(expr_span(expr), format!("unknown name `{name}`"));
+                    return None;
+                }
                 Value::Label(name) => {
                     cells.push(Cell::SymRef { name, width: width_bytes as u8, windowed: false });
                     total += width_bytes;
