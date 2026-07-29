@@ -1658,3 +1658,28 @@ ignored 2→1 via the P1 un-ignore; overseer's own runs at every gate).
   **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`992d9e7d`**, sha256
   **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
+
+## t29 re-baseline (2026-07-29) — game-side G1: the trivial objects
+
+Tranche 29 opened the census-era game-side front: `test_static.emp` (a single
+`jbra Draw_Sprite` tail call) + `test_animated.emp` — byte-identical at the FIRST
+linking compile, zero wave needed (the step-2 branch flips are byte-identical at
+this bank distance). test_animated turned out to be the FIRST game-side
+SST-overlay-twin port (`vars DplcV: Sst.sst_custom`, offsetof drift-guards against
+test_player.asm, the overlay's window-overflow check subsuming the AS
+`objvarsCheck`) — a census correction (that "first" was assigned to G3). Typed
+`vram_bytes(VramTile) -> VramAddr` built at its first consumer; `vram_art`
+adopted. Regions TEST_STATIC `$10C66`/`$4` + TEST_ANIMATED `$10C6A`/`$5A`
+(bases shape-invariant, content compile-twice). Proof = windowed byte gates +
+whole-ROM mixed arms (drift guards resolving against the REAL AS tree), t24
+doctored controls. Zero extern procs bar HELD. Per-file gates ratified as the
+STANDING PATTERN for multi-file object tranches. Kill rows 60-63.
+
+Byte-neutral end to end — SIXTH consecutive byte-neutral landing.
+Full paired strict **2691/0 (1 ignored)** on merged masters (2685 + 6 net t29).
+
+- Aeon repo master: **`c6a89a5`** (merge of `port-tranche29`; sigil master **`557f5b0`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`c51342d0`**, sha256
+  **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`992d9e7d`**, sha256
+  **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
