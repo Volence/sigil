@@ -137,3 +137,30 @@ the overseer's call at gate (c).
 ## Corrections
 - Kill rows were a same-commit duty missed at the step-1 commit (a72d271); written as
   the first post-(a) commit (77a8eb8) per overseer ruling 3.
+
+## Step-6 corpus sweep for abs_w (kill row 82; MANDATORY-before-merge, run 2026-07-29)
+
+Swept the whole ported `.emp` corpus for the `bpl .X / neg.w REG / .X:` abs idiom
+(CC-liveness verified per site; excluded Z80/sound_sequencer per scope). Per file:
+
+- **player_common.emp — 3 FOLDED** (`.abs_ok` d0, `.skid_abs` d2, `.wr_abs` d1;
+  each a fresh move.w into the reg before the bpl → genuine abs). Self-contained
+  (abs_w is defined in player_common), byte-neutral. test_p1_player_port green.
+- **player_ground.emp / player_air.emp — already folded at step-4** (9 sites).
+- **entity_window.emp ×2 (`.sx_pos`/`.sy_pos`), collision.emp ×2 (`.solid_ax_pos`/
+  `.solid_ay_pos`), core.emp ×2 (`.culled_xpos`/`.culled_ypos`) — genuine idiom,
+  LEDGERED-BLOCKED (not folded).** They are ENGINE modules; abs_w is game-homed, so
+  a direct fold inverts engine→game layering. The enabling abs_w engine-hoist (to
+  `engine.coords`) has a large test-ambient blast radius (6+ compile sites need a
+  coords ambient — verified by attempt-then-revert), the same class the overseer
+  deferred the constants hoist for → dedicated post-t35 parcel (gap-ledger t35 sweep
+  row; kill row 82 tracks). LESSON logged: abs_w was step-4-placed in a game module;
+  the sweep proved it a corpus-wide engine idiom (the wrong-home first-consumer case).
+- **SKIPPED as NOT-the-idiom (copysign, not abs):** player_ground `.nudge` (tst.b
+  angle → neg d1) and `.shared_move`/`.keep_rolling` (multiply-referenced label);
+  player_air `Air_GspFromYvel .store` (tst.b d3 → neg d0); player_spindash `.launch`
+  (btst ST_XFLIP → neg d0). These test a DIFFERENT register's sign than the one
+  negated (copysign) — logged as the copysign_w candidate (gap-ledger t35 dry panel).
+
+**Sweep byte-movement: ZERO** (all folds byte-neutral). Full strict 2827/0 (1 ignored),
+CRCs unchanged 4b66cace/1c256b3b.
