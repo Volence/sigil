@@ -1935,3 +1935,24 @@ Full paired strict **2862/0 (1 ignored)** on merged masters; g4 4/4 by name.
 - Aeon repo master: **`23e6ca7`** (merge of `port-tranche39`; sigil master **`3901f1d`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
+
+## t40 (rung-4) — z80_sound_driver port (2026-07-29) — canonical UNCHANGED; ALL Z80 CODE PORTED
+
+The driver (`z80_sound_driver.asm`, 1495 L / 20 procs, the blob FRONT $0000..$0565 =
+1381 B) ported to `z80_sound_driver.emp` — the LAST Z80 code file; all five resident
+sound files are contracted and INBOUND Z80 TRUST = ZERO (4 conversions subset-verified).
+RUNG 4 DELIVERED: the cycles capability (T-state table + the eager ensure channel +
+`pad_to_cycles`); the DAC loop's three paths verify **195/195/194** on the real spans
+(doctored-pad proofs; derived pads == hand pads byte-proven; the ensures ARE the
+jp-cc structural pin). `[proc.out-clobbers-overlap]` first exercised; the driver's
+headers were honest (0 lies; sound tally psg 3 + fm 2 + sfx 1). Byte movement ZERO on
+the blob front (the existential bar held). Kill row 87 — the seam sub-tranche now
+holds ALL SIX sound twins (70/71/78/83/87 + sound_api's row) + the drift-diagnostic
+ledger set.
+
+Full paired strict **2888/0 (1 ignored)** on merged masters; driver 7/7 + sfx 5/5 +
+sequencer 6/6 + fm 5/5 + psg 5/5 by name.
+
+- Aeon repo master: **`597ce06`** (merge of `port-tranche40`; sigil master **`cb1950e`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
