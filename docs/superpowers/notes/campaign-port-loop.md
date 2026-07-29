@@ -166,7 +166,7 @@ re-green. No emulator time needed at this step.
      `ifdef` widths: the .emp stays bare, the twin carries the per-shape
      spelling with its site comment (t19 bg_anim · t21 vblank sound-off ·
      t22 s4lz; overseer-ratified 2026-07-24 from the t22 noticing,
-     Volence override open).
+     Volence-ratified 2026-07-29).
   2. Every structural width-pin carries its site comment naming the
      exception class — an UNCOMMENTED kept width is a miss even when
      keeping it is correct (retro-check 2026-07-15: `aabb.emp:62 bpl.s`
