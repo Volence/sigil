@@ -112,6 +112,17 @@ fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
+/// children.emp filtered to ONLY the `SpawnDesc` struct (the hoisted 4-byte
+/// descriptor record the two emitters now `use`). children.emp is code-bearing,
+/// so prepending it whole would emit its procs — this keeps just the type decl.
+fn spawn_desc_file(aeon: &std::path::Path) -> sigil_frontend_emp::ast::File {
+    use sigil_frontend_emp::ast::Item;
+    let mut file = parse_file(&aeon.join("engine/objects/children.emp"));
+    file.items
+        .retain(|it| matches!(it, Item::Struct(d) if d.name == "SpawnDesc"));
+    file
+}
+
 fn with_ambient(
     deps: Vec<sigil_frontend_emp::ast::File>,
     main: sigil_frontend_emp::ast::File,
@@ -227,7 +238,8 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let mut guards = Vec::new();
     for (region, rel) in files {
         let main = parse_file(&aeon.join(rel));
-        let file = with_ambient(vec![types(), sst(), constants(), objdef()], main);
+        let file =
+            with_ambient(vec![types(), sst(), constants(), objdef(), spawn_desc_file(&aeon)], main);
         let (module, ldiags) = lower_module(&file, &opts);
         assert!(
             ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

@@ -907,6 +907,31 @@ pub fn assemble_mixed_tranche30_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 31 (game-side G3): the full AS-side game with `SIGIL_EMP_TEST_PARENT`
+/// on — main.asm skips the test_parent object include and org-resumes at the
+/// (shape-invariant) `$1115C` (test_stress_emitter's first label TestStressEmitter)
+/// bank address; the `.emp` module fills the window. The effect/child-lifecycle
+/// emitters stay AS-side (test_emitter/stress_emitter/churn INCLUDED). The
+/// cross-seam callees (CreateChild_Normal / DeleteChildren / GetSineCosine /
+/// DeleteObject / Draw_Sprite) are the real AS symbols; TestChildPart is internal
+/// to the `.emp`. There is no outbound objroutine-word consumer — object_test_state
+/// spawns TestParent, not TestChildPart, and TestParent's dispatch word is the
+/// objdef data (which stays AS-side).
+pub fn assemble_mixed_tranche31_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_TEST_PARENT".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche31 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included

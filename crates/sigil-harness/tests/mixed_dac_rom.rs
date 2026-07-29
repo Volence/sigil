@@ -121,6 +121,7 @@ use sigil_harness::{
     assemble_mixed_tranche22_as_side, assemble_mixed_tranche23_as_side,
     assemble_mixed_tranche24_as_side,
     assemble_mixed_tranche29_as_side, assemble_mixed_tranche30_as_side,
+    assemble_mixed_tranche31_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -1329,6 +1330,25 @@ fn objdef_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item
     file.items
 }
 
+/// children.emp filtered to ONLY the `pub struct SpawnDesc` — the hoisted 4-byte
+/// spawn-descriptor record (t31) the two emitters + test_parent `use`. children.emp
+/// is code-bearing, so prepending it whole would emit its procs into the region;
+/// this keeps just the type-only struct decl (zero bytes anywhere in the ROM).
+fn spawn_desc_ambient_items(objects_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    let src = std::fs::read_to_string(objects_dir.join("children.emp"))
+        .unwrap_or_else(|e| panic!("cannot read children.emp: {e}"));
+    let (file, cdiags) = parse_str(&src);
+    assert!(
+        cdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "children.emp parse errors: {cdiags:?}"
+    );
+    file.items
+        .into_iter()
+        .filter(|it| matches!(it, Item::Struct(d) if d.name == "SpawnDesc"))
+        .collect()
+}
+
 /// The `engine.objects.frames` comptime-fn template (`engine/objects/frames.emp`):
 /// a single `pub comptime fn frame_piece_count` — zero bytes anywhere, spliced
 /// by animate/load_object at the piece-count read. Uses FRAME_PIECE_COUNT from
@@ -2333,7 +2353,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x2577E..0x25786],
+        &rom[0x25772..0x2577A],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -2341,7 +2361,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The sonic_anims table head: eleven self-relative words starting at
     // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
     assert_eq!(
-        &rom[0x25710..0x25718],
+        &rom[0x25704..0x2570C],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (plain)"
     );
@@ -2352,7 +2372,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // table (base + 0x22); pin-spliced so it tracks the pin on a ROM shift (t12).
     let ad = pins::ACT_DESCRIPTOR.plain_base + 0x22;
     assert_eq!(
-        &rom[0x14B5E..0x14B66],
+        &rom[0x14B52..0x14B5A],
         &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (plain)"
     );
@@ -4515,6 +4535,7 @@ fn build_mixed_tranche30_rom(aeon: &Path, debug: bool) -> Vec<u8> {
             sst_ambient_items(objects_dir),
             constants_ambient_items(system_dir),
             objdef_ambient_items(objects_dir),
+            spawn_desc_ambient_items(objects_dir),
         ]
     };
 
@@ -4621,6 +4642,145 @@ fn mixed_tranche30_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche30_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche30 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 31 — game-side G3: test_parent.emp inside the full ROM. The per-file
+// gate SIGIL_EMP_TEST_PARENT gates the object include out of main.asm's object
+// bank; the `.emp` module fills the shape-invariant window ($11030 len $12C). The
+// effect/child-lifecycle emitters stay AS-side. Shared bracket anchor:
+// TestStressEmitter ($1115C, test_stress_emitter's first label) must land
+// canonically with the include gated out. The cross-seam callees
+// (CreateChild_Normal / DeleteChildren / GetSineCosine / DeleteObject /
+// Draw_Sprite) resolve against the real AS tree; TestChildPart is internal. The
+// AS-side objdef data (test_objects.asm `objdef code=TestParent`) resolves its
+// code_addr word against the `.emp`-owned TestParent (the outbound consumer).
+// ---------------------------------------------------------------------------
+
+fn build_mixed_tranche31_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche31_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof (1): org-resume must land TestStressEmitter at its canonical address
+    // (= TEST_PARENT window end) with the object include gated out.
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    let stress_expect = pins::TEST_PARENT.plain_base + pins::TEST_PARENT.plain_len as u32;
+    assert_eq!(
+        find_label("TestStressEmitter"),
+        Some(stress_expect),
+        "org-resume must land TestStressEmitter at its canonical address (the region end anchor)"
+    );
+
+    let dbg = i128::from(debug);
+    let objects_dir = aeon.join("engine/objects");
+    let system_dir = aeon.join("engine/system");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let (base, len) = if debug {
+        (pins::TEST_PARENT.debug_base, pins::TEST_PARENT.debug_len)
+    } else {
+        (pins::TEST_PARENT.plain_base, pins::TEST_PARENT.plain_len)
+    };
+    let (secs, asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/objects/test_parent.emp",
+        vec![
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            objdef_ambient_items(&objects_dir),
+            spawn_desc_ambient_items(&objects_dir),
+        ],
+        "test_parent",
+        base,
+        len,
+        defines,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(secs);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche31 mixed resolve_layout failed: {d:?}"));
+
+    // Proof (2): the AS-side objdef `code=TestParent` word resolves against the
+    // .emp export (derived from the RESOLVED .emp label — never hardcoded).
+    let emp_label = |region: &str, want: &str| -> u32 {
+        for sec in &resolved {
+            if sec.name != region {
+                continue;
+            }
+            for l in &sec.labels {
+                if l.name == want {
+                    return sec.vma_origin().wrapping_add(l.offset);
+                }
+            }
+        }
+        panic!("{region} must export {want}");
+    };
+    let test_parent = emp_label("test_parent", "TestParent");
+
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche31 mixed link failed: {d:?}"));
+
+    // The VRAM_TEST_OBJ + SST/constants drift guards resolve against the REAL AS
+    // tree (structs.asm, constants.asm, config/constants.asm).
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche31 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    let rom = sigil_link::flatten(&linked, 0x00);
+
+    let obj_code_base = pins::OBJ_CODE_BASE.plain;
+    let want = (test_parent - obj_code_base) as u16;
+    let pat = want.to_be_bytes();
+    assert!(
+        rom.windows(2).any(|w| w == pat),
+        "the AS-side objdef code_addr word for TestParent must encode its bank offset {want:#x} \
+         (the .emp-owned address)"
+    );
+
+    rom
+}
+
+#[test]
+fn mixed_tranche31_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche31_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche31 mixed");
+}
+
+#[test]
+fn mixed_tranche31_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche31_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche31 mixed debug");
 }
 
 // ---------------------------------------------------------------------------

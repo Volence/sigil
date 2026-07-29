@@ -424,6 +424,18 @@ end = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_CHURN"
 tests = ["test_g2_objects_port"]
 
+# G3 (t31): the struct-overlay object. Bank window shape-invariant. test_parent's
+# FIRST label is TestChildPart (test_emitter's end anchor); its end is
+# TestStressEmitter (test_stress_emitter's first label). Region const is
+# TEST_PARENT; the TestParent LABEL symbol below pins as TEST_PARENT_LABEL to
+# avoid the const collision (the Plane_Buffer/plane_buffer precedent).
+[[region]]
+name = "test_parent"
+start = "TestChildPart"
+end = "TestStressEmitter"
+gate = "SIGIL_EMP_TEST_PARENT"
+tests = ["test_g3_objects_port"]
+
 # ── Game data (main.asm gates) ──────────────────────────────────────────────
 
 [[region]]
@@ -492,6 +504,9 @@ tests = ["objdef_port"]
 
 [[symbol]]
 name = "TestParent"
+# const_name override: `test_parent` is a t31 region (-> TEST_PARENT), so this
+# LABEL pin takes the _LABEL suffix (the Plane_Buffer -> PLANE_BUFFER_BASE precedent).
+const_name = "TEST_PARENT_LABEL"
 tests = ["objdef_port"]
 
 [[symbol]]
@@ -519,6 +534,21 @@ tests = ["test_g1_objects_port"]
 [[symbol]]
 name = "CreateEffect_Normal"
 tests = ["test_g2_objects_port"]
+
+# G3 (t31): test_parent's cross-seam callees. CreateChild_Normal + DeleteChildren
+# (children.emp), GetSineCosine (math.emp). The others (DeleteObject, Draw_Sprite,
+# Map_TestObj) are already pinned; TestChildPart is INTERNAL to the region.
+[[symbol]]
+name = "CreateChild_Normal"
+tests = ["test_g3_objects_port"]
+
+[[symbol]]
+name = "DeleteChildren"
+tests = ["test_g3_objects_port"]
+
+[[symbol]]
+name = "GetSineCosine"
+tests = ["test_g3_objects_port"]
 
 # ── Cross-seam symbols ──────────────────────────────────────────────────────
 # m1c_vector_table's exception-stub VMAs (the IRQ4 $70 target is now
