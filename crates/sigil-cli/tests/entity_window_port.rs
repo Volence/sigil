@@ -237,10 +237,13 @@ fn compile_real_file(
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
     let structs = parse_file(&aeon.join("engine/structs.emp"));
+    let coords = parse_file(&aeon.join("engine/coords.emp"));
     let ew = parse_file(&aeon.join("engine/objects/entity_window.emp"));
 
-    // entity_window also `use`s engine.structs.{Sec, Act_grid_w_lo}.
-    let file = with_ambient(vec![types, sst, constants, structs], ew);
+    // entity_window also `use`s engine.structs.{Sec, Act_grid_w_lo} and
+    // engine.coords.{abs_w} (the ambient-hoist parcel folded its |slot-center|
+    // sites onto the shared abs_w).
+    let file = with_ambient(vec![types, sst, constants, structs, coords], ew);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -475,6 +478,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
             parse_file(&aeon.join("engine/objects/sst.emp")),
             parse_file(&aeon.join("engine/system/constants.emp")),
             parse_file(&aeon.join("engine/structs.emp")),
+            parse_file(&aeon.join("engine/coords.emp")),
         ],
         aeon.join("engine/objects"),
         "entity_window",

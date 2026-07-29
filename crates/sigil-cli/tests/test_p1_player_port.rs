@@ -104,36 +104,11 @@ fn as_constant_equs() -> Vec<Section> {
     pairs.push(("ANIM_GETUP", "10"));
     pairs.push(("ANIM_RUN_THRESHOLD", "$600"));
     pairs.push(("SFXID_SKID", "$36"));
-    // engine/constants.asm player-physics block (row-1 class; player 1st consumer)
-    pairs.push(("PHYS_ACCEL", "$C"));
-    pairs.push(("PHYS_DECEL", "$80"));
-    pairs.push(("PHYS_FRICTION", "$C"));
-    pairs.push(("PHYS_TOP_SPEED", "$600"));
-    pairs.push(("PHYS_GRAVITY", "$38"));
-    pairs.push(("PHYS_JUMP_FORCE", "$680"));
-    pairs.push(("PHYS_AIR_ACCEL", "$18"));
-    pairs.push(("PHYS_JUMP_RELEASE_CAP", "-$400"));
-    pairs.push(("PHYS_SKID_MIN", "$400"));
-    pairs.push(("PHYS_JUMP_BUFFER", "2"));
-    pairs.push(("PHYS_FALL_CAP", "$1000"));
-    pairs.push(("PLAYER_X_RADIUS", "9"));
-    pairs.push(("PLAYER_Y_RADIUS", "19"));
-    pairs.push(("BALL_X_RADIUS", "7"));
-    pairs.push(("BALL_Y_RADIUS", "14"));
-    pairs.push(("CURL_Y_SHIFT", "5"));
-    pairs.push(("ST_XFLIP", "1"));
-    pairs.push(("ST_ROLLING", "4"));
-    pairs.push(("ST_PUSHING", "6"));
-    pairs.push(("COLLISION_NONE", "0"));
-    pairs.push(("EDGE_CLAMP", "0"));
-    pairs.push(("EDGE_WRAP_V", "1"));
-    pairs.push(("EDGE_KILL", "2"));
-    pairs.push(("BUTTON_A", "$40"));
-    pairs.push(("BUTTON_C", "$20"));
-    pairs.push(("BUTTON_LEFT_BIT", "2"));
-    pairs.push(("BUTTON_RIGHT_BIT", "3"));
-    pairs.push(("BUTTON_UP_BIT", "0"));
-    pairs.push(("BUTTON_DOWN_BIT", "1"));
+    // The engine-truth PHYS_* / radii / ST_* / EDGE_* / COLLISION_NONE /
+    // BUTTON_A/C / BUTTON_*_BIT block moved into `engine_constant_equs()` at the
+    // ambient-hoist parcel (the engine.constants twin now owns the drift guards),
+    // so it is supplied by the `engine_constant_equs()` extend above — pushing it
+    // again here would double-define the equs.
     // the surviving-AS PlayerV struct equates (guard targets)
     pairs.push(("_pl_gsp", "$2E"));
     pairs.push(("_pl_state", "$30"));

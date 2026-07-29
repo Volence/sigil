@@ -118,33 +118,12 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("SFXID_DASH", "$B6"));
     pairs.push(("SFXID_ROLL", "$3C"));
     pairs.push(("SFXID_JUMP", "$62"));
-    // engine/constants.asm mirrors (player state block)
-    pairs.push(("ST_XFLIP", "1"));
-    pairs.push(("ST_ROLLING", "4"));
-    pairs.push(("ST_PUSHING", "6"));
-    pairs.push(("PLAYER_Y_RADIUS", "19"));
-    pairs.push(("BALL_Y_RADIUS", "14"));
-    pairs.push(("CURL_Y_SHIFT", "5"));
-    pairs.push(("PUSH_RADIUS", "10"));
-    pairs.push(("PHYS_JUMP_HEADROOM", "6"));
-    pairs.push(("PHYS_GSP_CAP", "$1000"));
-    pairs.push(("PHYS_SLOPE_WALK", "$20"));
-    pairs.push(("PHYS_SLOPE_ROLL_DOWN", "$50"));
-    pairs.push(("PHYS_SLOPE_ROLL_UP", "$14"));
-    pairs.push(("PHYS_SLOPE_STAND_MIN", "$D"));
-    pairs.push(("PHYS_ROLL_DECEL", "$20"));
-    pairs.push(("PHYS_ROLL_START_MIN", "$100"));
-    pairs.push(("PHYS_UNROLL_MAX", "$80"));
-    pairs.push(("PHYS_KEEP_ROLL_MIN", "$400"));
-    pairs.push(("PHYS_SLIP_SPEED", "$280"));
-    pairs.push(("PHYS_SLIP_ANGLE", "$18"));
-    pairs.push(("PHYS_FALL_ANGLE", "$30"));
-    pairs.push(("PHYS_SLIP_NUDGE", "$80"));
-    pairs.push(("PHYS_MOVE_LOCK_TIME", "30"));
-    pairs.push(("PHYS_FALL_CAP", "$1000"));
-    // (BUTTON_LEFT / BUTTON_RIGHT come from engine_constant_equs)
-    pairs.push(("BUTTON_A", "$40"));
-    pairs.push(("BUTTON_C", "$20"));
+    // The engine-truth ST_* / radii / PHYS_* / BUTTON_A/C block moved into
+    // `engine_constant_equs()` at the ambient-hoist parcel (the engine.constants
+    // twin now owns the drift guards), supplied by the `engine_constant_equs()`
+    // extend above — re-pushing here would double-define the equs. Only the
+    // game-truth BUTTON_JUMP_MASK + PPHYS_* (player_common.asm) stay below,
+    // matching the file-local mirrors those state files keep.
     pairs.push(("BUTTON_JUMP_MASK", "$60"));
     // physics-table field offsets (a4-relative)
     pairs.push(("PPHYS_ACCEL", "0"));
