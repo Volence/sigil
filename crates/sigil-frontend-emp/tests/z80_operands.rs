@@ -14,7 +14,7 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Module, SymbolTable};
+use sigil_ir::{Expr, Fixup, FixupKind, Fragment, Module, SymbolTable};
 use sigil_span::{Diagnostic, Level};
 
 /// Parse + lower `src` for the 68k default (a Z80 section opts in explicitly),
@@ -26,6 +26,23 @@ fn lower(src: &str) -> (Module, Vec<Diagnostic>) {
         &file,
         &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
     )
+}
+
+/// Every fixup across a named section's data fragments.
+fn fixups_of(module: &Module, name: &str) -> Vec<Fixup> {
+    module
+        .sections
+        .iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no section `{name}`"))
+        .fragments
+        .iter()
+        .filter_map(|f| match f {
+            Fragment::Data(d) => Some(d.fixups.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
 }
 
 /// The linked bytes of a named section.
@@ -128,4 +145,72 @@ fn ld_bc_imm16_comptime() {
     // pair ← comptime imm16 ($1234): 01 34 12 (little-endian). Proves the
     // form-directed imm8-vs-imm16 split (a pair destination forces imm16).
     assert_eq!(z80_body("ld bc, $1234"), vec![0x01, 0x34, 0x12, 0xC9]);
+}
+
+// ---- item 3: symbolic imm16 → 2-byte LE hole + Value16Le fixup (§4) ---------
+
+/// `ld hl, Target` with a label operand cannot fold at eval — it defers to link
+/// as a 2-byte little-endian hole. FRAGMENT level: exactly one `Value16Le`
+/// fixup (byte width 2) targeting the bare symbol `Target`, with the two
+/// immediate bytes reserved as zero.
+#[test]
+fn symbolic_ld_hl_defers_value16le_fixup() {
+    let src = "module m\n\
+               section code (cpu: z80, vma: $0) {\n\
+                 proc P() {\n\
+                   ld hl, Target\n\
+                   ret\n\
+                 }\n\
+               }\n\
+               section tgt (cpu: z80, vma: $1234) {\n\
+                 data Target: u8 = $00\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    let fixups = fixups_of(&module, "code");
+    assert_eq!(fixups.len(), 1, "one symbolic fixup, got: {fixups:?}");
+    assert_eq!(fixups[0].kind, FixupKind::Value16Le);
+    assert_eq!(fixups[0].kind.byte_width(), 2);
+    assert_eq!(fixups[0].target, Expr::Sym("Target".into()));
+    assert_eq!(fixups[0].offset, 1, "the imm hole is the last 2 of the 3-byte `21 nn nn`");
+}
+
+/// LINKED level: `Target` resolves to VMA $1234; the `ld hl,nn` immediate is
+/// written little-endian (`34 12`) — the whole `code` section is `21 34 12 C9`.
+#[test]
+fn symbolic_ld_hl_links_little_endian() {
+    let src = "module m\n\
+               section code (cpu: z80, vma: $0) {\n\
+                 proc P() {\n\
+                   ld hl, Target\n\
+                   ret\n\
+                 }\n\
+               }\n\
+               section tgt (cpu: z80, vma: $1234) {\n\
+                 data Target: u8 = $00\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "code"), vec![0x21, 0x34, 0x12, 0xC9]);
+}
+
+/// `jp Label` also defers its 16-bit target through the same `Value16Le` path
+/// (the immediate is the last 2 bytes of `C3 nn nn`).
+#[test]
+fn symbolic_jp_defers_and_links() {
+    let src = "module m\n\
+               section code (cpu: z80, vma: $0) {\n\
+                 proc P() {\n\
+                   jp Target\n\
+                 }\n\
+               }\n\
+               section tgt (cpu: z80, vma: $ABCD) {\n\
+                 data Target: u8 = $00\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    let fixups = fixups_of(&module, "code");
+    assert_eq!(fixups.len(), 1);
+    assert_eq!(fixups[0].kind, FixupKind::Value16Le);
+    assert_eq!(section_bytes(&module, "code"), vec![0xC3, 0xCD, 0xAB]);
 }
