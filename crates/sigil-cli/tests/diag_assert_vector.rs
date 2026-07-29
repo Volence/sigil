@@ -331,3 +331,107 @@ fn negative_fstring_param_below_0x80_rejected() {
         "param byte < $80 must be rejected: {msg}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// t25 — `raise_exception` (the exception-vector `__ErrorMessage` counterpart)
+// and the options form. The AS reference is the REAL `__ErrorMessage` macro
+// from debugger.asm (opts as the literal `_eh_address_error` / `0`, since the
+// `_eh_default` equate lives in error_handler.asm, not debugger.asm; here
+// `_eh_default` is 0 by config so `_eh_default|_eh_address_error` ≡
+// `_eh_address_error`). `raise_exception` is unconditional (like `raise_error`),
+// so lowered at DEBUG=0.
+// ---------------------------------------------------------------------------
+
+/// P1 — the parity probe (t25 step-0). A bare opts=0 `raise_exception` byte-
+/// matches an opts=0 `__ErrorMessage` exception stub: same `jsr (handler).l` +
+/// FSTRING message + `_eh_return`-only flag + `jmp (pages).l`, with NO `pea`/
+/// `move.w sr` frame (the CPU-vectored handler shape). This is the probe the
+/// brief demanded; it passes for `raise_exception` (and would FAIL for a bare
+/// `raise_error` — see `raise_error_frame_differs_from_exception_stub`).
+#[test]
+fn raise_exception_opts0_matches_default_stub() {
+    assert_vector(
+        "raise_exception opts0 (IllegalInstr)",
+        "        __ErrorMessage  \"ILLEGAL INSTRUCTION\", 0",
+        "        raise_exception \"ILLEGAL INSTRUCTION\"",
+        0,
+    );
+}
+
+/// Demanded feature (site 1/2): `raise_exception "BUS ERROR", address_error`
+/// byte-matches `__ErrorMessage "BUS ERROR", _eh_address_error` — the
+/// even-parity `$A1,$00` exit-flag path (opts $01 | `_eh_return` $20 | align $80).
+#[test]
+fn raise_exception_address_error_matches_bus_error_stub() {
+    assert_vector(
+        "raise_exception address_error (BusError)",
+        "        __ErrorMessage  \"BUS ERROR\", _eh_address_error",
+        "        raise_exception \"BUS ERROR\", address_error",
+        0,
+    );
+}
+
+/// Demanded feature (site 2/2): `raise_exception "ADDRESS ERROR", address_error`.
+#[test]
+fn raise_exception_address_error_matches_address_error_stub() {
+    assert_vector(
+        "raise_exception address_error (AddressError)",
+        "        __ErrorMessage  \"ADDRESS ERROR\", _eh_address_error",
+        "        raise_exception \"ADDRESS ERROR\", address_error",
+        0,
+    );
+}
+
+/// THE t25 FINDING, made executable: a DELIBERATE `raise_error` does NOT match
+/// the exception stub — it is exactly 6 bytes longer (the `pea *(pc)` +
+/// `move.w sr,-(sp)` frame simulation the CPU-vectored `__ErrorMessage` must
+/// omit). Positive control: the SAME message through `raise_exception` DOES match
+/// (the accept path is real), so this `assert_ne` cannot be trivially true.
+#[test]
+fn raise_error_frame_differs_from_exception_stub() {
+    let dbg = debugger_asm_path();
+    if !dbg.exists() {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debugger.asm missing at {}", dbg.display());
+        }
+        eprintln!("skip: debugger.asm not at {} (set AEON_DIR)", dbg.display());
+        return;
+    }
+    let stub = as_reference("        __ErrorMessage  \"ILLEGAL INSTRUCTION\", 0");
+    let deliberate = emp_candidate("        raise_error \"ILLEGAL INSTRUCTION\"", 0);
+    let exception = emp_candidate("        raise_exception \"ILLEGAL INSTRUCTION\"", 0);
+
+    // Positive control: the exception form matches the stub (accept path real).
+    assert_eq!(exception, stub, "positive control: raise_exception must match the stub");
+    // The finding: the deliberate form does NOT — it carries the 6-byte frame.
+    assert_ne!(deliberate, stub, "raise_error carries the frame the stub omits");
+    assert_eq!(
+        deliberate.len(),
+        stub.len() + 6,
+        "the difference is exactly the pea(4) + move.w sr(2) frame prefix"
+    );
+    // And the frame bytes are at the front: pea *(pc) = 487A FFFE, move.w sr = 40E7.
+    assert_eq!(&deliberate[0..6], &[0x48, 0x7A, 0xFF, 0xFE, 0x40, 0xE7]);
+}
+
+/// An unknown flag after the comma is rejected, listing the accepted set.
+#[test]
+fn negative_unknown_error_flag_rejected() {
+    let msg = diag_messages("        raise_exception \"boom\", show_sr_usp");
+    assert!(
+        msg.to_lowercase().contains("flag") && msg.contains("show_sr_usp") && msg.contains("address_error"),
+        "unknown flag must be rejected listing the set: {msg}"
+    );
+}
+
+/// A `consoleprogram`-shape second arg (a bare program label, NOT a known flag)
+/// keeps the out-of-scope steering error — the rejection stays for the genuine
+/// two-argument console form.
+#[test]
+fn negative_raise_exception_consoleprogram_rejected() {
+    let msg = diag_messages("        raise_exception \"boom\", MyConsoleProgram");
+    assert!(
+        msg.to_lowercase().contains("consoleprogram") || msg.to_lowercase().contains("out of scope"),
+        "a non-flag second arg must be rejected as the console form: {msg}"
+    );
+}

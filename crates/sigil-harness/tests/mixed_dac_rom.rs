@@ -120,6 +120,7 @@ use sigil_harness::{
     assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side,
     assemble_mixed_tranche22_as_side, assemble_mixed_tranche23_as_side,
     assemble_mixed_tranche24_as_side,
+    assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
 use sigil_ir::backend::Cpu;
@@ -4300,4 +4301,97 @@ fn mixed_tranche24_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche24_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche24 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 25 — error_handler.emp inside the full ROM. `SIGIL_EMP_ERROR_HANDLER`
+// gates error_handler.asm out of engine.inc; the region [BusError, EndOfRom)
+// (0x10B0 both shapes: stub table 0x15A + blob 0xF56) comes from the .emp. The
+// MDDBG__ equ table (mddbg_symbols.asm) stays AS-side and derives off the numeric
+// `ErrorHandler` equ the gate-ON arm defines, so debugger.asm's assert/RaiseError
+// macro consumers resolve without a link-time-equ-off-external-base capability.
+// The 12 vector labels flip to .emp ownership (vectors.asm dc.l -> .emp exports).
+// ---------------------------------------------------------------------------
+
+fn build_mixed_error_handler_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_error_handler_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    let dbg = i128::from(debug);
+    let base = if debug { pins::ERROR_HANDLER.debug_base } else { pins::ERROR_HANDLER.plain_base };
+    let len = if debug { pins::ERROR_HANDLER.debug_len } else { pins::ERROR_HANDLER.plain_len };
+    // error_handler.emp has no `use` imports — empty ambient.
+    let (eh_sections, eh_asserts) = t21_lower_and_place(
+        aeon,
+        "engine/debug/error_handler.emp",
+        vec![],
+        "error_handler",
+        base,
+        len,
+        vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(eh_sections);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("error_handler mixed resolve_layout failed: {d:?}"));
+
+    // The .emp stub label VMAs (the flip: vectors.asm's dc.l resolves to these).
+    let emp_label = |want: &str| -> u32 {
+        for sec in &resolved {
+            if sec.name != "error_handler" {
+                continue;
+            }
+            for l in &sec.labels {
+                if l.name == want {
+                    return sec.vma_origin().wrapping_add(l.offset);
+                }
+            }
+        }
+        panic!("error_handler.emp must export {want}");
+    };
+    let bus_error = emp_label("BusError");
+    assert_eq!(bus_error, base, "BusError must land at the region base ({base:#x})");
+
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("error_handler mixed link failed: {d:?}"));
+
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &eh_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "error_handler mixed drift guards: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_error_handler_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_error_handler_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "error_handler mixed");
+}
+
+#[test]
+fn mixed_error_handler_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_error_handler_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "error_handler mixed debug");
 }

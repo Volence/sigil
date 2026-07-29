@@ -9,9 +9,8 @@
 //!     `hex`/`dec`/`bin`/`sym`/`symdisp`/`str` and the width equates
 //!     `byte`/`word`/`long`) and lines 96-107 (console control flags:
 //!     `endl`/`cr`/`pal0..3` plain, `setw`/`setoff`/`setpat`/`setx`
-//!     parametrized). (The task plan cited "85-130"; the equates actually
-//!     span 53-107 in this file — the constants below are copied from those
-//!     lines, not the plan's approximate range.)
+//!     parametrized). The equates span debugger.asm lines 53-107; the constants
+//!     below are copied from those lines.
 //!   * `__FSTRING_GenerateDecodedString` (debugger.asm lines 712-779) — the
 //!     descriptor byte is `val(param) | width_bits` where width_bits is
 //!     0/1/3 for `.b`/`.w`/`.l`, and the run ends with a `$00` terminator.
@@ -25,21 +24,13 @@
 //!
 //! This module reads no state and touches no `Evaluator`; it is a
 //! self-contained encoder, unit-tested directly (matching `s4lz.rs`'s
-//! split between arg-shape checking and a pure core).
-//!
-//! Task 1 of the diagnostics-construct build ships this encoder as the
-//! ground-truth foundation; the parser/desugar/lowering that CONSUME its
-//! `pub` API land in later tasks. Until then those public items are exercised
-//! only by the `#[cfg(test)]` vectors below, so each carries a per-item
-//! `#[allow(dead_code)]`. The attribute is deliberately NOT module-scoped:
-//! private helpers (`encode_token`/`resolve_param`/`parse_num`) stay
-//! dead-code-checked, so a genuinely-orphaned helper still warns once the
-//! encoder is wired in.
+//! split between arg-shape checking and a pure core). Its `pub` API is consumed
+//! by the parser (`asm_raise_error`'s flag vocabulary) and `eval/asm.rs`
+//! (`encode_fstring`/`arg_push`/`build_{assert,raise_error,raise_exception}_expansion`).
 
 /// Argument display width for an FSTRING `%<.b|.w|.l ...>` operand and for
 /// `assert.<w>`. The `width_bits` (0/1/3) are OR'd into the param base to
 /// form the descriptor byte (debugger.asm lines 87-89, 750-756).
-#[allow(dead_code)] // consumed by the parser/desugar in later diag tasks
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Width {
     B,
@@ -104,7 +95,6 @@ const PARAM_FLAGS: &[(&str, u8)] = &[("signed", 8), ("split", 8), ("forced", 4),
 /// One `%<.b|.w|.l operand [param]>` argument recorded in string order, so the
 /// downstream push-code generator can emit the stack pushes (in reverse token
 /// order, per `__FSTRING_GenerateArgumentsCode`).
-#[allow(dead_code)] // consumed by the push-code generator in later diag tasks
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FStringArg {
     pub width: Width,
@@ -119,7 +109,6 @@ pub struct FStringArg {
 /// The encoded inline-message byte run for a format string, plus the ordered
 /// argument list. `bytes` includes the trailing `$00` terminator but NOT the
 /// exit-flag byte (that is offset-parity-dependent — see [`exit_flag_bytes`]).
-#[allow(dead_code)] // returned to the lowering stage in later diag tasks
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncodedFString {
     pub bytes: Vec<u8>,
@@ -179,7 +168,6 @@ fn resolve_param(param: &str) -> Result<u8, String> {
 ///     `param` defaults to `hex`.
 ///
 /// A trailing `$00` terminator is always appended.
-#[allow(dead_code)] // driven by `raise_error` lowering in later diag tasks
 pub fn encode_fstring(s: &str) -> Result<EncodedFString, String> {
     let mut bytes = Vec::new();
     let mut args = Vec::new();
@@ -307,7 +295,6 @@ fn parse_num(s: &str) -> Option<u64> {
 /// (`dest == None`) the `$E8 ",<dest>"` segment is omitted. The run includes
 /// the `%<.<w> src>` descriptor byte (`hex | width_bits`) and the `$00`
 /// terminator, but NOT the exit-flag byte (see [`exit_flag_bytes`]).
-#[allow(dead_code)] // driven by `assert` lowering in later diag tasks
 pub fn assert_message(w: Width, src: &str, cond: &str, dest: Option<&str>) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(b"Assertion failed:");
@@ -335,25 +322,71 @@ pub fn assert_message(w: Width, src: &str, cond: &str, dest: Option<&str>) -> Ve
     out
 }
 
+/// `_eh_return` — the exit-flag base every error message carries so the handler
+/// returns to its page controller (debugger.asm line 120).
+pub const EH_RETURN: u8 = 0x20;
+/// `_eh_align_offset` — OR'd into the flag byte (and a `$00` pad emitted) when
+/// the flag lands at an even offset, so the handler skips it to reach the
+/// word-aligned trailer (debugger.asm line 122).
+const EH_ALIGN: u8 = 0x80;
+
+/// The error-handler per-MESSAGE flag names the `raise_error` / `raise_exception`
+/// options form accepts → their `opts` bits (debugger.asm lines 114-116).
+///
+/// DELIBERATELY only `_eh_address_error`: the other two donor flags are not
+/// meaningful per-site in this engine. `_eh_show_sr_usp` ($02) is the GLOBAL
+/// config default (`_eh_default`, driven by `DEBUGGER__SHOW_SR_USP`), not a
+/// per-message choice; `_eh_hide_caller` ($04) is "for SGDK and C/C++ projects"
+/// (debugger.asm:116). `address_error` IS per-site ("this vector is a bus/address
+/// error — show the Address field") and is the only one with corpus demand
+/// (BusError/AddressError). The set grows if a real per-site flag demand appears.
+pub const ERROR_FLAGS: &[(&str, u8)] = &[("address_error", 0x01)];
+
+/// ALL donor per-message flag NAMES (debugger.asm:114-116), for CLASSIFYING the
+/// options form vs the out-of-scope `consoleprogram` form. A trailing arg that
+/// names any of these is the options form; anything else (a program label) is
+/// the console form. Only `address_error` maps to a live opts bit
+/// ([`ERROR_FLAGS`]); the other two are recognized here ONLY so a caller reaching
+/// for them gets a targeted "not exposed per-site" error instead of the
+/// misleading console rejection.
+pub const KNOWN_FLAG_NAMES: &[&str] = &["address_error", "show_sr_usp", "hide_caller"];
+
+/// Whether `name` is a donor per-message flag name (for options-vs-console
+/// classification — see [`KNOWN_FLAG_NAMES`]).
+pub fn is_known_flag_name(name: &str) -> bool {
+    KNOWN_FLAG_NAMES.contains(&name)
+}
+
+/// Resolve an options-form flag NAME to its `opts` bit, or `None` if it is not an
+/// EXPOSED per-message flag (the caller emits the steering error listing the
+/// accepted set). `None` covers both a total unknown and a known-but-unexposed
+/// donor flag (`show_sr_usp`/`hide_caller`).
+pub fn resolve_error_flag(name: &str) -> Option<u8> {
+    ERROR_FLAGS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
+}
+
 /// The error-handler exit-flag byte(s) following the message run (§4.5).
 ///
-/// `_eh_return` is `$20` (debugger.asm line 120). The macro's own align rule
+/// The flag byte is `opts | _eh_return` (debugger.asm's `(opts)+_eh_return`,
+/// line 533 — `opts` uses the low bits $01/$02/$04 and `_eh_return` is $20, so
+/// `+` and `|` coincide). The macro's own align rule
 /// (`.__align_flag: set ((((*)&1)!1)*_eh_align_offset)`, debugger.asm line 264):
 /// `(*)` is the flag byte's OWN address and AS's logical-`!` negates its low
-/// bit, so the `_eh_align_offset` bit (`$80`, line 122) is OR'd in — and one
-/// `$00` pad emitted so the following `jmp` is word-aligned (`!align 2`) —
-/// exactly when the flag byte sits at an EVEN address; at an ODD address it
-/// emits the bare `$20`.
+/// bit, so the `_eh_align_offset` bit (`$80`) is OR'd in — and one `$00` pad
+/// emitted so the following `jmp` is word-aligned (`!align 2`) — exactly when the
+/// flag byte sits at an EVEN address; at an ODD address it emits the bare flag.
 ///
 /// `pad` = "the flag byte lands at an even offset → emit the aligned form".
-/// (rings: message len 50, flag at even offset → `$A0, $00`; core `.l`: flag at
-/// odd offset → bare `$20`, no pad — both reproduced by the byte-equality tests.)
-#[allow(dead_code)] // emitted by the lowering stage in later diag tasks
-pub fn exit_flag_bytes(pad: bool) -> Vec<u8> {
+/// `opts` = the error-handler flag bits (0 for `assert` / bare `raise_error`;
+/// `$01` for the `address_error` exception stubs). (rings: message len 50, flag
+/// at even offset, opts 0 → `$A0, $00`; core `.l`: flag at odd offset, opts 0 →
+/// bare `$20`; BusError: even offset, opts $01 → `$A1, $00`.)
+pub fn exit_flag_bytes(pad: bool, opts: u8) -> Vec<u8> {
+    let flag = EH_RETURN | opts;
     if pad {
-        vec![0x20 | 0x80, 0x00]
+        vec![flag | EH_ALIGN, 0x00]
     } else {
-        vec![0x20]
+        vec![flag]
     }
 }
 
@@ -491,26 +524,50 @@ fn label(name: &str, span: Span) -> AsmStmt {
 const HANDLER: &str = "MDDBG__ErrorHandler";
 const PAGES: &str = "MDDBG__ErrorHandler_PagesController";
 
-/// The RRAISE tail (spec §4.2 steps 4-10 / §4.3): `pea self(pc)`, SR push, the
-/// argument pushes, `jsr (handler).l`, the inline message + exit-flag data, and
-/// `jmp (pages).l`. Shared by `assert` (auto-message) and `raise_error` (user
-/// fstring). `raise_label` is the minted self-address label; `message` is the
-/// full encoded run INCLUDING its `$00` terminator (from `assert_message` or
-/// `encode_fstring`); `arg_pushes` are the already-ordered stack pushes.
+/// The RRAISE tail (spec §4.2 steps 4-10 / §4.3): optionally `pea self(pc)` + SR
+/// push, then the argument pushes, `jsr (handler).l`, the inline message +
+/// exit-flag data, and `jmp (pages).l`. Shared by `assert` (auto-message),
+/// `raise_error` (deliberate raise, user fstring) and `raise_exception` (the
+/// exception-vector `__ErrorMessage` counterpart).
+///
+/// `frame` selects the two contexts (t25 finding): a DELIBERATE raise from normal
+/// code (`assert`/`raise_error`, `frame = true`) must SIMULATE the CPU exception
+/// frame — `pea self(pc)` (return address ≈ crash PC) + `move.w sr,-(sp)` — so
+/// the handler sees the same [PC][SR][msgptr] stack an exception would build.
+/// An EXCEPTION VECTOR handler (`raise_exception`, `frame = false`) is entered by
+/// the CPU with SR+PC ALREADY pushed by hardware, so it must NOT push them — it
+/// starts straight at the arg pushes / `jsr`. This 6-byte prefix is the entire
+/// difference between `raise_error` and `__ErrorMessage`. `frame = false` also
+/// emits no self-label (there is no `pea self(pc)` to reference).
+///
+/// `opts` is the error-handler flag bits folded into the exit-flag byte (0 for
+/// `assert`/bare raises; `$01` for the `address_error` stubs). `raise_label` is
+/// the minted self-address label (used only when `frame`); `message` is the full
+/// encoded run INCLUDING its `$00` terminator; `arg_pushes` are the already-ordered
+/// stack pushes.
 ///
 /// The parity insight (§4.5): every 68k instruction preceding the data is
 /// word-sized (even), so the exit-flag's offset parity from the expansion start
-/// equals `message.len() % 2`. We compute `odd_offset` from that and let
-/// `exit_flag_bytes` add the `$80` align bit + `$00` pad when the flag would
-/// land odd. (Asserted in `debug_assert!` below + a unit test, so a future
+/// equals `message.len() % 2` — INDEPENDENT of the (always-even) prefix length,
+/// so `frame` does not change it. `exit_flag_bytes` adds the `$80` align bit +
+/// `$00` pad when the flag would land even. (Asserted by unit tests, so a future
 /// odd-length synthesized instruction trips the identity.)
-fn raise_tail(raise_label: &str, message: &[u8], arg_pushes: Vec<AsmStmt>, span: Span) -> Vec<AsmStmt> {
+fn raise_tail(
+    raise_label: &str,
+    message: &[u8],
+    arg_pushes: Vec<AsmStmt>,
+    opts: u8,
+    frame: bool,
+    span: Span,
+) -> Vec<AsmStmt> {
     let mut out = Vec::new();
-    // 4. pea self(pc) — the handler reads the message at the jsr return addr.
-    out.push(label(raise_label, span));
-    out.push(instr("pea", None, vec![pcrel(raise_label, span)], span));
-    // 5. move.w sr, -(sp) — SR for the handler display.
-    out.push(instr("move", Some("w"), vec![path_op("sr", span), predec_sp(span)], span));
+    if frame {
+        // 4. pea self(pc) — the handler reads the message at the jsr return addr.
+        out.push(label(raise_label, span));
+        out.push(instr("pea", None, vec![pcrel(raise_label, span)], span));
+        // 5. move.w sr, -(sp) — SR for the handler display.
+        out.push(instr("move", Some("w"), vec![path_op("sr", span), predec_sp(span)], span));
+    }
     // 6. argument pushes (already built + ordered by the caller).
     out.extend(arg_pushes);
     // 7. jsr (handler).l
@@ -527,8 +584,11 @@ fn raise_tail(raise_label: &str, message: &[u8], arg_pushes: Vec<AsmStmt>, span:
     // the handler skips the byte to reach the word-aligned `jmp`.
     //
     // The deterministic insight: every statement emitted BEFORE the message
-    // (steps 1-7 for assert, 4-7 for raise_error) is a 68k instruction, and
-    // every 68k instruction is word-sized (even bytes). So the message run
+    // (assert: SR-save + compare + branch + tail-prefix; raise_error: pea + SR
+    // + arg pushes; raise_exception: arg pushes + jsr only — `frame = false`
+    // drops the pea/SR but the jsr and every arg push stay word-sized) is a 68k
+    // instruction, and every 68k instruction is word-sized (even bytes). So the
+    // message run
     // STARTS at an even offset, and the flag byte's offset parity equals
     // `message.len() % 2`: an EVEN-length message → flag at an even offset →
     // pad; an odd-length message → flag at an odd offset → bare `$20`.
@@ -537,8 +597,10 @@ fn raise_tail(raise_label: &str, message: &[u8], arg_pushes: Vec<AsmStmt>, span:
     // synthesized instruction before the message would shift this and trip them.)
     let flag_at_even_offset = message.len().is_multiple_of(2);
     // `exit_flag_bytes`'s `pad` param IS "emit the aligned/padded form" — pass
-    // the even-offset case (the align bit + `$00` pad).
-    out.push(dc_b(&exit_flag_bytes(flag_at_even_offset), span));
+    // the even-offset case (the align bit + `$00` pad); `opts` folds the
+    // error-handler flag bits into the flag byte (0 unless the site is an
+    // `address_error` stub).
+    out.push(dc_b(&exit_flag_bytes(flag_at_even_offset, opts), span));
     // 10. jmp (pages).l
     out.push(instr("jmp", None, vec![abs_l(PAGES, span)], span));
     out
@@ -552,7 +614,6 @@ fn raise_tail(raise_label: &str, message: &[u8], arg_pushes: Vec<AsmStmt>, span:
 /// order by the caller). The operand class is validated upstream (a register
 /// for assert; register-or-immediate for raise_error, via
 /// [`fstring_arg_operand`]).
-#[allow(dead_code)] // driven by the diag arms in eval/asm.rs
 pub fn arg_push(w: Width, src: Operand, span: Span) -> Vec<AsmStmt> {
     match w {
         Width::B => vec![
@@ -573,7 +634,6 @@ const CMP: &str = "cmp";
 /// `Option<(Operand, spelling)>`), so the operand and its verbatim source
 /// spelling never drift apart. `dest = Some` is the cmp form (`cmp.<w> dest,
 /// src`), `None` the tst form (`tst.<w> src`).
-#[allow(dead_code)] // constructed by the `Assert` arm in eval/asm.rs
 #[derive(Clone, Debug)]
 pub struct AssertParts {
     /// The operation width (`.b`/`.w`/`.l`).
@@ -600,7 +660,6 @@ pub struct AssertParts {
 /// AST) so their exact addressing shape rides through unchanged; `p.src` is also
 /// pushed for the handler to display. The message bytes come from
 /// [`assert_message`] over the source spellings.
-#[allow(dead_code)] // driven by the `Assert` arm in eval/asm.rs
 pub fn build_assert_expansion(n: u32, scope: &str, p: &AssertParts, span: Span) -> Vec<AsmStmt> {
     let skip = format!("$diag{n}{scope}$skip");
     let raise = format!("$diag{n}{scope}$raise");
@@ -623,11 +682,12 @@ pub fn build_assert_expansion(n: u32, scope: &str, p: &AssertParts, span: Span) 
     // 3. b<cond>.w .skip — PINNED .w (generator-owned structural width, §4.2 #3).
     out.push(instr(&format!("b{}", p.cond), Some("w"), vec![path_op(&skip, span)], span));
 
-    // 4-10. the RaiseError tail (auto-message).
+    // 4-10. the RaiseError tail (auto-message; deliberate raise → frame push,
+    // opts 0 — assert's exit flag is the bare `_eh_return`).
     let dest_spelling = p.dest.as_ref().map(|(_, s)| s.as_str());
     let message = assert_message(p.width, &p.src_spelling, &p.cond, dest_spelling);
     let arg_pushes = arg_push(p.width, p.src.clone(), span);
-    out.extend(raise_tail(&raise, &message, arg_pushes, span));
+    out.extend(raise_tail(&raise, &message, arg_pushes, 0, /*frame=*/ true, span));
 
     // 11. .skip: then move.w (sp)+, sr — CCR restore.
     out.push(label(&skip, span));
@@ -635,21 +695,42 @@ pub fn build_assert_expansion(n: u32, scope: &str, p: &AssertParts, span: Span) 
     out
 }
 
-/// Build the `raise_error` expansion (§4.3): steps 4-10 only — NO DEBUG gate,
-/// NO cmp/branch/CCR-compare wrapper. `n` mints the unique `.raise` self-label;
-/// `message` is the encoded user fstring (incl. `$00`); `arg_pushes` are the
-/// per-token pushes the caller already built in REVERSE token order
-/// (matching `__FSTRING_GenerateArgumentsCode`).
-#[allow(dead_code)] // driven by the `RaiseError` arm in eval/asm.rs
+/// Build the `raise_error` expansion (§4.3): the DELIBERATE-raise tail (steps
+/// 4-10) — NO DEBUG gate, NO cmp/branch/CCR-compare wrapper, but WITH the frame
+/// simulation (`pea self(pc)` + `move.w sr`). `n` mints the unique `.raise`
+/// self-label; `message` is the encoded user fstring (incl. `$00`); `arg_pushes`
+/// are the per-token pushes the caller already built in REVERSE token order
+/// (matching `__FSTRING_GenerateArgumentsCode`); `opts` folds any options-form
+/// flag bits into the exit-flag byte (0 unless a flag was given).
 pub fn build_raise_error_expansion(
     n: u32,
     scope: &str,
     message: &[u8],
     arg_pushes: Vec<AsmStmt>,
+    opts: u8,
     span: Span,
 ) -> Vec<AsmStmt> {
     let raise = format!("$diag{n}{scope}$raise");
-    raise_tail(&raise, message, arg_pushes, span)
+    raise_tail(&raise, message, arg_pushes, opts, /*frame=*/ true, span)
+}
+
+/// Build the `raise_exception` expansion (t25): the EXCEPTION-VECTOR
+/// `__ErrorMessage` counterpart — the raise tail with NO frame push (the CPU
+/// pushed SR+PC when it vectored here) and NO self-label. Just the arg pushes,
+/// `jsr (handler).l`, the inline message + exit-flag byte, and `jmp (pages).l`.
+/// `message` is the encoded fstring (incl. `$00`); `arg_pushes` the reverse-order
+/// per-token pushes (empty for the fixed-string vectors); `opts` the flag bits
+/// (`$01` for the `address_error` bus/address stubs). No `n`/`scope`: with no
+/// `pea self(pc)` there is no minted label that could collide.
+pub fn build_raise_exception_expansion(
+    message: &[u8],
+    arg_pushes: Vec<AsmStmt>,
+    opts: u8,
+    span: Span,
+) -> Vec<AsmStmt> {
+    // `raise_label` is unused when `frame = false` (no `pea self(pc)`); pass a
+    // placeholder that is never emitted.
+    raise_tail("", message, arg_pushes, opts, /*frame=*/ false, span)
 }
 
 
@@ -657,7 +738,6 @@ pub fn build_raise_error_expansion(
 /// enforcing the §5 register-or-immediate limit. A leading `#` → an immediate
 /// whose expr is parsed from the remainder; a register name → a plain register
 /// operand; anything else → `None` (the caller emits the steering error).
-#[allow(dead_code)] // driven by the `RaiseError` arm in eval/asm.rs
 pub fn fstring_arg_operand(spelling: &str, span: Span) -> Option<Operand> {
     let s = spelling.trim();
     if let Some(imm) = s.strip_prefix('#') {
@@ -745,9 +825,27 @@ mod tests {
     #[test]
     fn exit_flag_parity_both_ways() {
         // pad=true (flag at EVEN offset) -> $20|$80 + $00 pad (rings shape);
-        // pad=false (flag at ODD offset) -> bare $20 (core `.l` shape).
-        assert_eq!(exit_flag_bytes(/*pad=*/ true), vec![0xA0, 0x00]);
-        assert_eq!(exit_flag_bytes(/*pad=*/ false), vec![0x20]);
+        // pad=false (flag at ODD offset) -> bare $20 (core `.l` shape). opts 0.
+        assert_eq!(exit_flag_bytes(/*pad=*/ true, 0), vec![0xA0, 0x00]);
+        assert_eq!(exit_flag_bytes(/*pad=*/ false, 0), vec![0x20]);
+    }
+
+    #[test]
+    fn exit_flag_opts_fold_address_error() {
+        // opts=$01 (address_error): flag base $20|$01 = $21. Even offset →
+        // $21|$80 = $A1 + $00 pad (the BusError/AddressError stub shape); odd
+        // offset → bare $21.
+        assert_eq!(exit_flag_bytes(/*pad=*/ true, 0x01), vec![0xA1, 0x00]);
+        assert_eq!(exit_flag_bytes(/*pad=*/ false, 0x01), vec![0x21]);
+    }
+
+    #[test]
+    fn error_flag_vocabulary_is_address_error_only() {
+        assert_eq!(resolve_error_flag("address_error"), Some(0x01));
+        // The two donor flags excluded on purpose (global-config / C-project).
+        assert_eq!(resolve_error_flag("show_sr_usp"), None);
+        assert_eq!(resolve_error_flag("hide_caller"), None);
+        assert_eq!(resolve_error_flag("bogus"), None);
     }
 
     #[test]
@@ -970,11 +1068,11 @@ mod tests {
         // rings message (len 50, even) → padded.
         let even = assert_message(Width::B, "d4", "eq", Some("#0"));
         assert!(even.len().is_multiple_of(2));
-        assert_eq!(exit_flag_bytes(even.len().is_multiple_of(2)), vec![0xA0, 0x00]);
+        assert_eq!(exit_flag_bytes(even.len().is_multiple_of(2), 0), vec![0xA0, 0x00]);
         // core `.l` message (odd) → bare $20.
         let odd = assert_message(Width::L, "a0", "hs", Some("#Object_RAM"));
         assert!(!odd.len().is_multiple_of(2));
-        assert_eq!(exit_flag_bytes(odd.len().is_multiple_of(2)), vec![0x20]);
+        assert_eq!(exit_flag_bytes(odd.len().is_multiple_of(2), 0), vec![0x20]);
     }
 
     /// The cmp-form assert desugar has the §4.2 statement shape in order: SR
@@ -1031,7 +1129,7 @@ mod tests {
     #[test]
     fn raise_error_expansion_is_bare_tail() {
         let enc = encode_fstring("boom%<endl>Got: %<.b d0>").unwrap();
-        let stmts = build_raise_error_expansion(3, "", &enc.bytes, vec![], sp());
+        let stmts = build_raise_error_expansion(3, "", &enc.bytes, vec![], 0, sp());
         // First stmt is the raise label; second is `pea self(pc)`.
         assert!(matches!(&stmts[0], AsmStmt::Label { name, .. } if name == "$diag3$raise"));
         let AsmStmt::Instr(pea) = &stmts[1] else { panic!() };
@@ -1045,6 +1143,42 @@ mod tests {
                 assert_ne!(m, "tst");
             }
         }
+    }
+
+    /// `raise_exception` desugar is the FRAME-LESS tail: it starts straight at
+    /// `jsr (handler).l` — NO `.raise` label, NO `pea self(pc)`, NO `move.w sr`
+    /// (the CPU vectored here with SR+PC already pushed). This is the entire
+    /// 6-byte difference from `raise_error` (t25 finding).
+    #[test]
+    fn raise_exception_expansion_omits_the_frame() {
+        let enc = encode_fstring("BUS ERROR").unwrap();
+        let stmts = build_raise_exception_expansion(&enc.bytes, vec![], 0x01, sp());
+        // No labels at all (no pea self to reference).
+        assert!(
+            !stmts.iter().any(|s| matches!(s, AsmStmt::Label { .. })),
+            "exception form mints no self-label"
+        );
+        // First stmt is `jsr` (no pea/move.w sr prefix).
+        let AsmStmt::Instr(first) = &stmts[0] else { panic!("first stmt is an instr") };
+        assert_eq!(first.mnemonic, vec![TextOrSplice::Text("jsr".into())]);
+        // No `pea` and no `move.w sr,-(sp)` anywhere.
+        for s in &stmts {
+            if let AsmStmt::Instr(i) = s {
+                let m = match &i.mnemonic[0] { TextOrSplice::Text(t) => t.as_str(), _ => "" };
+                assert_ne!(m, "pea", "exception form has no frame pea");
+            }
+        }
+        // The tail is jsr, dc.b message, dc.b flag ($A1,$00 for even+opts $01),
+        // jmp. Confirm the flag dc.b carries the address_error opts bit.
+        let dc_flag = stmts.iter().rev().nth(1).unwrap();
+        let AsmStmt::Instr(f) = dc_flag else { panic!("flag is a dc.b") };
+        assert_eq!(f.mnemonic, vec![TextOrSplice::Text("dc".into())]);
+        // "BUS ERROR"+$00 = 10 bytes (even) → flag $A1, pad $00.
+        let vals: Vec<i64> = f.operands.iter().map(|o| match o {
+            Operand::Plain { expr: Expr::Int(v, _), .. } => *v,
+            _ => panic!("dc.b int cell"),
+        }).collect();
+        assert_eq!(vals, vec![0xA1, 0x00], "even-offset address_error flag");
     }
 
     /// The FSTRING-arg operand builder enforces §5 (register or immediate only).

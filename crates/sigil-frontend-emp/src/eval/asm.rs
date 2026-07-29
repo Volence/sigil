@@ -385,8 +385,11 @@ impl Evaluator<'_> {
                 };
                 self.lower_assert(&parts, *span, scope, buf, env);
             }
-            AsmStmt::RaiseError { fstring, span } => {
-                self.lower_raise_error(fstring, *span, scope, buf, env);
+            AsmStmt::RaiseError { fstring, opts, span } => {
+                self.lower_raise_error(fstring, *opts, /*from_exception=*/ false, *span, scope, buf, env);
+            }
+            AsmStmt::RaiseException { fstring, opts, span } => {
+                self.lower_raise_error(fstring, *opts, /*from_exception=*/ true, *span, scope, buf, env);
             }
         }
     }
@@ -467,14 +470,20 @@ impl Evaluator<'_> {
         }
     }
 
-    /// Lower a `raise_error` (spec §4.3): NO DEBUG gate, NO cmp/branch/CCR
-    /// wrapper — just the steps 4-10 tail with the user's fstring. Arg pushes
-    /// are generated in REVERSE token order (matching
-    /// `__FSTRING_GenerateArgumentsCode`); each arg operand is limited to a
-    /// register or immediate (§5), else a steering error.
+    /// Lower a `raise_error` (spec §4.3) or `raise_exception` (t25): NO DEBUG
+    /// gate, NO cmp/branch/CCR wrapper — just the raise tail with the user's
+    /// fstring. `from_exception` selects the frame-omit (`raise_exception` = the
+    /// CPU-vectored `__ErrorMessage` shape, no `pea`/`move.w sr`); `opts` folds
+    /// the options-form flag bits into the exit-flag byte. Arg pushes are
+    /// generated in REVERSE token order (matching `__FSTRING_GenerateArgumentsCode`);
+    /// each arg operand is limited to a register or immediate (§5), else a
+    /// steering error.
+    #[allow(clippy::too_many_arguments)]
     fn lower_raise_error(
         &mut self,
         fstring: &str,
+        opts: u8,
+        from_exception: bool,
         span: Span,
         scope: &LabelScope,
         buf: &mut CodeBuf,
@@ -493,10 +502,11 @@ impl Evaluator<'_> {
         for arg in encoded.args.iter().rev() {
             let Some(operand) = crate::eval::diag::fstring_arg_operand(&arg.operand_spelling, span)
             else {
+                let kw = if from_exception { "raise_exception" } else { "raise_error" };
                 self.error(
                     span,
                     format!(
-                        "raise_error argument `{}` must be a register or immediate in v1 \
+                        "{kw} argument `{}` must be a register or immediate in v1 \
                          (§5) — a memory/EA operand arg is a recorded extension",
                         arg.operand_spelling
                     ),
@@ -505,16 +515,23 @@ impl Evaluator<'_> {
             };
             arg_pushes.extend(crate::eval::diag::arg_push(arg.width, operand, span));
         }
-        let n = self.asm_counter;
-        self.asm_counter += 1;
-        let diag_scope = self.diag_label_scope();
-        let stmts = crate::eval::diag::build_raise_error_expansion(
-            n,
-            &diag_scope,
-            &encoded.bytes,
-            arg_pushes,
-            span,
-        );
+        let stmts = if from_exception {
+            // The exception form mints no self-label (no `pea self(pc)`), so it
+            // needs no instantiation id.
+            crate::eval::diag::build_raise_exception_expansion(&encoded.bytes, arg_pushes, opts, span)
+        } else {
+            let n = self.asm_counter;
+            self.asm_counter += 1;
+            let diag_scope = self.diag_label_scope();
+            crate::eval::diag::build_raise_error_expansion(
+                n,
+                &diag_scope,
+                &encoded.bytes,
+                arg_pushes,
+                opts,
+                span,
+            )
+        };
         for stmt in &stmts {
             self.lower_asm_stmt(stmt, scope, buf, env);
         }
@@ -789,7 +806,14 @@ impl Evaluator<'_> {
                     return None;
                 }
             };
-            match self.eval_expr(expr, env) {
+            // Evaluate the element in LABEL context so a bareword/dotted proc or
+            // data name becomes a first-class `Value::Label` (a deferred link
+            // symbol) rather than an `unknown name` error — the same rule a
+            // pointer FIELD uses (`lower_ptr`, D-PP.3). This makes `dc.l <label>`
+            // (an absolute symbol pointer, e.g. a jump/vector table entry) work;
+            // existing name resolution (local → const → fn) still WINS, so a
+            // const named the same as a label keeps its comptime value.
+            match self.in_label_ctx(|this| this.eval_expr(expr, env)) {
                 Value::Int(n) => {
                     let bits = (width_bytes * 8) as u32;
                     let lo = -(1i128 << (bits - 1));
@@ -809,6 +833,28 @@ impl Evaluator<'_> {
                     });
                     total += width_bytes;
                 }
+                // A link-resolved symbol pointer: `dc.l Label` (or `.w`) emits a
+                // `Cell::SymRef` of the element width, resolved at link — the
+                // absolute-pointer form a vector/jump table needs. Mirrors
+                // `lower_ptr`'s `Cell::SymRef` (a `*u8` field), here in raw `dc`
+                // position rather than a typed `data` field. A REGISTER name is
+                // not a valid `dc` element (a register has no data reading) —
+                // keep it the loud `unknown name` error the corpus pins, not a
+                // silent SymRef.
+                Value::Label(name)
+                    if reg_from_name(&name).is_some()
+                        || matches!(name.as_str(), "sp" | "pc" | "sr" | "ccr") =>
+                {
+                    // A register-class word is not a valid `dc` element — keep it
+                    // the loud `unknown name` error (consistent with
+                    // `bare_symbol_seg`'s sr/ccr exclusion), not a silent SymRef.
+                    self.error(expr_span(expr), format!("unknown name `{name}`"));
+                    return None;
+                }
+                Value::Label(name) => {
+                    cells.push(Cell::SymRef { name, width: width_bytes as u8, windowed: false });
+                    total += width_bytes;
+                }
                 Value::Str(s) if width_bytes == 1 => {
                     total += s.len();
                     cells.push(Cell::Bytes(s.into_bytes()));
@@ -825,7 +871,7 @@ impl Evaluator<'_> {
                     self.error(
                         expr_span(expr),
                         format!(
-                            "[dc.comptime-only] `dc` elements must be comptime ints or strings, got {} (link-resolved cells in `dc` position are a recorded extension — use a typed `data` item)",
+                            "[dc.comptime-only] `dc` elements must be comptime ints, strings, or link symbols, got {}",
                             other.type_name()
                         ),
                     );

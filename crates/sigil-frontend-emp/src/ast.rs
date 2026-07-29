@@ -1424,16 +1424,35 @@ pub enum AsmStmt {
         /// Span of the whole statement.
         span: Span,
     },
-    /// `raise_error "<fstring>"` (diagnostics construct, spec §4.1) — an
-    /// UNCONDITIONAL fatal: it lowers to the `RaiseError` blob (Task 3) with the
-    /// user's format string encoded via [`crate::eval::diag::encode_fstring`].
+    /// `raise_error "<fstring>" [, <flag>]...` (diagnostics construct, spec §4.1)
+    /// — an UNCONDITIONAL fatal: it lowers to the DELIBERATE-raise blob (frame
+    /// simulation + user fstring) via [`crate::eval::diag::encode_fstring`].
     /// Unlike `assert` it has no DEBUG gate (matches AS: path_swap's is a
-    /// release-path fatal). The single string argument is captured raw here; the
-    /// `consoleprogram` two-argument form is a steering error at parse time
-    /// (spec §5, out of scope).
+    /// release-path fatal). The optional trailing flags fold into the exit-flag
+    /// byte's `opts` (the closed error-handler flag set,
+    /// [`crate::eval::diag::ERROR_FLAGS`]); a non-flag second argument (the
+    /// `consoleprogram` form) is a steering error at parse time (spec §5, out of
+    /// scope).
     RaiseError {
         /// The user's format string (decoded string-literal contents).
         fstring: String,
+        /// The error-handler flag bits from the options form (0 if none given).
+        opts: u8,
+        /// Span of the whole statement.
+        span: Span,
+    },
+    /// `raise_exception "<fstring>" [, <flag>]...` (t25) — the EXCEPTION-VECTOR
+    /// counterpart of `raise_error`: the CPU's `__ErrorMessage` handler shape.
+    /// Lowers to the raise tail WITHOUT the `pea self(pc)` + `move.w sr,-(sp)`
+    /// frame simulation (the CPU pushed SR+PC by hardware when it vectored to the
+    /// handler), so it is exactly 6 bytes shorter at the front than `raise_error`.
+    /// Used by the 12 CPU exception-vector stubs (error_handler.emp); the 2
+    /// bus/address vectors carry `address_error` in `opts`.
+    RaiseException {
+        /// The user's format string (decoded string-literal contents).
+        fstring: String,
+        /// The error-handler flag bits from the options form (0 if none given).
+        opts: u8,
         /// Span of the whole statement.
         span: Span,
     },

@@ -851,3 +851,26 @@ pub fn assemble_mixed_tranche24_as_side(aeon: &Path, debug: bool) -> Result<Modu
         format!("assemble (mixed tranche24 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
+
+/// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
+/// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
+/// defines the numeric `ErrorHandler` base so the always-included
+/// mddbg_symbols.asm equ table folds. The 12 exception-vector labels
+/// (BusError..ErrorTrap) that vectors.asm spells as `dc.l` become unresolved
+/// externs here — the .emp side owns them (the ownership flip). The blob's
+/// `.emp` label is renamed (ErrorHandlerBlob), so the numeric `ErrorHandler`
+/// equ is the sole owner of that name.
+pub fn assemble_mixed_error_handler_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_ERROR_HANDLER".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed error_handler AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
