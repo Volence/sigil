@@ -63,6 +63,11 @@ pub(super) struct ProcCtx<'a> {
     /// `(cpu: z80)` module INHERITS (rung-2 §3.2). Empty when the module carries
     /// no invariant (every 68k module, and a Z80 module without the attribute).
     pub invariant_regs: &'a [String],
+    /// The callee-declared-preserves oracle (gap 2): each visible proc / `extern
+    /// proc` name → the register UNITS its contract preserves, so the Z80
+    /// `preserves` proof credits a `call`/tail-transfer to a preserving callee.
+    /// Empty for every 68k module (the map is only consulted by the Z80 proof).
+    pub callee_preserves: &'a crate::z80_preserves::CalleePreserves,
 }
 
 /// Lower one proc: define its label, evaluate + lower its body, then run the
@@ -129,7 +134,7 @@ pub(super) fn lower_proc(
     // every register write is undeclared) — likewise a modernization warning
     // silenced under `@as_compat`.
     if proc.clobbers.is_some() && !ctx.as_compat {
-        check_clobbers(proc, &buf, diags);
+        check_clobbers(proc, &buf, ctx.cpu, diags);
     }
 
     // 5. Preserves contract. On Z80 (rung-2 §4.2) the push/pop `preserves` proof
@@ -140,7 +145,7 @@ pub(super) fn lower_proc(
     // (byte-frozen — `preserves.rs` untouched). Both are opt-in declared
     // CONTRACTs, error-tier, NOT silenced by `@as_compat`.
     if ctx.cpu == Cpu::Z80 {
-        check_z80_preserves(proc, &buf, ctx.invariant_regs, diags);
+        check_z80_preserves(proc, &buf, ctx.invariant_regs, ctx.callee_preserves, diags);
     } else if !proc.preserves.is_empty() {
         check_preserves(proc, &buf, diags);
     }
@@ -152,7 +157,7 @@ pub(super) fn lower_proc(
     // it declares "returns nothing", so any listed register would be moot but
     // the overlap/unwritten checks still apply to whatever IS listed).
     if proc.out.is_some() {
-        check_out(proc, &buf, diags);
+        check_out(proc, &buf, ctx.cpu, diags);
     }
 
     // 7. Flag results (`out(carry: name)`) + conditional register results
@@ -181,6 +186,7 @@ fn check_z80_preserves(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     invariant_regs: &[String],
+    callee_preserves: &crate::z80_preserves::CalleePreserves,
     diags: &mut Vec<Diagnostic>,
 ) {
     use crate::preserves::PreserveStatus;
@@ -203,7 +209,8 @@ fn check_z80_preserves(
         return;
     }
     let checklist: Vec<String> = check.into_iter().collect();
-    let statuses = crate::z80_preserves::verify_z80_preserved(&buf.items, &checklist);
+    let statuses =
+        crate::z80_preserves::verify_z80_preserved(&buf.items, &checklist, callee_preserves);
     for (reg, status) in statuses {
         // Whether `reg` is an INHERITED invariant (vs an explicit preserve) — for
         // a message that names WHY the proc must preserve it.
@@ -417,7 +424,36 @@ fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
 /// [`is_terminator`]). It also assumes param NAMES are register spellings
 /// (`a0`/`d2`/…), which is today's model (§5.1); if params ever gain symbolic
 /// names bound to registers, a write to that register would false-positive here.
-fn check_clobbers(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
+fn check_clobbers(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    cpu: Cpu,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // On Z80 (rung-2 §2/§2.2, gap 1) the reglist validates against the Z80
+    // register file via the CPU-aware recognizer, NOT the 68k universe — so
+    // `clobbers(af, b)` is accepted and `clobbers(d0)` is `[proc.clobber-invalid]`.
+    // The undeclared-write LINT below is 68k-only (Z80 mnemonics carry no 68k
+    // `Reg` destination — see this fn's doc), so on Z80 reglist validation is the
+    // whole job.
+    if cpu == Cpu::Z80 {
+        crate::regfile::expand_reglist(
+            proc.clobbers.as_deref().unwrap_or(&[]),
+            crate::regfile::RegFile::Z80,
+            |reason| {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.clobber-invalid] `{}` declares an invalid `clobber` register: {reason}",
+                        proc.name
+                    ),
+                )
+            },
+        );
+        return;
+    }
     // Expand + validate the clobbers reglist (C1 items 2/6): ranges expand to
     // their register set, and an invalid entry (`clobbers(d9)`/typo) is a loud
     // `[proc.clobber-invalid]` error at THIS site (the primary owner).
@@ -949,7 +985,67 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
 /// concept, so this runs for both CPUs; the unwritten check reuses the 68k
 /// write-form heuristic, which on Z80 simply finds no matching writes (a Z80
 /// `out` currently cannot be verified-written — honest, like `preserves`).
-fn check_out(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
+fn check_out(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    cpu: Cpu,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // On Z80 (rung-2 §2.2, gap 1) validate the out reglist against the Z80
+    // register file, then run the out∩clobbers / out∩preserves overlap checks with
+    // Z80-expanded sets. The out-UNWRITTEN check is 68k-only: its write detector is
+    // the 68k heuristic (`proc_written_registers`), which finds no Z80 writes, so a
+    // Z80 out cannot be verified-written — honest, like `preserves` (an empty 68k
+    // `written` set would otherwise false-fire unwritten on EVERY Z80 out).
+    if cpu == Cpu::Z80 {
+        let rf = crate::regfile::RegFile::Z80;
+        let out_set = crate::regfile::expand_reglist(
+            proc.out.as_deref().unwrap_or(&[]),
+            rf,
+            |reason| {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.out-invalid] `{}` declares an invalid `out` register: {reason}",
+                        proc.name
+                    ),
+                )
+            },
+        );
+        let clob = crate::regfile::expand_reglist(proc.clobbers.as_deref().unwrap_or(&[]), rf, |_| {});
+        let pres = crate::regfile::expand_reglist(&proc.preserves, rf, |_| {});
+        for name in &out_set {
+            if clob.contains(name) {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.out-clobbers-overlap] `{}` declares `{name}` both output and \
+                         clobbered — a register is either a returned result or destroyed scratch, \
+                         not both",
+                        proc.name
+                    ),
+                );
+            }
+            if pres.contains(name) {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
+                         preserved — a register is either a returned result or left untouched, \
+                         not both",
+                        proc.name
+                    ),
+                );
+            }
+        }
+        return;
+    }
     // Expand + validate the out reglist (C1 items 2/6): ranges (`out(d0-d1)`)
     // expand to their register set; a nonsense name is `[proc.out-invalid]` and
     // dropped from the downstream membership checks. Sorted for deterministic

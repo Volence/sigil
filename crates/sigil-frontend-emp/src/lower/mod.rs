@@ -171,6 +171,16 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // register file (ruling 4) and capture the inherited-preserve unit set every
     // Z80 proc is checked against (§3.2 inheritance).
     let invariant_regs = validate_module_invariants(&file.module, initial_cpu, &mut diags);
+    // The callee-declared-preserves oracle (rung-2 gap 2): each visible proc /
+    // `extern proc` → the register units its contract preserves, so the Z80
+    // `preserves` proof can credit a `call`/tail-transfer to a preserving callee.
+    // Only built for a Z80 module (the map is consulted solely by the Z80 proof);
+    // a 68k module passes an empty map, keeping its path byte-identical.
+    let callee_preserves = if initial_cpu == Cpu::Z80 {
+        collect_z80_callee_preserves(&file.items, &invariant_regs)
+    } else {
+        crate::z80_preserves::CalleePreserves::new()
+    };
 
     // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
@@ -230,7 +240,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs },
+                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -366,6 +376,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     },
                     as_compat,
                     &invariant_regs,
+                    &callee_preserves,
                     &module_id,
                     &mut here_anchor_counter,
                     &mut builder,
@@ -516,6 +527,7 @@ fn lower_section_items(
     placement: &Placement,
     as_compat: bool,
     invariant_regs: &[String],
+    callee_preserves: &crate::z80_preserves::CalleePreserves,
     module_id: &str,
     here_anchor_counter: &mut u32,
     builder: &mut IrBuilder,
@@ -545,7 +557,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs },
+                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves },
                     builder,
                     diags,
                     asm_counter,
@@ -1514,6 +1526,48 @@ fn module_declared_cpu(module: &ast::ModuleDecl, diags: &mut Vec<Diagnostic>) ->
 /// contract checker (the push/pop `preserves` proof), which consumes this
 /// validated reglist. Validation is separated so a mistyped invariant register is
 /// a loud error even before the checker lands.
+/// Build the callee-declared-preserves oracle (rung-2 gap 2) for a Z80 module: a
+/// map from each visible callee name to the register UNITS its contract preserves.
+/// A `proc`'s entry is its declared `preserves` (expanded through the Z80 register
+/// file) UNIONED with the module `invariant` (every local proc is CHECKED to hold
+/// the invariant, so crediting it is sound); an `extern proc`'s entry is its
+/// declared `preserves` (trusted by the extern convention — the invariant is a
+/// property of THIS module's procs, not the extern's). Both top-level and
+/// section-nested procs/externs are collected (the psg port declares externs at
+/// top level and its procs inside a section). Register-spelling validity is the
+/// per-proc/extern checkers' job — this collector expands quietly.
+fn collect_z80_callee_preserves(
+    items: &[ast::Item],
+    invariant_regs: &[String],
+) -> crate::z80_preserves::CalleePreserves {
+    let rf = crate::regfile::RegFile::Z80;
+    let mut map = crate::z80_preserves::CalleePreserves::new();
+    fn walk(
+        items: &[ast::Item],
+        rf: crate::regfile::RegFile,
+        invariant_regs: &[String],
+        map: &mut crate::z80_preserves::CalleePreserves,
+    ) {
+        for item in items {
+            match item {
+                ast::Item::Proc(p) => {
+                    let mut units = crate::regfile::expand_reglist(&p.preserves, rf, |_| {});
+                    units.extend(invariant_regs.iter().cloned());
+                    map.insert(p.name.clone(), units);
+                }
+                ast::Item::ExternProc(e) => {
+                    let units = crate::regfile::expand_reglist(&e.sig.preserves, rf, |_| {});
+                    map.insert(e.name.clone(), units);
+                }
+                ast::Item::Section(sec) => walk(&sec.items, rf, invariant_regs, map),
+                _ => {}
+            }
+        }
+    }
+    walk(items, rf, invariant_regs, &mut map);
+    map
+}
+
 fn validate_module_invariants(
     module: &ast::ModuleDecl,
     cpu: Cpu,
