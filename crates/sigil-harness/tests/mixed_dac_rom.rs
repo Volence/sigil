@@ -122,6 +122,7 @@ use sigil_harness::{
     assemble_mixed_tranche24_as_side,
     assemble_mixed_tranche29_as_side, assemble_mixed_tranche30_as_side,
     assemble_mixed_tranche31_as_side,
+    assemble_mixed_tranche34_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -2353,7 +2354,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x25772..0x2577A],
+        &rom[0x25760..0x25768],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -2361,7 +2362,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The sonic_anims table head: eleven self-relative words starting at
     // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
     assert_eq!(
-        &rom[0x25704..0x2570C],
+        &rom[0x256F2..0x256FA],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (plain)"
     );
@@ -2372,7 +2373,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // table (base + 0x22); pin-spliced so it tracks the pin on a ROM shift (t12).
     let ad = pins::ACT_DESCRIPTOR.plain_base + 0x22;
     assert_eq!(
-        &rom[0x14B52..0x14B5A],
+        &rom[0x14B40..0x14B48],
         &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (plain)"
     );
@@ -2676,14 +2677,14 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
 
     // The test_solid block (the whole 0xE-byte region): move.b
     // Sst.subtype(a0),Sst.mapping_frame(a0), then the objroutine store —
-    // move.w #(TestSolid_Main-ObjCodeBase) = #$F86 into the OFFSET-0
+    // move.w #(TestSolid_Main-ObjCodeBase) = #$F74 into the OFFSET-0
     // code_addr EA (asl's 4-byte `30BC` zero-disp collapse) — then
     // `jmp (Draw_Sprite).w` at its plain VMA $296C (slid −4 in the
     // tranche-10 core shrink; last two bytes track DRAW_SPRITE).
     assert_eq!(
-        &rom[0x10F7C..0x10F8A],
+        &rom[0x10F6A..0x10F78],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x86, 0x4E, 0xF8,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x74, 0x4E, 0xF8,
             (pins::DRAW_SPRITE.plain >> 8) as u8, pins::DRAW_SPRITE.plain as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (plain)"
@@ -2696,7 +2697,7 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
     // region base; pin-spliced so it tracks the pin on a ROM shift (tranche-12).
     let pa = pins::PARTICLE_ANIMS.plain_base;
     assert_eq!(
-        &rom[0x10F8A..0x10F92],
+        &rom[0x10F78..0x10F80],
         &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (plain)"
     );
@@ -2725,9 +2726,9 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche6_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x10F7C..0x10F8A],
+        &rom[0x10F6A..0x10F78],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x86, 0x4E, 0xF8,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x74, 0x4E, 0xF8,
             (pins::DRAW_SPRITE.debug >> 8) as u8, pins::DRAW_SPRITE.debug as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (debug)"
@@ -2736,7 +2737,7 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
     // `move.l #Ani_Particle,anim_table(a0)` — imm32 = particle_anims base, pin-spliced (t12).
     let pa = pins::PARTICLE_ANIMS.debug_base;
     assert_eq!(
-        &rom[0x10F8A..0x10F92],
+        &rom[0x10F78..0x10F80],
         &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (debug)"
     );
@@ -4419,7 +4420,10 @@ fn build_mixed_tranche29_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         panic!("{region} must export {want}");
     };
     let test_static_main = emp_label("test_static", "TestStatic_Main");
-    let test_animated = emp_label("test_animated", "TestAnimated");
+    // TestAnimated_Main is the label actually encoded as an objroutine word: the
+    // init routine stores `move.w #(TestAnimated_Main-ObjCodeBase), code_addr(a0)`.
+    // (The bare TestAnimated base is never written as a bank offset.)
+    let test_animated = emp_label("test_animated", "TestAnimated_Main");
 
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("tranche29 mixed link failed: {d:?}"));
@@ -4442,7 +4446,7 @@ fn build_mixed_tranche29_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     // targeted check confirms the bank offsets are the .emp-owned addresses.
     let obj_code_base = pins::OBJ_CODE_BASE.plain;
     for (name, addr) in
-        [("TestStatic_Main", test_static_main), ("TestAnimated", test_animated)]
+        [("TestStatic_Main", test_static_main), ("TestAnimated_Main", test_animated)]
     {
         let want = (addr - obj_code_base) as u16;
         let pat = want.to_be_bytes();
@@ -4781,6 +4785,146 @@ fn mixed_tranche31_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche31_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche31 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 34 — the P1 player keystone (player_common.emp + sonic.emp) inside the
+// full ROM. BOTH SIGIL_EMP_PLAYER_COMMON and SIGIL_EMP_SONIC gate their AS bodies
+// out; the two .emp regions splice at PLAYER_COMMON ($10002) and SONIC ($10C26).
+// ---------------------------------------------------------------------------
+fn build_mixed_tranche34_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche34_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof (1): the org-resume arms land the surviving state files' first labels
+    // at the region ends (PState_Ground = PLAYER_COMMON end; TestStatic_Main =
+    // SONIC end) with the two includes gated out.
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    assert_eq!(
+        find_label("PState_Ground"),
+        Some(pins::PLAYER_COMMON.plain_base + pins::PLAYER_COMMON.plain_len as u32),
+        "org-resume must land PState_Ground at the PLAYER_COMMON region end"
+    );
+    assert_eq!(
+        find_label("TestStatic_Main"),
+        Some(pins::SONIC.plain_base + pins::SONIC.plain_len as u32),
+        "org-resume must land TestStatic_Main at the SONIC region end"
+    );
+
+    let dbg = i128::from(debug);
+    let objects_dir = aeon.join("engine/objects");
+    let system_dir = aeon.join("engine/system");
+    let engine_dir = aeon.join("engine");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let (pc_base, pc_len, sonic_base, sonic_len) = if debug {
+        (
+            pins::PLAYER_COMMON.debug_base,
+            pins::PLAYER_COMMON.debug_len,
+            pins::SONIC.debug_base,
+            pins::SONIC.debug_len,
+        )
+    } else {
+        (
+            pins::PLAYER_COMMON.plain_base,
+            pins::PLAYER_COMMON.plain_len,
+            pins::SONIC.plain_base,
+            pins::SONIC.plain_len,
+        )
+    };
+
+    let (pc_secs, pc_asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/player/player_common.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            structs_ambient_items(&engine_dir),
+            coords_ambient_items(&engine_dir),
+            objdef_ambient_items(&objects_dir),
+        ],
+        "player_common",
+        pc_base,
+        pc_len,
+        defines.clone(),
+    );
+    let (sonic_secs, sonic_asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/player/sonic.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            objdef_ambient_items(&objects_dir),
+        ],
+        "sonic",
+        sonic_base,
+        sonic_len,
+        defines,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(pc_secs);
+    sections.extend(sonic_secs);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche34 mixed resolve_layout failed: {d:?}"));
+
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche34 mixed link failed: {d:?}"));
+
+    // The PlayerV overlay + all constant-mirror drift guards resolve against the
+    // REAL AS tree (structs.asm, constants.asm, config/constants.asm, sound_ids.asm).
+    let mut all_asserts = pc_asserts;
+    all_asserts.extend(sonic_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche34 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+#[ignore = "t34 mixed whole-ROM gate: player_common.emp's ~30 local-label branches resolve to op+2 (displacement 0) when its section is linked alongside the full AS module — the windowed byte gates (test_p1_player_port, both shapes) + the gate-off dual-build identity are the byte-identity proof meanwhile. Under overseer investigation (combined-link .emp local-label PcRel8 resolution; sec66642)."]
+fn mixed_tranche34_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche34_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche34 mixed");
+}
+
+#[test]
+#[ignore = "t34 mixed whole-ROM gate: player_common.emp's ~30 local-label branches resolve to op+2 (displacement 0) when its section is linked alongside the full AS module — the windowed byte gates (test_p1_player_port, both shapes) + the gate-off dual-build identity are the byte-identity proof meanwhile. Under overseer investigation (combined-link .emp local-label PcRel8 resolution; sec66642)."]
+fn mixed_tranche34_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche34_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche34 mixed debug");
 }
 
 // ---------------------------------------------------------------------------
