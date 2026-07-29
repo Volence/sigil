@@ -2353,7 +2353,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x2577E..0x25786],
+        &rom[0x25772..0x2577A],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -2361,7 +2361,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The sonic_anims table head: eleven self-relative words starting at
     // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
     assert_eq!(
-        &rom[0x25710..0x25718],
+        &rom[0x25704..0x2570C],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (plain)"
     );
@@ -2372,7 +2372,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // table (base + 0x22); pin-spliced so it tracks the pin on a ROM shift (t12).
     let ad = pins::ACT_DESCRIPTOR.plain_base + 0x22;
     assert_eq!(
-        &rom[0x14B5E..0x14B66],
+        &rom[0x14B52..0x14B5A],
         &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (plain)"
     );

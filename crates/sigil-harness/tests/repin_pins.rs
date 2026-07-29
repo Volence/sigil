@@ -358,7 +358,7 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // creators, the CreateChild_Linked parent_ptr assert (debug only), minus the
     // two deleted effect parent_ptr writes, minus the branchless flip mask
     // (−4 bytes), minus DeleteChildren's movem→move.l park (−4). $8000 BAR
-    // CHECKED LIVE at this wave: TEST_STATIC_MAIN/TEST_PARENT plain == debug,
+    // CHECKED LIVE at this wave: TEST_STATIC_MAIN/TEST_PARENT_LABEL plain == debug,
     // so no engine symbol consumed by object-bank code crossed the boundary and
     // the game bank did not slide (contrast the earlier five-assert cut, which
     // did move it +0xC).
