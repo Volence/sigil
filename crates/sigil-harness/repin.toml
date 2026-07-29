@@ -29,6 +29,18 @@ tests = ["m1d_rom", "m1d_debug_rom", "mixed_dac_rom"]
 # ── Gated regions, engine.inc ladder order ──────────────────────────────────
 
 [[region]]
+# Tranche 26 — the engine-owned 64-entry CPU/interrupt/trap vector table
+# (vectors.emp), `org 0`, exactly $000-$0FF. FIXED SIZE and PRECEDES EVERYTHING
+# — base 0 both shapes, a literal $100 length (shape-invariant; the region is
+# pure data whose VALUES differ per shape through the link, never its size). The
+# byte gate window is [0, $100). start = Vectors (the table's head label).
+name = "vectors"
+start = "Vectors"
+len = 0x100
+gate = "SIGIL_EMP_VECTORS"
+tests = ["vectors_port"]
+
+[[region]]
 # Tranche 23 — the boot sequence (EntryPoint/Warm/Cold fall-through chain).
 # End is the data tail's head: boot_data.asm's BootData table (the .emp
 # reaches it cross-seam via `lea BootData(pc)`). FIRST region in the engine
