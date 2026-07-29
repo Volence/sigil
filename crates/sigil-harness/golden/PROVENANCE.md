@@ -1918,3 +1918,20 @@ canaries by name.
 - Aeon repo master: **`fa474cd`** (merge of `port-tranche38`; sigil master **`1dd1ed0`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
+
+## t39 — the final three objects (2026-07-29) — canonical UNCHANGED; THE OBJECT BANK IS ALL-.EMP
+
+`test_enemy` (63 L) + `test_player` (293 L) + `path_swap` (132 L) ported byte-exact
+BOTH shapes (windowed oracle `test_g4_final_objects_port` 4/4 + whole-ROM
+`mixed_tranche39` 2/2). Byte-neutral end-to-end. Internal gates ×2 (surviving
+zero-byte-header AS consumers); path_swap = the game side's first SHAPE-DEPENDENT
+whole-file gate ($92 plain / $FA debug; per-shape resume orgs $1128C/$112F4 — a new
+wave-ripple surface, kill rows 84-86). TestPlayer whole-register d7 honest clobber
+(the t34 partial-width pattern). Census 0-for-5 pattern noted; zero extern proc HELD.
+The game side is down to T1 (2 harness states) + main/config (Spec-5).
+
+Full paired strict **2862/0 (1 ignored)** on merged masters; g4 4/4 by name.
+
+- Aeon repo master: **`23e6ca7`** (merge of `port-tranche39`; sigil master **`3901f1d`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
