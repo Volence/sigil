@@ -36,7 +36,34 @@
 use crate::flag_check::{Cfg, Edge};
 use crate::preserves::PreserveStatus;
 use crate::value::{CodeItem, CodeOperand, Z80Pair, Z80Reg8};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+/// The callee-declared-preserves oracle for the Z80 sibling — the analog of
+/// `preserves.rs`'s `CallPolicy::Oracle` (`preserves.rs:77`) / `call_preserves`
+/// (`preserves.rs:83`). A map from a visible callee name (a module proc, or an
+/// `extern proc`) to the register UNITS its contract preserves: a local proc's
+/// declared `preserves` UNIONED with the module `invariant`; an `extern proc`'s
+/// declared `preserves`.
+///
+/// **Soundness.** A local callee's declared preservation is itself proven by THIS
+/// SAME per-proc check (an inherited `invariant(ix)` makes every local proc prove
+/// it preserves `ix`; a broken one fires and stops the build), and an `extern`
+/// callee's is trusted by the extern convention — the same trust boundary the 68k
+/// oracle's `effective` map draws. A caller's OWN direct write to a register always
+/// clears its entry bit regardless of any callee credit, so crediting a callee can
+/// never mask a local clobber. Unlike the 68k closure (which folds SCCs to
+/// conservative), this per-proc map trusts declarations directly — the divergence
+/// is recorded in the design note §13.5; it is sound for the reason above and psg
+/// is acyclic.
+pub type CalleePreserves = BTreeMap<String, BTreeSet<String>>;
+
+/// Does a call/tail-transfer to `callee` (`None` = indirect / no symbol target)
+/// provably PRESERVE the register UNIT `unit`, per the oracle? A callee ABSENT
+/// from the map — unknown or indirect — preserves nothing (conservative
+/// clobber-all), mirroring `callee_clobbers`' `None => true` (`preserves.rs:632`).
+fn callee_preserves(map: &CalleePreserves, callee: Option<&str>, unit: &str) -> bool {
+    callee.and_then(|c| map.get(c)).is_some_and(|s| s.contains(unit))
+}
 
 /// The Z80 register UNITS the proof tracks — the 8-bit halves plus the index
 /// units (`sp` is stack discipline, the a7 analog, never tracked). Indexed
@@ -190,6 +217,7 @@ struct State {
 pub fn verify_z80_preserved(
     items: &[CodeItem],
     check: &[String],
+    callee_map: &CalleePreserves,
 ) -> BTreeMap<String, PreserveStatus> {
     let checked: Vec<(String, usize)> =
         check.iter().filter_map(|n| unit_idx(n).map(|i| (n.clone(), i))).collect();
@@ -200,15 +228,37 @@ pub fn verify_z80_preserved(
         return check.iter().map(|n| (n.clone(), PreserveStatus::Verified)).collect();
     };
 
-    // Which units are EVER written (a plain write, a pop, or any call). Only a
-    // never-written unit stays preserved past a bailout (its value is immutable) —
-    // mirrors `preserves.rs:127` (`ever_clobbered`).
+    // Which units are EVER written — a plain write, a pop, or a call/tail-transfer
+    // to a callee that does NOT provably preserve the unit (the callee oracle, gap
+    // 2). Only a never-written unit stays preserved past a bailout (its value is
+    // immutable) — mirrors `preserves.rs:127` (`ever_clobbered`). A call that
+    // preserves a unit no longer marks it clobbered (the pre-oracle `has_call ⇒ all`
+    // was over-conservative and would false-fire on a bail+call+return proc).
     let mut ever_clobbered = [false; NU];
-    let mut has_call = false;
     for it in items {
         if let CodeItem::Instr { mnemonic, ops, .. } = it {
             if is_call(mnemonic) {
-                has_call = true;
+                let callee = branch_sym(ops);
+                for (u, name) in UNITS.iter().enumerate() {
+                    if !callee_preserves(callee_map, callee, name) {
+                        ever_clobbered[u] = true;
+                    }
+                }
+            }
+            // An external tail transfer (`jp`/`jr` to a symbol that is neither a
+            // local label nor a local end-label) exits into the tail-callee, which
+            // clobbers every unit it does not preserve. A local (end-)label jump is
+            // an in-proc fall-off, not a tail call — excluded.
+            if matches!(mnemonic.as_str(), "jp" | "jr") {
+                if let Some(t) = branch_sym(ops) {
+                    if cfg.label_index(t).is_none() && !cfg.is_local_label(t) {
+                        for (u, name) in UNITS.iter().enumerate() {
+                            if !callee_preserves(callee_map, Some(t), name) {
+                                ever_clobbered[u] = true;
+                            }
+                        }
+                    }
+                }
             }
             for u in z80_writes(mnemonic, ops) {
                 ever_clobbered[u] = true;
@@ -221,9 +271,6 @@ pub fn verify_z80_preserved(
                 }
             }
         }
-    }
-    if has_call {
-        ever_clobbered = [true; NU];
     }
 
     let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
@@ -238,7 +285,7 @@ pub fn verify_z80_preserved(
     while let Some(idx) = work.pop_front() {
         let mut st = in_state[&idx].clone();
         if !st.bailed {
-            if let Some(reason) = transfer(&cfg, idx, &mut st) {
+            if let Some(reason) = transfer(&cfg, idx, &mut st, callee_map) {
                 st.bailed = true;
                 bail_reason.get_or_insert(reason);
             }
@@ -279,10 +326,28 @@ pub fn verify_z80_preserved(
                         }
                     }
                 }
-                // An external tail transfer (`jp`/`jr` to a non-local symbol) is
-                // not this proc's return — mirror `preserves.rs:240` (`Defer`):
-                // ignore it, bailed or not.
-                Edge::Defer => {}
+                // An external tail transfer (`jp`/`jr` to a non-local target) is an
+                // EXIT: this proc's real return happens inside the tail-callee.
+                // Closing the §13.4 vacuous `!saw_return` hole (gap 3) — a proc that
+                // ONLY tail-transfers used to pass `preserves` vacuously, silently
+                // verifying a contract its body breaks. The proc preserves rN across
+                // the transfer iff rN holds its entry value AT the jp AND the
+                // tail-callee itself preserves rN (unknown/indirect target →
+                // conservative clobber, via the oracle). Mirrors `Edge::Abandon`
+                // plus the callee oracle.
+                Edge::Defer => {
+                    saw_return = true;
+                    if st.bailed {
+                        bailed_reached_return = true;
+                    } else {
+                        let tail_callee = cfg.instr(idx).and_then(|(_, ops)| branch_sym(ops));
+                        for (name, i) in &checked {
+                            if !(st.entry[*i] && callee_preserves(callee_map, tail_callee, name)) {
+                                *all_returns_preserve.get_mut(i).unwrap() = false;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -307,13 +372,21 @@ pub fn verify_z80_preserved(
 }
 
 /// Apply instruction `idx`'s effect to `st`. `Some(reason)` on a soundness bail.
-fn transfer(cfg: &Cfg, idx: usize, st: &mut State) -> Option<String> {
+fn transfer(cfg: &Cfg, idx: usize, st: &mut State, callee_map: &CalleePreserves) -> Option<String> {
     let (mnem, ops) = cfg.instr(idx)?;
 
-    // A call clobbers every register (no local callee contract) but nets zero on
-    // the stack — mirrors `preserves.rs:344`.
+    // A call clobbers every register the callee does NOT provably preserve (the
+    // callee oracle, gap 2 — the Z80 analog of `preserves.rs:411`'s
+    // `call_preserves` loop); an unknown/indirect callee preserves nothing, so it
+    // clobbers all (the pre-oracle behavior). It nets zero on the stack (its pushed
+    // return address is popped by its own `ret`) — mirrors `preserves.rs:344`.
     if is_call(mnem) {
-        st.entry = [false; NU];
+        let callee = branch_sym(ops);
+        for (u, name) in UNITS.iter().enumerate() {
+            if !callee_preserves(callee_map, callee, name) {
+                st.entry[u] = false;
+            }
+        }
         return None;
     }
 
@@ -388,22 +461,16 @@ fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
             None => vec![Edge::Abandon, Edge::Abandon],
         };
     }
-    // Unconditional tail transfer: `jp`/`jr` to a LOCAL label follows it; to an
-    // external symbol (or a computed `jp (hl)`) it defers out of the proc.
+    // Unconditional tail transfer: `jp`/`jr` follows a LOCAL label; a jump to a
+    // local END-label (no following instruction) is a fall-off exit (Abandon); a
+    // transfer to an EXTERNAL symbol (or a computed `jp (hl)`) defers out of the
+    // proc as a tail call.
     if matches!(mnem, "jp" | "jr") && !leads_cc {
-        return match branch_sym(ops).and_then(|t| cfg.label_index(t)) {
-            Some(tgt) => vec![Edge::Follow(tgt)],
-            None => vec![Edge::Defer],
-        };
+        return vec![branch_edge(cfg, ops)];
     }
-    // Conditional `jr cc`/`jp cc`: the taken edge (local → follow, external →
-    // defer) PLUS the fall-through.
+    // Conditional `jr cc`/`jp cc`: the taken edge (as above) PLUS the fall-through.
     if matches!(mnem, "jp" | "jr") && leads_cc {
-        let mut v = Vec::new();
-        match branch_sym(ops).and_then(|t| cfg.label_index(t)) {
-            Some(tgt) => v.push(Edge::Follow(tgt)),
-            None => v.push(Edge::Defer),
-        }
+        let mut v = vec![branch_edge(cfg, ops)];
         match cfg.next_instr(idx) {
             Some(f) => v.push(Edge::Follow(f)),
             None => v.push(Edge::Abandon),
@@ -427,6 +494,21 @@ fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
     match cfg.next_instr(idx) {
         Some(f) => vec![Edge::Follow(f)],
         None => vec![Edge::Abandon],
+    }
+}
+
+/// The taken-edge of a `jp`/`jr` from its target: a LOCAL label with an
+/// instruction after it is followed; a LOCAL end-label (no following instruction —
+/// a jump to the proc's fall-off point) is an Abandon; an EXTERNAL symbol or a
+/// computed `jp (hl)` (no symbol) is a Defer tail transfer.
+fn branch_edge(cfg: &Cfg, ops: &[CodeOperand]) -> Edge {
+    match branch_sym(ops) {
+        Some(t) => match cfg.label_index(t) {
+            Some(tgt) => Edge::Follow(tgt),
+            None if cfg.is_local_label(t) => Edge::Abandon,
+            None => Edge::Defer,
+        },
+        None => Edge::Defer,
     }
 }
 

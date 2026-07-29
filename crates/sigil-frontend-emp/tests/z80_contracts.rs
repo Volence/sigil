@@ -372,3 +372,240 @@ fn z80_init_style_drain_without_contract_is_silent() {
         "a contract-less Z80 drain proc must be silent (item 7 vacuous pass), got: {diags:?}"
     );
 }
+
+// ---- gap 1 (§13.5): clobbers/out reglist validation via the Z80 regfile --------
+//
+// The rung-2 note §2/§2.2 designed `clobbers`/`out` to ride the CPU-aware
+// recognizer, but items 1-8 wired only `preserves`/`invariant`/`out(carry:)` — so
+// `check_clobbers`/`check_out` validated the reglist against the 68k universe and
+// every `clobbers(af)`/`out(a)` on a Z80 proc fired `[proc.*-invalid]`. These wire
+// the two remaining reglists to `expand_reglist(RegFile::Z80)`.
+
+/// A Z80 proc's `clobbers(af, b)` (the `Psg_VolToAtten` shape, §1.1) validates
+/// against the Z80 register file — NO `[proc.clobber-invalid]`.
+#[test]
+fn z80_clobbers_validates_against_z80_regfile() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() clobbers(af, b) preserves(c) {\n\
+                 ld b, a\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.clobber-invalid]")),
+        "Z80 clobbers(af, b) must validate against the Z80 regfile, got: {diags:?}"
+    );
+}
+
+/// A Z80 proc's `out(a)` / `out(hl)` register result validates against the Z80
+/// register file — NO `[proc.out-invalid]`. (`clobbers(f)` keeps the flag-scratch
+/// half disjoint from the `a` result — no out∩clobbers overlap.)
+#[test]
+fn z80_out_reg_validates_against_z80_regfile() {
+    let a_out = "module m in s (cpu: z80)\n\
+                 proc P() out(a) clobbers(f) {\n\
+                   ld a, (ix+0)\n\
+                   sub 5\n\
+                   ret\n\
+                 }\n";
+    assert!(
+        !lower_diags(a_out).iter().any(|d| d.contains("[proc.out-invalid]")),
+        "Z80 out(a) must validate"
+    );
+    let hl_out = "module m in s (cpu: z80)\n\
+                  proc P() out(hl) {\n\
+                    ld hl, 0\n\
+                    ret\n\
+                  }\n";
+    assert!(
+        !lower_diags(hl_out).iter().any(|d| d.contains("[proc.out-invalid]")),
+        "Z80 out(hl) must validate"
+    );
+}
+
+/// A Z80 `out`-declared register never written on any path must NOT false-fire
+/// `[proc.out-unwritten]` — the Z80 write detector is the 68k heuristic (finds no
+/// Z80 writes), so an unwritten claim is unverifiable, not false (honest, like
+/// `preserves`). Before the wiring, an empty 68k `written` set fired unwritten on
+/// EVERY Z80 out.
+#[test]
+fn z80_out_unwritten_not_false_fired() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(hl) {\n\
+                 ld hl, 0\n\
+                 ret\n\
+               }\n";
+    assert!(
+        !lower_diags(src).iter().any(|d| d.contains("[proc.out-unwritten]")),
+        "a Z80 out must not false-fire out-unwritten (write detection is 68k-only)"
+    );
+}
+
+/// t24 NEGATIVE control: a 68k register name in a Z80 `clobbers`/`out` is still
+/// `[proc.clobber-invalid]` / `[proc.out-invalid]` (`d0` is not a Z80 register).
+#[test]
+fn z80_clobbers_out_68k_name_still_invalid() {
+    let clob = "module m in s (cpu: z80)\n\
+                proc P() clobbers(d0) { ret }\n";
+    assert!(
+        lower_diags(clob).iter().any(|d| d.contains("[proc.clobber-invalid]") && d.contains("d0")),
+        "clobbers(d0) in a Z80 module must stay invalid"
+    );
+    let out = "module m in s (cpu: z80)\n\
+               proc P() out(d0) { ret }\n";
+    assert!(
+        lower_diags(out).iter().any(|d| d.contains("[proc.out-invalid]") && d.contains("d0")),
+        "out(d0) in a Z80 module must stay invalid"
+    );
+}
+
+/// t24 NEGATIVE control (the reverse): a Z80 register name in a 68k `clobbers` is
+/// still `[proc.clobber-invalid]` — the frozen-68k behavior is unchanged.
+#[test]
+fn m68k_clobbers_z80_name_still_invalid() {
+    let src = "module m in s\n\
+               proc P() clobbers(af) { rts }\n";
+    assert!(
+        lower_diags(src).iter().any(|d| d.contains("[proc.clobber-invalid]")),
+        "clobbers(af) in a 68k module must stay invalid (frozen 68k path)"
+    );
+}
+
+// ---- gap 2 (§13.5): callee-declared-preserves oracle for z80_preserves ---------
+//
+// The sibling proof treated every `call` as clobber-all (no callee awareness), so
+// `invariant(ix)` + every calling proc's `preserves` false-fired on psg's 5
+// calling procs. This threads a callee-preserves map (each visible proc's declared
+// `preserves` ∪ the module invariant; each `extern proc`'s declared `preserves`) —
+// the Z80 analog of `preserves.rs`'s `CallPolicy::Oracle`.
+
+/// A calling proc under `invariant(ix)` VERIFIES when the callee's own contract
+/// preserves ix (a LOCAL callee, credited from its declared/inherited preserves).
+/// Before the fix `call` clobbered all, so the caller fired.
+#[test]
+fn z80_call_to_ix_preserving_local_callee_verifies() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc Leaf() {\n\
+                 ld a, (ix+0)\n\
+                 ret\n\
+               }\n\
+               proc Caller() {\n\
+                 call Leaf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a call to an ix-preserving local callee must verify invariant(ix), got: {diags:?}"
+    );
+}
+
+/// An `extern proc`'s declared `preserves` is credited — the mechanism psg needs
+/// for its cross-module callees (`Snd_ChanClass`/`Mod_ReArm`/`Mod_Advance`, all
+/// ix-preserving). Before the fix the caller fired.
+#[test]
+fn z80_extern_callee_preserves_credited() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               extern proc Ext() preserves(ix)\n\
+               proc Caller() {\n\
+                 call Ext\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "an extern callee's declared preserves(ix) must be credited, got: {diags:?}"
+    );
+}
+
+/// t24 NEGATIVE control: a call to a callee that does NOT preserve the register
+/// still fires — the oracle credits only DECLARED preservation.
+#[test]
+fn z80_call_to_non_preserving_callee_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Sub() clobbers(de) { ret }\n\
+               proc Caller() preserves(de) {\n\
+                 call Sub\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a call to a callee that does not preserve de must fire preserves(de), got: {diags:?}"
+    );
+}
+
+/// t24 NEGATIVE control: an UNKNOWN (undeclared) callee stays conservative —
+/// clobbers everything — so a caller's `preserves(de)` across it fires.
+#[test]
+fn z80_call_to_unknown_callee_conservative() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Caller() preserves(de) {\n\
+                 call SomethingUndeclared\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "an unknown callee must be conservative (clobbers de) — preserves(de) fires, got: {diags:?}"
+    );
+}
+
+// ---- gap 3 (§13.5): the vacuous tail-jp pass — a soundness hole -----------------
+//
+// A proc ending in a tail `jp`/`jr` with NO local `ret` passed `preserves`
+// VACUOUSLY (`!saw_return`), silently verifying a contract the body breaks. The
+// tail transfer is now an EXIT: the preserved register must hold its entry value
+// AT the jp AND the tail-callee must itself preserve it.
+
+/// REPRODUCER (the watched fail): a proc that CLOBBERS the preserved register
+/// (`push bc / pop ix` writes ix a foreign value) then tail-jumps out (`jp
+/// External`) with no `ret` must FIRE. Before the fix `!saw_return` verified it.
+#[test]
+fn z80_tail_jp_clobber_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(ix) {\n\
+                 push bc\n\
+                 pop ix\n\
+                 jp SomewhereExternal\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a tail-jp proc that clobbers the preserved ix must FIRE (not pass vacuously), got: {diags:?}"
+    );
+}
+
+/// t24 POSITIVE control: a tail-jp proc that GENUINELY preserves ix (never writes
+/// it) and tail-jumps to a callee that itself preserves ix still passes — the psg
+/// `jp Psg_SetVolume` shape.
+#[test]
+fn z80_tail_jp_genuine_preserve_holds() {
+    let src = "module m in s (cpu: z80)\n\
+               extern proc Sink() preserves(ix)\n\
+               proc P() preserves(ix) {\n\
+                 ld a, (ix+0)\n\
+                 jp Sink\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a tail-jp to an ix-preserving callee, ix untouched, must hold, got: {diags:?}"
+    );
+}
+
+/// A tail-jp to an UNKNOWN external callee is conservative even when the body
+/// preserves the register — the callee could clobber it (no contract). Fires.
+#[test]
+fn z80_tail_jp_unknown_callee_conservative() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(ix) {\n\
+                 ld a, (ix+0)\n\
+                 jp SomewhereUnknown\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a tail-jp to an unknown callee must be conservative — preserves(ix) fires, got: {diags:?}"
+    );
+}
