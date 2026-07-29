@@ -220,10 +220,30 @@ impl Evaluator<'_> {
                 // instantiated (call_site = this call; def_site = the span the
                 // generator's own diagnostic already carries).
                 let watermark = self.diags.len();
+                // A body-position `ensure` may read `cycles(L1, L2)` (rung 4): give
+                // it the partial CodeBuf lowered SO FAR so the T-state span sum sees
+                // every instruction textually before this guard. Snapshotted only
+                // for guard statements (cheap — body ensures are rare); cleared
+                // after so no other call sees a stale scope.
+                let is_guard = matches!(
+                    expr,
+                    ast::Expr::Call { callee, .. }
+                        if callee.segments.len() == 1
+                            && (callee.segments[0] == "ensure" || callee.segments[0] == "ensure_fatal")
+                );
+                if is_guard {
+                    self.cycle_scope = Some(buf.items.clone());
+                }
                 let v = self.eval_expr(expr, env);
+                if is_guard {
+                    self.cycle_scope = None;
+                }
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
                     Value::Code(inner) => buf.items.extend(inner.items),
+                    // A body-position guard (`ensure(...)`) yields Unit and emits
+                    // no code — the rung-4 `ensure(cycles(...) == N)` site.
+                    Value::Unit => {}
                     Value::Poison => {}
                     other => self.error(
                         expr_span(expr),

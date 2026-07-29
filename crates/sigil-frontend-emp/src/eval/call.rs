@@ -78,6 +78,11 @@ impl<'a> Evaluator<'a> {
                 // link symbol from `.emp`. Same argument contract as
                 // `bankid`/`winptr`; also non-shadowable.
                 "extern" => return self.eval_extern(args, span, env),
+                // `cycles(L1, L2)` (rung 4, t40) — the Z80 T-state cost of the
+                // straight-line span `[L1, L2)` in the enclosing proc body,
+                // summed eagerly from the body-ensure CodeBuf snapshot. Returns
+                // an `Int` (composes with `+`/`==`); non-shadowable.
+                "cycles" => return self.eval_cycles(args, span, env),
                 // `here()` (§7.1) — the current VMA. A lowering-time query: the
                 // position is threaded in via `here_base` (set per data item by
                 // the lowering pass); it is not user-shadowable.

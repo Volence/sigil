@@ -511,6 +511,76 @@ impl<'a> Evaluator<'a> {
         Value::LinkExpr(shifted)
     }
 
+    /// `cycles(L1, L2)` (rung 4, t40 — `2026-07-29-t40-step0-design.md` §3): the
+    /// Z80 T-state cost of the straight-line instruction span `[L1, L2)` in the
+    /// enclosing proc body, summed EAGERLY from the partial CodeBuf snapshotted on
+    /// [`cycle_scope`](Evaluator::cycle_scope) while this body-position `ensure`
+    /// guard evaluates. Returns [`Value::Int`] so it composes with `+`/`==` for
+    /// free — which the DAC loop needs (DRAIN/DRAINING are shared-prefix + body
+    /// SUMS, not single spans; FILL is the one clean single span `.loop..exhaust`).
+    ///
+    /// The two args are proc-LOCAL label references (`.loop`, `.exhaust`),
+    /// evaluated in a label context so each yields a [`Value::Label`] carrying the
+    /// SAME owner-mangled symbol the buf's `CodeItem::Label` holds. Both labels
+    /// MUST be defined textually BEFORE this ensure (the annotation sits at/after
+    /// the loop) — a forward/missing label is a loud error, never a silent 0.
+    /// A `jr cc`/`djnz`/`ret cc`/`call cc` in the span is `[cycles.ambiguous-branch]`
+    /// (the jp-not-jr hot-path discipline as a compile error); an op off the
+    /// timed-region table is `[cycles.unknown-op]`.
+    pub(super) fn eval_cycles(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 2 {
+            self.error(span, format!("`cycles` expects 2 label arguments (L1, L2), got {}", args.len()));
+            return Value::Poison;
+        }
+        let mut label_name = |this: &mut Self, i: usize| -> Option<String> {
+            match this.in_label_ctx(|t| t.eval_expr(&args[i].value, env)) {
+                Value::Label(n) => Some(n),
+                Value::Poison => None,
+                other => {
+                    this.error(
+                        args[i].span,
+                        format!("`cycles` argument {} must be a proc-local label (`.name`), got {}", i + 1, other.type_name()),
+                    );
+                    None
+                }
+            }
+        };
+        let (Some(l1), Some(l2)) = (label_name(self, 0), label_name(self, 1)) else {
+            return Value::Poison;
+        };
+        let Some(items) = self.cycle_scope.clone() else {
+            self.error(span, "`cycles(...)` is only valid inside a proc-body `ensure` — no CodeBuf span is in scope here".to_string());
+            return Value::Poison;
+        };
+        let Some(span_items) = crate::z80_cycles::label_span(&items, &l1, &l2) else {
+            self.error(
+                span,
+                format!(
+                    "`cycles`: could not carve the span [`{l1}` .. `{l2}`) — both labels must be \
+                     defined textually BEFORE this `ensure` and `{l2}` must follow `{l1}`"
+                ),
+            );
+            return Value::Poison;
+        };
+        match crate::z80_cycles::span_cost(span_items) {
+            Ok(n) => Value::Int(n as i128),
+            Err(crate::z80_cycles::CycleBail::AmbiguousBranch { mnemonic, span: isp }) => {
+                self.error(
+                    isp,
+                    format!("[cycles.ambiguous-branch] `{mnemonic}` has different taken/not-taken cost — a timed span must use `jp`/`jp cc` (constant), never `jr cc`/`djnz`/`ret cc`/`call cc`"),
+                );
+                Value::Poison
+            }
+            Err(crate::z80_cycles::CycleBail::UnknownOp { mnemonic, span: isp }) => {
+                self.error(
+                    isp,
+                    format!("[cycles.unknown-op] `{mnemonic}` is not in the timed-region T-state table — add it to `z80_cycles` if a timed span legitimately needs it"),
+                );
+                Value::Poison
+            }
+        }
+    }
+
     /// `extern(name)` (Task B2, seam re-eval): RAW passthrough of a link
     /// symbol as a [`Value::LinkExpr`] residual tree — no mask, no shift
     /// (unlike `bankid`/`winptr`, which both wrap their symbol in Genesis
