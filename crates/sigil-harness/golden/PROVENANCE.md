@@ -1766,3 +1766,25 @@ merged masters (2763 + 20 net t32 incl. the contract-system fixes).
 - Aeon repo master: **`a4008ca`** (merge of `port-tranche32`; sigil master **`30cb42e`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`85111814`** — UNCHANGED from t31.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`eb5e94be`** — UNCHANGED from t31.
+
+## t33 re-baseline (2026-07-29) — sound_fm: the rung-2 contract-model graduation
+
+Tranche 33 ported engine/sound/sound_fm.asm (998 L, 21 procs + the Snd_ChanClass
+definition) to sound_fm.emp at scale (1) — windowed oracles both shapes (925 B;
+plain $12C3 / debug $1341; ZERO shape-dependent seam symbols). THE GRADUATION:
+firing arc **0 → 0** — the checker, fully wired at t32, verified fm's honest
+contract set DIRECTLY (no finisher, no demanded features; the pure-port premise
+HELD). psg's Snd_ChanClass trust CONVERTED TO VERIFICATION at the exact equ-carrier
+addresses; depth-4 LIFO nesting passed the sibling proof; the dry panel caught a
+third header over-claim (Fm_WriteFreq hl) and stale hardware prose (the $2A/de
+"reasons" described an older driver). Header-accuracy census: 36 procs across
+psg+fm, 6 machine-corrected over-claims (all safe-direction; zero unsafe
+under-claims), 83% accurate as written — the scoreboard rung 3's 74-proc corpus
+inherits. Typed params adopted at the design-named site only; the typed-register-out
+grammar gap ledgered. Kill row 71 (seam-sub-tranche condition).
+
+Byte-neutral. Full paired strict **2788/0 (1 ignored)** on merged masters (2783 + 5).
+
+- Aeon repo master: **`5a9d974`** (merge of `port-tranche33`; sigil master **`3a4ef09`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`85111814`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`eb5e94be`** — UNCHANGED.
