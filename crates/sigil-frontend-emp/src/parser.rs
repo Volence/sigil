@@ -2286,6 +2286,30 @@ impl Parser {
             }
             Tok::LParen => {
                 let inner = self.paren_operand(splices_allowed, start);
+                // A parenthesized DISPLACEMENT expression immediately followed by
+                // `(` is the WRAPPED displacement form `(disp)(An)` — the outer
+                // parens group the displacement, distinguishing it from a bare
+                // `(An)` indirect. Continue into the same displacement-indirect
+                // grammar the unwrapped `disp(An)` form uses (the `_`/`.local`
+                // arms below). Only a single-part, size-free paren group is a
+                // displacement; `(a0, d0.w)(...)` is not valid 68k, so it is left
+                // for the line-end error rather than mis-read as a displacement.
+                if self.at(&Tok::LParen) {
+                    if let Operand::Ind { parts, size: None, .. } = &inner {
+                        if parts.len() == 1 && parts[0].1.is_none() {
+                            let disp = parts[0].0.clone();
+                            let real_inner = self.paren_operand(splices_allowed, self.span());
+                            let span = start.merge(self.prev_span());
+                            return Operand::DispInd {
+                                disp,
+                                inner: Box::new(real_inner),
+                                disp_spliced: false,
+                                field_size_override: None,
+                                span,
+                            };
+                        }
+                    }
+                }
                 if self.eat(&Tok::Plus) {
                     Operand::PostInc(Box::new(inner))
                 } else {
