@@ -168,9 +168,9 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     let module_cpu = module_declared_cpu(&file.module, &mut diags);
     let initial_cpu = module_cpu.unwrap_or(opts.initial_cpu);
     // Validate the rung-2 module `invariant` clauses against the module CPU's
-    // register file (ruling 4). The inheritance PROOF is the Z80 contract
-    // checker's; this catches a mistyped invariant register up front.
-    validate_module_invariants(&file.module, initial_cpu, &mut diags);
+    // register file (ruling 4) and capture the inherited-preserve unit set every
+    // Z80 proc is checked against (§3.2 inheritance).
+    let invariant_regs = validate_module_invariants(&file.module, initial_cpu, &mut diags);
 
     // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
@@ -230,7 +230,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines },
+                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -365,6 +365,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                         defines: &opts.defines,
                     },
                     as_compat,
+                    &invariant_regs,
                     &module_id,
                     &mut here_anchor_counter,
                     &mut builder,
@@ -514,6 +515,7 @@ fn lower_section_items(
     sec: &ast::SectionDecl,
     placement: &Placement,
     as_compat: bool,
+    invariant_regs: &[String],
     module_id: &str,
     here_anchor_counter: &mut u32,
     builder: &mut IrBuilder,
@@ -543,7 +545,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines },
+                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs },
                     builder,
                     diags,
                     asm_counter,
@@ -1512,11 +1514,16 @@ fn module_declared_cpu(module: &ast::ModuleDecl, diags: &mut Vec<Diagnostic>) ->
 /// contract checker (the push/pop `preserves` proof), which consumes this
 /// validated reglist. Validation is separated so a mistyped invariant register is
 /// a loud error even before the checker lands.
-fn validate_module_invariants(module: &ast::ModuleDecl, cpu: Cpu, diags: &mut Vec<Diagnostic>) {
+fn validate_module_invariants(
+    module: &ast::ModuleDecl,
+    cpu: Cpu,
+    diags: &mut Vec<Diagnostic>,
+) -> Vec<String> {
     let rf = match cpu {
         Cpu::Z80 => crate::regfile::RegFile::Z80,
         Cpu::M68000 => crate::regfile::RegFile::M68k,
     };
+    let mut inherited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for (name, expr) in &module.attrs {
         if name != "invariant" {
             continue;
@@ -1532,17 +1539,20 @@ fn validate_module_invariants(module: &ast::ModuleDecl, cpu: Cpu, diags: &mut Ve
             Some("preserves") => {
                 // Each arg is a bare register name (a single-segment path). Reuse
                 // the §2 CPU-parametric recognizer so a bad register is the same
-                // `[contract.unknown-register]` a proc reglist gives.
+                // `[contract.unknown-register]` a proc reglist gives; its expanded
+                // UNITS become the inherited-preserve set every proc is checked
+                // against (§3.2).
                 let segs: Vec<(String, Option<String>)> = args
                     .iter()
                     .map(|a| (invariant_reg_name(&a.value), None))
                     .collect();
-                crate::regfile::expand_reglist(&segs, rf, |reason| {
+                let units = crate::regfile::expand_reglist(&segs, rf, |reason| {
                     err(diags, module.span, format!(
                         "module `{}` invariant: {reason}",
                         module.path.segments.join(".")
                     ))
                 });
+                inherited.extend(units);
             }
             // The value-bound form (§3.4) — represented, not wired in rung 2.
             Some("holds") => {}
@@ -1552,6 +1562,7 @@ fn validate_module_invariants(module: &ast::ModuleDecl, cpu: Cpu, diags: &mut Ve
             )),
         }
     }
+    inherited.into_iter().collect()
 }
 
 /// The register spelling a `preserves(...)` invariant argument names — a bare

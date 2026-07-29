@@ -171,3 +171,160 @@ fn module_invariant_malformed_errors() {
         "expected a malformed-invariant error, got: {diags:?}"
     );
 }
+
+// ---- ladder item 5 (§4.2): the push/pop `preserves` proof (z80_preserves) -----
+//
+// The SIBLING proof (ruling 2, 2026-07-29 countersign) — a Z80 proc declaring
+// `preserves(rN)` is verified over the push/pop stack model. Every negative
+// carries a positive control (t24).
+
+/// (a) POSITIVE control: a proc that brackets a clobbering `call` with
+/// `push hl / … / pop hl` PROVES `preserves(hl)` — no firing. The Z80 analog of
+/// the 68k closure's transitive-clobber job (§1.2).
+#[test]
+fn z80_preserves_via_push_pop_bracket_proven() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Callee() { ret }\n\
+               proc P() preserves(hl) {\n\
+                 push hl\n\
+                 call Callee\n\
+                 pop hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "push hl/call/pop hl must PROVE preserves(hl), got: {diags:?}"
+    );
+}
+
+/// (b) NEGATIVE: a proc that writes `hl` and never restores it, yet declares
+/// `preserves(hl)`, fires `[proc.preserves-unverifiable]`.
+#[test]
+fn z80_preserves_written_unrestored_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Q() preserves(hl) {\n\
+                 ld hl, 5\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    // The proof is unit-level, so a declared `preserves(hl)` fires on its halves
+    // (`h`/`l`) — the register that is genuinely not preserved.
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")
+            && d.contains("written and not restored")),
+        "a written-unrestored preserves(hl) must fire, got: {diags:?}"
+    );
+}
+
+/// (c) the `push R / pop R'` MOVE idiom (§1.3): `push ix / pop hl` copies ix→hl —
+/// it PROVES `preserves(ix)` (ix never written) while CLOBBERING hl. The proof
+/// credits ix and (in the sibling test below) rejects a `preserves(hl)` claim.
+#[test]
+fn z80_move_idiom_preserves_source_not_dest() {
+    let ok = "module m in s (cpu: z80)\n\
+              proc R() preserves(ix) {\n\
+                push ix\n\
+                pop hl\n\
+                ret\n\
+              }\n";
+    assert!(
+        !lower_diags(ok).iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "push ix/pop hl must PROVE preserves(ix)"
+    );
+    let bad = "module m in s (cpu: z80)\n\
+               proc R() preserves(hl) {\n\
+                 push ix\n\
+                 pop hl\n\
+                 ret\n\
+               }\n";
+    assert!(
+        lower_diags(bad).iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("h")),
+        "push ix/pop hl CLOBBERS hl — preserves(hl) must fire"
+    );
+}
+
+/// (d) an unmodeled sp manipulation BAILS the proof — a declared preserve over it
+/// is `[proc.preserves-unverifiable]`. Tested via `ld sp, hl` (a modeled sp
+/// hazard); the rung-3 `ex (sp),hl` trampoline routes to the SAME bail once its
+/// `(sp)` operand form lands (§4.2), so the bailout is proven now.
+#[test]
+fn z80_sp_hazard_bails_declared_preserve() {
+    let src = "module m in s (cpu: z80)\n\
+               proc S() preserves(hl) {\n\
+                 push hl\n\
+                 ld sp, hl\n\
+                 pop hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "an unmodeled sp op must bail a declared preserve, got: {diags:?}"
+    );
+}
+
+// ---- ladder item 6 (§3.2): module invariant(ix) INHERITANCE proof -------------
+
+/// (a) POSITIVE control: `invariant: preserves(ix)` is inherited onto a proc with
+/// NO explicit contract and PROVEN — no instruction writes ix (it is only read as
+/// `(ix+d)`). No firing.
+#[test]
+fn module_invariant_ix_inherited_and_proven() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc P() {\n\
+                 ld a, (ix+0)\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "invariant(ix) must be PROVEN for an ix-read-only proc, got: {diags:?}"
+    );
+}
+
+/// (b) NEGATIVE: a proc that writes ix (`pop ix` with no matching save) fires
+/// `[proc.preserves-unverifiable]` via the INHERITED invariant — the
+/// psg-header-line-60 bug class, now a compile error (§3.2). The message names it
+/// as a MODULE-invariant break.
+#[test]
+fn module_invariant_ix_broken_fires_via_inheritance() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc P() {\n\
+                 pop ix\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")
+            && d.contains("ix")
+            && d.contains("invariant")),
+        "breaking the inherited invariant(ix) must fire naming the module invariant, got: {diags:?}"
+    );
+}
+
+// ---- ladder item 7 (§4.5): the t27-retirement transition ----------------------
+
+/// The three landed Z80 modules take the VACUOUS pass: a `(cpu: z80)` proc with
+/// NO declared `preserves` and NO module `invariant` has nothing to prove, so the
+/// checker fires nothing — even `z80_init`'s unbalanced init-drain pops
+/// (`pop ix/iy/de/hl/af/bc`, which would underflow-bail the proof) are silent
+/// because there is no contract to verify. Item 7's stated outcome, executable.
+#[test]
+fn z80_init_style_drain_without_contract_is_silent() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Z80_Idle() {\n\
+                 pop ix\n\
+                 pop iy\n\
+                 pop de\n\
+                 pop hl\n\
+                 pop af\n\
+                 pop bc\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves")),
+        "a contract-less Z80 drain proc must be silent (item 7 vacuous pass), got: {diags:?}"
+    );
+}

@@ -662,3 +662,40 @@ DISPOSITION: draft RATIFIED with the five rulings; renamed to
 Implementation dispatches on its own branch AFTER t28's countersign cadence allows —
 the TDD ladder §here items run with sound_psg as acceptance corpus; the T1 §0 splice-test
 obligation rides ladder item 4 as drafted.
+
+---
+
+## 13. IMPLEMENTATION ADDENDUM (branch `z80-rung2-contracts`, this pass)
+
+### 13.1 §9 discrepancies caught during implementation (tree wins)
+
+- **9-E — proc bodies do NOT allow operand splices.** §2.3/§6 sketch `{ix}` spliced
+  directly in a proc body. The parser gates `{r}` operand splices to `comptime fn`
+  TEMPLATE bodies (`parser.rs` `splices_allowed`); a proc body is not a template. The
+  Z80 register-named param DOES bind to a `Value::Z80Reg` (the producer, landed item 4),
+  but reaches a `{r}` splice by flowing through a comptime-fn template the proc
+  instantiates — the SAME vehicle T1's own 68k-direction splice test uses. The section
+  CPU the template instantiates under decides validity. (No behavior gap — the obligation
+  is discharged; only the SPELLING differs from §2.3's sketch.)
+- **9-F — `check_flag_unused`/`consumes_carry`/`writes_carry` are NOT CPU-agnostic.**
+  §2.2 states the caller-side flag check "is CPU-agnostic over `CodeItem::Instr` and needs
+  only the Z80 condition-mnemonic recognition." In the tree they are hardcoded 68k
+  mnemonic ALLOWLISTS (`bcs`/`bcc`/`bhi`/`bls` consumers; the 68k CC-writer set). Z80
+  flag-result support (item 2) requires teaching them the Z80 condition mnemonics
+  (`jr z`/`jr c` consume; the Z80 CC-writers redefine) — an ADDITIVE touch of the 68k
+  flag path (new Z80 arms, 68k allowlists byte-unchanged), per the overseer's item-2 bar.
+
+### 13.2 Overseer countersign (2026-07-29) — item 5 = SIBLING, ratified
+
+Ruling 2 amended on its own terms: the shared soundness bailouts the original rationale
+protected are predominantly 68k-specific (movem masks, linear-delta arithmetic,
+sp-displacement hazards); the genuinely shared part — `flag_check::Cfg` — is already
+shared. So a `z80_preserves` SIBLING duplicates nothing that matters. Constraints: the
+sibling CALLS the shared `Cfg`; mirrors the join / call-clobbers-all-nets-zero
+conventions (cite the `preserves.rs` lines mirrored); the `push R / pop R'` move idiom is
+in scope; `ex (sp),hl` is a REPRESENTED loud bailout (rung-3 wires it); `preserves.rs`
+stays byte-untouched; TDD with t24 positive controls. Continuation authorized for the full
+checker cluster: item 5 sibling → item 6 inheritance proof → item 2 flag results (additive
+68k bar) → `Z80Cc` eval producer (only if demanded) → checker routing (`analyze_z80_module`
+replaces the skip; the three existing Z80 modules compile unchanged = an executable item-7
+test). End state: rung-2 sigil-side COMPLETE except item 9 (the psg/fm ports).
