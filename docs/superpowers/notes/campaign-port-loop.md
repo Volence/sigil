@@ -175,7 +175,11 @@ re-green. No emulator time needed at this step.
      comptime-fn / asm-template bodies.
   4. Brace-indent file-wide.
   5. The idiom list walked item-by-item (`Sst.field`, bareword
-     `winptr`/`bankid`, label-in-immediate, typed VDP fns, contract
+     `winptr`/`bankid`, label-in-immediate, `dc.l <label>` for an absolute
+     symbol pointer in raw `dc` position (t25 — vector/jump table entries;
+     register-class words stay loud), `raise_exception "<msg>" [, <flag>]` for a
+     CPU exception/trap vector handler (t25 — the frame-less `__ErrorMessage`
+     shape, sibling to `raise_error`), typed VDP fns, contract
      reglists in movem-RANGE form — `clobbers(d0-d7/a0-a4)`, not comma
      enumeration, wherever a ≥2 contiguous run exists (C1 item 2
      grammar; added 2026-07-15 after t15 shipped three enumerated
@@ -401,14 +405,20 @@ by default):
     the six back-patch macros). NOT dense-conditional-multi-cell yet (mt_bank
     gap, ledgered).
   - `dispatch` (D2.21) — computed state/jump dispatch (encoding-agnostic).
-  - `assert` / `raise_error` (2026-07-12) — DEBUG-diagnostics: `assert.<w> src,
-    cond [, dest]` (self-gates to zero bytes in the plain shape) and unconditional
-    `raise_error "<fstring>"`. Replaces hand-spelled debugger.asm macro-tower
+  - `assert` / `raise_error` / `raise_exception` (2026-07-12; raise_exception t25)
+    — DEBUG/error diagnostics: `assert.<w> src, cond [, dest]` (self-gates to zero
+    bytes in the plain shape), unconditional `raise_error "<fstring>"` (a DELIBERATE
+    raise from normal code — simulates the exception frame with `pea self(pc)` +
+    `move.w sr`), and `raise_exception "<fstring>" [, <flag>]...` (t25 — the
+    EXCEPTION-VECTOR counterpart, i.e. vladikcomper's `__ErrorMessage`: NO frame
+    push because the CPU pushed SR+PC when it vectored here; used by CPU
+    exception/trap vector handlers; the flag list is the error-handler per-message
+    set, `address_error` today). Replaces hand-spelled debugger.asm macro-tower
     transliterations (kill row 16). `ifdebug <x>` ports to `if DEBUG == 1 { <x> }`.
     The `src` must be a register (load first, inside the `if DEBUG == 1` so the load
     itself is gated). Keep operand spellings identical to the AS twin (the auto-
-    message embeds them). rings/core are the shipped consumers; entity_window (11
-    sites) is the ratifying demand.
+    message embeds them). rings/core are the shipped assert/raise consumers;
+    error_handler is the raise_exception consumer.
   - comptime-fn helpers — repeated-emission templates: `clear_longs` (unrolled
     fill), `rep` (repeated bytes), `reload_anim_timer`/`perform_dplc`
     (instruction templates), `aabb_axis_test`, `ojz_sec` (validating record
@@ -419,7 +429,9 @@ by default):
   - contracts — `clobbers`/`preserves`/`out` (reglist form), `let rN: Type`
     (body-position typed register).
   - spelling idioms (step 2, not this pass) — bare Bcc, `jbra`/`jbsr`,
-    `Sst.field`, bareword `bankid`/`winptr`, label-in-immediate.
+    `Sst.field`, bareword `bankid`/`winptr`, label-in-immediate, `dc.l <label>`
+    (t25 — an absolute symbol pointer in raw `dc` position, e.g. a vector/jump
+    table entry; register-class words stay a loud error).
 
   Also scan for STRUCTURAL clones — N-variant duplicated bodies
   differing in one or two terms (the `emit_piece_loop` class): they are
