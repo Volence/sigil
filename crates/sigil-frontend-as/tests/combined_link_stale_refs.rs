@@ -119,6 +119,35 @@ Const:          equ     $1234
         dc.l    Const
 ";
 
+/// `jsr (Ptr).l` where `Ptr = Handler` (a label-referencing equ) past a grown
+/// cross-seam jsr — the debugger's `__ErrorMessage` macro shape (`jsr
+/// (MDDBG__ErrorHandler).l`). The explicit `.l` PINS the width, so the deferred
+/// abs address is a fixed-width `Abs32Be` fixup that must follow the shifted
+/// label, not a baked stale address.
+const JSR_ABS_SRC: &str = "\
+        cpu 68000
+        phase $10000
+        jsr     External
+Handler:
+        rts
+Ptr:            equ     Handler
+        jsr     (Ptr).l
+";
+
+#[test]
+fn jsr_abs_l_through_label_equ_past_grown_jsr_is_not_stale() {
+    let bytes = assemble_link_flatten(JSR_ABS_SRC);
+    // Grown layout: jsr External(6) @0, Handler=rts(2) @6 = $10006, then
+    // `jsr (Ptr).l` = opcode 4EB9 @8, abs32 @10. abs32 must equal Handler's
+    // GROWN VMA ($10006), not the baseline ($10004).
+    assert_eq!(&bytes[8..10], &[0x4E, 0xB9], "jsr (abs).l opcode");
+    assert_eq!(
+        &bytes[10..14],
+        &[0x00, 0x01, 0x00, 0x06],
+        "jsr (Ptr).l through a label-referencing equ past a grown jsr must resolve to the shifted label ($10006)"
+    );
+}
+
 #[test]
 fn dc_l_through_label_referencing_equ_past_grown_jsr_is_not_stale() {
     let bytes = assemble_link_flatten(EQU_SRC);

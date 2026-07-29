@@ -2138,25 +2138,32 @@ impl Asm {
         if let Some(v) = self.eval_all(rest, span) {
             self.env.define(&q, SymbolValue::Int(v));
             // A label-referencing equate (`HandlerPtr = Handler`, the debugger's
-            // `DEBUGGER__*` table): on the deferral pass its VALUE is a
-            // relaxation-shiftable label address, so export it to the linker as a
-            // SYMBOLIC equ_sym (folded post-relax) and register the name so a
-            // `dc.l`/`jsr` through it is kept symbolic too. `relax_safe_fold`
-            // still bakes any env-only subterm, so `X = Label + CONST` ships
-            // `Sym(Label) + Int(CONST)`. A pure-constant equ (no label leaf) or
-            // an ordinary pass falls through to the unchanged `Int(v)` export.
-            let sym_rhs = if self.keep_labels_symbolic() {
-                crate::expr::parse_expr(&self.expand_calls(rest, 0))
-                    .and_then(|(e, tail)| tail.is_empty().then_some(e))
-                    .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
-                    .filter(|e| self.expr_refs_label(e))
-            } else {
-                None
-            };
+            // `DEBUGGER__* = MDDBG__* = ErrorHandler + N` chain): its VALUE is a
+            // relaxation-shiftable label address. DETECT and register such a name
+            // on EVERY pass — the detection is byte-neutral (it only feeds
+            // `expr_refs_label`, whose consumer sites are all `keep_labels_symbolic`-
+            // gated, inert off the deferral pass) and MUST run on the ordinary
+            // passes so the threaded set carries a producer equ (defined LATE, e.g.
+            // mddbg_symbols.asm) to a consumer equ (defined EARLY, debugger.asm)
+            // that references it. The env value stays `Int(v)`, so convergence is
+            // unaffected. On the deferral pass ONLY, a registered name is EXPORTED
+            // to the linker as a SYMBOLIC equ_sym (`relax_safe_fold` keeps section
+            // labels / chained label-ref equs symbolic and bakes env-only
+            // subterms — `X = Label + CONST` ships `Sym(Label) + Int(CONST)`); the
+            // linker folds it post-relax onto the shifted label. A pure-constant
+            // equ never matches and keeps baking `Int(v)`.
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+                .and_then(|(e, tail)| tail.is_empty().then_some(e))
+                .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
+                .filter(|e| self.expr_refs_label(e));
             let equ_expr = match &sym_rhs {
                 Some(e) => {
                     self.label_ref_equs.insert(q.clone());
-                    self.relax_safe_fold(e)
+                    if self.keep_labels_symbolic() {
+                        self.relax_safe_fold(e)
+                    } else {
+                        Expr::Int(v)
+                    }
                 }
                 None => Expr::Int(v),
             };
@@ -2736,6 +2743,37 @@ impl Asm {
                 let frag = self.m68k.lower_jmp_jsr_abs(is_jsr, fixup_target, width, span);
                 self.emit_frag(Ok(frag), span);
                 return;
+            }
+            // `jmp`/`jsr (abs).w/.l` (an EXPLICIT-width absolute-EA target — the
+            // debugger's `jsr (MDDBG__ErrorHandler).l` in __ErrorMessage): the
+            // generic path bakes the folded address, which a width-grown
+            // `JmpJsrSym` shifts out from under. On the deferral pass, if the
+            // address references a section label (directly or through a
+            // label-ref equ), emit the SAME opcode + a symbolic `Abs16Be`/
+            // `Abs32Be` fixup so the linker fills it post-relax. The `.w`/`.l`
+            // suffix PINS the width (no relaxation, so no width-boundary
+            // hazard); the abs hole sits at offset 2 (jmp/jsr take no other
+            // extension words). A resolved non-label / ordinary pass falls
+            // through to the generic (baked) path unchanged.
+            if let [OperandAtom::M68kAbs { addr, long }] = atoms.as_slice() {
+                let qualified = self.resolve_dollar(&self.qualify_expr(addr));
+                if self.keep_labels_symbolic() && self.expr_refs_label(&qualified) {
+                    let inst = M68kInstruction {
+                        mnemonic,
+                        size: M68kSize::L,
+                        ops: vec![if *long { M68kOperand::AbsL(0) } else { M68kOperand::AbsW(0) }],
+                    };
+                    if let Ok(mut frag) = self.m68k.lower_inst(&inst, span) {
+                        debug_assert!(frag.bytes.len() >= if *long { 6 } else { 4 });
+                        frag.fixups.push(Fixup {
+                            kind: if *long { FixupKind::Abs32Be } else { FixupKind::Abs16Be },
+                            offset: 2,
+                            target: self.relax_safe_fold(&qualified),
+                        });
+                        self.emit_frag(Ok(frag), span);
+                        return;
+                    }
+                }
             }
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
         }
