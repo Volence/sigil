@@ -7,6 +7,21 @@ pins/listings only — every claim needing a build is tagged **PORTER-VERIFY**).
 the real trees; the 2026-07-29 t26-close-packet's three framing corrections and its
 one OVERRULED census claim (the `$55A4` listing-echo trap) are folded in below.
 
+**STATUS AMENDMENT (2026-07-29, t29 close — `2026-07-29-t29-close-packet.md`):**
+G1 is PORTED (`test_static.emp` + `test_animated.emp`, merged; byte-delta zero,
+strict 2691/0). TWO corrections this census owes:
+1. **test_animated was UNDER-SCOPED** (§3a row): it is NOT "trivial … display +
+   AnimateSprite" with 2 cross-seam calls — it carries a `vars DplcV: Sst.sst_custom`
+   SST-OVERLAY (the corpus's FIRST `vars` overlay, grep-confirmed) + a THIRD cross-seam
+   call `Perform_DPLC`. So test_animated — not test_parent (§3c/G3) — is the FIRST
+   game-side SST-overlay-twin port. G3's brief reframes: test_parent is the 2nd/3rd
+   overlay consumer (the shared-overlay-twin consolidation question opens there), not
+   the debut.
+2. **"shape-invariant" (§2) means BASES, not bytes:** G1 file BASES are shape-invariant
+   (bank not slid), but CONTENT bytes track per-shape cross-seam operands → the
+   COMPILE-TWICE class (the gate compiles once per shape), not "identical bytes plain/
+   debug." Same for every canonical game-code file that calls shape-moving engine symbols.
+
 **The $55A4 trap (never repeat it):** an asl listing ECHOES skipped-ifdef lines
 with a frozen address and NO byte column. A listing address is never proof of
 emission. Every emission claim here is grounded in the include graph
@@ -79,8 +94,8 @@ Placement context from `games/sonic4/main.asm`:
 
 | File | Lines | Shape | Role / notes | Cross-seam calls |
 |---|---|---|---|---|
-| `objects/test_static.asm` | 11 | invariant | **Trivial** — `TestStatic_Main: jmp Draw_Sprite`. .emp = one `jbra Draw_Sprite` proc (step-2 idiom). | Draw_Sprite (sprites.emp) |
-| `objects/test_animated.asm` | 48 | invariant (1 assert-if) | display + AnimateSprite. | Draw_Sprite, AnimateSprite (animate.emp) |
+| `objects/test_static.asm` | 11 | invariant | **PORTED (t29)** → test_static.emp (`pins::TEST_STATIC` $10C66, gate `SIGIL_EMP_TEST_STATIC`). One `jbra Draw_Sprite` proc. | Draw_Sprite (sprites.emp) |
+| `objects/test_animated.asm` | 48 | invariant (overlay window-overflow check) | **PORTED (t29)** → test_animated.emp (`pins::TEST_ANIMATED` $10C6A, gate `SIGIL_EMP_TEST_ANIMATED`). **FIRST game-side SST-overlay port** — `vars DplcV: Sst.sst_custom` (corpus's first `vars` overlay); adopts vram_art, builds vram_bytes. | Draw_Sprite, AnimateSprite (animate.emp), **Perform_DPLC** (dplc.emp) |
 | `objects/test_enemy.asm` | 63 | invariant | badnik-shaped test object. | Draw_Sprite, ObjectMove, TouchResponse |
 | `objects/test_emitter.asm` | 50 | invariant | spawns effects. | CreateEffect_Normal/Simple (children.emp t24) |
 | `objects/test_stress_emitter.asm` | 51 | invariant | effect-pool stress. | CreateEffect_* (children.emp) |
