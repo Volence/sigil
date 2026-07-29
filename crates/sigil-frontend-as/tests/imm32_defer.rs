@@ -217,7 +217,9 @@ fn moveq_unresolved_symbol_still_errors() {
 
 #[test]
 fn move_w_unresolved_symbol_still_errors() {
-    // 16-bit immediate — R3 scopes deferral to LONG immediates only.
+    // 16-bit immediate into a REGISTER — t30 scopes W-immediate deferral to
+    // MEMORY destinations (the object-spawn `move.w #Sym, (An)` shape); a
+    // register-dest word immediate stays loud (L-only, R3's original scope).
     let src = "        cpu 68000\n        phase 0\n        move.w #ExternalSym, d0\n";
     let err = assemble(src, &Options::default()).expect_err("move.w of undefined symbol errors");
     assert!(
@@ -335,5 +337,70 @@ fn branch_to_undefined_label_still_errors() {
     assert!(
         err.iter().any(|d| d.message.contains("UndefinedLabel")),
         "expected an unresolved-symbol error naming UndefinedLabel, got: {err:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// move.w #Sym, (An) / #Sym, disp0(An) — defers as Value16Be (t30 G2)
+// ---------------------------------------------------------------------------
+// The game object-spawn idiom `move.w #objroutine(EffectObj), SST_code_addr(a1)`
+// where the spawned object is now `.emp`-owned (Sym unresolved on the AS side).
+// `objroutine` = `Sym - ObjCodeBase` (a bank offset <= $FFFF) → the low-16 word
+// truncation `Value16Be` carries. Two dest forms: the literal `(a1)` and the
+// disp-0 `SST_code_addr(a1)` that must fold to `(a1)` (mode 2, no dest ext word).
+
+#[test]
+fn move_w_unresolved_symbol_to_ind_defers_as_value16be() {
+    let src = "        cpu 68000\n        phase 0\n        ObjCodeBase = $10000\n\
+               \n        move.w #ExternalSym-ObjCodeBase, (a1)\n";
+    let module = assemble(src, &Options::default())
+        .expect("move.w of undefined symbol to (a1) defers, no error");
+
+    let frag = first_fixup_frag(&module);
+    // move.w #imm,(a1): 00 11 dest_reg(001) dest_mode(010) src_mode(111) src_reg(100)
+    // = 0011 001 010 111 100 = 0x32BC — mode 2 (An indirect), no dest ext word.
+    assert_eq!(
+        frag.bytes,
+        vec![0x32, 0xBC, 0x00, 0x00],
+        "opcode word (2 bytes) + 2-byte hole for the deferred word immediate"
+    );
+    assert_eq!(frag.fixups.len(), 1);
+    assert_eq!(frag.fixups[0].kind, FixupKind::Value16Be);
+    assert_eq!(frag.fixups[0].offset, 2, "hole starts right after the 2-byte opcode");
+}
+
+#[test]
+fn move_w_unresolved_symbol_to_disp0_folds_and_defers() {
+    // `SST_code_addr = 0`, so `SST_code_addr(a1)` MUST fold to `(a1)` (mode 2) —
+    // matching asl's zeroOffsetOptimization on the eager path. The deferred frag
+    // is 4 bytes (opcode + word hole), NOT 6 (an extra $0000 disp word).
+    let src = "        cpu 68000\n        phase 0\n        ObjCodeBase = $10000\n\
+               SST_code_addr = 0\n        move.w #ExternalSym-ObjCodeBase, SST_code_addr(a1)\n";
+    let module = assemble(src, &Options::default())
+        .expect("move.w of undefined symbol to disp-0 dest defers, no error");
+
+    let frag = first_fixup_frag(&module);
+    assert_eq!(
+        frag.bytes,
+        vec![0x32, 0xBC, 0x00, 0x00],
+        "disp-0 folds to (a1): 4 bytes, NOT the 6-byte mode-5 form with a $0000 disp word"
+    );
+    assert_eq!(frag.fixups.len(), 1);
+    assert_eq!(frag.fixups[0].kind, FixupKind::Value16Be);
+    assert_eq!(frag.fixups[0].offset, 2);
+
+    // Link: ExternalSym = $1115C (an object-bank address) → the word becomes
+    // ($1115C - $10000) = $115C, big-endian.
+    let defs = equ_defining_section(0x2000, vec![equ("ExternalSym", Expr::Int(0x0001_115C))]);
+    let mut all = module.sections.clone();
+    all.push(defs);
+    let resolved =
+        sigil_link::resolve_layout(&all, &SymbolTable::new(), true).expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+    let sec = linked.section(&module.sections[0].name).expect("section");
+    assert_eq!(
+        sec.bytes,
+        vec![0x32, 0xBC, 0x11, 0x5C],
+        "objroutine bank offset $115C folded verbatim big-endian"
     );
 }
