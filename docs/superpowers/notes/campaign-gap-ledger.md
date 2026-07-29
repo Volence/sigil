@@ -1634,3 +1634,31 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 
 - **HARNESS: two separately-lowered `.emp` modules cannot be combined in one link (the flip-harness `sec0` collision).** Attempting the fully-`.emp`-to-`.emp` kill-row-42 flip (compile `vblank.emp` + `sound_debug.emp` together so `jbsr Sound_DebugMirror` resolves module-to-module) failed: each module lowered separately produces its own default `sec0` section at LMA 0x0, and extending one section list with the other's collides ("sections `sec0` [0x0,0x2) and `sec0` [0x0,0x2) overlap — colliding pins"). REPRO: `lower_module` each of two `.emp` files, concat the section lists, `resolve_layout` → overlap error. WORKAROUND: the combined WHOLE-ROM off-canonical gate (`mixed_offcanonical_rom::mixed_combined_config_a`) proves the byte-exact cross-seam call (AS-vblank → placed emp-sound_debug) — a STRONGER artifact than the isolated flip. Only bites tests that combine two independently-lowered `.emp` modules at a synthetic base (the window-oracle flip pattern); the whole-ROM path (one AS module + placed emp sections) is unaffected. KILL: a harness helper that renames/relocates each module's default section (or the frontend gives an unnamed section a module-scoped name), OR Spec-5 (no synthetic-base flip tests once the reference is sigil's own link). — RECORDED (harness limitation; overseer-ordered row).
 - **DIAGNOSTICS: a body-position `{fn()}` Code-splice gives the cryptic `expected an instruction, found LBrace`.** A `{stop_z80()}`-style splice is valid ONLY inside a splices-allowed context (a `comptime fn` template body or an `asm {}`/`sr_masked(asm{})` block); at a bare PROC-body statement position the correct form is `fn()` (no braces). The current error ("expected an instruction, found LBrace") does not steer the author to either fix, and CONTRIBUTED to the t25 sound_debug draft sitting broken for days (the splice error was masked by the parser hang, then read as a mystery). THE ASK: when `{` opens a statement where splices are not allowed, diagnose "`{expr}` Code-splices are only valid inside a comptime-fn / `asm {}` template; at proc-body statement position use `fn()` (no braces)". Corpus census (sweep 2): every live `{fn()}` site (sound_api.emp ×4, inside `sr_masked(asm{})`) is a VALID splice context; sound_debug.emp uses the bare `stop_z80()` form; ZERO body-position misuses remain. — RECORDED (diagnostics polish; demand 1).
+
+## t29 (game-side G1: test_static + test_animated) — 2026-07-29
+
+- **CENSUS UNDER-SCOPE CORRECTIONS (TREE WINS, flagged).** The census G1 row for
+  `test_animated` (§3a) called it "trivial ... display + AnimateSprite" and listed
+  only 2 cross-seam calls. The real file carries THREE: it also `jsr Perform_DPLC`
+  (dplc.emp — `.emp`-ported, module-to-module) AND a `DplcV` SST-overlay struct
+  (shared with test_player.asm) AND uses `vram_art`/`vram_bytes`. So test_animated
+  is the FIRST game-side SST-OVERLAY-TWIN port — the census assigned that "first"
+  to test_parent (G3, §3c). The overlay arrived in G1. Byte-neutral regardless
+  (all three land byte-identical on the first compile); the correction is scope
+  framing for G2/G3 (test_parent is no longer the overlay debut).
+- **TYPE-LAYER CANDIDATE (deferred, cross-seam) — Perform_DPLC's `d1` as VramAddr.**
+  test_animated's `move.w #vram_bytes(VRAM_TEST_SONIC), d1` now produces a VramAddr
+  at the PRODUCING site (vram_bytes returns VramAddr), but d1 flows into
+  `Perform_DPLC (…, d1: u16)` — an already-ported proc whose signature takes a raw
+  u16. Typing d1 VramAddr end-to-end needs dplc.emp's signature to take VramAddr
+  (out of t29 scope — sensors/dplc are not this tranche). Ledgered as an item-13
+  VramAddr adoption candidate at the dplc.emp seam; the converter itself is typed.
+- **vram_art + vram_bytes want a shared VRAM-layout home (kill row 63 tracks it).**
+  objdef.emp already homes `vram_art` (a data-table module — not its natural home;
+  objdef.emp's own comment anticipates "the VRAM-layout port that also brings a
+  vram_bytes tile→address converter"). t29 adopts vram_art via import + builds
+  vram_bytes file-local (1st-consumer rule). The 2nd consumer (sonic.asm or
+  test_player port) triggers the shared home — engine.vram (or similar) housing
+  BOTH, `vram_art` moving out of objdef.emp then (a byte-neutral import sweep of
+  objdef.emp / rings.emp / test_objects.emp). LOG-ONLY (LEAN); not built this
+  tranche.

@@ -383,6 +383,22 @@ end = "TestEmitter"
 gate = "SIGIL_EMP_TEST_OBJECTS"
 tests = ["test_objects_port"]
 
+# G1 (t29): the trivial display/animate objects. Bank windows shape-invariant;
+# TestAnimated is the SHARED anchor (test_static's end / test_animated's start).
+[[region]]
+name = "test_static"
+start = "TestStatic_Main"
+end = "TestAnimated"
+gate = "SIGIL_EMP_TEST_STATIC"
+tests = ["test_g1_objects_port"]
+
+[[region]]
+name = "test_animated"
+start = "TestAnimated"
+end = "TestPlayer"
+gate = "SIGIL_EMP_TEST_ANIMATED"
+tests = ["test_g1_objects_port"]
+
 # ── Game data (main.asm gates) ──────────────────────────────────────────────
 
 [[region]]
@@ -456,6 +472,20 @@ tests = ["objdef_port"]
 [[symbol]]
 name = "Map_TestObj"
 tests = ["objdef_port"]
+
+# test_animated's cross-seam imm32 pointers (Ani_Sonic = SONIC_ANIMS region
+# base; Draw_Sprite / ANIMATE / DPLC pins already exist).
+[[symbol]]
+name = "Map_Sonic"
+tests = ["test_g1_objects_port"]
+
+[[symbol]]
+name = "DPLC_Sonic"
+tests = ["test_g1_objects_port"]
+
+[[symbol]]
+name = "Art_Sonic"
+tests = ["test_g1_objects_port"]
 
 # ── Cross-seam symbols ──────────────────────────────────────────────────────
 # m1c_vector_table's exception-stub VMAs (the IRQ4 $70 target is now
