@@ -74,7 +74,7 @@ fn player_common_imports(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast:
             Item::Vars(d) => d.name.as_deref() == Some("PlayerV"),
             Item::ComptimeFn(d) => matches!(
                 d.name.as_str(),
-                "mask_opposing_lr" | "dist_to_fix" | "set_standing_size" | "set_ball_size"
+                "mask_opposing_lr" | "dist_to_fix" | "set_standing_size" | "set_ball_size" | "abs_w"
             ),
             _ => false,
         })
