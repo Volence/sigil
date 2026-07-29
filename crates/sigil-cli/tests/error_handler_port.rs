@@ -8,11 +8,11 @@
 //! 0x15A + blob 0xF56) — same size, different base.
 //!
 //! The `raise_exception` construct emits `jsr (MDDBG__ErrorHandler).l` / `jmp
-//! (MDDBG__ErrorHandler_PagesController).l`; those two handler entry points are
-//! fed as synthetic pinned labels at their real ErrorHandler-relative addresses
-//! (ErrorHandler = base+0x15A; PagesController = ErrorHandler+0xDC6). The blob's
-//! own `ErrorHandler+$E6C/$EB8` extension-button pointers resolve against the
-//! `.emp`'s own `ErrorHandler` label.
+//! (MDDBG__ErrorHandler_PagesController).l`, and the blob's extension-button
+//! pointers are `dc.l MDDBG__Debugger_AddressRegisters/Backtrace`. All four are
+//! ErrorHandler-relative equs (ErrorHandler = base+0x15A) fed here as synthetic
+//! pinned labels; in the full ROM they come from the AS-side mddbg_symbols.asm
+//! table (mixed_dac_rom's mixed gate).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`). Absent, the
 //! gates SKIP green unless `SIGIL_STRICT_GATE=1`.
@@ -21,6 +21,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
@@ -35,18 +36,20 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-const REGION_LEN: usize = 0x10B0;
 const STUB_TABLE_LEN: u32 = 0x15A; // BusError..ErrorHandler
 const PAGES_OFFSET: u32 = 0xDC6; // ErrorHandler..PagesController
 
 struct Shape {
     base: u32,
+    len: usize,
     rom: &'static str,
     debug: i128,
 }
 
-const PLAIN: Shape = Shape { base: 0x5CAB0, rom: "s4.bin", debug: 0 };
-const DEBUG: Shape = Shape { base: 0x5E5AA, rom: "s4.debug.bin", debug: 1 };
+const PLAIN: Shape =
+    Shape { base: pins::ERROR_HANDLER.plain_base, len: pins::ERROR_HANDLER.plain_len, rom: "s4.bin", debug: 0 };
+const DEBUG: Shape =
+    Shape { base: pins::ERROR_HANDLER.debug_base, len: pins::ERROR_HANDLER.debug_len, rom: "s4.debug.bin", debug: 1 };
 
 fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
@@ -96,7 +99,7 @@ fn compile(shape: &Shape) -> sigil_link::LinkedImage {
         ldiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
     );
 
-    let map = sigil_link::load_map(&map_toml(shape.base, REGION_LEN)).expect("map loads");
+    let map = sigil_link::load_map(&map_toml(shape.base, shape.len)).expect("map loads");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(
@@ -157,8 +160,8 @@ fn reference_gate(shape: &Shape) {
     let base = shape.base as usize;
     assert_region_matches(
         &section.bytes,
-        &refrom[base..base + REGION_LEN],
-        &format!("error_handler vs {}[{base:#x}..{:#x}]", shape.rom, base + REGION_LEN),
+        &refrom[base..base + shape.len],
+        &format!("error_handler vs {}[{base:#x}..{:#x}]", shape.rom, base + shape.len),
     );
 }
 
@@ -204,7 +207,7 @@ fn vector_labels_resolve_to_emp_ownership() {
             defines: vec![("DEBUG".to_string(), 0), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
         },
     );
-    let map = sigil_link::load_map(&map_toml(PLAIN.base, REGION_LEN)).expect("map loads");
+    let map = sigil_link::load_map(&map_toml(PLAIN.base, PLAIN.len)).expect("map loads");
     let mut sections = module.sections;
     place_sections(&mut sections, &map);
 
@@ -273,17 +276,16 @@ fn vector_labels_resolve_to_emp_ownership() {
     }
 }
 
-/// THE t25 INTEGRATION FINDING, made executable: sigil does NOT resolve an
-/// AS-side `X: equ ExternalSym + const` at link — the derived symbol `X` stays
-/// UNRESOLVED even when `ExternalSym` is provided by another module. This blocks
-/// the brief's clean MDDBG__ ownership flip (the equ table `MDDBG__Y equ
-/// ErrorHandler+$yyy` deriving off the flipped `.emp` ErrorHandler): the 4
-/// cross-consumed equs (MDDBG__ErrorHandler/_PagesController + the two blob
-/// Debugger_* pointers) can't derive off a link-external base. The whole-ROM
-/// mixed gate therefore awaits an overseer ruling (build a link-time-equ
-/// capability, or pin the 4 equs per-shape). The windowed region gates above
-/// prove byte-identity independently of this. When sigil gains the capability
-/// this test FLIPS (the derived equ resolves) and signals the flip can be built.
+/// t25 capability note (ledgered demand-1), made executable: sigil does NOT
+/// resolve an AS-side `X: equ ExternalSym + const` at link — the derived symbol
+/// `X` stays UNRESOLVED even when `ExternalSym` is provided by another module.
+/// This is why the MDDBG__ equ table does NOT derive off the `.emp`-owned
+/// ErrorHandler; instead engine.inc's gate-ON arm defines a NUMERIC per-shape
+/// `ErrorHandler` equ so the table folds at assemble time (the numeric-org
+/// derivation — `mixed_dac_rom::mixed_error_handler_rom_matches_assembled_reference`
+/// ships the whole-ROM mixed gate on it). The external-base equ remains a
+/// recorded demand; when sigil gains it this test FLIPS (the derived equ
+/// resolves) and the numeric pin can retire.
 #[test]
 fn derived_equ_off_external_base_is_unresolved_today() {
     use sigil_ir::SymbolValue;

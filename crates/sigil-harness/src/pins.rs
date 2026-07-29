@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche24/s4.lst (07/24/2026 11:39:48 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche24/s4.debug.lst (07/24/2026 11:39:50 PM)
-//! [provenance] 37 regions, 276 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche25/s4.lst (07/28/2026 10:32:59 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche25/s4.debug.lst (07/28/2026 10:33:00 PM)
+//! [provenance] 38 regions, 276 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,6 +155,9 @@ pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x14B5E, debug_base: 0x1
 
 /// `ObjDef_Static` .. `OJZ_Sec0_TypeTable` — gate `SIGIL_EMP_OBJDEFS`. tests: objdef_port
 pub const OBJDEFS: Region = Region { plain_base: 0x11D4A, debug_base: 0x11DB2, plain_len: 0x68, debug_len: 0x68 };
+
+/// `BusError` .. `EndOfRom` — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
+pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CAB0, debug_base: 0x5E5AA, plain_len: 0x10B0, debug_len: 0x10B0 };
 
 // ── Symbols (manifest order) ──
 

@@ -406,6 +406,22 @@ end = "OJZ_Sec0_TypeTable"
 gate = "SIGIL_EMP_OBJDEFS"
 tests = ["objdef_port"]
 
+# Tranche 25 — the error_handler region (the ROM TAIL): the 12 CPU
+# exception-vector stubs (raise_exception) + the vendored MD Debugger blob. Length
+# 0x10B0 BOTH shapes (stub table 0x15A + blob 0xF56) — same size, different base,
+# NOT a shape-split region. `end = "EndOfRom"` is the end-is-next-placement
+# precedent (the region tail lands exactly on EndOfRom, the byte before the
+# convsym deb2 appendix). The MDDBG__ equ table (mddbg_symbols.asm) stays AS-side,
+# deriving off the numeric `ErrorHandler` equ the gate-ON arm defines (numeric-org
+# derivation — an external-base equ does not resolve, ledgered demand-1). The 12
+# vector labels flip to .emp ownership (vectors.asm dc.l).
+[[region]]
+name = "error_handler"
+start = "BusError"
+end = "EndOfRom"
+gate = "SIGIL_EMP_ERROR_HANDLER"
+tests = ["error_handler_port"]
+
 # objdef byte gate cross-seam symbols: the four routine labels (code_addr =
 # label − ObjCodeBase) + the mappings pointer, resolved to their true VMAs so
 # the .emp records match the reference ROM windows.
