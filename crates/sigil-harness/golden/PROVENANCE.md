@@ -1630,3 +1630,31 @@ checkouts; overseer's own runs at every gate).
   sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
   sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
+
+## t28 re-baseline (2026-07-29) — parser debt + DEMAND-3 off-canonical machinery + sound_debug
+
+Tranche 28 paid down the three known parser-debt items (each root-caused DIFFERENTLY
+than framed — the t25 hang was the top-level `recover_to_next_decl` spinning on a
+contextual `extern`, not operand/expr parse; the "extern-in-lea" gap was the
+wrapped-paren `(disp)(An)` form for ANY displacement; the leftmost-local-label bug
+was fixed in shared `eval_path`, converging both parse forms), built the DEMAND-3
+whole-ROM off-canonical machinery (`mixed_offcanonical_rom.rs`: pure-`assemble_root`
+references, `assert_rom_matches` with an EMPTY allowlist held as a hard bar; Config A
+debug+hotkeys+mirror serves game_debug AND sound_debug in one build, Config B plain
+no-sound serves z80_init — all three consumers green by name), and landed
+`sound_debug.emp` (116 L, canonically empty both shapes, proven at the mirror shape).
+
+**KILL ROW 42 KILLED: the corpus's last `extern proc` (Sound_DebugMirror) is closed —
+ZERO extern proc declarations remain corpus-wide** (step-6 census with evidence).
+Byte-neutral end to end; canonical CRCs/sha256/EndOfRom unchanged (fifth consecutive
+byte-neutral landing). Rows 58/59 born; sec0-collision harness limitation and the
+cryptic body-position-splice diagnostic ledgered.
+
+Full paired strict **2685/0 (1 ignored)** on merged masters (2675 + 10 net t28,
+ignored 2→1 via the P1 un-ignore; overseer's own runs at every gate).
+
+- Aeon repo master: **`7051b4d`** (merge of `port-tranche28`; sigil master **`7fd38c9`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`c51342d0`**, sha256
+  **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`992d9e7d`**, sha256
+  **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`** — UNCHANGED.
