@@ -64,6 +64,16 @@ fn z80_body(body: &str) -> Vec<u8> {
     section_bytes(&module, "s")
 }
 
+/// Lower one Z80 body line (same `(cpu: z80, vma: $0)` proc wrapper as
+/// [`z80_body`]) and return the lowering diagnostics WITHOUT asserting they are
+/// empty — for the negative controls.
+fn z80_body_diags(body: &str) -> Vec<Diagnostic> {
+    let src = format!(
+        "module m\nsection s (cpu: z80, vma: $0) {{\n  proc P() {{\n    {body}\n    ret\n  }}\n}}\n"
+    );
+    lower(&src).1
+}
+
 // ---- item 1: the probe -----------------------------------------------------
 
 #[test]
@@ -269,4 +279,60 @@ fn symbolic_jp_defers_and_links() {
     assert_eq!(fixups.len(), 1);
     assert_eq!(fixups[0].kind, FixupKind::Value16Le);
     assert_eq!(section_bytes(&module, "code"), vec![0xC3, 0xCD, 0xAB]);
+}
+
+// ---- item 5: positive/negative controls (the probe must be able to fail) ----
+
+/// A 68k register (`Value::Reg`) spliced into a Z80 section is the CPU/kind
+/// disagreement `[asm.splice-kind]` error — the check actually fires (t24
+/// positive-control rule). Reached by a `Reg`-param comptime fn (which binds
+/// `d0` to a `Value::Reg`) instantiated in a Z80 proc.
+#[test]
+fn reg68k_spliced_in_z80_section_is_splice_kind_error() {
+    let src = "module m in s (cpu: z80)\n\
+               comptime fn splice68(r: Reg) -> Code {\n\
+                 return asm {\n\
+                   ld {r}, a\n\
+                 }\n\
+               }\n\
+               proc P() {\n\
+                 splice68(d0)\n\
+                 ret\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[asm.splice-kind]")),
+        "expected a splice-kind error for a 68k register in a Z80 section, got: {diags:?}"
+    );
+}
+
+/// `(ix+127)` is accepted — the i8 window's positive edge maps cleanly to a
+/// `DD 7E 7F` (`ld a,(ix+d)`, base `ld r,(hl)`), no range error.
+#[test]
+fn indexed_disp_127_accepted() {
+    assert_eq!(z80_body("ld a, (ix+127)"), vec![0xDD, 0x7E, 0x7F, 0xC9]);
+}
+
+/// `(ix+128)` is one past the i8 window — the same `-128..=127` check the 68k
+/// brief-extension disp8 path runs. A loud range error, no bytes.
+#[test]
+fn indexed_disp_128_is_i8_range_error() {
+    let diags = z80_body_diags("ld a, (ix+128)");
+    assert!(
+        diags.iter().any(|d| d.message.contains("-128..=127") && d.message.contains("128")),
+        "expected an (ix+d) i8-range error, got: {diags:?}"
+    );
+}
+
+/// A form the corpus does NOT demand — `bit 0,(ix+d)`, whose bit number needs a
+/// `Z80Bit` operand the T1 model does not yet produce — still reports
+/// `[lower.z80-unsupported]`. Proves T1's wired scope is BOUNDED: it never
+/// silently accepts un-oracled bytes.
+#[test]
+fn unwired_bit_indexed_is_z80_unsupported() {
+    let diags = z80_body_diags("bit 0, (ix+1)");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[lower.z80-unsupported]")),
+        "expected [lower.z80-unsupported] for the unwired bit form, got: {diags:?}"
+    );
 }

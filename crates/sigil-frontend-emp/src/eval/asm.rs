@@ -25,7 +25,7 @@ use crate::ast::{self, AsmStmt, BinOp, InstrLine, Operand, TextOrSplice};
 use crate::lower::hygiene::{LabelScope, Owner};
 use crate::parser::expr_span;
 use crate::value::{
-    CodeBuf, CodeItem, CodeOperand, Reg, Value, Width, Z80Index, Z80Pair, Z80Reg8,
+    CodeBuf, CodeItem, CodeOperand, Reg, Value, Width, Z80Index, Z80Pair, Z80Reg8, Z80RegClass,
 };
 use sigil_span::{Level, Span};
 
@@ -2186,9 +2186,39 @@ impl Evaluator<'_> {
     /// classes are decided (used by both `{splice}` operands and evaluated
     /// non-path `Plain` operands).
     fn classify_operand_splice(&mut self, v: Value, span: Span) -> Option<CodeOperand> {
+        let is_z80 = self.cpu == Some(sigil_ir::backend::Cpu::Z80);
         match v {
             Value::Poison => None,
-            Value::Reg(r) => Some(CodeOperand::Reg(r)),
+            // CPU/kind agreement (T1, §2.2): a 68k register spliced into a Z80
+            // section is a loud `[asm.splice-kind]` error — the free correctness
+            // win the single-CPU-per-section fact hands us. In a 68k section it
+            // is the ordinary register operand (byte-frozen path).
+            Value::Reg(r) => {
+                if is_z80 {
+                    self.splice_kind_err(span, "a Z80 operand (this is a Z80 section)", &Value::Reg(r));
+                    None
+                } else {
+                    Some(CodeOperand::Reg(r))
+                }
+            }
+            // The mirror: a Z80 register (`{r}` in a Z80 template, §3.1) maps to
+            // its Z80 operand in a Z80 section; the SAME value in a 68k section
+            // is the `[asm.splice-kind]` error. (The producer — a Z80 proc
+            // register param — arrives with the rung-2 files; this arm is wired
+            // now so it is a one-line addition then, and the 68k-section guard
+            // is defense-in-depth today.)
+            Value::Z80Reg(rc) => {
+                if is_z80 {
+                    Some(z80_regclass_operand(rc))
+                } else {
+                    self.splice_kind_err(
+                        span,
+                        "a 68k operand (this is a 68000 section)",
+                        &Value::Z80Reg(rc),
+                    );
+                    None
+                }
+            }
             // A Label param spliced into an operand position (`jsr {p}`,
             // `lea {p}, a1`) produces the same symbol operand as the string form
             // (D-PP.3) — a link-time reference, byte-identical to `jsr {t}` with
@@ -2216,6 +2246,19 @@ impl Evaluator<'_> {
             span,
             format!("[asm.splice-kind] expected {expected}, got {}", got.type_name()),
         );
+    }
+}
+
+/// Map a comptime Z80 register class (a `{r}` splice value) to its operand
+/// (§3.1). An index register alone in operand position is its 16-bit pair
+/// spelling (`ix`/`iy`); `(ix+d)` indexing is a distinct operand shape, not a
+/// bare splice.
+fn z80_regclass_operand(rc: Z80RegClass) -> CodeOperand {
+    match rc {
+        Z80RegClass::R8(r) => CodeOperand::Z80Reg8(r),
+        Z80RegClass::Pair(p) => CodeOperand::Z80Pair(p),
+        Z80RegClass::Index(Z80Index::Ix) => CodeOperand::Z80Pair(Z80Pair::Ix),
+        Z80RegClass::Index(Z80Index::Iy) => CodeOperand::Z80Pair(Z80Pair::Iy),
     }
 }
 
