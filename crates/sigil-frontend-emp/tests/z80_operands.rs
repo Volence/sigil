@@ -324,16 +324,56 @@ fn indexed_disp_128_is_i8_range_error() {
     );
 }
 
-/// A form the corpus does NOT demand — `bit 0,(ix+d)`, whose bit number needs a
-/// `Z80Bit` operand the T1 model does not yet produce — still reports
-/// `[lower.z80-unsupported]`. Proves T1's wired scope is BOUNDED: it never
-/// silently accepts un-oracled bytes.
+/// The bounded-scope negative control (moved off `bit`/(ix+d), which item 3
+/// wires): a condition-code control-flow form (`ret nz`) is a real Z80 shape the
+/// rung-2 eval mapper does not yet produce a `Z80Cc` operand for, so it still
+/// reports `[lower.z80-unsupported]` — proving the wired scope stays BOUNDED,
+/// never silently accepting un-oracled bytes.
 #[test]
-fn unwired_bit_indexed_is_z80_unsupported() {
-    let diags = z80_body_diags("bit 0, (ix+1)");
+fn unwired_condition_code_is_z80_unsupported() {
+    let diags = z80_body_diags("ret nz");
     assert!(
         diags.iter().any(|d| d.message.contains("[lower.z80-unsupported]")),
-        "expected [lower.z80-unsupported] for the unwired bit form, got: {diags:?}"
+        "expected [lower.z80-unsupported] for the unwired condition-code form, got: {diags:?}"
+    );
+}
+
+// ---- rung-2 item 3: bit/set/res + Z80Bit operand wiring (§1.6) --------------
+
+/// `bit 4, a` — a bit number on an 8-bit register: `CB 67` (asl golden). The
+/// leading `4` becomes a `Z80Operand::Bit`, not an ordinary immediate.
+#[test]
+fn bit_number_on_register() {
+    assert_eq!(z80_body("bit 4, a"), vec![0xCB, 0x67, 0xC9]);
+}
+
+/// `bit 1, (ix+10)` — a bit test on an indexed operand: `DD CB 0A 4E` (asl
+/// golden). The demanded `bit 7,(ix+sc_flags)` shape.
+#[test]
+fn bit_number_on_indexed() {
+    assert_eq!(z80_body("bit 1, (ix+10)"), vec![0xDD, 0xCB, 0x0A, 0x4E, 0xC9]);
+}
+
+/// `set 1, (ix+10)` — the `set SCF_KEYED_B,(ix+sc_flags)` corpus shape:
+/// `DD CB 0A CE` (asl golden).
+#[test]
+fn set_bit_on_indexed() {
+    assert_eq!(z80_body("set 1, (ix+10)"), vec![0xDD, 0xCB, 0x0A, 0xCE, 0xC9]);
+}
+
+/// `res 1, (ix+10)` — the reset sibling: `DD CB 0A 8E` (asl golden).
+#[test]
+fn res_bit_on_indexed() {
+    assert_eq!(z80_body("res 1, (ix+10)"), vec![0xDD, 0xCB, 0x0A, 0x8E, 0xC9]);
+}
+
+/// A bit number outside `0..=7` is a loud range error, not silent bytes.
+#[test]
+fn bit_number_out_of_range_errors() {
+    let diags = z80_body_diags("bit 8, a");
+    assert!(
+        diags.iter().any(|d| d.message.contains("[lower.z80-unsupported]") && d.message.contains("0..=7")),
+        "expected a 0..=7 bit-number range error, got: {diags:?}"
     );
 }
 

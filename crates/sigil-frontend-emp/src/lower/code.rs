@@ -1819,7 +1819,42 @@ fn lower_z80_abs16_sym(
 fn map_z80_operands(m: Z80Mnemonic, ops: &[CodeOperand]) -> Result<Vec<Z80Operand>, String> {
     let wants_imm16 = matches!(m, Z80Mnemonic::Jp | Z80Mnemonic::Call)
         || ops.iter().any(|o| matches!(o, CodeOperand::Z80Pair(_)));
-    ops.iter().map(|op| map_z80_operand(op, wants_imm16)).collect()
+    // `bit`/`set`/`res` (rung-2 §1.6): the FIRST operand is a 3-bit bit NUMBER
+    // (`bit 4,a` / `set SCF_KEYED_B,(ix+sc_flags)`), not an ordinary immediate.
+    // The eval mapper folds it to a `CodeOperand::Imm` (no mnemonic context
+    // there); here — where the mnemonic IS known — it becomes a `Z80Operand::Bit`
+    // so `z80::encode`'s CB-bit path selects. (A `Z80Bit` operand, if a future
+    // eval-time path produces one, maps directly via `map_z80_operand`.)
+    let is_bit_op = matches!(m, Z80Mnemonic::Bit | Z80Mnemonic::Set | Z80Mnemonic::Res);
+    ops.iter()
+        .enumerate()
+        .map(|(i, op)| {
+            if is_bit_op && i == 0 {
+                map_z80_bit_number(op)
+            } else {
+                map_z80_operand(op, wants_imm16)
+            }
+        })
+        .collect()
+}
+
+/// Map the leading bit-NUMBER operand of a `bit`/`set`/`res` (§1.6) to a
+/// [`Z80Operand::Bit`]. Accepts a comptime `Imm(0..=7)` (the usual `bit 4,a`
+/// spelling, or a folded `set SCF_KEYED_B,…` constant) or an already-classified
+/// [`CodeOperand::Z80Bit`]; anything else — or a value outside `0..=7` — is
+/// `[lower.z80-unsupported]` (the ISA's own `0..=7` guard is the byte-exact
+/// backstop).
+fn map_z80_bit_number(op: &CodeOperand) -> Result<Z80Operand, String> {
+    match op {
+        CodeOperand::Z80Bit(b) => Ok(Z80Operand::Bit(*b)),
+        CodeOperand::Imm(n) if (0..=7).contains(n) => Ok(Z80Operand::Bit(*n as u8)),
+        CodeOperand::Imm(n) => Err(format!(
+            "[lower.z80-unsupported] bit number {n} out of range 0..=7"
+        )),
+        other => Err(format!(
+            "[lower.z80-unsupported] `bit`/`set`/`res` needs a 0..=7 bit number, got `{other:?}`"
+        )),
+    }
 }
 
 /// Map one comptime [`CodeOperand`] to a [`Z80Operand`]. A `[lower.z80-unsupported]`
