@@ -119,9 +119,9 @@ fn written_without_restore_not_preserved() {
          }\n",
         Reg::A0,
     );
-    // a0 was lea'd and the save was discarded via `addq #4,sp` (a computed-sp
-    // pop we cannot model as a register restore) → not provably preserved.
-    assert!(!is_verified(&s), "clobbered, not restored → not Verified, got {s:?}");
+    // a0 was lea'd and its save DISCARDED by the immediate cleanup `addq #4,sp`
+    // (which drops the whole a0 slot, no restore) → genuinely not preserved.
+    assert!(!is_verified(&s), "clobbered, save discarded → not Verified, got {s:?}");
 }
 
 /// AllocDynamic's real shape: two independent push/pop return paths plus a third
@@ -370,23 +370,25 @@ fn bailout_on_returning_path_is_unverifiable() {
     assert!(is_unverifiable(&s), "bail on the rts path → Unverifiable, got {s:?}");
 }
 
-/// Computed sp: an `adda.w #n, sp` moves the stack pointer by an amount the slot
-/// model cannot track → the path is UNVERIFIABLE (error-tier for a declared
-/// preserves — a wrong contract is worse than none).
+/// Computed sp: an `adda.w d1, sp` (REGISTER source) moves the stack pointer by a
+/// runtime amount the slot model cannot track → the path is UNVERIFIABLE
+/// (error-tier for a declared preserves — a wrong contract is worse than none).
+/// The immediate cleanup form is modeled separately (the sp-cleanup idiom); only a
+/// COMPUTED (register/index) sp op stays a hard bailout here.
 #[test]
 fn computed_sp_is_unverifiable() {
     let s = status(
         "module m\n\
-         proc P () clobbers(d0) {\n\
+         proc P () clobbers(d0, d1) {\n\
              move.l  a0, -(sp)\n\
              lea     A, a0\n\
-             adda.w  #4, sp\n\
+             adda.w  d1, sp\n\
              movea.l (sp)+, a0\n\
              rts\n\
          }\n",
         Reg::A0,
     );
-    assert!(is_unverifiable(&s), "computed sp → Unverifiable, got {s:?}");
+    assert!(is_unverifiable(&s), "computed (register) sp → Unverifiable, got {s:?}");
 }
 
 /// sp escaping into an address register (`movea.l sp, a3`) means the saved
@@ -754,4 +756,186 @@ fn t24_sp_hazard_is_not_deferrable() {
         matches!(opt, PreserveStatus::Unverifiable(_)),
         "an sp hazard is not deferrable → Unverifiable even optimistically, got {opt:?}"
     );
+}
+
+// --- the immediate-sp-cleanup idiom (t38 player_sensors probe cores) ----------
+// `move.l a0,-(sp)` … push scratch … drop the scratch with `addq/adda #N,sp` …
+// `movea.l (sp)+,a0`: the probe cores save a0 across Collision_GetType, stash the
+// layer word beneath it, then pop the layer with an immediate sp-INCREASE before
+// restoring a0. The old model bailed on ALL explicit sp arithmetic; §5 now models
+// an IMMEDIATE sp-INCREASE as dropping exactly N bytes of tracked slots, so the
+// round-trip verifies. Slots carry their TRUE pushed byte width (move.w=2 vs
+// move.l=4 vs per-movem-member) — the prerequisite for a whole-slot drop.
+
+/// C1 — the core positive: an immediate `addq #2,sp` drops the WORD scratch slot
+/// exactly, leaving a0's long slot for the final pop → Verified.
+#[test]
+fn sp_cleanup_immediate_increase_over_word_slot_preserves() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a0, -(sp)\n\
+             move.w  d3, -(sp)\n\
+             lea      A, a0\n\
+             addq.l  #2, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "addq #2 drops the word slot, a0 pops from its long slot → Verified, got {s:?}");
+}
+
+/// C1 control — a constant sp-DECREASE (`subq #4,sp`, a scratch alloc) is NOT the
+/// cleanup idiom and stays a soundness bailout → Unverifiable.
+#[test]
+fn sp_cleanup_constant_decrease_stays_bailing() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a0, -(sp)\n\
+             lea      A, a0\n\
+             subq.l  #4, sp\n\
+             addq.l  #4, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_unverifiable(&s), "sp-DECREASE is not the cleanup idiom → Unverifiable, got {s:?}");
+}
+
+/// C1 control — a COMPUTED sp-increase (register source, `adda d1,sp`) is not an
+/// immediate cleanup; the drop amount is unknown → stays bailing.
+#[test]
+fn sp_cleanup_computed_increase_register_stays_bailing() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0, d1) {\n\
+             move.l  a0, -(sp)\n\
+             lea      A, a0\n\
+             adda.l  d1, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_unverifiable(&s), "computed (register) sp-increase → Unverifiable, got {s:?}");
+}
+
+/// C2 — the slot-boundary rule: a drop that consumes only PART of a slot (`addq
+/// #2,sp` over a 4-byte long slot) cannot be modeled and bails loudly.
+#[test]
+fn sp_cleanup_partial_slot_drop_bails() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a0, -(sp)\n\
+             lea      A, a0\n\
+             addq.l  #2, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_unverifiable(&s), "a partial-slot drop (2 of a 4-byte slot) must bail → Unverifiable, got {s:?}");
+}
+
+/// C3 — over-drop soundness: a cleanup that consumes a0's OWN saved slot (dropping
+/// the wrong 4 bytes) leaves a decoy slot below; the later pop reads the decoy, so
+/// a0 ends != entry → preserves is REFUTED (NotPreserved, not merely unverifiable).
+#[test]
+fn sp_cleanup_over_drop_reads_wrong_slot_refutes() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a1, -(sp)\n\
+             move.l  a0, -(sp)\n\
+             lea      A, a0\n\
+             addq.l  #4, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_not_preserved(&s), "over-drop consumes a0's slot, pop reads a1's decoy → NotPreserved, got {s:?}");
+}
+
+/// C4 — a `move.w` push is tracked as a TRUE 2-byte slot: `addq #2,sp` lands on
+/// its boundary exactly and verifies. (If the word slot were mis-sized as 4, this
+/// same drop would be a partial-slot bail — the width representation is the proof.)
+#[test]
+fn sp_cleanup_word_slot_width_is_two_bytes() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a0, -(sp)\n\
+             move.w  d1, -(sp)\n\
+             lea      A, a0\n\
+             addq.l  #2, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "a move.w slot is 2 bytes, dropped exactly by addq #2 → Verified, got {s:?}");
+}
+
+/// C4 — movem member widths are TRUE per-member sizes: three `movem.w` members are
+/// 2 bytes each (6 total), dropped exactly by `addq #6,sp` → Verified.
+#[test]
+fn sp_cleanup_movem_word_members_are_two_bytes_each() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0-d2) {\n\
+             move.l  a0, -(sp)\n\
+             movem.w d0-d2, -(sp)\n\
+             lea      A, a0\n\
+             addq.l  #6, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "three movem.w members = 6 bytes, dropped exactly → Verified, got {s:?}");
+}
+
+/// C5 — the real probe-core shape end to end: save a0, stash the layer word, call
+/// a clobbering callee, drop the layer with `addq #2,sp`, restore a0. Under the
+/// conservative ClobberAll model a0 verifies (the save round-trips regardless of
+/// what the callee did).
+#[test]
+fn sp_cleanup_probe_core_shape_with_call_preserves_a0() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0-d3, a1) {\n\
+             move.l  a0, -(sp)\n\
+             move.w  d3, -(sp)\n\
+             jbsr    Collision_GetType\n\
+             addq.l  #2, sp\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(is_verified(&s), "probe-core save/cleanup/restore → Verified even under ClobberAll, got {s:?}");
+}
+
+/// C5 non-vacuity — the SAME shape with the final restore REMOVED must not verify
+/// (the layer drop discarded a0's save and nothing restores it) → an injected
+/// false preserves fires.
+#[test]
+fn sp_cleanup_probe_core_missing_restore_does_not_preserve() {
+    let s = status(
+        "module m\n\
+         proc P () clobbers(d0-d3, a1) {\n\
+             move.l  a0, -(sp)\n\
+             move.w  d3, -(sp)\n\
+             jbsr    Collision_GetType\n\
+             addq.l  #6, sp\n\
+             rts\n\
+         }\n",
+        Reg::A0,
+    );
+    assert!(!is_verified(&s), "no restore → a0 not preserved, got {s:?}");
 }

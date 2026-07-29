@@ -1861,6 +1861,20 @@ end = "Sonic_InitAssets"
 gate = "SIGIL_EMP_PLAYER_SPINDASH"
 tests = ["test_p2_player_states_port"]
 
+# P4 (tranche 38) — player_sensors, the collision sensor primitives. Lives in
+# the ENGINE BLOCK (main.asm gameEngineBlockIncludes, the first include), NOT
+# the object bank — a called primitive with no code_addr entry points. Base
+# shifts with upstream __DEBUG__ growth (SHAPE-VARYING base, shape-invariant own
+# layout: $4FC both shapes); the gate arm carries a per-shape ifdef __DEBUG__
+# org. End anchor = Section_Init (game_debug.asm emits ZERO canonical bytes, so
+# the region ends where the next engine region begins).
+[[region]]
+name = "player_sensors"
+start = "Collision_ProbeDown"
+end = "Section_Init"
+gate = "SIGIL_EMP_PLAYER_SENSORS"
+tests = ["test_p4_player_sensors_port"]
+
 # P1 cross-seam call targets + RAM/data pins. Draw_Sprite/Sound_PlaySFX/
 # Map_TestObj/ObjCodeBase/Ctrl_1_Press/Ctrl_1_Held/Current_Act_Ptr/Map_Sonic/
 # DPLC_Sonic/Art_Sonic already pinned; Perform_DPLC=DPLC base, AnimateSprite=
@@ -1911,6 +1925,23 @@ tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "Player_SensorWallAt"
 tests = ["test_p2_player_states_port"]
+# P4 (tranche 38) cross-seam callees player_sensors.emp references: the surviving-
+# AS collision lookup proc + its four ROM tables (Player_Quadrant already pinned).
+[[symbol]]
+name = "Collision_GetType"
+tests = ["test_p4_player_sensors_port"]
+[[symbol]]
+name = "SolidityTable"
+tests = ["test_p4_player_sensors_port"]
+[[symbol]]
+name = "AngleTable"
+tests = ["test_p4_player_sensors_port"]
+[[symbol]]
+name = "HeightMaps"
+tests = ["test_p4_player_sensors_port"]
+[[symbol]]
+name = "HeightMapsRot"
+tests = ["test_p4_player_sensors_port"]
 [[symbol]]
 name = "Sonic_LoadArt"
 tests = ["test_p1_player_port"]

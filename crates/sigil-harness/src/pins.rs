@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche35/s4.lst (07/29/2026 01:10:30 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche35/s4.debug.lst (07/29/2026 01:10:32 PM)
-//! [provenance] 50 regions, 307 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche38/s4.lst (07/29/2026 02:37:23 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche38/s4.debug.lst (07/29/2026 02:37:33 PM)
+//! [provenance] 51 regions, 312 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +194,9 @@ pub const PLAYER_AIR: Region = Region { plain_base: 0x10896, debug_base: 0x10896
 
 /// `PState_Spindash` .. `Sonic_InitAssets` — gate `SIGIL_EMP_PLAYER_SPINDASH`. tests: test_p2_player_states_port
 pub const PLAYER_SPINDASH: Region = Region { plain_base: 0x10B58, debug_base: 0x10B58, plain_len: 0x9C, debug_len: 0x9C };
+
+/// `Collision_ProbeDown` .. `Section_Init` — gate `SIGIL_EMP_PLAYER_SENSORS`. tests: test_p4_player_sensors_port
+pub const PLAYER_SENSORS: Region = Region { plain_base: 0x50A8, debug_base: 0x5E40, plain_len: 0x4FC, debug_len: 0x4FC };
 
 // ── Symbols (manifest order) ──
 
@@ -1087,6 +1090,21 @@ pub const PLAYER_SENSOR_WALL_DIR: Pin = Pin { plain: 0x54E4, debug: 0x627C };
 
 /// `Player_SensorWallAt`. tests: test_p2_player_states_port
 pub const PLAYER_SENSOR_WALL_AT: Pin = Pin { plain: 0x54DC, debug: 0x6274 };
+
+/// `Collision_GetType`. tests: test_p4_player_sensors_port
+pub const COLLISION_GET_TYPE: Pin = Pin { plain: 0x5084, debug: 0x5E1C };
+
+/// `SolidityTable`. tests: test_p4_player_sensors_port
+pub const SOLIDITY_TABLE: Pin = Pin { plain: 0x27852, debug: 0x278BA };
+
+/// `AngleTable`. tests: test_p4_player_sensors_port
+pub const ANGLE_TABLE: Pin = Pin { plain: 0x27752, debug: 0x277BA };
+
+/// `HeightMaps`. tests: test_p4_player_sensors_port
+pub const HEIGHT_MAPS: Pin = Pin { plain: 0x25752, debug: 0x257BA };
+
+/// `HeightMapsRot`. tests: test_p4_player_sensors_port
+pub const HEIGHT_MAPS_ROT: Pin = Pin { plain: 0x26752, debug: 0x267BA };
 
 /// `Sonic_LoadArt`. tests: test_p1_player_port
 pub const SONIC_LOAD_ART: Pin = Pin { plain: 0x10C0C, debug: 0x10C0C };

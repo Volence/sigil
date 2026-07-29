@@ -824,6 +824,34 @@ impl Evaluator<'_> {
                     return None;
                 }
             };
+            // Self-relative offset word: `dc.w .target - .base` where BOTH sides
+            // are proc-LOCAL labels — the AS inline jump-table idiom. Extends the
+            // symbol-difference semantic already shipped for `offsets`/`dispatch`
+            // and the `extern("X") - extern("Y")` data form (all `Cell::RelOffset`)
+            // to local labels in `dc` position. SCOPE (each an Option-A constraint,
+            // t38): SUB of TWO LOCALS only — `label + label`/`label + int`/
+            // `int - label`/a GLOBAL operand fall through to the general eval below,
+            // which keeps the loud label-arithmetic error (a global difference is a
+            // potential cross-section fold — not this form; `offsets`/`dispatch` own
+            // the cross-module table). LOCAL-only is a structural same-section
+            // guarantee (proc-locals share the enclosing proc's section). `dc.w`
+            // only — a self-rel offset is a signed word, so `dc.b`/`dc.l` reject.
+            if let ast::Expr::Binary { op: BinOp::Sub, lhs, rhs, .. } = expr {
+                if let (Some(target), Some(base)) =
+                    (self.dc_self_rel_local(lhs, env), self.dc_self_rel_local(rhs, env))
+                {
+                    if width != Width::W {
+                        self.error(
+                            expr_span(expr),
+                            "[dc.self-rel-width] a `<local> - <local>` self-relative offset is a signed word — `dc.w`-only",
+                        );
+                        return None;
+                    }
+                    cells.push(Cell::RelOffset { base, target });
+                    total += 2;
+                    continue;
+                }
+            }
             // Evaluate the element in LABEL context so a bareword/dotted proc or
             // data name becomes a first-class `Value::Label` (a deferred link
             // symbol) rather than an `unknown name` error — the same rule a
@@ -898,6 +926,31 @@ impl Evaluator<'_> {
             }
         }
         Some(CodeItem::Inline(DataBuf { cells, size: total }, instr.span))
+    }
+
+    /// A `dc.w` self-relative-offset operand side: the mangled symbol name IF
+    /// `e` is a proc-LOCAL label reference (a dotted `.name`), else `None`. A
+    /// leading `.name` operand is an `Expr::Path[".name"]`; an interior `.name`
+    /// is an `Expr::LocalLabel` — accept BOTH. Evaluates in label context so the
+    /// name is owner-mangled and tracked for the end-of-body loudness check,
+    /// exactly as a normal `.name` reference. A GLOBAL/imported label (bareword,
+    /// no leading `.`) returns `None`: it is not this same-section-only form and
+    /// falls through to the general path's loud label-arithmetic error.
+    fn dc_self_rel_local(&mut self, e: &ast::Expr, env: &mut Env) -> Option<String> {
+        let is_local = match e {
+            ast::Expr::LocalLabel(..) => true,
+            ast::Expr::Path(p) => {
+                p.segments.len() == 1 && p.segments[0].starts_with('.')
+            }
+            _ => false,
+        };
+        if !is_local {
+            return None;
+        }
+        match self.in_label_ctx(|this| this.eval_expr(e, env)) {
+            Value::Label(name) => Some(name),
+            _ => None,
+        }
     }
 
     /// Map a `movem`'s two operands (D-P1H.2): exactly one must be a register

@@ -124,6 +124,7 @@ use sigil_harness::{
     assemble_mixed_tranche31_as_side,
     assemble_mixed_tranche34_as_side,
     assemble_mixed_tranche35_as_side,
+    assemble_mixed_tranche38_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -5090,6 +5091,114 @@ fn mixed_tranche35_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche35_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche35 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 38 — player_sensors.emp inside the full ROM (P4, the player-cluster
+// close). `SIGIL_EMP_PLAYER_SENSORS` gates player_sensors.asm out of the ENGINE
+// BLOCK; the gate arm org-resumes at Section_Init (game_debug emits zero
+// canonical bytes) with a PER-SHAPE org (the region base shifts with __DEBUG__).
+// The .emp region splices at PLAYER_SENSORS ($50A8 plain / $5E40 debug). Every
+// AS caller of the sensors (player_common/ground/air/spindash.asm +
+// test_player.asm) stays AS and resolves cross-seam to the spliced region.
+// ---------------------------------------------------------------------------
+fn build_mixed_tranche38_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche38_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof: with SIGIL_EMP_PLAYER_SENSORS set, the gate arm org-resumes so the
+    // next engine region's first label (Section_Init) lands at the region end.
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    let region_end = if debug {
+        pins::PLAYER_SENSORS.debug_base + pins::PLAYER_SENSORS.debug_len as u32
+    } else {
+        pins::PLAYER_SENSORS.plain_base + pins::PLAYER_SENSORS.plain_len as u32
+    };
+    assert_eq!(
+        find_label("Section_Init"),
+        Some(region_end),
+        "the player_sensors gate arm must org-resume Section_Init at the PLAYER_SENSORS region end"
+    );
+
+    let dbg = i128::from(debug);
+    let objects_dir = aeon.join("engine/objects");
+    let system_dir = aeon.join("engine/system");
+    let engine_dir = aeon.join("engine");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let (base, len) = if debug {
+        (pins::PLAYER_SENSORS.debug_base, pins::PLAYER_SENSORS.debug_len)
+    } else {
+        (pins::PLAYER_SENSORS.plain_base, pins::PLAYER_SENSORS.plain_len)
+    };
+
+    let ambient = vec![
+        types_ambient_items(&system_dir),
+        sst_ambient_items(&objects_dir),
+        constants_ambient_items(&system_dir),
+        // player_sensors adopts abs_w (engine.coords) at Player_AtLedgeEdge.
+        coords_ambient_items(&engine_dir),
+    ];
+
+    let (secs, asserts) = t21_lower_and_place(
+        aeon, "games/sonic4/player/player_sensors.emp", ambient,
+        "player_sensors", base, len, defines,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(secs);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche38 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche38 mixed link failed: {d:?}"));
+
+    // The SOLID_*/SST_interact drift guards resolve against the REAL AS tree.
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche38 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_tranche38_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche38_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche38 mixed");
+}
+
+#[test]
+fn mixed_tranche38_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche38_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche38 mixed debug");
 }
 
 // ---------------------------------------------------------------------------
