@@ -182,6 +182,9 @@ fn sensors_bytes(shape: &Shape) -> Vec<u8> {
     let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
+    // coords ambient: player_sensors adopts abs_w (engine.coords) at Player_AtLedgeEdge
+    // (the |player-center − object-center| balance probe); the fn must be in scope.
+    let coords = || parse_file(&aeon.join("engine/coords.emp")).items;
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -191,7 +194,7 @@ fn sensors_bytes(shape: &Shape) -> Vec<u8> {
     };
 
     let main = parse_file(&aeon.join("games/sonic4/player/player_sensors.emp"));
-    let file = with_ambient(vec![types(), sst(), constants()], main);
+    let file = with_ambient(vec![types(), sst(), constants(), coords()], main);
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

@@ -5131,6 +5131,7 @@ fn build_mixed_tranche38_rom(aeon: &Path, debug: bool) -> Vec<u8> {
     let dbg = i128::from(debug);
     let objects_dir = aeon.join("engine/objects");
     let system_dir = aeon.join("engine/system");
+    let engine_dir = aeon.join("engine");
     let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
 
     let (base, len) = if debug {
@@ -5143,6 +5144,8 @@ fn build_mixed_tranche38_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         types_ambient_items(&system_dir),
         sst_ambient_items(&objects_dir),
         constants_ambient_items(&system_dir),
+        // player_sensors adopts abs_w (engine.coords) at Player_AtLedgeEdge.
+        coords_ambient_items(&engine_dir),
     ];
 
     let (secs, asserts) = t21_lower_and_place(
