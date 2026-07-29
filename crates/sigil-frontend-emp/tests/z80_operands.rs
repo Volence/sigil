@@ -324,15 +324,164 @@ fn indexed_disp_128_is_i8_range_error() {
     );
 }
 
-/// A form the corpus does NOT demand — `bit 0,(ix+d)`, whose bit number needs a
-/// `Z80Bit` operand the T1 model does not yet produce — still reports
-/// `[lower.z80-unsupported]`. Proves T1's wired scope is BOUNDED: it never
-/// silently accepts un-oracled bytes.
+// ---- rung-2 §13.3 item 1: the Z80Cc eval producer --------------------------
+
+/// `ret nz` — a condition-code control-flow form, now produced as a `Z80Cc`
+/// (the rung-2 §13.3 producer flips the former bounded-scope negative). `nz`
+/// (cond code 0) → `C0`, then the wrapper's `ret` → `C9`.
 #[test]
-fn unwired_bit_indexed_is_z80_unsupported() {
-    let diags = z80_body_diags("bit 0, (ix+1)");
+fn ret_condition_code() {
+    assert_eq!(z80_body("ret nz"), vec![0xC0, 0xC9]);
+}
+
+/// `ret c` — the c/carry disambiguation: under a control-flow mnemonic the
+/// leading `c` is the CARRY condition (cond code 3 → `D8`), NOT the C register.
+#[test]
+fn ret_carry_is_condition_not_register() {
+    assert_eq!(z80_body("ret c"), vec![0xD8, 0xC9]);
+}
+
+/// The positive control for the ambiguity (t24 rule): OUTSIDE control-flow
+/// position, `c` is the C register — `ld a, c` = `79` (reg→reg move), never a
+/// cc. This is the exact case the `control_flow && i == 0` rule leaves alone.
+#[test]
+fn ld_a_c_reads_c_as_register() {
+    assert_eq!(z80_body("ld a, c"), vec![0x79, 0xC9]);
+}
+
+/// A conditional relative `jr z, Label` — a plain 2-byte `Z80JrRel8` (asl's
+/// in-reach choice). `jr z` (opcode `28`) to `Q` at offset 3 = disp +1.
+#[test]
+fn jr_z_conditional_relative() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 proc P() { jr z, Q\n ret }\n\
+                 proc Q() { ret }\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0x28, 0x01, 0xC9, 0xC9]);
+}
+
+/// `jr c, Label` — the carry-cc conditional relative (opcode `38`). Proves `c`
+/// leads as the carry cc in a `jr` too, and the byte differs from `jr z`.
+#[test]
+fn jr_c_conditional_relative() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 proc P() { jr c, Q\n ret }\n\
+                 proc Q() { ret }\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0x38, 0x01, 0xC9, 0xC9]);
+}
+
+/// A conditional absolute `jp z, Label` / `call nz, Label` — the leading cc, a
+/// 16-bit LE absolute target. `jp z` = `CA`, `call nz` = `C4`; `Q` at VMA $0.
+#[test]
+fn jp_call_conditional_absolute() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 proc P() { jp z, Q\n ret }\n\
+                 proc Q() { ret }\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    // P = `jp z, Q` (3 B) + `ret` (1 B) = 4 B, so Q is at offset 4:
+    // jp z, Q → CA 04 00, ret P → C9, ret Q → C9.
+    assert_eq!(section_bytes(&module, "s"), vec![0xCA, 0x04, 0x00, 0xC9, 0xC9]);
+}
+
+// ---- rung-2 item 3: bit/set/res + Z80Bit operand wiring (§1.6) --------------
+
+/// `bit 4, a` — a bit number on an 8-bit register: `CB 67` (asl golden). The
+/// leading `4` becomes a `Z80Operand::Bit`, not an ordinary immediate.
+#[test]
+fn bit_number_on_register() {
+    assert_eq!(z80_body("bit 4, a"), vec![0xCB, 0x67, 0xC9]);
+}
+
+/// `bit 1, (ix+10)` — a bit test on an indexed operand: `DD CB 0A 4E` (asl
+/// golden). The demanded `bit 7,(ix+sc_flags)` shape.
+#[test]
+fn bit_number_on_indexed() {
+    assert_eq!(z80_body("bit 1, (ix+10)"), vec![0xDD, 0xCB, 0x0A, 0x4E, 0xC9]);
+}
+
+/// `set 1, (ix+10)` — the `set SCF_KEYED_B,(ix+sc_flags)` corpus shape:
+/// `DD CB 0A CE` (asl golden).
+#[test]
+fn set_bit_on_indexed() {
+    assert_eq!(z80_body("set 1, (ix+10)"), vec![0xDD, 0xCB, 0x0A, 0xCE, 0xC9]);
+}
+
+/// `res 1, (ix+10)` — the reset sibling: `DD CB 0A 8E` (asl golden).
+#[test]
+fn res_bit_on_indexed() {
+    assert_eq!(z80_body("res 1, (ix+10)"), vec![0xDD, 0xCB, 0x0A, 0x8E, 0xC9]);
+}
+
+/// A bit number outside `0..=7` is a loud range error, not silent bytes.
+#[test]
+fn bit_number_out_of_range_errors() {
+    let diags = z80_body_diags("bit 8, a");
     assert!(
-        diags.iter().any(|d| d.message.contains("[lower.z80-unsupported]")),
-        "expected [lower.z80-unsupported] for the unwired bit form, got: {diags:?}"
+        diags.iter().any(|d| d.message.contains("[lower.z80-unsupported]") && d.message.contains("0..=7")),
+        "expected a 0..=7 bit-number range error, got: {diags:?}"
+    );
+}
+
+// ---- rung-2 item 4: typed Z80 proc register params + the T1 §0 splice test --
+//
+// DESIGN-vs-TREE (design §2.3 vs the parser): the parser gates operand splices
+// (`{r}`) to `comptime fn` template bodies — a proc body is NOT a template, so
+// `{ix}` cannot appear directly in a proc body (as §2.3 sketches). The Z80
+// register-named param DOES bind to a `Value::Z80Reg` (rung-2 §2.3, the
+// producer); the value reaches a `{r}` splice by flowing through a comptime-fn
+// template the proc instantiates — the SAME vehicle T1's own 68k-direction
+// splice test uses. The section CPU the template instantiates under decides
+// validity. (Flagged for the note's §9 discrepancies bucket.)
+
+/// Positive control (t24): a Z80 proc register param binds `ix` to a
+/// [`Value::Z80Reg`] (§2.3); flowed through a comptime-fn template instantiated
+/// in the proc's OWN Z80 section, `{r}` splices cleanly — `pop {r}` maps to
+/// `pop ix` = `DD E1`, byte-identical to the plain `pop ix`.
+#[test]
+fn z80_proc_param_ix_splices_in_z80_section() {
+    let src = "module m in s (cpu: z80)\n\
+               comptime fn emit(r: u8) -> Code {\n\
+                 return asm { pop {r} }\n\
+               }\n\
+               proc F(ix: *u8) {\n\
+                 emit(ix)\n\
+                 ret\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0xDD, 0xE1, 0xC9]);
+}
+
+/// The T1 §0 RUNG-2 OBLIGATION: the SAME Z80-register param (a
+/// [`Value::Z80Reg`]) flowed into a `{r}` splice of a `(cpu: m68000)`-section
+/// template instruction is the `[asm.splice-kind]` error — the source producer
+/// T1 implemented the guard for but could not yet test. Pairs with the positive
+/// control above (t24 rule).
+#[test]
+fn z80_reg_spliced_in_m68000_section_is_splice_kind_error() {
+    let src = "module m\n\
+               section blk (cpu: m68000, vma: $0) {\n\
+                 comptime fn emit(r: u8) -> Code {\n\
+                   return asm { move.l {r}, d0 }\n\
+                 }\n\
+                 proc F(ix: *u8) {\n\
+                   emit(ix)\n\
+                   rts\n\
+                 }\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[asm.splice-kind]")),
+        "expected a splice-kind error for a Z80 register in a 68k section, got: {diags:?}"
     );
 }

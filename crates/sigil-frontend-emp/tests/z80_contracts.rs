@@ -1,0 +1,374 @@
+//! Z80 rung-2 contracts — the register-contract vocabulary, the module-scope
+//! `invariant` class, and the push/pop `preserves` proof, scoped to what the
+//! rung-2 corpus (`sound_psg.asm`/`sound_fm.asm`) demands. Design note:
+//! `docs/superpowers/notes/2026-07-29-z80-rung2-contracts.md`. Every negative
+//! control carries a positive control (the t24 rule).
+
+use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::parse_str;
+use sigil_frontend_emp::regfile::{expand_reglist, RegFile};
+use sigil_ir::backend::Cpu;
+use sigil_span::Level;
+
+/// Lower `src` (68k default; a Z80 module opts in) and return the diagnostics.
+fn lower_diags(src: &str) -> Vec<String> {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
+    let (_module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+    );
+    diags.into_iter().map(|d| d.message).collect()
+}
+
+/// Expand a comma-enumerated reglist under `rf`, collecting the unit set and any
+/// error reasons — the unit-test lens on [`expand_reglist`].
+fn expand(segs: &[(&str, Option<&str>)], rf: RegFile) -> (Vec<String>, Vec<String>) {
+    let owned: Vec<(String, Option<String>)> =
+        segs.iter().map(|(lo, hi)| (lo.to_string(), hi.map(|h| h.to_string()))).collect();
+    let mut errs = Vec::new();
+    let set = expand_reglist(&owned, rf, |reason| errs.push(reason));
+    let mut units: Vec<String> = set.into_iter().collect();
+    units.sort();
+    (units, errs)
+}
+
+// ---- ladder item 1: the Z80 reglist recognizer (§2) ------------------------
+
+/// A pair name EXPANDS to its 8-bit halves: `de` → `{d, e}` (§1.1).
+#[test]
+fn z80_pair_expands_to_halves() {
+    let (units, errs) = expand(&[("de", None)], RegFile::Z80);
+    assert_eq!(units, vec!["d", "e"]);
+    assert!(errs.is_empty(), "clean pair expansion: {errs:?}");
+}
+
+/// A register HALF is an independent unit: `clobbers(af, b)` lists `{a, f, b}`
+/// and leaves `c` unlisted — the pair split that makes `clobbers(af, b)` +
+/// `preserves(c)` expressible (`Psg_VolToAtten`, §1.1).
+#[test]
+fn z80_half_split_leaves_sibling_unlisted() {
+    let (units, errs) = expand(&[("af", None), ("b", None)], RegFile::Z80);
+    assert_eq!(units, vec!["a", "b", "f"]);
+    assert!(!units.contains(&"c".to_string()), "c stays unlisted");
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+/// `ix`/`iy` are index UNITS (not pairs — no half-split): `preserves(bc, ix)` →
+/// `{b, c, ix}`.
+#[test]
+fn z80_index_is_a_unit() {
+    let (units, errs) = expand(&[("bc", None), ("ix", None)], RegFile::Z80);
+    assert_eq!(units, vec!["b", "c", "ix"]);
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+/// Negative control (t24): a 68k register name in a Z80 reglist is
+/// `[contract.unknown-register]` — `clobbers(d0)` under a Z80 module.
+#[test]
+fn z80_unknown_register_d0_errors() {
+    let (_units, errs) = expand(&[("d0", None)], RegFile::Z80);
+    assert!(
+        errs.iter().any(|e| e.contains("[contract.unknown-register]") && e.contains("d0")),
+        "expected unknown-register for a 68k name in a Z80 reglist, got: {errs:?}"
+    );
+}
+
+/// The reverse (t24 positive control the negative pairs with): a Z80 register
+/// name in a 68k reglist is the SAME `[contract.unknown-register]` — `af` under
+/// the 68k file. Proves the recognizer is genuinely CPU-parametric, not a
+/// one-sided allow-list.
+#[test]
+fn m68k_unknown_register_af_errors() {
+    let (_units, errs) = expand(&[("af", None)], RegFile::M68k);
+    assert!(
+        errs.iter().any(|e| e.contains("[contract.unknown-register]") && e.contains("af")),
+        "expected unknown-register for a Z80 name in a 68k reglist, got: {errs:?}"
+    );
+}
+
+/// A well-formed 68k reglist still expands cleanly through the same seam (the
+/// positive control for the reverse-direction negative): `d0`, `a1` are units.
+#[test]
+fn m68k_known_registers_expand() {
+    let (units, errs) = expand(&[("d0", None), ("a1", None)], RegFile::M68k);
+    assert_eq!(units, vec!["a1", "d0"]);
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+/// Z80 reglists ENUMERATE — no ordinal range form (the step-2 range rule is
+/// 68k-scoped, §2.1). `preserves(b-l)` under Z80 is a loud reason, not a silent
+/// wrong expansion.
+#[test]
+fn z80_range_form_rejected() {
+    let (_units, errs) = expand(&[("b", Some("l"))], RegFile::Z80);
+    assert!(
+        errs.iter().any(|e| e.to_lowercase().contains("enumerate")),
+        "expected a no-range-form reason for a Z80 range, got: {errs:?}"
+    );
+}
+
+// ---- ladder item 6 (§3, ruling 4): the module-scope `invariant` grammar ------
+//
+// The module-header attribute form (ruling 4), reusing `ModuleDecl.attrs` beside
+// `cpu:`. This landing is the GRAMMAR + reglist validation (the forward-compat
+// slot, giving item 1's recognizer a production consumer); the INHERITANCE PROOF
+// — every proc actually preserving `ix` — rides the Z80 contract checker (the
+// push/pop `preserves` proof), which is gated on the ruling-2 preserves decision.
+
+/// `module m (cpu: z80, invariant: preserves(ix))` parses and lowers with NO
+/// error — the ratified attribute form (ruling 4).
+#[test]
+fn module_invariant_preserves_ix_accepted() {
+    let src = "module m (cpu: z80, invariant: preserves(ix))\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(diags.is_empty(), "invariant: preserves(ix) must lower clean, got: {diags:?}");
+}
+
+/// Negative control (t24): a 68k register in a Z80 module's invariant reglist is
+/// the same `[contract.unknown-register]` a proc reglist gives — the invariant
+/// clause is genuinely validated, not silently swallowed.
+#[test]
+fn module_invariant_bad_register_errors() {
+    let src = "module m (cpu: z80, invariant: preserves(d0))\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[contract.unknown-register]") && d.contains("d0")),
+        "expected an unknown-register error for `d0` in a Z80 invariant, got: {diags:?}"
+    );
+}
+
+/// The value-bound form `invariant: holds(de == $4001)` (§3.4) is REPRESENTED —
+/// accepted but not wired (the rung-4 DAC-loop spelling; the grammar is
+/// forward-compatible now).
+#[test]
+fn module_invariant_holds_value_form_represented() {
+    let src = "module m (cpu: z80, invariant: holds(de == $4001))\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(diags.is_empty(), "invariant: holds(...) must be accepted (represented), got: {diags:?}");
+}
+
+/// A malformed invariant clause (neither `preserves(...)` nor `holds(...)`) is a
+/// loud error, not silent tolerance.
+#[test]
+fn module_invariant_malformed_errors() {
+    let src = "module m (cpu: z80, invariant: ix)\n\
+               section s (cpu: z80, vma: $0) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("invariant must be")),
+        "expected a malformed-invariant error, got: {diags:?}"
+    );
+}
+
+// ---- ladder item 5 (§4.2): the push/pop `preserves` proof (z80_preserves) -----
+//
+// The SIBLING proof (ruling 2, 2026-07-29 countersign) — a Z80 proc declaring
+// `preserves(rN)` is verified over the push/pop stack model. Every negative
+// carries a positive control (t24).
+
+/// (a) POSITIVE control: a proc that brackets a clobbering `call` with
+/// `push hl / … / pop hl` PROVES `preserves(hl)` — no firing. The Z80 analog of
+/// the 68k closure's transitive-clobber job (§1.2).
+#[test]
+fn z80_preserves_via_push_pop_bracket_proven() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Callee() { ret }\n\
+               proc P() preserves(hl) {\n\
+                 push hl\n\
+                 call Callee\n\
+                 pop hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "push hl/call/pop hl must PROVE preserves(hl), got: {diags:?}"
+    );
+}
+
+/// (b) NEGATIVE: a proc that writes `hl` and never restores it, yet declares
+/// `preserves(hl)`, fires `[proc.preserves-unverifiable]`.
+#[test]
+fn z80_preserves_written_unrestored_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Q() preserves(hl) {\n\
+                 ld hl, 5\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    // The proof is unit-level, so a declared `preserves(hl)` fires on its halves
+    // (`h`/`l`) — the register that is genuinely not preserved.
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")
+            && d.contains("written and not restored")),
+        "a written-unrestored preserves(hl) must fire, got: {diags:?}"
+    );
+}
+
+/// (c) the `push R / pop R'` MOVE idiom (§1.3): `push ix / pop hl` copies ix→hl —
+/// it PROVES `preserves(ix)` (ix never written) while CLOBBERING hl. The proof
+/// credits ix and (in the sibling test below) rejects a `preserves(hl)` claim.
+#[test]
+fn z80_move_idiom_preserves_source_not_dest() {
+    let ok = "module m in s (cpu: z80)\n\
+              proc R() preserves(ix) {\n\
+                push ix\n\
+                pop hl\n\
+                ret\n\
+              }\n";
+    assert!(
+        !lower_diags(ok).iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "push ix/pop hl must PROVE preserves(ix)"
+    );
+    let bad = "module m in s (cpu: z80)\n\
+               proc R() preserves(hl) {\n\
+                 push ix\n\
+                 pop hl\n\
+                 ret\n\
+               }\n";
+    assert!(
+        lower_diags(bad).iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("h")),
+        "push ix/pop hl CLOBBERS hl — preserves(hl) must fire"
+    );
+}
+
+/// (d) an unmodeled sp manipulation BAILS the proof — a declared preserve over it
+/// is `[proc.preserves-unverifiable]`. Tested via `ld sp, hl` (a modeled sp
+/// hazard); the rung-3 `ex (sp),hl` trampoline routes to the SAME bail once its
+/// `(sp)` operand form lands (§4.2), so the bailout is proven now.
+#[test]
+fn z80_sp_hazard_bails_declared_preserve() {
+    let src = "module m in s (cpu: z80)\n\
+               proc S() preserves(hl) {\n\
+                 push hl\n\
+                 ld sp, hl\n\
+                 pop hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "an unmodeled sp op must bail a declared preserve, got: {diags:?}"
+    );
+}
+
+/// (e) SOUNDNESS (§13.4-E): a register clobbered ONLY on a conditional branch's
+/// FALL-THROUGH path must NOT be verified preserved. `jr z, .skip` skips the
+/// `ld a, 5` on the z-TRUE edge but FALLS THROUGH to it on the z-FALSE edge, so
+/// `a` is clobbered on some path — a caller cannot rely on it, and
+/// `preserves(a)` MUST fire. (Before the conditional two-way split, `z80_edges`
+/// treated `jr cc` as unconditional and dropped the fall-through, wrongly
+/// verifying the preserve — the empirical reproducer this pass recorded.)
+#[test]
+fn z80_conditional_jr_fallthrough_clobber_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(a) {\n\
+                 jr z, .skip\n\
+                 ld a, 5\n\
+               .skip:\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a clobber on the jr-z FALL-THROUGH must fire preserves(a), got: {diags:?}"
+    );
+}
+
+/// (e′) t24 POSITIVE control: an UNCONDITIONAL `jr .skip` stays SINGLE-edge — the
+/// `ld a, 5` it jumps over is DEAD (nothing branches into it), so `a` is NOT
+/// clobbered and `preserves(a)` HOLDS. Guards against the conditional two-way
+/// split leaking a PHANTOM fall-through onto unconditional branches (which would
+/// re-reach the dead `ld a, 5` and false-fire).
+#[test]
+fn z80_unconditional_jr_keeps_single_edge() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(a) {\n\
+                 jr .skip\n\
+                 ld a, 5\n\
+               .skip:\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "unconditional jr skips the dead `ld a, 5` — preserves(a) must hold, got: {diags:?}"
+    );
+}
+
+// ---- ladder item 6 (§3.2): module invariant(ix) INHERITANCE proof -------------
+
+/// (a) POSITIVE control: `invariant: preserves(ix)` is inherited onto a proc with
+/// NO explicit contract and PROVEN — no instruction writes ix (it is only read as
+/// `(ix+d)`). No firing.
+#[test]
+fn module_invariant_ix_inherited_and_proven() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc P() {\n\
+                 ld a, (ix+0)\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "invariant(ix) must be PROVEN for an ix-read-only proc, got: {diags:?}"
+    );
+}
+
+/// (b) NEGATIVE: a proc that writes ix (`pop ix` with no matching save) fires
+/// `[proc.preserves-unverifiable]` via the INHERITED invariant — the
+/// psg-header-line-60 bug class, now a compile error (§3.2). The message names it
+/// as a MODULE-invariant break.
+#[test]
+fn module_invariant_ix_broken_fires_via_inheritance() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc P() {\n\
+                 pop ix\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")
+            && d.contains("ix")
+            && d.contains("invariant")),
+        "breaking the inherited invariant(ix) must fire naming the module invariant, got: {diags:?}"
+    );
+}
+
+// ---- ladder item 7 (§4.5): the t27-retirement transition ----------------------
+
+/// The three landed Z80 modules take the VACUOUS pass: a `(cpu: z80)` proc with
+/// NO declared `preserves` and NO module `invariant` has nothing to prove, so the
+/// checker fires nothing — even `z80_init`'s unbalanced init-drain pops
+/// (`pop ix/iy/de/hl/af/bc`, which would underflow-bail the proof) are silent
+/// because there is no contract to verify. Item 7's stated outcome, executable.
+#[test]
+fn z80_init_style_drain_without_contract_is_silent() {
+    let src = "module m in s (cpu: z80)\n\
+               proc Z80_Idle() {\n\
+                 pop ix\n\
+                 pop iy\n\
+                 pop de\n\
+                 pop hl\n\
+                 pop af\n\
+                 pop bc\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves")),
+        "a contract-less Z80 drain proc must be silent (item 7 vacuous pass), got: {diags:?}"
+    );
+}

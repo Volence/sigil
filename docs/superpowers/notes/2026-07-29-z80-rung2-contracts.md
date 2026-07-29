@@ -662,3 +662,164 @@ DISPOSITION: draft RATIFIED with the five rulings; renamed to
 Implementation dispatches on its own branch AFTER t28's countersign cadence allows —
 the TDD ladder §here items run with sound_psg as acceptance corpus; the T1 §0 splice-test
 obligation rides ladder item 4 as drafted.
+
+---
+
+## 13. IMPLEMENTATION ADDENDUM (branch `z80-rung2-contracts`, this pass)
+
+### 13.1 §9 discrepancies caught during implementation (tree wins)
+
+- **9-E — proc bodies do NOT allow operand splices.** §2.3/§6 sketch `{ix}` spliced
+  directly in a proc body. The parser gates `{r}` operand splices to `comptime fn`
+  TEMPLATE bodies (`parser.rs` `splices_allowed`); a proc body is not a template. The
+  Z80 register-named param DOES bind to a `Value::Z80Reg` (the producer, landed item 4),
+  but reaches a `{r}` splice by flowing through a comptime-fn template the proc
+  instantiates — the SAME vehicle T1's own 68k-direction splice test uses. The section
+  CPU the template instantiates under decides validity. (No behavior gap — the obligation
+  is discharged; only the SPELLING differs from §2.3's sketch.)
+- **9-F — `check_flag_unused`/`consumes_carry`/`writes_carry` are NOT CPU-agnostic.**
+  §2.2 states the caller-side flag check "is CPU-agnostic over `CodeItem::Instr` and needs
+  only the Z80 condition-mnemonic recognition." In the tree they are hardcoded 68k
+  mnemonic ALLOWLISTS (`bcs`/`bcc`/`bhi`/`bls` consumers; the 68k CC-writer set). Z80
+  flag-result support (item 2) requires teaching them the Z80 condition mnemonics
+  (`jr z`/`jr c` consume; the Z80 CC-writers redefine) — an ADDITIVE touch of the 68k
+  flag path (new Z80 arms, 68k allowlists byte-unchanged), per the overseer's item-2 bar.
+
+### 13.2 Overseer countersign (2026-07-29) — item 5 = SIBLING, ratified
+
+Ruling 2 amended on its own terms: the shared soundness bailouts the original rationale
+protected are predominantly 68k-specific (movem masks, linear-delta arithmetic,
+sp-displacement hazards); the genuinely shared part — `flag_check::Cfg` — is already
+shared. So a `z80_preserves` SIBLING duplicates nothing that matters. Constraints: the
+sibling CALLS the shared `Cfg`; mirrors the join / call-clobbers-all-nets-zero
+conventions (cite the `preserves.rs` lines mirrored); the `push R / pop R'` move idiom is
+in scope; `ex (sp),hl` is a REPRESENTED loud bailout (rung-3 wires it); `preserves.rs`
+stays byte-untouched; TDD with t24 positive controls. Continuation authorized for the full
+checker cluster: item 5 sibling → item 6 inheritance proof → item 2 flag results (additive
+68k bar) → `Z80Cc` eval producer (only if demanded) → checker routing (`analyze_z80_module`
+replaces the skip; the three existing Z80 modules compile unchanged = an executable item-7
+test). End state: rung-2 sigil-side COMPLETE except item 9 (the psg/fm ports).
+
+### 13.3 HANDOFF — what remains for a fresh implementer (branch tip after items 1-8)
+
+LANDED this pass (frozen-68k bar held, suite 2685→2713): item 1 (reglist recognizer,
+`regfile.rs`), item 3 (bit/set/res + Z80Bit), item 4 (Z80 proc params + T1 §0 splice),
+item 5 (`z80_preserves` SIBLING proof), item 6 (invariant grammar + inheritance), item 7
+(executable vacuous-pass test), item 8 (jr→jp latent ladder). preserves.rs/flag_check.rs
+byte-untouched.
+
+PLACEMENT NOTE for the checker (countersign step 5): the single-proc preserves +
+invariant proof is wired at the **per-proc lowering** seam (`lower_proc` →
+`check_z80_preserves`), where 68k's `check_preserves` also runs and where firings reach
+`lower_module` diagnostics directly — NOT (yet) inside `analyze_corpus`'s `module_is_z80`
+skip. This is sound: the sibling proof conservatively treats every `call` as
+clobber-all, so it needs no transitive closure. The corpus skip stays correct for the 68k
+closure. The executable item-7 vacuous-pass test lives at this seam.
+
+REMAINING — **item 2 (flag results on Z80 regs)** + its dependencies, a coherent chunk
+deliberately NOT built (deep-in-budget stop; the invasive frozen-`flag_check` touch wants
+a fresh, unhurried pass):
+
+1. **`Z80Cc` eval PRODUCER** (currently the bounded-scope negative — `ret nz` is
+   `[lower.z80-unsupported]`). A condition code in control-flow FIRST-operand position
+   (`jr z`/`jr c`/`ret c`/`call nz`) must map to `CodeOperand::Z80Cc`. HAZARD: `c` is
+   ambiguous — the C register (`Z80Reg8::C`, produced today) vs the carry cc. Resolve like
+   the AS front-end's `control_flow && i==0` rule (`eval.rs:3601`): under jr/jp/call/ret,
+   the first operand is a cc. The lowering `CodeOperand::Z80Cc → Z80Operand::Cc` arm
+   already exists (T1); only the eval producer is missing. Cleanest seam: `map_z80_operands`
+   (has the mnemonic) reinterprets a leading register/Sym as a cc for control-flow forms,
+   mirroring the item-3 bit-number handling.
+2. **`flag_check` Z80 arms — ADDITIVE, hard 68k bar** (countersign item-2 constraint):
+   `consumes_carry`/`writes_carry` (`flag_check.rs:77`,`:100`) are 68k mnemonic ALLOWLISTS
+   (discrepancy §9-F). Add Z80 arms (`jr c`/`jr nc`/`ret c` consume carry; the Z80
+   CC-writers redefine) as NEW branches, 68k allowlists byte-unchanged; the full suite is
+   the proof. If additivity fails, STOP with evidence.
+3. **Corpus routing for the CROSS-PROC flag analysis** — item 2's caller-must-consume check
+   (`PsgVolEnv_Resolve` declares `out(carry: found)`; a caller `jr z` on it is credited,
+   one that abandons it fires `[call.flag-result-unused]`) is inherently cross-proc, so Z80
+   procs' flag callees/consumers must reach the whole-corpus flag pass. Either un-skip
+   `(cpu: z80)` for a Z80-aware flag sub-pass in `analyze_corpus_with`, or a sibling
+   `analyze_z80_module` (design §4.1). `out(hl)`/`out(carry:)` PARSING already works
+   CPU-agnostically (`out_list`); the caller-side check needs the Z80Cc recognition from (1).
+4. **`Z80Cc` on the `jr` ladder** — once (1) lands, a symbolic `jr cc,L` can join the item-8
+   ladder (conditional `jr cc` → `jp cc` rung); today only unconditional `jr` ladders.
+
+Corpus demand for item 2 is real (design §1 table: `sound_psg.asm:120` `out(carry)`), so it
+is in rung-2 scope — but it is the ONE remaining ladder item, and the psg/fm ports (item 9)
+are the acceptance gate for the whole rung.
+
+### 13.4 IMPLEMENTATION — item 2 LANDED (finisher pass, four sub-part commits)
+
+All four §13.3 sub-parts landed; suite **2713 → 2729** (0 failed, 1 ignored), frozen-68k
+bar held throughout. Commits (one per sub-part):
+
+- **2.1 `e633772` — `Z80Cc` eval producer.** `eval/asm.rs` `lower_instr_to_item`: under a
+  Z80 `jr`/`jp`/`call`/`ret`, a bare condition word in the FIRST operand position becomes a
+  `CodeOperand::Z80Cc` (helpers `is_z80_control_flow` / `z80_cc_operand`). Lowering
+  (`lower/code.rs`) grows a conditional `jr cc` rung, `ret cc` via the comptime encode path,
+  and `jp/call cc, Label` via the symbolic-abs16 path. Flips the former bounded-scope
+  negative (`ret nz`) to a positive; adds the `ld a, c` positive control (t24).
+- **2.2 `d4d340b` — additive Z80 arms in `flag_check`** (§9-F). `consumes_carry` /
+  `writes_carry` gain a `cpu` param + a leading `if cpu == Cpu::Z80 { return z80_… }` guard;
+  new `z80_reads_carry` / `z80_writes_carry` helpers; new `Cfg::z80_edges` method;
+  `check_flag_unused` / `abandons_flag` gain `cpu`; `is_call_site` recognizes the Z80 `call`.
+- **2.3 `00f230f` — corpus routing** (§4.1). A SEPARATE `Cpu::Z80` flag pass
+  (`collect_z80_flag_procs`) in `analyze_corpus_with` routes Z80 procs' flag callees + bodies
+  into `check_flag_unused`; the 68k closure stays Z80-free.
+- **2.4 `69ff308` — conditional `jr cc` ladder** (§5). `lower_jr_jp_cc_candidates` (encoder-
+  sourced opcodes) upgrades the sub-part-1 plain form to the grow-only `jr cc → jp cc` ladder.
+
+**13.4-A — the `c`/carry ambiguity resolved (§13.3 item 1).** As the handoff specified:
+`control_flow && i == 0 ⇒ cc`. Under `jr`/`jp`/`call`/`ret`, position 0 is a condition; every
+other position and mnemonic reads `c` as the C register. VERIFIED against the encoder
+(`z80.rs`): `ret cc` (`C0|cc<<3`), `jp cc, nn` (`C2|cc<<3`), `call cc, nn` (`C4|cc<<3`),
+`jr cc, e` (`20|cc<<3`, `cc < 4`) all encode — the rule is sound, NO STOP. The positive
+control `ld a, c → 79` (register, unchanged) fences it.
+
+**13.4-B — DISCREPANCY (tree wins): the producer seam is EVAL, not `map_z80_operands`.**
+§13.3 item 1 named `map_z80_operands` (a LOWERING function `CodeOperand → Z80Operand`) as the
+seam. The tree requires the EVAL layer (`lower_instr_to_item`, `CodeOperand`-producing)
+instead, because item 2's flag analysis reads the `CodeItem::Instr` `ops` stream — the cc must
+be a `Z80Cc` IN THE CODEITEM (so `consumes_carry`/`z80_edges` see it), not merely
+reinterpreted at encoding. Reinterpreting only at `map_z80_operands` would leave the CodeItem
+carrying `Z80Reg8(C)` / a mangled `Sym("nz")` (post-`resolve_ref`), which the flag walk cannot
+read. Producing `Z80Cc` at eval feeds BOTH consumers cleanly (the T1 `Z80Cc → Z80Operand::Cc`
+lowering arm already exists). No behavior gap — the obligation is discharged; only the seam
+differs from the handoff's sketch.
+
+**13.4-C — additivity proof for sub-part 2 (the item-2 hard bar).** The 68k allowlists are
+byte-unchanged: `consumes_carry` / `writes_carry` reach their original `matches!(…)` /
+`CALL_MNEMONICS` allowlists via the SAME path for 68k (the Z80 branch is an early
+`if cpu == Cpu::Z80 { return }` guard placed BEFORE them), and `Cfg::edges` is untouched (Z80
+uses a NEW `z80_edges` method). Proof: the full suite — every prior `flag_check` + corpus
+test — stays green (2724/0 at the sub-part-2 commit), and the 3 landed Z80 modules (which
+declare no `out(carry:)`) produce zero Z80 flag firings on the real corpus (firing-neutral).
+68k callers pass `Cpu::M68000` (mechanical plumbing, the anticipated churn). Additivity did
+NOT fail — no STOP.
+
+**13.4-D — corpus routing needs MODULE-level `(cpu: z80)`.** `module_is_z80` reads
+`file.module.attrs`, so the §4.1 flag pass routes only when the CPU is on the MODULE header
+(`module m (cpu: z80)`), as the real corpus declares it (`module engine.z80_init (cpu: z80)`).
+A section-only `(cpu: z80)` would leave the 68k PASS-2 to (mis)handle the procs. Not a change —
+a constraint the synthetic tests must honor (and do).
+
+**13.4-E — SOUNDNESS FIX (overseer-authorized this pass): `z80_preserves` conditional-branch
+edges.** `z80_preserves`' private `z80_edges` (`z80_preserves.rs`) now treats a CONDITIONAL
+form (a leading `Z80Cc`) as a genuine two-way split: `jr cc`/`jp cc` contribute BOTH the taken
+edge and the fall-through; `ret cc` contributes the return (abandon) AND the fall-through.
+Unconditional `jr`/`jp`/`ret` stay single-edge. This mirrors the flag check's `Cfg::z80_edges`
+(`flag_check.rs`) — one conditional-split edge model across both Z80 dataflows.
+
+The bug it closes: the prior `z80_edges` treated EVERY `jr`/`jp` as unconditional (one
+`Follow` to the target), DROPPING a `jr cc` fall-through — so a register clobbered only on
+that path was missed and a `preserves` over it was WRONGLY verified (a `preserves` that lies
+is worse than no proof). The gap pre-dated item 2 but item-1 makes conditional `jr cc` a
+first-class lowering form, so it became exercisable. PERMANENT reproducer +
+positive control now in the proof's test set:
+`z80_conditional_jr_fallthrough_clobber_fires` (a clobber on the `jr z` fall-through fires
+`[proc.preserves-unverifiable]`) and the t24 `z80_unconditional_jr_keeps_single_edge` (an
+unconditional `jr .skip` stays single-edge, so the dead `ld a, 5` it jumps over does NOT
+false-fire — the guard against a phantom fall-through leaking onto unconditional branches).
+`preserves.rs` (the 68k proof) stays byte-untouched.
+
+**Rung-2 sigil-side is now COMPLETE except item 9 (the psg/fm byte-locked ports).**

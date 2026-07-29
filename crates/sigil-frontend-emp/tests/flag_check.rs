@@ -34,7 +34,7 @@ fn run(src: &str, callee: &str, discarded: &[Span]) -> Vec<FlagFiring> {
     let buf = buf.expect("codebuf");
     let mut fc: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     fc.insert(callee.to_string(), BTreeSet::from(["carry".to_string()]));
-    check_flag_unused(&p.name, &buf.items, &fc, discarded)
+    check_flag_unused(&p.name, &buf.items, &fc, discarded, Cpu::M68000)
 }
 
 /// The AST spans of instructions carrying `@discards`, for the opt-out set.
@@ -447,4 +447,149 @@ fn invalid_path_conditional_out_does_not_kill_trap() {
         "mutation check: crediting Find2's out as unconditional silences the read \
          (this is the false negative the guardrail prevents): {weakened:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// rung-2 §13.3 sub-part 2 — the ADDITIVE Z80 arms in the carry consume/redefine
+// model + the Z80 terminator/edge model. The 68k allowlists above are
+// byte-unchanged; these exercise the Z80 branches through the SAME
+// check_flag_unused entry, evaluated under Cpu::Z80. Corpus shape:
+// `call PsgVolEnv_Resolve` (declares out(carry: found)) then a `jr c`/`jr nc`
+// carry test — the sound_psg.asm:120 demand.
+// ---------------------------------------------------------------------------
+
+/// Eval the first proc under Cpu::Z80 and run the flag-unused check for a Z80
+/// `call` to `callee` (declared to return carry). The Z80 sibling of [`run`].
+fn run_z80(src: &str, callee: &str) -> Vec<FlagFiring> {
+    let (file, diags) = parse_str(src);
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "parse: {diags:?}");
+    let p = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Proc(p) => Some(p),
+            _ => None,
+        })
+        .expect("a proc");
+    let (buf, _d, _n) =
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::Z80, &[]);
+    let buf = buf.expect("codebuf");
+    let mut fc: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    fc.insert(callee.to_string(), BTreeSet::from(["carry".to_string()]));
+    check_flag_unused(&p.name, &buf.items, &fc, NONE, Cpu::Z80)
+}
+
+/// CONSUMED: a Z80 `jr c` reads the carry result before any redefine — the
+/// sound_psg.asm consumer form. No firing (the positive control for the arm).
+#[test]
+fn z80_jr_c_consumes_carry() {
+    let f = run_z80(
+        "module m\n\
+         proc P () {\n\
+             call Resolve\n\
+             jr c, .unknown\n\
+             ld a, 1\n\
+         .unknown:\n\
+             ret\n\
+         }\n",
+        "Resolve",
+    );
+    assert!(f.is_empty(), "jr c consumes the carry result — should not fire: {f:?}");
+}
+
+/// CONSUMED: `jr nc` (carry-clear) is the mirror consumer — also discharges the
+/// obligation. No firing.
+#[test]
+fn z80_jr_nc_consumes_carry() {
+    let f = run_z80(
+        "module m\n\
+         proc P () {\n\
+             call Resolve\n\
+             jr nc, .found\n\
+             ret\n\
+         .found:\n\
+             ret\n\
+         }\n",
+        "Resolve",
+    );
+    assert!(f.is_empty(), "jr nc consumes the carry result — should not fire: {f:?}");
+}
+
+/// ABANDONED: a Z80 caller that returns without testing carry drops the result
+/// — the flag-result-unused firing (the psg-header bug class).
+#[test]
+fn z80_return_without_consume_fires() {
+    let f = run_z80(
+        "module m\n\
+         proc P () {\n\
+             call Resolve\n\
+             ld a, 0\n\
+             ret\n\
+         }\n",
+        "Resolve",
+    );
+    assert_eq!(f.len(), 1, "return abandons the Z80 carry result — should fire: {f:?}");
+    assert_eq!(f[0].flag, "carry");
+}
+
+/// REDEFINED: an intervening `scf` (a Z80 carry writer, the new z80_writes_carry
+/// arm) between the call and a `jr c` clobbers the callee's carry — the later
+/// test reads the wrong flag, so the result is abandoned. Must fire.
+#[test]
+fn z80_scf_redefines_carry_and_fires() {
+    let f = run_z80(
+        "module m\n\
+         proc P () {\n\
+             call Resolve\n\
+             scf\n\
+             jr c, .x\n\
+         .x:\n\
+             ret\n\
+         }\n",
+        "Resolve",
+    );
+    assert_eq!(f.len(), 1, "scf redefines carry before the jr c — must fire: {f:?}");
+}
+
+/// TRANSPARENT: a `jr z` (Zero-testing, NOT carry) between the call and the
+/// carry consumer neither consumes nor redefines carry — the carry survives to
+/// the `jr c`. No firing (the Z80 analog of the movem-transparency case; proves
+/// z80_reads_carry fences on the exact cc, and the two-way `jr z` edge split is
+/// walked without abandoning).
+#[test]
+fn z80_jr_z_is_carry_transparent() {
+    let f = run_z80(
+        "module m\n\
+         proc P () {\n\
+             call Resolve\n\
+             jr z, .zero\n\
+         .zero:\n\
+             jr c, .done\n\
+         .done:\n\
+             ret\n\
+         }\n",
+        "Resolve",
+    );
+    assert!(f.is_empty(), "jr z is carry-transparent — carry survives to jr c: {f:?}");
+}
+
+/// JOIN: one path consumes the carry (`jr c`), the other returns unconsumed —
+/// must-use is every-path, so it fires (the Z80 CFG has real joins via
+/// z80_edges' two-way conditional split).
+#[test]
+fn z80_one_unconsumed_path_at_a_join_fires() {
+    let f = run_z80(
+        "module m\n\
+         proc P () {\n\
+             call Resolve\n\
+             jr z, .skip\n\
+             jr c, .done\n\
+         .skip:\n\
+             ret\n\
+         .done:\n\
+             ret\n\
+         }\n",
+        "Resolve",
+    );
+    assert_eq!(f.len(), 1, "the .skip path returns unconsumed — should fire: {f:?}");
 }

@@ -380,3 +380,56 @@ fn closure_fires_when_trailing_callee_clobbers() {
     ]);
     assert!(fires(&r, "Caller", "a0"), "a clobbering trailing callee must fire on the caller: {:?}", r.firings);
 }
+
+// ---------------------------------------------------------------------------
+// rung-2 §13.3 sub-part 3 — the Z80 cross-proc caller-must-consume flag check.
+// The 68k register-contract closure skips (cpu: z80) modules, but the
+// flag-result must-use check is inherently cross-proc, so a SEPARATE Cpu::Z80
+// pass routes Z80 procs' flag callees + bodies into check_flag_unused. Corpus
+// shape: PsgVolEnv_Resolve declares out(carry: found); a caller `jr c`s on it.
+// ---------------------------------------------------------------------------
+
+/// A Z80 caller that CONSUMES the callee's `out(carry:)` result (`jr c`) over
+/// the whole-corpus walk — no flag firing (the wired Z80 happy path).
+#[test]
+fn z80_flag_result_consumed_over_corpus_passes() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc Resolve () out(carry: found) {\n\
+               scf\n\
+               ret\n\
+           }\n\
+           proc Caller () {\n\
+               call Resolve\n\
+               jr c, .miss\n\
+               ret\n\
+           .miss:\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert_eq!(flag_fires(&r, "Caller", "Resolve"), 0, "flag firings: {:?}", r.flag_firings);
+}
+
+/// The same Z80 callee whose caller ABANDONS the carry (returns without testing
+/// it) fires `[call.flag-result-unused]` through the Z80 corpus routing — the
+/// psg-header bug class, now cross-proc-caught.
+#[test]
+fn z80_flag_result_dropped_over_corpus_fires() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc Resolve () out(carry: found) {\n\
+               scf\n\
+               ret\n\
+           }\n\
+           proc Caller () {\n\
+               call Resolve\n\
+               ld a, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert_eq!(flag_fires(&r, "Caller", "Resolve"), 1, "flag firings: {:?}", r.flag_firings);
+}

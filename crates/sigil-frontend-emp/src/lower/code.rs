@@ -1689,11 +1689,54 @@ fn lower_z80_instr(
         push_err(diags, span, format!("`{mnemonic}` is not a recognized Z80 mnemonic"));
         return;
     };
-    // Relative branch to a symbolic target → linker-resolved Z80JrRel8 fixup.
-    if matches!(m, Z80Mnemonic::Jr | Z80Mnemonic::Djnz) {
+    // An unconditional symbolic `jr Label` sizes ITSELF over the latent `jr → jp`
+    // ladder (rung-2 §5): emit a two-rung `RelaxLadder` (`jr e` 2 B → `jp nn`
+    // 3 B) the linker width-selects. Byte-neutral — an in-reach target keeps the
+    // 2-byte `jr` rung (asl's choice); a genuinely out-of-reach target grows to
+    // `jp` rather than the old hard error. `djnz` (short-only) is never laddered:
+    // it stays a hard `Z80JrRel8` fixup so an out-of-range `djnz` is the real
+    // `[branch.out-of-reach]` code-structure error, matching asl (§5).
+    if matches!(m, Z80Mnemonic::Jr) {
+        if let [CodeOperand::Sym(name)] = ops {
+            let candidates = Z80Backend.lower_jr_jp_candidates(Expr::Sym(name.clone()), span);
+            let advance = candidates[0].bytes.len() as u32;
+            let frag = Fragment::RelaxLadder { candidates, target: Expr::Sym(name.clone()), span };
+            builder.emit_fragment(frag, advance);
+            return;
+        }
+    }
+    if matches!(m, Z80Mnemonic::Djnz) {
         if let [CodeOperand::Sym(name)] = ops {
             match Z80Backend.lower_rel(m, None, Expr::Sym(name.clone()), span) {
                 Ok(df) => emit_data_frag(builder, df),
+                Err(e) => push_err(diags, span, e.message),
+            }
+            return;
+        }
+    }
+    // A conditional symbolic `jr cc, Label` (rung-2 §13.3 item 4): sizes ITSELF
+    // over the latent `jr cc → jp cc` ladder (§5), exactly like the unconditional
+    // `jr` above — a two-rung `RelaxLadder` (`jr cc, e` 2 B → `jp cc, nn` 3 B)
+    // the linker width-selects. Byte-neutral: an in-reach target keeps the 2-byte
+    // `jr cc` rung (asl's choice, which every psg/fm `jr cc` takes); a genuinely
+    // out-of-reach target grows to `jp cc`. Detected before the symbolic-abs16
+    // path below because a `jr` target is relative, not absolute.
+    if matches!(m, Z80Mnemonic::Jr) {
+        if let [CodeOperand::Z80Cc(cc), CodeOperand::Sym(name)] = ops {
+            match Z80Backend.lower_jr_jp_cc_candidates(
+                map_z80_cond(*cc),
+                Expr::Sym(name.clone()),
+                span,
+            ) {
+                Ok(candidates) => {
+                    let advance = candidates[0].bytes.len() as u32;
+                    let frag = Fragment::RelaxLadder {
+                        candidates,
+                        target: Expr::Sym(name.clone()),
+                        span,
+                    };
+                    builder.emit_fragment(frag, advance);
+                }
                 Err(e) => push_err(diags, span, e.message),
             }
             return;
@@ -1764,6 +1807,22 @@ fn lower_z80_abs16_sym(
         (Z80Mnemonic::Jp | Z80Mnemonic::Call, [CodeOperand::ImmLink { target }]) => {
             (vec![Z80Operand::Imm16(0)], target.clone())
         }
+        // Conditional `jp cc, Label` / `call cc, Label` (rung-2 §13.3): the cc
+        // is the leading operand, the imm16 the trailing two bytes.
+        (
+            Z80Mnemonic::Jp | Z80Mnemonic::Call,
+            [CodeOperand::Z80Cc(cc), CodeOperand::Sym(name)],
+        ) => (
+            vec![Z80Operand::Cc(map_z80_cond(*cc)), Z80Operand::Imm16(0)],
+            Expr::Sym(name.clone()),
+        ),
+        (
+            Z80Mnemonic::Jp | Z80Mnemonic::Call,
+            [CodeOperand::Z80Cc(cc), CodeOperand::ImmLink { target }],
+        ) => (
+            vec![Z80Operand::Cc(map_z80_cond(*cc)), Z80Operand::Imm16(0)],
+            target.clone(),
+        ),
         _ => {
             push_err(
                 diags,
@@ -1804,7 +1863,42 @@ fn lower_z80_abs16_sym(
 fn map_z80_operands(m: Z80Mnemonic, ops: &[CodeOperand]) -> Result<Vec<Z80Operand>, String> {
     let wants_imm16 = matches!(m, Z80Mnemonic::Jp | Z80Mnemonic::Call)
         || ops.iter().any(|o| matches!(o, CodeOperand::Z80Pair(_)));
-    ops.iter().map(|op| map_z80_operand(op, wants_imm16)).collect()
+    // `bit`/`set`/`res` (rung-2 §1.6): the FIRST operand is a 3-bit bit NUMBER
+    // (`bit 4,a` / `set SCF_KEYED_B,(ix+sc_flags)`), not an ordinary immediate.
+    // The eval mapper folds it to a `CodeOperand::Imm` (no mnemonic context
+    // there); here — where the mnemonic IS known — it becomes a `Z80Operand::Bit`
+    // so `z80::encode`'s CB-bit path selects. (A `Z80Bit` operand, if a future
+    // eval-time path produces one, maps directly via `map_z80_operand`.)
+    let is_bit_op = matches!(m, Z80Mnemonic::Bit | Z80Mnemonic::Set | Z80Mnemonic::Res);
+    ops.iter()
+        .enumerate()
+        .map(|(i, op)| {
+            if is_bit_op && i == 0 {
+                map_z80_bit_number(op)
+            } else {
+                map_z80_operand(op, wants_imm16)
+            }
+        })
+        .collect()
+}
+
+/// Map the leading bit-NUMBER operand of a `bit`/`set`/`res` (§1.6) to a
+/// [`Z80Operand::Bit`]. Accepts a comptime `Imm(0..=7)` (the usual `bit 4,a`
+/// spelling, or a folded `set SCF_KEYED_B,…` constant) or an already-classified
+/// [`CodeOperand::Z80Bit`]; anything else — or a value outside `0..=7` — is
+/// `[lower.z80-unsupported]` (the ISA's own `0..=7` guard is the byte-exact
+/// backstop).
+fn map_z80_bit_number(op: &CodeOperand) -> Result<Z80Operand, String> {
+    match op {
+        CodeOperand::Z80Bit(b) => Ok(Z80Operand::Bit(*b)),
+        CodeOperand::Imm(n) if (0..=7).contains(n) => Ok(Z80Operand::Bit(*n as u8)),
+        CodeOperand::Imm(n) => Err(format!(
+            "[lower.z80-unsupported] bit number {n} out of range 0..=7"
+        )),
+        other => Err(format!(
+            "[lower.z80-unsupported] `bit`/`set`/`res` needs a 0..=7 bit number, got `{other:?}`"
+        )),
+    }
 }
 
 /// Map one comptime [`CodeOperand`] to a [`Z80Operand`]. A `[lower.z80-unsupported]`

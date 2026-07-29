@@ -59,6 +59,10 @@ pub(super) struct ProcCtx<'a> {
     /// into this proc's evaluator so its body can reference one like any
     /// other name.
     pub defines: &'a [(String, i128)],
+    /// The module-scope `invariant: preserves(...)` unit set every proc in a
+    /// `(cpu: z80)` module INHERITS (rung-2 §3.2). Empty when the module carries
+    /// no invariant (every 68k module, and a Z80 module without the attribute).
+    pub invariant_regs: &'a [String],
 }
 
 /// Lower one proc: define its label, evaluate + lower its body, then run the
@@ -128,11 +132,16 @@ pub(super) fn lower_proc(
         check_clobbers(proc, &buf, diags);
     }
 
-    // 5. Preserves contract (S2-D6b SYNTACTIC slice): the declared set must
-    // match the literal movem save/restore pair. An opt-in declared CONTRACT
-    // like `falls_into` — error tier, NOT silenced by `@as_compat` (only the
-    // heuristic modernization lints are).
-    if !proc.preserves.is_empty() {
+    // 5. Preserves contract. On Z80 (rung-2 §4.2) the push/pop `preserves` proof
+    // (the `z80_preserves` sibling) replaces the 68k movem-pair slice, and the
+    // module-scope `invariant` is UNIONED onto every proc's declared preserves
+    // (§3.2 inheritance) — so a proc that breaks the invariant fires even with no
+    // explicit `preserves`. On 68k, the S2-D6b syntactic slice stands unchanged
+    // (byte-frozen — `preserves.rs` untouched). Both are opt-in declared
+    // CONTRACTs, error-tier, NOT silenced by `@as_compat`.
+    if ctx.cpu == Cpu::Z80 {
+        check_z80_preserves(proc, &buf, ctx.invariant_regs, diags);
+    } else if !proc.preserves.is_empty() {
         check_preserves(proc, &buf, diags);
     }
 
@@ -154,6 +163,74 @@ pub(super) fn lower_proc(
     // declared contract, like `preserves`/`out`.
     if !proc.out_flags.is_empty() || !proc.out_cond.is_empty() {
         check_out_flags_cond(&proc.name, &proc.out_flags, &proc.out_cond, diags);
+    }
+}
+
+/// Verify a `(cpu: z80)` proc's `preserves` contract (rung-2 §4.2/§3.2) via the
+/// push/pop [`z80_preserves`](crate::z80_preserves) proof. The CHECKED set is the
+/// proc's own declared `preserves(...)` UNIONED with the module's inherited
+/// `invariant: preserves(...)` (`invariant_regs`) — so an `invariant(ix)` module
+/// makes EVERY proc prove it preserves `ix`, even one with no explicit contract
+/// (the psg-header-line-60 bug class, now a compile error). Each reglist is read
+/// through the Z80 register file (item 1), so a bad register is
+/// `[contract.unknown-register]`. A register the proof cannot verify preserved is
+/// `[proc.preserves-unverifiable]` (error — a wrong contract is worse than none,
+/// the D2.32 principle kept). NOTHING to prove ⇒ nothing runs (the vacuous pass
+/// the three landed Z80 modules take — item 7).
+fn check_z80_preserves(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    invariant_regs: &[String],
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::preserves::PreserveStatus;
+    // The declared preserves reglist → Z80 units (validated), plus the inherited
+    // invariant units.
+    let mut check: BTreeSet<String> = crate::regfile::expand_reglist(
+        &proc.preserves,
+        crate::regfile::RegFile::Z80,
+        |reason| {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!("[proc.preserves-invalid] `{}` declares an invalid `preserves` register: {reason}", proc.name),
+            )
+        },
+    );
+    check.extend(invariant_regs.iter().cloned());
+    if check.is_empty() {
+        return;
+    }
+    let checklist: Vec<String> = check.into_iter().collect();
+    let statuses = crate::z80_preserves::verify_z80_preserved(&buf.items, &checklist);
+    for (reg, status) in statuses {
+        // Whether `reg` is an INHERITED invariant (vs an explicit preserve) — for
+        // a message that names WHY the proc must preserve it.
+        let inherited = invariant_regs.iter().any(|r| *r == reg);
+        match status {
+            PreserveStatus::Verified => {}
+            PreserveStatus::NotPreserved => push(
+                diags,
+                Level::Error,
+                proc.span,
+                if inherited {
+                    format!("[proc.preserves-unverifiable] `{}` breaks the module invariant `preserves({reg})` — `{reg}` is written and not restored", proc.name)
+                } else {
+                    format!("[proc.preserves-unverifiable] `{}` declares `preserves({reg})` but `{reg}` is written and not restored", proc.name)
+                },
+            ),
+            PreserveStatus::Unverifiable(why) => push(
+                diags,
+                Level::Error,
+                proc.span,
+                if inherited {
+                    format!("[proc.preserves-unverifiable] `{}` cannot verify the module invariant `preserves({reg})`: {why}", proc.name)
+                } else {
+                    format!("[proc.preserves-unverifiable] `{}` cannot verify `preserves({reg})`: {why}", proc.name)
+                },
+            ),
+        }
     }
 }
 

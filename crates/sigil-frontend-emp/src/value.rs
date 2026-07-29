@@ -954,6 +954,30 @@ pub enum Z80RegClass {
     Index(Z80Index),
 }
 
+impl Z80RegClass {
+    /// The Z80 register class a register-spelling names, or `None` for a
+    /// non-Z80-register word. An index name (`ix`/`iy`) classifies as
+    /// [`Index`](Z80RegClass::Index) (the `(ix+d)` base, matching
+    /// `Fm_TransposeClamp`'s `ix: *SeqChannel`); the four splittable pairs
+    /// (`bc`/`de`/`hl`/`af`) as [`Pair`](Z80RegClass::Pair); the 8-bit halves as
+    /// [`R8`](Z80RegClass::R8). `sp` is DELIBERATELY excluded — it is Z80 stack
+    /// discipline (the a7 analog), never a splice register, and excluding it keeps
+    /// the by-name proc-param binder (rung-2 §2.3) clear of any 68k `sp`→`a7`
+    /// param collision.
+    pub fn from_name(name: &str) -> Option<Z80RegClass> {
+        if let Some(r) = Z80Reg8::from_name(name) {
+            return Some(Z80RegClass::R8(r));
+        }
+        if let Some(i) = Z80Index::from_name(name) {
+            return Some(Z80RegClass::Index(i));
+        }
+        match Z80Pair::from_name(name) {
+            Some(Z80Pair::Sp) | None => None,
+            Some(p) => Some(Z80RegClass::Pair(p)),
+        }
+    }
+}
+
 impl fmt::Display for Z80RegClass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

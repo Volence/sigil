@@ -1413,6 +1413,18 @@ pub fn eval_proc_body_env(
         }
         drop(probe);
         let mut env = Env::new();
+        // Rung-2 §2.3 — a Z80 register-named proc param binds to its
+        // [`Value::Z80Reg`] so `{ix}`/`{hl}` splices resolve (the source producer
+        // the T1 §0 obligation needs). Bound BY NAME: a Z80 register spelling
+        // (`a`..`l`, `bc`/`de`/`hl`/`af`, `ix`/`iy` — `sp` excluded) is never a
+        // valid 68k param, so this leaves every 68k proc untouched. The SECTION
+        // CPU decides validity — the same `{ix}` splices cleanly in a Z80 section
+        // and is the `[asm.splice-kind]` error in a 68k one (classify_operand_splice).
+        for (pname, _pty, _pspan) in params {
+            if let Some(rc) = crate::value::Z80RegClass::from_name(pname) {
+                env.define(pname.clone(), Value::Z80Reg(rc), false);
+            }
+        }
         let buf = match ev.eval_asm_owned(body, span, &mut env, Some(name)) {
             Value::Code(buf) => Some(buf),
             _ => None,

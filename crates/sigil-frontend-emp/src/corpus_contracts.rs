@@ -320,7 +320,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let mut flag_firings: Vec<FlagFiring> = Vec::new();
     let mut flag_firings_verified: Vec<FlagFiring> = Vec::new();
     for pb in &proc_bufs {
-        let unused = check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded);
+        let unused =
+            check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded, Cpu::M68000);
         flag_firings_verified.extend(unused.iter().cloned());
         flag_firings.extend(unused);
         flag_firings.extend(check_result_invalid_path(
@@ -336,6 +337,34 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             &verified_uncond_out,
         ));
     }
+    // rung-2 §13.3 sub-part 3 — the Z80 caller-must-consume flag check. PASS 2
+    // skips `(cpu: z80)` modules from the 68k register-contract closure (a Z80
+    // proc carries no 68k effect), but the flag-result must-use check is
+    // inherently cross-proc: a Z80 caller that `jr c`s on a callee's
+    // `out(carry:)` is credited, one that abandons it fires
+    // `[call.flag-result-unused]`. Z80 procs and their flag callees are
+    // self-contained within Z80 modules (a Z80 proc is reachable only from Z80),
+    // so a SEPARATE Cpu::Z80 pass collects their flag contracts + CodeBufs and
+    // runs the check — the 68k closure stays Z80-free. `check_result_invalid_path`
+    // is NOT run for Z80 (no corpus site declares a Z80 conditional register
+    // result — the represented-not-wired boundary).
+    let mut z80_flag_callees: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut z80_proc_bufs: Vec<ProcBuf> = Vec::new();
+    for file in files {
+        if module_is_z80(&file.module) {
+            collect_z80_flag_procs(
+                &file.items, file, &mut counter, defines, &env, &mut z80_flag_callees,
+                &mut z80_proc_bufs,
+            );
+        }
+    }
+    for pb in &z80_proc_bufs {
+        let unused =
+            check_flag_unused(&pb.name, &pb.buf.items, &z80_flag_callees, &pb.discarded, Cpu::Z80);
+        flag_firings_verified.extend(unused.iter().cloned());
+        flag_firings.extend(unused);
+    }
+
     // Deterministic order (proc, callee, flag); spans stay in encounter order
     // via the stable sort.
     let flag_sort = |a: &FlagFiring, b: &FlagFiring| {
@@ -738,6 +767,63 @@ fn collect_items(
             Item::Section(s) => collect_items(
                 &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter,
                 flag_callees, cond_callees, proc_bufs, defines, env, dropped_by_proc,
+            ),
+            _ => {}
+        }
+    }
+}
+
+/// rung-2 §13.3 sub-part 3 — walk a `(cpu: z80)` module's items (recursing
+/// sections), collecting each proc/extern's `out(carry: …)` flag contract into
+/// `z80_flag_callees` and each body-bearing proc's Cpu::Z80-evaluated CodeBuf
+/// (with its `@discards` spans) into `z80_proc_bufs`. The whole-corpus flag
+/// must-use check needs both sides (callee contract + caller body); this pass
+/// supplies them WITHOUT feeding the 68k closure — keeping the register-contract
+/// half of the PASS-2 Z80 skip intact.
+fn collect_z80_flag_procs(
+    items: &[Item],
+    file: &ast::File,
+    counter: &mut u32,
+    defines: &[(String, i128)],
+    env: &[Item],
+    z80_flag_callees: &mut BTreeMap<String, BTreeSet<String>>,
+    z80_proc_bufs: &mut Vec<ProcBuf>,
+) {
+    for item in items {
+        match item {
+            Item::Proc(p) => {
+                let flags = flags_of(&p.out_flags);
+                if !flags.is_empty() {
+                    z80_flag_callees.insert(p.name.clone(), flags);
+                }
+                let (buf, _diags, next, _dropped) = crate::eval::eval_proc_body_env(
+                    file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::Z80, defines, env,
+                );
+                *counter = next;
+                if let Some(buf) = buf {
+                    let mut discarded = Vec::new();
+                    collect_discarded(&p.body, &mut discarded);
+                    z80_proc_bufs.push(ProcBuf {
+                        name: p.name.clone(),
+                        buf,
+                        discarded,
+                        span: p.span,
+                        // Z80 preserves are proven by the z80_preserves sibling,
+                        // not the 68k callee-preserves oracle: empty inputs make
+                        // the oracle round skip this buf (preserve_check empty).
+                        preserve_check: Vec::new(),
+                        preserve_names: std::collections::BTreeSet::new(),
+                    });
+                }
+            }
+            Item::ExternProc(e) => {
+                let flags = flags_of(&e.sig.out_flags);
+                if !flags.is_empty() {
+                    z80_flag_callees.insert(e.name.clone(), flags);
+                }
+            }
+            Item::Section(s) => collect_z80_flag_procs(
+                &s.items, file, counter, defines, env, z80_flag_callees, z80_proc_bufs,
             ),
             _ => {}
         }
