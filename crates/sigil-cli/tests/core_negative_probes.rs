@@ -79,12 +79,15 @@ fn core_with_ambient(core_src: &str) -> sigil_frontend_emp::ast::File {
     let types = read(aeon().join("engine/system/types.emp"));
     let sst = read(aeon().join("engine/objects/sst.emp"));
     let constants = read(aeon().join("engine/system/constants.emp"));
+    let coords = read(aeon().join("engine/coords.emp"));
     let (core, cdiags) = parse_str(core_src);
     assert!(cdiags.iter().all(|x| x.level != Level::Error), "core parse: {cdiags:?}");
     let mut items = Vec::new();
     items.extend(types.items);
     items.extend(sst.items);
     items.extend(constants.items);
+    // coords carries abs_w (ambient-hoist parcel folded core's cull sites onto it).
+    items.extend(coords.items);
     items.extend(core.items);
     sigil_frontend_emp::ast::File {
         module: core.module.clone(),

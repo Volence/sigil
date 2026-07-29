@@ -82,6 +82,7 @@ struct Sources {
     sst: String,
     constants: String,
     aabb: String,
+    coords: String,
     collision: String,
 }
 
@@ -91,6 +92,9 @@ fn sources() -> Option<Sources> {
         sst: read_aeon("engine/objects/sst.emp")?,
         constants: read_aeon("engine/system/constants.emp")?,
         aabb: read_aeon("engine/objects/aabb.emp")?,
+        // coords carries abs_w (ambient-hoist parcel folded collision's AABB
+        // |delta| sites onto the shared template).
+        coords: read_aeon("engine/coords.emp")?,
         collision: read_aeon("engine/objects/collision.emp")?,
     })
 }
@@ -122,10 +126,13 @@ fn lower_quintet(
     sst: &str,
     constants: &str,
     aabb: &str,
+    coords: &str,
     collision: &str,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<sigil_span::Diagnostic>) {
     let mut items = Vec::new();
-    for src in [types, sst, constants, aabb] {
+    // coords carries abs_w (ambient-hoist parcel folded collision's AABB |delta|
+    // sites onto the shared template).
+    for src in [types, sst, constants, aabb, coords] {
         items.extend(parse_str(src).0.items);
     }
     let (main, _) = parse_str(collision);
@@ -184,7 +191,7 @@ fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
 
     // Control: the real quintet's guards PASS against the real AS truths.
     let (_c_sec, c_asserts, c_ldiags) =
-        lower_quintet(&s.types, &s.sst, &s.constants, &s.aabb, &s.collision);
+        lower_quintet(&s.types, &s.sst, &s.constants, &s.aabb, &s.coords, &s.collision);
     assert!(
         c_ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "control must lower clean: {:?}",
@@ -205,7 +212,7 @@ fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
     );
     assert_ne!(doctored_sst, s.sst, "the doctor must have found its target");
     let (_sec, asserts, ldiags) =
-        lower_quintet(&s.types, &doctored_sst, &s.constants, &s.aabb, &s.collision);
+        lower_quintet(&s.types, &doctored_sst, &s.constants, &s.aabb, &s.coords, &s.collision);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "the doctored twin still lowers clean (the guard is a link assert): {:?}",
@@ -234,7 +241,7 @@ fn drifted_constants_collision_value_fires_its_guard() {
     let doctored = s.constants.replace("pub const ST_ON_OBJECT   = 5", "pub const ST_ON_OBJECT   = 4");
     assert_ne!(doctored, s.constants, "the doctor must have found its target");
     let (_sec, asserts, ldiags) =
-        lower_quintet(&s.types, &s.sst, &doctored, &s.aabb, &s.collision);
+        lower_quintet(&s.types, &s.sst, &doctored, &s.aabb, &s.coords, &s.collision);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "the doctored twin still lowers clean (the guard is a link assert): {:?}",
@@ -317,7 +324,7 @@ fn broken_falls_into_stub_chain_fires_fallthrough() {
     };
 
     // Control: the real chain lowers with no undeclared-fallthrough diagnostic.
-    let control = lower_with_ambient(&[&s.types, &s.sst, &s.constants, &s.aabb], &s.collision);
+    let control = lower_with_ambient(&[&s.types, &s.sst, &s.constants, &s.aabb, &s.coords], &s.collision);
     assert!(
         !control.iter().any(|d| d.message.contains("[proc.undeclared-fallthrough]")),
         "control must have no undeclared-fallthrough diagnostic: {:?}",
@@ -333,7 +340,7 @@ fn broken_falls_into_stub_chain_fires_fallthrough() {
     );
     assert_ne!(doctored, s.collision, "the doctor must have found its target");
 
-    let diags = lower_with_ambient(&[&s.types, &s.sst, &s.constants, &s.aabb], &doctored);
+    let diags = lower_with_ambient(&[&s.types, &s.sst, &s.constants, &s.aabb, &s.coords], &doctored);
     assert!(
         diags.iter().any(|d| d.message.contains("[proc.undeclared-fallthrough]")
             && d.message.contains("Touch_None")),

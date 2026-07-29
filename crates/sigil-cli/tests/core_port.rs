@@ -248,9 +248,12 @@ fn compile_real_file_with(
     let types = parse_file(&aeon.join("engine/system/types.emp"));
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
+    let coords = parse_file(&aeon.join("engine/coords.emp"));
     let core = parse_file(&aeon.join("engine/objects/core.emp"));
 
-    let file = with_ambient(vec![types, sst, constants], core);
+    // coords carries the shared abs_w the ambient-hoist parcel folded the
+    // |pos-camera| cull sites onto.
+    let file = with_ambient(vec![types, sst, constants, coords], core);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,

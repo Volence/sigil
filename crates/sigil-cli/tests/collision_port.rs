@@ -229,11 +229,13 @@ fn compile_real_file(
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
     let aabb = parse_file(&aeon.join("engine/objects/aabb.emp"));
+    let coords = parse_file(&aeon.join("engine/coords.emp"));
     let collision = parse_file(&aeon.join("engine/objects/collision.emp"));
 
     // engine.types rides in front of sst (sst.emp imports it); aabb is the
-    // zero-byte template `collision.emp` splices via F3.
-    let file = with_ambient(vec![types, sst, constants, aabb], collision);
+    // zero-byte template `collision.emp` splices via F3; coords carries the
+    // shared abs_w the ambient-hoist parcel folded the AABB |delta| sites onto.
+    let file = with_ambient(vec![types, sst, constants, aabb, coords], collision);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,

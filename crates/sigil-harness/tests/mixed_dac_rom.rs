@@ -1488,13 +1488,19 @@ fn placed_module_sections_with_roots(
         // comptime-fn template (aabb.emp, sibling — F3 cross-module import).
         // Prepend in `use` order: sst (+types), constants, aabb.
         "collision.emp" | "rings.emp" => {
-            let system = dir.parent().expect("engine/objects has a parent").join("system");
+            let engine = dir.parent().expect("engine/objects has a parent").to_path_buf();
+            let system = engine.join("system");
             ambient_items = sst_ambient_items(&dir);
             ambient_items.extend(constants_ambient_items(&system));
             ambient_items.extend(aabb_ambient_items(&dir));
             // rings.emp additionally imports `vram_art` from objdef.emp (RING_ART_ATTR).
             if module_file == "rings.emp" {
                 ambient_items.extend(objdef_ambient_items(&dir));
+            }
+            // collision.emp `use`s engine.coords.{abs_w} (ambient-hoist parcel
+            // folded its AABB |delta| sites onto the shared template).
+            if module_file == "collision.emp" {
+                ambient_items.extend(coords_ambient_items(&engine));
             }
         }
         "test_solid.emp" | "test_particle.emp" => {
@@ -4955,7 +4961,9 @@ fn player_common_import_items(player_dir: &Path) -> Vec<sigil_frontend_emp::ast:
             Item::Vars(d) => d.name.as_deref() == Some("PlayerV"),
             Item::ComptimeFn(d) => matches!(
                 d.name.as_str(),
-                "mask_opposing_lr" | "dist_to_fix" | "set_standing_size" | "set_ball_size" | "abs_w"
+                // abs_w moved to engine.coords at the ambient-hoist parcel; the
+                // state files import it from there (coords_ambient_items), not here.
+                "mask_opposing_lr" | "dist_to_fix" | "set_standing_size" | "set_ball_size"
             ),
             _ => false,
         })

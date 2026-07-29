@@ -266,6 +266,57 @@ pub fn engine_constant_equs() -> Vec<(&'static str, &'static str)> {
         ("VRAM_SPRITE_TABLE", "$B800"),
         ("VRAM_HSCROLL_TABLE", "$BC00"),
         ("PLANE_H_CELLS", "64"),
+        // Player physics / status / radii / edge / buttons — HOISTED into the
+        // engine.constants twin at the ambient-hoist parcel (kill-list rows
+        // 76/77/81): the player .emp files were the 1st consumers, so the
+        // engine-truth block moved here at the 2nd (player_ground). All defined
+        // in engine/constants.asm; the game-truth PPHYS_*/BUTTON_JUMP_MASK
+        // (player_common.asm) stay file-local in the player port tests.
+        ("BUTTON_C", "$20"),
+        ("BUTTON_A", "$40"),
+        ("BUTTON_UP_BIT", "0"),
+        ("BUTTON_DOWN_BIT", "1"),
+        ("BUTTON_LEFT_BIT", "2"),
+        ("BUTTON_RIGHT_BIT", "3"),
+        ("ST_XFLIP", "1"),
+        ("ST_ROLLING", "4"),
+        ("ST_PUSHING", "6"),
+        ("COLLISION_NONE", "0"),
+        ("PLAYER_X_RADIUS", "9"),
+        ("PLAYER_Y_RADIUS", "19"),
+        ("BALL_X_RADIUS", "7"),
+        ("BALL_Y_RADIUS", "14"),
+        ("CURL_Y_SHIFT", "5"),
+        ("PUSH_RADIUS", "10"),
+        ("EDGE_CLAMP", "0"),
+        ("EDGE_WRAP_V", "1"),
+        ("EDGE_KILL", "2"),
+        ("PHYS_ACCEL", "$C"),
+        ("PHYS_DECEL", "$80"),
+        ("PHYS_FRICTION", "$C"),
+        ("PHYS_TOP_SPEED", "$600"),
+        ("PHYS_GRAVITY", "$38"),
+        ("PHYS_JUMP_FORCE", "$680"),
+        ("PHYS_AIR_ACCEL", "$18"),
+        ("PHYS_JUMP_RELEASE_CAP", "-$400"),
+        ("PHYS_SKID_MIN", "$400"),
+        ("PHYS_JUMP_BUFFER", "2"),
+        ("PHYS_FALL_CAP", "$1000"),
+        ("PHYS_SLOPE_WALK", "$20"),
+        ("PHYS_SLOPE_ROLL_DOWN", "$50"),
+        ("PHYS_SLOPE_ROLL_UP", "$14"),
+        ("PHYS_SLOPE_STAND_MIN", "$D"),
+        ("PHYS_ROLL_START_MIN", "$100"),
+        ("PHYS_JUMP_HEADROOM", "6"),
+        ("PHYS_GSP_CAP", "$1000"),
+        ("PHYS_ROLL_DECEL", "$20"),
+        ("PHYS_UNROLL_MAX", "$80"),
+        ("PHYS_KEEP_ROLL_MIN", "$400"),
+        ("PHYS_SLIP_SPEED", "$280"),
+        ("PHYS_SLIP_ANGLE", "$18"),
+        ("PHYS_FALL_ANGLE", "$30"),
+        ("PHYS_SLIP_NUDGE", "$80"),
+        ("PHYS_MOVE_LOCK_TIME", "30"),
     ]
 }
 
@@ -360,14 +411,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn engine_constants_blob_assembles_and_defines_all_70() {
+    fn engine_constants_blob_assembles_and_defines_all_115() {
         let secs = as_engine_constants_equs();
         // Non-empty: the `Stub:` carrier flushed the equs into a real section.
         assert!(!secs.is_empty(), "the equ blob must produce at least the Stub section");
         assert_eq!(
             engine_constant_equs().len(),
-            70,
-            "the twin guards 70 engine constants (34 + tranche-11 sprites block of 15 + NUM_DYNAMIC_PENDING, A2 + tranche-15 section-geometry block of 3 + shared-struct-module tile-cache block of 4 + tranche-20 DMA/ART block of 9 + tranche-21 VRAM/plane block of 3 + tranche-24 RF_PRIORITY_MASK)"
+            115,
+            "the twin guards 115 engine constants (the prior 70 + the ambient-hoist parcel's player-cluster block of 45: 6 BUTTON_C/A/*_BIT + 3 ST_XFLIP/ROLLING/PUSHING + COLLISION_NONE + 6 radii/curl/push + 3 EDGE_* + 26 PHYS_*)"
         );
     }
 
