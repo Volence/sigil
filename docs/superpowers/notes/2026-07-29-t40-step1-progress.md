@@ -193,3 +193,82 @@ addresses and gates both shapes as genuinely-different byte images (a
 step-0 §1.1's row `Z80_Sound_End = $0565` is wrong — $0565 is the sequencer base
 (Sequencer_Frame); the true `Z80_Sound_End` is $1BFA (the whole-blob end). Neither
 correction changes the window boundary ($0000..$0565) or the deliverables.
+
+---
+
+## STEP 2 (modernize) — DONE. The pad_to_cycles derived-pad capability (the rung-4 payoff)
+- **Built `pad_to_cycles(target, measured)`** (sigil `4a88c4e`): a comptime pad emitter
+  returning `(target - measured)/4` real `nop` instructions, where `measured` is DERIVED
+  from `cycles(...)` spans + the fixed pre-pad/trailing cost. The eager `cycle_scope` is
+  extended to the pad statement-call (it reads `cycles()` exactly as an `ensure` does).
+  Loud errors on a negative pad (`measured exceeds target`) or a non-multiple-of-4 pad
+  (nop granularity). 4 TDD tests (emit-count via a following `cycles()` span, derives-
+  from-a-span, over-budget, non-mult-of-4).
+- **Applied to the two DAC timing pads** (aeon `c737fd5`): the literal `rept 19/nop`
+  (DRAIN) → `pad_to_cycles(195, cycles(.loop,.fill_body) + 10)` = 19 nops; the literal
+  `rept 21/nop` (DRAINING) → `pad_to_cycles(194, cycles(.loop,.dma_check) +
+  cycles(.draining,.draining_pad) + 10)` = 21 nops (one `.draining_pad` cut label added).
+- **DERIVED == HAND, byte movement ZERO** (STOP-not-absorb honored): the windowed byte
+  gate proves the derived pads are byte-IDENTICAL to the literal `rept 19/21` in BOTH
+  shapes. A count mismatch would have failed the gate = a STOP finding; it did not.
+- The three cycle-balance ensures still verify FILL 195 / DRAIN 195 / DRAINING 194, now
+  cross-checking the derived pads (complementary: the pad derivation uses the prefix span
+  + a literal trailing 10; the ensure uses the full body span — a trailing-jp edit would
+  be caught by the ensure).
+- House-format/step-2: the file is conformant from fresh transcription (panel A confirms
+  clause-order, brace-indent, compound-displacement parenthesization, present-tense prose).
+- **Full strict suite 2882/0/1** (`--no-fail-fast`) = 2878 + the 4 new pad_to_cycles tests.
+  Frozen behavior: no crate regression. ROM CRCs unchanged (the `.asm` is untouched; the
+  oracle proves `.emp`==`.asm` bytes).
+
+## THE DRY PANEL (A1 · B1 · C1 · C2 · C3) — 3 fresh read-only lens subagents
+- **A (ceremony / house-format) → NOTHING NEW.** All 5 dimensions clean vs the sequencer/
+  sfx reference: contract clause-order (`out → [clobbers] → preserves`, `falls_into`
+  trailing) on all 20 procs; brace-indent; every `+k` displacement parenthesized; zero
+  history-narration comments; module-header prose present-tense/complete.
+- **B (corpus-pattern) → NOTHING NEW.** extern-decl sparse style matches sequencer;
+  `export .afterPoll:` / `SndDrv_Sample.afterPoll` mirrors the sequencer `export .fetch:`
+  idiom; `falls_into`, module/section shape, and all idiom spellings have corpus
+  precedent. (`pad_to_cycles` is the one new construct — no precedent to diverge from.)
+- **C1 (T-state) → CONFIRMS, nothing new.** Walked the FILL span instruction-by-
+  instruction (22+30+30+27+44+22+20 = 195) against z80_cycles.rs and the .asm header;
+  DRAIN 109+86=195, DRAINING 82+112=194; both pad derivations (19, 21) re-derived. Table
+  is the documented driver-demand SUPERSET (a few unused ops present), not a gap — every
+  op in the three spans is covered, no reachable `[cycles.unknown-op]`.
+- **C2 (contracts) → CONFIRMS, nothing new.** Snd_DacLookup decl `preserves(ix)` ⊆ real
+  `preserves(bc,ix,iy)` (safe subset); RouteClassFlags `out(a)` honest; SndDrv_Sample's
+  clobbers-all/no-preserves correct (jp into TimerATick clobbers iy). The out-clobbers-
+  overlap resolution (dropping af/de from the clobbers clause, implicit scratch) is sound.
+- **C3 (hardware prose) → THREE byte-neutral findings, ALL FIXED (comments only):**
+  (b) the header's "$2A re-parked ... the sole $4000-touching paths" OVER-CLAIMED (it
+  omitted Snd_LoadSong + init + the idle loop, which also write $4000) → corrected to the
+  honest fuller set (init/idle/tick/.stop/StartSample/LoadSong/Timer-A programs).
+  (c) the "banked in-frame CODE is a proven crash hazard" line was imported from
+  sound_sequencer.emp and has no driver-.asm backing → reframed as the corpus resident-
+  code discipline (attributed to sequencer.emp) with the .asm-BACKED half (the
+  DacSampleTable BANK CONTRACT) stated separately.
+  (d) the .asm header's INHERENT PITCH ASYMMETRY block (DRAIN ~29 cents / DRAINING ~38
+  cents, math verified correct by C) was DROPPED in transcription → restored to the .emp
+  header. Byte gate re-run GREEN after all three (comments emit nothing).
+
+## DRY DETERMINATION — the panel converged
+A + B returned nothing new; C1/C2 confirmed the porter; C3's three prose findings were
+byte-neutral and are RESOLVED in-place (no code/contract/byte change, no re-opened cycle).
+The panel is DRY. Byte movement stayed ZERO throughout (windowed gates GREEN both shapes
+after every edit; the `.asm` canonical untouched, so ROM CRCs 4b66cace/1c256b3b hold by
+construction).
+
+## CHECKPOINT (b) — the loop is dry. Evidence:
+- Deliverables: aeon `z80_sound_driver.emp` (transcription + derived pads + C3 prose
+  fixes); sigil `z80_sound_driver_port.rs` (7 gates) + `pad_to_cycles` capability (4
+  tests) + this note + kill-list row 84.
+- Windowed gates 7/7 GREEN both shapes; byte movement ZERO (derived pads byte-identical
+  to the literal `rept 19/21`; C3 fixes comment-only).
+- Full strict suite **2882/0/1** (`--no-fail-fast`).
+- The three cycle-balance ensures verify FILL 195 / DRAIN 195 / DRAINING 194 on the real
+  spans (C1 re-walked); pad_to_cycles non-vacuity proven (doctored `.drain` pad fires);
+  contract firing arc 3→0 + preserve-checker non-vacuity (both from checkpoint a).
+- Panel A1/B1/C1/C2/C3 all resolved → dry. Kill row 84 tracks the driver twin (seam
+  sub-tranche kill). STOP here per the brief; gate (c) + the rebase (t39 merged: aeon
+  23e6ca7 / sigil c6d3ec5, 68k-side, zero overlap — NOT self-rebased) + the merge are the
+  overseer's.
