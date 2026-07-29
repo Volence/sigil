@@ -45,6 +45,10 @@ pub enum CycleBail {
     UnknownOp { mnemonic: String, span: Span },
 }
 
+/// `ix`/`iy` (a 16-bit inc/dec on an index reg costs 10, a plain pair 6)?
+fn is_index_pair(p: crate::value::Z80Pair) -> bool {
+    matches!(p, crate::value::Z80Pair::Ix | crate::value::Z80Pair::Iy)
+}
 /// Is this operand the 8-bit accumulator `a`?
 fn is_a(op: &CodeOperand) -> bool {
     matches!(op, CodeOperand::Z80Reg8(Z80Reg8::A))
@@ -101,7 +105,12 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         ("and" | "or" | "xor" | "cp" | "sub", [n]) if is_imm(n) => Cost::Fixed(7),
 
         // --- inc / dec ---
+        // 8-bit: inc/dec r                            4
         ("inc" | "dec", [r]) if is_reg8(r) => Cost::Fixed(4),
+        // 16-bit pair: inc/dec bc|de|hl|sp|af         6   (FILL's `dec hl` shadow len--)
+        ("inc" | "dec", [CodeOperand::Z80Pair(p)]) if !is_index_pair(*p) => Cost::Fixed(6),
+        // 16-bit index: inc/dec ix|iy                 10  (FILL's `inc ix` ROM++)
+        ("inc" | "dec", [CodeOperand::Z80Pair(p)]) if is_index_pair(*p) => Cost::Fixed(10),
 
         // --- shadow-set exchange ---
         ("exx", []) => Cost::Fixed(4),
@@ -220,14 +229,27 @@ mod tests {
         assert_eq!(span_cost(&items).unwrap(), 30);
     }
 
-    // The FILL body: ld a,(ix+0) / ld l,b / ld (hl),a / inc b / inc ix... but inc ix
-    // is a PAIR inc (10) — NOT in the reg8 arm; assert it bails Unknown (the honest
-    // subset boundary: inc ix appears in FILL but is a 16-bit inc; the table must
-    // carry it explicitly if a timed span needs it).
+    // FILL's 16-bit pointer/len ops: `inc ix` (10, ROM++) and `dec hl` (6, shadow
+    // len--) — both in the demand subset, both fixed-cost.
     #[test]
-    fn inc_ix_is_unknown_until_added() {
-        let items = vec![instr("inc", vec![CodeOperand::Z80Pair(crate::value::Z80Pair::Ix)])];
-        assert!(matches!(span_cost(&items), Err(CycleBail::UnknownOp { .. })));
+    fn pair_inc_dec_costs() {
+        let inc_ix = vec![instr("inc", vec![CodeOperand::Z80Pair(crate::value::Z80Pair::Ix)])];
+        assert_eq!(span_cost(&inc_ix).unwrap(), 10);
+        let dec_hl = vec![instr("dec", vec![CodeOperand::Z80Pair(crate::value::Z80Pair::Hl)])];
+        assert_eq!(span_cost(&dec_hl).unwrap(), 6);
+    }
+
+    // The whole FILL body block: ld a,(ix+0)/ld l,b/ld (hl),a/inc b/inc ix = 44.
+    #[test]
+    fn fill_body_is_44() {
+        let items = vec![
+            instr("ld", vec![a(), CodeOperand::Z80Indexed { reg: crate::value::Z80Index::Ix, disp: 0 }]), // 19
+            instr("ld", vec![l(), CodeOperand::Z80Reg8(Z80Reg8::B)]),  // 4
+            instr("ld", vec![CodeOperand::Z80IndHl, a()]),             // 7
+            instr("inc", vec![CodeOperand::Z80Reg8(Z80Reg8::B)]),      // 4
+            instr("inc", vec![CodeOperand::Z80Pair(crate::value::Z80Pair::Ix)]), // 10
+        ];
+        assert_eq!(span_cost(&items).unwrap(), 44);
     }
 
     // A `jr cc` inside a span is the HARD ambiguous bail (the jp-not-jr discipline).
