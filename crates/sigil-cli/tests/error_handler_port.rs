@@ -171,3 +171,33 @@ fn error_handler_region_matches_reference() {
 fn error_handler_debug_region_matches_reference() {
     reference_gate(&DEBUG);
 }
+
+/// THE t25 INTEGRATION FINDING, made executable: sigil does NOT resolve an
+/// AS-side `X: equ ExternalSym + const` at link — the derived symbol `X` stays
+/// UNRESOLVED even when `ExternalSym` is provided by another module. This blocks
+/// the brief's clean MDDBG__ ownership flip (the equ table `MDDBG__Y equ
+/// ErrorHandler+$yyy` deriving off the flipped `.emp` ErrorHandler): the 4
+/// cross-consumed equs (MDDBG__ErrorHandler/_PagesController + the two blob
+/// Debugger_* pointers) can't derive off a link-external base. The whole-ROM
+/// mixed gate therefore awaits an overseer ruling (build a link-time-equ
+/// capability, or pin the 4 equs per-shape). The windowed region gates above
+/// prove byte-identity independently of this. When sigil gains the capability
+/// this test FLIPS (the derived equ resolves) and signals the flip can be built.
+#[test]
+fn derived_equ_off_external_base_is_unresolved_today() {
+    use sigil_ir::SymbolValue;
+    let asm = "cpu 68000\nMDDBG__X: equ ErrorHandler+$128\n dc.l MDDBG__X\n";
+    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let m = assemble(asm, &opts).expect("assemble tolerates the external-base equ (defers)");
+    let mut st = SymbolTable::new();
+    st.define("ErrorHandler", SymbolValue::Int(0x5CC0A));
+    let resolved = sigil_link::resolve_layout(&m.sections, &st, true).expect("resolve_layout");
+    let link = sigil_link::link(&resolved, &st);
+    assert!(
+        link.is_err(),
+        "EXPECTED-GAP: a derived equ off an external base does not resolve today; \
+         if this now links, the MDDBG__ flip capability arrived — build the flip"
+    );
+    let err = format!("{:?}", link.unwrap_err());
+    assert!(err.contains("MDDBG__X") && err.contains("unresolved"), "the derived symbol is the unresolved one: {err}");
+}
