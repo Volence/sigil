@@ -336,3 +336,57 @@ fn unwired_bit_indexed_is_z80_unsupported() {
         "expected [lower.z80-unsupported] for the unwired bit form, got: {diags:?}"
     );
 }
+
+// ---- rung-2 item 4: typed Z80 proc register params + the T1 §0 splice test --
+//
+// DESIGN-vs-TREE (design §2.3 vs the parser): the parser gates operand splices
+// (`{r}`) to `comptime fn` template bodies — a proc body is NOT a template, so
+// `{ix}` cannot appear directly in a proc body (as §2.3 sketches). The Z80
+// register-named param DOES bind to a `Value::Z80Reg` (rung-2 §2.3, the
+// producer); the value reaches a `{r}` splice by flowing through a comptime-fn
+// template the proc instantiates — the SAME vehicle T1's own 68k-direction
+// splice test uses. The section CPU the template instantiates under decides
+// validity. (Flagged for the note's §9 discrepancies bucket.)
+
+/// Positive control (t24): a Z80 proc register param binds `ix` to a
+/// [`Value::Z80Reg`] (§2.3); flowed through a comptime-fn template instantiated
+/// in the proc's OWN Z80 section, `{r}` splices cleanly — `pop {r}` maps to
+/// `pop ix` = `DD E1`, byte-identical to the plain `pop ix`.
+#[test]
+fn z80_proc_param_ix_splices_in_z80_section() {
+    let src = "module m in s (cpu: z80)\n\
+               comptime fn emit(r: u8) -> Code {\n\
+                 return asm { pop {r} }\n\
+               }\n\
+               proc F(ix: *u8) {\n\
+                 emit(ix)\n\
+                 ret\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0xDD, 0xE1, 0xC9]);
+}
+
+/// The T1 §0 RUNG-2 OBLIGATION: the SAME Z80-register param (a
+/// [`Value::Z80Reg`]) flowed into a `{r}` splice of a `(cpu: m68000)`-section
+/// template instruction is the `[asm.splice-kind]` error — the source producer
+/// T1 implemented the guard for but could not yet test. Pairs with the positive
+/// control above (t24 rule).
+#[test]
+fn z80_reg_spliced_in_m68000_section_is_splice_kind_error() {
+    let src = "module m\n\
+               section blk (cpu: m68000, vma: $0) {\n\
+                 comptime fn emit(r: u8) -> Code {\n\
+                   return asm { move.l {r}, d0 }\n\
+                 }\n\
+                 proc F(ix: *u8) {\n\
+                   emit(ix)\n\
+                   rts\n\
+                 }\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[asm.splice-kind]")),
+        "expected a splice-kind error for a Z80 register in a 68k section, got: {diags:?}"
+    );
+}
