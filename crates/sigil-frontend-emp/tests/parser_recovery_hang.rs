@@ -1,28 +1,46 @@
-//! t25 (sound_debug lane) — a parser ROBUSTNESS bug, captured as a documented
-//! repro. `parse_str` HANGS (infinite error-recovery loop, never terminates) on
-//! the input below instead of emitting a clean parse error. A front-end must
-//! error loudly, never spin — so this is a bug independent of the missing
-//! feature that triggers it.
+//! t25/t28 (sound_debug lane) — a parser ROBUSTNESS bug, captured as a
+//! documented repro. Before the t28 P1 fix, `parse_str` HUNG (infinite
+//! error-recovery loop, never terminated) on the inputs below instead of
+//! emitting a clean parse error. A front-end must error loudly, never spin.
 //!
-//! TRIGGER: `lea (extern("X") - CONST)(a0), a0` — an `extern(...)` inside a
-//! displacement expression is an UNSUPPORTED form (a parse gap; ledgered as a
-//! demanded feature). In ISOLATION the parser reports "expected end of line" and
-//! recovers cleanly. But in the ACCUMULATED context below (a `{stop_z80()}` Code
-//! splice opening the body + a nested `.copy3c`/`.copy3cb` label loop, with the
-//! module's `equ = extern(...)` / `ensure(...)` header), the recovery from that
-//! error LOOPS forever. Minimization could not reduce it below this shape — the
-//! loop is context-sensitive (removing the splice, the nested labels, or the
-//! header each makes the same trigger error cleanly), which is why it is
-//! ledgered as a DEEP parser-recovery bug rather than an obvious one-line fix.
+//! ROOT CAUSE (t28 P1): `recover_to_next_decl` lists `extern` among the
+//! declaration OPENERS, but `extern` is a CONTEXTUAL opener — only `extern proc`
+//! is a real item. When an upstream mis-parse left recovery positioned on a bare
+//! `extern` (the `extern("Sym")` comptime read in expression position, e.g. the
+//! `equ SND_* = extern(...)` header lines), recovery STOPPED there without
+//! consuming; `item()` then failed on the same token (it is not `extern proc`)
+//! and returned to recovery, which stopped on the same token again — an infinite
+//! loop. The fix extends the existing contextual-opener guard (already present
+//! for `ensure`/`ensure_fatal`/`align`) to skip past a non-`proc` `extern`.
 //!
-//! Kept `#[ignore]` so the suite never hangs; run explicitly (WITH A TIMEOUT) to
-//! reproduce: `timeout 20 cargo test -p sigil-frontend-emp --test
-//! parser_recovery_hang -- --ignored recovery_loops` → the process is killed by
-//! the timeout (it does not return). When the parse gap or the recovery loop is
-//! fixed, this returns and the test can be un-ignored to assert a clean error.
+//! The `asm_body` zero-progress guard shipped at t25 is a SEPARATE robustness
+//! defense (a stuck statement parse inside a proc body) and is kept; the actual
+//! hang lived in the top-level recovery loop, not in operand/expr parse.
 use sigil_frontend_emp::parse_str;
 
-const HANGS: &str = r#"module m in s
+/// Minimal, stable direct regression for the root cause: a bare `extern(...)`
+/// at item position (invalid — a comptime read is not a declaration) must be
+/// recovered past, producing a clean error and NEVER hanging. Independent of the
+/// extern-in-displacement parse gap (P2) — this stays a valid regression after
+/// that form becomes supported.
+#[test]
+fn recover_does_not_spin_on_bare_extern_at_item_position() {
+    let src = "module m in s\n\nextern(\"X\")\n";
+    let (_f, diags) = parse_str(src);
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error),
+        "a bare `extern(...)` at item position must be a clean parse error, not a hang"
+    );
+}
+
+/// The original context-sensitive integration repro (t25 sound_debug body). The
+/// `lea (extern(...) - CONST)(a0), a0` line is an extern-in-displacement form
+/// (the P2 parse gap): at P1 it is still unsupported, so the accumulated context
+/// below reports a clean parse error and RECOVERS — before the P1 fix this
+/// recovery hung. (When P2 lands and the extern-in-displacement form parses, the
+/// sound_debug port itself becomes the acceptance test for the valid form; this
+/// test continues to assert the pre-P2 unsupported-form error path terminates.)
+const RECOVERS: &str = r#"module m in s
 
 use engine.z80_bus.{stop_z80, start_z80}
 
@@ -51,13 +69,12 @@ pub proc Sound_DebugMirror () clobbers(d0/d1/a0/a1) {
 }
 "#;
 
-#[ignore = "captures a parser infinite-loop bug — parse_str never returns on this input (t25 sound_debug lane, ledgered)"]
 #[test]
-fn recovery_loops_forever_on_extern_disp_in_context() {
-    // This call DOES NOT RETURN today (infinite error-recovery loop). Kept
-    // ignored so the suite never hangs; the assertion documents the intended
-    // post-fix behavior (a clean parse error, no hang).
-    let (_f, diags) = parse_str(HANGS);
+fn recovery_terminates_on_extern_disp_in_context() {
+    // Before the P1 fix this call DID NOT RETURN (infinite recovery loop). Now
+    // it returns with a clean parse error (the extern-in-displacement form is
+    // still an unsupported parse gap at P1).
+    let (_f, diags) = parse_str(RECOVERS);
     assert!(
         diags.iter().any(|d| d.level == sigil_span::Level::Error),
         "post-fix: the extern-in-displacement form must be a clean parse error, not a hang"

@@ -536,7 +536,18 @@ impl Parser {
                     // made `align = 5` an infinite parse loop).
                     let align_non_item =
                         s == "align" && matches!(self.peek_at(1), Tok::Eq);
-                    if (guard_kw && !matches!(self.peek_at(1), Tok::LParen)) || align_non_item {
+                    // `extern` is ALSO contextual: only `extern proc` is an item
+                    // (`item()` consumes `extern` only when `proc` follows). A bare
+                    // `extern` — the `extern("Sym")` comptime read in expression
+                    // position, which can land in item position after an upstream
+                    // mis-parse — is NOT an item, so stopping there spins the loop
+                    // identically. Skip past a non-`proc` occurrence.
+                    let extern_non_item = s == "extern"
+                        && !matches!(self.peek_at(1), Tok::Ident(k) if k == "proc");
+                    if (guard_kw && !matches!(self.peek_at(1), Tok::LParen))
+                        || align_non_item
+                        || extern_non_item
+                    {
                         self.bump();
                     } else {
                         return;
