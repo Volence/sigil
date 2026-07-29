@@ -459,7 +459,7 @@ fn objdefs_match_reference_plain() {
         test_static_main: pins::TEST_STATIC_MAIN.plain,
         test_solid_init: pins::TEST_SOLID_INIT.plain,
         test_enemy_init: pins::TEST_ENEMY_INIT.plain,
-        test_parent: pins::TEST_PARENT.plain,
+        test_parent: pins::TEST_PARENT_LABEL.plain,
         rom: "s4.bin",
     });
 }
@@ -474,7 +474,7 @@ fn objdefs_match_reference_debug() {
         test_static_main: pins::TEST_STATIC_MAIN.debug,
         test_solid_init: pins::TEST_SOLID_INIT.debug,
         test_enemy_init: pins::TEST_ENEMY_INIT.debug,
-        test_parent: pins::TEST_PARENT.debug,
+        test_parent: pins::TEST_PARENT_LABEL.debug,
         rom: "s4.debug.bin",
     });
 }
