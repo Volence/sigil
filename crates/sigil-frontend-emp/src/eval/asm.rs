@@ -841,7 +841,13 @@ impl Evaluator<'_> {
                 // not a valid `dc` element (a register has no data reading) —
                 // keep it the loud `unknown name` error the corpus pins, not a
                 // silent SymRef.
-                Value::Label(name) if reg_from_name(&name).is_some() || name == "sp" || name == "pc" => {
+                Value::Label(name)
+                    if reg_from_name(&name).is_some()
+                        || matches!(name.as_str(), "sp" | "pc" | "sr" | "ccr") =>
+                {
+                    // A register-class word is not a valid `dc` element — keep it
+                    // the loud `unknown name` error (consistent with
+                    // `bare_symbol_seg`'s sr/ccr exclusion), not a silent SymRef.
                     self.error(expr_span(expr), format!("unknown name `{name}`"));
                     return None;
                 }

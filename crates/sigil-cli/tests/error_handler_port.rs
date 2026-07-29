@@ -38,6 +38,8 @@ fn strict_gate() -> bool {
 
 const STUB_TABLE_LEN: u32 = 0x15A; // BusError..ErrorHandler
 const PAGES_OFFSET: u32 = 0xDC6; // ErrorHandler..PagesController
+const BTN_A_OFFSET: u32 = 0xE6C; // ErrorHandler..Debugger_AddressRegisters (mddbg_symbols.asm)
+const BTN_B_OFFSET: u32 = 0xEB8; // ErrorHandler..Debugger_Backtrace (mddbg_symbols.asm)
 
 struct Shape {
     base: u32,
@@ -50,6 +52,32 @@ const PLAIN: Shape =
     Shape { base: pins::ERROR_HANDLER.plain_base, len: pins::ERROR_HANDLER.plain_len, rom: "s4.bin", debug: 0 };
 const DEBUG: Shape =
     Shape { base: pins::ERROR_HANDLER.debug_base, len: pins::ERROR_HANDLER.debug_len, rom: "s4.debug.bin", debug: 1 };
+
+/// The four `MDDBG__*` handler entry points the stubs' `raise_exception`
+/// jsr/jmp and the blob's dc.l pointers resolve against — all ErrorHandler-
+/// relative equs (ErrorHandler = base + STUB_TABLE_LEN), fed as synthetic pinned
+/// labels starting at `start_lma`. Shared by the region gate and the flip test.
+fn synthetic_handlers(base: u32, start_lma: u32) -> Vec<Section> {
+    let eh = base + STUB_TABLE_LEN;
+    let mut groups = vec![
+        as_label_at("MDDBG__ErrorHandler", eh),
+        as_label_at("MDDBG__ErrorHandler_PagesController", eh + PAGES_OFFSET),
+        as_label_at("MDDBG__Debugger_AddressRegisters", eh + BTN_A_OFFSET),
+        as_label_at("MDDBG__Debugger_Backtrace", eh + BTN_B_OFFSET),
+    ];
+    let mut out = Vec::new();
+    let mut lma = start_lma;
+    for group in &mut groups {
+        for sec in group.iter_mut() {
+            sec.lma = lma;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+        }
+        out.append(group);
+        lma += 0x10_0000;
+    }
+    out
+}
 
 fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
@@ -107,26 +135,9 @@ fn compile(shape: &Shape) -> sigil_link::LinkedImage {
         "place_sections errors: {pdiags:?}"
     );
 
-    // Synthetic handler entry points (the raise_exception jsr/jmp targets).
-    let mut lma = 0x0100_0000u32;
-    // The raise_exception jsr/jmp targets + the two blob extension-button
-    // pointers, all ErrorHandler-relative equs (ErrorHandler = base+0x15A).
-    let eh = shape.base + STUB_TABLE_LEN;
-    let mut groups = vec![
-        as_label_at("MDDBG__ErrorHandler", eh),
-        as_label_at("MDDBG__ErrorHandler_PagesController", eh + PAGES_OFFSET),
-        as_label_at("MDDBG__Debugger_AddressRegisters", eh + 0xE6C),
-        as_label_at("MDDBG__Debugger_Backtrace", eh + 0xEB8),
-    ];
-    for group in &mut groups {
-        for sec in group.iter_mut() {
-            sec.lma = lma;
-            sec.placement = SectionPlacement::Pinned;
-            sec.group = None;
-        }
-        sections.append(group);
-        lma += 0x10_0000;
-    }
+    // Synthetic handler entry points (the raise_exception jsr/jmp targets + the
+    // blob's dc.l extension-button pointers).
+    sections.extend(synthetic_handlers(shape.base, 0x0100_0000));
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
@@ -229,23 +240,7 @@ fn vector_labels_resolve_to_emp_ownership() {
     sections.append(&mut vec_secs);
 
     // The synthetic handler entry points the stubs' raise_exception jsr/jmp need.
-    let eh = PLAIN.base + STUB_TABLE_LEN;
-    let mut extra = vec![
-        as_label_at("MDDBG__ErrorHandler", eh),
-        as_label_at("MDDBG__ErrorHandler_PagesController", eh + PAGES_OFFSET),
-        as_label_at("MDDBG__Debugger_AddressRegisters", eh + 0xE6C),
-        as_label_at("MDDBG__Debugger_Backtrace", eh + 0xEB8),
-    ];
-    let mut lma = 0x0300_0000u32;
-    for group in &mut extra {
-        for sec in group.iter_mut() {
-            sec.lma = lma;
-            sec.placement = SectionPlacement::Pinned;
-            sec.group = None;
-        }
-        sections.append(group);
-        lma += 0x10_0000;
-    }
+    sections.extend(synthetic_handlers(PLAIN.base, 0x0300_0000));
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("flip resolve failed: {d:?}"));
