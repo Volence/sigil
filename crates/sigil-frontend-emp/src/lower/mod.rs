@@ -167,6 +167,10 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // the pre-T1 behavior).
     let module_cpu = module_declared_cpu(&file.module, &mut diags);
     let initial_cpu = module_cpu.unwrap_or(opts.initial_cpu);
+    // Validate the rung-2 module `invariant` clauses against the module CPU's
+    // register file (ruling 4). The inheritance PROOF is the Z80 contract
+    // checker's; this catches a mistyped invariant register up front.
+    validate_module_invariants(&file.module, initial_cpu, &mut diags);
 
     // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
@@ -1476,6 +1480,12 @@ fn module_declared_cpu(module: &ast::ModuleDecl, diags: &mut Vec<Diagnostic>) ->
     for (name, expr) in &module.attrs {
         match name.as_str() {
             "cpu" => cpu = Some(attr_cpu(expr)),
+            // The rung-2 module-scope `invariant` class (ruling 4): the
+            // forward-compat slot T1 named for it. Its CONTENT (a `preserves(...)`
+            // reglist / a `holds(...)` value bound) is validated by
+            // [`validate_module_invariants`] once the module CPU is known — here
+            // it is only recognized as a KNOWN key (no unknown-attribute error).
+            "invariant" => {}
             other => err(
                 diags,
                 module.span,
@@ -1484,6 +1494,74 @@ fn module_declared_cpu(module: &ast::ModuleDecl, diags: &mut Vec<Diagnostic>) ->
         }
     }
     cpu
+}
+
+/// Validate the module-scope `invariant` clauses (rung-2 §3, ruling 4) against
+/// the module's register file. Two shapes:
+///
+/// - `invariant: preserves(ix, …)` — a register-preserve invariant every proc
+///   inherits (§3.2). Each named register is validated against the module CPU's
+///   vocabulary (a 68k name under a Z80 module, or vice versa, is
+///   `[contract.unknown-register]`). Reglist range form is a Z80 error (§2.1).
+/// - `invariant: holds(reg == value)` — the strictly-stronger VALUE-bound form
+///   (§3.4, the rung-4 DAC-loop's `de = $4001` spelling). REPRESENTED here so the
+///   attribute grammar is forward-compatible, accepted but NOT wired (no proc
+///   checks it in rung 2).
+///
+/// The INHERITANCE proof — every proc actually preserving `ix` — rides the Z80
+/// contract checker (the push/pop `preserves` proof), which consumes this
+/// validated reglist. Validation is separated so a mistyped invariant register is
+/// a loud error even before the checker lands.
+fn validate_module_invariants(module: &ast::ModuleDecl, cpu: Cpu, diags: &mut Vec<Diagnostic>) {
+    let rf = match cpu {
+        Cpu::Z80 => crate::regfile::RegFile::Z80,
+        Cpu::M68000 => crate::regfile::RegFile::M68k,
+    };
+    for (name, expr) in &module.attrs {
+        if name != "invariant" {
+            continue;
+        }
+        let ast::Expr::Call { callee, args, .. } = expr else {
+            err(diags, module.span, format!(
+                "module `{}` invariant must be `preserves(...)` or `holds(...)`",
+                module.path.segments.join(".")
+            ));
+            continue;
+        };
+        match callee.segments.last().map(String::as_str) {
+            Some("preserves") => {
+                // Each arg is a bare register name (a single-segment path). Reuse
+                // the §2 CPU-parametric recognizer so a bad register is the same
+                // `[contract.unknown-register]` a proc reglist gives.
+                let segs: Vec<(String, Option<String>)> = args
+                    .iter()
+                    .map(|a| (invariant_reg_name(&a.value), None))
+                    .collect();
+                crate::regfile::expand_reglist(&segs, rf, |reason| {
+                    err(diags, module.span, format!(
+                        "module `{}` invariant: {reason}",
+                        module.path.segments.join(".")
+                    ))
+                });
+            }
+            // The value-bound form (§3.4) — represented, not wired in rung 2.
+            Some("holds") => {}
+            _ => err(diags, module.span, format!(
+                "module `{}` invariant must be `preserves(...)` or `holds(...)`",
+                module.path.segments.join(".")
+            )),
+        }
+    }
+}
+
+/// The register spelling a `preserves(...)` invariant argument names — a bare
+/// single-segment path (`ix`). A non-path arg yields a sentinel that the reglist
+/// recognizer rejects as `[contract.unknown-register]`.
+fn invariant_reg_name(e: &ast::Expr) -> String {
+    match e {
+        ast::Expr::Path(p) if p.segments.len() == 1 => p.segments[0].clone(),
+        _ => "<non-register>".to_string(),
+    }
 }
 
 /// A [`Cpu`] to its `.emp` spelling, for diagnostics.
