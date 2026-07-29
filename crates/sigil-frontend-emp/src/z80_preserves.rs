@@ -245,11 +245,13 @@ pub fn verify_z80_preserved(
                     }
                 }
             }
-            // An external tail transfer (`jp`/`jr` to a non-local target) exits
-            // into the tail-callee, which clobbers every unit it does not preserve.
+            // An external tail transfer (`jp`/`jr` to a symbol that is neither a
+            // local label nor a local end-label) exits into the tail-callee, which
+            // clobbers every unit it does not preserve. A local (end-)label jump is
+            // an in-proc fall-off, not a tail call — excluded.
             if matches!(mnemonic.as_str(), "jp" | "jr") {
                 if let Some(t) = branch_sym(ops) {
-                    if cfg.label_index(t).is_none() {
+                    if cfg.label_index(t).is_none() && !cfg.is_local_label(t) {
                         for (u, name) in UNITS.iter().enumerate() {
                             if !callee_preserves(callee_map, Some(t), name) {
                                 ever_clobbered[u] = true;
@@ -459,22 +461,16 @@ fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
             None => vec![Edge::Abandon, Edge::Abandon],
         };
     }
-    // Unconditional tail transfer: `jp`/`jr` to a LOCAL label follows it; to an
-    // external symbol (or a computed `jp (hl)`) it defers out of the proc.
+    // Unconditional tail transfer: `jp`/`jr` follows a LOCAL label; a jump to a
+    // local END-label (no following instruction) is a fall-off exit (Abandon); a
+    // transfer to an EXTERNAL symbol (or a computed `jp (hl)`) defers out of the
+    // proc as a tail call.
     if matches!(mnem, "jp" | "jr") && !leads_cc {
-        return match branch_sym(ops).and_then(|t| cfg.label_index(t)) {
-            Some(tgt) => vec![Edge::Follow(tgt)],
-            None => vec![Edge::Defer],
-        };
+        return vec![branch_edge(cfg, ops)];
     }
-    // Conditional `jr cc`/`jp cc`: the taken edge (local → follow, external →
-    // defer) PLUS the fall-through.
+    // Conditional `jr cc`/`jp cc`: the taken edge (as above) PLUS the fall-through.
     if matches!(mnem, "jp" | "jr") && leads_cc {
-        let mut v = Vec::new();
-        match branch_sym(ops).and_then(|t| cfg.label_index(t)) {
-            Some(tgt) => v.push(Edge::Follow(tgt)),
-            None => v.push(Edge::Defer),
-        }
+        let mut v = vec![branch_edge(cfg, ops)];
         match cfg.next_instr(idx) {
             Some(f) => v.push(Edge::Follow(f)),
             None => v.push(Edge::Abandon),
@@ -498,6 +494,21 @@ fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
     match cfg.next_instr(idx) {
         Some(f) => vec![Edge::Follow(f)],
         None => vec![Edge::Abandon],
+    }
+}
+
+/// The taken-edge of a `jp`/`jr` from its target: a LOCAL label with an
+/// instruction after it is followed; a LOCAL end-label (no following instruction —
+/// a jump to the proc's fall-off point) is an Abandon; an EXTERNAL symbol or a
+/// computed `jp (hl)` (no symbol) is a Defer tail transfer.
+fn branch_edge(cfg: &Cfg, ops: &[CodeOperand]) -> Edge {
+    match branch_sym(ops) {
+        Some(t) => match cfg.label_index(t) {
+            Some(tgt) => Edge::Follow(tgt),
+            None if cfg.is_local_label(t) => Edge::Abandon,
+            None => Edge::Defer,
+        },
+        None => Edge::Defer,
     }
 }
 

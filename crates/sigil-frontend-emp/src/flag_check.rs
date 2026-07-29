@@ -242,6 +242,16 @@ impl<'a> Cfg<'a> {
         self.label_target.get(name).copied()
     }
 
+    /// Whether `name` is a label DEFINED among these items — INCLUDING one at the
+    /// very end with no following instruction, which [`Cfg::label_index`] returns
+    /// `None` for. The Z80 tail-transfer edge model needs this to tell a local
+    /// jump-to-proc-end (a fall-off exit) from a transfer to an EXTERNAL symbol (a
+    /// tail call): a `jr cc, .end` whose `.end:` closes the proc must not be read
+    /// as an external tail transfer.
+    pub(crate) fn is_local_label(&self, name: &str) -> bool {
+        self.items.iter().any(|it| matches!(it, CodeItem::Label { name: n, .. } if n == name))
+    }
+
     /// The successor edges of the instruction at `idx`, for carry-tracking. An
     /// edge is either `Follow(next_idx)` (stay in the proc) or `Abandon` (the
     /// flag is left unconsumed: a return, a fall-off-end, or a redefine reached).
