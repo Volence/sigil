@@ -958,6 +958,31 @@ pub fn assemble_mixed_tranche34_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 35 (P2+P3 player state machines): the full AS-side game with
+/// `SIGIL_EMP_PLAYER_GROUND` + `SIGIL_EMP_PLAYER_AIR` + `SIGIL_EMP_PLAYER_SPINDASH`
+/// on. The three state-body includes gate out and org-resume at the next file's
+/// first label (PState_Air / PState_Spindash / Sonic_InitAssets). player_common.asm
+/// and sonic.asm stay AS — their Player_States table entries (PState_Ground/Roll/
+/// Spindash/Air/Jump/RollJump/AirBall) and the state files' calls to
+/// Player_SetState/SnapToSurface resolve cross-seam to the spliced .emp regions
+/// (the duplicate-local-label combined-link class, fixed at 03d29cd).
+pub fn assemble_mixed_tranche35_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_PLAYER_GROUND".to_string(), 1),
+        ("SIGIL_EMP_PLAYER_AIR".to_string(), 1),
+        ("SIGIL_EMP_PLAYER_SPINDASH".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche35 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included

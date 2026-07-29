@@ -123,6 +123,7 @@ use sigil_harness::{
     assemble_mixed_tranche29_as_side, assemble_mixed_tranche30_as_side,
     assemble_mixed_tranche31_as_side,
     assemble_mixed_tranche34_as_side,
+    assemble_mixed_tranche35_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -2354,7 +2355,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x2576A..0x25772],
+        &rom[0x2574A..0x25752],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -2362,7 +2363,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The sonic_anims table head: eleven self-relative words starting at
     // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
     assert_eq!(
-        &rom[0x256FC..0x25704],
+        &rom[0x256DC..0x256E4],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (plain)"
     );
@@ -2373,7 +2374,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // table (base + 0x22); pin-spliced so it tracks the pin on a ROM shift (t12).
     let ad = pins::ACT_DESCRIPTOR.plain_base + 0x22;
     assert_eq!(
-        &rom[0x14B4A..0x14B52],
+        &rom[0x14B2A..0x14B32],
         &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (plain)"
     );
@@ -2682,9 +2683,9 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
     // `jmp (Draw_Sprite).w` at its plain VMA $296C (slid −4 in the
     // tranche-10 core shrink; last two bytes track DRAW_SPRITE).
     assert_eq!(
-        &rom[0x10F6A..0x10F78],
+        &rom[0x10F4A..0x10F58],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x74, 0x4E, 0xF8,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x54, 0x4E, 0xF8,
             (pins::DRAW_SPRITE.plain >> 8) as u8, pins::DRAW_SPRITE.plain as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (plain)"
@@ -2697,7 +2698,7 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
     // region base; pin-spliced so it tracks the pin on a ROM shift (tranche-12).
     let pa = pins::PARTICLE_ANIMS.plain_base;
     assert_eq!(
-        &rom[0x10F78..0x10F80],
+        &rom[0x10F58..0x10F60],
         &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (plain)"
     );
@@ -2726,9 +2727,9 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche6_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x10F6A..0x10F78],
+        &rom[0x10F4A..0x10F58],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x74, 0x4E, 0xF8,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x54, 0x4E, 0xF8,
             (pins::DRAW_SPRITE.debug >> 8) as u8, pins::DRAW_SPRITE.debug as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (debug)"
@@ -2737,7 +2738,7 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
     // `move.l #Ani_Particle,anim_table(a0)` — imm32 = particle_anims base, pin-spliced (t12).
     let pa = pins::PARTICLE_ANIMS.debug_base;
     assert_eq!(
-        &rom[0x10F78..0x10F80],
+        &rom[0x10F58..0x10F60],
         &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (debug)"
     );
@@ -4923,6 +4924,164 @@ fn mixed_tranche34_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche34_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche34 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 35 — the P2+P3 player STATE MACHINES (player_ground.emp +
+// player_air.emp + player_spindash.emp) inside the full ROM. The three
+// SIGIL_EMP_PLAYER_{GROUND,AIR,SPINDASH} gates cut the AS bodies; the three
+// .emp regions splice at PLAYER_GROUND ($10448), PLAYER_AIR ($108A2), and
+// PLAYER_SPINDASH ($10B74). player_common.asm + sonic.asm stay AS; the state
+// files' cross-seam refs (Player_SetState/SnapToSurface, PState_Roll .emp→.emp,
+// the surviving-AS sensors/GetSineCosine/ObjectMove/Sound_PlaySFX) resolve in
+// the combined link (the duplicate-local-label class, 03d29cd).
+// ---------------------------------------------------------------------------
+
+/// The keystone items the state files import (PlayerV overlay + the shared
+/// comptime-fn macros), filtered from player_common.emp — in the mixed build
+/// player_common is AS, so these are provided as ambient .emp items.
+fn player_common_import_items(player_dir: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    let src = std::fs::read_to_string(player_dir.join("player_common.emp"))
+        .expect("read player_common.emp");
+    let (file, diags) = parse_str(&src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "player_common.emp parse errors: {diags:?}"
+    );
+    file.items
+        .into_iter()
+        .filter(|it| match it {
+            Item::Vars(d) => d.name.as_deref() == Some("PlayerV"),
+            Item::ComptimeFn(d) => matches!(
+                d.name.as_str(),
+                "mask_opposing_lr" | "dist_to_fix" | "set_standing_size" | "set_ball_size" | "abs_w"
+            ),
+            _ => false,
+        })
+        .collect()
+}
+
+fn build_mixed_tranche35_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche35_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof (1): the org-resume arms land the surviving next-file first labels at
+    // the region ends with the three includes gated out.
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    // With all three gates set, the intermediate first-labels (PState_Air,
+    // PState_Spindash) are .emp-provided, not AS labels — only the FINAL resume
+    // lands on a surviving-AS label. Sonic_InitAssets (sonic.asm, still AS) at
+    // the PLAYER_SPINDASH region end validates the whole three-org chain.
+    assert_eq!(
+        find_label("Sonic_InitAssets"),
+        Some(pins::PLAYER_SPINDASH.plain_base + pins::PLAYER_SPINDASH.plain_len as u32),
+        "the three org-resume arms must chain to land Sonic_InitAssets at the PLAYER_SPINDASH region end"
+    );
+
+    let dbg = i128::from(debug);
+    let objects_dir = aeon.join("engine/objects");
+    let system_dir = aeon.join("engine/system");
+    let engine_dir = aeon.join("engine");
+    let player_dir = aeon.join("games/sonic4/player");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let region = |base_plain: u32, len_plain: usize, base_debug: u32, len_debug: usize| {
+        if debug { (base_debug, len_debug) } else { (base_plain, len_plain) }
+    };
+    let (gr_base, gr_len) = region(
+        pins::PLAYER_GROUND.plain_base, pins::PLAYER_GROUND.plain_len,
+        pins::PLAYER_GROUND.debug_base, pins::PLAYER_GROUND.debug_len,
+    );
+    let (air_base, air_len) = region(
+        pins::PLAYER_AIR.plain_base, pins::PLAYER_AIR.plain_len,
+        pins::PLAYER_AIR.debug_base, pins::PLAYER_AIR.debug_len,
+    );
+    let (sd_base, sd_len) = region(
+        pins::PLAYER_SPINDASH.plain_base, pins::PLAYER_SPINDASH.plain_len,
+        pins::PLAYER_SPINDASH.debug_base, pins::PLAYER_SPINDASH.debug_len,
+    );
+
+    let ambient = || vec![
+        types_ambient_items(&system_dir),
+        sst_ambient_items(&objects_dir),
+        constants_ambient_items(&system_dir),
+        coords_ambient_items(&engine_dir),
+        player_common_import_items(&player_dir),
+    ];
+
+    let (gr_secs, gr_asserts) = t21_lower_and_place(
+        aeon, "games/sonic4/player/player_ground.emp", ambient(),
+        "player_ground", gr_base, gr_len, defines.clone(),
+    );
+    let (air_secs, air_asserts) = t21_lower_and_place(
+        aeon, "games/sonic4/player/player_air.emp", ambient(),
+        "player_air", air_base, air_len, defines.clone(),
+    );
+    let (sd_secs, sd_asserts) = t21_lower_and_place(
+        aeon, "games/sonic4/player/player_spindash.emp", ambient(),
+        "player_spindash", sd_base, sd_len, defines,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(gr_secs);
+    sections.extend(air_secs);
+    sections.extend(sd_secs);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche35 mixed resolve_layout failed: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche35 mixed link failed: {d:?}"));
+
+    // All constant/PPHYS/config drift guards resolve against the REAL AS tree.
+    let mut all_asserts = gr_asserts;
+    all_asserts.extend(air_asserts);
+    all_asserts.extend(sd_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche35 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_tranche35_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche35_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche35 mixed");
+}
+
+#[test]
+fn mixed_tranche35_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche35_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche35 mixed debug");
 }
 
 // ---------------------------------------------------------------------------

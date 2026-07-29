@@ -1837,6 +1837,30 @@ end = "TestStatic_Main"
 gate = "SIGIL_EMP_SONIC"
 tests = ["test_p1_player_port"]
 
+# P2+P3 (tranche 35) — the player state machines. Three per-file object-bank
+# gates; pure code, bank windows shape-invariant. Each region's end anchor is
+# the next file's first emitted label.
+[[region]]
+name = "player_ground"
+start = "PState_Ground"
+end = "PState_Air"
+gate = "SIGIL_EMP_PLAYER_GROUND"
+tests = ["test_p2_player_states_port"]
+
+[[region]]
+name = "player_air"
+start = "PState_Air"
+end = "PState_Spindash"
+gate = "SIGIL_EMP_PLAYER_AIR"
+tests = ["test_p2_player_states_port"]
+
+[[region]]
+name = "player_spindash"
+start = "PState_Spindash"
+end = "Sonic_InitAssets"
+gate = "SIGIL_EMP_PLAYER_SPINDASH"
+tests = ["test_p2_player_states_port"]
+
 # P1 cross-seam call targets + RAM/data pins. Draw_Sprite/Sound_PlaySFX/
 # Map_TestObj/ObjCodeBase/Ctrl_1_Press/Ctrl_1_Held/Current_Act_Ptr/Map_Sonic/
 # DPLC_Sonic/Art_Sonic already pinned; Perform_DPLC=DPLC base, AnimateSprite=
@@ -1870,6 +1894,23 @@ tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_AtLedgeEdge"
 tests = ["test_p1_player_port"]
+# P2+P3 (tranche 35) cross-seam callees: the ONE transition writer, the surface
+# snap, and the three surviving-AS sensors the state files call.
+[[symbol]]
+name = "Player_SetState"
+tests = ["test_p2_player_states_port"]
+[[symbol]]
+name = "Player_SnapToSurface"
+tests = ["test_p2_player_states_port"]
+[[symbol]]
+name = "Player_SensorCeiling"
+tests = ["test_p2_player_states_port"]
+[[symbol]]
+name = "Player_SensorWallDir"
+tests = ["test_p2_player_states_port"]
+[[symbol]]
+name = "Player_SensorWallAt"
+tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "Sonic_LoadArt"
 tests = ["test_p1_player_port"]
