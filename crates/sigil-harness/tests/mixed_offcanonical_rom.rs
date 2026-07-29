@@ -90,15 +90,27 @@ fn placed_emp(
     lma_base: u32,
     region_size: u32,
     emp_defines: &[(&str, i64)],
+    extra_modules: &[&str],
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
     let path = aeon.join(rel_path);
     let dir = path.parent().unwrap().to_path_buf();
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {rel_path}: {e}"));
-    let (file, pdiags) = parse_str(&src);
+    let (mut file, pdiags) = parse_str(&src);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{rel_path} parse errors: {pdiags:?}"
     );
+    // Concatenate the items of any helper modules (e.g. engine.z80_bus's
+    // stop_z80/start_z80 comptime fns) into the same compilation unit — the
+    // vblank_port precedent (module resolution is not wired in these oracles).
+    for m in extra_modules {
+        let msrc = std::fs::read_to_string(aeon.join(m)).unwrap_or_else(|e| panic!("read {m}: {e}"));
+        let (mfile, mdiags) = parse_str(&msrc);
+        assert!(mdiags.iter().all(|d| d.level != sigil_span::Level::Error), "{m} parse: {mdiags:?}");
+        let mut items = mfile.items;
+        items.extend(std::mem::take(&mut file.items));
+        file.items = items;
+    }
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir),
@@ -171,6 +183,7 @@ fn mixed_game_debug_config_a_rom_matches_reference() {
         GAME_DEBUG_BASE,
         GAME_DEBUG_END - GAME_DEBUG_BASE,
         GAME_DEBUG_EMP_DEFS,
+        &[],
     );
     sections.extend(emp_sections);
     // The drift-guard ensures (game_debug.emp's 16 game-const guards) run and
@@ -181,4 +194,65 @@ fn mixed_game_debug_config_a_rom_matches_reference() {
     assert_eq!(rom.len(), refrom.len(), "off-canonical ROM lengths must match");
     // Empty allowlist HARD BAR: both sides pre-convsym, headers must match too.
     assert_rom_matches(&rom, &refrom, refrom.len(), &[], "off-canonical Config A: game_debug");
+}
+
+// sound_debug.emp reads DEBUG / SOUND_DRIVER_ENABLED / SOUND_DBG_MIRROR.
+const SOUND_DEBUG_EMP_DEFS: &[(&str, i64)] =
+    &[("DEBUG", 1), ("SOUND_DRIVER_ENABLED", 1), ("SOUND_DBG_MIRROR", 1)];
+// sound_debug region at Config A: [Sound_DebugMirror=0x81B0, CarrierMaskTableZ=0x827C).
+// Above $8000 — the $8000 bar is satisfied by construction: the reference is
+// assembled AT THE SAME Config A, so both sides see ONE bank layout (no cross-shape
+// object-bank collision).
+const SOUND_DEBUG_BASE: u32 = 0x81B0;
+const SOUND_DEBUG_END: u32 = 0x827C;
+
+fn placed_sound_debug(aeon: &Path) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    placed_emp(
+        aeon,
+        "engine/debug/sound_debug.emp",
+        "sound_debug",
+        SOUND_DEBUG_BASE,
+        SOUND_DEBUG_END - SOUND_DEBUG_BASE,
+        SOUND_DEBUG_EMP_DEFS,
+        &["engine/z80_bus.emp"],
+    )
+}
+
+fn placed_game_debug(aeon: &Path) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    placed_emp(
+        aeon,
+        "games/sonic4/debug/game_debug.emp",
+        "game_debug",
+        GAME_DEBUG_BASE,
+        GAME_DEBUG_END - GAME_DEBUG_BASE,
+        GAME_DEBUG_EMP_DEFS,
+        &[],
+    )
+}
+
+/// THE COMBINED Config-A gate (the t26 "one build serves both", ruled): with BOTH
+/// SIGIL_EMP_GAME_DEBUG and SIGIL_EMP_SOUND_DEBUG on, game_debug.emp AND
+/// sound_debug.emp placed in ONE off-canonical ROM == pure-asl at Config A. Proves
+/// the two coexist and both cross-seam resolve through the joint symbol table.
+#[test]
+fn mixed_combined_config_a_rom_matches_reference() {
+    let aeon = aeon_dir();
+    if maybe_skip(&aeon) {
+        return;
+    }
+    let refrom = flatten_module(assemble_offcanonical(&aeon, CONFIG_A, &[]).sections, "ref combined");
+
+    let mut sections =
+        assemble_offcanonical(&aeon, CONFIG_A, &["SIGIL_EMP_GAME_DEBUG", "SIGIL_EMP_SOUND_DEBUG"]).sections;
+    let (gd, gd_asserts) = placed_game_debug(&aeon);
+    let (sd, sd_asserts) = placed_sound_debug(&aeon);
+    sections.extend(gd);
+    sections.extend(sd);
+    let mut asserts = gd_asserts;
+    asserts.extend(sd_asserts);
+    assert!(!asserts.is_empty(), "the combined build must carry both files' drift guards");
+    let rom = flatten_with_asserts(sections, &asserts, "mixed combined");
+
+    assert_eq!(rom.len(), refrom.len(), "off-canonical ROM lengths must match");
+    assert_rom_matches(&rom, &refrom, refrom.len(), &[], "off-canonical Config A: combined");
 }
