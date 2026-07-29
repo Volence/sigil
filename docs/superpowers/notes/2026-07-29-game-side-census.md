@@ -7,6 +7,26 @@ pins/listings only — every claim needing a build is tagged **PORTER-VERIFY**).
 the real trees; the 2026-07-29 t26-close-packet's three framing corrections and its
 one OVERRULED census claim (the `$55A4` listing-echo trap) are folded in below.
 
+**STATUS AMENDMENT (2026-07-29, t31 close — `2026-07-29-t31-close-packet.md`):**
+G3 is PORTED (`test_parent.emp` + the pre-ruled SpawnDesc hoist to children.emp).
+The FIRST byte-moving game-side wave: a step-5 optimization cut −12 B/shape (dead
+`movem` + `andi` around GetSineCosine) → the FIRST canonical change since t24. New
+canonical **plain 85111814/421041 · debug eb5e94be/429102** (sizes UNCHANGED —
+pad-absorbed); strict **2763/0 (1 ignored)**. Corrections this census owes:
+1. **The callee-preserves oracle gained its FIRST OPTIMIZATION use** — proving a
+   caller's save/restore DEAD (not just a contract true). Consumer count UNCHANGED at
+   1 (test_parent's Mains never write a0 — the census's a0-write speculation was moot).
+2. **Two overlays over ONE sst_custom region** (TParentV/TOrbitChildV, disjoint
+   lifetimes) with ZERO drift guards (single-consumer, row-66 class); the two
+   objvarsCheck calls SUBSUMED by the vars window-overflow checks (§3a PORTER-VERIFY:
+   no separate ensure).
+3. **CONFIRMED latent defect → VOLENCE OVERRIDE FLAG:** test_parent's self-destruct +
+   DeleteChildren cascade is UNREACHABLE (life_timer doubles as the swing-phase
+   counter, reset before the countdown floor) — the object cannot demo the behavior it
+   is named for. Faithful to both twins; comments corrected byte-neutrally, behavior
+   fix DEFERRED to Volence (his test scene; ObjectTest soak determinism). Full trace in
+   the gap-ledger.
+
 **STATUS AMENDMENT (2026-07-29, t30 close — `2026-07-29-t30-close-packet.md`):**
 G2 is PORTED (`test_emitter.emp` + `test_stress_emitter.emp` + `test_churn.emp`;
 byte-delta zero, strict 2711/0). THREE corrections this census owes:
