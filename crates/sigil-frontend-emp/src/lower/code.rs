@@ -1445,6 +1445,7 @@ fn m68k_operand(op: &CodeOperand) -> Result<M68kOperand, String> {
         | CodeOperand::Z80IndHl
         | CodeOperand::Z80IndBc
         | CodeOperand::Z80IndDe
+        | CodeOperand::Z80IndSp
         | CodeOperand::Z80Indexed { .. }
         | CodeOperand::Z80Mem { .. }
         | CodeOperand::Z80AfShadow
@@ -1912,6 +1913,10 @@ fn map_z80_operand(op: &CodeOperand, wants_imm16: bool) -> Result<Z80Operand, St
         CodeOperand::Z80IndHl => Z80Operand::IndHl,
         CodeOperand::Z80IndBc => Z80Operand::IndBc,
         CodeOperand::Z80IndDe => Z80Operand::IndDe,
+        // `(sp)` lowers to the ISA `Pair(Sp)` operand — the golden `ex (sp),hl`
+        // encoding arm (`z80.rs`) matches `[Pair(Sp), Pair(Hl)]` → `$E3`. The
+        // emp-level distinctness (for `sp_hazard`) collapses here, byte-neutral.
+        CodeOperand::Z80IndSp => Z80Operand::Pair(map_z80_pair(Z80Pair::Sp)),
         CodeOperand::Z80Indexed { reg, disp } => {
             // Defense-in-depth: the operand mapper (`map_ind_z80`) already checked
             // the i8 window; re-check at this byte-exactness seam.

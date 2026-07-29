@@ -1461,6 +1461,10 @@ impl Evaluator<'_> {
                     "hl" => return Some(CodeOperand::Z80IndHl),
                     "bc" => return Some(CodeOperand::Z80IndBc),
                     "de" => return Some(CodeOperand::Z80IndDe),
+                    // `(sp)` — only `ex (sp),hl`/`ex (sp),ix` encode it; any other
+                    // mnemonic pairing errors at the ISA encode gate. Distinct
+                    // from a bare `sp` so `sp_hazard` sees the trampoline swap.
+                    "sp" => return Some(CodeOperand::Z80IndSp),
                     _ => {}
                 }
             }

@@ -609,3 +609,93 @@ fn z80_tail_jp_unknown_callee_conservative() {
         "a tail-jp to an unknown callee must be conservative — preserves(ix) fires, got: {diags:?}"
     );
 }
+
+// ======================================================================
+// t36 — the `ex (sp),hl` sequencer trampoline (the demanded rung-3a feature).
+// The `push hl` + `ex (sp),hl` + `ret` idiom is a COMPUTED DISPATCH through the
+// return address, not a proc exit. The distinct `(sp)` operand form (Z80IndSp)
+// lands here and routes to the SAME loud bail `ld sp` uses; the verdict
+// tightening (ruling iii) restricts credit past the bail to module-invariant
+// units only.
+// ======================================================================
+
+/// The `ex (sp),hl` operand form LANDS and bails a declared preserve — the real
+/// trampoline spelling, replacing the `ld sp,hl` proxy of test (d). A non-invariant
+/// register declared preserved across the swap is `[proc.preserves-unverifiable]`.
+#[test]
+fn z80_ex_sp_hl_trampoline_bails_declared_preserve() {
+    let src = "module m in s (cpu: z80)\n\
+               proc T() preserves(hl) {\n\
+                 push hl\n\
+                 ex (sp), hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "ex (sp),hl must bail a declared preserve, got: {diags:?}"
+    );
+}
+
+/// THE TIGHTENING RED (ruling iii): a LOCALLY-UNTOUCHED, NON-invariant unit (`de`,
+/// never written in this proc's body) declared preserved ACROSS the trampoline must
+/// be REFUTED — the `ret` continues into a handler that could clobber `de`. This
+/// fixture FALSE-PASSES against the pre-tightening verdict (a never-written unit
+/// fell through to `all_returns_preserve`=true → silently Verified); post-fix it is
+/// loudly `[proc.preserves-unverifiable]`. This is the demonstration the overseer
+/// mandated.
+#[test]
+fn z80_trampoline_untouched_noninvariant_preserve_is_unverifiable() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc T() preserves(de) {\n\
+                 push hl\n\
+                 ex (sp), hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("de")),
+        "a locally-untouched NON-invariant `de` preserved past the trampoline must be \
+         Unverifiable (false-passes pre-tightening), got: {diags:?}"
+    );
+}
+
+/// THE GREEN control: the MODULE INVARIANT (`ix`, never written locally + in the
+/// invariant set) IS credited past the trampoline bail — verification-grade,
+/// because the invariant is machine-checked on every dispatch target. A proc that
+/// preserves ONLY the inherited invariant across the swap lowers clean.
+#[test]
+fn z80_trampoline_module_invariant_survives_bail() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc T() {\n\
+                 push hl\n\
+                 ex (sp), hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "the module invariant ix (never written, invariant-set) is creditable past \
+         the trampoline bail, got: {diags:?}"
+    );
+}
+
+/// The invariant is NOT blindly credited: a proc that WRITES `ix` locally
+/// (`pop ix` — the move idiom clobbers it) then trampolines still fails the
+/// invariant — ever_clobbered gates clause (a) of the tightening.
+#[test]
+fn z80_trampoline_locally_written_invariant_still_fires() {
+    let src = "module m in s (cpu: z80, invariant: preserves(ix))\n\
+               proc T() {\n\
+                 push hl\n\
+                 pop ix\n\
+                 push hl\n\
+                 ex (sp), hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("ix")),
+        "ix written locally (pop ix) must fail the invariant even past a bail, got: {diags:?}"
+    );
+}

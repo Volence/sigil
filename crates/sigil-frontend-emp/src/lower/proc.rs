@@ -210,7 +210,12 @@ fn check_z80_preserves(
     }
     let checklist: Vec<String> = check.into_iter().collect();
     let statuses =
-        crate::z80_preserves::verify_z80_preserved(&buf.items, &checklist, callee_preserves);
+        crate::z80_preserves::verify_z80_preserved(
+            &buf.items,
+            &checklist,
+            invariant_regs,
+            callee_preserves,
+        );
     for (reg, status) in statuses {
         // Whether `reg` is an INHERITED invariant (vs an explicit preserve) — for
         // a message that names WHY the proc must preserve it.
