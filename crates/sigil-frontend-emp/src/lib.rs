@@ -21,6 +21,7 @@ pub mod z80_preserves;
 pub mod type_slice;
 pub mod value;
 pub mod z80_bus;
+pub mod z80_cycles;
 
 use sigil_span::{Diagnostic, SourceId};
 
