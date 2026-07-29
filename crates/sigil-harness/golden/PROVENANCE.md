@@ -1897,3 +1897,24 @@ canaries by name.
 - Aeon repo master: **`b26efc8`** (merge of `port-tranche37`; sigil master **`abe7f1b`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
+
+## t38 (P4) — player_sensors port (2026-07-29) — canonical UNCHANGED; THE PLAYER CLUSTER COMPLETE
+
+`player_sensors.asm` (493 L) → `player_sensors.emp` byte-exact BOTH shapes (windowed
+oracle `test_p4_player_sensors_port`: $50A8/$4FC plain · $5E40/$4FC debug — shape-
+varying base, invariant layout; whole-ROM `mixed_tranche38` both shapes). Byte-neutral
+end-to-end (even the step-2 wave: twins already width-minimal). TWO ratified features
+born from this file: `dc.w <local> - <local>` self-relative offset words (6-constraint
+TDD) and the immediate-sp-cleanup preserves model (true slot byte-widths; over-drop
+refutes). The a0 verification story had TWO root causes (the sp-cleanup idiom + the
+shared CFG's bsr-as-conditional-branch classifier lie — resolved byte-neutrally,
+classifier fix kill-rowed). The 8 extern-proc decls retired: **the 68k game side is at
+ZERO extern proc** (closure residue 10→0 via honest `preserves(a0)`). First 68k-side
+header under-claim fixed (Player_AtLedgeEdge d6). P1-P4 all ported.
+
+Full paired strict **2856/0 (1 ignored)** on merged masters; p4 8 + p2 12 + p1 4
+canaries by name.
+
+- Aeon repo master: **`fa474cd`** (merge of `port-tranche38`; sigil master **`1dd1ed0`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
