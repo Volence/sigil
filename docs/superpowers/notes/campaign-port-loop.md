@@ -157,6 +157,17 @@ re-green. No emulator time needed at this step.
   had NO enforced list, making it the easiest step to declare done on the
   loudest item; the packet's step-2 section is now the FILLED checklist,
   same enforcement as steps 3(a)/3(b)/5):**
+
+  **META (2026-07-29, Volence's abs-EA catch): a step-2 MISS traced to an
+  UNSTATED (precedent-only) convention makes CODIFYING that convention a
+  mandatory close-packet duty. The byte gate is blind to byte-identical
+  spelling variants, so a convention that lives only as precedent in engine
+  files drifts silently in new files until it is TEXT here — the exact failure
+  behind the abs-EA catch (the bare-RAM-EA form obeyed by every engine file but
+  never written down, so three game-side files drifted for three tranches). The
+  abs-EA idiom (item 5), the contract CPU-split (item 5 reglist), and the
+  mem-to-mem comment string (item 2) were all promoted from precedent to TEXT by
+  this rule after the 2026-07-29 convention-drift audit.**
   1. Branch conversions (bare Bcc, `jbra`/`jbsr`) INCLUDING the
      region-shrink/re-pin/twin-lockstep wave they trigger — the packet
      names the byte delta and where downstream absorbs it (org shield vs
@@ -171,6 +182,14 @@ re-green. No emulator time needed at this step.
      exception class — an UNCOMMENTED kept width is a miss even when
      keeping it is correct (retro-check 2026-07-15: `aabb.emp:62 bpl.s`
      was the corpus's single uncommented pin; everything else conformed).
+     A mem-to-mem `move.w (X).w, (Y).w` (TWO symbolic operands) legitimately
+     keeps BOTH widths — the auto-width rule cannot pick a per-operand width
+     across two symbolic operands — and its required site comment is the FIXED
+     string `// widths pinned: mem-to-mem two-symbolic operands`
+     (`vblank.emp:97/123/125` is the precedent; this exact string is now
+     canonical). A kept mem-to-mem `.w` pin WITHOUT it is an uncommented-pin miss
+     (2026-07-29 audit B3: `section.emp` ×2 + `tile_cache.emp` ×6 carried the
+     correct pins with no comment — fixed the same parcel as the abs-EA cleanup).
   3. Bare-symbol width-rule spellings complete — including inside
      comptime-fn / asm-template bodies.
   4. Brace-indent file-wide.
@@ -216,19 +235,45 @@ re-green. No emulator time needed at this step.
      enumeration, wherever a ≥2 contiguous run exists (C1 item 2
      grammar; added 2026-07-15 after t15 shipped three enumerated
      13-register contracts — the form existed in the corpus since
-     sound_api but was never ON this list; Volence's catch),
-     absolute-EA over a LINK-TIME base spelled BARE `sym + const` — NOT
-     the operand-override `(sym + const).w`/`.l` (added 2026-07-15, t16;
-     the override comptime-folds and can't defer a link base — row 1004,
-     GENUINELY-UNBUILT — so the bare form is the standing spelling and
-     the width rule picks abs.w/.l by the resolved value; section.emp:303
-     is the byte-proven precedent). BOUNDARY — this does NOT touch the
-     explicit-width forms that a DIFFERENT gap requires: keep the
-     explicit `(Sym).w` where `[lower.imm-link]` needs it (a bare
-     relaxable dest combined with a `#extern(...)` link-immediate source
-     — core.emp's 4 kept sites, row 1046 item 2) and keep the t15
-     mem-to-mem pinned `.w` spellings; the bare-form rule is for
-     absolute-EA-over-link-base ONLY, …
+     sound_api but was never ON this list; Volence's catch)
+     — and the contract clause ORDER + register-group SEPARATOR are a clean
+     CPU split, precedent-only until now (2026-07-29 audit A1): **68k** =
+     `clobbers` → `out` → `preserves`, `falls_into` LAST, register groups joined
+     by `/` (`clobbers(d0-d4/a1-a2)`), NEVER comma; **Z80** = `out` → `clobbers`
+     → `preserves`, named registers joined by `,` (`out(a) clobbers(f)
+     preserves(bc, de, hl)` — af/bc/de/hl are pairs, not ranges). A 68k contract
+     with comma-separated groups, or either CPU carrying the other's clause
+     order, is a step-2 miss (the pervasive 68k comma-group spelling — ~40 procs,
+     audit B5 — is LEDGERED as its own byte-neutral sweep, un-gated now that this
+     rule is TEXT; do not fold it speculatively into an unrelated parcel),
+     **Absolute RAM/ROM EA = BARE symbol, auto-width — a FIRST-CLASS idiom, not a
+     boundary footnote (promoted 2026-07-29 — the motivating Volence catch, see the
+     META rule above).** Write `move.w Camera_X, d0` / `lea DPLC_Sonic, a2` /
+     `tst.b VBlank_Ready`; the width rule picks abs.w/abs.l from the RESOLVED value
+     (RAM `$FFFFxxxx` → .w, ROM / Z80-bus-window `≥$8000` → .l). The width MAY be
+     spelled in a trailing `// (Sym).w` / `// (Sym).l` TWIN-NOTE comment
+     (`vblank.emp:37`, the engine precedent) — that comment is NOT a code pin. An
+     explicit `(Sym).w` / `(Sym).l` IN CODE is a MISS unless it is one of the
+     NAMED pinned exceptions, each carrying its site comment:
+     (1) mem-to-mem two-symbolic operands (item 2 above; the t15 pins);
+     (2) `[lower.imm-link]` — a `#extern(...)` link-immediate source combined with
+     a relaxable symbolic dest (core.emp's 4 sites, row 1046 item 2);
+     (3) a movem abs seam (boot.emp:210);
+     (4) the trailing-`(d16,An)` form with no bare lowering yet (parallax.emp:342);
+     (5) a TRAILING-`align` structural pin — a bare abs EA lowers to a `RelaxAbsSym`
+     (size-relaxable), and a later `align` / table `item_align` in the SAME section
+     refuses a provisional pad position (`[align.provisional]`); so the abs EAs
+     (together with the section's branches) stay explicit-width to keep every
+     preceding size fixed (`game_debug.emp:105-113`, the byte-proven t26 precedent —
+     its 14 `(X).w` sites are divergence-WITH-REASON, NOT drift, and were correctly
+     KEPT by the style-bare-abs-ea parcel). Original link-base rule (added t16,
+     2026-07-15, row 1004): absolute-EA over a LINK-TIME base spelled BARE
+     `sym + const`, never the operand-override `(sym + const).w`/`.l` (the override
+     comptime-folds and can't defer a link base — GENUINELY-UNBUILT; section.emp:303
+     the byte-proven precedent). MOTIVATING DRIFT (the catch): game-side files went
+     explicit-width for three tranches undetected — `game_debug.emp` 14 (kept-pinned,
+     exception 5) / `test_churn.emp` 1 / `player_common.emp` 20 / `sonic.emp` 2 /
+     `sound_debug.emp` 5 — because the rule was precedent-only, …
      Sec/Act ROM-descriptor field access — `use engine.structs` +
      `Sec.field(aN)` reg-relative displacements / `offsetof(Sec, f)` /
      `offsetof(Act, f)` (the `.field`-in-disp sugar does NOT compose inside
