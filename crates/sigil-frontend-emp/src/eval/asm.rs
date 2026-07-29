@@ -806,7 +806,14 @@ impl Evaluator<'_> {
                     return None;
                 }
             };
-            match self.eval_expr(expr, env) {
+            // Evaluate the element in LABEL context so a bareword/dotted proc or
+            // data name becomes a first-class `Value::Label` (a deferred link
+            // symbol) rather than an `unknown name` error — the same rule a
+            // pointer FIELD uses (`lower_ptr`, D-PP.3). This makes `dc.l <label>`
+            // (an absolute symbol pointer, e.g. a jump/vector table entry) work;
+            // existing name resolution (local → const → fn) still WINS, so a
+            // const named the same as a label keeps its comptime value.
+            match self.in_label_ctx(|this| this.eval_expr(expr, env)) {
                 Value::Int(n) => {
                     let bits = (width_bytes * 8) as u32;
                     let lo = -(1i128 << (bits - 1));
@@ -826,6 +833,15 @@ impl Evaluator<'_> {
                     });
                     total += width_bytes;
                 }
+                // A link-resolved symbol pointer: `dc.l Label` (or `.w`) emits a
+                // `Cell::SymRef` of the element width, resolved at link — the
+                // absolute-pointer form a vector/jump table needs. Mirrors
+                // `lower_ptr`'s `Cell::SymRef` (a `*u8` field), here in raw `dc`
+                // position rather than a typed `data` field.
+                Value::Label(name) => {
+                    cells.push(Cell::SymRef { name, width: width_bytes as u8, windowed: false });
+                    total += width_bytes;
+                }
                 Value::Str(s) if width_bytes == 1 => {
                     total += s.len();
                     cells.push(Cell::Bytes(s.into_bytes()));
@@ -842,7 +858,7 @@ impl Evaluator<'_> {
                     self.error(
                         expr_span(expr),
                         format!(
-                            "[dc.comptime-only] `dc` elements must be comptime ints or strings, got {} (link-resolved cells in `dc` position are a recorded extension — use a typed `data` item)",
+                            "[dc.comptime-only] `dc` elements must be comptime ints, strings, or link symbols, got {}",
                             other.type_name()
                         ),
                     );

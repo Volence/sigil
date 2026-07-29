@@ -1006,3 +1006,34 @@ fn t3_p3_u32_max_int_entry_in_pointer_array_is_accepted() {
     let bytes = linked_bytes(&module);
     assert_eq!(&bytes[5..9], &[0xFF, 0xFF, 0xFF, 0xFF], "T[1] = $FFFFFFFF as a big-endian absolute cell");
 }
+
+#[test]
+fn dc_l_label_emits_abs32_symref_fixup() {
+    // t25: `dc.l <label>` in a proc body is an absolute symbol pointer (a
+    // vector/jump-table entry), lowering to a width-4 SymRef fixup targeting the
+    // name — the capability the MD Debugger blob's extension-button pointers need
+    // (`dc.l MDDBG__Debugger_AddressRegisters`). A bare int stays a value cell.
+    let src = "module m\n\
+               section s (cpu: m68000) {\n\
+                   proc p () clobbers() {\n\
+                       dc.l TargetSym, $12345678\n\
+                   }\n\
+               }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+    );
+    assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error), "unexpected errors: {diags:?}");
+    let fixups = section_fixups(&module);
+    assert!(
+        fixups.iter().any(|f| matches!(&f.target, Expr::Sym(n) if n == "TargetSym")),
+        "dc.l <label> must emit a SymRef fixup targeting the name: {fixups:?}"
+    );
+    // The second element ($12345678) is a plain value, not a fixup.
+    assert_eq!(fixups.len(), 1, "only the label element is a fixup: {fixups:?}");
+    // The literal long is in the raw bytes big-endian after the 4-byte symref hole.
+    let raw = raw_data_bytes(&module);
+    assert_eq!(&raw[4..8], &[0x12, 0x34, 0x56, 0x78], "the int element is a big-endian value cell");
+}
