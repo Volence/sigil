@@ -256,3 +256,39 @@ fn mixed_combined_config_a_rom_matches_reference() {
     assert_eq!(rom.len(), refrom.len(), "off-canonical ROM lengths must match");
     assert_rom_matches(&rom, &refrom, refrom.len(), &[], "off-canonical Config A: combined");
 }
+
+// Config B (no-sound): SOUND_DRIVER_ENABLED off, plain. Serves z80_init (the
+// boot_data.asm no-sound else-arm). One shape (plain no-sound only, LEAN —
+// debug+no-sound is deliberately unexercised; the else-arm is shape-shared).
+const CONFIG_B: &[(&str, i64)] = &[];
+// z80_init region at Config B: [Z80_IdleProgram=0x3D8, Z80_IdleProgram_End=0x3FE),
+// 38 bytes of Z80 idle code (a phased `(cpu: z80)` section placed in the 68k ROM).
+const Z80_INIT_BASE: u32 = 0x3D8;
+const Z80_INIT_END: u32 = 0x3FE;
+
+/// THE whole-ROM off-canonical gate for z80_init (Config B): z80_init.emp (a
+/// phased Z80 section) placed in the real no-sound ROM == pure-asl at Config B.
+#[test]
+fn mixed_z80_init_config_b_rom_matches_reference() {
+    let aeon = aeon_dir();
+    if maybe_skip(&aeon) {
+        return;
+    }
+    let refrom = flatten_module(assemble_offcanonical(&aeon, CONFIG_B, &[]).sections, "ref z80_init");
+
+    let mut sections = assemble_offcanonical(&aeon, CONFIG_B, &["SIGIL_EMP_Z80_INIT"]).sections;
+    let (emp_sections, asserts) = placed_emp(
+        &aeon,
+        "engine/system/z80_init.emp",
+        "z80_idle",
+        Z80_INIT_BASE,
+        Z80_INIT_END - Z80_INIT_BASE,
+        &[],
+        &[],
+    );
+    sections.extend(emp_sections);
+    let rom = flatten_with_asserts(sections, &asserts, "mixed z80_init");
+
+    assert_eq!(rom.len(), refrom.len(), "off-canonical ROM lengths must match");
+    assert_rom_matches(&rom, &refrom, refrom.len(), &[], "off-canonical Config B: z80_init");
+}
