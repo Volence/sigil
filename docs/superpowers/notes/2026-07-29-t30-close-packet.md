@@ -196,3 +196,48 @@ mixed_tranche30_debug_rom_matches_assembled_reference}`. Frontend feature:
 move_w_unresolved_symbol_to_disp0_folds_and_defers}`. Contract:
 `contract_closure_corpus::corpus_closure_residue_is_empty_the_error_gate` (the
 oracle round flipped it green).
+
+## Step-6 sweeps (overseer-ordered at the merge gate)
+
+**1. Oracle-consumer census (the transitive-preserve feature's demand baseline).**
+`grep preserves( --include=*.emp`: 24 preserves-declaring procs corpus-wide. The
+oracle credits a call to a callee whose verified effective omits the preserved reg;
+a proc NEEDS it only if it writes-then-restores the reg with a preserving call
+before rts (else the local proof already passes). **Demand today = EXACTLY 1:
+`TestChurnObj_Main`.** Evidence: pre-oracle `contract_closure_corpus` fired on
+`[("TestChurnObj_Main","a0")]` and NOTHING else (the 2691/0 baseline had all 23
+other preserves-procs verifying locally); post-oracle it is green — the sole
+fail→pass flip. The other 23 either never write the preserved reg (VBlank_Handler
+`preserves(d0-d7/a0-a6)`, the sound_api `preserves(sr)` family, …) or restore AFTER
+the last call (movem save/restore pairs). This is the baseline the player cluster
+(P1+, save/restore-heavy state machines) grows from — the first non-trivial
+transitive-preserve consumer.
+
+**2. Descriptor-format census (for the G3 shared-home ruling).** The
+CreateEffect_Normal and CreateChild_Normal descriptors share the SAME 4-byte record
+`{code: ObjRoutine :w, x_off: i8, y_off: i8}` (children.emp:542-546 documents it),
+terminated by a separate `dc.w 0`. Member sites:
+- `EffectSpawn1` (single entry) — `test_emitter.emp:27/71`, `test_stress_emitter.emp:27/72` (PORTED, duplicated).
+- AS-side effect twins — `test_emitter.asm:47`, `test_stress_emitter.asm:48` (`.particle_desc`; retire at Spec 5).
+- **CHILD descriptor (G3, NOT ported)** — `test_parent.asm:144 .child_desc`: THREE `objroutine(TestChildPart)` entries (left/right/above, `dc.b ±24`) + terminator — the MULTI-entry consumer, same 4-byte record.
+RULING INPUT for G3: the shared home is a single 4-byte `SpawnDesc` record (NOT
+EffectSpawn1's fused 6-byte entry+terminator — B1 finding 3), used as `[SpawnDesc]`
++ explicit terminator; test_parent is its 2nd/3rd/4th consumer. Natural home:
+alongside `CreateEffect_Normal`/`CreateChild_Normal` in children.emp (the
+ObjDef-in-sst.emp precedent — the record lives with the format's owner), imported by
+the game objects.
+
+**3. Value16Be word-imm census (blast radius PROVEN, not assumed).** `grep 'move.w
+#objroutine('`: 10 AS sites. The defer activates ONLY on an UNRESOLVED (.emp-owned,
+gated-out) target in a memory dest. Categorized:
+- **Current consumers (2, both proven byte-exact by `mixed_tranche30`):**
+  `object_test_state.asm:54` (TestStressEmitter) + `:228` (TestChurnObj) — the t30
+  gated-out objects.
+- **Self-stores in gated-out .asm twins** (`test_churn.asm:56/75`) — don't compile
+  in the mixed build (the file is gated out); the .emp owns those stores.
+- **Resolve-locally, no defer** — `test_particle.asm:26`, `test_player.asm:59`,
+  `test_parent.asm:73/140` (self-Main stores in unported AS objects); and
+  `object_test_state.asm:38/218` (TestPlayer, unported → resolves).
+- **Pending at P1:** when `test_player.asm` ports, `object_test_state.asm:38/218`
+  (`objroutine(TestPlayer)`) become the next 2 defer consumers. Feature proven on 2
+  live sites; +2 queued.
