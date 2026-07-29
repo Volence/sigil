@@ -436,6 +436,33 @@ end = "TestStressEmitter"
 gate = "SIGIL_EMP_TEST_PARENT"
 tests = ["test_g3_objects_port"]
 
+# t39 (the FINAL three objects — the object bank closes ALL-.emp). test_player and
+# test_enemy are shape-INVARIANT (internal-gated AS twins keep their zero-byte
+# headers). path_swap is SHAPE-DEPENDENT (2 __DEBUG__ blocks: the reserved-bit
+# RaiseError guard + the debug jmp Draw_Sprite vs release rts tail; debug +$68) —
+# start/end symbols auto-derive its per-shape lengths, end anchor DeformTable_Zero
+# is gameDataIncludes' first label (ojz_default.asm), the next placement.
+[[region]]
+name = "test_player"
+start = "TestPlayer"
+end = "TestEnemy_Init"
+gate = "SIGIL_EMP_TEST_PLAYER"
+tests = ["test_g4_final_objects_port"]
+
+[[region]]
+name = "test_enemy"
+start = "TestEnemy_Init"
+end = "TestSolid_Init"
+gate = "SIGIL_EMP_TEST_ENEMY"
+tests = ["test_g4_final_objects_port"]
+
+[[region]]
+name = "path_swap"
+start = "ObjDef_PathSwap"
+end = "DeformTable_Zero"
+gate = "SIGIL_EMP_PATH_SWAP"
+tests = ["test_g4_final_objects_port"]
+
 # ── Game data (main.asm gates) ──────────────────────────────────────────────
 
 [[region]]
@@ -1221,6 +1248,13 @@ tests = ["sprites_port"]
 [[symbol]]
 name = "Sound_PlaySFX"
 tests = ["animate_port"]
+
+# t39 final object cross-seam callee: ObjectMoveX (core, test_enemy's mover).
+# Draw_Sprite/ObjectMove/ObjCodeBase/Player_1/Ctrl_1_Held/Ctrl_1_Press/
+# Player_SensorFloor/Map_*/DPLC_Sonic/Art_Sonic/Ani_Sonic already pinned.
+[[symbol]]
+name = "ObjectMoveX"
+tests = ["test_g4_final_objects_port"]
 
 # test_objects (tranche 6)
 
