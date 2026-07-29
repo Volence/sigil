@@ -783,18 +783,47 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
     // slice, which becomes its trivial fast path). Every declared register must be
     // provably preserved by symbolic stack tracking ([`crate::preserves`]): its
     // ENTRY value restored on every return path (individual push/pop, `(sp)` peek,
-    // mid-body or entry/exit movem, or a superset save), or never written. A
-    // register that is NOT provably preserved — a soundness bailout (computed sp,
-    // sp escape, aliasing store, stack underflow), a `.w` restore (sign-extends),
-    // or a genuine clobber on some exit — is `[proc.preserves-unverifiable]`
-    // (error: a wrong contract is worse than none, the D2.32 principle kept).
+    // mid-body or entry/exit movem, or a superset save), or never written.
+    //
+    // The byte gate verifies under the CONSERVATIVE model (`ClobberAll` — it has no
+    // cross-file contract knowledge; a callee here may be a synthetic, contract-less
+    // stub). A register it cannot prove falls into two classes:
+    //  - blocked ONLY by a call to a contract-less callee — a fact only the
+    //    whole-corpus closure can settle. Re-verify under the OPTIMISTIC probe
+    //    (`PreserveAll` — every call preserves everything); a register that verifies
+    //    there is call-blocked, so the byte gate stays SILENT and DEFERS it to the
+    //    corpus closure, which re-proves it with the verified-`effective` oracle and
+    //    is the FINAL AUTHORITY. The strict suite ALWAYS runs that closure gate, so
+    //    a genuinely-unprovable deferral still errors there — nothing silently ships.
+    //  - blocked by a LOCAL hazard the closure cannot fix — an sp bailout (computed
+    //    sp, sp escape, aliasing store, stack underflow), a `.w` restore
+    //    (sign-extends), or a direct clobber with no restore. These fail the
+    //    optimistic probe too and are a real `[proc.preserves-unverifiable]` here (a
+    //    wrong contract is worse than none, the D2.32 principle kept).
     // `[proc.preserves-missing-pair]`/`-mismatch`/`-word-pair` retire, subsumed.
     let regs = crate::preserves::expand_mask(declared);
-    let status = crate::preserves::verify_preserved(&buf.items, &regs);
-    let unverifiable: Vec<String> = regs
+    let real = crate::preserves::verify_preserved(
+        &buf.items,
+        &regs,
+        crate::preserves::CallPolicy::ClobberAll,
+    );
+    let not_verified: Vec<crate::value::Reg> = regs
+        .iter()
+        .copied()
+        .filter(|r| !matches!(real.get(r), Some(crate::preserves::PreserveStatus::Verified)))
+        .collect();
+    if not_verified.is_empty() {
+        return;
+    }
+    let optimistic = crate::preserves::verify_preserved(
+        &buf.items,
+        &not_verified,
+        crate::preserves::CallPolicy::PreserveAll,
+    );
+    let unverifiable: Vec<String> = not_verified
         .iter()
         .filter(|r| {
-            !matches!(status.get(r), Some(crate::preserves::PreserveStatus::Verified))
+            !matches!(optimistic.get(r), Some(crate::preserves::PreserveStatus::Verified))
         })
         .map(|r| r.to_string())
         .collect();
@@ -1123,14 +1152,31 @@ pub fn expand_reglist_regs(segs: &[(String, Option<String>)]) -> BTreeSet<String
     reglist_set_quiet(segs).regs.into_iter().collect()
 }
 
-/// The register set a proc PROVABLY preserves — its declared `preserves` when
-/// that set passes the D2.32 syntactic (movem-pair) verification, else empty.
-/// The contract closure's `verifiedPreserved(P)` (§1): a register the proc
-/// writes but save/restores does not escape it. Reuses [`check_preserves`]
-/// verbatim (runs it against a throwaway diag sink) so the "verified" judgment
-/// can never drift from the lint — a declared-but-UNVERIFIABLE `preserves`
-/// (individual-push, wrong movem) yields the empty set (it stays a D2.32 error
-/// at its own site and subtracts nothing). `sr` is dropped (out of the
+/// The declared `preserves` reglist folded to a canonical movem mask (bit0=d0..
+/// bit15=a7), `sr` dropped and ranges expanded. Quiet — contract-shape validity
+/// (invalid name / reversed range / overlap) is [`check_preserves`]' job.
+fn preserve_mask(proc: &ast::ProcDecl) -> u16 {
+    let mut mask = 0u16;
+    for name in reglist_set_quiet(&proc.preserves).regs {
+        if let Some(bit) = preserves_reg_bit(&name) {
+            mask |= 1 << bit;
+        }
+    }
+    mask
+}
+
+/// The register set a proc PROVABLY preserves with NO callee-contract knowledge —
+/// the contract closure's oracle-FREE base `verifiedPreserved(P)` (§1): a register
+/// the proc writes but save/restores by its OWN machinery does not escape it. The
+/// closure SEED must stay oracle-free so the callee-preserves oracle it feeds
+/// ([`crate::corpus_contracts`]' oracle round) cannot be circular; that round then
+/// UPGRADES this monotonically with verified callee contracts.
+///
+/// Shape validity is checked by [`check_preserves`] against a throwaway sink (a
+/// malformed contract credits nothing). The round-trip verdict itself is recomputed
+/// here under `ClobberAll` rather than read off that sink, because `check_preserves`
+/// now DEFERS a call-only failure (emitting no error) — the seed must NOT credit a
+/// register whose only proof needs a callee contract. `sr` is dropped (out of the
 /// register-file closure's scope).
 pub fn verified_preserves_regs(
     proc: &ast::ProcDecl,
@@ -1142,10 +1188,41 @@ pub fn verified_preserves_regs(
     let mut sink = Vec::new();
     check_preserves(proc, buf, &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
-        BTreeSet::new()
-    } else {
-        expand_reglist_regs(&proc.preserves)
+        return BTreeSet::new();
     }
+    let regs = crate::preserves::expand_mask(preserve_mask(proc));
+    let status =
+        crate::preserves::verify_preserved(&buf.items, &regs, crate::preserves::CallPolicy::ClobberAll);
+    if regs
+        .iter()
+        .all(|r| matches!(status.get(r), Some(crate::preserves::PreserveStatus::Verified)))
+    {
+        expand_reglist_regs(&proc.preserves)
+    } else {
+        BTreeSet::new()
+    }
+}
+
+/// The inputs the corpus callee-preserves oracle round ([`crate::corpus_contracts`])
+/// needs for one proc: `(check_regs, credit_names)` — the declared registers to
+/// re-verify under the oracle, and the full declared set to credit iff EVERY
+/// `check_reg` round-trips. `(empty, empty)` when `preserves` is absent or its shape
+/// is malformed (a malformed contract credits nothing, mirroring
+/// [`verified_preserves_regs`]). The oracle round need not re-run
+/// [`check_preserves`]: an empty `check_regs` result already means "no credit".
+pub fn preserve_oracle_inputs(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+) -> (Vec<crate::value::Reg>, BTreeSet<String>) {
+    if proc.preserves.is_empty() {
+        return (Vec::new(), BTreeSet::new());
+    }
+    let mut sink = Vec::new();
+    check_preserves(proc, buf, &mut sink);
+    if sink.iter().any(|d| matches!(d.level, Level::Error)) {
+        return (Vec::new(), BTreeSet::new());
+    }
+    (crate::preserves::expand_mask(preserve_mask(proc)), expand_reglist_regs(&proc.preserves))
 }
 
 /// Format a canonical movem mask back to its reglist spelling (`d0-d1/a0`) —

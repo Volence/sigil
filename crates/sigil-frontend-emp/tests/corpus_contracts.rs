@@ -323,3 +323,60 @@ fn flip_gate_verified_credit_is_load_bearing() {
         r.input_firings
     );
 }
+
+// ===========================================================================
+// §5 — the CALLEE-PRESERVES ORACLE + the defer→closure final-authority split
+// (t30). The `TestChurnObj_Main` shape: a caller save/restores a register then
+// makes a trailing call. The per-file byte gate DEFERS; the corpus closure is
+// the FINAL AUTHORITY — it credits a callee that PROVABLY preserves the register,
+// and fires when the callee genuinely clobbers it.
+// ===========================================================================
+
+/// FINAL AUTHORITY, positive: the callee `Del` provably preserves a0 (it saves +
+/// restores a0 around its own body), so the closure credits the caller's trailing
+/// `jsr Del` and the caller's `preserves(a0)` clears — NO firing. The caller could
+/// not prove this per-file (it deferred); the closure does.
+#[test]
+fn oracle_credits_preserving_trailing_callee() {
+    let r = analyze(&[
+        "module m\n\
+         proc Caller () clobbers(d0) preserves(a0) {\n\
+             move.l  a0, -(sp)\n\
+             lea     Foo, a0\n\
+             movea.l (sp)+, a0\n\
+             jbsr    Del\n\
+             rts\n\
+         }\n\
+         proc Del () clobbers(d0) preserves(a0) {\n\
+             move.l  a0, -(sp)\n\
+             lea     Bar, a0\n\
+             movea.l (sp)+, a0\n\
+             rts\n\
+         }\n",
+    ]);
+    assert!(!fires(&r, "Caller", "a0"), "a preserving trailing callee → no firing: {:?}", r.firings);
+    assert!(!fires(&r, "Del", "a0"), "Del itself preserves a0: {:?}", r.firings);
+}
+
+/// FINAL AUTHORITY, negative: the callee `Trash` genuinely CLOBBERS a0 (writes it,
+/// no restore, no preserves). The caller's trailing `jbsr Trash` therefore does NOT
+/// round-trip a0 — the per-file gate DEFERRED, but the closure, the final authority,
+/// FIRES `Caller`/a0. Nothing genuinely unprovable slips through.
+#[test]
+fn closure_fires_when_trailing_callee_clobbers() {
+    let r = analyze(&[
+        "module m\n\
+         proc Caller () clobbers(d0) preserves(a0) {\n\
+             move.l  a0, -(sp)\n\
+             lea     Foo, a0\n\
+             movea.l (sp)+, a0\n\
+             jbsr    Trash\n\
+             rts\n\
+         }\n\
+         proc Trash () clobbers(d0/a0) {\n\
+             lea     Bar, a0\n\
+             rts\n\
+         }\n",
+    ]);
+    assert!(fires(&r, "Caller", "a0"), "a clobbering trailing callee must fire on the caller: {:?}", r.firings);
+}

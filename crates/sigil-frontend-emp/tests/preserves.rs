@@ -17,12 +17,15 @@
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::parse_str;
-use sigil_frontend_emp::preserves::{verify_preserved, PreserveStatus};
+use sigil_frontend_emp::closure::RegEffect;
+use sigil_frontend_emp::preserves::{verify_preserved, CallPolicy, PreserveStatus};
 use sigil_frontend_emp::value::Reg;
 use sigil_ir::backend::Cpu;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// Eval the first proc in `src` and return the preserve status of `reg`.
-fn status(src: &str, reg: Reg) -> PreserveStatus {
+/// Eval the first proc in `src` and return the preserve status of `reg` under
+/// `policy`.
+fn status_with(src: &str, reg: Reg, policy: CallPolicy) -> PreserveStatus {
     let (file, diags) = parse_str(src);
     assert!(diags.is_empty(), "parse: {diags:?}");
     let p = file
@@ -36,8 +39,24 @@ fn status(src: &str, reg: Reg) -> PreserveStatus {
     let (buf, _d, _n) =
         eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
     let buf = buf.expect("codebuf");
-    let mut r = verify_preserved(&buf.items, &[reg]);
+    let mut r = verify_preserved(&buf.items, &[reg], policy);
     r.remove(&reg).expect("status for the checked reg")
+}
+
+/// Eval + status under the conservative (no callee-contract) model — the byte
+/// gate's default and the pre-oracle behavior.
+fn status(src: &str, reg: Reg) -> PreserveStatus {
+    status_with(src, reg, CallPolicy::ClobberAll)
+}
+
+/// A one-entry `effective` oracle map: `callee` clobbers exactly `clobbers`.
+fn oracle(callee: &str, clobbers: &[&str]) -> BTreeMap<String, RegEffect> {
+    let mut m = BTreeMap::new();
+    m.insert(
+        callee.to_string(),
+        RegEffect { top: false, regs: clobbers.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>() },
+    );
+    m
 }
 
 fn is_verified(s: &PreserveStatus) -> bool {
@@ -593,4 +612,146 @@ fn displaced_sp_read_into_sp_still_bails() {
         Reg::D3,
     );
     assert!(is_unverifiable(&s), "movea.l d(sp),sp replaces the stack pointer → Unverifiable, got {s:?}");
+}
+
+// ===========================================================================
+// §5 — the CALLEE-PRESERVES ORACLE (t30). A `preserves(rN)` that round-trips
+// rN then makes a TRAILING call to a callee that itself `preserves(rN)` is not
+// provable by the conservative model (the call clobbers all), but IS provable
+// once the callee's verified contract is credited. The `TestChurnObj_Main`
+// shape: pop a0, `jsr DeleteObject` (preserves a0), rts.
+// ===========================================================================
+
+/// The reproducing fixture: a0 saved, clobbered, restored, then a TRAILING call
+/// runs before `rts`. Under the conservative model the trailing call clobbers
+/// a0 → NotPreserved.
+const TRAILING_CALL_SHAPE: &str = "module m\n\
+     proc P () clobbers(d0) {\n\
+         move.l  a0, -(sp)\n\
+         lea     Foo, a0\n\
+         movea.l (sp)+, a0\n\
+         jsr     DeleteObject\n\
+         rts\n\
+     }\n";
+
+#[test]
+fn trailing_call_conservative_is_not_preserved() {
+    // ClobberAll: the trailing call is treated as clobbering a0 → NotPreserved.
+    // This is the demand the oracle closes.
+    let s = status_with(TRAILING_CALL_SHAPE, Reg::A0, CallPolicy::ClobberAll);
+    assert!(
+        matches!(s, PreserveStatus::NotPreserved),
+        "conservative model: trailing call clobbers a0 → NotPreserved, got {s:?}"
+    );
+}
+
+#[test]
+fn trailing_call_oracle_preserving_callee_verifies() {
+    // Oracle where DeleteObject preserves a0 (clobbers only d0-d1) → the call no
+    // longer clobbers a0 → Verified. THE feature.
+    let eff = oracle("DeleteObject", &["d0", "d1"]);
+    let s = status_with(TRAILING_CALL_SHAPE, Reg::A0, CallPolicy::Oracle(&eff));
+    assert!(
+        matches!(s, PreserveStatus::Verified),
+        "oracle: a preserving callee lets a0 round-trip → Verified, got {s:?}"
+    );
+}
+
+#[test]
+fn trailing_call_optimistic_probe_verifies() {
+    // PreserveAll (the byte gate's DEFER probe): every call preserves → a0
+    // verifies, so the byte gate knows the ONLY obstacle is the call and DEFERS.
+    let s = status_with(TRAILING_CALL_SHAPE, Reg::A0, CallPolicy::PreserveAll);
+    assert!(
+        matches!(s, PreserveStatus::Verified),
+        "optimistic probe: call-only obstacle → Verified (defer), got {s:?}"
+    );
+}
+
+// --- t24 controls ----------------------------------------------------------
+
+#[test]
+fn t24_callee_without_preserves_still_clobbers() {
+    // Control: a callee whose effective set INCLUDES a0 (it does NOT preserve it)
+    // still clobbers a0 under the oracle → NotPreserved. The oracle credits only
+    // a genuinely-preserving callee.
+    let eff = oracle("DeleteObject", &["a0", "d0"]);
+    let s = status_with(TRAILING_CALL_SHAPE, Reg::A0, CallPolicy::Oracle(&eff));
+    assert!(
+        matches!(s, PreserveStatus::NotPreserved),
+        "callee that clobbers a0 → NotPreserved even under the oracle, got {s:?}"
+    );
+}
+
+#[test]
+fn t24_unknown_or_cycle_callee_stays_conservative() {
+    // Control: a callee ABSENT from the effective map (an unresolved target, or an
+    // in-cycle member the closure could not credit) reads as clobber-all → the
+    // trailing call clobbers a0 → NotPreserved. Cycles need no fixpoint here.
+    let empty: BTreeMap<String, RegEffect> = BTreeMap::new();
+    let s = status_with(TRAILING_CALL_SHAPE, Reg::A0, CallPolicy::Oracle(&empty));
+    assert!(
+        matches!(s, PreserveStatus::NotPreserved),
+        "unknown/cycle callee stays conservative → NotPreserved, got {s:?}"
+    );
+}
+
+#[test]
+fn t24_top_effect_callee_clobbers() {
+    // Control: a callee with a ⊤ (unbounded) effect clobbers everything → a0 not
+    // credited even though its concrete `regs` set is empty.
+    let mut eff: BTreeMap<String, RegEffect> = BTreeMap::new();
+    eff.insert("DeleteObject".to_string(), RegEffect { top: true, regs: Default::default() });
+    let s = status_with(TRAILING_CALL_SHAPE, Reg::A0, CallPolicy::Oracle(&eff));
+    assert!(
+        matches!(s, PreserveStatus::NotPreserved),
+        "⊤-effect callee clobbers a0 → NotPreserved, got {s:?}"
+    );
+}
+
+#[test]
+fn t24_genuine_local_clobber_is_not_deferrable() {
+    // Control: a clobber AFTER the trailing preserving call with NO restore is a
+    // GENUINE local failure the oracle cannot fix — it fails even the optimistic
+    // probe, so the byte gate must NOT defer it (it stays a real error).
+    let src = "module m\n\
+         proc P () clobbers(d0) {\n\
+             move.l  a0, -(sp)\n\
+             movea.l (sp)+, a0\n\
+             jsr     DeleteObject\n\
+             lea     Foo, a0\n\
+             rts\n\
+         }\n";
+    // Optimistic (every call preserves) STILL fails — the trailing lea clobbers a0
+    // with no restore.
+    let opt = status_with(src, Reg::A0, CallPolicy::PreserveAll);
+    assert!(
+        matches!(opt, PreserveStatus::NotPreserved),
+        "a post-call clobber is a genuine failure, not deferrable → NotPreserved, got {opt:?}"
+    );
+    // The oracle likewise cannot save it.
+    let eff = oracle("DeleteObject", &["d0"]);
+    let s = status_with(src, Reg::A0, CallPolicy::Oracle(&eff));
+    assert!(
+        matches!(s, PreserveStatus::NotPreserved),
+        "oracle cannot fix a genuine local clobber → NotPreserved, got {s:?}"
+    );
+}
+
+#[test]
+fn t24_sp_hazard_is_not_deferrable() {
+    // Control: an sp bailout is a local hazard no callee contract can fix — it
+    // stays Unverifiable under the optimistic probe (not deferrable).
+    let src = "module m\n\
+         proc P () clobbers(d0) {\n\
+             moveq   #5, d3\n\
+             pea     4(sp)\n\
+             jsr     DeleteObject\n\
+             rts\n\
+         }\n";
+    let opt = status_with(src, Reg::D3, CallPolicy::PreserveAll);
+    assert!(
+        matches!(opt, PreserveStatus::Unverifiable(_)),
+        "an sp hazard is not deferrable → Unverifiable even optimistically, got {opt:?}"
+    );
 }

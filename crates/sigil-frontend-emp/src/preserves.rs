@@ -34,6 +34,60 @@ use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+/// Registers in canonical mask-bit order (bit0=d0..bit15=a7); the array index
+/// equals [`reg_idx`], so `REG_BY_IDX[i]` is the register the state arrays track
+/// at slot `i`.
+const REG_BY_IDX: [Reg; 16] = [
+    Reg::D0, Reg::D1, Reg::D2, Reg::D3, Reg::D4, Reg::D5, Reg::D6, Reg::D7,
+    Reg::A0, Reg::A1, Reg::A2, Reg::A3, Reg::A4, Reg::A5, Reg::A6, Reg::A7,
+];
+
+/// How a `jsr`/`bsr` call is modeled in the entry-value proof — the CALLEE-PRESERVES
+/// ORACLE (§5). A call always ends the linear-delta tracking of every register
+/// (the callee may recompute them past what the delta model follows), but its
+/// effect on the ENTRY-value bits — the round-trip proof — depends on what is known
+/// about the callee's contract.
+///
+/// **Soundness.** The oracle credits a caller's `preserves(rN)` across a call only
+/// when the callee's OWN `preserves(rN)` is itself proven — by THIS SAME analysis,
+/// transitively resolved into the closure's verified `effective` map. There is no
+/// new fixpoint and no circular trust: the closure's monotone union fixpoint
+/// ([`crate::closure::compute_closure`]) has already folded every call CYCLE /
+/// SCC into `effective` conservatively (a member's effect is the union of the
+/// cycle's), so an in-cycle or unknown callee reads as "clobbers" and the caller
+/// stays conservative. `Oracle` consults `effective` through the EXACT convention
+/// [`find_dead_saves`] already uses ([`callee_clobbers`]) — ONE convention for
+/// "does this callee clobber rN?" across both the dead-save and preserve analyses.
+#[derive(Clone, Copy)]
+pub enum CallPolicy<'a> {
+    /// No callee-contract knowledge: every call clobbers every register. The
+    /// per-file byte gate's default (a callee there may be a synthetic,
+    /// contract-less stub). The pre-oracle behavior, and the closure SEED's
+    /// oracle-free base credit.
+    ClobberAll,
+    /// Every call preserves every register: the per-file byte gate's DEFER probe.
+    /// A register that verifies under this but NOT under `ClobberAll` is blocked
+    /// SOLELY by calls (no local sp/`.w`/direct-clobber hazard), so the byte gate
+    /// defers it to the corpus closure rather than erroring.
+    PreserveAll,
+    /// The closure's VERIFIED effective clobber map: a call to `callee` preserves
+    /// rN iff `!callee_clobbers(effective, callee, rN)`. An indirect/unresolved
+    /// target, an absent callee, a ⊤ effect, or a cycle member whose effect still
+    /// names rN all read as "clobbers" — conservative.
+    Oracle(&'a BTreeMap<String, RegEffect>),
+}
+
+/// Does a call to `callee` (`None` = indirect / unresolved target) provably
+/// PRESERVE register `r` under `policy`? The entry-value oracle for the call
+/// transfer (see [`CallPolicy`]).
+fn call_preserves(policy: &CallPolicy, callee: Option<&str>, r: Reg) -> bool {
+    match policy {
+        CallPolicy::ClobberAll => false,
+        CallPolicy::PreserveAll => true,
+        CallPolicy::Oracle(effective) => callee.is_some_and(|c| !callee_clobbers(effective, c, r)),
+    }
+}
+
 /// The proof outcome for one checked register.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PreserveStatus {
@@ -88,11 +142,7 @@ fn instr_size(items: &[CodeItem], idx: usize) -> Option<Width> {
 /// (`bit0=d0`..`bit7=d7`, `bit8=a0`..`bit15=a7` — the `CodeOperand::RegList`
 /// convention shared with `check_preserves`).
 pub(crate) fn expand_mask(mask: u16) -> Vec<Reg> {
-    const ORDER: [Reg; 16] = [
-        Reg::D0, Reg::D1, Reg::D2, Reg::D3, Reg::D4, Reg::D5, Reg::D6, Reg::D7,
-        Reg::A0, Reg::A1, Reg::A2, Reg::A3, Reg::A4, Reg::A5, Reg::A6, Reg::A7,
-    ];
-    (0..16).filter(|b| mask & (1 << b) != 0).map(|b| ORDER[b]).collect()
+    (0..16).filter(|b| mask & (1 << b) != 0).map(|b| REG_BY_IDX[b]).collect()
 }
 
 /// The `RegList` mask among a movem's operands, if any.
@@ -105,7 +155,11 @@ fn reglist_mask(ops: &[CodeOperand]) -> Option<u16> {
 
 /// Verify `preserves(rN)` for each register in `check` over a proc's evaluated
 /// CodeBuf `items`. One forward dataflow serves all checked registers.
-pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, PreserveStatus> {
+pub fn verify_preserved(
+    items: &[CodeItem],
+    check: &[Reg],
+    policy: CallPolicy,
+) -> BTreeMap<Reg, PreserveStatus> {
     let cfg = Cfg::build(items);
 
     // The first instruction is the entry point; a body with no instructions
@@ -187,7 +241,7 @@ pub fn verify_preserved(items: &[CodeItem], check: &[Reg]) -> BTreeMap<Reg, Pres
         // does NOT stop the dataflow — the path must still reach its terminator so
         // we can tell a returning bail from a diverging one.
         if !st.bailed {
-            if let Some(reason) = transfer(&cfg, idx, &mut st, items) {
+            if let Some(reason) = transfer(&cfg, idx, &mut st, items, &policy) {
                 st.bailed = true;
                 bail_reason.get_or_insert(reason);
             }
@@ -336,18 +390,31 @@ fn sp_hazard(ops: &[CodeOperand]) -> bool {
 
 /// Apply instruction `idx`'s effect to `st`. Returns `Some(reason)` on a
 /// soundness bailout.
-fn transfer(cfg: &Cfg, idx: usize, st: &mut State, items: &[CodeItem]) -> Option<String> {
+fn transfer(
+    cfg: &Cfg,
+    idx: usize,
+    st: &mut State,
+    items: &[CodeItem],
+    policy: &CallPolicy,
+) -> Option<String> {
     let (mnem, ops) = cfg.instr(idx)?;
     // Only a FULL (`.l`) transfer round-trips an address/data register; a `.w`/`.b`
     // restore moves or sign-extends a fragment and preserves nothing.
     let is_long = matches!(instr_size(items, idx), Some(Width::L));
 
-    // A call clobbers every register (no local callee contract) but nets zero on
-    // the stack (its pushed return address is popped by its own rts). It also ends
-    // linear-delta tracking for every register — the callee may set them to
-    // anything, so their values are no longer a static offset of entry.
+    // A call nets zero on the stack (its pushed return address is popped by its own
+    // rts) and always ends linear-delta tracking for every register (the callee may
+    // recompute them past what the delta model follows — conservative regardless of
+    // policy). Its effect on the ENTRY-value bits is the CALLEE-PRESERVES ORACLE
+    // ([`CallPolicy`]): a register the callee provably preserves keeps its entry
+    // bit; every other is clobbered.
     if is_call(mnem) {
-        st.entry = [false; 16];
+        let callee = call_target(ops);
+        for i in 0..16 {
+            if !call_preserves(policy, callee, REG_BY_IDX[i]) {
+                st.entry[i] = false;
+            }
+        }
         st.delta = [None; 16];
         return None;
     }

@@ -23,7 +23,9 @@ use crate::ast::{self, AsmStmt, ContractTypeDecl, ExternProcDecl, InstrLine, Ite
 use crate::calls::{check_input_undefined, check_live_clobbered, InputFiring, LiveClobberFiring};
 use crate::closure::{check_firings, compute_closure, Closure, Firing, ProcNode, RegEffect};
 use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring};
-use crate::lower::{expand_reglist_regs, proc_written_registers, verified_preserves_regs};
+use crate::lower::{
+    expand_reglist_regs, preserve_oracle_inputs, proc_written_registers, verified_preserves_regs,
+};
 use crate::out_verify::{check_out, compute_verified_outs, CondOutMap, OutFiring, UncondOutMap};
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
@@ -218,7 +220,51 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let contract_type_count = types.len();
     let proc_count = nodes.len();
 
-    let closure = compute_closure(&nodes, &types);
+    let mut closure = compute_closure(&nodes, &types);
+
+    // The callee-preserves ORACLE round (§5) — the transitive upgrade to each proc's
+    // oracle-FREE base verified-preserves. A proc that save/restores a register
+    // across a call to a callee the closure has proven preserves it (rN ∉
+    // effective(callee)) genuinely preserves rN, though the base (no-callee-knowledge)
+    // seed could not show it — the `TestChurnObj_Main` shape (pop a0, then a trailing
+    // `jsr DeleteObject` that itself `preserves(a0)`). Re-verify every declared
+    // `preserves` under the oracle built from the BASE effective map (the SAME map +
+    // `callee_clobbers` convention `find_dead_saves` reads). The credit is MONOTONE
+    // over the base: a preserving callee only REMOVES clobbers, so the recomputed
+    // effective can only shrink (final ⊆ base), and any base-proven preserves stays
+    // proven under the oracle — one round then a single closure recompute suffices,
+    // no outer fixpoint. Call CYCLES / unknown callees stay conservative (the closure
+    // fixpoint already folded SCCs into `effective`; the oracle reads them as
+    // clobber-all).
+    {
+        let base_effective = closure.effective.clone();
+        let mut upgraded = false;
+        for pb in &proc_bufs {
+            if pb.preserve_check.is_empty() {
+                continue;
+            }
+            let Some(node) = nodes.get_mut(&pb.name) else { continue };
+            if node.verified_preserves == pb.preserve_names {
+                continue; // already fully credited by the oracle-free base
+            }
+            let status = crate::preserves::verify_preserved(
+                &pb.buf.items,
+                &pb.preserve_check,
+                crate::preserves::CallPolicy::Oracle(&base_effective),
+            );
+            let all_verified = pb.preserve_check.iter().all(|r| {
+                matches!(status.get(r), Some(crate::preserves::PreserveStatus::Verified))
+            });
+            if all_verified {
+                node.verified_preserves = pb.preserve_names.clone();
+                upgraded = true;
+            }
+        }
+        if upgraded {
+            closure = compute_closure(&nodes, &types);
+        }
+    }
+
     let firings = check_firings(&nodes, &closure);
 
     // Callee contract maps shared by the caller-side checks (§6 invalid-path, D1b
@@ -584,6 +630,12 @@ struct ProcBuf {
     buf: CodeBuf,
     discarded: Vec<Span>,
     span: Span,
+    /// The callee-preserves oracle round's inputs (built once from the ProcDecl):
+    /// the declared `preserves` registers to re-verify under the closure oracle,
+    /// and the full declared set to credit iff all round-trip. Empty when the proc
+    /// declares no `preserves` (or a malformed one).
+    preserve_check: Vec<Reg>,
+    preserve_names: BTreeSet<String>,
 }
 
 /// The set of status flags a decl's `out(carry: name)` clauses name.
@@ -654,9 +706,17 @@ fn collect_items(
                 }
                 // Stash the CodeBuf + discard sites for the post-walk checks.
                 if let Some(buf) = buf {
+                    let (preserve_check, preserve_names) = preserve_oracle_inputs(p, &buf);
                     let mut discarded = Vec::new();
                     collect_discarded(&p.body, &mut discarded);
-                    proc_bufs.push(ProcBuf { name: p.name.clone(), buf, discarded, span: p.span });
+                    proc_bufs.push(ProcBuf {
+                        name: p.name.clone(),
+                        buf,
+                        discarded,
+                        span: p.span,
+                        preserve_check,
+                        preserve_names,
+                    });
                 }
             }
             Item::ExternProc(e) => {
