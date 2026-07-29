@@ -2355,7 +2355,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The particle_anims block: table word 0002, inline body 04 02 02 02 FB,
     // align pad 00 — shape-invariant content at the plain base.
     assert_eq!(
-        &rom[0x2576A..0x25772],
+        &rom[0x2574A..0x25752],
         &[0x00, 0x02, 0x04, 0x02, 0x02, 0x02, 0xFB, 0x00][..],
         "particle_anims block must match the reference bytes exactly (plain)"
     );
@@ -2363,7 +2363,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // The sonic_anims table head: eleven self-relative words starting at
     // 0x16 (the table's own size) — the ordinal order IS the ANIM_* ids.
     assert_eq!(
-        &rom[0x256FC..0x25704],
+        &rom[0x256DC..0x256E4],
         &[0x00, 0x16, 0x00, 0x20, 0x00, 0x26, 0x00, 0x30][..],
         "sonic_anims table head must match the reference bytes exactly (plain)"
     );
@@ -2374,7 +2374,7 @@ fn mixed_tranche4_rom_matches_assembled_reference() {
     // table (base + 0x22); pin-spliced so it tracks the pin on a ROM shift (t12).
     let ad = pins::ACT_DESCRIPTOR.plain_base + 0x22;
     assert_eq!(
-        &rom[0x14B4A..0x14B52],
+        &rom[0x14B2A..0x14B32],
         &[(ad >> 24) as u8, (ad >> 16) as u8, (ad >> 8) as u8, ad as u8, 0x00, 0x03, 0x00, 0x03][..],
         "act_descriptor head must match the reference bytes exactly (plain)"
     );
@@ -2683,9 +2683,9 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
     // `jmp (Draw_Sprite).w` at its plain VMA $296C (slid −4 in the
     // tranche-10 core shrink; last two bytes track DRAW_SPRITE).
     assert_eq!(
-        &rom[0x10F6A..0x10F78],
+        &rom[0x10F4A..0x10F58],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x74, 0x4E, 0xF8,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x54, 0x4E, 0xF8,
             (pins::DRAW_SPRITE.plain >> 8) as u8, pins::DRAW_SPRITE.plain as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (plain)"
@@ -2698,7 +2698,7 @@ fn mixed_tranche6_rom_matches_assembled_reference() {
     // region base; pin-spliced so it tracks the pin on a ROM shift (tranche-12).
     let pa = pins::PARTICLE_ANIMS.plain_base;
     assert_eq!(
-        &rom[0x10F78..0x10F80],
+        &rom[0x10F58..0x10F60],
         &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (plain)"
     );
@@ -2727,9 +2727,9 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
     let rom = build_mixed_tranche6_rom(&aeon, true);
 
     assert_eq!(
-        &rom[0x10F6A..0x10F78],
+        &rom[0x10F4A..0x10F58],
         &[
-            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x74, 0x4E, 0xF8,
+            0x11, 0x68, 0x00, 0x19, 0x00, 0x23, 0x30, 0xBC, 0x0F, 0x54, 0x4E, 0xF8,
             (pins::DRAW_SPRITE.debug >> 8) as u8, pins::DRAW_SPRITE.debug as u8,
         ][..],
         "test_solid block must match the reference bytes exactly (debug)"
@@ -2738,7 +2738,7 @@ fn mixed_tranche6_debug_rom_matches_assembled_reference() {
     // `move.l #Ani_Particle,anim_table(a0)` — imm32 = particle_anims base, pin-spliced (t12).
     let pa = pins::PARTICLE_ANIMS.debug_base;
     assert_eq!(
-        &rom[0x10F78..0x10F80],
+        &rom[0x10F58..0x10F60],
         &[0x21, 0x7C, (pa >> 24) as u8, (pa >> 16) as u8, (pa >> 8) as u8, pa as u8, 0x00, 0x1A][..],
         "test_particle block head must match the reference bytes exactly (debug)"
     );
