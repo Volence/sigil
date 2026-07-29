@@ -852,6 +852,32 @@ pub fn assemble_mixed_tranche24_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 29 (game-side G1): the full AS-side game with `SIGIL_EMP_TEST_STATIC`
+/// + `SIGIL_EMP_TEST_ANIMATED` on — main.asm skips test_static.asm/test_animated.asm
+/// and org-resumes at the per-shape (shape-invariant) `$10C6A` / `$10CC4` bank
+/// addresses; the two `.emp` modules fill the windows. Shared anchor: `TestPlayer`
+/// is test_animated's gate end AND the next object's start, so with both includes
+/// gated out the AS side must still land `TestPlayer` at its canonical address.
+/// The `.asm → .emp` caller class: `ObjDef_Static`'s `dc.w objroutine(TestStatic_Main)`
+/// (data/objdefs/test_objects.asm) and the object-test harness `TestAnimated`
+/// spawn word resolve against the `.emp` exports. The DplcV overlay's AS truth
+/// (`_dplc_ptr`/`_art_base`) is defined by the surviving test_player.asm.
+pub fn assemble_mixed_tranche29_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_TEST_STATIC".to_string(), 1),
+        ("SIGIL_EMP_TEST_ANIMATED".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche29 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included

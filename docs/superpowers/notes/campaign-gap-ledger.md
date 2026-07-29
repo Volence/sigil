@@ -1662,3 +1662,25 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   BOTH, `vram_art` moving out of objdef.emp then (a byte-neutral import sweep of
   objdef.emp / rings.emp / test_objects.emp). LOG-ONLY (LEAN); not built this
   tranche.
+
+### t29 panel (A1) — two corpus-wide type-layer candidates (LEDGER, not t29 changes)
+
+- **`objroutine(label) -> ObjRoutine` typed constructor (item-13 candidate).** Panel
+  A1 noticed the asymmetry: test_animated types its VRAM values through constructors
+  (vram_art→VramArtTile, the new vram_bytes→VramAddr) but stores the dispatch word as
+  raw arithmetic `#TestAnimated_Main - ObjCodeBase` into the `ObjRoutine`-typed
+  code_addr field — defeating the "never arithmetic" newtype at the one store that
+  matters. This is CORPUS-WIDE, not t29-local: test_solid.emp:22 / test_particle.emp:35
+  (the shipped siblings) inline the identical difference, and the inline was the
+  deliberate C1 ruling (bare label-difference over a helper). An `objroutine(l) ->
+  ObjRoutine` comptime fn (parallel to vram_art) would type the construction, but it
+  is a corpus-wide sweep (every object module) that REVERSES the C1 inline decision —
+  so it is a step-6-class corpus retrofit + a design call, not a t29 file change.
+  LEDGERED as the item-13 ObjRoutine-construction candidate; reconciles the A1
+  asymmetry finding.
+- **AnimId / MappingFrame `$FF` spawn sentinel as a named const (item-13, low pri).**
+  test_animated stores `#$FF` into prev_anim (AnimId) / prev_frame (MappingFrame) as
+  the "no previous / force refresh" sentinel (documented in sst.emp). Same in every
+  shipped object (test_particle.emp). A named `AnimId`/`MappingFrame` "none" const
+  would name the sentinel, but A1 itself flags it as near-ceremony under the LEAN bar,
+  and it is corpus-wide (not t29-local). LEDGERED, low priority; not built.
