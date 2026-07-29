@@ -1766,7 +1766,13 @@ impl Parser {
             return Some(self.asm_assert());
         }
         if self.at_kw("raise_error") {
-            return Some(self.asm_raise_error());
+            return Some(self.asm_raise_error(false));
+        }
+        // `raise_exception "<fstring>" [, <flag>]...` (t25): the exception-vector
+        // counterpart. Same parse shape as `raise_error` (the frame-omit is a
+        // lowering concern); the keyword is what distinguishes the two AST nodes.
+        if self.at_kw("raise_exception") {
+            return Some(self.asm_raise_error(true));
         }
         // statement-position `{expr}` Code-splice (2026-07-11 mini-spec): a
         // hole whose expr yields Code, inlined at eval. `{` at statement
@@ -1895,37 +1901,90 @@ impl Parser {
         lc
     }
 
-    /// Parse `raise_error "<fstring>"` (diagnostics construct, spec §4.1). The
-    /// leading `raise_error` is confirmed by the caller. Takes EXACTLY ONE
-    /// string literal; a second argument (the `consoleprogram` form) is a
-    /// steering error naming the single-string shape as out of scope (spec §5).
-    fn asm_raise_error(&mut self) -> AsmStmt {
+    /// Parse `raise_error` / `raise_exception` `"<fstring>" [, <flag>]...`
+    /// (diagnostics construct, spec §4.1 + t25 options form). The leading keyword
+    /// is confirmed by the caller; `exception` selects which AST node (the
+    /// frame-omit is a lowering concern). Takes ONE string literal, then an
+    /// OPTIONAL trailing list of error-handler flag names. A trailing comma whose
+    /// first token is NOT a known flag is the out-of-scope `consoleprogram` form
+    /// (spec §5) and keeps its steering error.
+    fn asm_raise_error(&mut self, exception: bool) -> AsmStmt {
+        let kw = if exception { "raise_exception" } else { "raise_error" };
         let start = self.span();
-        self.bump(); // `raise_error`
+        self.bump(); // the keyword
         let fstring = if let Tok::Str(s) = self.peek().clone() {
             self.bump();
             s
         } else {
             let span = self.span();
-            self.diag_at(span, "expected a format string after `raise_error`");
+            self.diag_at(span, format!("expected a format string after `{kw}`"));
             String::new()
         };
-        // A trailing `,` opens the out-of-scope `consoleprogram` form (spec §5).
+        let mut opts: u8 = 0;
+        // Optional trailing options-form: `, <flag> [, <flag>]...`. The FIRST
+        // token after the comma disambiguates from the out-of-scope
+        // `consoleprogram` form: a known flag name → options form; anything else
+        // (a program label, etc.) → the retained steering error.
         if self.at(&Tok::Comma) {
-            let span = self.span();
-            self.diag_at(
-                span,
-                "`raise_error` takes exactly one string; the `consoleprogram` \
-                 two-argument form is out of scope",
-            );
-            // Swallow the rest of the line so recovery stays in step.
-            while !matches!(self.peek(), Tok::Newline | Tok::RBrace | Tok::Eof) {
-                self.bump();
+            // Peek the token after the comma without consuming, to classify.
+            let first_is_flag = matches!(self.peek_at(1), Tok::Ident(n)
+                if crate::eval::diag::is_known_flag_name(n));
+            if first_is_flag {
+                while self.at(&Tok::Comma) {
+                    self.bump(); // ','
+                    let flag_span = self.span();
+                    if let Tok::Ident(name) = self.peek().clone() {
+                        self.bump();
+                        match crate::eval::diag::resolve_error_flag(&name) {
+                            Some(bits) => opts |= bits,
+                            None => {
+                                let accepted: Vec<&str> = crate::eval::diag::ERROR_FLAGS
+                                    .iter()
+                                    .map(|(n, _)| *n)
+                                    .collect();
+                                let reason = if crate::eval::diag::is_known_flag_name(&name) {
+                                    // A real donor flag we do not expose per-site
+                                    // (global config / C-project — see ERROR_FLAGS).
+                                    "is not a per-site error-handler flag"
+                                } else {
+                                    "is not a known error-handler flag"
+                                };
+                                self.diag_at(
+                                    flag_span,
+                                    format!(
+                                        "flag `{name}` {reason} — accepted per-site flags: {}",
+                                        accepted.join(", ")
+                                    ),
+                                );
+                            }
+                        }
+                    } else {
+                        self.diag_at(flag_span, format!("expected a flag name after `,` in `{kw}`"));
+                        break;
+                    }
+                }
+            } else {
+                let span = self.span();
+                self.diag_at(
+                    span,
+                    format!(
+                        "`{kw}` takes a string and an optional error-handler flag list; \
+                         the `consoleprogram` two-argument form is out of scope"
+                    ),
+                );
+                // Swallow the rest of the line so recovery stays in step.
+                while !matches!(self.peek(), Tok::Newline | Tok::RBrace | Tok::Eof) {
+                    self.bump();
+                }
             }
         }
         let span = start.merge(self.prev_span());
         self.expect_line_end_or_rbrace();
-        AsmStmt::RaiseError { fstring, span }
+        if exception {
+            AsmStmt::RaiseException { fstring, opts, span }
+        } else {
+            AsmStmt::RaiseError { fstring, opts, span }
+        }
     }
 
     /// Parse one operand AND recover its VERBATIM source spelling (spec §4.4 —

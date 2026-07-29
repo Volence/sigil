@@ -385,8 +385,11 @@ impl Evaluator<'_> {
                 };
                 self.lower_assert(&parts, *span, scope, buf, env);
             }
-            AsmStmt::RaiseError { fstring, span } => {
-                self.lower_raise_error(fstring, *span, scope, buf, env);
+            AsmStmt::RaiseError { fstring, opts, span } => {
+                self.lower_raise_error(fstring, *opts, /*from_exception=*/ false, *span, scope, buf, env);
+            }
+            AsmStmt::RaiseException { fstring, opts, span } => {
+                self.lower_raise_error(fstring, *opts, /*from_exception=*/ true, *span, scope, buf, env);
             }
         }
     }
@@ -467,14 +470,20 @@ impl Evaluator<'_> {
         }
     }
 
-    /// Lower a `raise_error` (spec §4.3): NO DEBUG gate, NO cmp/branch/CCR
-    /// wrapper — just the steps 4-10 tail with the user's fstring. Arg pushes
-    /// are generated in REVERSE token order (matching
-    /// `__FSTRING_GenerateArgumentsCode`); each arg operand is limited to a
-    /// register or immediate (§5), else a steering error.
+    /// Lower a `raise_error` (spec §4.3) or `raise_exception` (t25): NO DEBUG
+    /// gate, NO cmp/branch/CCR wrapper — just the raise tail with the user's
+    /// fstring. `from_exception` selects the frame-omit (`raise_exception` = the
+    /// CPU-vectored `__ErrorMessage` shape, no `pea`/`move.w sr`); `opts` folds
+    /// the options-form flag bits into the exit-flag byte. Arg pushes are
+    /// generated in REVERSE token order (matching `__FSTRING_GenerateArgumentsCode`);
+    /// each arg operand is limited to a register or immediate (§5), else a
+    /// steering error.
+    #[allow(clippy::too_many_arguments)]
     fn lower_raise_error(
         &mut self,
         fstring: &str,
+        opts: u8,
+        from_exception: bool,
         span: Span,
         scope: &LabelScope,
         buf: &mut CodeBuf,
@@ -493,10 +502,11 @@ impl Evaluator<'_> {
         for arg in encoded.args.iter().rev() {
             let Some(operand) = crate::eval::diag::fstring_arg_operand(&arg.operand_spelling, span)
             else {
+                let kw = if from_exception { "raise_exception" } else { "raise_error" };
                 self.error(
                     span,
                     format!(
-                        "raise_error argument `{}` must be a register or immediate in v1 \
+                        "{kw} argument `{}` must be a register or immediate in v1 \
                          (§5) — a memory/EA operand arg is a recorded extension",
                         arg.operand_spelling
                     ),
@@ -505,16 +515,23 @@ impl Evaluator<'_> {
             };
             arg_pushes.extend(crate::eval::diag::arg_push(arg.width, operand, span));
         }
-        let n = self.asm_counter;
-        self.asm_counter += 1;
-        let diag_scope = self.diag_label_scope();
-        let stmts = crate::eval::diag::build_raise_error_expansion(
-            n,
-            &diag_scope,
-            &encoded.bytes,
-            arg_pushes,
-            span,
-        );
+        let stmts = if from_exception {
+            // The exception form mints no self-label (no `pea self(pc)`), so it
+            // needs no instantiation id.
+            crate::eval::diag::build_raise_exception_expansion(&encoded.bytes, arg_pushes, opts, span)
+        } else {
+            let n = self.asm_counter;
+            self.asm_counter += 1;
+            let diag_scope = self.diag_label_scope();
+            crate::eval::diag::build_raise_error_expansion(
+                n,
+                &diag_scope,
+                &encoded.bytes,
+                arg_pushes,
+                opts,
+                span,
+            )
+        };
         for stmt in &stmts {
             self.lower_asm_stmt(stmt, scope, buf, env);
         }
