@@ -4,7 +4,7 @@ Status: **CHECKPOINT (b) — STOPPED for overseer gate (c).** Step-1 countersign
 packet closes the 2→(3→4→5)→panel loop. Byte movement ZERO, STOP-not-absorb held. Gate (c), the
 rebase, and the merge are the overseer's.
 
-Tips (continuation): aeon `port-tranche37` @ `7c9bbd5` · sigil `port-tranche37` @ `<this commit>`. Masters
+Tips (continuation): aeon `port-tranche37` @ `7c9bbd5` · sigil `port-tranche37` @ `aecb7e6` (+ this tip fix). Masters
 still sigil `103a4a7` / aeon `1cbd4fd` (the overseer executes the rebase onto the post-hoist-ambient
 masters at the gate — NOT rebased here per standing practice).
 
