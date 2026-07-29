@@ -177,12 +177,14 @@ fn is_return(mnem: &str) -> bool {
 /// (`ld sp,…` / `inc sp` / `dec sp` / `add hl,sp`-into-sp — replaces or
 /// recomputes the stack pointer). The clean stack forms are `push`/`pop` only.
 fn sp_hazard(mnem: &str, ops: &[CodeOperand]) -> bool {
-    // `ex (sp), rr` — the top-of-stack swap.
-    if mnem == "ex" && ops.iter().any(|o| matches!(o, CodeOperand::Z80IndHl)) {
-        // NOTE: `(sp)` is not a distinct CodeOperand today; the sequencer
-        // trampoline spelling arrives with rung 3. Represented via the doc — a
-        // real `ex (sp),hl` operand form lands then and routes here.
-        return false;
+    // `ex (sp),hl` / `ex (sp),ix` — the top-of-stack swap (the rung-3 sequencer
+    // trampoline: `push hl` + `ex (sp),hl` + `ret` = a computed dispatch through
+    // the return address). The distinct `Z80IndSp` operand (t36) lands here so the
+    // swap is a REPRESENTED loud bail — the pushed slot becomes the jump target
+    // and `ret` leaves this proc's linear extent, so no `preserves` may be
+    // credited past it except a module-invariant unit (see the verdict tightening).
+    if mnem == "ex" && ops.iter().any(|o| matches!(o, CodeOperand::Z80IndSp)) {
+        return true;
     }
     // A direct write to `sp` that is not a push/pop.
     match mnem {
@@ -217,10 +219,15 @@ struct State {
 pub fn verify_z80_preserved(
     items: &[CodeItem],
     check: &[String],
+    invariant_regs: &[String],
     callee_map: &CalleePreserves,
 ) -> BTreeMap<String, PreserveStatus> {
     let checked: Vec<(String, usize)> =
         check.iter().filter_map(|n| unit_idx(n).map(|i| (n.clone(), i))).collect();
+    // The module-invariant unit set (t36): the ONLY units creditable past a loud
+    // bail, because the invariant is machine-checked on every module proc incl.
+    // every dispatch target the bail transfers into.
+    let invariant_units: Vec<usize> = invariant_regs.iter().filter_map(|n| unit_idx(n)).collect();
 
     let cfg = Cfg::build(items);
     let Some(entry_idx) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) else {
@@ -357,10 +364,24 @@ pub fn verify_z80_preserved(
         .map(|(name, i)| {
             let status = if !saw_return {
                 PreserveStatus::Verified
-            } else if bailed_reached_return && ever_clobbered[*i] {
-                PreserveStatus::Unverifiable(
-                    bail_reason.clone().unwrap_or_else(|| "unverifiable stack".to_string()),
-                )
+            } else if bailed_reached_return {
+                // TIGHTENED (t36 ruling iii): once ANY bailed path reaches a return,
+                // the `ret` continues execution INSIDE the caller-observed extent (the
+                // trampoline dispatches into handler procs; an `ld sp` recomputes the
+                // frame). A unit may be credited Verified ONLY if it is (a) never
+                // written locally AND (b) in the module-invariant set — the invariant
+                // is machine-checked on EVERY module proc including all dispatch
+                // targets, so whatever the bail transfers into preserves it
+                // (verification-grade, not local optimism). Every OTHER unit — incl. a
+                // locally-untouched NON-invariant register (the silent-Verified hole a
+                // handler could clobber) — is loudly Unverifiable, naming the bail.
+                if !ever_clobbered[*i] && invariant_units.contains(i) {
+                    PreserveStatus::Verified
+                } else {
+                    PreserveStatus::Unverifiable(
+                        bail_reason.clone().unwrap_or_else(|| "unverifiable stack".to_string()),
+                    )
+                }
             } else if all_returns_preserve[i] {
                 PreserveStatus::Verified
             } else {

@@ -526,6 +526,12 @@ pub enum CodeOperand {
     Z80IndBc,
     /// `(de)` — rung 3.
     Z80IndDe,
+    /// `(sp)` — the top-of-stack indirect, produced ONLY for `ex (sp),hl`/
+    /// `ex (sp),ix` (the rung-3 sequencer trampoline). Kept DISTINCT from a bare
+    /// `Z80Pair::Sp` so the preserve model (`z80_preserves::sp_hazard`) recognises
+    /// the top-of-stack swap as a loud bail; it LOWERS to the ISA `Pair(Sp)` arm
+    /// that already golden-encodes `ex (sp),hl` → `$E3` (byte-neutral).
+    Z80IndSp,
     /// `(ix+d)` / `(iy+d)`, `disp` range-checked to i8 at map time (§3) — rung 2.
     Z80Indexed {
         /// The index register.
