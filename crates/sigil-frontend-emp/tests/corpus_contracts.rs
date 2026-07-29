@@ -379,6 +379,7 @@ fn closure_fires_when_trailing_callee_clobbers() {
          }\n",
     ]);
     assert!(fires(&r, "Caller", "a0"), "a clobbering trailing callee must fire on the caller: {:?}", r.firings);
+}
 
 // ---------------------------------------------------------------------------
 // rung-2 §13.3 sub-part 3 — the Z80 cross-proc caller-must-consume flag check.

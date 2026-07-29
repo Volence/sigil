@@ -808,6 +808,11 @@ fn collect_z80_flag_procs(
                         buf,
                         discarded,
                         span: p.span,
+                        // Z80 preserves are proven by the z80_preserves sibling,
+                        // not the 68k callee-preserves oracle: empty inputs make
+                        // the oracle round skip this buf (preserve_check empty).
+                        preserve_check: Vec::new(),
+                        preserve_names: std::collections::BTreeSet::new(),
                     });
                 }
             }
