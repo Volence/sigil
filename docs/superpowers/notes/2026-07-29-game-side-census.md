@@ -7,6 +7,37 @@ pins/listings only — every claim needing a build is tagged **PORTER-VERIFY**).
 the real trees; the 2026-07-29 t26-close-packet's three framing corrections and its
 one OVERRULED census claim (the `$55A4` listing-echo trap) are folded in below.
 
+**STATUS AMENDMENT (2026-07-29, t39 checkpoint (b) — `2026-07-29-t39-checkpoint-b-packet.md`; close packet at merge): THE
+OBJECT BANK IS ALL-.EMP.** The final three object files (`test_enemy.emp` +
+`test_player.emp` + `path_swap.emp`) are ported; all 11 objects in
+`gameObjectBankIncludes` (test_static/test_animated/test_enemy/test_player/test_solid/
+test_particle/test_emitter/test_parent/test_stress_emitter/test_churn/path_swap) plus
+the 6-file player cluster are now `.emp`. Byte-delta ZERO both shapes (plain
+4b66cace/421041 · debug 1c256b3b/429102 UNCHANGED); strict 2862/0 (1 ignored) + 6 new
+gate tests. The 68k GAME SIDE now has only T1 (object_test_state + ojz_scroll_test,
+the debug-divergent harness states) + main.asm (manifest) + the 4-file config cluster
+(Spec-5 flip) remaining. Corrections this census owes (the census is now 0-for-5 t3x
+tranches on being fully right — every tranche has overturned rows; the recon step
+earns its keep, and the POST-TWIN retrospect inherits a census-refresh duty):
+1. **§3a test_enemy cross-seam** was "Draw_Sprite, ObjectMove, TouchResponse" — WRONG.
+   Tree: `ObjectMoveX` + `Draw_Sprite` (no TouchResponse, no ObjectMove).
+2. **§3a test_player** was "3 asserts → ensure … sensors, Sound_PlaySFX". WRONG on both:
+   ZERO asserts, ZERO Sound_PlaySFX. It uses its own DplcV/TPlayerV overlay (NOT
+   PlayerV — the brief's "PlayerV import" premise is false); callees ObjectMove /
+   Player_SensorFloor (module-to-module) / AnimateSprite / Perform_DPLC / Draw_Sprite.
+3. **§3a path_swap cross-seam** was "Draw_Sprite, section calls". WRONG: NO section
+   calls (Draw_Sprite + Player_1 RAM + raise_error). It touches no VDP/DMA/bus and
+   makes no hardware claims → the "shape-dependent, VDP-adjacent" framing overstated;
+   C3 is a flagged-inactive lens for it (gate-accepted).
+4. **§3a "test_player is a 2nd overlay consumer"** understated the gate mechanics:
+   test_player.asm needs an INTERNAL gate (t34 keystone) — its zero-byte DplcV/TPlayerV
+   header feeds test_animated.emp's guards; and test_enemy.asm ALSO needs an internal
+   gate (its ENEMY_PATROL_SPEED equate feeds test_objects.emp's objdef guard — a
+   dependency the census did not flag).
+5. **path_swap is the object bank's FIRST shape-dependent gate** ($92 plain / $FA
+   debug) with PER-SHAPE resume orgs — a new ripple surface the census's "shape-
+   invariant bank" framing did not carry.
+
 **STATUS AMENDMENT (2026-07-29, t31 close — `2026-07-29-t31-close-packet.md`):**
 G3 is PORTED (`test_parent.emp` + the pre-ruled SpawnDesc hoist to children.emp).
 The FIRST byte-moving game-side wave: a step-5 optimization cut −12 B/shape (dead
