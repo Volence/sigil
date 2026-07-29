@@ -4896,7 +4896,6 @@ fn build_mixed_tranche34_rom(aeon: &Path, debug: bool) -> Vec<u8> {
 }
 
 #[test]
-#[ignore = "t34 mixed whole-ROM gate: player_common.emp's ~30 local-label branches resolve to op+2 (displacement 0) when its section is linked alongside the full AS module — the windowed byte gates (test_p1_player_port, both shapes) + the gate-off dual-build identity are the byte-identity proof meanwhile. Under overseer investigation (combined-link .emp local-label PcRel8 resolution; sec66642)."]
 fn mixed_tranche34_rom_matches_assembled_reference() {
     let aeon = aeon_dir();
     let rom_path = aeon.join("s4.bin");
@@ -4912,7 +4911,6 @@ fn mixed_tranche34_rom_matches_assembled_reference() {
 }
 
 #[test]
-#[ignore = "t34 mixed whole-ROM gate: player_common.emp's ~30 local-label branches resolve to op+2 (displacement 0) when its section is linked alongside the full AS module — the windowed byte gates (test_p1_player_port, both shapes) + the gate-off dual-build identity are the byte-identity proof meanwhile. Under overseer investigation (combined-link .emp local-label PcRel8 resolution; sec66642)."]
 fn mixed_tranche34_debug_rom_matches_assembled_reference() {
     let aeon = aeon_dir();
     let rom_path = aeon.join("s4.debug.bin");
