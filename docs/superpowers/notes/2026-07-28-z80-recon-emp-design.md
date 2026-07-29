@@ -198,7 +198,9 @@ Z80 code, 68k code, AND Python tools.
 - The idle program (38 L, one self-modifying store — it's just `ld (hl),$E9` as data
   bytes; no SMC "feature" needed).
 
-## 5. Proposed port ladder (re-derivation of "T1/T2/T3", pending Volence's restatement)
+## 5. THE port ladder (RULED 2026-07-28: Volence does not recall the original T1/T2/T3
+## jot and delegated to the overseer's judgment — this re-derivation IS the ladder now;
+## the t23-brief jot is superseded)
 
 All rungs byte-identical under the standard gates; the blob-precedes-engine rule makes
 ANY byte movement a whole-corpus re-baseline, so expected byte movement at every rung
@@ -219,17 +221,26 @@ is ZERO (nonzero = STOP, not absorb — the t25 rule).
   feature (or an explicit verbatim-pin policy if we ship without it), the standing-
   invariant contract, and the vector-gap/even-pad mechanics all in place first.
 
-## 6. Open questions for Volence
-1. Restate (or bless the §5 re-derivation of) the T1/T2/T3 ladder jot from 2026-07-24.
-2. Is comptime T-state accounting (§4.3) wanted as a language feature, or is
-   verbatim-pin + byte gates enough for the driver port? (Recommend: build the
-   straight-line accounting; it's the feature that makes the driver port safe to ever
-   touch again post-twin-retirement.)
-3. Module-scope standing-invariant contracts (§4.2) — new contract class, or spell
-   them as per-proc preserves + prose?
-4. Timing of the whole campaign: after t25 the engine 68k backlog is empty; does the
-   Z80 arc slot before or after the game-side ~10 files? (The sigil-side T1 operand
-   work conflicts with nothing and can start any time on its own branch.)
+## 6. Open questions for Volence — ALL FOUR RULED 2026-07-28 (Volence delegated:
+## "I'll trust your takes"; overseer recommendations adopted as rulings)
+1. ~~Restate (or bless the §5 re-derivation of) the T1/T2/T3 ladder jot from
+   2026-07-24.~~ **RULED: the §5 re-derivation IS the ladder** (Volence does not
+   recall the original tiers; the jot is superseded).
+2. ~~Is comptime T-state accounting (§4.3) wanted as a language feature?~~ **RULED:
+   BUILD IT, straight-line + single-path scope ONLY** — the feature that makes the
+   driver safe to touch post-twin-retirement; whole-CFG cycle bounds stay explicitly
+   out of scope (research project, do not promise).
+3. ~~Module-scope standing-invariant contracts — new contract class or prose?~~
+   **RULED: NEW CONTRACT CLASS** (module-scope `invariant`, inherited by every proc
+   in the module as an implicit preserves unless re-established) — the de=$4001 /
+   reg-$2A / ix-preserved-everywhere prose contracts are exactly the footgun class
+   the language exists to remove. Surface design lands with the rung-2 files that
+   demand it, TDD'd, not before.
+4. ~~Z80 arc before or after the game-side ~10 files?~~ **RULED: BOTH, split-stream**
+   — game-side port tranches continue next (proven machinery, keeps the cadence);
+   the sigil-side T1 operand-model work starts in PARALLEL on its own branch (it
+   conflicts with nothing and gates every Z80 rung). The streams meet when T1 is
+   done and rung 1 (satellites) can start.
 
 ## 7. Sources
 Agent surveys 2026-07-28 over aeon main checkout (corpus, `sound_constants.asm`,
