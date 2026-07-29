@@ -194,6 +194,62 @@ fn symbolic_ld_hl_links_little_endian() {
     assert_eq!(section_bytes(&module, "code"), vec![0x21, 0x34, 0x12, 0xC9]);
 }
 
+// ---- item 4: the module `(cpu: z80)` attribute (§5) ------------------------
+
+/// (a) `module m in s (cpu: z80)` lowers its top-level (default-section) code as
+/// Z80 — the module attribute seeds `initial_cpu`, so a top-level proc's Z80
+/// mnemonics encode without any per-section `(cpu:)`.
+#[test]
+fn module_cpu_z80_lowers_top_level_as_z80() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() {\n\
+                 ld a, 5\n\
+                 ret\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(diags.is_empty(), "lower: {diags:?}");
+    assert_eq!(section_bytes(&module, "s"), vec![0x3E, 0x05, 0xC9]);
+}
+
+/// (b) a `(cpu: z80)` module that opens a `(cpu: m68000)` section is the
+/// `[module.cpu-mismatch]` error naming both CPUs.
+#[test]
+fn module_cpu_z80_opening_m68000_section_mismatches() {
+    let src = "module m (cpu: z80)\n\
+               section blk (cpu: m68000, vma: $0) {\n\
+                 data X: u8 = 0\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("[module.cpu-mismatch]")
+            && d.message.contains("z80")
+            && d.message.contains("m68000")),
+        "expected a module.cpu-mismatch naming both CPUs, got: {diags:?}"
+    );
+}
+
+/// (c) an OMITTED module attribute defaults to M68000 with no warn — so a Z80
+/// mnemonic under it stays unrecognized on the existing loud 68k path (NOT a
+/// silent lower, NOT a `[lower.z80-unsupported]`).
+#[test]
+fn module_no_cpu_attr_defaults_m68000_and_z80_mnemonic_is_unrecognized() {
+    let src = "module m\n\
+               proc P() {\n\
+                 ld a, 5\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        diags.iter().any(|d| d.message.contains("not a recognized 68000 mnemonic")),
+        "expected the existing 68k unrecognized-mnemonic error, got: {diags:?}"
+    );
+    // And no misfired default warn about the omitted attribute.
+    assert!(
+        !diags.iter().any(|d| d.message.contains("cpu-mismatch")
+            || d.message.to_lowercase().contains("module cpu")),
+        "an omitted module (cpu:) must not warn: {diags:?}"
+    );
+}
+
 /// `jp Label` also defers its 16-bit target through the same `Value16Le` path
 /// (the immediate is the last 2 bytes of `C3 nn nn`).
 #[test]

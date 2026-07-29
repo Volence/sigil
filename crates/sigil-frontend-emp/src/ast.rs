@@ -58,6 +58,12 @@ pub struct ModuleDecl {
     pub path: Path,
     /// `module x.y in obj_bank` — the section this module's code belongs to.
     pub in_section: Option<String>,
+    /// `module x.y (cpu: z80)` — the module attribute list (T1, §5). Only the
+    /// `cpu:` key is read today (it seeds the module's default-section CPU);
+    /// this is the ONE forward-compatible slot a later rung's module-scope
+    /// `invariant(de)` etc. attaches to. `(key, value)` pairs, section-attr
+    /// shape.
+    pub attrs: Vec<(String, Expr)>,
     /// Span of the whole declaration.
     pub span: Span,
 }

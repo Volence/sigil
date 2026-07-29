@@ -359,15 +359,31 @@ impl Parser {
             return ModuleDecl {
                 path: Path { segments: vec!["<error>".into()], span: start },
                 in_section: None,
+                attrs: Vec::new(),
                 span: start,
             };
         }
         let path = self.path();
         let in_section = if self.eat_kw("in") { Some(self.expect_ident("section name")) } else { None };
+        // Optional `(cpu: z80, …)` attribute list (T1, §5) — the same
+        // `( name: expr, … )` shape a `section` header uses.
+        let mut attrs = Vec::new();
+        if self.eat(&Tok::LParen) {
+            if !self.at(&Tok::RParen) {
+                loop {
+                    let aname = self.expect_ident("attribute name");
+                    self.expect(&Tok::Colon, "`:`");
+                    attrs.push((aname, self.expr()));
+                    if !self.eat(&Tok::Comma) { break; }
+                    if self.at(&Tok::RParen) { break; } // trailing comma
+                }
+            }
+            self.expect(&Tok::RParen, "`)`");
+        }
         // Span computed before the line end so the newline isn't included.
         let span = start.merge(self.prev_span());
         self.expect_line_end();
-        ModuleDecl { path, in_section, span }
+        ModuleDecl { path, in_section, attrs, span }
     }
 
     fn path(&mut self) -> Path {
