@@ -328,6 +328,22 @@ impl<'a> Evaluator<'a> {
                 // introduces a first-class Option value.
                 "none" => Value::Unit,
                 name => {
+                    // A leading-`.` single-segment path is a proc-LOCAL label
+                    // reference that reached expression-INTERIOR evaluation. The
+                    // operand grammar spells an operand-LEADING `.local` as this
+                    // raw `Path[".name"]` (the expression grammar can't OPEN with
+                    // a `.local` atom), whereas an interior `.local` is already an
+                    // `Expr::LocalLabel`. Route BOTH through the same
+                    // owner-mangling so a leftmost `.x + 1` resolves and is tracked
+                    // for loudness IDENTICALLY to the interior `1 + .x` (ledger row
+                    // 1610 — the leftmost-local-label asymmetry; without this the
+                    // leftmost form minted a raw, unresolvable `Value::Label(".x")`).
+                    // A dotted name can never be an env var / const / fn, so this
+                    // short-circuit shadows nothing. `eval_local_label` owns the
+                    // enclosing-proc / label-context checks and the loudness push.
+                    if let Some(stripped) = name.strip_prefix('.') {
+                        return self.eval_local_label(stripped, path.span);
+                    }
                     // Precedence (D2.12): local binding → file const → fn-ref.
                     // A bare `comptime fn` name becomes a first-class `FnRef` so
                     // it can be passed as a value (`xs.map(band_entry)`); env

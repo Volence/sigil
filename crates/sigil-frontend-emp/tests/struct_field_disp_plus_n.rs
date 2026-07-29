@@ -12,7 +12,10 @@
 //! name `Act.grid_w`"). The `.field`-access sugar only special-cases a BARE
 //! `Struct.field(An)` displacement (see `bare_field_disp_is_the_offset_control`),
 //! not one wrapped in arithmetic. The parenthesized `(Struct.field + 1)(An)` form
-//! does not parse (`(disp)(An)` is not a displacement grammar).
+//! now PARSES (t28 P2 taught `(disp)(An)` the wrapped-displacement grammar) but
+//! still does NOT compose — it lowers with the same "unknown name `Act.grid_w`"
+//! (the `.field`-in-arithmetic gap this note records is a LOWERING gap, not the
+//! parse gap P2 closed).
 //!
 //! BYTE-NEUTRAL FALLBACK (the shipped path): `offsetof(Act, grid_w) + 1(a2)`
 //! composes to the identical bytes `12 2A 00 05` (disp 5) — offsetof folds to a

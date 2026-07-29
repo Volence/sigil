@@ -195,9 +195,14 @@ re-green. No emulator time needed at this step.
      the COMMUTED `<const> + .local` immediate spelling (constant FIRST) wherever
      a leading-`.` local label would otherwise START an immediate expression
      (t27 — `ld de, 1 + .code_end`, NOT `.code_end + 1`; a leftmost `.local` in an
-     immediate expr is parsed raw/unmangled → a dangling-symbol link bug, so
-     commute — `+` is commutative, byte-identical — with a site comment, until the
-     leftmost-local-label parser fix lands; gap-ledgered, CPU-agnostic),
+     immediate expr WAS parsed raw/unmangled → a dangling-symbol link bug, so
+     commute — `+` is commutative, byte-identical — with a site comment; CPU-agnostic.
+     **OPTIONAL as of t28 P3** — the leftmost-local-label parser fix LANDED (eval_path
+     routes a leading-`.` path through eval_local_label's owner-mangling, so `.x + 1`
+     and `1 + .x` now emit identical bytes; ledger row 1610 closed). The commuted
+     spelling STAYS the house preference (a leftmost `.local` still reads oddly), but
+     it is no longer load-bearing for correctness — drop the "until the fix lands"
+     site comments at next touch),
      typed VDP fns, contract
      reglists in movem-RANGE form — `clobbers(d0-d7/a0-a4)`, not comma
      enumeration, wherever a ≥2 contiguous run exists (C1 item 2
