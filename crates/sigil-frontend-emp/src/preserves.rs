@@ -101,8 +101,29 @@ pub enum PreserveStatus {
     Unverifiable(String),
 }
 
-/// A stack slot: `Some(r)` holds register `r`'s entry value; `None` is opaque.
-type Slot = Option<Reg>;
+/// A stack slot. `reg = Some(r)` holds register `r`'s entry value; `None` is
+/// opaque. `bytes` is the TRUE pushed width (`.l`=4, `.w`=2, byte-on-a7=2, each
+/// `movem` member its own size) — the prerequisite for the immediate-sp-cleanup
+/// idiom: an `addq/adda #N,sp` drops whole slots totaling exactly N bytes, and a
+/// drop that lands mid-slot bails. A bare `Option<Reg>` carries no byte size, so
+/// it could not tell a 2-byte word scratch from a 4-byte long save.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Slot {
+    reg: Option<Reg>,
+    bytes: u8,
+}
+
+/// The stack byte width a push of size `size` consumes on a7. Long=4, word=2; a
+/// BYTE push to `-(a7)` decrements sp by 2 (the 68000 keeps a7 word-aligned), so
+/// byte=2. An unsized push (defaults to a long-shaped transfer) is 4.
+fn slot_bytes(size: Option<Width>) -> u8 {
+    match size {
+        Some(Width::L) => 4,
+        Some(Width::W) => 2,
+        Some(Width::B) => 2,
+        _ => 4,
+    }
+}
 
 /// The abstract state at a program point: the symbolic stack + per-register
 /// entry-value bits (indexed `d0`..`a7` = 0..16).
@@ -388,6 +409,59 @@ fn sp_hazard(ops: &[CodeOperand]) -> bool {
     })
 }
 
+/// If `(mnem, ops)` is an IMMEDIATE sp-INCREASE (`add`/`addq`/`adda #N, sp`), the
+/// byte count `N` it deallocates; `None` otherwise. Deliberately NARROW:
+/// - ADD family only — a `sub`/`subq`/`suba #N, sp` (scratch ALLOCATION, an
+///   sp-DECREASE) is a hazard the slot model does not follow (constraint 1);
+/// - IMMEDIATE source only — a register/index source (`adda dN, sp`) is a computed
+///   advance with no static byte count (constraint 1);
+/// - non-negative `N` — a negative immediate is not a real cleanup.
+fn immediate_sp_cleanup_bytes(mnem: &str, ops: &[CodeOperand]) -> Option<i64> {
+    if !matches!(mnem, "add" | "addq" | "adda") {
+        return None;
+    }
+    // dest = sp.
+    if !matches!(ops.last(), Some(CodeOperand::Reg(Reg::A7))) {
+        return None;
+    }
+    match ops.first() {
+        Some(CodeOperand::Imm(v)) if *v >= 0 => Some(*v as i64),
+        _ => None,
+    }
+}
+
+/// Drop exactly `n` BYTES of tracked slots off the top of `st.stack` (an immediate
+/// sp-cleanup). Returns `Some(reason)` on a bail:
+/// - the drop lands MID-SLOT (`n` does not consume whole slots) — a partial-slot
+///   drop the model cannot represent (constraint 2);
+/// - the drop drains MORE than is tracked — it reaches into the caller frame /
+///   return address, so the model is inconsistent (the pop-underflow sibling).
+///
+/// Over-drop soundness (constraint 3) needs no special case: dropping the slot
+/// that held a saved register simply removes it, and a later pop then reads
+/// whatever slot is now on top — a different register's value, so the entry-bit
+/// model REFUTES the preserve on its own.
+fn apply_sp_cleanup(st: &mut State, n: i64) -> Option<String> {
+    let mut remaining = n;
+    while remaining > 0 {
+        match st.stack.pop() {
+            None => {
+                return Some("sp cleanup drains more than was pushed".to_string());
+            }
+            Some(slot) => {
+                remaining -= slot.bytes as i64;
+                if remaining < 0 {
+                    return Some(
+                        "sp cleanup lands mid-slot — a partial-slot drop cannot be modeled"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Apply instruction `idx`'s effect to `st`. Returns `Some(reason)` on a
 /// soundness bailout.
 fn transfer(
@@ -419,6 +493,15 @@ fn transfer(
         return None;
     }
 
+    // IMMEDIATE sp-INCREASE cleanup (`addq/adda #N,sp`): deallocate a save area by
+    // dropping exactly N BYTES of tracked slots off the top. Modeled BEFORE the
+    // sp_hazard bail (its `sp` operand would otherwise read as an escape). A
+    // constant sp-DECREASE (scratch alloc) and a COMPUTED (register/index) sp op
+    // are NOT this idiom — they fall through to the hazard bail below.
+    if let Some(n) = immediate_sp_cleanup_bytes(mnem, ops) {
+        return apply_sp_cleanup(st, n);
+    }
+
     // Unmodeled sp manipulation corrupts the slot model — EXCEPT a displaced-sp
     // READ into a plain register (`movea.l d(sp), aN`), the displaced analogue of
     // the `(sp)` peek: a load cannot alias a tracked slot (only a store could), so
@@ -430,17 +513,19 @@ fn transfer(
 
     // PUSH — `-(sp)`.
     if is_push(ops) {
+        let bytes = slot_bytes(instr_size(items, idx));
         if let Some(mask) = reglist_mask(ops) {
             // movem save: push in REVERSE canonical order so the lowest register
-            // (d0) lands on top, matching the (sp)+ restore order.
+            // (d0) lands on top, matching the (sp)+ restore order. Each member is
+            // `bytes` wide (a `.w` movem stores 2 bytes per member).
             for r in expand_mask(mask).into_iter().rev() {
-                st.stack.push(tag(st, r));
+                st.stack.push(tag(st, r, bytes));
             }
         } else {
             // Single push: the SOURCE (first operand) if it is a plain register.
             let slot = match ops.first() {
-                Some(CodeOperand::Reg(r)) => tag(st, *r),
-                _ => None, // pushing a non-register value → opaque slot
+                Some(CodeOperand::Reg(r)) => tag(st, *r, bytes),
+                _ => Slot { reg: None, bytes }, // non-register value → opaque slot
             };
             st.stack.push(slot);
         }
@@ -465,7 +550,7 @@ fn transfer(
         }
         // movem restores in canonical ascending order; a single pop is one reg.
         for r in regs {
-            let slot = st.stack.pop().flatten();
+            let slot = st.stack.pop().and_then(|s| s.reg);
             // A `.w`/`.b` restore does not round-trip the full register.
             st.entry[reg_idx(r)] = is_long && slot == Some(r);
             // A pop LOADS the register from the stack — a fresh value, not a
@@ -479,7 +564,7 @@ fn transfer(
     // PEEK — `(sp)` (no stack change), a full `.l` read of the top slot.
     if is_peek(mnem, ops) {
         if let Some(CodeOperand::Reg(dst)) = ops.last() {
-            let top = st.stack.last().copied().flatten();
+            let top = st.stack.last().and_then(|s| s.reg);
             st.entry[reg_idx(*dst)] = is_long && top == Some(*dst);
             st.delta[reg_idx(*dst)] = None; // a fresh load; entry-bit model judges it
         }
@@ -547,14 +632,10 @@ fn linear_write_amount(mnem: &str, ops: &[CodeOperand], size: Option<Width>, r: 
     None
 }
 
-/// The slot tag for register `r` at the current state: `Some(r)` iff `r` still
-/// holds its entry value.
-fn tag(st: &State, r: Reg) -> Slot {
-    if st.entry[reg_idx(r)] {
-        Some(r)
-    } else {
-        None
-    }
+/// The slot tag for a `bytes`-wide push of register `r` at the current state:
+/// `reg = Some(r)` iff `r` still holds its entry value.
+fn tag(st: &State, r: Reg, bytes: u8) -> Slot {
+    Slot { reg: if st.entry[reg_idx(r)] { Some(r) } else { None }, bytes }
 }
 
 fn sp_hazard_reason(ops: &[CodeOperand]) -> String {
@@ -577,8 +658,17 @@ fn join(acc: &mut State, other: &State) {
         return;
     }
     for (a, b) in acc.stack.iter_mut().zip(other.stack.iter()) {
-        if *a != *b {
-            *a = None;
+        // Differing slot BYTE widths at the same depth mean the two paths reached
+        // this point with different sp offsets — an ambiguous stack geometry, the
+        // depth-mismatch bail's finer-grained sibling → taint the merge.
+        if a.bytes != b.bytes {
+            acc.bailed = true;
+            return;
+        }
+        // Registers meet pointwise: a slot holds a saved value only if both paths
+        // agree it holds the SAME register's value.
+        if a.reg != b.reg {
+            a.reg = None;
         }
     }
     for i in 0..16 {
