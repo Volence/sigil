@@ -1353,8 +1353,23 @@ impl Evaluator<'_> {
                     "r" => return Some(CodeOperand::Z80RegR),
                     _ => {}
                 }
-                // Not a register word: a link symbol (a label in operand
-                // position → the symbolic imm16 of §4, or a `jp`/`call` target).
+                // A bare non-register word that resolves to a COMPTIME integer (a
+                // file `const`/`equ` or a `-D` define) folds to a CPU-neutral
+                // immediate — the Z80 lowering picks imm8/imm16 by form. Without
+                // this the single-segment fast path skips the comptime fold that
+                // every COMPOUND expr (`CONST+0`, `CONST-1`) already reaches below,
+                // so a bare `sub CONST` / `ld b, CONST` / `set BIT, (ix+d)`
+                // mis-routes to the symbolic-imm16 path ([lower.z80-unsupported] —
+                // the psg port surfaced this, the first Z80 code with symbolic
+                // 8-bit immediates). A word that is NOT a comptime int stays a
+                // link `Sym` (a label operand), so `call`/`jp`/`ld rr,Label` and
+                // local-label branch-target resolution are unchanged.
+                if let Some(n) = self.z80_bareword_const(seg, p.span, env) {
+                    return Some(CodeOperand::Imm(n));
+                }
+                // Not a register or comptime constant: a link symbol (a label in
+                // operand position → the symbolic imm16 of §4, or a `jp`/`call`
+                // target).
                 return Some(CodeOperand::Sym(scope.resolve_ref(seg)));
             }
             // Multi-segment: an exported cross-body label (`Owner.label`).
@@ -1384,6 +1399,30 @@ impl Evaluator<'_> {
             return None;
         }
         self.classify_operand_splice(v, expr_span(expr))
+    }
+
+    /// A bare single-segment word that resolves to a COMPTIME integer (a file
+    /// `const`/`equ` or a `-D` define), or `None` if it is not a known comptime
+    /// constant — a register, a proc-local label, a `proc`/`data` link label, or
+    /// an unknown name, all of which must stay a link `Sym` in Z80 operand
+    /// position. Mirrors [`Self::eval_path`]'s single-segment const precedence
+    /// (local binding → file const/equ → `-D` define) but WITHOUT its label /
+    /// unknown-name fallback, so it never errors and never steals a label. A
+    /// non-integer const (e.g. a string) yields `None` and stays a `Sym`.
+    fn z80_bareword_const(&mut self, name: &str, span: Span, env: &Env) -> Option<i128> {
+        if name.starts_with('.') {
+            return None; // a proc-local label reference, never a comptime constant
+        }
+        let v = if let Some(v) = env.lookup(name) {
+            v.clone()
+        } else if self.consts.contains_key(name) || self.equs.contains_key(name) {
+            self.resolve_const(name, span)
+        } else if let Some(d) = self.defines.get(name) {
+            Value::Int(*d)
+        } else {
+            return None;
+        };
+        v.as_stored_int()
     }
 
     /// The Z80 branch of [`Operand::Ind`] mapping (§3): a single-part paren is

@@ -485,3 +485,65 @@ fn z80_reg_spliced_in_m68000_section_is_splice_kind_error() {
         "expected a splice-kind error for a Z80 register in a 68k section, got: {diags:?}"
     );
 }
+
+// --- rung-2 (t32 psg port): a bare comptime constant in a Z80 8-bit immediate /
+// ALU / bit-number operand folds to an immediate (was mis-routed to the
+// symbolic-imm16 path). The psg corpus is the first Z80 code with symbolic 8-bit
+// immediates. A bare LABEL still stays a symbol (call/jp/ld-rr target).
+fn z80_bytes_with_prelude(prelude: &str, body: &str) -> Vec<u8> {
+    let src = format!(
+        "module m\n{prelude}section s (cpu: z80, vma: $0) {{\n  proc P() {{\n    {body}\n    ret\n  }}\n}}\n"
+    );
+    let (file, perrs) = parse_str(&src);
+    assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
+    let (module, ldiags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+    );
+    assert!(
+        ldiags.iter().all(|d| d.level != Level::Error),
+        "lower: {:?}",
+        ldiags.iter().filter(|d| d.level == Level::Error).collect::<Vec<_>>()
+    );
+    section_bytes(&module, "s")
+}
+
+#[test]
+fn z80_bare_const_folds_in_imm8_positions() {
+    // `ld b, K` (06 nn) / `sub K` (D6 nn) / `and K` (E6 nn) / `cp K` (FE nn) —
+    // K a file const — must fold to the immediate byte, not error.
+    let b = z80_bytes_with_prelude(
+        "const K = $7F\n",
+        "ld b, K\n    sub K\n    and K\n    cp K",
+    );
+    assert_eq!(&b[..8], &[0x06, 0x7F, 0xD6, 0x7F, 0xE6, 0x7F, 0xFE, 0x7F], "bare-const imm8 fold: {b:02x?}");
+}
+
+#[test]
+fn z80_bare_const_bit_number_folds() {
+    // `set K, (ix+5)` — K the bit number — folds (DD CB 05 C6). Was the
+    // set/res bit-number mis-route.
+    let b = z80_bytes_with_prelude("const K = 0\n", "set K, (ix+5)");
+    assert_eq!(&b[..4], &[0xDD, 0xCB, 0x05, 0xC6], "set bit-const: {b:02x?}");
+}
+
+#[test]
+fn z80_bare_label_still_symbol() {
+    // A bare label (NOT a const) stays a symbolic call target — the fold must not
+    // steal it. `call Foo` lowers to a `CD` + a deferred fixup on `Foo` (an
+    // AbsImm16 link fixup), NOT a comptime immediate. Checked PRE-link (Foo has no
+    // definition here by design — it stays a dangling link symbol).
+    let src = "module m\nsection s (cpu: z80, vma: $0) {\n  proc P() {\n    call Foo\n    ret\n  }\n}\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
+    let (module, ldiags) = lower_module(
+        &file,
+        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
+    );
+    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower: {ldiags:?}");
+    let fx = fixups_of(&module, "s");
+    assert!(
+        fx.iter().any(|f| matches!(&f.target, Expr::Sym(n) if n == "Foo")),
+        "call Foo must keep a deferred fixup on `Foo` (label not folded), got: {fx:?}"
+    );
+}
