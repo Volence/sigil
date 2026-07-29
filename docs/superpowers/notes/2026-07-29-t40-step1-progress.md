@@ -98,23 +98,44 @@ Commits `9e60a8b` + `73c0350` (10 tests, no crate regression). The T-state table
 - `span_cost(items)` sums a straight-line span; `label_span(items, L1, L2)` carves the
   half-open `[L1.body .. L2)` instruction slice from a proc CodeBuf.
 
+## Landed — the cycles `ensure` channel, EAGER (Ruling 2), commit `74504b8` (5 tests)
+
+Ruling 2 said investigate the lighter channel first. Eager is not only feasible but
+SUPERIOR, so it is CHOSEN (no `Value::CycleSpan` residual, no `eval_proc_body`
+threading, no `proc.rs` change, no ~18-file match sweep):
+- Z80 encodings are fixed-width (no relaxation) → the partial CodeBuf snapshot is EXACT
+  for any span textually preceding the ensure (the annotation's natural place).
+- A local-label arg (`.loop`) already evaluates to `Value::Label(owner-mangled)` — the
+  SAME name the buf's `CodeItem::Label` carries — so span carving is a direct match.
+- **`cycles()` returns a plain `Int` → composes via `+`/`==` FOR FREE, which the driver
+  NEEDS** (see the multi-span finding below). The residual channel would have needed
+  arithmetic on residuals.
+
+Mechanism: `cycle_scope: Option<Vec<CodeItem>>` on the evaluator, snapshotted around a
+body-position `ensure` (guards are rare → cheap); `cycles(L1,L2)` reads it, carves
+`[L1,L2)` via `label_span`, sums via `span_cost`, returns `Int`. The `AsmStmt::Call` arm
+now accepts a `Unit`-returning body guard. Failing-first (`t40_cycles.rs`): correct count
+passes; doctored count fires the ensure's own message; `jr cc` in span →
+`[cycles.ambiguous-branch]`; off-table op → `[cycles.unknown-op]`; `jp cc`=10 positive
+control. Full strict gate **2871/0/1** (2856 + 10 z80_cycles + 5 t40_cycles).
+
+## Finding 4 — the DAC loop's three paths are NOT three single textual spans
+
+FILL is the one clean single span: `cycles(.loop, .exhaust) == 195` (the fall-through;
+its not-taken `jp cc`s count at 10 each = exactly the driver's arithmetic). But DRAIN and
+DRAINING_TAIL are **shared-prefix + separate-body SUMS**: DRAIN = prefix(`.loop`..the
+`jp nz,.drain`, =109) + drain-body(`.drain`..return, =86) = 195; DRAINING = prefix +
+draining-body. Expressing them needs `cycles(A,B) + cycles(C,D) == N` composition (the
+eager `Int` channel does this natively) and MAY need one or two byte-neutral cut labels in
+the `.emp` at the prefix/body boundaries (labels emit no bytes → byte-oracle-safe; a
+`.emp`-only label is fine since twin lockstep is byte-level, not text-level). This is the
+concrete shape the transcription's three ensures take — recorded so the port writes them
+right the first time.
+
 ## REMAINING to checkpoint (a) — precise continuation map
 
-1. **Wire `cycles()` into `ensure` + a per-proc pass.** `ensure(cycles(L1,L2) == N)`
-   deferred to `check_z80_cycles(proc, &buf, asserts, diags)` beside `check_z80_preserves`
-   (`lower/proc.rs:148`); the pass calls the LANDED `label_span` + `span_cost`, fires
-   `[cycles.mismatch]` / the two bails. SCOPE (measured this pass): the deferral needs a
-   new residual `Value::CycleSpan`-class value (mirroring `LinkExpr`) that `==` folds to a
-   deferred CycleAssert, a `take_cycle_asserts()` drain, and a NEW return element threaded
-   through `eval_proc_body` (which today returns only `(buf, diags, counter)` — no
-   assert drain) into `proc.rs`. A `Value` variant touches ~18 files' matches (mostly
-   non-exhaustive `if let`, but must be swept). Invasive but bounded; ripple-scoped so a
-   continuation lands it cleanly. DESIGN CALL: the `ensure` lives IN the proc body (local
-   `.loop`/`.exhaust` in scope). Failing-first: pad+4 mismatch, jr-in-span bail,
-   off-table bail, real loop green + byte-neutral (self-gates).
-2. **Balanced-`exx` recognition** — DEFERRED pending adjudication (Finding 3): not
-   demanded by the driver (no returning proc crosses an exx pair with a declared
-   preserve). Wire only if the overseer rules forward-compat despite no demand.
+1. ~~Wire `cycles()` into `ensure`~~ — DONE (eager channel, commit `74504b8`, 5 tests).
+2. ~~Balanced-`exx` recognition~~ — DEFERRED (Ruling 1; gap-ledger row [t40 step-1]).
 3. **The faithful transcription** — `engine/sound/z80_sound_driver.emp`, phase $0000,
    1381 B, `module engine.z80_sound_driver (cpu: z80)`. Per-proc contracts (NO module
    invariant — the sequencer shape; per-proc `preserves(ix)` only where verifiable; ISR
