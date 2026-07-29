@@ -125,6 +125,7 @@ use sigil_harness::{
     assemble_mixed_tranche34_as_side,
     assemble_mixed_tranche35_as_side,
     assemble_mixed_tranche38_as_side,
+    assemble_mixed_tranche39_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -5199,6 +5200,203 @@ fn mixed_tranche38_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche38_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche38 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 39 — the FINAL three objects (test_player.emp + test_enemy.emp +
+// path_swap.emp) inside the full ROM; the object bank closes ALL-.emp. test_player
+// and test_enemy are INTERNAL-gated (headers stay AS-visible), path_swap is
+// WHOLE-FILE gated and SHAPE-DEPENDENT (debug +$68). The gate arms org-resume so
+// TestSolid_Init (test_player+test_enemy) and DeformTable_Zero (path_swap, PER
+// SHAPE) land canonically; the AS objdef consumers resolve to the .emp-owned
+// TestEnemy_Init / ObjDef_PathSwap.
+// ---------------------------------------------------------------------------
+
+fn build_mixed_tranche39_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche39_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    // Proof (1): test_player + test_enemy internal-gate CODE arms org-resume so
+    // test_solid's first label TestSolid_Init lands at the TEST_ENEMY window end.
+    assert_eq!(
+        find_label("TestSolid_Init"),
+        Some(pins::TEST_ENEMY.plain_base + pins::TEST_ENEMY.plain_len as u32),
+        "the test_player+test_enemy internal gates must org-resume TestSolid_Init at the TEST_ENEMY region end"
+    );
+    // Proof (2): path_swap whole-file gate PER-SHAPE org-resumes DeformTable_Zero
+    // (gameDataIncludes' first label) at the PATH_SWAP region end — the shape-
+    // dependent arm ($1128C plain / $112F4 debug).
+    let path_swap_end = if debug {
+        pins::PATH_SWAP.debug_base + pins::PATH_SWAP.debug_len as u32
+    } else {
+        pins::PATH_SWAP.plain_base + pins::PATH_SWAP.plain_len as u32
+    };
+    assert_eq!(
+        find_label("DeformTable_Zero"),
+        Some(path_swap_end),
+        "the path_swap per-shape gate arm must org-resume DeformTable_Zero at the PATH_SWAP region end"
+    );
+
+    let dbg = i128::from(debug);
+    let objects_dir = aeon.join("engine/objects");
+    let system_dir = aeon.join("engine/system");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let (player_base, player_len, enemy_base, enemy_len, swap_base, swap_len) = if debug {
+        (
+            pins::TEST_PLAYER.debug_base,
+            pins::TEST_PLAYER.debug_len,
+            pins::TEST_ENEMY.debug_base,
+            pins::TEST_ENEMY.debug_len,
+            pins::PATH_SWAP.debug_base,
+            pins::PATH_SWAP.debug_len,
+        )
+    } else {
+        (
+            pins::TEST_PLAYER.plain_base,
+            pins::TEST_PLAYER.plain_len,
+            pins::TEST_ENEMY.plain_base,
+            pins::TEST_ENEMY.plain_len,
+            pins::PATH_SWAP.plain_base,
+            pins::PATH_SWAP.plain_len,
+        )
+    };
+
+    let (player_secs, player_asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/objects/test_player.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            objdef_ambient_items(&objects_dir),
+        ],
+        "test_player",
+        player_base,
+        player_len,
+        defines.clone(),
+    );
+    let (enemy_secs, enemy_asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/objects/test_enemy.emp",
+        vec![sst_ambient_items(&objects_dir), constants_ambient_items(&system_dir)],
+        "test_enemy",
+        enemy_base,
+        enemy_len,
+        defines.clone(),
+    );
+    let (swap_secs, swap_asserts) = t21_lower_and_place(
+        aeon,
+        "games/sonic4/objects/path_swap.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            objdef_ambient_items(&objects_dir),
+        ],
+        "path_swap",
+        swap_base,
+        swap_len,
+        defines,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(player_secs);
+    sections.extend(enemy_secs);
+    sections.extend(swap_secs);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche39 mixed resolve_layout failed: {d:?}"));
+
+    // Proof (3): the AS-side objdef consumers resolve to the .emp-owned labels.
+    let emp_label = |region: &str, want: &str| -> u32 {
+        for sec in &resolved {
+            if sec.name != region {
+                continue;
+            }
+            for l in &sec.labels {
+                if l.name == want {
+                    return sec.vma_origin().wrapping_add(l.offset);
+                }
+            }
+        }
+        panic!("{region} must export {want}");
+    };
+    let test_enemy_init = emp_label("test_enemy", "TestEnemy_Init");
+    let obj_def_path_swap = emp_label("path_swap", "ObjDef_PathSwap");
+
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche39 mixed link failed: {d:?}"));
+
+    // All three overlays' + VRAM/COLLISION drift guards resolve against the REAL AS
+    // tree (structs.asm, constants.asm, config/constants.asm, and the surviving
+    // internal-gated test_player.asm/test_enemy.asm headers).
+    let mut all_asserts = player_asserts;
+    all_asserts.extend(enemy_asserts);
+    all_asserts.extend(swap_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche39 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    let rom = sigil_link::flatten(&linked, 0x00);
+
+    // Outbound (a): the objdef `dc.w objroutine(TestEnemy_Init)` word encodes the
+    // .emp-owned bank offset.
+    let obj_code_base = pins::OBJ_CODE_BASE.plain;
+    let enemy_word = (test_enemy_init - obj_code_base) as u16;
+    assert!(
+        rom.windows(2).any(|w| w == enemy_word.to_be_bytes()),
+        "the AS objdef objroutine(TestEnemy_Init) word must encode its bank offset {enemy_word:#x}"
+    );
+    // Outbound (b): the objdef-table `dc.l ObjDef_PathSwap` encodes the .emp-owned
+    // absolute address.
+    assert!(
+        rom.windows(4).any(|w| w == obj_def_path_swap.to_be_bytes()),
+        "the AS `dc.l ObjDef_PathSwap` must encode the .emp-owned address {obj_def_path_swap:#x}"
+    );
+
+    rom
+}
+
+#[test]
+fn mixed_tranche39_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche39_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche39 mixed");
+}
+
+#[test]
+fn mixed_tranche39_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche39_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche39 mixed debug");
 }
 
 // ---------------------------------------------------------------------------

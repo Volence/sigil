@@ -1006,6 +1006,34 @@ pub fn assemble_mixed_tranche38_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 39 (the FINAL three objects): the full AS-side game with
+/// `SIGIL_EMP_TEST_PLAYER` + `SIGIL_EMP_TEST_ENEMY` + `SIGIL_EMP_PATH_SWAP` on.
+/// test_player.asm and test_enemy.asm are INTERNAL-gated (their zero-byte headers
+/// stay AS-visible so test_animated.emp's DplcV guards, test_objects.emp's
+/// ENEMY_PATROL_SPEED guard, and object_test_state.asm's STUB_FLOOR_Y still
+/// resolve); their CODE arms org-resume at TestEnemy_Init / TestSolid_Init.
+/// path_swap.asm is WHOLE-FILE gated with a PER-SHAPE org (2 __DEBUG__ blocks,
+/// debug +$68), resuming at DeformTable_Zero (gameDataIncludes' first label). The
+/// AS-side objdef consumers (test_objects.asm objroutine(TestEnemy_Init),
+/// act_descriptor/objdef-table `dc.l ObjDef_PathSwap`) resolve cross-seam to the
+/// .emp-owned labels (the ownership flip). After t39 the object bank is ALL-.emp.
+pub fn assemble_mixed_tranche39_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_TEST_PLAYER".to_string(), 1),
+        ("SIGIL_EMP_TEST_ENEMY".to_string(), 1),
+        ("SIGIL_EMP_PATH_SWAP".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche39 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included
