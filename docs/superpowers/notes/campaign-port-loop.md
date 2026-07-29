@@ -174,7 +174,15 @@ re-green. No emulator time needed at this step.
   3. Bare-symbol width-rule spellings complete — including inside
      comptime-fn / asm-template bodies.
   4. Brace-indent file-wide.
-  5. The idiom list walked item-by-item (`Sst.field`, bareword
+  5. The idiom list walked item-by-item (`Sst.field`,
+     `OverlayV.field(aN)` for a per-object `vars` overlay's field access — the
+     SST-custom-window overlay's always-on `[overlay.window-overflow]` check
+     REPLACES the AS `objvarsCheck`, and a field whose bare name would shadow a
+     direct struct field (`Sst`'s `angle`) is renamed on the overlay side
+     (t31 — `orbit_angle`; the overlay is single-consumer with no surviving AS
+     truth, so the rename carries no drift guard; joined the list at t31, the
+     2nd/3rd overlay consumers after t29's DplcV / t30's TEmitterV debut),
+     bareword
      `winptr`/`bankid`, label-in-immediate, `dc.l <label>` for an absolute
      symbol pointer in raw `dc` position (t25 — vector/jump table entries;
      register-class words stay loud), `raise_exception "<msg>" [, <flag>]` for a
