@@ -15,6 +15,7 @@ pub mod lower;
 pub mod out_verify;
 pub mod parser;
 pub mod preserves;
+pub mod regfile;
 pub mod resolve;
 pub mod type_slice;
 pub mod value;
