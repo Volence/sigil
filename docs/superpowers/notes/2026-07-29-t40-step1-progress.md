@@ -150,3 +150,46 @@ right the first time.
    twin), mirroring `sound_sequencer_port.rs`. t24 positive control + one-symbol doctor
    negative. Byte movement ZERO is existential — STOP-not-absorb on any drift.
 5. **Contract set + t24 controls + checkpoint (a)** packet with the full evidence block.
+
+---
+
+## CHECKPOINT (a) — DONE (2026-07-29). Deliverables committed:
+- aeon `port-tranche40` `60f15a9`: `engine/sound/z80_sound_driver.emp` (the 1381-B
+  transcription). sigil `port-tranche40` `56e22f4`: `crates/sigil-cli/tests/
+  z80_sound_driver_port.rs` (7 tests). No `.asm` touched.
+- **Windowed gates BOTH shapes GREEN** (7/7): plain 1381 B == twin, debug 1381 B ==
+  twin, both-same-size, both-shapes-DIFFER (9 bytes), 2 doctor positives (link +
+  const), 1 doctor-both-equal.
+- **Whole-ROM CRCs REPRODUCED EXACTLY** (byte movement ZERO): dual gate-off rebuild
+  plain `4b66cace`/421041, debug `1c256b3b`/429102.
+- **Full strict suite 2878/0/1** (`--no-fail-fast`) = the 2871/0/1 bar + the 7 new
+  driver-port tests.
+- **Cycles-ensure non-vacuity on the REAL span**: doctoring the `.drain` pad 19->20
+  nops fires `DRAIN pass must equal FILL (195 T-states)` (199 != 195); reverted.
+- **Contract firing arc 3 -> 0**: the honest-contract checker fired at first compile —
+  `[proc.out-clobbers-overlap]` on `Snd_DacLookup` (h,l) and `Snd_RouteClassFlags` (a):
+  a register is either an `out` result or clobbered scratch, not both. Driven to zero by
+  dropping the out registers from the clobbers clause (out(hl,carry) preserves(bc,ix,iy);
+  out(a) preserves(bc,de,hl,ix,iy)). Preserve-checker non-vacuity separately proven:
+  injecting `ld c,0` into `Snd_RouteClassFlags` fires `[proc.preserves-unverifiable]
+  declares preserves(c) but c is written and not restored`; reverted.
+- **4 inbound trust conversions VERIFIED + stated** at each def site (all conservative
+  subsets of the real closure; sfx SndDrv_SetBank/RouteClassFlags + sequencer
+  Snd_StartSample/DacLookup). 4 outbound externs declared (Sequencer_Frame preserves(iy);
+  StopAll/StopAll/Dispatch bare).
+
+## CORRECTION (tree wins) — the driver window is NOT byte-identical across shapes
+The step-0 §2 premise "IDENTICAL in BOTH shapes / the first Z80 port where plain and
+debug windows are the SAME BYTES" is FALSE at the byte level. The window is the same
+SIZE (1381 B) and POSITION ($0000) both shapes (the driver's own code has zero
+`__DEBUG__` content), but its BYTES differ: the driver `call`s three callees that live
+AFTER the sequencer's +$7E debug growth — `Sequencer_StopAll` ($CB2->$D30),
+`Sfx_StopAll` ($11AA->$1228), `SfxDispatch` ($E5D->$EDB) — so five call sites (2 + 2 +
+1) emit different operand bytes plain vs debug (9 bytes total; SfxDispatch shares its
+$0E high byte). `Sequencer_Frame` ($0565, the sequencer base) is the ONE shape-invariant
+target. Verified in s4.lst vs s4.debug.lst. The oracle therefore feeds PER-SHAPE link
+addresses and gates both shapes as genuinely-different byte images (a
+`plain_and_debug_shapes_differ` test asserts the 9-byte delta), NOT "same bytes". Also:
+step-0 §1.1's row `Z80_Sound_End = $0565` is wrong — $0565 is the sequencer base
+(Sequencer_Frame); the true `Z80_Sound_End` is $1BFA (the whole-blob end). Neither
+correction changes the window boundary ($0000..$0565) or the deliverables.
