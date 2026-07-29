@@ -87,7 +87,34 @@ distinct class (checker limitation, not a lie). Contract-PRECISION tightening (s
 — Fade_Ramp, Mod_Advance, the Seq_Hook* — provably preserve more than declared, e.g. c/de/hl
 untouched) is a step-3(b) candidate, not chased at step 1.
 
-## STOP
+## Checkpoint-(a) countersign follow-ups (overseer-demanded)
 
-Checkpoint (a). Step 1 green. No aeon `.asm` edit (byte movement zero). Next (out of scope):
-step 2 modernization loop, then dry-panel, then merge.
+**Consequence analysis — who relies on ix surviving Sequencer_Channel/NextOpcode:** BOTH
+callers rely on it (the preservation HOLDS in fact; only the checker can't certify it).
+- `sound_sequencer.asm:98` (Sequencer_Frame): after `call Sequencer_Channel` the loop does
+  `.chan_done: pop bc / .next_chan: ld de,SeqChannel_len / add ix,de` — it ADVANCES the same
+  ix (set once at `ld ix,SND_SEQ_CHANNELS` before the loop), NOT a fresh per-channel reload.
+  A clobbered ix would corrupt the whole channel walk.
+- `sound_sfx.asm:294` (Sfx_Frame, the SFX shared-interp caller): after `call Sequencer_Channel`
+  it does `bit SCF_ACTIVE_B,(ix+sc_flags)` + `call Sfx_Restore` + `.next_slot: add ix,de` —
+  all read/advance the same ix.
+So the omitted `preserves(ix)` is a reliance the checker cannot certify through the `ex (sp),hl`
+computed dispatch (not a "nobody relies on it" case). Correction to my earlier draft, which
+wrongly said "Frame reloads ix per channel" — it advances, it does not reload.
+
+**Named upgrade path (ledgered):** Option-B `ex (sp),hl as dispatch(SeqOpcodeTable)` table-
+membership closure restores machine-credit on Channel/NextOpcode — credit basis "all
+SeqOpcodeTable members preserve ix" INSTEAD of a module invariant Sequencer_Frame cannot
+satisfy. Ledger row added (kill = the Option-B grammar landing).
+
+**Extern-decl-vs-def drift probe (overseer-demanded, reverted):** doctored psg's
+`extern proc Mod_ReArm` to falsely claim `af` preserved (the real def clobbers af); ran the
+corpus pass AND the full workspace strict suite → **NOTHING fired, 2813/0 unchanged.** So the
+stale extern decls are a SILENT drift hazard. Ledger row added (demanded diagnostic ask =
+extern-decl-vs-same-corpus-def consistency check; kill = the seam sub-tranche). psg.emp
+reverted, unchanged; the other four resident Z80 files untouched.
+
+## STOP → LOOP AUTHORIZED
+
+Checkpoint (a) countersigned. No aeon `.asm` byte edit (movement zero). Loop authorized:
+step 2 (house format) → 3→4→5 until dry → dry-panel (A1+B1+C2+C3) → checkpoint (b).
