@@ -126,6 +126,7 @@ use sigil_harness::{
     assemble_mixed_tranche35_as_side,
     assemble_mixed_tranche38_as_side,
     assemble_mixed_tranche39_as_side,
+    assemble_mixed_tranche41_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -5397,6 +5398,215 @@ fn mixed_tranche39_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche39_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche39 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 41 — the T1 harness states (object_test_state.emp + ojz_scroll_test.emp)
+// inside the full ROM. Both gameStatesIncludes files, SHAPE-DEPENDENT (the DEBUG
+// profiling block / the two Debug_Scene_Freeze skips). object_test_state OWNS
+// TestArt/TestArt_End; ojz references them cross-module (the DMA length). Its
+// TestArt blob embeds art/palettes/sonic.bin + games/sonic4/test/ring_art.bin from
+// the AEON REPO ROOT (the BINCLUDE path semantics — include_root = repo root).
+// ---------------------------------------------------------------------------
+
+/// Like `t21_lower_and_place`, but with `include_root` + `embed_base` supplied
+/// explicitly (object_test_state.emp's `embed(...)` blobs resolve repo-root-
+/// relative, matching the AS twin's BINCLUDE path model).
+#[allow(clippy::too_many_arguments)]
+fn t41_lower_and_place(
+    aeon: &Path,
+    emp_rel: &str,
+    ambient: Vec<Vec<sigil_frontend_emp::ast::Item>>,
+    region: &str,
+    base: u32,
+    len: usize,
+    defines: Vec<(String, i128)>,
+    include_root: &Path,
+    embed_base: &Path,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
+    let src = std::fs::read_to_string(aeon.join(emp_rel))
+        .unwrap_or_else(|e| panic!("cannot read {emp_rel}: {e}"));
+    let (main, mdiags) = parse_str(&src);
+    assert!(
+        mdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} parse errors: {mdiags:?}"
+    );
+    let mut items = Vec::new();
+    for a in ambient {
+        items.extend(a);
+    }
+    items.extend(main.items);
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(include_root.to_path_buf()),
+        embed_base: Some(embed_base.to_path_buf()),
+        defines,
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    assert!(
+        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} lower errors: {ldiags:?}"
+    );
+    let mt = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n[[region]]\nname = \"{region}\"\nlma_base = {base:#x}\nsize = {len:#x}\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&mt).expect("map must load");
+    let mut sections = module.sections;
+    let pdiags = place_sections(&mut sections, &map);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{emp_rel} place_sections errors: {pdiags:?}"
+    );
+    (sections, module.link_asserts)
+}
+
+fn build_mixed_tranche41_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module = assemble_mixed_tranche41_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    // Proof: ojz's per-shape gate arm org-resumes NullInterrupt (the
+    // post-gameStates level-1 stub) at the OJZ_SCROLL_TEST region end. (Both
+    // regions' start/end labels — GameState_ObjectTest_Init / GameState_OJZScroll_Init
+    // — are now .emp-owned, so NullInterrupt is the sole AS-side anchor after both
+    // gate arms; object_test_state's org placement is proven by the whole-ROM byte
+    // gate below.)
+    let ojz_end = if debug {
+        pins::OJZ_SCROLL_TEST.debug_base + pins::OJZ_SCROLL_TEST.debug_len as u32
+    } else {
+        pins::OJZ_SCROLL_TEST.plain_base + pins::OJZ_SCROLL_TEST.plain_len as u32
+    };
+    assert_eq!(
+        find_label("NullInterrupt"),
+        Some(ojz_end),
+        "ojz's per-shape gate arm must org-resume NullInterrupt at the OJZ_SCROLL_TEST region end"
+    );
+
+    let dbg = i128::from(debug);
+    let engine_dir = aeon.join("engine");
+    let system_dir = engine_dir.join("system");
+    let objects_dir = engine_dir.join("objects");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let (ots_base, ots_len, ojz_base, ojz_len) = if debug {
+        (
+            pins::OBJECT_TEST_STATE.debug_base,
+            pins::OBJECT_TEST_STATE.debug_len,
+            pins::OJZ_SCROLL_TEST.debug_base,
+            pins::OJZ_SCROLL_TEST.debug_len,
+        )
+    } else {
+        (
+            pins::OBJECT_TEST_STATE.plain_base,
+            pins::OBJECT_TEST_STATE.plain_len,
+            pins::OJZ_SCROLL_TEST.plain_base,
+            pins::OJZ_SCROLL_TEST.plain_len,
+        )
+    };
+
+    // object_test_state.emp: embeds resolve repo-root-relative (include_root =
+    // embed_base = the aeon repo root), matching the BINCLUDE path model.
+    let (ots_secs, ots_asserts) = t41_lower_and_place(
+        aeon,
+        "games/sonic4/test/object_test_state.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            objdef_ambient_items(&objects_dir),
+            vdp_ambient_items(&engine_dir),
+        ],
+        "object_test_state",
+        ots_base,
+        ots_len,
+        defines.clone(),
+        aeon,
+        aeon,
+    );
+    // ojz_scroll_test.emp: embeds ring_art.bin for its length (repo-root path).
+    let (ojz_secs, ojz_asserts) = t41_lower_and_place(
+        aeon,
+        "games/sonic4/test/ojz_scroll_test.emp",
+        vec![
+            types_ambient_items(&system_dir),
+            sst_ambient_items(&objects_dir),
+            constants_ambient_items(&system_dir),
+            objdef_ambient_items(&objects_dir),
+            structs_ambient_items(&engine_dir),
+            vdp_ambient_items(&engine_dir),
+            z80_bus_ambient_items(&engine_dir),
+        ],
+        "ojz_scroll_test",
+        ojz_base,
+        ojz_len,
+        defines,
+        aeon,
+        aeon,
+    );
+
+    let mut sections = as_module.sections;
+    sections.extend(ots_secs);
+    sections.extend(ojz_secs);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche41 mixed resolve_layout failed: {d:?}"));
+
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche41 mixed link failed: {d:?}"));
+
+    let mut all_asserts = ots_asserts;
+    all_asserts.extend(ojz_asserts);
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche41 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn mixed_tranche41_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche41_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche41 mixed");
+}
+
+#[test]
+fn mixed_tranche41_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche41_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche41 mixed debug");
 }
 
 // ---------------------------------------------------------------------------
