@@ -1788,3 +1788,27 @@ Byte-neutral. Full paired strict **2788/0 (1 ignored)** on merged masters (2783 
 - Aeon repo master: **`5a9d974`** (merge of `port-tranche33`; sigil master **`3a4ef09`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`85111814`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`eb5e94be`** — UNCHANGED.
+
+## t34 re-baseline (2026-07-29) — the P1 player keystone + the second game-side wave
+
+Tranche 34 ported the player cluster's ORDERING ROOT: player_common.emp (the PlayerV
+13-field GUARDED overlay — 5 drift guards on exactly the fields the surviving P2-P4
+files read; the INTERNAL gate pattern for keystone files whose zero-byte headers feed
+surviving AS consumers; 4 macro→comptime-fn templates incl. dist_to_fix delegating to
+pixels_to_coord) + sonic.emp. Two porters (a clean valve handoff mid-tranche); one
+boundary extern (Player_AtLedgeEdge, kill-rowed to die at P4) puts the corpus extern
+count at exactly 1, honestly asterisked. The step-2 wave (the AS twin's explicit
+bsr.w→.s shrink + the census-corrected dead-ext.l cut from the distToFix macro,
+C2-confirmed on both axes at 5 sites) slid the object bank −0x12 pad-absorbed:
+**NEW CANONICAL**. The ripple discipline caught the act_descriptor SELF-GATE-org
+class and a coincidental-byte-match latent test bug. The combined-link stale-fold
+bug (found via t34's mixed gate; its own fix branch) keeps the 2 mixed_tranche34
+tests #[ignore]d; P2-P4 dispatch is GATED on that fix. Kill rows 72-77.
+
+Full paired strict **2796/0 (3 ignored)** on merged masters (2788 + 8 net t34).
+
+- Aeon repo master: **`b0fce19`** (merge of `port-tranche34`; sigil master **`14ce198`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`ee4de2ed`**, sha256
+  **`5444bd3f5a103af1c767e2fb0e2de7071a6cff8762bb095fba940f65f01f4d3a`** — NEW.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`b5f76eee`**, sha256
+  **`c2605f27b939a4e44f27fc246a06bf8fa7649b51b7433de327d751f501b36c34`** — NEW.
