@@ -1878,3 +1878,22 @@ Full paired strict **2827/0 (1 ignored)** on merged masters; p2 12 + p1 8 + sequ
   **`45e7a268f41cc6bc106d5a65fb604ead414ee81fb0e0b8e9761d34a8046d48a3`** — NEW.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`**, sha256
   **`e73be3323400c0e73b201c0daad721886593d74721e9e64e020e883e9fae4bc1`** — NEW.
+
+## t37 (rung-3b) — sound_sfx port (2026-07-29) — canonical UNCHANGED
+
+The SFX engine (`sound_sfx.asm`, 1627 L) ported to `sound_sfx.emp` byte-identically
+in BOTH shapes (windowed oracle `sound_sfx_port`: 1516 B = $5EC both shapes;
+shape-VARIANT base $0CD7 plain / $0D55 debug from the sequencer's +$7E). Byte
+movement ZERO (kill row 83, seam-sub-tranche kill). Firing arc 3→0 self-corrected.
+THE FIRST CLOBBERS UNDER-CLAIM in the sound corpus (Sfx_Frame iy — fixed lockstep in
+both twins) with the checker-invisibility proof → the `[call.clobbers-incomplete]`
+demanded diagnostic, the symmetric second half of the t36 extern-decl-vs-def drift
+problem. The Z80 code front is DRIVER-ONLY; the seam sub-tranche input set is
+COMPLETE.
+
+Full paired strict **2832/0 (1 ignored)** on merged masters; sfx 5/5 + sequencer 6/6
+canaries by name.
+
+- Aeon repo master: **`b26efc8`** (merge of `port-tranche37`; sigil master **`abe7f1b`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
