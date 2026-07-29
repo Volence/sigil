@@ -1498,3 +1498,57 @@ masters, from main checkouts.
   sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`**.
 - Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
   sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`**.
+
+## Tranche 25 re-baseline (error_handler.asm → error_handler.emp; debugger.asm reclassified; BYTE-NEUTRAL)
+
+The debug-trio tranche — and the first re-baseline in the campaign with ZERO
+byte movement: both canonical ROMs are BYTE-IDENTICAL to the t24 baseline
+(CRC32 and sha256 unchanged below; `EndOfRom` unchanged both shapes). The
+tranche's bar was "expected byte movement: zero; any nonzero delta is
+STOP-and-report" and it held through every commit.
+
+**What shipped:** `engine/debug/error_handler.asm` → `error_handler.emp` —
+the 12 CPU exception-vector stubs via the NEW `raise_exception` construct
+(the `__ErrorMessage` counterpart: a hardware-vectored stub must NOT simulate
+the exception frame, so it is `raise_error`'s tail WITHOUT the `pea *(pc)` +
+`move.w sr,-(sp)` prefix; options form carries `address_error` for the two
+bus/address vectors) + the vendored MD Debugger v2.6 blob (dc.l verbatim,
+attribution carried, bytes untouchable; kept per Volence — an own
+`.emp`-native diagnostics runtime is a POST-TWIN-RETIREMENT row). NEW
+region `error_handler` = `BusError` .. `EndOfRom`, **0x10B0 in BOTH shapes**
+(same-size, base-relocated only: plain `0x5CAB0`, debug `0x5E5AA`). Byte
+gates: windowed region gate both shapes + the whole-ROM mixed gates
+(`mixed_error_handler_{,debug_}rom_matches_assembled_reference`) riding
+`assert_rom_matches_convsym` — the region tail abuts the convsym appendix.
+The MDDBG__ equ table extracted to `mddbg_symbols.asm` (always included),
+deriving off `ErrorHandler` = the blob label (pure-AS) / a NUMERIC per-shape
+equ in the gate-ON arm (kill row 52 — sigil does not resolve an AS-side equ
+off a link-external base; ledgered demand-1 with an executable finding test).
+Second new capability: `dc.l <label>` absolute-symbol pointers in `.emp`
+(the blob's extension-button pointers demanded it; vectors.asm is the one
+genuine future consumer per the step-6 census).
+
+**Reclassified, not ported:** `engine/debug/debugger.asm` emits ZERO ROM
+bytes (macro tower + config, included before `org 0`); it is AS-side
+assembler infrastructure that retires WITH the twins — POST-TWIN-RETIREMENT
+row, engine 68k backlog drops it by reclassification. **Deferred:**
+`sound_debug.asm` (zero bytes in both canonical shapes; the port
+transliteration exposed a PARSER INFINITE LOOP — minimized ~26-line repro
+committed `#[ignore]`d in `parser_recovery_hang.rs`, an `asm_body`
+zero-progress guard shipped, the deep fix + the `extern`-in-lea-displacement
+parse gap ledgered demand-1; kill row 42 stays OPEN; the lane returns as its
+own mini-tranche). **The engine 68k conversion backlog is EMPTY at t25
+close** (+Z80 ~5 Volence-deferred, game-side ~10).
+
+Panel A1+B1+C2 (C1 inactive: cold error path; C3 inactive: mirror lane
+deferred) — dry stood after adjudication; kill rows 52/53 born; TWO
+overseer-error rows logged (the brief claimed bare `raise_error` matches an
+exception stub — it is +6 bytes of frame simulation; and assumed the
+derived-equ flip was buildable). Full paired strict **2620/0** on merged
+masters (2604 + 16 net t25, from main checkouts).
+
+- Aeon repo master: **`915d304`** (merge of `port-tranche25`; sigil master **`a05d4bc`**).
+- Non-debug `s4.bin`: **421041 bytes** (`EndOfRom`/`ASSEMBLED_LEN` = `0x5DB60`), crc32 **`c51342d0`**,
+  sha256 **`452c7007646d8d85b3b2fa172eee8fb48db58411684c04914ac625884fe4e999`**.
+- Debug `s4.debug.bin`: **429102 bytes** (`EndOfRom`/`DEBUG_ASSEMBLED_LEN` = `0x5F65A`), crc32 **`992d9e7d`**,
+  sha256 **`f2def343114696851e639dd077533e6bee29169d66746754c6f1c8baa5a5c026`**.
