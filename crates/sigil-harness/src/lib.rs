@@ -983,6 +983,29 @@ pub fn assemble_mixed_tranche35_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 38 (P4 player_sensors): the full AS-side game with
+/// `SIGIL_EMP_PLAYER_SENSORS` on. player_sensors is the FIRST engine-block
+/// include (gameEngineBlockIncludes); its gate arm org-resumes at Section_Init
+/// (game_debug.asm emits zero canonical bytes) — a PER-SHAPE org (the region's
+/// base shifts with upstream __DEBUG__ growth). The AS callers of the sensors
+/// (player_common/ground/air/spindash.asm + test_player.asm) stay AS and resolve
+/// Player_Sensor*/Collision_Probe*/Player_AtLedgeEdge cross-seam to the spliced
+/// .emp region (the combined-link duplicate-local-label class).
+pub fn assemble_mixed_tranche38_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_PLAYER_SENSORS".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche38 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included
