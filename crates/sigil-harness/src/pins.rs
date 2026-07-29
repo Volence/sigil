@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/fix-test-parent-lifecycle/s4.lst (07/29/2026 11:11:29 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/fix-test-parent-lifecycle/s4.debug.lst (07/29/2026 11:14:23 AM)
-//! [provenance] 47 regions, 302 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche35/s4.lst (07/29/2026 12:42:42 PM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche35/s4.debug.lst (07/29/2026 12:42:43 PM)
+//! [provenance] 50 regions, 307 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +185,15 @@ pub const PLAYER_COMMON: Region = Region { plain_base: 0x10002, debug_base: 0x10
 
 /// `Sonic_InitAssets` .. `TestStatic_Main` — gate `SIGIL_EMP_SONIC`. tests: test_p1_player_port
 pub const SONIC: Region = Region { plain_base: 0x10C14, debug_base: 0x10C14, plain_len: 0x40, debug_len: 0x40 };
+
+/// `PState_Ground` .. `PState_Air` — gate `SIGIL_EMP_PLAYER_GROUND`. tests: test_p2_player_states_port
+pub const PLAYER_GROUND: Region = Region { plain_base: 0x10448, debug_base: 0x10448, plain_len: 0x45A, debug_len: 0x45A };
+
+/// `PState_Air` .. `PState_Spindash` — gate `SIGIL_EMP_PLAYER_AIR`. tests: test_p2_player_states_port
+pub const PLAYER_AIR: Region = Region { plain_base: 0x108A2, debug_base: 0x108A2, plain_len: 0x2D2, debug_len: 0x2D2 };
+
+/// `PState_Spindash` .. `Sonic_InitAssets` — gate `SIGIL_EMP_PLAYER_SPINDASH`. tests: test_p2_player_states_port
+pub const PLAYER_SPINDASH: Region = Region { plain_base: 0x10B74, debug_base: 0x10B74, plain_len: 0xA0, debug_len: 0xA0 };
 
 // ── Symbols (manifest order) ──
 
@@ -1063,6 +1072,21 @@ pub const PLAYER_SENSOR_FLOOR: Pin = Pin { plain: 0x5414, debug: 0x61AC };
 
 /// `Player_AtLedgeEdge`. tests: test_p1_player_port
 pub const PLAYER_AT_LEDGE_EDGE: Pin = Pin { plain: 0x552E, debug: 0x62C6 };
+
+/// `Player_SetState`. tests: test_p2_player_states_port
+pub const PLAYER_SET_STATE: Pin = Pin { plain: 0x1023C, debug: 0x1023C };
+
+/// `Player_SnapToSurface`. tests: test_p2_player_states_port
+pub const PLAYER_SNAP_TO_SURFACE: Pin = Pin { plain: 0x1030C, debug: 0x1030C };
+
+/// `Player_SensorCeiling`. tests: test_p2_player_states_port
+pub const PLAYER_SENSOR_CEILING: Pin = Pin { plain: 0x542A, debug: 0x61C2 };
+
+/// `Player_SensorWallDir`. tests: test_p2_player_states_port
+pub const PLAYER_SENSOR_WALL_DIR: Pin = Pin { plain: 0x54E4, debug: 0x627C };
+
+/// `Player_SensorWallAt`. tests: test_p2_player_states_port
+pub const PLAYER_SENSOR_WALL_AT: Pin = Pin { plain: 0x54DC, debug: 0x6274 };
 
 /// `Sonic_LoadArt`. tests: test_p1_player_port
 pub const SONIC_LOAD_ART: Pin = Pin { plain: 0x10C2C, debug: 0x10C2C };
