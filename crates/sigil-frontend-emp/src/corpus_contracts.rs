@@ -320,7 +320,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let mut flag_firings: Vec<FlagFiring> = Vec::new();
     let mut flag_firings_verified: Vec<FlagFiring> = Vec::new();
     for pb in &proc_bufs {
-        let unused = check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded);
+        let unused =
+            check_flag_unused(&pb.name, &pb.buf.items, &flag_callees, &pb.discarded, Cpu::M68000);
         flag_firings_verified.extend(unused.iter().cloned());
         flag_firings.extend(unused);
         flag_firings.extend(check_result_invalid_path(

@@ -24,7 +24,8 @@
 use crate::calls::call_unconditional_outs;
 use crate::lower::instr_written_regs;
 use crate::out_verify::cc_transparent;
-use crate::value::{CodeItem, CodeOperand, Reg};
+use crate::value::{CodeItem, CodeOperand, Reg, Z80Cond};
+use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -74,13 +75,29 @@ const RETURN_MNEMONICS: [&str; 4] = ["rts", "rte", "rtr", "rtd"];
 /// redefines (`writes_carry`), not consumers. (The spec's "ADDX-class consumer"
 /// language is about an `out(extend:)` result; a carry result is discharged only
 /// by a carry-reading branch.)
-fn consumes_carry(mnem: &str) -> bool {
+fn consumes_carry(mnem: &str, ops: &[CodeOperand], cpu: Cpu) -> bool {
+    // Z80 (rung-2 §13.3 sub-part 2): a carry-testing conditional control-flow
+    // form (`jr c`/`jr nc`/`ret c`/`jp nc`/`call c`) READS carry — the Z80
+    // sibling of the 68k `bcs`/`bcc` consumers. The condition rides the leading
+    // `Z80Cc` operand (the §13.3 producer), so the mnemonic alone is
+    // insufficient. NEW Z80 arm; the 68k allowlist below is byte-unchanged.
+    if cpu == Cpu::Z80 {
+        return z80_reads_carry(mnem, ops);
+    }
     matches!(
         mnem,
         "bcs" | "bcc" | "bhi" | "bls" | "blo" | "bhs"
             | "scs" | "scc" | "shi" | "sls" | "slo" | "shs"
             | "dbcs" | "dbcc" | "dbhi" | "dbls"
     )
+}
+
+/// A Z80 carry-testing control-flow form CONSUMES carry: `jr`/`jp`/`call`/`ret`
+/// whose leading `Z80Cc` is `c` (carry set) or `nc` (carry clear). A `z`/`nz`
+/// (Zero) form tests a DIFFERENT flag — it neither consumes nor redefines carry.
+fn z80_reads_carry(mnem: &str, ops: &[CodeOperand]) -> bool {
+    matches!(mnem, "jr" | "jp" | "call" | "ret")
+        && matches!(ops.first(), Some(CodeOperand::Z80Cc(Z80Cond::C | Z80Cond::Nc)))
 }
 
 /// Does this resolved mnemonic REDEFINE (write) the carry flag, ending the
@@ -97,7 +114,14 @@ fn consumes_carry(mnem: &str) -> bool {
 /// `bclr`/`bchg`, which write ONLY the Z flag and never touch C (do not "fix"
 /// this by adding them). `move` writes CC; `movea` (address-register move) does
 /// not — the evaluator spells them distinctly.
-fn writes_carry(mnem: &str) -> bool {
+fn writes_carry(mnem: &str, cpu: Cpu) -> bool {
+    // Z80 (rung-2 §13.3 sub-part 2): its own carry-writer allowlist (incl. an
+    // intervening `call`/`rst`, which clobbers carry — no local callee CC
+    // contract). NEW Z80 arm; the 68k `CALL_MNEMONICS`/allowlist below is
+    // byte-unchanged.
+    if cpu == Cpu::Z80 {
+        return z80_writes_carry(mnem);
+    }
     if CALL_MNEMONICS.contains(&mnem) {
         // An intervening call clobbers the condition codes: the tracked carry
         // does not survive it (a `bcs` after an unrelated `jsr` tests the wrong
@@ -117,6 +141,24 @@ fn writes_carry(mnem: &str) -> bool {
             | "tst" | "ext" | "extb" | "swap" | "tas"
             | "nbcd" | "abcd" | "sbcd"
             | "asl" | "asr" | "lsl" | "lsr" | "rol" | "ror" | "roxl" | "roxr"
+    )
+}
+
+/// The Z80 carry-writer allowlist — the mnemonics that REDEFINE carry, ending a
+/// flag-result must-use window (the Z80 sibling of the 68k [`writes_carry`]
+/// allowlist). A curated set (false-negative-leaning, like the 68k detector: an
+/// unmodeled mnemonic is CC-transparent). Includes the ALU/shift/rotate carry
+/// writers, `scf`/`ccf`, and `call`/`rst` (a callee clobbers carry). NOT here —
+/// hence transparent: `ld`/`push`/`pop`/`inc`/`dec` (8-bit inc/dec leave carry,
+/// 16-bit inc/dec touch no flags), `bit`/`set`/`res`, `cpl` (writes H/N, not C).
+fn z80_writes_carry(mnem: &str) -> bool {
+    matches!(
+        mnem,
+        "add" | "adc" | "sub" | "sbc" | "cp" | "and" | "or" | "xor"
+            | "neg" | "daa" | "ccf" | "scf"
+            | "rlca" | "rrca" | "rla" | "rra"
+            | "rlc" | "rrc" | "rl" | "rr" | "sla" | "sra" | "srl" | "sll"
+            | "call" | "rst"
     )
 }
 
@@ -245,6 +287,73 @@ impl<'a> Cfg<'a> {
         }
     }
 
+    /// The Z80 successor edges of instruction `idx` — the CPU-parametric sibling
+    /// of [`Self::edges`] (rung-2 §13.3). The shared `edges` bakes in the 68k
+    /// terminators (`rts`/`bra`/…); Z80 has its own (`ret`/`reti`/`retn`,
+    /// `jp`/`jr`, conditional `jr cc`/`jp cc`/`ret cc`, `djnz`), so the
+    /// carry-tracking walk consults THIS when the proc is a Z80 module — leaving
+    /// the 68k `edges` byte-untouched. A conditional form (a leading `Z80Cc`)
+    /// contributes BOTH its taken and fall-through edges (a carry-CONSUMING
+    /// conditional is pruned by the caller before `z80_edges` is reached, so
+    /// only Z/parity-testing conditionals arrive here, each a genuine two-way
+    /// split). An external `jp`/`jr` target `Defer`s (the flag flows out).
+    pub(crate) fn z80_edges(&self, idx: usize) -> Vec<Edge> {
+        let Some((mnem, ops)) = self.instr(idx) else { return vec![] };
+        let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
+        let fallthrough = self.next_instr.get(&idx).copied();
+        // Unconditional return.
+        if matches!(mnem, "ret" | "reti" | "retn") && !leads_cc {
+            return vec![Edge::Abandon];
+        }
+        // Conditional `ret cc`: taken edge returns (abandon); fall-through stays.
+        if mnem == "ret" && leads_cc {
+            return match fallthrough {
+                Some(f) => vec![Edge::Abandon, Edge::Follow(f)],
+                None => vec![Edge::Abandon, Edge::Abandon],
+            };
+        }
+        // Unconditional `jp`/`jr`: a LOCAL label follows; an external symbol (or a
+        // computed `jp (hl)` with no bare Sym) defers out of the proc.
+        if matches!(mnem, "jp" | "jr") && !leads_cc {
+            return match branch_target(ops).and_then(|t| self.label_target.get(t)) {
+                Some(&tgt) => vec![Edge::Follow(tgt)],
+                None => vec![Edge::Defer],
+            };
+        }
+        // Conditional `jr cc`/`jp cc`/`call cc`: the taken edge (local → follow,
+        // external → defer) PLUS the fall-through.
+        if matches!(mnem, "jp" | "jr" | "call") && leads_cc {
+            let mut v = Vec::new();
+            match branch_target(ops).and_then(|t| self.label_target.get(t)) {
+                Some(&tgt) => v.push(Edge::Follow(tgt)),
+                None => v.push(Edge::Defer),
+            }
+            match fallthrough {
+                Some(f) => v.push(Edge::Follow(f)),
+                None => v.push(Edge::Abandon),
+            }
+            return v;
+        }
+        // `djnz` — a counting loop: branch to its label PLUS fall-through.
+        if mnem == "djnz" {
+            let mut v = Vec::new();
+            if let Some(&tgt) = branch_target(ops).and_then(|t| self.label_target.get(t)) {
+                v.push(Edge::Follow(tgt));
+            }
+            match fallthrough {
+                Some(f) => v.push(Edge::Follow(f)),
+                None => v.push(Edge::Abandon),
+            }
+            return v;
+        }
+        // Everything else (incl. `call Name`, which returns) falls through; the
+        // end of the body abandons.
+        match fallthrough {
+            Some(f) => vec![Edge::Follow(f)],
+            None => vec![Edge::Abandon],
+        }
+    }
+
     /// From the call at `call_idx`, walk the fall-through chain to the first
     /// branch that tests `cc` (or its negation) and return the item index that
     /// begins the INVALID edge (where `cc` does NOT hold). `None` when the guard
@@ -266,7 +375,10 @@ impl<'a> Cfg<'a> {
                     None // an unrelated branch — bail
                 };
             }
-            if RETURN_MNEMONICS.contains(&mnem) || writes_carry(mnem) || writes_ccr_operand(ops) {
+            if RETURN_MNEMONICS.contains(&mnem)
+                || writes_carry(mnem, Cpu::M68000)
+                || writes_ccr_operand(ops)
+            {
                 return None; // guard never tested (returned / CC redefined)
             }
             idx = *self.next_instr.get(&idx)?; // fall through to the next instr
@@ -393,6 +505,16 @@ pub(crate) enum Edge {
     Defer,
 }
 
+/// Whether a mnemonic names a DIRECT subroutine call — the site whose flag
+/// result must be consumed. 68k `jsr`/`bsr`/`jbsr`; Z80 `call` (rung-2 §13.3
+/// sub-part 2). A NEW Z80 arm; the 68k `CALL_MNEMONICS` membership is unchanged.
+fn is_call_site(mnem: &str, cpu: Cpu) -> bool {
+    match cpu {
+        Cpu::Z80 => mnem == "call",
+        _ => CALL_MNEMONICS.contains(&mnem),
+    }
+}
+
 /// Run `[call.flag-result-unused]` over one proc's evaluated CodeBuf `items`.
 /// For each call to a `flag_callees` member, verify every path consumes the
 /// flag before a redefine / return. `discarded` is the set of call-site spans
@@ -402,13 +524,14 @@ pub fn check_flag_unused(
     items: &[CodeItem],
     flag_callees: &BTreeMap<String, BTreeSet<String>>,
     discarded: &[Span],
+    cpu: Cpu,
 ) -> Vec<FlagFiring> {
     let cfg = Cfg::build(items);
     let mut firings = Vec::new();
 
     for (idx, it) in items.iter().enumerate() {
         let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
-        if !CALL_MNEMONICS.contains(&mnemonic.as_str()) {
+        if !is_call_site(mnemonic, cpu) {
             continue;
         }
         // A DIRECT call whose sole operand is a bare symbol naming a flag-result
@@ -426,7 +549,7 @@ pub fn check_flag_unused(
             if flag != "carry" {
                 continue; // only carry has a consumer model today
             }
-            if abandons_flag(&cfg, idx) {
+            if abandons_flag(&cfg, idx, cpu) {
                 firings.push(FlagFiring {
                     proc: proc_name.to_string(),
                     callee: callee.to_string(),
@@ -616,11 +739,18 @@ fn reads_reg_before_redefine(
 /// satisfied); a `Defer` edge (tail call to an external symbol) also prunes (the
 /// flag flows out of the proc — not a local abandonment). The visited set gives
 /// the CFG real joins so loops terminate.
-fn abandons_flag(cfg: &Cfg, call_idx: usize) -> bool {
+fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu) -> bool {
+    // The Z80 terminator/edge model diverges from 68k (`ret` vs `rts`, `jr`/`jp`
+    // vs `bra`/`jmp`, conditional `jr cc`), so the carry-tracking walk consults
+    // the matching edge builder — leaving the 68k `edges` byte-untouched.
+    let edges = |idx: usize| match cpu {
+        Cpu::Z80 => cfg.z80_edges(idx),
+        _ => cfg.edges(idx),
+    };
     let mut visited: BTreeSet<usize> = BTreeSet::new();
     let mut queue: VecDeque<Edge> = VecDeque::new();
     // Seed from the call's own fall-through (the call is never re-examined).
-    for e in cfg.edges(call_idx) {
+    for e in edges(call_idx) {
         queue.push_back(e);
     }
     while let Some(edge) = queue.pop_front() {
@@ -633,13 +763,13 @@ fn abandons_flag(cfg: &Cfg, call_idx: usize) -> bool {
             continue; // join / back-edge already explored
         }
         let Some((mnem, ops)) = cfg.instr(idx) else { continue };
-        if consumes_carry(mnem) {
+        if consumes_carry(mnem, ops, cpu) {
             continue; // this path is satisfied
         }
-        if writes_carry(mnem) || writes_ccr_operand(ops) {
+        if writes_carry(mnem, cpu) || writes_ccr_operand(ops) {
             return true; // carry redefined before any consumer
         }
-        for e in cfg.edges(idx) {
+        for e in edges(idx) {
             queue.push_back(e);
         }
     }
