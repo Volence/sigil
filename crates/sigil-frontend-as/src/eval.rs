@@ -2945,9 +2945,16 @@ impl Asm {
             _ => return None,
         };
         let qualified = self.qualify_expr(imm_expr);
-        // Only unresolved (Poison) exprs defer — a resolved value takes the
-        // existing eager path (fall through to `None`), byte-identical.
-        if !matches!(self.fold(&qualified), Fold::Poison) {
+        // Unresolved (Poison) exprs ALWAYS defer. A RESOLVED immediate that names
+        // a section LABEL also defers on the deferral pass (`keep_labels_symbolic`):
+        // `move.l #Label` bakes the label's VMA, which a width-grown `JmpJsrSym`
+        // would shift out from under — so carry the label symbolically and let
+        // the linker fill it post-relax. A resolved NON-label immediate takes the
+        // existing eager path (byte-identical), and on every ordinary pass this is
+        // exactly the pre-existing Poison-only rule.
+        let is_poison = matches!(self.fold(&qualified), Fold::Poison);
+        let refs_label = self.keep_labels_symbolic() && self.expr_refs_label(&qualified);
+        if !is_poison && !refs_label {
             return None;
         }
         let inst = M68kInstruction {
@@ -2974,8 +2981,14 @@ impl Asm {
             offset: 2,
             // Bake env-resolvable subterms; defer only the true cross-seam leaf
             // (mirrors the `db`/`dw` deferral — a compound imm32 with an
-            // env-only equ subterm must not ship that equ as a `Sym`).
-            target: self.partial_fold(&qualified),
+            // env-only equ subterm must not ship that equ as a `Sym`). On the
+            // deferral pass a section-LABEL subterm ALSO stays symbolic
+            // (`relax_safe_fold`) so a width-growth shift is honored at link.
+            target: if refs_label {
+                self.relax_safe_fold(&qualified)
+            } else {
+                self.partial_fold(&qualified)
+            },
         });
         Some(frag)
     }

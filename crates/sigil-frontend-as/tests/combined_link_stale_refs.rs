@@ -78,3 +78,26 @@ fn dc_l_past_grown_cross_seam_jsr_is_not_stale() {
         "dc.l past a width-grown cross-seam jsr must resolve to the shifted label ($1000C)"
     );
 }
+
+/// `move.l #Label, d16(An)` past a grown cross-seam jsr — the immediate holds
+/// the label's VMA and must shift with it (t34: `move.l #$5C93E, $8004(a0)`).
+const IMM_SRC: &str = "\
+        cpu 68000
+        phase $10000
+        jsr     External
+        move.l  #Skip, 4(a0)
+Skip:
+        rts
+";
+
+#[test]
+fn move_l_imm_label_past_grown_cross_seam_jsr_is_not_stale() {
+    let bytes = assemble_link_flatten(IMM_SRC);
+    // Grown layout: jsr(6) @0, move.l opcode @6, imm32 @8, d16 dest word @12,
+    // Skip @14 = $1000E. The imm32 (LMA 8..12) must equal Skip's GROWN VMA.
+    assert_eq!(
+        &bytes[8..12],
+        &[0x00, 0x01, 0x00, 0x0E],
+        "move.l #Label immediate past a width-grown cross-seam jsr must resolve to the shifted label ($1000E)"
+    );
+}
