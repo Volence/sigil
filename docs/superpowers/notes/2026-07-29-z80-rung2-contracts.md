@@ -823,3 +823,130 @@ false-fire — the guard against a phantom fall-through leaking onto uncondition
 `preserves.rs` (the 68k proof) stays byte-untouched.
 
 **Rung-2 sigil-side is now COMPLETE except item 9 (the psg/fm byte-locked ports).**
+
+---
+
+## 13.5 THE psg ACCEPTANCE CORPUS CLOSED THREE UNDER-WIRED GAPS (t32 finisher pass, overseer-dispatched)
+
+Item 9 began: the t32 porter built the `sound_psg` windowed oracle (byte-identical
+both shapes) but found the FULL faithful contract set could not go live — the
+checkpoint-(a) findings. Applying it fired **63 diagnostics** (38 `clobber-invalid`
++ 5 `out-invalid` + ~20 `preserves-unverifiable`), so psg LANDED with `invariant(ix)`
++ calling-proc `preserves` + `clobbers`/`out(<reg>)` as PROSE. This pass wired the
+three gaps the items-1-8 implementation under-built; the full set now VERIFIES
+machine-checked, **63 → 0**, `invariant(ix)` LIVE, byte-identical (`sound_psg_port`
+5/5). Frozen-68k held throughout (`preserves.rs` byte-untouched; suite 2765 → 2777).
+
+### 13.5-A — the items-1-8 wiring gap (`clobbers`/`out` never reached the recognizer)
+
+§2/§2.2 DESIGNED `clobbers`/`preserves`/`out` to ride the CPU-aware recognizer, but
+items 1-8 wired only `preserves` (via `check_z80_preserves` → `expand_reglist`),
+`invariant`, and `out(carry:)`. `check_clobbers`/`check_out` (`lower/proc.rs`) still
+validated their reglists against the **68k** universe (`reglist_expand`'s
+`preserves_reg_bit`), so every `clobbers(af)` / `out(a)` on a Z80 proc fired
+`[proc.clobber-invalid]` / `[proc.out-invalid]`. FIX: both gained a `cpu` param; a
+Z80 proc routes its reglist through `expand_reglist(RegFile::Z80)`. The `out`
+partition also needed the Z80 out∩clobbers / out∩preserves overlap checks Z80-
+expanded, and the out-UNWRITTEN check SKIPPED on Z80 (its write detector is the 68k
+heuristic — a Z80 `out` is unverifiable-written, honest like `preserves`; an empty
+68k `written` set would have false-fired unwritten on every Z80 out — a latent bug
+the prose contracts never exercised). This is why the psg `af` header SPLITS in the
+`.emp`: `out(a) clobbers(f)` (the result vs the flag scratch), disjoint by
+construction.
+
+### 13.5-B — the §3.2 "trivially satisfied" over-claim (contradicted by its own corpus)
+
+§3.2 asserted `invariant(ix)` is "trivially satisfied (no instruction writes ix)"
+and "the day a future edit adds `pop ix` … fires." Both halves are true for a
+NO-CALL proc — but the sibling proof (§13.3: "the sibling proof conservatively
+treats every `call` as clobber-all, so it needs no transitive closure") makes a
+`call` write EVERY register. psg is dense with calls, so `invariant(ix)` +
+every calling proc's `preserves` fired on the 5 calling procs (Psg_ChBase /
+Psg_NoteOff / Psg_ApplyMod / Psg_EmitDivisor / Psg_SetVolume) EVEN THOUGH ix is only
+ever read as `(ix+d)`. The §3.2 claim held only because **the item-5/6 tests
+exercised NO call case** — every `preserves`/`invariant` fixture was a leaf. The
+corpus contradicted the design. This is the IDENTICAL wall t30 hit for 68k
+(`verify_preserved` clobber-all through a preserving call before `rts`), which t30
+fixed with the callee-preserves oracle — but the Z80 sibling was built call-clobber-
+all and never got the equivalent. FIX (gap 2): a `CalleePreserves` map (visible proc
+/ `extern proc` → preserved units) — the Z80 analog of `preserves.rs`'s
+`CallPolicy::Oracle` (`:77`) / `call_preserves` (`:83`) / `callee_clobbers`' `None
+=> true` (`:632`). The `transfer` call arm clobbers only units the callee does NOT
+preserve; unknown/indirect → conservative clobber-all. A local proc's map entry is
+its declared `preserves` UNIONED with the module invariant (each local proc is
+itself checked, so the credit is sound; a caller's own write always clears its bit
+regardless of callee credit); an `extern`'s is its declared `preserves` (trusted, the
+extern convention). DIVERGENCE from the 68k closure (recorded honestly): the per-proc
+map trusts DECLARATIONS directly rather than a verified `effective` fixpoint — the
+per-proc seam has no closure — so a declared-but-false `preserves` on a callee would
+not itself fold to conservative; it is caught instead by the callee's OWN check
+firing (the build stops at the root). Sound because own-writes are always caught and
+psg is acyclic; a genuinely cyclic mutual-preserve would be trusted (the 68k closure
+would fold it conservative). Named for a future rung if a Z80 cycle appears.
+
+### 13.5-C — the vacuous tail-jp pass (a soundness hole; the never-rides-flagged-open rule)
+
+A proc ending in a tail `jp`/`jr` with NO local `ret` reached only `Edge::Defer` (the
+external-tail edge, ignored mirroring `preserves.rs:294`), so `saw_return` stayed
+false and the proof returned `Verified` VACUOUSLY (`!saw_return`) — silently
+verifying a `preserves` the body breaks. psg's `Psg_NoteOn` / `Psg_EmitNoiseClock` /
+`Psg_Noise` all tail-jump (`jp Psg_SetVolume`, `jr Psg_EmitDivisorTo`) and passed
+`preserves(ix)` on air. The reproducer, now a permanent test
+(`z80_tail_jp_clobber_fires`): `push bc / pop ix / jp External` — clobbers ix then
+tail-jumps, MUST fire, but passed vacuously. FIX (gap 3): `Edge::Defer` is now an
+EXIT that CHECKPOINTS — the proc preserves rN across a tail transfer iff rN holds
+its entry value AT the jp AND the tail-callee itself preserves rN (unknown →
+conservative, via the same oracle). A tail-jp to a same-module proc (`jp
+Psg_SetVolume`) is credited from the map; an external unknown fires. `saw_return` is
+now set at a Defer exit, so the vacuous branch only survives a genuinely no-exit body
+(an infinite loop).
+
+### 13.5-D — the local END-label mis-classification (a gap-3 self-catch on the corpus)
+
+Making `Edge::Defer` a checkpoint surfaced a latent ambiguity in `Cfg::label_index`:
+it returns `None` BOTH for a truly external symbol AND for a LOCAL label at the proc's
+very end (no following instruction). `Psg_ApplyMod`'s `jr z, .div_ok` — where
+`.div_ok:` closes the proc before it falls into `Psg_EmitDivisor` — was thus read as
+an external tail transfer, and the conservative unknown-callee fired
+`[proc.preserves-unverifiable]` on the inherited `invariant(ix)`. FIX:
+`flag_check::Cfg` gains an additive `is_local_label` (a `CodeItem::Label` defined
+among the items, end-label included); z80_preserves' `branch_edge` routes a local
+end-label jump to `Edge::Abandon` (an in-proc fall-off), reserving `Edge::Defer` for
+a symbol that is neither a local label nor a local end-label (a genuine tail call) or
+a computed `jp (hl)`. This is the whole reason gap 3 must consult label DEFINITION,
+not just `label_index` — the corpus caught the shortcut.
+
+### 13.5-E — the honest contracts the checker positively caught (the port's payoff)
+
+With the machine checker live, several 15-year-old `.asm` header over-claims became
+honest `.emp` contracts the proof VERIFIES (the "a false clobber comment caused a
+prior bug" class the psg header warns of, now a compile-time positive):
+`Psg_EnvCursorReset` clobbers NOTHING (the two `(ix+d)` immediate stores touch no
+register — the header's `Clobbers af` over-claims; the `.emp` `preserves(af, …)` and
+the proof confirms it); `Psg_EmitDivisor` preserves `b`, `de` (de is push/pop-
+bracketed across `Psg_ChBase`, b untouched — the `af, bc, de` header over-claims);
+`Psg_EmitDivisorTo` / `Psg/FmVolEnv_Resolve` preserve `c` (only the djnz counter `b`
+dies — the `bc` header over-claims). The `out`/`clobbers` split of every `af` result
+register is the §1.1 register-half design earning its keep.
+
+### 13.5-F — residue the psg corpus still cannot express (honest)
+
+- **No `di`/`ei`/`exx`/`ex (sp),hl` in psg** (§1.5 confirmed on the tree) — the
+  shadow-set, di/ei-lattice, and trampoline-alias bailout stay REPRESENTED-not-wired
+  (§4.3/§4.4); psg exercises none, so rung 2 leaves them for rung 3/4 as designed.
+- **The callee oracle is declaration-trust, not a verified closure** (13.5-B) — a
+  cyclic Z80 mutual-preserve would be trusted where the 68k closure folds it
+  conservative; psg is acyclic so it never bites, and it is named for the rung that
+  first ships a Z80 call cycle.
+- **`out(carry:)` cross-proc must-use is untested WITHIN psg** — `Psg/FmVolEnv_Resolve`
+  declare `out(hl, carry: found)` but their consumers live in other files (the
+  sequencer), so the windowed port has no in-file caller to exercise the
+  `[call.flag-result-unused]` check; the whole-ROM seam sub-tranche is where that
+  lands.
+- **`de = $4001` / `$2A`-parked stay out of the register-invariant model** (§9-A/§9-B,
+  ruling 3) — psg CLOBBERS de and relies on the Timer-A caller; the `.emp` honestly
+  `clobbers(de)` where it touches it and carries no de invariant, as ruled.
+
+Credit: overseer (Fable) dispatched + drove this finisher pass; the porter's
+checkpoint-(a) table (the 63-firing arc, the Psg_EnvCursorReset correction) is the
+input this discharges.
