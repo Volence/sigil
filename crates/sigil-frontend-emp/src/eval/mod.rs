@@ -327,6 +327,15 @@ pub struct Evaluator<'a> {
     /// `unknown name`. A COUNTER (not a bool) so nested value positions restore
     /// correctly.
     label_ctx: u32,
+    /// The partial CodeBuf items lowered SO FAR in the enclosing proc/asm body,
+    /// snapshotted while evaluating a body-position `ensure` guard (rung 4, t40).
+    /// `cycles(L1, L2)` reads this to sum the T-states of the `[L1, L2)` label
+    /// span (`z80_cycles`). `None` outside a body-ensure — a `cycles()` call
+    /// there is a context error. Because Z80 encodings are fixed-width (no
+    /// relaxation), the snapshot's instruction costs are EXACT for any span that
+    /// textually PRECEDES the ensure — which is the annotation's natural place
+    /// (at/after the loop it measures).
+    cycle_scope: Option<Vec<crate::value::CodeItem>>,
     /// Depth of enclosing IMMEDIATE-OPERAND contexts (C1 item 1). A SUBSET of
     /// [`label_ctx`](Self::label_ctx): bumped only inside an instruction `#`
     /// immediate (by [`in_imm_link_ctx`](Self::in_imm_link_ctx), which bumps
@@ -430,6 +439,7 @@ impl<'a> Evaluator<'a> {
             reg_pointee_struct: HashMap::new(),
             cpu: None,
             label_ctx: 0,
+            cycle_scope: None,
             imm_ctx: 0,
             imported_item_types: HashMap::new(),
             data_value_memo: HashMap::new(),
