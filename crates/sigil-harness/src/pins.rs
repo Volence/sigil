@@ -6,9 +6,9 @@
 //! staleness. All values are LISTING truth — per-shape VMAs/lengths from
 //! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche29/s4.lst (07/29/2026 04:40:55 AM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche29/s4.debug.lst (07/29/2026 04:41:03 AM)
-//! [provenance] 41 regions, 279 symbols, 7 offsets
+//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche30/s4.lst (07/29/2026 05:37:32 AM)
+//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche30/s4.debug.lst (07/29/2026 05:37:33 AM)
+//! [provenance] 44 regions, 280 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +153,15 @@ pub const TEST_STATIC: Region = Region { plain_base: 0x10C66, debug_base: 0x10C6
 /// `TestAnimated` .. `TestPlayer` — gate `SIGIL_EMP_TEST_ANIMATED`. tests: test_g1_objects_port
 pub const TEST_ANIMATED: Region = Region { plain_base: 0x10C6A, debug_base: 0x10C6A, plain_len: 0x5A, debug_len: 0x5A };
 
+/// `TestEmitter` .. `TestChildPart` — gate `SIGIL_EMP_TEST_EMITTER`. tests: test_g2_objects_port
+pub const TEST_EMITTER: Region = Region { plain_base: 0x10FDC, debug_base: 0x10FDC, plain_len: 0x54, debug_len: 0x54 };
+
+/// `TestStressEmitter` .. `TestChurnObj` — gate `SIGIL_EMP_TEST_STRESS_EMITTER`. tests: test_g2_objects_port
+pub const TEST_STRESS_EMITTER: Region = Region { plain_base: 0x1115C, debug_base: 0x1115C, plain_len: 0x5A, debug_len: 0x5A };
+
+/// `TestChurnObj` .. `ObjDef_PathSwap` — gate `SIGIL_EMP_TEST_CHURN`. tests: test_g2_objects_port
+pub const TEST_CHURN: Region = Region { plain_base: 0x111B6, debug_base: 0x111B6, plain_len: 0x78, debug_len: 0x78 };
+
 /// `Ani_Sonic` .. `Ani_Sonic_End` — gate `SIGIL_EMP_SONIC_ANIMS`. tests: sonic_anims_port
 pub const SONIC_ANIMS: Region = Region { plain_base: 0x25710, debug_base: 0x25778, plain_len: 0x6E, debug_len: 0x6E };
 
@@ -193,6 +202,9 @@ pub const DPLC_SONIC: Pin = Pin { plain: 0x29606, debug: 0x2966E };
 
 /// `Art_Sonic`. tests: test_g1_objects_port
 pub const ART_SONIC: Pin = Pin { plain: 0x29F46, debug: 0x29FAE };
+
+/// `CreateEffect_Normal`. tests: test_g2_objects_port
+pub const CREATE_EFFECT_NORMAL: Pin = Pin { plain: 0x3F72, debug: 0x4C4A };
 
 /// `EntryPoint`. tests: m1c_vector_table
 pub const ENTRY_POINT: Pin = Pin { plain: 0x200, debug: 0x200 };

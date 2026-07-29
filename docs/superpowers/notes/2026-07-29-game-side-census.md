@@ -7,6 +7,23 @@ pins/listings only — every claim needing a build is tagged **PORTER-VERIFY**).
 the real trees; the 2026-07-29 t26-close-packet's three framing corrections and its
 one OVERRULED census claim (the `$55A4` listing-echo trap) are folded in below.
 
+**STATUS AMENDMENT (2026-07-29, t30 close — `2026-07-29-t30-close-packet.md`):**
+G2 is PORTED (`test_emitter.emp` + `test_stress_emitter.emp` + `test_churn.emp`;
+byte-delta zero, strict 2711/0). THREE corrections this census owes:
+1. **ANCHOR ERROR (§3a/§7):** test_emitter's end anchor / gate resume is
+   `TestChildPart` ($11030), test_parent.asm's FIRST label — NOT `TestParent`
+   ($110C0, its 3rd label). Caught by the windowed byte gate. Rule for G3+: derive
+   an object's end anchor from the NEXT include's FIRST EMITTED label.
+2. **Two demanded FRONTEND features shipped** (the census implied game-code ports
+   need no frontend work): (a) `Value16Be` word-immediate link-deferral — the
+   `move.w #objroutine(Sym), (An)` spawn idiom for a gated-out object (t30 = the
+   first tranche to gate out an object referenced by a `move.w #` immediate, not a
+   `dc.w`); (b) `EffectSpawn1` typed struct — sigil's `dc` cannot hold a
+   link-EXPRESSION, so the effect descriptor's objroutine word rides a typed record.
+3. **First object Main to WRITE a0** (test_churn's self-management) drove the
+   contract system to grow the CALLEE-PRESERVES ORACLE (transitive-preserve
+   verification) — the capability the player cluster (P1+) will lean on.
+
 **STATUS AMENDMENT (2026-07-29, t29 close — `2026-07-29-t29-close-packet.md`):**
 G1 is PORTED (`test_static.emp` + `test_animated.emp`, merged; byte-delta zero,
 strict 2691/0). TWO corrections this census owes:

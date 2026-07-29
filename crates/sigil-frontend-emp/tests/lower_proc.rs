@@ -1305,3 +1305,45 @@ fn stack_push_pop_is_not_a_clobber() {
     });
     assert!(!a7_warn, "stack push/pop must not trip the clobber lint on a7: {diags:?}");
 }
+
+#[test]
+fn preserves_trailing_preserving_call_defers_not_errors() {
+    // §5 callee-preserves oracle (t30): a0 is saved, restored, then a TRAILING
+    // call runs before `rts` (the `TestChurnObj_Main` shape). The byte gate has no
+    // cross-file contract knowledge, so it cannot prove a0 round-trips — but the
+    // failure is blocked SOLELY by the call, so it must DEFER to the corpus closure
+    // (which credits the callee's verified `preserves`), NOT emit a per-file error.
+    let src = "module m\n\
+               proc h() clobbers(d0) preserves(a0) {\n\
+               \x20   move.l  a0, -(sp)\n\
+               \x20   lea     Foo, a0\n\
+               \x20   movea.l (sp)+, a0\n\
+               \x20   jsr     DeleteObject\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a call-only preserves failure DEFERS to the closure — no per-file error: {diags:?}"
+    );
+}
+
+#[test]
+fn preserves_post_call_clobber_still_errors() {
+    // The DEFER must NOT swallow a genuine local failure: a clobber AFTER the
+    // trailing call with no restore fails even the optimistic probe, so the byte
+    // gate still errors (defer is call-only, not a blanket amnesty).
+    let src = "module m\n\
+               proc h() clobbers(d0) preserves(a0) {\n\
+               \x20   move.l  a0, -(sp)\n\
+               \x20   movea.l (sp)+, a0\n\
+               \x20   jsr     DeleteObject\n\
+               \x20   lea     Foo, a0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a post-call clobber with no restore is a genuine, non-deferrable error: {diags:?}"
+    );
+}

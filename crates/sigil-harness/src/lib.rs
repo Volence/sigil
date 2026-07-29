@@ -878,6 +878,35 @@ pub fn assemble_mixed_tranche29_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 30 (game-side G2): the full AS-side game with `SIGIL_EMP_TEST_EMITTER`
+/// + `SIGIL_EMP_TEST_STRESS_EMITTER` + `SIGIL_EMP_TEST_CHURN` on — main.asm skips
+/// the three effect/child-lifecycle object includes and org-resumes at the
+/// per-shape (shape-invariant) `$11030` (test_parent's first label TestChildPart)
+/// / `$111B6` (TestChurnObj) / `$1122E` (ObjDef_PathSwap) bank addresses; the
+/// three `.emp` modules fill the windows. The `.asm → .emp` caller class:
+/// object_test_state.asm's `dc.w objroutine(TestStressEmitter)` /
+/// `objroutine(TestChurnObj)` spawn words resolve against the `.emp` exports; the
+/// emitter descriptors' `TestParticle` word resolves against the surviving
+/// test_particle.asm. All effect-seam callees (CreateEffect_Normal /
+/// PopulateSpawnedPieceCount / AllocDynamic / DeleteObject / Draw_Sprite) are the
+/// real AS symbols.
+pub fn assemble_mixed_tranche30_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_TEST_EMITTER".to_string(), 1),
+        ("SIGIL_EMP_TEST_STRESS_EMITTER".to_string(), 1),
+        ("SIGIL_EMP_TEST_CHURN".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche30 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included

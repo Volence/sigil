@@ -399,6 +399,31 @@ end = "TestPlayer"
 gate = "SIGIL_EMP_TEST_ANIMATED"
 tests = ["test_g1_objects_port"]
 
+# G2 (t30): the effect/child-lifecycle trio. Bank windows shape-invariant.
+# test_parent.asm sits between test_emitter and test_stress_emitter (NOT ported).
+# test_parent.asm's FIRST label is TestChildPart (NOT TestParent — TestParent is
+# its third label), so that is test_emitter's end anchor / gate resume org.
+[[region]]
+name = "test_emitter"
+start = "TestEmitter"
+end = "TestChildPart"
+gate = "SIGIL_EMP_TEST_EMITTER"
+tests = ["test_g2_objects_port"]
+
+[[region]]
+name = "test_stress_emitter"
+start = "TestStressEmitter"
+end = "TestChurnObj"
+gate = "SIGIL_EMP_TEST_STRESS_EMITTER"
+tests = ["test_g2_objects_port"]
+
+[[region]]
+name = "test_churn"
+start = "TestChurnObj"
+end = "ObjDef_PathSwap"
+gate = "SIGIL_EMP_TEST_CHURN"
+tests = ["test_g2_objects_port"]
+
 # ── Game data (main.asm gates) ──────────────────────────────────────────────
 
 [[region]]
@@ -486,6 +511,14 @@ tests = ["test_g1_objects_port"]
 [[symbol]]
 name = "Art_Sonic"
 tests = ["test_g1_objects_port"]
+
+# G2 (t30): the effect-seam callee CreateEffect_Normal (children.emp). The other
+# callees (PopulateSpawnedPieceCount = CHILDREN base, AllocDynamic, DeleteObject,
+# Draw_Sprite, Frame_Counter, Map_TestObj, TestParticle = TEST_PARTICLE base) are
+# already pinned.
+[[symbol]]
+name = "CreateEffect_Normal"
+tests = ["test_g2_objects_port"]
 
 # ── Cross-seam symbols ──────────────────────────────────────────────────────
 # m1c_vector_table's exception-stub VMAs (the IRQ4 $70 target is now

@@ -2733,6 +2733,19 @@ impl Asm {
         Some(frag)
     }
 
+    /// A 16- or 32-bit immediate operand whose expr is unresolved defers to the
+    /// linker as a `Value16Be`/`Value32Be` fixup instead of hard-erroring.
+    ///
+    /// t30 (game-side G2) extends the original imm32 deferral to size W — the
+    /// `move.w #objroutine(Sym), (An)` object-spawn idiom (object_test_state.asm's
+    /// `move.w #objroutine(TestStressEmitter), SST_code_addr(a1)` where the effect
+    /// object is now `.emp`-owned, so `Sym` is unresolved on the AS side). The
+    /// word source immediate is a single extension word (2 bytes) at offset 2 —
+    /// the disp-0 `SST_code_addr(a1)` dest folds to `(An)` (mode 2, no dest ext
+    /// word) in the same `lower_inst` the eager path uses, so the fixup offset is
+    /// 2 exactly as in the imm32 case. `Value16Be` carries the low-16 truncation
+    /// (`objroutine` = `Sym - ObjCodeBase`, a bank offset ≤ $FFFF).
+    ///
     /// R3 (sound-migration T2, Task 3): a 32-bit immediate operand
     /// (`movea.l #expr,aN` / `move.l #expr,dN`) whose expr is unresolved
     /// defers to the linker as a `Value32Be` fixup instead of hard-erroring —
@@ -2784,7 +2797,7 @@ impl Asm {
         atoms: &[OperandAtom],
         span: Span,
     ) -> Option<DataFragment> {
-        if size != M68kSize::L {
+        if size != M68kSize::L && size != M68kSize::W {
             return None;
         }
         // A bare register destination classifies as `RegOrCond` (the Z80
@@ -2796,8 +2809,12 @@ impl Asm {
         // `move.l` only (an absolute `movea` destination isn't a legal 68k
         // shape; `m68k_addr_reg`/`m68k_data_reg` below reject non-register
         // names regardless, so this arm is naturally Move-only in practice).
+        // REGISTER destinations stay LONG-only (R3's original scope); the t30 W
+        // extension is scoped to MEMORY destinations (the object-spawn shape). A
+        // word immediate into a register (`move.w #Sym, d0`) falls through to the
+        // eager path and errors as before.
         let (imm_expr, dst) = match atoms {
-            [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] => {
+            [OperandAtom::Imm(e), OperandAtom::RegOrCond(w)] if size == M68kSize::L => {
                 let dst = match mnemonic {
                     M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
                     // `move.l #imm, sp` lands here and MUST stay None:
@@ -2809,7 +2826,7 @@ impl Asm {
                 };
                 (e, dst)
             }
-            [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] => {
+            [OperandAtom::Imm(e), OperandAtom::Value(Expr::Sym(w))] if size == M68kSize::L => {
                 let dst = match mnemonic {
                     M68kMnemonic::Movea => M68kOperand::An(m68k_addr_reg(w)?),
                     M68kMnemonic::Move => M68kOperand::Dn(m68k_data_reg(w)?),
@@ -2817,7 +2834,7 @@ impl Asm {
                 };
                 (e, dst)
             }
-            [OperandAtom::Imm(e), OperandAtom::M68kAbs { addr, long }] if mnemonic == M68kMnemonic::Move => {
+            [OperandAtom::Imm(e), OperandAtom::M68kAbs { addr, long }] if mnemonic == M68kMnemonic::Move && size == M68kSize::L => {
                 // The destination address resolves EAGERLY (it's not the
                 // cross-seam leaf this deferral targets) — an unresolved
                 // absolute destination falls through to the eager path.
@@ -2842,7 +2859,20 @@ impl Asm {
                 let n = m68k_addr_reg(an)?;
                 let qd = self.qualify_expr(disp);
                 let d = self.fold_imm(&qd, span, i16::MIN as i64, i16::MAX as i64);
-                (e, M68kOperand::Disp16An(d as i16, n))
+                // Zero-offset fold: `Sym(a1)` with Sym == 0 (e.g. SST_code_addr)
+                // encodes (An) mode 2 — no dest ext word — exactly as asl's
+                // zeroOffsetOptimization does on the eager path. That fold runs
+                // AFTER lower_inst, which the deferred frag skips, so fold here or
+                // the imm hole ships an extra $0000 disp word (+2 bytes, ROM drift).
+                let dst = if d == 0 { M68kOperand::Ind(n) } else { M68kOperand::Disp16An(d as i16, n) };
+                (e, dst)
+            }
+            [OperandAtom::Imm(e), OperandAtom::M68kInd(reg)] if mnemonic == M68kMnemonic::Move && size == M68kSize::W => {
+                // `move.w #Sym, (An)` — the literal `(a1)` object-spawn dest (mode
+                // 2, no dest ext word). W-only: the L (An) memory dest deliberately
+                // stays loud (R3 scoped move.l deferral to register/abs/disp).
+                let n = m68k_addr_reg(reg)?;
+                (e, M68kOperand::Ind(n))
             }
             _ => return None,
         };
@@ -2862,12 +2892,17 @@ impl Asm {
         // the eager path still fails loud (poison ref + the same encode
         // error), never silent.
         let mut frag = self.m68k.lower_inst(&inst, span).ok()?;
+        let (kind, min_len) = if size == M68kSize::L {
+            (FixupKind::Value32Be, 6)
+        } else {
+            (FixupKind::Value16Be, 4)
+        };
         debug_assert!(
-            frag.bytes.len() >= 6,
-            "movea.l/move.l #imm,dest must encode to at least opcode word + 4-byte immediate"
+            frag.bytes.len() >= min_len,
+            "move(a).{{w,l}} #imm,dest must encode to at least opcode word + the immediate"
         );
         frag.fixups.push(Fixup {
-            kind: FixupKind::Value32Be,
+            kind,
             offset: 2,
             // Bake env-resolvable subterms; defer only the true cross-seam leaf
             // (mirrors the `db`/`dw` deferral — a compound imm32 with an

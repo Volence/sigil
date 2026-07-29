@@ -16,7 +16,7 @@
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::parse_str;
-use sigil_frontend_emp::preserves::{verify_preserved, PreserveStatus};
+use sigil_frontend_emp::preserves::{verify_preserved, CallPolicy, PreserveStatus};
 use sigil_frontend_emp::value::Reg;
 use sigil_ir::backend::Cpu;
 use std::path::PathBuf;
@@ -38,7 +38,7 @@ fn residue_status(aeon: &PathBuf, file_rel: &str, proc: &str, reg: Reg) -> Prese
     let (buf, _d, _n) =
         eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
     let buf = buf.unwrap_or_else(|| panic!("no codebuf for {proc}"));
-    verify_preserved(&buf.items, &[reg]).remove(&reg).unwrap()
+    verify_preserved(&buf.items, &[reg], CallPolicy::ClobberAll).remove(&reg).unwrap()
 }
 
 #[test]

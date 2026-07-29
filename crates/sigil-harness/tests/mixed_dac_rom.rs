@@ -120,7 +120,7 @@ use sigil_harness::{
     assemble_mixed_tranche20_as_side, assemble_mixed_tranche21_as_side,
     assemble_mixed_tranche22_as_side, assemble_mixed_tranche23_as_side,
     assemble_mixed_tranche24_as_side,
-    assemble_mixed_tranche29_as_side,
+    assemble_mixed_tranche29_as_side, assemble_mixed_tranche30_as_side,
     assemble_mixed_error_handler_as_side,
     assert_rom_matches_convsym,
 };
@@ -4464,6 +4464,163 @@ fn mixed_tranche29_debug_rom_matches_assembled_reference() {
     };
     let rom = build_mixed_tranche29_rom(&aeon, true);
     assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche29 mixed debug");
+}
+
+// ---------------------------------------------------------------------------
+// TRANCHE 30 — game-side G2: test_emitter.emp + test_stress_emitter.emp +
+// test_churn.emp inside the full ROM. The three per-file gates gate the object
+// includes out of main.asm's object bank; the `.emp` modules fill the
+// shape-invariant windows ($10FDC len $54 / $1115C len $5A / $111B6 len $78).
+// Shared end anchors: TestChildPart (test_parent's first label, $11030),
+// TestChurnObj ($111B6), ObjDef_PathSwap ($1122E) must land canonically with the
+// includes gated out. The effect-seam callees + descriptor TestParticle resolve
+// against the real AS tree (children.asm/core.asm/sprites.asm/test_particle.asm).
+// ---------------------------------------------------------------------------
+
+fn build_mixed_tranche30_rom(aeon: &Path, debug: bool) -> Vec<u8> {
+    let as_module =
+        assemble_mixed_tranche30_as_side(aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+
+    // Proof (1): org-resume must land the three shared end anchors at their
+    // canonical addresses with the object includes gated out.
+    let find_label = |name: &str| -> Option<u32> {
+        for sec in &as_module.sections {
+            for l in &sec.labels {
+                if l.name == name {
+                    return Some(sec.vma_origin().wrapping_add(l.offset));
+                }
+            }
+        }
+        None
+    };
+    // AS-visible shared anchors only. TestChurnObj (test_stress_emitter's end =
+    // test_churn's start) is GATED OUT on both sides (.emp-owned), so it is not an
+    // AS label here; the two ungated bracket anchors are TestChildPart
+    // (test_parent's first label = test_emitter's end) and ObjDef_PathSwap
+    // (path_swap's first label = test_churn's end).
+    for (name, want) in [
+        ("TestChildPart", pins::TEST_EMITTER.plain_base + pins::TEST_EMITTER.plain_len as u32),
+        ("ObjDef_PathSwap", pins::TEST_CHURN.plain_base + pins::TEST_CHURN.plain_len as u32),
+    ] {
+        assert_eq!(find_label(name), Some(want), "org-resume must land {name} at its canonical address");
+    }
+
+    let dbg = i128::from(debug);
+    let objects_dir = aeon.join("engine/objects");
+    let system_dir = aeon.join("engine/system");
+    let defines = vec![("DEBUG".to_string(), dbg), ("SOUND_DRIVER_ENABLED".to_string(), 1)];
+
+    let ambient = |objects_dir: &Path, system_dir: &Path| {
+        vec![
+            sst_ambient_items(objects_dir),
+            constants_ambient_items(system_dir),
+            objdef_ambient_items(objects_dir),
+        ]
+    };
+
+    let regions: [(&str, &str, pins::Region); 3] = [
+        ("test_emitter", "games/sonic4/objects/test_emitter.emp", pins::TEST_EMITTER),
+        ("test_stress_emitter", "games/sonic4/objects/test_stress_emitter.emp", pins::TEST_STRESS_EMITTER),
+        ("test_churn", "games/sonic4/objects/test_churn.emp", pins::TEST_CHURN),
+    ];
+
+    let mut sections = as_module.sections;
+    let mut all_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
+    for (name, rel, region) in regions {
+        let (base, len) = if debug {
+            (region.debug_base, region.debug_len)
+        } else {
+            (region.plain_base, region.plain_len)
+        };
+        let (secs, asserts) = t21_lower_and_place(
+            aeon,
+            rel,
+            ambient(&objects_dir, &system_dir),
+            name,
+            base,
+            len,
+            defines.clone(),
+        );
+        sections.extend(secs);
+        all_asserts.extend(asserts);
+    }
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("tranche30 mixed resolve_layout failed: {d:?}"));
+
+    // Proof (2): the game-side spawn words resolved against the .emp exports
+    // (derived from the RESOLVED .emp labels — never hardcoded).
+    let emp_label = |region: &str, want: &str| -> u32 {
+        for sec in &resolved {
+            if sec.name != region {
+                continue;
+            }
+            for l in &sec.labels {
+                if l.name == want {
+                    return sec.vma_origin().wrapping_add(l.offset);
+                }
+            }
+        }
+        panic!("{region} must export {want}");
+    };
+    let test_stress = emp_label("test_stress_emitter", "TestStressEmitter");
+    let test_churn = emp_label("test_churn", "TestChurnObj");
+
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("tranche30 mixed link failed: {d:?}"));
+
+    // The VRAM_TEST_OBJ + SST/constants drift guards resolve against the REAL AS
+    // tree (structs.asm, constants.asm, config/constants.asm).
+    let adiags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &all_asserts);
+    assert!(
+        adiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "tranche30 mixed drift guards must PASS against the real AS tree: {adiags:?}"
+    );
+
+    let rom = sigil_link::flatten(&linked, 0x00);
+
+    let obj_code_base = pins::OBJ_CODE_BASE.plain;
+    for (name, addr) in [("TestStressEmitter", test_stress), ("TestChurnObj", test_churn)] {
+        let want = (addr - obj_code_base) as u16;
+        let pat = want.to_be_bytes();
+        assert!(
+            rom.windows(2).any(|w| w == pat),
+            "the game-side objroutine word for {name} must encode its bank offset {want:#x} \
+             (the .emp-owned address)"
+        );
+    }
+
+    rom
+}
+
+#[test]
+fn mixed_tranche30_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but reference missing: aeon/s4.bin");
+        }
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche30_rom(&aeon, false);
+    assert_rom_matches_convsym(&rom, &refrom, ASSEMBLED_LEN, "tranche30 mixed");
+}
+
+#[test]
+fn mixed_tranche30_debug_rom_matches_assembled_reference() {
+    let aeon = aeon_dir();
+    let rom_path = aeon.join("s4.debug.bin");
+    let Ok(refrom) = std::fs::read(&rom_path) else {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but debug reference missing: aeon/s4.debug.bin");
+        }
+        eprintln!("skip: debug reference not at {}", rom_path.display());
+        return;
+    };
+    let rom = build_mixed_tranche30_rom(&aeon, true);
+    assert_rom_matches_convsym(&rom, &refrom, DEBUG_ASSEMBLED_LEN, "tranche30 mixed debug");
 }
 
 // ---------------------------------------------------------------------------
