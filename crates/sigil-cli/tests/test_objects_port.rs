@@ -58,8 +58,8 @@
 //! ## Reference windows (both shapes — bank addresses shape-invariant)
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! `test_solid`: `[0x10F7C..0x10F8A]` (0xE bytes).
-//! `test_particle`: `[0x10F8A..0x10FDC]` (0x52 bytes).
+//! `test_solid`: `[0x10F6A..0x10F78]` (0xE bytes).
+//! `test_particle`: `[0x10F78..0x10FCA]` (0x52 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the reference tests SKIP green —
