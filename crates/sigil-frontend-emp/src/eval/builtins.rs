@@ -3,7 +3,7 @@
 //! expression's callee/receiver into one of them.
 use super::{Env, Evaluator};
 use crate::ast;
-use crate::value::{Cell, DataBuf, Value};
+use crate::value::{Cell, CodeBuf, CodeItem, DataBuf, Value};
 use sigil_span::Span;
 
 /// The inclusive value range accepted by `byte`/`bytes` — an 8-bit cell may be
@@ -579,6 +579,79 @@ impl<'a> Evaluator<'a> {
                 Value::Poison
             }
         }
+    }
+
+    /// `pad_to_cycles(target, measured)` (rung 4, t40 step-2): emit exactly the
+    /// `nop`s needed to bring a timed path's cost up to `target` T-states, given the
+    /// `measured` non-pad cost of that path. `measured` is itself DERIVED from
+    /// `cycles(...)` spans (+ the fixed pre-pad/trailing constant), so a future edit
+    /// to the measured prefix RE-DERIVES the pad instead of silently unbalancing the
+    /// DAC clock — the modernized form of the literal `rept N / nop` timing pad.
+    /// Returns a [`Value::Code`] run of `(target - measured) / 4` `nop`s (each nop =
+    /// 4 T-states, the only pad unit). `target - measured` must be >= 0 and a
+    /// multiple of 4; anything else is a loud error (the target is unreachable with
+    /// nop padding). Emitted as real `nop` instructions so the enclosing body's
+    /// `cycles()` span counts them at 4 each.
+    pub(super) fn eval_pad_to_cycles(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 2 {
+            self.error(
+                span,
+                format!("`pad_to_cycles` expects 2 arguments (target, measured), got {}", args.len()),
+            );
+            return Value::Poison;
+        }
+        let mut int_arg = |this: &mut Self, i: usize| -> Option<i128> {
+            match this.eval_expr(&args[i].value, env) {
+                Value::Int(n) => Some(n),
+                Value::Poison => None,
+                other => {
+                    this.error(
+                        args[i].span,
+                        format!(
+                            "`pad_to_cycles` argument {} must be an integer T-state count, got {}",
+                            i + 1,
+                            other.type_name()
+                        ),
+                    );
+                    None
+                }
+            }
+        };
+        let (Some(target), Some(measured)) = (int_arg(self, 0), int_arg(self, 1)) else {
+            return Value::Poison;
+        };
+        let rem = target - measured;
+        if rem < 0 {
+            self.error(
+                span,
+                format!(
+                    "`pad_to_cycles`: the measured cost {measured} exceeds the target {target} — \
+                     the path is already over budget, no pad fits"
+                ),
+            );
+            return Value::Poison;
+        }
+        if rem % 4 != 0 {
+            self.error(
+                span,
+                format!(
+                    "`pad_to_cycles`: the pad {rem} T-states ({target} - {measured}) is not a \
+                     multiple of 4 (a `nop` is 4 T-states) — the target is unreachable with nop padding"
+                ),
+            );
+            return Value::Poison;
+        }
+        let n = (rem / 4) as usize;
+        let items = (0..n)
+            .map(|_| CodeItem::Instr {
+                mnemonic: "nop".to_string(),
+                size: None,
+                ops: Vec::new(),
+                span,
+                as_type: None,
+            })
+            .collect();
+        Value::Code(CodeBuf { items })
     }
 
     /// `extern(name)` (Task B2, seam re-eval): RAW passthrough of a link

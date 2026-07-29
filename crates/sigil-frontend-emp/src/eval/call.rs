@@ -83,6 +83,7 @@ impl<'a> Evaluator<'a> {
                 // summed eagerly from the body-ensure CodeBuf snapshot. Returns
                 // an `Int` (composes with `+`/`==`); non-shadowable.
                 "cycles" => return self.eval_cycles(args, span, env),
+                "pad_to_cycles" => return self.eval_pad_to_cycles(args, span, env),
                 // `here()` (§7.1) — the current VMA. A lowering-time query: the
                 // position is threaded in via `here_base` (set per data item by
                 // the lowering pass); it is not user-shadowable.

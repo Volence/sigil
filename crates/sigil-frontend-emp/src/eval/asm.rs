@@ -225,17 +225,25 @@ impl Evaluator<'_> {
                 // every instruction textually before this guard. Snapshotted only
                 // for guard statements (cheap — body ensures are rare); cleared
                 // after so no other call sees a stale scope.
-                let is_guard = matches!(
+                // The rung-4 cycle READERS: a body `ensure(cycles(...))` guard AND a
+                // `pad_to_cycles(target, cycles(...) + k)` pad emitter both read the
+                // partial CodeBuf via `cycle_scope`. Snapshot for those two spellings
+                // only (cheap — both are rare); cleared after so no other call sees a
+                // stale scope.
+                let is_cycle_reader = matches!(
                     expr,
                     ast::Expr::Call { callee, .. }
                         if callee.segments.len() == 1
-                            && (callee.segments[0] == "ensure" || callee.segments[0] == "ensure_fatal")
+                            && matches!(
+                                callee.segments[0].as_str(),
+                                "ensure" | "ensure_fatal" | "pad_to_cycles"
+                            )
                 );
-                if is_guard {
+                if is_cycle_reader {
                     self.cycle_scope = Some(buf.items.clone());
                 }
                 let v = self.eval_expr(expr, env);
-                if is_guard {
+                if is_cycle_reader {
                     self.cycle_scope = None;
                 }
                 self.note_if_comptime_error(watermark, expr_span(expr));
