@@ -92,6 +92,10 @@ fn main() -> std::process::ExitCode {
         "CarrierMaskTableZ",
         "Z80_IdleProgram",
         "Z80_IdleProgram_End",
+        // the label-less AS data blob (collision heightmaps + level data tail): a
+        // real listing label the chainer needs as a frozen anchor to ORDER it after
+        // the emp anim regions (its baked residual address mis-sorts it into them).
+        "HeightMaps",
         // spine anchors the chainer keys on
         "Vectors",
         "Checksum",

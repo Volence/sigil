@@ -5,8 +5,8 @@
 # reproduces_golden=s4.debug.bin
 # golden_crc32=b4a6756d
 # assembled_end=0x5f65a
-# listing_stamp=07/30/2026 01:45:57 PM
-# labels=69
+# listing_stamp=07/30/2026 02:11:38 PM
+# labels=70
 Ani_Particle 0x257be
 Ani_Particle_End 0x257c6
 Ani_Sonic 0x25750
@@ -33,6 +33,7 @@ GameState_OJZScroll_Init 0x5e2da
 GameState_ObjectTest_Init 0x5dc82
 GetSineCosine 0x26ac
 HBlank_Install 0x2380
+HeightMaps 0x257c6
 InitObjectRAM 0x29e8
 InitSpriteSystem 0x3114
 Init_DMA_Queue 0x1ce6
