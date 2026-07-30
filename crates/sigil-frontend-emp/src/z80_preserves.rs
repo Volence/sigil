@@ -162,6 +162,24 @@ fn z80_writes(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
     }
 }
 
+/// The register UNITS a Z80 proc's OWN body writes DIRECTLY (its `local_writes`
+/// for the transitive-clobber closure, [`crate::closure`]) — the union of
+/// [`z80_writes`] over its instructions. `call`/`rst` (closure edges) and
+/// `push`/`pop` (the preserve idiom) contribute nothing here, exactly as the
+/// per-proc preserves proof treats them; the curated, false-negative-leaning
+/// [`z80_writes`] detector is shared so the closure never drifts from the proof.
+pub fn z80_written_registers(buf: &crate::value::CodeBuf) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for it in &buf.items {
+        if let CodeItem::Instr { mnemonic, ops, .. } = it {
+            for u in z80_writes(mnemonic, ops) {
+                out.insert(UNITS[u].to_string());
+            }
+        }
+    }
+    out
+}
+
 /// True for a Z80 CALL (clobbers every register, nets zero on the stack).
 fn is_call(mnem: &str) -> bool {
     matches!(mnem, "call" | "rst")
