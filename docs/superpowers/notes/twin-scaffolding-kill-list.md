@@ -192,6 +192,19 @@ Executed (subsystem — commit — twin files deleted):
   distinct Stage-2 sub-item (harness config_b/demo registry + reverse-seam
   export). Left AS-side for now; z80_init_port's AS-twin oracle survives as the
   region proof meanwhile.
+- engine/debug specials — `compression_selftest.asm`, `sound_debug.asm`,
+  `error_handler.asm`. compression_selftest collapses to its bare `ifdef __DEBUG__`
+  block (the DEBUG-only region: the generated `generated/vectors.asm` golden-vector
+  include SURVIVES; compression_selftest_port reads it, not the twin). sound_debug is
+  Config-A-only (its gate-OFF `include` was taken by the canonical shapes, which the
+  twin's whole-file `ifdef SOUND_DBG_MIRROR` made 0-byte) → collapses to
+  `ifdef SIGIL_EMP_SOUND_DEBUG / org $827C / endif` (row 59). error_handler's gate-ON
+  `else` arm was taken by EVERY shape already (SIGIL_EMP_ERROR_HANDLER is in every
+  code-gate set, incl. demo) → bare collapse keeping the `ErrorHandler = ErrorHandlerBlob`
+  link alias + the per-shape EndOfRom orgs (rows 52/90 CLOSE — the alias is now the
+  only spelling). No AS-half retired: error_handler_port already compiles synthetic
+  handlers (`derived_equ_off_external_base_resolves`, not `_is_unresolved_today` — the
+  precursor 28098af flipped it); mddbg_symbols.asm survives (bucket D). Net 0 tests.
   **TOOLING NOTE (stale-artifact trap, MEMORY-flagged):** the scratch CRC proof
   must `rm` the output AND check the build's exit code BEFORE CRC'ing — a failed
   `sigil build` leaves the `-o` file untouched, so a prior success's bytes read
