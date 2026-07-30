@@ -15,8 +15,8 @@
 //! ## Composition (the T1 technique, from ports.rs + dac_port.rs)
 //!
 //! The `.emp` side is placed into a bank map BY SECTION NAME (dac_port.rs:
-//! `dac_blip_bank` @ $50000, `dac_shared_bank` @ $58000; T2 adds `mt_bank` @
-//! $60607, size $79F9 — mt_port.rs's region, R7). The top-level `SND_*`/`equ`
+//! `dac_blip_bank` @ $48000, `dac_shared_bank` @ $50000; T2 adds `mt_bank` @
+//! $58607, size $79F9 — mt_port.rs's region, R7). The top-level `SND_*`/`equ`
 //! carriers land in zero-byte `text` sections given a benign home at LMA 0 —
 //! T2 lowers TWO `.emp` modules (`dac_samples.emp` + `mt_bank.emp`), each
 //! opening its OWN `text` carrier, and P5/R7 already proved a same-named-`text`
@@ -34,23 +34,23 @@
 //!
 //! ## Gap-fill (Task 9 §3 — inspected in the reference before pinning)
 //!
-//! In the all-`.asm` ROM the bytes between the pre-DAC content and $50000,
-//! between the blip bank's end ($50B40) and $58000, and between the drums' end
-//! ($5F8BC) and $60000 are produced by asl `align $8000`. In the mixed build
+//! In the all-`.asm` ROM the bytes between the pre-DAC content and $48000,
+//! between the blip bank's end ($48B40) and $50000, and between the drums' end
+//! ($578BC) and $58000 are produced by asl `align $8000`. In the mixed build
 //! those become INTER-SECTION gaps produced by the flatten fill. `xxd` of the
 //! reference `aeon/s4.bin` at all three ranges (0x47FF0, 0x4FFF0, 0x57FF0, and
 //! the two bank tails 0x48B40 / 0x578C0) shows the pad byte is `0x00`
 //! throughout — matching `sigil.map.toml`'s `fill = 0x00` (which `emit_rom` uses
-//! for every gap). The pre-DAC content ends at $4867A (Art_Sonic's `align 2`
-//! tail, per s4.lst); the blip bank REALLY starts at $50000 in the reference
-//! (verified: 0x4FFFx is all-zero, 0x48000 is the first blip byte `80 A6 …`), so
-//! nothing lives in $4867A..$50000 except align pad — exactly the gap the
-//! flatten fill reproduces. The `org` skip drops ONLY the two BINCLUDE banks +
+//! for every gap). The pre-DAC content ends at $41BD2 (the `align 2` tail before
+//! the `align $8000` that snaps to $48000, per s4.lst); the blip bank starts at
+//! $48000 in the reference (verified: 0x47FFx is all-zero, 0x48000 is the first
+//! blip byte `80 A6 …`), so nothing lives in $41BD2..$48000 except align pad —
+//! exactly the gap the flatten fill reproduces. The `org` skip drops ONLY the two BINCLUDE banks +
 //! comments + equates from `dac_samples.asm`; the byte-identity assertion below
 //! is what proves nothing else was lost.
 //!
 //! **T2 adds NO new gap.** The MT block's `.asm` else-arm resumes placement
-//! EXACTLY at `mt_bank`'s section end (`$63AE8` plain / `$6553A` debug — the
+//! EXACTLY at `mt_bank`'s section end (`$5BAE8` plain / `$5D53A` debug — the
 //! fact base's tail addresses): `mt_bank.emp`'s items emit contiguously
 //! (§4.3 no-auto-pad) all the way to `SongPatchTable_End`, and the SFX block
 //! that follows in `.asm` picks up at that exact address with no `align`
@@ -85,7 +85,7 @@
 //! (`SFX_WIN_MASK`/`SFX_WIN_BASE`, invisible to the linker's section-label
 //! table) at that site, so the linker fold sees `(Sfx_NN & 32767) | 32768` and
 //! resolves the sole cross-seam leaf through the joint link. `SfxBlobWinTab[0] =
-//! sfx_winptr($63AE8) = $BAE8` → LE `E8 BA` at ROM `$6045F`, pinned explicitly
+//! sfx_winptr($5BAE8) = $BAE8` → LE `E8 BA` at ROM `$5845F`, pinned explicitly
 //! in the plain test and re-proven by the full-ROM byte assertion.
 //!
 //! ## STOP RULE (DSM.9)
@@ -170,8 +170,8 @@ fn sound_dir(aeon: &Path) -> PathBuf {
 }
 
 /// The two-bank map for placing `dac_samples.emp`'s sections BY NAME, at the
-/// aeon-f828406 pins (dac_port.rs verbatim): `dac_blip_bank` @ $50000,
-/// `dac_shared_bank` @ $58000. The top-level `SND_*` equs land in the default
+/// current-baseline pins (dac_port.rs verbatim): `dac_blip_bank` @ $48000,
+/// `dac_shared_bank` @ $50000. The top-level `SND_*` equs land in the default
 /// `text` section — a ZERO-byte carrier here (all equs, no data cells) —
 /// which `place_sections` still requires a home for; a nominal `text` region
 /// at LMA 0 is benign (the R7p.4 overlap check and `flatten` both skip
@@ -200,10 +200,10 @@ fn emp_bank_map() -> &'static str {
 }
 
 /// T2/T3's map: `emp_bank_map`'s three regions PLUS `mt_bank` @ `0x58607` size
-/// `0x79F9` (mt_port.rs's R7 region, to the `$68000` bank top) PLUS the T3
+/// `0x79F9` (mt_port.rs's R7 region, to the `$60000` bank top) PLUS the T3
 /// `sfx_bank` region — the FIRST shape-dependent region base (R7), so this map
-/// is a `fn of debug` where it was a const: plain `$63AE8`/`$4518`, debug
-/// `$6553A`/`$2AC6` (both to the same `$68000` bank top). The MT/DAC/`text`
+/// is a `fn of debug` where it was a const: plain `$5BAE8`/`$4518`, debug
+/// `$5D53A`/`$2AC6` (both to the same `$60000` bank top). The MT/DAC/`text`
 /// regions are byte-for-byte T2's.
 ///
 /// `dac_samples.emp`, `mt_bank.emp`, and `sfx_bank.emp` each open their own
@@ -211,11 +211,11 @@ fn emp_bank_map() -> &'static str {
 /// chain resolves fine through one region (cumulative per-region cursor) — so a
 /// single `text` region still covers all three modules' carriers here.
 ///
-/// The `mt_bank` region ends at `$60607+$79F9 = $68000` and the `sfx_bank`
-/// region opens at `$63AE8`/`$6553A` — the two OVERLAP in LMA space, but this
+/// The `mt_bank` region ends at `$58607+$79F9 = $60000` and the `sfx_bank`
+/// region opens at `$5BAE8`/`$5D53A` — the two OVERLAP in LMA space, but this
 /// is benign exactly as in T2: `place_sections` matches BY NAME, and each `.emp`
 /// module's real section lands only in its OWN named region (`mt_bank`'s section
-/// is `$63AE8`-sized within its window, `sfx_bank`'s is 1864 bytes at its base),
+/// tops out at `$5BAE8` within its window, `sfx_bank`'s is 1864 bytes at its base),
 /// so no two placed sections collide. `resolve_layout`'s overlap check runs on
 /// the placed sections, not the map regions.
 fn emp_bank_map_with_mt(debug: bool) -> String {
@@ -1658,9 +1658,9 @@ fn build_mixed_mt_rom(aeon: &Path, debug: bool) -> (Vec<u8>, Vec<sigil_span::Dia
 /// UNRESOLVED (P1's deferral — a compound `(Sfx_NN & $7FFF) | $8000` lowered to
 /// a `Value16Le` fixup in the Z80 `phase 08000h` blob) and are satisfied by
 /// `sfx_bank.emp`'s labels through this ONE shared symbol table. The first
-/// entry resolves to `sfx_winptr($63AE8) = ($63AE8 & $7FFF) | $8000 = $BAE8` →
-/// LE bytes `E8 BA` at ROM `$6045F` (`SfxBlobWinTab` @ Z80 vma `$845F`,
-/// phase-based at `$60000+$45F`) — covered by the full-ROM byte assertion below.
+/// entry resolves to `sfx_winptr($5BAE8) = ($5BAE8 & $7FFF) | $8000 = $BAE8` →
+/// LE bytes `E8 BA` at ROM `$5845F` (`SfxBlobWinTab` @ Z80 vma `$845F`,
+/// phase-based at `$58000+$45F`) — covered by the full-ROM byte assertion below.
 ///
 /// Returns `(rom_bytes, mt_assert_diags, sfx_assert_diags)` — the caller pins
 /// BOTH modules' `check_link_asserts` (mt == 7, sfx == 4) and asserts every
@@ -3609,8 +3609,8 @@ fn mixed_sfx_rom_matches_assembled_reference() {
     );
 
     // The win-tab deferral, PINNED end-to-end: `SfxBlobWinTab[0]` lives at Z80
-    // vma `$845F` in the `phase 08000h` blob → ROM `$60000 + ($845F - $8000) =
-    // $6045F`. `sfx_winptr(Sfx_33)` = `($63AE8 & $7FFF) | $8000 = $BAE8` → LE
+    // vma `$845F` in the `phase 08000h` blob → ROM `$58000 + ($845F - $8000) =
+    // $5845F`. `sfx_winptr(Sfx_33)` = `($5BAE8 & $7FFF) | $8000 = $BAE8` → LE
     // bytes `E8 BA`. This resolved through the joint link from `Sfx_33`
     // (`.emp`-side) with `SFX_WIN_MASK`/`SFX_WIN_BASE` baked at AS-time
     // (`partial_fold`). The full-ROM assert below re-proves it against the

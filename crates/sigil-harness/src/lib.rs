@@ -126,8 +126,8 @@ pub fn assemble_mixed_dac_as_side(aeon: &Path, debug: bool) -> Result<Module, St
 /// `assemble_mixed_dac_as_side` does, PLUS `SIGIL_EMP_MT` defined so
 /// `main.asm`'s Moving-Trucks block (lines 150-208: the six streaming-bank
 /// includes + the pitch-contiguity fatal) is REPLACED by an `org` resume — per
-/// shape, `$6553A` (`__DEBUG__`) or `$63AE8` (plain) — leaving the whole
-/// `$60607..end` window for the `.emp` side's `mt_bank` section to supply.
+/// shape, `$5D53A` (`__DEBUG__`) or `$5BAE8` (plain) — leaving the whole
+/// `$58607..end` window for the `.emp` side's `mt_bank` section to supply.
 /// Both `SIGIL_EMP_DAC` and `SIGIL_EMP_MT` are independent gates (R6); T2's
 /// mixed build exercises both ON together, DAC-only stays covered by the
 /// unchanged `assemble_mixed_dac_as_side` T1 tests.
@@ -157,9 +157,9 @@ pub fn assemble_mixed_mt_as_side(aeon: &Path, debug: bool) -> Result<Module, Str
 /// Assemble the AS side of the T3 MIXED `.asm`+`.emp` build: everything
 /// `assemble_mixed_mt_as_side` does, PLUS `SIGIL_EMP_SFX` defined so
 /// `main.asm`'s SFX block (the 19 blob/patch/table includes + the two SFX
-/// fatals, R6) is REPLACED by an `org` resume — per shape, `$65C82`
-/// (`__DEBUG__`) or `$64230` (plain), i.e. `SfxTable_End` — leaving the whole
-/// `$63AE8..SfxTable_End` window for the `.emp` side's `sfx_bank` section to
+/// fatals, R6) is REPLACED by an `org` resume — per shape, `$5DC82`
+/// (`__DEBUG__`) or `$5C230` (plain), i.e. `SfxTable_End` — leaving the whole
+/// `$5BAE8..SfxTable_End` window for the `.emp` side's `sfx_bank` section to
 /// supply. All three gates (`SIGIL_EMP_DAC`, `SIGIL_EMP_MT`, `SIGIL_EMP_SFX`)
 /// are independent (R6); T3's mixed build exercises all three ON together.
 ///
