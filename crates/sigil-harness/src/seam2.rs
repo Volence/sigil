@@ -464,6 +464,58 @@ pub fn emit_sound_tables_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), St
     Ok(())
 }
 
+/// The `movingtrucks_pitchtable` head LMA — right after `sound_tables_z80`
+/// ($58000 + $357) and before `SfxBlobWinTab` ($5845F), inside the `soundBankHead`
+/// phase-$8000 window. SHAPE-INVARIANT.
+pub const PITCHTABLE_LMA: u32 = 0x58357;
+/// The `movingtrucks_pitchtable` byte length (2 * PITCHTAB_COUNT = 2 * 132).
+pub const PITCHTABLE_LEN: usize = 264;
+
+/// Lower `movingtrucks_pitchtable.emp` (the `SndDefaultPitchTable` banked head — the
+/// exact Zyrinx "Moving Trucks" 132-entry two-page fnum table) placed at VMA `$8357`.
+/// SELF-CONTAINED — pure `dc.b` data with no external symbols and no intra-module
+/// references, so no co-link is needed (the SndDefaultPitchTable/MovingTrucks_PitchTable
+/// labels are provided by `sound_bank.inc`'s AS side ahead of the BINCLUDE, like the
+/// other heads). SHAPE-INVARIANT (one `.bin` serves both shapes). The last AS sound
+/// head to go native (flip Stage-0), which frees `soundBankHead`'s `include pitchfile`.
+pub fn emit_pitchtable(aeon: &Path) -> Result<Vec<u8>, String> {
+    let dir = aeon.join("games/sonic4/data/sound");
+    let module = lower_emp_file(&dir.join("movingtrucks_pitchtable.emp"), &dir, Cpu::M68000)?;
+    let link_asserts = module.link_asserts.clone();
+
+    let map_toml = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"movingtrucks_pitchtable\"\nlma_base = 0x{PITCHTABLE_LMA:X}\nsize = 0x200\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
+    let mut sections = module.sections;
+    let pd = place_sections(&mut sections, &map);
+    if pd.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("place_sections errors: {pd:?}"));
+    }
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .map_err(|d| format!("resolve_layout: {d:?}"))?;
+    let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("movingtrucks_pitchtable guards fired: {assert_diags:?}"));
+    }
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    Ok(linked
+        .section("movingtrucks_pitchtable")
+        .ok_or("missing movingtrucks_pitchtable in linked image")?
+        .bytes
+        .clone())
+}
+
+/// Emit the seam-2 pitch-table build input to `out_dir`:
+/// `movingtrucks_pitchtable.bin` (shape-invariant — one file serves both shapes).
+pub fn emit_pitchtable_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    let bytes = emit_pitchtable(aeon)?;
+    let p = out_dir.join("movingtrucks_pitchtable.bin");
+    std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
+    Ok(())
+}
+
 /// Emit the seam-2 seq-opcode-table build inputs to `out_dir`:
 /// `seq_opcode_tab{,_debug}.bin` (the 64-byte jump table, shape-dependent — the
 /// resident handlers re-base in the debug shape).
