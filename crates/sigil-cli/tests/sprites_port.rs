@@ -373,64 +373,10 @@ fn sprites_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");
 }
 
-// ── The AS-twin lockstep oracle ─────────────────────────────────────────────
-
-/// The AS twin, assembled through the sigil AS front-end at the PLAIN base
-/// with the same equ prelude the `.emp` gets. sprites.asm is include-free, so
-/// no splicing. This is the LOCKSTEP gate ("the continuous gate is only
-/// `.emp == AS twin`") on an independent path — a macro/edit AS-side the
-/// `.emp` doesn't mirror fails here naming the first diverging byte.
-fn as_twin_bytes() -> Vec<u8> {
-    let aeon = aeon_dir();
-    let sprites_src = std::fs::read_to_string(aeon.join("engine/objects/sprites.asm"))
-        .expect("sprites.asm must be readable");
-
-    let mut prelude = String::from("cpu 68000\nsupmode on\n");
-    let mut pairs = sigil_harness::test_support::sst_field_equs();
-    pairs.extend(sigil_harness::test_support::engine_constant_equs());
-    for (name, rhs) in pairs {
-        prelude.push_str(&format!("{name} = {rhs}\n"));
-    }
-    for (name, vma) in PLAIN.labels {
-        prelude.push_str(&format!("{name} = ${vma:X}\n"));
-    }
-    let src = format!("{prelude}org ${:X}\n{sprites_src}\n", PLAIN.base);
-
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve_layout failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    let sec = linked
-        .sections
-        .iter()
-        .find(|s| s.lma == PLAIN.base && !s.bytes.is_empty())
-        .unwrap_or_else(|| panic!("AS twin must emit a section at {:#x}", PLAIN.base));
-    sec.bytes.clone()
-}
-
-/// The `.emp` vs the AS-twin oracle (PLAIN shape), byte-for-byte.
-#[test]
-fn sprites_matches_as_twin() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/sprites.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let (_, linked, _) = compile_real_file(&PLAIN);
-    let section = linked.section("sprites").expect("linked image must carry sprites");
-    let expected = as_twin_bytes();
-    assert_region_matches(&section.bytes, &expected, "sprites vs AS twin (plain)");
-}
+// The AS-twin lockstep oracle RETIRED (flip Stage-2): sprites.asm is deleted —
+// the .emp is the only source. Coverage is subsumed by the region gates above
+// (sprites == frozen-golden slice) + the native whole-ROM golden gates; the t24
+// negative probe below (doctored SCREEN_WIDTH) keeps the golden non-vacuous.
 
 // ── The twin-mirror drift probe (negative test) ─────────────────────────────
 

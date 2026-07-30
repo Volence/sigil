@@ -23,16 +23,99 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_rom
 //! ```
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use sigil_frontend_as::{assemble_root, Options as AsOptions};
 use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
-use sigil_ir::{Cpu, Module, Section, SymbolTable};
+use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
 use sigil_link::LinkedImage;
 
 use crate::pins::{self, Region};
 use crate::{seam1, seam2};
+
+// ── Flip Stage 2 · S1.2 — THE GAME PROFILE (the off-canonical driver parameters) ──
+//
+// The Stage-1 native driver is sonic4-shaped throughout (registry, defines, keystones,
+// the OBJDEFS `text` guard, the drift-guard allowlist, sound-on). The three off-canonical
+// targets (demo plain/debug, Config-A, Config-B) reuse the SAME chainer + split-golden
+// machinery through a `GameProfile` that carries every sonic4-hardcoding as data.
+
+/// Where a target's declared per-region SIZES come from (the load-bearing S1.2 finding:
+/// the chainer must reserve each section's exact asl span or relaxation settles at a
+/// different fixpoint — see the S1.2 chainer note).
+pub enum SizeSource {
+    /// Canonical sonic4: the baked lmas ARE asl-correct, so a pinned resolve reproduces
+    /// asl and each section's post-relax span is its exact asl size (the bootstrap).
+    PinnedBaked,
+    /// Off-canonical (demo/Config): the AS residual carries WRONG sonic4 resume orgs, so
+    /// sizes/order come from the FROZEN asl listing table (label → address). Every ROM
+    /// section's TRUE base is `frozen[L] − offset[L]` for a contained frozen label `L`;
+    /// label-less data blobs derive by contiguity from their frozen neighbour.
+    Frozen(HashMap<String, u32>),
+}
+
+/// One off-canonical / canonical target's full driver parameterization.
+pub struct GameProfile {
+    pub name: &'static str,
+    /// The AS residual root, relative to the aeon tree (`games/<g>/main.asm`).
+    pub game_root_rel: &'static str,
+    pub debug: bool,
+    /// Sound ON: pass `-D SOUND_DRIVER_ENABLED`, the DAC/MT/SFX BINCLUDE gates, and
+    /// run `ensure_generated`. OFF (demo/Config-B): no sound define at all (AS `ifdef`
+    /// checks DEFINEDNESS — a `=0` would still take the sound arm), no BINCLUDE, no gen.
+    pub sound_on: bool,
+    /// Extra AS `-D`s beyond the sound + code gates (Config-A: SOUND_DEBUG_HOTKEYS /
+    /// SOUND_DBG_MIRROR + the GAME_DEBUG / SOUND_DEBUG code gates).
+    pub extra_as_defines: Vec<(&'static str, i64)>,
+    /// The `SIGIL_EMP_*` code gates the AS side turns ON (each gate holes out an `.asm`
+    /// twin the registry places natively).
+    pub code_gates: Vec<&'static str>,
+    pub registry: Vec<ModuleSpec>,
+    /// The build-shape comptime defines the `.emp` modules read.
+    pub emp_defines: Vec<(&'static str, i128)>,
+    /// Internal keystones UNCONDITIONALLY AS-included whose emitted emp twin sections
+    /// must be dropped (they double-place). sonic4: player_common/test_player/test_enemy.
+    pub as_owned_keystones: Vec<&'static str>,
+    /// Enforce exactly ONE non-empty `text` section (OBJDEFS). OFF for demo (no objdefs).
+    pub require_one_text: bool,
+    /// The inapplicable-drift-guard allowlist (t24 both-directions), per target.
+    pub inapplicable_guards: Vec<(&'static str, &'static str)>,
+    pub size_source: SizeSource,
+    /// `EndOfRom` — the assembled-bar length.
+    pub assembled_len: usize,
+}
+
+impl GameProfile {
+    pub fn game_root(&self, aeon: &Path) -> std::path::PathBuf {
+        aeon.join(self.game_root_rel)
+    }
+}
+
+/// Load a frozen off-canonical size table (`golden/offcanonical_sizes/<name>.txt`):
+/// the committed `LABEL 0xADDR` rows (comment lines skipped) → a `label → addr` map.
+pub fn load_frozen_table(name: &str) -> HashMap<String, u32> {
+    let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("golden/offcanonical_sizes")
+        .join(name);
+    let txt = std::fs::read_to_string(&p)
+        .unwrap_or_else(|e| panic!("read frozen table {}: {e}", p.display()));
+    let mut m = HashMap::new();
+    for line in txt.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((name, addr)) = line.rsplit_once(' ') {
+            let a = addr.trim().trim_start_matches("0x");
+            if let Ok(v) = u32::from_str_radix(a, 16) {
+                m.insert(name.trim().to_string(), v);
+            }
+        }
+    }
+    m
+}
 
 /// One natively-placed `.emp` module: its dotted id (for the synthetic entry's
 /// `use` edge + `build_program` reachability), its declared section name (the
@@ -146,6 +229,199 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
     specs
 }
 
+/// The sonic4 code gates (the registry's gates, de-duplicated: TEST_OBJECTS is one
+/// gate serving test_solid + test_particle). Shared by canonical sonic4 + Config-A/B.
+fn sonic4_code_gates() -> Vec<&'static str> {
+    code_gate_defines()
+}
+
+/// The 30 ENGINE code gates the demo turns on (engine-only registry; no game modules,
+/// no sound). COMPRESSION_SELFTEST is added per-shape (debug-only).
+fn demo_code_gates(debug: bool) -> Vec<&'static str> {
+    let mut g = vec![
+        "SIGIL_EMP_VECTORS", "SIGIL_EMP_BOOT", "SIGIL_EMP_VDP_INIT", "SIGIL_EMP_DMA_QUEUE",
+        "SIGIL_EMP_BUFFERS", "SIGIL_EMP_VBLANK", "SIGIL_EMP_HBLANK", "SIGIL_EMP_CONTROLLERS",
+        "SIGIL_EMP_GAME_LOOP", "SIGIL_EMP_S4LZ", "SIGIL_EMP_ZX0", "SIGIL_EMP_MATH",
+        "SIGIL_EMP_DPLC", "SIGIL_EMP_CORE", "SIGIL_EMP_SPRITES", "SIGIL_EMP_ANIMATE",
+        "SIGIL_EMP_COLLISION", "SIGIL_EMP_RINGS", "SIGIL_EMP_ENTITY_WINDOW", "SIGIL_EMP_CHILDREN",
+        "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
+        "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
+        "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_ERROR_HANDLER",
+    ];
+    if debug {
+        g.push("SIGIL_EMP_COMPRESSION_SELFTEST");
+    }
+    g
+}
+
+/// The engine-only registry (demo): the `engine.*` modules of the sonic4 registry,
+/// minus `engine.sound_api` (demo is sound-OFF → the sound-caller `.asm`/`.emp` is
+/// not in the demo layout at all). The region bases/lens are sonic4-shape and are
+/// IGNORED under `SizeSource::Frozen` (the chainer sources demo sizes from the frozen
+/// listing table); only the module id + section name are load-bearing.
+fn demo_registry(debug: bool) -> Vec<ModuleSpec> {
+    registry(debug)
+        .into_iter()
+        .filter(|m| m.module_id.starts_with("engine.") && m.module_id != "engine.sound_api")
+        .collect()
+}
+
+/// CANONICAL sonic4 (the Stage-1 shape) as a profile — the regression harness for the
+/// GameProfile refactor: `native_rom` / `native_declared_chain` / `native_full_rom`
+/// build through this and must stay byte-green.
+pub fn sonic4_profile(debug: bool) -> GameProfile {
+    GameProfile {
+        name: if debug { "sonic4_debug" } else { "sonic4" },
+        game_root_rel: "games/sonic4/main.asm",
+        debug,
+        sound_on: true,
+        extra_as_defines: vec![],
+        code_gates: sonic4_code_gates(),
+        registry: registry(debug),
+        emp_defines: vec![
+            ("SOUND_DRIVER_ENABLED", 1),
+            ("DEBUG", if debug { 1 } else { 0 }),
+            ("SOUND_DEBUG_HOTKEYS", 0),
+            ("SOUND_DBG_MIRROR", 0),
+            ("GAME_CAMERA_JUMP_LOCK", 1),
+            // sonic4 game-config (games/sonic4/config/constants.asm); the engine
+            // `.emp` reads these as -D (rings.emp / entity_window.emp), the
+            // `ensure(extern(..)==..)` cross-checks them against the AS config.
+            ("MAX_RING_BUFFER", 128),
+            ("VRAM_RING_PLACEHOLDER", 0x3E8),
+            ("COLLECTED_WINDOW_SLOTS", 9),
+        ],
+        as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
+        require_one_text: true,
+        inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
+        size_source: SizeSource::PinnedBaked,
+        assembled_len: if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN },
+    }
+}
+
+/// DEMO (plain / debug) — engine-only registry, sound OFF, sizes from the frozen
+/// `demo.txt` / `demo_debug.txt`. GAME_CAMERA_JUMP_LOCK=0 (demo's config selects the
+/// inert camera path). No objdefs → the one-text guard is OFF.
+pub fn demo_profile(debug: bool) -> GameProfile {
+    GameProfile {
+        name: if debug { "demo_debug" } else { "demo" },
+        game_root_rel: "games/demo/main.asm",
+        debug,
+        sound_on: false,
+        extra_as_defines: vec![],
+        code_gates: demo_code_gates(debug),
+        registry: demo_registry(debug),
+        emp_defines: vec![
+            ("SOUND_DRIVER_ENABLED", 0),
+            ("DEBUG", if debug { 1 } else { 0 }),
+            ("SOUND_DEBUG_HOTKEYS", 0),
+            ("SOUND_DBG_MIRROR", 0),
+            ("GAME_CAMERA_JUMP_LOCK", 0),
+            // demo game-config (games/demo/config/constants.asm) — the values
+            // that DIFFER from sonic4 (the reason the engine takes them as -D).
+            ("MAX_RING_BUFFER", 16),
+            ("VRAM_RING_PLACEHOLDER", 0x3E4),
+            ("COLLECTED_WINDOW_SLOTS", 4),
+        ],
+        as_owned_keystones: vec![],
+        require_one_text: false,
+        inapplicable_guards: DEMO_INAPPLICABLE_GUARDS.to_vec(),
+        size_source: SizeSource::Frozen(load_frozen_table(if debug {
+            "demo_debug.txt"
+        } else {
+            "demo.txt"
+        })),
+        assembled_len: 0x11224,
+    }
+}
+
+/// A cosmetic region for the Config-A off-canonical debug modules (game_debug /
+/// sound_debug): their placement base/len are IGNORED under `SizeSource::Frozen`
+/// (the chainer computes them from the config listing), so only the id + section name
+/// are load-bearing.
+const DUMMY_REGION: Region =
+    Region { plain_base: 0, debug_base: 0, plain_len: 1, debug_len: 1 };
+
+/// CONFIG-B (off-canonical no-sound): sonic4 game, SOUND_DRIVER_ENABLED OFF, plain.
+/// Registry = the sonic4 set MINUS `engine.sound_api` (no sound caller). The Z80 idle
+/// (boot_data.asm no-sound else-arm) stays AS-side (a phased inline section the chainer
+/// chains). Sizes from `config_b.txt`.
+pub fn config_b_profile() -> GameProfile {
+    let registry: Vec<ModuleSpec> =
+        registry(false).into_iter().filter(|m| m.module_id != "engine.sound_api").collect();
+    GameProfile {
+        name: "config_b",
+        game_root_rel: "games/sonic4/main.asm",
+        debug: false,
+        sound_on: false,
+        extra_as_defines: vec![],
+        code_gates: sonic4_code_gates(),
+        registry,
+        emp_defines: vec![
+            ("SOUND_DRIVER_ENABLED", 0),
+            ("DEBUG", 0),
+            ("SOUND_DEBUG_HOTKEYS", 0),
+            ("SOUND_DBG_MIRROR", 0),
+            ("GAME_CAMERA_JUMP_LOCK", 1),
+            // Config-B is the sonic4 game (sound off), so sonic4's game-config.
+            ("MAX_RING_BUFFER", 128),
+            ("VRAM_RING_PLACEHOLDER", 0x3E8),
+            ("COLLECTED_WINDOW_SLOTS", 9),
+        ],
+        as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
+        require_one_text: true,
+        inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
+        size_source: SizeSource::Frozen(load_frozen_table("config_b.txt")),
+        assembled_len: 0x434d0,
+    }
+}
+
+/// CONFIG-A (off-canonical debug + sound + hotkeys + mirror): sonic4 game, __DEBUG__ +
+/// SOUND_DRIVER_ENABLED + SOUND_DEBUG_HOTKEYS + SOUND_DBG_MIRROR, so `game_debug` +
+/// `sound_debug` (canonically empty) become NON-empty placed modules. Registry = the
+/// sonic4 DEBUG set PLUS those two. Sizes from `config_a.txt`.
+pub fn config_a_profile() -> GameProfile {
+    let mut registry = registry(true);
+    registry.push(ModuleSpec {
+        module_id: "games.sonic4.game_debug",
+        section: "game_debug",
+        region: DUMMY_REGION,
+    });
+    registry.push(ModuleSpec {
+        module_id: "engine.debug.sound_debug",
+        section: "sound_debug",
+        region: DUMMY_REGION,
+    });
+    let mut code_gates = sonic4_code_gates();
+    code_gates.push("SIGIL_EMP_GAME_DEBUG");
+    code_gates.push("SIGIL_EMP_SOUND_DEBUG");
+    GameProfile {
+        name: "config_a",
+        game_root_rel: "games/sonic4/main.asm",
+        debug: true,
+        sound_on: true,
+        extra_as_defines: vec![("SOUND_DEBUG_HOTKEYS", 1), ("SOUND_DBG_MIRROR", 1)],
+        code_gates,
+        registry,
+        emp_defines: vec![
+            ("SOUND_DRIVER_ENABLED", 1),
+            ("DEBUG", 1),
+            ("SOUND_DEBUG_HOTKEYS", 1),
+            ("SOUND_DBG_MIRROR", 1),
+            ("GAME_CAMERA_JUMP_LOCK", 1),
+            // Config-A is the sonic4 game (debug + sound), so sonic4's game-config.
+            ("MAX_RING_BUFFER", 128),
+            ("VRAM_RING_PLACEHOLDER", 0x3E8),
+            ("COLLECTED_WINDOW_SLOTS", 9),
+        ],
+        as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
+        require_one_text: true,
+        inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
+        size_source: SizeSource::Frozen(load_frozen_table("config_a.txt")),
+        assembled_len: 0x5f65a,
+    }
+}
+
 /// Give EVERY reachable module a glob (`.*`) import of ALL pure-comptime helper
 /// modules, so each module's ambient set is the FULL transitively-closed helper
 /// closure. This is required because ambient injection is SHALLOW (one `use` level):
@@ -257,28 +533,44 @@ pub fn ensure_generated(aeon: &Path) {
         .unwrap_or_else(|e| panic!("emit_pitchtable_artifacts: {e}"));
 }
 
-/// The AS-side residual: `main.asm` with SOUND_DRIVER_ENABLED + every code gate
-/// ON + the DAC/MT/SFX BINCLUDE gates (NO body stubs — the `seam2_sfx_rom`
-/// sound path). GAME_DEBUG / SOUND_DEBUG are Config-A-only and stay OFF.
-pub fn assemble_native_all_gates_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
-    let root = aeon.join("games/sonic4/main.asm");
-    let mut defines: Vec<(String, i64)> = vec![("SOUND_DRIVER_ENABLED".to_string(), 1)];
-    // The sound-bank BINCLUDE gates (seam2_sfx_rom): DAC + MT + SFX on, no stubs.
-    for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX"] {
+/// The AS-side residual for `profile`: `main.asm` with the profile's sound state,
+/// code gates, and extras. Sound ON adds `-D SOUND_DRIVER_ENABLED` + the DAC/MT/SFX
+/// BINCLUDE gates (the `seam2_sfx_rom` sound path). Sound OFF (demo/Config-B) passes
+/// NO sound define — AS `ifdef` tests DEFINEDNESS, so a `=0` would wrongly take the
+/// sound arm; the demo golden builds by leaving it undefined.
+pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, String> {
+    let root = profile.game_root(aeon);
+    let mut defines: Vec<(String, i64)> = vec![];
+    if profile.sound_on {
+        defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
+        for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX"] {
+            defines.push((g.to_string(), 1));
+        }
+    }
+    for g in &profile.code_gates {
         defines.push((g.to_string(), 1));
     }
-    // Every code gate in the registry.
-    for g in code_gate_defines() {
-        defines.push((g.to_string(), 1));
+    for (k, v) in &profile.extra_as_defines {
+        defines.push((k.to_string(), *v));
     }
-    if debug {
+    if profile.debug {
         defines.push(("__DEBUG__".to_string(), 1));
     }
     let opts =
         AsOptions { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
     assemble_root(&root, &opts).map_err(|d| {
-        format!("assemble (native all-gates AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+        format!(
+            "assemble (native AS side, {}): {} diagnostics; first: {:?}",
+            profile.name,
+            d.len(),
+            d.first()
+        )
     })
+}
+
+/// Back-compat wrapper: the canonical sonic4 AS side (the Stage-1 shape).
+pub fn assemble_native_all_gates_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    assemble_as_side(aeon, &sonic4_profile(debug))
 }
 
 /// The `SIGIL_EMP_*` code-gate names Stage 1 turns ON (the registry's gates,
@@ -324,6 +616,24 @@ fn emp_map_toml(specs: &[ModuleSpec], debug: bool) -> String {
     out
 }
 
+/// The FROZEN-source emp placement map: one nominal region per DISTINCT section name
+/// present in the lowered set. Bases are COSMETIC (base 0, huge size) — the frozen
+/// chainer overrides every base from the listing table, so `place_sections` here only
+/// needs to give each section a home so it survives to the chainer. `place_sections`
+/// does not enforce the size, so the huge size never overflows.
+fn emp_map_frozen(sections: &[Section]) -> String {
+    let mut names: Vec<&str> = sections.iter().map(|s| s.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    let mut out = String::from("fill = 0x00\n");
+    for n in names {
+        out.push_str(&format!(
+            "\n[[region]]\nname = \"{n}\"\nlma_base = 0x0\nsize = 0x400000\nkind = \"rom\"\n"
+        ));
+    }
+    out
+}
+
 /// A synthetic entry `.emp` source whose `use` edges reach every registry module,
 /// so `build_program`'s reachability BFS pulls them all (and their comptime deps).
 fn synthetic_entry_src(specs: &[ModuleSpec]) -> String {
@@ -334,13 +644,24 @@ fn synthetic_entry_src(specs: &[ModuleSpec]) -> String {
     src
 }
 
-/// Natively lower + place every registry `.emp` module. Returns the placed
-/// sections + the whole program's deferred link asserts (drift guards).
+/// Back-compat wrapper: build the canonical sonic4 emp set (the Stage-1 shape).
 pub fn build_native_emp(
     aeon: &Path,
     debug: bool,
 ) -> Result<(Vec<Section>, Vec<sigil_ir::LinkAssert>), String> {
-    let specs = registry(debug);
+    build_emp(aeon, &sonic4_profile(debug))
+}
+
+/// Natively lower + place every registry `.emp` module for `profile`. Returns the
+/// placed sections + the whole program's deferred link asserts (drift guards). Under
+/// `SizeSource::Frozen` the placement map bases are COSMETIC (the chainer recomputes
+/// every base from the frozen table), so a nominal one-region-per-section map suffices.
+pub fn build_emp(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<(Vec<Section>, Vec<sigil_ir::LinkAssert>), String> {
+    let debug = profile.debug;
+    let specs = &profile.registry;
 
     let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
     let merr: Vec<_> = mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
@@ -363,22 +684,12 @@ pub fn build_native_emp(
         "engine.irq",
         "engine.z80_bus",
     ];
-    // A lone id/path inconsistency in the aeon `.emp` tree: `objdef.emp` imports
-    // `engine.system.constants`, but `constants.emp`'s header id is `engine.constants`.
-    // Drop that stray import too (it is superseded by the `engine.constants.*` glob)
-    // and add a manifest alias so any residual reference still resolves — byte-safe
-    // (identical module, same `RF_PRIORITY_SHIFT`), no edit to the frozen aeon tree.
-    const HELPER_ALIAS_DROP: &[&str] = &["engine.system.constants"];
-    if let Some(&i) = manifest.by_id.get("engine.constants") {
-        manifest.by_id.entry("engine.system.constants".to_string()).or_insert(i);
-    }
-
     publicize_helper_comptime(&mut manifest, COMPTIME_HELPERS);
-    normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, HELPER_ALIAS_DROP);
+    normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, &[]);
 
     // Inject the synthetic entry as a fresh module in the manifest.
     let entry_id = "native_flip_entry".to_string();
-    let src = synthetic_entry_src(&specs);
+    let src = synthetic_entry_src(specs);
     let source = sigil_span::SourceId(manifest.modules.len() as u32);
     let (file, pdiags) = sigil_frontend_emp::parse_file(&src, source);
     let perr: Vec<_> = pdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
@@ -400,15 +711,8 @@ pub fn build_native_emp(
     // SOUND_DEBUG_HOTKEYS / SOUND_DBG_MIRROR are the Config-A test-harness flags,
     // read as VALUES (`if X == 1`); OFF in every canonical shape (build.sh never
     // defines them → 0).
-    let defines: Vec<(String, i128)> = vec![
-        ("SOUND_DRIVER_ENABLED".to_string(), 1),
-        ("DEBUG".to_string(), if debug { 1 } else { 0 }),
-        ("SOUND_DEBUG_HOTKEYS".to_string(), 0),
-        ("SOUND_DBG_MIRROR".to_string(), 0),
-        // sonic4 game-config comptime flag (games/sonic4/config/game.asm):
-        // camera.emp COMPTIME-SELECTs on it.
-        ("GAME_CAMERA_JUMP_LOCK".to_string(), 1),
-    ];
+    let defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.to_path_buf()),
@@ -447,21 +751,28 @@ pub fn build_native_emp(
     // lowering); their emitted byte sections are redundant twins of the AS-side code
     // and MUST be dropped, or they double-place. Cross-module label references
     // resolve against the AS twin in the joint link.
-    const AS_OWNED_KEYSTONES: &[&str] = &["player_common", "test_player", "test_enemy"];
-    sections.retain(|s| !AS_OWNED_KEYSTONES.contains(&s.name.as_str()));
+    sections.retain(|s| !profile.as_owned_keystones.contains(&s.name.as_str()));
 
     // Guard: exactly ONE non-empty `"text"` section (OBJDEFS). A second would mean
     // an unexpected defaulted-module data producer slipped into the reachable set
-    // and would corrupt OBJDEFS's region — a STOP, not a silent pack.
-    let nonempty_text =
-        sections.iter().filter(|s| s.name == "text" && !s.image_bytes().is_empty()).count();
-    if nonempty_text != 1 {
-        return Err(format!(
-            "expected exactly 1 non-empty `text` section (OBJDEFS), found {nonempty_text}"
-        ));
+    // and would corrupt OBJDEFS's region — a STOP, not a silent pack. Demo has NO
+    // objdefs (0 non-empty `text`), so the guard is profile-gated.
+    if profile.require_one_text {
+        let nonempty_text =
+            sections.iter().filter(|s| s.name == "text" && !s.image_bytes().is_empty()).count();
+        if nonempty_text != 1 {
+            return Err(format!(
+                "expected exactly 1 non-empty `text` section (OBJDEFS), found {nonempty_text}"
+            ));
+        }
     }
 
-    let map_toml = emp_map_toml(&specs, debug);
+    let map_toml = match &profile.size_source {
+        SizeSource::PinnedBaked => emp_map_toml(specs, debug),
+        // The chainer recomputes every base from the frozen table, so the emp
+        // placement map only needs one (cosmetic) region per DISTINCT section name.
+        SizeSource::Frozen(_) => emp_map_frozen(&sections),
+    };
     let map = sigil_link::load_map(&map_toml).map_err(|e| format!("emp map load: {e}"))?;
     let place_diags = place_sections(&mut sections, &map);
     let perr: Vec<_> = place_diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
@@ -500,6 +811,15 @@ const STAGE1_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[
     ("CAM_SCREEN_HALF_H", "ojz_scroll_test"),    // twin: engine/level/camera.asm
 ];
 
+/// DEMO inapplicable-drift-guard allowlist. Demo's registry is engine-only, so the
+/// game-module `ojz_scroll_test` CAM_SCREEN_HALF guards are ABSENT; only the two
+/// engine `VRAM_PLANE_B_BYTES` guards (plane_buffer/section, twin bg.asm gated off)
+/// remain Poison. VERIFIED empirically by the demo gate's allowlist enforcement.
+const DEMO_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[
+    ("VRAM_PLANE_B_BYTES", "plane_buffer.emp"),
+    ("VRAM_PLANE_B_BYTES", "section.emp"),
+];
+
 /// Enforce that the observed inapplicable (Poison-unresolvable) drift guards are
 /// EXACTLY [`STAGE1_INAPPLICABLE_GUARDS`] — both directions (§t24). `inapplicable`
 /// are the "not defined in this link" diagnostics; `link_asserts` supplies each
@@ -507,6 +827,16 @@ const STAGE1_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[
 fn enforce_inapplicable_allowlist(
     inapplicable: &[&sigil_span::Diagnostic],
     link_asserts: &[sigil_ir::LinkAssert],
+) -> Result<(), String> {
+    enforce_inapplicable_allowlist_against(inapplicable, link_asserts, STAGE1_INAPPLICABLE_GUARDS)
+}
+
+/// As [`enforce_inapplicable_allowlist`] but against a caller-supplied allowlist (the
+/// per-profile set — demo/Config each home a different twin subset). Both directions.
+fn enforce_inapplicable_allowlist_against(
+    inapplicable: &[&sigil_span::Diagnostic],
+    link_asserts: &[sigil_ir::LinkAssert],
+    allowlist: &[(&str, &str)],
 ) -> Result<(), String> {
     // The guard's own message text (its Text parts), for the site match.
     let site_of = |d: &sigil_span::Diagnostic| -> String {
@@ -525,20 +855,20 @@ fn enforce_inapplicable_allowlist(
             .unwrap_or_default()
     };
 
-    let mut matched = vec![false; STAGE1_INAPPLICABLE_GUARDS.len()];
+    let mut matched = vec![false; allowlist.len()];
     for d in inapplicable {
         // The unresolved extern name(s) are the backtick-delimited tokens in the
         // Poison message ("references symbol(s) `X` not defined in this link").
         let externs: Vec<&str> = d.message.split('`').skip(1).step_by(2).collect();
         let site = site_of(d);
-        let hit = STAGE1_INAPPLICABLE_GUARDS.iter().enumerate().find(|(i, (name, token))| {
+        let hit = allowlist.iter().enumerate().find(|(i, (name, token))| {
             !matched[*i] && externs.contains(name) && site.contains(token)
         });
         match hit {
             Some((i, _)) => matched[i] = true,
             None => {
                 return Err(format!(
-                    "unresolvable-extern drift guard NOT in the Stage-1 allowlist — either the \
+                    "unresolvable-extern drift guard NOT in the allowlist — either the \
                      extern name is wrong or a new twin-parity guard needs a ruling.\n  \
                      externs: {externs:?}\n  site: {site}"
                 ));
@@ -547,19 +877,608 @@ fn enforce_inapplicable_allowlist(
     }
     if let Some(i) = matched.iter().position(|m| !m) {
         return Err(format!(
-            "Stage-1 inapplicable-guard allowlist is STALE: the guard {:?} \
+            "inapplicable-guard allowlist is STALE: the guard {:?} \
              (extern, site) no longer folds to an unresolvable-extern Poison — it now resolves \
              (or drifted to a Value(0) fail). Re-verify and update the allowlist.",
-            STAGE1_INAPPLICABLE_GUARDS[i],
+            allowlist[i],
         ));
     }
     if std::env::var("NATIVE_DEBUG").is_ok() {
         eprintln!(
-            "NATIVE_DEBUG: {} inapplicable drift guard(s) matched the Stage-1 allowlist exactly",
+            "NATIVE_DEBUG: {} inapplicable drift guard(s) matched the allowlist exactly",
             inapplicable.len()
         );
     }
     Ok(())
+}
+
+// ── Flip Stage 2 · S1.2 — THE DECLARED-ORDER, COMPUTED-BASE CHAINER ──
+//
+// The generalization of `native_chained_resume`'s proof into a first-class placement
+// authority. It computes EVERY section's ROM base by chaining in a DECLARED ORDER;
+// the baked `org`/resume-org literals are discarded for chained sections (proving
+// them redundant — the Stage-2 unblock). Only genuine fixed anchors (the object bank
+// `org $10000`, the phased sound banks) keep a declared base.
+//
+// THE LOAD-BEARING REFINEMENT (empirically established — see the S1.2 note): pure
+// content-size chaining does NOT reproduce asl. sigil's link-time branch relaxation
+// grows short→long; when sections pack tighter than asl's layout, a branch sitting at
+// the `.s`/`.w` boundary relaxes SHORTER, so the chained ROM settles at a *different*
+// (tighter) relaxation fixpoint than asl — a byte divergence that cascades (first seen
+// as a −2 at `hblank`, from `vblank.emp`'s bare branch). The fix: reserve each
+// section's DECLARED SIZE = its exact asl per-region span, so the computed-base chain
+// reproduces asl's addresses and thereby anchors relaxation to asl's widths. The
+// declared sizes are what the map manifest must hold (SPEC2:199), sourced per target
+// from its asl listing (sonic4: the pinned-resolve spans below; demo/Config: their
+// `.lst` spans). Bases stay COMPUTED — the soundness condition is met.
+
+/// Per-section image length (exact, relaxables lowered to `Data`) from a resolve where
+/// each ROM section is pinned at `pin_lma[idx]` (falling back to its baked lma). Keyed
+/// by the section's stable index. The unique-name tag makes the read unambiguous (the
+/// tree carries same-named `text`/`sec<lma>` sections); names never affect bytes.
+fn image_lens_pinned(sections: &[Section], pin_lma: &[Option<u32>]) -> Result<Vec<u32>, String> {
+    let mut tagged: Vec<Section> = sections.to_vec();
+    // ROM sections with NO pin (label-less data blobs whose true base is not yet known)
+    // are pinned at DISJOINT high scratch slots: they are pure DATA, so image_len is
+    // position-independent, and scratch pins keep the resolve overlap-free (a frozen
+    // labeled section and a baked label-less one can otherwise collide — the config_a
+    // sound-tail vs object_test_state case).
+    let mut scratch: u32 = 0x0070_0000;
+    for (i, s) in tagged.iter_mut().enumerate() {
+        s.name = format!("{}\u{0}{i}", s.name);
+        if is_rom_section(s) {
+            // Force Pinned so `resolve_layout` honours the lma we set (a Chained section
+            // would otherwise ignore it and pack within its group, defeating the pin).
+            s.placement = SectionPlacement::Pinned;
+            s.group = None;
+            match pin_lma.get(i) {
+                Some(Some(p)) => s.lma = *p,
+                _ => {
+                    s.lma = scratch;
+                    // keep vma tracking the scratch lma so labels don't leak a stale base
+                    if s.vma_base.map(|v| v < 0x8000).unwrap_or(false) {
+                        s.vma_base = None;
+                    }
+                    scratch += 0x10_0000;
+                }
+            }
+        }
+    }
+    let stubs = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&tagged, &stubs, true).map_err(|d| {
+        format!("span pass: resolve_layout: {} diag(s); first {:?}", d.len(), d.first())
+    })?;
+    let mut img = vec![0u32; sections.len()];
+    for s in &resolved {
+        if let Some(idx) = s.name.rsplit('\u{0}').next().and_then(|t| t.parse::<usize>().ok()) {
+            if is_rom_section(s) {
+                img[idx] = s.image_len();
+            }
+        }
+    }
+    Ok(img)
+}
+
+/// The TRUE per-section ROM base (the declared-order authority), keyed by stable index;
+/// `None` for RAM/phase-only sections. For `PinnedBaked` (canonical sonic4) the baked
+/// lma IS asl-correct so the true base is the baked lma. For `Frozen` (demo/Config) the
+/// baked resume orgs are WRONG sonic4 values, so each section's true base is
+/// `frozen[L] − offset[L]` for a contained frozen label `L`; a label-less DATA blob
+/// derives by CONTIGUITY from its frozen neighbour (the phased Z80 idle, HeightMaps),
+/// and a hard-org PHASE BANK (vma ≥ 0x8000 — the sound banks) keeps its baked (=asl) org.
+fn true_bases_by_index(
+    sections: &[Section],
+    src: &SizeSource,
+) -> Result<Vec<Option<u32>>, String> {
+    let n = sections.len();
+    match src {
+        SizeSource::PinnedBaked => Ok(sections
+            .iter()
+            .map(|s| if is_rom_section(s) { Some(s.lma) } else { None })
+            .collect()),
+        SizeSource::Frozen(table) => {
+            // Provisional base + labeled flag per ROM section.
+            let mut prov = vec![None; n];
+            let mut labeled = vec![false; n];
+            for (i, s) in sections.iter().enumerate() {
+                if !is_rom_section(s) {
+                    continue;
+                }
+                let mut base: Option<i64> = None;
+                for l in &s.labels {
+                    if let Some(&a) = table.get(&l.name) {
+                        let b = a as i64 - l.offset as i64;
+                        base = Some(base.map_or(b, |x: i64| x.min(b)));
+                    }
+                }
+                match base {
+                    Some(b) => {
+                        prov[i] = Some(b);
+                        labeled[i] = true;
+                    }
+                    None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
+                }
+            }
+            // Image lengths at the provisional pins: LABELED sections at their frozen
+            // base (→ correct relaxation); LABEL-LESS at scratch (None → disjoint high
+            // slots inside `image_lens_pinned`, avoiding a baked-vs-frozen collision).
+            let pin: Vec<Option<u32>> = (0..n)
+                .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
+                .collect();
+            let img = image_lens_pinned(sections, &pin).map_err(|e| format!("span pass (provisional): {e}"))?;
+
+            // Walk in provisional order; assign each label-less section its true base.
+            //   - a labeled section: its exact frozen base.
+            //   - a PHASE BANK (sound bank head, vma ≥ 0x8000): its absolute org (baked).
+            //   - a label-less DATA blob in a HARD-ORG PHASE RUN (the sound bank has no
+            //     interleaved emp holes, so its whole run's baked addresses are asl-exact):
+            //     its baked base.
+            //   - any other label-less blob (the boot-region Z80 idle, whose baked base
+            //     is skewed by the wrong resume orgs): CONTIGUITY from its neighbour.
+            let mut order: Vec<usize> = (0..n).filter(|&i| prov[i].is_some()).collect();
+            order.sort_by_key(|&i| prov[i].unwrap());
+            const ANCHOR_GAP: i64 = 0x400;
+            let mut out = vec![None; n];
+            let mut running: Option<i64> = None;
+            let mut in_phase_run = false;
+            for &i in &order {
+                let p = prov[i].unwrap();
+                let is_phase_bank =
+                    sections[i].vma_base.map(|v| v != sections[i].lma && v >= 0x8000).unwrap_or(false);
+                let tb = if labeled[i] {
+                    in_phase_run = false;
+                    p
+                } else if is_phase_bank {
+                    in_phase_run = true;
+                    p // sound bank head: absolute org (baked = asl)
+                } else if in_phase_run {
+                    p // sound bank tail: hard-org run, baked absolute
+                } else {
+                    match running {
+                        Some(r) if p > r + ANCHOR_GAP => p, // a genuine org hole
+                        Some(r) => r,                       // contiguity from the neighbour
+                        None => p,
+                    }
+                };
+                out[i] = Some(tb as u32);
+                running = Some(tb + img[i] as i64);
+            }
+            Ok(out)
+        }
+    }
+}
+
+/// The declared per-section SIZE (exact asl span the chainer reserves), keyed by stable
+/// index. Each ROM section is pinned at its `true_base`; the resolved layout's per-run
+/// advance (next.true_base − this.true_base within an abutting run; image_len before an
+/// org hole) is its span. This is what anchors relaxation to asl's widths.
+fn declared_spans_by_index(
+    sections: &[Section],
+    true_bases: &[Option<u32>],
+) -> Result<Vec<Option<u32>>, String> {
+    // A trailing `align $8000` on the pre-sound-bank data blob (HeightMaps) makes its
+    // image OVERSHOOT the sound-bank anchor, so pinning both at their true bases collides
+    // in the measuring resolve. Scratch the phase-region sections (the sound banks) for
+    // the measurement — they are pure data (their own span comes from the frozen gap, not
+    // this image) — so the resolve is overlap-free; the pre-bank blob is still measured at
+    // its true base (its span then clamps to the gap-to-anchor above).
+    let phase_region = phase_region_mask(sections, true_bases);
+    let pin: Vec<Option<u32>> = (0..sections.len())
+        .map(|i| if phase_region[i] { None } else { true_bases[i] })
+        .collect();
+    let img = image_lens_pinned(sections, &pin).map_err(|e| format!("span pass (declared): {e}"))?;
+    let mut rom: Vec<(usize, u32, u32)> = (0..sections.len())
+        .filter_map(|i| true_bases.get(i).and_then(|o| *o).map(|tb| (i, tb, img[i])))
+        .collect();
+    rom.sort_by_key(|&(_, tb, _)| tb);
+    let mut span = vec![None; sections.len()];
+    for i in 0..rom.len() {
+        let (idx, tb, im) = rom[i];
+        let adv = if i + 1 < rom.len() {
+            let gap = rom[i + 1].1.saturating_sub(tb);
+            // The declared size is the GAP to the next section when they abut (gap ≈
+            // image), and also when the image OVERSHOOTS the next section — a trailing
+            // `align $8000` (the sound bank) measures more padding at a scratch pin than
+            // fits at the real base, so the next anchor clamps the reserved span. A gap
+            // MUCH larger than the image is a genuine org hole: reserve only the image
+            // (the anchor after it pins; the interval fills).
+            if gap <= im + 0x10 { gap } else { im }
+        } else {
+            im
+        };
+        span[idx] = Some(if im == 0 { 0 } else { adv.max(1) });
+    }
+    Ok(span)
+}
+
+/// ALIGN-RECOMPUTE-ON-RELOCATION. A trailing `align $8000` (the pre-sound-bank data
+/// blob HeightMaps) bakes its padding as a `Fill` sized for the section's AS-RESIDUAL
+/// position. When the frozen chainer relocates the section, that baked pad is stale —
+/// its image OVERSHOOTS the section's (correctly clamped) reserved span and collides
+/// with the next hard-org anchor (`MovingTrucks_Bank_Start` at 0x58000). asl would have
+/// recomputed the pad for the new position; the linker never shrank a baked `align`.
+///
+/// This recomputes it: for a PURE-DATA section (no width-variable fragment — the only
+/// case whose image length is known pre-relaxation, and exactly the align-blob shape),
+/// if the image exceeds `span`, trim the overshoot off the TRAILING zero-`Fill` (the
+/// align padding). Only zero-Fill is trimmed and only down to `span`, so no real datum
+/// is ever cut; an overshoot that is NOT trailing zero-Fill is left intact for
+/// `resolve_layout` to reject loudly. Byte-neutral for the pinned (sonic4) path, where
+/// `image_len == span` and the guard never fires.
+fn trim_trailing_align_overshoot(s: &mut Section, span: u32) {
+    let has_variable = s.fragments.iter().any(|f| {
+        matches!(
+            f,
+            Fragment::JmpJsrSym { .. } | Fragment::RelaxAbsSym { .. } | Fragment::RelaxLadder { .. }
+        )
+    });
+    if has_variable {
+        return;
+    }
+    let img = s.image_len();
+    if img <= span {
+        return;
+    }
+    let mut overshoot = img - span;
+    while overshoot > 0 {
+        match s.fragments.last_mut() {
+            Some(Fragment::Fill { value: 0, count, .. }) => {
+                if *count > overshoot {
+                    *count -= overshoot;
+                    overshoot = 0;
+                } else {
+                    overshoot -= *count;
+                    s.fragments.pop();
+                }
+            }
+            // Not trailing zero-fill: leave the overshoot for resolve_layout to reject.
+            _ => break,
+        }
+    }
+}
+
+/// The minimum alignment (bank size) an INTERNAL `align` must target for
+/// `recompute_bank_aligns` to touch it. `align $8000` (the DAC/MT sound-bank pads)
+/// is the only aeon align at or above this; `align 2` word-aligns and any small
+/// bulk zero-fill fall below it and are left exactly as baked — so a relocated
+/// section's HEAD (e.g. HeightMaps at its true base) never moves.
+const BANK_ALIGN: u32 = 0x8000;
+
+/// ALIGN-RECOMPUTE-ON-RELOCATION for INTERNAL bank aligns (the general form of
+/// `trim_trailing_align_overshoot`, which handles only the trailing pad).
+///
+/// A pure-data section can carry `align $8000` pads MID-section (main.asm's
+/// BINCLUDE arm: HeightMaps → art → `align $8000` → DAC blip → `align $8000` →
+/// DAC shared → `align $8000` → MovingTrucks — ONE section). `directive_align`
+/// bakes each as a fixed `Fill{0, pad}` computed against the section's AS-RESIDUAL
+/// base. When the chainer re-pins the section at its true (frozen) base, that
+/// fixed pad carries the following content off the absolute bank boundary by the
+/// relocation delta (config_a's DAC banks landed +0xC at 0x4800c/0x5000c). asl
+/// aligns to ABSOLUTE N-multiples independent of the base, so the pad must be
+/// recomputed.
+///
+/// Replays the BAKED and TRUE absolute positions in parallel from `baked_base` /
+/// `true_base`. For each zero-`Fill` that is a MINIMAL pad landing on a
+/// `>= BANK_ALIGN` boundary (a bank align — never a word-align or bulk fill), the
+/// pad is rewritten so the following content resumes on that SAME absolute
+/// boundary (`new_pad = baked_after − true_pos`); the two cursors re-sync there.
+/// Non-bank fragments advance both cursors by their length, preserving the delta.
+/// Byte-neutral for the pinned path (`baked_base == true_base`, the loop is a
+/// no-op) and for any section with no `>= BANK_ALIGN` internal align.
+///
+/// Pure-data only (guarded): a width-variable fragment makes image offsets
+/// base-dependent in a way this static replay does not model — such a section is
+/// left untouched (it has no bank align in practice).
+fn recompute_bank_aligns(s: &mut Section, baked_base: u32, true_base: u32) {
+    if baked_base == true_base {
+        return;
+    }
+    // Only a section whose fragments advance the cursor monotonically by their own
+    // length can be replayed statically here. A width-variable fragment (base-
+    // dependent offsets) or an `Org` (cursor seek) is left untouched — neither
+    // occurs in the sound-bank blob this targets.
+    let simple = s.fragments.iter().all(|f| {
+        matches!(f, Fragment::Data(_) | Fragment::Fill { .. } | Fragment::Reserve { .. })
+    });
+    if !simple {
+        return;
+    }
+    let mut baked = baked_base;
+    let mut tru = true_base;
+    for f in &mut s.fragments {
+        match f {
+            Fragment::Fill { value: 0, count, .. } => {
+                let c = *count;
+                let baked_after = baked.wrapping_add(c);
+                // A bank align = a minimal pad (`c < BANK_ALIGN`) whose post-position is a
+                // >= BANK_ALIGN multiple. The boundary is `baked_after` itself (the absolute
+                // bank start the residual align reached). Recompute so `tru` resumes there.
+                let is_bank_align =
+                    c < BANK_ALIGN && baked_after != 0 && baked_after % BANK_ALIGN == 0;
+                if is_bank_align && baked_after >= tru {
+                    *count = baked_after - tru;
+                    tru = baked_after;
+                    baked = baked_after;
+                } else {
+                    baked = baked_after;
+                    tru = tru.wrapping_add(c);
+                }
+            }
+            Fragment::Data(d) => {
+                let l = d.bytes.len() as u32;
+                baked = baked.wrapping_add(l);
+                tru = tru.wrapping_add(l);
+            }
+            Fragment::Fill { count, .. } | Fragment::Reserve { count, .. } => {
+                baked = baked.wrapping_add(*count);
+                tru = tru.wrapping_add(*count);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Apply the declared-order computed-base chain to `sections`: split ROM/RAM, sort ROM
+/// by ascending true base, and Pin each org anchor / Chain the rest reserving its
+/// declared span. Returns the placed sections (ROM then RAM). Shared by the driver and
+/// the layout diagnostic so they can never drift.
+fn apply_declared_chain(
+    sections: Vec<Section>,
+    true_bases: &[Option<u32>],
+    spans: &[Option<u32>],
+) -> Vec<Section> {
+    type IndexedSection = (usize, Section);
+    let indexed: Vec<IndexedSection> = sections.into_iter().enumerate().collect();
+    let (mut rom, ram): (Vec<IndexedSection>, Vec<IndexedSection>) =
+        indexed.into_iter().partition(|(_, s)| is_rom_section(s));
+    // DECLARED ORDER = ascending true base (baked for sonic4; frozen for demo/Config).
+    rom.sort_by_key(|(idx, s)| (true_bases[*idx].unwrap_or(s.lma), s.placement_span()));
+
+    let mut cur_group = String::new();
+    let mut gi = 0usize;
+    let mut chain_end: Option<u32> = None;
+    for (idx, s) in rom.iter_mut() {
+        let orig_lma = s.lma;
+        let tb = true_bases[*idx].unwrap_or(orig_lma);
+        let span = spans[*idx].unwrap_or_else(|| s.placement_span());
+        // A GENUINELY-PHASED section runs at a VMA distinct from its ROM lma. Two kinds:
+        //   - a HARD-ORG SOUND BANK (vma at a real phase ≥ 0x8000 — resident/moving-
+        //     trucks): its labels use the phase VMA and its ROM org is absolute; ANCHOR.
+        //   - an INLINE Z80 section (vma = 0 — the no-sound Z80 idle): its internal
+        //     labels are Z80-relative (vma 0); the 68k reaches it via a neighbour label,
+        //     so it CHAINS but KEEPS its vma=0.
+        // A normal AS section carries vma == baked lma (NOT phased) — the check MUST
+        // compare against the section's OWN baked lma, never the re-based `tb` (else a
+        // baked object-bank address ≥ 0x8000 is misread as a phase and its stale sonic4
+        // VMA leaks into every reference to its labels).
+        let phase_bank = s.vma_base.map(|v| v != orig_lma && v >= 0x8000).unwrap_or(false);
+        let keep_vma = phase_bank || s.vma_base == Some(0);
+        let is_anchor =
+            chain_end.is_none() || phase_bank || chain_end.map(|e| tb > e).unwrap_or(true);
+        s.reserved_span = span;
+        // Recompute stale INTERNAL bank-boundary aligns (the DAC/MT `align $8000`
+        // pads inside a relocated pure-data blob) for the new base, then the
+        // TRAILING align (see each fn's doc). A VMA-tracking (non-phase) section
+        // only — a phase bank keeps its baked absolute image.
+        if !keep_vma {
+            recompute_bank_aligns(s, orig_lma, tb);
+        }
+        trim_trailing_align_overshoot(s, span);
+        if !keep_vma {
+            s.vma_base = None; // VMA tracks the (re-based) LMA — no stale baked address.
+        }
+        if is_anchor {
+            gi += 1;
+            cur_group = format!("declchain{gi}");
+            s.group = Some(cur_group.clone());
+            s.placement = SectionPlacement::Pinned;
+            s.lma = tb;
+            chain_end = Some(tb + span);
+        } else {
+            s.group = Some(cur_group.clone());
+            s.placement = SectionPlacement::Chained;
+            s.lma = 0; // base COMPUTED — the baked resume-org literal is discarded.
+            chain_end = Some(chain_end.unwrap().max(tb) + span);
+        }
+    }
+
+    let mut all: Vec<Section> = rom.into_iter().map(|(_, s)| s).collect();
+    all.extend(ram.into_iter().map(|(_, s)| s));
+    all
+}
+
+/// Mark the PHASE-REGION ROM sections (a phase bank — vma ≥ 0x8000 — and the label-less
+/// data tail chaining after it, up to the next labeled section). These are the hard-org
+/// sound banks whose image (with its own trailing align) would collide in the span-pass
+/// resolve; their declared span comes from frozen gaps, not from a measured image, so
+/// they are scratched during measurement.
+fn phase_region_mask(sections: &[Section], true_bases: &[Option<u32>]) -> Vec<bool> {
+    let n = sections.len();
+    let mut order: Vec<usize> = (0..n).filter(|&i| true_bases[i].is_some()).collect();
+    order.sort_by_key(|&i| true_bases[i].unwrap());
+    let mut mask = vec![false; n];
+    let mut in_phase = false;
+    for &i in &order {
+        let s = &sections[i];
+        let is_phase_bank =
+            s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false);
+        if is_phase_bank {
+            in_phase = true;
+            mask[i] = true;
+        } else if in_phase {
+            // stay in the phase region only for label-less data tails; a real labeled
+            // section (object_test_state) ends it.
+            let has_own_label = !s.labels.is_empty();
+            if has_own_label {
+                in_phase = false;
+            } else {
+                mask[i] = true;
+            }
+        }
+    }
+    mask
+}
+
+/// True for an image-bearing ROM section (VMA below the RAM/phase floor), as opposed
+/// to a RAM/phase section that never participates in ROM layout.
+fn is_rom_section(s: &Section) -> bool {
+    match s.vma_base {
+        Some(v) => v < 0x00F0_0000,
+        None => true,
+    }
+}
+
+/// Build the whole native ROM with every base COMPUTED by declared-order chaining
+/// (the S1.2 generalization). `debug` selects the shape. The DECLARED ORDER for the
+/// canonical-sonic4 bootstrap is the address order (baked lmas known-correct — the
+/// ratified sort-by-address bootstrap); for demo/Config it comes from their listing.
+/// Genuine org anchors (object bank, phased sound banks) keep their declared base;
+/// every other section is `Chained` with its baked lma zeroed (base computed).
+pub fn build_native_rom_chained(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
+    build_rom_chained(aeon, &sonic4_profile(debug))
+}
+
+/// Build the whole native ROM for `profile` with every base COMPUTED by declared-order
+/// chaining. The DECLARED ORDER + SIZES come from the profile's `SizeSource`: canonical
+/// sonic4 from the baked (asl-correct) lmas; demo/Config from the frozen listing table.
+/// Genuine org anchors (object bank, phase-address sound banks) keep their declared
+/// base; every other section is `Chained` with its lma zeroed (base computed).
+pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
+    Ok(build_rom_chained_with_listing(aeon, profile)?.0)
+}
+
+/// The chained whole-ROM build AND its sigil-canonical listing (the deb2-appendix
+/// source for the off-canonical full-file layer). One `C` row per resolved section
+/// label at its final VMA, de-duplicated and address-deterministic — mirrors
+/// `build_native_rom_with_listing`'s listing derivation, on the chained (Frozen)
+/// placement instead of the pinned one.
+pub fn build_rom_chained_with_listing(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<(Vec<u8>, Vec<sigil_link::ListingSymbol>), String> {
+    if profile.sound_on {
+        ensure_generated(aeon);
+    }
+    let as_side = assemble_as_side(aeon, profile)?;
+    let (emp, link_asserts) = build_emp(aeon, profile)?;
+    let mut sections: Vec<Section> = as_side.sections;
+    sections.extend(emp);
+
+    // The declared-order authority: each ROM section's TRUE base, then its exact span.
+    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
+    let spans = declared_spans_by_index(&sections, &true_bases)?;
+
+    let all = apply_declared_chain(sections, &true_bases, &spans);
+
+    let stubs = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&all, &stubs, true)
+        .map_err(|d| format!("declared-chain: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+    // Same drift partition as the pinned driver: real Value(0) drift is a hard fail;
+    // gated-off-twin (unresolvable-extern) guards are inapplicable here.
+    let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
+    let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
+        .iter()
+        .filter(|d| d.level == sigil_span::Level::Error)
+        .partition(|d| d.message.contains("not defined in this link"));
+    if !real.is_empty() {
+        if std::env::var("NATIVE_DEBUG").is_ok() {
+            for d in &real {
+                eprintln!("REAL DRIFT: {}", d.message);
+            }
+        }
+        return Err(format!("declared-chain drift guard FIRED: {} error(s); first {:?}", real.len(), real.first()));
+    }
+    enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
+
+    // Sigil-canonical listing from the resolved image (one C row per label VMA).
+    let mut listing: Vec<sigil_link::ListingSymbol> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for sec in &resolved {
+        let origin = sec.vma_origin();
+        for label in &sec.labels {
+            if seen.insert(label.name.clone()) {
+                listing.push(sigil_link::ListingSymbol {
+                    name: label.name.clone(),
+                    value: origin.wrapping_add(label.offset),
+                    is_equate: false,
+                    unused: false,
+                });
+            }
+        }
+    }
+
+    let linked = sigil_link::link(&resolved, &stubs)
+        .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
+    let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
+    Ok((rom, listing))
+}
+
+/// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical
+/// deb2 appendix (the same Option-A post-pipeline as `build_native_full_file`, over the
+/// Frozen-placed profile). `debug` selects the convsym range/fixheader shape.
+pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
+    let (rom, listing) = build_rom_chained_with_listing(aeon, profile)?;
+    // Demo (engine-only) packs a smaller appendix than sonic4/config; floor per game.
+    let floor = if profile.game_root_rel.contains("/demo/") {
+        DEMO_APPENDIX_FLOOR
+    } else {
+        SONIC4_APPENDIX_FLOOR
+    };
+    append_deb2_appendix(aeon, &rom, &listing, profile.debug, floor)
+}
+
+/// Resolve `profile`'s frozen-table chained layout and return, for every ROM section
+/// carrying a frozen-table label whose RESOLVED base differs from the frozen truth, a
+/// `(label, got, want)` mismatch. An empty result proves the frozen chainer placed every
+/// declared section byte-correctly (the PLACEMENT invariant, independent of any residual
+/// assembly-time-folded-constant divergence). `NATIVE_DEBUG` prints the full table.
+pub fn frozen_placement_mismatches(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<Vec<(String, u32, u32)>, String> {
+    let table = match &profile.size_source {
+        SizeSource::Frozen(t) => t.clone(),
+        _ => return Err("frozen_placement_mismatches: profile is not a Frozen target".into()),
+    };
+    if profile.sound_on {
+        ensure_generated(aeon);
+    }
+    let as_side = assemble_as_side(aeon, profile)?;
+    let (emp, _) = build_emp(aeon, profile)?;
+    let mut sections: Vec<Section> = as_side.sections;
+    sections.extend(emp);
+    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
+    let spans = declared_spans_by_index(&sections, &true_bases)?;
+    let all = apply_declared_chain(sections, &true_bases, &spans);
+    let stubs = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&all, &stubs, true)
+        .map_err(|d| format!("frozen placement: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+    let mut rows: Vec<(String, u32, u32)> = Vec::new();
+    for s in &resolved {
+        if !is_rom_section(s) {
+            continue;
+        }
+        let origin = s.vma_origin();
+        for l in &s.labels {
+            if let Some(&want) = table.get(&l.name) {
+                let got = origin.wrapping_add(l.offset);
+                if got != want {
+                    rows.push((l.name.clone(), got, want));
+                }
+            }
+        }
+    }
+    rows.sort_by_key(|r| r.1);
+    if std::env::var("NATIVE_DEBUG").is_ok() {
+        eprintln!("=== {} frozen-label mismatches: {} ===", profile.name, rows.len());
+        for (name, got, want) in &rows {
+            eprintln!("  {name} got={got:#x} want={want:#x} (Δ{})", *got as i64 - *want as i64);
+        }
+    }
+    Ok(rows)
 }
 
 /// THE native whole-ROM build: AS residual (all gates ON, sound BINCLUDE) + every
@@ -686,8 +1605,16 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 /// `.lst` to a fresh temp dir so parallel shapes never collide.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
-    append_deb2_appendix(aeon, &rom, &listing, debug)
+    append_deb2_appendix(aeon, &rom, &listing, debug, SONIC4_APPENDIX_FLOOR)
 }
+
+/// The sigil-canonical deb2 appendix size floor for the sonic4/config symbol set
+/// (~11 KB and up). Demo — engine-only, far fewer symbols — floors lower
+/// (`DEMO_APPENDIX_FLOOR`). Both are PRESENCE controls: a collapsed listing
+/// (a handful of symbols → ~0x27 B) still trips them.
+pub const SONIC4_APPENDIX_FLOOR: usize = 0x2000;
+/// The demo appendix floor (demo's engine-only set packs to ~0x1a0f B).
+pub const DEMO_APPENDIX_FLOOR: usize = 0x1000;
 
 /// Given the assembled ROM + listing, write both to a temp dir, run
 /// `convsym … -output deb2 -a` then `fixheader`, and return the full appended file.
@@ -697,6 +1624,7 @@ pub fn append_deb2_appendix(
     rom: &[u8],
     listing: &[sigil_link::ListingSymbol],
     debug: bool,
+    min_appendix: usize,
 ) -> Result<Vec<u8>, String> {
     let tools = aeon.join("tools");
     let convsym = tools.join("convsym");
@@ -774,10 +1702,13 @@ pub fn append_deb2_appendix(
         ));
     }
     let appendix = full.len() - eor;
-    // Size band: the sigil-canonical appendix is ~26 KB (plain) / ~27 KB (debug);
-    // a wildly-out-of-band size means the symbol set collapsed or exploded.
-    if !(0x2000..=0x10000).contains(&appendix) {
-        return Err(format!("deb2 appendix size {appendix:#x} out of the expected band (0x2000..0x10000)"));
+    // Size band: the sigil-canonical appendix size is target-dependent (sonic4/config
+    // ~11 KB+, demo ~7 KB); `min_appendix` is the per-target floor. A wildly-out-of-band
+    // size means the symbol set collapsed or exploded (the t24 presence control).
+    if !(min_appendix..=0x10000).contains(&appendix) {
+        return Err(format!(
+            "deb2 appendix size {appendix:#x} out of the expected band ({min_appendix:#x}..0x10000)"
+        ));
     }
     Ok(full)
 }
@@ -876,7 +1807,7 @@ mod allowlist_tests {
         let (ds, as_) = build(&entries);
         let refs: Vec<&Diagnostic> = ds.iter().collect();
         let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
-        assert!(err.contains("NOT in the Stage-1 allowlist"), "got: {err}");
+        assert!(err.contains("NOT in the allowlist"), "got: {err}");
     }
 
     #[test]
@@ -887,5 +1818,80 @@ mod allowlist_tests {
         let refs: Vec<&Diagnostic> = ds.iter().collect();
         let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
         assert!(err.contains("STALE"), "got: {err}");
+    }
+}
+
+#[cfg(test)]
+mod align_recompute_tests {
+    //! Fix 3 — the trailing-`align` overshoot recompute-on-relocation. A pure-data
+    //! section that ends in a stale `align` `Fill` (baked for its AS-residual position)
+    //! must have that padding trimmed to its relocated reserved span, so its image no
+    //! longer overshoots the next hard-org anchor. Byte-neutral when already in-bounds.
+    use super::trim_trailing_align_overshoot;
+    use sigil_ir::{Cpu, DataFragment, Fragment, Section, SectionPlacement};
+    use sigil_span::Span;
+
+    fn span0() -> Span {
+        Span { source: sigil_span::SourceId(0), start: 0, end: 0 }
+    }
+    /// A pure-data section: `data_len` bytes of data, then a trailing zero-`Fill` of
+    /// `pad` bytes (the align padding).
+    fn data_then_pad(data_len: u32, pad: u32) -> Section {
+        Section {
+            name: "heightmaps".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0xAB; data_len as usize], fixups: vec![], span: span0() }),
+                Fragment::Fill { value: 0, count: pad, span: span0() },
+            ],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![],
+        }
+    }
+
+    #[test]
+    fn overshoot_trims_trailing_pad_to_span() {
+        // Image = 0x100 data + 0x40 pad = 0x140; relocated span clamps to 0x134
+        // (0xC shorter). The 0xC overshoot must come off the trailing pad.
+        let mut s = data_then_pad(0x100, 0x40);
+        assert_eq!(s.image_len(), 0x140);
+        trim_trailing_align_overshoot(&mut s, 0x134);
+        assert_eq!(s.image_len(), 0x134, "image trimmed to the relocated span");
+        // The data is untouched; only the pad shrank (0x40 → 0x34).
+        match s.fragments.last().unwrap() {
+            Fragment::Fill { count, value: 0, .. } => assert_eq!(*count, 0x34),
+            other => panic!("expected trailing zero-fill, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn in_bounds_is_byte_neutral() {
+        // image_len (0x140) <= span (0x140): nothing trimmed (the pinned-path case).
+        let mut s = data_then_pad(0x100, 0x40);
+        let before = s.image_bytes();
+        trim_trailing_align_overshoot(&mut s, 0x140);
+        assert_eq!(s.image_bytes(), before, "in-bounds section untouched");
+    }
+
+    #[test]
+    fn overshoot_not_trailing_pad_is_left_for_the_linker() {
+        // A section whose overshoot is real DATA (no trailing zero-fill) is NOT
+        // trimmed — resolve_layout must reject it loudly, never silent corruption.
+        let mut s = Section {
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0xAB; 0x140],
+                fixups: vec![],
+                span: span0(),
+            })],
+            ..data_then_pad(0, 0)
+        };
+        trim_trailing_align_overshoot(&mut s, 0x134);
+        assert_eq!(s.image_len(), 0x140, "real data is never trimmed");
     }
 }

@@ -271,18 +271,17 @@ fn vector_labels_resolve_to_emp_ownership() {
     }
 }
 
-/// t25 capability note (ledgered demand-1), made executable: sigil does NOT
-/// resolve an AS-side `X: equ ExternalSym + const` at link — the derived symbol
-/// `X` stays UNRESOLVED even when `ExternalSym` is provided by another module.
-/// This is why the MDDBG__ equ table does NOT derive off the `.emp`-owned
-/// ErrorHandler; instead engine.inc's gate-ON arm defines a NUMERIC per-shape
-/// `ErrorHandler` equ so the table folds at assemble time (the numeric-org
-/// derivation — `mixed_dac_rom::mixed_error_handler_rom_matches_assembled_reference`
-/// ships the whole-ROM mixed gate on it). The external-base equ remains a
-/// recorded demand; when sigil gains it this test FLIPS (the derived equ
-/// resolves) and the numeric pin can retire.
+/// t25 capability note (ledgered demand-1) — NOW DELIVERED (Flip Stage 2): sigil
+/// resolves an AS-side `X: equ ExternalSym + const` at link, folding the derived
+/// symbol `X` off the external base once `ExternalSym` is provided by another
+/// module (equ-off-link-external-base). This is what lets the MDDBG__ equ table
+/// derive off the `.emp`-owned `ErrorHandler` (aliased to `ErrorHandlerBlob`) —
+/// engine.inc's gate-ON arm no longer needs a NUMERIC per-shape `ErrorHandler`
+/// equ (rows 52/90 nativization). The front-end emits the unresolvable-RHS equate
+/// as a deferred symbolic `equ_sym` (eval.rs `directive_equate`); `fold_equ_syms`
+/// folds it post-placement.
 #[test]
-fn derived_equ_off_external_base_is_unresolved_today() {
+fn derived_equ_off_external_base_resolves() {
     use sigil_ir::SymbolValue;
     let asm = "cpu 68000\nMDDBG__X: equ ErrorHandler+$128\n dc.l MDDBG__X\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
@@ -290,12 +289,10 @@ fn derived_equ_off_external_base_is_unresolved_today() {
     let mut st = SymbolTable::new();
     st.define("ErrorHandler", SymbolValue::Int(0x5CC0A));
     let resolved = sigil_link::resolve_layout(&m.sections, &st, true).expect("resolve_layout");
-    let link = sigil_link::link(&resolved, &st);
-    assert!(
-        link.is_err(),
-        "EXPECTED-GAP: a derived equ off an external base does not resolve today; \
-         if this now links, the MDDBG__ flip capability arrived — build the flip"
-    );
-    let err = format!("{:?}", link.unwrap_err());
-    assert!(err.contains("MDDBG__X") && err.contains("unresolved"), "the derived symbol is the unresolved one: {err}");
+    let linked = sigil_link::link(&resolved, &st)
+        .expect("derived equ off an external base now resolves (the MDDBG__ flip capability)");
+    // The `dc.l MDDBG__X` folds to ErrorHandler ($5CC0A) + $128 = $5CD32.
+    let sec = &linked.sections[0];
+    let got = u32::from_be_bytes(sec.bytes[0..4].try_into().unwrap());
+    assert_eq!(got, 0x5CC0A + 0x128, "MDDBG__X must fold off the external ErrorHandler base");
 }

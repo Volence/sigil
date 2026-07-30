@@ -411,81 +411,11 @@ fn animate_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");
 }
 
-// ── The SND combo probe ─────────────────────────────────────────────────────
-
-/// The AS-twin oracle for the SOUND_DRIVER_ENABLED dimension: animate.asm
-/// assembled through the sigil AS front-end at the PLAIN base with the same
-/// equ prelude the .emp gets, per-combo defines. animate.asm is include-free
-/// (the reloadAnimTimer macro is defined in-file), so no include splicing —
-/// the simplest oracle of the campaign.
-fn as_twin_bytes(snd_on: bool) -> Vec<u8> {
-    let aeon = aeon_dir();
-    let animate_src = std::fs::read_to_string(aeon.join("engine/objects/animate.asm"))
-        .expect("animate.asm must be readable");
-
-    let mut prelude = String::from("cpu 68000\nsupmode on\n");
-    let mut pairs = sigil_harness::test_support::sst_field_equs();
-    pairs.extend(sigil_harness::test_support::engine_constant_equs());
-    for (name, rhs) in pairs {
-        prelude.push_str(&format!("{name} = {rhs}\n"));
-    }
-    for (name, vma) in PLAIN.labels {
-        prelude.push_str(&format!("{name} = ${vma:X}\n"));
-    }
-    let src = format!("{prelude}org ${:X}\n{animate_src}\n", PLAIN.base);
-
-    let mut defines: Vec<(String, i64)> = Vec::new();
-    if snd_on {
-        defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
-    }
-    let opts = AsOptions { initial_cpu: Cpu::M68000, defines, ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve_layout failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    let sec = linked
-        .sections
-        .iter()
-        .find(|s| s.lma == PLAIN.base && !s.bytes.is_empty())
-        .unwrap_or_else(|| panic!("AS twin must emit a section at {:#x}", PLAIN.base));
-    sec.bytes.clone()
-}
-
-/// SND 0/1: the .emp vs the AS-twin oracle, module-level. This is the
-/// conditional-MIRRORING drift guard (the oracle re-reads the real
-/// animate.asm every run — a macro or conditional change AS-side that the
-/// .emp doesn't mirror fails here naming the first diverging byte).
-#[test]
-fn snd_combo_matches_as_twin() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/animate.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    for snd_on in [true, false] {
-        // PLAIN shape (DEBUG=0): the AS twin `as_twin_bytes` assembles without
-        // __DEBUG__, so the item-4 AF_* asserts are absent on both sides.
-        let defines: Vec<(&str, i128)> =
-            vec![("SOUND_DRIVER_ENABLED", i128::from(snd_on)), ("DEBUG", 0)];
-        let (_, linked, _) = compile_real_file(&PLAIN, &defines);
-        let section = linked.section("animate").expect("linked image must carry animate");
-        let expected = as_twin_bytes(snd_on);
-        assert_region_matches(
-            &section.bytes,
-            &expected,
-            &format!("animate combo (snd={snd_on}) vs AS twin"),
-        );
-    }
-}
+// The SND-combo AS-twin oracle RETIRED (flip Stage-2): animate.asm is deleted —
+// the .emp is the only source. The SOUND_DRIVER_ENABLED-dimension coverage is
+// subsumed by the native whole-ROM golden gates (sound-ON canonical + Config-B
+// sound-OFF), and the region gates above pin animate == frozen-golden slice; the
+// t24 negative probe below (doctored AF_SET_FIELD) keeps the golden non-vacuous.
 
 // ── The twin-mirror drift probe (kill-list row 2's guard) ───────────────────
 

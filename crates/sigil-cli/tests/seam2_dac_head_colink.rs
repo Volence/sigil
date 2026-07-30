@@ -27,7 +27,8 @@
 //! ```
 
 use sigil_harness::seam2::{
-    emit_dac_artifacts, emit_dac_body_and_head, DAC_SAMPLE_TAB_LEN, DAC_SAMPLE_TAB_LMA,
+    emit_dac_artifacts, emit_dac_body_and_head, emit_dac_body_and_head_doctored,
+    DAC_SAMPLE_TAB_LEN, DAC_SAMPLE_TAB_LMA,
 };
 use std::path::PathBuf;
 
@@ -38,6 +39,15 @@ fn aeon_dir() -> PathBuf {
 }
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
+}
+/// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
+/// tree ROM — post-flip `aeon/s4.bin` is itself sigil-built, so composing `.emp`
+/// and comparing to it would be circular; the committed golden is the independent
+/// witness (row-91 bar b). Mirrors `native_offcanonical_rom::golden`.
+fn golden(name: &str) -> Vec<u8> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
 /// THE HEAD BYTE GATE: the co-linked `DacSampleTable` == the reference ROM slice,
@@ -53,9 +63,9 @@ fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
 
     assert_eq!(out.head.len(), DAC_SAMPLE_TAB_LEN, "DacSampleTable is 10 × 9 = 90 bytes");
 
-    // The head is shape-invariant: gate against BOTH reference ROMs at the same LMA.
+    // The head is shape-invariant: gate against BOTH frozen goldens at the same LMA.
     for (rom_name, shape) in [("s4.bin", "plain"), ("s4.debug.bin", "debug")] {
-        let rom = std::fs::read(aeon.join(rom_name)).unwrap_or_else(|e| panic!("read {rom_name}: {e}"));
+        let rom = golden(rom_name);
         let lo = DAC_SAMPLE_TAB_LMA as usize;
         let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];
         if let Some(i) = (0..out.head.len()).find(|&i| out.head[i] != head_ref[i]) {
@@ -81,9 +91,32 @@ fn colink_banks_still_match_reference() {
     }
     let aeon = aeon_dir();
     let out = emit_dac_body_and_head(&aeon).expect("emit_dac_body_and_head co-links");
-    let rom = std::fs::read(aeon.join("s4.bin")).expect("read s4.bin");
+    let rom = golden("s4.bin");
     assert_eq!(out.blip, &rom[0x48000..0x48000 + out.blip.len()], "blip bank @ $48000");
     assert_eq!(out.shared, &rom[0x50000..0x50000 + out.shared.len()], "shared bank @ $50000");
+}
+
+/// t24 NON-VACUITY control (row-91 bar c): a doctored composition — the
+/// `dac_blip_bank` co-linked at `$40000` (bank $8) instead of `$48000` (bank $9)
+/// — must make the head DIVERGE from the golden slice, because `SND_BLIP_BANK`/
+/// `SND_BLIP_PTR` re-fold from the moved bank. The head byte gate is vacuous if a
+/// moved bank still matches.
+#[test]
+fn dac_head_diverges_when_blip_bank_moved() {
+    if !strict_gate() {
+        eprintln!("skipping seam2_dac_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        return;
+    }
+    let aeon = aeon_dir();
+    let doctored =
+        emit_dac_body_and_head_doctored(&aeon, Some(0x40000)).expect("doctored co-link");
+    let rom = golden("s4.bin");
+    let lo = DAC_SAMPLE_TAB_LMA as usize;
+    let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];
+    assert_ne!(
+        doctored.head, head_ref,
+        "the DAC head gate is vacuous if a moved blip bank still matches the golden slice"
+    );
 }
 
 /// Determinism: the co-link is byte-stable across runs (tracked `.emp` + `.pcm` +

@@ -60,6 +60,23 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
+/// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
+/// tree ROM — post-flip `aeon/s4.bin` is itself sigil-built, so composing `.emp`
+/// and comparing to it would be circular; the committed golden is the independent
+/// row-91 witness (bar b). Mirrors `native_offcanonical_rom::golden`.
+fn golden(name: &str) -> Option<Vec<u8>> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
+    match std::fs::read(&path) {
+        Ok(b) => Some(b),
+        Err(_) if strict_gate() => panic!("golden missing: {}", path.display()),
+        Err(_) => {
+            eprintln!("skip: golden not at {} (set SIGIL_STRICT_GATE)", path.display());
+            None
+        }
+    }
+}
+
 /// The map: a `text` region for the module's zero-byte default-section
 /// carrier (opened by its top-level `ensure`s — R-T0.3's carrier contract;
 /// TWO such carriers land here, one before and one after `mt_bank` in
@@ -195,15 +212,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 /// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x58607..0x5BAE8]`.
 #[test]
 fn mt_bank_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    let rom_path = Path::new(&aeon).join("s4.bin");
-    let Ok(refrom) = std::fs::read(&rom_path) else {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but reference missing: {}", rom_path.display());
-        }
-        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
-        return;
-    };
+    let Some(refrom) = golden("s4.bin") else { return };
 
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(0);
     assert_eq!(
@@ -225,15 +234,7 @@ fn mt_bank_region_matches_reference() {
 /// `s4.debug.bin[0x58607..0x5D53A]`.
 #[test]
 fn mt_bank_debug_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    let rom_path = Path::new(&aeon).join("s4.debug.bin");
-    let Ok(refrom) = std::fs::read(&rom_path) else {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but debug reference missing: {}", rom_path.display());
-        }
-        eprintln!("skip: debug reference ROM not at {} (set AEON_DIR)", rom_path.display());
-        return;
-    };
+    let Some(refrom) = golden("s4.debug.bin") else { return };
 
     let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(1);
     assert_eq!(

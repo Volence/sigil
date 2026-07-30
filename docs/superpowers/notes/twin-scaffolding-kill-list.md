@@ -133,3 +133,157 @@ packet reviews the list; the campaign-end sweep closes whatever survives.
 | 91 | **`SIGIL_EMP_*_BODY_STUB` — the DSM mixed-harness in-memory bank-composition entries** (`SIGIL_EMP_DAC_BODY_STUB` seam-2 stage-2b `cd31928`/`6de01ac`; **`SIGIL_EMP_MT_BODY_STUB` seam-2 stage-2c `cfe2abd`/`10eb2ce`**; **`SIGIL_EMP_SFX_BODY_STUB` seam-2 stage-2d** — IDENTICAL pattern: the SFX arm is `ifdef SIGIL_EMP_SFX_BODY_STUB org … else <BINCLUDE sfx_bank{,_debug}.bin>` (NO syms — no AS reader of `SfxTable`); the SfxBlobWinTab HEAD is BINCLUDE'd UNCONDITIONALLY in `soundBankHead` (`sfx_blob_win_tab{,_debug}.bin`, co-linked) — it can't be stubbed (the phase-block PC must advance past it), like the DAC head; the 10 SFX-and-downstream DSM helpers set it; kill condition below applies per-stage) — after the DAC deletion the aeon `gameSoundDataIncludes` body is `ifdef SIGIL_EMP_DAC_BODY_STUB org $58000 else <BINCLUDE the two banks>`. The stub `org` arm exists ONLY so the DSM `mixed_dac_rom` tranches can keep composing `dac_samples.emp`'s bank sections in-memory (the dac_port.rs pipeline, pinned $48000/$50000) INSIDE the whole ROM — the real build + `seam2_dac_rom` take the BINCLUDE arm. The 12 sound DSM helpers (dac/mt/sfx/hblank/tranche2-9 in `sigil-harness/src/lib.rs`) set the define. (Also: `SIGIL_EMP_DAC` — and now `SIGIL_EMP_SFX` — are VESTIGIAL: nothing in aeon reads them after the gate collapse (the SFX arm keys on `SIGIL_EMP_SFX_BODY_STUB`); the DSM helpers + `assemble_seam2_{dac,sfx}_rom_as_side` still set them as no-ops. Cleanup candidate.) | `games/sonic4/main.asm` (the `ifdef SIGIL_EMP_DAC_BODY_STUB` stub arm) vs the BINCLUDE arm; the define lives in `crates/sigil-harness/src/lib.rs` | `seam2_dac_rom::seam2_dac_rom_matches_reference_{plain,debug}` (the BINCLUDE path) + `mixed_dac_rom::*` tranches (the composed path) — BOTH == the reference, proving the two paths are byte-identical | the DSM `mixed_dac_rom` DAC-composition tranches retire OR convert to the BINCLUDE path (dropping the `dac_samples.emp` placement) — then the stub arm + the define die and the body collapses to a bare unconditional BINCLUDE, and the vestigial `SIGIL_EMP_DAC` is dropped from the helpers. |
 | 92 | **Vestigial AS-side sound scaffolding in `boot_data.asm`** (seam-2 stage-3, dry-panel C Finding 3) — after seq_opcode_tab + sfx_blob_win_tab went native, three AS-side items in `engine/system/boot_data.asm` have ZERO consumers: (a) `include "engine/sound/generated/z80_sound_syms.asm"` (:68) — its 26 `Seq_Op_*`/`Seq_BadOpcode` equs were read ONLY by the deleted `seq_opcode_tab.asm`; `seq_opcode_tab.emp` now resolves the handler VMAs in-link (`seam2::emit_seq_opcode_tab` → `native_sound_blob().symbols`). (b) `SFX_WIN_MASK`/`SFX_WIN_BASE`/`sfx_winptr`/`sfx_bankid` (:64-67) — read ONLY by the deleted `sfx_blob_win_tab.asm`; `sfx_bank.emp` folds the window pointers via the `winptr()` builtin. All emit NO bytes (equs/functions), so leaving them is byte-neutral; the stale comments that cited the deleted `.asm` as "still AS-included" were corrected present-tense same-commit. | `engine/system/boot_data.asm` (:64-68) — the include + the 4 helpers; `engine/sound/generated/z80_sound_syms.asm` (still emitted by `seam1::emit_sound_blob`) | grep: NO non-comment consumer of `Seq_Op_*` or `SFX_WIN_*`/`sfx_winptr` remains after the seq/sfx deletions; the whole-ROM byte gates are green with them present (byte-neutral) | remove the `z80_sound_syms.asm` include + stop `seam1` emitting it (the syms contract shrinks, design §3c) AND drop the 4 SFX helpers — a byte-neutral seam-1 cleanup (touches the permanent boot arm + the emitter's `render_sound_syms`), deferred from this data-deletion pass; OR Spec 5 (the whole boot arm / phase bracket retires). **DONE (flip Stage-0, 2026-07-30 `flip-stage0`):** boot_data.asm dropped the `z80_sound_syms.asm` include + the 4 SFX helpers (SFX_WIN_MASK/BASE/sfx_winptr/sfx_bankid); seam1's `emit_sound_blob` no longer writes `z80_sound_syms.asm` (`render_syms_asm` removed; `handler_symbols` kept — `emit_seq_opcode_tab` still reads the handler VMAs in-link). Byte-neutral: s4.bin eff2396f / s4.debug.bin 1e9097bc unchanged, 2904/0/1. |
 | 93 | **The gitignored OJZ level tree + the fresh-worktree non-determinism** (the level-gen parcel; the row-178 reproducibility hole). The generated level tree (`games/sonic4/data/generated/`, 61 files) + the ROM collision tables (`data/collision/*.bin`, BINCLUDE'd by `main.asm:282-291`) were ENTIRELY gitignored and regenerated every build by `prebuild.sh` from generators that read two OUT-OF-REPO donors (`sonic_hack`/`skdisasm`) at hard-coded absolute paths. A fresh `git worktree` lacked them and either failed OR — via `ojz_strip_gen.py:439 editor_data_available()`'s SILENT fallback — built a ~131 KB WRONG ROM with no error; `tools/seed-worktree.sh` (copy-the-gitignored-set-from-a-peer) was the standing workaround scaffolding. | aeon `.gitignore` (the `games/sonic4/data/generated/` dir-ignore) + `games/sonic4/prebuild.sh` (build-time generation) + `tools/seed-worktree.sh` (the copy workaround) + `ojz_strip_gen.py` (the silent-fallback path) | the fresh-worktree acceptance gate: an UNSEEDED `git worktree add` builds `eff2396f`/`1e9097bc` (assembled-ROM `e5765873`/`dab4f06c`) directly, or FAILS LOUDLY (`tools/verify_level_bin.py` preflight + `require_donor()` hard error) — never a silent wrong ROM | **DONE (level-gen 1-2/n, aeon `d3ebed9`):** the generated tree + collision tables + editor re-bake inputs are COMMITTED (the sound-migration model); `prebuild.sh` is a no-op; generation moved to the MANUAL `tools/regenerate-level.sh`; `ojz_strip_gen.generate()` gained `require_donor()` (absent donor/editor data = hard error, no silent fallback); the donor paths are env-overridable (`AEON_SONIC_HACK_DIR`/`AEON_SKDISASM_DIR`); `tools/verify_level_bin.py` (donor-free referential + `.zx0`-roundtrip drift check) wired into `build.sh` preflight; `seed-worktree.sh` retired to an error-checked relic. Fresh unseeded worktree builds `eff2396f`/`1e9097bc`, both shapes, no seed step. Byte-neutral throughout. |
+
+## STAGE-2 EXECUTION LOG — the row-5/6 twin deletions (the flip's point of no return)
+
+Row 5 (the AS code twins) + row 6 (the per-shape gate `org` pins) close
+PROGRESSIVELY, one subsystem per commit, each proven byte-identical at the four
+native pins (sonic4 2198deb2/1d895fcb · demo 0646d4bf/7e4a358a) + strict green.
+Each `ifndef SIGIL_EMP_X / include X.asm / else / <org resume> / endif` gate
+collapses to a bare `<org resume>` block (the canonical sonic4 orgs, used
+directly by the pinned sonic4 build; the off-canonical chainer derives placement
+from the frozen listing and ignores them); the `.asm` twin is `git rm`'d; the
+matching port test's AS-reassembly half (if any) retires and its region comparand
+re-points from the live tree `s4.bin` to the frozen `golden/s4.bin`.
+
+Row 6's `org` literals STAY (as the collapsed bare blocks) — they are the
+canonical-sonic4 placement authority until the map-manifest owns them (folded
+Phase-B cargo, this span). They are no longer a re-pin TAX (no dual build to keep
+in lockstep), so row 6 is downgraded from "mirror" to "residual placement
+literal" as each subsystem lands.
+
+Executed (subsystem — commit — twin files deleted):
+- compression — aeon `de41581` (D3) — `s4lz_decompress.asm`, `zx0_decompress.asm`.
+- engine/system math — `math.asm` (pcrel_port keeps its inline AS/EMP parity
+  snippets — it never read the file; math_port re-comparanded to golden).
+- engine/objects — `dplc.asm`, `core.asm`, `sprites.asm`, `animate.asm`,
+  `collision.asm`, `rings.asm`, `entity_window.asm`, `children.asm`,
+  `load_object.asm`. AS-twin lockstep oracles retired (−4 tests:
+  sprites/animate/dplc/rings `*_matches_as_twin`) — coverage subsumed by the
+  region + native whole-ROM golden gates; each file's t24 doctored-mirror probe
+  SURVIVES (gates on the `.emp`), keeping the golden non-vacuous. `aabb.inc`
+  survives (rings.emp's data source, not a code twin). Strict 2862→2858.
+- engine/level — `plane_buffer.asm`, `tile_cache.asm`, `collision_lookup.asm`,
+  `section.asm`, `camera.asm`, `parallax.asm` (the CODE twin; `data/parallax/*`
+  survive as bucket-H residual), `load_art.asm`, `bg.asm`, `bg_anim.asm`. No
+  AS-reassembly halves. ONE tree-scanning parity audit transformed:
+  `parcel_8b_stage_gen_touchers::block_stage_keys_has_exactly_three_touchers`
+  scanned ALL `.asm`/`.inc` for the three TileCache staging-claim routines (homed
+  in `tile_cache.asm`) — its `.asm`/`.inc` census half retires with the twin; the
+  `.emp` census half is now the sole gen-bump audit (still asserts exactly the
+  three). Strict 2858 (net 0 — the audit is one test that still passes).
+- engine/system — `boot.asm`, `buffers.asm`, `controllers.asm`, `dma_queue.asm`,
+  `game_loop.asm`, `hblank.asm`, `vblank.asm`, `vdp_init.asm`, `vectors.asm`
+  (vectors is a fixed-size no-`ifdef` gate → bare `org $100`; boot resumes at the
+  unconditionally-included boot_data.asm data tail). AS-half retired: game_loop
+  (`combo_matrix_matches_as_twin` + `as_twin_bytes` — the gameDebugTick H2-mirror
+  matrix, row 9 still OPEN as the Stage-3 game-contract hook; coverage → the
+  Config-A/canonical/Config-B whole-ROM goldens). Strict 2858→2857.
+  **z80_init DEFERRED (not deleted):** `engine/system/z80_init.asm` is the
+  no-sound (Config-B/demo) Z80 idle program, taken via the AS `include` arm in
+  boot_data.asm's `else` (these off-canonical profiles do NOT define
+  SIGIL_EMP_Z80_INIT — the config_b_profile comment: "the Z80 idle stays
+  AS-side"). It also DEFINES `Z80_IdleProgram`, consumed by boot_data.asm's
+  layout-assert wall (`if (Z80_IdleProgram-BootData) <> 54`). Deleting it +
+  collapsing the gate breaks EVERY no-sound build (CLI + harness) with
+  "unresolved long expression" — z80_init.emp is placed by NO ONE for no-sound.
+  z80_init flips only once the off-canonical native driver PLACES z80_init.emp
+  and exports `Z80_IdleProgram` cross-seam to the boot_data assert wall — a
+  distinct Stage-2 sub-item (harness config_b/demo registry + reverse-seam
+  export). Left AS-side for now; z80_init_port's AS-twin oracle survives as the
+  region proof meanwhile.
+- engine/debug specials — `compression_selftest.asm`, `sound_debug.asm`,
+  `error_handler.asm`. compression_selftest collapses to its bare `ifdef __DEBUG__`
+  block (the DEBUG-only region: the generated `generated/vectors.asm` golden-vector
+  include SURVIVES; compression_selftest_port reads it, not the twin). sound_debug is
+  Config-A-only (its gate-OFF `include` was taken by the canonical shapes, which the
+  twin's whole-file `ifdef SOUND_DBG_MIRROR` made 0-byte) → collapses to
+  `ifdef SIGIL_EMP_SOUND_DEBUG / org $827C / endif` (row 59). error_handler's gate-ON
+  `else` arm was taken by EVERY shape already (SIGIL_EMP_ERROR_HANDLER is in every
+  code-gate set, incl. demo) → bare collapse keeping the `ErrorHandler = ErrorHandlerBlob`
+  link alias + the per-shape EndOfRom orgs (rows 52/90 CLOSE — the alias is now the
+  only spelling). No AS-half retired: error_handler_port already compiles synthetic
+  handlers (`derived_equ_off_external_base_resolves`, not `_is_unresolved_today` — the
+  precursor 28098af flipped it); mddbg_symbols.asm survives (bucket D). Net 0 tests.
+- engine/sound — `sound_api.asm`. Nested under `ifdef SOUND_DRIVER_ENABLED`; every
+  sound-on build (sonic4, config_a) already took the gate-ON `else` arm (SIGIL_EMP_SOUND_API
+  is in the sonic4 code-gate set), and the sound-off builds (demo, config_b) skip the
+  whole conditional (config_b's registry also filters out engine.sound_api), so the
+  gate-off `include` was dead → bare collapse to the `ifdef __DEBUG__` org pair inside
+  the SOUND_DRIVER_ENABLED guard. No AS-half: sound_api_port assembles synthetic strings
+  only. Rows 10/24/36/43 CLOSE (the .emp's slot-address extern-equ sums + immediate
+  mirrors are now the sole spelling). Net 0 tests.
+- player-state — `player_sensors.asm`, `player_ground.asm`, `player_air.asm`,
+  `player_spindash.asm`, `sonic.asm`. Bare gate collapses (SIGIL_EMP_* in every
+  sonic4/config code-gate set; demo never includes them). player_sensors keeps its
+  per-shape `ifdef __DEBUG__` pair (shape-varying base); the four object-bank state
+  files are shape-invariant single orgs. No AS-half (test_p2/p4 read .emp + ROM).
+  Net 0 tests.
+- game objects — `test_static.asm`, `test_animated.asm`, `test_solid.asm`,
+  `test_particle.asm`, `test_emitter.asm`, `test_parent.asm`,
+  `test_stress_emitter.asm`, `test_churn.asm`, `path_swap.asm`. Bare gate collapses
+  (path_swap keeps its per-shape pair — the two __DEBUG__ blocks). test_player.asm /
+  test_enemy.asm SURVIVE (keystone headers, DEFERRED below). test_animated's DplcV
+  overlay equates still come from the surviving test_player.asm header. No AS-half.
+  Net 0 tests.
+- game data — `objdefs/test_objects.asm`, `animations/sonic_anims.asm`,
+  `animations/particle_anims.asm`. Bare gate collapses. act_descriptor.asm SURVIVES
+  (keystone-class, DEFERRED below). No AS-half. Net 0 tests.
+- game test/debug — `object_test_state.asm`, `ojz_scroll_test.asm`, `game_debug.asm`.
+  object_test_state / ojz_scroll_test are bare per-shape collapses. game_debug is the
+  Config-A-only collapse (`ifdef SIGIL_EMP_GAME_DEBUG / org $6408 / endif`; the
+  canonical shapes' gate-off include was already 0-byte via the twin's whole-file
+  SOUND_DEBUG_HOTKEYS ifdef). game_debug_port's AS-twin oracle RETIRES (−3 tests:
+  the `as_twin_bytes` reader + `emp_diverges_from_doctored_twin` +
+  `game_debug_{plain,debug}_is_empty`; `matches_as_twin` transformed to a .emp
+  compile+guards-pass+non-empty gate). Coverage → the config_a whole-ROM golden
+  (80e602df) + the surviving `doctored_extern_fires_drift_guard` (non-vacuity) +
+  `two_module_flip_resolves_debug_music_toggle`. Rows 6/58/88/89 advance. Strict
+  2857→2854.
+  **DEFERRED (keystone-class, CRC-moving — NOT done this span):** the internal-gate
+  keystones player_common / test_player / test_enemy AND act_descriptor. Each is an
+  UNCONDITIONALLY-AS-included file with a zero-byte equate/struct header ALWAYS
+  emitted (the cross-seam consumers — camera.emp's PL_STATE_ADDR, the drift guards,
+  test_animated's DplcV, entity_data's ObjDef refs) + an internal `ifndef SIGIL_EMP_X`
+  gating only the CODE/DATA body, whose `.emp` twin is NOT in the native registry.
+  Flipping = add the gate to code_gate_defines + add the ModuleSpec + drop from
+  as_owned_keystones. PROVEN this span to be CRC-MOVING and correctness-breaking off
+  the mapped plan: (1) the pinned sonic4 appendix (sigil-canonical deb2 symbol table)
+  SHRINKS ~1389 B — the `.emp` local labels mangle as `$module$Proc$local` vs the AS
+  frontend's `Proc.local`, so the appendix (frozen with the keystones AS-owned) is no
+  longer reproduced → the full-file CRC moves; (2) the Frozen chainer MISPLACES a
+  downstream config_a data pointer (anchor diverges at 0x11412, sig 0x12 != gold
+  0x13) — the `.emp` keystones enter the off-canonical chained set and perturb the
+  contiguity/label derivation. This is a re-baseline event (re-freeze the six pinned
+  CRCs) + a chainer reconciliation, same class as z80_init — it needs overseer
+  authorization to move the pins. Reverted clean; the keystone/act_descriptor `.asm`
+  headers stay AS-side, their `_port` region gates survive as the proof.
+  **TOOLING NOTE (stale-artifact trap, MEMORY-flagged):** the scratch CRC proof
+  must `rm` the output AND check the build's exit code BEFORE CRC'ing — a failed
+  `sigil build` leaves the `-o` file untouched, so a prior success's bytes read
+  as green. This masked the z80_init breakage for one cycle until config_a/
+  config_b were added to the proof and the exit-check landed. The proof now
+  covers all SIX targets (sonic4/demo ×2 + config_a/config_b).
+
+Closed also (build-tool retirement — its subjects single-sourced):
+- verify_emit_bin.py — aeon `5fc6ba1` (CLOSE). It byte-compared each generated sound
+  `.asm`'s `dc.b`/`db`/`pbyte` payload against its `--emit-bin` `.bin` twin. Every
+  subject `.asm` is now deleted (MT `.asm` at seam-2 stage-2c, the 20 SFX `.asm` at
+  stage-2d); `_FIXED_TARGETS` is empty and `sfx/` holds only `.bin`, so the verifier
+  discovers 0 targets and passes vacuously. The `.bin` blobs are single-source (the
+  sigil build BINCLUDEs them via main.asm/boot_data.asm/sound_bank.inc). Deleted +
+  its build.sh preflight removed (byte-neutral, all six CRCs held); the two
+  song_packer.py docstrings + verify_level_bin.py header that named it reworded.
+  verify_level_bin.py STAYS (its OJZ-tree subjects are live).
+
+## STAGE-3 OPENING — the deferred tail (behind its own designed gate; overseer-authorized re-baseline)
+
+The keystone/z80_init/act_descriptor code-half flips were ATTEMPTED and proven
+CRC-MOVING this parcel; they are NOT byte-neutral `git rm`s and wait for Stage 3.
+Formalized as rows:
+
+| # | Deferred item | Where | Why it waits | Kill condition |
+|---|---|---|---|---|
+| 93 | **The keystone re-baseline gate** — player_common / test_player / test_enemy code halves + always-emitted zero-byte headers, act_descriptor.asm, and z80_init.asm (rows 55/72/74/75/76/84/85 + act_descriptor). Flipping ANY moves the sigil-canonical appendix (~1389 B shrink: `.emp` locals mangle `$module$Proc$local` vs the AS frontend's `Proc.local`, so the frozen appendix no longer reproduces → full-file CRC moves). | aeon `engine/system/z80_init.asm`, `games/sonic4/player/player_common.asm`, `games/sonic4/objects/test_{player,enemy}.asm`, `data/levels/ojz/act1/act_descriptor.asm`; sigil `native.rs` (code_gate_defines / ModuleSpec / as_owned_keystones) | CRC-MOVING re-baseline: needs overseer authorization to re-freeze the six pinned CRCs. The always-emitted headers feed surviving cross-seam readers (camera.emp PL_STATE_ADDR, the drift guards, test_animated DplcV, entity_data ObjDef refs), so the flip is add-gate + add-ModuleSpec + drop-from-as_owned_keystones + reconcile the chainer (row 94), NOT a plain delete. | Stage 3, authorized: add the gate to code_gate_defines + add the ModuleSpec + drop from `as_owned_keystones`; z80_init also needs off-canonical native placement of `z80_init.emp` + the reverse-seam `Z80_IdleProgram` export to boot_data's comptime-assert wall. Re-freeze the six pins after. The `STAGE1_INAPPLICABLE_GUARDS` allowlist + `as_owned_keystones` field retire WITH this flip. |
+| 94 | **The Frozen chainer config_a bug** — when the `.emp` keystones enter the off-canonical chained set they perturb contiguity/label derivation: a downstream config_a data pointer misplaces (anchor diverges at 0x11412, sig `0x12` != gold `0x13`). | sigil `native.rs` / the Frozen chainer (off-canonical placement) | Surfaced by the row-93 keystone attempt; the assembled-anchor bar makes this a FIX (correctness), NOT a re-baseline. Independent of the appendix delta. | Stage 3: reconcile the chainer's contiguity/label derivation so the keystones chain without misplacing the config_a pointer; the assembled anchor must hold. Gates row 93's config_a re-freeze. |
+| 95 | **The folded Phase-B cargo** — the AS-residual section-split at natural boundaries, the $20000 object-bank budget as a `sigil.map.toml` map-region check, pins→map placement authority, repin's asl-`.lst`-parse retirement (row 34). | aeon `sigil.map.toml` + `engine.inc`/`main.asm` residual orgs; sigil `repin.rs:57-58` / pins | Architectural, not byte-neutral-trivial; the map-manifest must own placement before the residual-AS `org` literals (row 6) can retire. Untouched this parcel. | Stage 3: `sigil.map.toml` becomes the placement surface (computed resume points; the $20000 budget as a region check); row 6 residual placement literals + row 34 `.lst` machinery delete with it. |

@@ -129,11 +129,35 @@ fn collect_emp(dir: &Path, root: &Path, out: &mut Vec<PathBuf>, diags: &mut Vec<
         // directory symlink pointing at an ancestor cannot cause infinite
         // recursion (such symlinked dirs are simply skipped).
         if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            // Do NOT descend into a NESTED CHECKOUT. A `git worktree` (or a nested
+            // clone) living under the scan root — e.g. `<root>/.worktrees/<branch>`
+            // — is a byte-identical COPY of the same `.emp` tree, so walking into it
+            // reports every module `declared twice`. The scan root itself is legal to
+            // be a worktree (its `.git` FILE is never tested — only children are), so
+            // this excludes ONLY nested checkouts, never the root. Two signatures:
+            //   (1) a `.worktrees/` container (the canonical worktree home), and
+            //   (2) any subdirectory carrying its own `.git` (file OR dir) — the
+            //       general nested-repo/worktree root signature.
+            if is_nested_checkout_dir(&p) {
+                continue;
+            }
             collect_emp(&p, root, out, diags);
         } else if p.extension().is_some_and(|x| x == "emp") {
             out.push(p);
         }
     }
+}
+
+/// True if `dir` is a nested checkout the module scan must not descend into: the
+/// `.worktrees/` container, or any directory that carries its own `.git` entry
+/// (file or dir) — the general nested-clone / `git worktree` root signature. Only
+/// ever tested on CHILD directories, so the scan root (which may itself be a
+/// worktree) is never excluded.
+fn is_nested_checkout_dir(dir: &Path) -> bool {
+    if dir.file_name().is_some_and(|n| n == ".worktrees") {
+        return true;
+    }
+    dir.join(".git").exists()
 }
 
 /// Compute the module id implied by a file's location relative to `root`:

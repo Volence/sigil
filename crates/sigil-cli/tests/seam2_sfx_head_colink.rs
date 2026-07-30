@@ -23,7 +23,10 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test seam2_sfx_head_colink
 //! ```
 
-use sigil_harness::seam2::{emit_sfx_artifacts, emit_sfx_body_and_head, SFX_WIN_TAB_LMA};
+use sigil_harness::seam2::{
+    emit_sfx_artifacts, emit_sfx_body_and_head, emit_sfx_body_and_head_doctored,
+    SFX_BANK_LMA_PLAIN, SFX_WIN_TAB_LMA,
+};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -33,6 +36,13 @@ fn aeon_dir() -> PathBuf {
 }
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
+}
+/// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
+/// tree ROM — post-flip `aeon/s4.bin` is itself sigil-built (row-91 bar b).
+fn golden(name: &str) -> Vec<u8> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
 /// The reference SFX-block body window per shape (1864 bytes = `$748`).
@@ -63,8 +73,7 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
         assert_eq!(out.head.len(), SFX_WIN_TAB_LEN, "SfxBlobWinTab is 135 × 2 = 270 bytes");
         assert_eq!(out.body.len(), SFX_BODY_LEN, "sfx_bank body is 1864 bytes");
 
-        let rom = std::fs::read(aeon.join(if debug { "s4.debug.bin" } else { "s4.bin" }))
-            .unwrap_or_else(|e| panic!("read {shape} rom: {e}"));
+        let rom = golden(if debug { "s4.debug.bin" } else { "s4.bin" });
         let lo = SFX_WIN_TAB_LMA as usize;
         let head_ref = &rom[lo..lo + SFX_WIN_TAB_LEN];
         if let Some(i) = (0..out.head.len()).find(|&i| out.head[i] != head_ref[i]) {
@@ -84,6 +93,31 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
         let body_ref = &rom[base..base + SFX_BODY_LEN];
         assert_eq!(out.body, body_ref, "co-linked sfx_bank body must equal the {shape} reference");
     }
+}
+
+/// t24 NON-VACUITY control (row-91 bar c): a doctored composition — the SFX block
+/// co-linked `$100` bytes higher (still bank $B, so the body co-residency ensures
+/// stay green) — must make the head DIVERGE from the golden slice, because every
+/// `SFX_WIN_NN = winptr(Sfx_NN)` re-folds from the moved blobs. The head byte gate
+/// is vacuous if a moved SFX block still matches.
+#[test]
+fn sfx_head_diverges_when_block_moved() {
+    if !strict_gate() {
+        eprintln!("skipping seam2_sfx_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        return;
+    }
+    let aeon = aeon_dir();
+    // +$100 keeps the block in bank $B ($58000..$5FFFF): bankid unchanged, so only
+    // the window pointers shift — the body's co-residency guards do not fire.
+    let doctored = emit_sfx_body_and_head_doctored(&aeon, false, Some(SFX_BANK_LMA_PLAIN + 0x100))
+        .expect("doctored co-link (still bank $B)");
+    let rom = golden("s4.bin");
+    let lo = SFX_WIN_TAB_LMA as usize;
+    let head_ref = &rom[lo..lo + SFX_WIN_TAB_LEN];
+    assert_ne!(
+        doctored.head, head_ref,
+        "the SFX head gate is vacuous if a moved SFX block still matches the golden slice"
+    );
 }
 
 /// Determinism: the co-link is byte-stable across runs.

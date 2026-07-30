@@ -220,78 +220,13 @@ fn compile_emp(
     (resolved, linked)
 }
 
-/// The AS-twin oracle: the REAL `game_loop.asm` body, prefaced by the REAL
-/// `gameDebugTick` macro extracted from `games/sonic4/config/game.asm` at
-/// test time (THE drift guard for the H2 expansion mirror), assembled through
-/// sigil's AS front-end with the same synthetic label values. `ifdef` tests
-/// DEFINEDNESS, so an off define is OMITTED (the harness maps presence->1).
-fn as_twin_bytes(
-    drain_on: bool,
-    hotkeys_on: bool,
-    base: u32,
-    vsync_wait: u32,
-    drain: u32,
-    dbg_toggle: u32,
-) -> Vec<u8> {
-    let aeon = aeon_dir();
-    let loop_src = std::fs::read_to_string(aeon.join("engine/system/game_loop.asm"))
-        .unwrap_or_else(|e| panic!("cannot read game_loop.asm: {e}"));
-    let game_src = std::fs::read_to_string(aeon.join("games/sonic4/config/game.asm"))
-        .unwrap_or_else(|e| panic!("cannot read games/sonic4/config/game.asm: {e}"));
-
-    // Extract sonic4's `gameDebugTick macro ... endm` block verbatim.
-    // ASSUMES a flat macro body (the first `endm` closes it) — a nested
-    // macro or a bare `endm` on a comment-only line would truncate the
-    // oracle; keep the real macro flat or teach this extractor.
-    let lines: Vec<&str> = game_src.lines().collect();
-    let start = lines
-        .iter()
-        .position(|l| l.trim_start().starts_with("gameDebugTick") && l.contains("macro"))
-        .expect("games/sonic4/config/game.asm must define gameDebugTick (H2 mirror source)");
-    let end = lines[start..]
-        .iter()
-        .position(|l| l.trim() == "endm")
-        .map(|i| start + i)
-        .expect("gameDebugTick macro must close with endm");
-    let macro_text = lines[start..=end].join("\n");
-
-    let game_state = pins::GAME_STATE.plain;
-    let src = format!(
-        "cpu 68000\n\
-         supmode on\n\
-         VSync_Wait = ${vsync_wait:X}\n\
-         Sound_DrainSfxRing = ${drain:X}\n\
-         Debug_MusicToggle = ${dbg_toggle:X}\n\
-         Game_State = ${game_state:X}\n\
-         {macro_text}\n\
-         org ${base:X}\n\
-         {loop_src}\n"
-    );
-    let mut defines: Vec<(String, i64)> = Vec::new();
-    if drain_on {
-        defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
-    }
-    if hotkeys_on {
-        defines.push(("SOUND_DEBUG_HOTKEYS".to_string(), 1));
-    }
-    let opts = AsOptions { initial_cpu: Cpu::M68000, defines, ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve_layout failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    let sec = linked
-        .sections
-        .iter()
-        .find(|s| s.lma == base && !s.bytes.is_empty())
-        .unwrap_or_else(|| panic!("AS twin must emit a section at {base:#x}"));
-    sec.bytes.clone()
-}
+// The AS-twin oracle (the REAL game_loop.asm body + the gameDebugTick macro
+// extracted from config/game.asm) RETIRED (flip Stage-2): game_loop.asm is
+// deleted — the .emp is the only source. The gameDebugTick H2-mirror drift guard
+// (kill-list row 9, still OPEN as the Stage-3 game-contract-hook mechanism) is
+// now gated by the native whole-ROM golden gates: Config-A (hotkeys+mirror ON)
+// and the canonical/Config-B shapes together cover the define matrix, each with
+// a t24 control. config/game.asm survives as residual game config.
 
 /// On mismatch, report the first differing offset plus context on each side.
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
@@ -313,38 +248,9 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// The H1/H2 define matrix — all four combos, module-level, .emp vs the
-/// AS-twin oracle at matrix-chosen synthetic positions. This is BOTH hazard
-/// rulings' acceptance test AND the H2 mirror's drift guard (the oracle
-/// re-extracts the macro body from the real config/game.asm every run).
-#[test]
-fn combo_matrix_matches_as_twin() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/system/game_loop.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    // Matrix positions: VSync behind the block (negative disp), the drain
-    // ahead (positive), the toggle in abs.w reach (the real one sits there).
-    let (base, vsync, drain, toggle) = (0x1000u32, 0x0F00u32, 0x2000u32, 0x3000u32);
-    for (drain_on, hotkeys_on) in [(true, false), (true, true), (false, false), (false, true)] {
-        let defines: Vec<(&str, i128)> = vec![
-            ("SOUND_DRIVER_ENABLED", i128::from(drain_on)),
-            ("SOUND_DEBUG_HOTKEYS", i128::from(hotkeys_on)),
-        ];
-        let (_, linked) = compile_emp(&defines, base, vsync, drain, toggle, false);
-        let section = linked.section("game_loop").expect("linked image must carry game_loop");
-        let expected = as_twin_bytes(drain_on, hotkeys_on, base, vsync, drain, toggle);
-        assert_region_matches(
-            &section.bytes,
-            &expected,
-            &format!("game_loop combo (drain={drain_on}, hotkeys={hotkeys_on}) vs AS twin"),
-        );
-    }
-}
+// The H1/H2 combo-matrix AS-twin acceptance test RETIRED (flip Stage-2) with
+// game_loop.asm — see the note above `assert_region_matches`. The four-combo
+// coverage is subsumed by the native whole-ROM golden gates.
 
 /// Both pinned shapes' reference gate + the outbound bare-name proof, shared
 /// body.

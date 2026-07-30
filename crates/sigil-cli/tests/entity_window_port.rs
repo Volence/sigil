@@ -327,8 +327,13 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
         return;
     };
 
-    let defines: Vec<(&str, i128)> =
-        vec![("DEBUG", debug_define), ("SOUND_DRIVER_ENABLED", 1)];
+    let defines: Vec<(&str, i128)> = vec![
+        ("DEBUG", debug_define),
+        ("SOUND_DRIVER_ENABLED", 1),
+        // entity_window.emp takes COLLECTED_WINDOW_SLOTS as a game-config -D
+        // (engine/game split); sonic4 supplies 9 (matches the AS twin above).
+        ("COLLECTED_WINDOW_SLOTS", 9),
+    ];
     let (resolved, linked, link_asserts) = compile_real_file(shape, &defines);
     assert_drift_guards(&resolved, &link_asserts);
 
@@ -427,7 +432,14 @@ fn lower_and_place(
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), if debug { 1 } else { 0 })],
+        defines: vec![
+            ("DEBUG".to_string(), if debug { 1 } else { 0 }),
+            // Game-config -D inputs (engine/game split) the flipped modules read
+            // (entity_window / rings); sonic4 canonical values.
+            ("COLLECTED_WINDOW_SLOTS".to_string(), 9),
+            ("MAX_RING_BUFFER".to_string(), 128),
+            ("VRAM_RING_PLACEHOLDER".to_string(), 0x3E8),
+        ],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

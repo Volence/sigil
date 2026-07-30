@@ -66,3 +66,41 @@ fn nonexistent_root_reports_an_error() {
     assert!(diags.iter().any(|d| d.level == sigil_span::Level::Error),
         "expected a root-read-failure error, got {diags:?}");
 }
+
+// ── t24 control: the scan must not descend into a NESTED CHECKOUT ──────────────
+// A `git worktree` (or nested clone) under the scan root is a byte-identical COPY
+// of the same `.emp` tree; walking into it reports every module `declared twice`
+// (the Stage-2 flip bug: `build.sh` drives `sigil build` from the main checkout,
+// which routinely contains `.worktrees/`). Two nested-checkout signatures must be
+// ignored — a `.worktrees/` container and a subdir carrying its own `.git` — while
+// the scan ROOT (legitimately a worktree with a `.git` FILE) is still scanned.
+#[test]
+fn scan_ignores_nested_checkouts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // The scan root is ITSELF a worktree: a `.git` FILE at the root (the gitdir
+    // pointer a `git worktree` plants). The root's own module MUST still be found.
+    std::fs::write(root.join(".git"), "gitdir: /somewhere/.git/worktrees/x\n").unwrap();
+    write(root, "engine/thing.emp", "module engine.thing\n");
+
+    // Signature (1): a `.worktrees/<branch>/` copy of the same module.
+    write(root, ".worktrees/flip/engine/thing.emp", "module engine.thing\n");
+
+    // Signature (2): a nested checkout carrying its OWN `.git` (worktree pointer),
+    // NOT under `.worktrees/` — the general nested-repo signature.
+    write(root, "nested_clone/engine/thing.emp", "module engine.thing\n");
+    std::fs::write(root.join("nested_clone/.git"), "gitdir: /elsewhere\n").unwrap();
+
+    let (manifest, diags) = Manifest::scan(root);
+
+    // The decoys are ignored: `engine.thing` is found EXACTLY ONCE, no dup error.
+    assert!(manifest.by_id.contains_key("engine.thing"), "root module must be scanned");
+    let count = manifest.modules.iter().filter(|m| m.id == "engine.thing").count();
+    assert_eq!(count, 1, "nested-checkout copies must be ignored, found {count} `engine.thing`");
+    assert!(
+        !diags.iter().any(|d| d.level == sigil_span::Level::Error),
+        "no `declared twice` (or any) error expected; got {:?}",
+        diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
+    );
+}

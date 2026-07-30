@@ -199,7 +199,7 @@ fn deb2_appendix_negative_controls() {
             unused: false,
         })
         .collect();
-    let err = native::append_deb2_appendix(&aeon, &dummy, &tiny, false)
+    let err = native::append_deb2_appendix(&aeon, &dummy, &tiny, false, native::SONIC4_APPENDIX_FLOOR)
         .expect_err("collapsed listing must be rejected by the size-band presence control");
     assert!(
         err.contains("appendix size") && err.contains("band"),
@@ -210,6 +210,6 @@ fn deb2_appendix_negative_controls() {
     // so the silent-failure path (`2>/dev/null || true` producing an appendix-less
     // ROM) surfaces as a HARD error here, never a pass.
     let empty: Vec<sigil_link::ListingSymbol> = Vec::new();
-    native::append_deb2_appendix(&aeon, &dummy, &empty, false)
+    native::append_deb2_appendix(&aeon, &dummy, &empty, false, native::SONIC4_APPENDIX_FLOOR)
         .expect_err("empty listing must be rejected (convsym aborts on zero symbols)");
 }

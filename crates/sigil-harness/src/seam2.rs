@@ -170,6 +170,21 @@ fn lower_emp_file(
 /// extern("DacSample_len"))` is checked against the engine's real values (10, 9)
 /// supplied as equ carriers (the same values `sound_constants.asm` defines).
 pub fn emit_dac_body_and_head(aeon: &Path) -> Result<DacBodyAndHead, String> {
+    emit_dac_body_and_head_doctored(aeon, None)
+}
+
+/// [`emit_dac_body_and_head`] with an optional composition-input doctor: when
+/// `doctor_blip_lma` is `Some(lma)`, the `dac_blip_bank` payload is co-linked at
+/// `lma` instead of `$48000`, so the head's `SND_BLIP_BANK`/`SND_BLIP_PTR` cells
+/// re-fold from the moved bank (`bankid`/`winptr`). The row-91 t24 non-vacuity
+/// control for the DAC family: a moved bank must make the composed head DIVERGE
+/// from the frozen golden slice. Mirrors `seam1::native_blob_doctored`'s
+/// banked-carrier axis.
+pub fn emit_dac_body_and_head_doctored(
+    aeon: &Path,
+    doctor_blip_lma: Option<u32>,
+) -> Result<DacBodyAndHead, String> {
+    let blip_lma = doctor_blip_lma.unwrap_or(DAC_BLIP_LMA);
     let dac_dir = aeon.join("games/sonic4/data/sound");
     let eng_dir = aeon.join("engine/sound");
 
@@ -191,7 +206,7 @@ pub fn emit_dac_body_and_head(aeon: &Path) -> Result<DacBodyAndHead, String> {
     let map_toml = format!(
         "fill = 0x00\n\n\
          [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x40\nkind = \"rom\"\n\n\
-         [[region]]\nname = \"dac_blip_bank\"\nlma_base = 0x{DAC_BLIP_LMA:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"dac_blip_bank\"\nlma_base = 0x{blip_lma:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
          [[region]]\nname = \"dac_shared_bank\"\nlma_base = 0x{DAC_SHARED_LMA:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
          [[region]]\nname = \"dac_sample_tab\"\nlma_base = 0x{DAC_SAMPLE_TAB_LMA:X}\nsize = 0x100\nkind = \"rom\"\n"
     );
@@ -290,6 +305,22 @@ pub struct SfxBodyAndHead {
 /// 1 co-residency + 3 drift guards; the head's 1 span guard). Byte-deterministic
 /// from the tracked `.emp` + its embeds.
 pub fn emit_sfx_body_and_head(aeon: &Path, debug: bool) -> Result<SfxBodyAndHead, String> {
+    emit_sfx_body_and_head_doctored(aeon, debug, None)
+}
+
+/// [`emit_sfx_body_and_head`] with an optional composition-input doctor: when
+/// `doctor_sfx_base` is `Some(lma)`, the SFX block is co-linked at `lma` instead
+/// of its per-shape base, so every `SFX_WIN_NN = winptr(Sfx_NN)` equ re-folds
+/// from the moved blobs and the co-linked `SfxBlobWinTab` head DIVERGES. The
+/// row-91 t24 non-vacuity control for the SFX-head family. The alternate base
+/// MUST stay inside bank `$B` (`$58000..$5FFFF`) or the body's co-residency
+/// ensures fire instead (a different, guard-firing control the negative probes
+/// already own).
+pub fn emit_sfx_body_and_head_doctored(
+    aeon: &Path,
+    debug: bool,
+    doctor_sfx_base: Option<u32>,
+) -> Result<SfxBodyAndHead, String> {
     let sfx_dir = aeon.join("games/sonic4/data/sound/sfx");
     let snd_dir = aeon.join("games/sonic4/data/sound");
 
@@ -302,7 +333,8 @@ pub fn emit_sfx_body_and_head(aeon: &Path, debug: bool) -> Result<SfxBodyAndHead
     let mut link_asserts = body.link_asserts.clone();
     link_asserts.extend(head.link_asserts.clone());
 
-    let sfx_base = if debug { SFX_BANK_LMA_DEBUG } else { SFX_BANK_LMA_PLAIN };
+    let sfx_base =
+        doctor_sfx_base.unwrap_or(if debug { SFX_BANK_LMA_DEBUG } else { SFX_BANK_LMA_PLAIN });
     let sfx_size = 0x60000 - sfx_base; // to the bank top
 
     let mut sections: Vec<Section> = body.sections;
@@ -369,6 +401,21 @@ pub const SEQ_OPCODE_TAB_LEN: usize = 64;
 /// `z80_sound_syms.asm` contract exported (design §2c). SHAPE-DEPENDENT: the
 /// handlers re-base in the debug shape, so the emitted table differs per shape.
 pub fn emit_seq_opcode_tab(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
+    emit_seq_opcode_tab_doctored(aeon, debug, None)
+}
+
+/// [`emit_seq_opcode_tab`] with an optional composition-input doctor: when
+/// `doctor` is `Some((handler, vma))`, that resident `Seq_Op_*` handler's VMA
+/// carrier is overridden, so the table cell referencing it re-folds to `vma`.
+/// The row-91 t24 non-vacuity control for the seq-opcode family: a moved handler
+/// must make the composed table DIVERGE from the frozen golden slice. Mirrors
+/// `seam1::native_blob_doctored`'s banked-carrier axis directly (the handler VMAs
+/// ARE seam-1 carriers).
+pub fn emit_seq_opcode_tab_doctored(
+    aeon: &Path,
+    debug: bool,
+    doctor: Option<(&str, i64)>,
+) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
     let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000)?;
     let link_asserts = module.link_asserts.clone();
@@ -388,8 +435,16 @@ pub fn emit_seq_opcode_tab(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> 
     // from the SAME blob link the resident driver ships from — so the table cells
     // equal the handlers' real addresses in this shape.
     let symbols = crate::seam1::native_sound_blob(aeon, debug).symbols;
-    let pairs: Vec<(String, String)> =
-        symbols.into_iter().map(|(n, v)| (n, format!("${v:X}"))).collect();
+    let pairs: Vec<(String, String)> = symbols
+        .into_iter()
+        .map(|(n, v)| {
+            let v = match doctor {
+                Some((dn, dv)) if dn == n => dv,
+                _ => v as i64,
+            };
+            (n, format!("${v:X}"))
+        })
+        .collect();
     let refs: Vec<(&str, &str)> = pairs.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect();
     let mut carriers = crate::test_support::assemble_equ_pairs(&refs);
     for (i, sec) in carriers.iter_mut().enumerate() {
@@ -426,6 +481,21 @@ pub const SOUND_TABLES_Z80_LEN: usize = 0x357;
 /// (the pointer cells reference this module's own body labels), so no co-link is
 /// needed. SHAPE-INVARIANT (one `.bin` serves both shapes).
 pub fn emit_sound_tables_z80(aeon: &Path) -> Result<Vec<u8>, String> {
+    emit_sound_tables_z80_doctored(aeon, None)
+}
+
+/// [`emit_sound_tables_z80`] with an optional composition-input doctor: when
+/// `doctor_vma` is `Some(vma)`, the section's `$8000` window base is overridden
+/// to `vma`, so every intra-module `dc.w PsgVolEnv_XX`/`FmVolEnv_XX` pointer cell
+/// re-folds (`Value16Le`) to `vma + offset`. The row-91 t24 non-vacuity control
+/// for the sound-tables family: a moved window must make the composed table
+/// DIVERGE from the frozen golden slice (the byte-exact `$8000`-based layout is
+/// load-bearing — the resident FM/PSG writers read these labels through the
+/// window).
+pub fn emit_sound_tables_z80_doctored(
+    aeon: &Path,
+    doctor_vma: Option<u32>,
+) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
     let module = lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000)?;
     let link_asserts = module.link_asserts.clone();
@@ -437,6 +507,16 @@ pub fn emit_sound_tables_z80(aeon: &Path) -> Result<Vec<u8>, String> {
     );
     let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
     let mut sections = module.sections;
+    // The doctor overrides the window base BEFORE placement so the intra-module
+    // pointer cells fold from the moved VMA (the section attr's `vma: $8000` is
+    // the default; a map region has no vma_base to contend with).
+    if let Some(vma) = doctor_vma {
+        for sec in &mut sections {
+            if sec.name == "sound_tables_z80" {
+                sec.vma_base = Some(vma);
+            }
+        }
+    }
     let pd = place_sections(&mut sections, &map);
     if pd.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("place_sections errors: {pd:?}"));
@@ -479,8 +559,48 @@ pub const PITCHTABLE_LEN: usize = 264;
 /// other heads). SHAPE-INVARIANT (one `.bin` serves both shapes). The last AS sound
 /// head to go native (flip Stage-0), which frees `soundBankHead`'s `include pitchfile`.
 pub fn emit_pitchtable(aeon: &Path) -> Result<Vec<u8>, String> {
+    emit_pitchtable_doctored(aeon, false)
+}
+
+/// [`emit_pitchtable`] with an optional composition-input doctor: when `doctor`
+/// is `true`, the FIRST page-0 data cell of the `.emp` source (`dc.b $00, …`) is
+/// edited to `$01` before parse, and the table is recomposed from that doctored
+/// source. The row-91 t24 non-vacuity control for the pitchtable family: because
+/// the table is pure `dc.b` with a 1:1 source→output map (no fold, no placement
+/// sensitivity), a single changed source cell must make the composed table
+/// DIVERGE from the frozen golden slice — proving the byte gate catches any
+/// table drift (the AS-side size guard only covers LENGTH drift).
+pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, String> {
     let dir = aeon.join("games/sonic4/data/sound");
-    let module = lower_emp_file(&dir.join("movingtrucks_pitchtable.emp"), &dir, Cpu::M68000)?;
+    let emp = dir.join("movingtrucks_pitchtable.emp");
+    let mut src =
+        std::fs::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
+    if doctor {
+        // The first data cell: the `$00` immediately after the first `dc.b`.
+        let anchor = src.find("dc.b").ok_or("pitchtable has no dc.b to doctor")?;
+        let cell = src[anchor..]
+            .find("$00")
+            .ok_or("pitchtable's first data cell is not $00 (source drifted?)")?
+            + anchor;
+        src.replace_range(cell..cell + 3, "$01");
+    }
+    let (file, pdiags) = parse_str(&src);
+    if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("movingtrucks_pitchtable parse errors: {pdiags:?}"));
+    }
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(dir.clone()),
+        embed_base: None,
+        defines: vec![],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    if ldiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!(
+            "movingtrucks_pitchtable lower errors: {:?}",
+            ldiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
+        ));
+    }
     let link_asserts = module.link_asserts.clone();
 
     let map_toml = format!(

@@ -1,31 +1,20 @@
 //! Tranche 26 (lane B) — the REAL `game_debug.emp` port, the FIRST game-side
-//! `.emp` CODE module. Proven by the OFF-CANONICAL twin-parity oracle.
+//! `.emp` CODE module. Post-flip (Stage 2): the AS twin `game_debug.asm` is
+//! DELETED, so the twin-parity oracle retires; the surviving proofs gate on the
+//! `.emp` alone plus the Config-A whole-ROM golden.
 //!
-//! game_debug.asm is whole-file `ifdef SOUND_DEBUG_HOTKEYS` / `ifdef
+//! game_debug is whole-file `ifdef SOUND_DEBUG_HOTKEYS` / `ifdef
 //! SOUND_DRIVER_ENABLED` — it emits ZERO bytes in both canonical shapes
-//! (SOUND_DEBUG_HOTKEYS is a dev opt-in, off in every shipped build). So there
-//! is NO canonical reference ROM window to diff against. The oracle is the AS
-//! twin assembled through sigil's own AS front-end at the HOTKEYS shape
-//! (SOUND_DEBUG_HOTKEYS=1, SOUND_DRIVER_ENABLED=1): `game_debug.emp` compiled at
-//! that shape must byte-match `game_debug.asm` assembled at that shape, at a
-//! shared synthetic base with the same cross-seam seam (the game_loop_port
-//! `as_twin_bytes` + compression_selftest debug-only-region templates fused).
-//!
-//! Two canonical-emptiness proofs (both shapes) confirm the TWIN emits nothing
-//! canonically — the property that makes the whole file byte-neutral to build.sh
-//! (the .emp is placed only at the hotkeys shape). The two-module flip proves
-//! the extern-vs-import split: with `game_loop.emp` compiled TOGETHER, its
-//! `jsr Debug_MusicToggle` resolves module-to-module to this .emp's proc (the
-//! old extern decl deleted — kill-list row 33). Gate-OFF (game_loop.emp alone,
-//! synthetic AS symbol) stays green in `game_loop_port::combo_matrix_matches_as_twin`.
-//!
-//! $8000 bank-shift bar (hotkeys shape): STATED. game_debug sits below $10000
-//! unshielded; at the hotkeys shape its ~130-byte emission slides everything
-//! downstream — but the oracle assembles the AS twin AT THE SAME hotkeys shape,
-//! so both sides see one bank layout: there is no cross-shape object-bank
-//! collision to reason about (unlike a debug-vs-plain growth). Satisfied by
-//! construction; a real full-build overflow at the hotkeys shape would surface
-//! as an AS assembly error (the dev build's own concern), not here.
+//! (SOUND_DEBUG_HOTKEYS is a dev opt-in, off in every shipped build) and is
+//! placed only at the Config-A hotkeys shape, where the config_a whole-ROM native
+//! golden (80e602df) is the byte oracle for its emission. This file keeps the
+//! `.emp`-side proofs: (1) at the hotkeys shape the module compiles, its
+//! game-const drift guards PASS at the true values, and it emits non-empty code;
+//! (2) doctoring a mirrored const's `extern(...)` truth FIRES the guard (liveness,
+//! non-vacuous); (3) the two-module flip proves the extern-vs-import split — with
+//! `game_loop.emp` compiled TOGETHER, its `jsr Debug_MusicToggle` resolves
+//! module-to-module to this `.emp`'s proc (the old extern decl deleted, kill-list
+//! row 33).
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test game_debug_port
@@ -182,63 +171,15 @@ fn compile_emp(
     (resolved, linked, link_asserts)
 }
 
-/// The AS twin oracle: assemble game_debug.asm through sigil's AS front-end at
-/// the given shape, at BASE, with the whole cross-seam seam as equs. `hotkeys`
-/// gates the file; `doctor` overrides one value equ (the twin-diverges probe).
-fn as_twin_bytes(hotkeys: bool, doctor: Option<(&str, i64)>) -> Vec<u8> {
-    let aeon = aeon_dir();
-    let body = std::fs::read_to_string(aeon.join("games/sonic4/debug/game_debug.asm"))
-        .unwrap_or_else(|e| panic!("read game_debug.asm: {e}"));
-    let mut seam = String::from("cpu 68000\nsupmode on\n");
-    for (name, vma) in addr_seam() {
-        seam.push_str(&format!("{name} = ${vma:X}\n"));
-    }
-    for (name, val) in value_seam(doctor) {
-        seam.push_str(&format!("{name} = {val}\n"));
-    }
-    let src = format!("{seam}org ${BASE:X}\n{body}\n");
-    let mut defines: Vec<(String, i64)> = vec![("SOUND_DRIVER_ENABLED".to_string(), 1)];
-    if hotkeys {
-        defines.push(("SOUND_DEBUG_HOTKEYS".to_string(), 1));
-    }
-    let opts = AsOptions { initial_cpu: Cpu::M68000, defines, ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    linked
-        .sections
-        .iter()
-        .find(|s| s.lma == BASE && !s.bytes.is_empty())
-        .map(|s| s.bytes.clone())
-        .unwrap_or_default()
-}
-
-fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
-    assert_eq!(candidate.len(), expected.len(), "{what}: length mismatch ({} vs {})", candidate.len(), expected.len());
-    if let Some(i) = (0..candidate.len()).find(|&i| candidate[i] != expected[i]) {
-        let lo = i.saturating_sub(8);
-        let hi = (i + 16).min(candidate.len());
-        panic!(
-            "{what}: first diff at {i:#x}\n  candidate[{lo:#x}..{hi:#x}]: {:02x?}\n  expected[{lo:#x}..{hi:#x}]:  {:02x?}",
-            &candidate[lo..hi],
-            &expected[lo..hi]
-        );
-    }
-}
-
-/// THE off-canonical byte gate: game_debug.emp (hotkeys shape) == game_debug.asm
-/// (hotkeys shape). Also checks the drift guards PASS (extern == mirrored const).
+/// THE `.emp` positive gate (post-twin-deletion): at the Config-A hotkeys shape
+/// game_debug.emp compiles, its game-const drift guards PASS at the true values,
+/// and it emits non-empty code. The byte-shape oracle is now the config_a
+/// whole-ROM native golden (80e602df); the non-vacuity is `doctored_extern_fires_
+/// drift_guard` below.
 #[test]
-fn game_debug_matches_as_twin_at_hotkeys_shape() {
+fn game_debug_emp_compiles_and_guards_pass_at_hotkeys() {
     let aeon = aeon_dir();
-    if !aeon.join("games/sonic4/debug/game_debug.asm").exists() {
+    if !aeon.join("games/sonic4/debug/game_debug.emp").exists() {
         if strict_gate() {
             panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
         }
@@ -252,30 +193,7 @@ fn game_debug_matches_as_twin_at_hotkeys_shape() {
         "the game-const drift guards must PASS at the true values: {diags:?}"
     );
     let emp = linked.section("game_debug").expect("linked image carries game_debug").bytes.clone();
-    let twin = as_twin_bytes(true, None);
-    assert!(!twin.is_empty(), "the AS twin must emit code at the hotkeys shape");
-    assert_region_matches(&emp, &twin, "game_debug.emp vs game_debug.asm (hotkeys shape)");
-}
-
-/// Positive control (byte gate non-triviality): the UNDOCTORED .emp must DIVERGE
-/// from a twin assembled with a doctored SFXID immediate — proving the byte
-/// comparison genuinely detects a difference (not a vacuous equality). The
-/// undoctored equality is the test above.
-#[test]
-fn emp_diverges_from_doctored_twin() {
-    let aeon = aeon_dir();
-    if !aeon.join("games/sonic4/debug/game_debug.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing");
-        }
-        eprintln!("skip: aeon sources missing");
-        return;
-    }
-    let (_, linked, _) = compile_emp(None);
-    let emp = linked.section("game_debug").expect("game_debug").bytes.clone();
-    // Doctor the twin's SFXID_JUMP immediate (entry 0 of Dbg_SfxIdTable).
-    let twin = as_twin_bytes(true, Some(("SFXID_JUMP", 0x11)));
-    assert_ne!(emp, twin, "the byte gate is vacuous if the .emp matches a doctored twin");
+    assert!(!emp.is_empty(), "game_debug.emp must emit code at the hotkeys shape");
 }
 
 /// Drift-guard liveness: doctoring a mirrored const's `extern(...)` truth must
@@ -289,46 +207,6 @@ fn doctored_extern_fires_drift_guard() {
     assert!(
         fired.iter().any(|d| d.message.contains("SFXID_JUMP")),
         "the fired guard must name the drifted const: {fired:?}"
-    );
-}
-
-/// Canonical emptiness (plain shape): the AS twin emits ZERO bytes with
-/// SOUND_DEBUG_HOTKEYS OFF — the property that makes the whole file byte-neutral
-/// to build.sh (the .emp is placed only at the hotkeys shape). The t22
-/// `_plain_region_is_empty` analog, proven against the real twin.
-#[test]
-fn game_debug_plain_is_empty() {
-    let aeon = aeon_dir();
-    if !aeon.join("games/sonic4/debug/game_debug.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing");
-        }
-        eprintln!("skip: aeon sources missing");
-        return;
-    }
-    assert!(
-        as_twin_bytes(false, None).is_empty(),
-        "game_debug.asm must emit ZERO bytes with SOUND_DEBUG_HOTKEYS off (plain canonical shape)"
-    );
-}
-
-/// Canonical emptiness (debug shape): same, DEBUG=1 does not un-gate it (the
-/// ifdef is on SOUND_DEBUG_HOTKEYS, off in both canonical shapes).
-#[test]
-fn game_debug_debug_is_empty() {
-    let aeon = aeon_dir();
-    if !aeon.join("games/sonic4/debug/game_debug.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing");
-        }
-        eprintln!("skip: aeon sources missing");
-        return;
-    }
-    // DEBUG is irrelevant to the ifdef (only SOUND_DEBUG_HOTKEYS gates it); the
-    // AS twin has no DEBUG-conditional content, so hotkeys-off is empty in both.
-    assert!(
-        as_twin_bytes(false, None).is_empty(),
-        "game_debug.asm must emit ZERO bytes with SOUND_DEBUG_HOTKEYS off (debug canonical shape)"
     );
 }
 

@@ -176,6 +176,20 @@ struct PassOutput {
     label_ref_equs: std::collections::HashSet<String>,
 }
 
+/// True if `e` names any symbol (a `Sym` node anywhere in the tree). Used by the
+/// deferred cross-seam equate path: a RHS `eval_all` couldn't fold necessarily
+/// contains an unresolved symbol, and a full parse of it is worth exporting as a
+/// symbolic `equ_sym` only when it actually references one (a pure-`Int` parse
+/// would have folded).
+fn expr_has_sym(e: &Expr) -> bool {
+    match e {
+        Expr::Sym(_) => true,
+        Expr::Binary { lhs, rhs, .. } => expr_has_sym(lhs) || expr_has_sym(rhs),
+        Expr::Unary { operand, .. } => expr_has_sym(operand),
+        Expr::Int(_) => false,
+    }
+}
+
 /// Re-attach equ exports the CONVERGED pass lost to a guard-skipped block
 /// (tranche-3 review finding — see `run`'s `ever_exported` comment): any name
 /// some earlier pass exported that the final module lacks gets an `EquSym`
@@ -394,6 +408,23 @@ struct Asm {
     /// set and keeps baking. Threaded across passes so a forward reference
     /// through such an equ is recognized before its definition line.
     label_ref_equs: std::collections::HashSet<String>,
+    /// Every REASSIGNABLE set-symbol (`set`/`:=`) whose CURRENT value derives
+    /// from a section LABEL (`P_DBG := DeformTable`, or a chain `P_DFG :=
+    /// PC_FG_T` onto another such set), mapped to the `relax_safe_fold`ed
+    /// SYMBOLIC snapshot it holds AT THIS EMISSION POINT. `engine/parallax_macros.inc`
+    /// is the canonical shape: `P_DBG := deformBg` then `dc.l P_DFG, P_DBG` inside
+    /// a config record the chainer relocates — a baked absolute would go stale.
+    /// Unlike `label_ref_equs`, a set is REDEFINED, so this holds the value at the
+    /// current point in emission order (each `:=` overwrites or clears the entry),
+    /// giving per-use-site snapshot semantics without an SSA rename: emission is
+    /// sequential, so consulting the entry at each use captures exactly what the
+    /// set held then. NOT threaded across passes (set is imperative/sequential —
+    /// no forward references); rebuilt every pass. Consulted only on the deferral
+    /// pass (via `expr_refs_label`/`relax_safe_fold`, both guarded by
+    /// `keep_labels_symbolic` at every emit site), so ordinary-pass bytes are
+    /// unchanged. A set reassigned to a label-free value clears its entry and
+    /// reverts to baking.
+    set_sym_symbolic: std::collections::HashMap<String, Expr>,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -436,6 +467,7 @@ impl Asm {
             defer_unresolved_jsr_jmp,
             known_labels: std::collections::HashSet::new(),
             label_ref_equs: std::collections::HashSet::new(),
+            set_sym_symbolic: std::collections::HashMap::new(),
         }
     }
 
@@ -2202,6 +2234,37 @@ impl Asm {
             } else {
                 self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
             }
+        } else {
+            // `eval_all` failed: the RHS references a symbol not resolvable in
+            // THIS AS unit — a cross-seam `.emp` label joined only at link time
+            // (`Game_Entry = GameState_OJZScroll_Init`; the mixed-build
+            // `ErrorHandler = ErrorHandlerBlob` alias + its `MDDBG__* =
+            // ErrorHandler + N` chain). Without this the equate was silently
+            // dropped and every reference to it dangled at link. Emit it as a
+            // DEFERRED symbolic `equ_sym` (`relax_safe_fold` keeps the unresolved
+            // symbol symbolic and bakes any env-only subterm) so
+            // `resolve_layout`'s `fold_equ_syms` folds it off the external base
+            // once that label is placed (equ-off-link-external-base). Emitted on
+            // EVERY pass — a minimal AS unit with no cross-seam `jsr`/`jmp` poison
+            // never triggers the bonus pass, so gating on it would drop the equate
+            // in exactly those mixed harnesses; `run` keeps only the final module,
+            // and the raw env is untouched (the RHS never folded), so convergence
+            // is unaffected. An equate whose base is absent from the final link is
+            // simply not defined (`fold_equ_syms` leaves it), and only a REAL
+            // reference to it errors — at the fixup, as an unplaced label would.
+            if let Some(e) = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+                .and_then(|(e, tail)| tail.is_empty().then_some(e))
+                .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
+                .filter(|e| expr_has_sym(e))
+            {
+                self.label_ref_equs.insert(q.clone());
+                let equ_expr = self.relax_safe_fold(&e);
+                if self.in_section {
+                    self.builder.add_equ_sym(EquSym { name: q, expr: equ_expr, span });
+                } else {
+                    self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
+                }
+            }
         }
     }
 
@@ -2237,6 +2300,29 @@ impl Asm {
         }
         if let Some(v) = self.eval_all(rest, span) {
             self.env.define(&q, SymbolValue::Int(v));
+            // Relocation capability (flip Stage 2): if the RHS — after splicing
+            // any set-symbol it CHAINS through (`P_DFG := PC_FG_T`) — references a
+            // section LABEL, remember its `relax_safe_fold`ed symbolic snapshot so
+            // a later `dc.l`/`jsr`/... of this set keeps the label symbolic and
+            // relocates, instead of baking the this-pass VMA (`P_DBG := deformBg`
+            // in a chainer-relocated parallax record). Reassigning to a label-free
+            // value CLEARS the entry (snapshot/sequential semantics). Built on
+            // every pass (a chain needs the map populated in order within the
+            // deferral pass); byte-neutral because the map is read only under
+            // `keep_labels_symbolic`. `relax_safe_fold` splices set-symbols at its
+            // root, so a chained set stores the underlying label expr directly.
+            let sym_rhs = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+                .and_then(|(e, tail)| tail.is_empty().then_some(e))
+                .map(|e| self.resolve_dollar(&self.qualify_expr(&e)));
+            match sym_rhs {
+                Some(ref e) if self.expr_refs_label(e) => {
+                    let folded = self.relax_safe_fold(e);
+                    self.set_sym_symbolic.insert(q, folded);
+                }
+                _ => {
+                    self.set_sym_symbolic.remove(&q);
+                }
+            }
         }
     }
 
@@ -3830,7 +3916,9 @@ impl Asm {
     fn expr_refs_label(&self, e: &Expr) -> bool {
         match e {
             Expr::Sym(name) => {
-                self.known_labels.contains(name) || self.label_ref_equs.contains(name)
+                self.known_labels.contains(name)
+                    || self.label_ref_equs.contains(name)
+                    || self.set_sym_symbolic.contains_key(name)
             }
             Expr::Binary { lhs, rhs, .. } => {
                 self.expr_refs_label(lhs) || self.expr_refs_label(rhs)
@@ -3850,6 +3938,16 @@ impl Asm {
     /// on a `resolve_dollar`-ed expression) — `$` is not a label, so it would
     /// otherwise survive as an unresolvable `Sym`.
     fn relax_safe_fold(&self, e: &Expr) -> Expr {
+        // A reassignable set-symbol currently bound to a label: splice in its
+        // symbolic snapshot (itself already relax-safe) so the label rides through
+        // placement. This also resolves a CHAIN (`P := Q := Label`) — the stored
+        // snapshot for `P` is built by folding `Sym("Q")` here, which splices to
+        // `Q`'s underlying label expr.
+        if let Expr::Sym(name) = e {
+            if let Some(sub) = self.set_sym_symbolic.get(name) {
+                return sub.clone();
+            }
+        }
         if !self.expr_refs_label(e) {
             if let Fold::Value(v) = self.fold(e) {
                 return Expr::Int(v);

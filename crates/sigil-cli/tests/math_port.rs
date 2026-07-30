@@ -125,6 +125,22 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
+/// The frozen reference ROMs (harness `golden/`), NOT the live tree `s4.bin`
+/// (post-flip the tree ROM is sigil-canonical — the committed blob is truth).
+fn golden(name: &str) -> Option<Vec<u8>> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
+    match std::fs::read(&path) {
+        Ok(b) => Some(b),
+        Err(_) => {
+            if strict_gate() {
+                panic!("golden missing: {}", path.display());
+            }
+            None
+        }
+    }
+}
+
 /// The map: a `text` region for the module's zero-byte default-section
 /// carrier, and the real `math` region pinned at the per-shape reference
 /// base, sized to the 0x298-byte block (24 bytes of code + the 640-byte
@@ -269,13 +285,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 /// `Sine_Table`.
 #[test]
 fn math_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    let rom_path = Path::new(&aeon).join("s4.bin");
-    let Ok(refrom) = std::fs::read(&rom_path) else {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but reference missing: {}", rom_path.display());
-        }
-        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+    let Some(refrom) = golden("s4.bin") else {
+        eprintln!("skip: golden s4.bin not present");
         return;
     };
 
@@ -316,13 +327,8 @@ fn math_region_matches_reference() {
 /// resolve to the correct per-shape addresses.
 #[test]
 fn math_debug_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    let rom_path = Path::new(&aeon).join("s4.debug.bin");
-    let Ok(refrom) = std::fs::read(&rom_path) else {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but debug reference missing: {}", rom_path.display());
-        }
-        eprintln!("skip: debug reference ROM not at {} (set AEON_DIR)", rom_path.display());
+    let Some(refrom) = golden("s4.debug.bin") else {
+        eprintln!("skip: golden s4.debug.bin not present");
         return;
     };
 

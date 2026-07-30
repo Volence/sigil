@@ -18,7 +18,10 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test seam2_seq_colink
 //! ```
 
-use sigil_harness::seam2::{emit_seq_opcode_artifacts, emit_seq_opcode_tab, SEQ_OPCODE_TAB_LEN, SEQ_OPCODE_TAB_LMA};
+use sigil_harness::seam2::{
+    emit_seq_opcode_artifacts, emit_seq_opcode_tab, emit_seq_opcode_tab_doctored,
+    SEQ_OPCODE_TAB_LEN, SEQ_OPCODE_TAB_LMA,
+};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -28,6 +31,13 @@ fn aeon_dir() -> PathBuf {
 }
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
+}
+/// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
+/// tree ROM — post-flip `aeon/s4.bin` is itself sigil-built (row-91 bar b).
+fn golden(name: &str) -> Vec<u8> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
 /// THE HEAD BYTE GATE: the co-linked `SeqOpcodeTable` == the reference ROM slice
@@ -42,8 +52,7 @@ fn colinked_seq_opcode_tab_matches_the_reference_rom_slice_both_shapes() {
     for (debug, shape) in [(false, "plain"), (true, "debug")] {
         let head = emit_seq_opcode_tab(&aeon, debug).expect("emit_seq_opcode_tab co-links");
         assert_eq!(head.len(), SEQ_OPCODE_TAB_LEN, "SeqOpcodeTable is 32 × 2 = 64 bytes");
-        let rom = std::fs::read(aeon.join(if debug { "s4.debug.bin" } else { "s4.bin" }))
-            .unwrap_or_else(|e| panic!("read {shape} rom: {e}"));
+        let rom = golden(if debug { "s4.debug.bin" } else { "s4.bin" });
         let lo = SEQ_OPCODE_TAB_LMA as usize;
         let head_ref = &rom[lo..lo + SEQ_OPCODE_TAB_LEN];
         if let Some(i) = (0..head.len()).find(|&i| head[i] != head_ref[i]) {
@@ -70,6 +79,28 @@ fn plain_and_debug_tables_differ() {
     let p = emit_seq_opcode_tab(&aeon, false).expect("plain");
     let d = emit_seq_opcode_tab(&aeon, true).expect("debug");
     assert_ne!(p, d, "the shape-dependent handler re-base must move the table bytes");
+}
+
+/// t24 NON-VACUITY control (row-91 bar c): a doctored composition — the resident
+/// `Seq_Op_Dac` handler VMA overridden to `$0ABC` — must make the table DIVERGE
+/// from the golden slice, because that opcode's `dc.w` cell re-folds to the moved
+/// handler. The seq table gate is vacuous if a moved handler still matches.
+#[test]
+fn seq_tab_diverges_when_handler_moved() {
+    if !strict_gate() {
+        eprintln!("skipping seam2_seq_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        return;
+    }
+    let aeon = aeon_dir();
+    let doctored = emit_seq_opcode_tab_doctored(&aeon, false, Some(("Seq_Op_Dac", 0x0ABC)))
+        .expect("doctored co-link");
+    let rom = golden("s4.bin");
+    let lo = SEQ_OPCODE_TAB_LMA as usize;
+    let head_ref = &rom[lo..lo + SEQ_OPCODE_TAB_LEN];
+    assert_ne!(
+        doctored, head_ref,
+        "the seq table gate is vacuous if a moved Seq_Op_Dac handler still matches the golden slice"
+    );
 }
 
 /// Determinism + the emitted `.bin`s match the in-memory co-link.
