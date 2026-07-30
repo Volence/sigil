@@ -476,6 +476,92 @@ pub fn build_native_emp(
     Ok((sections, link_asserts))
 }
 
+/// THE Stage-1 INAPPLICABLE-drift-guard ALLOWLIST (t24 both-directions discipline).
+///
+/// Each entry is a `.emp` `ensure(extern("X") == mirror)` drift guard whose constant
+/// `X` is homed ONLY in a `.asm` twin that the all-gates build gates off, so it
+/// cannot resolve — it folds to Poison ("references symbol `X` not defined in this
+/// link"), NOT a `Value(0)` drift failure, and is INAPPLICABLE (the whole-ROM byte
+/// gate is the authoritative drift oracle for every USED constant). Pinned by
+/// `(extern name, a distinguishing substring of the guard's own message = its `.emp`
+/// site)`. The set of Poison guards MUST equal this list EXACTLY:
+///   - a Poison guard NOT here → HARD FAIL (a typo'd/renamed extern, or a new
+///     twin-parity guard that needs an explicit ruling), and
+///   - an allowlisted guard that no longer folds to Poison (it now resolves, or
+///     drifted to a `Value(0)` fail) → HARD FAIL (the allowlist is STALE).
+///
+/// STAGE-2 DELETION MANIFEST: these retire WITH their twins — VRAM_PLANE_B_BYTES ←
+/// `engine/level/bg.asm`, CAM_SCREEN_HALF_{W,H} ← `engine/level/camera.asm` — and
+/// this allowlist machinery retires with them.
+const STAGE1_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[
+    ("VRAM_PLANE_B_BYTES", "plane_buffer.emp"), // twin: engine/level/bg.asm
+    ("VRAM_PLANE_B_BYTES", "section.emp"),       // twin: engine/level/bg.asm
+    ("CAM_SCREEN_HALF_W", "ojz_scroll_test"),    // twin: engine/level/camera.asm
+    ("CAM_SCREEN_HALF_H", "ojz_scroll_test"),    // twin: engine/level/camera.asm
+];
+
+/// Enforce that the observed inapplicable (Poison-unresolvable) drift guards are
+/// EXACTLY [`STAGE1_INAPPLICABLE_GUARDS`] — both directions (§t24). `inapplicable`
+/// are the "not defined in this link" diagnostics; `link_asserts` supplies each
+/// guard's own message (its `.emp` site) via span match.
+fn enforce_inapplicable_allowlist(
+    inapplicable: &[&sigil_span::Diagnostic],
+    link_asserts: &[sigil_ir::LinkAssert],
+) -> Result<(), String> {
+    // The guard's own message text (its Text parts), for the site match.
+    let site_of = |d: &sigil_span::Diagnostic| -> String {
+        link_asserts
+            .iter()
+            .find(|a| a.span == d.primary)
+            .map(|a| {
+                a.message
+                    .iter()
+                    .filter_map(|p| match p {
+                        sigil_ir::MsgPart::Text(t) => Some(t.as_str()),
+                        _ => None,
+                    })
+                    .collect::<String>()
+            })
+            .unwrap_or_default()
+    };
+
+    let mut matched = vec![false; STAGE1_INAPPLICABLE_GUARDS.len()];
+    for d in inapplicable {
+        // The unresolved extern name(s) are the backtick-delimited tokens in the
+        // Poison message ("references symbol(s) `X` not defined in this link").
+        let externs: Vec<&str> = d.message.split('`').skip(1).step_by(2).collect();
+        let site = site_of(d);
+        let hit = STAGE1_INAPPLICABLE_GUARDS.iter().enumerate().find(|(i, (name, token))| {
+            !matched[*i] && externs.contains(name) && site.contains(token)
+        });
+        match hit {
+            Some((i, _)) => matched[i] = true,
+            None => {
+                return Err(format!(
+                    "unresolvable-extern drift guard NOT in the Stage-1 allowlist — either the \
+                     extern name is wrong or a new twin-parity guard needs a ruling.\n  \
+                     externs: {externs:?}\n  site: {site}"
+                ));
+            }
+        }
+    }
+    if let Some(i) = matched.iter().position(|m| !m) {
+        return Err(format!(
+            "Stage-1 inapplicable-guard allowlist is STALE: the guard {:?} \
+             (extern, site) no longer folds to an unresolvable-extern Poison — it now resolves \
+             (or drifted to a Value(0) fail). Re-verify and update the allowlist.",
+            STAGE1_INAPPLICABLE_GUARDS[i],
+        ));
+    }
+    if std::env::var("NATIVE_DEBUG").is_ok() {
+        eprintln!(
+            "NATIVE_DEBUG: {} inapplicable drift guard(s) matched the Stage-1 allowlist exactly",
+            inapplicable.len()
+        );
+    }
+    Ok(())
+}
+
 /// THE native whole-ROM build: AS residual (all gates ON, sound BINCLUDE) + every
 /// placed `.emp` module → ONE resolve_layout + link + emit_rom.
 pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
@@ -512,12 +598,7 @@ pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
             real.first()
         ));
     }
-    if std::env::var("NATIVE_DEBUG").is_ok() {
-        eprintln!(
-            "NATIVE_DEBUG: {} drift guard(s) inapplicable (twin .asm gated off; byte gate is the oracle)",
-            inapplicable.len()
-        );
-    }
+    enforce_inapplicable_allowlist(&inapplicable, &link_asserts)?;
 
     let linked: LinkedImage = sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("link: {} diag(s); first: {:?}", d.len(), d.first()))?;
@@ -526,4 +607,77 @@ pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load sigil.map.toml: {e}"))?;
     sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))
+}
+
+#[cfg(test)]
+mod allowlist_tests {
+    //! t24 both-directions negative controls for the Stage-1 inapplicable-drift-guard
+    //! allowlist: the enforcement rejects an UNKNOWN Poison guard (a typo'd/renamed
+    //! extern or a new twin-parity guard) AND a STALE allowlist (an entry that no
+    //! longer folds to Poison), so the native gates can never silently vacate a guard.
+    use super::{enforce_inapplicable_allowlist, STAGE1_INAPPLICABLE_GUARDS};
+    use sigil_ir::{Expr, LinkAssert, MsgPart};
+    use sigil_span::{Diagnostic, Level, Span, SourceId};
+
+    fn span(n: u32) -> Span {
+        Span { source: SourceId(0), start: n, end: n }
+    }
+    /// A synthetic Poison diagnostic + its matching LinkAssert (site text) for one
+    /// `(extern, site_token)` allowlist-shaped guard.
+    fn guard(n: u32, ext: &str, site: &str) -> (Diagnostic, LinkAssert) {
+        let d = Diagnostic {
+            level: Level::Error,
+            message: format!(
+                "link assertion condition references symbol(s) `{ext}` not defined in this link"
+            ),
+            primary: span(n),
+        };
+        let a = LinkAssert {
+            cond: Expr::Int(0),
+            message: vec![MsgPart::Text(format!("engine/level/twin.asm and {site} disagree"))],
+            fatal: false,
+            level: Level::Error,
+            span: span(n),
+        };
+        (d, a)
+    }
+
+    fn build(entries: &[(&str, &str)]) -> (Vec<Diagnostic>, Vec<LinkAssert>) {
+        let mut ds = Vec::new();
+        let mut as_ = Vec::new();
+        for (i, (e, s)) in entries.iter().enumerate() {
+            let (d, a) = guard(i as u32, e, s);
+            ds.push(d);
+            as_.push(a);
+        }
+        (ds, as_)
+    }
+
+    #[test]
+    fn exact_allowlist_passes() {
+        let (ds, as_) = build(STAGE1_INAPPLICABLE_GUARDS);
+        let refs: Vec<&Diagnostic> = ds.iter().collect();
+        assert!(enforce_inapplicable_allowlist(&refs, &as_).is_ok());
+    }
+
+    #[test]
+    fn unknown_poison_guard_is_rejected() {
+        // The exact set PLUS one unknown extern → HARD FAIL.
+        let mut entries: Vec<(&str, &str)> = STAGE1_INAPPLICABLE_GUARDS.to_vec();
+        entries.push(("SOME_NEW_TWIN_CONST", "camera.emp"));
+        let (ds, as_) = build(&entries);
+        let refs: Vec<&Diagnostic> = ds.iter().collect();
+        let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
+        assert!(err.contains("NOT in the Stage-1 allowlist"), "got: {err}");
+    }
+
+    #[test]
+    fn stale_allowlist_is_rejected() {
+        // One allowlisted guard MISSING (it now resolves) → HARD FAIL (stale).
+        let entries: Vec<(&str, &str)> = STAGE1_INAPPLICABLE_GUARDS[1..].to_vec();
+        let (ds, as_) = build(&entries);
+        let refs: Vec<&Diagnostic> = ds.iter().collect();
+        let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
+        assert!(err.contains("STALE"), "got: {err}");
+    }
 }
