@@ -77,13 +77,22 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
     // Pass 1b (R-T0.3): define each section's `equ_syms` — already folded to
     // `Expr::Int` by `resolve_layout` post-placement — as concrete
     // `SymbolValue::Int`, BEFORE any fixup is applied (Pass 2), so a cross-section
-    // fixup can target an equ symbol. `resolve_layout` guarantees these exprs are
-    // constant, so the fold below is trivial; the `Fold::Poison` arm is a
-    // defensive internal error (an un-folded equ reaching link is a compiler bug,
-    // not a source error). Duplicate names — equ-vs-equ and equ-vs-label — funnel
-    // through the SAME `defined_here` dup-symbol channel as labels.
+    // fixup can target an equ symbol. `resolve_layout` folds every equ in the full
+    // pipeline, so the fold below is normally trivial. An equ that STILL folds to
+    // `Poison` here is a DEFERRED cross-seam equate whose external base is not
+    // placed in THIS link (equ-off-link-external-base in a partial link — a direct
+    // `link()` caller that skipped `resolve_layout`, or a mixed harness that placed
+    // only a subset of `.emp` modules). It is left UNDEFINED, exactly like an
+    // absent label: harmless when unreferenced, and a REAL reference to it errors
+    // at the fixup (Pass 2, `unresolved symbol … for fixup`). Duplicate names —
+    // equ-vs-equ and equ-vs-label — funnel through the SAME `defined_here`
+    // dup-symbol channel as labels.
     for sec in sections {
         for eq in &sec.equ_syms {
+            let v = match eq.expr.fold(&|name| syms.resolve(name, None)) {
+                Fold::Value(v) => v,
+                Fold::Poison => continue,
+            };
             if let Some(prev) = defined_here.insert(eq.name.clone(), sec.name.clone()) {
                 diags.push(diag(
                     format!(
@@ -94,17 +103,7 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                 ));
                 continue;
             }
-            match eq.expr.fold(&|name| syms.resolve(name, None)) {
-                Fold::Value(v) => syms.define(&eq.name, SymbolValue::Int(v)),
-                Fold::Poison => diags.push(diag(
-                    format!(
-                        "internal: equ `{}` reached link() unfolded (resolve_layout must fold \
-                         every equ to a constant before link)",
-                        eq.name
-                    ),
-                    eq.span,
-                )),
-            }
+            syms.define(&eq.name, SymbolValue::Int(v));
         }
     }
 

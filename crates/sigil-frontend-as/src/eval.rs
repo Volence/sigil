@@ -176,6 +176,20 @@ struct PassOutput {
     label_ref_equs: std::collections::HashSet<String>,
 }
 
+/// True if `e` names any symbol (a `Sym` node anywhere in the tree). Used by the
+/// deferred cross-seam equate path: a RHS `eval_all` couldn't fold necessarily
+/// contains an unresolved symbol, and a full parse of it is worth exporting as a
+/// symbolic `equ_sym` only when it actually references one (a pure-`Int` parse
+/// would have folded).
+fn expr_has_sym(e: &Expr) -> bool {
+    match e {
+        Expr::Sym(_) => true,
+        Expr::Binary { lhs, rhs, .. } => expr_has_sym(lhs) || expr_has_sym(rhs),
+        Expr::Unary { operand, .. } => expr_has_sym(operand),
+        Expr::Int(_) => false,
+    }
+}
+
 /// Re-attach equ exports the CONVERGED pass lost to a guard-skipped block
 /// (tranche-3 review finding — see `run`'s `ever_exported` comment): any name
 /// some earlier pass exported that the final module lacks gets an `EquSym`
@@ -2201,6 +2215,37 @@ impl Asm {
                 self.builder.add_equ_sym(EquSym { name: q, expr: equ_expr, span });
             } else {
                 self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
+            }
+        } else {
+            // `eval_all` failed: the RHS references a symbol not resolvable in
+            // THIS AS unit — a cross-seam `.emp` label joined only at link time
+            // (`Game_Entry = GameState_OJZScroll_Init`; the mixed-build
+            // `ErrorHandler = ErrorHandlerBlob` alias + its `MDDBG__* =
+            // ErrorHandler + N` chain). Without this the equate was silently
+            // dropped and every reference to it dangled at link. Emit it as a
+            // DEFERRED symbolic `equ_sym` (`relax_safe_fold` keeps the unresolved
+            // symbol symbolic and bakes any env-only subterm) so
+            // `resolve_layout`'s `fold_equ_syms` folds it off the external base
+            // once that label is placed (equ-off-link-external-base). Emitted on
+            // EVERY pass — a minimal AS unit with no cross-seam `jsr`/`jmp` poison
+            // never triggers the bonus pass, so gating on it would drop the equate
+            // in exactly those mixed harnesses; `run` keeps only the final module,
+            // and the raw env is untouched (the RHS never folded), so convergence
+            // is unaffected. An equate whose base is absent from the final link is
+            // simply not defined (`fold_equ_syms` leaves it), and only a REAL
+            // reference to it errors — at the fixup, as an unplaced label would.
+            if let Some(e) = crate::expr::parse_expr(&self.expand_calls(rest, 0))
+                .and_then(|(e, tail)| tail.is_empty().then_some(e))
+                .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
+                .filter(|e| expr_has_sym(e))
+            {
+                self.label_ref_equs.insert(q.clone());
+                let equ_expr = self.relax_safe_fold(&e);
+                if self.in_section {
+                    self.builder.add_equ_sym(EquSym { name: q, expr: equ_expr, span });
+                } else {
+                    self.pending_equ_syms.push(EquSym { name: q, expr: equ_expr, span });
+                }
             }
         }
     }
