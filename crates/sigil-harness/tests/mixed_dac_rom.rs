@@ -74,19 +74,17 @@
 //! no synthetic cross-seam symbol injection is needed here: the real AS module
 //! supplies it for real, through the same shared symbol table.
 //!
-//! ## Cross-seam resolution (T3 — the win-tab `dw` deferral proving out)
+//! ## The SFX head (seam-2 stage-2d — BINCLUDE'd, no AS-side `dw` deferral)
 //!
-//! With `SIGIL_EMP_SFX` on, `sfx_blob_win_tab.asm`'s nine
-//! `dw sfx_winptr(Sfx_NN)` entries (a compound `(Sfx_NN & SFX_WIN_MASK) |
-//! SFX_WIN_BASE` in the Z80 `phase 08000h` blob) reference `.emp`-side `Sfx_NN`
-//! labels, unresolved at AS-time — T0's `dw` deferral (P1) is what lets the AS
-//! side assemble. Because ONE leaf (`Sfx_NN`) is external, the whole expr
-//! deferred; the front-end's `partial_fold` bakes the env-only equs
-//! (`SFX_WIN_MASK`/`SFX_WIN_BASE`, invisible to the linker's section-label
-//! table) at that site, so the linker fold sees `(Sfx_NN & 32767) | 32768` and
-//! resolves the sole cross-seam leaf through the joint link. `SfxBlobWinTab[0] =
-//! sfx_winptr($5BAE8) = $BAE8` → LE `E8 BA` at ROM `$5845F`, pinned explicitly
-//! in the plain test and re-proven by the full-ROM byte assertion.
+//! `sfx_blob_win_tab.asm` is DELETED; `soundBankHead` now BINCLUDEs the
+//! co-linked `sfx_blob_win_tab{,_debug}.bin` (its cells fold from `sfx_bank.emp`'s
+//! `SFX_WIN_*` equ layer at emit). So the AS side no longer assembles the nine
+//! `dw sfx_winptr(Sfx_NN)` entries here — the head bytes come from the BINCLUDE'd
+//! `.bin`, and the DSM harness (which composes the SFX body in-memory at the SAME
+//! per-shape base via `SIGIL_EMP_SFX_BODY_STUB`) agrees with them by construction.
+//! `SfxBlobWinTab[0] = sfx_winptr($5BAE8) = $BAE8` → LE `E8 BA` at ROM `$5845F`,
+//! re-proven by the full-ROM byte assertion. (The `dw`-defer language feature is
+//! still exercised elsewhere; it just no longer rides the win-tab.)
 //!
 //! ## STOP RULE (DSM.9)
 //!

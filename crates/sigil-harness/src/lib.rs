@@ -179,14 +179,13 @@ pub fn assemble_mixed_mt_as_side(aeon: &Path, debug: bool) -> Result<Module, Str
 /// Returns the UNLINKED [`Module`], exactly like the two sibling helpers: the
 /// T3 mixed harness concatenates these sections with all THREE `.emp` modules'
 /// placed sections (`dac_samples.emp` + `mt_bank.emp` + `sfx_bank.emp`) and
-/// runs ONE `resolve_layout` + `link` over the union. The cross-seam reads
-/// unique to this tranche are the `soundBankHead` win-tab's nine
-/// `dw sfx_winptr(Sfx_NN)` entries (a compound `(Sfx_NN & $7FFF) | $8000` in a
-/// Z80 `phase 08000h` LE `dw`): with `SIGIL_EMP_SFX` on the `Sfx_NN` labels are
-/// `.emp`-side, so those entries assemble here with the target UNRESOLVED (T0's
-/// dw deferral, P1-proven) and are satisfied by the joint link against
-/// `sfx_bank.emp`'s labels through the same shared symbol table everything else
-/// uses.
+/// runs ONE `resolve_layout` + `link` over the union. Seam-2 stage-2d:
+/// `SIGIL_EMP_SFX_BODY_STUB` keeps the SFX BODY composed in-memory (`sfx_bank.emp`,
+/// org-stub), while the SfxBlobWinTab HEAD is now BINCLUDE'd unconditionally in
+/// `soundBankHead` (`sfx_blob_win_tab{,_debug}.bin`, co-linked from `sfx_bank.emp`'s
+/// `SFX_WIN_*` equs) — so the AS side no longer assembles the nine
+/// `dw sfx_winptr(Sfx_NN)` entries; the head bytes come from the BINCLUDE'd `.bin`,
+/// which agrees with the in-memory body by construction (same per-shape base).
 pub fn assemble_mixed_sfx_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
     let root = aeon.join("games/sonic4/main.asm");
     let mut defines = vec![
@@ -202,6 +201,12 @@ pub fn assemble_mixed_sfx_as_side(aeon: &Path, debug: bool) -> Result<Module, St
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
     ];
     if debug {
         defines.push(("__DEBUG__".to_string(), 1));
@@ -256,6 +261,12 @@ pub fn assemble_mixed_hblank_as_side(aeon: &Path, debug: bool) -> Result<Module,
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
     ];
     if debug {
@@ -315,6 +326,12 @@ pub fn assemble_mixed_tranche2_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -371,6 +388,12 @@ pub fn assemble_mixed_tranche3_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -406,6 +429,12 @@ pub fn assemble_mixed_tranche4_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -455,6 +484,12 @@ pub fn assemble_mixed_tranche5_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -505,6 +540,12 @@ pub fn assemble_mixed_tranche6_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -551,6 +592,12 @@ pub fn assemble_mixed_tranche7_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -600,6 +647,12 @@ pub fn assemble_mixed_tranche8_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -652,6 +705,12 @@ pub fn assemble_mixed_tranche9_as_side(aeon: &Path, debug: bool) -> Result<Modul
         // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
         ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -1233,6 +1292,32 @@ pub fn assemble_seam2_mt_rom_as_side(aeon: &Path, debug: bool) -> Result<Module,
     let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
     assemble_root(&root, &opts).map_err(|d| {
         format!("assemble (seam2 DAC+MT BINCLUDE AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
+/// Seam-2 stage-2d (Option Y) — the REAL-BUILD DAC+MT+SFX path: `SIGIL_EMP_DAC` +
+/// `SIGIL_EMP_MT` + `SIGIL_EMP_SFX` on, NO body stubs, so `main.asm` BINCLUDEs the
+/// DAC banks + head, the Moving-Trucks bank, the SFX block (`sfx_bank{,_debug}.bin`
+/// @ $5BAE8/$5D53A), AND `soundBankHead` BINCLUDEs the SfxBlobWinTab head
+/// (`sfx_blob_win_tab{,_debug}.bin` @ VMA $845F) — exactly what `build.sh`
+/// assembles once the 20 SFX `.asm` (18 blob/patch + sfx_table + sfx_blob_win_tab)
+/// are deleted. No SFX syms (no surviving AS reader of SfxTable). Engine stays pure
+/// AS. All DAC/MT/SFX `.bin`s (+ the resident blob) must exist in the aeon tree;
+/// the seam-2 SFX whole-ROM gate emits them first. Returns the UNLINKED [`Module`].
+pub fn assemble_seam2_sfx_rom_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (seam2 DAC+MT+SFX BINCLUDE AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
 
