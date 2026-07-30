@@ -28,7 +28,7 @@ use std::path::Path;
 use sigil_frontend_as::{assemble_root, Options as AsOptions};
 use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
-use sigil_ir::{Cpu, Module, Section, SymbolTable};
+use sigil_ir::{Cpu, Module, Section, SectionPlacement, SymbolTable};
 use sigil_link::LinkedImage;
 
 use crate::pins::{self, Region};
@@ -560,6 +560,158 @@ fn enforce_inapplicable_allowlist(
         );
     }
     Ok(())
+}
+
+// ── Flip Stage 2 · S1.2 — THE DECLARED-ORDER, COMPUTED-BASE CHAINER ──
+//
+// The generalization of `native_chained_resume`'s proof into a first-class placement
+// authority. It computes EVERY section's ROM base by chaining in a DECLARED ORDER;
+// the baked `org`/resume-org literals are discarded for chained sections (proving
+// them redundant — the Stage-2 unblock). Only genuine fixed anchors (the object bank
+// `org $10000`, the phased sound banks) keep a declared base.
+//
+// THE LOAD-BEARING REFINEMENT (empirically established — see the S1.2 note): pure
+// content-size chaining does NOT reproduce asl. sigil's link-time branch relaxation
+// grows short→long; when sections pack tighter than asl's layout, a branch sitting at
+// the `.s`/`.w` boundary relaxes SHORTER, so the chained ROM settles at a *different*
+// (tighter) relaxation fixpoint than asl — a byte divergence that cascades (first seen
+// as a −2 at `hblank`, from `vblank.emp`'s bare branch). The fix: reserve each
+// section's DECLARED SIZE = its exact asl per-region span, so the computed-base chain
+// reproduces asl's addresses and thereby anchors relaxation to asl's widths. The
+// declared sizes are what the map manifest must hold (SPEC2:199), sourced per target
+// from its asl listing (sonic4: the pinned-resolve spans below; demo/Config: their
+// `.lst` spans). Bases stay COMPUTED — the soundness condition is met.
+
+/// One image-bearing section's exact asl span, captured from a PINNED resolve (which
+/// reproduces asl byte-for-byte — `native_rom` proves it), keyed by the section's
+/// stable index in the combined vec. This is the "declared size" the chainer reserves.
+fn asl_spans_by_index(sections: &[Section]) -> Result<Vec<Option<u32>>, String> {
+    // Tag each section with a unique name so the pinned-resolve read is unambiguous
+    // (the tree carries 5 same-named `text` sections + `sec<lma>` collisions). Names
+    // do not affect emitted bytes, so this is byte-neutral.
+    let mut tagged: Vec<Section> = sections.to_vec();
+    for (i, s) in tagged.iter_mut().enumerate() {
+        s.name = format!("{}\u{0}{i}", s.name);
+    }
+    let stubs = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&tagged, &stubs, true)
+        .map_err(|d| format!("declared-chain span pass: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+    // Recover each tag's index and its post-resolve image length (exact — relaxables
+    // are now `Data`). ROM sections sorted by final lma give the per-section advance
+    // (next.lma − this.lma within a run; a genuine gap falls back to image_len).
+    let mut rom: Vec<(usize, u32, u32)> = resolved
+        .iter()
+        .filter(|s| is_rom_section(s))
+        .filter_map(|s| {
+            let idx = s.name.rsplit('\u{0}').next()?.parse::<usize>().ok()?;
+            Some((idx, s.lma, s.image_len()))
+        })
+        .collect();
+    rom.sort_by_key(|&(_, lma, _)| lma);
+    let mut span = vec![None; sections.len()];
+    for i in 0..rom.len() {
+        let (idx, lma, img) = rom[i];
+        let adv = if i + 1 < rom.len() {
+            let gap = rom[i + 1].1.saturating_sub(lma);
+            // A real run abuts (gap ≈ img); a genuine org hole leaves gap ≫ img → the
+            // trailing section owns only its own image_len (the anchor after it pins).
+            if gap >= img && gap <= img + 0x10 { gap } else { img }
+        } else {
+            img
+        };
+        span[idx] = Some(if img == 0 { 0 } else { adv.max(1) });
+    }
+    Ok(span)
+}
+
+/// True for an image-bearing ROM section (VMA below the RAM/phase floor), as opposed
+/// to a RAM/phase section that never participates in ROM layout.
+fn is_rom_section(s: &Section) -> bool {
+    match s.vma_base {
+        Some(v) => v < 0x00F0_0000,
+        None => true,
+    }
+}
+
+/// Build the whole native ROM with every base COMPUTED by declared-order chaining
+/// (the S1.2 generalization). `debug` selects the shape. The DECLARED ORDER for the
+/// canonical-sonic4 bootstrap is the address order (baked lmas known-correct — the
+/// ratified sort-by-address bootstrap); for demo/Config it comes from their listing.
+/// Genuine org anchors (object bank, phased sound banks) keep their declared base;
+/// every other section is `Chained` with its baked lma zeroed (base computed).
+pub fn build_native_rom_chained(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
+    ensure_generated(aeon);
+    let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
+    let (emp, link_asserts) = build_native_emp(aeon, debug)?;
+    let mut sections: Vec<Section> = as_side.sections;
+    sections.extend(emp);
+
+    // The declared per-section sizes (exact asl spans) — the map-manifest datum.
+    let spans = asl_spans_by_index(&sections)?;
+
+    // Split ROM vs RAM; RAM/phase sections pass through untouched. The `usize` keeps
+    // each section's original index so its captured asl span (`spans[idx]`) survives
+    // the sort/partition.
+    type IndexedSection = (usize, Section);
+    let indexed: Vec<IndexedSection> = sections.into_iter().enumerate().collect();
+    let (mut rom, ram): (Vec<IndexedSection>, Vec<IndexedSection>) =
+        indexed.into_iter().partition(|(_, s)| is_rom_section(s));
+    // DECLARED ORDER (sonic4 bootstrap = address order).
+    rom.sort_by_key(|(_, s)| (s.lma, s.placement_span()));
+
+    let mut cur_group = String::new();
+    let mut gi = 0usize;
+    let mut chain_end: Option<u32> = None;
+    for (idx, s) in rom.iter_mut() {
+        let orig_lma = s.lma;
+        let span = spans[*idx].unwrap_or_else(|| s.placement_span());
+        let phased = s.vma_base.map(|v| v != orig_lma).unwrap_or(false);
+        // A genuine org anchor: the first unit, a phased bank, or a section whose base
+        // sits beyond the running chain end (a real hole — the object-bank `org`).
+        let is_anchor =
+            chain_end.is_none() || phased || chain_end.map(|e| orig_lma > e).unwrap_or(true);
+        s.reserved_span = span;
+        if is_anchor {
+            gi += 1;
+            cur_group = format!("declchain{gi}");
+            s.group = Some(cur_group.clone());
+            s.placement = SectionPlacement::Pinned;
+            chain_end = Some(orig_lma + span);
+        } else {
+            s.group = Some(cur_group.clone());
+            s.placement = SectionPlacement::Chained;
+            s.lma = 0; // base COMPUTED — the baked resume-org literal is discarded.
+            if s.vma_base == Some(orig_lma) {
+                s.vma_base = None; // no stale VMA to leak the discarded base.
+            }
+            chain_end = Some(chain_end.unwrap().max(orig_lma) + span);
+        }
+    }
+
+    let mut all: Vec<Section> = rom.into_iter().map(|(_, s)| s).collect();
+    all.extend(ram.into_iter().map(|(_, s)| s));
+
+    let stubs = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&all, &stubs, true)
+        .map_err(|d| format!("declared-chain: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+    // Same drift partition as the pinned driver: real Value(0) drift is a hard fail;
+    // gated-off-twin (unresolvable-extern) guards are inapplicable here.
+    let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
+    let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
+        .iter()
+        .filter(|d| d.level == sigil_span::Level::Error)
+        .partition(|d| d.message.contains("not defined in this link"));
+    if !real.is_empty() {
+        return Err(format!("declared-chain drift guard FIRED: {} error(s); first {:?}", real.len(), real.first()));
+    }
+    enforce_inapplicable_allowlist(&inapplicable, &link_asserts)?;
+
+    let linked = sigil_link::link(&resolved, &stubs)
+        .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
+    let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))
 }
 
 /// THE native whole-ROM build: AS residual (all gates ON, sound BINCLUDE) + every
