@@ -24,6 +24,7 @@
 
 use std::path::Path;
 
+use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
@@ -247,5 +248,138 @@ pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     write("dac_blip_bank.bin", &out.blip)?;
     write("dac_shared_bank.bin", &out.shared)?;
     write("dac_sample_tab.bin", &out.head)?;
+    Ok(())
+}
+
+/// The current-baseline LMA of the Moving-Trucks streaming bank (`mt_bank.emp`'s
+/// `mt_bank` section) — right after the engine-table head (`soundBankHead` ends at
+/// `$58607`). SHAPE-DEPENDENT content (plain ends `$5BAE8`; debug adds DrumTest +
+/// HCZ2 and ends `$5D53A`).
+pub const MT_BANK_LMA: u32 = 0x58607;
+
+/// The Moving-Trucks bank body + the labels AS-side 68k code consumes cross-seam
+/// (`SongTable`/`SongPatchTable`, read by `sound_api.asm`'s two `movea.l #…`).
+pub struct MtBank {
+    /// `mt_bank` @ `$58607` — song + pitch table + patch bank + song_table,
+    /// shape-dependent length.
+    pub bytes: Vec<u8>,
+    /// The AS-consumed cross-seam labels: `(name, absolute VMA)`. Emitted as an
+    /// `mt_syms{,_debug}.asm` equ file the BINCLUDE build includes so
+    /// `sound_api.asm`'s `movea.l #SongTable`/`#SongPatchTable` resolve.
+    pub syms: Vec<(String, u32)>,
+}
+
+/// Lower + co-link `mt_bank.emp` at the current-baseline bank pin (`$58607`) and
+/// return the bank body + the `SongTable`/`SongPatchTable` addresses. Supplies the
+/// same THREE cross-seam carriers `mt_port.rs` does — `MovingTrucks_Bank_Start`
+/// (label @ `$58000`, bank `$B`) + `SONG_MOVINGTRUCKS`=1 + `SONG_COUNT` (1 plain /
+/// 3 debug) — and checks the module's 7 link asserts (5 co-residency + 2 drift
+/// guards) all PASS. Byte-deterministic from the tracked `.emp` + its embeds.
+pub fn emit_mt_bank(aeon: &Path, debug: bool) -> Result<MtBank, String> {
+    let dir = aeon.join("games/sonic4/data/sound");
+    let emp = dir.join("mt_bank.emp");
+    let src = std::fs::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
+    let (file, pdiags) = parse_str(&src);
+    if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("mt_bank.emp parse errors: {pdiags:?}"));
+    }
+    let debug_val: i128 = if debug { 1 } else { 0 };
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(dir.clone()),
+        embed_base: None,
+        defines: vec![("DEBUG".to_string(), debug_val)],
+    };
+    let (module, ldiags) = lower_module(&file, &opts);
+    if ldiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!(
+            "mt_bank.emp lower errors: {:?}",
+            ldiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
+        ));
+    }
+    let link_asserts = module.link_asserts.clone();
+
+    let map_toml = format!(
+        "fill = 0x00\n\n\
+         [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"mt_bank\"\nlma_base = 0x{MT_BANK_LMA:X}\nsize = 0x79F9\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
+    let mut sections = module.sections;
+    let pd = place_sections(&mut sections, &map);
+    if pd.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("place_sections errors: {pd:?}"));
+    }
+
+    // The cross-seam carrier: MovingTrucks_Bank_Start label @ VMA $58000 (bank $B,
+    // where the head bank lands — the SAME bank mt_bank lands in) + the two song-id
+    // equs the drift guards read (SONG_COUNT is shape-dependent, per sound_ids.asm).
+    let song_count = if debug { 3 } else { 1 };
+    let carrier_asm = format!(
+        "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
+    );
+    let mut carriers = assemble(
+        &carrier_asm,
+        &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() },
+    )
+    .map_err(|d| format!("carrier assemble: {d:?}"))?
+    .sections;
+    for sec in &mut carriers {
+        sec.lma = 0x0100_0000;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.extend(carriers);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .map_err(|d| format!("resolve_layout (bank straddle / ensure?): {d:?}"))?;
+    let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("mt_bank co-residency/drift guards fired: {assert_diags:?}"));
+    }
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+
+    let bytes = linked.section("mt_bank").ok_or("missing mt_bank in linked image")?.bytes.clone();
+    // Read SongTable/SongPatchTable from the PLACED section's labels (offset +
+    // the section's final LMA). mt_bank is pure data — resolve_layout does not
+    // move byte offsets — so the lowered offsets are final.
+    let placed = sections.iter().find(|s| s.name == "mt_bank").ok_or("missing placed mt_bank")?;
+    let base = placed.lma;
+    let mut syms = Vec::new();
+    for want in ["SongTable", "SongPatchTable"] {
+        let label = placed
+            .labels
+            .iter()
+            .find(|l| l.name == want)
+            .ok_or_else(|| format!("mt_bank must export `{want}` (sound_api.asm consumes it)"))?;
+        syms.push((want.to_string(), base + label.offset));
+    }
+    Ok(MtBank { bytes, syms })
+}
+
+/// Emit the Moving-Trucks bank build inputs to `out_dir`: `mt_bank.bin` (plain) +
+/// `mt_bank_debug.bin` (debug) + the matching `mt_syms{,_debug}.asm` equ files
+/// (`SongTable`/`SongPatchTable` at their emitted addresses, so the BINCLUDE build's
+/// `sound_api.asm` cross-seam `movea.l`s resolve). SHAPE-DEPENDENT (the two songs
+/// the debug build adds), so — like the resident blob — there IS a `_debug` variant.
+pub fn emit_mt_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    for (debug, bin_name, syms_name) in [
+        (false, "mt_bank.bin", "mt_syms.asm"),
+        (true, "mt_bank_debug.bin", "mt_syms_debug.asm"),
+    ] {
+        let mt = emit_mt_bank(aeon, debug)?;
+        let bin_path = out_dir.join(bin_name);
+        std::fs::write(&bin_path, &mt.bytes).map_err(|e| format!("write {}: {e}", bin_path.display()))?;
+        let mut syms_src = String::from(
+            "; GENERATED by sigil emit_sound_blob (seam-2 mt_bank) — do not hand-edit.\n\
+             ; The Moving-Trucks bank labels sound_api.asm consumes cross-seam.\n",
+        );
+        for (name, addr) in &mt.syms {
+            syms_src.push_str(&format!("{name} = ${addr:X}\n"));
+        }
+        let syms_path = out_dir.join(syms_name);
+        std::fs::write(&syms_path, syms_src).map_err(|e| format!("write {}: {e}", syms_path.display()))?;
+    }
     Ok(())
 }
