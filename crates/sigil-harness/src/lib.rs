@@ -38,6 +38,8 @@ pub mod pins;
 /// bin (Option A — sigil emits the canonical build inputs asl packs).
 pub mod seam1;
 
+pub mod seam2;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;
