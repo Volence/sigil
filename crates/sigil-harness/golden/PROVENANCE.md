@@ -2018,3 +2018,55 @@ arm + the BODY_STUB / BINCLUDE-in-phase patterns. The stale-pin audit (a uniform
 - Strict **2904/0 (1 ignored)**; the seam2 gate family (dac/mt/sfx/seq/soundtables
   colinks + whole-ROM trio) green by name from mains.
 - Aeon master **`409b8ba`** / sigil master **`696fc18`**.
+
+## FLIP STAGE 1 — the golden freeze + the split-golden model (2026-07-30)
+
+The point-before-no-return freeze: capture the durable regression oracles WHILE asl
+is still a live independent witness. Delivered this session as the fresh-build
+capture SCRIPT (`golden/capture_goldens.sh`) + this record; the binary blobs are
+push-button via `capture_goldens.sh --write` (held pending the demo/Config re-scope
+ruling — the freeze is re-captured immediately before Stage 2 regardless, per OQ-A3).
+
+**THE SPLIT-GOLDEN MODEL (Option A, ruled — S1.4 appendix fork).** Each ROM has
+THREE provenance layers:
+- **PRIMARY — the assembled ROM `[0, EndOfRom)`, header-neutral.** The correctness
+  anchor. asl-witnessed, byte-identical to the native driver, DRIFT-STABLE across
+  `.asm` deletions. This is THE bar the native driver reproduces.
+- **SECONDARY — the asl full file** = assembled + asl's convsym deb2 appendix. What
+  `build.sh` writes to disk today. Drifts as the asl symbol set changes.
+- **SIGIL-CANONICAL — the native full file** = assembled + SIGIL's OWN deb2 appendix
+  (sigil `.lst` → real `tools/convsym`). The `.emp` names are the source names going
+  forward (Option A); this is the native path's frozen golden. CRC-pinned in
+  `native_full_rom.rs`. At Stage 2 the `== asl` clause drops; `== this golden` stays.
+
+**Frozen bars (aeon `bcb8f64`, sigil `flip-stage1`), fresh-build verified:**
+
+| ROM | SECONDARY (asl full file) | PRIMARY (assembled, header-neutral) | SIGIL-CANONICAL (native full) |
+|---|---|---|---|
+| s4.bin (plain) | **eff2396f / 413577** | e5765873 / 0x5DB60 | **2198deb2 / 395374** |
+| s4.debug.bin | **1e9097bc / 421579** | dab4f06c / 0x5F65A | **1d895fcb / 402696** |
+| demo.bin (plain) | **18c64002 / 90776** | (deb2 @ 0x11224) | native BLOCKED (S1.2) |
+| demo.debug.bin | **b0475a59 / 91584** | (deb2 @ 0x11224) | native BLOCKED (S1.2) |
+
+**DEMO STALE-BASELINE CORRECTION (history honesty).** The plain-demo figure
+`2b71b37d / 88738` that appears in earlier design/scoping notes was a STALE-ARTIFACT
+FALSE BASELINE — a pre-existing `demo.bin` CRC'd WITHOUT a rebuild, compounded by
+`GAME=demo ./build.sh` silently ignoring the env var (`build.sh:4` takes the game
+POSITIONALLY). The TRUE plain demo bar is **`18c64002 / 90776`**, re-confirmed this
+session by a genuine fresh rebuild through `capture_goldens.sh` (the mtime anti-stale
+guard passed). `demo.debug.bin` = `b0475a59 / 91584` was always a real build and
+held. The capture script makes this exact stale-capture class STRUCTURALLY impossible
+(delete → positional rebuild → assert artifact newer than a pre-build marker → CRC).
+
+**BLOCKED — not frozen this session (design fork; see
+`docs/superpowers/notes/2026-07-30-flip-stage1-demo-config-native-blocked.md`):**
+- **Config-A / Config-B goldens** — no shipped asl file; native reproduction requires
+  per-config resume orgs = S1.2 (deferred to Stage 2). The
+  `mixed_offcanonical_rom.rs` per-module gates remain the live Config-A/B witness.
+- **The demo NATIVE gate** (native == asl) — blocked on S1.2 (sound-off shifts the
+  whole engine layout off the sonic4-hardcoded resume orgs). The demo golden BLOBS
+  (asl outputs above) are un-blocked and captured by the script; only the native
+  reproduction gate waits for S1.2.
+
+Canonical sonic4 plain/debug native == asl stays GREEN (S1.1 `native_rom` 2/2, S1.4
+`native_full_rom` 3/3). Strict unchanged (no gates added this session).
