@@ -160,11 +160,12 @@ fn compile(shape: &Shape) -> Compiled {
     let vdp = || parse_items(&engine.join("vdp.emp"));
     let structs = || parse_items(&engine.join("structs.emp"));
     let z80_bus = || parse_items(&engine.join("z80_bus.emp"));
+    let coords = || parse_items(&engine.join("coords.emp"));
 
     let (ots_secs, ots_guards, ots_asserts) = lower_one(
         &aeon,
         "games/sonic4/test/object_test_state.emp",
-        vec![types(), sst(), constants(), objdef(), vdp()],
+        vec![types(), sst(), constants(), objdef(), vdp(), coords()],
         "object_test_state",
         shape.ots_base,
         shape.ots_len,
@@ -173,7 +174,7 @@ fn compile(shape: &Shape) -> Compiled {
     let (ojz_secs, ojz_guards, ojz_asserts) = lower_one(
         &aeon,
         "games/sonic4/test/ojz_scroll_test.emp",
-        vec![types(), sst(), constants(), objdef(), structs(), vdp(), z80_bus()],
+        vec![types(), sst(), constants(), objdef(), structs(), vdp(), z80_bus(), coords()],
         "ojz_scroll_test",
         shape.ojz_base,
         shape.ojz_len,
