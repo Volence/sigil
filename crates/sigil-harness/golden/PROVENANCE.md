@@ -1998,3 +1998,23 @@ leave the symbol table.**
 - Strict **2880/0 (1 ignored)** (2898 − 23 retired twin-era oracles + 5 diagnostic);
   seam1 9/9 + diagnostic 5/5 by name from mains.
 - Aeon master **`6c311b5`** / sigil master **`59095c9`**. −6,843 lines of `.asm`.
+
+## SEAM-2 RE-BASELINE (2026-07-30) — THE BANKED SOUND SIDE IS SIGIL-NATIVE
+
+Four deletion units (DAC body+head · MT bank · the coupled SFX unit · seq_opcode_tab
++ sound_tables_z80): 25+ sound data `.asm` files deleted (−3,110 lines this merge).
+Every file that assembles sound bytes is now `.emp` or a sigil-emitted artifact. All
+five convert-vs-embed classes exercised, incl. THE FIRST generator-emits-`.emp`
+(`gen_sound_tables.py`). The co-link mechanism (producer-owned SND_*/SFX_WIN_* equs
+resolving cross-module at link — no `-D`, no mirrors) + the blessed width-1 Value8
+arm + the BODY_STUB / BINCLUDE-in-phase patterns. The stale-pin audit (a uniform
+−$8000 layout shift caught before any emit trusted a header). Remaining sound `.asm`:
+`sound_api.asm` + `movingtrucks_pitchtable.asm` — both flip inputs.
+
+- **PRIMARY (assembled ROM): plain `e5765873` · debug `dab4f06c` — UNMOVED through
+  all four deletions** (the load-bearing proof).
+- SECONDARY full-file artifacts (deb2 drift per deletion, ledgered in the close
+  packet): plain `eff2396f`/413577 · debug `1e9097bc`/421579.
+- Strict **2904/0 (1 ignored)**; the seam2 gate family (dac/mt/sfx/seq/soundtables
+  colinks + whole-ROM trio) green by name from mains.
+- Aeon master **`409b8ba`** / sigil master **`696fc18`**.
