@@ -1548,11 +1548,22 @@ fn placed_module_sections_with_roots(
             docs: file.docs.clone(),
         }
     };
+    // The engine/game split moved a few GAME-config values from `.emp` consts to
+    // -D inputs (rings.emp MAX_RING_BUFFER / VRAM_RING_PLACEHOLDER,
+    // entity_window.emp COLLECTED_WINDOW_SLOTS). Supply sonic4's canonical values
+    // for any a caller didn't set (unused ones are harmless; no module declares
+    // them as a const anymore, so there is no collision).
+    let mut ds = defines.to_vec();
+    for (k, v) in [("MAX_RING_BUFFER", 128i128), ("VRAM_RING_PLACEHOLDER", 0x3E8), ("COLLECTED_WINDOW_SLOTS", 9)] {
+        if !ds.iter().any(|(n, _)| n == k) {
+            ds.push((k.to_string(), v));
+        }
+    }
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root.to_path_buf()),
         embed_base: Some(embed_base.to_path_buf()),
-        defines: defines.to_vec(),
+        defines: ds,
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

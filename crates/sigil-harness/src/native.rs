@@ -29,7 +29,7 @@ use std::path::Path;
 use sigil_frontend_as::{assemble_root, Options as AsOptions};
 use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
-use sigil_ir::{Cpu, Module, Section, SectionPlacement, SymbolTable};
+use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
 use sigil_link::LinkedImage;
 
 use crate::pins::{self, Region};
@@ -284,6 +284,12 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             ("GAME_CAMERA_JUMP_LOCK", 1),
+            // sonic4 game-config (games/sonic4/config/constants.asm); the engine
+            // `.emp` reads these as -D (rings.emp / entity_window.emp), the
+            // `ensure(extern(..)==..)` cross-checks them against the AS config.
+            ("MAX_RING_BUFFER", 128),
+            ("VRAM_RING_PLACEHOLDER", 0x3E8),
+            ("COLLECTED_WINDOW_SLOTS", 9),
         ],
         as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
         require_one_text: true,
@@ -311,6 +317,11 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             ("GAME_CAMERA_JUMP_LOCK", 0),
+            // demo game-config (games/demo/config/constants.asm) — the values
+            // that DIFFER from sonic4 (the reason the engine takes them as -D).
+            ("MAX_RING_BUFFER", 16),
+            ("VRAM_RING_PLACEHOLDER", 0x3E4),
+            ("COLLECTED_WINDOW_SLOTS", 4),
         ],
         as_owned_keystones: vec![],
         require_one_text: false,
@@ -352,6 +363,10 @@ pub fn config_b_profile() -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             ("GAME_CAMERA_JUMP_LOCK", 1),
+            // Config-B is the sonic4 game (sound off), so sonic4's game-config.
+            ("MAX_RING_BUFFER", 128),
+            ("VRAM_RING_PLACEHOLDER", 0x3E8),
+            ("COLLECTED_WINDOW_SLOTS", 9),
         ],
         as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
         require_one_text: true,
@@ -394,6 +409,10 @@ pub fn config_a_profile() -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 1),
             ("SOUND_DBG_MIRROR", 1),
             ("GAME_CAMERA_JUMP_LOCK", 1),
+            // Config-A is the sonic4 game (debug + sound), so sonic4's game-config.
+            ("MAX_RING_BUFFER", 128),
+            ("VRAM_RING_PLACEHOLDER", 0x3E8),
+            ("COLLECTED_WINDOW_SLOTS", 9),
         ],
         as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
         require_one_text: true,
@@ -1082,6 +1101,52 @@ fn declared_spans_by_index(
     Ok(span)
 }
 
+/// ALIGN-RECOMPUTE-ON-RELOCATION. A trailing `align $8000` (the pre-sound-bank data
+/// blob HeightMaps) bakes its padding as a `Fill` sized for the section's AS-RESIDUAL
+/// position. When the frozen chainer relocates the section, that baked pad is stale —
+/// its image OVERSHOOTS the section's (correctly clamped) reserved span and collides
+/// with the next hard-org anchor (`MovingTrucks_Bank_Start` at 0x58000). asl would have
+/// recomputed the pad for the new position; the linker never shrank a baked `align`.
+///
+/// This recomputes it: for a PURE-DATA section (no width-variable fragment — the only
+/// case whose image length is known pre-relaxation, and exactly the align-blob shape),
+/// if the image exceeds `span`, trim the overshoot off the TRAILING zero-`Fill` (the
+/// align padding). Only zero-Fill is trimmed and only down to `span`, so no real datum
+/// is ever cut; an overshoot that is NOT trailing zero-Fill is left intact for
+/// `resolve_layout` to reject loudly. Byte-neutral for the pinned (sonic4) path, where
+/// `image_len == span` and the guard never fires.
+fn trim_trailing_align_overshoot(s: &mut Section, span: u32) {
+    let has_variable = s.fragments.iter().any(|f| {
+        matches!(
+            f,
+            Fragment::JmpJsrSym { .. } | Fragment::RelaxAbsSym { .. } | Fragment::RelaxLadder { .. }
+        )
+    });
+    if has_variable {
+        return;
+    }
+    let img = s.image_len();
+    if img <= span {
+        return;
+    }
+    let mut overshoot = img - span;
+    while overshoot > 0 {
+        match s.fragments.last_mut() {
+            Some(Fragment::Fill { value: 0, count, .. }) => {
+                if *count > overshoot {
+                    *count -= overshoot;
+                    overshoot = 0;
+                } else {
+                    overshoot -= *count;
+                    s.fragments.pop();
+                }
+            }
+            // Not trailing zero-fill: leave the overshoot for resolve_layout to reject.
+            _ => break,
+        }
+    }
+}
+
 /// Apply the declared-order computed-base chain to `sections`: split ROM/RAM, sort ROM
 /// by ascending true base, and Pin each org anchor / Chain the rest reserving its
 /// declared span. Returns the placed sections (ROM then RAM). Shared by the driver and
@@ -1120,6 +1185,8 @@ fn apply_declared_chain(
         let is_anchor =
             chain_end.is_none() || phase_bank || chain_end.map(|e| tb > e).unwrap_or(true);
         s.reserved_span = span;
+        // Recompute a stale trailing `align` for the relocated position (see fn doc).
+        trim_trailing_align_overshoot(s, span);
         if !keep_vma {
             s.vma_base = None; // VMA tracks the (re-based) LMA — no stale baked address.
         }
@@ -1618,5 +1685,80 @@ mod allowlist_tests {
         let refs: Vec<&Diagnostic> = ds.iter().collect();
         let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
         assert!(err.contains("STALE"), "got: {err}");
+    }
+}
+
+#[cfg(test)]
+mod align_recompute_tests {
+    //! Fix 3 — the trailing-`align` overshoot recompute-on-relocation. A pure-data
+    //! section that ends in a stale `align` `Fill` (baked for its AS-residual position)
+    //! must have that padding trimmed to its relocated reserved span, so its image no
+    //! longer overshoots the next hard-org anchor. Byte-neutral when already in-bounds.
+    use super::trim_trailing_align_overshoot;
+    use sigil_ir::{Cpu, DataFragment, Fragment, Section, SectionPlacement};
+    use sigil_span::Span;
+
+    fn span0() -> Span {
+        Span { source: sigil_span::SourceId(0), start: 0, end: 0 }
+    }
+    /// A pure-data section: `data_len` bytes of data, then a trailing zero-`Fill` of
+    /// `pad` bytes (the align padding).
+    fn data_then_pad(data_len: u32, pad: u32) -> Section {
+        Section {
+            name: "heightmaps".into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0xAB; data_len as usize], fixups: vec![], span: span0() }),
+                Fragment::Fill { value: 0, count: pad, span: span0() },
+            ],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: vec![],
+        }
+    }
+
+    #[test]
+    fn overshoot_trims_trailing_pad_to_span() {
+        // Image = 0x100 data + 0x40 pad = 0x140; relocated span clamps to 0x134
+        // (0xC shorter). The 0xC overshoot must come off the trailing pad.
+        let mut s = data_then_pad(0x100, 0x40);
+        assert_eq!(s.image_len(), 0x140);
+        trim_trailing_align_overshoot(&mut s, 0x134);
+        assert_eq!(s.image_len(), 0x134, "image trimmed to the relocated span");
+        // The data is untouched; only the pad shrank (0x40 → 0x34).
+        match s.fragments.last().unwrap() {
+            Fragment::Fill { count, value: 0, .. } => assert_eq!(*count, 0x34),
+            other => panic!("expected trailing zero-fill, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn in_bounds_is_byte_neutral() {
+        // image_len (0x140) <= span (0x140): nothing trimmed (the pinned-path case).
+        let mut s = data_then_pad(0x100, 0x40);
+        let before = s.image_bytes();
+        trim_trailing_align_overshoot(&mut s, 0x140);
+        assert_eq!(s.image_bytes(), before, "in-bounds section untouched");
+    }
+
+    #[test]
+    fn overshoot_not_trailing_pad_is_left_for_the_linker() {
+        // A section whose overshoot is real DATA (no trailing zero-fill) is NOT
+        // trimmed — resolve_layout must reject it loudly, never silent corruption.
+        let mut s = Section {
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0xAB; 0x140],
+                fixups: vec![],
+                span: span0(),
+            })],
+            ..data_then_pad(0, 0)
+        };
+        trim_trailing_align_overshoot(&mut s, 0x134);
+        assert_eq!(s.image_len(), 0x140, "real data is never trimmed");
     }
 }

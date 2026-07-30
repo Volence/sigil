@@ -273,11 +273,20 @@ fn compile_real_file_with(
 
     let file = with_ambient(vec![types, sst, constants, objdef, aabb], rings);
 
+    // rings.emp takes the game-config values as -D (engine/game split); supply
+    // sonic4's canonical values for any a caller didn't already set (a doctored-
+    // override caller keeps its value — first-set wins).
+    let mut ds: Vec<(String, i128)> = defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    for (k, v) in [("MAX_RING_BUFFER", 128i128), ("VRAM_RING_PLACEHOLDER", 0x3E8)] {
+        if !ds.iter().any(|(n, _)| n == k) {
+            ds.push((k.to_string(), v));
+        }
+    }
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,
-        defines: defines.iter().map(|(n, v)| (n.to_string(), *v)).collect(),
+        defines: ds,
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

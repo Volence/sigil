@@ -12,9 +12,22 @@
 //! Under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS — these are shipping ERROR
 //! gates and must run in the standard strict invocation, not silently skip.
 
-use sigil_frontend_emp::corpus_contracts::analyze_corpus;
+use sigil_frontend_emp::corpus_contracts::{analyze_corpus, analyze_corpus_with};
 use sigil_frontend_emp::parse_str;
 use std::path::{Path, PathBuf};
+
+/// The GAME-config comptime defines the engine `.emp` now takes as required inputs
+/// (rings.emp / entity_window.emp — MAX_RING_BUFFER / VRAM_RING_PLACEHOLDER /
+/// COLLECTED_WINDOW_SLOTS, the engine/game split). Unlike `-D` toggles these are not
+/// optional: without a value, `RING_ART_ATTR = vram_art(VRAM_RING_PLACEHOLDER, …)`
+/// cannot lower and its instruction drops. The values are register-effect-neutral
+/// (an immediate never changes a clobber set), so the sonic4 canonical values suffice
+/// to give the drop-count gate a fully-lowerable corpus.
+const GAME_CONFIG_DEFINES: &[(&str, i128)] = &[
+    ("MAX_RING_BUFFER", 128),
+    ("VRAM_RING_PLACEHOLDER", 0x3E8),
+    ("COLLECTED_WINDOW_SLOTS", 9),
+];
 
 /// Recursively collect `*.emp` files under `dir`, skipping `.worktrees`.
 fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -68,7 +81,9 @@ fn corpus_has_zero_dropped_instructions() {
         .iter()
         .map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0)
         .collect();
-    let r = analyze_corpus(&files);
+    let defines: Vec<(String, i128)> =
+        GAME_CONFIG_DEFINES.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    let r = analyze_corpus_with(&files, &defines);
     assert_eq!(
         r.dropped_instrs, 0,
         "instructions dropped from analysis buffers (missing import/type in scope?): {:?}",
