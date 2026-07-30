@@ -1,12 +1,9 @@
 //! `emit_sound_blob` — seam-1 (Option A): emit the canonical resident-sound-blob
 //! build inputs that asl packs after the five `.asm` twins are deleted.
 //!
-//! Writes to `<out-dir>`:
+//! Writes to `<out-dir>` (plus the seam-2 banked artifacts):
 //!   * `z80_sound_blob.bin`       — the plain-shape native-linked blob ($181C B)
 //!   * `z80_sound_blob_debug.bin` — the debug-shape blob ($189A B = +$7E)
-//!   * `z80_sound_syms.asm`       — the exported-symbol CONTRACT (per-shape equs:
-//!                                   the sequencer opcode-handler VMAs the banked
-//!                                   seq_opcode_tab.asm references)
 //!
 //! Byte-DETERMINISTIC from the tracked `.emp` sources + the sigil toolchain
 //! version. The canonical ROM CRC is the provenance bar (the blob is tracked the
@@ -85,7 +82,7 @@ fn main() {
         process::exit(1);
     }
     println!(
-        "emitted seam-1 resident blob (z80_sound_blob{{,_debug}}.bin + z80_sound_syms.asm) \
+        "emitted seam-1 resident blob (z80_sound_blob{{,_debug}}.bin) \
          + seam-2 DAC artifacts (dac_blip_bank.bin + dac_shared_bank.bin + dac_sample_tab.bin) \
          + seam-2 MT bank (mt_bank{{,_debug}}.bin + mt_syms{{,_debug}}.asm) \
          + seam-2 SFX bank (sfx_bank{{,_debug}}.bin + sfx_blob_win_tab{{,_debug}}.bin) \

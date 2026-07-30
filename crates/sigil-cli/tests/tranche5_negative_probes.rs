@@ -300,15 +300,17 @@ fn sound_api_truth_sections() -> Vec<sigil_ir::Section> {
     truth
 }
 
-/// (d) drift-guard genuineness — a doctored `SND_ALIVE_MARKER` mirror makes
-/// its `ensure` FAIL against the AS-side truth (supplied synthetically), so
-/// a drifted immediate can never link silently.
+/// (d) drift-guard genuineness — a doctored `SFXID_RING_RIGHT` typed mirror
+/// makes its `ensure` FAIL against the AS-side truth (supplied synthetically),
+/// so a drifted immediate can never link silently. (The 5 untyped mirrors were
+/// retired to bare `#extern(...)` link names — row 10 — so the two surviving
+/// TYPED SfxId mirrors are what a drift guard still protects.)
 #[test]
 fn doctored_immediate_mirror_fails_its_drift_guard() {
     let Some(src) = sound_api_src() else { return };
     let doctored = src.replace(
-        "const SND_ALIVE_MARKER  = $5A",
-        "const SND_ALIVE_MARKER  = $5B",
+        "const SFXID_RING_RIGHT: SfxId = $33",
+        "const SFXID_RING_RIGHT: SfxId = $35",
     );
     assert_ne!(src, doctored, "the probe must actually doctor the source");
     let (module, asserts, diags) = lower_sound_api(&doctored);
@@ -385,7 +387,7 @@ fn doctored_immediate_mirror_fails_its_drift_guard() {
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
     assert!(
         diags.iter().any(|d| d.level == Level::Error
-            && d.message.contains("SND_ALIVE_MARKER drifted")),
+            && d.message.contains("SFXID_RING_RIGHT drifted")),
         "the doctored mirror must fail its drift guard, got: {diags:?}"
     );
 }

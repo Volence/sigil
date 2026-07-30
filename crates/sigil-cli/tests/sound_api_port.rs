@@ -111,10 +111,11 @@ const DEBUG: Shape = Shape {
 };
 
 /// The AS-side constants the .emp reads through the link: the EA-position
-/// equs (slot addresses — deliberately NOT mirrored) and the 7 drift-guard
-/// truths (immediate-position mirrors). A trailing label+`dc.w` opens a
-/// section so the equs flush via `pending_equ_syms` (the collision_lookup
-/// pattern).
+/// equs (slot addresses — deliberately NOT mirrored), the 5 untyped
+/// immediate-position values now read as bare `#extern(...)` link names
+/// (row 10 retirement), and the 2 typed-mirror drift-guard truths. A trailing
+/// label+`dc.w` opens a section so the equs flush via `pending_equ_syms` (the
+/// collision_lookup pattern).
 fn as_constant_equs() -> Vec<Section> {
     let asm = "cpu 68000\n\
                Z80_BUS_REQUEST = $A11100\n\
@@ -300,11 +301,14 @@ fn compile_real_file(
     (resolved, linked, link_asserts)
 }
 
-/// The 7 immediate-mirror drift guards must be captured and PASS against
-/// `as_constant_equs`' truths.
+/// The 2 typed-mirror drift guards must be captured and PASS against
+/// `as_constant_equs`' truths. (The 5 untyped immediate mirrors were RETIRED to
+/// bare `#extern(...)` link names at the flip Stage-0 sound_api touch — kill-list
+/// row 10 — so they no longer carry a local const or a drift guard; the two typed
+/// SfxId mirrors stay, blocked on the typed-extern grammar.)
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 7, "sound_api's seven drift guards must be captured");
+    assert_eq!(guards, 2, "sound_api's two typed drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

@@ -784,8 +784,8 @@ fn placed_emp_sections_tranche4(aeon: &Path, debug_val: i128) -> Tranche4Section
 }
 
 /// `placed_emp_sections_tranche5`'s return: tranche 4's tuple plus
-/// `sound_api.emp`'s link asserts (its 7 immediate-mirror drift guards —
-/// kill-list row 10).
+/// `sound_api.emp`'s link asserts (its 2 typed-mirror drift guards — the 5
+/// untyped mirrors retired to bare `#extern(...)` link names, kill-list row 10).
 type Tranche5Sections = (
     Vec<Section>,
     Vec<LinkAssert>,
@@ -2481,7 +2481,7 @@ fn build_mixed_tranche5_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
         // sound_api: the 7 immediate-mirror drift guards (kill-list row 10),
         // checked against the REAL sound_constants.asm / config/sound_ids.asm.
-        ("sound_api.emp", &sound_api_asserts, 7),
+        ("sound_api.emp", &sound_api_asserts, 2),
     ] {
         assert_eq!(guard_assert_count(asserts), want, "{name} asserts captured");
         let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts);
@@ -2641,7 +2641,7 @@ fn build_mixed_tranche6_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
-        ("sound_api.emp", &sound_api_asserts, 7),
+        ("sound_api.emp", &sound_api_asserts, 2),
         // The object modules' ambient guards: sst.emp's 30 SST_* struct-equ
         // pins ride BOTH modules; test_particle adds engine.constants's 11.
         // All read the REAL AS-side equs (engine/structs.asm's
@@ -2806,7 +2806,7 @@ fn build_mixed_tranche7_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
-        ("sound_api.emp", &sound_api_asserts, 7),
+        ("sound_api.emp", &sound_api_asserts, 2),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
         // collision.emp: sst.emp's 30 SST_* struct-equ pins ride via the
@@ -3102,7 +3102,7 @@ fn build_mixed_tranche8_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
-        ("sound_api.emp", &sound_api_asserts, 7),
+        ("sound_api.emp", &sound_api_asserts, 2),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
         ("collision.emp", &touch_response_asserts, 31 + twin_guards()),
@@ -3398,7 +3398,7 @@ fn build_mixed_tranche9_rom(aeon: &Path, debug: bool) -> Vec<u8> {
         ("particle_anims.emp", &particle_asserts, twin_guards() + 1),
         ("sonic_anims.emp", &sonic_asserts, twin_guards() + 13),
         ("act_descriptor.emp", &act_asserts, 65), // 3 limit mirrors + engine.structs wall (58+4, incl. parallax_config t21)
-        ("sound_api.emp", &sound_api_asserts, 7),
+        ("sound_api.emp", &sound_api_asserts, 2),
         ("test_solid.emp", &test_solid_asserts, 30),
         ("test_particle.emp", &test_particle_asserts, 30 + twin_guards()),
         ("collision.emp", &touch_response_asserts, 31 + twin_guards()),
