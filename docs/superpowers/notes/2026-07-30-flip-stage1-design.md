@@ -36,13 +36,23 @@ checksum folds into the sigil emit path. Rollback = revert (nothing deleted).
    `tools/fixheader`. OQ-4's ruled default is implemented; Stage 1 inherits it for
    free. `tools/fixheader` keeps serving the asl default path during the dual state.
 
-3. **convsym is a VERIFIED NO-OP on the current tree.** Both shipped ROMs contain
-   **zero `deb2` bytes** (grep of `s4.bin` and `s4.debug.bin`): each is the pure
-   `p2bin`+`fixheader` image, no appended symbol table. `build.sh:158-162` wraps
-   `convsym … -a 2>/dev/null || true` and it appends 0 bytes (its `as_lst` parser
-   finds no table it will emit for this source). This RESHAPES design-question 3
-   entirely (see Q3) — and it is the single most load-bearing verified fact for
-   the "full-file debug identity" bar.
+3. **convsym APPENDS a real deb2 symbol-table appendix — it is NOT a no-op.**
+   [CORRECTED after overseer own-run; the original claim here was WRONG — it
+   grepped for the ASCII string `"deb2"`, but the MD-Debugger appendix magic is
+   the RAW BYTES `de b2 04 02`.] Own-run verified (all four ROMs carry the
+   appendix immediately at `EndOfRom`, with the `$1A4` ROM-end pointer bumped to
+   span the full post-append file):
+   - `s4.bin`: EndOfRom `0x5DB60`, deb2 at `0x5DB60`, appendix **29,737 B**,
+     `$1A4`=`0x64F88` (=size−1) → eff2396f/413577.
+   - `s4.debug.bin`: deb2 at `0x5F65A`, appendix **30,833 B** → 1e9097bc/421579.
+   - `demo.bin`: deb2 at `0x11224`, appendix **18,558 B** → 2b71b37d/88738.
+   - `demo.debug.bin`: deb2 at `0x11224`, appendix **21,404 B** → b0475a59/91584.
+   The PRIMARY assembled-ROM CRCs (e5765873/dab4f06c) are computed over
+   `[0..EndOfRom)` header-neutral (checksum `$18E` + ROM-end `$1A4` zeroed) — which
+   is why they hold UNCHANGED across twin deletions while the full-file CRCs
+   legitimately drift (the appendix shrinks as symbols leave). **The full-file
+   golden = assembled ROM + convsym deb2 appendix.** This makes design-question 3
+   a REAL Stage-1 workstream, not nearly-free (see Q3).
 
 4. **The mixed-link machinery is the flip in miniature, ALREADY BUILT to
    near-completeness.** 45 distinct gate-flips are exercised across the
@@ -197,54 +207,67 @@ validates by byte-identity, not a pin.
 
 ---
 
-## §3 — LISTING / CONVSYM (design question 3)
+## §3 — LISTING / CONVSYM (design question 3) — A REAL WORKSTREAM
 
-### 3.1 The reshaping finding
+### 3.1 The corrected finding
 
-**convsym appends nothing.** Verified: `s4.bin` and `s4.debug.bin` both contain
-zero `deb2` bytes; each is the pure `p2bin`+`fixheader` image (413577 / 421579).
-`SIGIL_CORE_SPEC.md:83,92,106` (D7) states this as the contract: "Core appends
-nothing to the ROM (convsym is a verified no-op)." The debug artifact
-`1e9097bc`/421579 has **no appendix** — its extra bytes over the plain ROM are
-`__DEBUG__` code, not a symbol table.
+convsym APPENDS a real deb2 symbol-table appendix (§0.3 own-run: 29,737 B plain /
+30,833 B debug / 18,558 B demo / 21,404 B demo.debug, each at `EndOfRom`). **The
+full-file golden = assembled ROM + convsym deb2 appendix**, and the `$1A4`
+ROM-end pointer is bumped to span the post-append file. So full-file identity —
+including the debug bar `native s4.debug.bin == 1e9097bc/421579` — genuinely
+depends on reproducing that appendix byte-for-byte, which depends on the SYMBOL
+LISTING sigil feeds convsym: the symbol set, names, addresses, unused-flags, AND
+ordering must be identical to what asl's `-L` listing yields, or the packed deb2
+table diverges. (The `SIGIL_CORE_SPEC.md:83,92,106` D7 "no-op" language predates
+the tree growing a symbol table convsym now consumes; it is stale for `34023be`.)
 
-**Therefore full-file debug identity does NOT depend on the listing/convsym path
-at all.** `native s4.debug.bin == asl s4.debug.bin == 1e9097bc/421579` reduces to
-`emit_rom(debug-shape) + apply_header_checksum == golden`, full-file, because
-there is nothing after the assembled ROM. The checksum fold is already in
-`emit_rom` (§0.2). The brief §1.4's "sigil listing → convsym → appendix
-byte-identical" concern is **moot for the ROM bytes on the current tree** — the
-appendix is empty. This is a materially easier bar than the brief assumed, and it
-should be stated to Volence plainly.
-
-### 3.2 What the listing IS still for, and the real (small) gap
+### 3.2 What exists vs what Stage 1 must build
 
 `emit_listing` EXISTS (`sigil-link/src/listing.rs:18`) and emits an
 AS-`.lst`-compatible file: address-sorted `[*]NAME : HEX C|- |` rows under the
-`Symbol Table (* = unused):` header (parseable by `s4budget.py::parse_symbol_table`),
+`Symbol Table (* = unused):` header (`s4budget.py::parse_symbol_table`-parseable),
 PLUS Oracle `ParseLineHeader` body lines `(0) N/HEXADDR :        Name:` that
-`Symbols.cpp::LoadFromAsListing` reads (unit-proven, `listing.rs:56-105`). Its job
-is the `.lst` FILE consumers — `build.sh:159-177` (`convsym` input + `s4budget.py`
-summary) and Oracle `emulator/load_symbols` — **not ROM bytes**. Per
-`SIGIL_CORE_SPEC.md:61-62` (D4), the requirement is that the listing be
-FUNCTIONALLY parseable by those two consumers, NOT byte-identical to asl's
-3.2 MB / 8.4 MB `.lst` (which sigil neither can nor must reproduce).
+`Symbols.cpp::LoadFromAsListing` reads (unit-proven, `listing.rs:56-105`). But it
+is proven only as a UNIT against hand-built symbol rows — it is NOT wired to a
+build entrypoint (`run_build` writes only the ROM), and its output has NEVER been
+driven through `tools/convsym` to prove the produced appendix matches asl's.
 
-Gap for Stage 1: `emit_listing` is not WIRED to WRITE a `.lst` file from any build
-entrypoint (`run_build` writes only the ROM). Stage 1's native driver should emit
-`<ROM_NAME>.lst` alongside the ROM so `s4budget.py`/Oracle keep working when the
-native path drives the build. Acceptance = `s4budget.py` produces a budget summary
-and Oracle loads symbols from the sigil `.lst`; **not** a byte diff against asl's
-`.lst`.
+**The Q3 workstream (three sub-tasks, the hard sub-bar of Stage 1):**
 
-### 3.3 The one watch item
+- **(a) Wire the listing.** Have the native driver derive the `ListingSymbol` set
+  from the linked image's symbol table (`build_symbol_table`, `sigil-link/src/lib.rs:191`)
+  and write an as_lst-format `<ROM_NAME>.lst` file. The symbol SET/names/addresses/
+  unused-flags/ordering must match asl's `-L` output for the deb2 table to pack
+  identically — this is the load-bearing detail (e.g. address-sort tie-breaks,
+  which symbols asl marks unused, equate-vs-code markers).
+- **(b) Drive convsym.** Run `tools/convsym <ROM_NAME>.lst <ROM_NAME>.bin` with
+  build.sh's EXACT flags (`-input as_lst -range 0 FFFFFF -exclude -filter
+  "z[A-Z].+" -a`, `build.sh:160-161`) over the sigil-emitted `.lst` and native ROM.
+  (The `z[A-Z].+` filter currently matches zero Aeon labels, per
+  `SIGIL_CORE_SPEC.md:275` — but it must still be passed verbatim.)
+- **(c) Prove full-file identity.** Assert the appended native full files ==
+  eff2396f/413577 · 1e9097bc/421579 (and the demo pair), INCLUDING the appendix
+  and the bumped `$1A4`/`$18E`. This is a NEW gate class, not covered by any
+  existing test (the whole-ROM gates today diff against the asl reference FILE,
+  which already carries asl's appendix — so they never exercise sigil's OWN
+  listing → convsym path).
 
-IF a future debug build ever grows enough symbols that `convsym`'s `as_lst` parser
-STARTS emitting a `deb2` table (today it emits nothing), THEN the ROM WOULD gain an
-appendix and native-`.lst` → convsym → appendix WOULD need a byte gate. On the
-`34023be` tree it does not. Flag as a standing check: the Stage-1 full-file debug
-gate must assert `deb2`-absence in the golden (a positive control that convsym is
-still a no-op), so this assumption cannot silently rot. **OQ-A1 below.**
+### 3.3 THE SILENT-FAILURE TRAP → positive control INVERTS to assert-PRESENCE
+
+`build.sh:160-161` runs convsym wrapped `2>/dev/null || true` — a silent convsym
+failure produces an appendix-LESS ROM with NO error, which would look like a
+smaller "valid" file and poison provenance. So the Stage-1 full-file gate's
+positive control must assert **PRESENCE**, not absence: the deb2 magic
+`de b2 04 02` MUST exist at `EndOfRom`, the appendix must be non-trivial (size
+within the expected band), AND the full-file CRC must match the golden. A missing
+or truncated appendix is a hard FAIL, never a silent pass. (My original §3.3
+proposed the exact opposite — assert-absence — on the false no-op premise; it is
+corrected here.)
+
+Oracle/`s4budget.py` `.lst`-FILE consumption (the D4 functional requirement) rides
+along for free once (a) lands — but it is now the SECONDARY concern; the PRIMARY
+Q3 bar is the byte-identical deb2 appendix in the ROM.
 
 ---
 
@@ -283,13 +306,12 @@ lockstep.** So Stage 1 must:
   `.emp` engine + residual-AS game" configuration, a valuable independent
   exercise of the engine gates in a DIFFERENT surrounding program than sonic4.
 
-### 4.3 Demo shapes
+### 4.3 Demo shapes — SETTLED (OQ-A2)
 
-demo has no `SOUND_DEBUG_HOTKEYS`/mirror surface. Its shapes are plain and
-`__DEBUG__` (the engine's debug code still gates on `__DEBUG__`). Freeze both if
-a `demo.debug.bin` is a meaningful build; the design defaults to freezing at least
-plain `demo.bin` (present, CRC'd) and capturing `demo.debug.bin` at execution if
-`DEBUG=1 ./build.sh demo` produces one. **OQ-A2.**
+Overseer own-run built `DEBUG=1 ./build.sh demo` (exit 0): `demo.debug.bin` =
+**b0475a59 / 91584**. **Freeze BOTH demo shapes** (plain 2b71b37d/88738 + debug
+b0475a59/91584). Both carry a deb2 appendix (§0.3: 18,558 B plain / 21,404 B
+debug), so demo's full-file identity is the same appendix workstream as sonic4.
 
 ---
 
@@ -316,7 +338,12 @@ spec5-flip-design §2.3 mitigation 1):**
 | 3 | sonic4 Config-A ROM | debug+hotkeys+mirror | capture at execution (no shipped file today) |
 | 4 | sonic4 Config-B ROM | no-sound plain | capture at execution |
 | 5 | demo `demo.bin` plain | sound-off | 2b71b37d / 88738 |
-| 6 | demo `demo.debug.bin` | sound-off `__DEBUG__` | capture at execution (OQ-A2) |
+| 6 | demo `demo.debug.bin` | sound-off `__DEBUG__` | b0475a59 / 91584 (OQ-A2 settled) |
+
+All six are full files INCLUDING the deb2 appendix. Provenance in PROVENANCE.md
+records both the full-file CRC/size AND the header-neutral PRIMARY (assembled-ROM)
+CRC for the two sonic4 shapes (e5765873/dab4f06c), since the full-file values
+DRIFT at twin deletions (appendix shrink) while the PRIMARY holds.
 
 Kill rows **55** (z80_init twin) and **58** (off-canonical gate-arm org pins) die
 at Stage 2 — their `mixed_offcanonical_rom` gates re-comparand from "pure-asl
@@ -334,6 +361,17 @@ negative-probe discipline (undoctored == golden AND a doctored `.emp` != golden,
 kept verbatim). This is the one place Stage 1 must produce durable artifacts, not
 live-rebuild gates — it is the regression oracle Stage 2+ leans on.
 
+**OQ-A3 ENDORSED with a TIMING CAVEAT (overseer):** commit the six ROMs as
+byte-blobs under `crates/sigil-harness/golden/` with CRC provenance in
+PROVENANCE.md. BUT the full-file values are TRANSIENT: a levelgen precursor parcel
+is executing in parallel on aeon, and its `.asm` deletions will legitimately drift
+the full-file CRCs (appendix shrink) — so the goldens captured NOW are for proof
+DEVELOPMENT, and the FINAL freeze is re-captured + re-verified immediately before
+Stage 2 lands. **Design the golden-capture as ONE mechanical re-run step** (a
+capture script that rebuilds all six via asl and writes blob+CRC), so re-freezing
+at Stage-2 time is push-button, not hand-work. The header-neutral PRIMARY CRCs
+(e5765873/dab4f06c) do NOT drift and remain the stable anchor across the re-freeze.
+
 ---
 
 ## §6 — THE PROOF MATRIX + STRICT-SUITE GATES (design question 6)
@@ -341,24 +379,28 @@ live-rebuild gates — it is the regression oracle Stage 2+ leans on.
 ### 6.1 The Stage-1 exit bar (named gates)
 
 For every (game × shape × config), one NEW whole-ROM native gate asserting
-`sigil-native whole ROM == asl whole ROM == frozen golden`, full-file including
-the (empty) appendix:
+`sigil-native whole ROM == asl whole ROM == frozen golden`, **full-file INCLUDING
+the deb2 appendix** (native listing → `tools/convsym` → appendix, §3.2):
 
 | gate (proposed name) | asserts |
 |---|---|
-| `native_rom_sonic4_plain` | native gates-ON full build == eff2396f == asl |
-| `native_rom_sonic4_debug` | native gates-ON `__DEBUG__` == 1e9097bc == asl (full-file; deb2-absent positive control, §3.3) |
+| `native_rom_sonic4_plain` | native gates-ON full file (+appendix) == eff2396f/413577 == asl |
+| `native_rom_sonic4_debug` | native gates-ON `__DEBUG__` full file (+appendix) == 1e9097bc/421579 == asl |
 | `native_rom_config_a` | native gates-ON Config-A == captured golden == asl |
 | `native_rom_config_b` | native gates-ON Config-B == captured golden == asl |
-| `native_rom_demo_plain` | native demo (engine gates ON, sound off, game residual AS) == 2b71b37d == asl |
-| `native_rom_demo_debug` | native demo `__DEBUG__` == captured golden == asl (OQ-A2) |
-| `native_listing_consumers` | sigil `.lst` parses under `s4budget.py` + Oracle `load_symbols` (functional, not byte) |
+| `native_rom_demo_plain` | native demo (engine gates ON, sound off, game residual AS) full file == 2b71b37d/88738 == asl |
+| `native_rom_demo_debug` | native demo `__DEBUG__` full file == b0475a59/91584 == asl |
+| `native_listing_consumers` | sigil `.lst` parses under `s4budget.py` + Oracle `load_symbols` (functional) |
 
-Each keeps its t24 controls (positive control + a doctored-`.emp`-diverges
-negative probe) so the golden gates never go vacuous. These ADD to the strict
-suite; the 39 tranche gates + 14 window oracles + `mixed_offcanonical_rom` stay
-green and the asl default path stays at eff2396f/1e9097bc, PRIMARY
-e5765873/dab4f06c.
+**Appendix positive control (assert-PRESENCE, §3.3):** every full-file gate must
+also assert the deb2 magic `de b2 04 02` exists at `EndOfRom` and the appendix
+size is within its expected band — so a silent `convsym` failure
+(`build.sh:160-161` `2>/dev/null || true`) producing an appendix-less ROM is a
+hard FAIL, never a pass. Each gate keeps its t24 controls (the assert-presence
+positive control + a doctored-`.emp`-diverges negative probe) so the golden gates
+never go vacuous. These ADD to the strict suite; the 39 tranche gates + 14 window
+oracles + `mixed_offcanonical_rom` stay green and the asl default path stays at
+eff2396f/1e9097bc, PRIMARY e5765873/dab4f06c.
 
 ### 6.2 What Stage 2 re-comparands them to
 
@@ -403,67 +445,97 @@ links in the real image. *Identity bar:* whole-ROM native == golden holds with
 these 14 ON (the highest-risk step). *Rollback:* if one misplaces, isolate it OFF
 in the native set (still additive; asl unaffected).
 
-**S1.4 — wire the native `.lst` emit (§3.2).** Have the native driver write
-`<ROM_NAME>.lst` via `emit_listing`. *Bar:* `s4budget.py` + Oracle `load_symbols`
-consume it. *Rollback:* revert; the asl `.lst` still serves the default path.
+**S1.4 — the listing → convsym → appendix identity (§3.2/§3.3) — THE HARD SUB-BAR.**
+Three sub-tasks: (a) wire the native driver to derive `ListingSymbol`s from the
+linked symbol table and WRITE an as_lst `<ROM_NAME>.lst` matching asl's `-L` set/
+names/addresses/unused-flags/ordering; (b) drive `tools/convsym` over it with the
+exact `-input as_lst -range 0 FFFFFF -exclude -filter "z[A-Z].+" -a` flags; (c)
+prove the appended native full files == eff2396f/413577 · 1e9097bc/421579 (+demo
+pair) INCLUDING the appendix, with the assert-PRESENCE control (deb2 magic at
+EndOfRom, non-trivial size). *Bar:* full-file CRC match reported explicitly (this
+is overseer checkpoint 2). *Rollback:* revert; the asl `.lst`/appendix still serves
+the default path. **This is the step most likely to iterate** — any mismatch in the
+symbol set/order between sigil's table and asl's `-L` re-packs the deb2 table
+differently and fails the byte gate.
 
 **S1.5 — demo lockstep native build (§4).** Stand up the demo native path (engine
 gates ON, sound off, game-side residual AS). *Bar:* native `demo.bin` == 2b71b37d
-== asl. *Rollback:* revert; asl builds demo.
+and `demo.debug.bin` == b0475a59, full file (+appendix) == asl. *Rollback:* revert;
+asl builds demo.
 
-**S1.6 — capture + commit the six frozen goldens (§5)** under t24 discipline,
-with CRC32+size provenance. *Bar:* each == its live asl build at capture time; the
-Config-A/B ROMs deb2-absent. *Rollback:* revert the golden dir.
+**S1.6 — capture + commit the six frozen goldens (§5)** under t24 discipline, as a
+ONE-STEP mechanical capture script (OQ-A3 caveat: re-run immediately before Stage 2
+for the levelgen appendix drift). *Bar:* each full file == its live asl build at
+capture time; assert-PRESENCE on every appendix; PRIMARY CRCs recorded as the
+drift-stable anchor. *Rollback:* revert the golden dir.
 
 **S1.7 — the seven Stage-1 gates (§6.1)** added to the strict suite. *Bar:* strict
 suite green, asl default path unmoved at eff2396f/1e9097bc + PRIMARY
 e5765873/dab4f06c. *Close checkpoint:* the full proof matrix, overseer own-run,
 merge.
 
-### Workload estimate
+### Sequencing (overseer constraint)
 
-**Medium-large — roughly 5–8 focused porter-days**, dominated by S1.1 (the module
-registry + all-gates-ON driver: the one genuinely new mechanism, though every
-piece exists in the mixed harness to lift from) and S1.3 (the 14 first-time
-real-image placements — the empirical risk, may surface cross-seam/ordering
-surprises needing per-module diagnosis). S1.2/S1.4/S1.6/S1.7 are mechanical
-(1 day total). S1.5 demo is ~1 day (a second, simpler manifest through the same
-driver). Add contingency for whatever the 14 placements turn up — the honest range
-is 5 days if they place cleanly, 8 if two or three fight.
+A levelgen porter is executing on aeon in its own worktree; **aeon master is FROZEN
+at `34023be`** until the overseer merges. So: run the sigil-side steps FIRST
+(S1.1 registry + all-gates-ON driver, S1.2 map, S1.4 listing wiring) — they read
+aeon at `34023be` as-is. Any aeon-TOUCHING commit goes in a SEEDED aeon worktree
+(`tools/seed-worktree.sh` — the generated level tree is gitignored; an unseeded
+worktree builds a WRONG ROM, MEMORY) and MUST keep the asl default path
+byte-identical. Merges are the overseer's, sequential. Per-aeon-touching-commit
+discipline: `./build.sh` both shapes, `SIGIL_EMIT=<sigil>/target/release/emit_sound_blob`,
+strict suite failures-first with explicit counts, explicit paths in `git add`.
+
+### Overseer checkpoints back
+
+1. After the module registry + all-gates-ON driver first COMPILES and PLACES —
+   report which of the 14 first-time placements (§1.2) fought and how.
+2. After the listing/convsym appendix identity is PROVEN (S1.4, the hard sub-bar) —
+   report the full-file CRC match explicitly.
+3. Close checkpoint — the complete proof matrix (native == asl == golden, both
+   games × both shapes × Config-A/B) before the Stage-2 gate.
+STOP at any guard relaxation, identity surprise, or design fork.
+
+### Workload estimate — RE-ESTIMATED with Q3 as a real workstream
+
+**Large — roughly 7–11 focused porter-days.** S1.1 (registry + all-gates-ON
+driver) and S1.3 (the 14 first-time real-image placements) remain the core, ~4–6
+days combined. **S1.4 is now a REAL sub-project, +2–3 days** (not the ~½ day the
+original no-op premise implied): deriving a symbol listing that packs to a
+byte-identical deb2 appendix through convsym is exacting — asl's exact symbol
+inventory, unused-marking, and ordering must be matched, and each shape × game =
+six full files to land. S1.2/S1.6/S1.7 ~1.5 days; S1.5 demo ~1 day (reuses the
+driver + S1.4 machinery). Honest range: 7 days if the 14 placements AND the
+appendix land cleanly, 11 if both fight. The appendix identity is the new tail
+risk — flagged as checkpoint 2.
 
 ---
 
-## OPEN QUESTIONS (for the gate)
+## OPEN QUESTIONS — ALL RESOLVED AT THE COUNTERSIGN
 
-- **OQ-A1 (deb2 no-op durability):** §3.3 — the current tree's convsym appends 0
-  bytes (verified: no `deb2` in either ROM), so full-file debug identity needs no
-  appendix reproduction. The Stage-1 debug gate should assert deb2-ABSENCE as a
-  positive control so this can't silently rot. Confirm this is the intended bar
-  (vs. proactively building a native deb2 emitter now — D7 says Core must NOT
-  append, so I recommend the assert-absence control, not an emitter). LOAD-BEARING:
-  it is the difference between "Q3 is nearly free" and "Q3 needs a convsym
-  reimplementation."
-- **OQ-A2 (demo debug shape):** §4.3/§5 — does `DEBUG=1 ./build.sh demo` produce a
-  meaningful `demo.debug.bin` to freeze, or is demo plain-only for the golden set?
-  No `demo.debug.bin` exists in the tree today; capturing it is cheap if wanted.
-- **OQ-A3 (golden freeze location + form):** §5 — commit the six ROMs as tracked
-  binary blobs under `crates/sigil-harness/golden/` (departing from the current
-  live-file/CRC-pin discipline, which cannot survive asl's departure), vs. an
-  aeon-side frozen dir. Recommend committed blobs in sigil with CRC provenance —
-  they must be durable byte-for-byte artifacts for Stage 2+, not live rebuilds.
-  Confirm the home.
-- **OQ-A4 (registry scope — residual-AS boundary):** §1.3 — the native driver must
-  link native `.emp` modules AND residual `.asm` DATA (config, generated level
-  tree, parallax data, demo game-side) via `sigil-frontend-as` in ONE image. The
-  mixed harness proves this union for the ported set; confirm the residual-AS
-  files enumerated in spec5-flip-design §3.2 (buckets G/H — generated level tree,
-  parallax, sprite data) all assemble clean through `sigil-frontend-as` in the
-  full native build, since Stage 1 is the first time they ride the native driver
-  rather than asl. If any residual file uses an AS construct `sigil-frontend-as`
-  doesn't yet cover, that is a Stage-1 blocker to surface early (not a guess to
-  paper over).
-- **OQ-A5 (Config-A/B capture reproducibility):** §5 — the Config-A/B ROMs have no
-  shipped file and are reproducible only while asl is live. Confirm capturing them
-  during Stage 1 (not Stage 2) is acceptable, and that the capture config strings
-  (`CONFIG_A`/`CONFIG_B`, `mixed_offcanonical_rom.rs:152-263`) are the canonical
-  off-canonical set to freeze — vs. a wider off-canonical sweep Volence wants.
+The design checkpoint passed; every OQ below is settled. Recorded for the
+execution record.
+
+- **OQ-A1 (Q3 nature) — RESOLVED, PREMISE CORRECTED.** My original OQ-A1 asserted
+  convsym is a no-op (assert-ABSENCE control). That was WRONG — it grepped the
+  ASCII string `"deb2"` instead of the raw magic `de b2 04 02`. Overseer own-run +
+  my re-verification: convsym appends a real deb2 appendix (§0.3). Q3 is a REAL
+  workstream (§3.2 a/b/c); the positive control INVERTS to assert-PRESENCE (§3.3).
+  Workload re-estimated (§7). No native deb2 EMITTER is built — sigil emits the
+  `.lst` and drives `tools/convsym`, which stays in the pipeline for the appendix
+  (the checksum, by contrast, IS folded into `emit_rom`, §0.2).
+- **OQ-A2 (demo shapes) — SETTLED EMPIRICALLY.** Overseer built
+  `DEBUG=1 ./build.sh demo` (exit 0) → `demo.debug.bin` = b0475a59/91584. Freeze
+  BOTH demo shapes (§4.3/§5).
+- **OQ-A3 (golden home + form) — ENDORSED, with TIMING CAVEAT.** Committed byte-blobs
+  under `crates/sigil-harness/golden/` + CRC provenance in PROVENANCE.md. FINAL
+  freeze is re-captured + re-verified immediately before Stage 2 (parallel levelgen
+  parcel drifts the full-file values via appendix shrink); design the capture as
+  ONE mechanical re-run step (§5). PRIMARY CRCs are the drift-stable anchor.
+- **OQ-A4 (residual-AS boundary) — ENDORSED.** Stage 1 is the residual-AS set's
+  FIRST ride on the native driver. Any AS construct `sigil-frontend-as` does not
+  cover is a STOP-and-report to the overseer, never papered over (§1.3).
+- **OQ-A5 (Config-A/B capture) — ENDORSED.** Capture Config-A/B during Stage 1 while
+  asl is live; the existing `CONFIG_A`/`CONFIG_B` strings
+  (`mixed_offcanonical_rom.rs:152-263`) are the canonical off-canonical set; no
+  wider sweep (§5).
