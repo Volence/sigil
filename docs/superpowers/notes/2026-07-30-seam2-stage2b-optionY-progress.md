@@ -50,6 +50,7 @@
 >   * after SFX deletion: `413886` (`0x119c19fc`, −372) / `421880` (`0xcf24dd29`, −433)
 >   * after seq deletion: `413886` / `421880` (UNCHANGED — SeqOpcodeTable/_End labels preserved in the bracket)
 >   * after sound_tables deletion: `413555` (`0x67ee0011`, −331) / `421559` (`0x53d2b731`, −321)
+>   * after dry-panel C F2 (the sound_tables head span guard adds 2 `SoundTablesZ80_Head{,_End}` labels): `413577` (`0xeff2396f`, +22) / `421579` (`0x1e9097bc`, +20) — appendix-only (the 2 guard labels join the symbol table, like the sibling heads' `_End`s); assembled region UNMOVED.
 >   * assembled-region CRC UNMOVED throughout (the primary bar; the whole-ROM gates encode it).
 >
 > **Emitted artifacts (== reference slices):** `sfx_bank.bin` 1864B `0x1160dc56` / `_debug` `0x6de42f99`;
