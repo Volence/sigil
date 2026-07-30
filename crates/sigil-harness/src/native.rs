@@ -684,18 +684,8 @@ pub fn build_emp(
         "engine.irq",
         "engine.z80_bus",
     ];
-    // A lone id/path inconsistency in the aeon `.emp` tree: `objdef.emp` imports
-    // `engine.system.constants`, but `constants.emp`'s header id is `engine.constants`.
-    // Drop that stray import too (it is superseded by the `engine.constants.*` glob)
-    // and add a manifest alias so any residual reference still resolves — byte-safe
-    // (identical module, same `RF_PRIORITY_SHIFT`), no edit to the frozen aeon tree.
-    const HELPER_ALIAS_DROP: &[&str] = &["engine.system.constants"];
-    if let Some(&i) = manifest.by_id.get("engine.constants") {
-        manifest.by_id.entry("engine.system.constants".to_string()).or_insert(i);
-    }
-
     publicize_helper_comptime(&mut manifest, COMPTIME_HELPERS);
-    normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, HELPER_ALIAS_DROP);
+    normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, &[]);
 
     // Inject the synthetic entry as a fresh module in the manifest.
     let entry_id = "native_flip_entry".to_string();
