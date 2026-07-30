@@ -12,8 +12,8 @@
 //!     NOT $8000-aligned, forcing the real ported section to cross a bank
 //!     boundary → the section's `bank: $8000` no-straddle diagnostic fires.
 //! (b) wrong-bank ensure — supply the synthetic `MovingTrucks_Bank_Start`
-//!     cross-seam label at $58000 (bank $B) instead of the real $60000
-//!     (bank $C) where `mt_bank` actually lands (bank $C) → the five
+//!     cross-seam label at $60000 (bank $C) instead of the real $58000
+//!     (bank $B) where `mt_bank` actually lands ($58607, bank $B) → the five
 //!     `bankid(...) == bankid("MovingTrucks_Bank_Start")` co-residency
 //!     ensures fire, each carrying its own message text.
 //! (c) table-length mismatch, MT composition context — Task 2's P3
@@ -109,7 +109,7 @@ fn as_bank_start_label_at(vma: u32) -> Vec<Section> {
 /// `Pinned` section (`final_placement.rs` already covers that shape).
 ///
 /// Falsification (recorded per the task): re-ran with `lma_base` restored to
-/// the real `$60607` (bank-window-relative, no straddle) — `resolve_layout`
+/// the real `$58607` (bank-window-relative, no straddle) — `resolve_layout`
 /// genuinely returns `Ok`, so `.expect_err(...)` would panic on the `Ok`;
 /// confirmed by temporarily flipping this probe to `.expect("must resolve
 /// cleanly")` at the real base and observing it PASS, then reverting to the
@@ -171,18 +171,18 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
 // supplied at the WRONG bank.
 // ===========================================================================
 
-/// `mt_bank` genuinely lands at $60607 (bank $C, `bankid = (0x60607 &
-/// $7F8000) >> 15 = 0xC`). Supplying the synthetic `MovingTrucks_Bank_Start`
-/// label at $58000 (bank $B) instead of the real $60000 (also bank $C) means
+/// `mt_bank` genuinely lands at $58607 (bank $B, `bankid = (0x58607 &
+/// $7F8000) >> 15 = 0xB`). Supplying the synthetic `MovingTrucks_Bank_Start`
+/// label at $60000 (bank $C) instead of the real $58000 (also bank $B) means
 /// every one of the five `ensure(bankid("X") == bankid("MovingTrucks_Bank_
-/// Start"), "...")` co-residency guards compares bank $C against bank $B —
+/// Start"), "...")` co-residency guards compares bank $B against bank $C —
 /// a genuine mismatch, not a vacuous always-pass. `check_link_asserts` must
 /// report ALL FIVE as loud `Error`s, each carrying its own message text (the
 /// module's real "not co-located with the engine-table bank" family of
 /// strings) — asserted against one of the five verbatim, per the task.
 ///
 /// Falsification (recorded per the task): re-ran with the label restored to
-/// the real $60000 — `check_link_asserts` returns an EMPTY diagnostic list
+/// the real $58000 — `check_link_asserts` returns an EMPTY diagnostic list
 /// (all five pass); confirmed by temporarily asserting `.is_empty()` at the
 /// real address and observing it hold, then reverting to the wrong address
 /// and the "all five fire" assertion below.
@@ -211,7 +211,7 @@ fn wrong_bank_cross_seam_label_fires_all_five_co_residency_ensures() {
          \n\
          [[region]]\n\
          name = \"mt_bank\"\n\
-         lma_base = 0x60607\n\
+         lma_base = 0x58607\n\
          size = 0x79F9\n\
          kind = \"rom\"\n",
     )
@@ -221,8 +221,9 @@ fn wrong_bank_cross_seam_label_fires_all_five_co_residency_ensures() {
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place_sections: {pdiags:?}");
 
-    // WRONG bank: $58000 (bank $B) instead of the real $60000 (bank $C).
-    let mut cross_seam = as_bank_start_label_at(0x58000);
+    // WRONG bank: $60000 (bank $C) instead of the real $58000 (bank $B, where
+    // mt_bank @ $58607 lands).
+    let mut cross_seam = as_bank_start_label_at(0x60000);
     for sec in &mut cross_seam {
         sec.lma = 0x0100_0000;
         sec.placement = SectionPlacement::Pinned;
