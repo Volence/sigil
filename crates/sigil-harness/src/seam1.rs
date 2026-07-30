@@ -516,13 +516,16 @@ pub struct Z80ClobbersReport {
 /// `[dispatch.trampoline: SeqOpcodeTable …]` site), threading `hl` as the stream
 /// cursor. Their transitive clobbers depend on that un-traversable computed edge
 /// (e.g. `Seq_Op_Patch` clobbers ix through it), so the direct-call closure CANNOT
-/// soundly verify them — this is the design §4 face-4 / OQ-4 scope boundary. Named
-/// by convention: the `Seq_Op_*` handlers, their `Seq_Hook*` helpers, and the loop
-/// re-entry `Seq_ContinueFetch`. `[call.clobbers-incomplete]` reports these SEPARATELY
-/// (never as an in-scope firing); the external entry `Sequencer_Channel` carries the
-/// honest broad clobbers the loop actually inflicts.
+/// soundly verify them — this is the design §4 face-4 / OQ-4 scope boundary. The set
+/// is exactly the `Seq_Op_*` dispatch targets + the loop re-entry `Seq_ContinueFetch`
+/// (`jp Seq_ContinueFetch` from a handler → `Sequencer_NextOpcode.fetch` → the
+/// computed dispatch). It is DELIBERATELY the trampoline-only set: the `Seq_Hook*`
+/// event helpers are straight-line `call/ret` (bounded, closure-verifiable) and ARE
+/// checked in scope — an in-scope caller (`Sequencer_NextOpcode`) consumes them.
+/// `[call.clobbers-incomplete]` reports the excluded set SEPARATELY; the external
+/// entry `Sequencer_Channel` carries the honest broad clobbers the loop inflicts.
 pub fn is_opcode_dispatch_proc(name: &str) -> bool {
-    name.starts_with("Seq_Op_") || name.starts_with("Seq_Hook") || name == "Seq_ContinueFetch"
+    name.starts_with("Seq_Op_") || name == "Seq_ContinueFetch"
 }
 
 /// Run `[call.clobbers-incomplete]` over the resident blob for `debug`. The honest
@@ -606,6 +609,12 @@ pub fn z80_clobbers_report_doctored(
                                 }
                             }
                         }
+                    }
+                    // A `falls_into T` proc physically flows into T with no transfer
+                    // instruction, so `transfer_target` cannot see the edge — model it
+                    // directly (T's effect becomes this proc's, like a tail transfer).
+                    if let Some(t) = &p.falls_into {
+                        direct_callees.push(t.clone());
                     }
                     let doctored = doctor.iter().find(|(n, _)| *n == p.name);
                     let declared_clobbers = match doctored {
