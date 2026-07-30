@@ -251,6 +251,131 @@ pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The current-baseline LMA of the SFX block (`sfx_bank.emp`'s `sfx_bank`
+/// section) — right after the shape-dependent Moving-Trucks streaming bank, so
+/// per shape: plain `$5BAE8` (== `MT_BANK` end) / debug `$5D53A`. The block
+/// CONTENT differs per shape only in the `SfxTable` `*u8` pointer cells (they
+/// hold the per-shape absolute Sfx_NN addresses); the blob payloads are
+/// shape-invariant.
+pub const SFX_BANK_LMA_PLAIN: u32 = 0x5BAE8;
+/// Debug-shape SFX block base (after the debug MT bank, which adds DrumTest +
+/// HCZ2).
+pub const SFX_BANK_LMA_DEBUG: u32 = 0x5D53A;
+/// The LMA of the `SfxBlobWinTab` head (VMA `$845F` in the `$8000` window,
+/// physically at `$58000 + ($845F - $8000)` in the song/SFX bank). The head's
+/// bank-head POSITION is shape-invariant (it precedes the shape-dependent song
+/// tables), but its CONTENT is shape-dependent: every real cell is a
+/// `winptr(Sfx_NN)` and the blobs shift with the shape.
+pub const SFX_WIN_TAB_LMA: u32 = 0x5845F;
+
+/// The SFX block BODY (`sfx_bank.emp`) + the co-linked window-pointer HEAD
+/// (`sfx_blob_win_tab.emp`) — the coupled unit (the head's `dc.w SFX_WIN_NN`
+/// cells resolve as cross-module link symbols against `sfx_bank.emp`'s
+/// `SFX_WIN_*` equs, which fold same-module from `winptr(Sfx_NN)`). The DAC
+/// body+head shape, per SHAPE (unlike the DAC, both halves shift with the build
+/// shape because the SFX block sits after the shape-dependent song tables).
+pub struct SfxBodyAndHead {
+    /// `sfx_bank` @ `$5BAE8` (plain) / `$5D53A` (debug) — 1864 bytes.
+    pub body: Vec<u8>,
+    /// `SfxBlobWinTab` @ `$5845F` — the 270-byte (135 × 2) window-pointer head.
+    pub head: Vec<u8>,
+}
+
+/// Lower + co-link `sfx_bank.emp` (bank body + the `SFX_WIN_*` equ layer) with
+/// `sfx_blob_win_tab.emp` (the phased head) at the per-shape SFX-block base and
+/// return the body + the head. Supplies the same cross-seam carriers `sfx_port.rs`
+/// does — `MovingTrucks_Bank_Start` (@ `$58000`, the bank the SFX block shares) +
+/// `SFX_ID_BASE`/`SFX_COUNT`/`SFX_TABLE_LEN` (config/sound_ids.asm's ungated
+/// equs, read by the drift guards) — and checks all link asserts PASS (the body's
+/// 1 co-residency + 3 drift guards; the head's 1 span guard). Byte-deterministic
+/// from the tracked `.emp` + its embeds.
+pub fn emit_sfx_body_and_head(aeon: &Path, debug: bool) -> Result<SfxBodyAndHead, String> {
+    let sfx_dir = aeon.join("games/sonic4/data/sound/sfx");
+    let snd_dir = aeon.join("games/sonic4/data/sound");
+
+    // sfx_bank.emp is m68000 (the blob table + the SFX_WIN_* equ layer); it lives
+    // in sound/sfx/ so its 18 embed("sfx_*.bin") fixtures resolve there.
+    let body = lower_emp_file(&sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000)?;
+    // sfx_blob_win_tab.emp declares (cpu: z80); its cells reference the SFX_WIN_*
+    // equs cross-module and its span guard defers to a link assert.
+    let head = lower_emp_file(&snd_dir.join("sfx_blob_win_tab.emp"), &snd_dir, Cpu::M68000)?;
+    let mut link_asserts = body.link_asserts.clone();
+    link_asserts.extend(head.link_asserts.clone());
+
+    let sfx_base = if debug { SFX_BANK_LMA_DEBUG } else { SFX_BANK_LMA_PLAIN };
+    let sfx_size = 0x60000 - sfx_base; // to the bank top
+
+    let mut sections: Vec<Section> = body.sections;
+    sections.extend(head.sections);
+
+    // The co-link map: the equ carriers ("text", zero-byte), the SFX body at its
+    // per-shape base, and the phased head at its `$5845F` bank LMA (its `vma:
+    // $8000` window is owned by the section attr).
+    let map_toml = format!(
+        "fill = 0x00\n\n\
+         [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x40\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"sfx_bank\"\nlma_base = 0x{sfx_base:X}\nsize = 0x{sfx_size:X}\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"sfx_blob_win_tab\"\nlma_base = 0x{SFX_WIN_TAB_LMA:X}\nsize = 0x200\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
+    let pd = place_sections(&mut sections, &map);
+    if pd.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("place_sections errors: {pd:?}"));
+    }
+
+    // The cross-seam carriers: the bank-start label (@ $58000, for the body's
+    // bankid co-residency ensure) + the three config/sound_ids.asm equs the drift
+    // guards + the head span guard read (SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN).
+    let carrier_asm = "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSFX_ID_BASE = $33\nSFX_COUNT = 9\nSFX_TABLE_LEN = 135\n";
+    let mut carriers = assemble(
+        carrier_asm,
+        &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() },
+    )
+    .map_err(|d| format!("carrier assemble: {d:?}"))?
+    .sections;
+    for sec in &mut carriers {
+        sec.lma = 0x0100_0000;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.extend(carriers);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .map_err(|d| format!("resolve_layout (bank straddle / ensure?): {d:?}"))?;
+    let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("sfx co-residency/drift/span guards fired: {assert_diags:?}"));
+    }
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+
+    let body_bytes = linked.section("sfx_bank").ok_or("missing sfx_bank in linked image")?.bytes.clone();
+    let head_bytes = linked.section("sfx_blob_win_tab").ok_or("missing sfx_blob_win_tab in linked image")?.bytes.clone();
+    Ok(SfxBodyAndHead { body: body_bytes, head: head_bytes })
+}
+
+/// Emit the seam-2 SFX build inputs to `out_dir`: `sfx_bank{,_debug}.bin` (the
+/// $5BAE8/$5D53A block bodies) + `sfx_blob_win_tab{,_debug}.bin` (the co-linked
+/// 270-byte window-pointer heads). SHAPE-DEPENDENT (both halves shift with the
+/// build shape — the SFX block sits after the shape-dependent song tables), so
+/// there IS a `_debug` variant of each. NO syms file: unlike the MT bank
+/// (`SongTable`/`SongPatchTable` read by `sound_api.asm`), no surviving AS code
+/// reads `SfxTable` — `sound_sfx.emp`'s `SfxBlobWinTab` reads are native (its
+/// address is a seam-1 banked carrier at $845F, unchanged by this unit).
+pub fn emit_sfx_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    for (debug, body_name, head_name) in [
+        (false, "sfx_bank.bin", "sfx_blob_win_tab.bin"),
+        (true, "sfx_bank_debug.bin", "sfx_blob_win_tab_debug.bin"),
+    ] {
+        let out = emit_sfx_body_and_head(aeon, debug)?;
+        let body_path = out_dir.join(body_name);
+        std::fs::write(&body_path, &out.body).map_err(|e| format!("write {}: {e}", body_path.display()))?;
+        let head_path = out_dir.join(head_name);
+        std::fs::write(&head_path, &out.head).map_err(|e| format!("write {}: {e}", head_path.display()))?;
+    }
+    Ok(())
+}
+
 /// The current-baseline LMA of the Moving-Trucks streaming bank (`mt_bank.emp`'s
 /// `mt_bank` section) — right after the engine-table head (`soundBankHead` ends at
 /// `$58607`). SHAPE-DEPENDENT content (plain ends `$5BAE8`; debug adds DrumTest +

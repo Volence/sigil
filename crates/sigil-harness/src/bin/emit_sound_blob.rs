@@ -67,9 +67,16 @@ fn main() {
         eprintln!("error: emit_sound_blob (seam-2 MT bank) failed: {err}");
         process::exit(1);
     }
+    // seam-2 stage-2d: the SFX block body + the co-linked window-pointer head
+    // (both shape-dependent — the SFX block sits after the shape-dependent songs).
+    if let Err(err) = sigil_harness::seam2::emit_sfx_artifacts(aeon_path, out_path) {
+        eprintln!("error: emit_sound_blob (seam-2 SFX bank) failed: {err}");
+        process::exit(1);
+    }
     println!(
         "emitted seam-1 resident blob (z80_sound_blob{{,_debug}}.bin + z80_sound_syms.asm) \
          + seam-2 DAC artifacts (dac_blip_bank.bin + dac_shared_bank.bin + dac_sample_tab.bin) \
-         + seam-2 MT bank (mt_bank{{,_debug}}.bin + mt_syms{{,_debug}}.asm) -> {out_dir}"
+         + seam-2 MT bank (mt_bank{{,_debug}}.bin + mt_syms{{,_debug}}.asm) \
+         + seam-2 SFX bank (sfx_bank{{,_debug}}.bin + sfx_blob_win_tab{{,_debug}}.bin) -> {out_dir}"
     );
 }
