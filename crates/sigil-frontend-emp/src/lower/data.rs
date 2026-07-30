@@ -14,6 +14,7 @@
 //! | 68000, width 2                   | `Abs16Be`                              |
 //! | Z80, windowed (`winptr`)         | `BankPtr16Le`                          |
 //! | 68000, windowed (`winptr`)       | `BankPtr16Be` (T6, D-P4.7)             |
+//! | Z80, width-1 ref (`dc.b`)        | `Value8` (seam-2 — bankid byte)        |
 //! | Z80, width-2 local ref (`dc.w`)  | `Value16Le` (t27 — resident Z80 addr)  |
 //! | Z80, un-windowed 68k pointer (w4)| ERROR `[cross-cpu.unwindowed-pointer]` |
 //!
@@ -173,6 +174,18 @@ fn fixup_kind(
         // link-time `[value.out-of-range]` — so the cross-cpu guard's protection
         // survives, now width-split as the data.rs comment anticipated.
         (Cpu::Z80, 2, false) => Some(FixupKind::Value16Le),
+        // A width-1 Z80 SymRef (`dc.b <cross-module-equ>`, e.g. dac_sample_tab's
+        // `dc.b SND_KICK_BANK` where `SND_KICK_BANK = bankid(Dac_Kick)` folds in
+        // the co-linked dac_samples module): the byte VALUE of the resolved
+        // symbol. The width-1 sibling of the t27 `(Z80, 2, false) => Value16Le`
+        // decision — a `bankid()` fold is a 1-byte bank ordinal, NOT a pointer.
+        // The linker's UNSIGNED u8 range check (`write_value`, width 1) then
+        // catches a genuine un-windowed 68k address (> $FF) that reached here
+        // without folding, as a link-time `[value.out-of-range]` — so the
+        // cross-cpu guard's protection survives, width-split exactly as the
+        // width-2 case anticipated. (seam-2 Option Y: the DAC descriptor head's
+        // ds_bank byte, sourced from the co-linked `SND_*_BANK` equ, not a `-D`.)
+        (Cpu::Z80, 1, false) => Some(FixupKind::Value8),
         // A wider (68k-address, width-4) un-windowed pointer in Z80 data is an
         // error unless explicitly windowed via `winptr(sym)` — the convsym
         // z-filter class is unrepresentable (§7.2).
@@ -188,10 +201,10 @@ fn fixup_kind(
         }
         // Totality guard: every (width, cpu, windowed) shape T2 actually
         // produces is matched above, so this arm is currently unreachable. The
-        // Z80-local width-2 `dc.w <resident-label>` case is now the
-        // `(Cpu::Z80, 2, false) => Value16Le` arm above (t27); a width-4 Z80
-        // un-windowed pointer still falls to the `(Cpu::Z80, _, false)`
-        // cross-cpu error, not here.
+        // Z80-local width-1/width-2 `dc.b`/`dc.w <symbol>` VALUE cases are the
+        // `(Cpu::Z80, 1, false) => Value8` / `(Cpu::Z80, 2, false) => Value16Le`
+        // arms above; a width-4 Z80 un-windowed pointer still falls to the
+        // `(Cpu::Z80, _, false)` cross-cpu error, not here.
         _ => {
             diags.push(err(
                 span,
@@ -378,5 +391,36 @@ mod rel_offset_tests {
         let (bytes, _fixups, diags) = stream_data(&buf, Cpu::Z80, span());
         assert_eq!(bytes.len(), 2, "still reserves the hole so sizes line up");
         assert!(diags.iter().any(|d| d.message.contains("offset table")), "got: {diags:?}");
+    }
+
+    /// seam-2 Option Y: a width-1 Z80 `SymRef` (`dc.b <cross-module bankid equ>`)
+    /// selects `Value8` — the byte VALUE of the resolved symbol, NOT the
+    /// `[cross-cpu.unwindowed-pointer]` error a width-1 Z80 ref used to raise. The
+    /// width-1 sibling of the t27 `Value16Le` decision; the linker's unsigned u8
+    /// range check keeps the cross-cpu guard's protection (a genuine >$FF pointer
+    /// that reached here without folding fires `[value.out-of-range]` at link).
+    #[test]
+    fn z80_width1_symref_selects_value8_not_cross_cpu_error() {
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::SymRef { name: "SND_KICK_BANK".into(), width: 1, windowed: false });
+        let (bytes, fixups, diags) = stream_data(&buf, Cpu::Z80, span());
+        assert!(diags.is_empty(), "a width-1 Z80 symref must NOT error: {diags:?}");
+        assert_eq!(bytes.len(), 1, "reserves a 1-byte hole");
+        assert_eq!(fixups.len(), 1);
+        assert_eq!(fixups[0].kind, FixupKind::Value8);
+        assert_eq!(fixups[0].target, Expr::Sym("SND_KICK_BANK".into()));
+    }
+
+    /// The width-4 Z80 un-windowed pointer STILL errors — the arm added for
+    /// width-1 is deliberately width-split, not a blanket relaxation.
+    #[test]
+    fn z80_width4_symref_still_cross_cpu_errors() {
+        let mut buf = DataBuf::empty();
+        buf.push(Cell::SymRef { name: "SomePtr".into(), width: 4, windowed: false });
+        let (_bytes, _fixups, diags) = stream_data(&buf, Cpu::Z80, span());
+        assert!(
+            diags.iter().any(|d| d.message.contains("cross-cpu.unwindowed-pointer")),
+            "width-4 Z80 un-windowed pointer must still error: {diags:?}"
+        );
     }
 }
