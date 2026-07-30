@@ -102,3 +102,60 @@ claims and belong with the stages that actively re-prove them:
 - **3:** the phased head (`seq_opcode_tab`/`dac_sample_tab`) + `sound_tables_z80`
   generator-emits-`.emp`.
 - **4/5:** remaining retirements + loop + C3-heavy dry panel → checkpoint (b).
+
+## STAGE 2b READINESS — the SND_* coupling (a design decision the next porter owes)
+
+Scoping 2b surfaced a coupling the one-line "wire + delete dac_samples.asm"
+summary hides: **`dac_samples.asm` DEFINES the 30 `SND_*` equs, and
+`engine/sound/dac_sample_tab.asm` (the still-AS head descriptor) CONSUMES them**
+(grep-confirmed: those two files are the only readers). `dac_sample_tab.asm` is
+included UNCONDITIONALLY via `engine/sound/sound_bank.inc:37` (inside the
+`soundBankHead` phase-head) — it has NO `SIGIL_EMP_*` gate yet. So deleting the
+DAC body at 2b STRANDS the AS head, which needs `SND_*` at assemble time.
+
+The build wiring facts (verified):
+- `build.sh:87` runs `${SIGIL_EMIT} --aeon . --out-dir engine/sound/generated`
+  (the resident-blob emit; extend THIS binary to also drop the DAC bank .bins).
+- The seam-1 BINCLUDE pattern to mirror is `boot_data.asm:69-75`:
+  `Z80_Sound_Start:` then `ifdef __DEBUG__ / BINCLUDE ..._debug.bin / else /
+  BINCLUDE ....bin / endif` — unconditional, NO `.asm` fallback. DAC is
+  shape-INVARIANT (one blip + one shared, no `-D`), so no `_debug` variant.
+- The current `SIGIL_EMP_DAC` arm (main.asm:312-320) only does `org $58000`
+  (the .emp banks are supplied in-memory by the TEST harness today, not the real
+  build). 2b must turn that arm into the real `align $8000` + `Dac_Temp_Blip:
+  BINCLUDE dac_blip_bank.bin` + `align $8000` + `Dac_SharedBank_Start: BINCLUDE
+  dac_shared_bank.bin` + `align $8000` (to $58000).
+- `dac_samples.asm` structure (the align/label/BINCLUDE order to reproduce
+  byte-for-byte): `align $8000` → `Dac_Temp_Blip:` → blip → `align $8000` →
+  `Dac_SharedBank_Start:/Dac_Kick:` → the 9 drums → (MT arm's `align $8000`).
+
+**The `SND_*` decision (needs the overseer or an autonomous call):**
+- **Option X — the syms bridge (seam-1 precedent, design §3c):** extend the
+  emitter to ALSO emit a `dac_sample_syms.asm` contract of the 30 `SND_*` equ
+  values (folded from `dac_samples.emp` placed at $48000/$50000 — `emit_dac_banks`
+  already places there; add the equ export). `dac_sample_tab.asm` includes that
+  contract; `dac_samples.asm` deleted. Keeps 2b body-only, head stays AS. The
+  contract PINS the LMAs, so the AS `align $8000` BINCLUDE must land the banks at
+  EXACTLY $48000/$50000 or the assembled-ROM CRC gate fires (the false-green
+  guard). This is the clean seam-1-shaped intermediate — RECOMMENDED.
+- **Option Y — co-link now (design §2d endpoint):** pull the stage-3
+  `dac_sample_tab` → `.emp` conversion forward and co-link, so `SND_*` VANISHES
+  (folds from `bankid/winptr/.len`). Bigger; merges 2b+part-of-3. Requires
+  un-suppressing `dac_samples.emp`'s per-sample start labels (design OQ-4 — the
+  header says they're "deliberately not ported, zero external consumers";
+  `dac_sample_tab.emp` becomes the first consumer).
+
+Recommendation: Option X for 2b (self-contained body deletion + syms bridge),
+then Option Y folds the bridge away at stage 3 when `dac_sample_tab` goes native
+(the bridge's kill condition). The finisher-stage-2 line "kill row 57 +
+row-5's dac arm" conflates the two: row 5 (dac_samples body) closes at 2b under
+Option X; row 57 (dac_sample_tab) closes at stage 3 — NOT the same commit unless
+Option Y is chosen. Flag for the gate.
+
+## VALVE STOP — clean boundary
+
+Stopped here (Stage 1 complete, green, committed both branches; 2884/0/1) rather
+than rush the coupled 2b sub-problem above. Handoff is honest and complete: the
+current-baseline address truth table, the mt/sfx audit result (reference oracles
+already current), the deferred synthetic-oracle ledger, and the 2b coupling
+decision are all recorded for the next porter.
