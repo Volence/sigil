@@ -565,6 +565,20 @@ fn enforce_inapplicable_allowlist(
 /// THE native whole-ROM build: AS residual (all gates ON, sound BINCLUDE) + every
 /// placed `.emp` module → ONE resolve_layout + link + emit_rom.
 pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
+    Ok(build_native_rom_with_listing(aeon, debug)?.0)
+}
+
+/// The native whole-ROM build AND its symbol listing — the S1.4 source. The
+/// listing is derived from the SAME resolved sections the ROM bytes come from (one
+/// `resolve_layout`), so the `.lst` addresses are exactly the emitted addresses.
+/// Every section LABEL becomes an as-`-L` `C` (code/address) row; equates (`-`) are
+/// omitted (convsym's `as_lst` reader takes only `C` symbols, §S1.4 note), so the
+/// listing is the sigil-canonical debug symbol set — NOT a byte-imitation of asl's
+/// name set (Option A: the `.emp` names are the source names going forward).
+pub fn build_native_rom_with_listing(
+    aeon: &Path,
+    debug: bool,
+) -> Result<(Vec<u8>, Vec<sigil_link::ListingSymbol>), String> {
     ensure_generated(aeon);
 
     let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
@@ -576,6 +590,27 @@ pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let stubs = SymbolTable::new();
     let resolved = sigil_link::resolve_layout(&sections, &stubs, true)
         .map_err(|d| format!("resolve_layout: {} diag(s); first: {:?}", d.len(), d.first()))?;
+
+    // Derive the sigil-canonical listing from the resolved image: one `C` row per
+    // section label at its final VMA. De-duplicated (a label defined once) and
+    // deterministic (emit_listing address-sorts). RAM labels (`$FFFFxxxx`) are kept
+    // — convsym's `-range 0 FFFFFF` drops them from the deb2 table, but they belong
+    // in the full listing for the `s4budget` RAM consumer.
+    let mut listing: Vec<sigil_link::ListingSymbol> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for sec in &resolved {
+        let origin = sec.vma_origin();
+        for label in &sec.labels {
+            if seen.insert(label.name.clone()) {
+                listing.push(sigil_link::ListingSymbol {
+                    name: label.name.clone(),
+                    value: origin.wrapping_add(label.offset),
+                    is_equate: false,
+                    unused: false,
+                });
+            }
+        }
+    }
 
     // Drift-guard ensures. In the ALL-GATES native build every engine `.asm` twin
     // is gated off, so a guard of the form `ensure(extern("X") == X_mirror)` whose
@@ -606,7 +641,180 @@ pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load sigil.map.toml: {e}"))?;
-    sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))
+    let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))?;
+    Ok((rom, listing))
+}
+
+/// CRC-32 (IEEE, the campaign provenance standard alongside byte-size). Small
+/// table-per-call impl — the golden set is a handful of ROMs, so speed is moot.
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut table = [0u32; 256];
+    for (n, slot) in table.iter_mut().enumerate() {
+        let mut c = n as u32;
+        for _ in 0..8 {
+            c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+        }
+        *slot = c;
+    }
+    let mut c = 0xFFFF_FFFFu32;
+    for &b in data {
+        c = table[((c ^ b as u32) & 0xFF) as usize] ^ (c >> 8);
+    }
+    !c
+}
+
+/// The convsym `as_lst` filter build.sh passes verbatim (`build.sh:170-171`).
+/// `z[A-Z].+` currently matches zero Aeon labels; passed for parity.
+pub const CONVSYM_FILTER: &str = "z[A-Z].+";
+
+/// The deb2 appendix magic (MD-Debugger symbol table) — the FIRST TWO bytes only.
+/// convsym writes `de b2` then DATA-DEPENDENT header bytes (observed `04 02` in the
+/// shipped ROMs, `00 1a`/`00 06` elsewhere — they encode the packing/offset, NOT a
+/// fixed magic), so the presence control asserts these two bytes + a size band, not
+/// the four-byte constant design §3.3 wrongly proposed (§S1.4 note).
+pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
+
+/// THE Option-A full-file native build: the assembled ROM (checksum-folded by
+/// `emit_rom`) + the sigil-canonical deb2 appendix, produced by driving the REAL
+/// `tools/convsym` over sigil's own listing and `tools/fixheader` over the result —
+/// byte-for-byte the `build.sh:169-175` post-pipeline, but fed sigil's `.lst`
+/// instead of asl's. Deterministic. The assembled prefix `[0, EndOfRom)` stays the
+/// asl-witnessed correctness anchor (header-neutral PRIMARY CRC); the appendix is
+/// sigil-canonical (the frozen golden is sigil's OWN full file, not asl's).
+///
+/// `tools_dir` is `<aeon>/tools` (convsym + fixheader live there). Writes the ROM +
+/// `.lst` to a fresh temp dir so parallel shapes never collide.
+pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
+    let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
+    append_deb2_appendix(aeon, &rom, &listing, debug)
+}
+
+/// Given the assembled ROM + listing, write both to a temp dir, run
+/// `convsym … -output deb2 -a` then `fixheader`, and return the full appended file.
+/// Split out so the t24 doctored-listing negative control can feed a mutated set.
+pub fn append_deb2_appendix(
+    aeon: &Path,
+    rom: &[u8],
+    listing: &[sigil_link::ListingSymbol],
+    debug: bool,
+) -> Result<Vec<u8>, String> {
+    let tools = aeon.join("tools");
+    let convsym = tools.join("convsym");
+    let fixheader = tools.join("fixheader");
+    for (name, p) in [("convsym", &convsym), ("fixheader", &fixheader)] {
+        if !p.exists() {
+            return Err(format!("{name} not found at {}", p.display()));
+        }
+    }
+
+    // A unique temp dir (pid + shape + a monotonic counter) so parallel builds
+    // never share a `.bin`/`.lst`.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "sigil_s14_{}_{}_{}",
+        std::process::id(),
+        if debug { "debug" } else { "plain" },
+        seq
+    ));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let bin = dir.join("rom.bin");
+    let lst = dir.join("rom.lst");
+    std::fs::write(&bin, rom).map_err(|e| e.to_string())?;
+    std::fs::write(&lst, sigil_link::emit_listing(listing)).map_err(|e| e.to_string())?;
+
+    // convsym: append the deb2 table (build.sh:170-171 flags verbatim).
+    let out = std::process::Command::new(&convsym)
+        .arg(&lst)
+        .arg(&bin)
+        .args(["-input", "as_lst", "-range", "0", "FFFFFF", "-exclude", "-filter"])
+        .arg(CONVSYM_FILTER)
+        .arg("-a")
+        .output()
+        .map_err(|e| format!("spawn convsym: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "convsym failed (rc {:?}): {}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    // fixheader: re-checksum the appended file (build.sh:175).
+    let fout = std::process::Command::new(&fixheader)
+        .arg(&bin)
+        .output()
+        .map_err(|e| format!("spawn fixheader: {e}"))?;
+    if !fout.status.success() {
+        return Err(format!(
+            "fixheader failed (rc {:?}): {}",
+            fout.status.code(),
+            String::from_utf8_lossy(&fout.stderr)
+        ));
+    }
+    let full = std::fs::read(&bin).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // POSITIVE CONTROL (assert-PRESENCE, §S1.4 / condition 2b): the deb2 magic MUST
+    // sit at EndOfRom and the appendix MUST be non-trivial — a silent convsym
+    // failure (`2>/dev/null || true` in build.sh) yields an appendix-LESS ROM, which
+    // this rejects as a HARD error rather than a smaller "valid" file.
+    let eor = rom.len();
+    if full.len() <= eor {
+        return Err(format!(
+            "deb2 appendix MISSING: full file {} <= assembled {} (convsym silently produced no append)",
+            full.len(),
+            eor
+        ));
+    }
+    if full[eor..eor + 2] != DEB2_MAGIC {
+        return Err(format!(
+            "deb2 magic absent at EndOfRom {eor:#x}: found {:02X?}",
+            &full[eor..eor + 2.min(full.len() - eor)]
+        ));
+    }
+    let appendix = full.len() - eor;
+    // Size band: the sigil-canonical appendix is ~26 KB (plain) / ~27 KB (debug);
+    // a wildly-out-of-band size means the symbol set collapsed or exploded.
+    if !(0x2000..=0x10000).contains(&appendix) {
+        return Err(format!("deb2 appendix size {appendix:#x} out of the expected band (0x2000..0x10000)"));
+    }
+    Ok(full)
+}
+
+/// Run the REAL `tools/convsym … -output log` over sigil's listing — the functional
+/// consumer path (condition 2c): the same parser that packs the deb2 table, asked
+/// to resolve names→addresses. Returns the `HEXADDR: Name` map. A load-bearing
+/// symbol resolving to its known address here is proof the appendix carries it
+/// correctly; a doctored `.lst` address is detected (t24).
+pub fn convsym_resolve(aeon: &Path, listing: &[sigil_link::ListingSymbol]) -> Result<std::collections::HashMap<String, u32>, String> {
+    let convsym = aeon.join("tools/convsym");
+    let dir = std::env::temp_dir().join(format!("sigil_s14_log_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let lst = dir.join("resolve.lst");
+    std::fs::write(&lst, sigil_link::emit_listing(listing)).map_err(|e| e.to_string())?;
+    let out = std::process::Command::new(&convsym)
+        .arg(&lst)
+        .arg("-")
+        .args(["-input", "as_lst", "-output", "log", "-range", "0", "FFFFFF", "-exclude", "-filter"])
+        .arg(CONVSYM_FILTER)
+        .output()
+        .map_err(|e| format!("spawn convsym -output log: {e}"))?;
+    let _ = std::fs::remove_file(&lst);
+    if !out.status.success() {
+        return Err(format!("convsym -output log rc {:?}", out.status.code()));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut map = std::collections::HashMap::new();
+    for line in text.lines() {
+        // `HEXADDR: Name`
+        if let Some((addr, name)) = line.split_once(": ") {
+            if let Ok(v) = u32::from_str_radix(addr.trim(), 16) {
+                map.insert(name.trim().to_string(), v);
+            }
+        }
+    }
+    Ok(map)
 }
 
 #[cfg(test)]
