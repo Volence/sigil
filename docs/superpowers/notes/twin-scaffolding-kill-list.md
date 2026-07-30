@@ -264,3 +264,26 @@ Executed (subsystem — commit — twin files deleted):
   as green. This masked the z80_init breakage for one cycle until config_a/
   config_b were added to the proof and the exit-check landed. The proof now
   covers all SIX targets (sonic4/demo ×2 + config_a/config_b).
+
+Closed also (build-tool retirement — its subjects single-sourced):
+- verify_emit_bin.py — aeon `5fc6ba1` (CLOSE). It byte-compared each generated sound
+  `.asm`'s `dc.b`/`db`/`pbyte` payload against its `--emit-bin` `.bin` twin. Every
+  subject `.asm` is now deleted (MT `.asm` at seam-2 stage-2c, the 20 SFX `.asm` at
+  stage-2d); `_FIXED_TARGETS` is empty and `sfx/` holds only `.bin`, so the verifier
+  discovers 0 targets and passes vacuously. The `.bin` blobs are single-source (the
+  sigil build BINCLUDEs them via main.asm/boot_data.asm/sound_bank.inc). Deleted +
+  its build.sh preflight removed (byte-neutral, all six CRCs held); the two
+  song_packer.py docstrings + verify_level_bin.py header that named it reworded.
+  verify_level_bin.py STAYS (its OJZ-tree subjects are live).
+
+## STAGE-3 OPENING — the deferred tail (behind its own designed gate; overseer-authorized re-baseline)
+
+The keystone/z80_init/act_descriptor code-half flips were ATTEMPTED and proven
+CRC-MOVING this parcel; they are NOT byte-neutral `git rm`s and wait for Stage 3.
+Formalized as rows:
+
+| # | Deferred item | Where | Why it waits | Kill condition |
+|---|---|---|---|---|
+| 93 | **The keystone re-baseline gate** — player_common / test_player / test_enemy code halves + always-emitted zero-byte headers, act_descriptor.asm, and z80_init.asm (rows 55/72/74/75/76/84/85 + act_descriptor). Flipping ANY moves the sigil-canonical appendix (~1389 B shrink: `.emp` locals mangle `$module$Proc$local` vs the AS frontend's `Proc.local`, so the frozen appendix no longer reproduces → full-file CRC moves). | aeon `engine/system/z80_init.asm`, `games/sonic4/player/player_common.asm`, `games/sonic4/objects/test_{player,enemy}.asm`, `data/levels/ojz/act1/act_descriptor.asm`; sigil `native.rs` (code_gate_defines / ModuleSpec / as_owned_keystones) | CRC-MOVING re-baseline: needs overseer authorization to re-freeze the six pinned CRCs. The always-emitted headers feed surviving cross-seam readers (camera.emp PL_STATE_ADDR, the drift guards, test_animated DplcV, entity_data ObjDef refs), so the flip is add-gate + add-ModuleSpec + drop-from-as_owned_keystones + reconcile the chainer (row 94), NOT a plain delete. | Stage 3, authorized: add the gate to code_gate_defines + add the ModuleSpec + drop from `as_owned_keystones`; z80_init also needs off-canonical native placement of `z80_init.emp` + the reverse-seam `Z80_IdleProgram` export to boot_data's comptime-assert wall. Re-freeze the six pins after. The `STAGE1_INAPPLICABLE_GUARDS` allowlist + `as_owned_keystones` field retire WITH this flip. |
+| 94 | **The Frozen chainer config_a bug** — when the `.emp` keystones enter the off-canonical chained set they perturb contiguity/label derivation: a downstream config_a data pointer misplaces (anchor diverges at 0x11412, sig `0x12` != gold `0x13`). | sigil `native.rs` / the Frozen chainer (off-canonical placement) | Surfaced by the row-93 keystone attempt; the assembled-anchor bar makes this a FIX (correctness), NOT a re-baseline. Independent of the appendix delta. | Stage 3: reconcile the chainer's contiguity/label derivation so the keystones chain without misplacing the config_a pointer; the assembled anchor must hold. Gates row 93's config_a re-freeze. |
+| 95 | **The folded Phase-B cargo** — the AS-residual section-split at natural boundaries, the $20000 object-bank budget as a `sigil.map.toml` map-region check, pins→map placement authority, repin's asl-`.lst`-parse retirement (row 34). | aeon `sigil.map.toml` + `engine.inc`/`main.asm` residual orgs; sigil `repin.rs:57-58` / pins | Architectural, not byte-neutral-trivial; the map-manifest must own placement before the residual-AS `org` literals (row 6) can retire. Untouched this parcel. | Stage 3: `sigil.map.toml` becomes the placement surface (computed resume points; the $20000 budget as a region check); row 6 residual placement literals + row 34 `.lst` machinery delete with it. |
