@@ -205,6 +205,14 @@ Executed (subsystem — commit — twin files deleted):
   only spelling). No AS-half retired: error_handler_port already compiles synthetic
   handlers (`derived_equ_off_external_base_resolves`, not `_is_unresolved_today` — the
   precursor 28098af flipped it); mddbg_symbols.asm survives (bucket D). Net 0 tests.
+- engine/sound — `sound_api.asm`. Nested under `ifdef SOUND_DRIVER_ENABLED`; every
+  sound-on build (sonic4, config_a) already took the gate-ON `else` arm (SIGIL_EMP_SOUND_API
+  is in the sonic4 code-gate set), and the sound-off builds (demo, config_b) skip the
+  whole conditional (config_b's registry also filters out engine.sound_api), so the
+  gate-off `include` was dead → bare collapse to the `ifdef __DEBUG__` org pair inside
+  the SOUND_DRIVER_ENABLED guard. No AS-half: sound_api_port assembles synthetic strings
+  only. Rows 10/24/36/43 CLOSE (the .emp's slot-address extern-equ sums + immediate
+  mirrors are now the sole spelling). Net 0 tests.
   **TOOLING NOTE (stale-artifact trap, MEMORY-flagged):** the scratch CRC proof
   must `rm` the output AND check the build's exit code BEFORE CRC'ing — a failed
   `sigil build` leaves the `-o` file untouched, so a prior success's bytes read
