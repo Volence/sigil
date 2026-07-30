@@ -24,7 +24,6 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test z80_sound_driver_port
 //! ```
 
-use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
@@ -158,25 +157,6 @@ fn const_seam_doctored(doctor: Option<(&str, i64)>) -> Vec<(String, i64)> {
         .collect()
 }
 
-/// Slice the driver BODY out of z80_sound_driver.asm: from after the `phase 0`
-/// framing directive to before the first engine `include`, so the even-pad + budget
-/// `fatal` + the included engine are excluded and only $0000..$0565 is emitted.
-fn driver_body(aeon: &std::path::Path) -> String {
-    let src = std::fs::read_to_string(aeon.join("engine/sound/z80_sound_driver.asm"))
-        .unwrap_or_else(|e| panic!("read z80_sound_driver.asm: {e}"));
-    let lines: Vec<&str> = src.lines().collect();
-    let phase_idx = lines
-        .iter()
-        .position(|l| l.trim() == "phase 0")
-        .expect("driver `phase 0` framing directive");
-    let incl_idx = lines
-        .iter()
-        .position(|l| l.contains("include \"engine/sound/"))
-        .expect("driver first engine include");
-    assert!(phase_idx < incl_idx, "phase framing precedes the includes");
-    lines[phase_idx + 1..incl_idx].join("\n")
-}
-
 /// Compile z80_sound_driver.emp at the $0000 window with the shape's link addresses.
 /// Constants -> `-D` defines; the 4 external call targets -> equ carriers. Returns the
 /// `z80_sound_driver` section bytes (1381 B).
@@ -234,39 +214,36 @@ fn compile_emp(shape: Shape, doctor: Option<(&str, i64)>) -> Vec<u8> {
     linked.section("z80_sound_driver").expect("linked z80_sound_driver").bytes.clone()
 }
 
-/// The AS twin oracle: assemble the driver body through sigil's AS front-end at the
-/// $0000 phase, with ALL cross-file symbols (constants + the 4 call targets) as equs,
-/// and return the emitted Z80 code bytes. The debug shape shifts the three
-/// after-sequencer call targets +$7E (the driver has no `ifdef __DEBUG__` of its own).
-fn as_twin_bytes(shape: Shape, doctor: Option<(&str, i64)>) -> Vec<u8> {
-    let aeon = aeon_dir();
-    let body = driver_body(&aeon);
-    let mut seam = String::from("cpu 68000\n");
-    for (name, val) in const_seam_doctored(doctor) {
-        seam.push_str(&format!("{name} = ${val:X}\n"));
+/// The blob's LMA base in the reference ROM, per shape (plain vs debug).
+fn blob_lma(debug: bool) -> usize {
+    if debug {
+        0x3E2
+    } else {
+        0x3DE
     }
-    for (name, val) in link_seam(shape, doctor) {
-        seam.push_str(&format!("{name} = ${val:X}\n"));
-    }
-    seam.push_str("cpu z80\nphase 0h\n");
-    let src = format!("{seam}{body}\ndephase\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, defines: Vec::new(), ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    linked
-        .sections
-        .iter()
-        .find(|s| !s.bytes.is_empty())
-        .map(|s| s.bytes.clone())
-        .unwrap_or_default()
+}
+
+/// The reference-ROM slice this file's window is byte-gated against. The driver DEFINES
+/// the blob origin, so its bytes live in the shipped ROM at `blob_lma(shape) + $0000`
+/// (the blob's LMA; the driver's vma is $0000 in both shapes). Reads `s4.bin` (plain) /
+/// `s4.debug.bin` (debug) from `AEON_DIR`; returns the ROM tail from that offset (the
+/// caller compares the first `compile_emp.len()` bytes). Under `strict_gate` a missing
+/// ROM panics; otherwise the test skips (`None`).
+fn reference_slice(shape: Shape) -> Option<Vec<u8>> {
+    let name = if shape.is_debug() { "s4.debug.bin" } else { "s4.bin" };
+    let path = aeon_dir().join(name);
+    let refrom = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => {
+            if strict_gate() {
+                panic!("SIGIL_STRICT_GATE set but reference ROM missing: {}", path.display());
+            }
+            eprintln!("skip: reference ROM not at {} (set AEON_DIR)", path.display());
+            return None;
+        }
+    };
+    let off = blob_lma(shape.is_debug()); // driver vma = $0000
+    Some(refrom[off..].to_vec())
 }
 
 fn assert_bytes_match(candidate: &[u8], expected: &[u8], what: &str) {
@@ -290,47 +267,47 @@ fn assert_bytes_match(candidate: &[u8], expected: &[u8], what: &str) {
 
 fn skip_if_missing() -> bool {
     let aeon = aeon_dir();
-    if !aeon.join("engine/sound/z80_sound_driver.asm").exists() {
+    if !aeon.join("s4.bin").exists() {
         if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
+            panic!("SIGIL_STRICT_GATE set but reference ROM missing at {}", aeon.display());
         }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", aeon.display());
         return true;
     }
     false
 }
 
-/// THE windowed byte gate (PLAIN shape): z80_sound_driver.emp == the driver body of
-/// z80_sound_driver.asm at the $0000 window, DEBUG=0. 1381 bytes ($0000..$0565).
-/// Proves the whole transcription incl. the reset-vector zero-fill, the shadow-set
-/// `exx` pairs, the `im 1` / `ld (nn),ix` / `ld ix,(nn)` forms, and the three
-/// cycle-balance `ensure`s (self-gated to zero bytes).
+/// THE windowed byte gate (PLAIN shape): z80_sound_driver.emp == the reference ROM
+/// slice at the $0000 window, DEBUG=0. 1381 bytes ($0000..$0565). Proves the whole
+/// transcription incl. the reset-vector zero-fill, the shadow-set `exx` pairs, the
+/// `im 1` / `ld (nn),ix` / `ld ix,(nn)` forms, and the three cycle-balance `ensure`s
+/// (self-gated to zero bytes).
 #[test]
-fn z80_sound_driver_matches_as_twin_plain() {
-    if skip_if_missing() {
-        return;
-    }
+fn z80_sound_driver_matches_reference_plain() {
+    let Some(ref_tail) = reference_slice(Shape::Plain) else { return };
     let emp = compile_emp(Shape::Plain, None);
-    let twin = as_twin_bytes(Shape::Plain, None);
-    assert!(!twin.is_empty(), "the AS twin must emit the driver code");
-    assert_eq!(twin.len(), Shape::Plain.window_len(), "driver window is 1381 B");
-    assert_bytes_match(&emp, &twin, "z80_sound_driver.emp vs .asm (plain $0000, DEBUG=0)");
+    assert_eq!(emp.len(), Shape::Plain.window_len(), "driver window is 1381 B");
+    assert_bytes_match(
+        &emp,
+        &ref_tail[..emp.len()],
+        "z80_sound_driver.emp vs s4.bin slice (plain $0000, DEBUG=0)",
+    );
 }
 
-/// THE windowed byte gate (DEBUG shape): z80_sound_driver.emp == the driver body at
-/// the $0000 window, DEBUG=1. SAME SIZE (1381 B) as plain, but the three
+/// THE windowed byte gate (DEBUG shape): z80_sound_driver.emp == the reference ROM
+/// slice at the $0000 window, DEBUG=1. SAME SIZE (1381 B) as plain, but the three
 /// after-sequencer call targets shift +$7E, so five call-site operands differ. Proves
 /// the .emp reproduces the debug-shape link addresses exactly.
 #[test]
-fn z80_sound_driver_matches_as_twin_debug() {
-    if skip_if_missing() {
-        return;
-    }
+fn z80_sound_driver_matches_reference_debug() {
+    let Some(ref_tail) = reference_slice(Shape::Debug) else { return };
     let emp = compile_emp(Shape::Debug, None);
-    let twin = as_twin_bytes(Shape::Debug, None);
-    assert!(!twin.is_empty(), "the AS twin must emit the driver code");
-    assert_eq!(twin.len(), Shape::Debug.window_len(), "driver window is 1381 B (both shapes)");
-    assert_bytes_match(&emp, &twin, "z80_sound_driver.emp vs .asm (debug $0000, DEBUG=1)");
+    assert_eq!(emp.len(), Shape::Debug.window_len(), "driver window is 1381 B (both shapes)");
+    assert_bytes_match(
+        &emp,
+        &ref_tail[..emp.len()],
+        "z80_sound_driver.emp vs s4.debug.bin slice (debug $0000, DEBUG=1)",
+    );
 }
 
 /// Both windows are the SAME SIZE (1381 B) — the driver's own code is shape-invariant
@@ -367,44 +344,31 @@ fn plain_and_debug_shapes_differ() {
     assert_eq!(diffs, 9, "exactly the 5 shape-variant call-target operands differ (9 bytes)");
 }
 
-/// Positive control (byte-gate non-triviality, t24): the UNDOCTORED .emp must DIVERGE
-/// from a twin assembled with ONE doctored cross-file address (a moved Sfx_StopAll
-/// changes the `call Sfx_StopAll` operand). Proves the comparison detects a
-/// difference, not a vacuous match. Pins-derived: the reference is the twin
-/// RE-ASSEMBLED each run, so a re-pin cannot re-stale it.
+/// Positive control (byte-gate non-triviality, t24): a DOCTORED .emp (ONE moved
+/// cross-file address — a shifted Sfx_StopAll changes the `call Sfx_StopAll` operand)
+/// must DIVERGE from the reference slice. Proves the comparison detects a difference,
+/// not a vacuous match.
 #[test]
-fn emp_diverges_from_doctored_twin() {
-    if skip_if_missing() {
-        return;
-    }
-    let emp = compile_emp(Shape::Plain, None);
-    let twin = as_twin_bytes(Shape::Plain, Some(("Sfx_StopAll", 0x1ABC)));
-    assert_ne!(emp, twin, "the byte gate is vacuous if the .emp matches a doctored twin");
+fn emp_diverges_from_doctored_reference() {
+    let Some(ref_tail) = reference_slice(Shape::Plain) else { return };
+    let emp = compile_emp(Shape::Plain, Some(("Sfx_StopAll", 0x1ABC)));
+    assert_ne!(
+        emp.as_slice(),
+        &ref_tail[..emp.len()],
+        "the byte gate is vacuous if a doctored .emp still matches the reference"
+    );
 }
 
-/// Positive control on a CONSTANT (t24, second axis): doctoring an absolute RAM
-/// address (SND_STAT_TICK, referenced across the driver) on the twin only must
-/// diverge from the undoctored .emp — proves the const seam is load-bearing, not
-/// inert.
+/// Positive control on a CONSTANT (t24, second axis): a DOCTORED .emp with a moved
+/// absolute RAM address (SND_STAT_TICK, referenced across the driver) must DIVERGE from
+/// the reference slice — proves the const seam is load-bearing, not inert.
 #[test]
-fn emp_diverges_from_doctored_const_twin() {
-    if skip_if_missing() {
-        return;
-    }
-    let emp = compile_emp(Shape::Plain, None);
-    let twin = as_twin_bytes(Shape::Plain, Some(("SND_STAT_TICK", 0x1DED)));
-    assert_ne!(emp, twin, "a moved SND_STAT_TICK must change the driver's abs-mem operands");
-}
-
-/// Doctoring the SAME symbol on BOTH sides keeps them equal — the imm16/abs16 fixups
-/// resolve to the shared address identically (the cell tracks the linked symbol, not
-/// a frozen literal).
-#[test]
-fn doctored_both_sides_stay_equal() {
-    if skip_if_missing() {
-        return;
-    }
-    let emp = compile_emp(Shape::Plain, Some(("SfxDispatch", 0x1234)));
-    let twin = as_twin_bytes(Shape::Plain, Some(("SfxDispatch", 0x1234)));
-    assert_bytes_match(&emp, &twin, "z80_sound_driver.emp vs twin (both SfxDispatch=$1234)");
+fn emp_diverges_from_doctored_const_reference() {
+    let Some(ref_tail) = reference_slice(Shape::Plain) else { return };
+    let emp = compile_emp(Shape::Plain, Some(("SND_STAT_TICK", 0x1DED)));
+    assert_ne!(
+        emp.as_slice(),
+        &ref_tail[..emp.len()],
+        "a moved SND_STAT_TICK must change the driver's abs-mem operands"
+    );
 }

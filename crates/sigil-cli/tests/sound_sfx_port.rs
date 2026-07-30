@@ -23,7 +23,6 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test sound_sfx_port
 //! ```
 
-use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
@@ -204,41 +203,36 @@ fn compile_emp(shape: Shape, doctor: Option<(&str, i64)>) -> Vec<u8> {
     linked.section("sound_sfx").expect("linked sound_sfx").bytes.clone()
 }
 
-/// The AS twin oracle: assemble sound_sfx.asm through sigil's AS front-end at the
-/// shape's `phase`, with ALL cross-seam symbols (constants + link addresses) as equs,
-/// and return the emitted Z80 code bytes.
-fn as_twin_bytes(shape: Shape, doctor: Option<(&str, i64)>) -> Vec<u8> {
-    let aeon = aeon_dir();
-    let body = std::fs::read_to_string(aeon.join("engine/sound/sound_sfx.asm"))
-        .unwrap_or_else(|e| panic!("read sound_sfx.asm: {e}"));
-    let mut seam = String::from("cpu 68000\n");
-    for (name, val) in const_seam() {
-        seam.push_str(&format!("{name} = ${val:X}\n"));
+/// The blob's LMA base in the reference ROM, per shape (plain vs debug).
+fn blob_lma(debug: bool) -> usize {
+    if debug {
+        0x3E2
+    } else {
+        0x3DE
     }
-    for (name, val) in link_seam(shape, doctor) {
-        seam.push_str(&format!("{name} = ${val:X}\n"));
-    }
-    // Leading `0` so an h-suffix hex whose first digit is a letter (e.g. $CD7 ->
-    // `0CD7h`) parses as a number, not a symbol (the AS hex-literal quirk).
-    seam.push_str(&format!("cpu z80\nphase 0{:X}h\n", shape.vma()));
-    let src = format!("{seam}{body}\ndephase\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    linked
-        .sections
-        .iter()
-        .find(|s| !s.bytes.is_empty())
-        .map(|s| s.bytes.clone())
-        .unwrap_or_default()
+}
+
+/// The reference-ROM slice this file's window is byte-gated against. sfx's bytes live
+/// in the shipped ROM at `blob_lma(shape) + shape.vma()` (the blob's LMA plus sfx's
+/// phase-0 window offset). Reads `s4.bin` (plain) / `s4.debug.bin` (debug) from
+/// `AEON_DIR`; returns the ROM tail from that offset (the caller compares the first
+/// `compile_emp.len()` bytes). Under `strict_gate` a missing ROM panics; otherwise the
+/// test skips (`None`).
+fn reference_slice(shape: Shape) -> Option<Vec<u8>> {
+    let name = if shape.is_debug() { "s4.debug.bin" } else { "s4.bin" };
+    let path = aeon_dir().join(name);
+    let refrom = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => {
+            if strict_gate() {
+                panic!("SIGIL_STRICT_GATE set but reference ROM missing: {}", path.display());
+            }
+            eprintln!("skip: reference ROM not at {} (set AEON_DIR)", path.display());
+            return None;
+        }
+    };
+    let off = blob_lma(shape.is_debug()) + shape.vma() as usize;
+    Some(refrom[off..].to_vec())
 }
 
 fn assert_bytes_match(candidate: &[u8], expected: &[u8], what: &str) {
@@ -262,46 +256,42 @@ fn assert_bytes_match(candidate: &[u8], expected: &[u8], what: &str) {
 
 fn skip_if_missing() -> bool {
     let aeon = aeon_dir();
-    if !aeon.join("engine/sound/sound_sfx.asm").exists() {
+    if !aeon.join("s4.bin").exists() {
         if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
+            panic!("SIGIL_STRICT_GATE set but reference ROM missing at {}", aeon.display());
         }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
+        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", aeon.display());
         return true;
     }
     false
 }
 
-/// THE windowed byte gate (PLAIN shape): sound_sfx.emp == sound_sfx.asm at the
-/// $0CD7 window. sfx is 1516 bytes ($5EC, $0CD7..$12C3). Proves the whole
+/// THE windowed byte gate (PLAIN shape): sound_sfx.emp == the reference ROM slice at
+/// the $0CD7 window. sfx is 1516 bytes ($5EC, $0CD7..$12C3). Proves the whole
 /// transcription incl. the Out-heavy contract set, the game-config `if SFXID_REV_LOOP
 /// >= 0` block, and the parenthesized `(ix+(field+k))` displacements.
 #[test]
-fn sound_sfx_matches_as_twin_plain() {
-    if skip_if_missing() {
-        return;
-    }
+fn sound_sfx_matches_reference_plain() {
+    let Some(ref_tail) = reference_slice(Shape::Plain) else { return };
     let emp = compile_emp(Shape::Plain, None);
-    let twin = as_twin_bytes(Shape::Plain, None);
-    assert!(!twin.is_empty(), "the AS twin must emit the sfx code");
-    assert_eq!(twin.len(), SFX_WINDOW_LEN, "sfx is 1516 bytes ($0CD7..$12C3)");
-    assert_bytes_match(&emp, &twin, "sound_sfx.emp vs sound_sfx.asm (plain $0CD7)");
+    assert_eq!(emp.len(), SFX_WINDOW_LEN, "sfx is 1516 bytes ($0CD7..$12C3)");
+    assert_bytes_match(&emp, &ref_tail[..emp.len()], "sound_sfx.emp vs s4.bin slice (plain $0CD7)");
 }
 
-/// THE windowed byte gate (DEBUG shape): sound_sfx.emp == sound_sfx.asm at the
-/// $0D55 window (the sequencer's +$7E __DEBUG__ growth shifts the base). SAME length
-/// as plain (sfx has no own debug blocks); the internal jp/call targets + the fm/psg
-/// external targets differ — proving the .emp tracks the shape's window.
+/// THE windowed byte gate (DEBUG shape): sound_sfx.emp == the reference ROM slice at
+/// the $0D55 window (the sequencer's +$7E __DEBUG__ growth shifts the base). SAME
+/// length as plain (sfx has no own debug blocks); the internal jp/call targets + the
+/// fm/psg external targets differ — proving the .emp tracks the shape's window.
 #[test]
-fn sound_sfx_matches_as_twin_debug() {
-    if skip_if_missing() {
-        return;
-    }
+fn sound_sfx_matches_reference_debug() {
+    let Some(ref_tail) = reference_slice(Shape::Debug) else { return };
     let emp = compile_emp(Shape::Debug, None);
-    let twin = as_twin_bytes(Shape::Debug, None);
-    assert!(!twin.is_empty(), "the AS twin must emit the sfx code");
-    assert_eq!(twin.len(), SFX_WINDOW_LEN, "sfx is 1516 bytes (shape-invariant length)");
-    assert_bytes_match(&emp, &twin, "sound_sfx.emp vs sound_sfx.asm (debug $0D55)");
+    assert_eq!(emp.len(), SFX_WINDOW_LEN, "sfx is 1516 bytes (shape-invariant length)");
+    assert_bytes_match(
+        &emp,
+        &ref_tail[..emp.len()],
+        "sound_sfx.emp vs s4.debug.bin slice (debug $0D55)",
+    );
 }
 
 /// The two shapes MUST differ (shape-variance evidence): the base embedded in the
@@ -317,30 +307,17 @@ fn plain_and_debug_shapes_differ() {
     assert_ne!(plain, debug, "sfx is shape-variant — the two windows must produce different bytes");
 }
 
-/// Positive control (byte-gate non-triviality, t24): the UNDOCTORED .emp must DIVERGE
-/// from a twin assembled with ONE doctored cross-seam address (a moved SfxBlobWinTab
-/// changes every `ld de, SfxBlobWinTab` — SfxDispatch + Sfx_BeginSound). Proves the
-/// comparison detects a difference, not a vacuous match. Pins-derived: the reference
-/// window is the twin RE-ASSEMBLED each run, so a re-pin cannot re-stale it.
+/// Positive control (byte-gate non-triviality, t24): a DOCTORED .emp (ONE moved
+/// cross-seam address — a shifted SfxBlobWinTab changes every `ld de, SfxBlobWinTab`:
+/// SfxDispatch + Sfx_BeginSound) must DIVERGE from the reference slice. Proves the
+/// comparison detects a difference, not a vacuous match.
 #[test]
-fn emp_diverges_from_doctored_twin() {
-    if skip_if_missing() {
-        return;
-    }
-    let emp = compile_emp(Shape::Plain, None);
-    let twin = as_twin_bytes(Shape::Plain, Some(("SfxBlobWinTab", 0x8ABC)));
-    assert_ne!(emp, twin, "the byte gate is vacuous if the .emp matches a doctored twin");
-}
-
-/// Doctoring the SAME symbol on BOTH sides keeps them equal — the abs16 call fixups
-/// resolve to the shared address identically (the cell tracks the linked symbol, not
-/// a frozen literal).
-#[test]
-fn doctored_both_sides_stay_equal() {
-    if skip_if_missing() {
-        return;
-    }
-    let emp = compile_emp(Shape::Plain, Some(("ModUpdate", 0x1234)));
-    let twin = as_twin_bytes(Shape::Plain, Some(("ModUpdate", 0x1234)));
-    assert_bytes_match(&emp, &twin, "sound_sfx.emp vs twin (both ModUpdate=$1234)");
+fn emp_diverges_from_doctored_reference() {
+    let Some(ref_tail) = reference_slice(Shape::Plain) else { return };
+    let emp = compile_emp(Shape::Plain, Some(("SfxBlobWinTab", 0x8ABC)));
+    assert_ne!(
+        emp.as_slice(),
+        &ref_tail[..emp.len()],
+        "the byte gate is vacuous if a doctored .emp still matches the reference"
+    );
 }

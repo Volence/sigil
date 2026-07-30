@@ -27,7 +27,7 @@
 
 use std::path::PathBuf;
 
-use sigil_harness::{assemble_full_rom, region_at_lma, REGION_A_LMA, REGION_B_LMA};
+use sigil_harness::{assemble_full_rom, region_at_lma, REGION_B_LMA};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -50,10 +50,17 @@ fn full_build_reproduces_sound_driver_regions() {
         return;
     };
 
-    // Full non-debug build, NO stubs.
+    // Full non-debug build, NO stubs. Post-seam-1 (the FIRST twin deletion) the
+    // resident sound driver (former Region A @ 0x3DE) is no longer a distinct linked
+    // section: it is the sigil-native-linked blob, emitted by `emit_sound_blob` and
+    // BINCLUDE'd into the boot_data table, so it is now interior bytes of the boot
+    // section rather than a section keyed at its LMA. Its byte-identity proof moved
+    // to `seam1_native_link::native_blob_matches_reference_{plain,debug}` (the whole
+    // blob == the reference slice, both shapes). This gate keeps Region B (the
+    // phase-08000h banked engine-table bank — seam-2, still AS-assembled).
     let linked = assemble_full_rom(&aeon).unwrap_or_else(|e| panic!("{e}"));
 
-    for (label, lma) in [("Region A", REGION_A_LMA), ("Region B", REGION_B_LMA)] {
+    for (label, lma) in [("Region B", REGION_B_LMA)] {
         let bytes = region_at_lma(&linked, lma).unwrap_or_else(|| {
             let present: Vec<String> = linked
                 .sections
