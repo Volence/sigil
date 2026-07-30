@@ -1,0 +1,47 @@
+# GENERATED — capture_offcanon. FROZEN asl-derived region-boundary addresses.
+# These are PERISHABLE (no asl after the flip) and are GOLDEN PROVENANCE: the
+# declared per-region sizes (addr[end]-addr[start]) reproduce the golden below.
+# target=demo
+# reproduces_golden=demo.bin
+# golden_crc32=18c64002
+# assembled_end=0x11224
+# listing_stamp=07/30/2026 01:45:56 PM
+# labels=38
+AnimateSprite 0x16e6
+Art_Decompress 0x42e2
+BG_Init 0x4346
+BgAnim_Init 0x43f4
+BootData 0x3a2
+BusError 0x10174
+Camera_Init 0x3c26
+Checksum 0x18e
+Collected_Init 0x1c20
+Collision_GetType 0x3826
+EndOfRom 0x11224
+EntryPoint 0x200
+GameLoop 0xb48
+GetSineCosine 0xca6
+HBlank_Install 0xa8a
+InitObjectRAM 0xfe2
+InitSpriteSystem 0x12c6
+Init_DMA_Queue 0x456
+Init_SpriteTable 0x758
+Load_Object 0x27aa
+NullInterrupt 0x10172
+ObjCodeBase 0x10000
+Parallax_Init 0x3d6c
+Perform_DPLC 0xf3e
+Plane_Buffer_Reset 0x282c
+PopulateSpawnedPieceCount 0x24da
+Read_Controllers 0xad2
+RingBuffer_Add 0x1a6c
+S4LZ_DecompressDict 0xb56
+Section_Init 0x384a
+Tile_Cache_GetTile 0x2b06
+TouchResponse 0x186c
+VBlank_Handler 0x9b0
+VDP_Shadow_Init 0x40c
+Vectors 0x0
+Z80_IdleProgram 0x3d8
+Z80_IdleProgram_End 0x3fe
+ZX0_Decompress 0xc4e
