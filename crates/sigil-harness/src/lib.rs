@@ -38,6 +38,8 @@ pub mod pins;
 /// bin (Option A — sigil emits the canonical build inputs asl packs).
 pub mod seam1;
 
+pub mod seam2;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;
@@ -111,6 +113,11 @@ pub fn assemble_mixed_dac_as_side(aeon: &Path, debug: bool) -> Result<Module, St
         // the other `-D` defines. This is the gate that flips main.asm's
         // dac_samples.asm include to `org $60000`.
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
     ];
     if debug {
         defines.push(("__DEBUG__".to_string(), 1));
@@ -124,8 +131,8 @@ pub fn assemble_mixed_dac_as_side(aeon: &Path, debug: bool) -> Result<Module, St
 /// `assemble_mixed_dac_as_side` does, PLUS `SIGIL_EMP_MT` defined so
 /// `main.asm`'s Moving-Trucks block (lines 150-208: the six streaming-bank
 /// includes + the pitch-contiguity fatal) is REPLACED by an `org` resume — per
-/// shape, `$6553A` (`__DEBUG__`) or `$63AE8` (plain) — leaving the whole
-/// `$60607..end` window for the `.emp` side's `mt_bank` section to supply.
+/// shape, `$5D53A` (`__DEBUG__`) or `$5BAE8` (plain) — leaving the whole
+/// `$58607..end` window for the `.emp` side's `mt_bank` section to supply.
 /// Both `SIGIL_EMP_DAC` and `SIGIL_EMP_MT` are independent gates (R6); T2's
 /// mixed build exercises both ON together, DAC-only stays covered by the
 /// unchanged `assemble_mixed_dac_as_side` T1 tests.
@@ -141,7 +148,15 @@ pub fn assemble_mixed_mt_as_side(aeon: &Path, debug: bool) -> Result<Module, Str
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
     ];
     if debug {
         defines.push(("__DEBUG__".to_string(), 1));
@@ -155,30 +170,43 @@ pub fn assemble_mixed_mt_as_side(aeon: &Path, debug: bool) -> Result<Module, Str
 /// Assemble the AS side of the T3 MIXED `.asm`+`.emp` build: everything
 /// `assemble_mixed_mt_as_side` does, PLUS `SIGIL_EMP_SFX` defined so
 /// `main.asm`'s SFX block (the 19 blob/patch/table includes + the two SFX
-/// fatals, R6) is REPLACED by an `org` resume — per shape, `$65C82`
-/// (`__DEBUG__`) or `$64230` (plain), i.e. `SfxTable_End` — leaving the whole
-/// `$63AE8..SfxTable_End` window for the `.emp` side's `sfx_bank` section to
+/// fatals, R6) is REPLACED by an `org` resume — per shape, `$5DC82`
+/// (`__DEBUG__`) or `$5C230` (plain), i.e. `SfxTable_End` — leaving the whole
+/// `$5BAE8..SfxTable_End` window for the `.emp` side's `sfx_bank` section to
 /// supply. All three gates (`SIGIL_EMP_DAC`, `SIGIL_EMP_MT`, `SIGIL_EMP_SFX`)
 /// are independent (R6); T3's mixed build exercises all three ON together.
 ///
 /// Returns the UNLINKED [`Module`], exactly like the two sibling helpers: the
 /// T3 mixed harness concatenates these sections with all THREE `.emp` modules'
 /// placed sections (`dac_samples.emp` + `mt_bank.emp` + `sfx_bank.emp`) and
-/// runs ONE `resolve_layout` + `link` over the union. The cross-seam reads
-/// unique to this tranche are the `soundBankHead` win-tab's nine
-/// `dw sfx_winptr(Sfx_NN)` entries (a compound `(Sfx_NN & $7FFF) | $8000` in a
-/// Z80 `phase 08000h` LE `dw`): with `SIGIL_EMP_SFX` on the `Sfx_NN` labels are
-/// `.emp`-side, so those entries assemble here with the target UNRESOLVED (T0's
-/// dw deferral, P1-proven) and are satisfied by the joint link against
-/// `sfx_bank.emp`'s labels through the same shared symbol table everything else
-/// uses.
+/// runs ONE `resolve_layout` + `link` over the union. Seam-2 stage-2d:
+/// `SIGIL_EMP_SFX_BODY_STUB` keeps the SFX BODY composed in-memory (`sfx_bank.emp`,
+/// org-stub), while the SfxBlobWinTab HEAD is now BINCLUDE'd unconditionally in
+/// `soundBankHead` (`sfx_blob_win_tab{,_debug}.bin`, co-linked from `sfx_bank.emp`'s
+/// `SFX_WIN_*` equs) — so the AS side no longer assembles the nine
+/// `dw sfx_winptr(Sfx_NN)` entries; the head bytes come from the BINCLUDE'd `.bin`,
+/// which agrees with the in-memory body by construction (same per-shape base).
 pub fn assemble_mixed_sfx_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
     let root = aeon.join("games/sonic4/main.asm");
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
     ];
     if debug {
         defines.push(("__DEBUG__".to_string(), 1));
@@ -223,8 +251,22 @@ pub fn assemble_mixed_hblank_as_side(aeon: &Path, debug: bool) -> Result<Module,
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
     ];
     if debug {
@@ -274,8 +316,22 @@ pub fn assemble_mixed_tranche2_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -322,8 +378,22 @@ pub fn assemble_mixed_tranche3_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -349,8 +419,22 @@ pub fn assemble_mixed_tranche4_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -390,8 +474,22 @@ pub fn assemble_mixed_tranche5_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -432,8 +530,22 @@ pub fn assemble_mixed_tranche6_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -470,8 +582,22 @@ pub fn assemble_mixed_tranche7_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -511,8 +637,22 @@ pub fn assemble_mixed_tranche8_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -555,8 +695,22 @@ pub fn assemble_mixed_tranche9_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let mut defines = vec![
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("SIGIL_EMP_DAC".to_string(), 1),
+        // The DSM mixed harness composes the DAC banks IN-MEMORY as dac_samples.emp
+        // sections (org-stub body); the real build + seam-2 whole-ROM gate BINCLUDE
+        // the emitted .bins. Both paths produce the byte-identical ROM. The head is
+        // AS-BINCLUDE'd in BOTH (it can't be stubbed — the MT song must land past it).
+        ("SIGIL_EMP_DAC_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_MT".to_string(), 1),
+        // DSM harness composes mt_bank.emp in-memory (org-stub); the real build +
+        // seam-2 gate BINCLUDE the emitted mt_bank.bin + include mt_syms.asm.
+        ("SIGIL_EMP_MT_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_SFX".to_string(), 1),
+        // DSM harness composes sfx_bank.emp in-memory (org-stub body); the real
+        // build + seam-2 gate BINCLUDE the emitted sfx_bank.bin. The SfxBlobWinTab
+        // head is BINCLUDE'd UNCONDITIONALLY in soundBankHead (it can't be stubbed —
+        // the phase-block PC must advance past it) as sfx_blob_win_tab{,_debug}.bin,
+        // co-linked at the same per-shape base as the in-memory body, so they agree.
+        ("SIGIL_EMP_SFX_BODY_STUB".to_string(), 1),
         ("SIGIL_EMP_HBLANK".to_string(), 1),
         ("SIGIL_EMP_CONTROLLERS".to_string(), 1),
         ("SIGIL_EMP_MATH".to_string(), 1),
@@ -1090,6 +1244,80 @@ pub fn assemble_mixed_z80sound_as_side(aeon: &Path, debug: bool) -> Result<Modul
     let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
     assemble_root(&root, &opts).map_err(|d| {
         format!("assemble (mixed z80sound AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
+/// Seam-2 (Option Y) — the REAL-BUILD DAC path: the full AS-side game with
+/// `SIGIL_EMP_DAC` on and NO `SIGIL_EMP_DAC_BODY_STUB`, so `main.asm`'s
+/// `gameSoundDataIncludes` macro takes the BINCLUDE arm (dac_blip_bank.bin @
+/// $48000 + dac_shared_bank.bin @ $50000) and `soundBankHead` BINCLUDEs
+/// dac_sample_tab.bin at VMA $85AD — exactly what `build.sh` assembles once the
+/// two `.asm` twins are deleted. Everything else (MT/SFX/engine) stays pure AS.
+/// The three DAC `.bin`s (+ the resident blob) must exist in the aeon tree at the
+/// BINCLUDE paths; the seam-2 whole-ROM gate emits them first (like seam-1's
+/// `ensure_generated`). Returns the UNLINKED [`Module`]; the caller resolves+links
+/// and emits the ROM for the byte gate.
+pub fn assemble_seam2_dac_rom_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (seam2 DAC BINCLUDE AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
+/// Seam-2 stage-2c (Option Y) — the REAL-BUILD DAC+MT path: `SIGIL_EMP_DAC` +
+/// `SIGIL_EMP_MT` on, NO body stubs, so `main.asm` BINCLUDEs the DAC banks + head
+/// AND the Moving-Trucks bank (`mt_bank{,_debug}.bin`) and includes
+/// `mt_syms{,_debug}.asm` (SongTable/SongPatchTable equs `sound_api.asm` consumes) —
+/// exactly what `build.sh` assembles once the MT `.asm` stream is deleted. SFX +
+/// engine stay pure AS. The four DAC/MT `.bin`s + two syms (+ the resident blob)
+/// must exist in the aeon tree; the seam-2 MT whole-ROM gate emits them first.
+pub fn assemble_seam2_mt_rom_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (seam2 DAC+MT BINCLUDE AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
+/// Seam-2 stage-2d (Option Y) — the REAL-BUILD DAC+MT+SFX path: `SIGIL_EMP_DAC` +
+/// `SIGIL_EMP_MT` + `SIGIL_EMP_SFX` on, NO body stubs, so `main.asm` BINCLUDEs the
+/// DAC banks + head, the Moving-Trucks bank, the SFX block (`sfx_bank{,_debug}.bin`
+/// @ $5BAE8/$5D53A), AND `soundBankHead` BINCLUDEs the SfxBlobWinTab head
+/// (`sfx_blob_win_tab{,_debug}.bin` @ VMA $845F) — exactly what `build.sh`
+/// assembles once the 20 SFX `.asm` (18 blob/patch + sfx_table + sfx_blob_win_tab)
+/// are deleted. No SFX syms (no surviving AS reader of SfxTable). Engine stays pure
+/// AS. All DAC/MT/SFX `.bin`s (+ the resident blob) must exist in the aeon tree;
+/// the seam-2 SFX whole-ROM gate emits them first. Returns the UNLINKED [`Module`].
+pub fn assemble_seam2_sfx_rom_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_DAC".to_string(), 1),
+        ("SIGIL_EMP_MT".to_string(), 1),
+        ("SIGIL_EMP_SFX".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (seam2 DAC+MT+SFX BINCLUDE AS side): {} diagnostics; first: {:?}", d.len(), d.first())
     })
 }
 

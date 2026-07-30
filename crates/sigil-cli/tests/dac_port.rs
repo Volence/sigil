@@ -6,8 +6,9 @@
 //! parse → lower → place → resolve → link pipeline, with `include_root` set to
 //! the module's OWN directory (so `embed("dac/kick.pcm")` and
 //! `embed("temp_blip.bin")` resolve), and the two `bank:` sections placed into
-//! `--map` regions BY SECTION NAME at the aeon-f828406 pins
-//! (`dac_blip_bank` @ $50000, `dac_shared_bank` @ $58000).
+//! `--map` regions BY SECTION NAME at the current-baseline pins
+//! (`dac_blip_bank` @ $48000, `dac_shared_bank` @ $50000; the addresses
+//! aeon's `s4.lst` records, NOT the older "aeon-f828406" $50000/$58000 layout).
 //!
 //! It pins two independent facts:
 //!
@@ -25,23 +26,22 @@
 //!       `equ_syms`.
 //!
 //! The bank labels resolve at their PLACED LMAs (neither `bank:` section has a
-//! `vma:`, so VMA == LMA — R7p.5): `Dac_Temp_Blip` @ $50000, and the drums
-//! chained from $58000. `bankid(L) = (L & $7F8000) >> 15` folds to $A for the
-//! blip bank ($50000 >> 15 == 10) and $B for the shared bank ($58000 >> 15 ==
-//! 11); `winptr(L) = (L & $7FFF) | $8000`. Cross-checked against `s4.lst`:
+//! `vma:`, so VMA == LMA — R7p.5): `Dac_Temp_Blip` @ $48000, and the drums
+//! chained from $50000. `bankid(L) = (L & $7F8000) >> 15` folds to $9 for the
+//! blip bank ($48000 >> 15 == 9) and $A for the shared bank ($50000 >> 15 ==
+//! 10); `winptr(L) = (L & $7FFF) | $8000`. Cross-checked against `s4.lst`:
 //! e.g. `SND_S3K_KICK_PTR = $F33E` is the last drum's window pointer, matching
-//! the .asm's `Dac_S3K_Kick @ ($58000 + 30908 - 1406)`.
+//! the .asm's `Dac_S3K_Kick @ ($50000 + 30908 - 1406) = $5733E`.
 //!
 //! ## Falsification (TDD-loose, recorded per the task)
 //!
-//! Before pinning the correct table, `SND_BLIP_BANK`'s expectation was set to a
-//! deliberately-wrong `$B` (the shared-bank value) instead of `$A`. The run
-//! panicked, reporting the REAL folded value:
-//!   `SND_BLIP_BANK: expected 0xB, got 0xA`
-//! — `got 0xA` is the genuine link-fold of `bankid("Dac_Temp_Blip")` from the
-//! placed address $50000 ((0x50000 & 0x7F8000) >> 15 == 0xA), matching s4.lst.
+//! `SND_BLIP_BANK` folds to `$9` (the blip bank @ $48000). A deliberately-wrong
+//! pin of `$A` (the shared-bank value) panics with the REAL folded value:
+//!   `SND_BLIP_BANK: expected 0xA, got 0x9`
+//! — `got 0x9` is the genuine link-fold of `bankid("Dac_Temp_Blip")` from the
+//! placed address $48000 ((0x48000 & 0x7F8000) >> 15 == 0x9), matching s4.lst.
 //! That proves the fold is threaded end-to-end (placement → resolve → equ
-//! rewrite), not a copy-pasted golden. The pin below uses the CORRECT $A.
+//! rewrite), not a copy-pasted golden. The pin below uses the CORRECT $9.
 
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
@@ -60,11 +60,12 @@ fn sound_dir() -> PathBuf {
     Path::new(&aeon).join("games/sonic4/data/sound")
 }
 
-/// The two-bank map, pinned at the aeon-f828406 layout. Sections match regions
-/// BY NAME; the top-level `equ`/`ensure` items land in the default `text`
-/// section, which needs its own region (it emits ZERO bytes here — all the
-/// SND_* are equs, not data cells — but `place_sections` still requires a home
-/// for it). Region sizes are the $8000 window per bank; `text` is nominal.
+/// The two-bank map, pinned at the CURRENT baseline (aeon's `s4.lst`; NOT the
+/// older aeon-f828406 $50000/$58000 layout). Sections match regions BY NAME;
+/// the top-level `equ`/`ensure` items land in the default `text` section, which
+/// needs its own region (it emits ZERO bytes here — all the SND_* are equs, not
+/// data cells — but `place_sections` still requires a home for it). Region
+/// sizes are the $8000 window per bank; `text` is nominal.
 fn map_toml() -> &'static str {
     "fill = 0x00\n\
      \n\
@@ -76,13 +77,13 @@ fn map_toml() -> &'static str {
      \n\
      [[region]]\n\
      name = \"dac_blip_bank\"\n\
-     lma_base = 0x50000\n\
+     lma_base = 0x48000\n\
      size = 0x8000\n\
      kind = \"rom\"\n\
      \n\
      [[region]]\n\
      name = \"dac_shared_bank\"\n\
-     lma_base = 0x58000\n\
+     lma_base = 0x50000\n\
      size = 0x8000\n\
      kind = \"rom\"\n"
 }
@@ -208,19 +209,21 @@ fn snd_equ_values_match_s4lst_baseline() {
     let (resolved, _linked) = compile_real_file();
     let v = |name: &str| equ_value(&resolved, name);
 
-    // (BANK, PTR, LEN) per sample — the s4.lst pins.
-    // BLIP bank $A (@ $50000); every drum bank $B (@ $58000+).
+    // (BANK, PTR, LEN) per sample — the s4.lst pins (current baseline).
+    // BLIP bank $9 (@ $48000); every drum bank $A (@ $50000+). The PTR/LEN
+    // are placement-invariant (window-relative / comptime), unchanged by the
+    // re-baseline; only the BANK ids moved down one bank ($A/$B -> $9/$A).
     let expect: &[(&str, i64, i64, i64)] = &[
-        ("SND_BLIP", 0xA, 0x8000, 0xB40),
-        ("SND_KICK", 0xB, 0x8000, 0x57E),
-        ("SND_SNARE", 0xB, 0x857E, 0xEA4),
-        ("SND_HAT", 0xB, 0x9422, 0xF0),
-        ("SND_S3K_SNARE", 0xB, 0x9512, 0xEA4),
-        ("SND_S3K_HITOM", 0xB, 0xA3B6, 0xE8C),
-        ("SND_S3K_MIDTOM", 0xB, 0xB242, 0x1230),
-        ("SND_S3K_LOWTOM", 0xB, 0xC472, 0x15B6),
-        ("SND_S3K_FLOORTOM", 0xB, 0xDA28, 0x1916),
-        ("SND_S3K_KICK", 0xB, 0xF33E, 0x57E),
+        ("SND_BLIP", 0x9, 0x8000, 0xB40),
+        ("SND_KICK", 0xA, 0x8000, 0x57E),
+        ("SND_SNARE", 0xA, 0x857E, 0xEA4),
+        ("SND_HAT", 0xA, 0x9422, 0xF0),
+        ("SND_S3K_SNARE", 0xA, 0x9512, 0xEA4),
+        ("SND_S3K_HITOM", 0xA, 0xA3B6, 0xE8C),
+        ("SND_S3K_MIDTOM", 0xA, 0xB242, 0x1230),
+        ("SND_S3K_LOWTOM", 0xA, 0xC472, 0x15B6),
+        ("SND_S3K_FLOORTOM", 0xA, 0xDA28, 0x1916),
+        ("SND_S3K_KICK", 0xA, 0xF33E, 0x57E),
     ];
 
     for (base, bank, ptr, len) in expect {
