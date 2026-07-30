@@ -33,6 +33,11 @@ pub mod repin;
 /// `cargo run -p sigil-harness --bin repin`; never edit by hand.
 pub mod pins;
 
+/// The seam-1 resident-sound-blob native link: the five sound `.emp` files linked
+/// as ONE Z80 module set, shared by the whole-ROM gates and the `emit_sound_blob`
+/// bin (Option A — sigil emits the canonical build inputs asl packs).
+pub mod seam1;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;

@@ -8,12 +8,14 @@ sigil-span = { path = "../sigil-span" }
 sigil-ir = { path = "../sigil-ir" }
 sigil-link = { path = "../sigil-link" }
 sigil-frontend-as = { path = "../sigil-frontend-as" }
+# The emp front-end is a LIB dependency now (was dev-only): the seam-1 sound-blob
+# emitter (`seam1` module + the `emit_sound_blob` bin) natively links the five
+# resident sound `.emp` files, so it needs `lower_module` at library scope.
+sigil-frontend-emp = { path = "../sigil-frontend-emp" }
 # The `repin` manifest (`repin.toml`) rides the same TOML+serde pair
 # sigil-link's map loader established — no new dependency class.
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
 [dev-dependencies]
-# The mixed .asm+.emp harness (mixed_dac_rom) composes the emp front-end's
-# output with the AS side; only the tests need it, hence dev-only.
-sigil-frontend-emp = { path = "../sigil-frontend-emp" }
+# (sigil-frontend-emp is now a regular dependency — see [dependencies].)
