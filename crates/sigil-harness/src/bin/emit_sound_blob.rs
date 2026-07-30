@@ -81,11 +81,18 @@ fn main() {
         eprintln!("error: emit_sound_blob (seam-2 sound_tables_z80) failed: {err}");
         process::exit(1);
     }
+    // flip Stage-0: the SndDefaultPitchTable banked head (the last AS sound head,
+    // shape-invariant).
+    if let Err(err) = sigil_harness::seam2::emit_pitchtable_artifacts(aeon_path, out_path) {
+        eprintln!("error: emit_sound_blob (pitchtable) failed: {err}");
+        process::exit(1);
+    }
     println!(
         "emitted seam-1 resident blob (z80_sound_blob{{,_debug}}.bin) \
          + seam-2 DAC artifacts (dac_blip_bank.bin + dac_shared_bank.bin + dac_sample_tab.bin) \
          + seam-2 MT bank (mt_bank{{,_debug}}.bin + mt_syms{{,_debug}}.asm) \
          + seam-2 SFX bank (sfx_bank{{,_debug}}.bin + sfx_blob_win_tab{{,_debug}}.bin) \
-         + seam-2 head (seq_opcode_tab{{,_debug}}.bin + sound_tables_z80.bin) -> {out_dir}"
+         + seam-2 head (seq_opcode_tab{{,_debug}}.bin + sound_tables_z80.bin) \
+         + pitchtable (movingtrucks_pitchtable.bin) -> {out_dir}"
     );
 }
