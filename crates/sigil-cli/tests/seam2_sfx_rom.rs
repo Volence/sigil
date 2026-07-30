@@ -164,3 +164,37 @@ fn seam2_sfx_rom_diverges_when_seq_doctored() {
         "the whole-ROM gate is vacuous if a doctored seq-opcode head still matches canonical"
     );
 }
+
+/// t24 WHOLE-ROM positive control for the seam-2 stage-3 sound-tables head: a
+/// DOCTORED sound_tables_z80.bin (one byte flipped) must make the ROM DIVERGE from
+/// canonical in the FmPitchTableZ window ($58000). Restores honest inputs after.
+#[test]
+fn seam2_sfx_rom_diverges_when_soundtables_doctored() {
+    let Some(refrom) = read_ref("s4.bin") else { return };
+    let _guard = GEN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let aeon = aeon_dir();
+    let gen = aeon.join("engine/sound/generated");
+    ensure_generated(&aeon);
+    let tab_path = gen.join("sound_tables_z80.bin");
+    let mut tab = std::fs::read(&tab_path).expect("read honest sound_tables_z80");
+    tab[0] ^= 0xFF; // flip FmPitchTableZ[0]'s low byte
+    std::fs::write(&tab_path, &tab).expect("write doctored sound_tables");
+
+    let module = assemble_seam2_sfx_rom_as_side(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = sigil_link::resolve_layout(&module.sections, &Default::default(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let linked = sigil_link::link(&resolved, &Default::default())
+        .unwrap_or_else(|d| panic!("link: {d:?}"));
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+    let rom = sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom: {e}"));
+
+    ensure_generated(&aeon); // restore honest inputs
+
+    let lo = seam2::SOUND_TABLES_Z80_LMA as usize;
+    assert_ne!(
+        &rom[lo..lo + 0x10],
+        &refrom[lo..lo + 0x10],
+        "the whole-ROM gate is vacuous if a doctored sound-tables head still matches canonical"
+    );
+}

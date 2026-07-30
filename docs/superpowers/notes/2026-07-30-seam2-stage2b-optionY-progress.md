@@ -1,5 +1,61 @@
 # 2026-07-30 — seam-2 stage-2b Option Y: PROGRESS (mechanism blessed · head co-linked · emitter wired) → the deletion is the next unit
 
+> ## ✅ UPDATE 3 — STAGE 2d (sfx) + STAGE 3 (seq_opcode_tab, sound_tables_z80) ALL LANDED → checkpoint (b). The banked sound side is FULLY sigil-native.
+>
+> The whole banked sound HEAD + SFX block are now `.emp`-native, BINCLUDE'd; the
+> only sound `.asm` left is the deferred 68k caller `sound_api.asm` (rides the flip)
+> + the still-AS head `movingtrucks_pitchtable.asm` (SndDefaultPitchTable, NOT in
+> this pass's scope — a remaining head file). Strict **2903 passed / 0 / 1**.
+>
+> **Commits (aeon `seam2-banked-data` / sigil `seam2-banked-data`):**
+>   * Stage 2d additive: aeon `23eabe8` (SFX_WIN_* equ layer + sfx_blob_win_tab.emp) · sigil `a1286dd` (emit + head co-link gate).
+>   * Stage 2d deletion: aeon `4b89ae2` (THE 20 SFX `.asm` deleted) · sigil `176a335` (whole-ROM gate + DSM BODY_STUB + rows).
+>   * Stage 3 seq_opcode_tab: sigil `50cda1a` (emit + gate) · aeon `de06d44` (deletion).
+>   * Stage 3 sound_tables_z80: sigil `52b6280` (emit + gate) · aeon `c0a81c5` (deletion, generator-emits-.emp).
+>
+> **What was new / the four deletions' mechanisms:**
+>   * **SFX (2d) — the coupled body+head, BOTH shape-dependent.** sfx_bank.emp gained
+>     an `SFX_WIN_NN = winptr(Sfx_NN)` equ layer; the NEW sfx_blob_win_tab.emp head
+>     references those cross-module (the DAC SND_*_PTR mechanism). Both halves are
+>     shape-dependent (the SFX block sits after the shape-dependent songs — the body's
+>     SfxTable `*u8` cells hold per-shape absolute Sfx_NN addrs; every win-tab cell is a
+>     winptr shifting with the base). Emit `sfx_bank{,_debug}.bin` + `sfx_blob_win_tab{,_debug}.bin`.
+>     **NO syms** (CORRECTION vs the 2d scoping: no surviving AS reader of `SfxTable` —
+>     sound_sfx.emp's `SfxBlobWinTab` reads are native, address is the seam-1 banked
+>     carrier `$845F`). `sfx_transcode.py` moved from prebuild-auto to MANUAL (the
+>     `.asm` it regenerated are deleted; the committed `.bin` embed sources stay).
+>   * **seq_opcode_tab (3) — co-linked to the RESIDENT handlers.** `emit_seq_opcode_tab`
+>     resolves the 32 `dc.w Seq_Op_*` cells against `native_sound_blob().symbols` (the
+>     same seam-1 blob link the driver ships from). SHAPE-DEPENDENT (handlers re-base after
+>     sound_sequencer's `if DEBUG==1`). `seq_opcode_tab_port` windowed oracle RETIRED with
+>     the twin; `SeqOpcodeTable`/`_End` + the 32*2 span guard move into the BINCLUDE bracket.
+>   * **sound_tables_z80 (3) — the generator-emits-.emp step (rows 1615/1619/1620 SETTLED).**
+>     `gen_sound_tables.py` now emits `sound_tables_z80.emp` (its `emit_emp_z80()`, single
+>     source of the 4 pure-math LUTs + PSG/FM vol-env tables). SELF-CONTAINED (the
+>     PsgVolEnv_Ptrs/FmVolEnv_Ptrs cells are intra-module `dc.w` folding to `$8000`-window
+>     addrs — the last Value16Le demand sites) + SHAPE-INVARIANT.
+>   * **The BODY_STUB pattern generalized to SFX** (`SIGIL_EMP_SFX_BODY_STUB`, kill row 91);
+>     the win-tab + seq + sound_tables HEADS are BINCLUDE'd UNCONDITIONALLY in soundBankHead
+>     (can't be stubbed — the phase PC must advance). `SIGIL_EMP_SFX` is now vestigial too.
+>
+> **Proof (each deletion, both shapes):** region gate (`seam2_sfx_head_colink` /
+> `seam2_seq_colink` / `seam2_soundtables_colink`, == reference slice) + whole-ROM gate
+> (`seam2_sfx_rom` incl. doctored win-tab + doctored seq controls) + the DSM `mixed_dac_rom`
+> 52 tranches + `./build.sh` BOTH shapes through real asl. **Assembled region (0..ASSEMBLED_LEN)
+> byte-for-byte UNMOVED** except the 2 convsym header fields (`$18E-$18F`, `$1A6-$1A7`); the
+> full file shrinks per deletion (deb2 — the deleted labels leave the convsym appendix).
+>
+> **Per-deletion artifact-CRC drift ledger (full-file s4.bin / s4.debug.bin):**
+>   * baseline (post-MT): `414258` (`0x1087aac8`) / `422313` (`0xf6311a78`)
+>   * after SFX deletion: `413886` (`0x119c19fc`, −372) / `421880` (`0xcf24dd29`, −433)
+>   * after seq deletion: `413886` / `421880` (UNCHANGED — SeqOpcodeTable/_End labels preserved in the bracket)
+>   * after sound_tables deletion: `413555` (`0x67ee0011`, −331) / `421559` (`0x53d2b731`, −321)
+>   * assembled-region CRC UNMOVED throughout (the primary bar; the whole-ROM gates encode it).
+>
+> **Emitted artifacts (== reference slices):** `sfx_bank.bin` 1864B `0x1160dc56` / `_debug` `0x6de42f99`;
+> `sfx_blob_win_tab.bin` 270B `0x96724056` / `_debug` `0x43efa523`; `seq_opcode_tab.bin` 64B `0x140f1fcc` /
+> `_debug` `0x231576c2`; `sound_tables_z80.bin` 855B `0xfa0fe7c8`.
+
 > ## ✅ UPDATE (later 2026-07-30) — THE WIRE + THE DAC DELETION LANDED (the irreversible unit is DONE, green, committed)
 >
 > Four commits close the unit. **aeon** `seam2-banked-data`: `cd31928` (the wire) →

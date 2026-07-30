@@ -371,6 +371,7 @@ pub const SEQ_OPCODE_TAB_LEN: usize = 64;
 pub fn emit_seq_opcode_tab(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
     let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000)?;
+    let link_asserts = module.link_asserts.clone();
 
     // The table places at VMA $8000; its cell VALUES (resident Seq_Op_* addresses)
     // do not depend on its own placement, so a nominal region suffices.
@@ -400,6 +401,13 @@ pub fn emit_seq_opcode_tab(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> 
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .map_err(|d| format!("resolve_layout: {d:?}"))?;
+    // Fire any module ensures (none today; the AS twin's span guard awaits a
+    // section-length primitive — but thread it so a future guard is not silently
+    // ignored, matching the co-link emitters).
+    let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("seq_opcode_tab guards fired: {assert_diags:?}"));
+    }
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
     Ok(linked.section("seq_opcode_tab").ok_or("missing seq_opcode_tab in linked image")?.bytes.clone())
 }
@@ -420,6 +428,7 @@ pub const SOUND_TABLES_Z80_LEN: usize = 0x357;
 pub fn emit_sound_tables_z80(aeon: &Path) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
     let module = lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000)?;
+    let link_asserts = module.link_asserts.clone();
 
     // Place at the head LMA with the section's own `vma: $8000` window — the
     // intra-module pointer cells fold from that window base.
@@ -434,6 +443,13 @@ pub fn emit_sound_tables_z80(aeon: &Path) -> Result<Vec<u8>, String> {
     }
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .map_err(|d| format!("resolve_layout: {d:?}"))?;
+    // Fire any module ensures (none today; the vol-env count guards await a
+    // section-length primitive — threaded so a future guard is not silently
+    // ignored, matching the co-link emitters).
+    let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+    if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("sound_tables_z80 guards fired: {assert_diags:?}"));
+    }
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
     Ok(linked.section("sound_tables_z80").ok_or("missing sound_tables_z80 in linked image")?.bytes.clone())
 }
