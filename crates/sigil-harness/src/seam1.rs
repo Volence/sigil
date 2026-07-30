@@ -488,6 +488,181 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// ===========================================================================
+// [call.clobbers-incomplete] — the transitive-clobbers-completeness diagnostic
+// over the linked resident blob (seam-1 design §4 · the t37 demand).
+// ===========================================================================
+
+/// The report of `[call.clobbers-incomplete]` over the five linked resident sound
+/// files: every proc's declared `clobbers` must be a SUPERSET of its transitive
+/// effect (local writes ∪ reachable-callee clobbers − verified preserves). The
+/// native link is the precondition that makes this computable — every callee body
+/// is present in ONE module, so the reachable-callee union is finite and in-scope.
+pub struct Z80ClobbersReport {
+    /// Each `[call.clobbers-incomplete]` firing (an under-claimed proc/register).
+    pub firings: Vec<sigil_frontend_emp::closure::Firing>,
+    /// Direct callees named by some proc that resolve to no in-blob proc — the
+    /// closure's holes (the OQ-4 scope check: a non-empty set past the local-label
+    /// filter is a resident code-call into the banked/68k side, out of seam-1's
+    /// closure). Local labels (`.`-prefixed) and hygiene symbols are filtered.
+    pub unresolved_callees: std::collections::BTreeSet<String>,
+    /// Instructions the per-proc eval DROPPED (unresolved mnemonic/operand). Must
+    /// be 0 for the closure to be complete over the corpus.
+    pub dropped: usize,
+}
+
+/// The opcode-dispatch SUB-MACHINE — the sequencer procs reached ONLY via the
+/// `ex(sp),hl; ret` COMPUTED trampoline (`sound_sequencer.emp`'s
+/// `[dispatch.trampoline: SeqOpcodeTable …]` site), threading `hl` as the stream
+/// cursor. Their transitive clobbers depend on that un-traversable computed edge
+/// (e.g. `Seq_Op_Patch` clobbers ix through it), so the direct-call closure CANNOT
+/// soundly verify them — this is the design §4 face-4 / OQ-4 scope boundary. Named
+/// by convention: the `Seq_Op_*` handlers, their `Seq_Hook*` helpers, and the loop
+/// re-entry `Seq_ContinueFetch`. `[call.clobbers-incomplete]` reports these SEPARATELY
+/// (never as an in-scope firing); the external entry `Sequencer_Channel` carries the
+/// honest broad clobbers the loop actually inflicts.
+pub fn is_opcode_dispatch_proc(name: &str) -> bool {
+    name.starts_with("Seq_Op_") || name.starts_with("Seq_Hook") || name == "Seq_ContinueFetch"
+}
+
+/// Run `[call.clobbers-incomplete]` over the resident blob for `debug`. The honest
+/// corpus fires 0 IN SCOPE (the computed-dispatch sub-machine, [`is_opcode_dispatch_proc`],
+/// is out of the sound direct-call closure and reported separately).
+pub fn z80_clobbers_report(aeon: &Path, debug: bool) -> Z80ClobbersReport {
+    z80_clobbers_report_doctored(aeon, debug, &[])
+}
+
+/// The IN-SCOPE firings of a report — every firing outside the computed-dispatch
+/// sub-machine. The honest corpus's in-scope set is EMPTY; a non-empty one is a
+/// real transitive clobbers under-claim to fix (or, for a doctored/RED run, the
+/// injected one).
+pub fn in_scope_firings(report: &Z80ClobbersReport) -> Vec<&sigil_frontend_emp::closure::Firing> {
+    report.firings.iter().filter(|f| !is_opcode_dispatch_proc(&f.proc)).collect()
+}
+
+/// [`z80_clobbers_report`] with per-proc `clobbers` OVERRIDES (name → reglist
+/// segments) — the RED fixture / t24 non-vacuity injection: doctoring a proc's
+/// declared clobbers to UNDER-claim a register a callee destroys must fire.
+pub fn z80_clobbers_report_doctored(
+    aeon: &Path,
+    debug: bool,
+    doctor_clobbers: &[(&str, Vec<(String, Option<String>)>)],
+) -> Z80ClobbersReport {
+    use sigil_frontend_emp::closure::{check_firings, compute_closure, ProcNode};
+    use sigil_frontend_emp::eval::eval_proc_body_env;
+    use sigil_frontend_emp::regfile::{expand_reglist, RegFile};
+    use sigil_frontend_emp::value::{CodeItem, CodeOperand};
+    use sigil_frontend_emp::z80_preserves::z80_written_registers;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let expand = |segs: &[(String, Option<String>)]| expand_reglist(segs, RegFile::Z80, |_| {});
+
+    // The Sym target of a Z80 transfer instruction (`call`/`rst`/`jp`/`jr`/`djnz`,
+    // conditional or not) — the last symbolic operand (a leading `Cc` is skipped).
+    // A `.`-prefixed local label or a hygiene (`$`) symbol is NOT an inter-proc
+    // edge; a computed `jp (hl)`/indirect has no `Sym` and returns `None`.
+    fn transfer_target(mnemonic: &str, ops: &[CodeOperand]) -> Option<String> {
+        if !matches!(mnemonic, "call" | "rst" | "jp" | "jr" | "djnz") {
+            return None;
+        }
+        ops.iter().rev().find_map(|op| match op {
+            CodeOperand::Sym(name)
+                if !name.starts_with('.') && !name.contains('$') =>
+            {
+                Some(name.clone())
+            }
+            _ => None,
+        })
+    }
+
+    fn collect_nodes(
+        file: &ast::File,
+        items: &[ast::Item],
+        defines: &[(String, i128)],
+        inv_units: &BTreeSet<String>,
+        expand: &impl Fn(&[(String, Option<String>)]) -> BTreeSet<String>,
+        doctor: &[(&str, Vec<(String, Option<String>)>)],
+        counter: &mut u32,
+        dropped_total: &mut usize,
+        nodes: &mut BTreeMap<String, ProcNode>,
+    ) {
+        for it in items {
+            match it {
+                ast::Item::Proc(p) => {
+                    let (buf, _diags, next, dropped) = eval_proc_body_env(
+                        file, &p.name, &p.params, &p.body, p.span, *counter,
+                        sigil_ir::backend::Cpu::Z80, defines, &[],
+                    );
+                    *counter = next;
+                    *dropped_total += dropped;
+                    let mut local_writes = BTreeSet::new();
+                    let mut direct_callees = Vec::new();
+                    if let Some(buf) = &buf {
+                        local_writes = z80_written_registers(buf);
+                        for ci in &buf.items {
+                            if let CodeItem::Instr { mnemonic, ops, .. } = ci {
+                                if let Some(t) = transfer_target(mnemonic, ops) {
+                                    direct_callees.push(t);
+                                }
+                            }
+                        }
+                    }
+                    let doctored = doctor.iter().find(|(n, _)| *n == p.name);
+                    let declared_clobbers = match doctored {
+                        Some((_, segs)) => expand(segs),
+                        None => expand(p.clobbers.as_deref().unwrap_or(&[])),
+                    };
+                    let mut verified_preserves = expand(&p.preserves);
+                    verified_preserves.extend(inv_units.iter().cloned());
+                    nodes.insert(
+                        p.name.clone(),
+                        ProcNode {
+                            local_writes,
+                            direct_callees,
+                            indirect_sites: Vec::new(),
+                            is_extern: false,
+                            declared_clobbers,
+                            params: BTreeSet::new(),
+                            out: expand(p.out.as_deref().unwrap_or(&[])),
+                            has_clobber_contract: p.clobbers.is_some() || doctored.is_some(),
+                            verified_preserves,
+                        },
+                    );
+                }
+                ast::Item::Section(sec) => collect_nodes(
+                    file, &sec.items, defines, inv_units, expand, doctor, counter,
+                    dropped_total, nodes,
+                ),
+                _ => {}
+            }
+        }
+    }
+
+    let mut nodes: BTreeMap<String, ProcNode> = BTreeMap::new();
+    let mut counter: u32 = 0;
+    let mut dropped = 0usize;
+    for spec in &file_specs() {
+        let (file, _dir) = parse_one(aeon, spec);
+        let inv_units = expand(&module_invariant_reglist(&file));
+        let mut defines: Vec<(String, i128)> = (spec.consts)()
+            .into_iter()
+            .map(|(n, v)| (n.to_string(), v as i128))
+            .collect();
+        for (n, v) in banked_carriers() {
+            defines.push((n.to_string(), v as i128));
+        }
+        defines.push(("DEBUG".to_string(), if debug { 1 } else { 0 }));
+        collect_nodes(
+            &file, &file.items, &defines, &inv_units, &expand, doctor_clobbers,
+            &mut counter, &mut dropped, &mut nodes,
+        );
+    }
+
+    let closure = compute_closure(&nodes, &BTreeMap::new());
+    let firings = check_firings(&nodes, &closure);
+    Z80ClobbersReport { firings, unresolved_callees: closure.unresolved_callees, dropped }
+}
+
 // ---------------------------------------------------------------------------
 // The five per-file const seams (the sound_constants.asm equs each file folds).
 // ---------------------------------------------------------------------------
