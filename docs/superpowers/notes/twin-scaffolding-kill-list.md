@@ -172,3 +172,29 @@ Executed (subsystem — commit — twin files deleted):
   in `tile_cache.asm`) — its `.asm`/`.inc` census half retires with the twin; the
   `.emp` census half is now the sole gen-bump audit (still asserts exactly the
   three). Strict 2858 (net 0 — the audit is one test that still passes).
+- engine/system — `boot.asm`, `buffers.asm`, `controllers.asm`, `dma_queue.asm`,
+  `game_loop.asm`, `hblank.asm`, `vblank.asm`, `vdp_init.asm`, `vectors.asm`
+  (vectors is a fixed-size no-`ifdef` gate → bare `org $100`; boot resumes at the
+  unconditionally-included boot_data.asm data tail). AS-half retired: game_loop
+  (`combo_matrix_matches_as_twin` + `as_twin_bytes` — the gameDebugTick H2-mirror
+  matrix, row 9 still OPEN as the Stage-3 game-contract hook; coverage → the
+  Config-A/canonical/Config-B whole-ROM goldens). Strict 2858→2857.
+  **z80_init DEFERRED (not deleted):** `engine/system/z80_init.asm` is the
+  no-sound (Config-B/demo) Z80 idle program, taken via the AS `include` arm in
+  boot_data.asm's `else` (these off-canonical profiles do NOT define
+  SIGIL_EMP_Z80_INIT — the config_b_profile comment: "the Z80 idle stays
+  AS-side"). It also DEFINES `Z80_IdleProgram`, consumed by boot_data.asm's
+  layout-assert wall (`if (Z80_IdleProgram-BootData) <> 54`). Deleting it +
+  collapsing the gate breaks EVERY no-sound build (CLI + harness) with
+  "unresolved long expression" — z80_init.emp is placed by NO ONE for no-sound.
+  z80_init flips only once the off-canonical native driver PLACES z80_init.emp
+  and exports `Z80_IdleProgram` cross-seam to the boot_data assert wall — a
+  distinct Stage-2 sub-item (harness config_b/demo registry + reverse-seam
+  export). Left AS-side for now; z80_init_port's AS-twin oracle survives as the
+  region proof meanwhile.
+  **TOOLING NOTE (stale-artifact trap, MEMORY-flagged):** the scratch CRC proof
+  must `rm` the output AND check the build's exit code BEFORE CRC'ing — a failed
+  `sigil build` leaves the `-o` file untouched, so a prior success's bytes read
+  as green. This masked the z80_init breakage for one cycle until config_a/
+  config_b were added to the proof and the exit-check landed. The proof now
+  covers all SIX targets (sonic4/demo ×2 + config_a/config_b).
