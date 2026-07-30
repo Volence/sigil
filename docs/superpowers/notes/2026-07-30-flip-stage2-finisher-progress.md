@@ -4,6 +4,58 @@ Span: the remaining twin-deletion groups + folded Phase-B cargo + close packet
 (picking up after D1/D2/D3). Worktrees: sigil `.worktrees/flip-stage2`, aeon
 `.worktrees/flip-stage2`. This note is the handoff for the next session.
 
+## FINISHER-2 SESSION (the delicate specials + game groups) — heads: sigil `3dfbef6`, aeon `22513f4`
+
+DONE (all byte-neutral, ALL SIX CRCs green each commit, strict 2854/0/1 at close):
+1. **engine/debug specials** (aeon `5c95d5b`, sigil `4702c54`): compression_selftest
+   (keeps its generated/vectors.asm include), sound_debug (Config-A `ifdef` collapse),
+   error_handler (bare collapse keeping `ErrorHandler = ErrorHandlerBlob`). Rows 52/90/59.
+   No AS-half (error_handler_port already synthetic).
+2. **engine/sound** (aeon `fea702c`, sigil `42246f3`): sound_api. Rows 10/24/36/43.
+3. **player-state** (aeon `6d82a32`): player_sensors/ground/air/spindash/sonic. Bare collapses.
+4. **game object/data/test** (aeon `8566bd2`, sigil `a7af2b2`): 15 twins (test objects,
+   objdefs, sonic_anims, particle_anims, object_test_state, ojz_scroll_test, game_debug).
+   game_debug_port AS-twin oracle RETIRED (−3 tests; coverage → config_a golden + surviving
+   .emp probes). game_debug = Config-A `ifdef` collapse. Rows 6/58/88/89.
+5. **objdef.emp import-id fix** (aeon `22513f4`, sigil `3dfbef6`): `use engine.constants`
+   (real module id) + retired the harness alias workaround (HELPER_ALIAS_DROP). Byte-neutral.
+
+Total this session: **24 twins / 4247 .asm lines deleted.** No stray/broken includes.
+
+## THREE ITEMS DEFERRED — CRC-MOVING, need overseer re-baseline authorization
+
+- **The player keystones (player_common / test_player / test_enemy) + act_descriptor.**
+  ATTEMPTED the keystone flip; it is NOT the mapped "git rm + registry" mechanic. Each is
+  an UNCONDITIONALLY-AS-included file whose **zero-byte equate/struct header is ALWAYS
+  emitted** (t34/t39 internal gate) for cross-seam consumers (camera.emp's PL_STATE_ADDR
+  via `extern("_pl_state")`; the drift guards; test_animated's DplcV; entity_data's ObjDef
+  refs), and whose CODE body is internally gated (`ifndef SIGIL_EMP_X`) with the `.emp`
+  twin NOT in the native registry. Flip = add gate to code_gate_defines + add ModuleSpec +
+  drop from as_owned_keystones. PROVEN CRC-MOVING two ways: (1) the pinned sonic4 **appendix**
+  (sigil-canonical deb2 symbol table) shrinks ~1389 B — the `.emp` locals mangle
+  `$module$Proc$local` vs the AS frontend's `Proc.local`, so the appendix (frozen with the
+  keystones AS-owned) no longer reproduces → full-file CRC moves; (2) the **Frozen chainer**
+  misplaces a config_a data pointer (anchor diverges at 0x11412, sig 0x12 != gold 0x13) —
+  the `.emp` keystones enter the chained set and perturb contiguity/label derivation.
+  → re-baseline the six pins + reconcile the chainer; same class as z80_init. Reverted clean;
+  the headers stay AS-side, the `_port` region gates survive as the proof.
+- **z80_init** (row 55): unchanged from the prior finding (no-sound Z80 idle, reverse-seam
+  export to boot_data's comptime wall). Same re-baseline class.
+
+## NOT DONE (deferred to the overseer / Stage 3) — the group-6/7/8 remainder
+
+- **Scaffolding finale remainder:** main.asm/engine.inc gate collapse is COMPLETE (only the
+  2 intentional Config-A `ifdef` collapses + the 3 deferred internal gates remain). NOT done:
+  (a) the 4 STAGE1_INAPPLICABLE_GUARDS + drift-guard retirement — retiring the allowlist needs
+  the Poison-producing `.emp` guards removed too (multi-file, entangled with the deferred
+  twins), risky; (b) `as_owned_keystones` field + the retain line — STAYS (keystones didn't
+  flip); (c) engine/structs.asm CODE-twin arm — defer to Stage 3.
+- **Folded Phase-B cargo (group 7):** AS-residual section-split, $20000 object-bank budget as
+  a map-region check, pins→map placement authority, repin's asl-.lst-parse retirement (row 34).
+  Architectural sigil work, not byte-neutral-trivial; untouched.
+- **verify_emit_bin.py (group 8):** `aeon/tools/verify_emit_bin.py` exists; not assessed for
+  single-sourcing/retirement.
+
 ## DONE this session (all byte-neutral across ALL SIX targets; strict green each commit)
 
 Verification bar met after every commit: scratch `sigil build --native` (never
