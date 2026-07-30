@@ -34,6 +34,7 @@ use sigil_span::{Diagnostic, Level, Span};
 use std::path::{Path, PathBuf};
 
 /// Options controlling how a `.emp` module lowers to Core IR.
+#[derive(Clone)]
 pub struct LowerOptions {
     /// The CPU the initial (top-level, no `section {}`) section is encoded for.
     pub initial_cpu: Cpu,

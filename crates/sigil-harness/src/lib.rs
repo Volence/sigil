@@ -40,6 +40,11 @@ pub mod seam1;
 
 pub mod seam2;
 
+/// Flip Stage 1 · S1.1 — the all-gates-ON native whole-ROM driver (the registry
+/// + `build_native_rom`), the seam-2 whole-ROM template generalized to all 53
+/// gates. Consumed by the `native_rom` gate.
+pub mod native;
+
 use sigil_frontend_as::{assemble_root, Options};
 use sigil_ir::{Cpu, Module, SymbolTable};
 use sigil_link::LinkedImage;

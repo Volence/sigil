@@ -12,7 +12,7 @@ use sigil_ir::map::MemoryMap;
 use sigil_ir::{Section, SectionPlacement};
 use sigil_span::{Diagnostic, Level, Span};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Name of a `pub`, comptime-only item — the only kind we inject. Such an item
 /// never emits bytes when lowered (`lower_module`'s item loop skips these kinds),
@@ -203,6 +203,67 @@ pub fn build_program(
     prelude_id: Option<&str>,
     opts: &LowerOptions,
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+    build_program_with(manifest, entry_id, prelude_id, opts, true, true, &|_| opts.embed_base.clone())
+}
+
+/// [`build_program`] for an OPEN program — one whose `.emp` modules reference
+/// symbols supplied by a SEPARATE unit linked alongside them (the flip Stage-1
+/// mixed native build: the `.emp` engine references AS-residual RAM labels / proc
+/// seams resolved only in the joint symbol table). Identical to `build_program`
+/// except it does NOT report unresolved references as errors: `lower_module`
+/// already emits those as link-time fixups, and whether they resolve is decided by
+/// the joint `link` over the union, not here. Names that stay undefined surface as
+/// the linker's own "undefined symbol" errors, so nothing is silently dropped.
+pub fn build_program_open(
+    manifest: &Manifest,
+    entry_id: &str,
+    prelude_id: Option<&str>,
+    opts: &LowerOptions,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+    build_program_with(manifest, entry_id, prelude_id, opts, false, true, &|_| opts.embed_base.clone())
+}
+
+/// [`build_program_open`] with a PER-MODULE `embed_base` override. The aeon `.emp`
+/// tree mixes two `embed(...)` path conventions — module-relative
+/// (`math.emp: "../data/sine.bin"`) and repo-root-relative
+/// (`object_test_state.emp: "games/sonic4/test/ring_art.bin"`) — that no single
+/// `embed_base` satisfies. `embed_base_for(module_id)` picks the base per module;
+/// `None` falls back to `opts.embed_base`. The isolated port oracles pick the base
+/// per module already; this restores that freedom in the whole-program build.
+///
+/// It also SKIPS the canonical-rename pass, so exported labels keep their PLAIN
+/// names (`AnimateSprite`, not `engine.objects.animate.AnimateSprite`). The mixed
+/// build links `.emp` sections against an AS residual that references those procs
+/// by their bare cross-seam names (the `pub proc` link contract the port oracles
+/// prove); module-qualifying them would leave every AS→`.emp` call unresolved.
+/// Private labels already carry module-unique `$`-hygiene from lowering, so bare
+/// exports collide only if two modules export the same name — which the aeon
+/// cross-seam contract forbids, exactly as the flat link table already assumes.
+pub fn build_program_open_embed(
+    manifest: &Manifest,
+    entry_id: &str,
+    prelude_id: Option<&str>,
+    opts: &LowerOptions,
+    embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
+    build_program_with(manifest, entry_id, prelude_id, opts, false, false, embed_base_for)
+}
+
+/// Shared body of [`build_program`] / [`build_program_open`]. `closed` gates the
+/// unresolved-reference check: a closed pure-`.emp` program must define every
+/// name it references (CLI `sigil emp`); an open one defers them to the joint link.
+/// `rename` gates the canonical-rename pass: a pure-`.emp` program module-qualifies
+/// its cross-module symbols, while the mixed AS+`.emp` build keeps them bare.
+/// `embed_base_for` overrides `opts.embed_base` per module.
+fn build_program_with(
+    manifest: &Manifest,
+    entry_id: &str,
+    prelude_id: Option<&str>,
+    opts: &LowerOptions,
+    closed: bool,
+    rename: bool,
+    embed_base_for: &dyn Fn(&str) -> Option<PathBuf>,
+) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     let mut diags = Vec::new();
     let mut sections = Vec::new();
     // Deferred link-time assertions (D-H.4) from every reachable module,
@@ -300,6 +361,18 @@ pub fn build_program(
         // to lowering `pm.file` directly. The common no-prelude/no-comptime-use
         // path has an empty ambient list and lowers BY REFERENCE (zero clones);
         // only the injected path builds a synthetic file.
+        // Per-module `embed_base` (the aeon tree mixes module-relative and
+        // repo-root-relative `embed(...)` conventions). Clone opts only when the
+        // override differs from the ambient one, keeping the common path cheap.
+        let module_embed_base = embed_base_for(&pm.id);
+        let per_module_opts;
+        let opts: &LowerOptions = if module_embed_base == opts.embed_base {
+            opts
+        } else {
+            per_module_opts = LowerOptions { embed_base: module_embed_base, ..opts.clone() };
+            &per_module_opts
+        };
+
         let ambient = ambient_items(pm, prelude_pm, manifest);
         let (mut module, ldiags) = if ambient.is_empty() {
             lower_module(&pm.file, opts) // zero-clone common path.
@@ -336,9 +409,13 @@ pub fn build_program(
         seen_across_modules.extend(ldiags.iter().cloned());
         diags.extend(ldiags);
 
-        report_unresolved(pm, &module, &env, &mut diags);
+        if closed {
+            report_unresolved(pm, &module, &env, &mut diags);
+        }
 
-        rename::rename_module(&mut module, env.rename_map());
+        if rename {
+            rename::rename_module(&mut module, env.rename_map());
+        }
         sections.extend(module.sections);
         link_asserts.extend(module.link_asserts);
     }

@@ -2018,3 +2018,67 @@ arm + the BODY_STUB / BINCLUDE-in-phase patterns. The stale-pin audit (a uniform
 - Strict **2904/0 (1 ignored)**; the seam2 gate family (dac/mt/sfx/seq/soundtables
   colinks + whole-ROM trio) green by name from mains.
 - Aeon master **`409b8ba`** / sigil master **`696fc18`**.
+
+## FLIP STAGE 1 — the SIX-TARGET golden freeze + the split-golden model (2026-07-30)
+
+The point-before-no-return freeze: capture the durable Stage-2 comparands WHILE asl
+is still a live independent witness — the ONLY moment the off-canonical Config-A/B
+(no shipped file) are reproducible. All six full-file blobs are committed under
+`golden/` alongside the fresh-build capture script (`golden/capture_goldens.sh`,
+`--write`). **THESE SIX BLOBS ARE THE STAGE-2 COMPARANDS**: at the Stage-2 gate the
+native driver's `== asl` clause drops and each target becomes `native == this frozen
+golden` (both layers). Overseer ruling (Option 1): demo + Config-A/B NATIVE proofs
+are Stage-2-coupled (they ⊇ S1.2, the computed-resume-org work — see the fork note
+below); the GOLDEN FREEZE happens NOW regardless, since asl leaves at Stage 2.
+
+**THE SPLIT-GOLDEN MODEL (Option A, ruled — S1.4 appendix fork).** Two frozen layers
+per target:
+- **ANCHOR — the assembled ROM `[0, EndOfRom)`, header-neutral** (checksum `$18E` +
+  ROM-end pointer `$1A4` zeroed). The correctness bar. asl-witnessed, byte-identical
+  to the native driver, DRIFT-STABLE across `.asm` deletions (the PRIMARY class,
+  extended here to demo + Config-A/B the way `e5765873`/`dab4f06c` are pinned for
+  sonic4). **This is THE bar the Stage-2 native driver reproduces.**
+- **FULL FILE — assembled + convsym deb2 appendix** (what `build.sh` writes). Drifts
+  as the symbol set changes; the committed blob is the asl full file. Post-flip the
+  native path emits its OWN (sigil-canonical) appendix — the `.emp` names are the
+  source names going forward — CRC-pinned for sonic4 in `native_full_rom.rs`
+  (2198deb2/395374 · 1d895fcb/402696).
+
+**THE SIX FROZEN GOLDENS (aeon `bcb8f64`, sigil `flip-stage1`), fresh-build verified;
+anchor computation validated — it reproduces the campaign PRIMARY `e5765873`/`dab4f06c`
+exactly for the two sonic4 shapes:**
+
+| golden blob | config | FULL FILE (crc / size) | ANCHOR (crc / EndOfRom) |
+|---|---|---|---|
+| `s4.bin` | sonic4 plain (canonical) | **eff2396f / 413577** | **e5765873** / 0x5DB60 |
+| `s4.debug.bin` | sonic4 `__DEBUG__` (canonical) | **1e9097bc / 421579** | **dab4f06c** / 0x5F65A |
+| `demo.bin` | demo plain (sound-off) | **18c64002 / 90776** | **cfda98d3** / 0x11224 |
+| `demo.debug.bin` | demo `__DEBUG__` (sound-off) | **b0475a59 / 91584** | **20c5571d** / 0x11224 |
+| `config_a.bin` | sonic4 `__DEBUG__` + sound + hotkeys + mirror | **b4a6756d / 421898** | **3d9bac53** / 0x5F65A |
+| `config_b.bin` | sonic4 plain, sound-off | **92776720 / 304961** | **fd3f7f8e** / 0x434D0 |
+
+Config-A/B are captured via the LIVE asl `build.sh` at the `mixed_offcanonical_rom.rs`
+CONFIG_A/CONFIG_B defines (Config-A = `DEBUG=1 SOUND_DRIVER_ENABLED=1
+SOUND_DEBUG_HOTKEYS=1 SOUND_DBG_MIRROR=1`; Config-B = `SOUND_DRIVER_ENABLED=0`). They
+write to `s4.debug.bin`/`s4.bin` and CLOBBER the canonical references, so the script
+captures the canonical/demo four FIRST, freezes Config-A/B into distinct blobs, then
+REBUILDS canonical `s4.bin`+`s4.debug.bin` (verified restored to eff2396f/1e9097bc).
+
+**DEMO STALE-BASELINE CORRECTION (history honesty).** The plain-demo figure
+`2b71b37d / 88738` in earlier design/scoping notes was a STALE-ARTIFACT FALSE
+BASELINE — a pre-existing `demo.bin` CRC'd WITHOUT a rebuild, compounded by
+`GAME=demo ./build.sh` silently ignoring the env var (`build.sh:4` takes the game
+POSITIONALLY). The TRUE plain demo bar is **`18c64002 / 90776`**, re-confirmed by a
+genuine fresh rebuild through `capture_goldens.sh` (the mtime anti-stale guard
+passed). `demo.debug.bin` = `b0475a59 / 91584` was always a real build. The script
+makes this exact stale-capture class STRUCTURALLY impossible (delete → positional
+rebuild → assert the artifact is newer than a pre-build marker → CRC).
+
+**STAGE-2-COUPLED (the NATIVE proofs, not the freeze; fork note:
+`docs/superpowers/notes/2026-07-30-flip-stage1-demo-config-native-blocked.md`).** The
+demo + Config-A/B `native == golden` proofs need per-game/per-config resume orgs =
+S1.2 (deferred to Stage 2). Until then the `mixed_offcanonical_rom.rs` per-module
+gates remain the live Config-A/B witness, and canonical sonic4 plain/debug native ==
+asl stays GREEN (S1.1 `native_rom` 2/2, S1.4 `native_full_rom` 3/3). The six goldens
+above are the frozen comparands those Stage-2 proofs will run against. Strict
+**2914/0 (1 ignored)**, unchanged (no gates added — the freeze is data + a script).
