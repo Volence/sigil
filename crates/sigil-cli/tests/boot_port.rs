@@ -60,40 +60,55 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// Parse a value symbol out of an AS listing's symbol table (`NAME : <hex>`),
-/// so build-floating values (Z80 driver size, game config ids) are read from
-/// the live tree, never hardcoded (the t22 CSELF lesson).
-fn listing_symbol(aeon: &Path, debug: bool, name: &str) -> u64 {
-    let lst = aeon.join(if debug { "s4.debug.lst" } else { "s4.lst" });
-    let txt = std::fs::read_to_string(&lst)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", lst.display()));
-    let needle = format!("{name} :");
-    for line in txt.lines() {
-        let mut rest = line;
-        while let Some(pos) = rest.find(&needle) {
-            // Word boundary on the left: line start, whitespace, or '|'.
-            let ok_left = pos == 0
-                || rest[..pos].ends_with(' ')
-                || rest[..pos].ends_with('|')
-                || rest[..pos].ends_with('*');
-            if ok_left {
-                let after = &rest[pos + needle.len()..];
-                let tok = after.split_whitespace().next().unwrap_or_default();
-                if let Ok(v) = u64::from_str_radix(tok, 16) {
-                    return v;
-                }
+/// The frozen reference ROMs (harness `golden/`), NOT the live tree `s4.bin`
+/// (post-flip the tree ROM is sigil-canonical — the committed blob is truth,
+/// mirroring `native_offcanonical_rom::golden`).
+fn golden(name: &str) -> Option<Vec<u8>> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
+    match std::fs::read(&path) {
+        Ok(b) => Some(b),
+        Err(_) => {
+            if strict_gate() {
+                panic!("golden missing: {}", path.display());
             }
-            rest = &rest[pos + needle.len()..];
+            None
         }
     }
-    panic!("symbol {name} not found in {}", lst.display());
+}
+
+/// The build-floating values boot's imm-links resolve against (Z80 driver
+/// size, game entry contract), FROZEN with provenance at the golden freeze.
+///
+/// These were formerly parsed live from the tree's `s4.lst` — a fragile
+/// dependency once the flip made the tree listing sigil-canonical (any
+/// `sigil build` overwrites it and asl can no longer regenerate it). They
+/// are now pinned to the frozen-golden truth (the declared-sizes doctrine:
+/// frozen, provenance'd). If the Z80 driver or game config changes, re-freeze
+/// the golden ROMs (`native_full_rom` fires) and re-pin here in lockstep.
+///
+/// Provenance — the values in the frozen goldens (`golden/s4.bin` 414K /
+/// `golden/s4.debug.bin`), matching the asl-canonical `s4.lst`/`s4.debug.lst`
+/// at the freeze commit:
+///   Z80_SOUND_SIZE  plain $181C   debug $189A   (the resident Z80 driver span)
+///   GAME_ENTRY_ID   $3 both shapes             (sonic4 game-config entry id)
+///   Game_Entry      plain $5C7EC debug $5E2DA  (the game-entry link target)
+fn frozen_symbol(debug: bool, name: &str) -> u64 {
+    match (name, debug) {
+        ("Z80_SOUND_SIZE", false) => 0x181C,
+        ("Z80_SOUND_SIZE", true) => 0x189A,
+        ("GAME_ENTRY_ID", _) => 0x3,
+        ("Game_Entry", false) => 0x5C7EC,
+        ("Game_Entry", true) => 0x5E2DA,
+        _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
+    }
 }
 
 /// The VALUE seam: prepended-twin drift-lock truths + boot's own mirrors +
-/// the stable constants.asm values + the LISTING-PARSED floating values
-/// (Z80 driver size, game entry contract) — one equ blob (one Stub pin).
+/// the stable constants.asm values + the FROZEN floating values (Z80 driver
+/// size, game entry contract) — one equ blob (one Stub pin).
 /// `doctor` overrides ONE static pair (negative probe).
-fn value_equs(aeon: &Path, debug: bool, doctor: Option<(&str, &str)>) -> Vec<Section> {
+fn value_equs(debug: bool, doctor: Option<(&str, &str)>) -> Vec<Section> {
     let mut pairs: Vec<(&str, &str)> = vec![
         // engine.vdp port addresses + target/op bit vocabulary (its ensures)
         ("VDP_DATA", "$C00000"),
@@ -145,13 +160,13 @@ fn value_equs(aeon: &Path, debug: bool, doctor: Option<(&str, &str)>) -> Vec<Sec
         pairs.into_iter().map(|(n, v)| (n, v.to_string())).collect();
     owned.push((
         "Z80_SOUND_SIZE",
-        format!("${:X}", listing_symbol(aeon, debug, "Z80_SOUND_SIZE")),
+        format!("${:X}", frozen_symbol(debug, "Z80_SOUND_SIZE")),
     ));
     owned.push((
         "GAME_ENTRY_ID",
-        format!("${:X}", listing_symbol(aeon, debug, "GAME_ENTRY_ID")),
+        format!("${:X}", frozen_symbol(debug, "GAME_ENTRY_ID")),
     ));
-    owned.push(("Game_Entry", format!("${:X}", listing_symbol(aeon, debug, "Game_Entry"))));
+    owned.push(("Game_Entry", format!("${:X}", frozen_symbol(debug, "Game_Entry"))));
     sigil_harness::test_support::assemble_owned_equ_pairs(&owned)
 }
 
@@ -301,18 +316,21 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 fn run(debug: bool) {
     let aeon = aeon_dir();
     let rom_name = if debug { "s4.debug.bin" } else { "s4.bin" };
-    let rom_path = aeon.join(rom_name);
-    let Ok(refrom) = std::fs::read(&rom_path) else {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but reference missing: {}", rom_path.display());
-        }
-        eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
+    let Some(refrom) = golden(rom_name) else {
+        eprintln!("skip: golden {rom_name} not present");
         return;
     };
+    if !aeon.join("engine/system/boot.emp").exists() {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but boot.emp source missing (set AEON_DIR)");
+        }
+        eprintln!("skip: boot.emp source not present (set AEON_DIR)");
+        return;
+    }
 
     let base = region_base(debug);
     let (mut sections, asserts) = lower_boot(&aeon, base, region_len(debug), debug);
-    sections.extend(value_equs(&aeon, debug, None));
+    sections.extend(value_equs(debug, None));
     sections.extend(addr_labels(debug));
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
@@ -355,7 +373,7 @@ fn doctored_psg_port_fires_its_guard() {
     }
     let base = region_base(false);
     let (mut sections, asserts) = lower_boot(&aeon, base, region_len(false), false);
-    sections.extend(value_equs(&aeon, false, Some(("PSG_PORT", "$C00013"))));
+    sections.extend(value_equs(false, Some(("PSG_PORT", "$C00013"))));
     sections.extend(addr_labels(false));
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
