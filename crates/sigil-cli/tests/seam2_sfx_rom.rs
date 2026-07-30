@@ -52,6 +52,7 @@ fn ensure_generated(aeon: &Path) {
     seam2::emit_dac_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_dac_artifacts: {e}"));
     seam2::emit_mt_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_mt_artifacts: {e}"));
     seam2::emit_sfx_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_sfx_artifacts: {e}"));
+    seam2::emit_seq_opcode_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_seq_opcode_artifacts: {e}"));
 }
 
 fn build_seam2_sfx_rom(debug: bool) -> Vec<u8> {
@@ -126,5 +127,39 @@ fn seam2_sfx_rom_diverges_when_head_doctored() {
         &rom[lo..lo + 0x10],
         &refrom[lo..lo + 0x10],
         "the whole-ROM SFX gate is vacuous if a doctored win-tab head still matches canonical"
+    );
+}
+
+/// t24 WHOLE-ROM positive control for the seam-2 stage-3 seq-opcode head: a
+/// DOCTORED seq_opcode_tab.bin (one byte flipped) must make the ROM DIVERGE from
+/// canonical in the SeqOpcodeTable window ($5856D). Restores honest inputs after.
+#[test]
+fn seam2_sfx_rom_diverges_when_seq_doctored() {
+    let Some(refrom) = read_ref("s4.bin") else { return };
+    let _guard = GEN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let aeon = aeon_dir();
+    let gen = aeon.join("engine/sound/generated");
+    ensure_generated(&aeon);
+    let seq_path = gen.join("seq_opcode_tab.bin");
+    let mut seq = std::fs::read(&seq_path).expect("read honest seq_opcode_tab");
+    seq[0] ^= 0xFF; // flip the first handler pointer's low byte
+    std::fs::write(&seq_path, &seq).expect("write doctored seq");
+
+    let module = assemble_seam2_sfx_rom_as_side(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = sigil_link::resolve_layout(&module.sections, &Default::default(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let linked = sigil_link::link(&resolved, &Default::default())
+        .unwrap_or_else(|d| panic!("link: {d:?}"));
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
+    let rom = sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom: {e}"));
+
+    ensure_generated(&aeon); // restore honest inputs
+
+    let lo = seam2::SEQ_OPCODE_TAB_LMA as usize;
+    assert_ne!(
+        &rom[lo..lo + 0x10],
+        &refrom[lo..lo + 0x10],
+        "the whole-ROM gate is vacuous if a doctored seq-opcode head still matches canonical"
     );
 }

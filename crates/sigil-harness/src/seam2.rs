@@ -353,6 +353,70 @@ pub fn emit_sfx_body_and_head(aeon: &Path, debug: bool) -> Result<SfxBodyAndHead
     Ok(SfxBodyAndHead { body: body_bytes, head: head_bytes })
 }
 
+/// The LMA of the `SeqOpcodeTable` head (VMA `$856D` in the `$8000` window,
+/// physically at `$58000 + ($856D - $8000)` in the song/SFX bank). The head's
+/// bank-head POSITION is shape-invariant, but its CONTENT is shape-DEPENDENT:
+/// each cell is a resident `Seq_Op_*` handler VMA, and the handlers re-base
+/// after `sound_sequencer.emp`'s `if DEBUG==1` growth.
+pub const SEQ_OPCODE_TAB_LMA: u32 = 0x5856D;
+/// The `SeqOpcodeTable` byte length: 32 opcode slots × 2 bytes.
+pub const SEQ_OPCODE_TAB_LEN: usize = 64;
+
+/// Lower `seq_opcode_tab.emp` (the 32-entry coordination-opcode jump table) and
+/// resolve its `dc.w Seq_Op_*` cells against the REAL resident handler VMAs — read
+/// off the same seam-1 blob link (`native_sound_blob`) the resident driver is
+/// emitted from, so the Seq_Op_* imports resolve to the exact VMAs the
+/// `z80_sound_syms.asm` contract exported (design §2c). SHAPE-DEPENDENT: the
+/// handlers re-base in the debug shape, so the emitted table differs per shape.
+pub fn emit_seq_opcode_tab(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
+    let dir = aeon.join("engine/sound");
+    let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000)?;
+
+    // The table places at VMA $8000; its cell VALUES (resident Seq_Op_* addresses)
+    // do not depend on its own placement, so a nominal region suffices.
+    let map_toml =
+        "fill = 0x00\n\n[[region]]\nname = \"seq_opcode_tab\"\nlma_base = 0x8000\nsize = 0x100\nkind = \"rom\"\n";
+    let map = sigil_link::load_map(map_toml).map_err(|d| format!("map load: {d:?}"))?;
+    let mut sections = module.sections;
+    let pd = place_sections(&mut sections, &map);
+    if pd.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("place_sections errors: {pd:?}"));
+    }
+
+    // The resident Seq_Op_* handler VMAs (the `dc.w <label>` link targets), read
+    // from the SAME blob link the resident driver ships from — so the table cells
+    // equal the handlers' real addresses in this shape.
+    let symbols = crate::seam1::native_sound_blob(aeon, debug).symbols;
+    let pairs: Vec<(String, String)> =
+        symbols.into_iter().map(|(n, v)| (n, format!("${v:X}"))).collect();
+    let refs: Vec<(&str, &str)> = pairs.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect();
+    let mut carriers = crate::test_support::assemble_equ_pairs(&refs);
+    for (i, sec) in carriers.iter_mut().enumerate() {
+        sec.lma = 0x0100_0000 + (i as u32) * 0x1000;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+    }
+    sections.extend(carriers);
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .map_err(|d| format!("resolve_layout: {d:?}"))?;
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    Ok(linked.section("seq_opcode_tab").ok_or("missing seq_opcode_tab in linked image")?.bytes.clone())
+}
+
+/// Emit the seam-2 seq-opcode-table build inputs to `out_dir`:
+/// `seq_opcode_tab{,_debug}.bin` (the 64-byte jump table, shape-dependent — the
+/// resident handlers re-base in the debug shape).
+pub fn emit_seq_opcode_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    for (debug, name) in [(false, "seq_opcode_tab.bin"), (true, "seq_opcode_tab_debug.bin")] {
+        let bytes = emit_seq_opcode_tab(aeon, debug)?;
+        let p = out_dir.join(name);
+        std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
+    }
+    Ok(())
+}
+
 /// Emit the seam-2 SFX build inputs to `out_dir`: `sfx_bank{,_debug}.bin` (the
 /// $5BAE8/$5D53A block bodies) + `sfx_blob_win_tab{,_debug}.bin` (the co-linked
 /// 270-byte window-pointer heads). SHAPE-DEPENDENT (both halves shift with the

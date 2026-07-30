@@ -73,6 +73,12 @@ fn main() {
         eprintln!("error: emit_sound_blob (seam-2 SFX bank) failed: {err}");
         process::exit(1);
     }
+    // seam-2 stage-3: the sequencer opcode jump table (shape-dependent — the
+    // resident Seq_Op_* handlers re-base in the debug shape).
+    if let Err(err) = sigil_harness::seam2::emit_seq_opcode_artifacts(aeon_path, out_path) {
+        eprintln!("error: emit_sound_blob (seam-2 seq_opcode_tab) failed: {err}");
+        process::exit(1);
+    }
     println!(
         "emitted seam-1 resident blob (z80_sound_blob{{,_debug}}.bin + z80_sound_syms.asm) \
          + seam-2 DAC artifacts (dac_blip_bank.bin + dac_shared_bank.bin + dac_sample_tab.bin) \

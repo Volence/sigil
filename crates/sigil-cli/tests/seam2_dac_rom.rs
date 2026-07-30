@@ -55,6 +55,12 @@ fn ensure_generated(aeon: &Path) {
     let gen = aeon.join("engine/sound/generated");
     seam1::emit_sound_blob(aeon, &gen).unwrap_or_else(|e| panic!("emit_sound_blob (blob): {e}"));
     seam2::emit_dac_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_dac_artifacts: {e}"));
+    // Post MT/SFX/seq deletion the whole-ROM assemble BINCLUDEs the MT bank + the
+    // SFX body + the SFX win-tab + the seq-opcode head (no more "DAC-only" build —
+    // those .asm are gone), so this gate emits the full artifact set too.
+    seam2::emit_mt_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_mt_artifacts: {e}"));
+    seam2::emit_sfx_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_sfx_artifacts: {e}"));
+    seam2::emit_seq_opcode_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_seq_opcode_artifacts: {e}"));
 }
 
 /// Assemble the WHOLE ROM through the AS front-end with the seam-2 DAC gate ON

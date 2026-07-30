@@ -51,6 +51,10 @@ fn ensure_generated(aeon: &Path) {
     seam1::emit_sound_blob(aeon, &gen).unwrap_or_else(|e| panic!("emit_sound_blob (blob): {e}"));
     seam2::emit_dac_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_dac_artifacts: {e}"));
     seam2::emit_mt_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_mt_artifacts: {e}"));
+    // soundBankHead now BINCLUDEs the SFX win-tab + seq-opcode heads (unconditional,
+    // post stage-2d/3), so the whole-ROM assemble needs them present too.
+    seam2::emit_sfx_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_sfx_artifacts: {e}"));
+    seam2::emit_seq_opcode_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_seq_opcode_artifacts: {e}"));
 }
 
 fn build_seam2_mt_rom(debug: bool) -> Vec<u8> {
