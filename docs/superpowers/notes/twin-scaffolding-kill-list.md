@@ -213,6 +213,51 @@ Executed (subsystem — commit — twin files deleted):
   the SOUND_DRIVER_ENABLED guard. No AS-half: sound_api_port assembles synthetic strings
   only. Rows 10/24/36/43 CLOSE (the .emp's slot-address extern-equ sums + immediate
   mirrors are now the sole spelling). Net 0 tests.
+- player-state — `player_sensors.asm`, `player_ground.asm`, `player_air.asm`,
+  `player_spindash.asm`, `sonic.asm`. Bare gate collapses (SIGIL_EMP_* in every
+  sonic4/config code-gate set; demo never includes them). player_sensors keeps its
+  per-shape `ifdef __DEBUG__` pair (shape-varying base); the four object-bank state
+  files are shape-invariant single orgs. No AS-half (test_p2/p4 read .emp + ROM).
+  Net 0 tests.
+- game objects — `test_static.asm`, `test_animated.asm`, `test_solid.asm`,
+  `test_particle.asm`, `test_emitter.asm`, `test_parent.asm`,
+  `test_stress_emitter.asm`, `test_churn.asm`, `path_swap.asm`. Bare gate collapses
+  (path_swap keeps its per-shape pair — the two __DEBUG__ blocks). test_player.asm /
+  test_enemy.asm SURVIVE (keystone headers, DEFERRED below). test_animated's DplcV
+  overlay equates still come from the surviving test_player.asm header. No AS-half.
+  Net 0 tests.
+- game data — `objdefs/test_objects.asm`, `animations/sonic_anims.asm`,
+  `animations/particle_anims.asm`. Bare gate collapses. act_descriptor.asm SURVIVES
+  (keystone-class, DEFERRED below). No AS-half. Net 0 tests.
+- game test/debug — `object_test_state.asm`, `ojz_scroll_test.asm`, `game_debug.asm`.
+  object_test_state / ojz_scroll_test are bare per-shape collapses. game_debug is the
+  Config-A-only collapse (`ifdef SIGIL_EMP_GAME_DEBUG / org $6408 / endif`; the
+  canonical shapes' gate-off include was already 0-byte via the twin's whole-file
+  SOUND_DEBUG_HOTKEYS ifdef). game_debug_port's AS-twin oracle RETIRES (−3 tests:
+  the `as_twin_bytes` reader + `emp_diverges_from_doctored_twin` +
+  `game_debug_{plain,debug}_is_empty`; `matches_as_twin` transformed to a .emp
+  compile+guards-pass+non-empty gate). Coverage → the config_a whole-ROM golden
+  (80e602df) + the surviving `doctored_extern_fires_drift_guard` (non-vacuity) +
+  `two_module_flip_resolves_debug_music_toggle`. Rows 6/58/88/89 advance. Strict
+  2857→2854.
+  **DEFERRED (keystone-class, CRC-moving — NOT done this span):** the internal-gate
+  keystones player_common / test_player / test_enemy AND act_descriptor. Each is an
+  UNCONDITIONALLY-AS-included file with a zero-byte equate/struct header ALWAYS
+  emitted (the cross-seam consumers — camera.emp's PL_STATE_ADDR, the drift guards,
+  test_animated's DplcV, entity_data's ObjDef refs) + an internal `ifndef SIGIL_EMP_X`
+  gating only the CODE/DATA body, whose `.emp` twin is NOT in the native registry.
+  Flipping = add the gate to code_gate_defines + add the ModuleSpec + drop from
+  as_owned_keystones. PROVEN this span to be CRC-MOVING and correctness-breaking off
+  the mapped plan: (1) the pinned sonic4 appendix (sigil-canonical deb2 symbol table)
+  SHRINKS ~1389 B — the `.emp` local labels mangle as `$module$Proc$local` vs the AS
+  frontend's `Proc.local`, so the appendix (frozen with the keystones AS-owned) is no
+  longer reproduced → the full-file CRC moves; (2) the Frozen chainer MISPLACES a
+  downstream config_a data pointer (anchor diverges at 0x11412, sig 0x12 != gold
+  0x13) — the `.emp` keystones enter the off-canonical chained set and perturb the
+  contiguity/label derivation. This is a re-baseline event (re-freeze the six pinned
+  CRCs) + a chainer reconciliation, same class as z80_init — it needs overseer
+  authorization to move the pins. Reverted clean; the keystone/act_descriptor `.asm`
+  headers stay AS-side, their `_port` region gates survive as the proof.
   **TOOLING NOTE (stale-artifact trap, MEMORY-flagged):** the scratch CRC proof
   must `rm` the output AND check the build's exit code BEFORE CRC'ing — a failed
   `sigil build` leaves the `-o` file untouched, so a prior success's bytes read
