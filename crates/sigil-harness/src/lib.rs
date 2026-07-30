@@ -1034,6 +1034,31 @@ pub fn assemble_mixed_tranche39_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Tranche 41 (the T1 harness states — the LAST game-side code tranche): the full
+/// AS-side game with `SIGIL_EMP_OBJECT_TEST_STATE` + `SIGIL_EMP_OJZ_SCROLL_TEST`
+/// on. Both gameStatesIncludes files are SHAPE-DEPENDENT, so each gate arm
+/// org-resumes at a PER-SHAPE address (object_test_state → ojz start; ojz →
+/// NullInterrupt, the post-gameStates level-1 stub). The AS-side link resolves
+/// ojz's `TestArt`/`TestArt_End` references to object_test_state.emp's exports and
+/// config/game.asm's `Game_Entry = GameState_OJZScroll_Init` to the .emp export
+/// (the ownership flip). After t41 the 68k game SIDE is code-complete — only
+/// main/config remain (the Spec-5 flip itself).
+pub fn assemble_mixed_tranche41_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_OBJECT_TEST_STATE".to_string(), 1),
+        ("SIGIL_EMP_OJZ_SCROLL_TEST".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed tranche41 AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included
