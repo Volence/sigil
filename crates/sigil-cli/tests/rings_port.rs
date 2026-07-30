@@ -441,85 +441,13 @@ fn rings_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin", 1);
 }
 
-// ── The SND combo probe ─────────────────────────────────────────────────────
-
-/// The AS-twin oracle for the SOUND_DRIVER_ENABLED dimension: aabb.inc +
-/// rings.asm (the include line replaced by the .inc text), assembled through
-/// the sigil AS front-end at the PLAIN base with the same equ prelude the .emp
-/// gets, per-combo defines. DEBUG stays OFF in the matrix — expanding the
-/// `assert.b` needs the whole debugger.asm macro tower, and the DEBUG
-/// dimension is already byte-gated by the debug REFERENCE gate above; the one
-/// uncovered combo is (DEBUG=1, SND=0), a debug-silent build no pin exists
-/// for. Recorded, not hidden.
-fn as_twin_bytes(snd_on: bool) -> Vec<u8> {
-    let aeon = aeon_dir();
-    let inc = std::fs::read_to_string(aeon.join("engine/objects/aabb.inc"))
-        .expect("aabb.inc must be readable");
-    let rings_src = std::fs::read_to_string(aeon.join("engine/objects/rings.asm"))
-        .expect("rings.asm must be readable");
-    let rings_body = rings_src.replace("    include \"engine/objects/aabb.inc\"", "");
-
-    let mut prelude = String::from("cpu 68000\nsupmode on\n");
-    let mut pairs = sigil_harness::test_support::sst_field_equs();
-    pairs.extend(sigil_harness::test_support::engine_constant_equs());
-    pairs.extend(game_ring_equs());
-    for (name, rhs) in pairs {
-        prelude.push_str(&format!("{name} = {rhs}\n"));
-    }
-    for (name, vma) in PLAIN.labels {
-        prelude.push_str(&format!("{name} = ${vma:X}\n"));
-    }
-    let src = format!("{prelude}{inc}\norg ${:X}\n{rings_body}\n", PLAIN.base);
-
-    let mut defines: Vec<(String, i64)> = Vec::new();
-    if snd_on {
-        defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
-    }
-    let opts = AsOptions { initial_cpu: Cpu::M68000, defines, ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve_layout failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    let sec = linked
-        .sections
-        .iter()
-        .find(|s| s.lma == PLAIN.base && !s.bytes.is_empty())
-        .unwrap_or_else(|| panic!("AS twin must emit a section at {:#x}", PLAIN.base));
-    sec.bytes.clone()
-}
-
-/// SND 0/1 at DEBUG=0: the .emp vs the AS-twin oracle, module-level. This is
-/// the conditional-MIRRORING drift guard (the oracle re-reads the real
-/// rings.asm every run).
-#[test]
-fn snd_combo_matches_as_twin() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/rings.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    for snd_on in [true, false] {
-        let defines: Vec<(&str, i128)> =
-            vec![("DEBUG", 0), ("SOUND_DRIVER_ENABLED", i128::from(snd_on))];
-        let (_, linked, _) = compile_real_file(&PLAIN, &defines);
-        let section = linked.section("rings").expect("linked image must carry rings");
-        let expected = as_twin_bytes(snd_on);
-        assert_region_matches(
-            &section.bytes,
-            &expected,
-            &format!("rings combo (snd={snd_on}) vs AS twin"),
-        );
-    }
-}
+// The SND-combo AS-twin oracle RETIRED (flip Stage-2): rings.asm is deleted —
+// the .emp is the only source. The SOUND_DRIVER_ENABLED-dimension coverage is
+// subsumed by the native whole-ROM golden gates (sound-ON canonical + Config-B
+// sound-OFF); the region gates above pin rings == frozen-golden slice, and the
+// t24 game-mirror drift probe below keeps the golden non-vacuous. aabb.inc (not
+// a twin) survives as rings.emp's data source. The zero-disp collapse probe
+// below still exercises the F1 splice against the real aabb.emp.
 
 // ── The zero-disp collapse probe (row 13's promise) ─────────────────────────
 

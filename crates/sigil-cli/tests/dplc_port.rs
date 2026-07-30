@@ -307,64 +307,9 @@ fn dplc_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");
 }
 
-// ── The AS-twin oracle ───────────────────────────────────────────────────────
-
-/// The AS-twin oracle: dplc.asm assembled through the sigil AS front-end at the
-/// PLAIN base with the same equ prelude the .emp gets. dplc.asm has no
-/// conditionals (no SOUND/DEBUG paths), so a single equality check suffices —
-/// the oracle re-reads the real dplc.asm every run, so any AS-side change the
-/// .emp doesn't mirror fails here naming the first diverging byte.
-fn as_twin_bytes() -> Vec<u8> {
-    let aeon = aeon_dir();
-    let dplc_src = std::fs::read_to_string(aeon.join("engine/objects/dplc.asm"))
-        .expect("dplc.asm must be readable");
-
-    let mut prelude = String::from("cpu 68000\nsupmode on\n");
-    let mut pairs = sigil_harness::test_support::sst_field_equs();
-    pairs.extend(sigil_harness::test_support::engine_constant_equs());
-    for (name, rhs) in pairs {
-        prelude.push_str(&format!("{name} = {rhs}\n"));
-    }
-    for (name, vma) in PLAIN.labels {
-        prelude.push_str(&format!("{name} = ${vma:X}\n"));
-    }
-    let src = format!("{prelude}org ${:X}\n{dplc_src}\n", PLAIN.base);
-
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    let out = assemble(&src, &opts).unwrap_or_else(|d| panic!("AS twin assemble: {d:?}"));
-    let mut sections = out.sections;
-    for sec in &mut sections {
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("AS twin resolve_layout failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("AS twin link failed: {d:?}"));
-    let sec = linked
-        .sections
-        .iter()
-        .find(|s| s.lma == PLAIN.base && !s.bytes.is_empty())
-        .unwrap_or_else(|| panic!("AS twin must emit a section at {:#x}", PLAIN.base));
-    sec.bytes.clone()
-}
-
-/// The .emp vs the AS-twin oracle, module-level.
-#[test]
-fn dplc_matches_as_twin() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/dplc.asm").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let (_, linked, _) = compile_real_file(&PLAIN);
-    let section = linked.section("dplc").expect("linked image must carry dplc");
-    let expected = as_twin_bytes();
-    assert_region_matches(&section.bytes, &expected, "dplc vs AS twin");
-}
+// The AS-twin oracle RETIRED (flip Stage-2): dplc.asm is deleted — the .emp is
+// the only source. dplc's region correctness is subsumed by the region gates
+// (dplc == frozen-golden slice) + the native whole-ROM golden gates.
 
 // ===========================================================================
 // Tranche 20 — the QueueDMA ownership FLIP (proof-mechanism feed-forward):

@@ -156,3 +156,10 @@ Executed (subsystem — commit — twin files deleted):
 - compression — aeon `de41581` (D3) — `s4lz_decompress.asm`, `zx0_decompress.asm`.
 - engine/system math — `math.asm` (pcrel_port keeps its inline AS/EMP parity
   snippets — it never read the file; math_port re-comparanded to golden).
+- engine/objects — `dplc.asm`, `core.asm`, `sprites.asm`, `animate.asm`,
+  `collision.asm`, `rings.asm`, `entity_window.asm`, `children.asm`,
+  `load_object.asm`. AS-twin lockstep oracles retired (−4 tests:
+  sprites/animate/dplc/rings `*_matches_as_twin`) — coverage subsumed by the
+  region + native whole-ROM golden gates; each file's t24 doctored-mirror probe
+  SURVIVES (gates on the `.emp`), keeping the golden non-vacuous. `aabb.inc`
+  survives (rings.emp's data source, not a code twin). Strict 2862→2858.
