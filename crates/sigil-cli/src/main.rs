@@ -3,8 +3,7 @@
 //! Usage: `sigil <input.asm> [-o <output.bin>] [--hex]`
 //!        `sigil parse <input.emp>`
 //!        `sigil emp <input.emp> [-o <output.bin>] [--hex]`
-//!        `sigil build --aeon <dir> [-o <output.bin>]`
-//!        `sigil diff --aeon <dir>`
+//!        `sigil build --aeon <dir> [-o <output.bin>] [--emit-lst <lst>] [--game ...] [--debug]`
 //!
 //! Assembles the given Z80 source file. Writes the binary image to the path
 //! given by `-o` (if supplied). When `--hex` is passed, prints the output
@@ -13,13 +12,10 @@
 //! `sigil parse <input.emp>` runs only the .emp lexer/parser front end
 //! (Spec 2 Plan 1) and reports success or every diagnostic collected.
 //!
-//! `sigil build --aeon <dir>` assembles the full non-debug Aeon ROM (the whole
-//! `main.asm` include tree, no stubs) and, with `-o`, writes the emitted ROM to
-//! disk.
-//!
-//! `sigil diff --aeon <dir>` assembles the same full ROM and compares the Z80
-//! sound driver's Region A + Region B byte-for-byte against `aeon/s4.bin`,
-//! exiting non-zero if either region diverges.
+//! `sigil build --aeon <dir>` is THE Aeon ROM build (post-flip, the only one):
+//! it assembles the whole `main.asm` include tree with every `.emp` module
+//! lowered natively, chained-links, folds the checksum, emits the sigil-canonical
+//! `.lst`, and appends the `convsym` deb2 symbol table — the full shipped ROM.
 
 use std::process;
 
@@ -31,7 +27,6 @@ fn main() {
         Some("emp") => return run_emp(&args[2..]),
         Some("test") => return run_test(&args[2..]),
         Some("build") => return run_build(&args[2..]),
-        Some("diff") => return run_diff(&args[2..]),
         _ => {}
     }
 
@@ -739,130 +734,31 @@ fn render_program_diags(
     }
 }
 
-/// Parse `--aeon <dir>` (required) and, if `allow_output` is set, an optional
-/// `-o <path>` out of a subcommand's argument slice. Any other/unexpected
-/// argument is a usage error. Returns `(aeon_dir, output_path)`.
-fn parse_aeon_and_output(args: &[String], allow_output: bool, usage: &str) -> (String, Option<String>) {
-    let mut aeon: Option<String> = None;
-    let mut output: Option<String> = None;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--aeon" => {
-                i += 1;
-                match args.get(i) {
-                    Some(path) => aeon = Some(path.clone()),
-                    None => {
-                        eprintln!("error: --aeon requires a path argument");
-                        process::exit(2);
-                    }
-                }
-            }
-            "-o" if allow_output => {
-                i += 1;
-                match args.get(i) {
-                    Some(path) => output = Some(path.clone()),
-                    None => {
-                        eprintln!("error: -o requires a path argument");
-                        process::exit(2);
-                    }
-                }
-            }
-            other => {
-                eprintln!("error: unexpected argument '{other}'");
-                eprintln!("usage: {usage}");
-                process::exit(2);
-            }
-        }
-        i += 1;
-    }
-
-    let aeon = match aeon {
-        Some(path) => path,
-        None => {
-            eprintln!("usage: {usage}");
-            process::exit(2);
-        }
-    };
-    (aeon, output)
-}
-
-/// `sigil build --aeon <dir> [-o <output.bin>]` — the Aeon ROM build.
+/// `sigil build --aeon <dir> [-o <output.bin>] [--emit-lst <lst>]` — THE Aeon ROM
+/// build (post-flip: the ONLY build).
 ///
-/// Two modes:
-///   - `--native` (the flip build): drive the SAME code path the native gates
-///     bank — assemble (all `.emp` modules lowered + AS residual) → declared-order
-///     chained link → `emit_rom` (checksum folded) → sigil-canonical `.lst` →
-///     `convsym` deb2 appendix → `fixheader` — and write the full ROM+appendix.
-///     Target selected by `--game <sonic4|demo>` + `--debug` (or `--config-a` /
-///     `--config-b` for the off-canonical proof shapes). This is what `build.sh`
-///     invokes under `SIGIL_NATIVE=1`.
-///   - default (no `--native`): the legacy all-AS `assemble_full_rom` image (kept
-///     for tooling that wants the raw assembled bytes without the symbol appendix).
+/// Drives the SAME code path the native gates bank — assemble (all `.emp` modules
+/// lowered + AS residual) → declared-order chained link → `emit_rom` (checksum
+/// folded) → sigil-canonical `.lst` → `convsym` deb2 appendix → `fixheader` — and
+/// writes the full ROM+appendix. Target selected by `--game <sonic4|demo>` +
+/// `--debug` (or `--config-a`/`--config-b` for the off-canonical proof shapes).
+/// This is what `build.sh` invokes. The legacy no-appendix all-AS `assemble_full_rom`
+/// mode retired with the flip (the AS-reassembly harness is gone); `--native` is
+/// accepted as a no-op for build.sh compatibility.
 fn run_build(args: &[String]) {
     let opts = match parse_build_args(args) {
         Ok(o) => o,
         Err(msg) => {
             eprintln!("error: {msg}");
             eprintln!(
-                "usage: sigil build --aeon <dir> [-o <out.bin>] \
-                 [--native [--game sonic4|demo] [--debug] [--config-a|--config-b]]"
+                "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
+                 [--game sonic4|demo] [--debug] [--config-a|--config-b]"
             );
             process::exit(2);
         }
     };
     let aeon_path = std::path::Path::new(&opts.aeon);
-
-    if opts.native {
-        return run_build_native(aeon_path, &opts);
-    }
-
-    let img = match sigil_harness::assemble_full_rom(aeon_path) {
-        Ok(img) => img,
-        Err(err) => {
-            eprintln!("error: {err}");
-            process::exit(1);
-        }
-    };
-
-    let len_a = sigil_harness::region_at_lma(&img, sigil_harness::REGION_A_LMA)
-        .map(<[u8]>::len)
-        .unwrap_or(0);
-    let len_b = sigil_harness::region_at_lma(&img, sigil_harness::REGION_B_LMA)
-        .map(<[u8]>::len)
-        .unwrap_or(0);
-
-    if let Some(out_path) = &opts.output {
-        let map_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
-        let map = match std::fs::read_to_string(&map_path)
-            .map_err(|e| e.to_string())
-            .and_then(|s| sigil_link::load_map(&s))
-        {
-            Ok(map) => map,
-            Err(err) => {
-                eprintln!("error: load map {}: {err}", map_path.display());
-                process::exit(1);
-            }
-        };
-        let rom = match sigil_link::emit_rom(&img, &map) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                eprintln!("error: {err}");
-                process::exit(1);
-            }
-        };
-        if let Err(err) = std::fs::write(out_path, &rom) {
-            eprintln!("error: cannot write {out_path}: {err}");
-            process::exit(1);
-        }
-    }
-
-    println!(
-        "built: full ROM, sound driver region A {len_a} B @ {:#x}, region B {len_b} B @ {:#x}",
-        sigil_harness::REGION_A_LMA,
-        sigil_harness::REGION_B_LMA
-    );
+    run_build_native(aeon_path, &opts);
 }
 
 /// Which native target `sigil build --native` produces.
@@ -879,20 +775,18 @@ struct BuildOpts {
     aeon: String,
     output: Option<String>,
     emit_lst: Option<String>,
-    native: bool,
     target: BuildTarget,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
-/// `--native`, `--game <name>`, `--debug`, `--config-a`, `--config-b` are optional.
-/// `--config-a`/`--config-b` fix the whole shape (sonic4 game), so they conflict
-/// with `--game`/`--debug`. Everything is a native-mode selector — with no
-/// `--native` the legacy all-AS path runs and the target is unused.
+/// `--emit-lst <path>`, `--game <name>`, `--debug`, `--config-a`, `--config-b` are
+/// optional. `--config-a`/`--config-b` fix the whole shape (sonic4 game), so they
+/// conflict with `--game`/`--debug`. `--native` is accepted as a no-op (post-flip
+/// the native build is the only build).
 fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut aeon: Option<String> = None;
     let mut output: Option<String> = None;
     let mut emit_lst: Option<String> = None;
-    let mut native = false;
     let mut game: Option<String> = None;
     let mut debug = false;
     let mut config: Option<char> = None;
@@ -904,7 +798,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "-o" => output = Some(next_value(args, &mut i, "-o")?),
             "--emit-lst" => emit_lst = Some(next_value(args, &mut i, "--emit-lst")?),
             "--game" => game = Some(next_value(args, &mut i, "--game")?),
-            "--native" => native = true,
+            "--native" => {} // accepted as a no-op — native is the only build post-flip
             "--debug" => debug = true,
             "--config-a" => config = Some('a'),
             "--config-b" => config = Some('b'),
@@ -928,7 +822,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             Some(g) => return Err(format!("unknown --game '{g}' (want sonic4 or demo)")),
         },
     };
-    Ok(BuildOpts { aeon, output, emit_lst, native, target })
+    Ok(BuildOpts { aeon, output, emit_lst, target })
 }
 
 /// Consume the value after a value-taking flag at `args[*i]`, advancing `i`. A
@@ -1012,69 +906,6 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     println!("built: {label} native ROM — crc={:08x} len={}", native::crc32(&full), full.len());
 }
 
-/// `sigil diff --aeon <dir>` — assemble the full non-debug Aeon ROM (no stubs)
-/// and compare the sound driver's Region A + Region B byte-for-byte against
-/// `aeon/s4.bin`. Exits non-zero if either region diverges.
-fn run_diff(args: &[String]) {
-    let (aeon, _) = parse_aeon_and_output(args, false, "sigil diff --aeon <dir>");
-    let aeon_path = std::path::Path::new(&aeon);
-
-    let img = match sigil_harness::assemble_full_rom(aeon_path) {
-        Ok(img) => img,
-        Err(err) => {
-            eprintln!("error: {err}");
-            process::exit(1);
-        }
-    };
-
-    let refrom = match std::fs::read(aeon_path.join("s4.bin")) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            eprintln!("error: cannot read {}/s4.bin: {err}", aeon);
-            process::exit(1);
-        }
-    };
-
-    let mut ok = true;
-    for (label, lma) in
-        [("region A", sigil_harness::REGION_A_LMA), ("region B", sigil_harness::REGION_B_LMA)]
-    {
-        let bytes = match sigil_harness::region_at_lma(&img, lma) {
-            Some(b) => b,
-            None => {
-                println!("{label} ({lma:#x}): no linked section at that LMA");
-                ok = false;
-                continue;
-            }
-        };
-        let start = lma as usize;
-        let end = start + bytes.len();
-        match refrom.get(start..end) {
-            Some(win) if win == bytes => println!("{label} ({lma:#x}): MATCH ({} bytes)", bytes.len()),
-            Some(win) => {
-                let i = (0..bytes.len()).find(|&i| bytes[i] != win[i]).unwrap();
-                println!(
-                    "{label} ({lma:#x}): diverged at region offset {i:#x} (ROM {:#x}): \
-                     sigil {:#04x} != ref {:#04x}",
-                    start + i,
-                    bytes[i],
-                    win[i]
-                );
-                ok = false;
-            }
-            None => {
-                println!("{label} ({lma:#x}): window exceeds reference ROM ({} B)", refrom.len());
-                ok = false;
-            }
-        }
-    }
-
-    if !ok {
-        process::exit(1);
-    }
-    println!("OK: both regions byte-identical");
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -1119,9 +950,8 @@ mod tests {
         use crate::BuildTarget;
         let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
-        // Default (no --game) → canonical sonic4 plain.
+        // Default (no --game) → canonical sonic4 plain. `--native` is an accepted no-op.
         let o = crate::parse_build_args(&s(&["--aeon", "x", "--native"])).unwrap();
-        assert!(o.native);
         assert!(matches!(o.target, BuildTarget::Sonic4 { debug: false }));
 
         // --game sonic4 --debug → sonic4 debug.
