@@ -14,8 +14,10 @@
 //! `.emp` sources + the sigil toolchain version, and the canonical CRC bar is what
 //! proves it — the blob is provenance-tracked exactly like the ROMs.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use sigil_frontend_emp::ast;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
@@ -140,9 +142,9 @@ fn banked_carriers() -> Vec<(&'static str, i64)> {
     ]
 }
 
-/// Lower one resident `.emp` file (const seam `-D` + the shape `DEBUG` flag, with an
-/// optional single-symbol doctor), returning its single named section.
-fn lower_one(aeon: &Path, spec: &FileSpec, debug: bool, doctor: Option<(&str, i64)>) -> Section {
+/// Parse one resident `.emp` file, returning its AST + its directory (the include
+/// root). Panics on a parse error — the blob is a hard build dependency.
+fn parse_one(aeon: &Path, spec: &FileSpec) -> (ast::File, PathBuf) {
     let path = aeon.join(spec.rel_path);
     let dir = path.parent().expect("file has a parent dir").to_path_buf();
     let src = std::fs::read_to_string(&path)
@@ -153,6 +155,164 @@ fn lower_one(aeon: &Path, spec: &FileSpec, debug: bool, doctor: Option<(&str, i6
         "{} parse errors: {pdiags:?}",
         spec.rel_path
     );
+    (file, dir)
+}
+
+/// A module's `invariant: preserves(...)` reglist segments (empty if none) — the
+/// register units every proc in the module inherits (mirrors `lower/mod.rs`'s
+/// `validate_module_invariants` reader). Unioned into an imported callee's stub so
+/// a consumer credits the inherited-preserve (e.g. fm/psg's module `preserves(ix)`).
+fn module_invariant_reglist(file: &ast::File) -> Vec<(String, Option<String>)> {
+    for (name, expr) in &file.module.attrs {
+        if name != "invariant" {
+            continue;
+        }
+        if let ast::Expr::Call { callee, args, .. } = expr {
+            if callee.segments.last().map(String::as_str) == Some("preserves") {
+                return args
+                    .iter()
+                    .filter_map(|a| match &a.value {
+                        ast::Expr::Path(p) if p.segments.len() == 1 => {
+                            Some((p.segments[0].clone(), None))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+            }
+        }
+    }
+    Vec::new()
+}
+
+/// The cross-module import-resolution table: every `pub proc` across the five
+/// resident files → the `extern proc` contract stub a CONSUMER module needs to
+/// credit a `call` to it. The stub's contract is DERIVED from the definition (its
+/// declared clauses, its `preserves` UNIONED with its home module's `invariant`),
+/// so there is no hand-written decl to drift (the seam retires the extern-decl-vs-def
+/// hazard structurally). Emits nothing — an `extern proc` is a byte-neutral decl.
+fn import_stub_table(aeon: &Path) -> BTreeMap<String, ast::ExternProcDecl> {
+    let mut out = BTreeMap::new();
+    for spec in &file_specs() {
+        let (file, _dir) = parse_one(aeon, spec);
+        let inv = module_invariant_reglist(&file);
+        collect_pub_proc_stubs(&file.items, &inv, &mut out);
+    }
+    out
+}
+
+fn collect_pub_proc_stubs(
+    items: &[ast::Item],
+    inv: &[(String, Option<String>)],
+    out: &mut BTreeMap<String, ast::ExternProcDecl>,
+) {
+    use sigil_frontend_emp::regfile::{expand_reglist, RegFile};
+    let expand = |segs: &[(String, Option<String>)]| expand_reglist(segs, RegFile::Z80, |_| {});
+    for it in items {
+        match it {
+            ast::Item::Proc(p) if p.public => {
+                // The callee's PRESERVED units, resolved from its DEFINITION. A proc
+                // with a complete `clobbers` contract preserves everything it does
+                // NOT clobber-or-return (the honest-contract theorem — sound because
+                // `[call.clobbers-incomplete]` verifies the corpus's clobbers are
+                // complete); a proc with no `clobbers` clause falls back to its
+                // declared preserves. The home module's `invariant` is unioned in.
+                let declared = expand(&p.preserves);
+                let inv_units = expand(inv);
+                let mut units: std::collections::BTreeSet<String> = match &p.clobbers {
+                    Some(clob) => {
+                        let clobbered = expand(clob);
+                        let produced = p.out.as_deref().map(expand).unwrap_or_default();
+                        RegFile::Z80
+                            .universe()
+                            .into_iter()
+                            .filter(|u| !clobbered.contains(u) && !produced.contains(u))
+                            .collect()
+                    }
+                    None => std::collections::BTreeSet::new(),
+                };
+                units.extend(declared);
+                units.extend(inv_units);
+                let preserves: Vec<(String, Option<String>)> =
+                    units.into_iter().map(|u| (u, None)).collect();
+                let sig = ast::ProcSig {
+                    params: p
+                        .params
+                        .iter()
+                        .map(|(n, t, s)| (n.clone(), Some(t.clone()), *s))
+                        .collect(),
+                    // An extern decl carries preserves + out (the caller-consumed
+                    // clauses); `clobbers` stays undeclared, matching the retired
+                    // hand-written externs' shape.
+                    clobbers: None,
+                    preserves,
+                    out: p.out.clone(),
+                    out_flags: p.out_flags.clone(),
+                    out_cond: p.out_cond.clone(),
+                    out_types: p.out_types.clone(),
+                };
+                out.insert(
+                    p.name.clone(),
+                    ast::ExternProcDecl { public: false, name: p.name.clone(), sig, span: p.span },
+                );
+            }
+            ast::Item::Section(sec) => collect_pub_proc_stubs(&sec.items, inv, out),
+            _ => {}
+        }
+    }
+}
+
+/// The derived contract stubs for the `use engine.sound_*.{...}` imports a file
+/// declares — prepended to the file's items so the Z80 callee-preserves oracle
+/// credits its cross-module `call`s (the `extern proc` machinery, now DERIVED from
+/// the sibling definitions rather than hand-declared).
+fn use_import_stubs(
+    items: &[ast::Item],
+    table: &BTreeMap<String, ast::ExternProcDecl>,
+    out: &mut Vec<ast::Item>,
+) {
+    for it in items {
+        match it {
+            ast::Item::Use(u) => match &u.names {
+                ast::UseNames::List(names) => {
+                    for n in names {
+                        if let Some(stub) = table.get(n) {
+                            out.push(ast::Item::ExternProc(stub.clone()));
+                        }
+                    }
+                }
+                ast::UseNames::Glob | ast::UseNames::Whole => {}
+            },
+            ast::Item::Section(sec) => use_import_stubs(&sec.items, table, out),
+            _ => {}
+        }
+    }
+}
+
+/// Lower one resident `.emp` file (const seam `-D` + the shape `DEBUG` flag, with an
+/// optional single-symbol doctor), returning its single named section. The file's
+/// `use` imports are resolved to derived contract stubs (`table`) and prepended, so
+/// the cross-module `call`s' callee-preserves credit exactly as the retired
+/// hand-written `extern proc` decls provided (byte-neutral — decls emit nothing).
+fn lower_one(
+    aeon: &Path,
+    spec: &FileSpec,
+    debug: bool,
+    doctor: Option<(&str, i64)>,
+    table: &BTreeMap<String, ast::ExternProcDecl>,
+) -> Section {
+    let (file, dir) = parse_one(aeon, spec);
+    let mut imported: Vec<ast::Item> = Vec::new();
+    use_import_stubs(&file.items, table, &mut imported);
+    let file = if imported.is_empty() {
+        file
+    } else {
+        ast::File {
+            module: file.module.clone(),
+            attrs: file.attrs.clone(),
+            items: imported.into_iter().chain(file.items.iter().cloned()).collect(),
+            docs: file.docs.clone(),
+        }
+    };
     let mut defines: Vec<(String, i128)> = (spec.consts)()
         .into_iter()
         .map(|(n, v)| {
@@ -208,7 +368,8 @@ pub fn native_sound_blob(aeon: &Path, debug: bool) -> NativeSoundBlob {
 fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     let specs = file_specs();
     let seq = specs.iter().find(|s| s.section == "sound_sequencer").expect("sequencer spec");
-    let sec = lower_one(aeon, seq, debug, None);
+    let table = import_stub_table(aeon);
+    let sec = lower_one(aeon, seq, debug, None, &table);
     let base = if debug { seq.vma_debug } else { seq.vma_plain };
     let mut out = Vec::new();
     for want in HANDLER_SYMBOLS {
@@ -226,9 +387,10 @@ fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
 /// (const seam `-D` OR a banked carrier). Used by the byte gate + its t24 controls.
 pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)>) -> Vec<u8> {
     let specs = file_specs();
+    let table = import_stub_table(aeon);
     let mut sections: Vec<Section> = Vec::new();
     for spec in &specs {
-        let mut sec = lower_one(aeon, spec, debug, doctor);
+        let mut sec = lower_one(aeon, spec, debug, doctor, &table);
         let vma = if debug { spec.vma_debug } else { spec.vma_plain };
         sec.vma_base = Some(vma);
         sec.lma = blob_lma(debug) + vma;
