@@ -1,10 +1,34 @@
 # 2026-07-30 — FLIP STAGE 1 · demo lockstep — scoping + the plain-golden drift
 
 Status: **demo layout characterized; the native demo driver is a real sub-project
-(demo-specific pins + engine-only registry), scoped here. One golden correction: the
-PLAIN demo full-file golden DRIFTED (expected OQ-A3 appendix growth); the assembled demo
-and the debug full-file golden are stable.** No demo driver code yet — this de-risks it
-for the build session (analogous to the S1.4 investigation note).
+(demo-specific pins + engine-only registry), scoped here. Golden correction (overseer
+own-run, RESOLVED): the PLAIN demo golden `2b71b37d/88738` was a STALE-ARTIFACT FALSE
+BASELINE — there was NO drift. The first TRUE plain demo capture is `18c64002/90776`.**
+No demo driver code yet — this de-risks it for the build session (analogous to the S1.4
+investigation note).
+
+## GOLDEN CORRECTION — the plain demo "drift" was a stale artifact (overseer own-run)
+
+There was no drift. The overseer built a fresh DETACHED worktree at the OLD commit
+`34023be` (the design-era baseline) and it ALSO builds demo plain = `18c64002/90776`,
+byte-identical to the current tree. The `2b71b37d/88738` figure entered the record TWICE
+as a stale artifact: (1) the design porter (aeon read-only) CRC'd a pre-existing
+`demo.bin` lying in the main checkout; (2) the overseer's own "verification" ran
+`GAME=demo ./build.sh`, but **`build.sh` takes the game POSITIONALLY** (`build.sh:4`,
+`GAME="${1:-sonic4}"`), so the env var was silently ignored, sonic4 rebuilt, and the same
+STALE `demo.bin` got re-CRC'd. The debug run used the positional form (`./build.sh demo`),
+so `b0475a59/91584` was a REAL build and correctly "held."
+
+**RULING (overseer):** the plain demo golden bar is **`18c64002/90776`** — the FIRST true
+capture, NOT a re-capture of a drifted value. `b0475a59/91584` debug stands. PROVENANCE
+must document the cause (stale-artifact false baseline, corrected by the two-commit fresh
+derivation) so the history is honest.
+
+**FREEZE-SCRIPT HARDENING (overseer, for the freeze stage):** the one-step re-capture
+script must ALWAYS BUILD each ROM fresh via the POSITIONAL game arg (`./build.sh demo`,
+`DEBUG=1 ./build.sh demo`) before capturing — NEVER CRC an existing file — and, if cheap,
+assert the build actually ran (artifact mtime newer than the invocation, or a build-log
+marker) so a stale-capture of this exact class is structurally impossible.
 
 ## The golden facts (aeon `bcb8f64`, freshly rebuilt both shapes)
 
