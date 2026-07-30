@@ -61,6 +61,7 @@ fn ensure_generated(aeon: &Path) {
     seam2::emit_mt_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_mt_artifacts: {e}"));
     seam2::emit_sfx_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_sfx_artifacts: {e}"));
     seam2::emit_seq_opcode_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_seq_opcode_artifacts: {e}"));
+    seam2::emit_sound_tables_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_sound_tables_artifacts: {e}"));
 }
 
 /// Assemble the WHOLE ROM through the AS front-end with the seam-2 DAC gate ON

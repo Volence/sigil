@@ -404,6 +404,50 @@ pub fn emit_seq_opcode_tab(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> 
     Ok(linked.section("seq_opcode_tab").ok_or("missing seq_opcode_tab in linked image")?.bytes.clone())
 }
 
+/// The LMA of the `sound_tables_z80` head (VMA `$8000`, the FIRST head table in
+/// `soundBankHead`, physically at `$58000`). SHAPE-INVARIANT (pure-math LUTs +
+/// fixed vol-env data; 855 bytes both shapes).
+pub const SOUND_TABLES_Z80_LMA: u32 = 0x58000;
+/// The `sound_tables_z80` byte length (`FmPitchTableZ` .. `FmVolEnv_03` end).
+pub const SOUND_TABLES_Z80_LEN: usize = 0x357;
+
+/// Lower `sound_tables_z80.emp` (the 4 pure-math FM/PSG LUTs + the vol-env
+/// id-lists, pointer tables, and bodies) placed at VMA `$8000`, so its
+/// intra-module `dc.w PsgVolEnv_XX`/`FmVolEnv_XX` pointer cells resolve to their
+/// `$8000`-window addresses (Value16Le). SELF-CONTAINED — no external symbols
+/// (the pointer cells reference this module's own body labels), so no co-link is
+/// needed. SHAPE-INVARIANT (one `.bin` serves both shapes).
+pub fn emit_sound_tables_z80(aeon: &Path) -> Result<Vec<u8>, String> {
+    let dir = aeon.join("engine/sound");
+    let module = lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000)?;
+
+    // Place at the head LMA with the section's own `vma: $8000` window — the
+    // intra-module pointer cells fold from that window base.
+    let map_toml = format!(
+        "fill = 0x00\n\n[[region]]\nname = \"sound_tables_z80\"\nlma_base = 0x{SOUND_TABLES_Z80_LMA:X}\nsize = 0x400\nkind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&map_toml).map_err(|d| format!("map load: {d:?}"))?;
+    let mut sections = module.sections;
+    let pd = place_sections(&mut sections, &map);
+    if pd.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("place_sections errors: {pd:?}"));
+    }
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .map_err(|d| format!("resolve_layout: {d:?}"))?;
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
+    Ok(linked.section("sound_tables_z80").ok_or("missing sound_tables_z80 in linked image")?.bytes.clone())
+}
+
+/// Emit the seam-2 sound-tables build input to `out_dir`: `sound_tables_z80.bin`
+/// (shape-invariant — one file serves both shapes).
+pub fn emit_sound_tables_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    let bytes = emit_sound_tables_z80(aeon)?;
+    let p = out_dir.join("sound_tables_z80.bin");
+    std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
+    Ok(())
+}
+
 /// Emit the seam-2 seq-opcode-table build inputs to `out_dir`:
 /// `seq_opcode_tab{,_debug}.bin` (the 64-byte jump table, shape-dependent — the
 /// resident handlers re-base in the debug shape).
