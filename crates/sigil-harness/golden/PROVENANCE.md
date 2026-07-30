@@ -1956,3 +1956,21 @@ sequencer 6/6 + fm 5/5 + psg 5/5 by name.
 - Aeon repo master: **`597ce06`** (merge of `port-tranche40`; sigil master **`cb1950e`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
+
+## t41 (T1) — the harness states (2026-07-29) — canonical UNCHANGED; THE 68K GAME SIDE IS CODE-COMPLETE
+
+`object_test_state` ($5BC plain / $658 debug) + `ojz_scroll_test` ($2C2/$2CE) ported
+byte-exact BOTH shapes (shape-dependent gates, per-shape orgs). The FIRST data-emitting
+game-state ports: `embed()` resolves from the AEON REPO ROOT (the AS BINCLUDE path
+model) and the embedded art/palette bytes gate byte-identical. The row-35 engine-gap
+compensation carried VERBATIM per the adjudication (the parallax-hardening parcel
+ledgered; row 35 stays open). The oracle-A/B soak scenes bit-exact (Game_Entry +
+Debug_Scene_Freeze hooks). Another `.asm` under-claim corrected (Load_ObjectList a3).
+Kill rows 88-90. **Every game-side code `.asm` is now gated with an `.emp` twin —
+only main/config remain, and those ARE the Spec-5 flip.**
+
+Full paired strict **2894/0 (1 ignored)** on merged masters; t1 4/4 by name.
+
+- Aeon repo master: **`4e04f8e`** (merge of `port-tranche41`; sigil master **`6b113e6`**).
+- Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
+- Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
