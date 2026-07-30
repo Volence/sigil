@@ -17,7 +17,10 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test seam2_pitchtable
 //! ```
 
-use sigil_harness::seam2::{emit_pitchtable, emit_pitchtable_artifacts, PITCHTABLE_LEN, PITCHTABLE_LMA};
+use sigil_harness::seam2::{
+    emit_pitchtable, emit_pitchtable_artifacts, emit_pitchtable_doctored, PITCHTABLE_LEN,
+    PITCHTABLE_LMA,
+};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -27,6 +30,13 @@ fn aeon_dir() -> PathBuf {
 }
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
+}
+/// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
+/// tree ROM — post-flip `aeon/s4.bin` is itself sigil-built (row-91 bar b).
+fn golden(name: &str) -> Vec<u8> {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
 /// THE HEAD BYTE GATE: the emitted `movingtrucks_pitchtable` == the reference ROM
@@ -42,7 +52,7 @@ fn pitchtable_matches_the_reference_rom_slice_both_shapes() {
     let out = emit_pitchtable(&aeon).expect("emit_pitchtable");
     assert_eq!(out.len(), PITCHTABLE_LEN, "movingtrucks_pitchtable is 264 bytes (2*132)");
     for rom_name in ["s4.bin", "s4.debug.bin"] {
-        let rom = std::fs::read(aeon.join(rom_name)).unwrap_or_else(|e| panic!("read {rom_name}: {e}"));
+        let rom = golden(rom_name);
         let lo = PITCHTABLE_LMA as usize;
         let refslice = &rom[lo..lo + PITCHTABLE_LEN];
         if let Some(i) = (0..out.len()).find(|&i| out[i] != refslice[i]) {
@@ -55,6 +65,29 @@ fn pitchtable_matches_the_reference_rom_slice_both_shapes() {
         }
         assert_eq!(out, refslice, "movingtrucks_pitchtable must equal the {rom_name} reference @ $58357");
     }
+}
+
+/// t24 NON-VACUITY control (row-91 bar c): a doctored composition — the first
+/// page-0 data cell edited `$00 → $01` at the `.emp` source, recomposed — must
+/// make the table DIVERGE from the golden slice. The table is pure `dc.b` with a
+/// 1:1 source→output map (no fold, no placement sensitivity), so the AS-side size
+/// guard only catches LENGTH drift; this proves the byte gate catches CONTENT
+/// drift. The gate is vacuous if a changed source cell still matches.
+#[test]
+fn pitchtable_diverges_when_source_cell_doctored() {
+    if !strict_gate() {
+        eprintln!("skipping seam2_pitchtable (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        return;
+    }
+    let aeon = aeon_dir();
+    let doctored = emit_pitchtable_doctored(&aeon, true).expect("doctored recompose");
+    let rom = golden("s4.bin");
+    let lo = PITCHTABLE_LMA as usize;
+    let refslice = &rom[lo..lo + PITCHTABLE_LEN];
+    assert_ne!(
+        doctored, refslice,
+        "the pitchtable gate is vacuous if a doctored source cell still matches the golden slice"
+    );
 }
 
 /// Determinism + the emitted `.bin` matches the in-memory emit.

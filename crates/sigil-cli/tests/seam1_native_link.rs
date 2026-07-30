@@ -30,15 +30,20 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
+/// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
+/// tree ROM — post-flip `aeon/s4.bin` is itself sigil-built, so composing `.emp`
+/// and comparing to it would be circular; the committed golden is the independent
+/// row-91 witness of the resident blob (bar b). Mirrors `native_offcanonical_rom`.
 fn read_ref(name: &str) -> Option<Vec<u8>> {
-    let path = aeon_dir().join(name);
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../sigil-harness/golden/{name}"));
     match std::fs::read(&path) {
         Ok(b) => Some(b),
         Err(_) => {
             if strict_gate() {
-                panic!("SIGIL_STRICT_GATE set but reference missing: {}", path.display());
+                panic!("SIGIL_STRICT_GATE set but golden missing: {}", path.display());
             }
-            eprintln!("skip: reference ROM not at {} (set AEON_DIR)", path.display());
+            eprintln!("skip: golden ROM not at {} (set SIGIL_STRICT_GATE)", path.display());
             None
         }
     }
