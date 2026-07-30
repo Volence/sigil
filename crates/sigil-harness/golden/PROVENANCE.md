@@ -1974,3 +1974,27 @@ Full paired strict **2894/0 (1 ignored)** on merged masters; t1 4/4 by name.
 - Aeon repo master: **`4e04f8e`** (merge of `port-tranche41`; sigil master **`6b113e6`**).
 - Non-debug `s4.bin`: **421041 bytes**, crc32 **`4b66cace`** — UNCHANGED.
 - Debug `s4.debug.bin`: **429102 bytes**, crc32 **`1c256b3b`** — UNCHANGED.
+
+## SEAM-1 RE-BASELINE (2026-07-29) — THE FIRST TWIN DELETION; THE PROVENANCE MODEL REFINES
+
+The five resident sound `.asm` twins are DELETED (kill rows 70/71/78/83/87 closed);
+the blob is SIGIL-NATIVE-LINKED (`emit_sound_blob` → BINCLUDE, fail-loud — the first
+hard aeon→sigil build dependency). The 47 intra-blob externs are module imports (the
+extern-decl-vs-def hazard retired structurally); `[call.clobbers-incomplete]` shipped
+and immediately caught 7 real transitive under-claims (incl. the unsound driver
+`preserves(iy)` cascade) — all fixed honestly, byte-neutral.
+
+**THE PROVENANCE MODEL (ruled at this deletion): the canonical object is the
+ASSEMBLED ROM (the game, 0..EndOfRom, header-neutral); the full file is the game +
+the convsym deb2 debug appendix, which legitimately shrinks as deleted files' labels
+leave the symbol table.**
+
+- **PRIMARY (assembled ROM, must not change without a ruled wave):** plain
+  **`e5765873`** · debug **`dab4f06c`** — UNCHANGED across the deletion (the proof).
+- **SECONDARY (full-file artifact, drift-expected at deletions):** plain
+  `22f69f77`/414414 · debug `d4e8d043`/422466.
+- Emitted blob (deterministic, provenance-tracked): plain `c7534c84` · debug
+  `fd2a845d` · syms `87b87b1b`.
+- Strict **2880/0 (1 ignored)** (2898 − 23 retired twin-era oracles + 5 diagnostic);
+  seam1 9/9 + diagnostic 5/5 by name from mains.
+- Aeon master **`6c311b5`** / sigil master **`59095c9`**. −6,843 lines of `.asm`.
