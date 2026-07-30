@@ -2082,3 +2082,37 @@ gates remain the live Config-A/B witness, and canonical sonic4 plain/debug nativ
 asl stays GREEN (S1.1 `native_rom` 2/2, S1.4 `native_full_rom` 3/3). The six goldens
 above are the frozen comparands those Stage-2 proofs will run against. Strict
 **2914/0 (1 ignored)**, unchanged (no gates added — the freeze is data + a script).
+
+## Flip Stage 2 · S1.2 — the OFF-CANONICAL SIZE TABLES (frozen asl-derived, perishable)
+
+The declared-order computed-base chainer (`native::build_native_rom_chained`,
+`native_declared_chain`) reproduces a target's golden by reserving each emp region's
+EXACT asl per-region SIZE. Pure content-size chaining does NOT reproduce asl (the link
+relaxer settles at a tighter fixpoint — a boundary branch relaxes short; empirically a
+−2 at `hblank`), so the declared size anchors relaxation to asl's widths while the base
+stays computed. sonic4 sizes come from a pinned pass-1 resolve (baked == asl); the
+OFF-CANONICAL targets' baked resume orgs are wrong sonic4 values, so their sizes come
+from their OWN asl listing — PERISHABLE (no asl after the flip). Frozen NOW into
+`golden/offcanonical_sizes/*.txt` by `capture_offcanonical_sizes.sh` (anti-stale:
+delete → positional rebuild → assert-newer → parse via the authoritative
+`repin::parse_listing`), each header CRC-tied to the golden it reproduces:
+
+- `demo.txt` — 38 boundary labels, assembled end `0x11224`, reproduces `demo.bin`
+  **18c64002**.
+- `demo_debug.txt` — 40 labels, end `0x11224`, reproduces `demo.debug.bin` **b0475a59**.
+- `config_a.txt` — 69 labels, end `0x5f65a`, reproduces `config_a.bin` **b4a6756d**
+  (aeon build output `s4.debug.bin` at the CONFIG_A defines; the CRC is the tie).
+- `config_b.txt` — 66 labels, end `0x434d0`, reproduces `config_b.bin` **92776720**
+  (aeon build output `s4.bin` at `SOUND_DRIVER_ENABLED=0`; the CRC is the tie).
+
+A region's declared SIZE = `addr[end] − addr[start]`; absent labels (sound-off
+`sound_api`, the `games.sonic4.*` game modules under demo) are omitted. Captured aeon
+`bcb8f64`; canonical refs verified restored to eff2396f/1e9097bc.
+
+**POST-FLIP SEMANTICS (these are the LAST asl-derived constants).** The sizes are
+golden provenance — they exist to reproduce the frozen goldens. When a ruled post-flip
+re-baseline changes a golden (the §17 sweep), the sizes RE-DERIVE from sigil's OWN
+native layout (each emp region's resolved `image_len`) as part of the same re-baseline
+— a tighter relaxation fixpoint is then legitimate; nothing ever requires asl again.
+They must not fossilize as mysterious pins; see
+`docs/superpowers/notes/2026-07-30-flip-stage2-S1.2-size-capture-handoff.md`.
