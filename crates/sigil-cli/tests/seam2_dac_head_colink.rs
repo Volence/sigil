@@ -26,7 +26,9 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test seam2_dac_head_colink
 //! ```
 
-use sigil_harness::seam2::{emit_dac_body_and_head, DAC_SAMPLE_TAB_LEN, DAC_SAMPLE_TAB_LMA};
+use sigil_harness::seam2::{
+    emit_dac_artifacts, emit_dac_body_and_head, DAC_SAMPLE_TAB_LEN, DAC_SAMPLE_TAB_LMA,
+};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -98,4 +100,27 @@ fn colink_is_deterministic() {
     assert_eq!(a.head, b.head, "head emit must be deterministic");
     assert_eq!(a.blip, b.blip, "blip emit must be deterministic");
     assert_eq!(a.shared, b.shared, "shared emit must be deterministic");
+}
+
+/// The EMITTER binary's DAC artifacts (`emit_dac_artifacts`, driven by the
+/// `emit_sound_blob` bin the real build runs) are written to disk and equal the
+/// in-memory co-link — the build's BINCLUDE inputs match the proven reference.
+#[test]
+fn emit_dac_artifacts_writes_reference_bins() {
+    if !strict_gate() {
+        eprintln!("skipping seam2_dac_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        return;
+    }
+    let aeon = aeon_dir();
+    let dir = tempfile::tempdir().expect("tempdir");
+    emit_dac_artifacts(&aeon, dir.path()).expect("emit_dac_artifacts writes the 3 .bins");
+    let mem = emit_dac_body_and_head(&aeon).expect("co-link");
+    for (name, want) in [
+        ("dac_blip_bank.bin", &mem.blip),
+        ("dac_shared_bank.bin", &mem.shared),
+        ("dac_sample_tab.bin", &mem.head),
+    ] {
+        let got = std::fs::read(dir.path().join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        assert_eq!(&got, want, "emitted {name} must equal the in-memory co-link (== reference)");
+    }
 }

@@ -229,3 +229,23 @@ pub fn emit_dac_body_and_head(aeon: &Path) -> Result<DacBodyAndHead, String> {
     let head = linked.section("dac_sample_tab").ok_or("missing dac_sample_tab")?.bytes.clone();
     Ok(DacBodyAndHead { blip, shared, head })
 }
+
+/// Emit the seam-2 DAC build inputs to `out_dir` (the wire's artifacts, mirroring
+/// seam-1's `emit_sound_blob`): `dac_blip_bank.bin` (the $48000 payload),
+/// `dac_shared_bank.bin` (the $50000 payload), and `dac_sample_tab.bin` (the
+/// co-linked 90-byte descriptor head). Byte-DETERMINISTIC from the tracked `.emp`
+/// + `.pcm` + toolchain; the assembled-ROM CRC is the provenance bar. The DAC side
+/// is shape-INVARIANT (one blip + one shared + one head, no `-D`/`__DEBUG__`), so —
+/// unlike the resident blob — there is NO `_debug` variant.
+pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    let out = emit_dac_body_and_head(aeon)?;
+    let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
+        let p = out_dir.join(name);
+        std::fs::write(&p, bytes).map_err(|e| format!("write {}: {e}", p.display()))
+    };
+    write("dac_blip_bank.bin", &out.blip)?;
+    write("dac_shared_bank.bin", &out.shared)?;
+    write("dac_sample_tab.bin", &out.head)?;
+    Ok(())
+}
