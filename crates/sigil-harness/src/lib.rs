@@ -1059,6 +1059,35 @@ pub fn assemble_mixed_tranche41_as_side(aeon: &Path, debug: bool) -> Result<Modu
     })
 }
 
+/// Seam-1 (the resident sound blob): the full AS-side game with
+/// `SIGIL_EMP_Z80_SOUND` on — `boot_data.asm`'s `include z80_sound_driver.asm`
+/// (nested inside `ifdef SOUND_DRIVER_ENABLED`) is REPLACED by the gate arm that
+/// defines `Z80_Sound_Start` (label at the include position = `$3DE` plain / `$3E2`
+/// debug), the numeric per-shape `Z80_SOUND_SIZE` (`$181C` / `$189A`), and
+/// org-resumes at `Z80_Sound_End` — leaving the whole `$3DE..$1BFA` / `$3E2..$1C7C`
+/// window for the `.emp` side's five natively-linked resident sections
+/// (z80_sound_driver / sound_sequencer / sound_sfx / sound_fm / sound_psg) to
+/// supply. The AS-side survivors of the blob are the boot copy count
+/// (`move.w #Z80_SOUND_SIZE-1, d1`) and the boot_data.asm layout-assert wall
+/// (`Z80_Sound_Start-BootData == 54`, `Z80_SOUND_SIZE` parity + total), all
+/// satisfied by the numeric carrier. The banked `$8000`-window sound tables
+/// (SeqOpcodeTable / SfxBlobWinTab / the FM+PSG LUTs) stay AS-included (seam-2),
+/// so the `.emp` side's references to them resolve through the shared symbol table.
+pub fn assemble_mixed_z80sound_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
+    let root = aeon.join("games/sonic4/main.asm");
+    let mut defines = vec![
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("SIGIL_EMP_Z80_SOUND".to_string(), 1),
+    ];
+    if debug {
+        defines.push(("__DEBUG__".to_string(), 1));
+    }
+    let opts = Options { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+    assemble_root(&root, &opts).map_err(|d| {
+        format!("assemble (mixed z80sound AS side): {} diagnostics; first: {:?}", d.len(), d.first())
+    })
+}
+
 /// Tranche 25 (error_handler): the full AS-side game with `SIGIL_EMP_ERROR_HANDLER`
 /// on — the engine.inc arm skips error_handler.asm, org-resumes at EndOfRom, and
 /// defines the numeric `ErrorHandler` base so the always-included

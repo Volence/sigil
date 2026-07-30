@@ -39,6 +39,7 @@
 
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
+use sigil_harness::{assemble_mixed_z80sound_as_side, assert_rom_matches_convsym};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
@@ -528,4 +529,116 @@ fn blob_diverges_when_const_doctored() {
     let expected = &refrom[base..base + BLOB_LEN_PLAIN];
     let doctored = native_blob_doctored(false, Some(("SND_STAT_TICK", 0x1DED)));
     assert_ne!(doctored, expected, "a moved SND_STAT_TICK must change the blob's abs-mem operands");
+}
+
+// ===========================================================================
+// §2.4 — THE WHOLE-ROM DUAL-BUILD GATE (gate-off ≡ pure-AS canonical; gate-on =
+// the native blob spliced into the real ROM ≡ the same canonical bytes).
+// ===========================================================================
+
+/// The placed native-blob sections for the WHOLE-ROM mixed link: the five files
+/// lowered (const seam `-D` + the shape `DEBUG` flag), re-based to their per-shape
+/// VMA, and pinned at LMA `blob_lma(debug) + vma`. NO banked equ carriers here — in
+/// the whole ROM the banked `$8000`-window tables are STILL AS-included (seam-2), so
+/// SeqOpcodeTable / SfxBlobWinTab / the FM+PSG LUTs resolve against the AS side
+/// through the joint link; the intra-blob `extern proc`s resolve internally.
+fn placed_blob_sections(debug: bool) -> Vec<Section> {
+    let aeon = aeon_dir();
+    let mut sections = Vec::new();
+    for spec in &file_specs() {
+        let mut sec = lower_one(&aeon, spec, debug, None);
+        let vma = if debug { spec.vma_debug } else { spec.vma_plain };
+        sec.vma_base = Some(vma);
+        sec.lma = blob_lma(debug) + vma;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+        sections.push(sec);
+    }
+    sections
+}
+
+/// Compose the AS side (gate ON) with the placed native blob and emit the full ROM
+/// through the whole-ROM `sigil.map.toml` — the `build_mixed_rom` shape.
+fn build_seam1_rom(debug: bool) -> Vec<u8> {
+    let aeon = aeon_dir();
+    let as_module = assemble_mixed_z80sound_as_side(&aeon, debug).unwrap_or_else(|e| panic!("{e}"));
+    let mut sections = as_module.sections;
+    sections.extend(placed_blob_sections(debug));
+
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (mixed seam1): {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link (mixed seam1): {d:?}"));
+
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("read map {}: {e}", map_path.display()));
+    let map = sigil_link::load_map(&map_src).unwrap_or_else(|e| panic!("load map: {e}"));
+    sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom (mixed seam1): {e}"))
+}
+
+/// §2.4 (PLAIN): the native blob spliced into the REAL ROM (gate ON) is
+/// byte-identical to the canonical `s4.bin` (modulo the convsym/fixheader header
+/// fields, derived + confined). The downstream engine + banks are unchanged by
+/// construction (the blob is the same length).
+#[test]
+fn mixed_seam1_rom_matches_reference_plain() {
+    let Some(refrom) = read_ref("s4.bin") else { return };
+    let rom = build_seam1_rom(false);
+    assert_rom_matches_convsym(
+        &rom,
+        &refrom,
+        sigil_harness::pins::ASSEMBLED_LEN,
+        "seam1 mixed (plain) vs s4.bin",
+    );
+}
+
+/// §2.4 (DEBUG): the native blob (with the +$7E sequencer growth EMITTED, blob base
+/// $3E2) spliced into the REAL debug ROM is byte-identical to canonical
+/// `s4.debug.bin`.
+#[test]
+fn mixed_seam1_rom_matches_reference_debug() {
+    let Some(refrom) = read_ref("s4.debug.bin") else { return };
+    let rom = build_seam1_rom(true);
+    assert_rom_matches_convsym(
+        &rom,
+        &refrom,
+        sigil_harness::pins::DEBUG_ASSEMBLED_LEN,
+        "seam1 mixed (debug) vs s4.debug.bin",
+    );
+}
+
+/// t24 WHOLE-ROM positive control: doctoring the blob's `SND_STAT_TICK` `-D` must
+/// make the spliced ROM DIVERGE from canonical — proving the whole-ROM gate is not
+/// vacuous (the blob's bytes genuinely enter the ROM). Built via a doctored blob.
+#[test]
+fn mixed_seam1_rom_diverges_when_blob_doctored() {
+    let Some(refrom) = read_ref("s4.bin") else { return };
+    let aeon = aeon_dir();
+    let as_module = assemble_mixed_z80sound_as_side(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let mut sections = as_module.sections;
+    // Doctored blob: SND_STAT_TICK moved on the .emp side only.
+    for spec in &file_specs() {
+        let mut sec = lower_one(&aeon, spec, false, Some(("SND_STAT_TICK", 0x1DED)));
+        sec.vma_base = Some(spec.vma_plain);
+        sec.lma = blob_lma(false) + spec.vma_plain;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+        sections.push(sec);
+    }
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
+    let linked = sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("link: {d:?}"));
+    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let map_src = std::fs::read_to_string(&map_path).unwrap();
+    let map = sigil_link::load_map(&map_src).unwrap();
+    let rom = sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom: {e}"));
+    // The doctored blob region must differ from canonical somewhere in $3DE..$1BFA.
+    let base = blob_lma(false) as usize;
+    assert_ne!(
+        &rom[base..base + BLOB_LEN_PLAIN],
+        &refrom[base..base + BLOB_LEN_PLAIN],
+        "the whole-ROM gate is vacuous if a doctored blob still matches canonical"
+    );
 }
