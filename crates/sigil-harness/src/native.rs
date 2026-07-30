@@ -1147,6 +1147,87 @@ fn trim_trailing_align_overshoot(s: &mut Section, span: u32) {
     }
 }
 
+/// The minimum alignment (bank size) an INTERNAL `align` must target for
+/// `recompute_bank_aligns` to touch it. `align $8000` (the DAC/MT sound-bank pads)
+/// is the only aeon align at or above this; `align 2` word-aligns and any small
+/// bulk zero-fill fall below it and are left exactly as baked — so a relocated
+/// section's HEAD (e.g. HeightMaps at its true base) never moves.
+const BANK_ALIGN: u32 = 0x8000;
+
+/// ALIGN-RECOMPUTE-ON-RELOCATION for INTERNAL bank aligns (the general form of
+/// `trim_trailing_align_overshoot`, which handles only the trailing pad).
+///
+/// A pure-data section can carry `align $8000` pads MID-section (main.asm's
+/// BINCLUDE arm: HeightMaps → art → `align $8000` → DAC blip → `align $8000` →
+/// DAC shared → `align $8000` → MovingTrucks — ONE section). `directive_align`
+/// bakes each as a fixed `Fill{0, pad}` computed against the section's AS-RESIDUAL
+/// base. When the chainer re-pins the section at its true (frozen) base, that
+/// fixed pad carries the following content off the absolute bank boundary by the
+/// relocation delta (config_a's DAC banks landed +0xC at 0x4800c/0x5000c). asl
+/// aligns to ABSOLUTE N-multiples independent of the base, so the pad must be
+/// recomputed.
+///
+/// Replays the BAKED and TRUE absolute positions in parallel from `baked_base` /
+/// `true_base`. For each zero-`Fill` that is a MINIMAL pad landing on a
+/// `>= BANK_ALIGN` boundary (a bank align — never a word-align or bulk fill), the
+/// pad is rewritten so the following content resumes on that SAME absolute
+/// boundary (`new_pad = baked_after − true_pos`); the two cursors re-sync there.
+/// Non-bank fragments advance both cursors by their length, preserving the delta.
+/// Byte-neutral for the pinned path (`baked_base == true_base`, the loop is a
+/// no-op) and for any section with no `>= BANK_ALIGN` internal align.
+///
+/// Pure-data only (guarded): a width-variable fragment makes image offsets
+/// base-dependent in a way this static replay does not model — such a section is
+/// left untouched (it has no bank align in practice).
+fn recompute_bank_aligns(s: &mut Section, baked_base: u32, true_base: u32) {
+    if baked_base == true_base {
+        return;
+    }
+    // Only a section whose fragments advance the cursor monotonically by their own
+    // length can be replayed statically here. A width-variable fragment (base-
+    // dependent offsets) or an `Org` (cursor seek) is left untouched — neither
+    // occurs in the sound-bank blob this targets.
+    let simple = s.fragments.iter().all(|f| {
+        matches!(f, Fragment::Data(_) | Fragment::Fill { .. } | Fragment::Reserve { .. })
+    });
+    if !simple {
+        return;
+    }
+    let mut baked = baked_base;
+    let mut tru = true_base;
+    for f in &mut s.fragments {
+        match f {
+            Fragment::Fill { value: 0, count, .. } => {
+                let c = *count;
+                let baked_after = baked.wrapping_add(c);
+                // A bank align = a minimal pad (`c < BANK_ALIGN`) whose post-position is a
+                // >= BANK_ALIGN multiple. The boundary is `baked_after` itself (the absolute
+                // bank start the residual align reached). Recompute so `tru` resumes there.
+                let is_bank_align =
+                    c < BANK_ALIGN && baked_after != 0 && baked_after % BANK_ALIGN == 0;
+                if is_bank_align && baked_after >= tru {
+                    *count = baked_after - tru;
+                    tru = baked_after;
+                    baked = baked_after;
+                } else {
+                    baked = baked_after;
+                    tru = tru.wrapping_add(c);
+                }
+            }
+            Fragment::Data(d) => {
+                let l = d.bytes.len() as u32;
+                baked = baked.wrapping_add(l);
+                tru = tru.wrapping_add(l);
+            }
+            Fragment::Fill { count, .. } | Fragment::Reserve { count, .. } => {
+                baked = baked.wrapping_add(*count);
+                tru = tru.wrapping_add(*count);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Apply the declared-order computed-base chain to `sections`: split ROM/RAM, sort ROM
 /// by ascending true base, and Pin each org anchor / Chain the rest reserving its
 /// declared span. Returns the placed sections (ROM then RAM). Shared by the driver and
@@ -1185,7 +1266,13 @@ fn apply_declared_chain(
         let is_anchor =
             chain_end.is_none() || phase_bank || chain_end.map(|e| tb > e).unwrap_or(true);
         s.reserved_span = span;
-        // Recompute a stale trailing `align` for the relocated position (see fn doc).
+        // Recompute stale INTERNAL bank-boundary aligns (the DAC/MT `align $8000`
+        // pads inside a relocated pure-data blob) for the new base, then the
+        // TRAILING align (see each fn's doc). A VMA-tracking (non-phase) section
+        // only — a phase bank keeps its baked absolute image.
+        if !keep_vma {
+            recompute_bank_aligns(s, orig_lma, tb);
+        }
         trim_trailing_align_overshoot(s, span);
         if !keep_vma {
             s.vma_base = None; // VMA tracks the (re-based) LMA — no stale baked address.
@@ -1267,6 +1354,18 @@ pub fn build_native_rom_chained(aeon: &Path, debug: bool) -> Result<Vec<u8>, Str
 /// Genuine org anchors (object bank, phase-address sound banks) keep their declared
 /// base; every other section is `Chained` with its lma zeroed (base computed).
 pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
+    Ok(build_rom_chained_with_listing(aeon, profile)?.0)
+}
+
+/// The chained whole-ROM build AND its sigil-canonical listing (the deb2-appendix
+/// source for the off-canonical full-file layer). One `C` row per resolved section
+/// label at its final VMA, de-duplicated and address-deterministic — mirrors
+/// `build_native_rom_with_listing`'s listing derivation, on the chained (Frozen)
+/// placement instead of the pinned one.
+pub fn build_rom_chained_with_listing(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<(Vec<u8>, Vec<sigil_link::ListingSymbol>), String> {
     if profile.sound_on {
         ensure_generated(aeon);
     }
@@ -1301,12 +1400,44 @@ pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, 
     }
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
 
+    // Sigil-canonical listing from the resolved image (one C row per label VMA).
+    let mut listing: Vec<sigil_link::ListingSymbol> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for sec in &resolved {
+        let origin = sec.vma_origin();
+        for label in &sec.labels {
+            if seen.insert(label.name.clone()) {
+                listing.push(sigil_link::ListingSymbol {
+                    name: label.name.clone(),
+                    value: origin.wrapping_add(label.offset),
+                    is_equate: false,
+                    unused: false,
+                });
+            }
+        }
+    }
+
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load sigil.map.toml: {e}"))?;
-    sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))
+    let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
+    Ok((rom, listing))
+}
+
+/// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical
+/// deb2 appendix (the same Option-A post-pipeline as `build_native_full_file`, over the
+/// Frozen-placed profile). `debug` selects the convsym range/fixheader shape.
+pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
+    let (rom, listing) = build_rom_chained_with_listing(aeon, profile)?;
+    // Demo (engine-only) packs a smaller appendix than sonic4/config; floor per game.
+    let floor = if profile.game_root_rel.contains("/demo/") {
+        DEMO_APPENDIX_FLOOR
+    } else {
+        SONIC4_APPENDIX_FLOOR
+    };
+    append_deb2_appendix(aeon, &rom, &listing, profile.debug, floor)
 }
 
 /// Resolve `profile`'s frozen-table chained layout and return, for every ROM section
@@ -1484,8 +1615,16 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 /// `.lst` to a fresh temp dir so parallel shapes never collide.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
-    append_deb2_appendix(aeon, &rom, &listing, debug)
+    append_deb2_appendix(aeon, &rom, &listing, debug, SONIC4_APPENDIX_FLOOR)
 }
+
+/// The sigil-canonical deb2 appendix size floor for the sonic4/config symbol set
+/// (~11 KB and up). Demo — engine-only, far fewer symbols — floors lower
+/// (`DEMO_APPENDIX_FLOOR`). Both are PRESENCE controls: a collapsed listing
+/// (a handful of symbols → ~0x27 B) still trips them.
+pub const SONIC4_APPENDIX_FLOOR: usize = 0x2000;
+/// The demo appendix floor (demo's engine-only set packs to ~0x1a0f B).
+pub const DEMO_APPENDIX_FLOOR: usize = 0x1000;
 
 /// Given the assembled ROM + listing, write both to a temp dir, run
 /// `convsym … -output deb2 -a` then `fixheader`, and return the full appended file.
@@ -1495,6 +1634,7 @@ pub fn append_deb2_appendix(
     rom: &[u8],
     listing: &[sigil_link::ListingSymbol],
     debug: bool,
+    min_appendix: usize,
 ) -> Result<Vec<u8>, String> {
     let tools = aeon.join("tools");
     let convsym = tools.join("convsym");
@@ -1572,10 +1712,13 @@ pub fn append_deb2_appendix(
         ));
     }
     let appendix = full.len() - eor;
-    // Size band: the sigil-canonical appendix is ~26 KB (plain) / ~27 KB (debug);
-    // a wildly-out-of-band size means the symbol set collapsed or exploded.
-    if !(0x2000..=0x10000).contains(&appendix) {
-        return Err(format!("deb2 appendix size {appendix:#x} out of the expected band (0x2000..0x10000)"));
+    // Size band: the sigil-canonical appendix size is target-dependent (sonic4/config
+    // ~11 KB+, demo ~7 KB); `min_appendix` is the per-target floor. A wildly-out-of-band
+    // size means the symbol set collapsed or exploded (the t24 presence control).
+    if !(min_appendix..=0x10000).contains(&appendix) {
+        return Err(format!(
+            "deb2 appendix size {appendix:#x} out of the expected band ({min_appendix:#x}..0x10000)"
+        ));
     }
     Ok(full)
 }
