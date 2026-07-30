@@ -192,50 +192,10 @@ fn block_stage_keys_has_exactly_three_touchers() {
          or the Pfx/Cs memos become unsound."
     );
 
-    // --- .asm/.inc census: attribute each occurrence to its enclosing column-0
-    // label. The `Block_Stage_Keys:` RAM declaration attributes to SYM itself and
-    // is the sole allowlisted non-proc site — asserted to live only in ram.asm. ---
-    let mut asm_paths = Vec::new();
-    files_with_ext(&aeon.join("engine"), &["asm", "inc"], &mut asm_paths);
-    files_with_ext(&aeon.join("games"), &["asm", "inc"], &mut asm_paths);
-    asm_paths.sort();
-    assert!(!asm_paths.is_empty(), "no .asm/.inc files under {}", aeon.display());
-
-    let mut asm_touchers: Vec<(String, Option<String>)> = Vec::new();
-    for p in &asm_paths {
-        let src = std::fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
-        for lbl in asm_touchers_in_file(&src, SYM) {
-            asm_touchers.push((p.display().to_string(), lbl));
-        }
-    }
-
-    // No .asm occurrence may sit before any label (an unscoped write we can't audit).
-    let asm_orphans: Vec<&String> =
-        asm_touchers.iter().filter(|(_, l)| l.is_none()).map(|(f, _)| f).collect();
-    assert!(asm_orphans.is_empty(), "{SYM} referenced outside any .asm label in: {asm_orphans:?}");
-
-    // The declaration site (`Block_Stage_Keys:`, enclosing label == SYM) must live
-    // only in ram.asm — a re-declaration elsewhere is a second definition to audit.
-    for (file, lbl) in &asm_touchers {
-        if lbl.as_deref() == Some(SYM) {
-            assert!(
-                file.ends_with("ram.asm"),
-                "{SYM} declared outside engine/ram.asm: {file}"
-            );
-        }
-    }
-
-    // The touching labels (excluding the allowlisted declaration) must be EXACTLY
-    // the three audited routines — same set the .emp scan proves.
-    let mut asm_got: Vec<String> =
-        asm_touchers.iter().filter_map(|(_, l)| l.clone()).filter(|l| l != SYM).collect();
-    asm_got.sort();
-    asm_got.dedup();
-    assert_eq!(
-        asm_got, want,
-        "\n{SYM} .asm/.inc toucher set changed — the memoize gen-bump audit must be redone.\n  \
-         expected exactly: {want:?}\n  found:            {asm_got:?}\n  \
-         A new toucher is a staging-claim path; every claim MUST bump Block_Stage_Gen \
-         or the Pfx/Cs memos become unsound."
-    );
+    // The .asm/.inc census half RETIRED (flip Stage-2): tile_cache.asm (which
+    // homed the three TileCache staging-claim routines) is deleted — the .emp is
+    // the only source. The .emp census above is now the sole authoritative
+    // gen-bump audit; the still-present `Block_Stage_Keys:` RAM declaration lives
+    // in the surviving engine/ram.asm (residual data), which carries no toucher
+    // proc so it is not a staging-claim path.
 }

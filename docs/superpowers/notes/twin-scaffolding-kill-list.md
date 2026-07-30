@@ -163,3 +163,12 @@ Executed (subsystem — commit — twin files deleted):
   region + native whole-ROM golden gates; each file's t24 doctored-mirror probe
   SURVIVES (gates on the `.emp`), keeping the golden non-vacuous. `aabb.inc`
   survives (rings.emp's data source, not a code twin). Strict 2862→2858.
+- engine/level — `plane_buffer.asm`, `tile_cache.asm`, `collision_lookup.asm`,
+  `section.asm`, `camera.asm`, `parallax.asm` (the CODE twin; `data/parallax/*`
+  survive as bucket-H residual), `load_art.asm`, `bg.asm`, `bg_anim.asm`. No
+  AS-reassembly halves. ONE tree-scanning parity audit transformed:
+  `parcel_8b_stage_gen_touchers::block_stage_keys_has_exactly_three_touchers`
+  scanned ALL `.asm`/`.inc` for the three TileCache staging-claim routines (homed
+  in `tile_cache.asm`) — its `.asm`/`.inc` census half retires with the twin; the
+  `.emp` census half is now the sole gen-bump audit (still asserts exactly the
+  three). Strict 2858 (net 0 — the audit is one test that still passes).
