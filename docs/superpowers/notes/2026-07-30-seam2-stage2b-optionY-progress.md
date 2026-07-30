@@ -1,10 +1,73 @@
 # 2026-07-30 — seam-2 stage-2b Option Y: PROGRESS (mechanism blessed · head co-linked · emitter wired) → the deletion is the next unit
 
-Status: **EXECUTION Y-sequence steps 1-2 + the emitter half of step 3 DONE, GREEN,
-committed. The remaining main.asm/build.sh wire + THE COUPLED `.asm` DELETION (steps
-3b-4) is the irreversible unit — flagged for its own careful pass (byte-exact BINCLUDE
-placement + the real `./build.sh` CRC confirmation rebuilds the reference).** Sigil
-branch `seam2-banked-data`. The overseer BLESSED the width-1 arm (own-run 2888/0/1).
+> ## ✅ UPDATE (later 2026-07-30) — THE WIRE + THE DAC DELETION LANDED (the irreversible unit is DONE, green, committed)
+>
+> Four commits close the unit. **aeon** `seam2-banked-data`: `cd31928` (the wire) →
+> `7c4769c` (the deletion). **sigil** `seam2-banked-data`: `6de01ac` (the whole-ROM
+> gate + harness) → `22d0225` (retire the row-57 oracle + close kill rows). Strict at
+> the tip: **2891 passed / 0 failed / 1 ignored** (−4 vs 2895: the retired oracle;
+> +3 vs the 2892 baseline: the new seam2_dac_rom gate). The assembled ROM is UNMOVED
+> (674166e9 plain / 16ee80b9 debug over 0..ASSEMBLED_LEN; the seam2/m1d/seam1 gates
+> are green). `./build.sh` BOTH shapes through the REAL asl reproduces the baseline
+> assembled region byte-for-byte except the 2 convsym header fields ($18E-$18F,
+> $1A6-$1A7) — the deb2 appendix shrinks 156 B (plain), the deleted labels leaving
+> the table (Option B, out of scope); the reference s4.bin stays the FIXED gitignored
+> baseline (never rebuilt/committed — the seam-1 precedent; it is gitignored, not
+> tracked).
+>
+> **THE MECHANISM THAT WAS SETTLED (the tension the plan flagged, resolved):** the
+> DSM `mixed_dac_rom` harness (~20 tranches) composes the DAC banks IN-MEMORY (the
+> `org $58000` stub + `.emp` sections) — that path is INCOMPATIBLE with turning the
+> body else-arm into a BINCLUDE. Resolution:
+>   * **The BODY keeps a stub sub-arm** gated by a NEW harness-only define
+>     `SIGIL_EMP_DAC_BODY_STUB`. The 12 sound DSM helpers (dac/mt/sfx/hblank/tranche2-9)
+>     set it → they keep composing the `.emp` banks in-memory (ZERO tranche/map churn —
+>     one define added). The real build + the seam-2 whole-ROM gate do NOT set it → the
+>     real BINCLUDE arm.
+>   * **The HEAD is ALWAYS AS-BINCLUDE'd (no stub).** It CANNOT be stubbed: for T1
+>     (MT AS-included) the AS PC must advance the 90 head bytes past $585AD so the MT
+>     song lands at $58607 — a hole would shift it. So the head byte-gate is: AS
+>     BINCLUDEs the co-linked `dac_sample_tab.bin` (proven == the reference 90-B slice
+>     by seam2_dac_head_colink). This is a NEW code path — **BINCLUDE inside a
+>     `phase 08000h` block** — and it works (the whole-ROM gate is green both shapes).
+>   * **THE DELETION collapsed both gates** to their native path (the seam-1
+>     unconditional-BINCLUDE pattern): main.asm body = `ifdef SIGIL_EMP_DAC_BODY_STUB
+>     org else BINCLUDE`; sound_bank.inc head = unconditional BINCLUDE. `m1d`/`seam1`/
+>     tranche20+ (which set no DAC define) now take the BINCLUDE arm — identical ROM,
+>     they need the `.bin`s present (same kind of dependency as the seam-1 blob `.bin`).
+>
+> **THE NEW GATE:** `crates/sigil-cli/tests/seam2_dac_rom.rs` — the seam-1
+> `mixed_seam1_rom` pattern applied to the DAC: emit → assemble main.asm with
+> `SIGIL_EMP_DAC` on (no stub) → whole ROM == reference BOTH shapes
+> (`assert_rom_matches_convsym`) + a t24 doctored-head control. `assemble_seam2_dac_rom_as_side`
+> is its AS side. This IS the primary deletion bar (the design-note "whole-ROM byte gate").
+>
+> **CORRECTIONS / findings for the close:**
+>   * `SIGIL_EMP_DAC` is now VESTIGIAL — after the gate collapse nothing in aeon reads
+>     it (main.asm uses `SIGIL_EMP_DAC_BODY_STUB`, sound_bank.inc is unconditional). The
+>     12 DSM helpers + `assemble_seam2_dac_rom_as_side` still SET it (harmless no-op).
+>     Cleanup candidate (drop the define; keep only BODY_STUB in the DSM helpers) —
+>     deferred to avoid churn on the deletion; a dry-panel / next-pass item.
+>   * `SIGIL_EMP_DAC_BODY_STUB` is TWIN SCAFFOLDING (the DSM in-memory composition
+>     entry). Kill condition: when the DSM `mixed_dac_rom` DAC-composition tranches
+>     retire (or convert to BINCLUDE), the stub arm + the define die and the body
+>     collapses to a bare BINCLUDE. Needs a kill-list row (not yet added).
+>   * The oracle-retirement ripple was REAL and caught by the byte gate:
+>     `dac_sample_tab_port.rs` (t27 lane C) read the deleted `.asm` and failed 4/4 →
+>     deleted same-unit (row 57's identity bar moves to the whole-ROM gate). No sibling
+>     BODY oracle broke (`dac_bank_acceptance` proves the `.emp` banks vs the reference
+>     SLICE, not vs a `.asm` twin — it stays).
+>   * The plan's "compose the .emp HEAD in place of the AS head" resolved to
+>     **AS-BINCLUDE the .emp-derived head .bin** (not a composed .emp section) — the
+>     only shape that advances the AS PC correctly for T1. Both paths byte-identical.
+>
+> **CASCADE READINESS (2c/2d/3):** the head-BINCLUDE-in-`phase` pattern is PROVEN
+> (reusable for `seq_opcode_tab` / `sfx_blob_win_tab` / `sound_tables_z80` heads). The
+> `SIGIL_EMP_*_BODY_STUB` idiom is the template for any bank BODY the DSM harness must
+> keep composing. mt_bank/sfx_bank are bank BODIES (`bank: $8000`, m68000) placed after
+> the DAC — the `org`-resume addresses in their gates are unchanged by this unit.
+>
+> --- (original note below) ---
 
 ## What landed (three committed green steps)
 
