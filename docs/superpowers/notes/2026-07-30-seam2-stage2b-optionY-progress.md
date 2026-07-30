@@ -67,6 +67,67 @@
 > keep composing. mt_bank/sfx_bank are bank BODIES (`bank: $8000`, m68000) placed after
 > the DAC — the `org`-resume addresses in their gates are unchanged by this unit.
 >
+> ## ✅ UPDATE 2 — STAGE 2c (mt_bank) LANDED (cascade authorized; DAC unit countersigned)
+>
+> The overseer countersigned the DAC unit and authorized the full cascade (no per-unit
+> stop). Stage 2c (Moving-Trucks bank) is DONE, green, committed, the SAME wire→dual-
+> proof→standalone-deletion shape as the DAC. **aeon:** `cfe2abd` (MT wire) → `19fce50`
+> (MT deletion, 7 `.asm` + the verify_emit_bin fix). **sigil:** `10eb2ce` (emit + gate)
+> → `f6938b9` (probe re-baseline + row closes). Strict **2894/0/1**; `./build.sh` BOTH
+> shapes through real `asl` reproduces the baseline assembled region (only the 2 convsym
+> header fields differ; deb2 shrinks further).
+>
+> **What was new vs the DAC (the reusable MT pattern):**
+>   * **Shape-dependent bank** — `emit_mt_bank(aeon, debug)` emits `mt_bank{,_debug}.bin`
+>     (plain 13,537 B / debug 20,275 B; the debug build adds DrumTest + HCZ2). Supplies
+>     the same 3 cross-seam carriers `mt_port.rs` does (`MovingTrucks_Bank_Start`@$58000
+>     + `SONG_MOVINGTRUCKS` + `SONG_COUNT`) and checks the 7 link asserts.
+>   * **A SYMS file** — unlike the DAC head (consumed by `-D`), the MT bank is consumed by
+>     AS-assembled 68k code: `sound_api.asm`'s `movea.l #SongTable`/`#SongPatchTable`.
+>     So `emit_mt_artifacts` ALSO emits `mt_syms{,_debug}.asm` (equs at the emitted
+>     addresses, extracted from the placed section labels — the seam-1 syms pattern), and
+>     the MT BINCLUDE arm `include`s it. THIS is the template for any bank BODY with
+>     AS-side label consumers (find them by grepping the bank's exported labels).
+>   * **`SIGIL_EMP_MT_BODY_STUB`** — same idiom as DAC (kill row 91, generalized).
+>   * **Ripple caught by `./build.sh`, NOT the strict suite:** `tools/verify_emit_bin.py`'s
+>     `_FIXED_TARGETS` hardcoded the 6 MT `.asm` → MISSING_ASM at the build's twin-verify
+>     preflight. Emptied the list (the `.bin` embed source is covered by the byte gates).
+>     **LESSON for 2d/stage-3: run `./build.sh` (both shapes) per deletion — the strict
+>     suite does NOT exercise build.sh's preflights (verify_emit_bin, lint).**
+>   * **Probe re-baseline** — `mt_negative_probes` probe (b) was at the stale f828406
+>     $60607/bank-$C; re-baselined to $58607/bank-$B with the wrong label moved to
+>     $60000/bank-$C so the 5 co-residency ensures still fire (verified 4/4).
+>
+> ## 🔜 STAGE 2d (sfx_bank) — SCOPED for the next pass (VALVED here; the delicate half)
+>
+> 2d has TWO coupled parts; the second is a genuinely fresh design unit (why this pass
+> valved after 2c rather than rush it):
+>   1. **sfx_bank BODY** — the 18 `sfx/sfx_NN{,_patches}.asm` + `sfx_table.asm` →
+>      `sfx_bank.emp` (already exists at `games/sonic4/data/sound/sfx/sfx_bank.emp`),
+>      the MT pattern EXACTLY: emit `sfx_bank{,_debug}.bin` @ the sfx region ($5BAE8
+>      plain size $4518 / $5D53A debug size $2AC6, from `emp_bank_map_with_mt`) +
+>      `sfx_syms.asm` for the ONE AS-side consumer **`SfxTable`** (sound_sfx.asm reads
+>      it; grep confirmed SfxTable is the only cross-seam body label). Shape-dependent.
+>      Add `SIGIL_EMP_SFX_BODY_STUB`. NOTE: sfx_bank.emp's Sfx_NN are its OWN table-part
+>      labels; its co-residency ensures read `MovingTrucks_Bank_Start` (same carrier).
+>   2. **`sfx_blob_win_tab` HEAD table** (the delicate half — coordinator-ruled) — a
+>      `soundBankHead` table of `dw sfx_winptr(Sfx_NN)` (with `rept` gaps for unused ids)
+>      that references the Sfx_NN blob labels. When sfx_bank is BINCLUDE'd, Sfx_NN are
+>      gone. **RULING: the SFX_WIN_* equ layer** — sfx_bank.emp gains a `pub` SFX_WIN_NN
+>      equ layer (`winptr(Sfx_NN)` per blob), and sfx_blob_win_tab references SFX_WIN_NN
+>      (co-linked, the DAC-head mechanism). The in-cell-builtin spelling (`dw winptr(Sfx_NN)`
+>      inline) is a LEDGERED language-ask — DO NOT build it. `sfx_blob_win_tab.emp` does
+>      NOT yet exist — it must be created (the `rept`-gap unused-id pattern → some .emp
+>      construct) OR sfx_blob_win_tab.asm stays AS consuming SFX_WIN_NN from an emitted
+>      syms file. This is a head-table port (like `dac_sample_tab`/`seq_opcode_tab`) — use
+>      the BINCLUDE-in-`phase` pattern (proven). RE-PROBE: if the equ layer distorts bytes
+>      anywhere, STOP and report. Re-baseline `sfx_negative_probes` as it re-proves.
+>      SFX_WIN_MASK/BASE + sfx_winptr live in `boot_data.asm` today (seam-1 handoff §7).
+>
+> **STAGE 3 (after 2d):** `seq_opcode_tab` head (Value16Le proven + BINCLUDE-in-phase) +
+> `sound_tables_z80` (generator-emits-.emp, rows 56/1619/1620). Then the loop (2→3-4-5) +
+> the C3-HEAVY dry panel (C2 owes 4 re-derivations) → checkpoint (b).
+>
 > --- (original note below) ---
 
 ## What landed (three committed green steps)
