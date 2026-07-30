@@ -33,7 +33,16 @@ fn strict_gate() -> bool {
 /// The committed pins.rs must equal an in-memory regeneration from the live
 /// listings, modulo the `[provenance]` stamp lines (a rebuild that moves no
 /// pin is not drift).
+///
+/// RETIRED-IGNORED at the Stage-2 flip (kill rows 34/95): the guard's subject
+/// — a live asl-format `s4.lst` — no longer exists; the default build writes
+/// a sigil-canonical listing `parse_listing` cannot (and should not) read.
+/// The pins are frozen asl-derived constants under the declared-sizes
+/// doctrine; nothing regenerates them, so currency-drift is structurally
+/// impossible until the pins→map migration (row 95) retires the whole
+/// repin listing-parse path.
 #[test]
+#[ignore = "asl listings left the build at the Stage-2 flip (rows 34/95); pins are frozen provenance"]
 fn pins_rs_is_current() {
     let aeon = aeon_dir();
     let plain_path = aeon.join("s4.lst");
