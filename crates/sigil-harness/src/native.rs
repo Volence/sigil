@@ -1684,7 +1684,12 @@ pub fn append_deb2_appendix(
     let bin = dir.join("rom.bin");
     let lst = dir.join("rom.lst");
     std::fs::write(&bin, rom).map_err(|e| e.to_string())?;
-    std::fs::write(&lst, sigil_link::emit_listing(listing)).map_err(|e| e.to_string())?;
+    // Demangle the sigil-canonical `.emp` locals into `Parent.local` + drop compiler
+    // plumbing (Stage-3 P2b, OQ-B) so the source-meaningful locals SURVIVE convsym's
+    // `as_lst` name parser (which rejects the mangled `$` form) and reach the deb2
+    // appendix. ROM-byte-neutral: the appendix is post-`EndOfRom` symbol data only.
+    let deb2_listing = sigil_link::demangle_symbols(listing);
+    std::fs::write(&lst, sigil_link::emit_listing(&deb2_listing)).map_err(|e| e.to_string())?;
 
     // convsym: append the deb2 table (build.sh:170-171 flags verbatim).
     let out = std::process::Command::new(&convsym)
