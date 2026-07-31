@@ -87,8 +87,14 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
     // injects them as GUARDED AS `-D` defines so residual AS reads them at
     // comptime. Seed the same harvested guarded defines here, exactly as the real
     // harness does, so this standalone front-matter assembly resolves them.
-    let guarded_defines = sigil_harness::native::harvest_engine_constants(&aeon)
+    let mut guarded_defines = sigil_harness::native::harvest_engine_constants(&aeon)
         .expect("harvest engine constants");
+    // Post the conv-a structs flip, structs.asm is gone too — ram.asm's `ds`
+    // slot sizes (SST_len/DMAEntry_len/…) come from the struct-offset harvest.
+    guarded_defines.extend(
+        sigil_harness::native::harvest_engine_struct_offsets(&aeon)
+            .expect("harvest struct offsets"),
+    );
     let opts = Options {
         initial_cpu: Cpu::M68000,
         defines,

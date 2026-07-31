@@ -377,12 +377,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     let c = compile_real_files(shape);
 
-    // Drift guards: each file rides sst.emp's 30 + constants.emp's engine guards;
-    // test_player adds 4 (VRAM_TEST_SONIC + _dplc_ptr/_art_base/_debug_flag),
-    // path_swap adds 1 (VRAM_TEST_OBJ), test_enemy adds 0 (unguarded overlay).
-    assert_eq!(c.player_guards, 30 + twin_guards() + 4, "test_player ambient + own 4 guards");
-    assert_eq!(c.enemy_guards, 30 + twin_guards(), "test_enemy ambient guards (unguarded overlay)");
-    assert_eq!(c.swap_guards, 30 + twin_guards() + 1, "path_swap ambient + own VRAM_TEST_OBJ guard");
+    // sst.emp's SST_* wall retired at the conv-a structs flip; the constants
+    // twin's guards remain. test_player adds 4 (VRAM_TEST_SONIC +
+    // _dplc_ptr/_art_base/_debug_flag), path_swap adds 1 (VRAM_TEST_OBJ),
+    // test_enemy adds 0 (unguarded overlay).
+    assert_eq!(c.player_guards, twin_guards() + 4, "test_player own 4 guards");
+    assert_eq!(c.enemy_guards, twin_guards(), "test_enemy guards (unguarded overlay)");
+    assert_eq!(c.swap_guards, twin_guards() + 1, "path_swap + own VRAM_TEST_OBJ guard");
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

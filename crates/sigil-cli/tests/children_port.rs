@@ -285,37 +285,12 @@ fn children_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin", 1);
 }
 
-/// Negative probe: a doctored `SST_sibling_ptr` truth must FIRE the sst.emp
-/// drift guard NAMING the field — the struct seam children walks its whole
-/// chain through is live, not decorative.
-#[test]
-fn doctored_sibling_ptr_fires_its_guard() {
-    assert_doctored_seam_fires(("SST_sibling_ptr", "$2A"), "sibling_ptr");
-}
-
-// The `doctored_rf_xflip_fires_its_guard` negative probe retired with the
-// Stage-3 P5 ownership flip: `RF_XFLIP` is now SOLE-authored by `constants.emp`
-// (harvested into guarded AS defines), so its mirror drift guard was deleted.
-// The `SST_sibling_ptr` probe above is an `sst.emp` field twin and still fires
-// via the shared helper below.
-
-fn assert_doctored_seam_fires(doctor: (&str, &str), named: &str) {
-    let aeon = aeon_dir();
-    if !aeon.join("s4.bin").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon tree not present");
-        }
-        eprintln!("skip: aeon tree not present");
-        return;
-    }
-    let defines: Vec<(&str, i128)> = vec![("DEBUG", 0), ("SOUND_DRIVER_ENABLED", 1)];
-    let (resolved, _linked, asserts) = compile_with_seam(&PLAIN, &defines, Some(doctor));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
-    let fired = diags
-        .iter()
-        .any(|d| d.level == sigil_span::Level::Error && d.message.contains(named));
-    assert!(fired, "the doctored {} truth must fire its ensure naming {named}: {diags:?}", doctor.0);
-}
+// The `doctored_sibling_ptr_fires_its_guard` negative probe retired with the
+// conv-a structs flip: `sst.emp` is the sole author of the object-record layout
+// now (its `SST_*` drift wall is deleted — it became a tautology), so there is no
+// guard to fire. A wrong SST offset instead moves ROM bytes, caught by the
+// six-target byte-identity. (The `doctored_rf_xflip_fires_its_guard` probe
+// likewise retired at the Stage-3 P5 flip when `RF_XFLIP` became `.emp`-owned.)
 
 /// SHARED-ANCHOR proof. `PopulateSpawnedPieceCount` is entity_window's END
 /// anchor AND children's START anchor; `Load_Object` is children's END anchor

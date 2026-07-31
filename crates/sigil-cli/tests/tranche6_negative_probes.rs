@@ -86,12 +86,11 @@ fn lower_with_ambient(
 /// link-assert check diagnostics + whether resolve/link itself failed.
 struct LinkOutcome {
     resolve_link_errors: Vec<String>,
-    assert_errors: Vec<String>,
 }
 
 fn link_with_truths(
     mut sections: Vec<Section>,
-    link_asserts: &[sigil_ir::LinkAssert],
+    _link_asserts: &[sigil_ir::LinkAssert],
     extra: Vec<Vec<Section>>,
 ) -> LinkOutcome {
     let map_toml = "fill = 0x00\n\
@@ -134,7 +133,6 @@ fn link_with_truths(
         Err(diags) => {
             return LinkOutcome {
                 resolve_link_errors: diags.iter().map(|d| d.message.clone()).collect(),
-                assert_errors: vec![],
             }
         }
     };
@@ -142,12 +140,7 @@ fn link_with_truths(
         Ok(_) => vec![],
         Err(diags) => diags.iter().map(|d| d.message.clone()).collect(),
     };
-    let assert_errors = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), link_asserts)
-        .iter()
-        .filter(|d| d.level == sigil_span::Level::Error)
-        .map(|d| d.message.clone())
-        .collect();
-    LinkOutcome { resolve_link_errors, assert_errors }
+    LinkOutcome { resolve_link_errors }
 }
 
 /// The AS-side truth equs (the real structs.asm/constants.asm values).
@@ -212,77 +205,16 @@ fn solid_outcome(sst_src: &str, solid_src: &str, extra: Vec<Vec<Section>>) -> Li
     link_with_truths(sections, &asserts, all)
 }
 
-#[test]
-fn misspelled_sst_extern_dangles_loud_while_control_resolves() {
-    let Some(sst) = read_aeon("engine/objects/sst.emp") else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
-    let solid = read_aeon("games/sonic4/objects/test_solid.emp").unwrap();
+// The `misspelled_sst_extern_dangles_loud_while_control_resolves` probe retired
+// with the conv-a structs flip: sst.emp no longer carries `extern("SST_*")` drift
+// guards (the struct is the sole author now), so there is no sst extern to
+// misspell. The general "a dangling extern in an ensure is loud" property is
+// inherent to the link checker and exercised by the surviving constants probes.
 
-    // Control: the real pair resolves clean.
-    let control = solid_outcome(&sst, &solid, vec![]);
-    assert!(
-        control.resolve_link_errors.is_empty() && control.assert_errors.is_empty(),
-        "control must resolve clean: link={:?} asserts={:?}",
-        control.resolve_link_errors,
-        control.assert_errors
-    );
-
-    // Doctored: one guard's extern name misspelled — the assert's symbol
-    // dangles and the check is LOUD (never silently skipped).
-    let doctored_sst = sst.replace("extern(\"SST_subtype\")", "extern(\"SST_subtypo\")");
-    assert_ne!(doctored_sst, sst, "the doctor must have found its target");
-    let outcome = solid_outcome(&doctored_sst, &solid, vec![]);
-    assert!(
-        outcome
-            .assert_errors
-            .iter()
-            .any(|m| m.contains("SST_subtypo")),
-        "a misspelled cross-seam extern must dangle LOUD naming the symbol: {:?}",
-        outcome.assert_errors
-    );
-}
-
-#[test]
-fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
-    let Some(sst) = read_aeon("engine/objects/sst.emp") else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
-    let solid = read_aeon("games/sonic4/objects/test_solid.emp").unwrap();
-
-    // The drift: swap the two adjacent RUNTIME u8 fields `prev_frame` ($24)
-    // and `sprite_piece_count` ($25) in the twin ONLY — dense layout stays
-    // valid, the module compiles, and consumers would emit wrong
-    // displacements... but the twin's own extern drift guards fire at link,
-    // naming both drifted fields.
-    //
-    // (These are RUNTIME fields, past ObjDef's $18 template extent, chosen so
-    // this probe isolates the extern link-seam guard: a drift of a TEMPLATE
-    // field — $0A..$21 — is now caught EARLIER, at comptime, by sst.emp's
-    // ObjDef↔Sst burst-copy ensure-chain, which is exercised by objdef_port's
-    // SHIFT-mutation break-test.)
-    let doctored = sst
-        .replace("prev_frame: MappingFrame @ $24,", "sprite_piece_count: MappingFrame @ $24,")
-        .replace("sprite_piece_count: u8 @ $25,", "prev_frame: u8 @ $25,")
-        .replace(
-            "ensure(extern(\"SST_prev_frame\") == $24,",
-            "ensure(extern(\"SST_prev_frame\") == $25,",
-        )
-        .replace(
-            "ensure(extern(\"SST_sprite_piece_count\") == $25,",
-            "ensure(extern(\"SST_sprite_piece_count\") == $24,",
-        );
-    assert_ne!(doctored, sst, "the doctor must have found its targets");
-    let outcome = solid_outcome(&doctored, &solid, vec![]);
-    assert!(
-        outcome.assert_errors.iter().any(|m| m.contains("sprite_piece_count"))
-            && outcome.assert_errors.iter().any(|m| m.contains("prev_frame")),
-        "a drifted twin must be caught by its OWN guards naming the fields: {:?}",
-        outcome.assert_errors
-    );
-}
+// The `drifted_sst_twin_fires_its_own_guard_naming_the_field` probe retired with
+// the conv-a structs flip: sst.emp's `SST_*` drift wall is deleted (the struct
+// authors the layout, harvested into the residual AS), so a drifted field moves
+// ROM bytes and is caught by the six-target byte-identity, not a link guard.
 
 #[test]
 fn word_imm_link_range_violation_is_loud_on_both_frontends() {

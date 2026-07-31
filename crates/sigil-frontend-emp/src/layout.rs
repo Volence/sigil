@@ -1292,6 +1292,28 @@ pub fn layout_struct(file: &ast::File, name: &str) -> (Option<Layout>, Vec<Diagn
     })
 }
 
+/// Lay out `name` with an `ambient` slice of cross-file declaration items (the
+/// TYPE ENVIRONMENT — see [`Evaluator::with_file_and_ambient`]), so a struct
+/// whose fields reference IMPORTED newtypes (`Sst`'s `Coord`/`Velocity`/… from
+/// `engine.types`) resolves standalone. The struct-offset harvest reads field
+/// offsets + sizes this way; `file`'s own items shadow same-named ambient ones,
+/// so a self-contained struct ignores the ambient entirely.
+pub fn layout_struct_ambient(
+    file: &ast::File,
+    ambient: &[ast::Item],
+    name: &str,
+) -> (Option<Layout>, Vec<Diagnostic>) {
+    crate::eval::run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file_and_ambient(file, ambient);
+        if !ev.structs.contains_key(name) {
+            ev.error(file.module.span, format!("no struct named `{name}`"));
+            return (None, ev.diags);
+        }
+        let layout = ev.layout_of_struct(name, file.module.span);
+        (Some(layout), ev.diags)
+    })
+}
+
 /// Lay out several structs through a SINGLE shared [`Evaluator`] (unlike
 /// [`layout_struct`], which builds a fresh one per call), returning each query's
 /// layout (`None` for an unknown struct name) plus the accumulated diagnostics.

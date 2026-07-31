@@ -226,8 +226,8 @@ fn compile_real_file(
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
     assert_eq!(
-        guards, 30,
-        "sst.emp's 30 drift guards must be captured (dplc pulls no constants twin)"
+        guards, 0,
+        "sst.emp's SST_* drift wall retired at the conv-a structs flip; dplc pulls no constants twin"
     );
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(

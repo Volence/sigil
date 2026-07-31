@@ -302,7 +302,9 @@ fn compile_real_file(
 /// own `interact_off()` SST_interact guard = 49.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 31 + twin_guards(), "sst.emp's 30 + the constants twin's + collision.emp's 1 drift guards must be captured");
+    // sst.emp's SST_* wall + collision.emp's SST_interact guard both retired at
+    // the conv-a structs flip; only the constants twin (0 now) would remain.
+    assert_eq!(guards, twin_guards(), "the constants twin's drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

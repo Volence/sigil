@@ -522,12 +522,13 @@ fn p1_player_common_debug_region_matches_reference() {
 
 // ── guard gate + t24 positive control / negative probe ───────────────────────
 
-/// The drift guards (PlayerV 5 + ~40 constant mirrors + sst/constants ambient)
-/// all resolve and PASS against the AS-side equ seam.
+/// The drift guards (PlayerV overlay + constant mirrors) all resolve and PASS
+/// against the AS-side equ seam. sst.emp's 30 SST_* ambient guards retired at the
+/// conv-a structs flip, so the captured count dropped (27 now).
 #[test]
 fn p1_drift_guards_all_pass() {
     let (_linked, resolved, asserts, guards) = compile_player_common(&PC_PLAIN);
-    assert!(guards > 40, "player_common must capture its overlay + mirror drift guards (got {guards})");
+    assert!(guards > 20, "player_common must capture its overlay + mirror drift guards (got {guards})");
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

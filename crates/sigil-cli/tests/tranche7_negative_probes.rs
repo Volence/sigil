@@ -23,7 +23,6 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -107,123 +106,12 @@ fn errors(diags: &[sigil_span::Diagnostic]) -> Vec<&str> {
         .collect()
 }
 
-/// The AS-side value seam (the REAL structs.asm SST_* + constants.asm values
-/// the twins guard against) — a trailing label+`dc.w` opens a section so the
-/// equs flush (the collision_lookup / test_objects pattern).
-fn as_truth_equs() -> Vec<Section> {
-    // The 30 `SST_*` field pins + 18 engine constants both `.emp` twins guard
-    // (SOURCE OF TRUTH: `structs.asm` / `constants.asm`), shared via
-    // `sigil_harness::test_support`. The drifted-constants probe below builds
-    // its own DOCTORED blob via `with_engine_constant_override`.
-    sigil_harness::test_support::as_engine_constants_and_sst_equs()
-}
-
-/// Lower the quintet (types + sst + constants + aabb ambient, collision main)
-/// to (sections, link_asserts, lower_diags) — the doctorable pipeline for the
-/// drift probes.
-fn lower_quintet(
-    types: &str,
-    sst: &str,
-    constants: &str,
-    aabb: &str,
-    coords: &str,
-    collision: &str,
-) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<sigil_span::Diagnostic>) {
-    let mut items = Vec::new();
-    // coords carries abs_w (ambient-hoist parcel folded collision's AABB |delta|
-    // sites onto the shared template).
-    for src in [types, sst, constants, aabb, coords] {
-        items.extend(parse_str(src).0.items);
-    }
-    let (main, _) = parse_str(collision);
-    items.extend(main.items.clone());
-    let file = sigil_frontend_emp::ast::File {
-        module: main.module.clone(),
-        attrs: main.attrs.clone(),
-        items,
-        docs: main.docs.clone(),
-    };
-    let (module, ldiags) = lower_module(
-        &file,
-        &LowerOptions {
-            initial_cpu: Cpu::M68000,
-            include_root: None,
-            embed_base: None,
-            // collision.emp's A2 rail (item 1) references DEBUG; bind it (0 =
-            // plain, rail elided) so the doctored twin lowers to the link asserts.
-            defines: vec![("DEBUG".to_string(), 0)],
-        },
-    );
-    (module.sections, module.link_asserts, ldiags)
-}
-
-/// Check the module's drift-guard `ensure`s against the REAL AS truths (the
-/// collision region is NOT placed — so the always-recorded
-/// `[layout.odd-item]` even-address parity asserts on collision's own labels
-/// are filtered out; only the value-drift guards matter here), returning the
-/// ERROR-level assert messages.
-fn check_guards_against_truths(link_asserts: &[sigil_ir::LinkAssert]) -> Vec<String> {
-    let mut sections = as_truth_equs();
-    for sec in &mut sections {
-        sec.lma = 0x0100_0000;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    let guards: Vec<sigil_ir::LinkAssert> =
-        sigil_harness::test_support::drift_guards_only(link_asserts).cloned().collect();
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout (truths): {d:?}"));
-    sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &guards)
-        .iter()
-        .filter(|d| d.level == sigil_span::Level::Error)
-        .map(|d| d.message.clone())
-        .collect()
-}
-
 // ---- (a) drifted sst.emp twin → its own guard names the field ---------------
 
-#[test]
-fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
-    let Some(s) = sources() else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
-
-    // Control: the real quintet's guards PASS against the real AS truths.
-    let (_c_sec, c_asserts, c_ldiags) =
-        lower_quintet(&s.types, &s.sst, &s.constants, &s.aabb, &s.coords, &s.collision);
-    assert!(
-        c_ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "control must lower clean: {:?}",
-        errors(&c_ldiags)
-    );
-    let control = check_guards_against_truths(&c_asserts);
-    assert!(control.is_empty(), "control guards must all PASS: {control:?}");
-
-    // The drift: change what the twin's guard EXPECTS for `width_pixels` ($16
-    // → $15) — the exact shape of structs.asm drifting while sst.emp stays put
-    // (or vice versa). The `@`-placed field itself is untouched, so the module
-    // lowers clean; the guard `ensure(extern("SST_width_pixels") == $15, ...)`
-    // then reads the REAL AS $16 against the doctored $15 and fires LOUD at
-    // link, naming the field — BEFORE any consumer emits a wrong displacement.
-    let doctored_sst = s.sst.replace(
-        "ensure(extern(\"SST_width_pixels\") == $16,",
-        "ensure(extern(\"SST_width_pixels\") == $15,",
-    );
-    assert_ne!(doctored_sst, s.sst, "the doctor must have found its target");
-    let (_sec, asserts, ldiags) =
-        lower_quintet(&s.types, &doctored_sst, &s.constants, &s.aabb, &s.coords, &s.collision);
-    assert!(
-        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "the doctored twin still lowers clean (the guard is a link assert): {:?}",
-        errors(&ldiags)
-    );
-    let fired = check_guards_against_truths(&asserts);
-    assert!(
-        fired.iter().any(|m| m.contains("width_pixels")),
-        "the drifted twin's guard must fire LOUD naming `width_pixels`: {fired:?}"
-    );
-}
+// The `drifted_sst_twin_fires_its_own_guard_naming_the_field` probe retired with
+// the conv-a structs flip: sst.emp's `SST_*` drift wall is deleted (the struct is
+// the sole author, harvested into the residual AS), so a drifted field moves ROM
+// bytes and is caught by the six-target byte-identity, not a link guard.
 
 // ---- (b) drifted constants collision-block value → RETIRED ------------------
 //

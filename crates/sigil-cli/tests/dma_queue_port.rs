@@ -294,21 +294,8 @@ fn dma_queue_debug_region_matches_reference() {
 // was deleted. The DMAEntry per-field wall below is a `structs.emp` twin and is
 // unaffected — it still fires on a swapped field.
 
-/// Negative probe: a swapped-adjacent-field DOCTOR on the DMAEntry wall
-/// (`DMAEntry_SizeH` claiming offset 2) must fire the per-field drift wall —
-/// the stronger-than-sizeof property the Act/Sec wall established.
-#[test]
-fn doctored_dmaentry_field_fires_its_guard() {
-    if !strict_gate() && !aeon_dir().join("s4.bin").exists() {
-        eprintln!("skip: reference ROM missing");
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file(false, Some(("DMAEntry_SizeH", "2")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the doctored DMAEntry_SizeH truth must fire the field wall");
-    assert!(
-        fired.iter().any(|d| d.message.contains("SizeH")),
-        "the guard must NAME the field: {fired:?}"
-    );
-}
+// The `doctored_dmaentry_field_fires_its_guard` negative probe retired with the
+// conv-a structs flip: `engine.structs` is the sole author of the DMAEntry layout
+// now (the per-field `offsetof == extern` wall it doctored is deleted — it became
+// a tautology), so there is no wall to fire. A wrong DMAEntry offset instead moves
+// ROM bytes, caught by the six-target byte-identity.

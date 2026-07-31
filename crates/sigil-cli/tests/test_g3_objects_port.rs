@@ -291,9 +291,9 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     let c = compile_real_file(shape);
 
-    // sst.emp's 30 + constants.emp's engine-constant guards + its own one
-    // (VRAM_TEST_OBJ). All must be captured AND pass.
-    let want = 30 + twin_guards() + 1;
+    // sst.emp's SST_* wall retired at the conv-a structs flip; the constants
+    // twin's guards + its own one (VRAM_TEST_OBJ).
+    let want = twin_guards() + 1;
     assert_eq!(c.guards, want, "test_parent's ambient sst + constants guards + its own VRAM_TEST_OBJ captured");
 
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);

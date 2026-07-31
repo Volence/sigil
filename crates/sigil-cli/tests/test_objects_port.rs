@@ -324,7 +324,9 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
     // `[layout.odd-item]` even-address parity assert — not drift guards;
     // exclude them from the count (they still ride the check below).
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 60 + twin_guards(), "the ambient drift guards must all be captured");
+    // The prepended sst.emp SST_* walls retired at the conv-a structs flip; only
+    // the constants twin (0 now) would remain.
+    assert_eq!(guards, twin_guards(), "the ambient drift guards must all be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

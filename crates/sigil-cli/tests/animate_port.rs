@@ -296,7 +296,9 @@ fn compile_real_file_with(
 /// animate.emp itself carries ZERO module-local mirrors.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    let want = 30 + sigil_harness::test_support::engine_constant_equs().len();
+    // sst.emp's SST_* drift wall retired at the conv-a structs flip (the struct
+    // is the sole author now); animate.emp carries no module-local mirrors.
+    let want = sigil_harness::test_support::engine_constant_equs().len();
     assert_eq!(
         guards, want,
         "sst.emp's 30 + constants.emp's {} drift guards must be captured",

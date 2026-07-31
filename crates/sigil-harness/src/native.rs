@@ -656,8 +656,81 @@ pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, Strin
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_engine_constants: resolve: {:?}", diags.first()));
     }
-    // Exclude the struct-generated symbol (see the fn doc).
+    // VDP_Shadow_len is a STRUCT length, owned by the struct-offset harvest
+    // (harvest_engine_struct_offsets, VdpShadow), so it is excluded here to keep
+    // exactly one injector — the same reason it was excluded when structs.asm
+    // owned it, re-homed to the struct twin.
     Ok(vals.into_iter().filter(|(n, _)| n != "VDP_Shadow_len").collect())
+}
+
+/// The `.emp` struct twins whose field offsets + total size the residual AS
+/// consumes at comptime (`ram.asm`'s `ds` slot sizes, `demo_state.asm`'s
+/// `setVDPReg`, `player_common.asm`'s overlay-budget `if`, `act_descriptor.asm`'s
+/// `Sec`/`Act` field access). Each entry is `(emp file, struct name, AS symbol
+/// prefix)`: the harvest emits `<prefix>_<field>` = offsetof and `<prefix>_len` =
+/// sizeof, exactly the equs `engine/structs.asm`'s `struct … endstruct` generated.
+/// The prefix is VERBATIM the AS spelling — `Sst` (the `.emp` type) carried the
+/// `SST_*` AS equs, so its prefix is `SST`.
+const STRUCT_OFFSET_TWINS: &[(&str, &str, &str)] = &[
+    ("engine/structs.emp", "Act", "Act"),
+    ("engine/structs.emp", "Sec", "Sec"),
+    ("engine/structs.emp", "DMAEntry", "DMAEntry"),
+    ("engine/structs.emp", "parallax_config", "parallax_config"),
+    ("engine/structs.emp", "VdpShadow", "VDP_Shadow"),
+    ("engine/objects/sst.emp", "Sst", "SST"),
+    ("engine/objects/entity_window.emp", "EntityScanState", "EntityScanState"),
+    ("engine/level/parallax.emp", "band_entry", "band_entry"),
+];
+
+/// Harvest the `.emp` struct twins' field offsets + total sizes and shape them as
+/// AS `<Struct>_<field>` / `<Struct>_len` equs — the struct-offset sibling of
+/// [`harvest_engine_constants`]. With `engine/structs.asm` deleted, the `.emp`
+/// structs are the SOLE author of the object/section/DMA/parallax/VDP-shadow
+/// layouts; this reads their resolved offsets so the residual AS reads them as
+/// GUARDED defines, the same harvest→inject ordering the constants flip uses.
+///
+/// `engine/system/types.emp`'s newtypes are supplied as the shared ambient TYPE
+/// ENVIRONMENT: `Sst`'s fields are `Coord`/`Velocity`/… (erasing to raw widths);
+/// the other seven structs are all-primitive and ignore it. The lone DERIVED
+/// equate `structs.asm` carried outside a `struct` block — `SST_interact`
+/// (`SST_sst_custom + SST_CUSTOM_SIZE - 2` = the object record's tail word) — is
+/// emitted as `sizeof(Sst) - 2`, matching `collision.emp` / `player_sensors.emp`'s
+/// `interact_off()`.
+pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
+    use sigil_frontend_emp::layout::layout_struct_ambient;
+
+    let types_src = std::fs::read_to_string(aeon.join("engine/system/types.emp"))
+        .map_err(|e| format!("harvest_engine_struct_offsets: read types.emp: {e}"))?;
+    let (types_file, tdiags) = sigil_frontend_emp::parse_str(&types_src);
+    if tdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("harvest_engine_struct_offsets: types.emp parse: {:?}", tdiags.first()));
+    }
+
+    let mut out: Vec<(String, i64)> = Vec::new();
+    for (rel, sname, prefix) in STRUCT_OFFSET_TWINS {
+        let src = std::fs::read_to_string(aeon.join(rel))
+            .map_err(|e| format!("harvest_engine_struct_offsets: read {rel}: {e}"))?;
+        let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
+        if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+            return Err(format!("harvest_engine_struct_offsets: {rel} parse: {:?}", pdiags.first()));
+        }
+        let (layout, diags) = layout_struct_ambient(&file, &types_file.items, sname);
+        if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+            return Err(format!("harvest_engine_struct_offsets: layout {sname}: {:?}", diags.first()));
+        }
+        let layout = layout
+            .ok_or_else(|| format!("harvest_engine_struct_offsets: no struct `{sname}` in {rel}"))?;
+        for f in &layout.fields {
+            out.push((format!("{prefix}_{}", f.name), f.offset as i64));
+        }
+        out.push((format!("{prefix}_len"), layout.size as i64));
+        // SST_interact: the engine-owned player-slot tail word (structs.asm's one
+        // derived `=` outside a struct block). = sizeof(Sst) - 2.
+        if *sname == "Sst" {
+            out.push(("SST_interact".to_string(), layout.size as i64 - 2));
+        }
+    }
+    Ok(out)
 }
 
 pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, String> {
@@ -666,7 +739,11 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     // constants FIRST, then seed them as GUARDED defines so the residual AS reads
     // them at comptime. `.emp` definitions flow into the AS assembly — the harvest
     // must precede the assemble (the ordering the flip makes real).
-    let guarded_defines = harvest_engine_constants(aeon)?;
+    let mut guarded_defines = harvest_engine_constants(aeon)?;
+    // The struct-offset sibling flip: the `.emp` struct twins are the sole author
+    // of the object/section/DMA/parallax/VDP-shadow layouts (structs.asm deleted),
+    // so their field offsets + sizes inject the same way the constants do.
+    guarded_defines.extend(harvest_engine_struct_offsets(aeon)?);
     let mut defines: Vec<(String, i64)> = vec![];
     if profile.sound_on {
         defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));

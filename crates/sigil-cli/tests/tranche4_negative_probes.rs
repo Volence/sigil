@@ -144,30 +144,10 @@ fn doctored_af_delete_produces_different_bytes() {
     );
 }
 
-/// (b) The surviving twin drift guard compiled WITHOUT its AS-side equ
-/// carrier: checking the module's link asserts against an empty symbol table
-/// must FAIL LOUD, naming the missing extern.
-///
-/// The former `AF_DELETE` target retired with the Stage-3 P5 ownership flip:
-/// AF_DELETE is now SOLE-authored by `constants.emp` (harvested into guarded AS
-/// defines) and arrives via `use engine.constants` at comptime, so its mirror
-/// drift guard was deleted. The one surviving twin guard is `VDP_Shadow_len`
-/// (struct-generated AS-side, still mirrored + guarded in `constants.emp`),
-/// which rides the ambient prepend here — its `extern("VDP_Shadow_len")` is the
-/// missing symbol this probe now pins.
-#[test]
-fn standalone_drift_guard_fails_loud_on_the_missing_extern() {
-    let Some(src) = real_src() else { return };
-    let Some(constants) = constants_src() else { return };
-    let (sections, asserts) = place(&constants, &src, "0x309DE");
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
-    assert!(
-        diags.iter().any(|d| d.level == Level::Error && d.message.contains("VDP_Shadow_len")),
-        "the surviving VDP_Shadow_len drift guard must fail loud without the AS equ, got {diags:?}"
-    );
-}
+// The `standalone_drift_guard_fails_loud_on_the_missing_extern` probe retired
+// with the conv-a structs flip: the VDP_Shadow_len drift guard it pinned is
+// deleted (the VdpShadow struct authors the length, harvested into the residual
+// AS; constants.emp's `VDP_Shadow_len` is checked by byte-identity).
 
 /// (c) A wrong-base map moves the section — the placed LMA tracks the map,
 /// not an echo. FALSIFIED by the port gate placing at the true `0x309DE`.
@@ -390,10 +370,6 @@ fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_em
     sigil_frontend_emp::ast::File { module: act.module, attrs: act.attrs, items, docs: act.docs }
 }
 
-fn place_act(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
-    place_act_with(src, &structs_src())
-}
-
 fn place_act_with(act_src: &str, structs_src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
     let file = parse_act_with_structs(act_src, structs_src);
     let (module, ldiags) = lower_module(
@@ -527,17 +503,7 @@ fn act_wrong_base_map_places_the_section_at_a_different_address() {
     assert_ne!(sec.lma, 0x14AE6, "…and therefore differ from the true pin");
 }
 
-/// The Act_len twin pin compiled WITHOUT the AS equs: the link-assert check
-/// against an empty table must FAIL LOUD naming the missing symbol.
-#[test]
-fn act_standalone_twin_pins_fail_loud_on_missing_externs() {
-    let Some(src) = act_src() else { return };
-    let (sections, asserts) = place_act(&src);
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
-    assert!(
-        diags.iter().any(|d| d.level == Level::Error && d.message.contains("Act_len")),
-        "the Act_len twin pin must fail loud without the AS equs, got {diags:?}"
-    );
-}
+// The `act_standalone_twin_pins_fail_loud_on_missing_externs` probe retired with
+// the conv-a structs flip: engine.structs' `Act_len` (and every per-field) drift
+// wall is deleted — the struct is the sole author now, so there is no twin pin to
+// fail loud on a missing AS equ.
