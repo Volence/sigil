@@ -60,8 +60,8 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("GameLoop", 0x239A, 0x2428),        // the main loop
     ("BusError", 0x5CAB0, 0x5E5AA),      // ErrorHandler-class (error-handler region)
     ("Ground_Move_Cap", 0x10724, 0x10724), // a player proc (object bank)
-    ("Section_Init", 0x55BC, 0x635C),    // a level proc
-    ("BG_Init", 0x60DE, 0x6EC0),         // a level proc
+    ("Section_Init", 0x55CC, 0x636C),    // a level proc
+    ("BG_Init", 0x60EE, 0x6ED0),         // a level proc
     ("AnimateSprite", 0x2F3C, 0x351A),   // an objects keystone
     ("TouchResponse", 0x30C6, 0x37C2),   // a collision keystone
     ("Z80_Sound_Start", 0x3DE, 0x3E2),   // Z80-adjacent (shape-varying)

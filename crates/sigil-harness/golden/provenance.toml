@@ -174,3 +174,50 @@ full_crc = "ccfd35e2"
 full_size = 422171
 anchor_crc = "9c73a619"
 anchor_end = 0x5f65a
+
+[[entry]]
+name = "waveb-plane-buffer-2"
+ab = "docs/superpowers/notes/2026-07-31-waveb-pb2-ab.md"
+note = "VInt_DrawLevel col drain move.l pairs (-744 cyc/f from the VBlank window; +22B)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "c1c6374b"
+full_size = 422525
+anchor_crc = "20c85b01"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "11b58cf3"
+full_size = 303706
+anchor_crc = "70205171"
+anchor_end = 0x434d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f1f75b2a"
+full_size = 90479
+anchor_crc = "e65017b6"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "c672fa53"
+full_size = 92977
+anchor_crc = "1bbacbc0"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "1c37c489"
+full_size = 412350
+anchor_crc = "e5245111"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "e370f73c"
+full_size = 422189
+anchor_crc = "8896d6a8"
+anchor_end = 0x5f65a
