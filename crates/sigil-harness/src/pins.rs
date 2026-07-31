@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 56 regions, 315 symbols, 7 offsets
+//! [provenance] 56 regions, 314 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,10 +112,10 @@ pub const LOAD_OBJECT: Region = Region { plain_base: 0x4040, debug_base: 0x4D20,
 pub const PLANE_BUFFER: Region = Region { plain_base: 0x40C2, debug_base: 0x4DA2, plain_len: 0x2FE, debug_len: 0x2FE };
 
 /// `Tile_Cache_GetTile` .. `Collision_GetType` — gate `SIGIL_EMP_TILE_CACHE`. tests: tile_cache_port
-pub const TILE_CACHE: Region = Region { plain_base: 0x43C0, debug_base: 0x50A0, plain_len: 0xD20, debug_len: 0xDE0 };
+pub const TILE_CACHE: Region = Region { plain_base: 0x43C0, debug_base: 0x50A0, plain_len: 0xCE0, debug_len: 0xDA0 };
 
 /// `Collision_GetType` .. `Collision_ProbeDown` — gate `SIGIL_EMP_COLLISION_LOOKUP`. tests: collision_lookup_port
-pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x50E0, debug_base: 0x5E80, plain_len: 0x30, debug_len: 0x30 };
+pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x50A0, debug_base: 0x5E40, plain_len: 0x70, debug_len: 0x70 };
 
 /// `Section_Init` .. `Camera_Init` — gate `SIGIL_EMP_SECTION`. tests: section_port
 pub const SECTION: Region = Region { plain_base: 0x560C, debug_base: 0x63AC, plain_len: 0x3E4, debug_len: 0x3DC };
@@ -323,9 +323,6 @@ pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
 /// `Cache_Left_Col`. tests: collision_lookup_port, section_port
 pub const CACHE_LEFT_COL: Pin = Pin { plain: 0xFFFFA836, debug: 0xFFFFA85A };
 
-/// `Tile_Cache_GetCollision`. tests: collision_lookup_port
-pub const TILE_CACHE_GET_COLLISION: Pin = Pin { plain: 0x43FC, debug: 0x50DC };
-
 /// `Draw_TileColumn`. tests: section_port
 pub const DRAW_TILE_COLUMN: Pin = Pin { plain: 0x40CA, debug: 0x4DAA };
 
@@ -374,7 +371,7 @@ pub const PLANE_BUFFER_BASE: Pin = Pin { plain: 0xFFFFA12A, debug: 0xFFFFA14E };
 /// `Tile_Cache_Nametable`. tests: section_port
 pub const TILE_CACHE_NAMETABLE: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
 
-/// `Tile_Cache_Collision`. tests: tile_cache_port
+/// `Tile_Cache_Collision`. tests: tile_cache_port, collision_lookup_port
 pub const TILE_CACHE_COLLISION: Pin = Pin { plain: 0xFFFF2580, debug: 0xFFFF2580 };
 
 /// `Frame_Counter`. tests: tile_cache_port
@@ -1116,7 +1113,7 @@ pub const PLAYER_SENSOR_WALL_DIR: Pin = Pin { plain: 0x554C, debug: 0x62EC };
 pub const PLAYER_SENSOR_WALL_AT: Pin = Pin { plain: 0x5544, debug: 0x62E4 };
 
 /// `Collision_GetType`. tests: test_p4_player_sensors_port
-pub const COLLISION_GET_TYPE: Pin = Pin { plain: 0x50E0, debug: 0x5E80 };
+pub const COLLISION_GET_TYPE: Pin = Pin { plain: 0x50A0, debug: 0x5E40 };
 
 /// `SolidityTable`. tests: test_p4_player_sensors_port
 pub const SOLIDITY_TABLE: Pin = Pin { plain: 0x27852, debug: 0x278D2 };

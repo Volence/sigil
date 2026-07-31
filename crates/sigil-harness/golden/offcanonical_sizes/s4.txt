@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=6a69403c
-# assembled_anchor=b1c80c52
+# golden_crc32=5712eb1d
+# assembled_anchor=b6c76721
 # assembled_end=0x5db60
 # labels=65
 Ani_Particle 0x2574a
@@ -22,7 +22,7 @@ BusError 0x5cab0
 Camera_Init 0x59f0
 Checksum 0x18e
 Collected_Init 0x347e
-Collision_GetType 0x50e0
+Collision_GetType 0x50a0
 Collision_ProbeDown 0x5110
 EndOfRom 0x5db60
 EntryPoint 0x200
