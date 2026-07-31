@@ -201,8 +201,9 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("games.sonic4.player_spindash", "player_spindash", pins::PLAYER_SPINDASH),
         m!("games.sonic4.sonic", "sonic", pins::SONIC),
         // ── Game objects ──
-        // test_player / test_enemy (kill row 93): headers stay AS-side (test_animated
-        // DplcV reads _dplc_ptr/_art_base); bodies place here.
+        // test_player (kill row 84): header stays AS-side (test_animated DplcV reads
+        // _dplc_ptr/_art_base); body places here. test_enemy fully flipped (conv-d
+        // #47): .asm deleted, ENEMY_PATROL_SPEED owned in test_objects.emp.
         m!("games.sonic4.test_player", "test_player", pins::TEST_PLAYER),
         m!("games.sonic4.test_enemy", "test_enemy", pins::TEST_ENEMY),
         m!("games.sonic4.test_static", "test_static", pins::TEST_STATIC),
