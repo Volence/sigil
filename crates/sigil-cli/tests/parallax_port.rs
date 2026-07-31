@@ -339,25 +339,7 @@ fn parallax_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a DOCTORED `PARALLAX_LERP_SHIFT` truth (5 AS-side while
-/// parallax.emp says 4) must fire parallax.emp's own `ensure(extern(…))` guard
-/// NAMING the constant — the undoctored control passes (the reference gates above).
-#[test]
-fn doctored_parallax_lerp_shift_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/level/parallax.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file(false, Some(("PARALLAX_LERP_SHIFT", "5")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the doctored PARALLAX_LERP_SHIFT truth must fire a drift guard");
-    assert!(
-        fired.iter().any(|d| d.message.contains("PARALLAX_LERP_SHIFT")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// `doctored_parallax_lerp_shift_fires_its_guard` RETIRED at the conv-b constants-tail
+// flip: PARALLAX_LERP_SHIFT flipped from parallax.emp's local mirror to `use engine.constants`,
+// so no `ensure(extern("PARALLAX_LERP_SHIFT") == …)` wall survives for the doctored probe to
+// fire. Its protection re-homes to the six-target byte-identity gate.

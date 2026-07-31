@@ -245,12 +245,22 @@ fn lower_boot(
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
     let dir = aeon.join("engine/system");
     let main = parse_file(&dir.join("boot.emp"));
+    // boot.emp reads VDP_DATA/VDP_CTRL/PSG_PORT from engine.constants (the
+    // hardware-address authority) via `use` — prepend the constants twin so those
+    // imports resolve standalone, exactly as the real ambient supplies them.
+    let constants_file = parse_file(&dir.join("constants.emp"));
     let vdp_file = parse_file(&aeon.join("engine/vdp.emp"));
     let z80_file = parse_file(&aeon.join("engine/z80_bus.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: vdp_file.items.into_iter().chain(z80_file.items).chain(main.items).collect(),
+        items: constants_file
+            .items
+            .into_iter()
+            .chain(vdp_file.items)
+            .chain(z80_file.items)
+            .chain(main.items)
+            .collect(),
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
@@ -370,30 +380,11 @@ fn boot_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a doctored PSG_PORT truth must FIRE boot.emp's drift
-/// ensure NAMING the constant (the value seam is live, not decorative).
-#[test]
-fn doctored_psg_port_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("s4.bin").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon tree not present");
-        }
-        eprintln!("skip: aeon tree not present");
-        return;
-    }
-    let base = region_base(false);
-    let (mut sections, asserts) = lower_boot(&aeon, base, region_len(false), false);
-    sections.extend(value_equs(false, Some(("PSG_PORT", "$C00013"))));
-    sections.extend(addr_labels(false));
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
-    let fired = diags.iter().any(|d| {
-        d.level == sigil_span::Level::Error && d.message.contains("PSG_PORT")
-    });
-    assert!(fired, "the doctored PSG_PORT truth must fire its ensure: {diags:?}");
-}
+// `doctored_psg_port_fires_its_guard` RETIRED at the conv-b constants-tail flip:
+// PSG_PORT (with VDP_DATA/VDP_CTRL) flipped from boot.emp's local mirror to
+// `use engine.constants`, so boot.emp no longer carries an `ensure(extern("PSG_PORT")
+// == …)` wall for the doctored probe to fire. Its protection re-homes to the
+// six-target byte-identity: a wrong PSG_PORT moves the emitted PSG displacement.
 
 // Off-canonical twin-parity arms RETIRED (flip Stage-2 D2): the sound-OFF and
 // HOTKEYS shapes assembled the full AS-side ROM as their oracle — AS-reassembly

@@ -298,29 +298,10 @@ fn camera_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a DOCTORED `CAM_MAX_Y_STEP` truth (17 AS-side while
-/// camera.emp says 16) must fire camera.emp's own `ensure(extern(…))` guard
-/// NAMING the constant — the undoctored control passes (the reference gates
-/// above).
-#[test]
-fn doctored_cam_max_y_step_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/level/camera.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file(false, 1, Some(("CAM_MAX_Y_STEP", "17")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the doctored CAM_MAX_Y_STEP truth must fire a drift guard");
-    assert!(
-        fired.iter().any(|d| d.message.contains("CAM_MAX_Y_STEP")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// `doctored_cam_max_y_step_fires_its_guard` RETIRED at the conv-b constants-tail
+// flip: CAM_MAX_Y_STEP flipped from camera.emp's local mirror to `use engine.constants`,
+// so no `ensure(extern("CAM_MAX_Y_STEP") == …)` wall survives for the doctored probe to
+// fire. Its protection re-homes to the six-target byte-identity gate.
 
 /// Negative probe (game-mirror class, kill-list row 18): a DOCTORED
 /// `PSTATE_JUMP` truth (9 game-side while camera.emp's gated mirror says 8)

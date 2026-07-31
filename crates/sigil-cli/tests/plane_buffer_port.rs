@@ -315,29 +315,10 @@ fn plane_buffer_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a DOCTORED `PLANE_BUFFER_SIZE` truth (1024 AS-side while
-/// plane_buffer.emp says 1536) must fire plane_buffer.emp's own `ensure(extern(…))`
-/// guard NAMING the constant — the undoctored control passes through the same
-/// plumbing (the reference gates above).
-#[test]
-fn doctored_plane_buffer_size_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/level/plane_buffer.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file(false, Some(("PLANE_BUFFER_SIZE", "1024")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the doctored PLANE_BUFFER_SIZE truth must fire a drift guard");
-    assert!(
-        fired.iter().any(|d| d.message.contains("PLANE_BUFFER_SIZE")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// `doctored_plane_buffer_size_fires_its_guard` RETIRED at the conv-b constants-tail
+// flip: PLANE_BUFFER_SIZE flipped from plane_buffer.emp's local mirror to `use engine.constants`,
+// so no `ensure(extern("PLANE_BUFFER_SIZE") == …)` wall survives for the doctored probe to
+// fire. Its protection re-homes to the six-target byte-identity gate.
 
 // ============================================================================
 // Two-module ownership flip (tranche 17) — the campaign's 3rd flip. plane_buffer

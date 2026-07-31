@@ -232,21 +232,7 @@ fn s4lz_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a DOCTORED `TILE_SIZE` truth (33 AS-side while the .emp
-/// mirror says 32) must FIRE the drift guard, naming the constant —
-/// TileDelta_Undo's tile advance rides exactly this value.
-#[test]
-fn doctored_tile_size_fires_its_guard() {
-    if !strict_gate() && !aeon_dir().join("s4.bin").exists() {
-        eprintln!("skip: reference ROM missing");
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file(false, Some("33"));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the doctored TILE_SIZE truth must fire a drift guard");
-    assert!(
-        fired.iter().any(|d| d.message.contains("TILE_SIZE")),
-        "the guard must NAME the constant: {fired:?}"
-    );
-}
+// `doctored_tile_size_fires_its_guard` RETIRED at the conv-b constants-tail
+// flip: TILE_SIZE flipped from s4lz_decompress.emp's local mirror to `use engine.constants`,
+// so no `ensure(extern("TILE_SIZE") == …)` wall survives for the doctored probe to
+// fire. Its protection re-homes to the six-target byte-identity gate.
