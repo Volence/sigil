@@ -1,0 +1,308 @@
+{
+ "label": "BEFORE_churn",
+ "rom": "/home/volence/sonic_hacks/aeon/s4.debug.bin",
+ "camera_x_start": 0,
+ "camera_x_end": 0,
+ "px_per_frame": 0.0,
+ "lag_frames_start": 26,
+ "lag_frames_end": 26,
+ "lag_in_window": 0,
+ "profile": {
+  "budget_cycles": 128000,
+  "budget_pct": 100.0,
+  "frame_count": 120,
+  "interrupts": {
+   "hint": {
+    "cycles": 8189,
+    "pct": 6.4
+   },
+   "vint": {
+    "cycles": 0,
+    "pct": 0.0
+   }
+  },
+  "routines": [
+   {
+    "addr": "$05DEA6",
+    "calls": 1,
+    "cycles": 65249,
+    "name": "GameState_ObjectTestChurn",
+    "pct": 51.0
+   },
+   {
+    "addr": "$002346",
+    "calls": 1,
+    "cycles": 54369,
+    "name": "VSync_Wait",
+    "pct": 42.5
+   },
+   {
+    "addr": "$002EAC",
+    "calls": 1,
+    "cycles": 41285,
+    "name": "RunObjects",
+    "pct": 32.3
+   },
+   {
+    "addr": "$002F02",
+    "calls": 1,
+    "cycles": 29712,
+    "name": "$002F02",
+    "pct": 23.2
+   },
+   {
+    "addr": "$0031D0",
+    "calls": 1,
+    "cycles": 16887,
+    "name": "Render_Sprites",
+    "pct": 13.2
+   },
+   {
+    "addr": "$0111CE",
+    "calls": 25,
+    "cycles": 15684,
+    "name": "TestChurnObj_Main",
+    "pct": 12.3
+   },
+   {
+    "addr": "$002232",
+    "calls": 1,
+    "cycles": 8189,
+    "name": "VBlank_Handler",
+    "pct": 6.4
+   },
+   {
+    "addr": "$002EEA",
+    "calls": 3,
+    "cycles": 8108,
+    "name": "$002EEA",
+    "pct": 6.3
+   },
+   {
+    "addr": "$002254",
+    "calls": 1,
+    "cycles": 8007,
+    "name": "VInt_Level",
+    "pct": 6.3
+   },
+   {
+    "addr": "$010CEA",
+    "calls": 1,
+    "cycles": 6714,
+    "name": "TestPlayer_Main",
+    "pct": 5.2
+   },
+   {
+    "addr": "$0033CC",
+    "calls": 26,
+    "cycles": 4857,
+    "name": "Emit_ObjectPieces",
+    "pct": 3.8
+   },
+   {
+    "addr": "$0037C2",
+    "calls": 1,
+    "cycles": 4742,
+    "name": "TouchResponse",
+    "pct": 3.7
+   },
+   {
+    "addr": "$002F5A",
+    "calls": 30,
+    "cycles": 4500,
+    "name": "Debug_AssertObjLoop",
+    "pct": 3.5
+   },
+   {
+    "addr": "$001EA8",
+    "calls": 1,
+    "cycles": 3993,
+    "name": "Process_DMA_Critical",
+    "pct": 3.1
+   },
+   {
+    "addr": "$011182",
+    "calls": 3,
+    "cycles": 3270,
+    "name": "TestChurnObj",
+    "pct": 2.6
+   },
+   {
+    "addr": "$002A9E",
+    "calls": 3,
+    "cycles": 2920,
+    "name": "DeleteObject",
+    "pct": 2.3
+   },
+   {
+    "addr": "$00292A",
+    "calls": 1,
+    "cycles": 2682,
+    "name": "Perform_DPLC",
+    "pct": 2.1
+   },
+   {
+    "addr": "$002D3C",
+    "calls": 1,
+    "cycles": 2348,
+    "name": "DrainDynamicPending",
+    "pct": 1.8
+   },
+   {
+    "addr": "$0061AC",
+    "calls": 1,
+    "cycles": 2290,
+    "name": "Player_SensorFloor",
+    "pct": 1.8
+   },
+   {
+    "addr": "$001F76",
+    "calls": 1,
+    "cycles": 2227,
+    "name": "Process_DMA_Important",
+    "pct": 1.7
+   },
+   {
+    "addr": "$00437C",
+    "calls": 1,
+    "cycles": 2152,
+    "name": "EntityWindow_Scan",
+    "pct": 1.7
+   },
+   {
+    "addr": "$006184",
+    "calls": 1,
+    "cycles": 1910,
+    "name": "Player_SensorPair",
+    "pct": 1.5
+   },
+   {
+    "addr": "$005E40",
+    "calls": 2,
+    "cycles": 1736,
+    "name": "Collision_ProbeDown",
+    "pct": 1.4
+   },
+   {
+    "addr": "$001DFC",
+    "calls": 5,
+    "cycles": 1450,
+    "name": "QueueDMA_Important",
+    "pct": 1.1
+   },
+   {
+    "addr": "$005EAE",
+    "calls": 3,
+    "cycles": 1432,
+    "name": "$005EAE",
+    "pct": 1.1
+   },
+   {
+    "addr": "$005E1C",
+    "calls": 3,
+    "cycles": 960,
+    "name": "Collision_GetType",
+    "pct": 0.8
+   },
+   {
+    "addr": "$002C4E",
+    "calls": 1,
+    "cycles": 935,
+    "name": "CompactDynamicLive",
+    "pct": 0.7
+   },
+   {
+    "addr": "$002A20",
+    "calls": 3,
+    "cycles": 765,
+    "name": "AllocDynamic",
+    "pct": 0.6
+   },
+   {
+    "addr": "$0020D4",
+    "calls": 1,
+    "cycles": 506,
+    "name": "Enqueue_Dirty_Buffers",
+    "pct": 0.4
+   },
+   {
+    "addr": "$0023B2",
+    "calls": 1,
+    "cycles": 506,
+    "name": "Read_Controllers",
+    "pct": 0.4
+   },
+   {
+    "addr": "$004906",
+    "calls": 3,
+    "cycles": 487,
+    "name": "PopulateSpawnedPieceCount",
+    "pct": 0.4
+   },
+   {
+    "addr": "$00351A",
+    "calls": 1,
+    "cycles": 414,
+    "name": "AnimateSprite",
+    "pct": 0.3
+   },
+   {
+    "addr": "$0023E4",
+    "calls": 2,
+    "cycles": 336,
+    "name": "$0023E4",
+    "pct": 0.3
+   },
+   {
+    "addr": "$00697E",
+    "calls": 1,
+    "cycles": 178,
+    "name": "Vscroll_Write",
+    "pct": 0.1
+   },
+   {
+    "addr": "$003AAC",
+    "calls": 1,
+    "cycles": 170,
+    "name": "DrawRings",
+    "pct": 0.1
+   },
+   {
+    "addr": "$0030C4",
+    "calls": 1,
+    "cycles": 146,
+    "name": "ObjectMove",
+    "pct": 0.1
+   },
+   {
+    "addr": "$00696C",
+    "calls": 2,
+    "cycles": 92,
+    "name": "Parallax_Active_Config",
+    "pct": 0.1
+   },
+   {
+    "addr": "$0030FA",
+    "calls": 1,
+    "cycles": 86,
+    "name": "InitSpriteSystem",
+    "pct": 0.1
+   },
+   {
+    "addr": "$008046",
+    "calls": 1,
+    "cycles": 56,
+    "name": "Sound_DrainSfxRing",
+    "pct": 0.0
+   },
+   {
+    "addr": "$001F8A",
+    "calls": 1,
+    "cycles": 54,
+    "name": "Process_DMA_Deferrable",
+    "pct": 0.0
+   }
+  ],
+  "total_cycles": 127997
+ }
+}

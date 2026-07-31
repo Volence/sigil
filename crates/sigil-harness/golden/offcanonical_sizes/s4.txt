@@ -1,26 +1,29 @@
-# GENERATED — derive_offcanon --bootstrap-canonical (§17 Wave-B B-0).
-# CANONICAL boundary table: one head label per ROM section off the PINNED
-# resolve (the committed pins layout). The packing chainer uses these as
-# ORDER + org-island ANCHORS; contiguous bases repack from live sizes.
+# GENERATED — derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).
+# Derived from sigil's OWN resolved layout (each label's ROM LMA), NOT an asl
+# listing — THE LAST asl-derived constants retire here (kill-list rows 34/95).
+# Section-END markers (`*_End`) are synthesized from the owning section's resolved
+# geometry (lma + image_len); the phased z80 idle reports its ROM LMA. The declared
+# per-region sizes (addr[end]-addr[start]) reproduce the golden below. On any ruled
+# post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=8692e93a
-# assembled_anchor=43322e8e
+# golden_crc32=4f5aa60c
+# assembled_anchor=d035dc69
 # assembled_end=0x5db60
 # labels=65
 Ani_Particle 0x2574a
 Ani_Sonic 0x256dc
 AnimateSprite 0x2f3c
-Art_Decompress 0x605a
-BG_Init 0x60be
-BgAnim_Init 0x616c
+Art_Decompress 0x607a
+BG_Init 0x60de
+BgAnim_Init 0x618c
 BootData 0x3a8
 BusError 0x5cab0
-Camera_Init 0x5980
+Camera_Init 0x59a0
 Checksum 0x18e
 Collected_Init 0x347e
-Collision_GetType 0x5084
-Collision_ProbeDown 0x50a8
+Collision_GetType 0x5098
+Collision_ProbeDown 0x50c0
 EndOfRom 0x5db60
 EntryPoint 0x200
 GameLoop 0x239a
@@ -44,7 +47,7 @@ ObjDef_Static 0x11d16
 PState_Air 0x10896
 PState_Ground 0x10448
 PState_Spindash 0x10b58
-Parallax_Init 0x5ae4
+Parallax_Init 0x5b04
 Perform_DPLC 0x2794
 Plane_Buffer_Reset 0x408a
 Player_Init 0x10002
@@ -52,10 +55,10 @@ PopulateSpawnedPieceCount 0x3d38
 Read_Controllers 0x2324
 RingBuffer_Add 0x32c6
 S4LZ_DecompressDict 0x23ac
-Section_Init 0x55a4
+Section_Init 0x55bc
 Sonic_InitAssets 0x10bf4
 SoundTablesZ80_Head 0x58000
-Sound_PostByte 0x620a
+Sound_PostByte 0x622a
 TestAnimated 0x10c38
 TestChildPart 0x10ffe
 TestChurnObj 0x11182
@@ -66,7 +69,7 @@ TestPlayer 0x10c92
 TestSolid_Init 0x10f4a
 TestStatic_Main 0x10c34
 TestStressEmitter 0x11128
-Tile_Cache_GetTile 0x4364
+Tile_Cache_GetTile 0x4378
 TouchResponse 0x30c6
 VBlank_Handler 0x21ac
 VDP_Shadow_Init 0x1c08

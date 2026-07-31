@@ -1,28 +1,31 @@
-# GENERATED — derive_offcanon --bootstrap-canonical (§17 Wave-B B-0).
-# CANONICAL boundary table: one head label per ROM section off the PINNED
-# resolve (the committed pins layout). The packing chainer uses these as
-# ORDER + org-island ANCHORS; contiguous bases repack from live sizes.
+# GENERATED — derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).
+# Derived from sigil's OWN resolved layout (each label's ROM LMA), NOT an asl
+# listing — THE LAST asl-derived constants retire here (kill-list rows 34/95).
+# Section-END markers (`*_End`) are synthesized from the owning section's resolved
+# geometry (lma + image_len); the phased z80 idle reports its ROM LMA. The declared
+# per-region sizes (addr[end]-addr[start]) reproduce the golden below. On any ruled
+# post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4_debug
 # reproduces_golden=s4.debug.bin
-# golden_crc32=1f84bdbc
-# assembled_anchor=27b8e5c8
+# golden_crc32=ccfd35e2
+# assembled_anchor=9c73a619
 # assembled_end=0x5f65a
 # labels=67
 Ani_Particle 0x257b2
 Ani_Sonic 0x25744
 AnimateSprite 0x351a
-Art_Decompress 0x6df2
-BG_Init 0x6ea0
-BgAnim_Init 0x6f4e
+Art_Decompress 0x6e12
+BG_Init 0x6ec0
+BgAnim_Init 0x6f6e
 BootData 0x3ac
 BusError 0x5e5aa
-CSelf_S4LZ_Plain 0x72be
-Camera_Init 0x6718
+CSelf_S4LZ_Plain 0x72de
+Camera_Init 0x6738
 Checksum 0x18e
 Collected_Init 0x3bde
-Collision_GetType 0x5e1c
-Collision_ProbeDown 0x5e40
-CompressionSelfTest 0x70a6
+Collision_GetType 0x5e30
+Collision_ProbeDown 0x5e60
+CompressionSelfTest 0x70c6
 EndOfRom 0x5f65a
 EntryPoint 0x200
 GameLoop 0x2428
@@ -46,7 +49,7 @@ ObjDef_Static 0x11d7e
 PState_Air 0x10896
 PState_Ground 0x10448
 PState_Spindash 0x10b58
-Parallax_Init 0x687c
+Parallax_Init 0x689c
 Perform_DPLC 0x292a
 Plane_Buffer_Reset 0x4d62
 Player_Init 0x10002
@@ -54,10 +57,10 @@ PopulateSpawnedPieceCount 0x4906
 Read_Controllers 0x23b2
 RingBuffer_Add 0x39ca
 S4LZ_DecompressDict 0x243a
-Section_Init 0x633c
+Section_Init 0x635c
 Sonic_InitAssets 0x10bf4
 SoundTablesZ80_Head 0x58000
-Sound_PostByte 0x7d30
+Sound_PostByte 0x7d50
 TestAnimated 0x10c38
 TestChildPart 0x10ffe
 TestChurnObj 0x11182
@@ -68,7 +71,7 @@ TestPlayer 0x10c92
 TestSolid_Init 0x10f4a
 TestStatic_Main 0x10c34
 TestStressEmitter 0x11128
-Tile_Cache_GetTile 0x503c
+Tile_Cache_GetTile 0x5050
 TouchResponse 0x37c2
 VBlank_Handler 0x2232
 VDP_Shadow_Init 0x1c8a

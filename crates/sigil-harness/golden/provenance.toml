@@ -127,3 +127,50 @@ full_crc = "1f84bdbc"
 full_size = 422147
 anchor_crc = "27b8e5c8"
 anchor_end = 0x5f65a
+
+[[entry]]
+name = "waveb-plane-buffer-4"
+ab = "docs/superpowers/notes/2026-07-31-waveb-pb4-ab.md"
+note = "Draw_TileColumn wrap-check hoist (-1748 cyc/f max-H; +18B, the packed-placement first consumer)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "24c0c511"
+full_size = 422507
+anchor_crc = "3a61efb6"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "fd959930"
+full_size = 303686
+anchor_crc = "6bf62a01"
+anchor_end = 0x434d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "1e5aa077"
+full_size = 90461
+anchor_crc = "bd20df3c"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "8fe37c6f"
+full_size = 92959
+anchor_crc = "d926619c"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "4f5aa60c"
+full_size = 412328
+anchor_crc = "d035dc69"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ccfd35e2"
+full_size = 422171
+anchor_crc = "9c73a619"
+anchor_end = 0x5f65a

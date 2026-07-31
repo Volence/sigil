@@ -1915,7 +1915,7 @@ pub fn sigil_native_symbol_listing(
     aeon: &Path,
     debug: bool,
 ) -> Result<(HashMap<String, u32>, u32), String> {
-    let resolved = resolve_pinned_sections(aeon, debug)?;
+    let resolved = resolve_canonical_sections(aeon, debug)?;
     let stubs = SymbolTable::new();
     let raw = sigil_link::resolved_symbols(&resolved, &stubs);
     // Demangle via the deb2 path so dotted locals resolve; keep RAM + ROM + equates.
@@ -1970,10 +1970,17 @@ pub fn project_memory_map() -> Result<sigil_ir::map::MemoryMap, String> {
         .map_err(|e| format!("load sigil.map.toml: {e}"))
 }
 
+/// Resolve the SHIPPED canonical layout (the packed chained placement) into its final
+/// ROM sections — the substrate `pins.rs` regeneration and the object-bank budget gate
+/// read addresses off. Post B-0 this is the chained resolve over `sonic4_profile`.
+pub fn resolve_canonical_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>, String> {
+    resolve_frozen_sections(aeon, &sonic4_profile(debug))
+}
+
 /// Resolve the canonical PINNED layout into its final ROM sections (assemble all-gates-on
-/// AS side + place every emp module at its pin + `resolve_layout`) — the substrate the
-/// object-bank budget gate reads `__BUDGET_DATA` off. Mirrors `build_native_rom_with_
-/// listing`'s resolve without the listing/link/emit tail.
+/// AS side + place every emp module at its pin + `resolve_layout`) — the Stage-1
+/// bootstrap shape (`derive_offcanon --bootstrap-canonical`); the SHIPPED layout is
+/// `resolve_canonical_sections`.
 pub fn resolve_pinned_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>, String> {
     ensure_generated(aeon);
     let as_side = assemble_native_all_gates_as_side(aeon, debug)?;

@@ -205,6 +205,11 @@ fn generated_pins_match_the_hand_typed_baseline() {
 /// (rings), literal-len regions (sound_api), debug-only symbols (MDDBG),
 /// and a RAM-cell Pin — all against the hand-typed sources.
 #[test]
+#[ignore = "RETIRED by Wave-B B-0 (packed placement): this test asserts literal pin VALUES,
+which now legitimately move on every layout-shifting parcel — the hand-typed baseline is the
+pin-tax class the packing walk exists to kill. Repin correctness stays covered by
+generated_pins_match_the_hand_typed_baseline (generator-vs-file) and pins_rs_is_current
+(file-vs-resolve). The pin-history narration in this body is preserved for archaeology."]
 fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // rings_port.rs: ringcol_off, the one per-shape offset. −6 (item 10:
     // DrawRings shrinks ahead of RingCollision within the region).
