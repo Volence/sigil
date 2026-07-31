@@ -33,7 +33,8 @@ fn main() -> std::process::ExitCode {
     }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let out_dir = std::env::args()
-        .nth(1)
+        .skip(1)
+        .find(|a| !a.starts_with("--"))
         .map(PathBuf::from)
         .unwrap_or_else(|| manifest.join("golden/offcanonical_sizes"));
     if let Err(e) = std::fs::create_dir_all(&out_dir) {
@@ -41,8 +42,55 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::from(2);
     }
 
+    // §17 Wave-B B-0 bootstrap: `--bootstrap-canonical` derives the canonical boundary
+    // tables from the PINNED resolve (the committed pins layout) — run once to mint
+    // `s4.txt`/`s4_debug.txt`; every later refresh goes through the normal loop below.
+    if std::env::args().any(|a| a == "--bootstrap-canonical") {
+        for (stem, golden_name, debug) in
+            [("s4", "s4.bin", false), ("s4_debug", "s4.debug.bin", true)]
+        {
+            let table = match native::derive_canonical_bootstrap_table(&aeon, debug) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("ERROR: bootstrap {stem}: {e}");
+                    return std::process::ExitCode::from(1);
+                }
+            };
+            let golden = match std::fs::read(manifest.join("golden").join(golden_name)) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("ERROR: read golden {golden_name}: {e}");
+                    return std::process::ExitCode::from(2);
+                }
+            };
+            let full_crc = native::crc32(&golden);
+            let eor = *table.get("EndOfRom").expect("bootstrap guarantees EndOfRom") as usize;
+            let anchor = native::assembled_anchor_crc(&golden, eor);
+            let mut out = String::new();
+            out.push_str("# GENERATED — derive_offcanon --bootstrap-canonical (§17 Wave-B B-0).\n");
+            out.push_str("# CANONICAL boundary table: one head label per ROM section off the PINNED\n");
+            out.push_str("# resolve (the committed pins layout). The packing chainer uses these as\n");
+            out.push_str("# ORDER + org-island ANCHORS; contiguous bases repack from live sizes.\n");
+            out.push_str(&format!("# target={stem}\n# reproduces_golden={golden_name}\n"));
+            out.push_str(&format!("# golden_crc32={full_crc:08x}\n# assembled_anchor={anchor:08x}\n"));
+            out.push_str(&format!("# assembled_end={eor:#x}\n# labels={}\n", table.len()));
+            for (name, addr) in &table {
+                out.push_str(&format!("{name} {addr:#x}\n"));
+            }
+            let out_path = out_dir.join(format!("{stem}.txt"));
+            if let Err(e) = std::fs::write(&out_path, &out) {
+                eprintln!("ERROR: write {}: {e}", out_path.display());
+                return std::process::ExitCode::from(2);
+            }
+            println!("   {stem}: {} boundary labels, end={eor:#x} -> {}", table.len(), out_path.display());
+        }
+        return std::process::ExitCode::SUCCESS;
+    }
+
     // (target file stem, golden blob under golden/, the profile).
     let targets: Vec<(&str, &str, GameProfile)> = vec![
+        ("s4", "s4.bin", native::sonic4_profile(false)),
+        ("s4_debug", "s4.debug.bin", native::sonic4_profile(true)),
         ("demo", "demo.bin", native::demo_profile(false)),
         ("demo_debug", "demo.debug.bin", native::demo_profile(true)),
         ("config_a", "config_a.bin", native::config_a_profile()),
@@ -68,7 +116,14 @@ fn main() -> std::process::ExitCode {
             }
         };
         let full_crc = native::crc32(&golden);
-        let eor = profile.assembled_len;
+        // EOR from the freshly-derived layout itself (`EndOfRom` boundary label) — the
+        // profile's baked assembled_len goes stale the moment a section changes size
+        // (§17 Wave-B B-0); fall back to it only if the label is ever absent.
+        let eor = table
+            .iter()
+            .find(|(n, _)| n.as_str() == "EndOfRom")
+            .map(|(_, a)| *a as usize)
+            .unwrap_or(profile.assembled_len);
         let anchor = native::assembled_anchor_crc(&golden, eor);
 
         let mut out = String::new();

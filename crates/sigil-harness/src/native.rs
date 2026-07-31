@@ -46,13 +46,16 @@ use crate::{seam1, seam2};
 /// the chainer must reserve each section's exact asl span or relaxation settles at a
 /// different fixpoint — see the S1.2 chainer note).
 pub enum SizeSource {
-    /// Canonical sonic4: the baked lmas ARE asl-correct, so a pinned resolve reproduces
-    /// asl and each section's post-relax span is its exact asl size (the bootstrap).
+    /// Canonical sonic4 (retired default): the baked lmas ARE asl-correct, so a pinned
+    /// resolve reproduces asl and each section's post-relax span is its exact asl size
+    /// (the bootstrap). Kept for the asl-witness bootstrap path; the shipped canonical
+    /// build uses `Computed` (§17 Wave-B B-0).
     PinnedBaked,
-    /// Off-canonical (demo/Config): the AS residual carries WRONG sonic4 resume orgs, so
-    /// sizes/order come from the FROZEN asl listing table (label → address). Every ROM
-    /// section's TRUE base is `frozen[L] − offset[L]` for a contained frozen label `L`;
-    /// label-less data blobs derive by contiguity from their frozen neighbour.
+    /// Off-canonical (demo/Config): the AS residual carries WRONG sonic4 resume orgs,
+    /// so ORDER and the org-island ANCHORS come from the FROZEN asl listing table
+    /// (label → address); every non-island section's base is then PACKED from live-
+    /// measured sizes (see `packed_true_bases`), so a size-changing `.emp` parcel
+    /// shifts downstream sections automatically instead of colliding with stale pins.
     Frozen(HashMap<String, u32>),
 }
 
@@ -284,6 +287,16 @@ fn demo_registry(debug: bool) -> Vec<ModuleSpec> {
 /// GameProfile refactor: `native_rom` / `native_declared_chain` / `native_full_rom`
 /// build through this and must stay byte-green.
 pub fn sonic4_profile(debug: bool) -> GameProfile {
+    sonic4_profile_with(
+        SizeSource::Frozen(load_frozen_table(if debug { "s4_debug.txt" } else { "s4.txt" })),
+        debug,
+    )
+}
+
+/// The canonical literal with an explicit placement source — the shared body of
+/// `sonic4_profile` (Frozen, the shipped shape) and `sonic4_pinned_profile` (the
+/// PinnedBaked bootstrap, which must not touch the table file it exists to mint).
+pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile {
     GameProfile {
         name: if debug { "sonic4_debug" } else { "sonic4" },
         game_root_rel: "games/sonic4/main.asm",
@@ -307,9 +320,55 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
         ],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
-        size_source: SizeSource::PinnedBaked,
+        size_source,
         assembled_len: if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN },
     }
+}
+
+/// CANONICAL sonic4 at PINNED-BAKED placement — the BOOTSTRAP profile. Exists for
+/// exactly one job: deriving the canonical frozen tables (`s4.txt` / `s4_debug.txt`)
+/// from the committed pins layout the first time (and for any deliberate re-bootstrap
+/// off a pinned resolve). Every shipped canonical build uses `sonic4_profile` (Frozen).
+pub fn sonic4_pinned_profile(debug: bool) -> GameProfile {
+    sonic4_profile_with(SizeSource::PinnedBaked, debug)
+}
+
+/// §17 Wave-B B-0 BOOTSTRAP: derive the canonical boundary table (one head label per
+/// ROM section, at `lma + offset`, plus `EndOfRom`) from the PINNED canonical resolve —
+/// the committed pins layout is the provisional-base authority the packing walk needs.
+/// Runs against unchanged sources; thereafter `derive_frozen_table` (over the Frozen
+/// profile) refreshes the committed table like any other target's.
+pub fn derive_canonical_bootstrap_table(
+    aeon: &Path,
+    debug: bool,
+) -> Result<std::collections::BTreeMap<String, u32>, String> {
+    let profile = sonic4_pinned_profile(debug);
+    ensure_generated(aeon);
+    let as_side = assemble_as_side(aeon, &profile)?;
+    let (emp, _asserts) = build_emp(aeon, &profile)?;
+    let mut sections: Vec<Section> = as_side.sections;
+    sections.extend(emp);
+    let stubs = SymbolTable::new();
+    let resolved = sigil_link::resolve_layout(&sections, &stubs, true)
+        .map_err(|d| format!("bootstrap resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+    let mut out = std::collections::BTreeMap::new();
+    for sec in &resolved {
+        if !is_rom_section(sec) {
+            continue;
+        }
+        if let Some(head) = sec.labels.iter().min_by_key(|l| l.offset) {
+            out.insert(head.name.clone(), sec.lma.wrapping_add(head.offset));
+        }
+        for l in &sec.labels {
+            if l.name == "EndOfRom" {
+                out.insert(l.name.clone(), sec.lma.wrapping_add(l.offset));
+            }
+        }
+    }
+    if !out.contains_key("EndOfRom") {
+        return Err("bootstrap: EndOfRom label absent from the pinned resolve".into());
+    }
+    Ok(out)
 }
 
 /// DEMO (plain / debug) — engine-only registry, sound OFF, sizes from the frozen
@@ -647,9 +706,12 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     })
 }
 
-/// Back-compat wrapper: the canonical sonic4 AS side (the Stage-1 shape).
+/// Back-compat wrapper: the canonical sonic4 AS side at the STAGE-1 PINNED shape
+/// (baked lmas intact, non-relocating). The pinned-era proofs (native_chained_resume,
+/// the bootstrap derivation) consume this; the SHIPPED canonical build is
+/// `build_rom_chained_with_listing(sonic4_profile(..))` (Frozen, packed).
 pub fn assemble_native_all_gates_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
-    assemble_as_side(aeon, &sonic4_profile(debug))
+    assemble_as_side(aeon, &sonic4_pinned_profile(debug))
 }
 
 /// The `SIGIL_EMP_*` code-gate names Stage 1 turns ON (the registry's gates,
@@ -732,7 +794,8 @@ pub fn build_native_emp(
     aeon: &Path,
     debug: bool,
 ) -> Result<(Vec<Section>, Vec<sigil_ir::LinkAssert>), String> {
-    build_emp(aeon, &sonic4_profile(debug))
+    // The Stage-1 PINNED shape (see assemble_native_all_gates_as_side).
+    build_emp(aeon, &sonic4_pinned_profile(debug))
 }
 
 /// Natively lower + place every registry `.emp` module for `profile`. Returns the
@@ -1070,53 +1133,154 @@ fn true_bases_by_index(
                     None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
                 }
             }
-            // Image lengths at the provisional pins: LABELED sections at their frozen
-            // base (→ correct relaxation); LABEL-LESS at scratch (None → disjoint high
-            // slots inside `image_lens_pinned`, avoiding a baked-vs-frozen collision).
-            let pin: Vec<Option<u32>> = (0..n)
-                .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
-                .collect();
-            let img = image_lens_pinned(sections, &pin).map_err(|e| format!("span pass (provisional): {e}"))?;
-
-            // Walk in provisional order; assign each label-less section its true base.
-            //   - a labeled section: its exact frozen base.
-            //   - a PHASE BANK (sound bank head, vma ≥ 0x8000): its absolute org (baked).
-            //   - a label-less DATA blob in a HARD-ORG PHASE RUN (the sound bank has no
-            //     interleaved emp holes, so its whole run's baked addresses are asl-exact):
-            //     its baked base.
-            //   - any other label-less blob (the boot-region Z80 idle, whose baked base
-            //     is skewed by the wrong resume orgs): CONTIGUITY from its neighbour.
-            let mut order: Vec<usize> = (0..n).filter(|&i| prov[i].is_some()).collect();
-            order.sort_by_key(|&i| prov[i].unwrap());
-            const ANCHOR_GAP: i64 = 0x400;
-            let mut out = vec![None; n];
-            let mut running: Option<i64> = None;
-            let mut in_phase_run = false;
-            for &i in &order {
-                let p = prov[i].unwrap();
-                let is_phase_bank =
-                    sections[i].vma_base.map(|v| v != sections[i].lma && v >= 0x8000).unwrap_or(false);
-                let tb = if labeled[i] {
-                    in_phase_run = false;
-                    p
-                } else if is_phase_bank {
-                    in_phase_run = true;
-                    p // sound bank head: absolute org (baked = asl)
-                } else if in_phase_run {
-                    p // sound bank tail: hard-org run, baked absolute
-                } else {
-                    match running {
-                        Some(r) if p > r + ANCHOR_GAP => p, // a genuine org hole
-                        Some(r) => r,                       // contiguity from the neighbour
-                        None => p,
-                    }
-                };
-                out[i] = Some(tb as u32);
-                running = Some(tb + img[i] as i64);
-            }
-            Ok(out)
+            packed_true_bases(sections, &prov, &labeled)
         }
     }
+}
+
+/// The §17 Wave-B B-0 packing walk (the rows-6/58 partial realization): provisional
+/// bases give ORDER and the org-island ANCHORS; every other ROM section's base is
+/// PACKED from live-measured image lengths, so a size-changing parcel shifts its
+/// contiguous run downstream instead of colliding with stale pins. Rules per section
+/// (walked in provisional order):
+///   - ISLAND (prov > running + ANCHOR_GAP, or the run head): absolute at prov; a
+///     packed run that overflows past an island's prov base fails loud.
+///   - PHASE BANK (vma ≥ 0x8000, vma ≠ lma) head, and label-less blobs inside its
+///     hard-org run: absolute at prov (the sound banks never pack).
+///   - label-less non-phase blob: contiguity from its neighbour (the Frozen
+///     boot-region Z80-idle rule, unchanged).
+///   - everything else: `align_up(running, A)` with A = the largest power of two
+///     ≤ 16 dividing prov — at unchanged sizes this reproduces prov exactly (the
+///     fold-identity the six golden gates prove), and under growth it re-derives the
+///     alignment pad the provisional layout implies.
+/// Image lengths are relaxation-dependent (branch widths move with distance), so the
+/// walk iterates measure → pack to a fixpoint (≤ 8 rounds; round 0 measures at
+/// disjoint scratch pins). Island classification must be IDENTICAL across rounds —
+/// a growth big enough to eat an org hole is a hand-ruling, not a silent repack.
+fn packed_true_bases(
+    sections: &[Section],
+    prov: &[Option<i64>],
+    labeled: &[bool],
+) -> Result<Vec<Option<u32>>, String> {
+    let n = sections.len();
+    let mut order: Vec<usize> = (0..n).filter(|&i| prov[i].is_some()).collect();
+    order.sort_by_key(|&i| prov[i].unwrap());
+    const ANCHOR_GAP: i64 = 0x400;
+    let align_of = |p: i64| -> i64 {
+        for a in [16i64, 8, 4, 2] {
+            if p % a == 0 {
+                return a;
+            }
+        }
+        1
+    };
+
+    // Round 0: lengths at the PROVISIONAL bases (labeled sections at prov, label-less
+    // pure-data blobs at scratch — the proven Frozen measuring pins). When a section
+    // GREW, prov pins collide and the resolve fails — retry with a small cumulative
+    // spread (+0x40 per ROM section, order-preserving): big enough to absorb
+    // parcel-scale growth, small enough that cross-section CONDITIONAL branches (no
+    // long form) keep their reach. A growth beyond the spread is a hand ruling.
+    let prov_pins: Vec<Option<u32>> = (0..n)
+        .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
+        .collect();
+    let mut img = match image_lens_pinned(sections, &prov_pins) {
+        Ok(v) => v,
+        Err(_collision) => {
+            let mut spread_pins = prov_pins.clone();
+            for (rank, &i) in order.iter().enumerate() {
+                if let Some(Some(p)) = spread_pins.get_mut(i).map(|s| s.as_mut()) {
+                    *p += 0x40 * rank as u32;
+                }
+            }
+            image_lens_pinned(sections, &spread_pins)
+                .map_err(|e| format!("span pass (spread round, post-growth): {e}"))?
+        }
+    };
+    let mut prev_islands: Option<Vec<bool>> = None;
+    for _round in 0..8 {
+        let mut out: Vec<Option<u32>> = vec![None; n];
+        let mut islands = vec![false; n];
+        let mut running: Option<i64> = None;
+        let mut in_phase_run = false;
+        for &i in &order {
+            let p = prov[i].unwrap();
+            let is_phase_bank =
+                sections[i].vma_base.map(|v| v != sections[i].lma && v >= 0x8000).unwrap_or(false);
+            let tb = if labeled[i] {
+                in_phase_run = false;
+                match running {
+                    None => {
+                        islands[i] = true;
+                        p
+                    }
+                    Some(r) if p > r + ANCHOR_GAP => {
+                        islands[i] = true;
+                        p
+                    }
+                    Some(r) => {
+                        let a = align_of(p);
+                        let packed = (r + a - 1) / a * a;
+                        if packed > p + ANCHOR_GAP {
+                            return Err(format!(
+                                "packed base {packed:#x} for section `{}` overruns its provisional {p:#x} by more than the island margin — a run grew past its org hole; hand ruling needed",
+                                sections[i].name
+                            ));
+                        }
+                        packed
+                    }
+                }
+            } else if is_phase_bank {
+                in_phase_run = true;
+                islands[i] = true;
+                // A running end past the bank org is NOT necessarily overflow: the
+                // pre-bank data blob's trailing `align $8000` pad measures oversized
+                // at provisional pins (trim_trailing_align_overshoot shrinks it at
+                // span time). Real overflow still fails loud downstream — the final
+                // resolve rejects colliding pins.
+                p
+            } else if in_phase_run {
+                p // hard-org phase-run tail: absolute
+            } else {
+                match running {
+                    Some(r) if p > r + ANCHOR_GAP => {
+                        islands[i] = true;
+                        p
+                    }
+                    Some(r) => r, // contiguity from the neighbour
+                    None => {
+                        islands[i] = true;
+                        p
+                    }
+                }
+            };
+            out[i] = Some(tb as u32);
+            running = Some(tb + img[i] as i64);
+        }
+        if let Some(prev) = &prev_islands {
+            if *prev != islands {
+                return Err(
+                    "island classification changed between packing rounds — growth ate an org hole; hand ruling needed"
+                        .to_string(),
+                );
+            }
+        }
+        prev_islands = Some(islands);
+        // Re-measure with the round-0 pin discipline: LABELED sections at their packed
+        // bases (correct relaxation), label-less pure-data blobs at scratch (position-
+        // independent, and the align-padded pre-bank blob would otherwise collide with
+        // the pinned bank org — the config_a HeightMaps case).
+        let remeasure: Vec<Option<u32>> = (0..n)
+            .map(|i| if labeled[i] { out[i] } else { None })
+            .collect();
+        let img2 = image_lens_pinned(sections, &remeasure)
+            .map_err(|e| format!("span pass (packed round): {e}"))?;
+        if img2 == img {
+            return Ok(out);
+        }
+        img = img2;
+    }
+    Err("packed_true_bases did not converge in 8 rounds (relaxation oscillation) — hand ruling needed".to_string())
 }
 
 /// The declared per-section SIZE (exact asl span the chainer reserves), keyed by stable
@@ -1507,8 +1671,8 @@ pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec
 /// emit). The shared substrate for the placement gate and the P4a LMA-correct
 /// size-table derivation: both read `section.lma + label.offset` off these sections.
 fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
-    if !matches!(profile.size_source, SizeSource::Frozen(_)) {
-        return Err("resolve_frozen_sections: profile is not a Frozen target".into());
+    if matches!(profile.size_source, SizeSource::PinnedBaked) {
+        return Err("resolve_frozen_sections: profile is not a chained (Frozen) target".into());
     }
     if profile.sound_on {
         ensure_generated(aeon);
@@ -1665,6 +1829,13 @@ pub fn build_native_rom_with_listing(
     aeon: &Path,
     debug: bool,
 ) -> Result<(Vec<u8>, Vec<sigil_link::ListingSymbol>), String> {
+    // §17 Wave-B B-0: canonical placement is COMPUTED (packed from live sizes over the
+    // pins-derived order/anchors), so the canonical build routes through the chained
+    // driver — one placement authority for all six targets. The pinned body below it
+    // remains only for the PinnedBaked bootstrap path.
+    if matches!(sonic4_profile(debug).size_source, SizeSource::Frozen(_)) {
+        return build_rom_chained_with_listing(aeon, &sonic4_profile(debug));
+    }
     ensure_generated(aeon);
 
     let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
