@@ -111,6 +111,13 @@ fn collect_exported(items: &[ast::Item], out: &mut Vec<String>) {
         if let Some(name) = item_pub_name(item) {
             out.push(name);
         }
+        // A `pub vars` REGION block exports every field/mark/alias LABEL it
+        // defines (item #7a §3.3 — labels, not equates; cross-seam by bare name).
+        if let ast::Item::Vars(v) = item {
+            if v.public {
+                region_field_names(v, out);
+            }
+        }
         if let ast::Item::Section(sec) = item {
             collect_exported(&sec.items, out);
         }
@@ -142,9 +149,38 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
         ast::Item::Newtype(n) if n.public => Some(n.name.clone()),
         // `pub vars` OVERLAY form (`vars Name: window { .. }`, D6.A8): a named,
         // exportable, comptime-only module item. The region form (`name: None`)
-        // has no name and is never exported.
-        ast::Item::Vars(v) if v.public => v.name.clone(),
+        // exports its FIELD/MARK/ALIAS labels instead — handled specially in
+        // `collect_exported` (an item can export many names).
+        ast::Item::Vars(v) if v.public && v.name.is_some() => v.name.clone(),
         _ => None,
+    }
+}
+
+/// Collect the field/mark/alias LABEL names a region-form `vars` block defines,
+/// recursing into conditional groups (item #7a §2.2). These are ordinary
+/// link-visible labels: a `pub vars` block exports them cross-module / cross-
+/// seam (§3.3), and every region-form block's names are module-local defined
+/// names (rename map). Overlay-form blocks (`v.name.is_some()`) contribute
+/// nothing here.
+pub(crate) fn region_field_names(v: &ast::VarsDecl, out: &mut Vec<String>) {
+    if v.name.is_some() {
+        return;
+    }
+    collect_region_field_names(&v.region_body, out);
+}
+
+fn collect_region_field_names(body: &[ast::RegionField], out: &mut Vec<String>) {
+    for f in body {
+        match f {
+            ast::RegionField::Typed(t) => out.push(t.name.clone()),
+            ast::RegionField::Mark { name, .. } => out.push(name.clone()),
+            ast::RegionField::Alias { name, .. } => out.push(name.clone()),
+            ast::RegionField::Pad { .. } => {}
+            ast::RegionField::Group { then_body, else_body, .. } => {
+                collect_region_field_names(then_body, out);
+                collect_region_field_names(else_body, out);
+            }
+        }
     }
 }
 
@@ -181,10 +217,13 @@ fn collect_defined(items: &[ast::Item], out: &mut Vec<String>) {
             ast::Item::Bitfield(b) => out.push(b.name.clone()),
             ast::Item::Newtype(n) => out.push(n.name.clone()),
             // Overlay-form `vars` (D6.A8): a named module item. Region form
-            // (`name: None`) defines no name.
+            // (`name: None`) defines its field/mark/alias LABEL names (item #7a),
+            // which enter the rename map like ordinary labels.
             ast::Item::Vars(v) => {
                 if let Some(name) = &v.name {
                     out.push(name.clone());
+                } else {
+                    region_field_names(v, out);
                 }
             }
             ast::Item::Section(sec) => collect_defined(&sec.items, out),

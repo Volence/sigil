@@ -659,9 +659,10 @@ impl<'a> Evaluator<'a> {
                     self.tables.insert(t.name.as_str(), t.as_ref());
                 }
                 ast::Item::Vars(v) => {
-                    // Only the NAMED overlay form (`vars Name: window { .. }`)
-                    // is indexed; the region form (`name: None`) is inert by
-                    // design (Plan 7 #6 OUT-list — no region allocation).
+                    // Only the NAMED overlay form (`vars Name: window { .. }`) is
+                    // indexed as an overlay here; the region form (`name: None`)
+                    // is resolved by `lower::regions` (item #7a, spec §2.2–§2.4),
+                    // which does its own comptime layout — nothing to index.
                     if let Some(name) = &v.name {
                         self.overlays.insert(name.as_str(), v);
                     }

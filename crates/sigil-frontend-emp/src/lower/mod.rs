@@ -13,7 +13,10 @@ mod data;
 pub(crate) mod hygiene;
 pub mod patch;
 mod proc;
+mod regions;
 mod script;
+
+pub use regions::check_single_owner;
 
 pub use code::lower_code_buf;
 pub use proc::{
@@ -395,7 +398,9 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
                 // Overlay form (`vars Name: window { .. }`): force its layout so
                 // the always-on declaration checks (window/capacity/shadow) fire
                 // (D6.A2); it emits ZERO bytes. Region form (`name: None`) is
-                // inert by design (Plan 7 #6 OUT-list).
+                // resolved+emitted once for the whole file by the dedicated
+                // `regions::lower_regions` pass (item #7a, spec §2.2–§2.4), not
+                // here — this arm only handles the overlay form's decl checks.
                 if let Some(name) = &decl.name {
                     let mut d = validate_overlay(file, name, decl.span, &opts.defines);
                     overlay_pass_diags.extend(d.iter().cloned());
@@ -461,6 +466,11 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
             _ => {}
         }
     }
+
+    // Item #7a: resolve the file's `region` items + region-form `vars` blocks
+    // into reserve-only RAM sections (VMA-placed, zero image bytes). A no-op for
+    // a file with no regions, so every region-free module is byte-identical.
+    regions::lower_regions(file, &opts.defines, &mut builder, &mut diags);
 
     let (module, mut build_diags) = builder.finish();
     diags.append(&mut build_diags);
@@ -582,7 +592,9 @@ fn lower_section_items(
             }
             ast::Item::Vars(decl) => {
                 // Same as the top-level arm: overlay form → force layout so its
-                // always-on checks fire, zero bytes; region form → inert.
+                // always-on checks fire, zero bytes. Region-form `vars` are
+                // top-level items resolved by `regions::lower_regions` (item #7a),
+                // never section-nested — so nothing to do for `name: None` here.
                 if let Some(name) = &decl.name {
                     let mut d = validate_overlay(file, name, decl.span, placement.defines);
                     overlay_pass_diags.extend(d.iter().cloned());

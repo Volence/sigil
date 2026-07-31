@@ -442,6 +442,76 @@ impl<'a> Evaluator<'a> {
         result.unwrap_or(0)
     }
 
+    /// Whether a value of type `ty` requires an EVEN start address — i.e. it
+    /// contains, at any depth, a scalar wider than one byte (u16/i16/u32/i32/
+    /// u16le, a pointer, a wide fixed-point, or a word-or-wider array/struct/
+    /// tuple element). A pure byte type (`u8`/`i8`/`[u8; N]`) does NOT. Used by
+    /// item #7's `[layout.odd-field]` lint (a word-or-wider region field at an
+    /// odd address is AS's silent address-error trap). Mirrors
+    /// [`size_of_ty`](Self::size_of_ty)'s recursion, and shares its cycle guards
+    /// (via `layout_of_struct` / `size_of_newtype`).
+    pub(crate) fn ty_needs_even(&mut self, ty: &Ty, span: Span) -> bool {
+        match ty {
+            Ty::Prim { width, .. } => *width >= 2,
+            Ty::Ptr(_) => true,
+            Ty::Array(inner, n) => *n > 0 && self.ty_needs_even(inner, span),
+            Ty::Tuple(elems) => elems.iter().any(|e| {
+                // Clone out of the borrow so the recursive `&mut self` call is legal.
+                let e = e.clone();
+                self.ty_needs_even(&e, span)
+            }),
+            Ty::Fixed { i, f } => self.fixed_byte_size(*i, *f, span) >= 2,
+            Ty::Refined { inner, .. } => self.ty_needs_even(inner, span),
+            Ty::Newtype(name) => {
+                let name = name.clone();
+                let underlying = self
+                    .newtypes
+                    .get(name.as_str())
+                    .copied()
+                    .map(|d| self.resolve_type(&d.underlying));
+                match underlying {
+                    Some(u) => self.ty_needs_even(&u, span),
+                    None => false,
+                }
+            }
+            Ty::Enum(name) => {
+                let repr = self
+                    .enums
+                    .get(name.as_str())
+                    .copied()
+                    .and_then(|d| d.repr.as_ref())
+                    .map(|r| self.resolve_type(r));
+                match repr {
+                    Some(r) => self.ty_needs_even(&r, span),
+                    None => false, // default u8 repr
+                }
+            }
+            Ty::Bitfield(name) => {
+                let repr = self
+                    .bitfields
+                    .get(name.as_str())
+                    .copied()
+                    .map(|d| self.resolve_type(&d.repr));
+                match repr {
+                    Some(r) => self.ty_needs_even(&r, span),
+                    None => false,
+                }
+            }
+            // Any struct field that needs even alignment forces the struct to.
+            Ty::Struct(name) => {
+                let name = name.clone();
+                let Some(decl) = self.structs.get(name.as_str()).copied() else {
+                    return false;
+                };
+                decl.fields.iter().any(|fld| {
+                    let t = self.resolve_type(&fld.ty);
+                    self.ty_needs_even(&t, span)
+                })
+            }
+            Ty::Poison => false,
+        }
+    }
+
     /// Compute (or fetch the memoized) byte layout of the struct named `name`,
     /// mirroring [`resolve_const`](crate::eval)'s memo + cycle machinery.
     ///
