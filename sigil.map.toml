@@ -1,5 +1,16 @@
-# Sigil external memory map for Aeon (the p2bin layout the source assumes).
-# Default gap fill matches p2bin invoked without -p.
+# Sigil external memory map for Aeon — THE PLACEMENT MANIFEST (Stage-3 P4b).
+#
+# Declares the ROM's fixed region geometry: the whole-image ROM terminus, the object
+# code bank BUDGET window, and the phased Z80 Moving-Trucks bank. The declared-order
+# chainer computes each section's base; the map owns the geometry the link validates
+# against (`emit_rom` section containment + `check_budget` overflow). The default gap
+# fill matches p2bin invoked without -p.
+#
+# SCOPE NOTE (OQ-E, the pins ruling): per-game section ORDER + per-region declared SIZES
+# stay in the off-canonical frozen tables (`golden/offcanonical_sizes/*.txt`) and the
+# sigil-derived `pins.rs`; folding them into this map is the capstone-class full-pins
+# retirement (ledgered), not this parcel. What P4b lands: region geometry + the object
+# bank budget as a map-owned check (was the AS `if * > $20000 / error`, engine.inc).
 fill = 0x00
 
 [[region]]
@@ -7,6 +18,12 @@ name = "rom"
 lma_base = 0
 size = 0x400000        # 4 MiB address space; the image ends at the source terminus
 kind = "rom"
+
+[[region]]
+name = "object_bank"
+lma_base = 0x10000     # ObjCodeBase — all object routines live in this 64KB block
+size = 0x10000         # budget: the __BUDGET_DATA cursor must stay <= $20000
+kind = "object_bank"
 
 [[region]]
 name = "z80_moving_trucks_bank"

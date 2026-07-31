@@ -1441,6 +1441,7 @@ pub fn build_rom_chained_with_listing(
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    check_object_bank_budget(&resolved, &map)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
     Ok((rom, listing))
 }
@@ -1684,8 +1685,63 @@ pub fn build_native_rom_with_listing(
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    check_object_bank_budget(&resolved, &map)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))?;
     Ok((rom, listing))
+}
+
+/// Load the project memory map (`sigil.map.toml`) — the same file `emit_rom` reads.
+pub fn project_memory_map() -> Result<sigil_ir::map::MemoryMap, String> {
+    let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("load sigil.map.toml: {e}"))
+}
+
+/// Resolve the canonical PINNED layout into its final ROM sections (assemble all-gates-on
+/// AS side + place every emp module at its pin + `resolve_layout`) — the substrate the
+/// object-bank budget gate reads `__BUDGET_DATA` off. Mirrors `build_native_rom_with_
+/// listing`'s resolve without the listing/link/emit tail.
+pub fn resolve_pinned_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>, String> {
+    ensure_generated(aeon);
+    let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
+    let (emp_sections, _) = build_native_emp(aeon, debug)?;
+    let mut sections = as_side.sections;
+    sections.extend(emp_sections);
+    let stubs = SymbolTable::new();
+    sigil_link::resolve_layout(&sections, &stubs, true).map_err(|d| {
+        format!("resolve_pinned_sections: resolve_layout: {} diag(s); first: {:?}", d.len(), d.first())
+    })
+}
+
+/// The object code bank's used cursor = the resolved LMA of `__BUDGET_DATA`, the engine
+/// marker (`engine.inc`) at the object bank's end / data region start. `None` if absent
+/// (a game without the marker). `ObjCodeBase`/`__BUDGET_OBJBANK` sit at the bank BASE;
+/// this cursor is the bank TERMINUS the `if * > $20000` guard checked.
+pub fn object_bank_cursor(resolved: &[Section]) -> Option<u32> {
+    for s in resolved {
+        for l in &s.labels {
+            if l.name == "__BUDGET_DATA" {
+                return Some(s.lma.wrapping_add(l.offset));
+            }
+        }
+    }
+    None
+}
+
+/// Enforce the object-code-bank budget the map's `object_bank` region declares: the
+/// `__BUDGET_DATA` cursor must not exceed `lma_base + size` (`$20000`). Returns the used
+/// byte count. A missing region or marker is a no-op (`Ok(0)`) — additive, so this is
+/// the map-owned successor to `engine.inc`'s `if * > $20000 / error`, not a new gate that
+/// can spuriously fail a game that declares neither. Runs on every native build (both the
+/// pinned canonical driver and the off-canonical chainer feed it their resolved sections).
+pub fn check_object_bank_budget(
+    resolved: &[Section],
+    map: &sigil_ir::map::MemoryMap,
+) -> Result<u32, String> {
+    match object_bank_cursor(resolved) {
+        Some(cursor) => map.check_budget("object_bank", cursor),
+        None => Ok(0),
+    }
 }
 
 /// CRC-32 (IEEE, the campaign provenance standard alongside byte-size). Small

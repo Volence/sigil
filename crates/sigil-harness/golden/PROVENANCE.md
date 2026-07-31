@@ -2216,3 +2216,27 @@ re-derive from sigil (`derive_offcanonical_sizes.sh`); asl is never required aga
 
 Aeon read-only; sigil branch `stage3-p4`. Strict 2863/0 (2 ignored) — +5 gates (4
 re-derivation proofs + the t24 doctored-table control), no gate retired.
+
+## Stage-3 P4b — THE OBJECT-BANK BUDGET AS A MAP-REGION CHECK (byte-neutral)
+
+`sigil.map.toml` grows into the placement manifest: it declares the ROM's fixed region
+geometry (the `rom` terminus, the `object_bank` BUDGET window at `$10000` size `$10000`,
+the phased Z80 MT bank) and the object-code-bank budget becomes a MAP-OWNED check.
+`RegionKind::ObjectBank` + `MemoryMap::check_budget` verify the engine's `__BUDGET_DATA`
+cursor (the object bank terminus, `engine.inc`) stays `<= $20000`; `native::check_object_
+bank_budget` runs it on every native build (both the pinned canonical driver and the
+off-canonical chainer, before `emit_rom`). The AS-side `if * > $20000 / error` in
+`engine.inc` is DELETED — a comptime zero-byte guard, so its removal is byte-neutral; the
+authority migrates to the map. The canonical object bank uses `$128C` of `$10000` (~7%).
+
+**Byte-neutral — no golden or pin moves** (six-target proof unchanged: `7f071417`/
+`0b8efc7a` + the four off-canonical goldens/anchors hold). t24
+`native_object_bank_budget::doctored_tiny_budget_fails_the_check` shrinks the region to
+`$100` on the real resolved layout and proves the check then fails loudly (the deleted AS
+guard's job, now map-owned). +3 gates (the `map.rs` unit test + the two budget gates);
+strict 2866/0 (2 ignored). SCOPE: the FULL pins→map placement flip (per-game order +
+sizes into the map, oracles re-pointed to map lookups) is capstone-ledgered — the pins
+ruling keeps `pins.rs` as the placement source (sigil-derived in P4c).
+
+Aeon commit: `engine.inc` object-bank guard migration (byte-neutral, references restored
+to `7f071417`/`0b8efc7a`).

@@ -34,6 +34,7 @@ pub fn load_map(toml_src: &str) -> Result<MemoryMap, String> {
             "rom" => RegionKind::Rom,
             "m68k_ram" => RegionKind::M68kRam,
             "z80_bank" => RegionKind::Z80Bank,
+            "object_bank" => RegionKind::ObjectBank,
             other => return Err(format!("region `{}`: unknown kind `{other}`", r.name)),
         };
         regions.push(Region { name: r.name, lma_base: r.lma_base, size: r.size, kind, vma_base: r.vma_base });
