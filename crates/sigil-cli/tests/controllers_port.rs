@@ -164,9 +164,17 @@ fn map_toml(debug: bool) -> String {
 /// opens a section so the equs (defined before any section) flush via
 /// `pending_equ_syms` into it.
 fn as_hw_port_equs() -> Vec<Section> {
-    // The 19-value AS-truth blob for the `engine.constants` twin (SOURCE OF
-    // TRUTH: `constants.asm`), consolidated in `sigil_harness::test_support`.
-    sigil_harness::test_support::as_engine_constants_equs()
+    // The engine.constants twin's surviving drift-guard truth (`VDP_Shadow_len`),
+    // consolidated in `sigil_harness::test_support`. Post the P5 ownership flip
+    // that blob shrank to the one struct-generated twin, so the two hardware-port
+    // link symbols `controllers.emp` reads as bare `lea` operands
+    // (`HW_PORT_1_DATA`/`HW_PORT_2_DATA`) — now .emp-owned consts, no longer AS
+    // equs in that blob — are supplied here directly (SOURCE OF TRUTH:
+    // `engine/constants.asm:17-18`).
+    let mut pairs = sigil_harness::test_support::engine_constant_equs();
+    pairs.push(("HW_PORT_1_DATA", "$A10003"));
+    pairs.push(("HW_PORT_2_DATA", "$A10005"));
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
 /// The synthetic AS-side cross-seam unit supplying the four `Ctrl_*` RAM

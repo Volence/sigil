@@ -198,24 +198,19 @@ fn compile_real_file(
     (resolved, linked, link_asserts)
 }
 
-/// The twin's AF_DELETE guard must be captured (riding the ambient prepend)
-/// and PASS against `as_af_equ`'s value. The `align 2` congruence assert
-/// (D2.29) also rides `module.link_asserts`, so the guard is identified by
-/// its own message text rather than by count.
+/// Every link assert riding the ambient prepend must PASS. The former
+/// AF_DELETE drift guard retired with the Stage-3 P5 ownership flip — AF_DELETE
+/// is now SOLE-authored by `constants.emp` and arrives via `use
+/// engine.constants.{AF_DELETE}` at comptime, so there is no AS-side twin to
+/// drift and its mirror guard was deleted. Only the surviving struct-generated
+/// `VDP_Shadow_len` twin guard (plus the D2.29 `align 2` congruence assert)
+/// still rides `module.link_asserts`; both must check clean against
+/// `as_af_equ`'s truths.
 fn assert_drift_guard(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
-    let guards = link_asserts
-        .iter()
-        .filter(|a| {
-            a.message.iter().any(|p| {
-                matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("disagree on AF_DELETE"))
-            })
-        })
-        .count();
-    assert_eq!(guards, 1, "the AF_DELETE drift guard must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "every link assert (drift guard + align congruence) must PASS: {diags:?}"
+        "every link assert (surviving VDP_Shadow_len twin guard + align congruence) must PASS: {diags:?}"
     );
 }
 

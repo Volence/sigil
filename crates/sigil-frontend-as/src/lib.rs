@@ -28,8 +28,19 @@ pub struct Options {
     /// explicitly; default `Z80` for the Z80-only M0 build.
     pub initial_cpu: Cpu,
     /// Pre-seeded integer symbols: the reference `-D` defines and (later) the
-    /// stubbed 68k leaf values. Names are case-sensitive.
+    /// stubbed 68k leaf values. Names are case-sensitive. These keep asl's
+    /// silent-override semantics — an in-file `=`/`equ` of the same name wins
+    /// (the code-gate / game-config-override defines rely on this).
     pub defines: Vec<(String, i64)>,
+    /// Pre-seeded integer symbols the residual AS may NOT redefine — the
+    /// `.emp`-owned constants injected by the Stage-3 P5 ownership flip (the
+    /// harvest of `engine.constants`'s `pub const`s). Like [`defines`] they seed
+    /// the env, but an in-file `=`/`equ` of a guarded name is a hard
+    /// `[defines.collision]` error, not a silent override — the structural
+    /// no-silent-shadowing guard proving a flipped constant has exactly ONE
+    /// author (the `.emp` module). Distinct from [`defines`] precisely because
+    /// the code-gate/override defines DO coexist with in-file definitions.
+    pub guarded_defines: Vec<(String, i64)>,
     /// Directory that `include` paths resolve against. Set automatically by
     /// [`assemble_root`] from the root file's parent when left `None`.
     pub include_root: Option<std::path::PathBuf>,
@@ -40,6 +51,7 @@ impl Default for Options {
         Options {
             initial_cpu: Cpu::Z80,
             defines: Vec::new(),
+            guarded_defines: Vec::new(),
             include_root: None,
         }
     }

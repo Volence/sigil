@@ -64,6 +64,13 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
     for (k, v) in &opts.defines {
         seed.define(k, SymbolValue::Int(*v));
     }
+    // Guarded defines seed the env exactly like ordinary defines (so the
+    // residual AS reads the `.emp`-owned constant at comptime); the difference
+    // is enforcement, not seeding — `directive_equate` rejects an in-file
+    // redefinition of a guarded name (the collision guard, Stage-3 P5).
+    for (k, v) in &opts.guarded_defines {
+        seed.define(k, SymbolValue::Int(*v));
+    }
     let mut macros = MacroTable::new();
     let mut functions = FunctionTable::new();
     // Label names known from the previous pass — seeds each pass so a FORWARD
@@ -118,6 +125,7 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
             if poison.is_empty() && !force_relocate {
                 let mut module = module;
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
+                attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
                 return if diags.iter().any(|d| d.level == Level::Error) {
                     Err(diags)
                 } else {
@@ -144,6 +152,7 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
             }
             let mut bonus_module = bonus.module;
             restore_missing_equ_exports(&mut bonus_module, &ever_exported, &env);
+            attach_guarded_equ_exports(&mut bonus_module, &opts.guarded_defines);
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(diags)
             } else {
@@ -233,6 +242,34 @@ fn restore_missing_equ_exports(
         })
         .collect();
     module.sections[0].equ_syms.extend(missing);
+}
+
+/// Export each guarded `-D` define (the `.emp`-owned constants injected by the
+/// P5 ownership flip) as a link-level `EquSym`, so an `.emp` module that
+/// references the constant as a BARE LINK SYMBOL — an absolute-address operand
+/// like `boot.emp`'s `move.b #$40, HW_PORT_1_DATA`, NOT a `use engine.constants`
+/// import — resolves through the joint link exactly as it did when
+/// `engine/constants.asm`'s `=` equate exported the same symbol. Byte-neutral:
+/// an `EquSym` is zero bytes and (like every AS `=` equate) is FILTERED from the
+/// deb2 symbol appendix, so re-homing the export from the deleted `.asm` `=` to
+/// this harvested-define carrier changes no ROM byte. A name already present as
+/// an equ_sym or a label is skipped (the definer wins; no duplicate-symbol).
+fn attach_guarded_equ_exports(module: &mut Module, guarded: &[(String, i64)]) {
+    if guarded.is_empty() || module.sections.is_empty() {
+        return;
+    }
+    let present: std::collections::HashSet<&str> = module
+        .sections
+        .iter()
+        .flat_map(|s| s.equ_syms.iter().map(|e| e.name.as_str()).chain(s.labels.iter().map(|l| l.name.as_str())))
+        .collect();
+    let sp = Span { source: SourceId(0), start: 0, end: 0 };
+    let add: Vec<EquSym> = guarded
+        .iter()
+        .filter(|(n, _)| !present.contains(n.as_str()))
+        .map(|(n, v)| EquSym { name: n.clone(), expr: Expr::Int(*v), span: sp })
+        .collect();
+    module.sections[0].equ_syms.extend(add);
 }
 
 /// One assembly pass seeded with `seed_env` (symbols) plus the macro/function
@@ -437,6 +474,11 @@ struct Asm {
     /// unchanged. A set reassigned to a label-free value clears its entry and
     /// reverts to baking.
     set_sym_symbolic: std::collections::HashMap<String, Expr>,
+    /// Names seeded from [`Options::guarded_defines`] — the `.emp`-owned
+    /// constants the residual AS may consume but not re-author. An in-file
+    /// `=`/`equ` of any of these is a `[defines.collision]` error (the P5
+    /// no-silent-shadowing guard). Constant across passes (seeded from opts).
+    guarded_defines: std::collections::HashSet<String>,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -480,6 +522,7 @@ impl Asm {
             known_labels: std::collections::HashSet::new(),
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
+            guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
         }
     }
 
@@ -2167,6 +2210,21 @@ impl Asm {
         // scope (so `ld a,.foo` resolves) but do NOT open a scope. `qualify`
         // leaves non-dotted global names unchanged.
         let q = qualify(name, self.scope.as_deref());
+        // The P5 no-silent-shadowing guard: a guarded `.emp`-owned constant may
+        // NOT be re-authored in the residual AS. An in-file `=`/`equ` of such a
+        // name fails LOUD (never silently prefers either side) — the structural
+        // proof that a flipped constant has exactly one author, the `.emp` module.
+        if self.guarded_defines.contains(&q) {
+            self.err(
+                span,
+                format!(
+                    "[defines.collision] `{q}` is an .emp-owned constant injected as a guarded define; \
+                     it must not be redefined in the residual AS (delete this in-file definition — \
+                     the .emp module engine.constants is the sole author)"
+                ),
+            );
+            return;
+        }
         // asl: `equ` may bind a STRING just as `set` does (`GAME_CONSOLE equ
         // "SEGA GENESIS    "`, then read back via `strlen(GAME_CONSOLE)` in the
         // engine's gameHeader width asserts). Detect the string shape via
@@ -5421,6 +5479,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -5441,6 +5500,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -5459,7 +5519,7 @@ mod tests {
         //   divs.w d0,d1      = 83 C0
         //   divs.w ($1234).w,d0 = 81 F8 12 34
         let src = "    cpu 68000\n    divs.w d4,d2\n    divs.w #10,d2\n    divs.w d0,d1\n    divs.w ($1234).w,d0\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -5477,7 +5537,7 @@ mod tests {
         //   divu.w d4,d2 = 84 C4
         //   divu.w d3,d5 = 8A C3
         let src = "    cpu 68000\n    divu.w d4,d2\n    divu.w d3,d5\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -5496,6 +5556,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -5515,6 +5576,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let diags = run(src, &opts)
             .expect_err("branch without a size suffix must be rejected, not lowered");
@@ -5537,6 +5599,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
@@ -5560,6 +5623,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         assert!(matches!(
@@ -5581,6 +5645,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let diags = run(src, &opts).expect_err("missing size suffix must be rejected");
         assert!(
@@ -5633,6 +5698,7 @@ mod tests {
             initial_cpu: Cpu::Z80,
             defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -5681,6 +5747,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -5701,6 +5768,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -5721,6 +5789,7 @@ mod tests {
             initial_cpu: Cpu::M68000,
             defines: vec![],
             include_root: None,
+            guarded_defines: vec![],
         };
         let m = run(src, &opts).expect("assemble");
         let bytes = m
@@ -6786,7 +6855,7 @@ C:\n";
         // No `GetSineCosine` anywhere in this source — exactly the shape a
         // real cross-seam `.emp` proc call takes from the AS side.
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).unwrap_or_else(|d| {
             panic!("expected a deferred compile, not a hard error: {d:?}")
         });
@@ -6805,7 +6874,7 @@ C:\n";
         // section that DOES define the target — the end-to-end proof (mirrors
         // `math_port.rs`'s outbound-consumer harness pattern).
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("deferred compile must succeed");
 
         let target_src = "    cpu 68000\n    phase $2468\nGetSineCosine:\n    rts\n";
@@ -6836,7 +6905,7 @@ C:\n";
         // Same source/expectation as
         // `m68k_jmp_jsr_bare_symbol_selects_width_in_front_end`, but for jsr.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jsr Lbl\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         assert!(
             matches!(m.sections[0].fragments[0], sigil_ir::Fragment::Data(_)),
@@ -6859,7 +6928,7 @@ C:\n";
         // (which named the symbol) to this link-time arm, so the link-time
         // wording must be at least as good.
         let src = "    cpu 68000\nConsumer:\n    jsr TotallyUndefined\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None };
+        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("deferred compile must succeed (front-end no longer errors)");
         let err = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect_err("a target defined nowhere must still fail at resolve_layout");

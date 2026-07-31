@@ -97,22 +97,15 @@ fn controllers_map_toml(base: &str) -> String {
 /// `extern(...)`, so they need real equs to check against here too (mirrors
 /// `controllers_port.rs`'s `as_hw_port_equs`).
 fn as_hw_port_equs() -> Vec<Section> {
-    // The undoctored 19-value constants-twin blob (SOURCE OF TRUTH:
-    // `constants.asm`), shared via `sigil_harness::test_support`.
-    sigil_harness::test_support::as_engine_constants_equs()
-}
-
-/// Like [`as_hw_port_equs`], but with the `BUTTON_UP` equ's RHS overridable
-/// (`button_up_rhs`) — the drift-guard negative probe doctors this to a wrong
-/// value to prove `engine.constants`'s `ensure(extern("BUTTON_UP") ==
-/// BUTTON_UP, ...)` genuinely fails loud, naming the constant, when the
-/// AS-side source of truth disagrees with the `.emp` twin.
-fn as_hw_port_equs_with_button_up(button_up_rhs: &str) -> Vec<Section> {
-    // The DOCTORING seam: the shared 19-value blob with EXACTLY `BUTTON_UP`'s
-    // RHS overridden (every other constant keeps its truth value), so the drift
-    // guard for `BUTTON_UP` fires while the rest pass.
-    let doctored = sigil_harness::test_support::with_engine_constant_override("BUTTON_UP", button_up_rhs);
-    sigil_harness::test_support::assemble_owned_equ_pairs(&doctored)
+    // The engine.constants twin's surviving drift-guard truth (`VDP_Shadow_len`),
+    // shared via `sigil_harness::test_support`, PLUS the two hardware-port link
+    // symbols `controllers.emp` reads as bare `lea` operands — .emp-owned consts
+    // post the P5 flip, no longer in the shrunk constants-twin blob (SOURCE OF
+    // TRUTH: `engine/constants.asm:17-18`).
+    let mut pairs = sigil_harness::test_support::engine_constant_equs();
+    pairs.push(("HW_PORT_1_DATA", "$A10003"));
+    pairs.push(("HW_PORT_2_DATA", "$A10005"));
+    sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
 fn as_ctrl_ram_labels() -> Vec<Section> {
@@ -378,71 +371,17 @@ fn controllers_standalone_compile_without_cross_seam_sections_is_a_loud_missing_
 // (per this file's header) rather than silently omitted.
 
 // ===========================================================================
-// Probe (d) — CONSTANTS-TWIN DRIFT GUARD
+// Probe (d) — CONSTANTS-TWIN DRIFT GUARD — RETIRED
 // ===========================================================================
-
-/// `engine.constants`'s `ensure(extern("BUTTON_UP") == BUTTON_UP, ...)` drift
-/// guard must genuinely fail — loudly, naming `BUTTON_UP` — when the AS-side
-/// source of truth (`engine/constants.asm`) disagrees with the `.emp` twin's
-/// value. Doctors the synthetic AS-side `BUTTON_UP` equ to `1<<4` ($10,
-/// `BUTTON_B`'s real value — a plausible off-by-one-bit slip, not an
-/// arbitrary garbage value) instead of the genuine `1<<0` ($01) and proves
-/// `check_link_asserts` reports an Error naming `BUTTON_UP`, on the REAL
-/// (undoctored) `controllers.emp` + `engine.constants` pair — this is the
-/// twin's drift guard catching a real disagreement, not a probe-doctored
-/// `.emp` source.
-///
-/// FALSIFIED (restore-real-value): re-ran with `as_hw_port_equs()` (the
-/// genuine `1<<0`) — `check_link_asserts` returns no Error diagnostics,
-/// confirmed by temporarily asserting `assert_diags.is_empty()` on the
-/// undoctored pair and observing it hold, then reverting to the doctored
-/// comparison below.
-#[test]
-fn constants_twin_drift_guard_fires_loudly_when_as_side_button_up_disagrees() {
-    let Some(src) = real_src("controllers.emp") else { return };
-    let (sections, link_asserts) = place_controllers_with_asserts(&src, "0x228C");
-
-    let mut all_sections = sections;
-    // Doctor ONLY `BUTTON_UP` — a wrong AS-side equate, exactly the drift
-    // scenario the guard exists to catch (constants.asm changed without its
-    // .emp twin following).
-    let mut hw_equs = as_hw_port_equs_with_button_up("1<<4");
-    for sec in &mut hw_equs {
-        sec.lma = 0x0100_0000;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    all_sections.extend(hw_equs);
-    let mut ram_labels = as_ctrl_ram_labels();
-    for sec in &mut ram_labels {
-        sec.lma = 0x0200_0000;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    all_sections.extend(ram_labels);
-
-    let resolved = sigil_link::resolve_layout(&all_sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
-    let assert_diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    assert!(
-        assert_diags.iter().any(|d| {
-            d.level == Level::Error
-                && d.message.contains("BUTTON_UP")
-                && d.message.contains("engine/constants.asm")
-                && d.message.contains("engine/constants.emp")
-        }),
-        "expected the BUTTON_UP drift guard to fail loudly, naming both files, got: {assert_diags:?}"
-    );
-    // Every OTHER drift guard (HW_PORT_*_DATA, BUTTON_DOWN/LEFT/RIGHT) must
-    // still PASS — this probe doctors exactly one constant, so exactly one
-    // guard should fire, not all six (which would suggest the guards aren't
-    // independently checking their own named constant).
-    let error_count = assert_diags.iter().filter(|d| d.level == Level::Error).count();
-    assert_eq!(
-        error_count, 1,
-        "doctoring only BUTTON_UP must fire exactly ONE drift guard, got: {assert_diags:?}"
-    );
-}
+//
+// The former `constants_twin_drift_guard_fires_loudly_when_as_side_button_up_disagrees`
+// probe drove `engine.constants`'s `ensure(extern("BUTTON_UP") == BUTTON_UP)`
+// drift guard. The Stage-3 P5 ownership flip made `BUTTON_UP` (and the other
+// 113 engine constants) SOLE-authored by `constants.emp` — the build harvests
+// them as guarded AS defines, so there is no AS-side twin to drift and the
+// BUTTON_UP mirror guard was deleted. With no guard to fire, this probe tested
+// a retired mechanism and is removed (only `VDP_Shadow_len`'s struct-generated
+// twin guard survives; it has no negative probe here).
 
 // ===========================================================================
 // Probe (c) — PLACEMENT GENUINENESS

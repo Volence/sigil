@@ -144,9 +144,17 @@ fn doctored_af_delete_produces_different_bytes() {
     );
 }
 
-/// (b) The drift guard compiled WITHOUT the AS-side equ carrier: checking
-/// the module's link asserts against an empty symbol table must FAIL LOUD,
-/// naming the missing `AF_DELETE`.
+/// (b) The surviving twin drift guard compiled WITHOUT its AS-side equ
+/// carrier: checking the module's link asserts against an empty symbol table
+/// must FAIL LOUD, naming the missing extern.
+///
+/// The former `AF_DELETE` target retired with the Stage-3 P5 ownership flip:
+/// AF_DELETE is now SOLE-authored by `constants.emp` (harvested into guarded AS
+/// defines) and arrives via `use engine.constants` at comptime, so its mirror
+/// drift guard was deleted. The one surviving twin guard is `VDP_Shadow_len`
+/// (struct-generated AS-side, still mirrored + guarded in `constants.emp`),
+/// which rides the ambient prepend here — its `extern("VDP_Shadow_len")` is the
+/// missing symbol this probe now pins.
 #[test]
 fn standalone_drift_guard_fails_loud_on_the_missing_extern() {
     let Some(src) = real_src() else { return };
@@ -156,8 +164,8 @@ fn standalone_drift_guard_fails_loud_on_the_missing_extern() {
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
     assert!(
-        diags.iter().any(|d| d.level == Level::Error && d.message.contains("AF_DELETE")),
-        "the extern drift guard must fail loud without the AS equ, got {diags:?}"
+        diags.iter().any(|d| d.level == Level::Error && d.message.contains("VDP_Shadow_len")),
+        "the surviving VDP_Shadow_len drift guard must fail loud without the AS equ, got {diags:?}"
     );
 }
 
@@ -361,15 +369,23 @@ fn structs_src() -> String {
         .expect("engine/structs.emp must exist (set AEON_DIR)")
 }
 
-/// Parse act source with the shared `engine.structs` module prepended (the
-/// `use engine.structs.{Act, Sec}` target — act_descriptor.emp no longer defines
-/// the structs locally, so the single-file lower path needs them ambient).
+/// Parse act source with the shared `engine.structs` AND `engine.constants`
+/// modules prepended. act_descriptor.emp `use`s both — `engine.structs.{Act,
+/// Sec}` (it no longer defines the structs locally) and, since the Stage-3 P5
+/// ownership flip, `engine.constants.{SECTION_SIZE_SHIFT, EDGE_CLAMP}` (plain
+/// comptime ints, imported from their sole author). The single-file lower path
+/// resolves no cross-module `use`, so both twins' items ride ambient.
 fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_emp::ast::File {
     let (structs, sd) = parse_str(structs_src);
     assert!(sd.iter().all(|d| d.level != Level::Error), "structs.emp parse errors: {sd:?}");
+    let csrc = std::fs::read_to_string(aeon_dir().join("engine/system/constants.emp"))
+        .expect("engine/system/constants.emp must exist (set AEON_DIR)");
+    let (constants, cd) = parse_str(&csrc);
+    assert!(cd.iter().all(|d| d.level != Level::Error), "constants.emp parse errors: {cd:?}");
     let (act, ad) = parse_str(act_src);
     assert!(ad.iter().all(|d| d.level != Level::Error), "act parse errors: {ad:?}");
     let mut items = structs.items;
+    items.extend(constants.items);
     items.extend(act.items);
     sigil_frontend_emp::ast::File { module: act.module, attrs: act.attrs, items, docs: act.docs }
 }

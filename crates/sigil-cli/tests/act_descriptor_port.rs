@@ -163,6 +163,9 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         ("EDGE_CLAMP", pins::EDGE_CLAMP.plain),
         ("MAX_ACT_SECTIONS", pins::MAX_ACT_SECTIONS.plain),
         ("SECTION_SIZE_SHIFT", pins::SECTION_SIZE_SHIFT.plain),
+        // The prepended engine.constants ambient carries its one surviving guard
+        // (VDP_Shadow_len, the struct twin); supply its extern target so it PASSES.
+        ("VDP_Shadow_len", 19),
         // Act_len/Sec_len + the Act_*/Sec_* field equs now come from
         // `act_sec_field_equs()` (the shared engine.structs drift wall reads them).
         ("OJZ_SEC0_BLOCK_DICT_LEN", pins::OJZ_SEC0_BLOCK_DICT_LEN.plain),
@@ -206,10 +209,14 @@ fn compile_real_file(
     debug: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let dir = act_dir();
-    // act_descriptor.emp `use engine.structs.{Act, Sec}` — prepend the shared
-    // struct module (its layout + per-field drift wall) as the `use` target.
+    // act_descriptor.emp `use engine.structs.{Act, Sec}` + (P5 ownership flip)
+    // `use engine.constants.{SECTION_SIZE_SHIFT, EDGE_CLAMP}` — prepend both the
+    // shared struct module (layout + per-field drift wall) and the engine
+    // constants module (now the sole author of the two engine limits act reads).
     let structs = parse_file(&aeon_root().join("engine/structs.emp"));
-    let file = with_ambient(vec![structs], parse_file(&dir.join("act_descriptor.emp")));
+    let constants = parse_file(&aeon_root().join("engine/system/constants.emp"));
+    let file =
+        with_ambient(vec![structs, constants], parse_file(&dir.join("act_descriptor.emp")));
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -272,12 +279,13 @@ fn assert_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
             })
         })
         .count();
-    // act_descriptor's own 3 limit mirrors (MAX_ACT_SECTIONS/SECTION_SIZE_SHIFT/
-    // EDGE_CLAMP) + the prepended engine.structs drift wall (58 per-field —
-    // 34 Act/Sec + 11 DMAEntry + 13 parallax_config, tranche 21 — + 4 sizeof
-    // = 62) = 65. The Act_len/Sec_len/DMAEntry_len/parallax_config_len sizeof
-    // guards live in structs.emp.
-    assert_eq!(drifted, 65, "act limit mirrors + shared struct drift wall must be captured");
+    // act_descriptor's ONE surviving limit mirror (MAX_ACT_SECTIONS — still
+    // AS-retained in engine/constants.asm) + the prepended engine.structs drift
+    // wall (58 per-field — 34 Act/Sec + 11 DMAEntry + 13 parallax_config,
+    // tranche 21 — + 4 sizeof = 62) = 63. SECTION_SIZE_SHIFT and EDGE_CLAMP flipped
+    // to `use engine.constants` (the P5 ownership flip — engine.constants is now
+    // their sole author), so their extern drift guards retired.
+    assert_eq!(drifted, 63, "act limit mirror + shared struct drift wall must be captured");
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {

@@ -82,10 +82,18 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
     defines.extend(STUBS.iter().map(|(n, v)| (n.to_string(), *v)));
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("m1c_root.asm");
+    // Post the Stage-3 P5 ownership flip, `constants.asm` no longer defines the
+    // 114 engine constants — `constants.emp` is their sole author and the build
+    // injects them as GUARDED AS `-D` defines so residual AS reads them at
+    // comptime. Seed the same harvested guarded defines here, exactly as the real
+    // harness does, so this standalone front-matter assembly resolves them.
+    let guarded_defines = sigil_harness::native::harvest_engine_constants(&aeon)
+        .expect("harvest engine constants");
     let opts = Options {
         initial_cpu: Cpu::M68000,
         defines,
         include_root: Some(aeon.clone()),
+        guarded_defines,
     };
 
     let module = match assemble_root(&root, &opts) {

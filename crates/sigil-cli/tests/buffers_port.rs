@@ -276,20 +276,7 @@ fn buffers_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a DOCTORED `VRAM_SPRITE_TABLE` truth ($D800 AS-side while
-/// the twin says $B800) must FIRE the engine.constants drift guard, naming
-/// the constant — proof the value seam is guarded, not decorative.
-#[test]
-fn doctored_vram_sprite_table_fires_its_guard() {
-    if !strict_gate() && !aeon_dir().join("s4.bin").exists() {
-        eprintln!("skip: aeon tree not present");
-        return;
-    }
-    let (resolved, _linked, link_asserts) =
-        compile_real_file(false, Some(("VRAM_SPRITE_TABLE", "$D800")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired = diags.iter().any(|d| {
-        d.level == sigil_span::Level::Error && d.message.contains("VRAM_SPRITE_TABLE")
-    });
-    assert!(fired, "the doctored VRAM_SPRITE_TABLE truth must fire its ensure: {diags:?}");
-}
+// The `doctored_vram_sprite_table_fires_its_guard` negative probe retired with
+// the Stage-3 P5 ownership flip: `VRAM_SPRITE_TABLE` is now SOLE-authored by
+// `constants.emp` (harvested into guarded AS defines), so its mirror drift guard
+// was deleted. The undoctored reference gates above remain the proof.

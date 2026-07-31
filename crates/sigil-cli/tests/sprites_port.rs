@@ -380,32 +380,10 @@ fn sprites_debug_region_matches_reference() {
 
 // ── The twin-mirror drift probe (negative test) ─────────────────────────────
 
-/// A DOCTORED twin truth (`SCREEN_WIDTH` = 319 AS-side while constants.emp
-/// says 320) must fire the twin's `ensure(extern(…))` guard NAMING the
-/// constant — proving the tranche's 15 new constants-twin guards ride
-/// sprites' gate, paired with the undoctored control (the reference gates
-/// above). SCREEN_WIDTH's drift would silently shift the exact X-cull
-/// boundary in Draw_Sprite.
-#[test]
-fn doctored_twin_mirror_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/sprites.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file_with(&PLAIN, Some(("SCREEN_WIDTH", "319")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(
-        !fired.is_empty(),
-        "the doctored SCREEN_WIDTH truth must fire constants.emp's drift guard"
-    );
-    assert!(
-        fired.iter().any(|d| d.message.contains("SCREEN_WIDTH")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// The `doctored_twin_mirror_fires_its_guard` negative probe (SCREEN_WIDTH)
+// retired with the Stage-3 P5 ownership flip: `SCREEN_WIDTH` and the other
+// constants-twin values are now SOLE-authored by `constants.emp` (harvested into
+// guarded AS defines), so their mirror drift guards were deleted — nothing for a
+// doctored AS-side truth to fire. The undoctored reference gates above remain the
+// proof these values are load-bearing.
 
