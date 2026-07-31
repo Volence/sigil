@@ -182,6 +182,29 @@ layout. **BN** (fold-identity). Effort L. → files: **5, 23, 16**. *This is the
 parcel that rides the active arc — sequence it right behind A/B so B-0b lands
 before entity_window/tile_cache need it.*
 
+> **PARCEL C OUTCOME (2026-08-01, `2026-08-01-conv-c-ram-ports.md`):** SPLIT.
+> **Half (a) B-0b = DONE** (2026-08-01 B-0b note: RAM's B-0 analog is AS
+> `phase`-from-symbol, already live; `ram_packing_invariants_{plain,debug}` guards
+> committed). **Half (b) the three ram.asm ports = BLOCKED, files 5/23/16 PARKED.**
+> The census premise ("port to the `vars` construct") does not hold: the region-form
+> `vars` (`vars upper_ram { … }`) **parses then is INERT** — zero bytes, no address
+> allocation, no labels, none of the §4.6 checks — by a RECORDED decision (item-#7
+> OUT-list, "recorded so nobody creeps",
+> `specs/2026-07-07-spec2-plan7-item6-overlay-dispatch-design.md:105`; three inert
+> lowering sites `lower/mod.rs:394/583`, `eval/mod.rs:661`). Building the port is a
+> capstone-scale LANGUAGE FEATURE (9 pieces: region map-file base authority,
+> region-allocation lowering, reserve-`@align`, conditional `vars` fields
+> [gap-ledger:153 "the port BLOCKS on this"], cross-region base chaining `phase
+> Engine_RAM_End`, buffer-reuse overlay, the reserved compiler checks, the
+> layout-stability lint, the repin/port-gate ripple) — NOT effort-L, NOT a mechanical
+> port, and NO completable subset exists (even the 9-line demo stub #16 needs region
+> allocation for its `Game_RAM_End` label). Effort reclass: **L → CAPSTONE**.
+> Overseer decision at the packet §10: (1) build item #7 as its own spec+plan+parcel,
+> (2) accept AS-authored RAM as the standing mechanism (nothing is broken — the
+> honest "100% .emp" exception, like the vendored debugger), or (3) byte-neutral
+> pre-port hygiene (move both `ifdef __DEBUG__` blocks to region tails) now,
+> feature later.
+
 ### Parcel D — the gated code twins (make `.emp` canonical, delete `.asm`) · #13, #47, #48, #49
 Needs Parcel A (their struct headers move with the structs flip). Flip
 z80_init, test_enemy, test_player, player_common: drop the `SIGIL_EMP_*` gate,

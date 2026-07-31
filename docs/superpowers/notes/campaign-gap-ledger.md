@@ -139,8 +139,26 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
 
 ## vars / RAM regions (ram.asm pre-port audit, 2026-07-09)
 
+> **IMPLEMENTATION-STATUS CORRECTION (2026-08-01, conv-C Parcel C,
+> `2026-08-01-conv-c-ram-ports.md`):** the 2026-07-09 verdict below was a
+> **spec-surface** audit — it read §4.6 and concluded "the surface already covers
+> the core." The IMPLEMENTATION does NOT. The region-form `vars`
+> (`vars upper_ram { … }`) parses and is then **INERT** — zero bytes, no address
+> allocation, no labels, no §4.6 checks — by the recorded item-#7 OUT-list decision
+> (three lowering sites: `lower/mod.rs:394`, `lower/mod.rs:583`, `eval/mod.rs:661`,
+> each "region form (`name: None`) is inert by design (Plan 7 #6 OUT-list — no region
+> allocation)"; the OUT-list itself:
+> `specs/2026-07-07-spec2-plan7-item6-overlay-dispatch-design.md:105`). So the
+> **PRIMARY blocker on the ram.asm port is the region-allocation feature not
+> existing at all** (item-#7 territory: map-file region bases + allocation lowering +
+> reserve-`@align` + cross-region base chaining `phase Engine_RAM_End`), and the
+> conditional-fields gap below is the SECOND blocker behind it. The overflow/bit-15/
+> align "compiler checks" the surface promises are aspirational §4.6 text describing
+> item #7, not shipped behavior. Full scope + decision paths in the conv-C packet §2b/§10.
+
 Volence asked whether the language has a good answer to `ram.asm`'s shape (bare `Name: ds.b N`
-runs, hand pads, invisible addresses). Audit verdict: the frozen §4.6 `vars` surface already
+runs, hand pads, invisible addresses). Audit verdict (SPEC-SURFACE ONLY — see the correction
+above): the frozen §4.6 `vars` surface already
 covers the core — map-file regions with budgets (kills the three overflow `if`s + bit-15
 check), `@align(N)` on fields (kills the 256-align guard and the ~20 hand `ds.b 1` evenness
 pads, spelled as intent on the following field), typed/struct fields (kills the
