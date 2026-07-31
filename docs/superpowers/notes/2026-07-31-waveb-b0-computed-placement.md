@@ -55,8 +55,9 @@ moment sizes change; it survives only as a fallback).
 
 - A single-parcel growth > ~0x40/section (the round-0 spread) or > ~0x400 (the island
   hysteresis margin) needs a hand ruling — the guards fail loud, nothing silent.
-- RAM sections are still pinned (`pins.rs` Pin table); the RAM analog of this packing
-  arrives with entity_window #1 (the first RAM-growing parcel).
+- RAM needed no analog of this parcel: B-0b verified RAM already packs (AS `phase`
+  chaining; the `pins.rs` RAM cells are repin-generated test snapshots, never build
+  inputs) — see `2026-08-01-waveb-b0b-ram-packing.md`.
 - Sound-bank INTERIOR sections now pack contiguously after their anchored bank head
   (previously absolute); byte-identical while the blob pipeline is size-stable — the
   Z80-blob-precedes-engine rule keeps it that way.
