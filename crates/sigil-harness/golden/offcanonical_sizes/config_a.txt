@@ -3,7 +3,7 @@
 # declared per-region sizes (addr[end]-addr[start]) reproduce the golden below.
 # target=config_a
 # reproduces_golden=s4.debug.bin
-# golden_crc32=b4a6756d
+# golden_crc32=1b4c49d2
 # assembled_end=0x5f65a
 # listing_stamp=07/30/2026 02:11:38 PM
 # labels=70

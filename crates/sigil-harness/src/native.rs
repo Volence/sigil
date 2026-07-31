@@ -26,7 +26,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use sigil_frontend_as::{assemble_root, Options as AsOptions};
+use sigil_frontend_as::{assemble_root, assemble_root_relocating, Options as AsOptions};
 use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
 use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
@@ -75,9 +75,6 @@ pub struct GameProfile {
     pub registry: Vec<ModuleSpec>,
     /// The build-shape comptime defines the `.emp` modules read.
     pub emp_defines: Vec<(&'static str, i128)>,
-    /// Internal keystones UNCONDITIONALLY AS-included whose emitted emp twin sections
-    /// must be dropped (they double-place). sonic4: player_common/test_player/test_enemy.
-    pub as_owned_keystones: Vec<&'static str>,
     /// Enforce exactly ONE non-empty `text` section (OBJDEFS). OFF for demo (no objdefs).
     pub require_one_text: bool,
     /// The inapplicable-drift-guard allowlist (t24 both-directions), per target.
@@ -192,12 +189,19 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
         m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER),
         // ── Game player ──
+        // player_common (kill row 93): always-emitted header stays AS-side (camera.emp
+        // PL_STATE_ADDR, entity_data ObjDef refs); the body places here.
+        m!("games.sonic4.player_common", "player_common", pins::PLAYER_COMMON),
         m!("games.sonic4.player_sensors", "player_sensors", pins::PLAYER_SENSORS),
         m!("games.sonic4.player_ground", "player_ground", pins::PLAYER_GROUND),
         m!("games.sonic4.player_air", "player_air", pins::PLAYER_AIR),
         m!("games.sonic4.player_spindash", "player_spindash", pins::PLAYER_SPINDASH),
         m!("games.sonic4.sonic", "sonic", pins::SONIC),
         // ── Game objects ──
+        // test_player / test_enemy (kill row 93): headers stay AS-side (test_animated
+        // DplcV reads _dplc_ptr/_art_base); bodies place here.
+        m!("games.sonic4.test_player", "test_player", pins::TEST_PLAYER),
+        m!("games.sonic4.test_enemy", "test_enemy", pins::TEST_ENEMY),
         m!("games.sonic4.test_static", "test_static", pins::TEST_STATIC),
         m!("games.sonic4.test_animated", "test_animated", pins::TEST_ANIMATED),
         m!("games.sonic4.test_solid", "test_solid", pins::TEST_SOLID),
@@ -215,6 +219,9 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("games.sonic4.data.objdefs.test_objects", "text", pins::OBJDEFS),
         m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
         m!("games.sonic4.particle_anims", "particle_anims", pins::PARTICLE_ANIMS),
+        // act_descriptor (kill row 93): the OJZ act1 descriptor table; header stays
+        // AS-side, the body/section table places here.
+        m!("games.sonic4.act_descriptor_ojz_act1", "act_descriptor", pins::ACT_DESCRIPTOR),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
@@ -251,6 +258,8 @@ fn demo_code_gates(debug: bool) -> Vec<&'static str> {
     if debug {
         g.push("SIGIL_EMP_COMPRESSION_SELFTEST");
     }
+    // The Z80 idle flips native in the no-sound demo too (kill row 55).
+    g.push("SIGIL_EMP_Z80_INIT");
     g
 }
 
@@ -260,10 +269,15 @@ fn demo_code_gates(debug: bool) -> Vec<&'static str> {
 /// IGNORED under `SizeSource::Frozen` (the chainer sources demo sizes from the frozen
 /// listing table); only the module id + section name are load-bearing.
 fn demo_registry(debug: bool) -> Vec<ModuleSpec> {
-    registry(debug)
+    let mut r: Vec<ModuleSpec> = registry(debug)
         .into_iter()
         .filter(|m| m.module_id.starts_with("engine.") && m.module_id != "engine.sound_api")
-        .collect()
+        .collect();
+    // The Z80 idle places natively in the no-sound demo (kill row 55); `z80_init`
+    // is not in the shared `registry()` (sound-on shapes must not place it), so add
+    // it here explicitly.
+    r.push(ModuleSpec { module_id: "engine.z80_init", section: "z80_idle", region: DUMMY_REGION });
+    r
 }
 
 /// CANONICAL sonic4 (the Stage-1 shape) as a profile — the regression harness for the
@@ -291,7 +305,6 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
             ("COLLECTED_WINDOW_SLOTS", 9),
         ],
-        as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::PinnedBaked,
@@ -323,7 +336,6 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             ("VRAM_RING_PLACEHOLDER", 0x3E4),
             ("COLLECTED_WINDOW_SLOTS", 4),
         ],
-        as_owned_keystones: vec![],
         require_one_text: false,
         inapplicable_guards: DEMO_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table(if debug {
@@ -343,19 +355,27 @@ const DUMMY_REGION: Region =
     Region { plain_base: 0, debug_base: 0, plain_len: 1, debug_len: 1 };
 
 /// CONFIG-B (off-canonical no-sound): sonic4 game, SOUND_DRIVER_ENABLED OFF, plain.
-/// Registry = the sonic4 set MINUS `engine.sound_api` (no sound caller). The Z80 idle
-/// (boot_data.asm no-sound else-arm) stays AS-side (a phased inline section the chainer
-/// chains). Sizes from `config_b.txt`.
+/// Registry = the sonic4 set MINUS `engine.sound_api` (no sound caller) PLUS the Z80
+/// idle (kill row 55): with `SIGIL_EMP_Z80_INIT` on, boot_data.asm's no-sound else-arm
+/// gates off `z80_init.asm` and `z80_init.emp`'s `z80_idle` section places at the
+/// frozen `Z80_IdleProgram` base (0x3d8). Sizes from `config_b.txt`.
 pub fn config_b_profile() -> GameProfile {
-    let registry: Vec<ModuleSpec> =
+    let mut registry: Vec<ModuleSpec> =
         registry(false).into_iter().filter(|m| m.module_id != "engine.sound_api").collect();
+    registry.push(ModuleSpec {
+        module_id: "engine.z80_init",
+        section: "z80_idle",
+        region: DUMMY_REGION,
+    });
+    let mut code_gates = sonic4_code_gates();
+    code_gates.push("SIGIL_EMP_Z80_INIT");
     GameProfile {
         name: "config_b",
         game_root_rel: "games/sonic4/main.asm",
         debug: false,
         sound_on: false,
         extra_as_defines: vec![],
-        code_gates: sonic4_code_gates(),
+        code_gates,
         registry,
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 0),
@@ -368,12 +388,20 @@ pub fn config_b_profile() -> GameProfile {
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
             ("COLLECTED_WINDOW_SLOTS", 9),
         ],
-        as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("config_b.txt")),
         assembled_len: 0x434d0,
     }
+}
+
+/// CONFIG-A with the player keystones flipped into the chained set. Post Stage-3 P2
+/// the flip IS the shipped `config_a_profile` (the keystones place natively by
+/// default), so this is now a thin alias retained as the row-94 fold-vs-placement
+/// regression bar (`keystone_flip_relocation.rs`): its assembled anchor MUST equal
+/// `config_a.bin`'s prefix.
+pub fn config_a_keystones_flipped_profile() -> GameProfile {
+    config_a_profile()
 }
 
 /// CONFIG-A (off-canonical debug + sound + hotkeys + mirror): sonic4 game, __DEBUG__ +
@@ -414,7 +442,6 @@ pub fn config_a_profile() -> GameProfile {
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
             ("COLLECTED_WINDOW_SLOTS", 9),
         ],
-        as_owned_keystones: vec!["player_common", "test_player", "test_enemy"],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("config_a.txt")),
@@ -558,7 +585,14 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     }
     let opts =
         AsOptions { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
-    assemble_root(&root, &opts).map_err(|d| {
+    // A CHAINED build (`SizeSource::Frozen`) moves sections after assembly, so its
+    // residual AS must keep section-label references SYMBOLIC to relocate (the row-94
+    // parallax pointer); a PinnedBaked build never moves and stays byte-for-byte asl.
+    let assemble = |root: &Path, opts: &AsOptions| match profile.size_source {
+        SizeSource::Frozen(_) => assemble_root_relocating(root, opts),
+        SizeSource::PinnedBaked => assemble_root(root, opts),
+    };
+    assemble(&root, &opts).map_err(|d| {
         format!(
             "assemble (native AS side, {}): {} diagnostics; first: {:?}",
             profile.name,
@@ -592,6 +626,10 @@ fn code_gate_defines() -> Vec<&'static str> {
         "SIGIL_EMP_TEST_STRESS_EMITTER", "SIGIL_EMP_TEST_CHURN", "SIGIL_EMP_PATH_SWAP",
         "SIGIL_EMP_OBJDEFS", "SIGIL_EMP_SONIC_ANIMS", "SIGIL_EMP_PARTICLE_ANIMS",
         "SIGIL_EMP_OBJECT_TEST_STATE", "SIGIL_EMP_OJZ_SCROLL_TEST",
+        // Stage-3 keystone flip (kill row 93): the last AS-owned code twins gate
+        // off (bodies → `.emp`, always-emitted headers stay AS-side).
+        "SIGIL_EMP_PLAYER_COMMON", "SIGIL_EMP_TEST_PLAYER", "SIGIL_EMP_TEST_ENEMY",
+        "SIGIL_EMP_ACT_DESCRIPTOR",
     ]
 }
 
@@ -743,15 +781,6 @@ pub fn build_emp(
             berr.first()
         ));
     }
-
-    // The internal KEYSTONES (player_common / test_player / test_enemy) are
-    // UNCONDITIONALLY `include`d as `.asm` in main.asm — no gate — so the AS
-    // residual owns their bytes. They are reachable here only because placed player/
-    // test modules `use` their comptime overlays/equates (already consumed during
-    // lowering); their emitted byte sections are redundant twins of the AS-side code
-    // and MUST be dropped, or they double-place. Cross-module label references
-    // resolve against the AS twin in the joint link.
-    sections.retain(|s| !profile.as_owned_keystones.contains(&s.name.as_str()));
 
     // Guard: exactly ONE non-empty `"text"` section (OBJDEFS). A second would mean
     // an unexpected defaulted-module data producer slipped into the reachable set
@@ -1461,7 +1490,12 @@ pub fn frozen_placement_mismatches(
         if !is_rom_section(s) {
             continue;
         }
-        let origin = s.vma_origin();
+        // The frozen table stores ROM (LMA) addresses — asl listed every label at its
+        // ROM position, including the Z80 idle (inline in the 68k boot region at
+        // 0x3d8). So compare against the section's LMA base, not `vma_origin()`: a
+        // phased `.emp` section (z80_idle, vma:$0) has vma_origin() == 0 but lands at
+        // LMA 0x3d8. For non-phased sections lma == vma_origin, so this is unchanged.
+        let origin = s.lma;
         for l in &s.labels {
             if let Some(&want) = table.get(&l.name) {
                 let got = origin.wrapping_add(l.offset);
@@ -1650,7 +1684,12 @@ pub fn append_deb2_appendix(
     let bin = dir.join("rom.bin");
     let lst = dir.join("rom.lst");
     std::fs::write(&bin, rom).map_err(|e| e.to_string())?;
-    std::fs::write(&lst, sigil_link::emit_listing(listing)).map_err(|e| e.to_string())?;
+    // Demangle the sigil-canonical `.emp` locals into `Parent.local` + drop compiler
+    // plumbing (Stage-3 P2b, OQ-B) so the source-meaningful locals SURVIVE convsym's
+    // `as_lst` name parser (which rejects the mangled `$` form) and reach the deb2
+    // appendix. ROM-byte-neutral: the appendix is post-`EndOfRom` symbol data only.
+    let deb2_listing = sigil_link::demangle_symbols(listing);
+    std::fs::write(&lst, sigil_link::emit_listing(&deb2_listing)).map_err(|e| e.to_string())?;
 
     // convsym: append the deb2 table (build.sh:170-171 flags verbatim).
     let out = std::process::Command::new(&convsym)

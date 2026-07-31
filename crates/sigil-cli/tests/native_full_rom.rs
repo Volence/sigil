@@ -67,14 +67,15 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("Z80_Sound_Start", 0x3DE, 0x3E2),   // Z80-adjacent (shape-varying)
 ];
 
-/// The sigil-canonical full-file CRC-32 + size (aeon `bcb8f64`, sigil `flip-stage1`).
+/// The sigil-canonical full-file CRC-32 + size (Stage-3 P2d re-freeze: the keystone
+/// flip shrinks each appendix, the demangler grows it; PROVENANCE.md).
 /// The ASSEMBLED prefix is asl-identical (PRIMARY e5765873/dab4f06c, stable); these
 /// FULL-FILE values are sigil-canonical (the appendix is sigil's) and DRIFT with any
 /// aeon `.asm` change (appendix content follows the symbol set) — a mismatch is the
 /// intended "re-freeze the golden" signal, per the split-golden model. The
 /// golden-freeze stage commits these as byte-blobs; here they are the regression pin.
-const SIGIL_FULL_PLAIN: (u32, usize) = (0x2198_deb2, 395374);
-const SIGIL_FULL_DEBUG: (u32, usize) = (0x1d89_5fcb, 402696);
+const SIGIL_FULL_PLAIN: (u32, usize) = (0x7f07_1417, 412306);
+const SIGIL_FULL_DEBUG: (u32, usize) = (0x0b8e_fc7a, 422147);
 
 fn run_shape(debug: bool, refname: &str, expect: (u32, usize)) {
     let Some(refrom) = read_ref(refname) else { return };

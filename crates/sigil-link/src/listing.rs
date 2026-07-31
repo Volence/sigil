@@ -12,6 +12,55 @@ pub struct ListingSymbol {
     pub unused: bool,
 }
 
+/// Is `part` a synthetic compiler block scope (`asm0`, `asm1`, …)? Those are
+/// block-internal names with no source meaning — pure backtrace noise.
+fn is_asm_block_scope(part: &str) -> bool {
+    part.strip_prefix("asm").is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Rewrite the sigil-canonical mangled `.emp` symbol names into debugger-friendly
+/// `Parent.local` names AND drop pure compiler-plumbing synthetics — the appendix
+/// filter policy (Stage-3 P2b, OQ-B):
+///
+///   1. `$<module.path>$<Parent>$<local>` (a `.emp` proc-local, e.g.
+///      `$engine.boot$EntryPoint$wait_dma`) → `EntryPoint.wait_dma`. KEEP.
+///   2. `__offsets$<module.path>$<Parent>$<local>` (a comptime offset-table entry
+///      a debugger user names, e.g. `__offsets$…$Ani_Sonic$Walk`) → `Ani_Sonic.Walk`.
+///      KEEP.
+///   3. `__align$…` internals and any name carrying an `asm<N>` block scope
+///      (e.g. `$engine.boot$asm1$wait_z80`) → DROPPED.
+///
+/// Plain (unmangled) names pass through untouched. The mangled form uses `$` which
+/// `convsym`'s `as_lst` name parser rejects (so mangled locals never reach the deb2
+/// table); demangling to a `$`-free `Parent.local` lets the source-meaningful ones
+/// survive it, while the plumbing stays dropped by removal here.
+pub fn demangle_symbols(symbols: &[ListingSymbol]) -> Vec<ListingSymbol> {
+    let mut out = Vec::with_capacity(symbols.len());
+    for s in symbols {
+        // Plain names (no mangling separator) are already source names.
+        if !s.name.contains('$') {
+            out.push(s.clone());
+            continue;
+        }
+        let parts: Vec<&str> = s.name.split('$').filter(|p| !p.is_empty()).collect();
+        // `__align$module$N` and any name with an `asm<N>` synthetic scope are
+        // plumbing — dropped (not emitted → convsym never sees them).
+        if parts.first() == Some(&"__align") || parts.iter().any(|p| is_asm_block_scope(p)) {
+            continue;
+        }
+        // `$module$Parent$local` and `__offsets$module$Parent$local` both demangle
+        // to their trailing `Parent.local` (the two most-specific components).
+        if parts.len() >= 2 {
+            let parent = parts[parts.len() - 2];
+            let local = parts[parts.len() - 1];
+            out.push(ListingSymbol { name: format!("{parent}.{local}"), ..s.clone() });
+        }
+        // A degenerate single-component mangled name (should not occur — top-level
+        // procs emit unmangled) is dropped rather than emit a bare `$`-form.
+    }
+    out
+}
+
 /// Emit the AS-`-L`-compatible symbol-table section. Symbols are address-sorted;
 /// each row is `[*]NAME : HEX C|-` `|`. One symbol per line keeps it trivially
 /// parseable (both consumers iterate matches, so layout is cosmetic).
@@ -82,6 +131,44 @@ mod tests {
                 && (l.contains(" C |") || l.contains(" - |"))
         });
         assert!(re_ok, "no parseable row in:\n{out}");
+    }
+
+    #[test]
+    fn demangler_keeps_proc_local_and_offsets_drops_plumbing() {
+        let out = demangle_symbols(&[
+            // (1) a .emp proc-local → Parent.local, KEPT.
+            sym("$engine.boot$EntryPoint$wait_dma", 0x210, false, false),
+            // (2) a source-meaningful comptime offset entry → Parent.local, KEPT.
+            sym("__offsets$games.sonic4.sonic_anims$Ani_Sonic$Walk", 0x256F2, false, false),
+            // (3a) an asm<N> block scope → DROPPED.
+            sym("$engine.boot$asm1$wait_z80", 0x260, false, false),
+            // (3b) an __align internal → DROPPED.
+            sym("__align$games.sonic4.sonic_anims$0", 0x2574A, false, false),
+            // plain → untouched.
+            sym("EntryPoint", 0x200, false, false),
+        ]);
+        let names: Vec<&str> = out.iter().map(|s| s.name.as_str()).collect();
+        // KEPT + demangled, value preserved.
+        assert!(names.contains(&"EntryPoint.wait_dma"), "proc-local demangle: {names:?}");
+        assert!(names.contains(&"Ani_Sonic.Walk"), "__offsets demangle: {names:?}");
+        assert_eq!(out.iter().find(|s| s.name == "EntryPoint.wait_dma").unwrap().value, 0x210);
+        // plain pass-through.
+        assert!(names.contains(&"EntryPoint"));
+        // DROPPED — the t24 must-NOT-survive control.
+        assert!(!names.iter().any(|n| n.contains("asm1")), "asm block scope leaked: {names:?}");
+        assert!(!names.iter().any(|n| n.contains("__align") || *n == "sonic_anims.0"), "align internal leaked: {names:?}");
+        // No `$` survives into the demangled set (convsym would drop those).
+        assert!(!names.iter().any(|n| n.contains('$')), "a mangled `$` name survived: {names:?}");
+    }
+
+    #[test]
+    fn demangler_is_asm_block_scope_precise() {
+        assert!(is_asm_block_scope("asm0"));
+        assert!(is_asm_block_scope("asm12"));
+        // NOT block scopes — real names beginning with `asm` keep their locals.
+        assert!(!is_asm_block_scope("asm"));
+        assert!(!is_asm_block_scope("asmName"));
+        assert!(!is_asm_block_scope("assemble"));
     }
 
     #[test]

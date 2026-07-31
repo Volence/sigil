@@ -19,7 +19,7 @@ mod map_load;
 pub use map_load::load_map;
 
 mod listing;
-pub use listing::{emit_listing, ListingSymbol};
+pub use listing::{demangle_symbols, emit_listing, ListingSymbol};
 
 /// One section's resolved bytes and where they load.
 #[derive(Clone, Debug, Eq, PartialEq)]
