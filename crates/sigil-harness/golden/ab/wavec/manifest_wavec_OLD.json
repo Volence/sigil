@@ -1,0 +1,166 @@
+{
+ "render_run1": [
+  {
+   "scene": "render",
+   "anchor": 220,
+   "fc": 220,
+   "ram_crc": "3d2cf676",
+   "vram": "0x27034AEDD09D6D79",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x1187572FE9C58E01",
+   "fb": "0x2B7E9D136A589E47"
+  },
+  {
+   "scene": "render",
+   "anchor": 280,
+   "fc": 280,
+   "ram_crc": "8fb35730",
+   "vram": "0xB480B3D6436E8A9F",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x1187572FE9C58E01",
+   "fb": "0x121DD4EC5469A0D1"
+  },
+  {
+   "scene": "render",
+   "anchor": 340,
+   "fc": 340,
+   "ram_crc": "92e544cb",
+   "vram": "0x1BFDF74FB65A76A3",
+   "cram": "0x452110C8BBB05047",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x1187572FE9C58E01",
+   "fb": "0x02AB8D0450BB6425"
+  }
+ ],
+ "soak_run1": [
+  {
+   "scene": "soak",
+   "cam_x": 64,
+   "ram_crc": "bb82fef2",
+   "vram": "0xC2E742FF57327699",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1C8525C850FEA55F"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 192,
+   "ram_crc": "53e5f826",
+   "vram": "0xA6EF23A7E70182FC",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0xFE709FAE51102CA3"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 320,
+   "ram_crc": "e077d072",
+   "vram": "0xB3208B53125FAA48",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1C8525C850FEA55F"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 448,
+   "ram_crc": "6f64842e",
+   "vram": "0x12515F7BE600C712",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1187572FE9C58E01"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 576,
+   "ram_crc": "aeeca471",
+   "vram": "0x679DCCB974F6A71A",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1187572FE9C58E01"
+  }
+ ],
+ "render_run2": [
+  {
+   "scene": "render",
+   "anchor": 220,
+   "fc": 220,
+   "ram_crc": "3d2cf676",
+   "vram": "0x27034AEDD09D6D79",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x1187572FE9C58E01",
+   "fb": "0x2B7E9D136A589E47"
+  },
+  {
+   "scene": "render",
+   "anchor": 280,
+   "fc": 280,
+   "ram_crc": "8fb35730",
+   "vram": "0xB480B3D6436E8A9F",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x1187572FE9C58E01",
+   "fb": "0x121DD4EC5469A0D1"
+  },
+  {
+   "scene": "render",
+   "anchor": 340,
+   "fc": 340,
+   "ram_crc": "92e544cb",
+   "vram": "0x1BFDF74FB65A76A3",
+   "cram": "0x452110C8BBB05047",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x1187572FE9C58E01",
+   "fb": "0x02AB8D0450BB6425"
+  }
+ ],
+ "soak_run2": [
+  {
+   "scene": "soak",
+   "cam_x": 64,
+   "ram_crc": "bb82fef2",
+   "vram": "0xC2E742FF57327699",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1C8525C850FEA55F"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 192,
+   "ram_crc": "53e5f826",
+   "vram": "0xA6EF23A7E70182FC",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0xFE709FAE51102CA3"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 320,
+   "ram_crc": "e077d072",
+   "vram": "0xB3208B53125FAA48",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1C8525C850FEA55F"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 448,
+   "ram_crc": "6f64842e",
+   "vram": "0x12515F7BE600C712",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1187572FE9C58E01"
+  },
+  {
+   "scene": "soak",
+   "cam_x": 576,
+   "ram_crc": "aeeca471",
+   "vram": "0x679DCCB974F6A71A",
+   "cram": "0xAC4EA3F85FC41B07",
+   "vsram": "0x16DAC2900129379A",
+   "regs": "0x1187572FE9C58E01"
+  }
+ ]
+}

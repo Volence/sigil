@@ -330,6 +330,25 @@ fn flip_lower(
     (sections, module.link_asserts)
 }
 
+/// Compare a compiled flip region against its reference span, tolerating a short
+/// (< 16 B) trailing all-zero ALIGNMENT PAD in the reference. Packed placement
+/// (Wave-B B-0) runs a pins region span to the NEXT section's aligned base, so an
+/// upstream size shift (e.g. wave-c PARALLAX growth pushing load_art) can leave the
+/// reference slice carrying zero pad the compiled image does not. Every real byte
+/// still compares (matches boot_port's `assert_region_matches`).
+fn assert_flip_region(compiled: &[u8], reference: &[u8], what: &str) {
+    let reference = if reference.len() > compiled.len()
+        && reference.len() - compiled.len() < 16
+        && reference[compiled.len()..].iter().all(|&b| b == 0)
+    {
+        &reference[..compiled.len()]
+    } else {
+        reference
+    };
+    assert_eq!(compiled.len(), reference.len(), "{what}: length");
+    assert_eq!(compiled, reference, "{what}: bytes must match the reference");
+}
+
 fn two_module_flip(debug: bool, rom_name: &str) {
     let aeon = aeon_dir();
     let rom_path = aeon.join(rom_name);
@@ -483,12 +502,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let shape = if debug { "debug" } else { "plain" };
     let la = linked.section("load_art").expect("load_art region");
     let lr = &refrom[la_base as usize..la_base as usize + la_len];
-    assert_eq!(la.bytes.len(), lr.len(), "load_art ({shape} flip): length");
-    assert_eq!(la.bytes, lr, "load_art ({shape} flip): bytes must match the reference");
+    assert_flip_region(&la.bytes, lr, &format!("load_art ({shape} flip)"));
     let vb = linked.section("vblank").expect("vblank region");
     let vr = &refrom[vb_base as usize..vb_base as usize + vb_len];
-    assert_eq!(vb.bytes.len(), vr.len(), "vblank ({shape} flip): length");
-    assert_eq!(vb.bytes, vr, "vblank ({shape} flip): bytes must match the reference");
+    assert_flip_region(&vb.bytes, vr, &format!("vblank ({shape} flip)"));
     let s4 = linked.section("s4lz").expect("s4lz region");
     let sr = &refrom[s4_base as usize..s4_base as usize + s4_len];
     assert_eq!(s4.bytes.len(), sr.len(), "s4lz ({shape} flip): length");

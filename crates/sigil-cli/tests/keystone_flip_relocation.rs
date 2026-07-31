@@ -45,7 +45,7 @@ fn is_header_field(i: usize) -> bool {
 // The chained build touches the shared engine/sound/generated dir — serialize.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-const EOR: usize = 0x5f65a; // config_a assembled_end (== config_a_profile)
+const EOR: usize = 0x5f5f2; // config_a assembled_end (== config_a_profile; −0x68 wave-c)
 const DEFORM_PTR_OFF: usize = 0x11410; // ParallaxConfig_OJZ_Default header +0x10: dc.l DeformTable_Zero
 const DEFORM_DIVERGENT_BYTE: usize = 0x11412; // the byte that went stale (0x12 vs 0x13) — the row-94 site
 

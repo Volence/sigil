@@ -1,0 +1,32 @@
+[
+ {
+  "f": 200,
+  "fc": 195,
+  "cam_x": "09300000",
+  "vram": "0x688B3A507ECF5BB0",
+  "cram": "0xCB7C22FD06CFE7A9",
+  "vsram": "0xB5F357FC0D28F314",
+  "regs": "0x39E6A741A949E1CF",
+  "fb": "0xF0965A548E12D55D"
+ },
+ {
+  "f": 260,
+  "fc": 256,
+  "cam_x": "0D000000",
+  "vram": "0x12C5E8589C298953",
+  "cram": "0xCB7C22FD06CFE7A9",
+  "vsram": "0xB5F357FC0D28F314",
+  "regs": "0xFEA1989659861480",
+  "fb": "0xB335D4E9A8ACA94D"
+ },
+ {
+  "f": 320,
+  "fc": 317,
+  "cam_x": "10D00000",
+  "vram": "0xD07E94E223C1C05F",
+  "cram": "0x452110C8BBB05047",
+  "vsram": "0xB5F357FC0D28F314",
+  "regs": "0x39E6A741A949E1CF",
+  "fb": "0x16F2B0E25B8407A9"
+ }
+]
