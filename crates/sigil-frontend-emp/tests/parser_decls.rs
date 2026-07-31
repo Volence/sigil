@@ -225,12 +225,14 @@ fn offsets_decl_parses_members() {
 
 #[test]
 fn vars_region_and_overlay_forms() {
-    // region form: `vars upper_ram { ... }`
+    // region form: `vars upper_ram { ... }` — typed fields go to `region_body`.
     let f = ok("module m\nvars upper_ram {\n    Player_Pos_Ring: [u8; 256] @align(256),\n}\n");
     let Item::Vars(v) = &f.items[0] else { panic!() };
     assert_eq!(v.name, None);
     assert_eq!(v.region, vec!["upper_ram".to_string()]);
-    assert!(v.fields[0].align.is_some());
+    assert!(v.fields.is_empty());
+    let RegionField::Typed(tf) = &v.region_body[0] else { panic!("expected typed field") };
+    assert!(tf.align.is_some());
 
     // overlay form: `vars PitcherPlantV: sst_custom { timer: u8 }`
     let f = ok("module m\nvars PitcherPlantV: sst_custom { timer: u8 }\n");
@@ -243,6 +245,77 @@ fn vars_region_and_overlay_forms() {
     let f = ok("module m\nvars X: Sst.sst_custom { timer: u8 }\n");
     let Item::Vars(v) = &f.items[0] else { panic!() };
     assert_eq!(v.region, vec!["Sst".to_string(), "sst_custom".to_string()]);
+}
+
+#[test]
+fn region_item_forms() {
+    // Explicit base + limit, and the `after(..) , w_addressable` form.
+    let f = ok("module m\n\
+        region lower_ram @ $FFFF0000 .. $FFFF8000\n\
+        pub region upper_ram @ $FFFF8000 .. SYSTEM_STACK, w_addressable\n\
+        pub region game_ram @ after(upper_ram) .. SYSTEM_STACK, w_addressable\n");
+    let Item::Region(r0) = &f.items[0] else { panic!("region 0") };
+    assert_eq!(r0.name, "lower_ram");
+    assert!(!r0.public);
+    assert!(!r0.w_addressable);
+    assert!(matches!(r0.base, RegionBase::Addr(_)));
+    let Item::Region(r1) = &f.items[1] else { panic!("region 1") };
+    assert!(r1.public);
+    assert!(r1.w_addressable);
+    let Item::Region(r2) = &f.items[2] else { panic!("region 2") };
+    let RegionBase::After { region, .. } = &r2.base else { panic!("expected after()") };
+    assert_eq!(region, "upper_ram");
+}
+
+#[test]
+fn region_vars_all_field_kinds() {
+    let f = ok("module m\n\
+        vars upper_ram {\n\
+            VBlank_Flag: u8,\n\
+            pad(1),\n\
+            Frame_Counter: u16,\n\
+            mark DMA_Queue,\n\
+            DMA_Critical: [u8; 8],\n\
+            Pos_table: [u8; 256] @align(256),\n\
+            Art_Staging: alias(VBlank_Flag),\n\
+            if __DEBUG__ @shape_divergent {\n\
+                Lag_Frame_Count: u32,\n\
+                pad(1),\n\
+            }\n\
+            mark Engine_RAM_End,\n\
+        }\n");
+    let Item::Vars(v) = &f.items[0] else { panic!() };
+    assert_eq!(v.name, None);
+    let b = &v.region_body;
+    assert!(matches!(&b[0], RegionField::Typed(t) if t.name == "VBlank_Flag"));
+    assert!(matches!(&b[1], RegionField::Pad { .. }));
+    assert!(matches!(&b[2], RegionField::Typed(t) if t.name == "Frame_Counter"));
+    assert!(matches!(&b[3], RegionField::Mark { name, .. } if name == "DMA_Queue"));
+    assert!(matches!(&b[4], RegionField::Typed(t) if t.name == "DMA_Critical"));
+    assert!(matches!(&b[5], RegionField::Typed(t) if t.name == "Pos_table" && t.align.is_some()));
+    assert!(matches!(&b[6], RegionField::Alias { name, target, .. } if name == "Art_Staging" && target == "VBlank_Flag"));
+    let RegionField::Group { shape_divergent, then_body, else_body, .. } = &b[7] else { panic!("group") };
+    assert!(*shape_divergent);
+    assert_eq!(then_body.len(), 2);
+    assert!(else_body.is_empty());
+    assert!(matches!(&b[8], RegionField::Mark { name, .. } if name == "Engine_RAM_End"));
+}
+
+#[test]
+fn region_vars_conditional_else() {
+    let f = ok("module m\n\
+        vars upper_ram {\n\
+            if __DEBUG__ { Live: u8 } else { pad(1) }\n\
+            After: u8,\n\
+        }\n");
+    let Item::Vars(v) = &f.items[0] else { panic!() };
+    let RegionField::Group { shape_divergent, then_body, else_body, .. } = &v.region_body[0] else {
+        panic!("group")
+    };
+    assert!(!*shape_divergent);
+    assert_eq!(then_body.len(), 1);
+    assert_eq!(else_body.len(), 1);
+    assert!(matches!(&v.region_body[1], RegionField::Typed(t) if t.name == "After"));
 }
 
 #[test]

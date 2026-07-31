@@ -97,6 +97,9 @@ pub enum Item {
     Dispatch(DispatchDecl),
     /// `vars ...` declaration.
     Vars(VarsDecl),
+    /// `region ...` declaration (item #7): a RAM address window a region-form
+    /// `vars` block allocates variables into.
+    Region(RegionDecl),
     /// `data ...` declaration.
     Data(DataDecl),
     /// `proc ...` declaration.
@@ -169,6 +172,7 @@ pub fn item_span(item: &Item) -> Span {
         Item::Table(d) => d.span,
         Item::Dispatch(d) => d.span,
         Item::Vars(d) => d.span,
+        Item::Region(d) => d.span,
         Item::Data(d) => d.span,
         Item::Proc(d) => d.span,
         Item::ExternProc(d) => d.span,
@@ -575,8 +579,15 @@ pub struct VarsDecl {
     pub name: Option<String>,
     /// The memory region (or dotted window path) this block is allocated into.
     pub region: Vec<String>,
-    /// The block's fields, in declaration order.
+    /// The OVERLAY-form block's fields (`vars Name: window { .. }`), in
+    /// declaration order. Empty for the region form, which uses
+    /// [`region_body`](Self::region_body) instead.
     pub fields: Vec<VarsField>,
+    /// The REGION-form block's ordered items (`vars region { .. }`, item #7):
+    /// typed fields interleaved with `pad`/`mark`/`alias`/conditional groups, in
+    /// declaration order (order is load-bearing — it is the RAM allocation
+    /// order). Empty for the overlay form.
+    pub region_body: Vec<RegionField>,
     /// The window binding resolved at the overlay's DEFINITION site, present ONLY
     /// on the clone injected into a CONSUMER module by `use`/prelude (Plan 7 #8).
     /// A bare `region: [w]` window is otherwise re-scanned in whatever namespace
@@ -616,6 +627,70 @@ pub struct VarsField {
     pub align: Option<Expr>,
     /// Span of the whole field.
     pub span: Span,
+}
+
+/// One item inside a region-form `vars` block (item #7 §2.2), in declaration
+/// (allocation) order. RAM emits no image bytes, so `@align` and `pad` here are
+/// pure RESERVE advances of the location counter — no fill is ever emitted.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RegionField {
+    /// `name: T [@align(N)]` — a typed variable defining a link-visible label at
+    /// its address and reserving `sizeof(T)` bytes. Reuses [`VarsField`].
+    Typed(VarsField),
+    /// `pad(N)` — an anonymous reserve of N bytes (the `ds.b 1` even-pad idiom),
+    /// intent-named, defining no label.
+    Pad { count: Expr, span: Span },
+    /// `mark Name` — a zero-size label at the current counter (the `ram.asm`
+    /// marker-label idiom, e.g. `Object_RAM:`, `Engine_RAM_End:`).
+    Mark { name: String, span: Span },
+    /// `name: alias(Other)` — a label equal to another field's address (the
+    /// buffer-reuse `Name = Other` idiom). Allocates nothing.
+    Alias { name: String, target: String, span: Span },
+    /// `if <cond> [@shape_divergent] { .. } [else { .. }]` — a conditional field
+    /// group driven by the comptime define environment. A size-varying group must
+    /// carry `shape_divergent`; a size-equal group is proven invariant.
+    Group {
+        /// The comptime condition (nonzero = the `then` arm).
+        cond: Expr,
+        /// `@shape_divergent` present — the author declaring the group's arms may
+        /// differ in size (everything after the group moves between shapes).
+        shape_divergent: bool,
+        /// Fields placed when `cond` is nonzero.
+        then_body: Vec<RegionField>,
+        /// Fields placed when `cond` is zero (empty when there is no `else`).
+        else_body: Vec<RegionField>,
+        /// Span of the whole group (the `if` keyword through the closing brace).
+        span: Span,
+    },
+}
+
+/// A `region name @ base .. limit [, w_addressable]` declaration (item #7 §2.1):
+/// a named RAM address window that region-form `vars` blocks allocate into.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionDecl {
+    /// Whether this region is exported (`pub region`).
+    pub public: bool,
+    /// The region's name (`upper_ram`, `game_ram`, …).
+    pub name: String,
+    /// The region's base VMA — a literal address or `after(<region>)`.
+    pub base: RegionBase,
+    /// The region's exclusive limit VMA (a comptime expression).
+    pub limit: Expr,
+    /// `w_addressable` — assert every byte in `[base, limit)` is reachable by
+    /// sign-extended `.w` addressing (bit 15 set across the window).
+    pub w_addressable: bool,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// A [`RegionDecl`]'s base: an explicit address or the running end of another
+/// region (`after(<region>)`, the `phase Engine_RAM_End` chaining idiom).
+#[derive(Debug, Clone, PartialEq)]
+pub enum RegionBase {
+    /// `@ <expr> ..` — an explicit base VMA (comptime expression).
+    Addr(Expr),
+    /// `@ after(<region>) ..` — the base is the chained parent region's end.
+    After { region: String, span: Span },
 }
 
 /// A `data NAME: Ty = value` declaration.
