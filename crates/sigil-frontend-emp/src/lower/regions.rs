@@ -129,9 +129,9 @@ fn resolve_regions(
             }
         }
 
-        // 2. Group region-form `vars` blocks by region name, in source order.
+        // 2. Group region-form `vars` blocks by region name, in source order
+        //    (multiple blocks per region allocate in that order, §2.3).
         let mut blocks_by_region: HashMap<&str, Vec<&ast::VarsDecl>> = HashMap::new();
-        let mut vars_order: Vec<&str> = Vec::new();
         for it in &file.items {
             if let ast::Item::Vars(v) = it {
                 if v.name.is_none() {
@@ -148,9 +148,6 @@ fn resolve_regions(
                         continue;
                     }
                     blocks_by_region.entry(region).or_default().push(v);
-                    if !vars_order.contains(&region) {
-                        vars_order.push(region);
-                    }
                 }
             }
         }
