@@ -40,6 +40,21 @@ type MacroTable = std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)
 type FunctionTable = std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>;
 
 pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
+    run_impl(src, opts, false)
+}
+
+/// Like [`run`] but FORCES the final label-relocation deferral pass even when the module
+/// converges poison-free. For a CHAINED build (the harness's `SizeSource::Frozen`
+/// placement moves sections after assembly), every `dc.l`/`dc.w`/… that references a
+/// section LABEL must stay symbolic so the linker relocates it against the label's placed
+/// base — otherwise a poison-free residual (config_a) bakes a stale this-pass VMA (the
+/// row-94 parallax `P_DBG := DeformTable_Zero` pointer). A PINNED build never needs this
+/// (sections don't move → bake == relocate), so ordinary `run` stays byte-for-byte asl.
+pub fn run_relocating(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
+    run_impl(src, opts, true)
+}
+
+fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, Vec<Diagnostic>> {
     // Seed pass 0 with the provided defines; each later pass is seeded with the
     // previous pass's discovered symbols so forward references resolve. Macro and
     // function definitions are carried forward too, so an `ifndef`-guarded
@@ -87,23 +102,20 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
             }
         }
         if pass > 0 && env == prev {
-            // Converged: this pass's result is authoritative. The env is now final,
-            // so any operand that still folded to Poison references a genuinely
-            // undefined symbol — UNLESS it's a `jsr`/`jmp` bare-symbol target,
-            // which (port #2, math.emp follow-up) may be a genuine cross-seam
-            // reference (a sibling `.emp` module's `pub proc`, joined only at
-            // LINK time) rather than a typo. Re-run ONE bonus pass, seeded
-            // from this SAME converged env, with `defer_unresolved_jsr_jmp`
-            // set — its `jsr`/`jmp`-Poison sites emit a deferred
-            // `Fragment::JmpJsrSym` instead of erroring; every OTHER operand
-            // kind is UNCHANGED (byte-identical to this pass), so the bonus
-            // pass's own `poison` list names only genuinely-undefined
-            // symbols of ANY kind still left over — promoted to the same
-            // hard error as before. Skipped entirely when `poison` is
-            // already empty (the overwhelmingly common case, and every
-            // pre-existing passing compile): zero extra work, byte-identical
-            // output.
-            if poison.is_empty() {
+            // Converged: this pass's env is authoritative. A final bonus pass (seeded
+            // from it, `defer_unresolved_jsr_jmp` set) does two things the ordinary
+            // passes cannot: (1) a `jsr`/`jmp` bare-symbol target still folding to Poison
+            // is a genuine cross-seam reference (a sibling `.emp` `pub proc`, joined at
+            // LINK time) → deferred `Fragment::JmpJsrSym` instead of an error; (2) a
+            // `dc.l`/`dc.w`/`jsr`/… referencing a section LABEL stays SYMBOLIC (an `Abs*`
+            // fixup) so the linker relocates it against the label's placed VMA.
+            //
+            // It runs when leftover poison needs (1), OR when `force_relocate` needs (2)
+            // for a CHAINED build (sections move → a baked label VMA goes stale; the
+            // row-94 parallax pointer). A poison-free PINNED build skips it: sections
+            // don't move, so a baked label == its relocated value — return the ordinary
+            // module, byte-for-byte asl (the overwhelmingly common path).
+            if poison.is_empty() && !force_relocate {
                 let mut module = module;
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 return if diags.iter().any(|d| d.level == Level::Error) {

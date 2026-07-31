@@ -55,6 +55,18 @@ pub fn assemble(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
 /// Assemble a root source file, resolving `include` paths relative to its parent
 /// directory (unless `opts.include_root` is already set).
 pub fn assemble_root(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
+    assemble_root_impl(root, opts, false)
+}
+
+/// Like [`assemble_root`] but keeps section-label references SYMBOLIC through the final
+/// pass so a later relocation (the harness's chained `SizeSource::Frozen` placement)
+/// resolves them against each label's placed base. Use for a build whose sections will
+/// MOVE after assembly; a pinned build must use [`assemble_root`] (byte-for-byte asl).
+pub fn assemble_root_relocating(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
+    assemble_root_impl(root, opts, true)
+}
+
+fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Module, Vec<Diagnostic>> {
     let text = std::fs::read_to_string(root).map_err(|e| {
         vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
@@ -70,5 +82,9 @@ pub fn assemble_root(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnost
     if o.include_root.is_none() {
         o.include_root = root.parent().map(|p| p.to_path_buf());
     }
-    eval::run(&text, &o)
+    if relocate {
+        eval::run_relocating(&text, &o)
+    } else {
+        eval::run(&text, &o)
+    }
 }

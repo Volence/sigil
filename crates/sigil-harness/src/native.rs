@@ -26,7 +26,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use sigil_frontend_as::{assemble_root, Options as AsOptions};
+use sigil_frontend_as::{assemble_root, assemble_root_relocating, Options as AsOptions};
 use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
 use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
@@ -376,6 +376,38 @@ pub fn config_b_profile() -> GameProfile {
     }
 }
 
+/// CONFIG-A with the THREE player keystones FLIPPED into the chained set — the P2
+/// keystone-flip shape as a TEST FIXTURE (the shipped `config_a_profile` keeps them
+/// AS-owned). Adds the `SIGIL_EMP_{PLAYER_COMMON,TEST_PLAYER,TEST_ENEMY}` gates so the
+/// `.asm` bodies gate off (the always-emitted headers stay), registers the three `.emp`
+/// twins, and empties `as_owned_keystones` so they place. Its assembled anchor MUST
+/// equal `config_a.bin` — the row-94 fold-vs-placement regression bar. The shipped six
+/// pins are NOT re-frozen by this fixture (it is test-only until the authorized P2).
+pub fn config_a_keystones_flipped_profile() -> GameProfile {
+    let mut p = config_a_profile();
+    for g in ["SIGIL_EMP_PLAYER_COMMON", "SIGIL_EMP_TEST_PLAYER", "SIGIL_EMP_TEST_ENEMY"] {
+        p.code_gates.push(g);
+    }
+    p.registry.push(ModuleSpec {
+        module_id: "games.sonic4.player_common",
+        section: "player_common",
+        region: DUMMY_REGION,
+    });
+    p.registry.push(ModuleSpec {
+        module_id: "games.sonic4.test_player",
+        section: "test_player",
+        region: DUMMY_REGION,
+    });
+    p.registry.push(ModuleSpec {
+        module_id: "games.sonic4.test_enemy",
+        section: "test_enemy",
+        region: DUMMY_REGION,
+    });
+    p.as_owned_keystones = vec![];
+    p.name = "config_a_keystones_flipped";
+    p
+}
+
 /// CONFIG-A (off-canonical debug + sound + hotkeys + mirror): sonic4 game, __DEBUG__ +
 /// SOUND_DRIVER_ENABLED + SOUND_DEBUG_HOTKEYS + SOUND_DBG_MIRROR, so `game_debug` +
 /// `sound_debug` (canonically empty) become NON-empty placed modules. Registry = the
@@ -558,7 +590,14 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     }
     let opts =
         AsOptions { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
-    assemble_root(&root, &opts).map_err(|d| {
+    // A CHAINED build (`SizeSource::Frozen`) moves sections after assembly, so its
+    // residual AS must keep section-label references SYMBOLIC to relocate (the row-94
+    // parallax pointer); a PinnedBaked build never moves and stays byte-for-byte asl.
+    let assemble = |root: &Path, opts: &AsOptions| match profile.size_source {
+        SizeSource::Frozen(_) => assemble_root_relocating(root, opts),
+        SizeSource::PinnedBaked => assemble_root(root, opts),
+    };
+    assemble(&root, &opts).map_err(|d| {
         format!(
             "assemble (native AS side, {}): {} diagnostics; first: {:?}",
             profile.name,
