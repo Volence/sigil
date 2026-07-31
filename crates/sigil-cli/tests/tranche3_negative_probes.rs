@@ -250,7 +250,17 @@ fn link_collision(src: &str, twin: &str, tile_cache_vma: &str) -> sigil_link::Li
 /// slice, which would make its `assert_ne!` trivially true.
 fn collision_ref_window(refrom: &[u8]) -> &[u8] {
     let base = pins::COLLISION_LOOKUP.plain_base as usize;
-    &refrom[base..base + pins::COLLISION_LOOKUP.plain_len]
+    let mut w = &refrom[base..base + pins::COLLISION_LOOKUP.plain_len];
+    // Packed placement (Wave-B B-0): the pins span may end in ALIGNMENT FILL up to
+    // the next section's aligned base — trim the short all-zero tail so the window
+    // is the lowered image the probes compare against.
+    while let [head @ .., 0] = w {
+        if pins::COLLISION_LOOKUP.plain_len - head.len() >= 16 {
+            break;
+        }
+        w = head;
+    }
+    w
 }
 
 /// The genuine plain-shape `Tile_Cache_GetCollision` position, as the AS

@@ -44,7 +44,7 @@ fn canonical_object_bank_within_budget() {
         return;
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let resolved = native::resolve_pinned_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = native::resolve_canonical_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
     let map = native::project_memory_map().unwrap_or_else(|e| panic!("{e}"));
     let used = native::check_object_bank_budget(&resolved, &map).unwrap_or_else(|e| panic!("{e}"));
     eprintln!("object bank used = {used:#x} / 0x10000");
@@ -62,7 +62,7 @@ fn doctored_tiny_budget_fails_the_check() {
         return;
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let resolved = native::resolve_pinned_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
+    let resolved = native::resolve_canonical_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
 
     // Baseline: the real map passes.
     let real = native::project_memory_map().unwrap_or_else(|e| panic!("{e}"));

@@ -142,6 +142,11 @@ fn header_neutral_diffs(a: &[u8], b: &[u8], n: usize) -> usize {
 
 /// (PLAIN) computed-resume chained placement == canonical asl `s4.bin`.
 #[test]
+#[ignore = "RETIRED by Wave-B B-0: the pinned-baked substrate this proof chains from is
+frozen at the asl-era layout, and pins.rs now tracks the PACKED shipped layout (they diverge
+at the first size-changing parcel). The live, continuously-enforced form of this proof is the
+shipped chained build itself: every target places via packed_true_bases and the six golden
+gates hold. Kept for archaeology with the Stage-1 pinned bootstrap shape."]
 fn chained_resume_plain() {
     let aeon = aeon_dir();
     let Some(refrom) = read_ref(&aeon, "s4.bin") else { return };
@@ -157,6 +162,11 @@ fn chained_resume_plain() {
 
 /// (DEBUG) computed-resume chained placement == canonical asl `s4.debug.bin`.
 #[test]
+#[ignore = "RETIRED by Wave-B B-0: the pinned-baked substrate this proof chains from is
+frozen at the asl-era layout, and pins.rs now tracks the PACKED shipped layout (they diverge
+at the first size-changing parcel). The live, continuously-enforced form of this proof is the
+shipped chained build itself: every target places via packed_true_bases and the six golden
+gates hold. Kept for archaeology with the Stage-1 pinned bootstrap shape."]
 fn chained_resume_debug() {
     let aeon = aeon_dir();
     let Some(refrom) = read_ref(&aeon, "s4.debug.bin") else { return };

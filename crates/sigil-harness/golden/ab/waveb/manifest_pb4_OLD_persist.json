@@ -1,0 +1,66 @@
+{
+ "OLD_run1": [
+  {
+   "anchor": 242,
+   "fc": 236,
+   "ram_crc": "9e01a94c",
+   "vram": "0x3D256A699C18C00A",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x39E6A741A949E1CF",
+   "fb": "0x9F087BC984735AE9"
+  },
+  {
+   "anchor": 244,
+   "fc": 238,
+   "ram_crc": "5db79bc4",
+   "vram": "0xB734E74713C380EE",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x39E6A741A949E1CF",
+   "fb": "0x7977785B35369609"
+  },
+  {
+   "anchor": 248,
+   "fc": 242,
+   "ram_crc": "3603e4ee",
+   "vram": "0x05720CF8373C2F58",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x39E6A741A949E1CF",
+   "fb": "0x02067CCF5DB2098B"
+  }
+ ],
+ "OLD_run2": [
+  {
+   "anchor": 242,
+   "fc": 236,
+   "ram_crc": "9e01a94c",
+   "vram": "0x3D256A699C18C00A",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x39E6A741A949E1CF",
+   "fb": "0x89A7AD9B4D8A9B0F"
+  },
+  {
+   "anchor": 244,
+   "fc": 238,
+   "ram_crc": "5db79bc4",
+   "vram": "0xB734E74713C380EE",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x39E6A741A949E1CF",
+   "fb": "0x654D46A6D9448983"
+  },
+  {
+   "anchor": 248,
+   "fc": 242,
+   "ram_crc": "3603e4ee",
+   "vram": "0x05720CF8373C2F58",
+   "cram": "0xCB7C22FD06CFE7A9",
+   "vsram": "0xB5F357FC0D28F314",
+   "regs": "0x39E6A741A949E1CF",
+   "fb": "0xD95B87E1B6789635"
+  }
+ ]
+}

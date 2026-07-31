@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_b
 # reproduces_golden=config_b.bin
-# golden_crc32=1ce80669
-# assembled_anchor=ceb51002
+# golden_crc32=11b58cf3
+# assembled_anchor=70205171
 # assembled_end=0x434d0
 # labels=67
 Ani_Particle 0x25718
@@ -16,16 +16,16 @@ Ani_Particle_End 0x25720
 Ani_Sonic 0x256aa
 Ani_Sonic_End 0x25718
 AnimateSprite 0x16e6
-Art_Decompress 0x47fc
-BG_Init 0x4860
-BgAnim_Init 0x490e
+Art_Decompress 0x4830
+BG_Init 0x48a0
+BgAnim_Init 0x494e
 BootData 0x3a2
 BusError 0x42420
-Camera_Init 0x4122
+Camera_Init 0x414c
 Checksum 0x18e
 Collected_Init 0x1c20
-Collision_GetType 0x3826
-Collision_ProbeDown 0x384a
+Collision_GetType 0x3850
+Collision_ProbeDown 0x3874
 DeformTable_Zero 0x1125a
 EndOfRom 0x434d0
 EntryPoint 0x200
@@ -50,7 +50,7 @@ ObjDef_Static 0x11ce4
 PState_Air 0x1087c
 PState_Ground 0x10442
 PState_Spindash 0x10b3e
-Parallax_Init 0x4286
+Parallax_Init 0x42b0
 Perform_DPLC 0xf3e
 Plane_Buffer_Reset 0x282c
 Player_Init 0x10002
@@ -58,7 +58,7 @@ PopulateSpawnedPieceCount 0x24da
 Read_Controllers 0xad2
 RingBuffer_Add 0x1a6c
 S4LZ_DecompressDict 0xb56
-Section_Init 0x3d46
+Section_Init 0x3d70
 Sonic_InitAssets 0x10bc2
 TestAnimated 0x10c06
 TestChildPart 0x10fcc
@@ -70,7 +70,7 @@ TestPlayer 0x10c60
 TestSolid_Init 0x10f18
 TestStatic_Main 0x10c02
 TestStressEmitter 0x110f6
-Tile_Cache_GetTile 0x2b06
+Tile_Cache_GetTile 0x2b30
 TouchResponse 0x186c
 VBlank_Handler 0x9b0
 VDP_Shadow_Init 0x40c

@@ -120,11 +120,13 @@ fn config_b_size_table_rederives_native() {
     rederives_native(native::config_b_profile());
 }
 
-/// t24 — the size table is genuinely LOAD-BEARING: doctoring one boundary address in the
-/// frozen table MUST break the build (a wrong placement → the assembled anchor diverges
-/// from the golden, or the chain fails to resolve). Proves the placement gate would catch
-/// a corrupted `offcanonical_sizes/*.txt`, not silently absorb it. (Condition-3 control
-/// from the S1.2 size-capture handoff, now on the sigil-native tables.)
+/// t24 — the table's TWO authorities under packed placement (Wave-B B-0):
+/// (a) an ISLAND ANCHOR is load-bearing — doctoring `ObjCodeBase` (+2) MUST move the
+///     ROM (or fail to resolve): a corrupted anchor cannot be silently absorbed;
+/// (b) a CONTIGUOUS entry is deliberately INERT — doctoring `HeightMaps` (+2) MUST
+///     leave the ROM byte-identical (bases repack from live sizes; a stale contiguous
+///     address is exactly what the packing walk immunizes against).
+/// (Condition-3 control from the S1.2 size-capture handoff, re-scoped for packing.)
 #[test]
 fn config_b_doctored_size_table_breaks_the_build() {
     let aeon = aeon_dir();
@@ -150,10 +152,10 @@ fn config_b_doctored_size_table_breaks_the_build() {
         "control: undoctored config_b anchor must match the golden"
     );
 
-    // Doctor a mid-ROM boundary address (+2) and rebuild. The chainer pins that section
-    // two bytes off, so the ROM MUST diverge from the golden (or fail to resolve).
+    // (a) Doctor an ISLAND ANCHOR (+2) and rebuild. The packing walk anchors the object
+    // bank at the table address, so the ROM MUST diverge (or fail to resolve).
     let mut profile = native::config_b_profile();
-    let probe = "HeightMaps";
+    let probe = "ObjCodeBase";
     if let native::SizeSource::Frozen(t) = &mut profile.size_source {
         *t.get_mut(probe).unwrap_or_else(|| panic!("{probe} not in table")) += 2;
     }
@@ -164,9 +166,23 @@ fn config_b_doctored_size_table_breaks_the_build() {
                 || (0..eor.min(doctored.len())).any(|i| !header(i) && doctored[i] != golden[i]);
             assert!(
                 diverges,
-                "t24: doctoring `{probe}`+2 in the size table left the ROM byte-identical to \
-                 the golden — the table is NOT load-bearing (the gate would be vacuous)"
+                "t24: doctoring the island anchor `{probe}`+2 left the ROM byte-identical to \
+                 the golden — the anchor authority is NOT load-bearing (the gate would be vacuous)"
             );
         }
     }
+
+    // (b) Doctor a CONTIGUOUS entry (+2): packing must ignore it — byte-identical build.
+    let mut inert_profile = native::config_b_profile();
+    let inert = "HeightMaps";
+    if let native::SizeSource::Frozen(t) = &mut inert_profile.size_source {
+        *t.get_mut(inert).unwrap_or_else(|| panic!("{inert} not in table")) += 2;
+    }
+    let repacked = native::build_rom_chained(&aeon, &inert_profile)
+        .unwrap_or_else(|e| panic!("t24(b): contiguous doctoring must still build: {e}"));
+    assert_eq!(
+        repacked, base,
+        "t24(b): doctoring the contiguous `{inert}`+2 changed the ROM — packing is supposed \
+         to derive contiguous bases from live sizes, not the table"
+    );
 }

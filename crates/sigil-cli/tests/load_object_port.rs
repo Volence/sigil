@@ -183,6 +183,17 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
 }
 
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
+    // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
+    // pins span runs to the next section's aligned base. Tolerate a short (< 16 B)
+    // all-zero tail beyond the lowered image; every real byte still compares.
+    let expected = if expected.len() > candidate.len()
+        && expected.len() - candidate.len() < 16
+        && expected[candidate.len()..].iter().all(|&b| b == 0)
+    {
+        &expected[..candidate.len()]
+    } else {
+        expected
+    };
     assert_eq!(
         candidate.len(),
         expected.len(),
