@@ -176,7 +176,7 @@ fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
         ("OEF_TYPE_MASK", "$1F"),
         ("OBJ_ENTRY_SIZE", "6"),
         ("RING_BUFFER_ENTRY_SIZE", "6"),
-        // EntityScanState struct (engine/structs.asm), $16 bytes.
+        // EntityScanState struct (engine/structs.asm), $1A bytes.
         ("EntityScanState_ess_ring_right_idx", "$00"),
         ("EntityScanState_ess_obj_right_idx", "$02"),
         ("EntityScanState_ess_rom_ring_ptr", "$04"),
@@ -186,7 +186,9 @@ fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
         ("EntityScanState_ess_section_id", "$12"),
         ("EntityScanState_ess_entry_idx", "$13"),
         ("EntityScanState_ess_origin_y", "$14"),
-        ("EntityScanState_len", "$16"),
+        ("EntityScanState_ess_ring_next_x", "$16"),
+        ("EntityScanState_ess_obj_next_x", "$18"),
+        ("EntityScanState_len", "$1A"),
         // Sec (ROM section descriptor) + Act field equs now come from
         // act_sec_field_equs() (the prepended engine.structs drift wall).
     ]

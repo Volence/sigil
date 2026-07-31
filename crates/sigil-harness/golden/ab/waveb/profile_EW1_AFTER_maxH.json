@@ -1,0 +1,308 @@
+{
+ "label": "EW1_AFTER_maxH",
+ "rom": "/home/volence/sonic_hacks/aeon/s4.debug.bin",
+ "camera_x_start": 2016,
+ "camera_x_end": 4416,
+ "px_per_frame": 16.0,
+ "lag_frames_start": 26,
+ "lag_frames_end": 26,
+ "lag_in_window": 0,
+ "profile": {
+  "budget_cycles": 128000,
+  "budget_pct": 100.0,
+  "frame_count": 120,
+  "interrupts": {
+   "hint": {
+    "cycles": 9611,
+    "pct": 7.5
+   },
+   "vint": {
+    "cycles": 0,
+    "pct": 0.0
+   }
+  },
+  "routines": [
+   {
+    "addr": "$002346",
+    "calls": 1,
+    "cycles": 64843,
+    "name": "VSync_Wait",
+    "pct": 50.7
+   },
+   {
+    "addr": "$05E44C",
+    "calls": 1,
+    "cycles": 53340,
+    "name": "GameState_OJZScroll_Update",
+    "pct": 41.7
+   },
+   {
+    "addr": "$005602",
+    "calls": 1,
+    "cycles": 25216,
+    "name": "Tile_Cache_Fill",
+    "pct": 19.7
+   },
+   {
+    "addr": "$005AA2",
+    "calls": 2,
+    "cycles": 17114,
+    "name": "TileCache_FillColumn",
+    "pct": 13.4
+   },
+   {
+    "addr": "$005336",
+    "calls": 8,
+    "cycles": 11127,
+    "name": "TileCache_CopyBlockColumn",
+    "pct": 8.7
+   },
+   {
+    "addr": "$002232",
+    "calls": 1,
+    "cycles": 9611,
+    "name": "VBlank_Handler",
+    "pct": 7.5
+   },
+   {
+    "addr": "$002254",
+    "calls": 1,
+    "cycles": 9429,
+    "name": "VInt_Level",
+    "pct": 7.4
+   },
+   {
+    "addr": "$006A64",
+    "calls": 1,
+    "cycles": 7246,
+    "name": "Parallax_Update",
+    "pct": 5.7
+   },
+   {
+    "addr": "$0065D2",
+    "calls": 1,
+    "cycles": 6288,
+    "name": "Section_UpdateColumns",
+    "pct": 4.9
+   },
+   {
+    "addr": "$0051B8",
+    "calls": 1,
+    "cycles": 5226,
+    "name": "TileCache_DecompressBlock",
+    "pct": 4.1
+   },
+   {
+    "addr": "$004DAA",
+    "calls": 2,
+    "cycles": 5196,
+    "name": "Draw_TileColumn",
+    "pct": 4.1
+   },
+   {
+    "addr": "$00243A",
+    "calls": 1,
+    "cycles": 4259,
+    "name": "S4LZ_DecompressDict",
+    "pct": 3.3
+   },
+   {
+    "addr": "$001EA8",
+    "calls": 1,
+    "cycles": 4109,
+    "name": "Process_DMA_Critical",
+    "pct": 3.2
+   },
+   {
+    "addr": "$004384",
+    "calls": 1,
+    "cycles": 4089,
+    "name": "EntityWindow_Scan",
+    "pct": 3.2
+   },
+   {
+    "addr": "$006CDC",
+    "calls": 1,
+    "cycles": 3908,
+    "name": "Parallax_Fill_PerLine",
+    "pct": 3.1
+   },
+   {
+    "addr": "$004EAC",
+    "calls": 2,
+    "cycles": 3776,
+    "name": "$004EAC",
+    "pct": 3.0
+   },
+   {
+    "addr": "$005164",
+    "calls": 9,
+    "cycles": 3232,
+    "name": "TileCache_FindStagedBlock",
+    "pct": 2.5
+   },
+   {
+    "addr": "$0031D0",
+    "calls": 1,
+    "cycles": 2986,
+    "name": "Render_Sprites",
+    "pct": 2.3
+   },
+   {
+    "addr": "$002EAC",
+    "calls": 1,
+    "cycles": 2965,
+    "name": "RunObjects",
+    "pct": 2.3
+   },
+   {
+    "addr": "$005034",
+    "calls": 1,
+    "cycles": 2636,
+    "name": "VInt_DrawLevel",
+    "pct": 2.1
+   },
+   {
+    "addr": "$0046DA",
+    "calls": 1,
+    "cycles": 2486,
+    "name": "EntityWindow_DespawnRings",
+    "pct": 1.9
+   },
+   {
+    "addr": "$002EEA",
+    "calls": 3,
+    "cycles": 2062,
+    "name": "$002EEA",
+    "pct": 1.6
+   },
+   {
+    "addr": "$003B3C",
+    "calls": 1,
+    "cycles": 1412,
+    "name": "RingCollision",
+    "pct": 1.1
+   },
+   {
+    "addr": "$003AAC",
+    "calls": 1,
+    "cycles": 1274,
+    "name": "DrawRings",
+    "pct": 1.0
+   },
+   {
+    "addr": "$0037C2",
+    "calls": 1,
+    "cycles": 1255,
+    "name": "TouchResponse",
+    "pct": 1.0
+   },
+   {
+    "addr": "$0020D4",
+    "calls": 1,
+    "cycles": 766,
+    "name": "Enqueue_Dirty_Buffers",
+    "pct": 0.6
+   },
+   {
+    "addr": "$002F02",
+    "calls": 1,
+    "cycles": 715,
+    "name": "$002F02",
+    "pct": 0.6
+   },
+   {
+    "addr": "$001CA0",
+    "calls": 1,
+    "cycles": 676,
+    "name": "Flush_VDP_Shadow",
+    "pct": 0.5
+   },
+   {
+    "addr": "$0067CE",
+    "calls": 1,
+    "cycles": 670,
+    "name": "Camera_Update",
+    "pct": 0.5
+   },
+   {
+    "addr": "$010084",
+    "calls": 1,
+    "cycles": 668,
+    "name": "Player_Main",
+    "pct": 0.5
+   },
+   {
+    "addr": "$0023B2",
+    "calls": 1,
+    "cycles": 506,
+    "name": "Read_Controllers",
+    "pct": 0.4
+   },
+   {
+    "addr": "$006CA4",
+    "calls": 4,
+    "cycles": 400,
+    "name": "Decode_Factor_B",
+    "pct": 0.3
+   },
+   {
+    "addr": "$006C6C",
+    "calls": 4,
+    "cycles": 392,
+    "name": "Decode_Factor_A",
+    "pct": 0.3
+   },
+   {
+    "addr": "$0023E4",
+    "calls": 2,
+    "cycles": 336,
+    "name": "$0023E4",
+    "pct": 0.3
+   },
+   {
+    "addr": "$002F5A",
+    "calls": 1,
+    "cycles": 276,
+    "name": "Debug_AssertObjLoop",
+    "pct": 0.2
+   },
+   {
+    "addr": "$00484E",
+    "calls": 1,
+    "cycles": 248,
+    "name": "EntityWindow_Slide",
+    "pct": 0.2
+   },
+   {
+    "addr": "$004404",
+    "calls": 1,
+    "cycles": 247,
+    "name": "EntityWindow_TrySpawnRing",
+    "pct": 0.2
+   },
+   {
+    "addr": "$010F6C",
+    "calls": 1,
+    "cycles": 216,
+    "name": "TestSolid_Main",
+    "pct": 0.2
+   },
+   {
+    "addr": "$0033CC",
+    "calls": 1,
+    "cycles": 211,
+    "name": "Emit_ObjectPieces",
+    "pct": 0.2
+   },
+   {
+    "addr": "$005DB0",
+    "calls": 2,
+    "cycles": 184,
+    "name": "TileCache_HSlide",
+    "pct": 0.1
+   }
+  ],
+  "total_cycles": 127983
+ }
+}

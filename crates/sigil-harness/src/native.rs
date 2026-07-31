@@ -1207,7 +1207,16 @@ fn packed_true_bases(
             let p = prov[i].unwrap();
             let is_phase_bank =
                 sections[i].vma_base.map(|v| v != sections[i].lma && v >= 0x8000).unwrap_or(false);
-            let tb = if labeled[i] {
+            let tb = if is_phase_bank {
+                // A PHASE BANK head is a HARD org even when labeled — the Z80 side
+                // holds pointers into the bank, so bank content NEVER packs. Without
+                // this precedence the labeled branch repacks the bank the moment the
+                // pre-bank blob's untrimmed align-pad image creeps past the org (the
+                // mt-gate catch: entity_window growth crossing the $58000 threshold).
+                in_phase_run = true;
+                islands[i] = true;
+                p
+            } else if labeled[i] {
                 in_phase_run = false;
                 match running {
                     None => {
@@ -1230,15 +1239,6 @@ fn packed_true_bases(
                         packed
                     }
                 }
-            } else if is_phase_bank {
-                in_phase_run = true;
-                islands[i] = true;
-                // A running end past the bank org is NOT necessarily overflow: the
-                // pre-bank data blob's trailing `align $8000` pad measures oversized
-                // at provisional pins (trim_trailing_align_overshoot shrinks it at
-                // span time). Real overflow still fails loud downstream — the final
-                // resolve rejects colliding pins.
-                p
             } else if in_phase_run {
                 p // hard-org phase-run tail: absolute
             } else {
@@ -1270,8 +1270,17 @@ fn packed_true_bases(
         // bases (correct relaxation), label-less pure-data blobs at scratch (position-
         // independent, and the align-padded pre-bank blob would otherwise collide with
         // the pinned bank org — the config_a HeightMaps case).
+        // Label-less pure-data blobs AND the phase banks measure at scratch (the
+        // pre-bank blob's baked align-pad is sized for its ORIGINAL position, so at
+        // a shifted packed base its image overshoots the hard bank org until
+        // declared_spans clamps it — the phase_region_mask rule keeps the measuring
+        // resolve overlap-free).
+        let bankish: Vec<bool> = sections
+            .iter()
+            .map(|s| s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false))
+            .collect();
         let remeasure: Vec<Option<u32>> = (0..n)
-            .map(|i| if labeled[i] { out[i] } else { None })
+            .map(|i| if labeled[i] && !bankish[i] { out[i] } else { None })
             .collect();
         let img2 = image_lens_pinned(sections, &remeasure)
             .map_err(|e| format!("span pass (packed round): {e}"))?;
