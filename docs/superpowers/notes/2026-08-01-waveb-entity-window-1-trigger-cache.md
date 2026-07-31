@@ -172,3 +172,42 @@ exactly as the bar prescribes.
   or retire it like its sibling. Deferred to you (relitigating a ruling).
 - The 4-section window (`MAX_TRACKED_SECTIONS`) is the win ceiling. A wider window would
   raise both the cost AND the reclaim, but that is a separate design axis.
+
+## Overseer A/B results + adjudication (countersign)
+
+**Profiler (max-H drive, s4.debug, OLD golden e370f73c vs NEW 29573719, per-shape
+listings):** whole-loop `GameState_OJZScroll_Update` **−896 cyc/f** (idle +899);
+`EntityWindow_Scan` self 5003→4089; the right-walkers' separately-attributed time
+went to zero (the gate skips the no-op calls; `TrySpawnRing`/`DespawnRings` cycles
+identical — spawn activity unchanged). Near the porter's structural ceiling because
+the window slides only once per 16 frames even at max scroll — the skip pays on the
+15 non-sliding frames.
+
+**State identity (plain shape, quantum anchors fc 234/414/694, runs duplicated,
+determinism OK):** VRAM/CRAM/VSRAM identical at every anchor; VDP regs identical at
+2/3 (the 414 delta = the established mid-VBlank register-sequence capture class).
+RAM compared zone-aware (the scan-state is a 4-element array, each +4; vars after it
+shift +0x10; the stack page is fixed): below-array IDENTICAL · every element's OLD
+fields IDENTICAL · ALL shifted variables IDENTICAL · stack = the established
+dead-residue class + one interrupted-PC byte (`22D0`/`22D4`, the A3 signature).
+The cleanest state result of the wave.
+
+**The countersign's own catch (fixed before the freeze):** the first freeze attempt
+moved the DEBUG sound bank +0x20 — the mt gate caught a B-0 edge case where the
+LABELED bank head lost its hard-org anchor once the pre-bank blob's untrimmed
+align-pad image crept past `$58000` (this parcel's +0x40 debug growth crossed the
+threshold; plain's +0x38 did not). Fixed in `packed_true_bases`: the phase-bank test
+now precedes the labeled test (bank content NEVER packs — the Z80 side holds pointers
+into it), and the fixpoint re-measure scratches the banks like `phase_region_mask`
+does (the position-stale align pad otherwise collides with the hard org at shifted
+bases). Both banks byte-identical to the master goldens after the fix; the re-run
+profiler on the fixed debug ROM: `EntityWindow_Scan` −916, whole-loop −917 (idle
++920) — the plain-shape state A/B transfers byte-exactly (plain never shifted).
+
+**Ruling: KEEP at −916 (sub-bar).** The ~1k bar is explicitly approximate; this
+parcel keeps because it passes ALL THREE of: (a) measured ≥ ~85% of the bar on the
+binding drive; (b) behavior-identical by construction with a BOUNDED adverse case
+(≤64 cyc/f fully-active); (c) the win measured near ceiling on the binding drive —
+no unmeasured-drive dependence. The test is the precedent: core #1 fails (b)/(c)
+(measured regression), pb#3 fails (a) by an order of magnitude. A sub-bar parcel
+failing any leg skips.

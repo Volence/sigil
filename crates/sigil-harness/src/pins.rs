@@ -41,7 +41,7 @@ pub struct ShapeOffset {
 /// Assembled (pre-convsym) ROM length, plain shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
 pub const ASSEMBLED_LEN: usize = 0x5DB60;
 /// Assembled (pre-convsym) ROM length, `__DEBUG__` shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F67A;
+pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F65A;
 
 // ── Regions (manifest order) ──
 
@@ -187,13 +187,13 @@ pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x14B2A, debug_base: 0x1
 pub const OBJDEFS: Region = Region { plain_base: 0x11D16, debug_base: 0x11D96, plain_len: 0x68, debug_len: 0x68 };
 
 /// `GameState_ObjectTest_Init` .. `GameState_OJZScroll_Init` — gate `SIGIL_EMP_OBJECT_TEST_STATE`. tests: test_t1_harness_states_port
-pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0x5C230, debug_base: 0x5DCA2, plain_len: 0x5BC, debug_len: 0x658 };
+pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0x5C230, debug_base: 0x5DC82, plain_len: 0x5BC, debug_len: 0x658 };
 
 /// `GameState_OJZScroll_Init` .. `NullInterrupt` — gate `SIGIL_EMP_OJZ_SCROLL_TEST`. tests: test_t1_harness_states_port
-pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0x5C7EC, debug_base: 0x5E2FA, plain_len: 0x2C2, debug_len: 0x2CE };
+pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0x5C7EC, debug_base: 0x5E2DA, plain_len: 0x2C2, debug_len: 0x2CE };
 
 /// `BusError` .. `EndOfRom` — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
-pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CAB0, debug_base: 0x5E5CA, plain_len: 0x10B0, debug_len: 0x10B0 };
+pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CAB0, debug_base: 0x5E5AA, plain_len: 0x10B0, debug_len: 0x10B0 };
 
 /// `Player_Init` .. `PState_Ground` — gate `SIGIL_EMP_PLAYER_COMMON`. tests: test_p1_player_port
 pub const PLAYER_COMMON: Region = Region { plain_base: 0x10002, debug_base: 0x10002, plain_len: 0x446, debug_len: 0x44E };
@@ -255,43 +255,43 @@ pub const GET_SINE_COSINE: Pin = Pin { plain: 0x24FC, debug: 0x2692 };
 pub const ENTRY_POINT: Pin = Pin { plain: 0x200, debug: 0x200 };
 
 /// `NullInterrupt`. tests: m1c_vector_table
-pub const NULL_INTERRUPT: Pin = Pin { plain: 0x5CAAE, debug: 0x5E5C8 };
+pub const NULL_INTERRUPT: Pin = Pin { plain: 0x5CAAE, debug: 0x5E5A8 };
 
 /// `BusError`. tests: m1c_vector_table
-pub const BUS_ERROR: Pin = Pin { plain: 0x5CAB0, debug: 0x5E5CA };
+pub const BUS_ERROR: Pin = Pin { plain: 0x5CAB0, debug: 0x5E5AA };
 
 /// `AddressError`. tests: m1c_vector_table
-pub const ADDRESS_ERROR: Pin = Pin { plain: 0x5CAC8, debug: 0x5E5E2 };
+pub const ADDRESS_ERROR: Pin = Pin { plain: 0x5CAC8, debug: 0x5E5C2 };
 
 /// `IllegalInstr`. tests: m1c_vector_table
-pub const ILLEGAL_INSTR: Pin = Pin { plain: 0x5CAE4, debug: 0x5E5FE };
+pub const ILLEGAL_INSTR: Pin = Pin { plain: 0x5CAE4, debug: 0x5E5DE };
 
 /// `ZeroDivide`. tests: m1c_vector_table
-pub const ZERO_DIVIDE: Pin = Pin { plain: 0x5CB06, debug: 0x5E620 };
+pub const ZERO_DIVIDE: Pin = Pin { plain: 0x5CB06, debug: 0x5E600 };
 
 /// `ChkInstr`. tests: m1c_vector_table
-pub const CHK_INSTR: Pin = Pin { plain: 0x5CB20, debug: 0x5E63A };
+pub const CHK_INSTR: Pin = Pin { plain: 0x5CB20, debug: 0x5E61A };
 
 /// `TrapvInstr`. tests: m1c_vector_table
-pub const TRAPV_INSTR: Pin = Pin { plain: 0x5CB3E, debug: 0x5E658 };
+pub const TRAPV_INSTR: Pin = Pin { plain: 0x5CB3E, debug: 0x5E638 };
 
 /// `PrivilegeViol`. tests: m1c_vector_table
-pub const PRIVILEGE_VIOL: Pin = Pin { plain: 0x5CB5E, debug: 0x5E678 };
+pub const PRIVILEGE_VIOL: Pin = Pin { plain: 0x5CB5E, debug: 0x5E658 };
 
 /// `Trace`. tests: m1c_vector_table
-pub const TRACE: Pin = Pin { plain: 0x5CB80, debug: 0x5E69A };
+pub const TRACE: Pin = Pin { plain: 0x5CB80, debug: 0x5E67A };
 
 /// `Line1010Emu`. tests: m1c_vector_table
-pub const LINE1010_EMU: Pin = Pin { plain: 0x5CB94, debug: 0x5E6AE };
+pub const LINE1010_EMU: Pin = Pin { plain: 0x5CB94, debug: 0x5E68E };
 
 /// `Line1111Emu`. tests: m1c_vector_table
-pub const LINE1111_EMU: Pin = Pin { plain: 0x5CBB4, debug: 0x5E6CE };
+pub const LINE1111_EMU: Pin = Pin { plain: 0x5CBB4, debug: 0x5E6AE };
 
 /// `ErrorExcept`. tests: m1c_vector_table
-pub const ERROR_EXCEPT: Pin = Pin { plain: 0x5CBD4, debug: 0x5E6EE };
+pub const ERROR_EXCEPT: Pin = Pin { plain: 0x5CBD4, debug: 0x5E6CE };
 
 /// `ErrorTrap`. tests: m1c_vector_table
-pub const ERROR_TRAP: Pin = Pin { plain: 0x5CBF2, debug: 0x5E70C };
+pub const ERROR_TRAP: Pin = Pin { plain: 0x5CBF2, debug: 0x5E6EC };
 
 /// `VBlank_Handler`. tests: m1c_vector_table
 pub const V_BLANK_HANDLER: Pin = Pin { plain: 0x21AC, debug: 0x2232 };
@@ -546,10 +546,10 @@ pub const C_SELF_ZX0: u32 = 0x7896;
 pub const C_SELF_EXPECTED: u32 = 0x7AB8;
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER: u32 = 0x5E724;
+pub const MDDBG_ERROR_HANDLER: u32 = 0x5E704;
 
 /// `MDDBG__ErrorHandler_PagesController` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F4EA;
+pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F4CA;
 
 /// `DMA_Critical`. tests: dma_queue_port
 pub const DMA_CRITICAL: Pin = Pin { plain: 0xFFFF803C, debug: 0xFFFF803C };

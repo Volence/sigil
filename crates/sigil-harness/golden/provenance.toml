@@ -221,3 +221,50 @@ full_crc = "e370f73c"
 full_size = 422189
 anchor_crc = "8896d6a8"
 anchor_end = 0x5f65a
+
+[[entry]]
+name = "waveb-entity-window-1"
+ab = "docs/superpowers/notes/2026-08-01-waveb-entity-window-1-trigger-cache.md"
+note = "per-section trigger cache (-916 cyc/f max-H; KEEP under the three-leg sub-bar test; bank-anchor fix rode the countersign)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "f4a077b8"
+full_size = 422553
+anchor_crc = "3094c89a"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "a7f51b46"
+full_size = 303724
+anchor_crc = "9113a226"
+anchor_end = 0x434d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "fd7d0454"
+full_size = 90507
+anchor_crc = "540800d1"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "5e99c9bb"
+full_size = 93005
+anchor_crc = "d4da7ce1"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f0d02beb"
+full_size = 412376
+anchor_crc = "549ac81f"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "dc3e3bce"
+full_size = 422217
+anchor_crc = "aadb1446"
+anchor_end = 0x5f65a

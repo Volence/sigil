@@ -395,8 +395,8 @@ fn spindash_bytes(shape: &Shape) -> Vec<u8> {
         shape,
         "games/sonic4/player/player_spindash.emp",
         "player_spindash",
-        pins::PLAYER_SPINDASH.plain_base,
-        pins::PLAYER_SPINDASH.plain_len,
+        if shape.debug { pins::PLAYER_SPINDASH.debug_base } else { pins::PLAYER_SPINDASH.plain_base },
+        if shape.debug { pins::PLAYER_SPINDASH.debug_len } else { pins::PLAYER_SPINDASH.plain_len },
         &["PState_Spindash"],
     )
 }
@@ -442,8 +442,8 @@ fn air_bytes(shape: &Shape) -> Vec<u8> {
         shape,
         "games/sonic4/player/player_air.emp",
         "player_air",
-        pins::PLAYER_AIR.plain_base,
-        pins::PLAYER_AIR.plain_len,
+        if shape.debug { pins::PLAYER_AIR.debug_base } else { pins::PLAYER_AIR.plain_base },
+        if shape.debug { pins::PLAYER_AIR.debug_len } else { pins::PLAYER_AIR.plain_len },
         &["PState_Air", "PState_AirBall", "PState_RollJump", "PState_Jump"],
     )
 }
@@ -489,8 +489,8 @@ fn ground_bytes(shape: &Shape) -> Vec<u8> {
         shape,
         "games/sonic4/player/player_ground.emp",
         "player_ground",
-        pins::PLAYER_GROUND.plain_base,
-        pins::PLAYER_GROUND.plain_len,
+        if shape.debug { pins::PLAYER_GROUND.debug_base } else { pins::PLAYER_GROUND.plain_base },
+        if shape.debug { pins::PLAYER_GROUND.debug_len } else { pins::PLAYER_GROUND.plain_len },
         &["PState_Ground", "PState_Roll", "Player_Jump"],
     )
 }
