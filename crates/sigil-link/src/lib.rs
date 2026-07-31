@@ -230,6 +230,24 @@ fn build_symbol_table(sections: &[Section], stubs: &SymbolTable) -> SymbolTable 
     syms
 }
 
+/// The FULLY-RESOLVED symbol table of a `resolve_layout` output, as `(name, value)`
+/// pairs (labels at their phased VMA + every `equ_sym` folded to a constant —
+/// including link-external-base equates like the `MDDBG__*` table off `ErrorHandler`).
+/// This is the sigil-native successor to parsing asl's `.lst Symbol Table` (Stage-3
+/// P4c: `pins.rs` derives from THIS, not an asl listing). `sections` must be a
+/// `resolve_layout` output (its `equ_syms` pre-folded); `stubs` seeds the same
+/// externals `link()` saw. Deterministic (name-sorted).
+pub fn resolved_symbols(sections: &[Section], stubs: &SymbolTable) -> Vec<(String, i64)> {
+    let table = build_symbol_table(sections, stubs);
+    table
+        .iter()
+        .filter_map(|(name, val)| match val {
+            SymbolValue::Int(v) => Some((name.clone(), *v)),
+            SymbolValue::Poison => None,
+        })
+        .collect()
+}
+
 /// Evaluate a program's deferred link-time assertions (D-H.4/D-H.6) against the
 /// post-`resolve_layout` symbol table, returning ONE `Error` diagnostic per
 /// FAILING assert (ALL failures collected, never first-failure). `resolved` is

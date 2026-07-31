@@ -2,57 +2,51 @@
 //!
 //! Re-pin waves used to be string substitution over ~115 hand-typed layout
 //! literals scattered across ~16 test files; every substitution error cost a
-//! suite run to find. This module kills that bug class: it parses the AS
-//! listings' `Symbol Table` sections (`aeon/s4.lst` + `aeon/s4.debug.lst`),
-//! resolves the declarative manifest (`crates/sigil-harness/repin.toml`)
-//! against BOTH shapes, and renders the generated `src/pins.rs` the port
-//! tests import. Design: `docs/superpowers/notes/
+//! suite run to find. This module kills that bug class: it takes a resolved
+//! `name → address` map for BOTH shapes, resolves the declarative manifest
+//! (`crates/sigil-harness/repin.toml`), and renders the generated `src/pins.rs`
+//! the port tests import. Design: `docs/superpowers/notes/
 //! 2026-07-10-tranche10-repin-design.md` (D-T10.1..D-T10.9).
+//!
+//! ADDRESS SOURCE (Stage-3 P4c, kill-list row 34): the addresses come from
+//! SIGIL'S OWN resolved layout (`native::sigil_native_symbol_listing` — the
+//! fully-resolved symbol table: labels + folded equates incl. `MDDBG__*`, `.emp`
+//! locals demangled, section-END markers synthesized), NOT an asl `.lst`. The
+//! `Listing` is now a plain `name → address` map built via
+//! [`Listing::from_symbols`]; the asl `Symbol Table` parser is deleted.
 //!
 //! The binary front-end lives in `src/bin/repin.rs`; the logic lives here so
 //! the staleness test (D-T10.5, `tests/repin_pins.rs::pins_rs_is_current`)
 //! can regenerate in-memory and compare against the committed file.
-//!
-//! ## Listing format facts (verified against the 2026-07-10 listings)
-//!
-//! - The table starts after the line `Symbol Table (* = unused):` and its
-//!   dashes underline, and ends at the `NNNN symbols` count line.
-//! - Two `NAME : HEXVALUE TYPE |` entries per line normally; long names,
-//!   sign-extended values and string values span a full line. Entries are
-//!   `|`-separated either way, so the chunk split handles both.
-//! - `*` prefix = unused symbol — still parsed (gate regions reference
-//!   symbols the reference build may not otherwise use).
-//! - Local labels appear parent-qualified (`AnimateSprite.cc_delete`).
-//! - RAM symbols are sign-extended 64-bit hex (`FFFFFFFFFFFF89EE`) —
-//!   truncated to the u32 VMA every consumer pins.
-//! - Non-numeric values exist and are SKIPPED: strings
-//!   (`ARCHITECTURE : "x86_64-unknown-linux"`), char literals
-//!   (`CROSS_RESET_MAGIC : 'INIT'`), floats (`CONSTPI : 3.14159…`).
-//! - Page headers (`AS V1.42 Beta … - Page N - …`) INTERRUPT the table
-//!   mid-stream and are skipped.
-//! - The `END` line (`     333/   658B4 :                         END`)
-//!   carries the assembled ROM end — the `[rom]` pins.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use serde::Deserialize;
 
-// ── Listing parsing ─────────────────────────────────────────────────────────
+// ── The symbol listing (a resolved `name → address` map) ────────────────────
 
-/// One parsed listing: the symbol table plus the `END` line address and the
-/// page-header date stamp (provenance).
+/// A resolved symbol listing: the `name → address` map plus the ROM-end address
+/// and a provenance stamp. Built via [`Listing::from_symbols`] from sigil's own
+/// resolved layout (Stage-3 P4c).
 #[derive(Debug)]
 pub struct Listing {
     symbols: HashMap<String, u32>,
-    /// The `END` line's address — the assembled ROM length.
+    /// The ROM end address (`EndOfRom`) — the assembled ROM length.
     pub end_addr: u32,
-    /// The page headers' trailing date stamp (`07/10/2026 10:03:54 PM`),
-    /// carried into the generated file's provenance header.
+    /// Provenance text (a build description), carried into the generated file's
+    /// provenance header.
     pub stamp: String,
 }
 
 impl Listing {
+    /// Build a `Listing` directly from a resolved `name → address` map (the
+    /// sigil-native source, Stage-3 P4c) instead of parsing an asl `.lst`. The
+    /// `stamp` is provenance text (a build date, not an asl page-header).
+    pub fn from_symbols(symbols: HashMap<String, u32>, end_addr: u32, stamp: String) -> Listing {
+        Listing { symbols, end_addr, stamp }
+    }
+
     /// Exact-match lookup. Unknown symbol = HARD ERROR naming it (D-T10.2 —
     /// never a silent 0). `Prof_RunObjects` vs `RunObjects` are DIFFERENT
     /// names; no prefix/suffix matching happens here.
@@ -67,202 +61,6 @@ impl Listing {
     pub fn symbol_count(&self) -> usize {
         self.symbols.len()
     }
-}
-
-/// Parse one AS listing (`s4.lst` shape). Fails loudly on: no symbol table,
-/// no `END` line, a duplicate symbol name (exact-name resolution would be
-/// ambiguous), or a value chunk in none of the known formats.
-pub fn parse_listing(text: &str) -> Result<Listing, String> {
-    let mut symbols: HashMap<String, u32> = HashMap::new();
-    let mut end_addr: Option<u32> = None;
-    let mut stamp = String::new();
-    let mut in_table = false;
-    let mut saw_terminator = false;
-
-    for line in text.lines() {
-        let t = line.trim();
-
-        // Page-header date stamp (first one wins; they are all identical).
-        if stamp.is_empty() && t.starts_with("AS V") && t.contains(" - Source File ") {
-            if let Some(pos) = t.rfind(" - ") {
-                stamp = t[pos + 3..].to_string();
-            }
-        }
-
-        if !in_table {
-            // The `END` line: `NNN/   HHHHH :   END` (source line number /
-            // address). Macro-expansion lines carry a `(N)` prefix and so
-            // fail the all-digits check on the left side. Last match wins.
-            if let Some((left, right)) = t.split_once(':') {
-                if right.trim() == "END" {
-                    if let Some((lineno, hex)) = left.trim().split_once('/') {
-                        if !lineno.is_empty() && lineno.chars().all(|c| c.is_ascii_digit()) {
-                            if let Ok(v) = u64::from_str_radix(hex.trim(), 16) {
-                                end_addr = Some(v as u32);
-                            }
-                        }
-                    }
-                }
-            }
-            if t == "Symbol Table (* = unused):" {
-                in_table = true;
-            }
-            continue;
-        }
-
-        // ── inside the symbol table ──
-        if t.is_empty() {
-            continue;
-        }
-        // The dashes underline right after the section header.
-        if t.chars().all(|c| c == '-') {
-            continue;
-        }
-        // Page headers interrupt the table mid-stream.
-        if t.starts_with("AS V") {
-            continue;
-        }
-        // Terminator: the `NNNN symbols` count line.
-        if let Some(count) = t.strip_suffix(" symbols") {
-            if !count.is_empty() && count.chars().all(|c| c.is_ascii_digit()) {
-                saw_terminator = true;
-                break;
-            }
-        }
-
-        for chunk in line.split('|') {
-            let c = chunk.trim();
-            if c.is_empty() {
-                continue;
-            }
-            // `*` prefix = unused — still parse it.
-            let c = c.strip_prefix('*').map(str::trim_start).unwrap_or(c);
-            let Some((name, value)) = c.split_once(':') else {
-                return Err(format!("symbol-table chunk without `:`: `{c}`"));
-            };
-            let (name, value) = (name.trim(), value.trim());
-            if name.is_empty() {
-                return Err(format!("symbol-table chunk with empty name: `{c}`"));
-            }
-            // Non-numeric values: strings, char literals, floats — skipped
-            // (they are never layout pins).
-            if value.starts_with('"') || value.starts_with('\'') || value.contains('.') {
-                continue;
-            }
-            // `HEXVALUE` optionally followed by ONE segment-type mark
-            // (`C` = CODE, `-` = untyped equ).
-            let mut toks = value.split_whitespace();
-            let hex = toks
-                .next()
-                .ok_or_else(|| format!("symbol `{name}`: empty value"))?;
-            if let Some(ty) = toks.next() {
-                if ty.len() != 1 || toks.next().is_some() {
-                    return Err(format!("symbol `{name}`: unrecognized value shape `{value}`"));
-                }
-            }
-            let v = u64::from_str_radix(hex, 16)
-                .map_err(|_| format!("symbol `{name}`: unparseable hex value `{hex}`"))?;
-            // RAM symbols are sign-extended 64-bit; the u32 VMA is the pin.
-            let v = v as u32;
-            if symbols.insert(name.to_string(), v).is_some() {
-                return Err(format!(
-                    "duplicate symbol `{name}` in the listing symbol table — exact-name \
-                     resolution would be ambiguous"
-                ));
-            }
-        }
-    }
-
-    if !in_table {
-        return Err("no `Symbol Table (* = unused):` section in the listing".to_string());
-    }
-    if !saw_terminator {
-        return Err("symbol table ran off the end of the listing (no `NNNN symbols` line)"
-            .to_string());
-    }
-    let end_addr =
-        end_addr.ok_or_else(|| "no `END` line found before the symbol table".to_string())?;
-    Ok(Listing { symbols, end_addr, stamp })
-}
-
-/// Parse a listing CODE line into `(rom_offset, emitted_bytes)`, or `None` for
-/// non-code lines (labels, `ifdef` markers, blank, symbol-table). The shape is
-/// `[(N)]  LINENO/  HHHH : BB BB ..  MNEMONIC ...` — the address is the hex after
-/// the last `/` before the first `:`, the bytes are the leading pure-hex tokens
-/// after the `:` (stopping at the mnemonic). Conservative: anything that does not
-/// cleanly match yields `None` (skipped, never a false mismatch).
-fn parse_code_line(line: &str) -> Option<(u32, Vec<u8>)> {
-    let (left, right) = line.split_once(':')?;
-    let addr_tok = left.rsplit('/').next()?.trim();
-    if addr_tok.is_empty() || !addr_tok.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    let addr = u32::from_str_radix(addr_tok, 16).ok()?;
-    let mut bytes = Vec::new();
-    for tok in right.split_whitespace() {
-        // Leading pure-hex, even-length tokens are emitted bytes; the first
-        // non-hex token is the mnemonic — stop there.
-        if tok.len() % 2 == 0 && !tok.is_empty() && tok.chars().all(|c| c.is_ascii_hexdigit()) {
-            for pair in tok.as_bytes().chunks(2) {
-                bytes.push(u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?);
-            }
-        } else {
-            break;
-        }
-    }
-    if bytes.is_empty() {
-        return None;
-    }
-    Some((addr, bytes))
-}
-
-/// Prove a parsed listing describes the SAME ROM as its built `.bin`: every clean
-/// code line's emitted bytes must equal the ROM at that offset. Skips the header
-/// region (`< 0x400`, where `fixheader` patches the checksum at `$18E`) and any
-/// offset at/after the assembled length (convsym append). A stale listing (built
-/// before the current `.bin`, e.g. a `.lst` copy missed by the build recipe) has
-/// downstream code at pre-shift addresses → the fresh ROM disagrees there → this
-/// hard-errors instead of silently repinning to phantom addresses.
-pub fn assert_listing_matches_rom(text: &str, rom: &[u8], end_addr: u32, shape: &str) -> Result<(), String> {
-    let mut checked = 0usize;
-    for line in text.lines() {
-        if line.trim() == "Symbol Table (* = unused):" {
-            break;
-        }
-        let Some((addr, bytes)) = parse_code_line(line) else { continue };
-        // Only the 68k main-code window [0x2000, 0x8000): below 0x2000 the listing
-        // interleaves Z80-driver disasm at Z80-LOCAL addresses (0x0..0x1FFF) that
-        // collide with 68k ROM offsets, and 0x8000+ is the Z80 bank window (`phase
-        // $8000`) — both have addresses that are NOT ROM offsets. Every dead-save
-        // / pass-3 shift lands in this window (entity_window..sound_api), so it is
-        // sufficient to catch a stale listing while excluding both Z80 spaces.
-        if !(0x2000..0x8000).contains(&addr) || addr as usize + bytes.len() > end_addr as usize {
-            continue;
-        }
-        let (a, n) = (addr as usize, bytes.len());
-        if a + n > rom.len() {
-            return Err(format!(
-                "{shape}: listing address {addr:#x} is past the ROM end {:#x} — listing/ROM mismatch",
-                rom.len()
-            ));
-        }
-        if rom[a..a + n] != bytes[..] {
-            return Err(format!(
-                "{shape} listing is STALE relative to the .bin: at {addr:#x} the listing emits \
-                 {bytes:02X?} but the ROM has {:02X?}. Regenerate the listing (the build recipe \
-                 must copy s4.lst alongside s4.bin) and re-run repin.",
-                &rom[a..a + n]
-            ));
-        }
-        checked += 1;
-    }
-    if checked < 64 {
-        return Err(format!(
-            "{shape}: only {checked} code lines cross-checked against the ROM (expected many) — \
-             the listing parser or its shape changed; investigate before trusting the pins"
-        ));
-    }
-    Ok(())
 }
 
 // ── The manifest (`repin.toml`, D-T10.2) ────────────────────────────────────
@@ -778,10 +576,10 @@ pub fn render(r: &Resolved, prov: &Provenance) -> String {
     let _ = writeln!(w, "//! GENERATED FILE — DO NOT EDIT BY HAND.");
     let _ = writeln!(w, "//!");
     let _ = writeln!(w, "//! Emitted by `cargo run -p sigil-harness --bin repin` from `repin.toml`");
-    let _ = writeln!(w, "//! + the aeon listings (D-T10.3, tranche-10 step 0). Edit the MANIFEST,");
-    let _ = writeln!(w, "//! then regenerate; `tests/repin_pins.rs::pins_rs_is_current` guards");
-    let _ = writeln!(w, "//! staleness. All values are LISTING truth — per-shape VMAs/lengths from");
-    let _ = writeln!(w, "//! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).");
+    let _ = writeln!(w, "//! + SIGIL'S OWN resolved layout (Stage-3 P4c; the asl-`.lst` parse retired).");
+    let _ = writeln!(w, "//! Edit the MANIFEST, then regenerate; `tests/repin_pins.rs::");
+    let _ = writeln!(w, "//! pins_rs_is_current` guards staleness. All values are per-shape VMAs/lengths");
+    let _ = writeln!(w, "//! from sigil's native canonical resolve (plain + `__DEBUG__`).");
     let _ = writeln!(w, "//!");
     let _ = writeln!(w, "//! [provenance] plain: {} ({})", prov.plain_path, prov.plain_stamp);
     let _ = writeln!(w, "//! [provenance] debug: {} ({})", prov.debug_path, prov.debug_stamp);
@@ -973,155 +771,11 @@ pub fn diff_pins(old_text: &str, new_text: &str) -> Vec<PinChange> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_code_line_extracts_addr_and_bytes() {
-        assert_eq!(
-            parse_code_line("(2)  202/     39A : 6100 6AA8                   bsr.w   Foo"),
-            Some((0x39A, vec![0x61, 0x00, 0x6A, 0xA8]))
-        );
-        // Z80 byte-pair bytes.
-        assert_eq!(
-            parse_code_line("(3)  440/     18D : DD CB 0A 4E                 bit     x"),
-            Some((0x18D, vec![0xDD, 0xCB, 0x0A, 0x4E]))
-        );
-        // `dc.w 0` — one word; `dc.w` (has a dot) is the mnemonic, stops there.
-        assert_eq!(parse_code_line("(1)   81/     18E : 0000   dc.w  0"), Some((0x18E, vec![0x00, 0x00])));
-        // Non-code lines yield None (never a false mismatch).
-        assert_eq!(parse_code_line("(2)  199/     39A : =>DEFINED   ifdef __DEBUG__"), None);
-        assert_eq!(parse_code_line("Camera_X: FFFFA11E"), None);
-        assert_eq!(parse_code_line("(2)   23/     346A :                     Foo:"), None);
-    }
-
-    #[test]
-    fn freshness_check_passes_fresh_hard_errors_stale() {
-        // 100 contiguous 2-byte code lines from 0x2000 (inside the 68k window).
-        let mut lst = String::new();
-        let end = 0x2000 + 200u32;
-        let mut rom = vec![0u8; end as usize + 16];
-        for i in 0..100u32 {
-            let addr = 0x2000 + i * 2;
-            let (b0, b1) = (0x40 + (i as u8 & 0xf), i as u8);
-            lst.push_str(&format!("(2)  {i}/     {addr:X} : {b0:02X}{b1:02X}       nop\n"));
-            rom[addr as usize] = b0;
-            rom[addr as usize + 1] = b1;
-        }
-        lst.push_str("Symbol Table (* = unused):\n");
-
-        // Fresh: every code line matches the ROM.
-        assert!(assert_listing_matches_rom(&lst, &rom, end, "test").is_ok());
-
-        // Stale: the ROM moved under the listing (one byte differs) → hard error.
-        let mut stale = rom.clone();
-        stale[0x2000 + 50] ^= 0xFF;
-        let e = assert_listing_matches_rom(&lst, &stale, end, "test").unwrap_err();
-        assert!(e.contains("STALE"), "expected STALE error, got: {e}");
-
-        // Parser sanity floor: too few checked lines is itself an error.
-        let short = "(2)  0/     2000 : 4E71   nop\nSymbol Table (* = unused):\n";
-        let mut r2 = vec![0u8; 0x2020];
-        r2[0x2000] = 0x4E;
-        r2[0x2001] = 0x71;
-        assert!(assert_listing_matches_rom(short, &r2, 0x2010, "test").unwrap_err().contains("code lines"));
-    }
-
-    /// A vendored excerpt of the real `s4.lst` shape: the END line, the table
-    /// header, a page-header INTERRUPTION mid-table, a `*`-prefixed (unused)
-    /// entry, a sign-extended RAM value, a string value, a char-literal
-    /// value, a float value, a dotted local, and the count terminator.
-    const EXCERPT: &str = "\
-(1)  332/   658B4 : [330]                    endif
-     333/   658B4 :                         END
- AS V1.42 Beta [Bld 212] - Source File main.asm - Page 796 - 07/10/2026 10:03:54 PM
-
-
-  Symbol Table (* = unused):
-  --------------------------
-
- ACCELERATION :                   C - |  AF_BACK :                       FE - |
-*AF_CALLBACK :                   FA - |
-*ARCHITECTURE :                                      \"x86_64-unknown-linux\" - |
- AnimateSprite :               2D78 C |  AnimateSprite.cc_delete :     2E7C C |
- AS V1.42 Beta [Bld 212] - Source File main.asm - Page 797 - 07/10/2026 10:03:54 PM
-
-
- Air_FloorLandBanded.grounded :                                       10A9A C |
- Player_1 :                                                FFFFFFFFFFFF89EE C |
-*CONSTPI :        3.141592653589793 - | *CROSS_RESET_MAGIC :         'INIT' - |
- GAME_CONSOLE :  \"SEGA GENESIS    \" - |
-
-   3296 symbols
-    426 unused symbols
-
- AS V1.42 Beta [Bld 212] - Source File main.asm - Page 830 - 07/10/2026 10:03:54 PM
-
-
-  Defined Macros:
-  ---------------
-";
-
-    #[test]
-    fn excerpt_parses_every_format_fact() {
-        let l = parse_listing(EXCERPT).expect("excerpt must parse");
-        // The END line address.
-        assert_eq!(l.end_addr, 0x658B4);
-        // Two-per-line entries + the equ type mark.
-        assert_eq!(l.get("ACCELERATION").unwrap(), 0xC);
-        assert_eq!(l.get("AF_BACK").unwrap(), 0xFE);
-        // `*` = unused — still parsed.
-        assert_eq!(l.get("AF_CALLBACK").unwrap(), 0xFA);
-        // CODE entries + a dotted local.
-        assert_eq!(l.get("AnimateSprite").unwrap(), 0x2D78);
-        assert_eq!(l.get("AnimateSprite.cc_delete").unwrap(), 0x2E7C);
-        // An entry AFTER the page-header interruption, full-line form.
-        assert_eq!(l.get("Air_FloorLandBanded.grounded").unwrap(), 0x10A9A);
-        // Sign-extended RAM value truncates to the u32 VMA.
-        assert_eq!(l.get("Player_1").unwrap(), 0xFFFF_89EE);
-        // Non-numeric values are skipped, not mangled.
-        assert!(l.get("ARCHITECTURE").is_err());
-        assert!(l.get("CONSTPI").is_err());
-        assert!(l.get("CROSS_RESET_MAGIC").is_err());
-        assert!(l.get("GAME_CONSOLE").is_err());
-        // Provenance stamp from the page header.
-        assert_eq!(l.stamp, "07/10/2026 10:03:54 PM");
-        assert_eq!(l.symbol_count(), 7);
-    }
-
-    #[test]
-    fn unknown_symbol_is_a_hard_error_naming_it() {
-        let l = parse_listing(EXCERPT).unwrap();
-        let err = l.get("RunObjects").unwrap_err();
-        assert!(err.contains("RunObjects"), "error must name the symbol: {err}");
-        // Exact match only — a prefix of a known name resolves nothing.
-        assert!(l.get("AnimateSprite.cc").is_err());
-    }
-
-    #[test]
-    fn duplicate_symbol_name_is_a_hard_error() {
-        let dup = "\
-     10/    100 :                         END
-
-  Symbol Table (* = unused):
-  --------------------------
-
- Twice :                          1 - |  Twice :                          2 - |
-
-   2 symbols
-";
-        let err = parse_listing(dup).unwrap_err();
-        assert!(err.contains("duplicate symbol `Twice`"), "{err}");
-    }
-
-    #[test]
-    fn missing_table_or_end_line_fail_loudly() {
-        assert!(parse_listing("just noise\n").unwrap_err().contains("Symbol Table"));
-        let no_end = "\
-  Symbol Table (* = unused):
-  --------------------------
- A :                              1 - |
-
-   1 symbols
-";
-        assert!(parse_listing(no_end).unwrap_err().contains("END"));
+    /// A test `Listing` from `(name, addr)` pairs + the ROM-end address (the
+    /// sigil-native `Listing::from_symbols` path — the asl `.lst` parser is gone).
+    fn test_listing(pairs: &[(&str, u32)], end: u32) -> Listing {
+        let map: HashMap<String, u32> = pairs.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+        Listing::from_symbols(map, end, "test".into())
     }
 
     #[test]
@@ -1140,14 +794,15 @@ mod tests {
     /// the computed len, the offset subtraction, and determinism.
     #[test]
     fn resolve_and_render_from_the_excerpt() {
-        // A second "debug" listing: everything slid by +0x10, END larger.
-        let debug_excerpt = EXCERPT
-            .replace("2D78", "2D88")
-            .replace("2E7C", "2E8C")
-            .replace("658B4", "673A2")
-            .replace("FFFFFFFFFFFF89EE", "FFFFFFFFFFFF8A10");
-        let plain = parse_listing(EXCERPT).unwrap();
-        let debug = parse_listing(&debug_excerpt).unwrap();
+        // A second "debug" listing: the region + local slid +0x10, END larger.
+        let plain = test_listing(
+            &[("AnimateSprite", 0x2D78), ("AnimateSprite.cc_delete", 0x2E7C), ("Player_1", 0xFFFF_89EE)],
+            0x658B4,
+        );
+        let debug = test_listing(
+            &[("AnimateSprite", 0x2D88), ("AnimateSprite.cc_delete", 0x2E8C), ("Player_1", 0xFFFF_8A10)],
+            0x673A2,
+        );
 
         let manifest = load_manifest(
             r#"
@@ -1214,12 +869,9 @@ tests = ["animate_port"]
     /// prints ONLY the debug resume org.
     #[test]
     fn debug_only_region_resolves_debug_listing_only() {
-        let debug_excerpt = EXCERPT.replace("658B4", "673A2").replace(
-            " GAME_CONSOLE :",
-            " SelfTest :                    6FDC C |  SelfTest.done :               7204 C |\n GAME_CONSOLE :",
-        );
-        let plain = parse_listing(EXCERPT).unwrap();
-        let debug = parse_listing(&debug_excerpt).unwrap();
+        let plain = test_listing(&[("AnimateSprite", 0x2D78)], 0x658B4);
+        let debug =
+            test_listing(&[("SelfTest", 0x6FDC), ("SelfTest.done", 0x7204)], 0x673A2);
         assert!(plain.get("SelfTest").is_err(), "premise: SelfTest absent from plain");
         let manifest = load_manifest(
             r#"
@@ -1283,9 +935,10 @@ plain_anchor = "AnimateSprite"
     fn non_invariant_offset_without_per_shape_is_rejected() {
         // Debug side: the LOCAL slides +0x20 but the base only +0x10 —
         // the offset is not invariant.
-        let debug_excerpt = EXCERPT.replace("2D78", "2D88").replace("2E7C", "2EAC");
-        let plain = parse_listing(EXCERPT).unwrap();
-        let debug = parse_listing(&debug_excerpt).unwrap();
+        let plain =
+            test_listing(&[("AnimateSprite", 0x2D78), ("AnimateSprite.cc_delete", 0x2E7C)], 0x658B4);
+        let debug =
+            test_listing(&[("AnimateSprite", 0x2D88), ("AnimateSprite.cc_delete", 0x2EAC)], 0x673A2);
         let manifest = load_manifest(
             r#"
 [rom]

@@ -1441,6 +1441,7 @@ pub fn build_rom_chained_with_listing(
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    check_object_bank_budget(&resolved, &map)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
     Ok((rom, listing))
 }
@@ -1459,6 +1460,29 @@ pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec
     append_deb2_appendix(aeon, &rom, &listing, profile.debug, floor)
 }
 
+/// Resolve `profile`'s frozen-table chained layout into its final ROM sections (the
+/// SAME placement `build_rom_chained_with_listing` emits, minus the drift check / link /
+/// emit). The shared substrate for the placement gate and the P4a LMA-correct
+/// size-table derivation: both read `section.lma + label.offset` off these sections.
+fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
+    if !matches!(profile.size_source, SizeSource::Frozen(_)) {
+        return Err("resolve_frozen_sections: profile is not a Frozen target".into());
+    }
+    if profile.sound_on {
+        ensure_generated(aeon);
+    }
+    let as_side = assemble_as_side(aeon, profile)?;
+    let (emp, _) = build_emp(aeon, profile)?;
+    let mut sections: Vec<Section> = as_side.sections;
+    sections.extend(emp);
+    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
+    let spans = declared_spans_by_index(&sections, &true_bases)?;
+    let all = apply_declared_chain(sections, &true_bases, &spans);
+    let stubs = SymbolTable::new();
+    sigil_link::resolve_layout(&all, &stubs, true)
+        .map_err(|d| format!("frozen resolve: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))
+}
+
 /// Resolve `profile`'s frozen-table chained layout and return, for every ROM section
 /// carrying a frozen-table label whose RESOLVED base differs from the frozen truth, a
 /// `(label, got, want)` mismatch. An empty result proves the frozen chainer placed every
@@ -1472,19 +1496,7 @@ pub fn frozen_placement_mismatches(
         SizeSource::Frozen(t) => t.clone(),
         _ => return Err("frozen_placement_mismatches: profile is not a Frozen target".into()),
     };
-    if profile.sound_on {
-        ensure_generated(aeon);
-    }
-    let as_side = assemble_as_side(aeon, profile)?;
-    let (emp, _) = build_emp(aeon, profile)?;
-    let mut sections: Vec<Section> = as_side.sections;
-    sections.extend(emp);
-    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
-    let spans = declared_spans_by_index(&sections, &true_bases)?;
-    let all = apply_declared_chain(sections, &true_bases, &spans);
-    let stubs = SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(&all, &stubs, true)
-        .map_err(|d| format!("frozen placement: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+    let resolved = resolve_frozen_sections(aeon, profile)?;
     let mut rows: Vec<(String, u32, u32)> = Vec::new();
     for s in &resolved {
         if !is_rom_section(s) {
@@ -1513,6 +1525,85 @@ pub fn frozen_placement_mismatches(
         }
     }
     Ok(rows)
+}
+
+/// P4a — THE LMA-CORRECT SIZE DERIVATION. Re-derive `profile`'s frozen size table from
+/// SIGIL'S OWN resolved layout, retiring the asl-`.lst` parse (`capture_offcanon`, row
+/// 34). Resolves the frozen chain and reads each boundary label's ROM address =
+/// `section.lma + label.offset`. This is LMA-correct where a naive `.lst` re-parse is
+/// NOT: a phased section (z80 idle, vma `$0`) reports its ROM LMA `$3d8`, and a
+/// section-END label (offset == the sigil-resolved `image_len`) reports the address
+/// sigil COMPUTES, not one asl listed. The label SET is exactly the committed table's
+/// keys (the boundary set the chainer needs); every one must be found or the derivation
+/// fails loud (a vanished boundary label is a real regression, not a silent drop).
+///
+/// The derivation bootstraps off the committed table (the profile's `SizeSource::Frozen`
+/// pins the labeled sections to place them), then reads the resolved positions back —
+/// so for a byte-correct build it REPRODUCES the committed addresses exactly. That
+/// fixpoint IS the proof: sigil's own resolve is now the authority; nothing parses asl.
+pub fn derive_frozen_table(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<std::collections::BTreeMap<String, u32>, String> {
+    let want: std::collections::HashSet<String> = match &profile.size_source {
+        SizeSource::Frozen(t) => t.keys().cloned().collect(),
+        _ => return Err("derive_frozen_table: profile is not a Frozen target".into()),
+    };
+    let resolved = resolve_frozen_sections(aeon, profile)?;
+    let mut out: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
+    for s in &resolved {
+        if !is_rom_section(s) {
+            continue;
+        }
+        for l in &s.labels {
+            if want.contains(&l.name) {
+                // LMA base (ROM address), NOT vma_origin — the phased-section fix.
+                out.insert(l.name.clone(), s.lma.wrapping_add(l.offset));
+            }
+        }
+    }
+    // SECTION-END boundary labels (`<Stem>_End`) are the one-past-end markers asl listed
+    // as symbols but sigil represents IMPLICITLY as a section terminus — the `.emp` data
+    // modules (sonic_anims/particle_anims) and the native z80 idle emit no explicit `_End`
+    // label, and the `.asm` twins that once carried them are deleted. Synthesize each from
+    // its owning section's resolved geometry: the section whose base carries `<Stem>` ends
+    // (one-past) at `section.lma + image_len` — LMA-correct for the phased z80 idle too.
+    for name in want.iter() {
+        if out.contains_key(name) {
+            continue;
+        }
+        let Some(stem) = name.strip_suffix("_End") else { continue };
+        let owner: Vec<&Section> = resolved
+            .iter()
+            .filter(|s| is_rom_section(s) && s.labels.iter().any(|l| l.name == stem))
+            .collect();
+        match owner.as_slice() {
+            [s] => {
+                out.insert(name.clone(), s.lma.wrapping_add(s.image_len()));
+            }
+            [] => {} // reported below
+            many => {
+                return Err(format!(
+                    "derive_frozen_table({}): section-end label `{name}` stem `{stem}` names \
+                     {} sections — ambiguous",
+                    profile.name,
+                    many.len()
+                ));
+            }
+        }
+    }
+    // Fail loud if any committed boundary label is no longer resolvable.
+    let missing: Vec<&String> = want.iter().filter(|n| !out.contains_key(*n)).collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "derive_frozen_table({}): {} committed boundary label(s) absent from the resolved \
+             layout (first: {:?}) — a real regression, not a silent drop",
+            profile.name,
+            missing.len(),
+            missing.first()
+        ));
+    }
+    Ok(out)
 }
 
 /// THE native whole-ROM build: AS residual (all gates ON, sound BINCLUDE) + every
@@ -1594,8 +1685,123 @@ pub fn build_native_rom_with_listing(
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    check_object_bank_budget(&resolved, &map)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))?;
     Ok((rom, listing))
+}
+
+/// Build the sigil-native SYMBOL LISTING for one shape (Stage-3 P4c: the `pins.rs`
+/// source that replaces parsing asl's `.lst`). Resolves the canonical pinned layout,
+/// dumps the fully-resolved symbol table (labels + folded equates — incl. the
+/// `MDDBG__*` link-external-base table), DEMANGLES the `.emp` locals (`$module$Parent$
+/// local` → `Parent.local`, matching the deb2 appendix) so a dotted-local offset spec
+/// like `AnimateSprite.cc_delete` resolves, and returns `(name → address, end_addr)`.
+/// A demangle collision on distinct addresses is a hard error (the asl parser rejected
+/// duplicate names; this preserves that guarantee).
+pub fn sigil_native_symbol_listing(
+    aeon: &Path,
+    debug: bool,
+) -> Result<(HashMap<String, u32>, u32), String> {
+    let resolved = resolve_pinned_sections(aeon, debug)?;
+    let stubs = SymbolTable::new();
+    let raw = sigil_link::resolved_symbols(&resolved, &stubs);
+    // Demangle via the deb2 path so dotted locals resolve; keep RAM + ROM + equates.
+    let listing_syms: Vec<sigil_link::ListingSymbol> = raw
+        .iter()
+        .map(|(name, val)| sigil_link::ListingSymbol {
+            name: name.clone(),
+            value: *val as u32,
+            is_equate: false,
+            unused: false,
+        })
+        .collect();
+    let demangled = sigil_link::demangle_symbols(&listing_syms);
+    // Demangle can map two DISTINCT internal `.emp` locals (e.g. `raise_error` scratch
+    // labels in sibling procs) to the same `Parent.local` — the asl `.lst` never did
+    // (its names were already unique). Such an alias is AMBIGUOUS, so it is DROPPED, not
+    // resolved to an arbitrary one. Every symbol the manifest queries is unique (a proc
+    // name or a global), so it survives; a query for a dropped/absent name fails loudly
+    // in `resolve()` (naming it) — never a silent wrong value.
+    let mut values: HashMap<String, std::collections::HashSet<u32>> = HashMap::new();
+    for s in &demangled {
+        values.entry(s.name.clone()).or_default().insert(s.value);
+    }
+    let mut map: HashMap<String, u32> = values
+        .into_iter()
+        .filter_map(|(name, vs)| if vs.len() == 1 { Some((name, vs.into_iter().next().unwrap())) } else { None })
+        .collect();
+    // Section-END markers (`<Base>_End`): the one-past-end boundary labels asl listed but
+    // sigil emits IMPLICITLY (the `.emp` data modules carry no `_End` label; the `.asm`
+    // twins that did are deleted). Synthesize each from its section's resolved geometry —
+    // the base (offset-0) label's name + `_End` at `lma + image_len` — matching P4a's
+    // `derive_frozen_table`. Real labels win (only added when absent).
+    for s in &resolved {
+        if !is_rom_section(s) {
+            continue;
+        }
+        if let Some(base) = s.labels.iter().find(|l| l.offset == 0) {
+            let end_name = format!("{}_End", base.name);
+            map.entry(end_name).or_insert_with(|| s.lma.wrapping_add(s.image_len()));
+        }
+    }
+    let end_addr = *map
+        .get("EndOfRom")
+        .ok_or("sigil_native_symbol_listing: `EndOfRom` absent from the resolved layout")?;
+    Ok((map, end_addr))
+}
+
+/// Load the project memory map (`sigil.map.toml`) — the same file `emit_rom` reads.
+pub fn project_memory_map() -> Result<sigil_ir::map::MemoryMap, String> {
+    let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("load sigil.map.toml: {e}"))
+}
+
+/// Resolve the canonical PINNED layout into its final ROM sections (assemble all-gates-on
+/// AS side + place every emp module at its pin + `resolve_layout`) — the substrate the
+/// object-bank budget gate reads `__BUDGET_DATA` off. Mirrors `build_native_rom_with_
+/// listing`'s resolve without the listing/link/emit tail.
+pub fn resolve_pinned_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>, String> {
+    ensure_generated(aeon);
+    let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
+    let (emp_sections, _) = build_native_emp(aeon, debug)?;
+    let mut sections = as_side.sections;
+    sections.extend(emp_sections);
+    let stubs = SymbolTable::new();
+    sigil_link::resolve_layout(&sections, &stubs, true).map_err(|d| {
+        format!("resolve_pinned_sections: resolve_layout: {} diag(s); first: {:?}", d.len(), d.first())
+    })
+}
+
+/// The object code bank's used cursor = the resolved LMA of `__BUDGET_DATA`, the engine
+/// marker (`engine.inc`) at the object bank's end / data region start. `None` if absent
+/// (a game without the marker). `ObjCodeBase`/`__BUDGET_OBJBANK` sit at the bank BASE;
+/// this cursor is the bank TERMINUS the `if * > $20000` guard checked.
+pub fn object_bank_cursor(resolved: &[Section]) -> Option<u32> {
+    for s in resolved {
+        for l in &s.labels {
+            if l.name == "__BUDGET_DATA" {
+                return Some(s.lma.wrapping_add(l.offset));
+            }
+        }
+    }
+    None
+}
+
+/// Enforce the object-code-bank budget the map's `object_bank` region declares: the
+/// `__BUDGET_DATA` cursor must not exceed `lma_base + size` (`$20000`). Returns the used
+/// byte count. A missing region or marker is a no-op (`Ok(0)`) — additive, so this is
+/// the map-owned successor to `engine.inc`'s `if * > $20000 / error`, not a new gate that
+/// can spuriously fail a game that declares neither. Runs on every native build (both the
+/// pinned canonical driver and the off-canonical chainer feed it their resolved sections).
+pub fn check_object_bank_budget(
+    resolved: &[Section],
+    map: &sigil_ir::map::MemoryMap,
+) -> Result<u32, String> {
+    match object_bank_cursor(resolved) {
+        Some(cursor) => map.check_budget("object_bank", cursor),
+        None => Ok(0),
+    }
 }
 
 /// CRC-32 (IEEE, the campaign provenance standard alongside byte-size). Small
@@ -1616,6 +1822,20 @@ pub fn crc32(data: &[u8]) -> u32 {
     !c
 }
 
+/// The header-neutral ASSEMBLED ANCHOR CRC over `bytes[0, eor)`: the checksum (`$18E`)
+/// and ROM-end-pointer (`$1A4`) header fields are zeroed before the CRC, so it is the
+/// drift-stable invariant the PROVENANCE anchors record (`e5765873` &c). `eor` is the
+/// target's `EndOfRom`; `bytes` may be a full golden file (only its prefix is read).
+pub fn assembled_anchor_crc(bytes: &[u8], eor: usize) -> u32 {
+    let mut prefix = bytes[..eor.min(bytes.len())].to_vec();
+    for i in crate::CHECKSUM_FIELD_RANGE.chain(crate::ROM_END_FIELD_RANGE) {
+        if i < prefix.len() {
+            prefix[i] = 0;
+        }
+    }
+    crc32(&prefix)
+}
+
 /// The convsym `as_lst` filter build.sh passes verbatim (`build.sh:170-171`).
 /// `z[A-Z].+` currently matches zero Aeon labels; passed for parity.
 pub const CONVSYM_FILTER: &str = "z[A-Z].+";
@@ -1629,13 +1849,14 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 
 /// THE Option-A full-file native build: the assembled ROM (checksum-folded by
 /// `emit_rom`) + the sigil-canonical deb2 appendix, produced by driving the REAL
-/// `tools/convsym` over sigil's own listing and `tools/fixheader` over the result —
-/// byte-for-byte the `build.sh:169-175` post-pipeline, but fed sigil's `.lst`
-/// instead of asl's. Deterministic. The assembled prefix `[0, EndOfRom)` stays the
-/// asl-witnessed correctness anchor (header-neutral PRIMARY CRC); the appendix is
+/// `tools/convsym` over sigil's own listing, then re-fixing the Sega header NATIVELY
+/// (the ROM-end pointer `$1A4` + the `$18E` checksum — was `tools/fixheader`, folded
+/// in at Stage-3 P4d). Byte-for-byte the `build.sh:169-175` post-pipeline, fed sigil's
+/// `.lst` instead of asl's. Deterministic. The assembled prefix `[0, EndOfRom)` stays
+/// the asl-witnessed correctness anchor (header-neutral PRIMARY CRC); the appendix is
 /// sigil-canonical (the frozen golden is sigil's OWN full file, not asl's).
 ///
-/// `tools_dir` is `<aeon>/tools` (convsym + fixheader live there). Writes the ROM +
+/// Only `<aeon>/tools/convsym` is shelled now (fixheader retired); writes the ROM +
 /// `.lst` to a fresh temp dir so parallel shapes never collide.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
@@ -1662,11 +1883,8 @@ pub fn append_deb2_appendix(
 ) -> Result<Vec<u8>, String> {
     let tools = aeon.join("tools");
     let convsym = tools.join("convsym");
-    let fixheader = tools.join("fixheader");
-    for (name, p) in [("convsym", &convsym), ("fixheader", &fixheader)] {
-        if !p.exists() {
-            return Err(format!("{name} not found at {}", p.display()));
-        }
+    if !convsym.exists() {
+        return Err(format!("convsym not found at {}", convsym.display()));
     }
 
     // A unique temp dir (pid + shape + a monotonic counter) so parallel builds
@@ -1707,20 +1925,18 @@ pub fn append_deb2_appendix(
             String::from_utf8_lossy(&out.stderr)
         ));
     }
-    // fixheader: re-checksum the appended file (build.sh:175).
-    let fout = std::process::Command::new(&fixheader)
-        .arg(&bin)
-        .output()
-        .map_err(|e| format!("spawn fixheader: {e}"))?;
-    if !fout.status.success() {
-        return Err(format!(
-            "fixheader failed (rc {:?}): {}",
-            fout.status.code(),
-            String::from_utf8_lossy(&fout.stderr)
-        ));
-    }
-    let full = std::fs::read(&bin).map_err(|e| e.to_string())?;
+    let mut full = std::fs::read(&bin).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_dir_all(&dir);
+
+    // Re-fix the Sega header over the APPENDED file (was `tools/fixheader`, retired at
+    // Stage-3 P4d — a native fold, verified byte-identical to fixheader's output):
+    //   (1) the ROM-end pointer at $1A4 (4 bytes BE) = the last byte's address (len-1);
+    //   (2) the checksum at $18E over [$200, len) — AFTER (1), since $1A4 is in range.
+    if full.len() >= 0x1A8 {
+        let end = (full.len() as u32).wrapping_sub(1);
+        full[0x1A4..0x1A8].copy_from_slice(&end.to_be_bytes());
+        sigil_link::apply_header_checksum(&mut full);
+    }
 
     // POSITIVE CONTROL (assert-PRESENCE, §S1.4 / condition 2b): the deb2 magic MUST
     // sit at EndOfRom and the appendix MUST be non-trivial — a silent convsym

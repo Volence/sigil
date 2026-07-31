@@ -2179,3 +2179,123 @@ P4 re-derives them from the resolved LMAs, closing the asl-derived-constants era
 Captured aeon `0afc1c9`; canonical refs restored to `7f071417`/`0b8efc7a`. Strict
 fully green; every full-file gate re-pinned (`native_full_rom::SIGIL_FULL_{PLAIN,DEBUG}`,
 `native_offcanonical_full` config_a/b + demo/demo_debug).
+
+## Stage-3 P4a — THE LMA-CORRECT SIZE DERIVATION (the last asl-derived constants retire)
+
+The four `golden/offcanonical_sizes/*.txt` boundary tables are **re-derived from sigil's
+OWN resolved layout** — the asl-`.lst` parse path (`capture_offcanon` +
+`capture_offcanonical_sizes.sh`, which parsed asl's `Symbol Table` via
+`repin::parse_listing`) is RETIRED. This closes the asl-derived-constants era the S1.2
+capture opened: nothing in the system now requires an asl listing for an address.
+
+**The derivation** (`native::derive_frozen_table`, driver `derive_offcanon`, script
+`derive_offcanonical_sizes.sh`): resolve the frozen chain (the SAME placement the
+off-canonical gates build) and read each boundary label's ROM address =
+`section.lma + label.offset` off the resolved sections. This is LMA-correct where the
+P2d-noted naive `.lst` re-parse was NOT:
+- a PHASED section (the native z80 idle, vma `$0`) reports its ROM LMA `$3d8`, not `$0`;
+- a section-END marker (`Z80_IdleProgram_End`, `Ani_Sonic_End`, `Ani_Particle_End`) —
+  which the deleted `.asm` twins once carried and the `.emp` modules do NOT emit — is
+  SYNTHESIZED from its owning section's resolved geometry (`lma + image_len`), not
+  dropped.
+
+**Proof — the tables are BYTE-IDENTICAL in their label rows** (only the provenance header
+changes, asl → sigil-native): `native_offcanonical_placement::{demo,demo_debug,config_a,
+config_b}_size_table_rederives_native` assert `derive_frozen_table == the committed table`
+for all four; the six-target scratch build reproduces every golden unchanged (the anchors
+`cfda98d3`/`20c5571d`/`3d9bac53`/`fd3f7f8e` + full CRCs `705a5871`/`37ded207`/`1b4c49d2`/
+`bfe2509e` recomputed by the derivation itself). **P4 is byte-neutral: no golden or pin
+moves.** t24 `config_b_doctored_size_table_breaks_the_build` doctors one boundary address
+`+2` and proves the chained ROM then DIVERGES from the golden (the table is genuinely
+load-bearing — a corrupted `*.txt` cannot slip past the placement gate).
+
+The re-derived tables carry the new provenance header (`# GENERATED — derive_offcanon.
+SIGIL-NATIVE …`), each tied to its committed golden blob (full CRC + the header-neutral
+assembled anchor). Post-flip semantics UNCHANGED: on any ruled golden re-baseline they
+re-derive from sigil (`derive_offcanonical_sizes.sh`); asl is never required again.
+
+Aeon read-only; sigil branch `stage3-p4`. Strict 2863/0 (2 ignored) — +5 gates (4
+re-derivation proofs + the t24 doctored-table control), no gate retired.
+
+## Stage-3 P4b — THE OBJECT-BANK BUDGET AS A MAP-REGION CHECK (byte-neutral)
+
+`sigil.map.toml` grows into the placement manifest: it declares the ROM's fixed region
+geometry (the `rom` terminus, the `object_bank` BUDGET window at `$10000` size `$10000`,
+the phased Z80 MT bank) and the object-code-bank budget becomes a MAP-OWNED check.
+`RegionKind::ObjectBank` + `MemoryMap::check_budget` verify the engine's `__BUDGET_DATA`
+cursor (the object bank terminus, `engine.inc`) stays `<= $20000`; `native::check_object_
+bank_budget` runs it on every native build (both the pinned canonical driver and the
+off-canonical chainer, before `emit_rom`). The AS-side `if * > $20000 / error` in
+`engine.inc` is DELETED — a comptime zero-byte guard, so its removal is byte-neutral; the
+authority migrates to the map. The canonical object bank uses `$128C` of `$10000` (~7%).
+
+**Byte-neutral — no golden or pin moves** (six-target proof unchanged: `7f071417`/
+`0b8efc7a` + the four off-canonical goldens/anchors hold). t24
+`native_object_bank_budget::doctored_tiny_budget_fails_the_check` shrinks the region to
+`$100` on the real resolved layout and proves the check then fails loudly (the deleted AS
+guard's job, now map-owned). +3 gates (the `map.rs` unit test + the two budget gates);
+strict 2866/0 (2 ignored). SCOPE: the FULL pins→map placement flip (per-game order +
+sizes into the map, oracles re-pointed to map lookups) is capstone-ledgered — the pins
+ruling keeps `pins.rs` as the placement source (sigil-derived in P4c).
+
+Aeon commit: `engine.inc` object-bank guard migration (byte-neutral, references restored
+to `7f071417`/`0b8efc7a`).
+
+## Stage-3 P4c — `pins.rs` BECOMES A SIGIL-DERIVED OUTPUT; the asl-`.lst` parse dies
+
+The pins ruling (middle path): `pins.rs` stays the placement source the `_port` window
+oracles slice by (full retirement = capstone), but its ASL DERIVATION dies. So:
+
+- **`pins.rs` regenerates from SIGIL'S OWN resolved layout.** `native::sigil_native_
+  symbol_listing` resolves the canonical pinned layout (both shapes) and dumps the
+  fully-resolved symbol table via the new `sigil_link::resolved_symbols` — labels at
+  their VMA + every `equ_sym` folded to a constant, INCLUDING the `MDDBG__*` table off
+  the link-external `ErrorHandler` base — then DEMANGLES the `.emp` locals
+  (`$module$Parent$local` → `Parent.local`, matching the deb2 appendix; ambiguous
+  demangle aliases dropped) and SYNTHESIZES the section-END markers (`<Base>_End` at
+  `lma + image_len`, the P4a technique). The repin bin feeds these two `Listing`s
+  (built via the new `Listing::from_symbols`) to the unchanged `resolve` + `render`.
+  Regenerated once: **every pin VALUE is byte-identical** to the committed table (the
+  placements are golden-proven) — only the provenance header changes (asl → sigil-native).
+- **`repin::parse_listing` + `parse_code_line` + `assert_listing_matches_rom` DELETED**
+  (the asl `Symbol Table`/`.lst` reader + its freshness cross-check); the repin bin no
+  longer reads `s4.lst`/`s4.debug.lst`. Kill-list row 34 CLOSES.
+- **`pins_rs_is_current` came back from retire-ignore as a REAL gate** re-pointed at the
+  native resolve — currency is checkable again, against sigil's own layout, no asl.
+
+Byte-neutral (no ROM, golden, or pin value moves). Strict 2861/0 (1 ignored) — the 6
+asl-format-parser unit tests retire with `parse_listing`; `pins_rs_is_current` un-ignores
+(net −6 +1, ignored 2→1). NEW APIs: `sigil_ir::SymbolTable::iter`,
+`sigil_link::resolved_symbols`, `repin::Listing::from_symbols`,
+`native::{sigil_native_symbol_listing, resolve_pinned_sections, project_memory_map}`.
+Aeon read-only for P4c. Rows 6/58 (the per-shape gate resume `org`s) are NOT dead — they
+still position the AS residual AROUND the natively-placed `.emp` regions in every build;
+they retire only when the map computes all placement (capstone).
+
+## Stage-3 P4d — THE TOOLS DELETION (OQ-A: nothing-retained governs the tree)
+
+The retired asl toolchain binaries are DELETED from the aeon tree: `aeon/tools/{asl,
+as.msg, cmdarg.msg, ioerrs.msg, p2bin, fixheader}` (`tools/.cache` was already absent).
+**`tools/convsym` STAYS** — it consumes sigil's OWN `.lst` (the deb2 appendix), not the
+retired toolchain.
+
+**`fixheader` folded natively (the precondition catch).** The grep-sweep found `fixheader`
+was still shelled by `append_deb2_appendix` — it re-fixes the appended file's `$1A4`
+ROM-end pointer + `$18E` checksum AFTER convsym grows the file (the design's "fixheader
+redundant" held only for the assembled ROM, not the appended one). Folded into native
+code: `full[$1A4..$1A8] = (len-1).to_be_bytes()` then `sigil_link::apply_header_checksum`
+(over `[$200, len)`). Verified byte-identical to fixheader (reverse-engineered from the
+golden: `$1A4 = 0x00064a91 = len-1`, `$18E = 0x662c = sum`) — the six full-file goldens
+reproduce unchanged, so the tool deletion is byte-neutral.
+
+**The ISA vector-corpus regen (OQ-A cost, surfaced).** `gen_{z80,m68k}_vectors`
+(sigil-isa) + `gen_snippet_vectors` (sigil-frontend-as) shelled `tools/asl`+`p2bin` to
+MINT the golden vectors — §2.3's "surviving independent-asl witness." Re-pointed to an
+`ASL_BIN`/`P2BIN_BIN` env-var hook, FAIL-LOUD ("install the Macro Assembler AS and set
+ASL_BIN"). The committed vectors stay the frozen witness (CI never needs asl); extending
+the corpus for a new post-flip instruction shape survives OUT-OF-REPO (README documents
+the path). Nothing is retained in-tree — the accepted OQ-A loss, eyes open.
+
+Precondition swept clean (build.sh / tools/*.py / prebuild.sh / CI / the harness): no
+live shell-out to a deleted tool remains (the residual `tools/asl` mentions are
+byte-provenance comments). Strict 2861/0 (1 ignored). Aeon commit: the `tools/` deletion.

@@ -65,6 +65,13 @@ impl SymbolTable {
         }
     }
 
+    /// Iterate every defined `(name, value)` entry (deterministic, key-sorted —
+    /// the backing store is a `BTreeMap`). Used to dump the fully-resolved symbol
+    /// table (the sigil-native `pins.rs` source, Stage-3 P4c).
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &SymbolValue)> {
+        self.entries.iter()
+    }
+
     /// Whether any defined symbol's key ends with `suffix`. Used by the linker's
     /// unexported-label hint (C1 item 5): a missing `Owner.label` reference is
     /// contrasted against the hidden `$module$Owner$label` mangled form of a

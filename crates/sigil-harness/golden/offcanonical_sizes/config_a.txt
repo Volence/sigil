@@ -1,11 +1,15 @@
-# GENERATED — capture_offcanon. FROZEN asl-derived region-boundary addresses.
-# These are PERISHABLE (no asl after the flip) and are GOLDEN PROVENANCE: the
-# declared per-region sizes (addr[end]-addr[start]) reproduce the golden below.
+# GENERATED — derive_offcanon. SIGIL-NATIVE region-boundary addresses (Stage-3 P4a).
+# Derived from sigil's OWN resolved layout (each label's ROM LMA), NOT an asl
+# listing — THE LAST asl-derived constants retire here (kill-list rows 34/95).
+# Section-END markers (`*_End`) are synthesized from the owning section's resolved
+# geometry (lma + image_len); the phased z80 idle reports its ROM LMA. The declared
+# per-region sizes (addr[end]-addr[start]) reproduce the golden below. On any ruled
+# post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
-# reproduces_golden=s4.debug.bin
+# reproduces_golden=config_a.bin
 # golden_crc32=1b4c49d2
+# assembled_anchor=3d9bac53
 # assembled_end=0x5f65a
-# listing_stamp=07/30/2026 02:11:38 PM
 # labels=70
 Ani_Particle 0x257be
 Ani_Particle_End 0x257c6

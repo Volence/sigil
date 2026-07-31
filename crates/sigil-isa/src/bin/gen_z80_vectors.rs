@@ -3,14 +3,13 @@
 //! MANUAL developer tool — NOT run in CI. It derives its snippet strings from the
 //! shared canonical `corpus()` (the SAME list the CI test and Task 9's completeness
 //! gate consume — no second, drifting snippet list); for each snippet it assembles a
-//! `cpu z80 / phase 0` snippet with the real `asl` (asl 1.42) from the Aeon tree,
+//! `cpu z80 / phase 0` snippet with the real `asl` (asl 1.42, out-of-repo — see ASL_BIN, P4d/OQ-A),
 //! extracts the exact bytes with `p2bin`, and (over)writes
 //! `tests/z80_golden_vectors.txt` as `<snippet> => <space-separated uppercase hex>`,
 //! in `corpus()` order. Commit the result.
 //!
 //! ```text
-//! cargo run -p sigil-isa --bin gen-z80-vectors
-//! AEON_DIR=/path/to/aeon cargo run -p sigil-isa --bin gen-z80-vectors
+//! ASL_BIN=/opt/asl/bin/asl cargo run -p sigil-isa --bin gen-z80-vectors
 //! ```
 //!
 //! CI reads the committed file instead (see `tests/z80_golden.rs`); it never
@@ -31,13 +30,22 @@ fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let golden_path = manifest.join("tests/z80_golden_vectors.txt");
 
-    let aeon = std::env::var("AEON_DIR")
-        .unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    let aeon = PathBuf::from(aeon);
-    let asl = aeon.join("tools/asl");
-    let p2bin = aeon.join("tools/p2bin");
-    assert!(asl.is_file(), "asl not found at {} (set AEON_DIR)", asl.display());
-    assert!(p2bin.is_file(), "p2bin not found at {} (set AEON_DIR)", p2bin.display());
+    // asl/p2bin are OUT-OF-REPO since the flip (P4d/OQ-A) — take them from ASL_BIN /
+    // P2BIN_BIN (p2bin defaults to a sibling of asl). Fail loud, never silently skip.
+    let Ok(asl) = std::env::var("ASL_BIN").map(PathBuf::from) else {
+        eprintln!(
+            "gen-z80-vectors: set ASL_BIN to the Macro Assembler AS binary to mint new vectors.\n  \
+             asl was DELETED from the repo at the flip (nothing-retained). Install AS \
+             (http://john.ccac.rwth-aachen.de:8000/as/) and point ASL_BIN at it; the committed \
+             vectors remain the frozen witness. (Stage-3 P4d / OQ-A.)"
+        );
+        std::process::exit(2);
+    };
+    let p2bin = std::env::var("P2BIN_BIN").map(PathBuf::from).unwrap_or_else(|_| {
+        asl.parent().map(|d| d.join("p2bin")).unwrap_or_else(|| PathBuf::from("p2bin"))
+    });
+    assert!(asl.is_file(), "ASL_BIN not a file: {} (install AS, set ASL_BIN)", asl.display());
+    assert!(p2bin.is_file(), "p2bin not found at {} (set P2BIN_BIN)", p2bin.display());
 
     let work = std::env::temp_dir().join("sigil_z80_gen");
     fs::create_dir_all(&work).expect("create work dir");
@@ -45,7 +53,7 @@ fn main() {
     let mut out = String::new();
     let mut count = 0usize;
     for (snippet, _inst) in corpus::corpus() {
-        let bytes = assemble(&aeon, &asl, &p2bin, &work, snippet);
+        let bytes = assemble(&asl, &p2bin, &work, snippet);
         let hex = bytes
             .iter()
             .map(|b| format!("{b:02X}"))
@@ -63,7 +71,7 @@ fn main() {
 }
 
 /// Assemble a single Z80 snippet at `phase 0` and return its machine-code bytes.
-fn assemble(aeon: &Path, asl: &Path, p2bin: &Path, work: &Path, snippet: &str) -> Vec<u8> {
+fn assemble(asl: &Path, p2bin: &Path, work: &Path, snippet: &str) -> Vec<u8> {
     let asm = work.join("gen.asm");
     let p = work.join("gen.p");
     let lst = work.join("gen.lst");
@@ -74,9 +82,11 @@ fn assemble(aeon: &Path, asl: &Path, p2bin: &Path, work: &Path, snippet: &str) -
     let src = format!("        cpu z80\n        phase 0\n        {snippet}\n");
     fs::write(&asm, src).expect("write snippet");
 
+    let msgpath = std::env::var("AS_MSGPATH")
+        .unwrap_or_else(|_| asl.parent().map(|d| d.display().to_string()).unwrap_or_default());
     let asl_out = Command::new(asl)
-        .current_dir(aeon)
-        .env("AS_MSGPATH", "tools")
+        .current_dir(work)
+        .env("AS_MSGPATH", msgpath)
         .env("USEANSI", "n")
         .args([
             "-cpu", "68000", "-q", "-L", "-U",

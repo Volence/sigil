@@ -15,9 +15,10 @@
 
 use std::path::PathBuf;
 
+use sigil_harness::native;
 use sigil_harness::pins;
 use sigil_harness::repin::{
-    diff_pins, load_manifest, parse_listing, render, resolve, strip_provenance, Provenance,
+    diff_pins, load_manifest, render, resolve, strip_provenance, Listing, Provenance,
 };
 
 fn aeon_dir() -> PathBuf {
@@ -30,46 +31,37 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// The committed pins.rs must equal an in-memory regeneration from the live
-/// listings, modulo the `[provenance]` stamp lines (a rebuild that moves no
+/// The committed pins.rs must equal an in-memory regeneration from SIGIL'S OWN
+/// resolved layout, modulo the `[provenance]` stamp lines (a rebuild that moves no
 /// pin is not drift).
 ///
-/// RETIRED-IGNORED at the Stage-2 flip (kill rows 34/95): the guard's subject
-/// — a live asl-format `s4.lst` — no longer exists; the default build writes
-/// a sigil-canonical listing `parse_listing` cannot (and should not) read.
-/// The pins are frozen asl-derived constants under the declared-sizes
-/// doctrine; nothing regenerates them, so currency-drift is structurally
-/// impossible until the pins→map migration (row 95) retires the whole
-/// repin listing-parse path.
+/// RE-POINTED at the sigil-native source (Stage-3 P4c, kill-list row 34): the asl
+/// `.lst` parse is gone; the addresses now come from `native::sigil_native_symbol_
+/// listing` (the fully-resolved symbol table — labels + folded equates incl. MDDBG,
+/// `.emp` locals demangled, section-END markers synthesized). Currency is checkable
+/// again — against sigil's own layout, no asl. REFERENCE-DEPENDENT: needs the sibling
+/// aeon tree (`AEON_DIR`) + `SIGIL_EMIT` (the resolve builds the sound-on shape).
 #[test]
-#[ignore = "asl listings left the build at the Stage-2 flip (rows 34/95); pins are frozen provenance"]
 fn pins_rs_is_current() {
     let aeon = aeon_dir();
-    let plain_path = aeon.join("s4.lst");
-    let debug_path = aeon.join("s4.debug.lst");
-    let (Ok(plain_txt), Ok(debug_txt)) =
-        (std::fs::read_to_string(&plain_path), std::fs::read_to_string(&debug_path))
-    else {
+    if !aeon.join("s4.bin").exists() {
         if strict_gate() {
-            panic!(
-                "SIGIL_STRICT_GATE set but listings missing: {} / {}",
-                plain_path.display(),
-                debug_path.display()
-            );
+            panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
         }
-        eprintln!("skip: listings not at {} (set AEON_DIR)", aeon.display());
+        eprintln!("skip: aeon tree not present (set AEON_DIR)");
         return;
-    };
-
-    let plain = parse_listing(&plain_txt)
-        .unwrap_or_else(|e| panic!("{}: {e}", plain_path.display()));
-    let debug = parse_listing(&debug_txt)
-        .unwrap_or_else(|e| panic!("{}: {e}", debug_path.display()));
+    }
+    let (pm, pe) = native::sigil_native_symbol_listing(&aeon, false)
+        .unwrap_or_else(|e| panic!("plain resolve: {e}"));
+    let (dm, de) = native::sigil_native_symbol_listing(&aeon, true)
+        .unwrap_or_else(|e| panic!("debug resolve: {e}"));
+    let plain = Listing::from_symbols(pm, pe, "plain".into());
+    let debug = Listing::from_symbols(dm, de, "debug".into());
     let manifest = load_manifest(include_str!("../repin.toml")).expect("repin.toml must load");
     let resolved = resolve(&manifest, &plain, &debug).unwrap_or_else(|e| panic!("resolve: {e}"));
     let prov = Provenance {
-        plain_path: plain_path.display().to_string(),
-        debug_path: debug_path.display().to_string(),
+        plain_path: "sigil-native canonical resolve".into(),
+        debug_path: "sigil-native canonical resolve".into(),
         plain_stamp: plain.stamp.clone(),
         debug_stamp: debug.stamp.clone(),
     };
