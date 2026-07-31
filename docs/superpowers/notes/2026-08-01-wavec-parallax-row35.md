@@ -236,3 +236,29 @@ frame level with zero VBlank/lag cost. KEEP.
   mode-changing transition (single config), so the A/B proves the single-config
   regime (all shipped content). The multi-config correctness is by construction —
   the engine derivation is byte-identical to the harness's, which was the reference.
+
+## Countersign (overseer, own-run)
+
+- Fresh builds from the branches reproduce the chain-8 CRCs exactly (plain
+  `7ec2137a/412127`, debug `229446d4/421958`); `refreeze --check` OK (tip
+  `wave-c-parallax`, chain len 8); strict suite own-run **2861/0/4**.
+- Diff review: the engine write is a semantically faithful transplant of the
+  harness block (same mode-bit derivation, same shadow+dirty, same
+  VDP_CTRL-read command-state reset, same Z80 wrap); the config resolution now
+  reuses `.config_resolved`'s already-loaded a0 (the −64 net); order vs
+  `Section_UpdateColumns` preserved. The null-config drop is the conservative
+  engine contract (no config → no assertion) and unreachable in shipped content.
+- Evidence re-adjudicated from the committed files: render check — full VDP
+  reg file (incl. reg $0B) byte-identical OLD vs NEW at all 3 code-point
+  anchors; RAM identical mod the one moved-return-address stack byte. Soak —
+  VRAM/CRAM/VSRAM identical at all 5 stops (the named bar).
+- **Classification added for the record:** the soak stops' `regs` hashes differ
+  at 3/5 stops OLD vs NEW. This is the established quantum-phase aliasing class,
+  NOT a register-value difference: the identical hash values recur ACROSS sides
+  at shifted stops (OLD stop-2 == NEW stop-1), i.e. the same finite set of
+  mid-VBlank flush snapshots landing at shifted intra-frame phases, exactly the
+  A3-classified residue. The authoritative reg-$0B instrument is the code-point
+  render check, which is identical. Future soak captures should code-point-anchor
+  if reg identity is ever part of their bar.
+- RULING CONFIRMED: KEEP — row-35 hardening + harness-scaffolding removal
+  (kill row 35 closed), net −64 cyc/f on max-H, zero lag delta, OQ-5 honored.
