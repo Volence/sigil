@@ -17,14 +17,14 @@
 //!     surface.
 //! (c) placement genuineness — a wrong-base map moves the section; the
 //!     placed LMA genuinely tracks the map, not an echo/hardcode.
-//! (d) NEW this tranche: PC-RELATIVE TARGET-POSITION genuineness — both
-//!     files carry a cross-seam pc-relative reference (`jbra
-//!     Tile_Cache_GetCollision` — the step-5 tail call; `lea.l
-//!     BootData_VDPRegs(pc), a0`) whose
-//!     bytes encode the DISTANCE to the target. Re-linking with the target
-//!     label phased at a wrong VMA (+4) must change the linked bytes —
-//!     proving the displacement is genuinely computed from the supplied
-//!     symbol position, not echoed from the reference.
+//! (d) CROSS-SEAM TARGET-POSITION genuineness — both files carry a cross-seam
+//!     reference whose bytes encode the target's position: collision_lookup's
+//!     fused `lea Tile_Cache_Collision, a0` (abs.l address, since the
+//!     collision_lookup #1 fusion) and vdp_init's `lea.l BootData_VDPRegs(pc),
+//!     a0` (pc-relative distance). Re-linking with the target label phased at
+//!     a wrong VMA must change the linked bytes — proving the address/distance
+//!     is genuinely computed from the supplied symbol position, not echoed
+//!     from the reference.
 //!
 //! ## Keep-copies convention (per the prior probe files)
 //!
@@ -145,13 +145,14 @@ fn as_sections(asm: &str, lma: u32) -> Vec<Section> {
     sections
 }
 
-/// The four cache-window RAM labels at the PLAIN base (probes run plain-shape
+/// The six cache-window RAM labels at the PLAIN base (probes run plain-shape
 /// only — the shape axis is the port gates' job).
 fn cache_ram_labels() -> Vec<Section> {
-    // Pins-derived: the four labels are consecutive words from Cache_Left_Col
-    // (repin.toml's own +2/+4/+6 derivation). A hardcoded base here silently
-    // de-genuines every probe in this file — RAM layout moves whenever a
-    // preceding cell is added.
+    // Pins-derived: the six labels are consecutive words from Cache_Left_Col
+    // (repin.toml's own +2/+4/+6/+8/+10 derivation). A hardcoded base here
+    // silently de-genuines every probe in this file — RAM layout moves
+    // whenever a preceding cell is added. The fused Collision_GetType
+    // (collision_lookup #1) reads Origin_Col/Origin_Row too.
     let base = pins::CACHE_LEFT_COL.plain;
     as_sections(
         &format!(
@@ -164,20 +165,25 @@ fn cache_ram_labels() -> Vec<Section> {
              Cache_Top_Row:\n\
              \tdc.w 0\n\
              Cache_Bottom_Row:\n\
+             \tdc.w 0\n\
+             Cache_Origin_Col:\n\
+             \tdc.w 0\n\
+             Cache_Origin_Row:\n\
              \tdc.w 0\n"
         ),
         0x0200_0000,
     )
 }
 
-/// `Tile_Cache_GetCollision` phased at `vma` — the genuine plain VMA is
-/// the pinned `TILE_CACHE_GET_COLLISION` position; probe (d) supplies a WRONG one.
-fn tile_cache_label(vma: &str) -> Vec<Section> {
+/// `Tile_Cache_Collision` (the collision array base) phased at `vma` — the
+/// genuine VMA is the pinned `TILE_CACHE_COLLISION` position; probe (d)
+/// supplies a WRONG one to move the fused abs.l `lea` target.
+fn collision_array_label(vma: &str) -> Vec<Section> {
     as_sections(
         &format!(
             "cpu 68000\n\
              phase {vma}\n\
-             Tile_Cache_GetCollision:\n\
+             Tile_Cache_Collision:\n\
              \tdc.b 0\n"
         ),
         0x0280_0000,
@@ -231,8 +237,8 @@ fn link_all(sections: Vec<Section>) -> sigil_link::LinkedImage {
 }
 
 /// Full plain-shape collision_lookup link with the given twin source and
-/// tile-cache VMA.
-fn link_collision(src: &str, twin: &str, tile_cache_vma: &str) -> sigil_link::LinkedImage {
+/// collision-array VMA.
+fn link_collision(src: &str, twin: &str, collision_array_vma: &str) -> sigil_link::LinkedImage {
     let mut sections = place_module(
         src,
         twin,
@@ -241,7 +247,7 @@ fn link_collision(src: &str, twin: &str, tile_cache_vma: &str) -> sigil_link::Li
         &format!("{:#x}", pins::COLLISION_LOOKUP.plain_len),
     );
     sections.extend(cache_ram_labels());
-    sections.extend(tile_cache_label(tile_cache_vma));
+    sections.extend(collision_array_label(collision_array_vma));
     link_all(sections)
 }
 
@@ -263,10 +269,10 @@ fn collision_ref_window(refrom: &[u8]) -> &[u8] {
     w
 }
 
-/// The genuine plain-shape `Tile_Cache_GetCollision` position, as the AS
+/// The genuine plain-shape `Tile_Cache_Collision` position, as the AS
 /// `phase` argument the probes doctor away from.
-fn genuine_tile_cache_vma() -> String {
-    format!("${:X}", pins::TILE_CACHE_GET_COLLISION.plain)
+fn genuine_collision_array_vma() -> String {
+    format!("${:X}", pins::TILE_CACHE_COLLISION.plain)
 }
 
 /// The vdp_init reference window — pins-derived, same rule as
@@ -319,7 +325,7 @@ fn collision_lookup_doctored_ctype_air_twin_produces_different_bytes() {
         "precondition: the twin spells `pub const CTYPE_AIR = 0`"
     );
     let doctored = twin.replace("pub const CTYPE_AIR = 0", "pub const CTYPE_AIR = 1");
-    let linked = link_collision(&src, &doctored, &genuine_tile_cache_vma());
+    let linked = link_collision(&src, &doctored, &genuine_collision_array_vma());
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
@@ -359,8 +365,8 @@ fn vdp_init_doctored_shadow_len_twin_produces_different_bytes() {
 
 /// Compile the real `collision_lookup.emp` WITHOUT its cross-seam sections:
 /// the link must fail LOUD, naming a symbol from the module's own cross-seam
-/// surface (the four `Cache_*` RAM labels widthed via RelaxAbsSym, or the
-/// `Tile_Cache_GetCollision` pc-relative branch target).
+/// surface (the six `Cache_*` RAM labels widthed via RelaxAbsSym, or the
+/// `Tile_Cache_Collision` abs.l lea target).
 #[test]
 fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
@@ -383,11 +389,11 @@ fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
         "Cache_Head_Col",
         "Cache_Top_Row",
         "Cache_Bottom_Row",
-        "Tile_Cache_GetCollision",
+        "Tile_Cache_Collision",
     ];
     assert!(
         err.iter().any(|d| d.level == Level::Error && names.iter().any(|n| d.message.contains(n))),
-        "expected a loud diagnostic naming one of collision_lookup.emp's five cross-seam \
+        "expected a loud diagnostic naming one of collision_lookup.emp's cross-seam \
          symbols, got: {err:?}"
     );
 }
@@ -480,24 +486,24 @@ fn vdp_init_wrong_base_map_places_the_section_at_a_different_address() {
 // Probe (d) — PC-RELATIVE TARGET-POSITION GENUINENESS (new this tranche)
 // ===========================================================================
 
-/// Re-link the real `collision_lookup.emp` with `Tile_Cache_GetCollision`
-/// phased at a WRONG VMA (`$4312`, away from the pinned position): the
-/// tail-call `bra.w`'s displacement bytes must CHANGE — the cross-seam pc-relative
-/// distance is genuinely computed from the supplied symbol position.
+/// Re-link the real `collision_lookup.emp` with `Tile_Cache_Collision`
+/// phased at a WRONG VMA (`$FF3000`, away from the pinned position): the fused
+/// `lea Tile_Cache_Collision, a0`'s abs.l address bytes must CHANGE — the
+/// cross-seam address is genuinely computed from the supplied symbol position.
 ///
 /// FALSIFIED (restore-real-value): with the pinned position the linked bytes
 /// equal the reference window (the port gate).
 #[test]
-fn collision_lookup_wrong_tile_cache_vma_changes_the_bra_bytes() {
+fn collision_lookup_wrong_collision_array_vma_changes_the_lea_bytes() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
     let Some(refrom) = read_reference("s4.bin") else { return };
-    let linked = link_collision(&src, &twin, "$4312");
+    let linked = link_collision(&src, &twin, "$FF3000");
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_ne!(
         section.bytes,
         collision_ref_window(&refrom),
-        "a moved Tile_Cache_GetCollision must change the bra.w displacement bytes"
+        "a moved Tile_Cache_Collision must change the lea abs.l address bytes"
     );
 }
 
@@ -542,7 +548,7 @@ fn collision_lookup_undoctored_compile_equals_the_reference_window() {
     let Some(src) = real_src("engine/level", "collision_lookup.emp") else { return };
     let Some(twin) = twin_src() else { return };
     let Some(refrom) = read_reference("s4.bin") else { return };
-    let linked = link_collision(&src, &twin, &genuine_tile_cache_vma());
+    let linked = link_collision(&src, &twin, &genuine_collision_array_vma());
     let section = linked.section("collision_lookup").expect("collision_lookup section");
     assert_eq!(
         section.bytes,
