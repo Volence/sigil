@@ -416,7 +416,7 @@ const DUMMY_REGION: Region =
 /// CONFIG-B (off-canonical no-sound): sonic4 game, SOUND_DRIVER_ENABLED OFF, plain.
 /// Registry = the sonic4 set MINUS `engine.sound_api` (no sound caller) PLUS the Z80
 /// idle (kill row 55): with `SIGIL_EMP_Z80_INIT` on, boot_data.asm's no-sound else-arm
-/// gates off `z80_init.asm` and `z80_init.emp`'s `z80_idle` section places at the
+/// takes the numeric-size path and `z80_init.emp`'s `z80_idle` section places at the
 /// frozen `Z80_IdleProgram` base (0x3d8). Sizes from `config_b.txt`.
 pub fn config_b_profile() -> GameProfile {
     let mut registry: Vec<ModuleSpec> =
