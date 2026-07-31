@@ -1,0 +1,129 @@
+# provenance.toml — the append-only golden provenance chain (§17 optimization arc).
+#
+# THE MODEL SHIFT this file encodes: post-flip the six golden blobs in this directory
+# are SIGIL'S OWN frozen output. For UNCHANGED code they are a perfect regression
+# oracle. A deliberate byte-CHANGING optimization proves correctness on the EMULATOR
+# (the oracle A/B), then RE-FREEZES the goldens as the new regression baseline — and
+# records that event HERE as one appended chain entry.
+#
+# Each golden has TWO CRC layers:
+#   * full_crc / full_size — the shipped ROM incl. the sigil-canonical deb2 appendix.
+#     The regression pin; drifts on ANY appendix change (e.g. a symbol rename).
+#   * anchor_crc / anchor_end — the header-neutral ASSEMBLED anchor over [0, anchor_end)
+#     (checksum $18E + ROM-end $1A4 zeroed). The PRIMARY, drift-stable bar; moves ONLY
+#     when real code/data bytes change. This is the bar the chain discipline guards.
+#
+# INVARIANT (enforced by tests/provenance_chain.rs::provenance_chain_holds):
+#   (1) TIP-MATCH — every committed golden blob's recomputed full_crc/full_size AND
+#       header-neutral anchor_crc equals the LAST (tip) entry below. A mismatch means
+#       the blobs and the chain disagree: re-freeze, or a golden was hand-touched.
+#   (2) ANCHOR-MOVE-NEEDS-A/B — for any target whose anchor_crc differs from the
+#       previous entry's, the NEWER entry MUST carry a non-empty `ab` A/B-evidence ref.
+#       An anchor that moved without A/B evidence is a HARD GATE FAILURE, not a review
+#       catch — a byte-changing optimization that skipped its emulator proof cannot be
+#       frozen. (full_crc may move freely — an appendix-only change is behaviour-inert.)
+#
+# APPEND ONLY, via `cargo run -p sigil-harness --bin refreeze -- --freeze <parcel>
+# --ab <evidence-ref>` (which also regenerates the blobs, size tables, and pins.rs).
+# Never hand-edit an existing entry; never delete the root.
+
+# ── ROOT: the flip freeze (the last asl-provable identity) ───────────────────
+# The anchor_crc values below are the ASL WITNESS — the header-neutral bytes asl and
+# sigil both produce, frozen at the Spec-5 flip. The full_crc values are already
+# SIGIL-CANONICAL (the deb2 appendix is sigil's, re-frozen at Stage-3 P2d by the
+# keystone-flip shrink + demangler grow) — the appendix drifted from asl during the
+# flip; the assembled BODY did not. The first byte-changing optimization (Wave-A G9)
+# severs these anchors in the next entry, carrying its A/B evidence.
+[[entry]]
+name = "root-flip-freeze"
+ab = "asl-witness"
+note = "Spec-5 flip freeze. anchor_crc = asl witness; full_crc = sigil-canonical appendix (Stage-3 P2d)."
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "7f071417"
+full_size = 412306
+anchor_crc = "e5765873"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0b8efc7a"
+full_size = 422147
+anchor_crc = "dab4f06c"
+anchor_end = 0x5f65a
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "705a5871"
+full_size = 90436
+anchor_crc = "cfda98d3"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "37ded207"
+full_size = 92935
+anchor_crc = "20c5571d"
+anchor_end = 0x11224
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1b4c49d2"
+full_size = 422483
+anchor_crc = "3d9bac53"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "bfe2509e"
+full_size = 303660
+anchor_crc = "fd3f7f8e"
+anchor_end = 0x434d0
+
+[[entry]]
+name = "wave-a-animate-a3"
+ab = "docs/superpowers/notes/2026-07-31-a3-pathfinder-ab.md"
+note = "AnimateSprite.set_frame jbsr+rts -> jbra tail-call (size-neutral, 2-byte diff); PS state-identity A/B oracle-blocked, byte-diff+static evidence"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "f8561a1a"
+full_size = 422483
+anchor_crc = "dd8540f9"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "1ce80669"
+full_size = 303660
+anchor_crc = "ceb51002"
+anchor_end = 0x434d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "a378c384"
+full_size = 90436
+anchor_crc = "e549d2f3"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "bd65fc95"
+full_size = 92935
+anchor_crc = "5e953260"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "8692e93a"
+full_size = 412306
+anchor_crc = "43322e8e"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1f84bdbc"
+full_size = 422147
+anchor_crc = "27b8e5c8"
+anchor_end = 0x5f65a

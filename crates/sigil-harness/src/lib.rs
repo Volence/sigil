@@ -32,6 +32,11 @@ pub mod seam1;
 
 pub mod seam2;
 
+/// The golden provenance chain (`golden/provenance.toml`) — the §17 optimization arc's
+/// re-freeze discipline: tip-match + anchor-move-needs-A/B. Driven by the `refreeze`
+/// bin and the `provenance_chain` gate test.
+pub mod provenance;
+
 /// Flip Stage 1 · S1.1 — the all-gates-ON native whole-ROM driver (the registry
 /// + `build_native_rom`), the seam-2 whole-ROM template generalized to all 53
 /// gates. Consumed by the `native_rom` gate.

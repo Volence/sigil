@@ -1,0 +1,238 @@
+{
+ "OLD_run1": [
+  {
+   "tag": "OLD_run1",
+   "frame_target": 240,
+   "frame_counter": 234,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x9F3B60476F9B240C",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0x72065A81EA8200EA",
+    "combined": "0x5B0BDB191AC14796",
+    "framebuffer": "0x74B7ECFAAF258A11"
+   },
+   "ram_crc32": "ed38b189",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run1/ram_f240.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run1/frame_f240.png"
+  },
+  {
+   "tag": "OLD_run1",
+   "frame_target": 480,
+   "frame_counter": 474,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0xB069178ACF7B59DF",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xB1C09582BA491A16",
+    "combined": "0x25C2A64D383E0AC1",
+    "framebuffer": "0x7B26A26283C596D1"
+   },
+   "ram_crc32": "620f92f6",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run1/ram_f480.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run1/frame_f480.png"
+  },
+  {
+   "tag": "OLD_run1",
+   "frame_target": 900,
+   "frame_counter": 894,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x4C9468106FDB61BA",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xB1C09582BA491A16",
+    "combined": "0x855A12C405E277F4",
+    "framebuffer": "0x71F6A6C692310BA9"
+   },
+   "ram_crc32": "7c55d75c",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run1/ram_f900.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run1/frame_f900.png"
+  }
+ ],
+ "OLD_run2": [
+  {
+   "tag": "OLD_run2",
+   "frame_target": 240,
+   "frame_counter": 234,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x9F3B60476F9B240C",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0x72065A81EA8200EA",
+    "combined": "0x5B0BDB191AC14796",
+    "framebuffer": "0x74B7ECFAAF258A11"
+   },
+   "ram_crc32": "ed38b189",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run2/ram_f240.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run2/frame_f240.png"
+  },
+  {
+   "tag": "OLD_run2",
+   "frame_target": 480,
+   "frame_counter": 474,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0xB069178ACF7B59DF",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xB1C09582BA491A16",
+    "combined": "0x25C2A64D383E0AC1",
+    "framebuffer": "0x7B26A26283C596D1"
+   },
+   "ram_crc32": "620f92f6",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run2/ram_f480.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run2/frame_f480.png"
+  },
+  {
+   "tag": "OLD_run2",
+   "frame_target": 900,
+   "frame_counter": 894,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x4C9468106FDB61BA",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xB1C09582BA491A16",
+    "combined": "0x855A12C405E277F4",
+    "framebuffer": "0x71F6A6C692310BA9"
+   },
+   "ram_crc32": "7c55d75c",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run2/ram_f900.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/OLD_run2/frame_f900.png"
+  }
+ ],
+ "NEW_run1": [
+  {
+   "tag": "NEW_run1",
+   "frame_target": 240,
+   "frame_counter": 234,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x9F3B60476F9B240C",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xA4458106244EF662",
+    "combined": "0x20C1843FF024D78E",
+    "framebuffer": "0x74B7ECFAAF258A11"
+   },
+   "ram_crc32": "ed38b189",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run1/ram_f240.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run1/frame_f240.png"
+  },
+  {
+   "tag": "NEW_run1",
+   "frame_target": 480,
+   "frame_counter": 474,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0xB069178ACF7B59DF",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0x36A08D588EF12F9E",
+    "combined": "0x61554E758C97BB59",
+    "framebuffer": "0x7B26A26283C596D1"
+   },
+   "ram_crc32": "620f92f6",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run1/ram_f480.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run1/frame_f480.png"
+  },
+  {
+   "tag": "NEW_run1",
+   "frame_target": 900,
+   "frame_counter": 894,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x4C9468106FDB61BA",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xB1C09582BA491A16",
+    "combined": "0x855A12C405E277F4",
+    "framebuffer": "0x71F6A6C692310BA9"
+   },
+   "ram_crc32": "841f2bb4",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run1/ram_f900.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run1/frame_f900.png"
+  }
+ ],
+ "NEW_run2": [
+  {
+   "tag": "NEW_run2",
+   "frame_target": 240,
+   "frame_counter": 234,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x9F3B60476F9B240C",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xA4458106244EF662",
+    "combined": "0x20C1843FF024D78E",
+    "framebuffer": "0x74B7ECFAAF258A11"
+   },
+   "ram_crc32": "ed38b189",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run2/ram_f240.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run2/frame_f240.png"
+  },
+  {
+   "tag": "NEW_run2",
+   "frame_target": 480,
+   "frame_counter": 474,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0xB069178ACF7B59DF",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0x36A08D588EF12F9E",
+    "combined": "0x61554E758C97BB59",
+    "framebuffer": "0x7B26A26283C596D1"
+   },
+   "ram_crc32": "620f92f6",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run2/ram_f480.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run2/frame_f480.png"
+  },
+  {
+   "tag": "NEW_run2",
+   "frame_target": 900,
+   "frame_counter": 894,
+   "game_state": "0x0005C2F0",
+   "sp": "0xFFFFFEB2",
+   "state_hash": {
+    "vram": "0x4C9468106FDB61BA",
+    "cram": "0x22B10C2223B16749",
+    "vsram": "0xB5F357FC0D28F314",
+    "regs": "0xB1C09582BA491A16",
+    "combined": "0x855A12C405E277F4",
+    "framebuffer": "0x71F6A6C692310BA9"
+   },
+   "ram_crc32": "841f2bb4",
+   "ram_len": 65536,
+   "ram_file": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run2/ram_f900.bin",
+   "png": "/tmp/claude-1000/-home-volence-sonic-hacks-sigil/c0f35c2c-daca-468f-89bd-9b554395785e/scratchpad/a3-ab/NEW_run2/frame_f900.png"
+  }
+ ]
+}
