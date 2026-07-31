@@ -1849,13 +1849,14 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 
 /// THE Option-A full-file native build: the assembled ROM (checksum-folded by
 /// `emit_rom`) + the sigil-canonical deb2 appendix, produced by driving the REAL
-/// `tools/convsym` over sigil's own listing and `tools/fixheader` over the result —
-/// byte-for-byte the `build.sh:169-175` post-pipeline, but fed sigil's `.lst`
-/// instead of asl's. Deterministic. The assembled prefix `[0, EndOfRom)` stays the
-/// asl-witnessed correctness anchor (header-neutral PRIMARY CRC); the appendix is
+/// `tools/convsym` over sigil's own listing, then re-fixing the Sega header NATIVELY
+/// (the ROM-end pointer `$1A4` + the `$18E` checksum — was `tools/fixheader`, folded
+/// in at Stage-3 P4d). Byte-for-byte the `build.sh:169-175` post-pipeline, fed sigil's
+/// `.lst` instead of asl's. Deterministic. The assembled prefix `[0, EndOfRom)` stays
+/// the asl-witnessed correctness anchor (header-neutral PRIMARY CRC); the appendix is
 /// sigil-canonical (the frozen golden is sigil's OWN full file, not asl's).
 ///
-/// `tools_dir` is `<aeon>/tools` (convsym + fixheader live there). Writes the ROM +
+/// Only `<aeon>/tools/convsym` is shelled now (fixheader retired); writes the ROM +
 /// `.lst` to a fresh temp dir so parallel shapes never collide.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
@@ -1882,11 +1883,8 @@ pub fn append_deb2_appendix(
 ) -> Result<Vec<u8>, String> {
     let tools = aeon.join("tools");
     let convsym = tools.join("convsym");
-    let fixheader = tools.join("fixheader");
-    for (name, p) in [("convsym", &convsym), ("fixheader", &fixheader)] {
-        if !p.exists() {
-            return Err(format!("{name} not found at {}", p.display()));
-        }
+    if !convsym.exists() {
+        return Err(format!("convsym not found at {}", convsym.display()));
     }
 
     // A unique temp dir (pid + shape + a monotonic counter) so parallel builds
@@ -1927,20 +1925,18 @@ pub fn append_deb2_appendix(
             String::from_utf8_lossy(&out.stderr)
         ));
     }
-    // fixheader: re-checksum the appended file (build.sh:175).
-    let fout = std::process::Command::new(&fixheader)
-        .arg(&bin)
-        .output()
-        .map_err(|e| format!("spawn fixheader: {e}"))?;
-    if !fout.status.success() {
-        return Err(format!(
-            "fixheader failed (rc {:?}): {}",
-            fout.status.code(),
-            String::from_utf8_lossy(&fout.stderr)
-        ));
-    }
-    let full = std::fs::read(&bin).map_err(|e| e.to_string())?;
+    let mut full = std::fs::read(&bin).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_dir_all(&dir);
+
+    // Re-fix the Sega header over the APPENDED file (was `tools/fixheader`, retired at
+    // Stage-3 P4d — a native fold, verified byte-identical to fixheader's output):
+    //   (1) the ROM-end pointer at $1A4 (4 bytes BE) = the last byte's address (len-1);
+    //   (2) the checksum at $18E over [$200, len) — AFTER (1), since $1A4 is in range.
+    if full.len() >= 0x1A8 {
+        let end = (full.len() as u32).wrapping_sub(1);
+        full[0x1A4..0x1A8].copy_from_slice(&end.to_be_bytes());
+        sigil_link::apply_header_checksum(&mut full);
+    }
 
     // POSITIVE CONTROL (assert-PRESENCE, §S1.4 / condition 2b): the deb2 magic MUST
     // sit at EndOfRom and the appendix MUST be non-trivial — a silent convsym

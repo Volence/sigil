@@ -1,15 +1,21 @@
 //! `gen-snippet-vectors` — regenerate the committed snippet golden bytes from asl.
 //!
 //! MANUAL developer tool — NOT run in CI. It reads the `asm` blocks from
-//! `tests/snippets_golden.txt`, assembles each one with the real `asl` (asl 1.42)
-//! from the Aeon tree (`-cpu 68000 -q -L -U`), extracts the emitted bytes with
-//! `p2bin`, and rewrites each block's `--- bytes ---` section in place. The CI
-//! test (`tests/asl_snippets.rs`) reads the committed golden bytes instead and
-//! never needs asl.
+//! `tests/snippets_golden.txt`, assembles each one with the real `asl` (asl 1.42),
+//! extracts the emitted bytes with `p2bin`, and rewrites each block's
+//! `--- bytes ---` section in place. The CI test (`tests/asl_snippets.rs`) reads
+//! the committed golden bytes instead and never needs asl.
+//!
+//! **OUT-OF-REPO asl (Stage-3 P4d / OQ-A).** The `asl`/`p2bin` binaries were
+//! DELETED from the aeon tree at the flip (nothing-retained). The committed golden
+//! vectors are the frozen independent-asl witness; EXTENDING the corpus (a new
+//! snippet block for a post-flip instruction shape) requires asl out-of-repo:
+//! install the public Macro Assembler AS
+//! (<http://john.ccac.rwth-aachen.de:8000/as/>) and point `ASL_BIN` (and, if not a
+//! sibling, `P2BIN_BIN`) at the binaries. Fail-loud otherwise — never a silent skip.
 //!
 //! ```text
-//! cargo run -p sigil-frontend-as --bin gen-snippet-vectors
-//! AEON_DIR=/path/to/aeon cargo run -p sigil-frontend-as --bin gen-snippet-vectors
+//! ASL_BIN=/opt/asl/bin/asl cargo run -p sigil-frontend-as --bin gen-snippet-vectors
 //! ```
 //!
 //! The committed golden bytes are **generator-produced from real asl** and
@@ -34,19 +40,27 @@ fn main() {
     let text = fs::read_to_string(&golden_path).expect("read snippets_golden.txt");
     let blocks = parse_blocks(&text);
 
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    let aeon = PathBuf::from(aeon);
-    let asl = aeon.join("tools/asl");
-    let p2bin = aeon.join("tools/p2bin");
-    assert!(
-        asl.is_file(),
-        "asl not found at {} (set AEON_DIR)",
-        asl.display()
-    );
+    // asl/p2bin are OUT-OF-REPO since the flip (P4d/OQ-A) — take them from ASL_BIN /
+    // P2BIN_BIN (p2bin defaults to a sibling of asl). Fail loud, never silently skip.
+    let asl = match std::env::var("ASL_BIN") {
+        Ok(p) => PathBuf::from(p),
+        Err(_) => {
+            eprintln!(
+                "gen-snippet-vectors: set ASL_BIN to the Macro Assembler AS binary to mint new \
+                 vectors.\n  asl was DELETED from the repo at the flip (nothing-retained). Install \
+                 AS (http://john.ccac.rwth-aachen.de:8000/as/) and point ASL_BIN at it; the \
+                 committed vectors remain the frozen witness. (Stage-3 P4d / OQ-A.)"
+            );
+            std::process::exit(2);
+        }
+    };
+    let p2bin = std::env::var("P2BIN_BIN").map(PathBuf::from).unwrap_or_else(|_| {
+        asl.parent().map(|d| d.join("p2bin")).unwrap_or_else(|| PathBuf::from("p2bin"))
+    });
+    assert!(asl.is_file(), "ASL_BIN not a file: {} (install AS, set ASL_BIN)", asl.display());
     assert!(
         p2bin.is_file(),
-        "p2bin not found at {} (set AEON_DIR)",
+        "p2bin not found at {} (set P2BIN_BIN, or place it beside ASL_BIN)",
         p2bin.display()
     );
 
@@ -55,7 +69,7 @@ fn main() {
 
     let mut out = String::new();
     for b in &blocks {
-        let bytes = assemble(&aeon, &asl, &p2bin, &work, &b.asm);
+        let bytes = assemble(&asl, &p2bin, &work, &b.asm);
         let hex = bytes
             .iter()
             .map(|x| format!("{x:02X}"))
@@ -113,7 +127,7 @@ fn parse_blocks(text: &str) -> Vec<Block> {
 }
 
 /// Assemble one snippet's full source and return its machine-code bytes.
-fn assemble(aeon: &Path, asl: &Path, p2bin: &Path, work: &Path, src: &str) -> Vec<u8> {
+fn assemble(asl: &Path, p2bin: &Path, work: &Path, src: &str) -> Vec<u8> {
     let asm = work.join("gen.asm");
     let p = work.join("gen.p");
     let lst = work.join("gen.lst");
@@ -123,9 +137,14 @@ fn assemble(aeon: &Path, asl: &Path, p2bin: &Path, work: &Path, src: &str) -> Ve
 
     fs::write(&asm, src).expect("write snippet");
 
+    // Self-contained snippets — assemble from the work dir. AS finds its message
+    // catalogs via AS_MSGPATH; point it at ASL_BIN's directory (a normal AS install
+    // keeps `as.msg` beside the binary), overridable for a non-standard layout.
+    let msgpath = std::env::var("AS_MSGPATH")
+        .unwrap_or_else(|_| asl.parent().map(|d| d.display().to_string()).unwrap_or_default());
     let asl_out = Command::new(asl)
-        .current_dir(aeon)
-        .env("AS_MSGPATH", "tools")
+        .current_dir(work)
+        .env("AS_MSGPATH", msgpath)
         .env("USEANSI", "n")
         .args([
             "-cpu",

@@ -2271,3 +2271,31 @@ asl-format-parser unit tests retire with `parse_listing`; `pins_rs_is_current` u
 Aeon read-only for P4c. Rows 6/58 (the per-shape gate resume `org`s) are NOT dead — they
 still position the AS residual AROUND the natively-placed `.emp` regions in every build;
 they retire only when the map computes all placement (capstone).
+
+## Stage-3 P4d — THE TOOLS DELETION (OQ-A: nothing-retained governs the tree)
+
+The retired asl toolchain binaries are DELETED from the aeon tree: `aeon/tools/{asl,
+as.msg, cmdarg.msg, ioerrs.msg, p2bin, fixheader}` (`tools/.cache` was already absent).
+**`tools/convsym` STAYS** — it consumes sigil's OWN `.lst` (the deb2 appendix), not the
+retired toolchain.
+
+**`fixheader` folded natively (the precondition catch).** The grep-sweep found `fixheader`
+was still shelled by `append_deb2_appendix` — it re-fixes the appended file's `$1A4`
+ROM-end pointer + `$18E` checksum AFTER convsym grows the file (the design's "fixheader
+redundant" held only for the assembled ROM, not the appended one). Folded into native
+code: `full[$1A4..$1A8] = (len-1).to_be_bytes()` then `sigil_link::apply_header_checksum`
+(over `[$200, len)`). Verified byte-identical to fixheader (reverse-engineered from the
+golden: `$1A4 = 0x00064a91 = len-1`, `$18E = 0x662c = sum`) — the six full-file goldens
+reproduce unchanged, so the tool deletion is byte-neutral.
+
+**The ISA vector-corpus regen (OQ-A cost, surfaced).** `gen_{z80,m68k}_vectors`
+(sigil-isa) + `gen_snippet_vectors` (sigil-frontend-as) shelled `tools/asl`+`p2bin` to
+MINT the golden vectors — §2.3's "surviving independent-asl witness." Re-pointed to an
+`ASL_BIN`/`P2BIN_BIN` env-var hook, FAIL-LOUD ("install the Macro Assembler AS and set
+ASL_BIN"). The committed vectors stay the frozen witness (CI never needs asl); extending
+the corpus for a new post-flip instruction shape survives OUT-OF-REPO (README documents
+the path). Nothing is retained in-tree — the accepted OQ-A loss, eyes open.
+
+Precondition swept clean (build.sh / tools/*.py / prebuild.sh / CI / the harness): no
+live shell-out to a deleted tool remains (the residual `tools/asl` mentions are
+byte-provenance comments). Strict 2861/0 (1 ignored). Aeon commit: the `tools/` deletion.

@@ -65,16 +65,22 @@ cargo run -p sigil-cli -- parse <input.asm>
 Correctness is proven, not asserted. For each backend, a canonical **corpus** of
 instruction snippets is assembled by real `asl` (+ `p2bin`) into committed
 golden-vector files; CI encodes each corpus form and asserts the bytes match
-byte-for-byte. CI never needs `asl` — the vectors are committed. Regeneration is a
-manual developer step:
+byte-for-byte. CI never needs `asl` — the vectors are committed, the **frozen
+independent-asl witness**. Regeneration is a manual developer step:
 
 ```bash
-cargo run -p sigil-isa --bin gen-z80-vectors    # regenerate Z80 golden vectors
-cargo run -p sigil-isa --bin gen-m68k-vectors   # regenerate 68000 golden vectors
+ASL_BIN=/opt/asl/bin/asl cargo run -p sigil-isa --bin gen-z80-vectors    # Z80 golden vectors
+ASL_BIN=/opt/asl/bin/asl cargo run -p sigil-isa --bin gen-m68k-vectors   # 68000 golden vectors
+ASL_BIN=/opt/asl/bin/asl cargo run -p sigil-frontend-as --bin gen-snippet-vectors
 ```
 
-These tools locate `asl`/`p2bin` under the sibling Aeon tree (override with
-`AEON_DIR=/path/to/aeon`). The 68000 encoder pairs a declarative fixed-field opcode
+**asl is OUT-OF-REPO (Stage-3 P4d / OQ-A).** At the flip the `asl`/`p2bin` binaries
+were removed from the toolchain (nothing-retained: `sigil build` IS the build). The
+committed vectors stay valid forever; EXTENDING the corpus for a new post-flip
+instruction shape requires the public [Macro Assembler
+AS](http://john.ccac.rwth-aachen.de:8000/as/) installed out-of-tree — point `ASL_BIN`
+(and, if not a sibling, `P2BIN_BIN`) at the binaries. The generators fail loud if
+`ASL_BIN` is unset — never a silent skip. The 68000 encoder pairs a declarative fixed-field opcode
 table with a **procedural effective-address / extension-word encoder** — the 68000's
 addressing modes do not fit a pure table — and pins the real byte landmines with
 dedicated vectors: the `MOVE` destination-EA mode/register field swap, the brief
