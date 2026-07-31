@@ -1459,6 +1459,29 @@ pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec
     append_deb2_appendix(aeon, &rom, &listing, profile.debug, floor)
 }
 
+/// Resolve `profile`'s frozen-table chained layout into its final ROM sections (the
+/// SAME placement `build_rom_chained_with_listing` emits, minus the drift check / link /
+/// emit). The shared substrate for the placement gate and the P4a LMA-correct
+/// size-table derivation: both read `section.lma + label.offset` off these sections.
+fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
+    if !matches!(profile.size_source, SizeSource::Frozen(_)) {
+        return Err("resolve_frozen_sections: profile is not a Frozen target".into());
+    }
+    if profile.sound_on {
+        ensure_generated(aeon);
+    }
+    let as_side = assemble_as_side(aeon, profile)?;
+    let (emp, _) = build_emp(aeon, profile)?;
+    let mut sections: Vec<Section> = as_side.sections;
+    sections.extend(emp);
+    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
+    let spans = declared_spans_by_index(&sections, &true_bases)?;
+    let all = apply_declared_chain(sections, &true_bases, &spans);
+    let stubs = SymbolTable::new();
+    sigil_link::resolve_layout(&all, &stubs, true)
+        .map_err(|d| format!("frozen resolve: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))
+}
+
 /// Resolve `profile`'s frozen-table chained layout and return, for every ROM section
 /// carrying a frozen-table label whose RESOLVED base differs from the frozen truth, a
 /// `(label, got, want)` mismatch. An empty result proves the frozen chainer placed every
@@ -1472,19 +1495,7 @@ pub fn frozen_placement_mismatches(
         SizeSource::Frozen(t) => t.clone(),
         _ => return Err("frozen_placement_mismatches: profile is not a Frozen target".into()),
     };
-    if profile.sound_on {
-        ensure_generated(aeon);
-    }
-    let as_side = assemble_as_side(aeon, profile)?;
-    let (emp, _) = build_emp(aeon, profile)?;
-    let mut sections: Vec<Section> = as_side.sections;
-    sections.extend(emp);
-    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
-    let spans = declared_spans_by_index(&sections, &true_bases)?;
-    let all = apply_declared_chain(sections, &true_bases, &spans);
-    let stubs = SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(&all, &stubs, true)
-        .map_err(|d| format!("frozen placement: resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
+    let resolved = resolve_frozen_sections(aeon, profile)?;
     let mut rows: Vec<(String, u32, u32)> = Vec::new();
     for s in &resolved {
         if !is_rom_section(s) {
@@ -1513,6 +1524,85 @@ pub fn frozen_placement_mismatches(
         }
     }
     Ok(rows)
+}
+
+/// P4a — THE LMA-CORRECT SIZE DERIVATION. Re-derive `profile`'s frozen size table from
+/// SIGIL'S OWN resolved layout, retiring the asl-`.lst` parse (`capture_offcanon`, row
+/// 34). Resolves the frozen chain and reads each boundary label's ROM address =
+/// `section.lma + label.offset`. This is LMA-correct where a naive `.lst` re-parse is
+/// NOT: a phased section (z80 idle, vma `$0`) reports its ROM LMA `$3d8`, and a
+/// section-END label (offset == the sigil-resolved `image_len`) reports the address
+/// sigil COMPUTES, not one asl listed. The label SET is exactly the committed table's
+/// keys (the boundary set the chainer needs); every one must be found or the derivation
+/// fails loud (a vanished boundary label is a real regression, not a silent drop).
+///
+/// The derivation bootstraps off the committed table (the profile's `SizeSource::Frozen`
+/// pins the labeled sections to place them), then reads the resolved positions back —
+/// so for a byte-correct build it REPRODUCES the committed addresses exactly. That
+/// fixpoint IS the proof: sigil's own resolve is now the authority; nothing parses asl.
+pub fn derive_frozen_table(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<std::collections::BTreeMap<String, u32>, String> {
+    let want: std::collections::HashSet<String> = match &profile.size_source {
+        SizeSource::Frozen(t) => t.keys().cloned().collect(),
+        _ => return Err("derive_frozen_table: profile is not a Frozen target".into()),
+    };
+    let resolved = resolve_frozen_sections(aeon, profile)?;
+    let mut out: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
+    for s in &resolved {
+        if !is_rom_section(s) {
+            continue;
+        }
+        for l in &s.labels {
+            if want.contains(&l.name) {
+                // LMA base (ROM address), NOT vma_origin — the phased-section fix.
+                out.insert(l.name.clone(), s.lma.wrapping_add(l.offset));
+            }
+        }
+    }
+    // SECTION-END boundary labels (`<Stem>_End`) are the one-past-end markers asl listed
+    // as symbols but sigil represents IMPLICITLY as a section terminus — the `.emp` data
+    // modules (sonic_anims/particle_anims) and the native z80 idle emit no explicit `_End`
+    // label, and the `.asm` twins that once carried them are deleted. Synthesize each from
+    // its owning section's resolved geometry: the section whose base carries `<Stem>` ends
+    // (one-past) at `section.lma + image_len` — LMA-correct for the phased z80 idle too.
+    for name in want.iter() {
+        if out.contains_key(name) {
+            continue;
+        }
+        let Some(stem) = name.strip_suffix("_End") else { continue };
+        let owner: Vec<&Section> = resolved
+            .iter()
+            .filter(|s| is_rom_section(s) && s.labels.iter().any(|l| l.name == stem))
+            .collect();
+        match owner.as_slice() {
+            [s] => {
+                out.insert(name.clone(), s.lma.wrapping_add(s.image_len()));
+            }
+            [] => {} // reported below
+            many => {
+                return Err(format!(
+                    "derive_frozen_table({}): section-end label `{name}` stem `{stem}` names \
+                     {} sections — ambiguous",
+                    profile.name,
+                    many.len()
+                ));
+            }
+        }
+    }
+    // Fail loud if any committed boundary label is no longer resolvable.
+    let missing: Vec<&String> = want.iter().filter(|n| !out.contains_key(*n)).collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "derive_frozen_table({}): {} committed boundary label(s) absent from the resolved \
+             layout (first: {:?}) — a real regression, not a silent drop",
+            profile.name,
+            missing.len(),
+            missing.first()
+        ));
+    }
+    Ok(out)
 }
 
 /// THE native whole-ROM build: AS residual (all gates ON, sound BINCLUDE) + every
@@ -1614,6 +1704,20 @@ pub fn crc32(data: &[u8]) -> u32 {
         c = table[((c ^ b as u32) & 0xFF) as usize] ^ (c >> 8);
     }
     !c
+}
+
+/// The header-neutral ASSEMBLED ANCHOR CRC over `bytes[0, eor)`: the checksum (`$18E`)
+/// and ROM-end-pointer (`$1A4`) header fields are zeroed before the CRC, so it is the
+/// drift-stable invariant the PROVENANCE anchors record (`e5765873` &c). `eor` is the
+/// target's `EndOfRom`; `bytes` may be a full golden file (only its prefix is read).
+pub fn assembled_anchor_crc(bytes: &[u8], eor: usize) -> u32 {
+    let mut prefix = bytes[..eor.min(bytes.len())].to_vec();
+    for i in crate::CHECKSUM_FIELD_RANGE.chain(crate::ROM_END_FIELD_RANGE) {
+        if i < prefix.len() {
+            prefix[i] = 0;
+        }
+    }
+    crc32(&prefix)
 }
 
 /// The convsym `as_lst` filter build.sh passes verbatim (`build.sh:170-171`).

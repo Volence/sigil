@@ -2179,3 +2179,40 @@ P4 re-derives them from the resolved LMAs, closing the asl-derived-constants era
 Captured aeon `0afc1c9`; canonical refs restored to `7f071417`/`0b8efc7a`. Strict
 fully green; every full-file gate re-pinned (`native_full_rom::SIGIL_FULL_{PLAIN,DEBUG}`,
 `native_offcanonical_full` config_a/b + demo/demo_debug).
+
+## Stage-3 P4a — THE LMA-CORRECT SIZE DERIVATION (the last asl-derived constants retire)
+
+The four `golden/offcanonical_sizes/*.txt` boundary tables are **re-derived from sigil's
+OWN resolved layout** — the asl-`.lst` parse path (`capture_offcanon` +
+`capture_offcanonical_sizes.sh`, which parsed asl's `Symbol Table` via
+`repin::parse_listing`) is RETIRED. This closes the asl-derived-constants era the S1.2
+capture opened: nothing in the system now requires an asl listing for an address.
+
+**The derivation** (`native::derive_frozen_table`, driver `derive_offcanon`, script
+`derive_offcanonical_sizes.sh`): resolve the frozen chain (the SAME placement the
+off-canonical gates build) and read each boundary label's ROM address =
+`section.lma + label.offset` off the resolved sections. This is LMA-correct where the
+P2d-noted naive `.lst` re-parse was NOT:
+- a PHASED section (the native z80 idle, vma `$0`) reports its ROM LMA `$3d8`, not `$0`;
+- a section-END marker (`Z80_IdleProgram_End`, `Ani_Sonic_End`, `Ani_Particle_End`) —
+  which the deleted `.asm` twins once carried and the `.emp` modules do NOT emit — is
+  SYNTHESIZED from its owning section's resolved geometry (`lma + image_len`), not
+  dropped.
+
+**Proof — the tables are BYTE-IDENTICAL in their label rows** (only the provenance header
+changes, asl → sigil-native): `native_offcanonical_placement::{demo,demo_debug,config_a,
+config_b}_size_table_rederives_native` assert `derive_frozen_table == the committed table`
+for all four; the six-target scratch build reproduces every golden unchanged (the anchors
+`cfda98d3`/`20c5571d`/`3d9bac53`/`fd3f7f8e` + full CRCs `705a5871`/`37ded207`/`1b4c49d2`/
+`bfe2509e` recomputed by the derivation itself). **P4 is byte-neutral: no golden or pin
+moves.** t24 `config_b_doctored_size_table_breaks_the_build` doctors one boundary address
+`+2` and proves the chained ROM then DIVERGES from the golden (the table is genuinely
+load-bearing — a corrupted `*.txt` cannot slip past the placement gate).
+
+The re-derived tables carry the new provenance header (`# GENERATED — derive_offcanon.
+SIGIL-NATIVE …`), each tied to its committed golden blob (full CRC + the header-neutral
+assembled anchor). Post-flip semantics UNCHANGED: on any ruled golden re-baseline they
+re-derive from sigil (`derive_offcanonical_sizes.sh`); asl is never required again.
+
+Aeon read-only; sigil branch `stage3-p4`. Strict 2863/0 (2 ignored) — +5 gates (4
+re-derivation proofs + the t24 doctored-table control), no gate retired.
