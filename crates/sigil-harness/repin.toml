@@ -814,6 +814,14 @@ name = "Block_Stage_Buffers"
 tests = ["tile_cache_port"]
 
 [[symbol]]
+name = "Block_Stage_Ptrs"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Block_Stage_ZeroPage"
+tests = ["tile_cache_port"]
+
+[[symbol]]
 name = "Cache_Fill_Last_Frame"
 tests = ["tile_cache_port"]
 
