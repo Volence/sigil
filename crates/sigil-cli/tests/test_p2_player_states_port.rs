@@ -468,7 +468,13 @@ fn p2_air_debug_region_matches_reference() {
 fn p2_air_undoctored_compile_equals_the_reference_window() {
     let got = air_bytes(&PLAIN);
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_AIR.plain_base, pins::PLAYER_AIR.plain_len) {
-        assert_eq!(got, want, "undoctored player_air must match the reference window");
+        // The pin len spans to the next section base, which may include align
+        // pad after the code (B-0 packed placement); the compile emits exact
+        // code bytes. Strict equality on the code, zero-verified pad tail.
+        assert!(want.len() >= got.len(), "reference window shorter than the compile");
+        let (code, pad) = want.split_at(got.len());
+        assert_eq!(got, code, "undoctored player_air must match the reference window");
+        assert!(pad.iter().all(|&b| b == 0), "player_air reference tail must be zero align pad, got {pad:x?}");
     }
 }
 
