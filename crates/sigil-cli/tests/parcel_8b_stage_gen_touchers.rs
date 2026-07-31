@@ -165,6 +165,12 @@ fn block_stage_keys_has_exactly_three_touchers() {
     let mut emp_paths = Vec::new();
     files_with_ext(&aeon.join("engine"), &["emp"], &mut emp_paths);
     files_with_ext(&aeon.join("games"), &["emp"], &mut emp_paths);
+    // Item #7b: engine/ram.emp is the label's DEFINITION home (a `vars` field
+    // `Block_Stage_Keys: [u32; ..]`), not a staging-claim path. It sits outside any
+    // proc by construction; exclude it so the definition is not mis-counted as an
+    // un-audited orphan (the role engine/ram.asm's `Block_Stage_Keys:` declaration
+    // played before the port — it was residual AS, never in this .emp census).
+    emp_paths.retain(|p| !p.ends_with("engine/ram.emp"));
     emp_paths.sort();
     assert!(!emp_paths.is_empty(), "no .emp files under {}", aeon.display());
 
@@ -195,7 +201,7 @@ fn block_stage_keys_has_exactly_three_touchers() {
     // The .asm/.inc census half RETIRED (flip Stage-2): tile_cache.asm (which
     // homed the three TileCache staging-claim routines) is deleted — the .emp is
     // the only source. The .emp census above is now the sole authoritative
-    // gen-bump audit; the still-present `Block_Stage_Keys:` RAM declaration lives
-    // in the surviving engine/ram.asm (residual data), which carries no toucher
-    // proc so it is not a staging-claim path.
+    // gen-bump audit; the `Block_Stage_Keys:` RAM declaration lives in
+    // engine/ram.emp (item #7b — the region form), excluded above as the label's
+    // definition home, so it is not a staging-claim path.
 }

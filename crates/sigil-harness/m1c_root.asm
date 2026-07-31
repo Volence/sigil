@@ -24,7 +24,11 @@ PAD_TO_POWER_OF_TWO     = 1
     include "games/sonic4/config/constants.asm"
     include "games/sonic4/config/sound_ids.asm"
     include "games/sonic4/config/game.asm"
-    include "engine/ram.asm"
+    ; engine/ram.asm is retired (item #7b): engine RAM is authored in
+    ; engine/ram.emp. The vector table's one RAM reference (HBlank_Vector_Slot)
+    ; and the game-RAM `phase Engine_RAM_End` resolve from the harvested RAM
+    ; addresses seeded as -D defines (see m1c_vector_table.rs), mirroring the real
+    ; build's Option-B bridge.
     include "games/sonic4/config/ram.asm"
     include "engine/debug/debugger.asm"
 

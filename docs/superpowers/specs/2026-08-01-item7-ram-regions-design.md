@@ -159,9 +159,19 @@ region base:
    waits for R's owner module. The engine's regions resolve first, then each
    game's `game_ram` (the game module chain-depends on the engine module —
    already a legal symbol dependency).
-3. **Cross-seam exports:** residual `.asm` reads RAM labels today by bare link
-   symbol; `pub vars` fields and `mark`s export identically (no harvest needed —
-   labels, not equates; the constants/struct harvests stay equate-only).
+3. **Cross-seam exports (AMENDED at the #7b stop — the original "no harvest
+   needed" claim was FALSE for eager references):** `pub vars` fields and
+   `mark`s link-export for DEFERRED AS references (`jsr`/`jmp`, `dc.l`/`dc.w`,
+   `lea (Sym).w`). But the AS frontend folds absolute-EA DATA operands
+   (`move.b #x,(Sym).w`) and `phase <Sym>` displacements EAGERLY — those need
+   values at assemble time. RULED (Option B): a third harvester,
+   `harvest_engine_ram_addresses`, lays out the regions and seeds every RAM
+   label as a plain value DEFINE on the AS side (values only, NOT exported
+   EquSyms — the `.emp` labels stay the sole link authority, no duplicate
+   symbols). HARD REQUIREMENT: the harvester and the lowering must share ONE
+   layout entry point (`lower/regions.rs`) — two authorities for the same
+   address must be structurally impossible, not merely tested. Deferred and
+   eager paths then agree by construction.
 4. **Z80 regions are OUT of v1** (no demand: Z80 RAM is driver-internal and
    already sigil-native). `u16le` fields are legal (data-contract cells).
 5. **comptime queries:** `addressof(Field)` is the label (link-time as usual);
@@ -239,3 +249,13 @@ absolute). Region form stops being inert the moment #7a lands — the three
 3. `place_sections` RAM-skip (`vma_base >= $F00000`) is #7b's first task —
    #7a left placement untouched for zero CRC risk (accepted).
 4. `[layout.odd-field]` is a warning — that is what "lint" means here (accepted).
+
+## §9 — #7b countersign addendum (the eager-reference stop, ruled)
+
+The #7b porter empirically confirmed §3.3's export claim false for eager AS
+references and stopped per brief. RULED: **Option B** (the RAM-address harvest
+as value-defines; §3.3 amended above). Option A (teaching the AS frontend to
+defer absolute-EA operands) was rejected: it touches the hot conversion path
+every residual line rides, and cannot fix `phase` eagerness anyway. Gap-3 (the
+four game-config size constants missing from `emp_defines`) is mechanical and
+in #7b scope.

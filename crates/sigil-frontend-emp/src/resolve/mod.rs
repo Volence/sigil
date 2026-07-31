@@ -449,6 +449,17 @@ pub fn place_sections(sections: &mut [Section], map: &MemoryMap) -> Vec<Diagnost
     // Cumulative bytes placed so far in each region, by region name.
     let mut used: HashMap<&str, u32> = HashMap::new();
     for sec in sections.iter_mut() {
+        // Item #7b: a RAM section (the reserve-only Core section a region-form
+        // `vars` block lowers to) is VMA-placed at its region base already and
+        // contributes ZERO image bytes — it never occupies a ROM map region.
+        // Skip it: matching its name (`upper_ram`/`lower_ram`) against the ROM
+        // regions would spuriously fire the no-region error. The RAM/ROM split
+        // is `vma_origin >= $F00000` (the `is_rom_section` threshold): RAM lives
+        // at `$FFFF0000`/`$FFFF8000`+, far above any ROM VMA. Its `lma` is left
+        // as the builder stamped it (irrelevant — no bytes flatten from it).
+        if sec.vma_origin() >= 0x00F0_0000 {
+            continue;
+        }
         let Some(region) = map.regions.iter().find(|r| r.name == sec.name) else {
             diags.push(Diagnostic {
                 level: Level::Error,
