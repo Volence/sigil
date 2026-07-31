@@ -134,9 +134,8 @@ fn as_constant_equs() -> Vec<Section> {
     let obj_code_base = format!("${:X}", OBJ_CODE_BASE);
     pairs.push(("ObjCodeBase", obj_code_base.as_str()));
     pairs.push(("VRAM_TEST_SONIC", "$03C0"));
-    // DplcV overlay lands at sst_custom ($2E): dplc_ptr @ +0, art_base @ +4.
-    pairs.push(("_dplc_ptr", "$2E"));
-    pairs.push(("_art_base", "$32"));
+    // (test_animated's _dplc_ptr/_art_base overlay guards retired at conv-d #48 —
+    // test_animated.emp owns the DplcV overlay, no extern mirror.)
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -327,13 +326,14 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     // Drift guards: sst.emp's SST_* wall retired at the conv-a structs flip, so
     // test_static now rides zero; test_animated keeps the constants twin's guards
-    // + its own three (VRAM_TEST_SONIC, _dplc_ptr, _art_base). All must be
+    // + its own one (VRAM_TEST_SONIC — its _dplc_ptr/_art_base overlay guards
+    // retired at conv-d #48 when test_player.asm was deleted). All must be
     // captured AND pass.
     assert_eq!(c.static_guards, 0, "test_static's sst ambient wall retired");
     assert_eq!(
         c.animated_guards,
-        twin_guards() + 3,
-        "test_animated's constants guards + its own three captured"
+        twin_guards() + 1,
+        "test_animated's constants guards + its own VRAM_TEST_SONIC captured"
     );
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(
