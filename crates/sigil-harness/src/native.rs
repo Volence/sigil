@@ -875,24 +875,21 @@ pub fn build_emp(
 ///   - an allowlisted guard that no longer folds to Poison (it now resolves, or
 ///     drifted to a `Value(0)` fail) → HARD FAIL (the allowlist is STALE).
 ///
-/// STAGE-2 DELETION MANIFEST: these retire WITH their twins — VRAM_PLANE_B_BYTES ←
-/// `engine/level/bg.asm`, CAM_SCREEN_HALF_{W,H} ← `engine/level/camera.asm` — and
-/// this allowlist machinery retires with them.
-const STAGE1_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[
-    ("VRAM_PLANE_B_BYTES", "plane_buffer.emp"), // twin: engine/level/bg.asm
-    ("VRAM_PLANE_B_BYTES", "section.emp"),       // twin: engine/level/bg.asm
-    ("CAM_SCREEN_HALF_W", "ojz_scroll_test"),    // twin: engine/level/camera.asm
-    ("CAM_SCREEN_HALF_H", "ojz_scroll_test"),    // twin: engine/level/camera.asm
-];
+/// **EMPTY post the Stage-3 P5 bg/camera flip (row 93 data-half).** The four
+/// Poison guards retired: `VRAM_PLANE_B_BYTES` (plane_buffer/section) and
+/// `CAM_SCREEN_HALF_{W,H}` (ojz_scroll_test) moved into `engine.constants` as the
+/// sole author (harvested + injected + link-exported like every flipped
+/// constant), and their consumers now `use engine.constants.{…}` instead of
+/// mirroring + guarding a gated-off `.asm` twin. With the list empty the
+/// enforcement asserts a STRONGER invariant: NO drift guard folds to an
+/// unresolvable-extern Poison — every guard resolves. (The field + this machinery
+/// can be deleted outright as trivial follow-up; kept here as the no-Poison
+/// invariant.)
+const STAGE1_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[];
 
-/// DEMO inapplicable-drift-guard allowlist. Demo's registry is engine-only, so the
-/// game-module `ojz_scroll_test` CAM_SCREEN_HALF guards are ABSENT; only the two
-/// engine `VRAM_PLANE_B_BYTES` guards (plane_buffer/section, twin bg.asm gated off)
-/// remain Poison. VERIFIED empirically by the demo gate's allowlist enforcement.
-const DEMO_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[
-    ("VRAM_PLANE_B_BYTES", "plane_buffer.emp"),
-    ("VRAM_PLANE_B_BYTES", "section.emp"),
-];
+/// DEMO inapplicable-drift-guard allowlist — EMPTY for the same reason (the two
+/// `VRAM_PLANE_B_BYTES` guards it carried retired with the bg/camera flip).
+const DEMO_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[];
 
 /// Enforce that the observed inapplicable (Poison-unresolvable) drift guards are
 /// EXACTLY [`STAGE1_INAPPLICABLE_GUARDS`] — both directions (§t24). `inapplicable`
@@ -2054,7 +2051,10 @@ mod allowlist_tests {
     //! allowlist: the enforcement rejects an UNKNOWN Poison guard (a typo'd/renamed
     //! extern or a new twin-parity guard) AND a STALE allowlist (an entry that no
     //! longer folds to Poison), so the native gates can never silently vacate a guard.
-    use super::{enforce_inapplicable_allowlist, STAGE1_INAPPLICABLE_GUARDS};
+    use super::{
+        enforce_inapplicable_allowlist, enforce_inapplicable_allowlist_against,
+        STAGE1_INAPPLICABLE_GUARDS,
+    };
     use sigil_ir::{Expr, LinkAssert, MsgPart};
     use sigil_span::{Diagnostic, Level, Span, SourceId};
 
@@ -2093,18 +2093,19 @@ mod allowlist_tests {
     }
 
     #[test]
-    fn exact_allowlist_passes() {
-        let (ds, as_) = build(STAGE1_INAPPLICABLE_GUARDS);
-        let refs: Vec<&Diagnostic> = ds.iter().collect();
-        assert!(enforce_inapplicable_allowlist(&refs, &as_).is_ok());
+    fn empty_allowlist_passes_with_no_poison() {
+        // Post the bg/camera flip STAGE1_INAPPLICABLE_GUARDS is empty; the
+        // enforcement asserts NO Poison drift guard exists → OK on an empty set.
+        assert!(STAGE1_INAPPLICABLE_GUARDS.is_empty(), "the allowlist retired to empty");
+        assert!(enforce_inapplicable_allowlist(&[], &[]).is_ok());
     }
 
     #[test]
-    fn unknown_poison_guard_is_rejected() {
-        // The exact set PLUS one unknown extern → HARD FAIL.
-        let mut entries: Vec<(&str, &str)> = STAGE1_INAPPLICABLE_GUARDS.to_vec();
-        entries.push(("SOME_NEW_TWIN_CONST", "camera.emp"));
-        let (ds, as_) = build(&entries);
+    fn any_poison_guard_is_rejected_against_the_empty_allowlist() {
+        // With the allowlist empty, ANY Poison-folding drift guard is a HARD FAIL
+        // (the strengthened no-Poison invariant — a new twin-parity guard needs a
+        // ruling, not a silent vacation).
+        let (ds, as_) = build(&[("SOME_NEW_TWIN_CONST", "camera.emp")]);
         let refs: Vec<&Diagnostic> = ds.iter().collect();
         let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
         assert!(err.contains("NOT in the allowlist"), "got: {err}");
@@ -2112,11 +2113,11 @@ mod allowlist_tests {
 
     #[test]
     fn stale_allowlist_is_rejected() {
-        // One allowlisted guard MISSING (it now resolves) → HARD FAIL (stale).
-        let entries: Vec<(&str, &str)> = STAGE1_INAPPLICABLE_GUARDS[1..].to_vec();
-        let (ds, as_) = build(&entries);
-        let refs: Vec<&Diagnostic> = ds.iter().collect();
-        let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
+        // The staleness direction still holds (an allowlisted guard that no longer
+        // folds to Poison → HARD FAIL), proven against a SYNTHETIC 1-entry allowlist
+        // with no matching Poison diag (the empty shipped list can't be stale).
+        let synthetic: &[(&str, &str)] = &[("SYNTHETIC_TWIN_CONST", "twin.emp")];
+        let err = enforce_inapplicable_allowlist_against(&[], &[], synthetic).unwrap_err();
         assert!(err.contains("STALE"), "got: {err}");
     }
 }
