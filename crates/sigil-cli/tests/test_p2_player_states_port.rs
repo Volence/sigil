@@ -118,28 +118,11 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("SFXID_DASH", "$B6"));
     pairs.push(("SFXID_ROLL", "$3C"));
     pairs.push(("SFXID_JUMP", "$62"));
-    // The engine-truth ST_* / radii / PHYS_* / BUTTON_A/C block moved into
-    // `engine_constant_equs()` at the ambient-hoist parcel (the engine.constants
-    // twin now owns the drift guards), supplied by the `engine_constant_equs()`
-    // extend above — re-pushing here would double-define the equs. Only the
-    // game-truth BUTTON_JUMP_MASK + PPHYS_* (player_common.asm) stay below,
-    // matching the file-local mirrors those state files keep.
-    pairs.push(("BUTTON_JUMP_MASK", "$60"));
-    // physics-table field offsets (a4-relative)
-    pairs.push(("PPHYS_ACCEL", "0"));
-    pairs.push(("PPHYS_DECEL", "2"));
-    pairs.push(("PPHYS_FRICTION", "4"));
-    pairs.push(("PPHYS_TOP_SPEED", "6"));
-    pairs.push(("PPHYS_GRAVITY", "8"));
-    pairs.push(("PPHYS_JUMP_FORCE", "10"));
-    pairs.push(("PPHYS_AIR_ACCEL", "12"));
-    pairs.push(("PPHYS_RELEASE_CAP", "14"));
-    // surviving-AS PlayerV struct equates (guard targets — sensors still read)
-    pairs.push(("_pl_gsp", "$2E"));
-    pairs.push(("_pl_state", "$30"));
-    pairs.push(("_pl_move_lock", "$32"));
-    pairs.push(("_pl_spindash", "$34"));
-    pairs.push(("_pl_stick_convex", "$39"));
+    // The engine-truth ST_* / radii / PHYS_* / BUTTON_A/C block is supplied by the
+    // `engine_constant_equs()` extend above. The state files' BUTTON_JUMP_MASK /
+    // PPHYS_* / _pl_* drift guards all retired at conv-d #49 (player_common.asm
+    // deleted — the state files own their file-local BUTTON_JUMP_MASK/PPHYS_*
+    // consts, verified by the region byte gate; no extern mirror to supply).
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 

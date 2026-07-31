@@ -157,11 +157,8 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("ObjCodeBase", obj_code_base.as_str()));
     pairs.push(("VRAM_TEST_SONIC", "$03C0"));
     pairs.push(("VRAM_TEST_OBJ", "$03E0"));
-    // TPlayerV / DplcV overlay lands at sst_custom ($2E): dplc_ptr @ +0,
-    // art_base @ +4, debug_flag @ +8.
-    pairs.push(("_dplc_ptr", "$2E"));
-    pairs.push(("_art_base", "$32"));
-    pairs.push(("_debug_flag", "$36"));
+    // (test_player's _dplc_ptr/_art_base/_debug_flag overlay guards retired at
+    // conv-d #48 — test_player.emp owns the TPlayerV overlay, no extern mirror.)
     pairs.push(("Ctrl_1_Held", "$FFFF802C"));
     pairs.push(("Ctrl_1_Press", "$FFFF802D"));
     let player_1 = format!("${:X}", shape.player_1);
@@ -378,10 +375,11 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let c = compile_real_files(shape);
 
     // sst.emp's SST_* wall retired at the conv-a structs flip; the constants
-    // twin's guards remain. test_player adds 4 (VRAM_TEST_SONIC +
-    // _dplc_ptr/_art_base/_debug_flag), path_swap adds 1 (VRAM_TEST_OBJ),
+    // twin's guards remain. test_player adds 1 (VRAM_TEST_SONIC — its
+    // _dplc_ptr/_art_base/_debug_flag overlay guards retired at conv-d #48 when
+    // test_player.asm was deleted), path_swap adds 1 (VRAM_TEST_OBJ),
     // test_enemy adds 0 (unguarded overlay).
-    assert_eq!(c.player_guards, twin_guards() + 4, "test_player own 4 guards");
+    assert_eq!(c.player_guards, twin_guards() + 1, "test_player own 1 guard (VRAM_TEST_SONIC)");
     assert_eq!(c.enemy_guards, twin_guards(), "test_enemy guards (unguarded overlay)");
     assert_eq!(c.swap_guards, twin_guards() + 1, "path_swap + own VRAM_TEST_OBJ guard");
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);

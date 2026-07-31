@@ -192,8 +192,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
         m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER),
         // ── Game player ──
-        // player_common (kill row 93): always-emitted header stays AS-side (camera.emp
-        // PL_STATE_ADDR, entity_data ObjDef refs); the body places here.
+        // player_common fully flipped (conv-d #49): player_common.asm deleted. The
+        // module owns the PlayerV overlay + PPHYS_*/macro templates (state files
+        // import by `use`); camera.emp late-binds the one _pl_state offset it
+        // link-exports as an `equ`.
         m!("games.sonic4.player_common", "player_common", pins::PLAYER_COMMON),
         m!("games.sonic4.player_sensors", "player_sensors", pins::PLAYER_SENSORS),
         m!("games.sonic4.player_ground", "player_ground", pins::PLAYER_GROUND),
@@ -201,8 +203,9 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("games.sonic4.player_spindash", "player_spindash", pins::PLAYER_SPINDASH),
         m!("games.sonic4.sonic", "sonic", pins::SONIC),
         // ── Game objects ──
-        // test_player / test_enemy (kill row 93): headers stay AS-side (test_animated
-        // DplcV reads _dplc_ptr/_art_base); bodies place here.
+        // test_player + test_enemy fully flipped (conv-d #48/#47): both .asm deleted.
+        // test_player.emp owns TPlayerV; test_animated.emp owns DplcV; STUB_FLOOR_Y
+        // is object_test_state.emp's; ENEMY_PATROL_SPEED is test_objects.emp's.
         m!("games.sonic4.test_player", "test_player", pins::TEST_PLAYER),
         m!("games.sonic4.test_enemy", "test_enemy", pins::TEST_ENEMY),
         m!("games.sonic4.test_static", "test_static", pins::TEST_STATIC),
@@ -416,7 +419,7 @@ const DUMMY_REGION: Region =
 /// CONFIG-B (off-canonical no-sound): sonic4 game, SOUND_DRIVER_ENABLED OFF, plain.
 /// Registry = the sonic4 set MINUS `engine.sound_api` (no sound caller) PLUS the Z80
 /// idle (kill row 55): with `SIGIL_EMP_Z80_INIT` on, boot_data.asm's no-sound else-arm
-/// gates off `z80_init.asm` and `z80_init.emp`'s `z80_idle` section places at the
+/// takes the numeric-size path and `z80_init.emp`'s `z80_idle` section places at the
 /// frozen `Z80_IdleProgram` base (0x3d8). Sizes from `config_b.txt`.
 pub fn config_b_profile() -> GameProfile {
     let mut registry: Vec<ModuleSpec> =

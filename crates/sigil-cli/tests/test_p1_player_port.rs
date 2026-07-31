@@ -109,12 +109,10 @@ fn as_constant_equs() -> Vec<Section> {
     // ambient-hoist parcel (the engine.constants twin now owns the drift guards),
     // so it is supplied by the `engine_constant_equs()` extend above — pushing it
     // again here would double-define the equs.
-    // the surviving-AS PlayerV struct equates (guard targets)
-    pairs.push(("_pl_gsp", "$2E"));
-    pairs.push(("_pl_state", "$30"));
-    pairs.push(("_pl_move_lock", "$32"));
-    pairs.push(("_pl_spindash", "$34"));
-    pairs.push(("_pl_stick_convex", "$39"));
+    // The _pl_* overlay drift guards retired at conv-d #49 (player_common.asm
+    // deleted — player_common.emp owns PlayerV outright). It now DEFINES _pl_state
+    // as its own `equ` (link-exported for camera), so supplying an _pl_state equ
+    // here would double-define it.
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
