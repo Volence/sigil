@@ -120,6 +120,85 @@ fn config_b_size_table_rederives_native() {
     rederives_native(native::config_b_profile());
 }
 
+/// Wave-B B-0b — the RAM-packing invariant guard. RAM is placed by AS `phase`/
+/// `dephase` (`engine/ram.asm` at `$FFFF0000`/`$FFFF8000`) plus `phase Engine_RAM_End`
+/// (game RAM chains onto the engine block) — the RAM analog of B-0's contiguous
+/// packing, executed natively by sigil's AS frontend. This gate asserts the three
+/// structural properties that keep a RAM-growing parcel (entity_window #1, tile_cache
+/// #2) safe, in BOTH shapes:
+///   (a) every RAM section (`vma_origin >= $FFFF0000`) is EVEN-based — the 68k
+///       address-error guard;
+///   (b) NO ROM section lands in RAM (`is_rom_section` partition holds) — ROM bases
+///       are independent of RAM sizes, so RAM growth never perturbs the ROM layout;
+///   (c) upper RAM PACKS CONTIGUOUSLY — sections at `vma >= $FFFF8000`, sorted, each
+///       successor base == predecessor end (game RAM abuts `Engine_RAM_End`). A gap
+///       or overlap means the packing broke.
+/// See `docs/superpowers/notes/2026-08-01-waveb-b0b-ram-packing.md` for the growth
+/// probe that exercised these under a live +2 RAM growth.
+fn ram_packing_invariants(debug: bool) {
+    let aeon = aeon_dir();
+    if !have_aeon(&aeon) {
+        return;
+    }
+    let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let secs = native::resolve_canonical_sections(&aeon, debug).unwrap_or_else(|e| {
+        panic!("resolve canonical sections ({}): {e}", if debug { "debug" } else { "plain" })
+    });
+
+    let mut ram: Vec<&sigil_ir::Section> =
+        secs.iter().filter(|s| s.vma_origin() >= 0xFFFF_0000).collect();
+    ram.sort_by_key(|s| s.vma_origin());
+
+    // (a) even-based, and there IS a RAM region (guards against a resolve that lost it).
+    assert!(!ram.is_empty(), "no RAM sections resolved — the phase blocks vanished");
+    for s in &ram {
+        assert_eq!(
+            s.vma_origin() % 2,
+            0,
+            "RAM section `{}` base {:#x} is ODD — a 68k word/long access there address-errors",
+            s.name,
+            s.vma_origin()
+        );
+    }
+
+    // (b) partition: no ROM section carries a high (RAM) lma; RAM sizes cannot move ROM.
+    let rom_in_ram = secs
+        .iter()
+        .filter(|s| s.vma_origin() < 0xFFFF_0000 && s.lma >= 0xFFFF_0000)
+        .count();
+    assert_eq!(
+        rom_in_ram, 0,
+        "{rom_in_ram} ROM section(s) placed at a RAM lma — the ROM/RAM partition broke; \
+         RAM growth could perturb ROM bases"
+    );
+
+    // (c) upper RAM (vma >= $FFFF8000) packs contiguously: successor base == predecessor end.
+    let upper: Vec<&sigil_ir::Section> =
+        ram.iter().copied().filter(|s| s.vma_origin() >= 0xFFFF_8000).collect();
+    for w in upper.windows(2) {
+        let end = w[0].vma_origin() + w[0].reserved_span;
+        assert_eq!(
+            w[1].vma_origin(),
+            end,
+            "upper-RAM packing broke: `{}` ends {:#x} but `{}` begins {:#x} \
+             (game RAM must abut Engine_RAM_End with no gap/overlap)",
+            w[0].name,
+            end,
+            w[1].name,
+            w[1].vma_origin()
+        );
+    }
+}
+
+#[test]
+fn ram_packing_invariants_plain() {
+    ram_packing_invariants(false);
+}
+#[test]
+fn ram_packing_invariants_debug() {
+    ram_packing_invariants(true);
+}
+
 /// t24 — the table's TWO authorities under packed placement (Wave-B B-0):
 /// (a) an ISLAND ANCHOR is load-bearing — doctoring `ObjCodeBase` (+2) MUST move the
 ///     ROM (or fail to resolve): a corrupted anchor cannot be silently absorbed;
