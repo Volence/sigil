@@ -193,7 +193,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
     assert_eq!(pins::ASSEMBLED_LEN, 0x5DB60);       // +0xCC churn
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F65A); // +0xCC churn +0xC hook guards
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F67A); // entity_window trigger-cache debug code grows EndOfRom +0x20 (plain absorbed by org $10000 slack)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
