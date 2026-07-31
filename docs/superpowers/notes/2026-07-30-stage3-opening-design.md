@@ -287,7 +287,46 @@ are re-sourced from sigil's OWN resolve, closing the asl-derived-constants era.
 
 ---
 
-## OPEN QUESTIONS (load-bearing; for the countersign / morning report)
+## COUNTERSIGN RULINGS (2026-07-30 — gate passed at 8b3e19d)
+
+The overseer countersigned all six answers. The six rulings, now binding on
+execution:
+
+- **OQ-A → BOTH halves hold.** `tools/asl` + catalogs + `p2bin` + `fixheader`
+  DELETE (nothing-retained governs the REPO, not the ecosystem). asl is the public
+  Macro Assembler AS, so `gen_snippet_vectors.rs` keeps/gains an `ASL_BIN` env-var
+  hook with a fail-loud "install AS and point `ASL_BIN` at it to mint new vectors"
+  message; the golden-vector README documents this as the corpus-extension path.
+  The committed corpus stays the frozen independent witness; extension survives
+  out-of-repo; nothing is retained in-tree. (Fold this into P0.)
+- **OQ-B → demangler policy READY; P2+P3 COMBINE into one re-freeze window.** The
+  filter policy: (1) `$module$Parent$local` → `Parent.local` KEEP; (2) comptime-table
+  names that demangle to source-meaningful names (`__offsets$…$Ani_Sonic$Balance`
+  class — anim-table entries a debugger user wants) demangle and KEEP; (3) pure
+  compiler-plumbing synthetics (`asmN.*` block-internal scopes, `__align` internals)
+  DROP (noise in a backtrace). Net: one appendix change, one re-freeze; 676 → the
+  demangled+filtered set.
+- **OQ-C → CONFIRMED.** The test-only chained-keystone profile is the right red
+  fixture; shipped pins frozen through P1.
+- **OQ-D → CONFIRMED.** The numeric-mirror path (`Z80_IDLE_SIZE=54` AS-side +
+  `.emp`-side self-`ensure`), not the wall relax.
+- **OQ-E → CONFIRMED.** map = region geometry + declared order + declared sizes;
+  chainer computes bases; budgets become size reports; final schema settles at P4.
+- **OQ-F → CONFIRMED.** The OQ-5 spike must prove the export path against residual
+  DATA readers (config, generated tree, parallax, demo game-side) before P5.
+
+**Execution authorized in order:** P1 (chainer fix, TDD, shipped pins frozen) →
+P2+P3 (the five flips + demangler, ONE combined re-freeze — a NAMED commit the
+overseer countersigns before it lands: run the six-target stale-trap-guarded proof,
+show the new values + the unmoved assembled anchors, THEN freeze) → P4 (Phase-B +
+repin retirement + size-table re-derivation) → the tools-deletion commit (with the
+OQ-A hook) → P5/P6 per their gates. **Mandatory checkpoints:** (1) after P1;
+(2) BEFORE the re-freeze commit; (3) at close. Standing discipline: strict green at
+every boundary (failures-first); the six assembled anchors are the invariant that
+NEVER moves; t24 on everything new; plain-spoken standalone commits; kill rows
+same-commit; the valve stands.
+
+## OPEN QUESTIONS (load-bearing; for the countersign / morning report) — RULED ABOVE
 
 - **OQ-A (the ISA vector-corpus regen — the real cost of physical asl deletion):**
   Volence ruled asl-binary NOT kept, overruling the design's OQ-2. But
