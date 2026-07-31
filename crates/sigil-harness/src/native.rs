@@ -736,6 +736,112 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
     Ok(out)
 }
 
+/// Item #7b (Option B bridge, spec §9): engine RAM is authored in
+/// `engine/ram.emp` now, and its `pub vars` labels are the SOLE link authority.
+/// But three residual-AS seams reference those labels EAGERLY — positions the AS
+/// frontend cannot defer to the linker:
+///   1. `games/demo/demo_state.asm`'s `move.x #imm, (RamLabel).w` absolute-EA
+///      writes + the `setVDPReg` macro (`move.b`/`ori.l` to an abs dest),
+///   2. `phase Engine_RAM_End` in each game's `config/ram.asm` (phase folds its
+///      argument at assemble time — a displacement must be known eagerly).
+/// So harvest every engine RAM label's ADDRESS from `ram.emp` and seed them as
+/// PLAIN value defines (NOT `guarded_defines` → NOT re-exported as EquSyms), so
+/// the AS side folds them at comptime with no duplicate-symbol collision against
+/// the `.emp` `pub` labels.
+///
+/// ONE layout authority (spec §9 requirement): this lowers `ram.emp` through the
+/// SAME `lower_regions` path the real build uses — a focused `build_program` over
+/// a `use engine.ram`-only entry — then reads the resolved section labels. The
+/// harvest-time and lower-time addresses are the same BY CONSTRUCTION (one code
+/// path, one comptime env = the profile's `emp_defines`), never merely tested.
+/// Shape-specific: `emp_defines` carries `DEBUG` (0/1), so the debug prof block's
+/// shift flows through to every downstream label's harvested address.
+pub fn harvest_engine_ram_addresses(
+    aeon: &Path,
+    profile: &GameProfile,
+) -> Result<Vec<(String, i64)>, String> {
+    let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
+    let merr: Vec<_> = mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+    if !merr.is_empty() {
+        return Err(format!(
+            "ram harvest manifest scan: {} error(s); first: {:?}",
+            merr.len(),
+            merr.first()
+        ));
+    }
+    // `ram.emp`'s comptime deps (the constants + the struct twins whose `sizeof`
+    // it reads + the type vocabulary Sst's fields erase through) must expose their
+    // comptime items to the focused lower.
+    const RAM_HELPERS: &[&str] = &[
+        "engine.types",
+        "engine.coords",
+        "engine.constants",
+        "engine.structs",
+        "engine.objects.sst",
+    ];
+    publicize_helper_comptime(&mut manifest, RAM_HELPERS);
+
+    // Synthetic entry: `use engine.ram` only — the focused reachable set.
+    let entry_id = "__ram_harvest_entry__".to_string();
+    let src = "module __ram_harvest_entry__\n\nuse engine.ram\n".to_string();
+    let source = sigil_span::SourceId(manifest.modules.len() as u32);
+    let (file, pdiags) = sigil_frontend_emp::parse_file(&src, source);
+    let perr: Vec<_> = pdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+    if !perr.is_empty() {
+        return Err(format!("ram harvest entry parse: {perr:?}"));
+    }
+    let idx = manifest.modules.len();
+    manifest.by_id.insert(entry_id.clone(), idx);
+    manifest.sources.insert(source, aeon.join("__ram_harvest_entry__.emp"));
+    manifest.modules.push(resolve::manifest::ParsedModule {
+        id: entry_id.clone(),
+        file,
+        path: aeon.join("__ram_harvest_entry__.emp"),
+    });
+
+    let defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    let opts = LowerOptions {
+        initial_cpu: Cpu::M68000,
+        include_root: Some(aeon.to_path_buf()),
+        embed_base: Some(aeon.to_path_buf()),
+        defines,
+    };
+    let aeon_root = aeon.to_path_buf();
+    let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
+    let (sections, _asserts, bdiags) =
+        resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed_base_for);
+    let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+    if !berr.is_empty() {
+        return Err(format!(
+            "ram harvest build_program: {} error(s); first: {:?}",
+            berr.len(),
+            berr.first()
+        ));
+    }
+
+    // Collect every RAM label (`vma_origin >= $F00000`) + every alias equate as a
+    // plain (name, address) value define.
+    let mut out: Vec<(String, i64)> = Vec::new();
+    for sec in &sections {
+        if sec.vma_origin() < 0x00F0_0000 {
+            continue;
+        }
+        for l in &sec.labels {
+            out.push((l.name.clone(), (sec.vma_origin().wrapping_add(l.offset)) as i64));
+        }
+        for e in &sec.equ_syms {
+            if let sigil_ir::expr::Expr::Int(v) = e.expr {
+                out.push((e.name.clone(), v));
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err("ram harvest: no RAM labels found (ram.emp not reachable?)".to_string());
+    }
+    Ok(out)
+}
+
 pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, String> {
     let root = profile.game_root(aeon);
     // The `.emp`→residual-AS export (Stage-3 P5): harvest the `.emp`-owned engine
@@ -747,7 +853,11 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     // of the object/section/DMA/parallax/VDP-shadow layouts (structs.asm deleted),
     // so their field offsets + sizes inject the same way the constants do.
     guarded_defines.extend(harvest_engine_struct_offsets(aeon)?);
-    let mut defines: Vec<(String, i64)> = vec![];
+    // Item #7b (Option B bridge, spec §9): seed engine RAM label ADDRESSES as
+    // PLAIN value defines — the AS side folds its eager absolute-EA operands +
+    // `phase Engine_RAM_End`; the `.emp` `pub vars` labels stay the sole link
+    // authority (plain defines never export EquSyms, so no duplicate symbol).
+    let mut defines: Vec<(String, i64)> = harvest_engine_ram_addresses(aeon, profile)?;
     if profile.sound_on {
         defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
         for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX"] {
@@ -863,6 +973,12 @@ fn emp_map_frozen(sections: &[Section]) -> String {
 /// so `build_program`'s reachability BFS pulls them all (and their comptime deps).
 fn synthetic_entry_src(specs: &[ModuleSpec]) -> String {
     let mut src = String::from("module native_flip_entry\n\n");
+    // Item #7b: the engine RAM module owns no ROM section (its region-form `vars`
+    // lower to reserve-only RAM sections, skipped by `place_sections`), so it has
+    // no registry `ModuleSpec` — but it MUST be reachable so its `pub vars` labels
+    // are built and exported as the joint-link RAM authority. Both sonic4 + demo
+    // need engine RAM, so it rides the shared entry.
+    src.push_str("use engine.ram\n");
     for s in specs {
         src.push_str(&format!("use {}\n", s.module_id));
     }

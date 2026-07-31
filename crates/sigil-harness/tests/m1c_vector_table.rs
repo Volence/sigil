@@ -95,6 +95,17 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         sigil_harness::native::harvest_engine_struct_offsets(&aeon)
             .expect("harvest struct offsets"),
     );
+    // Item #7b: engine/ram.asm is retired — the engine RAM labels the front-matter
+    // needs (HBlank_Vector_Slot; Engine_RAM_End for the game-RAM `phase`) come from
+    // the ram.emp address harvest seeded as PLAIN -D defines, exactly as the real
+    // build's assemble_as_side does (non-debug shape here).
+    defines.extend(
+        sigil_harness::native::harvest_engine_ram_addresses(
+            &aeon,
+            &sigil_harness::native::sonic4_profile(false),
+        )
+        .expect("harvest ram addresses"),
+    );
     let opts = Options {
         initial_cpu: Cpu::M68000,
         defines,
