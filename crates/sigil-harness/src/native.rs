@@ -1178,9 +1178,14 @@ fn packed_true_bases(
     // Round 0: lengths at the PROVISIONAL bases (labeled sections at prov, label-less
     // pure-data blobs at scratch — the proven Frozen measuring pins). When a section
     // GREW, prov pins collide and the resolve fails — retry with a small cumulative
-    // spread (+0x40 per ROM section, order-preserving): big enough to absorb
+    // spread (+0x80 per ROM section, order-preserving): big enough to absorb
     // parcel-scale growth, small enough that cross-section CONDITIONAL branches (no
-    // long form) keep their reach. A growth beyond the spread is a hand ruling.
+    // long form) keep their reach. This spread is a MEASURING device only — final
+    // bases come from the island/contiguity rounds below and re-measure to a
+    // fixpoint, so widening it never moves an unchanged section. Widened 0x40->0x80
+    // for collision_lookup #1 (the fused GetType+GetCollision grows the region by
+    // 0x44, just past the old 0x40 spread — the demo game's tight layout overran it
+    // by 4 bytes). A growth beyond this is a hand ruling.
     let prov_pins: Vec<Option<u32>> = (0..n)
         .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
         .collect();
@@ -1190,7 +1195,7 @@ fn packed_true_bases(
             let mut spread_pins = prov_pins.clone();
             for (rank, &i) in order.iter().enumerate() {
                 if let Some(Some(p)) = spread_pins.get_mut(i).map(|s| s.as_mut()) {
-                    *p += 0x40 * rank as u32;
+                    *p += 0x80 * rank as u32;
                 }
             }
             image_lens_pinned(sections, &spread_pins)

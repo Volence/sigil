@@ -315,3 +315,49 @@ full_crc = "7ea5e77d"
 full_size = 422198
 anchor_crc = "ee70397d"
 anchor_end = 0x5f65a
+
+[[entry]]
+name = "waveb-collision-lookup"
+ab = "docs/superpowers/notes/2026-08-01-waveb-collision-lookup.md"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "6998b7a7"
+full_size = 422505
+anchor_crc = "3298a425"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "8c35a5cd"
+full_size = 303677
+anchor_crc = "7123fd6c"
+anchor_end = 0x434d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "cb7550c2"
+full_size = 90460
+anchor_crc = "75aedb4a"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d87ede54"
+full_size = 92960
+anchor_crc = "483445e0"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5712eb1d"
+full_size = 412329
+anchor_crc = "b6c76721"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "7b1f7fd3"
+full_size = 422170
+anchor_crc = "1678d2b6"
+anchor_end = 0x5f65a

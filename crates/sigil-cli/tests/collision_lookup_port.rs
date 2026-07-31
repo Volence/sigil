@@ -9,35 +9,34 @@
 //!
 //! ## No shape define
 //!
-//! Like every code port so far, the block's CONTENT is byte-identical plain
-//! and debug (0x24 bytes in both since the step-5 tail-call optimize; 0x32
-//! as first ported) — only its BASE address shifts (plain `$4C02`, debug
-//! `$5426`), so the shape lives entirely in the MAP.
+//! The block's CONTENT byte-count is shape-invariant (the abs.w Cache_* reads
+//! and the abs.l `lea` are fixed-width regardless of the operand VALUES) —
+//! only its BASE address and the RAM operand values shift with `__DEBUG__`, so
+//! the shape lives in the MAP and the per-shape synthetic label positions.
+//! collision_lookup #1 fused the former `Tile_Cache_GetCollision` into this
+//! body, growing it from the 0x24-byte tail-call form.
 //!
-//! ## What this port exercises that the prior five did not
+//! ## What this port exercises
 //!
-//! - **Cross-seam pc-relative TRANSFER** — `jbra Tile_Cache_GetCollision`
-//!   (the step-5 tail call; `jbsr` + `rts` as first ported) targets an
-//!   AS-side ROM label (`engine/level/tile_cache.asm`), so a PC-RELATIVE
-//!   BRANCH fixup (not just a pc-rel EA) resolves against a link-supplied
-//!   symbol at its true per-shape VMA (plain `$418E`, debug `$48FA`). The
-//!   jsr/jmp cross-seam DEFERRAL (tranche 2) covered absolute transfers;
-//!   this was the first cross-seam pc-relative CALL in a ported body.
-//! - **SHAPE-DEPENDENT RAM** — the four `Cache_*` words live in GAME RAM,
-//!   which moves between shapes (plain `$FFFFA834+`, debug `$FFFFA856+`) —
+//! - **Cross-seam ABSOLUTE-address load** — `lea Tile_Cache_Collision, a0`
+//!   (the fused collision-array fetch) resolves an abs.l EA against a
+//!   link-supplied RAM symbol; the emitted longword carries the label's full
+//!   VMA.
+//! - **SHAPE-DEPENDENT RAM** — the six `Cache_*` words live in GAME RAM,
+//!   which moves between shapes (plain `$FFFFA836+`, debug `$FFFFA85A+`) —
 //!   the first port whose RAM imports shift with `__DEBUG__` (the engine-RAM
-//!   ports were shape-invariant). Both spellings width to abs.w.
+//!   ports were shape-invariant). All spellings width to abs.w.
 //!
 //! ## The cross-seam symbols
 //!
 //! INBOUND references, supplied as synthetic AS-side sections:
 //!
-//! - Four AS-side RAM labels: `Cache_Left_Col`/`Cache_Head_Col`/
-//!   `Cache_Top_Row`/`Cache_Bottom_Row` (`games/sonic4` game RAM, four
-//!   consecutive words, phased at the per-shape base — read from each
-//!   shape's symbol table).
-//! - One AS-side ROM label: `Tile_Cache_GetCollision`, phased at its true
-//!   per-shape VMA — the cross-seam `jbra` tail-call target described above.
+//! - Six AS-side RAM labels: `Cache_Left_Col`/`Cache_Head_Col`/
+//!   `Cache_Top_Row`/`Cache_Bottom_Row`/`Cache_Origin_Col`/`Cache_Origin_Row`
+//!   (`games/sonic4` game RAM, six consecutive words, phased at the per-shape
+//!   base — read from each shape's symbol table).
+//! - One AS-side RAM label: `Tile_Cache_Collision` (the collision array base,
+//!   engine RAM `$FFFF2580`, shape-invariant) — the fused abs.l `lea` target.
 //!
 //! `CTYPE_AIR` comes from the `engine.constants` twin (step 2's migration —
 //! `use engine.constants.{CTYPE_AIR}`; the twin lives in the SIBLING
@@ -132,11 +131,13 @@ fn as_twin_equs() -> Vec<Section> {
     sigil_harness::test_support::as_engine_constants_equs()
 }
 
-/// The synthetic AS-side cross-seam unit supplying the four cache-window RAM
-/// labels — four consecutive `dc.w` words phased at the per-shape base
-/// (GAME RAM moves with `__DEBUG__`: plain `$FFFFA834`, debug `$FFFFA856` —
+/// The synthetic AS-side cross-seam unit supplying the SIX cache-window RAM
+/// labels — six consecutive `dc.w` words phased at the per-shape base
+/// (GAME RAM moves with `__DEBUG__`: plain `$FFFFA836`, debug `$FFFFA85A` —
 /// read from each shape's symbol table; `Head_Col` = base+2, `Top_Row` =
-/// base+4, `Bottom_Row` = base+6 in both).
+/// base+4, `Bottom_Row` = base+6, `Origin_Col` = base+8, `Origin_Row` =
+/// base+10 in both). The fused `Collision_GetType` (collision_lookup #1) reads
+/// `Origin_Col`/`Origin_Row` too, so they join the four bounds words.
 fn as_cache_ram_labels(debug: bool) -> Vec<Section> {
     let base = format!(
         "${:X}",
@@ -152,32 +153,35 @@ fn as_cache_ram_labels(debug: bool) -> Vec<Section> {
          Cache_Top_Row:\n\
          \tdc.w 0\n\
          Cache_Bottom_Row:\n\
+         \tdc.w 0\n\
+         Cache_Origin_Col:\n\
+         \tdc.w 0\n\
+         Cache_Origin_Row:\n\
          \tdc.w 0\n"
     );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cache ram labels): {d:?}")).sections
 }
 
-/// The synthetic AS-side cross-seam unit supplying `Tile_Cache_GetCollision`
-/// at its TRUE per-shape VMA (plain `$418E`, debug `$48FA` —
-/// `engine/level/tile_cache.asm`, read from the shape's symbol table). A
-/// PC-RELATIVE branch target (`bsr.w`), so the label's absolute position is
-/// load-bearing: the `PcRelDisp16` fixup resolves to
-/// `target_vma - (site_vma + 2)` and the reference bytes only match when
-/// the label sits where the real tile_cache.asm put it.
-fn as_tile_cache_label(debug: bool) -> Vec<Section> {
+/// The synthetic AS-side cross-seam unit supplying the `Tile_Cache_Collision`
+/// RAM array base at its VMA (`$FFFF2580`, both shapes — engine RAM,
+/// shape-invariant). The fused `Collision_GetType` loads it with `lea
+/// Tile_Cache_Collision, a0` — an ABSOLUTE LONG address, so the emitted bytes
+/// carry the label's full VMA and only match when the label sits where
+/// `engine/ram.asm` put it.
+fn as_collision_array_label(debug: bool) -> Vec<Section> {
     let base = format!(
         "${:X}",
-        if debug { pins::TILE_CACHE_GET_COLLISION.debug } else { pins::TILE_CACHE_GET_COLLISION.plain }
+        if debug { pins::TILE_CACHE_COLLISION.debug } else { pins::TILE_CACHE_COLLISION.plain }
     );
     let asm = format!(
         "cpu 68000\n\
          phase {base}\n\
-         Tile_Cache_GetCollision:\n\
+         Tile_Cache_Collision:\n\
          \tdc.b 0\n"
     );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (tile cache label): {d:?}")).sections
+    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (collision array label): {d:?}")).sections
 }
 
 /// The synthetic AS-side OUTBOUND consumer — THE BARE-NAME PROOF. Mirrors
@@ -265,16 +269,16 @@ fn compile_real_file(
     }
     sections.extend(ram_labels);
 
-    // Tile_Cache_GetCollision is a PC-RELATIVE branch target: its section is
-    // `phase`d at the true per-shape VMA, so its LABEL address is already
+    // Tile_Cache_Collision is an ABSOLUTE-address target (`lea` abs.l): its
+    // section is `phase`d at the true VMA, so its LABEL address is already
     // correct — the LMA of the carrier byte is harness-private.
-    let mut tile_cache = as_tile_cache_label(debug);
-    for sec in &mut tile_cache {
+    let mut coll_array = as_collision_array_label(debug);
+    for sec in &mut coll_array {
         sec.lma = 0x0280_0000;
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }
-    sections.extend(tile_cache);
+    sections.extend(coll_array);
 
     let mut consumer = as_outbound_consumer();
     for sec in &mut consumer {
