@@ -43,7 +43,9 @@ fi
 # The off-canonical Config-A/B shapes have no build.sh env path (post-flip build.sh
 # forwards only --game/--debug to sigil); they build through `sigil build --config-*`
 # directly. The canonical four still go through build.sh.
-SIGIL_BUILD="${SIGIL_BUILD:-$SIGIL_ROOT/target/release/sigil}"
+# Honor CARGO_TARGET_DIR (a shared-target worktree build) — else the crate's own target.
+TARGET_DIR="${CARGO_TARGET_DIR:-$SIGIL_ROOT/target}"
+SIGIL_BUILD="${SIGIL_BUILD:-$TARGET_DIR/release/sigil}"
 [[ -x "$SIGIL_BUILD" ]] || { echo "ERROR: sigil build binary not at $SIGIL_BUILD (set SIGIL_BUILD)"; exit 1; }
 
 # report <lst> <bin> — print both split-golden layers (full file + header-neutral

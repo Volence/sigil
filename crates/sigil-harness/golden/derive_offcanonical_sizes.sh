@@ -32,8 +32,10 @@ fi
 echo "== Stage-3 P4a — sigil-native off-canonical size derivation (asl-free) =="
 echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
+# Honor CARGO_TARGET_DIR (a shared-target worktree build) — else the crate's own target.
+TARGET_DIR="${CARGO_TARGET_DIR:-$SIGIL_ROOT/target}"
 ( cd "$SIGIL_ROOT" && cargo build --release -p sigil-harness --bin derive_offcanon )
 AEON_DIR="$AEON" SIGIL_EMIT="$SIGIL_EMIT" \
-    "$SIGIL_ROOT/target/release/derive_offcanon" "$HERE/offcanonical_sizes"
+    "$TARGET_DIR/release/derive_offcanon" "$HERE/offcanonical_sizes"
 
 echo "== done — tables in $HERE/offcanonical_sizes (commit them; sigil-native provenance) =="

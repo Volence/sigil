@@ -67,17 +67,27 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("Z80_Sound_Start", 0x3DE, 0x3E2),   // Z80-adjacent (shape-varying)
 ];
 
-/// The sigil-canonical full-file CRC-32 + size (Stage-3 P2d re-freeze: the keystone
-/// flip shrinks each appendix, the demangler grows it; PROVENANCE.md).
-/// The ASSEMBLED prefix is asl-identical (PRIMARY e5765873/dab4f06c, stable); these
-/// FULL-FILE values are sigil-canonical (the appendix is sigil's) and DRIFT with any
-/// aeon `.asm` change (appendix content follows the symbol set) — a mismatch is the
-/// intended "re-freeze the golden" signal, per the split-golden model. The
-/// golden-freeze stage commits these as byte-blobs; here they are the regression pin.
-const SIGIL_FULL_PLAIN: (u32, usize) = (0x7f07_1417, 412306);
-const SIGIL_FULL_DEBUG: (u32, usize) = (0x0b8e_fc7a, 422147);
+/// The golden directory (holds the frozen blobs + `provenance.toml`, the single source
+/// of the expected CRC/size — the hand-edited const surface is retired).
+fn golden_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden")
+}
 
-fn run_shape(debug: bool, refname: &str, expect: (u32, usize)) {
+/// The sigil-canonical full-file CRC-32 + size, sourced from the provenance chain TIP
+/// (`golden/provenance.toml`). The ASSEMBLED prefix is asl-identical (the PRIMARY
+/// anchor); the FULL-FILE values are sigil-canonical (the appendix is sigil's) and move
+/// on any golden re-freeze — a mismatch is the intended "re-freeze the golden" signal,
+/// per the split-golden model. `provenance_chain` independently proves the tip equals
+/// the committed blobs, so build == tip here means build == the frozen golden.
+fn expected_full(key: &str) -> (u32, usize) {
+    let t = sigil_harness::provenance::tip_target(&golden_dir(), key)
+        .unwrap_or_else(|e| panic!("provenance tip: {e}"));
+    let crc = sigil_harness::provenance::hex_u32(&t.full_crc).unwrap_or_else(|e| panic!("{e}"));
+    (crc, t.full_size)
+}
+
+fn run_shape(debug: bool, refname: &str, key: &str) {
+    let expect = expected_full(key);
     let Some(refrom) = read_ref(refname) else { return };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let aeon = aeon_dir();
@@ -148,13 +158,13 @@ fn run_shape(debug: bool, refname: &str, expect: (u32, usize)) {
 /// (PLAIN) the split-golden full-file gate.
 #[test]
 fn native_full_sonic4_plain() {
-    run_shape(false, "s4.bin", SIGIL_FULL_PLAIN);
+    run_shape(false, "s4.bin", "s4");
 }
 
 /// (DEBUG) the split-golden full-file gate.
 #[test]
 fn native_full_sonic4_debug() {
-    run_shape(true, "s4.debug.bin", SIGIL_FULL_DEBUG);
+    run_shape(true, "s4.debug.bin", "s4_debug");
 }
 
 /// t24 NEGATIVE CONTROL: doctoring one symbol's address in the listing MUST change

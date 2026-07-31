@@ -56,13 +56,29 @@ fn is_header_field(i: usize) -> bool {
     sigil_harness::CHECKSUM_FIELD_RANGE.contains(&i) || sigil_harness::ROM_END_FIELD_RANGE.contains(&i)
 }
 
+fn golden_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden")
+}
+
+/// EndOfRom for a target, sourced from the provenance chain tip (`anchor_end`) — the
+/// hand-typed `assembled_end` literal is retired. `provenance_chain` proves the tip's
+/// anchor_end/anchor_crc against the committed blob; here the build's assembled length
+/// is independently asserted == that anchor_end, cross-checking it against the real ROM.
+fn anchor_end(key: &str) -> usize {
+    sigil_harness::provenance::tip_target(&golden_dir(), key)
+        .unwrap_or_else(|e| panic!("provenance tip: {e}"))
+        .anchor_end
+}
+
 /// Prove `profile`'s assembled anchor `[0, eor)` == the golden prefix, header-neutral.
-/// `golden_crc` is the FULL-file golden CRC (informational — the byte compare over the
-/// prefix is the load-bearing assertion). Determinism: a second build is byte-identical.
-fn anchor_matches(profile: &native::GameProfile, golden_name: &str, eor: usize) {
+/// `key` selects the provenance target (its `anchor_end` is the window); the byte
+/// compare over the prefix is the load-bearing assertion. Determinism: a second build is
+/// byte-identical.
+fn anchor_matches(profile: &native::GameProfile, golden_name: &str, key: &str) {
     if !have_aeon() {
         return;
     }
+    let eor = anchor_end(key);
     let Some(g) = golden(golden_name) else { return };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let aeon = aeon_dir();
@@ -83,26 +99,26 @@ fn anchor_matches(profile: &native::GameProfile, golden_name: &str, eor: usize) 
     );
 }
 
+// CRC/size/anchor_end now live in golden/provenance.toml (the chain tip); these gates
+// read anchor_end from there via the `key` and prove the fresh build's anchor == the
+// frozen golden's prefix.
+
 #[test]
 fn config_b_anchor_matches_golden() {
-    // golden config_b.bin 92776720/304961; assembled_end 0x434d0.
-    anchor_matches(&native::config_b_profile(), "config_b.bin", 0x434d0);
+    anchor_matches(&native::config_b_profile(), "config_b.bin", "config_b");
 }
 
 #[test]
 fn config_a_anchor_matches_golden() {
-    // golden config_a.bin b4a6756d/421898; assembled_end 0x5f65a.
-    anchor_matches(&native::config_a_profile(), "config_a.bin", 0x5f65a);
+    anchor_matches(&native::config_a_profile(), "config_a.bin", "config_a");
 }
 
 #[test]
 fn demo_plain_anchor_matches_golden() {
-    // demo.bin 18c64002/90776; assembled_end 0x11224.
-    anchor_matches(&native::demo_profile(false), "demo.bin", 0x11224);
+    anchor_matches(&native::demo_profile(false), "demo.bin", "demo");
 }
 
 #[test]
 fn demo_debug_anchor_matches_golden() {
-    // demo.debug.bin b0475a59/91584; assembled_end 0x11224 (demo_debug.txt).
-    anchor_matches(&native::demo_profile(true), "demo.debug.bin", 0x11224);
+    anchor_matches(&native::demo_profile(true), "demo.debug.bin", "demo_debug");
 }
