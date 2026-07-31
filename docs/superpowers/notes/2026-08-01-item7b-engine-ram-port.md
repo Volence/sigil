@@ -1,249 +1,211 @@
-# 2026-08-01 — ITEM #7b: engine/ram.asm → the `vars` region form (CHECKPOINT — cross-seam STOP for countersign)
+# 2026-08-01 — ITEM #7b: engine/ram.asm → the `vars` region form (CLOSE PACKET)
 
-Status: **STOP for the spec-owner's countersign on the cross-seam mechanism.**
-Branch `item7b-engine-ram` (sigil + aeon). Not merged. The `place_sections`
-RAM-skip (the brief's stated first task) is DONE, committed, and green. The port
-itself is BLOCKED on a spec-vs-reality gap in §3.3's cross-seam assumption that
-is above a porter's unilateral call (the "do not hack around" clause). Everything
-needed to finish once the mechanism is ruled is captured below (the port map is
-design-complete).
+Status: **DONE — branches unmerged for the overseer's countersign.** Branches
+`item7b-engine-ram` (sigil + aeon). The engine RAM layout is authored in
+`engine/ram.emp` (the region form); `engine/ram.asm` is deleted; the residual AS
+reads the addresses it needs eagerly via the Option-B harvest bridge. **All six
+targets byte-identical to chain-9; repin RAM-cell diff ZERO both shapes; strict
+2866/0/4.**
+
+Overseer ruling (spec commit `2d9518f0`, §3.3 rewritten + §9 decision record):
+**Option B — value-only harvest → plain AS defines; `.emp pub vars` labels are
+the sole link authority.** Implemented exactly as ruled. §7 below preserves the
+original STOP analysis as the §9 evidence.
 
 ## §0 — HEADLINE
 
-- **DONE (sigil, committed):** `resolve::place_sections` now SKIPS reserve-only
-  RAM sections (`vma_origin >= $F00000`) so a region-form `vars` section
-  (`upper_ram`/`lower_ram`) no longer trips the name→ROM-region match. Test
-  `place_sections_skips_ram_reserve_section` (green). This is spec §8.3's #7b-first
-  task, and it is the ONLY change that is resolution-independent + risk-free.
-- **BLOCKED (the real port):** deleting `engine/ram.asm` and moving its labels to
-  `engine/ram.emp` makes the engine RAM labels `.emp` symbols. Three residual-AS
-  seams then reference those labels EAGERLY (not link-deferred), and the AS
-  frontend hard-errors on an unresolved symbol in those positions. Spec §3.3
-  ("residual .asm reads RAM labels … pub vars fields/marks export identically —
-  **no harvest needed**") is FALSE against the frontend as built. Resolving it
-  changes either the AS frontend or the harvest architecture — a spec-owner call.
+`engine/ram.emp` = `module engine.ram` + two `region` decls + two `pub vars`
+blocks (single owner), faithful to `ram.asm` per spec §4. The three `if/error`
+guards became region `limit`s + `w_addressable`; the buffer-reuse became
+`alias()`+`ensure`; the two `ifdef __DEBUG__` blocks became `if DEBUG == 1`
+groups (prof block `@shape_divergent`; the size-equal `Dynamic_Live_Walking`
+if/else compiler-proven). `engine.inc` drops the include. The AS side gets the
+RAM addresses it references eagerly (demo_state writes + `phase Engine_RAM_End`)
+from `harvest_engine_ram_addresses`, which lowers `ram.emp` through the SAME
+`lower_regions` path the real build uses (§3).
 
-## §1 — WHAT SHIPPED (sigil, committed)
+## §1 — GATES (failures-first)
 
-`crates/sigil-frontend-emp/src/resolve/mod.rs` — `place_sections`: at the top of
-the placement loop, `if sec.vma_origin() >= 0x00F0_0000 { continue; }`. The
-reserve-only RAM section is VMA-placed at its region base already and flattens
-zero image bytes, so its `lma` is irrelevant and it must not be matched against
-the ROM map. `$F00000` is the exact `native::is_rom_section` threshold (RAM lives
-at `$FFFF0000`/`$FFFF8000`+). Test in `tests/region_lower.rs`:
-`place_sections_skips_ram_reserve_section` — a module lowering to BOTH a RAM
-reserve section (`upper_ram`) and a ROM data section (`rom_sec`); the map declares
-only the ROM region; asserts no error (RAM skipped), ROM placed at its region
-base, RAM VMA base preserved. `region_lower` 16/0, `tranche8_negative_probes`
-(the other `place_sections` caller) 7/0.
+| gate | result |
+|---|---|
+| full strict `cargo test --workspace` | **2866 / 0 / 4** (2864 baseline + 2 new tests) |
+| `native_full_rom` (six-target byte identity) | 3 / 0 |
+| `ram_packing_invariants_{plain,debug}` | 2 / 0 |
+| `repin` RAM-cell diff (both shapes) | **`pins.rs unchanged`** (zero diff) |
+| `region_lower` | 17 / 0 (+`place_sections_skips_ram_reserve_section`, +`conditional_group_accepts_comparison_condition`) |
 
-## §2 — THE CROSS-SEAM GAP (empirically confirmed, three interlocking parts)
+Six CRCs (all == chain-9 tips):
 
-The build assembles the residual AS and lowers the `.emp` modules into ONE joint
-`resolve_layout`, so labels cross-resolve. `.emp`→AS references (every RAM label
-consumer today) work because the LINKER resolves them. The reverse — AS
-referencing an `.emp` label — works ONLY where the AS frontend DEFERS an
-unresolved symbol to a link fixup. It defers in exactly three places:
-`jsr`/`jmp` bare targets (`JmpJsrSym`), `dc.l`/`dc.w` bare `Sym` (Abs32/16Be),
-and `lea (Sym).w/.l, aN` (`try_defer_lea_abs`). It does NOT defer an unresolved
-symbol used as an **absolute-EA data operand** — it hard-errors.
+| target | built | chain-9 |
+|---|---|---|
+| s4 | `6cf74e65` / 412127 | `6cf74e65` / 412127 ✓ |
+| s4.debug | `16615e46` / 421958 | `16615e46` / 421958 ✓ |
+| demo | `9bb8c993` / 90506 | `9bb8c993` / 90506 ✓ |
+| demo.debug | `bc7678d0` / 93006 | `bc7678d0` / 93006 ✓ |
+| config_a | `78df5e6a` / 422297 | (strict `native_offcanonical` gate) ✓ |
+| config_b | `f38f609b` / 303501 | (strict `native_offcanonical` gate) ✓ |
 
-### Gap 1 — AS absolute-EA writes to engine RAM labels (the blocker)
+## §2 — ADDRESS-IDENTITY PROOF
 
-After the port, these LIVE residual-AS sites reference `.emp` RAM labels as
-absolute-EA operands that the frontend cannot defer:
+- **`repin` regenerated `pins.rs` → `pins.rs unchanged`** (git diff empty). Every
+  RAM cell (both plain + debug columns) is byte-identical, so every engine RAM
+  label sits at the exact address `ram.asm` authored it — the port is an
+  ADDRESS-EXACT ownership move. Spot-validated against the golden pins during
+  bring-up: `Tile_Cache_Nametable` $FFFF0000, `RAM_Start` $FFFF8000, `Object_RAM`
+  $FFFF89EE/$FFFF8A12, `Camera_X` $FFFFA11C/$FFFFA140, `Ring_Buffer`
+  $FFFFA914/$FFFFA938, `Dynamic_Live` $FFFFB00C/$FFFFB030, `Art_Staging_Buffer`
+  aliased to $FFFF0000; `Engine_RAM_End` $FFFFB3CA/$FFFFB3EE (the +$24 debug shift
+  = the 36-byte `@shape_divergent` prof block).
+- **RAM addresses flow into ROM operands** (the fold-identity contrapositive), and
+  all six ROMs are byte-identical — so the address identity is real, not vacuous.
 
-| site | statement | frontend path | result |
-|---|---|---|---|
-| `games/demo/demo_state.asm:9` | `move.b #$0F, (Palette_Dirty).w` | `convert_one_atom_m68k` M68kAbs → `fold_imm` | **error** (unresolved) |
-| `demo_state.asm:18–19` | `move.l #0, (Camera_X).w` / `(Camera_Y).w` | `try_defer_long_imm` `[Imm,M68kAbs]`: dest folded EAGERLY (see its comment) | **error** |
-| `demo_state.asm:25` (`setVDPReg` macro, `engine/macros.asm:252-253`) | `move.b val,(VDP_Shadow_Table+reg).w` + `ori.l #(1<<reg),(VDP_Dirty_Mask).w` | eager M68kAbs / generic | **error** |
-| `demo_state.asm:27` | `move.l #GameState_Demo, (Game_State).w` | as Camera_X | **error** |
-| `demo_state.asm:4` | `lea (Palette_Buffer).w, a1` | `try_defer_lea_abs` | **OK (defers)** |
+## §3 — THE OPTION-B BRIDGE (single layout authority)
 
-demo_state.asm is `include`d by `games/demo/main.asm` (live in the demo + demo.debug
-builds), and #7b's bar is demo/demo.debug byte-identity — so this is a hard
-blocker, not a corner case. (All other AS "references" the label-sweep flagged —
-`main.asm`'s `Debug_Scene_Freeze`, `game.asm`'s `Ring_Sfx_Speaker`,
-`caves.asm`'s `Camera_Y`, and the `DMA_*`/`Ring_Buffer`/`Static_Pal_Line0`
-mentions in `macros.asm` — are COMMENTS or macro-parameter examples, not real
-operands. The real operand set is exactly the table above.)
+`harvest_engine_ram_addresses(aeon, profile)` (sigil-harness `native.rs`):
 
-### Gap 2 — `phase Engine_RAM_End` (the AS game-RAM continuation)
+1. Scans the manifest, publicizes the comptime helpers `ram.emp` reads
+   (`engine.types/coords/constants/structs/objects.sst`), injects a synthetic
+   `use engine.ram`-only entry, and runs `build_program_open_embed` — **the SAME
+   `lower_regions` code path the real build lowers `ram.emp` through**. Reads the
+   resolved RAM section labels (`vma_origin >= $F00000`) + alias equates as
+   `(name, address)` pairs. Drift between harvest-time and lower-time addresses is
+   impossible BY CONSTRUCTION: one code path, one comptime env (`profile.emp_defines`,
+   shape-specific via `DEBUG`).
+2. `assemble_as_side` seeds these as PLAIN value defines (NOT `guarded_defines` →
+   NOT re-exported as `EquSym`s). The AS side folds its eager absolute-EA operands
+   and `phase Engine_RAM_End` at comptime; the `.emp pub vars` labels remain the
+   sole joint-link authority. No duplicate symbol (plain defines emit no link
+   symbol; verified: `run_impl` seeds `defines` into the env, only
+   `attach_guarded_equ_exports` exports and it exports `guarded_defines` only).
+3. `synthetic_entry_src` gains `use engine.ram` so the real build builds ram.emp's
+   reserve section and exports its labels (both sonic4 + demo).
 
-`games/{sonic4,demo}/config/ram.asm` (still AS in #7b — #7c ports them) open with
-`phase Engine_RAM_End`. `directive_phase` calls `eval_all` EAGERLY (a phase
-displacement must be known at assemble time — it shifts every subsequent label),
-so `Engine_RAM_End` MUST resolve during AS assembly. As an `.emp` `mark` it does
-not. Same class as Gap 1 (AS needs an eager value for an `.emp`-owned address),
-same resolution.
+Requirement #4 (game configs still assemble against the harvested `Engine_RAM_End`):
+CONFIRMED — both `games/{sonic4,demo}/config/ram.asm` `phase Engine_RAM_End` and
+all four game ROMs build byte-identical. They stay AS in #7b (#7c ports them to
+`region game_ram @ after(upper_ram)`, retiring the harvest of `Engine_RAM_End`).
 
-### Gap 3 — game-config constants sized into ENGINE RAM (a smaller wiring gap)
+## §4 — CONSTRUCT-BY-CONSTRUCT PORT MAP (realized)
 
-`engine/ram.asm` sizes three arrays with GAME-config constants that are NOT in
-`engine/system/constants.emp` and NOT in the harness `emp_defines`:
-`RING_BUFFER_ENTRY_SIZE`, `COLLECTED_SLOT_SIZE`, `COLLECTED_PARK_SLOTS`,
-`COLLECTED_PARK_ENTRY_SIZE` (all game-config-only; only `MAX_RING_BUFFER` +
-`COLLECTED_WINDOW_SLOTS` are seeded to `.emp` today). `ram.emp` cannot lower
-without them. This one is NOT architectural — it is mechanical: add the four to
-each profile's `emp_defines` (mirrors the existing `MAX_RING_BUFFER` row), values
-from `games/{sonic4,demo}/config/constants.asm`. Flagged so it is not missed; not
-a STOP by itself. (`SFX_RING_DEPTH`/`band_entry`/`EntityScanState_len` etc. are
-engine-owned — `engine.constants` or harvested struct sizeofs — and are fine.)
-
-## §3 — THE DECISION (spec-owner countersign requested)
-
-Gap 1 (and Gap 2, same cause) forces a choice the spec did not anticipate:
-
-**Option A — extend the AS frontend to defer unresolved absolute-EA operands**
-(realizes §3.3 as written; no harvest). Extend the existing deferral family
-(`try_defer_lea_abs`/`try_defer_long_imm` + a `move.b`/`ori` abs-dest path) so an
-unresolved `(Sym).w/.l` destination emits a width-pinned `Abs16Be`/`Abs32Be`
-fixup instead of erroring. `Engine_RAM_End` still needs an eager value for
-`phase`, which this does NOT give (phase is not an operand) — so Option A alone
-does not close Gap 2; it would still need a value bridge for the phase.
-- Pro: `.emp` `pub` RAM labels stay the single link authority; matches spec §3.3;
-  repin snapshots the `.emp` section directly.
-- Con: an AS-frontend byte-surface change (only the current error path, so
-  byte-neutral for resolved operands — but must be PROVEN by the six CRCs);
-  several instruction shapes; does not solve `phase`.
-
-**Option B — harvest engine-RAM addresses → seed as plain AS `defines`** (values
-only, NOT `guarded_defines`, so NOT re-exported as `EquSym`s). `.emp` `pub vars`
-labels remain the link-export authority; the harvest gives the AS side EAGER
-values so its absolute-EA operands bake the correct address and `phase
-Engine_RAM_End` resolves. No AS-frontend change; closes Gaps 1 AND 2 uniformly.
-- Pro: reuses the proven harvest infrastructure (constants/struct-offset flips);
-  one mechanism for both gaps; zero AS-frontend risk; `Engine_RAM_End` is just
-  another harvested value (no double-export — plain `defines` don't emit link
-  symbols, verified: `run_impl` seeds `defines` into the env but only
-  `attach_guarded_equ_exports` exports, and it exports `guarded_defines` only).
-- Con: contradicts spec §3.3's "no harvest needed" — the emp labels are the link
-  authority, but the AS side reads harvested VALUES (a bridge, not a second
-  author). Harvest must be shape-specific (the debug prof block shifts every
-  label after it) and needs a focused `ram.emp` lower (its `use` comptime deps).
-
-**Porter recommendation: Option B.** It is the lowest-risk faithful bridge,
-handles Gap 2 for free, and keeps the `.emp` `pub vars` block as the address
-authority (so §3.3's INTENT — labels not equates — holds; only the "no harvest"
-sentence relaxes to "a value-only harvest bridges AS's eager-operand gap until
-#7c ports the AS game-RAM/demo_state consumers"). It sidesteps a byte-surface
-AS-frontend change on the critical ROM-identity path. If the overseer prefers
-Option A (keep §3.3 literal), the `ram.emp` authoring + `place_sections` work is
-100% reusable; only the bridge swaps.
-
-Note: whichever option, the `.emp` `pub vars` labels are exported; Gap-1's
-duplicate-symbol hazard for `Engine_RAM_End` is avoided because the harvest
-(Option B) seeds a PLAIN define (no `EquSym`), and Option A does not harvest at
-all. `link()` treats ANY duplicate name (label-vs-label, equ-vs-label) as a hard
-error regardless of value — so a harvested `guarded_define` of a name the `.emp`
-also `pub`-exports would collide; plain `defines` (Option B) do not.
-
-## §4 — THE CONSTRUCT-BY-CONSTRUCT PORT MAP (design-complete; authoring is mechanical once the bridge is ruled)
-
-`engine/ram.emp` = `module engine.ram` + `use engine.constants`, `use
-engine.structs.{DMAEntry, VdpShadow, parallax_config}` (for `sizeof`),
-`use engine.objects.sst.Sst`, `use engine.objects.entity_window.EntityScanState`,
-`use engine.level.parallax.band_entry` — then two `region` decls + two `pub vars`
-blocks (single owner module). Reachability: add `use engine.ram` to the harness
-synthetic entry (`synthetic_entry_src`), so its reserve section is built in both
-sonic4 + demo shapes (both need engine RAM).
-
-Region decls (spec §2.1 / §4):
-```
-pub region lower_ram @ $FFFF0000 .. $FFFF8000
-pub region upper_ram @ $FFFF8000 .. SYSTEM_STACK, w_addressable
-```
-- `lower_ram` limit `$FFFF8000` ⇒ replaces `if Lower_RAM_End > $FFFF8000 error`.
-- `upper_ram` limit `SYSTEM_STACK` ⇒ replaces `if Engine_RAM_End >= SYSTEM_STACK
-  error`; `w_addressable` ⇒ replaces `if (Object_RAM & $FFFF) < $8000 error`
-  (strictly stronger — covers every symbol, not just Object_RAM).
-
-Field mapping (every ram.asm construct):
 | ram.asm | ram.emp |
 |---|---|
-| `Name: ds.b N` | `Name: [u8; N]` (or `Name: u8` for N=1) |
-| `Name: ds.w N` / `ds.l N` | `Name: [u16; N]` / `[u32; N]` (scalars for N=1) |
-| `ds.b SST_len` (Player_1/2) | `Player_1: Sst` (typed; `sizeof(Sst)` bytes) |
-| `ds.b SST_len * NUM_DYNAMIC` | `[Sst; NUM_DYNAMIC]` |
-| `ds.b DMA_CRITICAL_SLOTS*DMAEntry_len` | `[u8; DMA_CRITICAL_SLOTS * sizeof(DMAEntry)]` (or `[DMAEntry; DMA_CRITICAL_SLOTS]`) |
+| `phase $FFFF0000 … dephase` | `region lower_ram @ $FFFF0000 .. $FFFF8000` + `pub vars lower_ram {}` |
+| `phase $FFFF8000 … dephase` | `region upper_ram @ $FFFF8000 .. SYSTEM_STACK, w_addressable` + `pub vars upper_ram {}` |
+| `Name: ds.b/w/l N` | `Name: [u8/u16/u32; N]` (scalar for N=1) |
+| `Player_1: ds.b SST_len` / pools | `Player_1: Sst` / `[Sst; N]` (typed) |
+| `ds.b N*DMAEntry_len` / `ds.b DMAEntry_len` | `[u8; N*sizeof(DMAEntry)]` / `[u8; sizeof(DMAEntry)]` |
 | `ds.b VDP_Shadow_len` | `[u8; sizeof(VdpShadow)]` |
-| `ds.b band_entry_len*MAX_PARALLAX_BANDS` | `[u8; sizeof(band_entry) * MAX_PARALLAX_BANDS]` |
-| `ds.b MAX_TRACKED_SECTIONS*EntityScanState_len` | `[u8; MAX_TRACKED_SECTIONS * sizeof(EntityScanState)]` |
-| anonymous `ds.b 1` / `ds.b 2` even-pad | `pad(1)` / `pad(2)` |
-| `Name:` (marker label) | `mark Name` |
+| `ds.b band_entry_len*N` / `ds.b N*EntityScanState_len` | `[u8; BAND_ENTRY_LEN*N]` / `[u8; N*ENTITY_SCAN_STATE_LEN]` (local const + drift ensure) |
+| anonymous `ds.b 1/2/4` pad | `pad(1)` / `pad(2)` / `pad(4)` |
+| `ds.b (…)&1` (defensive even-pad) | `pad((COLLECTED_PARK_SLOTS*COLLECTED_PARK_ENTRY_SIZE)&1)` |
+| `Name:` marker | `mark Name` (RAM_Start, DMA_Queue, DMA_*_End, Parallax_State/_End, Object_RAM/_End, Lower_RAM_End, Engine_RAM_End) |
 | `Art_Staging_Buffer = Tile_Cache_Nametable` | `Art_Staging_Buffer: alias(Tile_Cache_Nametable)` |
-| `if ART_STAGING_BUFFER_SIZE > TILE_CACHE_NT_SIZE error` | `ensure(ART_STAGING_BUFFER_SIZE <= TILE_CACHE_NT_SIZE, "…")` |
-| `align 256` (Pos_table is `ds.b 256` — no align in engine; the 256-align is in GAME ram, #7c) | n/a for engine; `@align(256)` is #7c's Player_Pos_Ring |
-| `ifdef __DEBUG__ … (Prof block, size-VARYING) endif` (`ram.asm:192-217`) | `if DEBUG == 1 @shape_divergent { DMA_Bytes_ThisFrame: u16, … Debug_Scene_Freeze: u8, pad(1) }` |
-| `ifdef __DEBUG__ Dynamic_Live_Walking: ds.b 1 else ds.b 1 endif` (size-EQUAL, `ram.asm:453-464`) | `if DEBUG == 1 { Dynamic_Live_Walking: u8 } else { pad(1) }` (compiler proves invariance — no annotation) |
+| `if ART_STAGING_BUFFER_SIZE > TILE_CACHE_NT_SIZE error` | `ensure(ART_STAGING_BUFFER_SIZE <= TILE_CACHE_NT_SIZE, …)` |
+| `if Lower_RAM_End > $FFFF8000 error` | `lower_ram` limit `$FFFF8000` (`[region.overflow]`) |
+| `if Engine_RAM_End >= SYSTEM_STACK error` | `upper_ram` limit `SYSTEM_STACK` (`[region.overflow]`) |
+| `if (Object_RAM & $FFFF) < $8000 error` | `upper_ram` `w_addressable` (`[region.not-w-addressable]`) |
+| `ifdef __DEBUG__` (size-VARYING prof block) | `if DEBUG == 1 @shape_divergent { … }` |
+| `ifdef __DEBUG__ X else pad endif` (size-EQUAL) | `if DEBUG == 1 { Dynamic_Live_Walking: u8 } else { pad(1) }` (invariance compiler-proven) |
 
-Two-block structure of the upper region (needed for the `Engine_RAM_End` mark
-under Option B — see below):
-- `pub vars upper_ram { RAM_Start … Block_Stage_ZeroPage }` — every exported
-  engine RAM label, in ram.asm order.
-- `Engine_RAM_End`: under Option B, place `mark Engine_RAM_End` in a TRAILING
-  **non-`pub`** `vars upper_ram { mark Engine_RAM_End }` block (single-owner allows
-  multiple source-order blocks) so it is a harvest anchor but NOT a link export
-  (avoids colliding with the plain-define value the AS side reads). Under Option A
-  it can be a plain `pub mark` in the main block (no harvest); Gap 2 then needs a
-  separate value bridge for `phase`.
+Struct-size sourcing (per-site call, §4): `sizeof()` for the comptime-only-module
+structs (`Sst`/`DMAEntry`/`VdpShadow` — pulled lightweight into the harvest);
+local `const` + `ensure(extern("X_len") == const)` drift guard for the two whose
+owners are CODE modules (`EntityScanState` in entity_window, `band_entry` in
+parallax — importing them would drag whole code modules into the focused harvest).
 
-Comments: port the present-tense contract comments (the §-refs, the bit-15/pad
-rationale, the tail-placement rationale for HBlank_Vector_Slot / Dynamic_Live /
-the prefetch memo block) verbatim-adapted; NO change-history narration (house
-rule). The `Debug_Scene_Freeze` sits inside the `@shape_divergent` DEBUG group,
-exactly as ram.asm has it inside `ifdef __DEBUG__`.
+## §5 — RETIREMENTS (consciously-retired walls, re-homed §4 template)
 
-## §5 — CROSS-SEAM CONSUMERS AFTER THE PORT (how each resolves)
+1. **`parcel_8b_stage_gen_touchers::block_stage_keys_has_exactly_three_touchers`** —
+   the `.emp` toucher census now sees `ram.emp`'s `Block_Stage_Keys:` field
+   (a `vars` declaration, outside any proc) as an un-audited orphan. RE-HOME:
+   exclude `engine/ram.emp` from the census — it is the label's DEFINITION home,
+   exactly the role `engine/ram.asm`'s `Block_Stage_Keys:` declaration played
+   before (residual AS, never `.emp`-scanned). Test green (1/0).
+2. **`m1c_vector_table::vector_table_matches_reference_rom_first_256_bytes`** — its
+   standalone `m1c_root.asm` `include`d the now-deleted `engine/ram.asm`, and its
+   game-RAM `phase Engine_RAM_End` needs `Engine_RAM_End`. RE-HOME: drop the dead
+   include; seed `harvest_engine_ram_addresses` (non-debug shape) into the test's
+   plain defines — mirroring the real build's Option-B bridge. Test green (1/0).
 
-- `.emp` consumers (all resolve at the joint link against `ram.emp`'s `pub`
-  labels — identical to how they resolve against `ram.asm` today):
-  `boot.emp` (`RAM_Start`, bare), `parallax.emp`
-  (`extern("Parallax_State"/"Parallax_State_End")`), `core.emp`
-  (`extern("Object_RAM"/"Object_RAM_End")`), and every `lea RamLabel`/`extern(..)`
-  in tile_cache/section/plane_buffer/etc.
-- AS consumers: the Gap-1 operand table (needs the bridge) + `phase
-  Engine_RAM_End` (Gap 2). The `lea (Palette_Buffer).w` already defers.
+No kill-list closures (as #7a foresaw: the region-`vars` scaffolding has no
+twin-mirror row; it acquires one when #7c wires the cross-module `after()` chain).
 
-## §6 — GATE STATE (this checkpoint)
+## §6 — DEVIATIONS (recorded for countersign)
 
-- `place_sections` change: `region_lower` 16/0, `tranche8_negative_probes` 7/0.
-- Full strict suite / six CRCs: NOT re-run for the port (the port is not wired —
-  `ram.asm` still present, `ram.emp` not authored). Baseline 2864/0/4 is
-  undisturbed by the `place_sections` skip (it is inert until a RAM section
-  reaches placement, which no aeon build does yet — same argument as #7a's
-  six-CRC identity). The `place_sections`-skip commit is on top of the chain-9
-  baseline; the aeon tree is UNTOUCHED (ram.asm intact).
+1. **Requirement #3 refined — the four sizes are LOCAL consts in `ram.emp`, NOT
+   `emp_defines`.** The overseer's binding instruction said "add the four
+   game-config size constants to the `emp_defines` profiles." On implementation I
+   found all four (`RING_BUFFER_ENTRY_SIZE`, `COLLECTED_SLOT_SIZE`,
+   `COLLECTED_PARK_SLOTS`, `COLLECTED_PARK_ENTRY_SIZE`) are **engine-INVARIANT**
+   (byte-identical values in `games/sonic4` and `games/demo` config), and
+   `RING_BUFFER_ENTRY_SIZE` is ALREADY a local `const` (=6) in `rings.emp` +
+   `entity_window.emp` with an `ensure(extern(..)==..)` drift guard — the shipped
+   convention for engine-invariant buffer-layout sizes. Seeding them as per-game
+   `-D` defines would (a) mismodel invariants as game-varying, and (b) risk a
+   `const`-vs-seeded-define collision in `rings.emp`/`entity_window.emp`. So I
+   homed them the way the corpus already does: local `const` + `ensure(extern(..)
+   == ..)` drift guards in `ram.emp`. This serves the requirement's GOAL (ram.emp
+   resolves them, drift-guarded) with the correct model. **Flagged for override.**
+2. **A #7a gap fixed en route:** the region-form group condition eval only accepted
+   a bare integer (`if __DEBUG__`) — the ratified `if DEBUG == 1` (spec §8.1) is a
+   comparison yielding `Value::Bool`, which `as_stored_int` rejected. Added
+   `eval_group_cond` (a Bool selects its arm; a bare integer is nonzero-is-true).
+   The #7a fixtures never exercised a `==` condition, so this surfaced only when
+   `ram.emp`'s two `if DEBUG == 1` groups did. Committed with a positive test.
 
-## §7 — NEXT STEPS (once the bridge is ruled)
+## §7 — DECISION-RECORD EVIDENCE (the original STOP that spec §9 cites)
 
-1. (If Option B) add `harvest_ram_labels(aeon, debug)` — focused `ram.emp` lower,
-   read every section label VMA, seed as plain `defines` in `assemble_as_side`
-   (before assembly). (If Option A) extend the AS abs-EA deferral family + a
-   value bridge for `phase Engine_RAM_End`.
-2. Add the four game-config constants (Gap 3) to both profiles' `emp_defines`.
-3. Author `engine/ram.emp` per §4; add `use engine.ram` to `synthetic_entry_src`.
-4. Delete `engine/ram.asm`; drop `include "engine/ram.asm"` from `engine/engine.inc`.
-5. `cargo run -p sigil-harness --bin repin`; prove the pins.rs RAM-cell diff is
-   ZERO both shapes (address identity); `ram_packing_invariants_{plain,debug}`
-   green; six-target byte-identity to chain-9; strict 2864/0/4 + the new
-   placement test; retirements enumerated with re-homes.
-6. Kill-list: the `place_sections` RAM-skip acquires its kill row when #7c lands
-   the cross-module chain (per #7a note §6). No kill-list closures this parcel.
+The cross-seam gap that forced the Option-A/B decision (verified against the AS
+frontend as built): after the port, three residual-AS seams reference engine RAM
+labels EAGERLY — positions the frontend cannot defer to the linker.
 
-## §8 — STEP-3 / STEP-5 / GAP-LEDGER
+- **Absolute-EA writes:** `games/demo/demo_state.asm` (live in the demo builds)
+  does `move.b #$0F, (Palette_Dirty).w`, `move.l #0, (Camera_X).w`/`(Camera_Y).w`,
+  `move.l #GameState_Demo, (Game_State).w`, + the `setVDPReg` macro
+  (`move.b …,(VDP_Shadow_Table+reg).w`, `ori.l …,(VDP_Dirty_Mask).w`).
+  `convert_one_atom_m68k`/`try_defer_long_imm` fold the absolute destination
+  EAGERLY → hard error on an unresolved `.emp` symbol. (Only `lea (Palette_Buffer).w`
+  defers, via `try_defer_lea_abs`.)
+- **`phase Engine_RAM_End`:** `directive_phase` folds its argument eagerly.
 
-- **Step-3 (retrospect / language-ask):** §3.3's cross-seam claim needs
-  amending — "residual .asm resolves `.emp` RAM labels through the existing link
-  path" is TRUE only for the link-deferred positions (jsr/jmp, dc.l/dc.w, lea
-  abs); it is FALSE for absolute-EA data operands and for `phase` (eager). Two
-  language/tooling asks fall out: (a) an AS-frontend "defer unresolved absolute-EA
-  operand" capability (Option A — generalizes the existing deferral family), and
-  (b) the recognition that `phase <emp-label>` is fundamentally eager, so the
-  engine→game RAM chain is always a harvest/`after()` bridge until BOTH sides are
-  `.emp` (#7c's `region game_ram @ after(upper_ram)` removes it entirely).
-- **Step-5 (engine opt):** none — no engine byte moved; ram.asm untouched.
-- **Gap-ledger:** no new jotted row (the §4 map has no unimplemented nice-to-have;
-  the region form already shipped in #7a). Rows 153/157/165 close with #7c per the
-  spec, not here.
+Spec §3.3's "no harvest needed — pub vars labels export identically" was FALSE
+there. Option B (value-only harvest → plain AS defines; `.emp` labels stay the
+authority) resolves both uniformly with zero AS-frontend byte-surface risk, using
+the proven harvest infrastructure. Ruled + implemented.
+
+## §8 — STEP-3 / STEP-5 / GAP-LEDGER / CROSS-SEAM
+
+- **Step-3 (retrospect / language-ask):** (a) the region-group condition needed the
+  `Value::Bool` fix to honor the ratified `if DEBUG == 1` — the #7a group-condition
+  eval was integer-only (now fixed; a language-conformance catch). (b) `sizeof` of
+  a struct whose fields carry newtypes requires the type vocabulary in the
+  consuming module's scope (`use engine.types.*` in ram.emp) — a cross-module
+  `sizeof` ergonomics note for the ledger. (c) importing a DERIVED `pub const`
+  evaluates its RHS in the CONSUMER's scope, so its base consts must be in scope
+  too — the glob `use engine.constants.*` is the clean answer (matches how
+  `tile_cache.emp` imports both bases and derivations).
+- **Step-5 (engine opt):** none — no engine byte moved; the port is address-exact.
+- **Gap-ledger:** the `vars / RAM regions` section (rows ~140–188) is now REALIZED
+  by this port (the feature #7a built + this port consuming it); formal row closure
+  rides #7c's census close per spec §6, not here. STALE-premise note (row ~353):
+  "RAM labels that live ONLY in `engine/ram.asm`, never in any `.emp` file" is now
+  false (`Ctrl_1_Held` & co are `ram.emp` labels); the port tests' synthetic-AS
+  RAM-section workaround still passes (independent of where the real build sources
+  them) — a doc-cleanup for #7c, no code impact. No new nice-to-have unimplemented.
+- **Cross-seam resolution (how each RAM label resolves now):**
+  - `.emp` consumers (`boot.emp` `RAM_Start`; `parallax.emp`
+    `extern("Parallax_State*")`; `core.emp` `extern("Object_RAM*")`; every
+    `lea RamLabel`/`extern(..)`): resolve at the joint link against `ram.emp`'s
+    `pub` labels — identical mechanism to how they resolved against `ram.asm`.
+  - AS consumers (demo_state abs-EA writes; `phase Engine_RAM_End`): fold the
+    harvested plain value defines at comptime.
+
+## §9 — COMMITS (unmerged)
+
+- sigil `item7b-engine-ram`:
+  - `52f5f2d1` place_sections RAM-skip + test (the pre-ruling first task).
+  - (condition fix) `eval_group_cond` + `conditional_group_accepts_comparison_condition`.
+  - (bridge) `harvest_engine_ram_addresses` + `use engine.ram` entry + the two
+    retired-wall re-homes (parcel_8b, m1c_vector_table/m1c_root).
+- aeon `item7b-engine-ram`:
+  - `4fb9926` `engine/ram.emp` + `engine/ram.asm` deletion + `engine.inc` drop.
