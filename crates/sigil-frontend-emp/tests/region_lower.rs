@@ -399,6 +399,52 @@ fn layout_odd_field() {
 }
 
 #[test]
+fn place_sections_skips_ram_reserve_section() {
+    // Item #7b's first task: `place_sections` must SKIP the reserve-only RAM
+    // section a region-form `vars` block lowers to (`vma_origin >= $F00000`) —
+    // matching its region name (`upper_ram`) against the ROM map would spuriously
+    // fire the "no region in the map" error. A module here produces TWO sections:
+    // a RAM reserve section (`upper_ram`) and a ROM data section (`rom_sec`). The
+    // map declares ONLY the ROM region.
+    use sigil_frontend_emp::resolve::place_sections;
+    use sigil_ir::map::{MemoryMap, Region, RegionKind};
+
+    let m = lower_ok(
+        "module m in rom_sec\n\
+         pub region upper_ram @ $FFFF8000 .. $FFFFF000\n\
+         pub vars upper_ram { Cam: u32, mark UpperEnd }\n\
+         pub data D: [u8; 4] = [1, 2, 3, 4]\n",
+        vec![],
+    );
+    let mut sections = m.sections.clone();
+    // Sanity: the lowering produced both the RAM reserve section and the ROM data
+    // section (order-independent).
+    assert!(sections.iter().any(|s| s.name == "upper_ram" && s.vma_origin() >= 0x00F0_0000));
+    assert!(sections.iter().any(|s| s.name == "rom_sec"));
+
+    let map = MemoryMap::new(
+        vec![Region {
+            name: "rom_sec".into(),
+            lma_base: 0x1000,
+            size: 0x1000,
+            kind: RegionKind::Rom,
+            vma_base: None,
+        }],
+        0x00,
+    );
+    let diags = place_sections(&mut sections, &map);
+    let errs: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
+    assert!(errs.is_empty(), "RAM section must be skipped, not error: {errs:?}");
+
+    // The ROM section was placed at the region base; the RAM section was skipped
+    // (its VMA base untouched, still `$FFFF8000`).
+    let rom = sections.iter().find(|s| s.name == "rom_sec").unwrap();
+    assert_eq!(rom.lma, 0x1000, "ROM section placed at region base");
+    let ram = sections.iter().find(|s| s.name == "upper_ram").unwrap();
+    assert_eq!(ram.vma_origin(), 0xFFFF_8000, "RAM section VMA base preserved");
+}
+
+#[test]
 fn multiple_owners_check() {
     use sigil_frontend_emp::lower::check_single_owner;
     let (fa, _) = parse_str("module a\nvars shared { A: u8 }\n");
