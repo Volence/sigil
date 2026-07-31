@@ -268,3 +268,50 @@ full_crc = "dc3e3bce"
 full_size = 422217
 anchor_crc = "aadb1446"
 anchor_end = 0x5f65a
+
+[[entry]]
+name = "waveb-tile-cache-2"
+ab = "docs/superpowers/notes/2026-08-01-waveb-tile-cache-2-staging-ptr.md"
+note = "per-slot staging ptr: empty->zero-page, raw->ROM-direct (ROM -19/-51; staging copy deleted)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "151f9776"
+full_size = 422533
+anchor_crc = "f15ebb61"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "75ce2929"
+full_size = 303703
+anchor_crc = "b0bab5e0"
+anchor_end = 0x434d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "35c08a42"
+full_size = 90488
+anchor_crc = "4a1631dc"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "564241fa"
+full_size = 92986
+anchor_crc = "c2679cbc"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6a69403c"
+full_size = 412357
+anchor_crc = "b1c80c52"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "7ea5e77d"
+full_size = 422198
+anchor_crc = "ee70397d"
+anchor_end = 0x5f65a
