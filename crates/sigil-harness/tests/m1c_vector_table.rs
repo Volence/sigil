@@ -86,6 +86,7 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         initial_cpu: Cpu::M68000,
         defines,
         include_root: Some(aeon.clone()),
+        guarded_defines: vec![],
     };
 
     let module = match assemble_root(&root, &opts) {

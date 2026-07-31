@@ -1198,6 +1198,51 @@ pub fn eval_const_with_root(
     })
 }
 
+/// Harvest EVERY top-level `pub const` in `file` to its resolved integer value
+/// — the `.emp`→residual-AS ownership-flip export path (Stage-3 P5). Creates one
+/// evaluator, seeds `defines`, then resolves each public `const` through the
+/// same lazy/memoized `resolve_const` the compile path uses, so a derived const
+/// (`NUM_TOTAL_SLOTS = NUM_PLAYERS + …`) reads its already-resolved siblings.
+/// Returns `(name, value)` in source order for the ints (a non-int / poisoned
+/// const is skipped and surfaced as a diagnostic — the caller decides). This is
+/// the harvest half of Option A: the resolved values are injected as guarded AS
+/// `-D` defines so the residual AS reads the `.emp`-owned constants at COMPTIME
+/// (`ds` counts, `if` guards, derived equates) — link-deferral cannot serve those.
+///
+/// Byte-neutral to the `.emp` module's own output: this only READS comptime
+/// const values (which lower to zero bytes and zero link symbols); it never
+/// mutates `file` or emits anything.
+pub fn eval_all_pub_consts(
+    file: &crate::ast::File,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+) -> (Vec<(String, i64)>, Vec<Diagnostic>) {
+    run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
+        if let Some(root) = include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let names: Vec<String> = file
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                crate::ast::Item::Const(d) if d.public => Some(d.name.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut out: Vec<(String, i64)> = Vec::with_capacity(names.len());
+        for name in names {
+            let span = file.module.span;
+            match ev.resolve_const(&name, span).as_stored_int() {
+                Some(v) => out.push((name, v as i64)),
+                None => ev.error(span, format!("pub const `{name}` did not resolve to an int")),
+            }
+        }
+        (out, ev.diags)
+    })
+}
+
 /// One `comptime test` outcome (S2-D11(a)).
 #[derive(Debug)]
 pub struct TestOutcome {

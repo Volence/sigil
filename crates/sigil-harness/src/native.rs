@@ -584,7 +584,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
         defines.push(("__DEBUG__".to_string(), 1));
     }
     let opts =
-        AsOptions { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()) };
+        AsOptions { initial_cpu: Cpu::M68000, defines, include_root: Some(aeon.to_path_buf()), guarded_defines: vec![], };
     // A CHAINED build (`SizeSource::Frozen`) moves sections after assembly, so its
     // residual AS must keep section-label references SYMBOLIC to relocate (the row-94
     // parallax pointer); a PinnedBaked build never moves and stays byte-for-byte asl.
