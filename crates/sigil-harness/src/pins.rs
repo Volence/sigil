@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 56 regions, 313 symbols, 7 offsets
+//! [provenance] 56 regions, 315 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -388,6 +388,12 @@ pub const BLOCK_STAGE_NEXT: Pin = Pin { plain: 0xFFFFA8A0, debug: 0xFFFFA8C4 };
 
 /// `Block_Stage_Buffers`. tests: tile_cache_port
 pub const BLOCK_STAGE_BUFFERS: Pin = Pin { plain: 0xFFFF3842, debug: 0xFFFF3842 };
+
+/// `Block_Stage_Ptrs`. tests: tile_cache_port
+pub const BLOCK_STAGE_PTRS: Pin = Pin { plain: 0xFFFFB08A, debug: 0xFFFFB0AE };
+
+/// `Block_Stage_ZeroPage`. tests: tile_cache_port
+pub const BLOCK_STAGE_ZERO_PAGE: Pin = Pin { plain: 0xFFFFB0CA, debug: 0xFFFFB0EE };
 
 /// `Cache_Fill_Last_Frame`. tests: tile_cache_port
 pub const CACHE_FILL_LAST_FRAME: Pin = Pin { plain: 0xFFFFA842, debug: 0xFFFFA866 };
@@ -1131,28 +1137,28 @@ pub const SONIC_LOAD_ART: Pin = Pin { plain: 0x10C0C, debug: 0x10C20 };
 pub const PHYS_TABLE_SONIC: Pin = Pin { plain: 0x10C24, debug: 0x10C38 };
 
 /// `Player_Phys`. tests: test_p1_player_port
-pub const PLAYER_PHYS: Pin = Pin { plain: 0xFFFFB08A, debug: 0xFFFFB0B2 };
+pub const PLAYER_PHYS: Pin = Pin { plain: 0xFFFFB3CA, debug: 0xFFFFB3F2 };
 
 /// `Player_Phys_End`. tests: test_p1_player_port
-pub const PLAYER_PHYS_END: Pin = Pin { plain: 0xFFFFB09A, debug: 0xFFFFB0C2 };
+pub const PLAYER_PHYS_END: Pin = Pin { plain: 0xFFFFB3DA, debug: 0xFFFFB402 };
 
 /// `Player_Quadrant`. tests: test_p1_player_port
-pub const PLAYER_QUADRANT: Pin = Pin { plain: 0xFFFFB09A, debug: 0xFFFFB0C2 };
+pub const PLAYER_QUADRANT: Pin = Pin { plain: 0xFFFFB3DA, debug: 0xFFFFB402 };
 
 /// `Player_JumpBuffer`. tests: test_p1_player_port
-pub const PLAYER_JUMP_BUFFER: Pin = Pin { plain: 0xFFFFB09B, debug: 0xFFFFB0C3 };
+pub const PLAYER_JUMP_BUFFER: Pin = Pin { plain: 0xFFFFB3DB, debug: 0xFFFFB403 };
 
 /// `Player_Ring_Index`. tests: test_p1_player_port
-pub const PLAYER_RING_INDEX: Pin = Pin { plain: 0xFFFFB400, debug: 0xFFFFB400 };
+pub const PLAYER_RING_INDEX: Pin = Pin { plain: 0xFFFFB700, debug: 0xFFFFB800 };
 
 /// `Player_Pos_Ring`. tests: test_p1_player_port
-pub const PLAYER_POS_RING: Pin = Pin { plain: 0xFFFFB200, debug: 0xFFFFB200 };
+pub const PLAYER_POS_RING: Pin = Pin { plain: 0xFFFFB500, debug: 0xFFFFB600 };
 
 /// `Player_Stat_Ring`. tests: test_p1_player_port
-pub const PLAYER_STAT_RING: Pin = Pin { plain: 0xFFFFB300, debug: 0xFFFFB300 };
+pub const PLAYER_STAT_RING: Pin = Pin { plain: 0xFFFFB600, debug: 0xFFFFB700 };
 
 /// `Player_Death_Pending`. tests: test_p1_player_port
-pub const PLAYER_DEATH_PENDING: Pin = Pin { plain: 0xFFFFB09C, debug: 0xFFFFB0C4 };
+pub const PLAYER_DEATH_PENDING: Pin = Pin { plain: 0xFFFFB3DC, debug: 0xFFFFB404 };
 
 // ── Region-relative offsets (manifest order) ──
 
