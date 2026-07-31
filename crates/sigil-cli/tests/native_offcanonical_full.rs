@@ -7,7 +7,8 @@
 //! The bar SPLITS exactly as sonic4's (`native_full_rom.rs`):
 //!   - ASSEMBLED ANCHOR `[0, EndOfRom)` == the asl golden prefix (header-neutral) —
 //!     proven by `native_offcanonical_rom.rs`.
-//!   - FULL FILE == the sigil-canonical golden (CRC-pinned here).
+//!   - FULL FILE == the sigil-canonical golden (CRC/size/anchor sourced from the
+//!     provenance chain tip in `golden/provenance.toml`).
 //!   - FUNCTIONAL TRUTH: determinism, deb2 presence + size band (inside
 //!     `append_deb2_appendix`), a convsym load-bearing spot-check, and a per-target
 //!     t24 doctored-address negative control.
@@ -42,13 +43,27 @@ fn have_aeon() -> bool {
 // convsym + the chained build touch shared temp/gen state — serialize the targets.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// A target's full-file proof: profile, its EndOfRom anchor, the pinned
-/// sigil-canonical full-file (crc, len), and a load-bearing (name, addr) spot set.
+/// The golden directory (holds the frozen blobs + `provenance.toml`, the single source
+/// of the expected CRC/size/anchor — the hand-edited const surface is retired).
+fn golden_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden")
+}
+
+/// EndOfRom anchor + sigil-canonical full-file (crc, len), sourced from the provenance
+/// chain TIP (`golden/provenance.toml`) — these move on every golden re-freeze, and
+/// `provenance_chain` independently proves the tip equals the committed blobs.
+fn expected(key: &str) -> (usize, u32, usize) {
+    let t = sigil_harness::provenance::tip_target(&golden_dir(), key)
+        .unwrap_or_else(|e| panic!("provenance tip: {e}"));
+    let crc = sigil_harness::provenance::hex_u32(&t.full_crc).unwrap_or_else(|e| panic!("{e}"));
+    (t.anchor_end, crc, t.full_size)
+}
+
+/// A target's full-file proof: profile plus a load-bearing (name, addr) spot set.
+/// `name` doubles as the provenance-chain target key.
 struct Target {
     name: &'static str,
     profile: native::GameProfile,
-    eor: usize,
-    full: (u32, usize),
     load_bearing: &'static [(&'static str, u32)],
 }
 
@@ -58,6 +73,7 @@ fn run(t: &Target) {
     }
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let aeon = aeon_dir();
+    let (eor, want_crc, want_len) = expected(t.name);
 
     // FULL FILE (presence control + size band live inside build_full_file_chained).
     let full = native::build_full_file_chained(&aeon, &t.profile).unwrap_or_else(|e| panic!("{}: {e}", t.name));
@@ -67,8 +83,8 @@ fn run(t: &Target) {
     assert_eq!(full, full2, "{}: full file non-deterministic", t.name);
 
     // (b) PRESENCE — deb2 magic at EndOfRom, non-trivial appendix.
-    assert_eq!(&full[t.eor..t.eor + 2], &native::DEB2_MAGIC, "{}: deb2 magic at EndOfRom", t.name);
-    let appendix = full.len() - t.eor;
+    assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{}: deb2 magic at EndOfRom", t.name);
+    let appendix = full.len() - eor;
     assert!(appendix >= 0x1000, "{}: appendix {appendix:#x} too small", t.name);
 
     // (c) FUNCTIONAL RESOLVE — load-bearing symbols → exact addresses via the REAL
@@ -83,12 +99,11 @@ fn run(t: &Target) {
         assert_eq!(got, want, "{}: `{name}` resolved to {got:#X}, expected {want:#X}", t.name);
     }
 
-    // FULL-FILE golden (sigil-canonical, CRC-pinned).
+    // FULL-FILE golden (sigil-canonical, CRC-pinned via the provenance tip).
     let crc = native::crc32(&full);
-    let (want_crc, want_len) = t.full;
     eprintln!(
-        "S2 {}: assembled={:#x} full={} appendix={appendix:#x} syms={} crc={crc:08x}",
-        t.name, t.eor, full.len(), listing.len()
+        "S2 {}: assembled={eor:#x} full={} appendix={appendix:#x} syms={} crc={crc:08x}",
+        t.name, full.len(), listing.len()
     );
     assert_eq!(full.len(), want_len, "{}: full-file size (re-freeze the golden?)", t.name);
     assert_eq!(crc, want_crc, "{}: full-file CRC (re-freeze the golden?)", t.name);
@@ -126,8 +141,6 @@ fn config_a() -> Target {
     Target {
         name: "config_a",
         profile: native::config_a_profile(),
-        eor: 0x5f65a,
-        full: (0x1b4c_49d2, 422483),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0x243e),
@@ -142,8 +155,6 @@ fn config_b() -> Target {
     Target {
         name: "config_b",
         profile: native::config_b_profile(),
-        eor: 0x434d0,
-        full: (0xbfe2_509e, 303660),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0xb48),
@@ -158,8 +169,6 @@ fn demo_plain() -> Target {
     Target {
         name: "demo",
         profile: native::demo_profile(false),
-        eor: 0x11224,
-        full: (0x705a_5871, 90436),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0xb48),
@@ -173,8 +182,6 @@ fn demo_debug() -> Target {
     Target {
         name: "demo_debug",
         profile: native::demo_profile(true),
-        eor: 0x11224,
-        full: (0x37de_d207, 92935),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0xb58),

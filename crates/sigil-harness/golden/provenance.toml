@@ -80,3 +80,50 @@ full_crc = "bfe2509e"
 full_size = 303660
 anchor_crc = "fd3f7f8e"
 anchor_end = 0x434d0
+
+[[entry]]
+name = "wave-a-animate-a3"
+ab = "docs/superpowers/notes/2026-07-31-a3-pathfinder-ab.md"
+note = "AnimateSprite.set_frame jbsr+rts -> jbra tail-call (size-neutral, 2-byte diff); PS state-identity A/B oracle-blocked, byte-diff+static evidence"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "f8561a1a"
+full_size = 422483
+anchor_crc = "dd8540f9"
+anchor_end = 0x5f65a
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "1ce80669"
+full_size = 303660
+anchor_crc = "ceb51002"
+anchor_end = 0x434d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "a378c384"
+full_size = 90436
+anchor_crc = "e549d2f3"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "bd65fc95"
+full_size = 92935
+anchor_crc = "5e953260"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "8692e93a"
+full_size = 412306
+anchor_crc = "43322e8e"
+anchor_end = 0x5db60
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1f84bdbc"
+full_size = 422147
+anchor_crc = "27b8e5c8"
+anchor_end = 0x5f65a

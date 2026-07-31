@@ -2299,3 +2299,35 @@ the path). Nothing is retained in-tree — the accepted OQ-A loss, eyes open.
 Precondition swept clean (build.sh / tools/*.py / prebuild.sh / CI / the harness): no
 live shell-out to a deleted tool remains (the residual `tools/asl` mentions are
 byte-provenance comments). Strict 2861/0 (1 ignored). Aeon commit: the `tools/` deletion.
+
+## §17 Wave-A `wave-a-animate-a3` — THE ROOT SEVERANCE (the first post-flip anchor move)
+
+The optimization arc's defining event: the first byte-CHANGING parcel. From this entry
+on, provenance is a **chain, not a point** — the asl-witnessed anchors above stay
+recorded as the frozen historical root and are **no longer the shipped ROM's identity**.
+The machine-checkable chain lives in `golden/provenance.toml` (`refreeze --check` is the
+gate: an anchor that moves without a chain entry carrying a real `--ab` ref is a hard
+failure); this file carries the narrative.
+
+**The parcel:** `AnimateSprite.set_frame` `jbsr RefreshSpritePieceCount` + fall-into
+`.done: rts` → `jbra` tail-call (aeon `opt-a3`; size-neutral `bsr.w`→`bra.w`, full-ROM
+diff = exactly 2 bytes: the opcode + the header checksum; ~24 cyc saved per frame-advance).
+
+**The chain link** (asl-witness root → `wave-a-animate-a3`), all sizes unchanged:
+
+| target | root anchor (asl-witnessed) | → new anchor | full file |
+|---|---|---|---|
+| s4.bin | `e5765873` | `43322e8e` | `8692e93a` / 412306 |
+| s4.debug.bin | `dab4f06c` | `27b8e5c8` | `1f84bdbc` / 422147 |
+| demo.bin | `cfda98d3` | `e549d2f3` | `a378c384` / 90436 |
+| demo.debug.bin | `20c5571d` | `5e953260` | `bd65fc95` / 92935 |
+| config_a.bin | `3d9bac53` | `dd8540f9` | `f8561a1a` / 422483 |
+| config_b.bin | `fd3f7f8e` | `ceb51002` | `1ce80669` / 303660 |
+
+**A/B evidence:** `docs/superpowers/notes/2026-07-31-a3-pathfinder-ab.md` — the PS
+state-identity bar met on the oracle (deterministic ObjectTest drive, frame-anchored to
+`Frame_Counter`, runners under `golden/ab/a3/`): framebuffer pixel-identical and
+VRAM/CRAM/VSRAM byte-identical at every anchor; full 64KB work RAM byte-identical at
+matched code points; the only quantum-boundary deltas are the interrupted-PC inside the
+`VSync_Wait` poll and mid-VBlank register-write phase — the ~24-cycle saving itself,
+classified in the note.

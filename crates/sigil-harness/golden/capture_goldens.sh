@@ -128,10 +128,6 @@ echo ">> restoring canonical aeon s4.bin + s4.debug.bin ..."
 ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null && DEBUG=1 SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null )
 echo "   restored: $(cd "$AEON" && python3 -c "import zlib;print('s4.bin',f'{zlib.crc32(open(\"s4.bin\",\"rb\").read())&0xffffffff:08x}','/','s4.debug.bin',f'{zlib.crc32(open(\"s4.debug.bin\",\"rb\").read())&0xffffffff:08x}')")"
 
-# Expected sigil-canonical full-file bars post Stage-3 keystone flip + demangler
-# (see PROVENANCE.md). The header-neutral assembled ANCHORS are unmoved
-# (e5765873/dab4f06c · cfda98d3/20c5571d · 3d9bac53 · fd3f7f8e); the full files moved
-# in the appendix only (keystone/z80 flip shrink + demangler grow).
-echo "== done — expected full-file bars (Stage-3 P2d re-freeze; see PROVENANCE.md) =="
-echo "   s4.bin 7f071417/412306  s4.debug.bin 0b8efc7a/422147  demo.bin 705a5871/90436  demo.debug.bin 37ded207/92935"
-echo "   config_a.bin 1b4c49d2/422483  config_b.bin bfe2509e/303660"
+# The expected full-file bars live in golden/provenance.toml (the chain tip) —
+# `refreeze --check` is the gate; no CRC literals are maintained here.
+echo "== done — expected bars = the provenance chain tip (golden/provenance.toml; refreeze --check) =="
