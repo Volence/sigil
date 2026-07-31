@@ -7,7 +7,7 @@
 //! SOUND_DRIVER_ENABLED` — it emits ZERO bytes in both canonical shapes
 //! (SOUND_DEBUG_HOTKEYS is a dev opt-in, off in every shipped build) and is
 //! placed only at the Config-A hotkeys shape, where the config_a whole-ROM native
-//! golden (80e602df) is the byte oracle for its emission. This file keeps the
+//! golden (1b4c49d2) is the byte oracle for its emission. This file keeps the
 //! `.emp`-side proofs: (1) at the hotkeys shape the module compiles, its
 //! game-const drift guards PASS at the true values, and it emits non-empty code;
 //! (2) doctoring a mirrored const's `extern(...)` truth FIRES the guard (liveness,
@@ -174,7 +174,7 @@ fn compile_emp(
 /// THE `.emp` positive gate (post-twin-deletion): at the Config-A hotkeys shape
 /// game_debug.emp compiles, its game-const drift guards PASS at the true values,
 /// and it emits non-empty code. The byte-shape oracle is now the config_a
-/// whole-ROM native golden (80e602df); the non-vacuity is `doctored_extern_fires_
+/// whole-ROM native golden (1b4c49d2); the non-vacuity is `doctored_extern_fires_
 /// drift_guard` below.
 #[test]
 fn game_debug_emp_compiles_and_guards_pass_at_hotkeys() {

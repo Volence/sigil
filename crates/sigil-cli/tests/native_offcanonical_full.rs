@@ -127,7 +127,7 @@ fn config_a() -> Target {
         name: "config_a",
         profile: native::config_a_profile(),
         eor: 0x5f65a,
-        full: (0x80e6_02df, 402742),
+        full: (0x1b4c_49d2, 422483),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0x243e),
@@ -143,7 +143,7 @@ fn config_b() -> Target {
         name: "config_b",
         profile: native::config_b_profile(),
         eor: 0x434d0,
-        full: (0x9eb2_e8a1, 286904),
+        full: (0xbfe2_509e, 303660),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0xb48),
@@ -159,7 +159,7 @@ fn demo_plain() -> Target {
         name: "demo",
         profile: native::demo_profile(false),
         eor: 0x11224,
-        full: (0x0646_d4bf, 76851),
+        full: (0x705a_5871, 90436),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0xb48),
@@ -174,7 +174,7 @@ fn demo_debug() -> Target {
         name: "demo_debug",
         profile: native::demo_profile(true),
         eor: 0x11224,
-        full: (0x7e4a_358a, 77244),
+        full: (0x37de_d207, 92935),
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0xb58),

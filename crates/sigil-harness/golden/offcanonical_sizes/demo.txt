@@ -3,7 +3,7 @@
 # declared per-region sizes (addr[end]-addr[start]) reproduce the golden below.
 # target=demo
 # reproduces_golden=demo.bin
-# golden_crc32=18c64002
+# golden_crc32=705a5871
 # assembled_end=0x11224
 # listing_stamp=07/30/2026 01:45:56 PM
 # labels=38

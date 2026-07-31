@@ -31,6 +31,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+SIGIL_ROOT="$(cd "$HERE/../../.." && pwd)"
 AEON="${AEON_DIR:-/home/volence/sonic_hacks/aeon}"
 WRITE=0
 [[ "${1:-}" == "--write" ]] && WRITE=1
@@ -39,6 +40,11 @@ if [[ -z "${SIGIL_EMIT:-}" || ! -x "${SIGIL_EMIT:-}" ]]; then
     echo "ERROR: set SIGIL_EMIT to <sigil>/target/release/emit_sound_blob (sound-on builds need it)."
     exit 1
 fi
+# The off-canonical Config-A/B shapes have no build.sh env path (post-flip build.sh
+# forwards only --game/--debug to sigil); they build through `sigil build --config-*`
+# directly. The canonical four still go through build.sh.
+SIGIL_BUILD="${SIGIL_BUILD:-$SIGIL_ROOT/target/release/sigil}"
+[[ -x "$SIGIL_BUILD" ]] || { echo "ERROR: sigil build binary not at $SIGIL_BUILD (set SIGIL_BUILD)"; exit 1; }
 
 # report <lst> <bin> — print both split-golden layers (full file + header-neutral
 # assembled anchor). EndOfRom (the appendix boundary) is read from the .lst END line.
@@ -48,7 +54,10 @@ import zlib, re, sys
 lst, binf = sys.argv[1], sys.argv[2]
 end = None
 for line in open(lst, errors='replace'):
-    m = re.search(r'/\s*([0-9A-Fa-f]+)\s*:\s+END\s*$', line)
+    # asl marks the assembled length with a `… : END` line; sigil's own listing
+    # (post-flip build.sh = sigil build) marks it with the `EndOfRom` label instead.
+    m = re.search(r'/\s*([0-9A-Fa-f]+)\s*:\s+END\s*$', line) \
+        or re.search(r'/\s*([0-9A-Fa-f]+)\s*:\s+EndOfRom:\s*$', line)
     if m:
         end = int(m.group(1), 16)  # last match wins
 raw = open(binf, 'rb').read()
@@ -79,6 +88,24 @@ capture() {
     if [[ "$WRITE" == "1" ]]; then cp "$path" "$HERE/$golden"; echo "   frozen -> golden/$golden"; fi
 }
 
+# capture_config <golden_name> <--config-a|--config-b> <out_rom> <out_lst>
+# The off-canonical shapes: `sigil build --config-*` directly (the whole shape is
+# fixed by the flag). Same stale-artifact-trap guard as `capture`.
+capture_config() {
+    local golden="$1" flag="$2" rom="$3" lst="$4"
+    local path="$AEON/$rom" lstp="$AEON/$lst"
+    local marker; marker="$(mktemp)"; sleep 0.01
+    rm -f "$path"
+    echo ">> $golden  (sigil build $flag)"
+    ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" "$SIGIL_BUILD" build --aeon . --native "$flag" \
+        -o "$rom" --emit-lst "$lst" >/dev/null )
+    [[ -f "$path" ]] || { echo "FAIL: $rom not produced"; rm -f "$marker"; exit 1; }
+    [[ "$path" -nt "$marker" ]] || { echo "FAIL: $rom not newer than the pre-build marker (stale-capture guard)"; rm -f "$marker"; exit 1; }
+    rm -f "$marker"
+    printf "   "; report "$lstp" "$path"
+    if [[ "$WRITE" == "1" ]]; then cp "$path" "$HERE/$golden"; echo "   frozen -> golden/$golden"; fi
+}
+
 echo "== Flip Stage 1 golden capture — all six, fresh-build, asl-derived =="
 echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
@@ -89,15 +116,20 @@ capture demo.bin      demo   demo.bin      demo.lst
 capture demo.debug.bin demo  demo.debug.bin demo.debug.lst DEBUG=1
 
 # 5-6: the off-canonical configs (CLOBBER s4.debug.bin / s4.bin — captured into
-# distinct golden blobs; canonical is rebuilt below).
-capture config_a.bin  sonic4 s4.debug.bin  s4.debug.lst  DEBUG=1 SOUND_DRIVER_ENABLED=1 SOUND_DEBUG_HOTKEYS=1 SOUND_DBG_MIRROR=1
-capture config_b.bin  sonic4 s4.bin        s4.lst        SOUND_DRIVER_ENABLED=0
+# distinct golden blobs; canonical is rebuilt below). Built via `sigil build
+# --config-*` directly (the stale SOUND_* env path through build.sh is gone post-flip).
+capture_config config_a.bin  --config-a  s4.debug.bin  s4.debug.lst
+capture_config config_b.bin  --config-b  s4.bin        s4.lst
 
 # RESTORE the canonical aeon references clobbered by Config-A/B.
 echo ">> restoring canonical aeon s4.bin + s4.debug.bin ..."
 ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null && DEBUG=1 SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null )
 echo "   restored: $(cd "$AEON" && python3 -c "import zlib;print('s4.bin',f'{zlib.crc32(open(\"s4.bin\",\"rb\").read())&0xffffffff:08x}','/','s4.debug.bin',f'{zlib.crc32(open(\"s4.debug.bin\",\"rb\").read())&0xffffffff:08x}')")"
 
-echo "== done — expected full-file bars (aeon bcb8f64; see PROVENANCE.md) =="
-echo "   s4.bin eff2396f/413577  s4.debug.bin 1e9097bc/421579  demo.bin 18c64002/90776  demo.debug.bin b0475a59/91584"
-echo "   config_a.bin b4a6756d/421898  config_b.bin 92776720/304961"
+# Expected sigil-canonical full-file bars post Stage-3 keystone flip + demangler
+# (see PROVENANCE.md). The header-neutral assembled ANCHORS are unmoved
+# (e5765873/dab4f06c · cfda98d3/20c5571d · 3d9bac53 · fd3f7f8e); the full files moved
+# in the appendix only (keystone/z80 flip shrink + demangler grow).
+echo "== done — expected full-file bars (Stage-3 P2d re-freeze; see PROVENANCE.md) =="
+echo "   s4.bin 7f071417/412306  s4.debug.bin 0b8efc7a/422147  demo.bin 705a5871/90436  demo.debug.bin 37ded207/92935"
+echo "   config_a.bin 1b4c49d2/422483  config_b.bin bfe2509e/303660"
