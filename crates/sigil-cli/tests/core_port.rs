@@ -467,32 +467,8 @@ fn debug_shape_length_diverges() {
 
 // ── The twin-mirror drift probe (the 4 new constants ride core's gate) ───────
 
-/// A DOCTORED twin truth (`CULL_DISTANCE_X` = $301 AS-side while constants.emp
-/// says $300) must fire the twin's `ensure(extern(…))` guard NAMING the
-/// constant — proving the tranche's FOUR new object-core-block guards ride
-/// core's gate like the originals, paired with the undoctored control (the
-/// reference gates above).
-#[test]
-fn doctored_twin_mirror_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/core.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let defines: Vec<(&str, i128)> = vec![("DEBUG", 0)];
-    let (resolved, _, link_asserts) =
-        compile_real_file_with(&PLAIN, &defines, Some(("CULL_DISTANCE_X", "$301")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(
-        !fired.is_empty(),
-        "the doctored CULL_DISTANCE_X truth must fire constants.emp's drift guard"
-    );
-    assert!(
-        fired.iter().any(|d| d.message.contains("CULL_DISTANCE_X")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// The `doctored_twin_mirror_fires_its_guard` negative probe (CULL_DISTANCE_X)
+// retired with the Stage-3 P5 ownership flip: the object-core-block constants are
+// now SOLE-authored by `constants.emp` (harvested into guarded AS defines), so
+// their mirror drift guards were deleted — nothing for a doctored AS-side truth
+// to fire. The undoctored reference gates above remain the proof.

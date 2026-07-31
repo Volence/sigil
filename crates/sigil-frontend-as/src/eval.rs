@@ -125,6 +125,7 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
             if poison.is_empty() && !force_relocate {
                 let mut module = module;
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
+                attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
                 return if diags.iter().any(|d| d.level == Level::Error) {
                     Err(diags)
                 } else {
@@ -151,6 +152,7 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
             }
             let mut bonus_module = bonus.module;
             restore_missing_equ_exports(&mut bonus_module, &ever_exported, &env);
+            attach_guarded_equ_exports(&mut bonus_module, &opts.guarded_defines);
             return if diags.iter().any(|d| d.level == Level::Error) {
                 Err(diags)
             } else {
@@ -240,6 +242,34 @@ fn restore_missing_equ_exports(
         })
         .collect();
     module.sections[0].equ_syms.extend(missing);
+}
+
+/// Export each guarded `-D` define (the `.emp`-owned constants injected by the
+/// P5 ownership flip) as a link-level `EquSym`, so an `.emp` module that
+/// references the constant as a BARE LINK SYMBOL — an absolute-address operand
+/// like `boot.emp`'s `move.b #$40, HW_PORT_1_DATA`, NOT a `use engine.constants`
+/// import — resolves through the joint link exactly as it did when
+/// `engine/constants.asm`'s `=` equate exported the same symbol. Byte-neutral:
+/// an `EquSym` is zero bytes and (like every AS `=` equate) is FILTERED from the
+/// deb2 symbol appendix, so re-homing the export from the deleted `.asm` `=` to
+/// this harvested-define carrier changes no ROM byte. A name already present as
+/// an equ_sym or a label is skipped (the definer wins; no duplicate-symbol).
+fn attach_guarded_equ_exports(module: &mut Module, guarded: &[(String, i64)]) {
+    if guarded.is_empty() || module.sections.is_empty() {
+        return;
+    }
+    let present: std::collections::HashSet<&str> = module
+        .sections
+        .iter()
+        .flat_map(|s| s.equ_syms.iter().map(|e| e.name.as_str()).chain(s.labels.iter().map(|l| l.name.as_str())))
+        .collect();
+    let sp = Span { source: SourceId(0), start: 0, end: 0 };
+    let add: Vec<EquSym> = guarded
+        .iter()
+        .filter(|(n, _)| !present.contains(n.as_str()))
+        .map(|(n, v)| EquSym { name: n.clone(), expr: Expr::Int(*v), span: sp })
+        .collect();
+    module.sections[0].equ_syms.extend(add);
 }
 
 /// One assembly pass seeded with `seed_env` (symbols) plus the macro/function

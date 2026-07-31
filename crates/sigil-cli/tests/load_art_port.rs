@@ -256,24 +256,12 @@ fn load_art_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a DOCTORED `ART_VER_ZX0` truth (3 AS-side while the twin
-/// says 2) must FIRE the engine.constants drift guard, naming the const —
-/// the version-dispatch compare rides exactly this value.
-#[test]
-fn doctored_art_ver_zx0_fires_its_guard() {
-    if !strict_gate() && !aeon_dir().join("s4.bin").exists() {
-        eprintln!("skip: reference ROM missing");
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file(false, Some(("ART_VER_ZX0", "3")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the doctored ART_VER_ZX0 truth must fire a drift guard");
-    assert!(
-        fired.iter().any(|d| d.message.contains("ART_VER_ZX0")),
-        "the guard must NAME the constant: {fired:?}"
-    );
-}
+// The `doctored_art_ver_zx0_fires_its_guard` negative probe retired with the
+// Stage-3 P5 ownership flip: `ART_VER_ZX0` is now SOLE-authored by
+// `constants.emp` (harvested into guarded AS defines), so its mirror drift
+// guard was deleted — there is no AS-side twin to drift and nothing for a
+// doctored truth to fire. The undoctored reference gates above remain the proof
+// the value is load-bearing.
 
 // ---------------------------------------------------------------------------
 // Ownership flips (kill-list rows 29 + 38): `VSync_Wait` (t21, engine.vblank)

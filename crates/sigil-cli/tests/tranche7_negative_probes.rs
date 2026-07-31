@@ -225,34 +225,16 @@ fn drifted_sst_twin_fires_its_own_guard_naming_the_field() {
     );
 }
 
-// ---- (b) drifted constants collision-block value → its own guard ------------
-
-#[test]
-fn drifted_constants_collision_value_fires_its_guard() {
-    let Some(s) = sources() else {
-        eprintln!("skip: aeon tree not present");
-        return;
-    };
-
-    // The drift: change `ST_ON_OBJECT`'s value in the twin (5 → 4). Its guard
-    // `ensure(extern("ST_ON_OBJECT") == ST_ON_OBJECT, ...)` now reads the real
-    // AS value 5 against the doctored 4 and fires LOUD at link, naming the
-    // constant.
-    let doctored = s.constants.replace("pub const ST_ON_OBJECT   = 5", "pub const ST_ON_OBJECT   = 4");
-    assert_ne!(doctored, s.constants, "the doctor must have found its target");
-    let (_sec, asserts, ldiags) =
-        lower_quintet(&s.types, &s.sst, &doctored, &s.aabb, &s.coords, &s.collision);
-    assert!(
-        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "the doctored twin still lowers clean (the guard is a link assert): {:?}",
-        errors(&ldiags)
-    );
-    let fired = check_guards_against_truths(&asserts);
-    assert!(
-        fired.iter().any(|m| m.contains("ST_ON_OBJECT")),
-        "the drifted constants guard must fire LOUD naming `ST_ON_OBJECT`: {fired:?}"
-    );
-}
+// ---- (b) drifted constants collision-block value → RETIRED ------------------
+//
+// The `drifted_constants_collision_value_fires_its_guard` probe drove
+// `constants.emp`'s `ensure(extern("ST_ON_OBJECT") == ST_ON_OBJECT)` drift
+// guard. The Stage-3 P5 ownership flip made `ST_ON_OBJECT` (and the other engine
+// constants) SOLE-authored by `constants.emp` — harvested into guarded AS
+// defines — so there is no AS-side twin to drift and its mirror guard was
+// deleted. Doctoring the `.emp` value can no longer fire a guard, so this probe
+// tested a retired mechanism and is removed. The `width_pixels` field-twin probe
+// above (a `structs`/`sst` wall) is unaffected and still fires.
 
 // ---- (c) F1: Reg splice in aabb's disp slot → [asm.splice-kind] -------------
 

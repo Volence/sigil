@@ -419,34 +419,9 @@ fn animate_debug_region_matches_reference() {
 
 // ── The twin-mirror drift probe (kill-list row 2's guard) ───────────────────
 
-/// A DOCTORED twin truth (`AF_SET_FIELD` = $F6 AS-side while constants.emp
-/// says $F7) must fire the twin's `ensure(extern(…))` guard NAMING the
-/// constant — proving the tranche's SIX new animation-block guards ride
-/// animate's gate like the originals, paired with the undoctored control
-/// (the reference gates above). AF_SET_FIELD is the one whose drift would
-/// silently re-classify frame bytes as control codes — the worst failure
-/// mode this file has.
-#[test]
-fn doctored_twin_mirror_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/animate.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let defines: Vec<(&str, i128)> = vec![("SOUND_DRIVER_ENABLED", 1), ("DEBUG", 0)];
-    let (resolved, _, link_asserts) =
-        compile_real_file_with(&PLAIN, &defines, Some(("AF_SET_FIELD", "$F6")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(
-        !fired.is_empty(),
-        "the doctored AF_SET_FIELD truth must fire constants.emp's drift guard"
-    );
-    assert!(
-        fired.iter().any(|d| d.message.contains("AF_SET_FIELD")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// The `doctored_twin_mirror_fires_its_guard` negative probe (AF_SET_FIELD)
+// retired with the Stage-3 P5 ownership flip: the animation-block constants are
+// now SOLE-authored by `constants.emp` (harvested into guarded AS defines), so
+// their mirror drift guards were deleted — there is no AS-side twin to drift and
+// nothing for a doctored truth to fire. The undoctored reference gates above
+// remain the proof these values are load-bearing.

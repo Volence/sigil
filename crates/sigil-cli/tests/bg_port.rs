@@ -253,26 +253,8 @@ fn bg_debug_region_matches_reference() {
     run(true);
 }
 
-/// Negative probe: a DOCTORED `VRAM_SPRITE_TABLE` truth ($B000 AS-side while
-/// bg.emp says $B800 — the SAT ceiling that bounds the BG capacity clamp)
-/// must fire bg.emp's own `ensure(extern(…))` guard NAMING the constant —
-/// the undoctored control passes (the reference gates above).
-#[test]
-fn doctored_vram_sprite_table_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/level/bg.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let (resolved, _, link_asserts) = compile_real_file(false, Some(("VRAM_SPRITE_TABLE", "$B000")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the doctored VRAM_SPRITE_TABLE truth must fire a drift guard");
-    assert!(
-        fired.iter().any(|d| d.message.contains("VRAM_SPRITE_TABLE")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// The `doctored_vram_sprite_table_fires_its_guard` negative probe retired with
+// the Stage-3 P5 ownership flip: `VRAM_SPRITE_TABLE` is now SOLE-authored by
+// `constants.emp` (harvested into guarded AS defines), so its mirror drift guard
+// was deleted — nothing for a doctored AS-side truth to fire. The undoctored
+// reference gates above remain the proof the value is load-bearing.

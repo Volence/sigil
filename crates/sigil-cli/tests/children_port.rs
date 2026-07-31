@@ -282,13 +282,11 @@ fn doctored_sibling_ptr_fires_its_guard() {
     assert_doctored_seam_fires(("SST_sibling_ptr", "$2A"), "sibling_ptr");
 }
 
-/// Negative probe: a doctored `RF_XFLIP` truth must FIRE the constants-twin
-/// guard NAMING the constant — CreateChild_FlipAware's `btst`/`bset` bit
-/// number comes from that twin, so a silent drift would mirror the wrong bit.
-#[test]
-fn doctored_rf_xflip_fires_its_guard() {
-    assert_doctored_seam_fires(("RF_XFLIP", "3"), "RF_XFLIP");
-}
+// The `doctored_rf_xflip_fires_its_guard` negative probe retired with the
+// Stage-3 P5 ownership flip: `RF_XFLIP` is now SOLE-authored by `constants.emp`
+// (harvested into guarded AS defines), so its mirror drift guard was deleted.
+// The `SST_sibling_ptr` probe above is an `sst.emp` field twin and still fires
+// via the shared helper below.
 
 fn assert_doctored_seam_fires(doctor: (&str, &str), named: &str) {
     let aeon = aeon_dir();
