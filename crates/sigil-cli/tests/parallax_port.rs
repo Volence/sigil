@@ -91,6 +91,9 @@ fn parallax_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
         ("VDP_Shadow_vdp_mode3", "$0B"),
+        // engine.z80_bus — the per-frame Mode Set 3 direct-write wraps the reg $0B
+        // write in stop_z80/start_z80; the templates resolve this bare hw address.
+        ("Z80_BUS_REQUEST", "$A11100"),
         // engine.vdp target_bits/op_bits drift-lock ensures read these six
         ("VRAM", "%100001"),
         ("CRAM", "%101011"),
@@ -212,6 +215,7 @@ fn compile_real_file(
     let constants_file = parse_file(&dir.parent().unwrap().join("system/constants.emp"));
     let structs_file = parse_file(&dir.parent().unwrap().join("structs.emp"));
     let vdp_file = parse_file(&dir.parent().unwrap().join("vdp.emp"));
+    let z80_bus_file = parse_file(&dir.parent().unwrap().join("z80_bus.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -220,6 +224,7 @@ fn compile_real_file(
             .into_iter()
             .chain(structs_file.items)
             .chain(vdp_file.items)
+            .chain(z80_bus_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),

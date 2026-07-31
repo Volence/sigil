@@ -192,8 +192,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DB60);       // +0xCC churn
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F65A); // entity_window growth absorbed by bank/org slack both shapes (the +0x20 seen pre-fix was the packed-bank bug, not real growth)
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DB00);       // −0x60 wave-c: ojz row-35 force-write deleted (net of PARALLAX growth)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F5F2); // −0x68 wave-c (debug ojz shrink)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
