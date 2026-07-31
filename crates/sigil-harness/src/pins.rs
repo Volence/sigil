@@ -1,13 +1,13 @@
 //! GENERATED FILE — DO NOT EDIT BY HAND.
 //!
 //! Emitted by `cargo run -p sigil-harness --bin repin` from `repin.toml`
-//! + the aeon listings (D-T10.3, tranche-10 step 0). Edit the MANIFEST,
-//! then regenerate; `tests/repin_pins.rs::pins_rs_is_current` guards
-//! staleness. All values are LISTING truth — per-shape VMAs/lengths from
-//! `s4.lst` (plain) and `s4.debug.lst` (`__DEBUG__`).
+//! + SIGIL'S OWN resolved layout (Stage-3 P4c; the asl-`.lst` parse retired).
+//! Edit the MANIFEST, then regenerate; `tests/repin_pins.rs::
+//! pins_rs_is_current` guards staleness. All values are per-shape VMAs/lengths
+//! from sigil's native canonical resolve (plain + `__DEBUG__`).
 //!
-//! [provenance] plain: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche41/s4.lst (07/29/2026 07:31:18 PM)
-//! [provenance] debug: /home/volence/sonic_hacks/aeon/.worktrees/port-tranche41/s4.debug.lst (07/29/2026 07:32:30 PM)
+//! [provenance] plain: sigil-native canonical resolve (plain)
+//! [provenance] debug: sigil-native canonical resolve (debug)
 //! [provenance] 56 regions, 313 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.

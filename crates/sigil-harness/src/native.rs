@@ -1690,6 +1690,66 @@ pub fn build_native_rom_with_listing(
     Ok((rom, listing))
 }
 
+/// Build the sigil-native SYMBOL LISTING for one shape (Stage-3 P4c: the `pins.rs`
+/// source that replaces parsing asl's `.lst`). Resolves the canonical pinned layout,
+/// dumps the fully-resolved symbol table (labels + folded equates — incl. the
+/// `MDDBG__*` link-external-base table), DEMANGLES the `.emp` locals (`$module$Parent$
+/// local` → `Parent.local`, matching the deb2 appendix) so a dotted-local offset spec
+/// like `AnimateSprite.cc_delete` resolves, and returns `(name → address, end_addr)`.
+/// A demangle collision on distinct addresses is a hard error (the asl parser rejected
+/// duplicate names; this preserves that guarantee).
+pub fn sigil_native_symbol_listing(
+    aeon: &Path,
+    debug: bool,
+) -> Result<(HashMap<String, u32>, u32), String> {
+    let resolved = resolve_pinned_sections(aeon, debug)?;
+    let stubs = SymbolTable::new();
+    let raw = sigil_link::resolved_symbols(&resolved, &stubs);
+    // Demangle via the deb2 path so dotted locals resolve; keep RAM + ROM + equates.
+    let listing_syms: Vec<sigil_link::ListingSymbol> = raw
+        .iter()
+        .map(|(name, val)| sigil_link::ListingSymbol {
+            name: name.clone(),
+            value: *val as u32,
+            is_equate: false,
+            unused: false,
+        })
+        .collect();
+    let demangled = sigil_link::demangle_symbols(&listing_syms);
+    // Demangle can map two DISTINCT internal `.emp` locals (e.g. `raise_error` scratch
+    // labels in sibling procs) to the same `Parent.local` — the asl `.lst` never did
+    // (its names were already unique). Such an alias is AMBIGUOUS, so it is DROPPED, not
+    // resolved to an arbitrary one. Every symbol the manifest queries is unique (a proc
+    // name or a global), so it survives; a query for a dropped/absent name fails loudly
+    // in `resolve()` (naming it) — never a silent wrong value.
+    let mut values: HashMap<String, std::collections::HashSet<u32>> = HashMap::new();
+    for s in &demangled {
+        values.entry(s.name.clone()).or_default().insert(s.value);
+    }
+    let mut map: HashMap<String, u32> = values
+        .into_iter()
+        .filter_map(|(name, vs)| if vs.len() == 1 { Some((name, vs.into_iter().next().unwrap())) } else { None })
+        .collect();
+    // Section-END markers (`<Base>_End`): the one-past-end boundary labels asl listed but
+    // sigil emits IMPLICITLY (the `.emp` data modules carry no `_End` label; the `.asm`
+    // twins that did are deleted). Synthesize each from its section's resolved geometry —
+    // the base (offset-0) label's name + `_End` at `lma + image_len` — matching P4a's
+    // `derive_frozen_table`. Real labels win (only added when absent).
+    for s in &resolved {
+        if !is_rom_section(s) {
+            continue;
+        }
+        if let Some(base) = s.labels.iter().find(|l| l.offset == 0) {
+            let end_name = format!("{}_End", base.name);
+            map.entry(end_name).or_insert_with(|| s.lma.wrapping_add(s.image_len()));
+        }
+    }
+    let end_addr = *map
+        .get("EndOfRom")
+        .ok_or("sigil_native_symbol_listing: `EndOfRom` absent from the resolved layout")?;
+    Ok((map, end_addr))
+}
+
 /// Load the project memory map (`sigil.map.toml`) — the same file `emit_rom` reads.
 pub fn project_memory_map() -> Result<sigil_ir::map::MemoryMap, String> {
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");

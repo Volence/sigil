@@ -2240,3 +2240,34 @@ ruling keeps `pins.rs` as the placement source (sigil-derived in P4c).
 
 Aeon commit: `engine.inc` object-bank guard migration (byte-neutral, references restored
 to `7f071417`/`0b8efc7a`).
+
+## Stage-3 P4c — `pins.rs` BECOMES A SIGIL-DERIVED OUTPUT; the asl-`.lst` parse dies
+
+The pins ruling (middle path): `pins.rs` stays the placement source the `_port` window
+oracles slice by (full retirement = capstone), but its ASL DERIVATION dies. So:
+
+- **`pins.rs` regenerates from SIGIL'S OWN resolved layout.** `native::sigil_native_
+  symbol_listing` resolves the canonical pinned layout (both shapes) and dumps the
+  fully-resolved symbol table via the new `sigil_link::resolved_symbols` — labels at
+  their VMA + every `equ_sym` folded to a constant, INCLUDING the `MDDBG__*` table off
+  the link-external `ErrorHandler` base — then DEMANGLES the `.emp` locals
+  (`$module$Parent$local` → `Parent.local`, matching the deb2 appendix; ambiguous
+  demangle aliases dropped) and SYNTHESIZES the section-END markers (`<Base>_End` at
+  `lma + image_len`, the P4a technique). The repin bin feeds these two `Listing`s
+  (built via the new `Listing::from_symbols`) to the unchanged `resolve` + `render`.
+  Regenerated once: **every pin VALUE is byte-identical** to the committed table (the
+  placements are golden-proven) — only the provenance header changes (asl → sigil-native).
+- **`repin::parse_listing` + `parse_code_line` + `assert_listing_matches_rom` DELETED**
+  (the asl `Symbol Table`/`.lst` reader + its freshness cross-check); the repin bin no
+  longer reads `s4.lst`/`s4.debug.lst`. Kill-list row 34 CLOSES.
+- **`pins_rs_is_current` came back from retire-ignore as a REAL gate** re-pointed at the
+  native resolve — currency is checkable again, against sigil's own layout, no asl.
+
+Byte-neutral (no ROM, golden, or pin value moves). Strict 2861/0 (1 ignored) — the 6
+asl-format-parser unit tests retire with `parse_listing`; `pins_rs_is_current` un-ignores
+(net −6 +1, ignored 2→1). NEW APIs: `sigil_ir::SymbolTable::iter`,
+`sigil_link::resolved_symbols`, `repin::Listing::from_symbols`,
+`native::{sigil_native_symbol_listing, resolve_pinned_sections, project_memory_map}`.
+Aeon read-only for P4c. Rows 6/58 (the per-shape gate resume `org`s) are NOT dead — they
+still position the AS residual AROUND the natively-placed `.emp` regions in every build;
+they retire only when the map computes all placement (capstone).
