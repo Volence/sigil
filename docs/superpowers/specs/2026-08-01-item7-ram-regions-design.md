@@ -72,7 +72,7 @@ vars upper_ram {
     mark DMA_Critical_End,
     Pos_table:       [u8; 256] @align(256),
     Art_Staging_Buffer: alias(Tile_Cache_Nametable),
-    if __DEBUG__ @shape_divergent {
+    if DEBUG == 1 @shape_divergent {
         Lag_Frame_Count: u32,
         Debug_Scene_Freeze: u8,
         pad(1),
@@ -105,7 +105,10 @@ region base:
   `if/error`). The §4.6 "declared region-level overlap" aspiration stays OUT
   (v2 candidate); alias+ensure is the audit-accepted faithful form.
 - **`if <comptime-cond> { fields... }`** — conditional field groups driven by
-  the existing define environment (`__DEBUG__`). Shapes may diverge downstream
+  the existing define environment. The condition is an arbitrary comptime
+  expression; the corpus convention is `-D DEBUG=0|1` + `if DEBUG == 1`
+  (RULED at #7a countersign — one conditional idiom, no `defined()`
+  presence-semantics construct; an undefined bareword errors loudly). Shapes may diverge downstream
   of a size-varying group — that is INTENDED for the two existing debug blocks.
   A size-varying conditional group must carry **`@shape_divergent`** or it is
   the `[vars.shape-divergent]` ERROR: the annotation is the author declaring
@@ -176,8 +179,8 @@ region base:
 | `Name:` (marker label) | `mark Name` |
 | `Name = Other` (alias) | `Name: alias(Other)` |
 | `if COND > LIMIT … error` | region `limit` / `ensure(...)` |
-| `ifdef __DEBUG__ … endif` (size-varying) | `if __DEBUG__ @shape_divergent { … }` |
-| `ifdef __DEBUG__ X else pad endif` (size-equal) | `if __DEBUG__ { X: u8 } else { pad(1) }` — compiler proves invariance |
+| `ifdef __DEBUG__ … endif` (size-varying) | `if DEBUG == 1 @shape_divergent { … }` |
+| `ifdef __DEBUG__ X else pad endif` (size-equal) | `if DEBUG == 1 { X: u8 } else { pad(1) }` — compiler proves invariance |
 | `(Object_RAM & $FFFF) < $8000` guard | region `w_addressable` |
 | `align 256` (game ram) | `@align(256)` |
 
@@ -223,3 +226,16 @@ absolute). Region form stops being inert the moment #7a lands — the three
 6. No auto-alignment anywhere; `[layout.odd-field]` turns the address-error
    class into a diagnostic; pads are explicit and intent-named.
 7. Z80 RAM regions and comptime region reflection are OUT of v1.
+
+## §8 — #7a countersign addenda (rulings on the implementation stops)
+
+1. **Condition spelling RULED:** `if DEBUG == 1`, the shipped corpus convention
+   (`-D DEBUG=0|1`); the §2.2/§4 examples above are amended. No `defined()`
+   construct — presence semantics is an AS-ism; the define environment is
+   explicit and an undefined bareword condition errors loudly.
+2. Cross-module `after()` resolution is #7c scope (accepted staging; the
+   intra-file DAG + cycle detection shipped in #7a; `[region.multiple-owners]`
+   is whole-program).
+3. `place_sections` RAM-skip (`vma_base >= $F00000`) is #7b's first task —
+   #7a left placement untouched for zero CRC risk (accepted).
+4. `[layout.odd-field]` is a warning — that is what "lint" means here (accepted).
