@@ -145,7 +145,7 @@ fn config_a() -> Target {
             ("EntryPoint", 0x200),
             ("GameLoop", 0x243e),
             ("BusError", 0x5e542),
-            ("HeightMaps", 0x257c6),
+            ("HeightMaps", 0x257d6),
             ("AnimateSprite", 0x3534),
             ("EndOfRom", 0x5f5f2),
         ],
@@ -158,10 +158,10 @@ fn config_b() -> Target {
         load_bearing: &[
             ("EntryPoint", 0x200),
             ("GameLoop", 0xb48),
-            ("BusError", 0x423c0),
-            ("HeightMaps", 0x25720),
+            ("BusError", 0x423d0),
+            ("HeightMaps", 0x25730),
             ("AnimateSprite", 0x16e6),
-            ("EndOfRom", 0x43470),
+            ("EndOfRom", 0x43480),
         ],
     }
 }
