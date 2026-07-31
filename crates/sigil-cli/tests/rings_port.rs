@@ -326,14 +326,13 @@ fn compile_real_file_with(
     (resolved, linked, link_asserts)
 }
 
-/// All prepended drift guards must be captured and PASS: sst.emp's 30 SST_*
-/// pins + the engine constants twin (derived via the shared truth list, so
-/// twin growth doesn't need a literal bump here) + rings.emp's own 4
-/// game-owned mirrors.
+/// All prepended drift guards must be captured and PASS: the engine constants
+/// twin (derived via the shared truth list) + rings.emp's own 4 game-owned
+/// mirrors. sst.emp's SST_* wall retired at the conv-a structs flip.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    let want = 30 + sigil_harness::test_support::engine_constant_equs().len() + 4;
-    assert_eq!(guards, want, "sst.emp's 30 + the constants twin's {} + rings.emp's 4 drift guards must be captured", sigil_harness::test_support::engine_constant_equs().len());
+    let want = sigil_harness::test_support::engine_constant_equs().len() + 4;
+    assert_eq!(guards, want, "the constants twin's {} + rings.emp's 4 drift guards must be captured", sigil_harness::test_support::engine_constant_equs().len());
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

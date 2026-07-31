@@ -280,12 +280,11 @@ fn assert_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
         })
         .count();
     // act_descriptor's ONE surviving limit mirror (MAX_ACT_SECTIONS — still
-    // AS-retained in engine/constants.asm) + the prepended engine.structs drift
-    // wall (58 per-field — 34 Act/Sec + 11 DMAEntry + 13 parallax_config,
-    // tranche 21 — + 4 sizeof = 62) = 63. SECTION_SIZE_SHIFT and EDGE_CLAMP flipped
-    // to `use engine.constants` (the P5 ownership flip — engine.constants is now
-    // their sole author), so their extern drift guards retired.
-    assert_eq!(drifted, 63, "act limit mirror + shared struct drift wall must be captured");
+    // AS-retained in engine/constants.asm). The prepended engine.structs per-field
+    // drift wall (Act/Sec/DMAEntry/parallax_config) retired at the conv-a structs
+    // flip — the structs are the sole author now, so those "drifted" asserts are
+    // gone. SECTION_SIZE_SHIFT/EDGE_CLAMP flipped to `use engine.constants` at P5.
+    assert_eq!(drifted, 1, "act limit mirror must be captured");
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {

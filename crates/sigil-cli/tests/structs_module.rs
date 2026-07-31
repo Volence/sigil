@@ -1,21 +1,22 @@
-//! Shared struct module (row 1051 micro-batch, item 1) — `engine/structs.emp`.
+//! Shared struct module — `engine/structs.emp` + the struct-offset harvest.
 //!
-//! `engine/structs.emp` is a TYPE-ONLY module (Act + Sec twins, zero emitted
-//! bytes), so there is no region to byte-compare. Its gate is the drift wall:
-//! lower the real file, supply the `Act_*`/`Sec_*` field equs (structs.asm's
-//! generated layout), and assert every per-field `offsetof(S, f) ==
-//! extern("S_f")` guard + the `sizeof == *_len` totals PASS. A doctored equ
-//! must fire its guard (the negative probe).
+//! Post the conv-a structs flip, `engine.structs` (and its siblings sst.emp /
+//! entity_window.emp / parallax.emp) is the SOLE AUTHOR of the object/section/
+//! DMA/parallax/VDP-shadow layouts: the per-field `offsetof == extern` drift
+//! walls retired (they became tautologies once the `.emp` owns the layout), and
+//! the residual AS reads the offsets through `harvest_engine_struct_offsets`.
+//!
+//! This gate replaces the old drift-wall test with the POSITIVE re-home: it
+//! asserts the harvester emits the exact `<Struct>_<field>` / `<Struct>_len` equs
+//! the AS side used to generate (a wrong offset would move ROM bytes — the
+//! six-target byte-identity is the ultimate check; this pins the mechanism).
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test structs_module
 //! ```
 
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
-use sigil_frontend_emp::parse_str;
-use sigil_harness::test_support;
-use sigil_ir::backend::Cpu;
-use sigil_ir::{Section, SectionPlacement, SymbolTable};
+use sigil_harness::native::harvest_engine_struct_offsets;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
@@ -24,84 +25,84 @@ fn aeon_dir() -> PathBuf {
     )
 }
 
-/// Lower `engine/structs.emp` and return its captured link asserts (the drift
-/// wall), plus the placed equ sections to resolve them against.
-fn lower_structs(equs: &[(&str, &str)]) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
-    let path = aeon_dir().join("engine/structs.emp");
-    let src = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let (file, pdiags) = parse_str(&src);
-    assert!(
-        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "structs.emp parse errors: {pdiags:?}"
-    );
-    let opts = LowerOptions {
-        initial_cpu: Cpu::M68000,
-        include_root: Some(aeon_dir().join("engine")),
-        embed_base: None,
-        defines: vec![],
-    };
-    let (module, ldiags) = lower_module(&file, &opts);
-    assert!(
-        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "structs.emp lower errors: {ldiags:?}"
-    );
-
-    let mut sections = module.sections;
-    let mut eqs = test_support::assemble_equ_pairs(equs);
-    for sec in &mut eqs {
-        sec.lma = 0x0100_0000;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    sections.extend(eqs);
-    (sections, module.link_asserts)
+fn skip() -> bool {
+    std::env::var("AEON_DIR").is_err() && !Path::new("/home/volence/sonic_hacks/aeon").exists()
 }
 
-fn guard_diags(
-    sections: &[Section],
-    asserts: &[sigil_ir::LinkAssert],
-) -> Vec<sigil_span::Diagnostic> {
-    let resolved = sigil_link::resolve_layout(sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
-    sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), asserts)
+fn harvested() -> HashMap<String, i64> {
+    harvest_engine_struct_offsets(&aeon_dir())
+        .expect("struct-offset harvest")
+        .into_iter()
+        .collect()
 }
 
 #[test]
-fn per_field_drift_wall_passes() {
-    if std::env::var("AEON_DIR").is_err() && !Path::new("/home/volence/sonic_hacks/aeon").exists() {
+fn harvest_emits_the_as_field_offsets_and_sizes() {
+    if skip() {
         eprintln!("skip: AEON_DIR unset");
         return;
     }
-    let equs = test_support::act_sec_field_equs();
-    let (sections, asserts) = lower_structs(&equs);
-    // 34 per-field guards + 2 sizeof guards = 36; all must pass.
-    assert!(asserts.len() >= 36, "expected >=36 drift guards, got {}", asserts.len());
-    let diags = guard_diags(&sections, &asserts);
-    assert!(
-        diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "structs.emp drift wall must all PASS: {diags:?}"
-    );
+    let h = harvested();
+    // A spread across all eight struct twins — the offsets structs.asm's
+    // `struct … endstruct` generated, now authored by the `.emp` structs.
+    let want: &[(&str, i64)] = &[
+        // Act ($22)
+        ("Act_sec_grid_ptr", 0x00),
+        ("Act_grid_w", 0x04),
+        ("Act_edge_mode", 0x20),
+        ("Act_len", 0x22),
+        // Sec ($42)
+        ("Sec_sec_block_index", 0x00),
+        ("Sec_sec_parallax_config", 0x14),
+        ("Sec_sec_block_dict_len", 0x40),
+        ("Sec_len", 0x42),
+        // DMAEntry (14)
+        ("DMAEntry_Reg94", 0),
+        ("DMAEntry_Command", 10),
+        ("DMAEntry_len", 14),
+        // parallax_config ($1C)
+        ("parallax_config_pcfg_band_count", 0),
+        ("parallax_config_pcfg_deform_table_fg", 12),
+        ("parallax_config_len", 0x1C),
+        // Sst ($50) + the derived tail word
+        ("SST_code_addr", 0x00),
+        ("SST_x_pos", 0x02),
+        ("SST_sst_custom", 0x2E),
+        ("SST_len", 0x50),
+        ("SST_interact", 0x4E),
+        // EntityScanState ($1A)
+        ("EntityScanState_ess_ring_right_idx", 0x00),
+        ("EntityScanState_ess_obj_next_x", 0x18),
+        ("EntityScanState_len", 0x1A),
+        // band_entry (10)
+        ("band_entry_band_top_cell", 0),
+        ("band_entry_band_phase_offset", 9),
+        ("band_entry_len", 10),
+        // VdpShadow (19)
+        ("VDP_Shadow_vdp_mode1", 0x00),
+        ("VDP_Shadow_vdp_mode2", 0x01),
+        ("VDP_Shadow_vdp_mode3", 0x0B),
+        ("VDP_Shadow_vdp_hint_rate", 0x0A),
+        ("VDP_Shadow_len", 19),
+    ];
+    for (name, off) in want {
+        assert_eq!(
+            h.get(*name),
+            Some(off),
+            "harvest must emit {name} = {off:#x} (got {:?})",
+            h.get(*name)
+        );
+    }
 }
 
 #[test]
-fn doctored_field_offset_fires_its_guard() {
-    if std::env::var("AEON_DIR").is_err() && !Path::new("/home/volence/sonic_hacks/aeon").exists() {
+fn sst_interact_is_the_record_tail_word() {
+    if skip() {
         eprintln!("skip: AEON_DIR unset");
         return;
     }
-    // Swap Sec.sec_bg_layout to a wrong offset — the per-field guard must fire
-    // (the case a sizeof-only guard would miss for a same-size neighbour).
-    let mut equs = test_support::act_sec_field_equs();
-    for pair in &mut equs {
-        if pair.0 == "Sec_sec_bg_layout" {
-            pair.1 = "$18"; // truth is $1C
-        }
-    }
-    let (sections, asserts) = lower_structs(&equs);
-    let diags = guard_diags(&sections, &asserts);
-    assert!(
-        diags.iter().any(|d| d.level == sigil_span::Level::Error && d.message.contains("sec_bg_layout")),
-        "doctored Sec.sec_bg_layout must fire its drift guard, got: {diags:?}"
-    );
+    let h = harvested();
+    // The one derived equate structs.asm carried outside a struct block:
+    // SST_interact = sizeof(Sst) - 2 (the tail custom-window word).
+    assert_eq!(h["SST_interact"], h["SST_len"] - 2, "SST_interact = SST_len - 2");
 }

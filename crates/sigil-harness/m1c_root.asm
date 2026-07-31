@@ -18,7 +18,6 @@ PAD_TO_POWER_OF_TWO     = 1
 
     include "engine/constants.asm"
     include "engine/sound_constants.asm"
-    include "engine/structs.asm"
     include "engine/macros.asm"
     include "engine/parallax_macros.inc"
     include "engine/sound/sound_bank.inc"

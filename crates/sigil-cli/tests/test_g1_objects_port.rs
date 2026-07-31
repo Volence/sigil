@@ -325,14 +325,15 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     let c = compile_real_files(shape);
 
-    // Drift guards: test_static rides sst.emp's 30; test_animated adds
-    // constants.emp's engine-constant guards + its own three (VRAM_TEST_SONIC,
-    // _dplc_ptr, _art_base). All must be captured AND pass.
-    assert_eq!(c.static_guards, 30, "test_static's ambient sst guards captured");
+    // Drift guards: sst.emp's SST_* wall retired at the conv-a structs flip, so
+    // test_static now rides zero; test_animated keeps the constants twin's guards
+    // + its own three (VRAM_TEST_SONIC, _dplc_ptr, _art_base). All must be
+    // captured AND pass.
+    assert_eq!(c.static_guards, 0, "test_static's sst ambient wall retired");
     assert_eq!(
         c.animated_guards,
-        30 + twin_guards() + 3,
-        "test_animated's ambient sst + constants guards + its own three captured"
+        twin_guards() + 3,
+        "test_animated's constants guards + its own three captured"
     );
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(
