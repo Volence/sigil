@@ -176,7 +176,6 @@ fn resolve_regions(
                 name,
                 &region_by_name,
                 &blocks_by_region,
-                defines,
                 &mut ev,
                 &mut memo,
                 &mut resolved,
@@ -197,7 +196,6 @@ fn resolve_one(
     name: &str,
     region_by_name: &HashMap<&str, &ast::RegionDecl>,
     blocks_by_region: &HashMap<&str, Vec<&ast::VarsDecl>>,
-    defines: &[(String, i128)],
     ev: &mut Evaluator,
     memo: &mut HashMap<String, (u32, u32)>,
     resolved: &mut Vec<ResolvedRegion>,
@@ -239,7 +237,7 @@ fn resolve_one(
                 0
             } else {
                 let (pbase, psize) = resolve_one(
-                    region, region_by_name, blocks_by_region, defines, ev, memo, resolved, visiting, diags,
+                    region, region_by_name, blocks_by_region, ev, memo, resolved, visiting, diags,
                 );
                 pbase.wrapping_add(psize)
             }
