@@ -436,8 +436,11 @@ impl Layout {
                         primary: *span,
                     });
                 }
-                // Select the arm by the comptime condition (nonzero = `then`).
-                let take_then = eval_i128(ev, cond, diags) != 0;
+                // Select the arm by the comptime condition. The ratified corpus
+                // spelling (spec §8.1) is `if DEBUG == 1` — a comparison, which
+                // yields `Value::Bool`; a bare integer flag (`if FLAG`) is also
+                // accepted (nonzero = the `then` arm).
+                let take_then = eval_group_cond(ev, cond, diags);
                 if take_then {
                     self.walk(then_body, ev, diags);
                 } else {
@@ -468,6 +471,30 @@ fn measure(body: &[ast::RegionField], ev: &mut Evaluator) -> u32 {
     let mut lay = Layout::new(0);
     lay.walk(body, ev, &mut sink);
     lay.cursor
+}
+
+/// Evaluate a region-form conditional-group condition (`if <cond> { .. }`). Per
+/// spec §8.1 the ratified corpus spelling is `if DEBUG == 1` — a comparison,
+/// yielding `Value::Bool`; a bare integer flag (`if FLAG`) is also accepted
+/// (nonzero = the `then` arm). Anything else is not a comptime condition.
+fn eval_group_cond(ev: &mut Evaluator, expr: &ast::Expr, diags: &mut Vec<Diagnostic>) -> bool {
+    let mut env = Env::new();
+    let v = ev.eval_expr(expr, &mut env);
+    if let crate::value::Value::Bool(b) = v {
+        return b;
+    }
+    match v.as_stored_int() {
+        Some(n) => n != 0,
+        None => {
+            diags.push(Diagnostic {
+                level: Level::Error,
+                message: "region conditional-group condition is not a comptime boolean or integer"
+                    .to_string(),
+                primary: crate::parser::expr_span(expr),
+            });
+            false
+        }
+    }
 }
 
 /// Evaluate a comptime expression to an `i128` (defines already seeded on `ev`).

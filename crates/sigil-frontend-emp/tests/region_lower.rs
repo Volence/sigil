@@ -399,6 +399,32 @@ fn layout_odd_field() {
 }
 
 #[test]
+fn conditional_group_accepts_comparison_condition() {
+    // Spec §8.1 ratified the corpus spelling `if DEBUG == 1` — a COMPARISON,
+    // which evaluates to a Bool. The region-group condition must accept it (the
+    // #7a fixture only exercised the bare-integer `if __DEBUG__` form). Both the
+    // then-arm (DEBUG=1) and else-arm (DEBUG=0) select correctly, and a field
+    // AFTER the group lands at the shape-correct address.
+    let src = "module m\n\
+        region r @ $FFFF8000 .. $FFFFFF00\n\
+        vars r {\n\
+            Head: u16,\n\
+            if DEBUG == 1 @shape_divergent { Dbg: u32, }\n\
+            Tail: u16,\n\
+        }\n";
+    // DEBUG=1: Head@8000, Dbg@8002, Tail@8006.
+    let m1 = lower_ok(src, vec![("DEBUG".into(), 1)]);
+    assert_eq!(addr(&m1, "Head"), 0xFFFF8000);
+    assert_eq!(addr(&m1, "Dbg"), 0xFFFF8002);
+    assert_eq!(addr(&m1, "Tail"), 0xFFFF8006);
+    // DEBUG=0: the group is empty, Tail@8002.
+    let m0 = lower_ok(src, vec![("DEBUG".into(), 0)]);
+    assert_eq!(addr(&m0, "Head"), 0xFFFF8000);
+    assert_eq!(addr(&m0, "Tail"), 0xFFFF8002);
+    assert!(m0.sections.iter().all(|s| s.labels.iter().all(|l| l.name != "Dbg")));
+}
+
+#[test]
 fn place_sections_skips_ram_reserve_section() {
     // Item #7b's first task: `place_sections` must SKIP the reserve-only RAM
     // section a region-form `vars` block lowers to (`vma_origin >= $F00000`) —
