@@ -420,6 +420,7 @@ impl Parser {
         if self.at_kw("table") { return Some(Item::Table(Box::new(self.table_decl(public)))); }
         if self.at_kw("dispatch") { return Some(Item::Dispatch(self.dispatch_decl(public))); }
         if self.at_kw("vars") { return Some(Item::Vars(self.vars_decl(public))); }
+        if self.at_kw("region") { return Some(Item::Region(self.region_decl(public))); }
         if self.at_kw("data") { return Some(Item::Data(self.data_decl(public))); }
         // `extern proc Name ...` (§3) — a two-token opener. `extern` stays an
         // ordinary name everywhere else (`extern("Sym")` comptime reads live in
@@ -1227,28 +1228,14 @@ impl Parser {
             (None, vec![first])
         };
         self.expect(&Tok::LBrace, "`{`");
-        let mut fields = Vec::new();
-        loop {
-            self.skip_newlines();
-            if self.at(&Tok::RBrace) { break; }
-            let fspan = self.span();
-            let fname = self.expect_ident("field name");
-            self.expect(&Tok::Colon, "`:`");
-            let fty = self.ty();
-            let align = if self.at(&Tok::At) && matches!(self.peek2(), Tok::Ident(s) if s == "align") {
-                self.bump(); // @
-                self.bump(); // align
-                self.expect(&Tok::LParen, "`(`");
-                let e = self.expr();
-                self.expect(&Tok::RParen, "`)`");
-                Some(e)
-            } else { None };
-            fields.push(VarsField { name: fname, ty: fty, align, span: fspan });
-            self.skip_newlines();
-            if !self.eat(&Tok::Comma) { break; }
-            self.skip_newlines();
-            if self.at(&Tok::RBrace) { break; } // trailing comma
-        }
+        // The overlay form (`name: window`) has only typed fields; the region
+        // form (`name: None`) allows the full item #7 field grammar (`pad`,
+        // `mark`, `alias`, conditional groups) interleaved in allocation order.
+        let (fields, region_body) = if name.is_some() {
+            (self.overlay_fields(), Vec::new())
+        } else {
+            (Vec::new(), self.region_fields())
+        };
         self.skip_newlines();
         self.expect(&Tok::RBrace, "`}`");
         VarsDecl {
@@ -1256,7 +1243,196 @@ impl Parser {
             name,
             region,
             fields,
+            region_body,
             resolved_window: None,
+            span: start.merge(self.prev_span()),
+        }
+    }
+
+    /// Parse the OVERLAY-form typed fields (`name: T [@align(N)]`, comma-
+    /// separated) up to the closing `}` (which the caller consumes).
+    fn overlay_fields(&mut self) -> Vec<VarsField> {
+        let mut fields = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            fields.push(self.typed_field());
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        fields
+    }
+
+    /// Parse one `name: T [@align(N)]` typed field (shared by the overlay form
+    /// and region-form typed items). The cursor is on the field name.
+    fn typed_field(&mut self) -> VarsField {
+        let fspan = self.span();
+        let fname = self.expect_ident("field name");
+        self.expect(&Tok::Colon, "`:`");
+        let fty = self.ty();
+        let align = self.opt_align();
+        VarsField { name: fname, ty: fty, align, span: fspan }
+    }
+
+    /// Parse a trailing `@align(N)` on a field, if present.
+    fn opt_align(&mut self) -> Option<Expr> {
+        if self.at(&Tok::At) && matches!(self.peek2(), Tok::Ident(s) if s == "align") {
+            self.bump(); // @
+            self.bump(); // align
+            self.expect(&Tok::LParen, "`(`");
+            let e = self.expr();
+            self.expect(&Tok::RParen, "`)`");
+            Some(e)
+        } else {
+            None
+        }
+    }
+
+    /// Parse the REGION-form body (item #7 §2.2): typed fields interleaved with
+    /// `pad(N)`, `mark Name`, `name: alias(Other)`, and conditional groups, in
+    /// declaration order, up to the closing `}` (which the caller consumes).
+    fn region_fields(&mut self) -> Vec<RegionField> {
+        let mut out = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; }
+            if self.at_kw("if") {
+                out.push(self.region_group());
+                // A group is brace-delimited; an optional trailing comma is fine.
+                self.skip_newlines();
+                self.eat(&Tok::Comma);
+                continue;
+            }
+            out.push(self.region_field());
+            self.skip_newlines();
+            if !self.eat(&Tok::Comma) { break; }
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) { break; } // trailing comma
+        }
+        out
+    }
+
+    /// Parse one non-group region field: `pad(N)`, `mark Name`,
+    /// `name: alias(Other)`, or a typed `name: T [@align(N)]`.
+    fn region_field(&mut self) -> RegionField {
+        let fspan = self.span();
+        if self.at_kw("pad") {
+            self.bump(); // pad
+            self.expect(&Tok::LParen, "`(`");
+            let count = self.expr();
+            self.expect(&Tok::RParen, "`)`");
+            return RegionField::Pad { count, span: fspan.merge(self.prev_span()) };
+        }
+        if self.at_kw("mark") {
+            self.bump(); // mark
+            let name = self.expect_ident("mark name");
+            return RegionField::Mark { name, span: fspan.merge(self.prev_span()) };
+        }
+        // `name: alias(Other)` vs `name: T` — both open `ident :`, so peek past
+        // the colon for the `alias` keyword.
+        let name = self.expect_ident("field name");
+        self.expect(&Tok::Colon, "`:`");
+        if self.at_kw("alias") {
+            self.bump(); // alias
+            self.expect(&Tok::LParen, "`(`");
+            let target = self.expect_ident("alias target field");
+            self.expect(&Tok::RParen, "`)`");
+            return RegionField::Alias { name, target, span: fspan.merge(self.prev_span()) };
+        }
+        let fty = self.ty();
+        let align = self.opt_align();
+        RegionField::Typed(VarsField { name, ty: fty, align, span: fspan.merge(self.prev_span()) })
+    }
+
+    /// Parse a conditional field group: `if <cond> [@shape_divergent] { .. }
+    /// [else { .. }]`. The cursor is on the `if` keyword.
+    fn region_group(&mut self) -> RegionField {
+        let start = self.span();
+        self.bump(); // `if`
+        // Struct literals disabled: `if __DEBUG__ { .. }` must not read
+        // `__DEBUG__ {` as a struct-literal condition (the `if_expr` rule).
+        let cond = self.expr_no_struct_lit();
+        let shape_divergent =
+            if self.at(&Tok::At) && matches!(self.peek2(), Tok::Ident(s) if s == "shape_divergent") {
+                self.bump(); // @
+                self.bump(); // shape_divergent
+                true
+            } else {
+                false
+            };
+        self.expect(&Tok::LBrace, "`{`");
+        let then_body = self.region_fields();
+        self.expect(&Tok::RBrace, "`}`");
+        let else_body = if self.peek_kw_across_newlines("else") {
+            self.skip_newlines();
+            self.bump(); // `else`
+            self.expect(&Tok::LBrace, "`{`");
+            let body = self.region_fields();
+            self.expect(&Tok::RBrace, "`}`");
+            body
+        } else {
+            Vec::new()
+        };
+        RegionField::Group {
+            cond,
+            shape_divergent,
+            then_body,
+            else_body,
+            span: start.merge(self.prev_span()),
+        }
+    }
+
+    /// Whether the next non-newline token is the contextual keyword `kw`, without
+    /// consuming anything (used to spot an `else` on the line after `}`).
+    fn peek_kw_across_newlines(&self, kw: &str) -> bool {
+        let mut i = self.pos;
+        while matches!(self.toks.get(i).map(|t| &t.tok), Some(Tok::Newline)) {
+            i += 1;
+        }
+        matches!(self.toks.get(i).map(|t| &t.tok), Some(Tok::Ident(s)) if s == kw)
+    }
+
+    /// Parse a `region name @ base .. limit [, w_addressable]` declaration
+    /// (item #7 §2.1). The cursor is on the `region` keyword.
+    fn region_decl(&mut self, public: bool) -> RegionDecl {
+        let start = self.span();
+        self.bump(); // `region`
+        let name = self.expect_ident("region name");
+        self.expect(&Tok::At, "`@`");
+        // `after(<region>)` or an explicit base address.
+        let base = if self.at_kw("after") {
+            let aspan = self.span();
+            self.bump(); // after
+            self.expect(&Tok::LParen, "`(`");
+            let region = self.expect_ident("parent region name");
+            self.expect(&Tok::RParen, "`)`");
+            RegionBase::After { region, span: aspan.merge(self.prev_span()) }
+        } else {
+            // Bind tighter than the range operator (`..`, bp 4) so the base expr
+            // stops AT the `..` separator instead of swallowing it as a range.
+            RegionBase::Addr(self.expr_bp(5))
+        };
+        self.expect(&Tok::DotDot, "`..`");
+        let limit = self.expr();
+        let w_addressable = if self.eat(&Tok::Comma) {
+            // Only `w_addressable` is a legal attribute here today.
+            let attr = self.expect_ident("region attribute (`w_addressable`)");
+            if attr != "w_addressable" {
+                let sp = self.prev_span();
+                self.diag_at(sp, format!("unknown region attribute `{attr}` (expected `w_addressable`)"));
+            }
+            true
+        } else {
+            false
+        };
+        RegionDecl {
+            public,
+            name,
+            base,
+            limit,
+            w_addressable,
             span: start.merge(self.prev_span()),
         }
     }

@@ -420,6 +420,16 @@ fn build_program_with(
         link_asserts.extend(module.link_asserts);
     }
 
+    // Item #7a §2.3: a region's `vars` blocks must all live in one owner module
+    // (`[region.multiple-owners]`). A whole-program check over the reachable set
+    // — per-module lowering cannot see it. A no-op (no diagnostics) for a program
+    // with no region-form `vars` blocks.
+    let reachable_pairs: Vec<(&str, &ast::File)> = reachable
+        .iter()
+        .map(|&i| (manifest.modules[i].id.as_str(), &manifest.modules[i].file))
+        .collect();
+    diags.extend(crate::lower::check_single_owner(&reachable_pairs));
+
     (sections, link_asserts, diags)
 }
 
