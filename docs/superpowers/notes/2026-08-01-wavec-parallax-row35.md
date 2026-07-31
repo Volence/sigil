@@ -262,3 +262,26 @@ frame level with zero VBlank/lag cost. KEEP.
   if reg identity is ever part of their bar.
 - RULING CONFIRMED: KEEP — row-35 hardening + harness-scaffolding removal
   (kill row 35 closed), net −64 cyc/f on max-H, zero lag delta, OQ-5 honored.
+
+## Scrolling addendum (overseer, post-merge — closes Volence's live observation)
+
+Volence (watching the emulator): the collision drive's wall-pin means no
+scrolling — so it can't exercise parallax deformation. Correct; the render
+check's anchors sat on that scene. This addendum re-runs state identity on the
+max-H SCROLLING drive (debug-fly + hold right — camera moves every frame,
+Section_UpdateColumns + the HScroll/VSRAM build run against a moving world),
+comparing the FROZEN chain-7 vs chain-8 goldens directly from git history
+(rebuild-from-source of an OLDER chain entry with the NEWER toolchain does NOT
+reproduce it — placement state evolves per freeze; the goldens are the
+artifacts of record).
+
+**Verdict: VRAM / CRAM / VSRAM / reg-file byte-identical OLD vs NEW at all 3
+code-point anchors under active scroll; anchor 280 fully identical INCLUDING
+all 64 KB RAM; anchors 220/340 differ by exactly one classified layout-pointer
+byte.** The engine-owned per-frame mode write is behavior-identical while the
+deform machinery actually runs. Evidence: `ab_wavec_scroll.py`,
+`manifest_scroll_{OLD,NEW}.json`, `scroll_*_run*/ram_f*.bin`.
+
+Method note for the record: chain-N goldens are reproducible only by their own
+freeze-time toolchain state; for historical A/B sides, extract the golden from
+git (`git show <merge>:crates/sigil-harness/golden/…`) instead of rebuilding.
